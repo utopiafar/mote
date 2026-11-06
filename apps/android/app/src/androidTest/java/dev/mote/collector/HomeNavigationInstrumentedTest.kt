@@ -26,6 +26,7 @@ class HomeNavigationInstrumentedTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private val conversation = "14d4ef91-48c4-4372-b9ac-008f59b71e46"
+    private val turn = "d6c2234d-5aa8-4f0a-a4cd-813c866a524a"
     private val feedPhoto = "6a1c3e5b-7d9f-4a2b-8c4d-1e3f5a7b9c02"
     private val feedAudio = "4d7b2a9c-1e5f-4b3a-9d6c-2f4a6b8c0d13"
     private val feedNote = "8f2e4c6a-3b1d-4e5f-a7c9-0d2b4e6f8a24"
@@ -87,21 +88,33 @@ class HomeNavigationInstrumentedTest {
                     assertFalse(shown(activity).any { it.tag == "home-record-action" })
                 }
                 screenshot(scenario, "home-menu")
-                scenario.onActivity { activity -> activity.onBackPressed() }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                waitFor(scenario, "Back from the initial menu returns home") { shown(it).any { row -> row.tag == "home-ask-action" } }
                 openGeneratedConversation(scenario)
                 assertEquals(conversation, fixture.openedId)
                 scenario.onActivity { activity ->
                     shown(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("生成的未发送草稿")
-                    activity.onBackPressed()
-                    activity.openGeneratedMenu(); activity.onBackPressed()
-                    shown(activity).single { it.tag == "home-ask-action" }.performClick()
                 }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                waitFor(scenario, "Back from a conversation returns to its history") { shown(it).any { row -> row.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true } }
+                scenario.onActivity { activity -> assertTrue(shown(activity).single { it.contentDescription == "返回上级" }.performClick()) }
+                waitFor(scenario, "The history back button returns home") { shown(it).any { row -> row.tag == "home-ask-action" } }
+                scenario.onActivity { activity ->
+                    activity.openGeneratedMenu()
+                    assertTrue(shown(activity).any { it.tag == "menu:设置" })
+                }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                waitFor(scenario, "Back from the menu returns home") { shown(it).any { row -> row.tag == "home-ask-action" } }
+                openGeneratedConversation(scenario)
                 waitFor(scenario, "Menu and home transitions preserve the existing native draft") { shown(it).filterIsInstance<EditText>().any { field -> field.contentDescription == "你的问题" && field.text.toString() == "生成的未发送草稿" } }
                 scenario.onActivity { assertFalse(Settings(it).enabled) }
                 screenshot(scenario, "ask-retained-draft")
                 scenario.recreate(); scenario.awaitMainUi()
                 waitFor(scenario, "Recreation preserves draft and secondary back path") { shown(it).filterIsInstance<EditText>().any { field -> field.text.toString() == "生成的未发送草稿" } }
-                scenario.onActivity { it.onBackPressed(); assertTrue(shown(it).any { row -> row.tag == "home-record-action" }) }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                waitFor(scenario, "Back after recreation returns to conversation history") { shown(it).any { row -> row.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true } }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                waitFor(scenario, "Back from history after recreation returns home") { shown(it).any { row -> row.tag == "home-record-action" } }
             }
             settings.save(settings.read().copy(server = "", token = "", debugHttp = false), confirmCentralEndpoint = true)
         }
@@ -292,7 +305,7 @@ class HomeNavigationInstrumentedTest {
                     assertTrue("The stale origin is explained on the real composer",ready)
                     scenario.onActivity { a ->
                         val labels=views(a.window.decorView).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }
-                        assertTrue(labels.contains("＋ 参考资料")); assertFalse(labels.any { it.startsWith("参考这条记录") || it.startsWith("仅查这条记录") })
+                        assertTrue(labels.contains(MoteI18n.text("参考资料"))); assertFalse(labels.any { it.startsWith("参考这条记录") || it.startsWith("仅查这条记录") })
                     }
                     assertEquals(0,fixture.captureReads)
                 }
@@ -414,7 +427,7 @@ class HomeNavigationInstrumentedTest {
                     path == "/api/status" -> JSONObject().put("storage",JSONObject().put("captures",0))
                     path.contains("/references/") -> JSONObject().put("id",evidence).put("available",referenceAvailable)
                     path.startsWith("/api/capture-browser/") -> { captureReads++; JSONObject().put("id",evidence).put("deviceId","generated-source-device").put("source","note").put("libraryVersion", (if (changeVersionOnSecondRead && captureReads >= 2) "b" else "a").repeat(64)).put("appName","Generated source").put("ocrText","Generated original content").put("capturedAt","2026-10-28T10:00:00Z").put("metadata",JSONObject().put("ownerDescription","Generated separate description")) }
-                    path.startsWith("/api/conversations/") -> { openedId = path.substringAfter("/api/conversations/").substringBefore('?'); JSONObject().put("id", conversation).put("scope", JSONObject()).put("turns", JSONArray().put(JSONObject().put("question", "周五评审需要准备什么？").put("result", JSONObject().put("answer", "这是已提交的生成回答。" + if (longAnswer) "\n\n" + (1..70).joinToString("\n\n") { "Generated original answer paragraph $it" } else "").put("modelSelection",JSONObject().put("model","generated-model")).put("citations", JSONArray().apply { if (includeCitations) put(JSONObject().put("id",evidence).put("appName","Generated source").put("capturedAt","2026-10-28T10:00:00Z")) })))) }
+                    path.startsWith("/api/conversations/") -> { openedId = path.substringAfter("/api/conversations/").substringBefore('?'); JSONObject().put("id", conversation).put("scope", JSONObject()).put("turns", JSONArray().put(JSONObject().put("id", turn).put("question", "周五评审需要准备什么？").put("result", JSONObject().put("answer", "这是已提交的生成回答。" + if (longAnswer) "\n\n" + (1..70).joinToString("\n\n") { "Generated original answer paragraph $it" } else "").put("modelSelection",JSONObject().put("model","generated-model")).put("citations", JSONArray().apply { if (includeCitations) put(JSONObject().put("id",evidence).put("appName","Generated source").put("capturedAt","2026-10-28T10:00:00Z")) })))) }
                     path.startsWith("/api/model-settings") -> JSONObject().put("profiles", JSONArray())
                     else -> JSONObject().put("items", JSONArray())
                 }.toString().toByteArray()

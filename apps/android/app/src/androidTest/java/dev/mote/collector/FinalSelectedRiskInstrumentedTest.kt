@@ -52,6 +52,7 @@ class FinalSelectedRiskInstrumentedTest {
     private fun until(label:String,check:()->Boolean){val end=SystemClock.elapsedRealtime()+30_000;while(SystemClock.elapsedRealtime()<end){if(check())return;Thread.sleep(50)};fail(label)}
     private fun has(text:String)=main{shown().filterIsInstance<TextView>().any{it.text.toString().contains(text)}}
     private fun click(label:String){until("Action $label"){main{shown().filterIsInstance<TextView>().any{it.isClickable&&it.isEnabled&&(it.text.toString()==label||it.contentDescription==label)}}};main{shown().filterIsInstance<TextView>().first{it.isClickable&&it.isEnabled&&(it.text.toString()==label||it.contentDescription==label)}.also{it.requestRectangleOnScreen(android.graphics.Rect(0,0,it.width,it.height),true)}.performClick()}}
+    private fun clickDisclosure(label:String){val key="disclosure:"+MoteI18n.text(label);until("Disclosure $label"){main{shown().any{it.isClickable&&it.isEnabled&&it.tag==key}}};main{shown().first{it.isClickable&&it.isEnabled&&it.tag==key}.also{it.requestRectangleOnScreen(android.graphics.Rect(0,0,it.width,it.height),true)}.performClick()}}
     private fun clickHomeMenu(){until("Home menu"){main{shown().any{it.tag=="home-m-action"&&it.isClickable}}};main{shown().single{it.tag=="home-m-action"&&it.isClickable}.performClick()}}
     private fun chooseNativeListItem(label:String){
         fun row(text:View):View?{var node=text;while(node.parent is View&&node.parent !is android.widget.AdapterView<*>)node=node.parent as View;return node.takeIf{it.parent is android.widget.AdapterView<*>}}
@@ -316,7 +317,7 @@ class FinalSelectedRiskInstrumentedTest {
                     val label="查看引用 ${i+1} · ";until("Exact H04 turn citation row"){main{shown().any{it.contentDescription?.toString()?.startsWith(label)==true}}};main{shown().single{it.contentDescription?.toString()?.startsWith(label)==true}.performClick()}
                     until("Public reader shows full exact typed text"){main{shown().filterIsInstance<TextView>().any{it.tag=="capture-reference-text"&&it.text.toString()==expected[i]}}}
                     assertFalse(has("imageLocation"));assertFalse(has("{\"speaker\""));assertFalse(main{shown().any{it.tag=="capture-reference-canonical"}});picture("h04-citation-${i+1}-readable-default")
-                    click("更多  ›");until("Complete exact canonical remains explicitly readable"){main{shown().filterIsInstance<TextView>().any{it.tag=="capture-reference-canonical"&&it.text.toString()==originals[i].getString("ocrText")}}};picture("h04-citation-${i+1}-canonical-more");click("返回上级")
+                    clickDisclosure("更多");until("Complete exact canonical remains explicitly readable"){main{shown().filterIsInstance<TextView>().any{it.tag=="capture-reference-canonical"&&it.text.toString()==originals[i].getString("ocrText")}}};picture("h04-citation-${i+1}-canonical-more");click("返回上级")
                     until("Same actual parent and full later draft returned"){var selected=false;scenario.onActivity{selected=!it.isWorking&&it.selectedAskConversationId==conversation};selected&&main{shown().filterIsInstance<EditText>().any{it.contentDescription=="你的问题"&&it.text.toString()==draft}}};picture("h04-citation-${i+1}-same-parent-return")
                 }
             }
