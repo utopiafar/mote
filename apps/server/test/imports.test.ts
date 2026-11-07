@@ -127,6 +127,31 @@ test('imports select only a configured pinned Python pack and do not fall back t
  sourcePacks.set('fixture.pack',{revision:'changed-v2',prepare:sourcePacks.get('fixture.pack')!.prepare});
  const blocked=await imports.prepare(pending.id);assert.equal(blocked.status,'needs_configuration');assert.match(blocked.error??'',/pinned Python Source Pack/);assert.equal(packCalls,1);assert.equal(modelCalls,0);
 });
+test('removing a source pack preserves completed imports and reviewed previews across restart',async t=>{
+ const sourcePacks=new Map([['fixture.pack',{revision:'fixture-v1',prepare:async({workspace,inputPaths}:import('../src/imports.js').ImportPreparation)=>{
+  writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(),evidencePaths:[inputPaths[0]],attachments:[inputPaths[1]]})+'\n');
+  return {summary:'Generated reviewed import'};
+ }}]]);
+ const directory=mkdtempSync(join(tmpdir(),'mote-import-restart-')),store=new Store(directory),files=new ArchivedFileStore(store),sources=new SourceStore(store),executor=new ExecutionEngine(store);
+ const imports=new ImportStore(store,files,sources,{sourcePacks,executor}),instruction='Generated owner description';let restarted:ImportStore|undefined;
+ t.after(async()=>{await restarted?.stop();await imports.stop();await executor.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ const create=(name:string)=>imports.create({sourcePackId:'fixture.pack',processing:'preview',instruction,files:[entry(name+'.txt','Generated original'),entry(name+'.png','Generated image')]});
+ const first=await create('completed'),firstPreview=await imports.prepare(first.id);assert.equal(firstPreview.status,'awaiting_confirmation');
+ const complete=await imports.confirm(first.id);assert.equal(complete.status,'completed');
+ const pending=await create('reviewed'),preview=await imports.prepare(pending.id);assert.equal(preview.status,'awaiting_confirmation');
+ const queued=await create('queued');
+ const before=store.evidence(complete.captureIds)[0];
+ // The central host quiesces its shared executor before disposing import services.
+ await executor.close();await imports.stop();
+ restarted=new ImportStore(store,files,sources);
+ assert.equal(restarted.get(complete.id).status,'completed');assert.deepEqual(store.evidence(complete.captureIds)[0],before);
+ const saved=await restarted.confirm(pending.id);assert.equal(saved.status,'completed');
+ const row=store.evidence(saved.captureIds)[0];assert.equal(row.ocrText,item().text);assert.equal(row.provenance?.document?.recordedAt,item().document.recordedAt);
+ assert.equal(files.listForCapture(row.id).length,2);assert.equal(files.read(saved.files[1].id).toString(),'Generated image');
+ const {MaterialStore}=await import('../src/materials.js');assert.equal(new MaterialStore(store).contextForEvidence(row).importStatements?.[0].instruction,instruction);
+ const blocked=await restarted.prepare(queued.id);assert.equal(blocked.status,'needs_configuration');assert.match(blocked.error??'',/pinned Python Source Pack/);
+ assert.equal(files.read(blocked.files[0].id).toString(),'Generated original');assert.deepEqual(blocked.captureIds,[]);
+});
 test('ZIP expands generic files and rejects traversal while retaining supplied original',async t=>{
  const {imports,files}=fixture(t);const zip=zipSync({'folder/note.txt':Buffer.from('synthetic note'),'assets/data.bin':Buffer.from([0,1,2])});
  const job=await imports.create({files:[{name:'backup.zip',dataBase64:Buffer.from(zip).toString('base64')}]});assert.equal(job.archive.expandedFiles,2);assert.equal(job.files.length,3);assert.deepEqual(files.read(job.files[0].id),Buffer.from(zip));

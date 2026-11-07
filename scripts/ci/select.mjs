@@ -9,7 +9,7 @@ export const scopes = ['web', 'server', 'agent', 'shared', 'plugin-sdk', 'i18n',
 const documentation = path => path.startsWith('docs/') || path.startsWith('release/notes/')
   || /(?:^|\/)AGENTS\.md$/.test(path) || /^(?:README(?:\.[\w-]+)?|THIRD_PARTY_NOTICES)\.md$/.test(path)
   || /^\.agents\/skills\/.*\.(?:md|yaml)$/.test(path)
-  || ['protocol/README.md', 'adapters/ui/README.md', 'plugins/source-packs/memex-markdown/README.md'].includes(path);
+  || ['protocol/README.md', 'adapters/ui/README.md'].includes(path);
 
 // Real file intake producers and the Kotlin consumer exercised by the light
 // upload contract. Unrelated Server/Android modules keep their existing scopes.

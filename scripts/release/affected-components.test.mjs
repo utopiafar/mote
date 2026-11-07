@@ -45,7 +45,7 @@ test('protocol and release infrastructure check every affected platform without 
   assert.deepEqual(groups(changed('new-platform-input/config.json')), ['central', 'desktop', 'android']);
 });
 test('documentation and historic notes do not require app builds', () => {
-  for (const path of ['docs/releasing.md', 'README.md', 'README.zh-CN.md', 'README.en.md', 'AGENTS.md', 'THIRD_PARTY_NOTICES.md', 'protocol/README.md', 'adapters/ui/README.md', 'plugins/source-packs/memex-markdown/README.md', 'release/notes/android/0.0.77.md']) {
+  for (const path of ['docs/releasing.md', 'README.md', 'README.zh-CN.md', 'README.en.md', 'AGENTS.md', 'THIRD_PARTY_NOTICES.md', 'protocol/README.md', 'adapters/ui/README.md', 'release/notes/android/0.0.77.md']) {
     assert.deepEqual(changed(path), { central: false, desktop: false, android: false, protocol: false, tooling: false }, path);
   }
   // Markdown runtime prompts inside a workspace remain build inputs.

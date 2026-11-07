@@ -1,6 +1,6 @@
 # Background model authorization integration contract
 
-Status: merged in [#253](https://github.com/utopiafar/mote/pull/253) (`429cbd0d0`). Product scope is [P1-K](ui-user-journeys.md#6-单一实施清单). This document describes that code so the independently owned media consumer can integrate against precise interfaces. It does not grant approval or replace the independent review required by [testing](testing.md#risk-based-review).
+Status: merged in [#253](https://github.com/utopiafar/mote/pull/253) (`429cbd0d0`). Product scope is [P1-K](ui-user-journeys.md#6-单一实施清单). This document describes that code so the independently owned media consumer can integrate against precise interfaces. Validation guidance is in [testing](testing.md#risk-based-review).
 
 ## Owned interfaces
 
