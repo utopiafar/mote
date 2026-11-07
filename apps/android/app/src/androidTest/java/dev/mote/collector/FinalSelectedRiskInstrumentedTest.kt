@@ -86,7 +86,7 @@ class FinalSelectedRiskInstrumentedTest {
             scenario.recreate();until("Expired input retained on recreation"){main{shown().filterIsInstance<EditText>().singleOrNull()?.text.toString()==expired}};assertEquals(before,Settings(context).read())
             val valid=invitation(Instant.ofEpochMilli(System.currentTimeMillis()+600_000));main{shown().filterIsInstance<EditText>().single().setText(valid)};click("核对连接");until("Actual review"){has("这是你的 Mote 吗？")}
             val name="Generated retained connection review";main{shown().filterIsInstance<EditText>().single().setText(name)};click("确认连接")
-            until("Actual HTTP EOF returns readable transport failure"){has(ConnectionActivity.message("network"))};assertEquals(1,http.redeems.get());assertEquals(before,Settings(context).read());assertFalse(pending.exists());picture("connection-transport-failure-retains-name")
+            until("Actual HTTP EOF returns readable transport failure"){has(MoteI18n.text("连接未完成"))};assertEquals(1,http.redeems.get());assertEquals(before,Settings(context).read());assertFalse(pending.exists());picture("connection-transport-failure-retains-name")
             scenario.recreate();until("Review name survives actual failed attempt and recreation"){main{shown().filterIsInstance<EditText>().singleOrNull()?.text.toString()==name}};click("返回上一页")
             until("Back returns the same invitation"){main{shown().filterIsInstance<EditText>().singleOrNull()?.text.toString()==valid}};picture("connection-failure-back-retains-invitation");click("核对连接");until("Review name retained after Back"){main{shown().filterIsInstance<EditText>().singleOrNull()?.text.toString()==name}};assertEquals(1,http.redeems.get())
         }}

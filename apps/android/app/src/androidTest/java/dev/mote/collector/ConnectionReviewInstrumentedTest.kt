@@ -53,14 +53,22 @@ class ConnectionReviewInstrumentedTest {
                 scenario.onActivity { activity ->
                     shown(activity).filterIsInstance<EditText>().single().setText("not an invitation")
                     click(activity,"核对连接")
-                    assertTrue(shown(activity).filterIsInstance<TextView>().any { it.text.toString().startsWith("邀请格式或节点不安全") })
+                    val notice = shown(activity).filterIsInstance<TextView>().single { it.text.toString() == MoteI18n.text("邀请已失效") }
+                    val scan = shown(activity).filterIsInstance<TextView>().single { it.isClickable && it.text.toString() == MoteI18n.text("扫描二维码") }
+                    val noticeBox = android.graphics.Rect(); val scanBox = android.graphics.Rect()
+                    assertTrue(notice.getGlobalVisibleRect(noticeBox)); assertTrue(scan.getGlobalVisibleRect(scanBox))
+                    assertTrue("P05 keeps the scan action under the expired invitation notice", scanBox.top >= noticeBox.bottom)
                     assertEquals(before,Settings(context).read())
                 }
                 val invitation = JSONObject().put("format","mote.connection").put("version",1).put("serverUrl","https://review.generated.invalid")
                     .put("code","B".repeat(43)).put("expiresAt",Instant.ofEpochMilli(System.currentTimeMillis() + 600_000).toString()).toString()
                 scenario.onActivity { activity -> shown(activity).filterIsInstance<EditText>().single().setText(invitation); click(activity,"核对连接") }
                 waitFor(scenario,"这是你的 Mote 吗？")
-                scenario.onActivity { activity -> shown(activity).filterIsInstance<EditText>().single().setText("Generated review device") }
+                scenario.onActivity { activity ->
+                    assertTrue(shown(activity).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("本人设备") })
+                    assertTrue(shown(activity).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("连接后发送") })
+                    shown(activity).filterIsInstance<EditText>().single().setText("Generated review device")
+                }
                 scenario.recreate(); waitFor(scenario,"这是你的 Mote 吗？")
                 scenario.onActivity { activity ->
                     assertEquals("Generated review device",shown(activity).filterIsInstance<EditText>().single().text.toString())
