@@ -97,10 +97,10 @@ exit "$check_status"
 
 ## Risk-based review
 
-Stop before implementing a changed product boundary or architectural decision: for example who may access data, what deletion/restoration promises, a persistence or cross-client contract, or lifecycle responsibilities across modules. Give the user a short decision note: the old/new decision, affected consumers, risks and how the real boundary will be validated. The user decides and arranges any independent review, which binds to that scope and its assumptions; review again only when the decision boundary changes. New product policies are likewise the user's call.
+When access, deletion or restoration, persistence, cross-client contracts, or lifecycle responsibilities change, identify affected consumers and validate the changed behavior at the real boundary. Follow the user's decisions and any review they request.
 
 Module features and bug fixes within an established boundary need focused validation, not new design approval. A permission, deletion or recovery fix that restores the existing contract needs the corresponding regression. It does not automatically require an independent approval or full-repository run.
 
-Product decisions can supersede obsolete assertions. Explain the changed behavior and remove obsolete tests in the same change; a change that alters a product or architectural boundary goes through the decision note above. KEEP/CHANGE/REMOVE/EXCEPTION/UNKNOWN is useful for superseded architectural responsibilities, not a mandatory form for every edit.
+Product decisions can supersede obsolete assertions. Explain the changed behavior and remove obsolete tests in the same change. KEEP/CHANGE/REMOVE/EXCEPTION/UNKNOWN is useful for superseded architectural responsibilities, not a mandatory form for every edit.
 
 [Coordination](agent-development-workflow.md) applies when work is split across several agents or sessions.

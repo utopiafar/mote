@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join,resolve} from 'node:path';
+import {join} from 'node:path';
 import {zipSync,strToU8} from 'fflate';
 import sharp from 'sharp';
 import {randomUUID} from 'node:crypto';
@@ -19,7 +19,6 @@ import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {memoryImageGrants} from '../src/memory-image-grants.js';
 import {ImportStore} from '../src/imports.js';
-import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation} from '../src/plugins/python-source-pack-executor.js';
 
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-evidence-images-')),store=new Store(directory),sources=new SourceStore(store);
@@ -106,12 +105,19 @@ test('archive reads enforce image limits and recheck authorization before return
 });
 
 test('imported ZIP image is readable through discovered Material evidence with preserved authored context',async t=>{
- const f=await fixture(t),packRoot=resolve(import.meta.dirname,'../../..','plugins/source-packs/memex-markdown');
- const executor=new PythonSourcePackExecutor({id:'memex.markdown',version:'1',packRoot,script:'main.py',scriptSha256:sha256(readFileSync(join(packRoot,'main.py'))),pythonExecutable:'/usr/bin/python3',maxInputFiles:256,config:{timeZoneOffset:'+08:00'},outputSchema:pythonImportOutputSchema},
-  (workspace,python,runner)=>({command:python,args:['-I','-B',runner],cwd:workspace,env:{PATH:'/usr/bin:/bin',HOME:workspace,TMPDIR:workspace,PYTHONNOUSERSITE:'1',PYTHONDONTWRITEBYTECODE:'1'}}));
- const imports=new ImportStore(f.store,f.archived,f.sources,{sourcePacks:new Map([['memex.markdown',{revision:'generated',prepare:pythonImportPreparation(executor)}]])});
+ const f=await fixture(t);
+ // Stand in for the model's generic import manifest; the archive, record,
+ // attachment and evidence readers below remain the real implementations.
+ const imports=new ImportStore(f.store,f.archived,f.sources,{prepare:async({workspace,inputPaths})=>{
+  const document=inputPaths.find(path=>path.endsWith('/2026-04-13.md'))!,image=inputPaths.find(path=>path.endsWith('/assets/photo.png'))!;
+  assert.ok(document&&image);
+  writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:{externalId:'generated-entry',revision:'1',observedAt:'2026-09-27T01:00:00Z',kind:'file',layer:'original',text:'Generated caption. ![image](assets/photo.png)',document:{recordedAt:'2026-04-13T13:18:00+08:00',timeBasis:'recorded',contentRole:'authored'}},evidencePaths:[document],attachments:[image]})+'\n');
+  return {summary:'Generated generic import manifest'};
+ }});
  const input=zipSync({'export/2026-04-13.md':strToU8('# 2026-04-13\n\n## 13:18:00\n\nGenerated caption. ![image](assets/photo.png)\n'),'export/assets/photo.png':f.bytes});
- const created=await imports.create({processing:'automatic',sourcePackId:'memex.markdown',files:[{name:'generated.zip',dataBase64:Buffer.from(input).toString('base64')}]}),complete=await imports.prepare(created.id);
+ const created=await imports.create({processing:'preview',instruction:'Keep the authored caption, recorded time and image.',files:[{name:'generated.zip',dataBase64:Buffer.from(input).toString('base64')}]});
+ const preview=await imports.prepare(created.id);assert.equal(preview.status,'awaiting_confirmation',preview.error);
+ const complete=await imports.confirm(created.id);
  assert.equal(complete.status,'completed',complete.error);const parent=f.store.evidence(complete.captureIds)[0],attachment=parent.provenance!.document!.attachments![0];
  assert.equal(f.archived.get(attachment.id!).mimeType,'application/octet-stream','ZIP metadata has no trusted MIME declaration');
  while(await f.organizers.tick(100));

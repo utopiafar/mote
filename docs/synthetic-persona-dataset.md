@@ -36,7 +36,7 @@ node apps/server/scripts/persona-fixture.mjs generate \
 | 目录或文件 | 内容 | 用途与限制 |
 | --- | --- | --- |
 | `persona.json` | 虚构角色、关系、设备、时区与来源说明 | 供操作者了解场景；不是一条待提取 Memory |
-| `imports/diary-export.zip` | 按日期与时间导出的 Markdown 日记，图片、重复时间、CRLF、emoji、组合字、导出元数据 | 走现有 `memex.markdown` Source Pack；每条原文和附件都应可追溯 |
+| `imports/diary-export.zip` | 按日期与时间导出的 Markdown 日记，图片、重复时间、CRLF、emoji、组合字、导出元数据 | 走通用导入，并在说明中提供时区；每条原文和附件都应可追溯 |
 | `imports/diary/` | ZIP 中相同的原始成员 | 方便查看；同一测试环境不要把 ZIP 和解压目录分别再导入一遍 |
 | `ingest/capture-events.ndjson` | Mac / Android 截图、当前 v3 结构化页面、活动时长，以及三端随手记 | 用正式 HTTP schema 与接收路由回放；不代表操作了真机 |
 | `assets/` | PNG、JPEG、WebP 几何纸样 | 包含仅存在于像素中的视觉信息；原图读取不能以 OCR 占位或元数据代替 |
@@ -61,14 +61,14 @@ node --import tsx apps/server/scripts/persona-fixture.mjs replay \
   --run .mote/fixtures/linzhao-v1-offline
 ```
 
-省略 `--run` 会使用新建的系统临时目录。指定目录也必须不存在。回放器没有 `--url`、`--profile`、重置或导入旧数据库选项。Python 默认为 `/usr/bin/python3`；会先通过 `sys.executable` 解析 macOS 启动器实际调用的解释器，再交给现有 Source Pack 沙箱。也可用 `--python` 指定本机已有的完整解释器路径。缺少 OS 沙箱时失败关闭，不提供无沙箱回退。
+省略 `--run` 会使用新建的系统临时目录。指定目录也必须不存在。回放器没有 `--url`、`--profile`、重置或导入旧数据库选项。
 
 离线检查包括：
 
 - 未授权接收被拒绝；当前 capture / note schema 接受生成输入。
 - 第一次接收有持久化 ACK；相同 ID 重传得到重复回执，冲突内容被拒绝且不覆盖原文。
 - 截图字节、原文和事件时间可通过正式读取接口核对。
-- 日记 ZIP 使用固定 Source Pack，检查预览、明确确认、完整原件哈希、逐条 Unicode 原文和 `+08:00` 事件时间。
+- 日记 ZIP 走通用导入；离线模式使用预先构造的模型结果检查预览、明确确认、完整原件哈希、逐条 Unicode 原文、图片关联和 `+08:00` 事件时间。该模式不验证模型能否生成这些结果。
 - 文件经分片上传、commit 和原件读回；计划 v2 成为当前 head。
 - 飞书和钉钉使用本地 Provider 响应，经过真实格式解析与编排；发现列表故意带重复及下一页，成功空结果与音频备份分别验收。
 - 重启后原文仍可读，完成的导入保持原 ID，不重做已成功批次。

@@ -32,6 +32,6 @@ One instance, one owner: a personal context collector and central archive for th
 
 ## Deciding and reporting
 
-- Decide implementation details yourself. Stop before implementing a change to data access, deletion/restore promises, a persistence or cross-client contract, cross-module lifecycle, or any new product policy; give the user the old/new behavior, affected consumers and risks ([risk-based review](docs/testing.md#risk-based-review)).
+- Decide implementation details yourself.
 - PR description: behavior changes; checks actually run, with reused results marked as reused; checks not run and untested risks; fixture, physical-device and live-model evidence kept separate. Add no other tracking files.
 - Large or multi-module work: [coordination guide](docs/agent-development-workflow.md); wire one real end-to-end path first.

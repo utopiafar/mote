@@ -1,20 +1,15 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { mkdir, writeFile, readFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
 import { captureSchema, noteSchema, FILE_PART_BYTES } from '@mote/shared';
 import { buildApp } from '../../../src/app.ts';
 import { feishuTranscript } from '../../../src/connectors/recording-formats.ts';
 import { dingtalkTranscript } from '../../../src/connectors/dingtalk-recordings.ts';
 import { loadDataset, hash } from './dataset.mjs';
 import { persona, diary, id } from './story.mjs';
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const pause = ms => new Promise(done => setTimeout(done, ms));
-const exec = promisify(execFile);
 export function fixtureProviders(dataset) {
     return ['feishu', 'dingtalk'].map(provider => {
         const entries = dataset.manifest.recordings.filter(r => r.provider === provider), find = key => { const row = entries.find(r => r.key === key); if (!row)
@@ -22,7 +17,25 @@ export function fixtureProviders(dataset) {
         return { id: provider, version: 'synthetic-persona@1', account: async () => ({ id: 'synthetic-linzhao-' + provider, name: '合成 · 林照' }), discover: async (_account, range) => range.cursor ? { ids: entries.slice(1).map(r => r.key) } : { ids: [entries[0].key, entries[0].key], next: 'synthetic-page-2' }, metadata: async (_account, key) => structuredClone(find(key).metadata), transcript: async (_account, metadata) => { const row = find(metadata.id), rawText = dataset.input(row.transcriptPath).bytes.toString('utf8'); return provider === 'feishu' ? { rawText, transcript: feishuTranscript(rawText, metadata.durationMs) } : dingtalkTranscript(JSON.parse(rawText), metadata.durationMs); }, media: async (_account, metadata) => ({ mimeType: 'audio/wav', bytes: dataset.input(find(metadata.id).audioPath).bytes }) };
     });
 }
-export async function replayDataset(directory, { runDirectory, python = '/usr/bin/python3', liveModel = false, memory = false, questionIds = [], serve = false } = {}) {
+// Offline replay supplies an explicit model-result fixture for this generated
+// story. The real generic import host still validates and saves the manifest.
+async function fixtureImport({ workspace, inputPaths, hostMedia }) {
+    const lines = [];
+    for (const entry of diary) {
+        const path = inputPaths.find(value => value.endsWith('/diary/' + entry.day + '.md'));
+        assert.ok(path, 'Generated source document is present');
+        const original = await readFile(path, 'utf8'), text = entry.day === '2025-03-07' ? entry.text.replaceAll('\n', '\r\n') : entry.text;
+        const offset = original.indexOf(text);assert.notEqual(offset, -1);
+        const start = Array.from(original.slice(0, offset)).length, end = start + Array.from(text).length;
+        const image = entry.key === 'diary-photo' ? hostMedia.find(value => value.relativePath.endsWith('/diary/images/card.png')) : undefined;
+        if (entry.key === 'diary-photo') assert.ok(image, 'Generated image is available as host media');
+        lines.push(JSON.stringify({ item: { externalId: 'fixture:' + entry.key, revision: hash(Buffer.from(text)), observedAt: new Date().toISOString(), kind: 'file', layer: 'original', mimeType: 'text/markdown', title: entry.day + ' ' + entry.time, text, document: { recordedAt: `${entry.day}T${entry.time}+08:00`, timeBasis: 'recorded', contentRole: 'authored', originalMetadata: { sourceSlice: { unit: 'unicode_code_points', start, end, sha256: hash(Buffer.from(text)) } } } }, evidencePaths: [path], attachments: image ? [image.path] : [] }));
+    }
+    await writeFile(join(workspace, 'records.jsonl'), lines.join('\n') + '\n');
+    await writeFile(join(workspace, 'dispositions.json'), JSON.stringify({ items: inputPaths.map(path => ({ path, status: diary.some(entry => path.endsWith('/diary/' + entry.day + '.md')) ? 'parsed' : 'excluded', reason: 'Generated story fixture' })) }));
+    return { summary: 'Generated model-result fixture for the synthetic diary.', warnings: [] };
+}
+export async function replayDataset(directory, { runDirectory, liveModel = false, memory = false, questionIds = [], serve = false } = {}) {
     const dataset = await loadDataset(directory);
     if ((memory || questionIds.length) && !liveModel)
         throw Error('Memory and questions require explicit --live-model');
@@ -37,11 +50,10 @@ export async function replayDataset(directory, { runDirectory, python = '/usr/bi
     }
     else
         run = await mkdtemp(join(tmpdir(), 'mote-persona-run-'));
-    const pythonRuntime = resolve((await exec(resolve(python), ['-I', '-c', 'import sys; print(sys.executable)'], { timeout: 10000, maxBuffer: 4096 })).stdout.trim());
-    const token = randomBytes(32).toString('hex'), vault = join(run, 'vault'), packRoot = join(repo, 'plugins/source-packs/memex-markdown'), report = { startedAt: new Date().toISOString(), fixture: dataset.manifest.fixtureId, syntheticOnly: true, modelCallsEnabled: liveModel, model: liveModel ? 'gpt-6.1-terra' : null, reasoningEffort: liveModel ? 'high' : null, serviceTier: liveModel ? 'default' : null, transport: 'running', semanticVerdict: 'not-tested', physicalDevicesTested: false, realCloudAccountsTested: false, asrTested: false, diarizationTested: false, captures: [], files: [], connectors: {}, checks: [], questions: [], notTested: ['native Mac/Android permissions and capture', 'real cloud authentication', 'ASR and speaker identity', 'file interpretation (originals retained; automatic processing disabled)', 'heavy E2E and scale', 'semantic verdict requires human review'] };
+    const token = randomBytes(32).toString('hex'), vault = join(run, 'vault'), report = { startedAt: new Date().toISOString(), fixture: dataset.manifest.fixtureId, syntheticOnly: true, modelCallsEnabled: liveModel, importAnalysis: liveModel ? 'live-model' : 'generated-model-result-fixture', model: liveModel ? 'gpt-6.1-terra' : null, reasoningEffort: liveModel ? 'high' : null, serviceTier: liveModel ? 'default' : null, transport: 'running', semanticVerdict: 'not-tested', physicalDevicesTested: false, realCloudAccountsTested: false, asrTested: false, diarizationTested: false, captures: [], files: [], connectors: {}, checks: [], questions: [], notTested: ['native Mac/Android permissions and capture', 'real cloud authentication', 'ASR and speaker identity', 'file interpretation (originals retained; automatic processing disabled)', 'heavy E2E and scale', 'semantic verdict requires human review'] };
     const save = () => writeFile(join(run, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
-    const config = { dataDir: vault, token, tokenPath: join(run, 'owner-token'), host: '127.0.0.1', port: 0, maxStorageBytes: 300000000, maxExportBytes: 50000000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [], model: liveModel ? 'gpt-6.1-terra' : '', modelProvider: liveModel ? 'codex' : 'custom', modelProtocol: liveModel ? 'codex-app-server' : 'openai-completions', modelReasoningEffort: 'high', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', agentTimeoutMs: 300000, logLevel: 'warn', diagnosticsEnabled: true, agentTraceEnabled: liveModel, codexBin: process.env.MOTE_CODEX_BIN, codexHome: process.env.MOTE_CODEX_HOME, importPythonPacks: [{ id: 'memex.markdown', version: '1', packRoot, script: 'main.py', scriptSha256: hash(await readFile(join(packRoot, 'main.py'))), pythonExecutable: pythonRuntime, maxInputFiles: 128, maxOutputBytes: 2 * 1024 * 1024, config: { timeZoneOffset: '+08:00' } }] };
-    const deps = { backgroundWorker: false, connectorTesting: { recordings: fixtureProviders(dataset) }, ...(!liveModel ? { agent: { configured: false, close: async () => { }, query: async () => { throw Error('Offline replay must never invoke a model'); } } } : {}) };
+    const config = { dataDir: vault, token, tokenPath: join(run, 'owner-token'), host: '127.0.0.1', port: 0, maxStorageBytes: 300000000, maxExportBytes: 50000000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [], model: liveModel ? 'gpt-6.1-terra' : '', modelProvider: liveModel ? 'codex' : 'custom', modelProtocol: liveModel ? 'codex-app-server' : 'openai-completions', modelReasoningEffort: 'high', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', agentTimeoutMs: 300000, logLevel: 'warn', diagnosticsEnabled: true, agentTraceEnabled: liveModel, codexBin: process.env.MOTE_CODEX_BIN, codexHome: process.env.MOTE_CODEX_HOME };
+    const deps = { backgroundWorker: false, connectorTesting: { recordings: fixtureProviders(dataset) }, ...(!liveModel ? { prepareImport: fixtureImport, agent: { configured: false, close: async () => { }, query: async () => { throw Error('Offline replay must never invoke a model'); } } } : {}) };
     let node;
     const keys = new Map();
     async function request(method, url, payload, expected) { const response = await node.app.inject({ method, url, headers: { authorization: 'Bearer ' + token, 'x-mote-ingress-version': '2', ...(Buffer.isBuffer(payload) ? { 'content-type': 'application/octet-stream' } : {}) }, ...(payload !== undefined ? { payload } : {}) }); if (expected !== undefined)
@@ -102,9 +114,9 @@ export async function replayDataset(directory, { runDirectory, python = '/usr/bi
         await request('POST', first.route, { ...first.body, text: 'Synthetic conflicting retry' }, 409);
         assert.equal((await request('GET', '/api/captures/' + first.body.id)).json().ocrText, first.body.text);
         report.checks.push('conflicting same-ID content rejected without rewriting original');
-        const batch = dataset.manifest.imports.find(b => b.id === 'diary'), archive = dataset.input(batch.path), importRequest = { requestId: id('diary-import'), name: '合成 · 林照日记', sourcePackId: batch.sourcePackId, instruction: batch.instruction, processing: 'automatic', files: [{ name: 'diary-export.zip', mimeType: archive.mimeType, dataBase64: archive.bytes.toString('base64') }] };
+        const batch = dataset.manifest.imports.find(b => b.id === 'diary'), archive = dataset.input(batch.path), importRequest = { requestId: id('diary-import'), name: '合成 · 林照日记', instruction: batch.instruction, processing: 'preview', files: [{ name: 'diary-export.zip', mimeType: archive.mimeType, dataBase64: archive.bytes.toString('base64') }] };
         let imported = (await request('POST', '/api/imports', importRequest)).json();
-        for (let attempt = 0; ['queued', 'preparing', 'importing'].includes(imported.status) && attempt < 200; attempt++) {
+        for (let attempt = 0; ['queued', 'preparing', 'importing'].includes(imported.status) && attempt < (liveModel ? 6000 : 200); attempt++) {
             await pause(50);
             imported = (await request('GET', '/api/imports/' + imported.id)).json();
         }
@@ -121,26 +133,30 @@ export async function replayDataset(directory, { runDirectory, python = '/usr/bi
                 break;
         }
         assert.equal(imported.status, 'completed', imported.error);
-        assert.equal(imported.captureIds.length, batch.expectedRecords);
         const originals = new Map();
         for (const f of imported.files) {
             const response = await request('GET', '/api/archived-files/' + f.id + '/content');
             assert.equal(hash(response.rawPayload), f.hash);
             originals.set(f.id, response.rawPayload);
         }
-        const records = node.store.evidence(imported.captureIds);
+        const records = node.store.evidence(imported.captureIds).filter(row => row.provenance?.mimeType === 'text/markdown');
+        assert.equal(records.length, batch.expectedRecords);
         for (const entry of diary) {
-            const text = entry.day === '2025-03-07' ? entry.text.replaceAll('\n', '\r\n') : entry.text, recordedAt = `${entry.day}T${entry.time}+08:00`, row = records.find(r => r.provenance?.document?.recordedAt === recordedAt && r.ocrText.startsWith(text));
-            assert.ok(row, 'Exact diary original must be retrievable');
-            const doc = row.provenance.document, slice = doc.originalMetadata.sourceSlice, original = originals.get(doc.fileId).toString('utf8');
-            assert.equal(slice.unit, 'unicode_code_points');
-            assert.equal(Array.from(original).slice(slice.start, slice.end).join(''), row.ocrText);
-            assert.equal(hash(Buffer.from(row.ocrText)), slice.sha256);
+            const text = entry.day === '2025-03-07' ? entry.text.replaceAll('\n', '\r\n') : entry.text, recordedAt = `${entry.day}T${entry.time}+08:00`, row = records.find(r => r.provenance?.document?.recordedAt === recordedAt && r.ocrText.replaceAll('\r\n', '\n').includes(entry.text.trim()));
+            assert.ok(row, 'Diary content and recorded time must be retrievable');
+            if (!liveModel) {
+                assert.equal(row.ocrText, text);
+                const doc = row.provenance.document, slice = doc.originalMetadata.sourceSlice, original = originals.get(doc.fileId).toString('utf8');
+                assert.equal(slice.unit, 'unicode_code_points');
+                assert.equal(Array.from(original).slice(slice.start, slice.end).join(''), row.ocrText);
+                assert.equal(hash(Buffer.from(row.ocrText)), slice.sha256);
+            }
+            if (entry.key === 'diary-photo') assert.ok(row.provenance.document.attachments?.some(item => item.path.endsWith('/diary/images/card.png')));
             keys.set(entry.key, [row.id]);
         }
         await sourceContext(imported.sourceId, 'owner', persona.sourceContext);
-        report.diary = { id: imported.id, captureIds: imported.captureIds, records: records.length, originalFiles: imported.files.length };
-        report.checks.push('ZIP fixed parser; explicit timezone; preview/confirmation; exact Unicode blocks and archived bytes');
+        report.diary = { id: imported.id, captureIds: records.map(row => row.id), records: records.length, totalCaptures: imported.captureIds.length, originalFiles: imported.files.length };
+        report.checks.push(liveModel ? 'ZIP generic model import; explicit timezone; preview/confirmation; diary content, image association and archived bytes' : 'ZIP generic import with generated model-result fixture; explicit timezone; preview/confirmation; exact Unicode blocks and archived bytes');
         const sourceId = 'synthetic-linzhao-files';
         await request('POST', '/api/sources', { id: sourceId, name: '合成 · 文件样本', kind: 'local-files', deviceId: persona.devices[0].id, platform: 'macos', retention: 'archive', ownerRelation: 'mixed' });
         await sourceContext(sourceId, 'mixed', persona.sourceContext + ' 计划文件是林照本人作品；无日期摘录和收藏文章是第三方；预算只是计划。');
