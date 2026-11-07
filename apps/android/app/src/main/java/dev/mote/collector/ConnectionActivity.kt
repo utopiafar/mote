@@ -27,6 +27,8 @@ class ConnectionActivity : MoteActivity() {
     private lateinit var invitationForm: LinearLayout
     private lateinit var reviewForm: LinearLayout
     private lateinit var reviewName: EditText
+    private lateinit var inviteNotice: TextView
+    private lateinit var pendingCountView: TextView
     private var parsed: ConnectionInvitation? = null
     private data class PickerSelection(val stamp: String, val requestCode: Int)
     private class RetainedPicker(val selection: PickerSelection?, val result: Pair<Int, String>?, val input: String, val name: String, val debugHttp: Boolean, val reviewing: Boolean)
@@ -42,12 +44,13 @@ class ConnectionActivity : MoteActivity() {
     private var deviceId = ""
     private var working = false
     private var applying = false
+    private var connectingInvite = false
     private var refreshRequested = false
     private var connectionFinished: (() -> Unit)? = null
     private val handler = Handler(Looper.getMainLooper())
     private val refresh = object : Runnable {
         override fun run() {
-            if (applying && ::status.isInitialized) status.text = administration.progressLabel()
+            if (applying && ::status.isInitialized) status.text = if (connectingInvite) ConnectionPresentation.connecting else administration.progressLabel()
             connectionFinished?.let { complete -> connectionFinished = null; complete() }
             if (::input.isInitialized && !working && !task.busy) pendingPicker?.let { receivePickerResult(it) }
             if (refreshRequested && ::currentNode.isInitialized && !working && !task.busy && !refreshTask.busy) {
@@ -113,11 +116,13 @@ class ConnectionActivity : MoteActivity() {
             val invite = connection.stage(input.text.toString(), allowHttp.isChecked)
             val chosenName = reviewName.text.toString().trim(); val debugHttp = allowHttp.isChecked
             name.setText(chosenName)
-            working = true; applying = true; status.text = MoteI18n.text("正在兑换邀请并校验设备身份…")
+            working = true; applying = true; connectingInvite = true
+            confirmAction.text = ConnectionPresentation.connecting
+            status.text = ConnectionPresentation.connecting
             connection.confirm(currentConfig, chosenName, debugHttp) { result ->
                 if (isDestroyed || isFinishing) return@confirm
                 connectionFinished = {
-                    working = false; applying = false
+                    working = false; applying = false; connectingInvite = false
                     administration.currentConfiguration()?.let { currentConfig = it }; refreshCurrentNode()
                     result.onSuccess {
                         input.text.clear(); parsed = null; preview.text = MoteI18n.text("连接成功：{0}", invite.serverUrl); confirmAction.visibility = View.GONE
@@ -167,6 +172,14 @@ class ConnectionActivity : MoteActivity() {
         root.setPadding(moteDp(20),moteDp(28),moteDp(20),moteDp(28))
         text(MoteI18n.text("把记录接到一起"),22f).apply { MoteUi.type(this,NativeFontRole.TITLE_MOBILE); MoteUi.textColor(this,NativeColorRole.INK) }
         text(MoteI18n.text("在中央工作台的「设备」里获取连接邀请。"),13f).apply { MoteUi.textColor(this,NativeColorRole.MUTED); setPadding(0,moteDp(6),0,moteDp(24)) }
+        inviteNotice = TextView(this).apply {
+            visibility = View.GONE
+            text = ConnectionPresentation.invalidInvitation
+            MoteUi.type(this, NativeFontRole.SUPPORT)
+            MoteUi.textColor(this, NativeColorRole.INK)
+            setPadding(moteDp(16), moteDp(12), moteDp(16), moteDp(12))
+        }
+        root.addView(inviteNotice, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(14) })
         val choices = LinearLayout(this).apply { gravity = android.view.Gravity.CENTER_VERTICAL; isBaselineAligned = false }
         choices.addView(scan,LinearLayout.LayoutParams(0,-2,1f).apply { marginEnd = moteDp(8) })
         choices.addView(choose,LinearLayout.LayoutParams(0,-2,1f)); root.addView(choices)
@@ -190,9 +203,23 @@ class ConnectionActivity : MoteActivity() {
         reviewText(MoteI18n.text("核对连接"),NativeFontRole.META)
         reviewText(MoteI18n.text("这是你的 Mote 吗？"),NativeFontRole.TITLE_MOBILE)
         preview.background = MoteUi.shape(this); preview.setPadding(moteDp(20),moteDp(20),moteDp(20),moteDp(20)); reviewForm.addView(preview)
+        reviewText(ConnectionPresentation.selfDevice, NativeFontRole.SUPPORT)
         reviewText(MoteI18n.text("设备名称"),NativeFontRole.SUPPORT)
         reviewName = MoteUi.field(EditText(this).apply { isSingleLine = true; isSaveEnabled = false; filters = arrayOf(android.text.InputFilter.LengthFilter(128)); contentDescription = MoteI18n.text("设备名称") })
         reviewForm.addView(reviewName)
+        val pendingRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL; setPadding(0, moteDp(8), 0, moteDp(12)) }
+        pendingRow.addView(TextView(this).apply {
+            text = ConnectionPresentation.pendingSend
+            MoteUi.type(this, NativeFontRole.SUPPORT)
+            MoteUi.textColor(this, NativeColorRole.INK)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        pendingCountView = TextView(this).apply {
+            text = ConnectionPresentation.pendingCountLabel(null)
+            MoteUi.type(this, NativeFontRole.SUPPORT)
+            MoteUi.textColor(this, NativeColorRole.MUTED)
+        }
+        pendingRow.addView(pendingCountView)
+        reviewForm.addView(pendingRow)
         reviewText(MoteI18n.text("这台设备将可以访问你的全部资料和设置。\n新保存的记录将按当前发送设置同步到这里。"),NativeFontRole.SUPPORT)
         val consent = reviewText(MoteI18n.text("将使用已有设备 ID 和当前采集设置，不会清空设置、队列或模型。首次连接会把尚未绑定的本机资料绑定到此节点；已绑定其他节点的待同步资料不能改投。"),NativeFontRole.SUPPORT)
         consent.textSize = 11f
@@ -205,7 +232,7 @@ class ConnectionActivity : MoteActivity() {
             input.setText(retained.input); name.setText(retained.name); allowHttp.isChecked = retained.debugHttp; retainedEditor = null
             if (retained.reviewing) runCatching { parseInput() }.onFailure(::showFailure)
         }
-            ?: intent.dataString?.let { raw -> if (raw.length <= ConnectionInvitation.MAX_BYTES * 2) input.setText(raw) else status.text = message("invitation") }
+            ?: intent.dataString?.let { raw -> if (raw.length <= ConnectionInvitation.MAX_BYTES * 2) input.setText(raw) else showInvalidInvitation() }
     }
     private fun parseInput(): ConnectionInvitation {
         parsed = null; confirmAction.visibility = View.GONE; preview.visibility = View.VISIBLE; preview.text = MoteI18n.text("还没有解析有效邀请。")
@@ -217,12 +244,38 @@ class ConnectionActivity : MoteActivity() {
         return invite
     }
     private fun showReview() {
+        if (::inviteNotice.isInitialized) inviteNotice.visibility = View.GONE
         invitationForm.visibility = View.GONE; reviewForm.visibility = View.VISIBLE; reviewName.setText(name.text)
-        preview.visibility = View.VISIBLE; confirmAction.visibility = View.VISIBLE; resetPagePosition(reviewForm)
+        preview.visibility = View.VISIBLE; confirmAction.visibility = View.VISIBLE
+        confirmAction.text = ConnectionPresentation.confirm
+        resetPagePosition(reviewForm)
+        refreshPendingCount()
     }
-    private fun showInvitation() {
+    private fun showInvitation(clearNotice: Boolean = true) {
         name.setText(reviewName.text); reviewForm.visibility = View.GONE; invitationForm.visibility = View.VISIBLE
-        status.text = ""; resetPagePosition(invitationForm)
+        if (clearNotice) {
+            if (::inviteNotice.isInitialized) inviteNotice.visibility = View.GONE
+            status.text = ""
+        }
+        resetPagePosition(invitationForm)
+    }
+    private fun showInvalidInvitation() {
+        showInvitation(clearNotice = false)
+        inviteNotice.text = ConnectionPresentation.invalidInvitation
+        inviteNotice.visibility = View.VISIBLE
+        status.text = ""
+        confirmAction.text = ConnectionPresentation.confirm
+    }
+    private fun refreshPendingCount() {
+        if (!::pendingCountView.isInitialized) return
+        pendingCountView.text = ConnectionPresentation.pendingCountLabel(null)
+        executor.execute {
+            val count = runCatching { SyncSchedule.pending(this).count }.getOrNull()
+            handler.post {
+                if (!isDestroyed && !isFinishing && ::pendingCountView.isInitialized)
+                    pendingCountView.text = ConnectionPresentation.pendingCountLabel(count)
+            }
+        }
     }
     private fun resetPagePosition(form: View) {
         currentFocus?.clearFocus(); form.requestFocus()
@@ -247,8 +300,27 @@ class ConnectionActivity : MoteActivity() {
     override fun onResume() { super.onResume(); refreshRequested = true; handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
     private fun showFailure(error: Throwable) {
-        status.text = if (error is SettingsChangedFailure) error.message else message((error as? ConnectionFailure)?.category ?: if (error is SettingsWriteFailure) "storage" else "response")
-        status.post { if (!isDestroyed && !isFinishing) status.requestRectangleOnScreen(Rect(0, 0, status.width, status.height), false) }
+        connectingInvite = false
+        if (error is SettingsChangedFailure) {
+            status.text = error.message
+            focusStatus(status)
+            return
+        }
+        val category = (error as? ConnectionFailure)?.category ?: if (error is SettingsWriteFailure) "storage" else "response"
+        if (ConnectionPresentation.isInvalidInvitation(category) && ::inviteNotice.isInitialized) {
+            showInvalidInvitation()
+            focusStatus(inviteNotice)
+            return
+        }
+        status.text = ConnectionPresentation.visibleNotice(category)
+        if (::reviewForm.isInitialized && reviewForm.visibility == View.VISIBLE) {
+            confirmAction.text = ConnectionPresentation.retry
+            confirmAction.visibility = View.VISIBLE
+        }
+        focusStatus(status)
+    }
+    private fun focusStatus(target: View) {
+        target.post { if (!isDestroyed && !isFinishing) target.requestRectangleOnScreen(Rect(0, 0, target.width, target.height), false) }
     }
     private fun armPicker(requestCode: Int) {
         selection = PickerSelection(SourceRules.hash(currentConfig.toString()), requestCode)
@@ -314,24 +386,6 @@ class ConnectionActivity : MoteActivity() {
     companion object {
         private const val SELECTION_STAMP = "pickerSelectionStamp"
         private const val SELECTION_REQUEST = "pickerSelectionRequest"
-        fun message(code: String) = when (code) {
-            "storage" -> MoteI18n.text("凭据持久保存失败，恢复记录仍保留。请释放空间后恢复连接，不要卸载应用。")
-            "no_pending" -> MoteI18n.text("没有可恢复的兑换结果，请重新生成邀请。")
-            "unchecked" -> MoteI18n.text("尚未测试连接"); "connected" -> MoteI18n.text("上次连接测试成功（不是持续在线保证）")
-            "invitation" -> MoteI18n.text("邀请格式或节点不安全。请使用中央生成的 JSON/二维码；公网节点须为 HTTPS。")
-            "expired", "invite_rejected" -> MoteI18n.text("邀请已失效、已使用或不匹配，请重新生成。")
-            "device_conflict" -> MoteI18n.text("中央已有此设备 ID。请用上方设备 ID 生成绑定邀请，再试一次；不会更换设备身份。")
-            "local_confirmation" -> MoteI18n.text("本机有尚未绑定节点的资料，请确认档案地址后再连接。")
-            "pending" -> MoteI18n.text("仍有截图/笔记/来源待同步或已准备提交的草稿，不能切换节点。请先同步原节点。")
-            "busy" -> MoteI18n.text("另一次设置操作尚未完成，请稍候再试。")
-            "authentication" -> MoteI18n.text("节点拒绝当前凭据，请生成绑定本设备的邀请。")
-            "protocol_incompatible" -> centralFailureMessage(426, "incompatible_protocol")
-            "origin_denied" -> centralFailureMessage(403, "origin_denied")
-            "permission" -> centralFailureMessage(403, "connection_scope_denied")
-            "not_found" -> centralFailureMessage(404, "")
-            "identity", "response" -> MoteI18n.text("节点响应或设备身份校验失败，未确认连接；旧配置保留。")
-            "rate_limit" -> MoteI18n.text("节点暂时限流，稍后重试。"); "network" -> MoteI18n.text("节点连接失败，请检查地址、网络与 TLS 证书后重试。")
-            else -> MoteI18n.text("连接未完成，请检查邀请并重试。")
-        }
+        fun message(code: String) = ConnectionPresentation.message(code)
     }
 }
