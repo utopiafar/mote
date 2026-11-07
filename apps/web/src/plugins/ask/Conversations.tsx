@@ -193,8 +193,10 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
   useEffect(()=>{if(reference.key){selectionMade.current=true;setSelectedId(null);setRun(null);setOlder(null);setSelectedOwnerQuestion(null);}},[api,reference.key]);
   useEffect(()=>{if(history.data){setItems(history.data.items);setCursor(history.data.nextCursor??null);}else if(history.error){setItems([]);setCursor(null);}},[history.data,history.error]);
   useEffect(()=>{if(!recentRuns.data||selectionMade.current||queryRecovery.get(api))return;
-    const recent=recentRuns.data.items.find(r=>r.status==='running')??recentRuns.data.items[0];
-    if(recent){selectionMade.current=true;if(recent.status==='running')queryRecovery.set(api,{kind:'adopted',id:recent.id,contextVersion:queryRecovery.versions(api).contextVersion,conversationId:recent.conversationId,run:recent,unknown:false});setRun(recent);setBusy(recent.status==='running');setSelectedId(recent.conversationId??null);}
+    // Only an in-flight run is recoverable. A completed run stays in history
+    // until the owner explicitly opens it or an incoming receipt selects it.
+    const running=recentRuns.data.items.find(r=>r.status==='running');
+    if(running){selectionMade.current=true;queryRecovery.set(api,{kind:'adopted',id:running.id,contextVersion:queryRecovery.versions(api).contextVersion,conversationId:running.conversationId,run:running,unknown:false});setRun(running);setBusy(true);setSelectedId(running.conversationId??null);}
   },[recentRuns.data]);
   useEffect(() => {if (!targetTurn&&conversation?.turns.length) end.current?.scrollIntoView({block: 'nearest'});}, [conversation?.id, conversation?.turns.length,targetTurn]);
   useEffect(()=>{

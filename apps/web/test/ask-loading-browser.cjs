@@ -86,12 +86,12 @@ async function run(){
  wc.on('console-message',event=>{if(event.level==='error')errors.push(event.message);});
  wc.session.webRequest.onBeforeRequest((details,callback)=>{const external=!details.url.startsWith(endpoint+'/')&&!details.url.startsWith('devtools:');if(external)unexpected.push(details.url);callback({cancel:external});});
  await window.loadURL(endpoint+'/__fixture');await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token,viewScope:randomUUID()}))})`);
- await window.loadURL(endpoint+'/#/ask');
+ await window.loadURL(endpoint+'/#/ask?conversation=A');
  await until(()=>counts.history&&counts.owner,'cold Ask HTTP reads');
  assert.match(await js('document.body.innerText'),/正在读取历史/,'cold history has a real loading state');
- cold.release();await until(()=>counts.detail,'restored completed conversation detail');
+ cold.release();await until(()=>counts.detail,'explicit conversation detail requested');
  await until(()=>js(`document.querySelector('.conversation-content')?.textContent.includes('正在打开对话')&&document.querySelector('textarea[aria-label="向 Mote 提问"]')?.disabled`),'cold detail blocks composer');
- firstDetail.release();await until(()=>js(`document.querySelector('.conversation-messages')?.textContent.includes('合成回答 A')&&!document.querySelector('textarea[aria-label="向 Mote 提问"]').disabled`),'restored conversation ready');
+ firstDetail.release();await until(()=>js(`document.querySelector('.conversation-messages')?.textContent.includes('合成回答 A')&&!document.querySelector('textarea[aria-label="向 Mote 提问"]').disabled`),'explicit conversation ready');
  await until(()=>!pending.size,'cold refreshes settle');
  const draft='合成草稿：后台更新时继续输入';
  await js(`(()=>{const input=document.querySelector('textarea[aria-label="向 Mote 提问"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,${JSON.stringify(draft)});input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();})()`);
@@ -168,7 +168,7 @@ async function run(){
  await until(()=>js(`document.querySelector('textarea[aria-label="向 Mote 提问"]')?.value==='generated'`),'global Ask draft handoff without sending');
  assert.equal(await js(`document.querySelector('[role="dialog"]')===null`),true);
  assert.deepEqual(unexpected,[]);assert.deepEqual(errors,[]);
- writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,actualWebMain:true,hiddenWindow:true,durationMs:Date.now()-startedAt,counts,collectionPaths,checks:['Central default overview and four primary destinations','global Cmd-K search to exact evidence and return','global Ask opens complete conversation workspace','Ask cold history and detail loading','restored completed conversation','capture/file/import/query change refreshes','real five-second empty-question poll','preserved Ask draft, DOM identity and focus','explicit history refresh','first load of another conversation','Media global refresh with advanced rolling URL and stable DOM','Activity global refresh with advanced rolling URL and stable DOM','RecordTimeline global refresh with stable DOM'],liveModel:false,personalNodeRead:false,physicalDevice:false},null,2));
+ writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,actualWebMain:true,hiddenWindow:true,durationMs:Date.now()-startedAt,counts,collectionPaths,checks:['Central default overview and four primary destinations','global Cmd-K search to exact evidence and return','global Ask opens complete conversation workspace','Ask cold history and detail loading','explicit conversation detail loading','capture/file/import/query change refreshes','real five-second empty-question poll','preserved Ask draft, DOM identity and focus','explicit history refresh','first load of another conversation','Media global refresh with advanced rolling URL and stable DOM','Activity global refresh with advanced rolling URL and stable DOM','RecordTimeline global refresh with stable DOM'],liveModel:false,personalNodeRead:false,physicalDevice:false},null,2));
  console.log('PASS: generated frontend refresh journeys through built Web main: Ask cold/background loading, empty-question polling, conversation selection, and Media/Activity/RecordTimeline global refresh stability.');
 }
 async function finish(code){gates.forEach(value=>value.release());if(window&&!window.isDestroyed())window.destroy();if(server){server.closeAllConnections();await new Promise(done=>server.close(done));}rmSync(root,{recursive:true,force:true});app.exit(code);}

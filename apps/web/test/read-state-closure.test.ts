@@ -43,18 +43,18 @@ test('background conversation reads keep loaded answers usable without replaying
  assert.match(d.body.textContent!,/正在打开对话/);assert.equal(input.disabled,true);
  await act(async()=>next.resolve(detail('B')));assert.equal(input.disabled,false);assert.match(d.querySelector('.conversation-messages')!.textContent!,/Answer B/);
 });
-test('restoring a completed run refreshes history once without cancelling its replacement read',async t=>{
+test('restoring a running run refreshes history once when it completes without cancelling its replacement read',async t=>{
  const {root,d}=await fixture(t),restore=deferred(),refresh=deferred(),reads:AbortSignal[]=[];
- const completed={id:'generated-completed',status:'completed',conversationId:'A',events:[]};
+ const running={id:'generated-running',status:'running',conversationId:'A',events:[]},completed={...running,status:'completed'};
  const api=apiWith((path,init)=>{
   if(path==='/api/conversations?limit=30'){reads.push(init!.signal as AbortSignal);return reads.length===1?{items:[summary('A')]}:refresh.promise;}
   if(path==='/api/query-runs')return restore.promise;
-  if(path==='/api/query-runs/generated-completed')return completed;
+  if(path==='/api/query-runs/generated-running')return completed;
   if(path==='/api/conversations/A')return detail('A');
   return {items:[]};
  });
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- await act(async()=>restore.resolve({items:[completed]}));
+ await act(async()=>restore.resolve({items:[running]}));
  assert.equal(reads.length,2,'one initial read and one terminal-run revalidation');assert.equal(reads[1].aborted,false);
  assert.doesNotMatch(d.body.textContent!,/正在读取历史/);
  await act(async()=>refresh.resolve({items:[summary('A')]}));assert.match(d.querySelector('.conversation-messages')!.textContent!,/Answer A/);
