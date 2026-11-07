@@ -16,6 +16,14 @@ This is the single source for test layers and when to run them. App `AGENTS.md` 
 
 A module test using real SQLite or HTTP is not automatically heavy E2E. A large fixture that checks every record or cancellation is correctness coverage, even if its file contains `performance` or `migration`. Retain that coverage when splitting suites; keeping it does not require running it on every PR. A test that measures time and asserts correctness may need separate entrypoints, with its meaningful assertions, input size, lifecycle states and timeouts preserved. Do not delete or weaken valid tests to hide an existing failure.
 
+## Regression test design
+
+Name the concrete user failure a test prevents. Prefer real domain objects or public entrypoints, use generated evidence, and mock only external services or unavailable platform boundaries.
+
+When practical, reproduce a regression before fixing it. Assert meaningful outcomes, including cleanup where relevant; avoid existence checks, mock echoes, implementation mirrors and duplicated adapter scenarios.
+
+For timing-sensitive behavior, explicitly control relevant states such as cancellation during work, late results, restart, partial upload acknowledgement, withdrawal or deletion. Do not rely on repeated runs to happen to exercise them.
+
 ## Reusable synthetic persona
 
 For a small fictional owner spanning desktop, Android, Central, imports, files and recording connectors, use the [Lin Zhao dataset and isolated replay guide](synthetic-persona-dataset.md). Offline transport checks, opt-in local-model runs, manual semantic review and physical/cloud boundaries are recorded separately.

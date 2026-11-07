@@ -28,7 +28,7 @@ One instance, one owner: a personal context collector and central archive for th
 - Never weaken assertions, timeouts, input scale or entrypoints to get green; moving a failing test to a manual suite doesn't fix it. Tests named `performance` or `migration` can guard correctness; keep their coverage.
 - Correctness first; optimize only measured, serious slowness.
 - UI automation stays hidden: [background UI](docs/testing-runbook.md#background-testing).
-- Writing or reviewing tests: follow [real-world-testing](.agents/skills/real-world-testing/SKILL.md).
+- When fixing bugs, changing lifecycle behavior, or writing or reviewing tests, follow [regression test design](docs/testing.md#regression-test-design).
 
 ## Deciding and reporting
 

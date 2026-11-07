@@ -232,7 +232,7 @@ G0 交设计及合同，不运行全仓测试凑证明。G1 的第一条真实�
 
 J17 的三端真实效果消费者除 C25、Web U14C、Android U22B 外，明确包含 Mac U16 的 `calendar-actions.ts`/native ledger（U18A 提供现有权限/连接 UI，U23 投影能力）。既有 EventKit/device/calendar/version/grant 检查与真实 receipt/readback 保持；未获 OS 授权或未有实际 calendar 的环境不得由 fixture 冒称 Mac 已执行。
 
-按 [testing](../testing.md) 和 [real-world-testing](../../.agents/skills/real-world-testing/SKILL.md) 选择回归。现有真实起点包括 server 的 `notes.test.ts`、`source-pipelines.test.ts`、`backend-plugin-scope.test.ts`、`memory-publication-retirement.test.ts`、`plugin-control-journeys.test.ts`，Web 的 `feature-bootstrap.test.ts`/`feature-host.test.ts`，以及 `apps/android/test-fixtures/central-kotlin-contract.ts` 的实际 HTTP→Kotlin 消费。它们是后续风险检查入口，本 H01 未执行，也不能据此声称新路径已通过。H15 复用生成数据与可控故障；新 heavy runner 放手选目录，不进入普通 test glob。
+按 [testing](../testing.md#regression-test-design) 选择回归。现有真实起点包括 server 的 `notes.test.ts`、`source-pipelines.test.ts`、`backend-plugin-scope.test.ts`、`memory-publication-retirement.test.ts`、`plugin-control-journeys.test.ts`，Web 的 `feature-bootstrap.test.ts`/`feature-host.test.ts`，以及 `apps/android/test-fixtures/central-kotlin-contract.ts` 的实际 HTTP→Kotlin 消费。它们是后续风险检查入口，本 H01 未执行，也不能据此声称新路径已通过。H15 复用生成数据与可控故障；新 heavy runner 放手选目录，不进入普通 test glob。
 
 fixture、真实 SQLite/HTTP/进程、真实 DSH SDK loop、模拟器、物理 OS 授权、真实第三方与 live model 分别报告。DSH 本地脚本 provider 可证明 hook/factory 被真实调用，不证明模型语义；JVM consumer 不证明 Android clock/meter/WorkManager。G5 对同一候选核适用 J01–J20，复用相关输入未变的成功结果，只重跑源/依赖/fixture/配置/环境使之失效的检查。
 

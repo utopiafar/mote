@@ -10,7 +10,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | 需要了解什么 | 当前说明 |
 | --- | --- |
 | 安装、开发、部署与更新 | [项目首页（中文）](../README.zh-CN.md)、[English](../README.md)、[Agent 安装](agent-install.md)、[开发](development.md)、[部署](deployment.md)、[当前 DEV 更新](updating.md)、[发布](releasing.md) |
-| 测试分层、定向命令与 CI | [测试规则](testing.md)、[测试操作手册](testing-runbook.md)、[CI 入口](ci.md)、[多模块协作](agent-development-workflow.md)、[真实回归 skill](../.agents/skills/real-world-testing/SKILL.md) |
+| 测试分层、定向命令与 CI | [测试规则](testing.md)、[回归测试设计](testing.md#regression-test-design)、[测试操作手册](testing-runbook.md)、[CI 入口](ci.md)、[多模块协作](agent-development-workflow.md) |
 | 采集、隐私和上传 | [统一行为](collection-and-sync.md)、[macOS](desktop.md)、[Android](android.md)、[文字审查与中央感知](central-perception.md)、[同步恢复](sync-recovery.md) |
 | 本地 OCR / ASR 与文件 | [运行时和模型安装](ocr-asr-implementation-plan.md)、[文件归档](files.md)、[文件处理](file-processing.md)、[类型策略](file-processing-policies.md) |
 | MVP 基线与断代 | [基线 ADR](adr-mvp-baseline.md)、[单 Owner MVP](adr-single-owner-mvp.md)、[升级与回退](deployment.md#升级与回退) |

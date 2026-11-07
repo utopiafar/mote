@@ -23,7 +23,7 @@ test('iOS scaffolding changes select only the iOS simulator check', () => {
 });
 test('unknown inputs and locks conservatively select all light scopes and explain the fallback', () => {
   for (const path of ['package-lock.json', 'package.json', 'tsconfig.base.json', 'packages/future/src/new.ts', 'new-root/input.ts']) assert.deepEqual(changed(path), { scopes, fallback: [path], serverGroups: ['all'], androidContract: true });
-  assert.deepEqual(changed('docs/testing.md', 'AGENTS.md', '.agents/skills/real-world-testing/SKILL.md').scopes, []);
+  assert.deepEqual(changed('docs/testing.md', 'AGENTS.md', '.agents/skills/example/SKILL.md').scopes, []);
   assert.deepEqual(changed('scripts/ci/select.mjs', '.github/workflows/component-checks.yml').scopes, ['tooling']);
 });
 test('new plugin API/host paths select their real consumers without all-light fallback', () => {
