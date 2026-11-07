@@ -61,12 +61,13 @@ test('component release workflows check only their platform and release tools', 
   assert.deepEqual(groups(changed('.github/workflows/release-android.yml', 'apps/web/src/App.tsx')), ['central', 'android']);
 });
 test('developer guidance is documentation while runtime skills and executable helpers retain consumers', () => {
+  // Synthetic developer-skill paths preserve classification for future skills.
   for (const path of ['apps/server/AGENTS.md', 'apps/android/AGENTS.md', 'packages/agent/AGENTS.md',
-    '.agents/skills/real-world-testing/SKILL.md', '.agents/skills/real-world-testing/agents/openai.yaml']) {
+    '.agents/skills/example/SKILL.md', '.agents/skills/example/agents/openai.yaml']) {
     assert.deepEqual(changed(path), { central: false, desktop: false, android: false, protocol: false, tooling: false }, path);
   }
   assert.deepEqual(groups(changed('packages/agent/skills/memory-extraction/SKILL.md')), ['central']);
-  assert.deepEqual(groups(changed('.agents/skills/real-world-testing/scripts/check.mjs')), ['central', 'desktop', 'android']);
+  assert.deepEqual(groups(changed('.agents/skills/example/scripts/check.mjs')), ['central', 'desktop', 'android']);
   assert.deepEqual(groups(changed('apps/server/AGENTS.md', 'apps/desktop/src/queue.ts')), ['desktop']);
 });
 test('check-selection infrastructure runs its own regressions without app builds', () => {
