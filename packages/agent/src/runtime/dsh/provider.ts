@@ -90,6 +90,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
             env: {PATH: process.env.PATH, TMPDIR: tmpdir(), HOME: join(root, 'home'), DEEPSEEK_API_KEY: adapter.apiKey || 'mote-local-no-auth', DEEPSEEK_BASE_URL: connection.baseUrl, MOTE_MODEL_API_KEY: adapter.apiKey || 'mote-local-no-auth',
               MOTE_HOST_RUN: JSON.stringify(channel.configuration), MOTE_MODEL_OBSERVER: JSON.stringify(observer.configuration),
               MOTE_MODEL_TRANSPORT: JSON.stringify({baseUrl: connection.baseUrl, protocol: connection.protocol, reasoningEffort: connection.effort, provider: adapter.provider, headers: adapter.headers, extraBody: adapter.extraBody}),
+              ...Object.fromEntries((['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy', 'NODE_USE_ENV_PROXY', 'SystemRoot'] as const).filter(key => process.env[key]).map(key => [key, process.env[key]!])),
             },
           });
           await Promise.race([harness.start(), channel.failure, observer.failure]);
