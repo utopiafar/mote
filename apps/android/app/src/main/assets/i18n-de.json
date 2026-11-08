@@ -1280,7 +1280,6 @@
   "保存处理设置": "Verarbeitungseinstellungen speichern",
   "有未保存修改": "Nicht gespeicherte Änderungen",
   "已保存类型方案": "Typenpläne gespeichert",
-  "旧配置已转换为方案预览，保存后启用": "Alte Konfiguration in Planvorschau umgewandelt; zum Aktivieren speichern",
   "重新加载": "Neu laden",
   "规则试算与已有文件": "Regelvorschau und vorhandene Dateien",
   "以下操作使用已保存设置。仅归档和 Shadow 文件不会进入内容处理；每次最多重新处理 100 份当前版本原件，预览有效期 10 分钟。": "Verwendet gespeicherte Einstellungen. Reine Archiv- und Shadow-Dateien werden nicht verarbeitet. Pro Durchlauf bis zu 100 aktuelle Originale erneut verarbeiten; Vorschauen laufen nach 10 Minuten ab.",
