@@ -65,7 +65,7 @@ function BuildStatus({builds}:{builds:PluginBuildView[]}){
 
 export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=>void;viewScope?:string}){
  const pluginResource=useResource<PluginCenterView>(api,pluginsPath,3000),buildResource=useResource<PluginBuildView[]>(api,buildsPath,3000),bindingResource=useResource<MemoryBindingView>(api,bindingPath,3000);
- const authorization=useResource<{authorization:{revision:number;state:'unapproved'|'enabled'|'paused'|'stopped'}}>(api,'/api/model-authorization',3000);
+ const authorization=useResource<{authorization:{revision:number;state:'off'|'on'}}>(api,'/api/model-authorization',3000);
  useForegroundResources(api,[pluginsPath,buildsPath,bindingPath,'/api/model-authorization']);
  useEffect(()=>operationFeed(api).subscribe(()=>{}),[api]);
  const view=pluginResource.data,builds=buildResource.data??[],binding=bindingResource.data;
@@ -116,7 +116,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
  function memoryCommand(action:string,extra:Record<string,unknown>={},after?:()=>void){if(binding)command(bindingPath+'/'+action,binding.revision,extra,after);}
  const admission=binding?.admission,preparation=binding?.preparation;
  const memoryActions=binding?.allowedActions??[];
- const waitingAuthorization=Boolean(authorization.error===undefined&&admission?.desired&&admission.state==='enabled'&&authorization.data?.authorization&&authorization.data.authorization.state!=='enabled');
+ const waitingAuthorization=Boolean(authorization.error===undefined&&admission?.desired&&admission.state==='enabled'&&authorization.data?.authorization&&authorization.data.authorization.state==='off');
  const automaticStatus=!admission?moteText('状态未知'):admission.desired&&admission.state==='enabled'?authorization.error!==undefined?moteText('自动处理状态暂不可用'):!authorization.data?.authorization?(authorization.loading?moteText('正在读取…'):moteText('状态未知')):waitingAuthorization?moteText('等待开启自动处理'):memoryAdmissionLabel(admission):memoryAdmissionLabel(admission);
  return <div className="plugin-center">
   {!(tab==='installed'&&currentPackage)&&<button className="back-link plugin-owner-back" onClick={()=>onPage('about')}>← {moteText('设置')}</button>}{tab==='installed'&&currentPackage&&<button className="back-link" disabled={busy} onClick={()=>setSelected(undefined)}>← {moteText('已安装插件')}</button>}<div className="page-heading split-heading"><div><h1>{tab==='installed'&&currentPackage?currentPackage.name:moteText('自动记忆与插件')}</h1></div></div>
