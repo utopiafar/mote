@@ -42,6 +42,7 @@ flowchart LR
 | `apps/web` | Central 网页；随 server 发布，展示资料、问答、活动、设置与处理状态 |
 | `apps/desktop` | Electron macOS 采集器、Swift 原生助手、本机隐私审查、持久队列及来源原件上传 |
 | `apps/android` | Kotlin 平台采集、ML Kit 可选文字规则审查、本机队列、来源与同步 |
+| `apps/ios` | SwiftUI 实验客户端；不进入正式支持矩阵 |
 | `packages/shared` | TypeScript 数据/协议契约、国际化、发布验证及公共工具 |
 | `packages/agent` | DeepSeek Harness / Codex 适配、只读工具桥、上下文装配和运行时 Skills |
 | `packages/diagnostics` | 有界数值诊断、固定事件与支持包 |
@@ -90,7 +91,7 @@ ExecutionEngine 负责并发、资源互斥、持久租约、输入版本、取�
 
 Central 不设置 HTTP 请求次数额度，不按前台/同步接口划分频控，也不因上传、查询、导入、登录、原件读取或文件准备队列达到固定总数而拒绝新请求。积压任务由现有执行并发、取消和生命周期机制调度；用户配置的存储容量和上游实际限流仍适用，见 [请求准入决策](adr-central-request-admission.md)。
 
-Central 是单所有者仓库，server/web 同版本发布。Desktop 与 Android 是独立产品；连接时严格验证 wire 元数据、Ingress 和当前凭据能力，不用产品版本号猜权限。配对凭据授予采集与声明的仓库读取范围；管理员会话管理整个归档，独立 MCP scope 按授权约束来源读写。
+Central 是单所有者仓库，server/web 同版本发布。首发正式支持 Central、macOS 与 Android；iOS 客户端是实验，不进入正式支持矩阵。Desktop 与 Android 是独立产品；连接时严格验证 wire 元数据、Ingress 和当前凭据能力，不用产品版本号猜权限。配对凭据授予采集与声明的仓库读取范围；管理员会话管理整个归档，独立 MCP scope 按授权约束来源读写。
 
 命名环境隔离配置、令牌、队列、目录与进程。默认绑定 loopback；远程部署使用 TLS 和强令牌。当前格式的队列位置迁移和同 epoch 备份恢复是显式功能，旧 epoch 库会保留并拒绝启动。日志和支持包只记录固定类别、数值与状态，不记录私人正文或凭据。
 
