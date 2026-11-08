@@ -61,7 +61,7 @@ test('explicit numeric YAML limits are preserved until adoption, which changes o
     const p = await fixture(t);
     await updateProfileConfiguration(p, document => {
       Object.assign(document.diagnostics, { maxBytes: maxMiB * MiB, maxFiles: 6, maxEntries: 4317 });
-      document.models.deployment.apiKey = 'generated-private-model-key'; document.storage.dataKey = 'a'.repeat(64);
+      document.models.deployment ??= {}; document.models.deployment.apiKey = 'generated-private-model-key'; document.storage.dataKey = 'a'.repeat(64);
       document.server.publicUrl = 'https://generated-retention.example';
     });
     const raw = await readFile(p.configFile, 'utf8'), metadata = await readFile(p.metaFile);
