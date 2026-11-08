@@ -1,0 +1,21 @@
+# 可直接使用的配置示例：复制为 mote.yaml 后再修改监听地址、端口和存储路径。
+# 相对路径以本文件所在目录为基准。示例不配置模型，也不包含密钥。
+# 未写 server.token 时，首次启动会在数据目录生成私有 access-token（0600）。
+version: 1
+revision: 0
+server:
+  profile: default
+  host: 127.0.0.1
+  port: 47832
+  # 需要固定所有者令牌时，取消下一行注释并从进程环境提供至少 24 字符的值。
+  # token: "${MOTE_OWNER_TOKEN}"
+storage:
+  dataDir: ./data
+execution:
+  interactiveConcurrency: 2
+  agentConcurrency: 8
+  llmConcurrency: 4
+  memoryConcurrency: 3
+perception:
+  allowQueryImages: false
+  allowExternalProcessing: false
