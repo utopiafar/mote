@@ -6,6 +6,11 @@ templates, when to pick each, and how the generated projects build and run on
 a real host. All templates use generated fixtures and private plugin-dev
 profiles only — never vault scans, personal data, credentials or models.
 
+The complete author reference for every current public surface — 16
+contribution surfaces, 4 runtime locations and 6 extension methods — is
+[plugin surfaces](plugin-surfaces.md). It describes the code as it is today,
+including that iOS does not load plugins.
+
 The author-facing boundary is `@mote/plugin-sdk` alone: a plugin never
 imports `apps/*`, `packages/*` internals or `@mote/shared`. The SDK tarball
 bundles the public contracts and the host entry; `plugin-dev` verifies the
