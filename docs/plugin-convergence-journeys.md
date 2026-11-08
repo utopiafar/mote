@@ -21,7 +21,7 @@
 | J04 升级、重装、撤权和在途停止 | fixture | `apps/server/test/plugin-control-upgrade-failure.test.ts`；`plugin-control-journeys.test.ts`；`plugin-central-release.ts` 的 `provider-and-plugin-lifecycle` | PASS | 热升级旧 activation 排空、坏候选保留运行版本；迁移/暂停/立即停止/撤销/未知写与重装状态由真实控制面覆盖；打包候选重启通过。 |
 | J05 显式绑定与插件依赖失效 | fixture | `apps/server/test/plugin-central-contracts.test.ts`；`plugin-plugin-control-store.test.ts`（“missing exact dependency is blocked…”）；`plugin-control-journeys.test.ts`（scope/intent 拒绝） | PASS | 显式 binding、反向安装顺序、错误 API 版本、reinstall/foreign host 不静默换 sibling；缺失精确依赖在真实 host/control 路径被阻止。`plugin-central-contracts` 的 T1 声明检查只作为补充，不单独算集成。 |
 | J06 默认 Memory 策略对等与完整发布 | fixture | `apps/server/test/official-agent-consumers.test.ts`；`memory-phase-lifecycle.test.ts`；`memory-pipeline.test.ts`；`memory-receipt-integration.test.ts` | PASS | 真实 app + 生成本地模型端点驱动 Query/Memory/Insight/Activity/Actions/Probe/usage；Memory phase/pipeline/publication 使用真实 SQLite 与审批账本。真实模型语义见 J16。 |
-| J07 现有 Memory Provider、未知写与备份恢复 | fixture | `plugin-central-release.ts` 的 `backup-restore`；`memory-adapters-journey.test.ts`；`plugin-memory-provider-adapters.test.ts`；`plugin-memory-deletion.test.ts`；`memory-provider-consumers.test.ts` | PASS | 生成 worker provider、Mem0/Hindsight 兼容安装路径、未知写/擦除意图跨重启对账、CLI 全库备份恢复到新数据目录后重读原文。没有使用上游真实 Mem0/Hindsight，也没有真实模型备份证据。 |
+| J07 现有 Memory Provider、未知写与备份恢复 | fixture | `plugin-central-release.ts` 的 `backup-restore`；`memory-adapters-journey.test.ts`；`plugin-memory-provider-adapters.test.ts`；`plugin-memory-deletion.test.ts`；`memory-provider-consumers.test.ts` | PASS | 生成 worker provider、外部 Memory 模块/引擎兼容安装路径、未知写/擦除意图跨重启对账、CLI 全库备份恢复到新数据目录后重读原文。没有使用上游真实外部 Memory 实现，也没有真实模型备份证据。 |
 | J08 只读工具及新 Runtime 独立接入 | fixture | `apps/server/test/agent-read-tools.test.ts`；`plugin-evidence-context-reader.test.ts`；`official-agent-consumers.test.ts`；`packages/agent/test/official-agent-composition.test.mjs`；`official-read-packs.test.mjs` | PASS | 只读 reader/工具注册、feature 卸载 fence、证据范围与 citation 边界；官方 Agent composition 被 Query/Memory/Insight/Activity/Actions/Probe 消费。没有真实模型会话。 |
 | J09 DSH 原生包、Hook 与 Factory 替换 | fixture | `packages/agent/test/dsh-native-extension.test.mjs`；`dsh-native-lifecycle.test.mjs`；`dsh-native-replacement.test.mjs` | PASS | 真实锁定 DSH loader 运行原生 package、读取/改变 request config、卸载 Hook；Factory A→B 热替换和 restart-required 替换均通过。使用本地脚本 provider，不证明模型语义。 |
 | J10 Codex 并列运行、Import 和既有 Host 委派 | fixture | `apps/server/test/codex-query.test.ts`；`agent-import-host.test.ts`；`delegated-query-app.test.ts`；`delegation-runtime.test.ts`；`packages/agent/test/codex-provider.test.mjs`；`codex-protocol.test.mjs`；`codex-tool-consumer.test.mjs`；`host-delegation.test.mjs` | PASS（fixture） | Codex App Server fixture 的认证查询、取消、崩溃恢复、DSH/Codex import 和 Host delegation 通过。真实 Codex 登录/账户未验证。 |
@@ -62,7 +62,7 @@
 - **J11 独立第三方作者**：未验证。模板构建/安装通过，但没有外部作者独立操作证据。
 - **J02 独立 source sync 双实例**：当前只有 host/installation/lease/state 隔离证据，没有两个同包实例各自同步的组装旅程。
 - **J03 真实 OCR/ASR 模型**：未验证；本轮 media e2e 使用生成 provider。
-- **J07 上游真实 Mem0/Hindsight 与真实模型备份**：未验证；测试使用生成兼容 worker。
+- **J07 上游真实外部 Memory 实现与真实模型备份**：未验证；测试使用生成兼容 worker。
 - **J18 Web 完整安装/卸载 UI**：本轮未通过。`plugin-final-browser.cjs` 的生成 manifest 仍把 `dependencies` 写成字符串数组，当前 `@mote/plugin-api` manifest schema 要求依赖对象；浏览器在 preview 阶段收到 validation 错误，随后超时。直接以当前 manifest 形状调用 `/api/plugins/resolve` 返回 200，说明是旧 fixture 与当前 schema 不一致，不是新路由回归。该测试未在 REL07 修改。
 
 ## 可复现命令

@@ -1,5 +1,7 @@
 # ADR: ask the owner when Memory needs information the archive cannot supply
 
+> **状态：历史。** 本文记录当时的决定与验证范围，不再描述当前实现；当前设计见 [Memory 当前设计](memory-current-design.md)。
+
 Date: 2026-10-10. Status: accepted; implemented in this change.
 
 ## Problem and decision

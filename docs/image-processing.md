@@ -111,8 +111,8 @@ group's visual citations removes its coverage requirement. This conservative
 grouping avoids inferring claim identity from prose when candidates are edited,
 split or merged.
 
-The current Hindsight native integration protocol accepts exact text ranges,
-not visual Memory proofs. It rejects a selected visual parent with
+The current external full-engine native integration protocol accepts exact text
+ranges, not visual Memory proofs. It rejects a selected visual parent with
 `memory_provider_unsupported_input` before initializing a remote bank or issuing
 retain/consolidate calls. OCR-supported text remains supported. There is no
 automatic retry, silent engine switch or conversion of a locator to a text quotation. Restored
@@ -120,12 +120,12 @@ owner archives retain their existing stale state; importing view metadata does
 not create a new current image grant or a runtime pixel receipt.
 
 Native extraction likewise receives text ranges, including a locator when it is
-selected; Hindsight does not thereby receive pixels. Its empty draft still goes
-through Mote's independent review. That reviewer can inspect the frozen original
-grant, or use sufficient delivered OCR from the same original. Without either,
-the target remains unfinished rather than becoming a successful empty result.
-A successful host review with its own visual proof is not evidence of native
-visual-extraction support in Hindsight.
+selected; the external engine does not thereby receive pixels. Its empty draft
+still goes through Mote's independent review. That reviewer can inspect the
+frozen original grant, or use sufficient delivered OCR from the same original.
+Without either, the target remains unfinished rather than becoming a successful
+empty result. A successful host review with its own visual proof is not evidence
+of native visual-extraction support in that engine.
 
 When this selected visual scope is present, other search results do not acquire
 image access from it. Consolidation without selected visual proofs retains its

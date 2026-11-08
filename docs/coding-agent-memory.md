@@ -58,7 +58,7 @@ Claude 原生 UUID 用于跨文件稳定去重；compaction sidechain 不作为�
 | [claude-code-sync](https://github.com/melihemreguler/claude-code-sync) | Git 支持的选择性原生会话同步，按路径控制范围；主要解决搬运，未提供语义提炼 | 保留来源过滤；不改原生目录 |
 | [codex-session-sync](https://github.com/shonngithub/codex-session-sync) | WebDAV、备份、冲突策略；要求 Codex 关闭后冷同步，以免覆盖正在写的状态 | 只读完整 JSONL 行，未完成的尾行等待下一轮 |
 | [lidongpeng36/agent-sync](https://github.com/lidongpeng36/agent-sync) | SSH 同步 session/memory，侧重原格式安全与差异 | 传输和语义分别处理；不把文件复制成功当 Memory 完成 |
-| [OpenMemory](https://github.com/mem0ai/openmemory) | Claude/Codex/OpenCode 会话转换与预览，解决 session portability；不是持久记忆质量系统 | provider adapter 输出统一证据契约，不统一 Agent 内部运行状态 |
+| OpenMemory | Claude/Codex/OpenCode 会话转换与预览，解决 session portability；不是持久记忆质量系统 | provider adapter 输出统一证据契约，不统一 Agent 内部运行状态 |
 | [history-viewer](https://github.com/jhlee0409/claude-code-history-viewer/blob/main/CHANGELOG.md) | 多 provider 解析；变更记录包含 Kimi macOS watcher、UTF-8 路径及巨大工具输出卡顿的修复 | 专用 worker、分段及预算、明确不完整状态，项目路径来自元数据 |
 | [sessions](https://github.com/nicknisi/sessions) | 跨 Agent 历史索引、长期 transcript archive、渐进检索；清索引不删除归档 | 原始证据与可重建派生产物分离 |
 | [claude-mem](https://github.com/thedotmack/claude-mem) | hooks→worker→observation/summary→SQLite/检索。公开 [#3917](https://github.com/thedotmack/claude-mem/issues/3917) 报告高水位导致旧未同步行被跳过；[#3902](https://github.com/thedotmack/claude-mem/issues/3902) 报告告警进入 observer，反复输出告警、阻碍恢复 | 事务性逐项 inbox；空候选可正常完成；原文不是指令；系统日志不作用户经历 |

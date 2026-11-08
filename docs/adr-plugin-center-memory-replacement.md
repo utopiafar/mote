@@ -1,5 +1,7 @@
 # ADR: Plugin center and replaceable Memory modules and engines
 
+> **状态：历史。** 本文记录当时的决定与验证范围，不再描述当前实现；当前设计见 [Memory 当前设计](memory-current-design.md)。
+
 Date: 2026-10-12. Status: **accepted; phase-one controls and pinned adapters implemented, validation tracked separately**.
 
 The owner accepted decisions 1A–8A after reviewing the architecture and prototype,

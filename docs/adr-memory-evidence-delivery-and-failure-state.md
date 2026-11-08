@@ -1,5 +1,7 @@
 # Memory evidence delivery and honest failure state
 
+> **状态：历史。** 本文记录当时的决定与验证范围，不再描述当前实现；当前设计见 [Memory 当前设计](memory-current-design.md)。
+
 Accepted by the owner on 2026-10-15. This decision follows the observed empty
 integration reads, image interpretation being used as original evidence, false
 context waits, repeated planner failures and misleading trace counts. Validation

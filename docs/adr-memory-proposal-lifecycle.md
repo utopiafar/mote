@@ -1,5 +1,7 @@
 # ADR: proposal completion and executable-child waiting
 
+> **状态：历史。** 本文记录当时的决定与验证范围，不再描述当前实现；当前设计见 [Memory 当前设计](memory-current-design.md)。
+
 > 历史设计或验收记录。2026-10-09 的 [MVP 基线](adr-mvp-baseline.md) 已替代旧迁移、预算、推理工具及旧提案等待修复；本文的原始测试结果不代表本次执行。当前结构见 [架构](architecture.md)。
 
 Date: 2026-10-07. Status: accepted for the Memory planning deadlock correction.
