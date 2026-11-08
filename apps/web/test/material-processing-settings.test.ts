@@ -11,6 +11,7 @@ import {join} from 'node:path';
 import {configureLocale} from '@mote/shared/i18n';
 import {ApiError,type Api} from '../src/api';
 import {MaterialProcessing} from '../src/plugins/models-processing/MaterialProcessing';
+import {FileProcessingSettings} from '../src/FileProcessingSettings';
 import {automaticProcessingPlan,type ProcessingAuthority} from '../src/plugins/models-processing/automatic-processing-plan';
 import {buildApp} from '../../server/src/app.js';
 import type {FileSettingsView} from '../src/processing-settings-view';
@@ -54,6 +55,13 @@ test('image edits use real policy and perception CAS, report a partial save and 
  assert.equal(label(f.d,'OCR 服务').querySelector('select')!.value,'generated-image');assert.equal(button(f.d,'保存设置').disabled,false);
  f.failedImage=false;await click(f.d,'保存设置');await until(()=>f.d.querySelector('.material-processing-form [role=status]')?.textContent?.includes('设置已保存')===true,'complete image settings');assert.equal(f.writes.filter(value=>value.path==='/api/file-processing').length,1,'the completed first save is not blindly repeated');assert.equal(f.writes.filter(value=>value.path==='/api/perception').length,2);
  assert.equal((await f.call('/api/perception')).settings.ocrEndpoint,'https://generated.invalid/ocr');assert.match(f.d.querySelector('.material-processing-form [role=status]')!.textContent!,/设置已保存/);assert.deepEqual(f.node.modelAuthorization.view(),authority,'saving a service/profile does not authorize background work');
+});
+
+test('file processing settings never offer a legacy-configuration migration hint',async t=>{
+ const f=await fixture(t),view=await f.call('/api/file-processing');
+ const api={request:async(path:string,init?:RequestInit)=>path==='/api/file-processing'?{...view,policyConfigured:false}:f.api.request(path,init)} as Api;
+ await act(async()=>f.root.render(React.createElement(FileProcessingSettings,{api})));await until(()=>!!f.d.querySelector('form'),'file processing settings');
+ assert.match(f.d.body.textContent!,/已保存类型方案/);assert.doesNotMatch(f.d.body.textContent!,/旧配置/);
 });
 
 test('a concurrent settings change rejects the original image draft without overwriting another owner window',async t=>{

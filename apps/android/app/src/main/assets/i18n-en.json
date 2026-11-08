@@ -1280,7 +1280,6 @@
   "保存处理设置": "Save processing settings",
   "有未保存修改": "Unsaved changes",
   "已保存类型方案": "Type plans saved",
-  "旧配置已转换为方案预览，保存后启用": "Legacy settings converted to a preview; save to enable",
   "重新加载": "Reload",
   "规则试算与已有文件": "Rule preview and existing files",
   "以下操作使用已保存设置。仅归档和 Shadow 文件不会进入内容处理；每次最多重新处理 100 份当前版本原件，预览有效期 10 分钟。": "Uses saved settings. Archive-only and shadow files are not processed. Reprocess up to 100 current originals per batch; previews expire in 10 minutes.",

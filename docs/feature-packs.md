@@ -1,20 +1,40 @@
 # Feature packs
 
-Global presentation has a separate [theme/layout contract](adr-ui-presentation-packs.md): Web and Mac use `UiPresentationHost` to select exact trusted providers through the shared registry. Android maps the generated theme/layout contract through `NativeUiPackRegistry` and its native renderer. Functional page/card/panel registrations below remain in force. Presentation activation does not change domain work or Agent access; the Memory plugin installer is not a UI-code loader.
+Mote adds functionality through plugin contributions. A package authors one `mote-plugin.json` (`PackageManifest`); the host validates its exact identities, capabilities and dependencies, then activates only the contributions it declares. Pages, HTTP routes, Agent read tools, processing steps, connectors and native entries are contributions, not additions to a shared service bag or a hand-written feature registry.
 
-The central Web console and server now have independent Cordis hosts. The server projects selected plugin contributions and their live availability; the browser registry owns UI pages/collections/detail panels. The execution engine, receipt protocol, material publisher, privacy rules and existing feature behavior remain authoritative.
+The complete surface reference is [plugin surfaces](plugin-surfaces.md). External SDK projects, template selection and private `plugin-dev` runs are in [plugin development](plugin-development.md). The domain contracts a contribution consumes are in [library and plugin extension contracts](library-plugin-contracts.md); themes and layouts use the separate [UI presentation contract](adr-ui-presentation-packs.md). `FeatureManifest` and `/api/features` are projections of installed package contributions and the capabilities a host actually registered, not a second package authority.
 
-资料库默认正式资料、命名产物消费者、安装实例代际与展示锚点的完整契约见 [资料库与插件扩展契约](library-plugin-contracts.md)。
+## Where contributions run
 
-## Ownership
+| Host | Current contribution path | Lifecycle |
+| --- | --- | --- |
+| Central server | Trusted build-time HTTP features in `apps/server/src/features/` mount through `FeatureRoutes` and `FeatureScope`; domain packages run through the common `PluginHost`. | Routes mount before `listen`; every request checks the live feature scope. Stopping blocks new dispatch with `503`; disposal releases routes, timers and owned resources exactly once. |
+| Central web | `WebFeatureHost` installs page, collection, card, action, renderer, panel and home contributions in a disposable Cordis context. Theme and layout packs are data bound by the presentation host. | React subscribes to the registry. A missing or failed specialized view falls back to the generic reader; disposal removes only that registration. |
+| macOS / Android | Native contributions ship with the app build and use the existing native hosts for capture, permissions and UI. | Native code is not downloaded at runtime; a new native primitive requires a client build. |
+| iOS | Experimental; this repository has no iOS plugin host or package install path. | The `ios` host kind is not a promise that an iOS package can be installed. |
 
-- `apps/server/src/features/`: per-feature HTTP entries. Capture, notes, devices, media, files, sources, Coding, materials, context, imports, memory, Ask, insights, actions, processing, models, storage, usage, diagnostics and system routes mount through `ServerFeatureHost`. Its child Fastify scopes inherit authentication, protocol gates, request budgets and diagnostics. Binary begin/chunk/commit and playback continue to use the existing file store and durable receipts.
-- Connector adapters retain their existing scoped `ConnectorRegistry` (MCP, Google, Gmail, Lark and trusted local extensions). OAuth/MCP retain their separate authorization boundaries.
-- `apps/server/src/plugins/agent-read-tools.ts`: all archive reader methods are registered by owning feature. The model and Agent inspector consume the same dispatch facade. No writer or raw filesystem operation is exposed. Direct conversation attachments retain their separate request-scoped authorization.
-- `apps/server/src/feature-inventory.ts`: `/api/features` projects contribution manifests through the common `PluginHost` snapshot. Selected domain plugins follow host activation state; each contribution also projects the HTTP route/upload/command, Agent read-tool and connector capabilities its owning host actually registered. Each feature and capability appears once, a quiesced common-host contribution stays unavailable until disposal, and the revision is a content digest, not a command CAS revision.
-- `apps/web/src/features/`: page entries declare route, navigation label, section and renderer. Library collections, exact kind/schema/representation renderers and additive detail panels are separate registrations. React subscribes to a disposable registry; Cordis owns the browser registrations. Existing API-instance caches remain scoped to authenticated identity and exact request scope.
+The server, web and native hosts keep their existing authorities. A contribution may register a route, a view or a processing step, but it does not create a second archive, task engine, authorization table or output service. Material, evidence, execution, Memory publication and Agent output stay with their existing owners.
 
-The shared registry pins descriptor copies, rejects duplicate component IDs and contract-version conflicts, detects missing/cyclic dependencies and revokes dependent lookup when a provider disappears. Disposal is idempotent and cannot unregister a replacement instance. A missing/failed/ambiguous specialized material renderer falls back to safe Markdown; panel failures stay local. New pages that need new server contracts check the returned capability ID/version before rendering.
+## Contribution surfaces
+
+A contribution declares exactly one `surface`. The current closed set is `ingress`, `upload`, `data`, `command`, `agent`, `processing`, `page`, `collection`, `card`, `action`, `renderer`, `panel`, `settings`, `home`, `theme` and `layout`. A capability named by a contribution must also appear in the package capability list, or composition rejects the package.
+
+| Group | Surfaces | What they add |
+| --- | --- | --- |
+| Central data and execution | `ingress`, `upload`, `data`, `command`, `agent`, `processing` | Source intake, owner uploads, typed ports, owner commands, read-only Agent tools and bounded processing steps. |
+| Web presentation | `page`, `collection`, `card`, `action`, `renderer`, `panel`, `home` | Navigation and views matched by exact declared kind, schema version and representation. |
+| Declarative presentation | `settings`, `theme`, `layout` | Configuration editing for the package schema, theme data and navigation geometry. |
+
+The host does not infer a surface from captured text, a route name or an installation order. Exact dependency versions and explicit service bindings select implementations; a missing, ambiguous or disposed provider makes the dependent capability unavailable instead of silently choosing another.
+
+## Adding a feature
+
+1. Declare the package and its contributions in `mote-plugin.json`: stable contribution IDs and versions, capability list, exact dependencies, configuration fields and, for executable contributions, a relative `entry` inside the payload.
+2. Implement the contribution in its owning scope. A server contribution mounts its routes through the feature or package host and keeps ingestion, upload, publication and authorization in the existing trusted services. A UI contribution registers a declarative descriptor and never infers a feature type from captured text. An Agent contribution exposes read-only context with bounded output.
+3. Compose the contribution through the trusted build (`apps/server/src/distribution/default.ts`, the domain assemblies and the web composition) or install a verified package through the plugin center. Do not maintain a second package description or a second runtime host.
+4. Test through the real entry point with generated data: receipt through publication and Agent/model reading, duplicate delivery, scope rejection, stale reference rejection, missing dependencies, restart and disposal. Update all six `packages/shared/src/i18n-*.ts` catalogs for authored UI strings.
+
+This MVP bundles trusted plugins with the deployment. Changing HTTP topology or installing new built-in packs requires a rebuild/restart; it is not a remote plugin marketplace or arbitrary-code sandbox. HTTP disposal blocks new dispatch without deleting data. UI disposal never stops processing or changes Agent access. Existing native collector upload and permission modules keep their native platform implementation and wire behavior; they do not execute browser Cordis plugins.
 
 ## User surfaces
 
@@ -28,15 +48,6 @@ The shared registry pins descriptor copies, rejects duplicate component IDs and 
 | Memory / task details | Read-only saved-record panels; existing review, correction, retry and cancellation commands remain in control |
 
 The Agent inspector is owner-only and cannot mint disclosure grants for a real query. It previews the current Ask archive scope, not arbitrary administrator impersonation or every possible custom agent task. Historical trace availability still follows the explicit diagnostics setting and log retention. New trace pages have a bounded response and clearly mark truncated payloads.
-
-## Adding a feature
-
-1. Add a server entry under `features/` and compose it in `features/index.ts`. Receive only a typed `Pick<FeatureServices,...>`; keep ingestion, file upload and publication in the existing trusted services. Register processing recipes/executors using the existing Source Pack and processing extension contracts.
-2. Add a browser page/collection/view contribution under `features/`, then include it in the deployment composition. Navigation derives from page entries. Match renderers by exact declared kind, schema version and representation; never infer feature type from captured text. Add panels without changing the owning page's business logic.
-3. Reuse generic read-only Agent methods for new data shapes. Add a new Agent capability only when it has genuinely new read semantics, with the same server authorization and bounded output.
-4. Test on a tiny generated fixture from receipt through publication and UI/model reading. Test duplicate delivery, scope rejection, stale reference rejection, missing dependencies and disposal. Update English and Android catalogs for authored UI strings.
-
-This MVP bundles trusted plugins with the deployment. Changing HTTP topology or installing new built-in packs requires a rebuild/restart; it is not a remote plugin marketplace or arbitrary-code sandbox. HTTP disposal blocks new dispatch without deleting data. UI disposal never stops processing or changes Agent access. Existing native collector upload/permission modules keep their native platform implementation and wire behavior; they do not execute browser Cordis plugins.
 
 ## Validation
 

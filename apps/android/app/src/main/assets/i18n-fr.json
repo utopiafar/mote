@@ -1280,7 +1280,6 @@
   "保存处理设置": "Enregistrer les paramètres de traitement",
   "有未保存修改": "Modifications non enregistrées",
   "已保存类型方案": "Plans de types enregistrés",
-  "旧配置已转换为方案预览，保存后启用": "L'ancienne configuration a été convertie en aperçu de plan ; enregistrez pour l'activer",
   "重新加载": "Recharger",
   "规则试算与已有文件": "Aperçu des règles et fichiers existants",
   "以下操作使用已保存设置。仅归档和 Shadow 文件不会进入内容处理；每次最多重新处理 100 份当前版本原件，预览有效期 10 分钟。": "Utilise les paramètres enregistrés. Les fichiers en archive uniquement et les fichiers shadow ne sont pas traités. Retraitez jusqu'à 100 originaux de la version actuelle par lot ; les aperçus expirent en 10 minutes.",
