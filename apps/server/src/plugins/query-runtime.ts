@@ -141,10 +141,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     // of being rewritten into a terminal gap.
     const runViolation=()=>runState.violation?new StoreError('Agent run accounting contradiction',409):undefined;
     const runSuccessGap=()=>runState.mode==='host'&&!runState.hostTerminal?new StoreError('Agent run terminal is missing',409):undefined;
-    const runLease:QueryRunLease={onFinalizer:mode=>{
-      if(runState.mode!==undefined&&runState.mode!==mode){runState.violation??='finalizer_mode_contradiction';return;}
-      runState.mode=mode;
-    }};
+    const runLease:QueryRunLease={onFinalizer:()=>{runState.mode='host';}};
     // Agent implementations account admitted model/tool/repair work. A second
     // wall-clock deadline here would charge host resource-gate waiting again.
     const deadline=agentDeadline(input.signal,null),taskSignal=deadline.signal;

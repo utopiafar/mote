@@ -9,7 +9,7 @@ type ReadResult=QueryResult&Pick<AgentAnswer,'evidenceReadRanges'>;
 /** Runtime metadata, never parsed from the model's JSON answer. Only supplied
  * seeds and successfully disclosed original pages acquire quote authority. */
 export function memoryReadRanges(result:QueryResult,seeds:readonly MemoryReadRange[],grant?:readonly MemoryReadRange[]):MemoryReadRange[]{
- if(!grant)return seeds.map(range=>({...range})); // Preserve legacy request order and quote scope exactly.
+ if(!grant)return seeds.map(range=>({...range})); // No grant: preserve the request's own range order and quote scope exactly.
  const receipt=(result as ReadResult).evidenceReadRanges;
  const ranges=grant&&receipt?[...seeds,...receipt]:seeds,allowed=grant??seeds;
  if(!Array.isArray(ranges)||ranges.some(range=>!range||typeof range.id!=='string'||!Number.isSafeInteger(range.offset)||range.offset<0||!Number.isSafeInteger(range.length)||range.length<1||!allowed.some(scope=>scope.id===range.id&&range.offset>=scope.offset&&range.offset+range.length<=scope.offset+scope.length)))

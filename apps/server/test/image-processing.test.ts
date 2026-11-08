@@ -1,10 +1,10 @@
 import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {dirname,join} from 'node:path';
+import {createHash,randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {ProviderFailure} from '@mote/shared';
 import {buildApp} from '../src/app.js';
@@ -31,8 +31,9 @@ import {DEFAULT_IMAGE_RECIPE} from '../src/image-recipes.js';
 import {generatedAppleDouble} from './fixtures/appledouble.js';
 import {isAppleDouble} from '../src/appledouble.js';
 import {Operations} from '../src/operations.js';
-import {MEDIA_CATALOG} from '../src/media-assets.js';
+import {MEDIA_CATALOG,MediaAssets} from '../src/media-assets.js';
 import {DEFAULT_MEDIA_OCR_ENDPOINT} from '../src/media-configuration.js';
+import {perceptionSchema} from '../src/perception-schema.js';
 
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-unified-images-')),store=new Store(directory),materials=new MaterialStore(store);let clock=Date.now();const memoryWork=new MaterialMemoryWork(store,materials,()=>clock,()=>true);
@@ -536,4 +537,175 @@ test('an image with empty OCR and no interpretation falls back to its metadata, 
  assert.match(card.ocrText,/"captureId"/);assert.doesNotMatch(card.ocrText,/originalImage/);
  const locator=await agent.evidence!({ids:[anchors[blocks.indexOf('image:original')]!]}) as {ocrText:string}[];
  assert.match(locator[0]!.ocrText,/original_image_reference/,'the locator stays explicitly addressable for read_image');
+});
+
+async function screenshotOcrFixture(t:import('node:test').TestContext,options:{managed?:boolean;probeOcr?:()=>Promise<boolean>}={}){
+ const directory=mkdtempSync(join(tmpdir(),'mote-screenshot-ocr-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),engine=new ExecutionEngine(store),processing=new FileProcessing(files,undefined,undefined,{executor:engine});
+ await processing.runtime.ready;
+ new ArchivedFileStore(store);
+ const assets=options.managed?new MediaAssets(join(directory,'models')):undefined;
+ const images=new ImageProcessing(store,processing,engine,{mediaAssets:assets,probeOcr:options.probeOcr??(async()=>true)});
+ const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#aabbcc'}}).png().toBuffer();
+ const screen=async(changes:Record<string,unknown>={})=>{const id=randomUUID();await store.ingest({id,deviceId:'generated-screen',deviceName:'Generated screen',platform:'android',source:'screen',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64'),...changes});return id;};
+ const job=(id:string)=>store.db.prepare("SELECT state,error,attempts FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(id) as {state:string;error:string|null;attempts:number};
+ t.after(async()=>{await images.close();await processing.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ return {directory,store,files,processing,engine,images,assets,bytes,screen,job};
+}
+
+test('managed media uses the injected startup snapshot and keeps worker credentials out of views',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-media-config-')),store=new Store(directory);
+ const media={ocrEndpoint:'http://127.0.0.1:19910/ocr',asrEndpoint:'http://127.0.0.1:19909/transcribe',workerToken:'generated-worker-credential'};
+ const assets=new MediaAssets(join(directory,'models')),files=new FileStore(store,new SourceStore(store));
+ const processing=new FileProcessing(files,undefined,undefined,{mediaAssets:assets,media});
+ t.after(async()=>{await processing.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ await processing.runtime.ready;
+ assert.equal(processing.imageDefault().services[0].endpoint,media.ocrEndpoint);
+ assert.equal(processing.imageConfiguration('', 'image/png').settings.apiKey,media.workerToken);
+ assert.equal(processing.localService('asr-local').endpoint,media.asrEndpoint);
+ assert.equal(processing.localService('asr-local').apiKey,media.workerToken);
+ assert.ok(!JSON.stringify(processing.view()).includes(media.workerToken));
+ media.ocrEndpoint='http://127.0.0.1:29910/ocr';media.workerToken='a-later-candidate';
+ assert.equal(processing.imageDefault().services[0].endpoint,'http://127.0.0.1:19910/ocr');
+ assert.equal(processing.imageConfiguration('', 'image/png').settings.apiKey,'generated-worker-credential');
+});
+
+test('ambient media variables never replace the current managed OCR default',async t=>{
+ const previous=process.env.MOTE_MEDIA_OCR_ENDPOINT;process.env.MOTE_MEDIA_OCR_ENDPOINT='https://ambient.example.invalid/ocr';
+ const directory=mkdtempSync(join(tmpdir(),'mote-media-default-')),store=new Store(directory),files=new FileStore(store,new SourceStore(store)),processing=new FileProcessing(files);
+ t.after(async()=>{if(previous===undefined)delete process.env.MOTE_MEDIA_OCR_ENDPOINT;else process.env.MOTE_MEDIA_OCR_ENDPOINT=previous;await processing.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ await processing.runtime.ready;
+ assert.equal(processing.imageDefault().services[0].endpoint,DEFAULT_MEDIA_OCR_ENDPOINT);
+});
+
+test('managed screenshot OCR waits for its model, processes new captures and requires explicit historical retry',async t=>{
+ const f=await screenshotOcrFixture(t,{managed:true});let calls=0;
+ f.images.configure({...f.images.settings(),understandingEnabled:false});
+ f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated managed OCR'}]};};
+ assert.equal(f.images.settings().ocrEndpoint,DEFAULT_MEDIA_OCR_ENDPOINT);
+ const historical=await f.screen();f.store.db.prepare("UPDATE image_inputs SET auto_eligible=0 WHERE capture_id=?").run(historical);
+ const newer=await f.screen();await f.images.tick();assert.equal(calls,0);
+ assert.equal(f.job(newer).error,'model_missing');
+ const root=join(f.directory,'models/ocr');for(const name of ['det/inference.onnx','det/inference.yml','rec/inference.onnx','rec/inference.yml']){const path=join(root,name);mkdirSync(dirname(path),{recursive:true});writeFileSync(path,'synthetic fixture');}
+ writeFileSync(join(root,'complete.json'),JSON.stringify({version:MEDIA_CATALOG.ocr.version}));await f.images.tick();
+ assert.equal(f.job(newer).state,'succeeded');assert.equal(calls,1);assert.equal(f.job(historical).state,'waiting');
+ const preview=f.images.previewHistoricalOcr();assert.equal(preview.count,1);f.images.processHistoricalOcr({token:preview.token});await f.images.tick();
+ assert.equal(f.job(historical).state,'succeeded');
+});
+
+test('failed screenshot OCR preserves the archived original and the last searchable result',async t=>{
+ const f=await screenshotOcrFixture(t);let fail=false;
+ f.images.configure({...f.images.settings(),ocrEndpoint:'http://localhost/ocr'});
+ f.processing.runtime.registry.get('image.http').process=async()=>{if(fail)throw Error('private provider error');return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated retained screenshot text'}]};};
+ const id=await f.screen();await f.images.tick();
+ assert.equal(f.store.evidence([id])[0].ocrText,'Generated retained screenshot text');
+ fail=true;f.images.configure({...f.images.settings(),ocrEndpoint:'http://localhost/new-ocr'});f.images.retry(id);await f.images.tick();
+ assert.equal(f.job(id).state,'failed');assert.ok(f.store.image(id));assert.equal(f.store.evidence([id])[0].ocrText,'Generated retained screenshot text');
+});
+
+test('external screenshot forwarding defaults off and a deleted input cannot be resurrected',async t=>{
+ const f=await screenshotOcrFixture(t);let calls=0;
+ f.images.configure({...f.images.settings(),ocrEndpoint:'https://fixture.invalid/ocr'});
+ f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[]};};
+ const id=await f.screen();await f.images.tick();
+ assert.equal(calls,0);assert.equal(f.job(id).error,'external_processing_disabled');
+ f.images.configure({...f.images.settings(),ocrEndpoint:'http://localhost/ocr'});f.images.retry(id);
+ f.processing.runtime.registry.get('image.http').process=async()=>{f.store.delete(id);return {durationMs:0,segments:[]};};
+ await f.images.tick();assert.equal(f.store.evidence([id]).length,0);
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM image_products').get()!.n,0);
+});
+
+test('screenshot OCR status distinguishes disabled, queued, cancelled, blocked and failed jobs without changing originals',async t=>{
+ const f=await screenshotOcrFixture(t);const id=await f.screen();
+ const original=f.store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(id);
+ f.images.configure({...f.images.settings(),enabled:true});
+ for(const [state,error,expected] of [['waiting',null,'pending'],['running',null,'pending'],['cancelled',null,'disabled'],['blocked','model_missing','failed'],['blocked','processing_disabled','disabled'],['failed','processor_failed','failed'],['succeeded',null,'failed']] as const){
+  f.store.db.prepare("UPDATE perception_jobs SET state=?,error=? WHERE capture_id=? AND kind='ocr'").run(state,error,id);
+  assert.equal(f.store.evidence([id])[0].ocr?.status,expected,state);
+  assert.equal(f.store.previews({ocrStatus:expected}).items[0]?.id,id,state);
+ }
+ f.images.configure({...f.images.settings(),enabled:false});f.store.db.prepare("UPDATE perception_jobs SET state='waiting',error=NULL WHERE capture_id=?").run(id);
+ assert.equal(f.store.evidence([id])[0].ocr?.status,'disabled');assert.equal(f.store.previews({ocrStatus:'disabled'}).items.length,1);
+ assert.deepEqual(f.store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(id),original);
+});
+
+test('missing screenshot OCR metadata stays unknown without deriving status from queued work',async t=>{
+ const f=await screenshotOcrFixture(t);
+ const id=await f.screen({ocr:undefined,metadata:{version:1,observedAt:'2026-10-01T00:00:00Z',capture:{ocrEnabled:false}}});
+ const original=f.store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(id);
+ for(const state of ['running','cancelled']){
+  f.store.db.prepare("UPDATE perception_jobs SET state=?,error=NULL WHERE capture_id=? AND kind='ocr'").run(state,id);
+  assert.equal(f.store.evidence([id])[0].ocr,undefined);
+  assert.equal(f.store.previews({ocrStatus:'unknown'}).items[0]?.id,id);
+  assert.equal(f.store.previews({ocrStatus:'disabled'}).items.length,0);
+ }
+ assert.deepEqual(f.store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(id),original);
+});
+
+test('a free screenshot OCR slot takes the next distinct image while an earlier image remains slow',async t=>{
+ const f=await screenshotOcrFixture(t);let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
+ f.images.configure({...f.images.settings(),ocrEndpoint:'http://localhost/ocr',concurrency:2});
+ const ids:string[]=[];
+ for(const color of ['#ff0000','#00ff00','#0000ff']){const image=await sharp({create:{width:16,height:16,channels:3,background:color}}).png().toBuffer();ids.push(await f.screen({imageBase64:image.toString('base64')}));}
+ let third!:()=>void;const thirdStarted=new Promise<void>(resolve=>third=resolve);
+ f.processing.runtime.registry.get('image.http').process=async args=>{if(args.file.id===ids[0])await held;if(args.file.id===ids[2])third();return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated OCR'}]};};
+ const running=f.images.tick();
+ try{await Promise.race([thirdStarted,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Free OCR slot stayed idle')),3000);timer.unref();})]);assert.equal(f.job(ids[0]).state,'running');}
+ finally{release();await running;}
+ assert.equal(f.store.db.prepare("SELECT COUNT(*) n FROM perception_jobs WHERE kind='ocr' AND state='succeeded'").get()!.n,3);
+});
+
+test('a screenshot configuration change cancels the in-flight OCR and fences its late result',async t=>{
+ const f=await screenshotOcrFixture(t);let begin!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>begin=resolve),held=new Promise<void>(resolve=>release=resolve);
+ f.images.configure({...f.images.settings(),ocrEndpoint:'http://localhost/old'});const id=await f.screen();
+ f.processing.runtime.registry.get('image.http').process=async()=>{begin();await held;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Obsolete provider result'}]};};
+ const running=f.images.tick();await started;
+ f.images.configure({...f.images.settings(),ocrEndpoint:'http://localhost/new'});
+ await Promise.race([running,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Cancelled provider held its slot')),3000);timer.unref();})]);
+ release();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id)!.n,0,'a cancelled configuration cannot publish its late result');
+ f.images.retry(id,true,true);
+ f.processing.runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[{startMs:0,endMs:0,text:'Current provider result'}]});
+ await f.images.tick();
+ assert.equal(f.store.evidence([id])[0].ocrText,'Current provider result');
+});
+
+test('identical screenshot bytes reuse the current OCR product without another provider call',async t=>{
+ const f=await screenshotOcrFixture(t);let calls=0;
+ f.images.configure({...f.images.settings(),ocrEndpoint:'http://localhost/ocr',understandingEnabled:false});
+ f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated reused OCR'}]};};
+ const first=await f.screen();await f.images.tick();
+ const second=await f.screen();await f.images.tick();
+ assert.equal(calls,1,'identical bytes must not send the same OCR request twice');
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM perception_jobs WHERE kind='ocr' AND state='succeeded'").get()!.n,2);
+ assert.equal(f.store.evidence([first])[0].ocrText,'Generated reused OCR');
+ assert.equal(f.store.evidence([second])[0].ocrText,'Generated reused OCR');
+ const product=JSON.parse(String(f.store.db.prepare("SELECT json FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(second)!.json));
+ assert.equal(product.reuse.captureId,first,'the reused product is bound to the independent source observation');
+});
+
+test('worker readiness does not consume OCR attempts and resumes queued screenshots',async t=>{
+ let ready=false;const f=await screenshotOcrFixture(t,{managed:true,probeOcr:async()=>ready});let calls=0;
+ f.images.configure({...f.images.settings(),understandingEnabled:false});
+ const root=join(f.directory,'models/ocr');for(const name of ['det/inference.onnx','det/inference.yml','rec/inference.onnx','rec/inference.yml']){const path=join(root,name);mkdirSync(dirname(path),{recursive:true});writeFileSync(path,'synthetic fixture');}
+ writeFileSync(join(root,'complete.json'),JSON.stringify({version:MEDIA_CATALOG.ocr.version}));
+ f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated resumed OCR'}]};};
+ const id=await f.screen();await f.images.tick();
+ assert.equal(calls,0);assert.equal(f.job(id).error,'ocr_worker_unavailable');assert.equal(f.job(id).attempts,0);
+ ready=true;await f.images.tick();assert.equal(f.job(id).state,'succeeded');assert.equal(f.job(id).attempts,1);assert.equal(calls,1);
+});
+
+test('per-capture OCR reads use the composite perception index and schema re-install is idempotent',async t=>{
+ const f=await screenshotOcrFixture(t);
+ for(let i=0;i<200;i++){const id=await f.screen();f.store.db.prepare('INSERT INTO perception_results VALUES(?,?,?,?,?,1)').run(randomUUID(),id,'ocr',createHash('sha256').update('result-'+id).digest('hex'),JSON.stringify({id:randomUUID(),fingerprint:createHash('sha256').update('json-'+id).digest('hex'),text:'Generated OCR text',inputHash:'',engine:'fixture',engineVersion:'1',configRevision:'1',generatedAt:'2026-10-01T00:00:01Z'}));}
+ const captureId=String(f.store.db.prepare("SELECT capture_id FROM perception_results WHERE kind='ocr' AND current=1 LIMIT 1").get()!.capture_id);
+ for(const sql of ["SELECT fingerprint FROM perception_results p WHERE p.capture_id=? AND p.kind='ocr' AND p.current=1","SELECT json FROM perception_results WHERE capture_id=? AND kind='ocr' AND current=1"]){
+  const plan=f.store.db.prepare('EXPLAIN QUERY PLAN '+sql).all(captureId).map(row=>String(row.detail));
+  assert.ok(plan.some(row=>row.includes('perception_current')),`plan must use perception_current: ${plan.join('; ')}`);
+  assert.ok(!plan.some(row=>/\bSCAN\b/.test(row)),`plan must not scan perception_results: ${plan.join('; ')}`);
+ }
+ f.store.db.exec('DROP INDEX perception_current');
+ assert.equal(f.store.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='perception_current'").get(),undefined);
+ perceptionSchema(f.store.db);
+ assert.equal(f.store.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='perception_current'").get()!.name,'perception_current');
 });

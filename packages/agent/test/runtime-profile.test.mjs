@@ -7,8 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {spawnSync} from 'node:child_process';
 import {runtimeProfileSchema, runtimeSettingsSchema} from '@mote/shared/agent-runtimes';
-import {publicRunSelection, resolveRunSelection} from '@mote/agent/runtime/profile';
-import {resolveFeatureRunSelection, validateAgentRuntimeSettings} from '../../../apps/server/src/agent-runtime-settings.ts';
+import {publicRunSelection, resolveRunSelection, resolveRuntimeProfileReference, validateRuntimeModelPair} from '@mote/agent/runtime/profile';
 
 const features = ['chat', 'memory', 'insight', 'import', 'file'];
 const instance = id => ({packageId: id, installationId: `generated-install-${id}`, instanceId: 'primary'});
@@ -22,7 +21,7 @@ function provider(id, transport = 'openai-responses') {
     hostDelegation: true, nativeDelegation: false, recovery: 'none', replacement: 'restart',
   }};
 }
-function profile(value) {
+function runtimeProfile(value) {
   return {id: `profile-${value.id}`, name: 'Generated runtime', revision: 4, runtimeProviderId: value.id,
     providerRef: reference(value.binding), assembly: {packages: [], hooks: []},
     allowedHostCapabilities: ['tools', 'images', 'importWorkspace', 'hostDelegation']};
@@ -37,15 +36,21 @@ function model(id = 'generated-http', protocol = 'openai-responses') {
   }}, profileRevision: 7, modelRevision: 2, connectionFingerprint: 'a'.repeat(64), capabilities: {tools: true, images: true}};
 }
 function fixture() {
-  const runtime = provider('generated.dsh');
-  const configuration = {schemaVersion: 1, revision: 10, profiles: [profile(runtime)],
+  const runtime = provider('generated.dsh'), profile = runtimeProfile(runtime), selectedModel = model();
+  const configuration = {schemaVersion: 1, revision: 10, profiles: [profile],
     assignments: Object.fromEntries(features.map(feature => [feature, `profile-${runtime.id}`]))};
-  const context = {models: [model()], modelDefaults: Object.fromEntries(features.map(feature => [feature, 'generated-http'])),
-    providers: [runtime], installedModules: [], requirements: Object.fromEntries(features.map(feature => [feature,
-      {taskKind: feature === 'import' ? 'import' : 'query', capabilities: feature === 'import' ? ['tools', 'importWorkspace'] : ['tools']}]))};
-  return {configuration, context};
+  const requirements = Object.fromEntries(features.map(feature => [feature,
+    {taskKind: feature === 'import' ? 'import' : 'query', capabilities: feature === 'import' ? ['tools', 'importWorkspace'] : ['tools']}]));
+  const context = {models: [selectedModel], modelDefaults: Object.fromEntries(features.map(feature => [feature, 'generated-http'])),
+    providers: [runtime], installedModules: [], requirements};
+  const selection = {revision: configuration.revision, profile, model: selectedModel,
+    providers: context.providers, installedModules: context.installedModules};
+  return {configuration, context, selection};
 }
-const select = ({configuration, context}, feature = 'chat') => resolveFeatureRunSelection(configuration, feature, context);
+// Current-run selection receives the already resolved runtime profile and exact
+// effective model facts. Feature assignment and model-default lookup belong to
+// configuration, not to resolveRunSelection.
+const select = (f, feature = 'chat') => resolveRunSelection({...f.selection, requirements: f.context.requirements[feature]});
 const code = expected => error => error?.code === expected && error.message === expected;
 
 test('explicit runtime/model choices accept supported HTTP and App Server pairs and reject both cross-pairs', () => {
@@ -54,26 +59,25 @@ test('explicit runtime/model choices accept supported HTTP and App Server pairs 
   assert.equal(http.receipt.modelProfileId, 'generated-http');
   assert.equal(http.modelSelection.profileRevision, 7);
   const codex = provider('generated.codex', 'codex-app-server');
-  f.context.providers.push(codex); f.configuration.profiles.push(profile(codex)); f.context.models.push(model('generated-login', 'codex-app-server'));
-  f.configuration.assignments.chat = `profile-${codex.id}`;
+  f.context.providers.push(codex); f.configuration.profiles.push(runtimeProfile(codex)); f.context.models.push(model('generated-login', 'codex-app-server'));
+  f.selection.profile = f.configuration.profiles.at(-1);
   assert.throws(() => select(f), code('incompatible_runtime_model'));
-  f.context.modelDefaults.chat = 'generated-login';
+  f.selection.model = f.context.models.at(-1);
   assert.equal(select(f).runtime.runtimeId, 'generated.codex');
-  f.configuration.assignments.chat = 'profile-generated.dsh';
+  f.selection.profile = f.configuration.profiles[0];
   assert.throws(() => select(f), code('incompatible_runtime_model'));
 });
 
 test('a third runtime is selected from its binding/capabilities without a protocol-to-engine branch', () => {
   const f = fixture(), first = select(f), alternate = provider('generated.alternate');
-  f.context.providers.push(alternate); f.configuration.profiles.push(profile(alternate));
-  f.configuration.assignments.chat = `profile-${alternate.id}`;
+  f.context.providers.push(alternate); f.configuration.profiles.push(runtimeProfile(alternate));
+  f.selection.profile = f.configuration.profiles.at(-1);
   const second = select(f);
   assert.equal(second.runtime.runtimeId, alternate.id);
   assert.equal(second.modelFingerprint, first.modelFingerprint);
   assert.notEqual(second.runtimeFingerprint, first.runtimeFingerprint);
-  f.context.defaultModels = {chat: 'generated-other-model'};
-  f.context.modelVariants = [{profileId: 'generated-http', profileRevision: 7, modelId: 'generated-other-model',
-    modelRevision: 3, capabilities: {tools: true, images: true}}];
+  const base = f.selection.model;
+  f.selection.model = {...base, profile: {...base.profile, settings: {...base.profile.settings, model: 'generated-other-model'}}, modelRevision: 3};
   const third = select(f);
   assert.equal(third.runtimeFingerprint, second.runtimeFingerprint);
   assert.notEqual(third.modelFingerprint, second.modelFingerprint);
@@ -81,48 +85,47 @@ test('a third runtime is selected from its binding/capabilities without a protoc
 
 test('shared-profile model overrides use exact effective tools/images facts and model revision', () => {
   const f = fixture();
-  f.context.defaultModels = Object.fromEntries(features.map(feature => [feature, 'generated-vision']));
-  f.context.defaultModels.chat = 'generated-text';
-  f.context.modelVariants = [
-    {profileId: 'generated-http', profileRevision: 7, modelId: 'generated-text', modelRevision: 11, capabilities: {tools: false, images: false}},
-    {profileId: 'generated-http', profileRevision: 7, modelId: 'generated-vision', modelRevision: 12, capabilities: {tools: true, images: true}},
-  ];
+  const base = f.selection.model;
+  const text = {...base, profile: {...base.profile, settings: {...base.profile.settings, model: 'generated-text'}}, modelRevision: 11, capabilities: {tools: false, images: false}};
+  const vision = {...text, profile: {...base.profile, settings: {...base.profile.settings, model: 'generated-vision'}}, modelRevision: 12, capabilities: {tools: true, images: true}};
   f.context.requirements.chat.capabilities = ['images'];
   f.context.requirements.insight.capabilities = ['images'];
-  assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), code('runtime_capability_missing'));
+  f.selection.model = text;
+  assert.throws(() => validateRuntimeModelPair({...f.selection, requirements: f.context.requirements.chat}), code('runtime_capability_missing'));
   assert.throws(() => select(f), code('runtime_capability_missing'));
-  const vision = select(f, 'insight');
-  assert.equal(vision.receipt.modelRevision, 12);
-  assert.equal(vision.modelSelection.modelRevision, 12);
-  assert.equal(vision.model.profile.id, 'generated-http');
-  assert.equal(vision.model.profile.settings.model, 'generated-vision');
+  f.selection.model = vision;
+  const selected = select(f, 'insight');
+  assert.equal(selected.receipt.modelRevision, 12);
+  assert.equal(selected.modelSelection.modelRevision, 12);
+  assert.equal(selected.model.profile.id, 'generated-http');
+  assert.equal(selected.model.profile.settings.model, 'generated-vision');
   f.context.requirements.chat.capabilities = ['hostDelegation'];
-  assert.equal(validateAgentRuntimeSettings(f.configuration, f.context).profiles.length, 1);
+  f.selection.model = text;
+  assert.doesNotThrow(() => validateRuntimeModelPair({...f.selection, requirements: f.context.requirements.chat}));
   assert.equal(select(f).modelSelection.modelRevision, 11);
   f.context.requirements.chat.capabilities = ['tools'];
-  assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), code('runtime_capability_missing'));
+  assert.throws(() => validateRuntimeModelPair({...f.selection, requirements: f.context.requirements.chat}), code('runtime_capability_missing'));
   assert.throws(() => select(f), code('runtime_capability_missing'));
-  f.context.defaultModels.chat = 'generated-vision';
   f.context.requirements.chat.capabilities = ['tools', 'images'];
   f.context.models[0].capabilities = {tools: false, images: false};
-  assert.equal(validateAgentRuntimeSettings(f.configuration, f.context).profiles.length, 1);
+  f.selection.model = vision;
   assert.equal(select(f).model.capabilities.images, true);
   assert.equal(select(f).model.capabilities.tools, true);
-  assert.equal(f.context.models[0].profile.settings.model, 'generated-model', 'base profile remains unchanged');
+  assert.equal(f.context.models[0].profile.settings.model, 'generated-model', 'the supplied base model/profile remains unchanged');
 });
 
-test('missing, ambiguous or stale effective-model facts never fall back to the base model', () => {
-  const f = fixture(); f.context.defaultModels = {chat: 'generated-override'};
-  for (const resolve of [() => select(f), () => validateAgentRuntimeSettings(f.configuration, f.context)]) {
-    assert.throws(resolve, code('model_capabilities_unavailable'));
-  }
-  const facts = {profileId: 'generated-http', profileRevision: 7, modelId: 'generated-override', modelRevision: 13, capabilities: {tools: true, images: true}};
-  f.context.modelVariants = [{...facts, profileRevision: 6}];
-  assert.throws(() => select(f), code('model_capabilities_unavailable'));
-  assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), code('model_capabilities_unavailable'));
-  f.context.modelVariants = [facts, structuredClone(facts)];
-  assert.throws(() => select(f), code('runtime_settings_invalid'));
-  assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), code('runtime_settings_invalid'));
+test('effective-model selection uses exactly the supplied facts and never falls back to the base model', () => {
+  const f = fixture(), base = f.selection.model;
+  const effective = {...base, profile: {...base.profile, settings: {...base.profile.settings, model: 'generated-override'}}, modelRevision: 13, capabilities: {tools: false, images: false}};
+  f.selection.model = effective;
+  f.context.requirements.chat.capabilities = [];
+  const selected = select(f);
+  assert.equal(selected.receipt.modelId, 'generated-override');
+  assert.equal(selected.receipt.modelRevision, 13);
+  assert.equal(selected.model.capabilities.tools, false);
+  assert.equal(selected.model.capabilities.images, false);
+  assert.equal(f.context.models[0].profile.settings.model, 'generated-model');
+  assert.equal(f.context.models[0].modelRevision, 2);
 });
 
 test('exact persistent identities survive host recreation, reject reinstall/stale versions, and ignore registration order', () => {
@@ -147,30 +150,29 @@ test('exact persistent identities survive host recreation, reject reinstall/stal
 
 test('reference validation covers unused profiles without implicitly pairing them to the first model', () => {
   const f = fixture(), codex = provider('generated.unused-codex', 'codex-app-server');
-  f.context.providers.push(codex); f.configuration.profiles.push(profile(codex));
-  assert.equal(validateAgentRuntimeSettings(JSON.parse(JSON.stringify(f.configuration)), f.context).profiles.length, 2);
+  f.context.providers.push(codex); f.configuration.profiles.push(runtimeProfile(codex));
+  const validate = () => resolveRuntimeProfileReference({profile: f.configuration.profiles.at(-1), providers: f.context.providers,
+    installedModules: f.context.installedModules, requireAvailable: false});
+  assert.equal(validate().profile.id, `profile-${codex.id}`);
   codex.availability = {state: 'unavailable', reason: 'dependency_unavailable'};
-  assert.equal(validateAgentRuntimeSettings(f.configuration, f.context).profiles.length, 2);
-  f.configuration.assignments.chat = `profile-${codex.id}`;
-  f.context.models.push(model('generated-login', 'codex-app-server')); f.context.modelDefaults.chat = 'generated-login';
-  assert.equal(validateAgentRuntimeSettings(f.configuration, f.context).profiles.length, 2);
+  assert.equal(validate().profile.id, `profile-${codex.id}`);
+  f.selection.profile = f.configuration.profiles.at(-1);
+  f.context.models.push(model('generated-login', 'codex-app-server')); f.selection.model = f.context.models.at(-1);
   assert.throws(() => select(f), code('runtime_provider_unavailable'));
 });
 
 test('runtime configuration can be saved before a model ID is configured, while a new run is blocked', () => {
   const f = fixture(); f.context.models[0].profile.settings.model = '';
-  assert.equal(validateAgentRuntimeSettings(f.configuration, f.context).profiles.length, 1);
+  assert.doesNotThrow(() => validateRuntimeModelPair({...f.selection, requirements: f.context.requirements.chat}));
   assert.throws(() => select(f), code('model_not_configured'));
 });
 
-test('missing/ambiguous bindings, model references and native artifact changes fail explicitly', () => {
+test('missing/ambiguous bindings and native artifact changes fail explicitly', () => {
   const f = fixture();
-  f.context.providers = []; assert.throws(() => select(f), code('runtime_provider_missing'));
-  f.context.providers = [provider('generated.dsh'), provider('generated.dsh')];
+  f.context.providers.length = 0; assert.throws(() => select(f), code('runtime_provider_missing'));
+  f.context.providers.push(provider('generated.dsh'), provider('generated.dsh'));
   assert.throws(() => select(f), code('runtime_binding_stale'));
-  f.context.providers.pop(); f.context.modelDefaults.chat = 'missing';
-  assert.throws(() => select(f), code('model_profile_missing'));
-  f.context.modelDefaults.chat = 'generated-http';
+  f.context.providers.pop();
   const native = {contribution: {instance: instance('generated.native'), contributionId: 'native-hook'}, revision: 2, artifactDigest: 'b'.repeat(64), exportName: 'apply'};
   f.configuration.profiles[0].assembly.hooks.push(native);
   assert.throws(() => select(f), code('runtime_module_unavailable'));
@@ -211,7 +213,7 @@ test('public configuration rejects launch/secret/path injection and invalid curr
     const f = fixture(), privateValue = 'generated-private-do-not-echo';
     f.configuration.profiles[0][key] = privateValue;
     assert.equal(runtimeProfileSchema.safeParse(f.configuration.profiles[0]).success, false);
-    assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), error => code('runtime_settings_invalid')(error) && !error.message.includes(privateValue));
+    assert.throws(() => select(f), error => code('runtime_settings_invalid')(error) && !error.message.includes(privateValue));
   }
   const f = fixture(); f.configuration.assignments.chat = 'missing';
   assert.equal(runtimeSettingsSchema.safeParse(f.configuration).success, false);
@@ -234,7 +236,7 @@ test('secret/login/launch changes alter only internal identity and public receip
   assert.notEqual(changedModel.modelFingerprint, first.modelFingerprint);
   assert.equal(changedModel.runtimeFingerprint, first.runtimeFingerprint);
   assert.deepEqual(publicRunSelection(changedModel), safe);
-  f.context.launches = {'profile-generated.dsh': {executable: '/generated/operator/runtime', home: '/generated/operator/private-home'}};
+  f.selection.launch = {executable: '/generated/operator/runtime', home: '/generated/operator/private-home'};
   const changedLaunch = select(f);
   assert.notEqual(changedLaunch.runtimeFingerprint, changedModel.runtimeFingerprint);
   assert.equal(changedLaunch.modelFingerprint, changedModel.modelFingerprint);
@@ -255,9 +257,8 @@ test('actual A02 declarations feed the A01 RuntimeProvider consumer without publ
 import type {RuntimeProvider, ModelLease, HostRunPort, RuntimeCapabilities as ProviderCapabilities} from '${join(root, 'packages/agent/dist/runtime/contracts.js')}';
 import type {ServiceLease} from '@mote/plugin-api/contracts';
 import type {RuntimeProfile, RuntimeCapabilities} from '@mote/shared/agent-runtimes';
-import {publicRunSelection, type RuntimeProfileConfiguration} from '@mote/agent/runtime/profile';
-import {resolveFeatureRunSelection} from '${join(root, 'apps/server/src/agent-runtime-settings.js')}';
-declare const selected: ReturnType<typeof resolveFeatureRunSelection>;
+import {publicRunSelection, resolveRunSelection, type RuntimeProfileConfiguration} from '@mote/agent/runtime/profile';
+declare const selected: ReturnType<typeof resolveRunSelection>;
 declare const provider: RuntimeProvider<RuntimeProfileConfiguration>;
 declare const modelLease: ServiceLease<unknown>;
 const model: ModelLease = {...modelLease, selection: selected.modelSelection};

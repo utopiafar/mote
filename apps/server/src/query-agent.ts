@@ -6,7 +6,7 @@ import type {QueryResult} from '@mote/shared';
  * composites only forward the same lease. */
 export type {QueryRunLease};
 /** Trusted declaration of which component owns the run's terminal accounting. */
-export type AgentRunFinalizer='host'|'legacy';
+export type AgentRunFinalizer='host';
 
 /** Model adapter contract; independent of server assembly and HTTP transport. */
 export interface QueryAgent {
