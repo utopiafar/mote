@@ -26,7 +26,7 @@ async function fixture(t: TestContext, query?: (input: QueryInput) => Promise<Qu
   const service = new ConfigService({ path: file, watch: false, initialDocument: parseConfigDocument('version: 1\nrevision: 0\nactions:\n  enabled: true\n  timeZone: UTC\n') });
   registerBuiltinDomains(service); await service.initialize();
   store.db.exec('CREATE TABLE action_meta(key TEXT PRIMARY KEY,json TEXT NOT NULL)');
-  store.db.prepare("INSERT INTO action_meta VALUES('settings',?)").run(JSON.stringify({ enabled: false, timeZone: 'Asia/Shanghai', reviewDeviceIds: ['phone'] }));
+  store.db.prepare("INSERT INTO action_meta VALUES('review-devices',?)").run(JSON.stringify({ revision: 0, reviewDeviceIds: ['phone'] }));
   const actions = new Actions(store, files, query ?? (async input => answer(input.evidenceIds![0])), () => true, { configService: service });
   sources.register({ id: 'fixture', kind: 'custom', name: 'Generated', deviceId: 'fixture', platform: 'import' });
   const add = () => sources.upsert('fixture', { externalId: randomUUID(), revision: '1', observedAt: '2026-01-01T00:00:00Z', kind: 'message', layer: 'original', text });
@@ -35,7 +35,7 @@ async function fixture(t: TestContext, query?: (input: QueryInput) => Promise<Qu
 }
 const save = (f: Awaited<ReturnType<typeof fixture>>, settings = f.actions.settings()) => f.actions.saveSettings({ revision: f.service.revision, authorizationRevision: f.actions.authorizationRevision(), settings });
 
-test('Actions runtime policy reloads from YAML while historical confirmations and legacy review authorization stay in the database', async t => {
+test('Actions runtime policy reloads from YAML while historical confirmations and device review authorization stay in the database', async t => {
   const f = await fixture(t);
   assert.deepEqual(f.actions.settings(), { enabled: true, timeZone: 'UTC', reviewDeviceIds: ['phone'] });
   assert.throws(() => f.actions.configure(f.actions.settings()), /configuration transaction/);
@@ -68,7 +68,6 @@ test('invalid runtime files still permit revocation, never grant a replacement d
   const response = await app.inject({ method: 'PUT', url: '/api/actions/settings', payload: { revision: 0, authorizationRevision: 0, settings: { enabled: false, timeZone: 'UTC', reviewDeviceIds: ['outsider'] } } });
   assert.equal(response.statusCode, 400, response.body); assert.equal(response.json().authorizationRevoked, true); assert.deepEqual(response.json().revokedDeviceIds, ['phone']);
   assert.equal(response.json().authorizationRevision, 1); assert.deepEqual(f.actions.settings(), { enabled: true, timeZone: 'UTC', reviewDeviceIds: [] });
-  assert.equal(f.store.db.prepare("SELECT 1 FROM action_meta WHERE key='settings'").get(), undefined);
   credential = { deviceId: 'phone' }; assert.equal((await app.inject('/api/actions')).statusCode, 403);
   credential = { deviceId: 'outsider' }; assert.equal((await app.inject('/api/actions')).statusCode, 403);
   await assert.rejects(f.actions.saveSettings({ revision: 0, authorizationRevision: 0, settings: { ...f.actions.settings(), reviewDeviceIds: ['phone'] } }), (error: { statusCode?: number }) => error.statusCode === 409);

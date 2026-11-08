@@ -8,8 +8,6 @@ export type OperationMembership={generation?:{slot:string;version:string};option
 export function installOperationProjection(store:Store){
  const db=store.db;
  const scheduledSkip=(step:string)=>`(${step}.state='blocked' AND coalesce(${step}.error IN ('summary_disabled','archive_only','appledouble_metadata'),0))`;
- const version='2',dbVersion=db.prepare("SELECT value FROM settings WHERE key='operation-projection-version'").get()?.value;
- if(dbVersion!==version)db.exec('DROP TRIGGER IF EXISTS operation_link_added; DROP TRIGGER IF EXISTS operation_link_changed; DROP TRIGGER IF EXISTS operation_link_removed; DROP TRIGGER IF EXISTS operation_step_changed; DROP TRIGGER IF EXISTS operation_step_removed; DROP TRIGGER IF EXISTS operation_memory_changed; DROP TRIGGER IF EXISTS operation_memory_removed;');
  const excluded=(state:string,optional:string)=>`(${optional} AND ${state} IN ('blocked','failed','cancelled','stale'))`;
  const applyLink=(alias:'old'|'new',sign:'+'|'-')=>`UPDATE operation_progress SET total=total${sign}${alias}.active,not_scheduled=not_scheduled${sign}(${alias}.active AND ${alias}.optional AND (SELECT ${scheduledSkip('e')} FROM execution_steps e WHERE e.id=${alias}.step_id)),${states.map(state=>`${state}=${state}${sign}(${alias}.active AND NOT ${excluded(`(SELECT state FROM execution_steps WHERE id=${alias}.step_id)`,`${alias}.optional`)} AND (SELECT state FROM execution_steps WHERE id=${alias}.step_id)='${state}')`).join(',')},updated_at=max(updated_at,coalesce((SELECT updated_at FROM execution_steps WHERE id=${alias}.step_id),updated_at)) WHERE id=${alias}.operation_id;`;
  const applyState=(alias:'old'|'new',sign:'+'|'-')=>`UPDATE operation_progress SET not_scheduled=not_scheduled${sign}(coalesce((SELECT optional FROM execution_operation_steps WHERE operation_id=operation_progress.id AND step_id=${alias}.id AND active=1),0) AND ${scheduledSkip(alias)}),${states.map(state=>`${state}=${state}${sign}(${alias}.state='${state}' AND NOT ${excluded(`${alias}.state`,`coalesce((SELECT optional FROM execution_operation_steps WHERE operation_id=operation_progress.id AND step_id=${alias}.id),0)`)} )`).join(',')},updated_at=max(updated_at,new.updated_at) WHERE id IN (SELECT operation_id FROM execution_operation_steps WHERE step_id=${alias}.id AND active=1);`;
@@ -32,10 +30,6 @@ export function installOperationProjection(store:Store){
    CREATE TRIGGER IF NOT EXISTS operation_created AFTER INSERT ON operation_progress BEGIN INSERT INTO operation_changes(operation_id) VALUES(new.id); END;
    CREATE TRIGGER IF NOT EXISTS operation_memory_changed AFTER UPDATE ON memories BEGIN INSERT INTO operation_changes(operation_id) VALUES('memory:'||new.id); END;
    CREATE TRIGGER IF NOT EXISTS operation_memory_removed AFTER DELETE ON memories BEGIN INSERT INTO operation_changes(operation_id) VALUES('memory:'||old.id); END;`);
- if(dbVersion!==version){
-  db.exec(`UPDATE operation_progress SET not_scheduled=(SELECT count(*) FROM execution_operation_steps o JOIN execution_steps e ON e.id=o.step_id WHERE o.operation_id=operation_progress.id AND o.active=1 AND o.optional=1 AND ${scheduledSkip('e')});`);
-  db.prepare("INSERT INTO settings VALUES('operation-projection-version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(version);
- }
  installOperationHierarchy(store);
 }
 export function linkOperation(store:Store,operationId:string,stepId:string,membership:OperationMembership={}){

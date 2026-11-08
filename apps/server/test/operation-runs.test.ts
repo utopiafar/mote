@@ -31,6 +31,26 @@ test('one import links originals to later engine work and generation changes ato
  assert.equal(imports.get(job.id).operationId,operation);
 });
 
+test('reopening the same vault installs each operation projection trigger once and keeps progress exact',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-operation-projection-'));
+ let store=new Store(directory);
+ t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+ const triggers=['operation_link_added','operation_link_changed','operation_link_removed','operation_step_changed','operation_step_removed','operation_memory_changed','operation_memory_removed','operation_changed','operation_created','operation_changes_bounded','operation_child_added','operation_child_changed','operation_child_removed'];
+ const progress=()=>store.db.prepare("SELECT total,waiting,not_scheduled FROM operation_progress WHERE id='generated:projection'").get();
+ for(let open=1;open<=3;open++){
+  const executor=new ExecutionEngine(store);
+  for(const name of triggers)assert.equal(Number(store.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger' AND name=?").get(name)?.n),1,`${name} must be installed once`);
+  assert.equal(store.db.prepare("SELECT 1 FROM settings WHERE key='operation-projection-version'").get(),undefined);
+  if(open===1){
+   executor.register({kind:'fixture.projection',pool:'generated',concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{}});
+   executor.enqueue('generated:projection','fixture.projection',{});
+  }
+  assert.deepEqual({...progress()},{total:1,waiting:1,not_scheduled:0});
+  await executor.close();
+  if(open<3){store.close();store=new Store(directory);}
+ }
+});
+
 test('insight cancellation fences results and close after engine shutdown does not strand waiters',async t=>{
  const {store,executor,operations}=fixture(t),runs=new InsightRuns(store,{executor});let release!:()=>void,signal!:AbortSignal;
  const id=randomUUID();runs.start(id,{},async(_observe,current)=>{signal=current;await new Promise<void>(resolve=>release=resolve);return {answer:'Generated late report',citations:[],trace:[],runId:randomUUID()};});await turn();

@@ -36,7 +36,6 @@ import { randomUUID } from 'node:crypto';
 import { existsSync,readFileSync } from 'node:fs';
 import { join,relative,sep } from 'node:path';
 import { z } from 'zod';
-import { assertCurrentDelegationSchema } from './delegation-runtime.js';
 import type {QueryQualityStrategy} from './query-quality-experiment.js';
 import {installAgentReadTools} from './plugins/agent-read-tools.js';
 import { repositoryRoot,type Config } from './config.js';
@@ -94,7 +93,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   resources.defer(()=>bootstrap.close());
   config=bootstrap.config;
   const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store;
-  assertCurrentDelegationSchema(store);
   let availableModelConnections=():ModelConnection[]=>[];
   const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync}=await assemblePlatform({
     bootstrap,config,store,resources,serverVersion,
