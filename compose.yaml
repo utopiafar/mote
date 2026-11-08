@@ -64,7 +64,7 @@ services:
     network_mode: "service:mote"
     depends_on:
       mote:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - path: ${MOTE_DOCKER_ENV_FILE:?Generated secret environment is required}
         format: raw
@@ -83,7 +83,10 @@ services:
         read_only: true
     command: ["node", "scripts/media-worker-entry.mjs", "ocr"]
     healthcheck:
-      test: ["CMD", "node", "apps/server/dist/healthcheck.js", "--shared-network"]
+      test: ["CMD", "node", "scripts/media-worker-health.mjs", "ocr"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -92,6 +95,11 @@ services:
   asr-worker:
     extends: ocr-worker
     command: ["node", "scripts/media-worker-entry.mjs", "asr"]
+    healthcheck:
+      test: ["CMD", "node", "scripts/media-worker-health.mjs", "asr"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
 volumes:
   mote-data:
     name: ${MOTE_VOLUME:?Profile-specific volume is required}
