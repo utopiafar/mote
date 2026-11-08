@@ -3,6 +3,8 @@
 Current direction (format and supersession checked 2026-10-29): [single-owner MVP](adr-single-owner-mvp.md). Earlier dated validation does not qualify this recovery.
 Status: Accepted, 2026-10-09. Owner approved the cleanup, validation, PR and merge.
 
+Status note (2026-11-08): the current Central storage epoch is 7; the one-current-format and no-upgrade-adapter rules below remain in force.
+
 Mote uses one current implementation and persisted format. There is no installed-version transition period, old reader, dual write or startup migration. Central storage is epoch **6** (`backend_epoch` and SQLite `user_version`); Desktop and Android local storage use format **4**. Wire protocol **1**, collector Ingress **2** and portable archive **2** are independent contracts, not product versions.
 
 A populated Central vault from another epoch is rejected before schema installation. Existing data is retained. Start with a new empty directory, or stop the service, preserve a backup and explicitly reset the selected vault. This change does not reset any user's directory. Same-epoch backup/restore and current-format portable import remain supported.
