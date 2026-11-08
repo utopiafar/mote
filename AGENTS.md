@@ -11,6 +11,8 @@ One instance, one owner: a personal context collector and central archive for th
 - Keep secrets and personal data out of Git. Listen on loopback by default; remote deployments need TLS and a strong token.
 - Tests use generated data and private temporary profiles; real profiles, screenshots and devices are never fixtures.
 - Dev keeps Mote-owned credentials in private profile files; Prod uses OS protection; third-party CLIs keep their own credential stores.
+- Host runtime contract is frozen: add no new concepts; delete leases, bindings, delivery ledgers and commit fences once no module needs them.
+- Delegation is frozen: fix defects only; batch processing replaces it after release.
 
 ## Before editing
 
