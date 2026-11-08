@@ -14,29 +14,10 @@ const ruleBase = {
   id: short, version: short, platform: z.enum(['android', 'macos']), appId: short,
   activity: short.optional(), required: z.array(uiSelectorSchema).max(8).default([]),
 };
-/** Selected-node rules remain active only for Desktop capture. */
-export const uiLegacyRuleSchema = z.object({
-  ...ruleBase, appVersion: short.optional(), select: uiSelectorSchema,
-  ancestor: uiSelectorSchema.optional(), complete: z.boolean().default(false),
-}).strict();
 export const uiFieldRuleSchema = z.object({
   select: uiSelectorSchema, ancestor: uiSelectorSchema.optional(), required: z.boolean().default(false),
   childPath: z.array(z.number().int().min(0).max(4095)).min(1).max(24).optional(),
 }).strict();
-export const uiStructuredRuleSchema = z.object({
-  ...ruleBase, formatVersion: z.literal(2), appVersion: nonblank(300),
-  kind: z.enum(['article', 'product']), region: uiSelectorSchema.optional(), repeat: uiSelectorSchema.optional(), repeatParent: uiSelectorSchema.optional(),
-  fields: z.object({
-    title: uiFieldRuleSchema, author: uiFieldRuleSchema.optional(), url: uiFieldRuleSchema.optional(),
-    itemId: uiFieldRuleSchema.optional(), body: uiFieldRuleSchema.optional(),
-  }).strict(),
-}).strict().superRefine((rule, ctx) => {
-  if (rule.kind === 'article' && !rule.fields.body) ctx.addIssue({code: 'custom', path: ['fields', 'body'], message: 'Articles require an explicit body mapping'});
-  if (!rule.fields.title.required) ctx.addIssue({code: 'custom', path: ['fields', 'title', 'required'], message: 'Title mappings must be required'});
-  if (rule.kind === 'article' && !rule.fields.body?.required) ctx.addIssue({code: 'custom', path: ['fields', 'body', 'required'], message: 'Article body mappings must be required'});
-  if (rule.repeatParent && !rule.repeat) ctx.addIssue({code: 'custom', path: ['repeatParent'], message: 'A repeat parent requires repeated containers'});
-  if (!rule.region && !rule.repeat && Object.values(rule.fields).some(field => field?.childPath)) ctx.addIssue({code: 'custom', path: ['fields'], message: 'Child paths require an explicit region or repeat root'});
-});
 export const uiNamedFieldRuleSchema = uiFieldRuleSchema.extend({
   childPath:z.array(z.number().int().min(0).max(4095)).max(24).optional(),
   source: z.enum(['text', 'description', 'state']).default('text'),
@@ -53,14 +34,13 @@ export const uiNamedRuleSchema = z.object({
   if (!r.region && !r.repeat && Object.values(r.fields).some(f=>f.childPath)) ctx.addIssue({code:'custom',message:'Paths require a scoped region or repeat'});
 });
 export type UiNamedRule = z.infer<typeof uiNamedRuleSchema>;
-export const uiRuleSchema = z.union([uiNamedRuleSchema, uiStructuredRuleSchema, uiLegacyRuleSchema]);
+export const uiRuleSchema = uiNamedRuleSchema;
 export const uiRulesSchema = z.array(uiRuleSchema).max(512)
   .refine(rules => new Set(rules.map(rule => rule.id)).size === rules.length, 'Duplicate rule IDs')
   .refine(rules => new TextEncoder().encode(JSON.stringify(rules)).length <= 1048576, 'Rule pack exceeds 1 MiB');
 export const uiModeSchema = z.enum(['screen_only', 'hybrid', 'ui_preferred', 'page_only']);
 export type UiMode = z.infer<typeof uiModeSchema>;
 export type UiRule = z.infer<typeof uiRuleSchema>;
-export type UiStructuredRule = z.infer<typeof uiStructuredRuleSchema>;
 export type UiSelector = z.infer<typeof uiSelectorSchema>;
 const boundsSchema = z.object({x: z.number().finite(), y: z.number().finite(), width: z.number().positive(), height: z.number().positive()}).strict();
 const nodeBase = {id: short, resourceId: z.string().max(300), role: z.string().max(300), bounds: boundsSchema};
@@ -81,12 +61,6 @@ const pageBase = {
   scope: z.literal('visible_window'), adapterId: short, adapterVersion: short,
   appVersion: z.string().max(300), activity: z.string().max(300), status: z.enum(['ok', 'partial']), truncated: z.boolean(),
 };
-export const uiPageV1Schema = z.object({
-  ...pageBase, version: z.literal(1),
-  nodes: z.array(z.object({...nodeBase, text: z.string().max(2000)}).strict()).min(1).max(256),
-}).strict().superRefine((page, ctx) => {
-  if (new Set(page.nodes.map(node => node.id)).size !== page.nodes.length || page.nodes.reduce((sum, node) => sum + node.text.length, 0) > 32000 || page.truncated && page.status === 'ok') ctx.addIssue({code: 'custom', message: 'Invalid page evidence'});
-});
 export const uiContentObjectSchema = z.object({
   kind: z.enum(['article', 'product']), title: nonblank(2000), author: nonblank(1000).optional(),
   url: pageUrl.optional(), itemId: nonblank(1000).optional(),
@@ -107,12 +81,10 @@ export const uiNamedObjectSchema = z.object({
 export const uiPageV3Schema=z.object({
  ...pageBase,version:z.literal(3),observations:z.object({firstAt:observedAt,lastAt:observedAt,count:z.number().int().min(1).max(256)}).strict(),objects:z.array(uiNamedObjectSchema).length(1),
 }).strict().superRefine((p,ctx)=>{if(Date.parse(p.observations.firstAt)>Date.parse(p.observations.lastAt)||p.truncated&&p.status==='ok')ctx.addIssue({code:'custom',message:'Invalid structured observation'});});
-// v1 is still the actively produced Desktop representation. Android emits only v3.
-export const uiPageSchema = z.union([uiPageV3Schema, uiPageV1Schema]);
+export const uiPageSchema = uiPageV3Schema;
 export type UiPage = z.infer<typeof uiPageSchema>;
 export type UiPageV3 = z.infer<typeof uiPageV3Schema>;
 export function uiPageText(page: UiPage): string {
-  if(page.version===1)return page.nodes.map(n=>n.text).join('\n');
   return page.objects.flatMap(o=>o.fields.flatMap(f=>f.values.map(v=>v.text))).join('\n');
 }
 export function namedPage(snapshot:UiSnapshot,rule:{id:string;version:string;kind:string},fields:z.infer<typeof uiNamedObjectSchema>['fields'],at:string,truncated=snapshot.truncated):UiPageV3 {
@@ -124,98 +96,15 @@ export function matchesUi(node: UiSnapshot['nodes'][number], selector: UiSelecto
 }
 /** Structural field mapping only. This function does not infer topics, intent, authors or attention. */
 export function extractUiPages(snapshot: UiSnapshot, rules: UiRule[], platform: 'android' | 'macos', at = snapshot.observedAt): UiPage[] {
-  const byId = new Map(snapshot.nodes.map(node => [node.id, node]));
-  const within = (node: UiSnapshot['nodes'][number], root: string | undefined): boolean => {
-    if (!root) return true;
-    if (node.id === root) return true;
-    let parent = node.parentId;
-    for (let depth = 0; parent && depth < 256; depth++) {
-      if (parent === root) return true;
-      parent = byId.get(parent)?.parentId;
-    }
-    return false;
-  };
-  const hasAncestor = (node: UiSnapshot['nodes'][number], selector?: UiSelector, rootId?: string, maxDepth = 256): boolean => {
-    if (!selector) return true;
-    let parent = node.parentId;
-    for (let depth = 0; parent && depth < maxDepth; depth++) {
-      const ancestor = byId.get(parent); if (!ancestor) break;
-      if (matchesUi(ancestor, selector)) return true;
-      if (parent === rootId) return false;
-      parent = ancestor.parentId;
-    }
-    return false;
-  };
+  if (!at || !observedAt.safeParse(at).success) return [];
   const accumulated:UiPageV3[]=[];
   for (const rule of rules) {
-    if (rule.platform !== platform || rule.appId !== snapshot.appId || rule.activity !== undefined && rule.activity !== snapshot.activity || rule.appVersion !== undefined && rule.appVersion !== snapshot.appVersion) continue;
+    if (rule.platform !== platform || rule.appId !== snapshot.appId || rule.activity !== undefined && rule.activity !== snapshot.activity || rule.appVersion !== snapshot.appVersion) continue;
     if (!rule.required.every(selector => snapshot.nodes.some(node => matchesUi(node, selector)))) continue;
-    if (!('formatVersion' in rule)) {
-      if (platform === 'android') continue;
-      let truncated = snapshot.truncated;
-      let budget = 32000;
-      const nodes = snapshot.nodes.filter(node => node.text.trim() && matchesUi(node, rule.select) && hasAncestor(node, rule.ancestor, undefined, 32)).flatMap(({parentId: _, childIndex: _childIndex, ...node}) => {
-        if (budget <= 0) { truncated = true; return []; }
-        const text = node.text.slice(0, Math.min(2000, budget)); budget -= text.length;
-        if (text.length !== node.text.length) truncated = true;
-        return [{...node, text}];
-      });
-      if (nodes.length) return [uiPageV1Schema.parse({version: 1, ...pageBaseValues(snapshot, rule), status: rule.complete && !truncated ? 'ok' : 'partial', truncated, nodes})];
-      continue;
-    }
-    if (!at || !observedAt.safeParse(at).success) continue;
-    if(rule.formatVersion===3){const found=extractNamedPages(snapshot,rule,at);accumulated.push(...found);if(accumulated.length>=64)break;continue;}
-    const regions = rule.region ? snapshot.nodes.filter(node => matchesUi(node, rule.region!)) : [];
-    if (rule.region && regions.length !== 1) continue;
-    const region = regions[0]?.id;
-    const roots = rule.repeat ? snapshot.nodes.filter(node => within(node, region) && matchesUi(node, rule.repeat!) && (!rule.repeatParent || node.parentId && byId.get(node.parentId) && matchesUi(byId.get(node.parentId)!, rule.repeatParent))) : [regions[0]];
-    const pages: UiPageV3[] = [];
-    for (const root of roots.slice(0, 16)) {
-      const fields: Record<string, string | {text: string}[]> = {};
-      let invalid = false;
-      let clipped = false;
-      for (const [name, field] of Object.entries(rule.fields)) {
-        if (!field) continue;
-        let pathNode: UiSnapshot['nodes'][number] | undefined = root;
-        if (field.childPath) for (const index of field.childPath) {
-          const children: UiSnapshot['nodes'] = pathNode ? snapshot.nodes.filter(node => node.parentId === pathNode!.id && node.childIndex === index) : [];
-          pathNode = children.length === 1 ? children[0] : undefined;
-          if (!pathNode) break;
-        }
-        const values = snapshot.nodes.filter(node => (!field.childPath || pathNode?.id === node.id) && within(node, region) && within(node, root?.id) && node.text.trim() && matchesUi(node, field.select) && hasAncestor(node, field.ancestor, root?.id)).map(node => node.text);
-        if (name !== 'body' && values.length > 1) { if (field.required || name === 'title') invalid = true; if (invalid) break; else continue; }
-        if (!values.length && (field.required || name === 'title' || name === 'body' && rule.kind === 'article')) { invalid = true; break; }
-        if (name === 'body') {
-          fields.body = values.slice(0, 64).map(text => ({text}));
-          if (values.length > 64) clipped = true;
-        }
-        else if (values[0] !== undefined) {
-          const limit = name === 'title' || name === 'url' ? 2000 : 1000;
-          if (values[0].length > limit || name === 'url' && !pageUrl.safeParse(values[0]).success) { if (field.required || name === 'title') invalid = true; }
-          else fields[name] = values[0];
-        }
-      }
-      if (invalid) continue;
-      const parsedObject = uiContentObjectSchema.safeParse({kind: rule.kind, body: [], ...fields, ...(typeof fields.itemId === 'string' ? {identity: {type: 'source_id', value: fields.itemId}} : typeof fields.url === 'string' ? {identity: {type: 'url', value: fields.url}} : {})});
-      if (!parsedObject.success) continue;
-      const truncated = snapshot.truncated || clipped || roots.length > 16;
-      const namedFields = Object.entries(parsedObject.data).filter(([key])=>!['kind','identity'].includes(key)).flatMap(([key,value])=>{
-        const texts=key==='body'?(value as {text:string}[]).map(b=>b.text):typeof value==='string'?[value]:[];
-        return texts.length?[{name:key==='itemId'?'item_id':key,values:texts.map(text=>({text,source:'text' as const}))}]:[];
-      });
-      const page=uiPageV3Schema.safeParse(namedPage(snapshot,rule,namedFields,at,truncated));
-      if(page.success)pages.push(page.data);
-    }
-    accumulated.push(...pages);if(accumulated.length>=64)break;
+    accumulated.push(...extractNamedPages(snapshot,rule,at));
+    if (accumulated.length>=64) break;
   }
   return accumulated.slice(0,64).map(p=>accumulated.length>=64?{...p,status:'partial' as const,truncated:true}:p);
-}
-function pageBaseValues(snapshot: UiSnapshot, rule: UiRule) {
-  return {scope: 'visible_window' as const, adapterId: rule.id, adapterVersion: rule.version, appVersion: snapshot.appVersion, activity: snapshot.activity};
-}
-/** Compatibility entry point. New collectors use extractUiPages so product cards remain separate records. */
-export function extractUiPage(snapshot: UiSnapshot, rules: UiRule[], platform: 'android' | 'macos', at = snapshot.observedAt): UiPage | undefined {
-  return extractUiPages(snapshot, rules, platform, at)[0];
 }
 
 function extractNamedPages(snapshot:UiSnapshot,rule:UiNamedRule,at:string):UiPageV3[]{

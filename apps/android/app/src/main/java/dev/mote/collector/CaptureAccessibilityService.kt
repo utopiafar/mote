@@ -310,7 +310,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                 outcome = UiPageOutcome.EMPTY
                 val version=runCatching { packageManager.getPackageInfo(appId,0).versionName.orEmpty() }.getOrDefault("")
                 if(!CapturePipeline.allows(config,snapshot,AppCollectionChannel.STRUCTURED)) {outcome=UiPageOutcome.EMPTY;return@execute}
-                val rules=config.pageRules.filter { it.optInt("formatVersion", 1) in setOf(2,3) && it.getString("platform")=="android" && it.getString("appId")==appId && (!it.has("activity")||it.getString("activity")==activity) && it.getString("appVersion")==version }
+                val rules=config.pageRules.filter { it.optInt("formatVersion") == 3 && it.getString("platform")=="android" && it.getString("appId")==appId && (!it.has("activity")||it.getString("activity")==activity) && it.getString("appVersion")==version }
 
                 val root=rootInActiveWindow ?: return@execute
                 val windowId=root.windowId

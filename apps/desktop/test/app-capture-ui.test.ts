@@ -3,7 +3,7 @@ import {JSDOM} from 'jsdom';
 import {readFileSync} from 'node:fs';
 import {uiRulesSchema} from '@mote/shared';
 import {createAppCaptureUi} from '../src/app-capture-ui';
-import {captureAppRows,captureAppNeedsAttention} from '../src/app-capture-model';
+import {captureRulesForApp,captureAppRows,captureAppNeedsAttention} from '../src/app-capture-model';
 import {defaultConfig} from '../src/config';
 import type {Status} from '../src/contracts';
 let dom:JSDOM,ui:ReturnType<typeof createAppCaptureUi>,changed:ReturnType<typeof vi.fn>,applications:ReturnType<typeof vi.fn>;
@@ -75,11 +75,23 @@ it('search and rule refresh retain edits and render names and IDs as text',async
   expect(el('.app-capture-list').querySelector('img')).toBeNull();expect(el('.app-capture-list').textContent).toContain('<img');await flush();
 });
 it('describes built-in WeChat, browser prerequisites and unused configured mappings using actual collector boundaries',()=>{
-  const rules=uiRulesSchema.parse([{id:'generated.old',version:'1',platform:'macos',appId:'dev.generated.reader',select:{role:'AXStaticText'}}]);
+  const rules=uiRulesSchema.parse([{formatVersion:3,id:'generated.old',version:'1',platform:'macos',appId:'dev.generated.reader',appVersion:'1.2',activity:'generated.Page',kind:'article',fields:{title:{select:{role:'AXStaticText'},required:true}}}]);
   const rows=captureAppRows([{appId:'com.tencent.xinWeChat',appName:'Generated WeChat',appVersion:'4.1.15'},{appId:'com.google.Chrome',appName:'Generated Chrome'},{appId:'dev.generated.reader',appName:'Generated reader'}],{'com.tencent.xinWeChat':{...off,structured:true},'com.google.Chrome':{...off,structured:true},'dev.generated.reader':{...off,structured:true}},duration,rules);
   const wechat=rows.find(row=>row.appId==='com.tencent.xinWeChat')!,chrome=rows.find(row=>row.appId==='com.google.Chrome')!,reader=rows.find(row=>row.appId==='dev.generated.reader')!;
   expect(wechat.rules[0]).toMatchObject({source:'builtin',appVersion:'4.1.15',applicability:'available'});
   expect(captureAppNeedsAttention(wechat,'granted','macos',[])).toBe(false);
   expect(captureAppNeedsAttention(chrome,'granted','macos',[])).toBe(true);
   expect(reader.rules[0].applicability).toBe('unused');expect(captureAppNeedsAttention(reader,'granted','macos',[])).toBe(true);
+});
+it('keeps the same current-format macOS rule availability set used by the collector',()=>{
+  const rules=uiRulesSchema.parse([
+    {formatVersion:3,id:'generated.reader.current',version:'1',platform:'macos',appId:'dev.generated.reader',appVersion:'1.2',kind:'article',fields:{title:{select:{resourceId:'generated_title'},required:true},body:{select:{resourceId:'generated_body'}}}},
+    {formatVersion:3,id:'generated.reader.other-version',version:'1',platform:'macos',appId:'dev.generated.reader',appVersion:'9.9',kind:'article',fields:{title:{select:{resourceId:'generated_title'}}}},
+    {formatVersion:3,id:'generated.reader.activity',version:'1',platform:'macos',appId:'dev.generated.reader',appVersion:'1.2',activity:'generated.Page',kind:'article',fields:{title:{select:{resourceId:'generated_title'}}}},
+  ]);
+  expect(captureRulesForApp({appId:'dev.generated.reader',appName:'Generated reader',appVersion:'1.2'},rules)).toEqual([
+    {id:'generated.reader.current',version:'1',appVersion:'1.2',kind:'article',fields:['title','body'],source:'configured',applicability:'available'},
+    {id:'generated.reader.other-version',version:'1',appVersion:'9.9',kind:'article',fields:['title'],source:'configured',applicability:'version_mismatch'},
+    {id:'generated.reader.activity',version:'1',appVersion:'1.2',kind:'article',fields:['title'],source:'configured',applicability:'unused'},
+  ]);
 });

@@ -49,10 +49,10 @@ test('all matching named rules retain separate observations and repeated identic
   assert.equal(repeated.length, 2); assert.equal(repeated[0].objects[0].fields[0].values[0].text, repeated[1].objects[0].fields[0].values[0].text);
 });
 
-test('Android replay ignores retired selected-node rules and bounds repeated field values without losing field provenance', () => {
+test('Android replay rejects retired selected-node rules and bounds repeated field values without losing field provenance', () => {
   const snapshot=uiSnapshotSchema.parse({appId:'fixture.current',appVersion:'1',activity:'',observedAt:'2026-10-24T00:00:00.000Z',truncated:false,nodes:Array.from({length:70},(_,i)=>({id:String(i),resourceId:'fixture:text',role:'android.widget.TextView',bounds:{x:0,y:i,width:1,height:1},text:`Generated ${i}`}))});
-  const legacy=uiRulesSchema.parse([{id:'legacy',version:'1',platform:'android',appId:snapshot.appId,select:{resourceId:'fixture:text'}}]);
-  assert.deepEqual(extractUiPages(snapshot,legacy,'android'),[]);
+  const legacy={id:'legacy',version:'1',platform:'android',appId:snapshot.appId,select:{resourceId:'fixture:text'}};
+  assert.equal(uiRulesSchema.safeParse([legacy]).success,false,'retired selected-node rules are rejected instead of silently ignored');
   const rules=uiRulesSchema.parse([{id:'current',version:'1',formatVersion:3,platform:'android',appId:snapshot.appId,appVersion:'1',kind:'visible_text',fields:{visible_text:{select:{resourceId:'fixture:text'},source:'text',cardinality:'many',required:true}}}]);
   const pages=extractUiPages(snapshot,rules,'android');
   assert.equal(pages.length,1);assert.equal(pages[0].status,'partial');assert.equal(pages[0].objects[0].fields[0].values.length,64);assert.equal(pages[0].objects[0].fields[0].values.at(-1).text,'Generated 63');

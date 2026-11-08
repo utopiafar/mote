@@ -18,7 +18,7 @@ class AppPageSetupTest {
         assertTrue(AppPageSetup.adapters(raw, "generated.other", "1.2").isEmpty())
         assertTrue(AppPageSetup.adapters(raw, "generated.reader", "").isEmpty())
         val legacy = """[{"id":"old","version":"1","platform":"android","appId":"generated.reader","select":{"role":"Text"}}]"""
-        assertTrue(AppPageSetup.adapters(legacy, "generated.reader", "1.2").isEmpty())
+        assertThrows(IllegalArgumentException::class.java) { AppPageSetup.adapters(legacy, "generated.reader", "1.2") }
     }
     @Test fun importingOneAppVersionPreservesOtherAppRules() {
         val before = article()

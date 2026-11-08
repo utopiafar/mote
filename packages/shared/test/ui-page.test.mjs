@@ -2,31 +2,37 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
-import {captureSchema,uiRulesSchema,uiSnapshotSchema,extractUiPage,uiPageText,builtinUiRules} from '../dist/index.js';
-const fixtures=[...JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/conformance.json',import.meta.url))),...JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/builtin-coverage.json',import.meta.url)))];
-for(const f of fixtures)test(`UI adapter conformance: ${f.name}`,()=>{
- const page=extractUiPage(uiSnapshotSchema.parse(f.snapshot),uiRulesSchema.parse(f.rules),f.platform);
- assert.deepEqual(page?{status:page.status,ids:page.nodes.map(n=>n.id)}:null,f.platform==='android'?null:f.expected,'Retired Android selected-node rules produce no current observations; Desktop preserves active extraction');
+import {captureSchema,uiRulesSchema,uiRuleSchema,uiPageSchema,uiSnapshotSchema,extractUiPages,uiPageText,builtinUiRules} from '../dist/index.js';
+const retiredFixtures=[...JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/conformance.json',import.meta.url))),...JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/builtin-coverage.json',import.meta.url)))];
+const structuredFixtures = JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/structured-conformance.json', import.meta.url)));
+test('retired selected-node rule packs are rejected instead of extracted',()=>{
+ for(const fixture of retiredFixtures)assert.equal(uiRulesSchema.safeParse(fixture.rules).success,false,fixture.name);
 });
-const f=fixtures.find(f=>f.platform==='macos');
-const page=extractUiPage(uiSnapshotSchema.parse(f.snapshot),uiRulesSchema.parse(f.rules),'macos');
-export const event={id:randomUUID(),deviceId:'fixture',deviceName:'Fixture',platform:'macos',capturedAt:'2026-09-20T00:00:00Z',durationMs:0,source:'ui_page',appId:f.snapshot.appId,appName:'Fixture App',ocrText:uiPageText(page),privacy:{excluded:false,redacted:true,mode:'local',collection:'content'},metadata:{version:1,observedAt:'2026-09-20T00:00:00Z',collector:{method:'accessibility'},uiPage:page}};
+const fixture=structuredFixtures[0];
+const page=extractUiPages(uiSnapshotSchema.parse(fixture.snapshot),uiRulesSchema.parse(fixture.rules),fixture.platform)[0];
+export const event={id:randomUUID(),deviceId:'fixture',deviceName:'Fixture',platform:fixture.platform,capturedAt:page.observations.lastAt,durationMs:0,source:'ui_page',appId:fixture.snapshot.appId,appName:'Fixture App',ocrText:uiPageText(page),privacy:{excluded:false,redacted:true,mode:'local',collection:'content'},metadata:{version:1,observedAt:page.observations.lastAt,collector:{method:'accessibility'},uiPage:page}};
 test('page protocol preserves evidence and rejects cross-source leakage',()=>{
  assert.deepEqual(captureSchema.parse(event).metadata.uiPage,page);
  for(const patch of [{source:'activity'},{source:'note'},{durationMs:100},{imageBase64:'x',imageMime:'image/png'},{ocrText:'forged'},{privacy:{...event.privacy,collection:'activity'}},{metadata:{...event.metadata,uiPage:{...page,truncated:true,status:'ok'}}}])assert.equal(captureSchema.safeParse({...event,...patch}).success,false);
 });
 test('rule runtime rejects action/code keys, duplicate IDs, missing selectors and invalid trees',()=>{
- for(const r of [{...f.rules[0],action:'click'},{...f.rules[0],script:'fetch()'},{...f.rules[0],select:{}}])assert.equal(uiRulesSchema.safeParse([r]).success,false);
- assert.equal(uiRulesSchema.safeParse([f.rules[0],f.rules[0]]).success,false);
- const s=structuredClone(f.snapshot);s.nodes[0].parentId='2';assert.equal(uiSnapshotSchema.safeParse(s).success,false);
+ const rule=structuredFixtures[0].rules[0];
+ for(const r of [{...rule,action:'click'},{...rule,script:'fetch()'},{...rule,fields:{...rule.fields,title:{...rule.fields.title,select:{}}}}])assert.equal(uiRulesSchema.safeParse([r]).success,false);
+ assert.equal(uiRulesSchema.safeParse([rule,rule]).success,false);
+ const s=structuredClone(fixture.snapshot);s.nodes[0].parentId='2';assert.equal(uiSnapshotSchema.safeParse(s).success,false);
  assert.deepEqual(builtinUiRules,uiRulesSchema.parse(JSON.parse(readFileSync(new URL('../../../adapters/ui/builtin.json',import.meta.url)))));
 });
-
-test('every builtin mapping has generated negative coverage without claiming live validation',()=>{for(const rule of builtinUiRules.filter(r=>r.formatVersion!==3)){const cases=[...fixtures,...structuredFixtures].filter(f=>f.name.startsWith('builtin-'+rule.id+'-'));assert.ok(cases.length>=6,rule.id);for(const f of cases)assert.deepEqual(uiRulesSchema.parse(f.rules),[rule]);if(!('formatVersion' in rule))assert.equal(rule.complete,false,'Visible accessibility fixture cannot establish whole-page completeness');else assert.ok(rule.appVersion,'Structured adapters must isolate an exact App version');}});
-
-const structuredFixtures = JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/structured-conformance.json', import.meta.url)));
+test('builtin rules are current v3 while v2, unversioned rules and v1 pages are rejected',()=>{
+ assert.equal(builtinUiRules.length,120);
+ for(const rule of builtinUiRules)assert.equal(uiRuleSchema.safeParse(rule).success,true,rule.id);
+ const v2Rule={formatVersion:2,id:'generated.v2',version:'1',platform:'android',appId:'dev.generated',appVersion:'1',kind:'article',fields:{title:{select:{role:'Text'},required:true},body:{select:{role:'Text'},required:true}}};
+ assert.equal(uiRuleSchema.safeParse(v2Rule).success,false);
+ const {formatVersion:_formatVersion,...unversioned}=builtinUiRules[0];
+ assert.equal(uiRuleSchema.safeParse(unversioned).success,false);
+ const v1Page={version:1,scope:'visible_window',adapterId:'generated.legacy',adapterVersion:'1',appVersion:'1',activity:'',status:'partial',truncated:false,nodes:[{id:'n',resourceId:'generated-id',role:'Text',text:'Generated legacy text',bounds:{x:0,y:0,width:100,height:20}}]};
+ assert.equal(uiPageSchema.safeParse(v1Page).success,false);
+});
 for (const fixture of structuredFixtures) test(`Structured UI fields: ${fixture.name}`, async () => {
- const {extractUiPages} = await import('../dist/index.js');
  const pages = extractUiPages(uiSnapshotSchema.parse(fixture.snapshot), uiRulesSchema.parse(fixture.rules), fixture.platform);
  assert.deepEqual(pages, fixture.expected);
  for (const page of pages) {
@@ -37,7 +43,6 @@ for (const fixture of structuredFixtures) test(`Structured UI fields: ${fixture.
  }
 });
 test('structured capture time, required fields and reliable identity are validated on upload', async () => {
- const {extractUiPages, uiPageSchema} = await import('../dist/index.js');
  const fixture = structuredFixtures[0];
  const page = extractUiPages(uiSnapshotSchema.parse(fixture.snapshot), uiRulesSchema.parse(fixture.rules), 'android')[0];
  const at = page.observations.lastAt;
@@ -57,15 +62,14 @@ test('structured capture time, required fields and reliable identity are validat
  assert.equal(uiPageSchema.safeParse(product).success, true, 'Title-only products remain fragments');
  assert.equal(uiPageSchema.safeParse({...product, objects: [{...product.objects[0], url: 'javascript:alert(1)'}]}).success, false);
 });
-test('structured rule mappings reject unbounded or ambiguous execution and require an exact version', async () => {
+test('named rule mappings reject unbounded or ambiguous execution and require an exact version', async () => {
  const rule = structuredFixtures[0].rules[0];
  const {appVersion, ...withoutVersion} = rule;
- for (const invalid of [withoutVersion, {...rule, fields: {...rule.fields, summary: {select: {role: 'Text'}}}}, {...rule, action: 'click'}, {...rule, script: 'fetch()'}, {...rule, complete: true}, {...rule, fields: {...rule.fields, body: undefined}}, {...rule, repeatParent: {role: 'Root'}}, {...rule, fields: {...rule.fields, title: {...rule.fields.title, childPath: [-1]}}}]) {
+ for (const invalid of [withoutVersion, {...rule, action: 'click'}, {...rule, script: 'fetch()'}, {...rule, complete: true}, {...rule, fields: {...rule.fields, body: undefined}}, {...rule, repeatParent: {role: 'Root'}}, {...rule, fields: {...rule.fields, title: {...rule.fields.title, childPath: [-1]}}}]) {
   assert.equal(uiRulesSchema.safeParse([invalid]).success, false, JSON.stringify(invalid));
  }
 });
 test('structured extraction does not infer observation times and preserves generated literal instructions as data', async () => {
- const {extractUiPages} = await import('../dist/index.js');
  const fixture = structuredClone(structuredFixtures[0]);
  delete fixture.snapshot.observedAt;
  assert.deepEqual(extractUiPages(uiSnapshotSchema.parse(fixture.snapshot), uiRulesSchema.parse(fixture.rules), 'android'), []);

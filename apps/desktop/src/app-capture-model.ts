@@ -24,7 +24,7 @@ export function captureRulesForApp(app:CaptureApplication,rules:UiRule[]):Captur
     fields:['conversation','conversation_count','text','description','state'],source:'builtin',applicability:versionApplicability(WECHAT_VERSION,app.appVersion)});
   if(app.appId==='com.google.Chrome') summaries.push({id:'browser_dom',version:'1',kind:'visible_window',fields:[],source:'browser',applicability:'available'});
   for(const rule of rules.filter(rule=>rule.platform==='macos'&&rule.appId===app.appId)) {
-    const used=app.appId!==WECHAT_APP_ID&&app.appId!=='com.google.Chrome'&&!rule.activity&&'formatVersion'in rule;
+    const used=app.appId!==WECHAT_APP_ID&&app.appId!=='com.google.Chrome'&&!rule.activity;
     summaries.push({id:rule.id,version:rule.version,appVersion:rule.appVersion,kind:'kind'in rule?rule.kind:'visible_text',
       fields:'fields'in rule?Object.keys(rule.fields):['text'],source:'configured',
       applicability:used?versionApplicability(rule.appVersion,app.appVersion):'unused'});

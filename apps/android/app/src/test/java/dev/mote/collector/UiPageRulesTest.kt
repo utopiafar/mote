@@ -26,13 +26,35 @@ class UiPageRulesTest {
             assertEquals(fixture.getString("name"), canonical(fixture.getJSONArray("expected")), canonical(JSONArray(pages)))
         }
     }
-    @Test fun androidSelectedNodeFixturesCannotPublishRawNodeObservations() {
+    @Test fun builtinWechatAndTaobaoFieldsRemainIdenticalAfterV3Migration() {
+        val cases=JSONArray(javaClass.getResource("/structured-conformance.json")!!.readText())
+        for(name in listOf("builtin-wechat-article-android-8.0.78-visible","builtin-taobao-products-android-10.66.22-visible")) {
+            val fixture=(0 until cases.length()).map(cases::getJSONObject).single{it.getString("name")==name}
+            val rule=fixture.getJSONArray("rules").getJSONObject(0)
+            assertEquals(name,3,rule.getInt("formatVersion"))
+            val pages=UiPageRules.extractAll(fixture.getJSONObject("snapshot"),UiPageRules.parse(fixture.getJSONArray("rules").toString()))
+            assertEquals(name,1,pages.size)
+            val expected=fixture.getJSONArray("expected").getJSONObject(0).getJSONArray("objects").getJSONObject(0).getJSONArray("fields")
+            assertEquals(name,canonical(expected),canonical(pages.single().getJSONArray("objects").getJSONObject(0).getJSONArray("fields")))
+        }
+    }
+    @Test fun retiredRuleFormatsAreRejectedWithoutExtraction() {
+        val snapshot=JSONObject().put("appId","fixture").put("appVersion","1").put("activity","fixture.Page").put("observedAt","2026-10-24T00:00:00Z").put("truncated",false)
+            .put("nodes",JSONArray().put(JSONObject().put("id","body").put("resourceId","fixture:id/body").put("role","Text").put("text","Generated body")))
+        val v1=JSONObject("""{"id":"fixture.v1","version":"1","platform":"android","appId":"fixture","select":{"resourceId":"fixture:id/body"}}""")
+        val v2=JSONObject("""{"formatVersion":2,"id":"fixture.v2","version":"1","platform":"android","appId":"fixture","appVersion":"1","kind":"article","fields":{"title":{"select":{"role":"Text"},"required":true},"body":{"select":{"resourceId":"fixture:id/body"},"required":true}}}""")
+        val unversioned=JSONObject("""{"id":"fixture.unversioned","version":"1","platform":"android","appId":"fixture","appVersion":"1","kind":"visible_text","fields":{"visible_text":{"select":{"role":"Text"}}}}""")
+        for(rule in listOf(v1,v2,unversioned)) {
+            try { UiPageRules.parse(JSONArray().put(rule).toString());fail(rule.getString("id")) } catch(_:IllegalArgumentException) { }
+            assertTrue(rule.getString("id"),UiPageRules.extractAll(snapshot,listOf(rule)).isEmpty())
+        }
+    }
+    @Test fun retiredSelectedNodeFixturesAreRejectedBeforeExtraction() {
         for(path in listOf("/conformance.json","/builtin-coverage.json")) {
             val cases=JSONArray(javaClass.getResource(path)!!.readText())
             for(i in 0 until cases.length()) {
                 val fixture=cases.getJSONObject(i);if(fixture.getString("platform")!="android")continue
-                val snapshot=fixture.getJSONObject("snapshot").put("observedAt","2026-10-24T00:00:00Z")
-                assertTrue(fixture.getString("name"),UiPageRules.extractAll(snapshot,UiPageRules.parse(fixture.getJSONArray("rules").toString())).isEmpty())
+                try { UiPageRules.parse(fixture.getJSONArray("rules").toString());fail(fixture.getString("name")) } catch(_:IllegalArgumentException) { }
             }
         }
     }
@@ -79,7 +101,7 @@ class UiPageRulesTest {
         assertTrue(UiPageRules.extractAll(snapshot,UiPageRules.parse(JSONArray().put(rule).toString())).isEmpty())
     }
     @Test fun rejectsExecutableAndUnboundedRules() {
-        val rule=JSONObject("""{"id":"fixture","version":"1","platform":"android","appId":"fixture","select":{"role":"Text"}}""")
+        val rule=JSONObject("""{"formatVersion":3,"id":"fixture","version":"1","platform":"android","appId":"fixture","appVersion":"1","kind":"visible_text","fields":{"visible_text":{"select":{"role":"Text"}}}}""")
         for(key in listOf("script","action","fetch")) {val invalid=JSONObject(rule.toString()).put(key,"evil");try{UiPageRules.parse(JSONArray().put(invalid).toString());fail(key)}catch(_:IllegalArgumentException){}}
         try{UiPageRules.parse(JSONArray().put(rule).put(rule).toString());fail("duplicate")}catch(_:IllegalArgumentException){}
     }

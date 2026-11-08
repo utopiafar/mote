@@ -1,6 +1,6 @@
 # Structural page rules
 
-`builtin.json` is the canonical source for the generated TypeScript module and Android rule asset. Android uploads named observations in the current version 3 format. Rule authoring supports explicit article/product mappings and version 3 named fields; article/product extraction produces the same version 3 observation format.
+`builtin.json` is the canonical source for the generated TypeScript module and Android rule asset. Android uploads named observations in the current version 3 format. Every rule uses version 3 named fields; article/product mappings produce the same version 3 observation format.
 
 ## Current exact-version mappings
 

@@ -62,14 +62,14 @@ class UiPageServiceInstrumentedTest {
             val field=(0 until fields.length()).map(fields::getJSONObject).singleOrNull {it.getString("name")==name}?:return emptyList()
             val values=field.getJSONArray("values");return (0 until values.length()).map {values.getJSONObject(it).getString("text")}
         }
-        fun field(name: String, required: Boolean = false)=JSONObject().put("select",JSONObject().put("resourceId","$fixture:id/mote_fixture_$name")).put("required",required)
-        val article=JSONObject().put("formatVersion",2).put("id","generated.article").put("version","1").put("platform","android").put("appId",fixture).put("appVersion",version)
+        fun field(name: String, required: Boolean = false, cardinality: String = "one")=JSONObject().put("select",JSONObject().put("resourceId","$fixture:id/mote_fixture_$name")).put("required",required).put("cardinality",cardinality)
+        val article=JSONObject().put("formatVersion",3).put("id","generated.article").put("version","1").put("platform","android").put("appId",fixture).put("appVersion",version)
             .put("activity",ExternalFixtureActivity::class.java.name).put("kind","article").put("region",JSONObject().put("resourceId","$fixture:id/mote_fixture_article"))
-            .put("fields",JSONObject().put("title",field("title",true)).put("author",field("author")).put("url",field("url")).put("body",field("body",true)))
-        val product=JSONObject().put("formatVersion",2).put("id","generated.product").put("version","1").put("platform","android").put("appId",fixture).put("appVersion",version)
+            .put("fields",JSONObject().put("title",field("title",true)).put("author",field("author")).put("url",field("url")).put("body",field("body",true,"many")))
+        val product=JSONObject().put("formatVersion",3).put("id","generated.product").put("version","1").put("platform","android").put("appId",fixture).put("appVersion",version)
             .put("activity",ExternalFixtureActivity::class.java.name).put("kind","product").put("region",JSONObject().put("resourceId","$fixture:id/mote_fixture_products"))
             .put("repeat",JSONObject().put("resourceId","$fixture:id/mote_fixture_card")).put("repeatParent",JSONObject().put("resourceId","$fixture:id/mote_fixture_products"))
-            .put("fields",JSONObject().put("title",field("product_title",true)).put("url",field("product_url")).put("itemId",field("product_id")))
+            .put("fields",JSONObject().put("title",field("product_title",true)).put("url",field("product_url")).put("item_id",field("product_id")))
         val base=settings.read().copy(server="",token="",syncMode="manual",mode="accessibility",intervalSeconds=5,screenCollectionEnabled=true,mediaCollectionEnabled=false,notificationCollectionEnabled=false,deviceEventCollectionEnabled=false,
             excludedPackages="",masks="",localContentOcr=false,appCollectionRules=AppCollectionRules.fromLines(AppCollectionMode.OFF,"$fixture=duration_structured").json(),chargingOnly=false,batteryPauseBelowPct=0,uiPageMode="ui_preferred",imageDedupeMode="off",uploadGate=UploadGateConfig(false))
         fun renderedScene(scene: String): Boolean {

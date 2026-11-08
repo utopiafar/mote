@@ -83,7 +83,7 @@ class UiPageReaderInstrumentedTest {
     @Test fun extractedLongArticleContainsOnlyFields() {
         val raw = read(node().apply { text="Generated article. "+"正文".repeat(4000);viewIdResourceName="fixture:id/body" }).put("observedAt","2026-10-10T00:00:00Z")
         raw.getJSONArray("nodes").put(org.json.JSONObject().put("id","title").put("resourceId","fixture:id/title").put("role","android.widget.TextView").put("text","Generated title"))
-        val rule = """[{"formatVersion":2,"id":"generated.article","version":"1","platform":"android","appId":"fixture","appVersion":"1","kind":"article","fields":{"title":{"select":{"resourceId":"fixture:id/title"},"required":true},"body":{"select":{"resourceId":"fixture:id/body"},"required":true}}}]"""
+        val rule = """[{"formatVersion":3,"id":"generated.article","version":"1","platform":"android","appId":"fixture","appVersion":"1","kind":"article","fields":{"title":{"select":{"resourceId":"fixture:id/title"},"required":true},"body":{"select":{"resourceId":"fixture:id/body"},"required":true,"cardinality":"many"}}}]"""
         val pages = UiPageRules.extractAll(raw, UiPageRules.parse(rule))
         assertEquals(1,pages.size)
         val page = pages.single()
@@ -129,7 +129,7 @@ class UiPageReaderInstrumentedTest {
             throw AssertionError("Generated deep Android hierarchy did not render")
         }
         try {
-            val rule="""[{"formatVersion":2,"id":"generated.deep","version":"1","platform":"android","appId":"$fixture","appVersion":"$version","activity":"$activity","kind":"article","fields":{"title":{"select":{"resourceId":"$fixture:id/mote_fixture_title"},"required":true},"body":{"select":{"resourceId":"$fixture:id/mote_fixture_body"},"required":true}}}]"""
+            val rule="""[{"formatVersion":3,"id":"generated.deep","version":"1","platform":"android","appId":"$fixture","appVersion":"$version","activity":"$activity","kind":"article","fields":{"title":{"select":{"resourceId":"$fixture:id/mote_fixture_title"},"required":true},"body":{"select":{"resourceId":"$fixture:id/mote_fixture_body"},"required":true,"cardinality":"many"}}}]"""
             for((wrappers,expectedDepth) in listOf(25 to 29,29 to 33)) {
                 launch(wrappers)
                 val root=rootWithBody(expectedDepth)
