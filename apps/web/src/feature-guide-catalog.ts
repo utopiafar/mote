@@ -2774,7 +2774,7 @@ export const guideSections:GuideSection[] = [
             "purpose": "查看当前运行的整套记忆实现，准备和验证替换，再单独应用已验证方案。",
             "actions": [
               "查看当前方案和模式",
-              "查看内置、Mem0 和 Hindsight 可用方案",
+              "查看内置和外部可用方案",
               "预览替换",
               "声明已有授权历史范围并确认成本",
               "准备并查看迁移、验证",
@@ -2828,8 +2828,7 @@ export const guideSections:GuideSection[] = [
             "setupTargets": [],
             "caveats": [
               "安装、配置、检查、启用和绑定是不同步骤。",
-              "不支持任意脚本或远程界面；需重启会提示，但页面不重启中央。",
-              "Hindsight 验证可能调用真实模型并产生费用。"
+              "不支持任意脚本或远程界面；需重启会提示，但页面不重启中央。"
             ],
             "condition": null
           }

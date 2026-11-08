@@ -16,9 +16,7 @@ import {useHashChoice} from '../../useHashChoice';
 import {pluginTabFromHash} from '../../route-query';
 import type {Page} from '../../navigation';
 import {PluginConfiguration} from './PluginConfiguration';
-import {PluginQuickAdd} from './PluginQuickAdd';
 import {MemorySettings} from '../../MemorySettings';
-import {clearQuickAdd} from '../../plugin-quick-add';
 
 const pluginsPath='/api/plugins',buildsPath='/api/plugin-builds',bindingPath='/api/memory-spaces/default/binding';
 const deniedBindingApis=new WeakSet<Api>();
@@ -83,7 +81,6 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   // authorized read, including one made by another page before a transient error.
   else if(bindingResource.data!==undefined){deniedBindingApis.delete(api);setBindingDenied(current=>current===api?undefined:current);}
   if(!denied)return;
-  clearQuickAdd();
   controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');setRepository('');setTag('');
  },[api,pluginResource.error,bindingResource.error,bindingResource.data,bindingResource.loading]);
  const currentPackage=view?.packages.find(item=>item.id===selected);
@@ -153,7 +150,6 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
     {!view.instances.some(instance=>instance.packageId===currentPackage.id)&&<p className="plugin-empty">{moteText('此安装包尚无配置实例；没有运行，也没有绑定到记忆方案。')}</p>}
    </section>}</div></div>}
   </>}
-  {tab==='discover'&&!privateDenied&&<PluginQuickAdd api={api} viewScope={viewScope} view={view} binding={binding} refresh={refresh} onManage={id=>{setSelected(id);setTab('installed');}}/>}
   {tab==='discover'&&<details className="plugin-advanced plugin-discovery"><summary>{moteText('从 GitHub 添加其他可信插件')}</summary><p>{moteText('读取兼容发布包，预览版本、能力与访问范围后安装。GitHub 数据连接器仍在资料来源中管理。')}</p>
    {view&&!view.installation.supported&&<p className="notice">{view.installation.reason??moteText('当前节点不支持在线安装。')}</p>}
    <form className="plugin-fields" onSubmit={event=>{event.preventDefault();void resolve();}}><label className="preference-field">{moteText('GitHub 仓库')}<input value={repository} onChange={event=>setRepository(event.target.value)} placeholder="https://github.com/owner/repository" required disabled={busy||!installReady}/></label><label className="preference-field">{moteText('发布标签（可选）')}<input value={tag} onChange={event=>setTag(event.target.value)} disabled={busy||!installReady}/></label><div className="plugin-footer"><button className="button primary" disabled={busy||!installReady||!repository.trim()||!view?.installation.supported}>{busy?moteText('正在解析…'):moteText('预览发布包')}</button></div></form>
