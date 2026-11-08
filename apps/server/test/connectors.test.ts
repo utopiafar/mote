@@ -161,6 +161,11 @@ test('MCP rejects unauthorized bodies before parsing and preserves authenticated
   assert.equal(parsed,1,'Only authorized requests may enter the body parser');
   const next=await app.inject({method:'POST',url:'/mcp',headers,payload:{jsonrpc:'2.0',id:1,method:'tools/list',params:{}}});
   assert.equal(next.statusCode,200);assert.ok(next.json().result.tools.length);
+  const status=await app.inject({method:'POST',url:'/mcp',headers,payload:{jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'mote_status',arguments:{}}}});
+  assert.equal(status.statusCode,200);
+  const result=status.json().result;
+  assert.ok(result.structuredContent,'Structured tool output is required');
+  assert.deepEqual(JSON.parse(result.content[0].text),result.structuredContent,'Text and structured tool output agree');
 });
 
 test('MCP context continues visible records with its scoped cursor',async t=>{

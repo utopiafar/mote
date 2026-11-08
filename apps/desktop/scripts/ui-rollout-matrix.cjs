@@ -9,9 +9,9 @@ const assert = require('node:assert/strict');
 module.exports = async function({window,js,navigate,outputDirectory,profile,ipcMain}) {
   const repo=resolve(__dirname,'../../..');
   const digest=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
-  const sourceFiles=['apps/desktop/src/index.html','apps/desktop/src/styles.css','apps/desktop/src/art-direction.css','apps/desktop/src/design-tokens.css','apps/desktop/src/ui.ts','packages/shared/design-tokens.json','packages/shared/src/i18n-en.ts','packages/shared/src/i18n.ts'];
+  const sourceFiles=['apps/desktop/src/index.html','apps/desktop/src/styles.css','apps/desktop/src/design-tokens.css','apps/desktop/src/ui.ts','packages/shared/design-tokens.json','packages/shared/src/i18n-en.ts','packages/shared/src/i18n.ts'];
   const sourceIdentity=Object.fromEntries(sourceFiles.map(file=>[file,digest(join(repo,file))]));
-  const buildIdentity=Object.fromEntries(['main.js','ui-bundle.js','index.html','styles.css','design-tokens.css','art-direction.css'].map(file=>[file,digest(join(__dirname,'../dist',file))]));
+  const buildIdentity=Object.fromEntries(['main.js','ui-bundle.js','index.html','styles.css','design-tokens.css'].map(file=>[file,digest(join(__dirname,'../dist',file))]));
   const nativeIdentity=Object.fromEntries(['mote-helper','mote-updater','mote.icns'].map(file=>[file,digest(join(__dirname,'../native/bin',file))]));
   const parentCommit=spawnSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).stdout.trim();
   const workingTreeChanges=spawnSync('git',['status','--porcelain','--','apps/desktop','packages/shared/design-tokens.json'],{cwd:repo,encoding:'utf8'}).stdout;
