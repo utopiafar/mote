@@ -1281,7 +1281,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "保存处理设置": "Guardar ajustes de procesamiento",
   "有未保存修改": "Cambios sin guardar",
   "已保存类型方案": "Planes de tipo guardados",
-  "旧配置已转换为方案预览，保存后启用": "Ajustes antiguos convertidos en vista previa; guarda para activarlos",
   "重新加载": "Recargar",
   "规则试算与已有文件": "Vista previa de reglas y archivos existentes",
   "以下操作使用已保存设置。仅归档和 Shadow 文件不会进入内容处理；每次最多重新处理 100 份当前版本原件，预览有效期 10 分钟。": "Usa los ajustes guardados. Los archivos de solo archivo y shadow no se procesan. Reprocesa hasta 100 originales actuales por lote; las vistas previas caducan en 10 minutos.",
