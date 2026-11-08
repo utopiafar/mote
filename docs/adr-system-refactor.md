@@ -2,6 +2,8 @@
 
 Date: 2026-10-10. Status: accepted by the owner; implementation validation is recorded separately.
 
+Status note (2026-11-08): this remains the accepted decision record; the later decisions named below supersede the affected sections, and the current Central storage epoch is 7.
+
 For new versioned recipes, the candidate-enumeration/saturation and semantic
 subdivision responsibilities below are superseded by the 2026-10-13
 [range-evaluation decision](adr-memory-range-evaluation.md). Legacy pinned work
