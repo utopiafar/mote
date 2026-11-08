@@ -13,7 +13,7 @@ test('range errors return actionable grants; corrected call stays within the ori
   const wrongId=await call(b,'evidence',{ids:['22222222-2222-4222-8222-222222222222']});assert.equal(wrongId.body.toolError.code,'evidence_scope_denied');assert.deepEqual(wrongId.body.toolError.details.allowedRanges,[{id,offset:7,length:18}]);
   const failed=await call(b,'evidence',{ids:[id],offset:0,length:12000});
   assert.equal(failed.status,400);assert.equal(failed.body.toolError.code,'evidence_range_exceeded');
-  assert.deepEqual(failed.body.toolError.details.allowedRanges,[{offset:7,length:18}]);
+  assert.deepEqual(failed.body.toolError.details.allowedRanges,[{id,offset:7,length:18}]);
   const corrected=await call(b,'evidence',{ids:[id]});assert.equal(corrected.status,200);assert.equal(corrected.body.data[0].ocrText,'generated evidence');
   assert.equal(events.filter(e=>e.type==='tool.rejected').at(-1).payload.code,'evidence_range_exceeded');
 });

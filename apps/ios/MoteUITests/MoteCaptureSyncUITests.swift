@@ -143,7 +143,9 @@ final class MoteCaptureSyncUITests: XCTestCase {
 
         app.buttons["返回"].firstMatch.tap()
         XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["记录"].exists)
+        // A previous editor test can leave the one durable draft in place, so
+        // the dock's primary action is either 记录 or 继续草稿.
+        XCTAssertTrue(app.buttons["记录"].exists || app.buttons["继续草稿"].exists)
     }
 
     private func assertPermissionState(appearance: String) {

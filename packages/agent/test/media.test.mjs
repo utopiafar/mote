@@ -31,6 +31,6 @@ test('media aggregate is read-only and bounded to the selected device and dates;
 });
 test('unsupported media accounting is reported as unavailable, never as zero listening',async()=>{
   const bridge=await startBridge(reader,{question:'generated unsupported archive'},2);
-  try {const result=await call(bridge,'media_activity');assert.equal(result.status,400);assert.match(result.body.error,/unavailable/);}
+  try {const result=await call(bridge,'media_activity');assert.equal(result.status,400);assert.match(result.body.error,/Unknown or unauthorized capability/);assert.equal(JSON.stringify(result.body).includes('totalDurationMs'),false,'an unsupported capability must not claim zero listening');}
   finally {await bridge.close();}
 });

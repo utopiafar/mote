@@ -51,7 +51,7 @@ test('Docker uses the same parent-mounted YAML, declared paths and private file 
  assert.equal(p.document.server.port,47954);assert.equal(p.document.server.host,'0.0.0.0');assert.equal(p.document.storage.dataDir,'/data');assert.equal(p.document.diagnostics.directory,'/data/logs');
  const config=JSON.parse(await compose(p,['config','--format','json'],{capture:true}));assert.deepEqual(config.services.mote.environment,{MOTE_CONFIG_FILE:'/config/mote.yaml'});
  assert.equal(config.services.mote.healthcheck,undefined,'Central retains the image healthcheck with its local PID check');
- for(const name of ['ocr-worker','asr-worker'])assert.deepEqual(config.services[name].healthcheck.test,['CMD','node','apps/server/dist/healthcheck.js','--shared-network'],'only shared-network workers bypass the local PID check');
+ for(const [name,role] of [['ocr-worker','ocr'],['asr-worker','asr']])assert.deepEqual(config.services[name].healthcheck.test,['CMD','node','scripts/media-worker-health.mjs',role],'each media worker reports its own idle or listening health instead of probing the Central listener');
  assert.equal(config.services.mote.ports[0].target,47954);assert.equal(config.services.mote.volumes.find(value=>value.target==='/config').source,p.directory);assert.equal(config.services.mote.volumes.find(value=>value.target==='/config').read_only,undefined);
  assert.deepEqual(config.services['asr-worker'].command,['node','scripts/media-worker-entry.mjs','asr']);assert.equal(config.services['storage-init'].network_mode,'none');
  for(const name of ['mote','ocr-worker','asr-worker','storage-init']) {

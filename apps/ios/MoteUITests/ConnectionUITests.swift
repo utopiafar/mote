@@ -117,7 +117,13 @@ final class ConnectionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["连接你的 Mote"].waitForNonExistence(timeout: 10))
         XCTAssertEqual(Array(central.requests.prefix(2)), ["/api/connections/redeem", "/api/connections/self"])
-        XCTAssertTrue(central.requests.last?.hasPrefix("/api/capture-browser") == true)
+        // Home refresh starts after the connection sheet dismisses. Let the
+        // real capture read arrive instead of requiring it to be the last
+        // request at the instant the UI finishes animating.
+        for _ in 0..<100 where !central.requests.contains(where: { $0.hasPrefix("/api/capture-browser") }) {
+            usleep(100_000)
+        }
+        XCTAssertTrue(central.requests.contains(where: { $0.hasPrefix("/api/capture-browser") }))
     }
 
     func testScannerRecognizesInjectedQRCodeImage() throws {

@@ -125,7 +125,11 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
                 if (cancellation || host.signal.aborted) return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? 'cancelled'}};
                 if (error instanceof AgentYieldError) return {terminal: {kind: 'yielded'}};
                 if (error instanceof AgentTimeoutError || error instanceof RequestTimeoutError) throw new AgentTimeoutError();
-                if (error instanceof AgentResponseError || error instanceof ContextToolError && error.recovery === 'stop') return {terminal: {kind: 'failed', reason: error instanceof AgentResponseError && error.reason === 'tools_unverified' ? 'tools_unverified' : 'tool_failure'}};
+                // Host admission and validation failures stay primary and keep
+                // their identity; the run terminal must not replace them with a
+                // generic provider or tool failure.
+                if (error instanceof ProviderFailure || error instanceof AgentResponseError) throw error;
+                if (error instanceof ContextToolError && error.recovery === 'stop') return {terminal: {kind: 'failed', reason: 'tool_failure'}};
                 return {terminal: {kind: 'failed', reason: 'provider_error', ...(error instanceof ProviderFailure ? {providerFailure: error.details} : {})}};
               } finally { active = undefined; }
             })();

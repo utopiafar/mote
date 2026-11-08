@@ -13,6 +13,7 @@ final class MoteUITests: XCTestCase {
     func testDefaultLaunchShowsFirstUseHome() {
         resetDraft()
         let app = XCUIApplication()
+        app.launchEnvironment = ["MOTE_TEST_RESET_SEND_QUEUE": "1"]
         app.launch()
 
         XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 10))

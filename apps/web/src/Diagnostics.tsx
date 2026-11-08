@@ -35,7 +35,7 @@ export function Diagnostics({api,profile,advanced,deployment}:{api:Api;profile?:
   const [checkedAt,setCheckedAt]=useState('');
   const statusResource=useResource<Snapshot>(api,'/api/diagnostics',autoRefresh?5000:undefined);
   const configuration=useResource<ServerConfiguration>(api,'/api/configuration');
-  const logDirectory=configuration.data?.groups.find(group=>group.id==='diagnostics')?.fields.find(field=>field.key==='logDirectory')?.value;
+  const logDirectory=configuration.data?.groups?.find(group=>group.id==='diagnostics')?.fields.find(field=>field.key==='logDirectory')?.value;
   const logs=useResource<LogPage>(api,`/api/diagnostics/log-pages?file=${logFile}&page=${logPage}&pageSize=${pageSize}&stage=${logStage}`,autoRefresh?5000:undefined);
   const snapshot=statusResource.data,logPageData=logs.data,rawLog=logs.data?.items.length?logs.data.items.join('\n')+'\n':'',busy=statusResource.loading||logs.loading;
   const logSelectionLoading=logs.loading&&logPageData===undefined;

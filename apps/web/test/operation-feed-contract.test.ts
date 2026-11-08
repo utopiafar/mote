@@ -71,7 +71,7 @@ test('real owner review lifecycle publishes insight hints while deleting an orig
  assert.equal((await read('/api/insight-runs')).items.find((item:any)=>item.id===id).status,'running');
  await until(()=>receipt.getSnapshot().data?.items.some(item=>item.id===id&&item.status==='running')??false);
  const captureId=randomUUID();const captured=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id:captureId,deviceId:'generated',deviceName:'Generated Mac',platform:'macos',capturedAt:new Date().toISOString(),durationMs:1000,appId:'generated.app',appName:'Generated original',source:'activity',ocrText:'',privacy:{collection:'activity',mode:'none'}}});assert.equal(captured.statusCode,201,captured.body);
- release();await node.insightRuns.close();
+ release();await until(()=>node.insightRuns.get(id).status==='completed');
  const completed=await changes(cursor);assert.ok(completed.ids.includes('insight:'+id));assert.equal(affectedResource('/api/insight-runs',new Set(completed.ids),completed.reset),true);
  const detail=await read('/api/insight-runs/'+id),before=await read('/api/insight-runs');assert.equal(detail.status,'completed');assert.equal(detail.result.artifact.title,'Generated report');
  await until(()=>receipt.getSnapshot().data?.items.some(item=>item.id===id&&item.status==='completed')??false);
