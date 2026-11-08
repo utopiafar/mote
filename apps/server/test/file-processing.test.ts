@@ -444,7 +444,7 @@ test('A1-25: an image file received while off waits for the switch and processes
   }) as ModelProcessingAuthority});
  control=new BackgroundModelAuthorization(f.store,()=>[]);
  let calls=0;f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image text'}]};};
- f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone',dataKind:'image'});f.store.db.exec('COMMIT');
+ f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone'});f.store.db.exec('COMMIT');
  await f.processing.tick();assert.equal(calls,0,'closed switch sends no OCR or understanding request');assert.equal(f.files.detail(f.id).job?.error,'background_model_authorization_required');
  const due=()=>{f.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE operation_id=?').run('file:'+f.id);f.store.db.prepare('UPDATE file_jobs SET available_at=0 WHERE capture_id=?').run(f.id);};
  control.command({action:'on',revision:0,operationId:randomUUID()});due();await f.processing.tick();
@@ -464,7 +464,7 @@ test('A1-26: an explicit owner retry processes one file immediately while the sw
  const f=await fixture(t,{file:{name:'generated-retry.png',mimeType:'image/png',bytes},settings:{imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},modelAuthority:authority});
  control=new BackgroundModelAuthorization(f.store,()=>[]);
  let calls=0;f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated explicit retry text'}]};};
- f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone',dataKind:'image'});f.store.db.exec('COMMIT');
+ f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone'});f.store.db.exec('COMMIT');
  await f.processing.tick();assert.equal(calls,0);
  const work='generated-owner-retry:'+randomUUID();control.manual(work,'manual',['capture:'+f.id],f.processing.modelConnections());
  await control.run(work,async()=>{f.processing.retry(f.id,'transcribe');});

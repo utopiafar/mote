@@ -307,7 +307,7 @@ export class ImageProcessing {
   if(cached)return {...JSON.parse(String(cached.json)),reuse:{productId:cached.id,captureId:cached.capture_id}};
   if(stage.kind!=='ocr'&&stage.kind!=='understanding')return this.executeAuthorized(step,signal,()=>signal.throwIfAborted());
   const processor=this.processing.runtime.registry.get(plan.binding.applied.profile.processorId),connection=stage.kind==='ocr'?this.processing.mediaConnection(processor,plan.binding.applied,plan.binding.settings):undefined;
-  return this.processing.runModelStage({operationId:step.operationId,captureId:row.capture_id,stage:stage.kind==='ocr'?'ocr':'image-understanding',dataKind:'image',connection,ownerIntentId:this.processing.modelIntent(row.capture_id,'image')},signal,(authorizedSignal,assertCurrent)=>this.executeAuthorized(step,authorizedSignal,assertCurrent),this.options.modelAuthority);
+  return this.processing.runModelStage({operationId:step.operationId,captureId:row.capture_id,stage:stage.kind==='ocr'?'ocr':'image-understanding',connection,ownerIntentId:this.processing.modelIntent(row.capture_id,'image')},signal,(authorizedSignal,assertCurrent)=>this.executeAuthorized(step,authorizedSignal,assertCurrent),this.options.modelAuthority);
  }
  private async executeAuthorized(step:ExecutionStep,signal:AbortSignal,assertCurrent:()=>void){
   const fence=String(this.store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(step.id)?.fence??'');

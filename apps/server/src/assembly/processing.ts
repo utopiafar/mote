@@ -117,7 +117,7 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
         authorizedSignal.throwIfAborted();modelAuthorization.assertCurrent(request.connection);
         if(!store.isCurrentEvidence(request.captureId))throw new StoreError('Media original is no longer available',409);
         const records=store.evidence([request.captureId]);if(!records.length)throw new StoreError('Media original is unavailable',409);
-        modelAuthorization.assertDisclosure(records.map(record=>({sourceId:record.provenance?.sourceId??'device:'+record.deviceId,dataKind:request.dataKind})));
+        modelAuthorization.assertDisclosure(records.map(record=>({sourceId:record.provenance?.sourceId??'device:'+record.deviceId})));
       };
       assertCurrent();const result=await task(authorizedSignal,assertCurrent);assertCurrent();return result;
     };
