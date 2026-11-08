@@ -651,30 +651,39 @@ test('memory keeps provider retry deadlines and refuses premature manual retry',
 });
 
 
-test('Memory count migration separates invalidated batches without changing scheduling or replaying model work',async t=>{
- const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item());let calls=0;
- const options={store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{calls++;return empty();}}};
- let pipeline=fixtureMemoryPipeline(options);const job=pipeline.create({evidenceIds:[a.id]});await pipeline.run(job.id);
- await sources.upsert('generated',item('a','Generated changed evidence','2'));
- await pipeline.close();
+test('Memory count triggers stay singular across restarts and match batch transitions',async t=>{
+ const f=fixture(t),a=await f.sources.upsert('generated',item());let calls=0,store=f.store,memories=f.memories;
+ // The job-delete cascade resolves the memory_input_plans foreign key. This
+ // generated table is only the FK target; material_evidence stays absent so
+ // the fixture keeps admitting the raw generated source item.
+ store.db.exec('CREATE TABLE IF NOT EXISTS material_heads(id TEXT PRIMARY KEY)');
+ const options=()=>({store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{calls++;return empty();}}});
+ let pipeline=fixtureMemoryPipeline(options());t.after(async()=>{await pipeline.close();store.close();});
+ const job=pipeline.create({evidenceIds:[a.id]});await pipeline.run(job.id);
+ await f.sources.upsert('generated',item('a','Generated changed evidence','2'));
  const batch=JSON.parse(String(store.db.prepare('SELECT json FROM memory_batches WHERE job_id=?').get(job.id)!.json));
- const clone={...batch,id:crypto.randomUUID(),index:1,status:'failed',errorCode:'memory_evaluation_incomplete',attempts:2};
+ const clone={...batch,id:randomUUID(),index:1,status:'failed',errorCode:'memory_evaluation_incomplete',attempts:2};
  store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(clone.id,job.id,1,JSON.stringify(clone));
  const batchRows=()=>store.db.prepare('SELECT id,json FROM memory_batches ORDER BY id').all().map(row=>({id:row.id,body:JSON.parse(String(row.json))}));
  const before=batchRows(),jobBefore=JSON.parse(String(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id)!.json));
- store.db.exec(`DROP TRIGGER batch_count_insert; DROP TRIGGER batch_count_delete; DROP TRIGGER batch_count_update;
-  DROP TABLE memory_job_counts; CREATE TABLE memory_job_counts(job_id TEXT PRIMARY KEY,total INTEGER,completed INTEGER,failed INTEGER,running INTEGER,pending INTEGER,attempts INTEGER);
-  DELETE FROM settings WHERE key='memory-job-counts-version';`);
- store.db.prepare('INSERT INTO memory_job_counts VALUES(?,2,0,2,0,0,3)').run(job.id);
- pipeline=fixtureMemoryPipeline(options);t.after(()=>pipeline.close());
+ const triggerNames=['batch_count_insert','batch_count_delete','batch_count_update'];
+ const singleTriggers=()=>{for(const name of triggerNames)assert.equal(Number(store.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger' AND name=?").get(name)?.n),1,`${name} must be installed once`);};
+ const aggregate=()=>store.db.prepare(`SELECT count(*) total,coalesce(sum(json_extract(json,'$.status')='completed'),0) completed,coalesce(sum(json_extract(json,'$.status')='failed'),0) failed,coalesce(sum(json_extract(json,'$.status')='invalidated'),0) invalidated,coalesce(sum(json_extract(json,'$.status')='running'),0) running,coalesce(sum(json_extract(json,'$.status')='pending'),0) pending,coalesce(sum(coalesce(json_extract(json,'$.attempts'),0)),0) attempts FROM memory_batches WHERE job_id=?`).get(job.id);
+ const stored=()=>store.db.prepare('SELECT total,completed,failed,invalidated,running,pending,attempts FROM memory_job_counts WHERE job_id=?').get(job.id)??{total:0,completed:0,failed:0,invalidated:0,running:0,pending:0,attempts:0};
+ const countsMatch=()=>assert.deepEqual({...stored()},{...aggregate()});
+ const requiredFields=(jobId:string)=>{const raw=JSON.parse(String(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(jobId)!.json));for(const key of ['authorizedChunks','materialInputs','materialRefs','batchCharacters','language'])assert.ok(key in raw,`${key} is persisted for current jobs`);const restored=pipeline.get(jobId);assert.ok(restored.authorizedChunks.length>0);assert.ok(Array.isArray(restored.materialInputs));assert.equal(typeof restored.materialRefs,'object');assert.equal(restored.batchCharacters,12000);assert.equal(restored.language,'zh-CN');};
+ singleTriggers();countsMatch();requiredFields(job.id);
+ for(let open=2;open<=3;open++){await pipeline.close();store.close();store=new Store(f.directory);memories=new MemoryStore(store);pipeline=fixtureMemoryPipeline(options());singleTriggers();countsMatch();requiredFields(job.id);}
  const mixed=pipeline.get(job.id),summary=pipeline.page().items.find(row=>row.id===job.id)!;
  assert.equal(mixed.status,'failed');assert.equal(mixed.outcome,'processing_failed');assert.equal(mixed.failedBatches,1);assert.equal(mixed.invalidatedBatches,1);assert.equal(mixed.errorCode,'memory_evaluation_incomplete');assert.equal(mixed.execution?.status,'failed');
  assert.equal(summary.failedBatches,1);assert.equal(summary.invalidatedBatches,1);assert.equal(summary.outcome,mixed.outcome);assert.equal(summary.execution?.status,'failed');assert.equal(summary.errorCode,mixed.errorCode);
  assert.deepEqual(batchRows(),before);assert.deepEqual(JSON.parse(String(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id)!.json)),jobBefore);assert.equal(calls,1);
- await pipeline.close();pipeline=fixtureMemoryPipeline(options);assert.equal(pipeline.get(job.id).invalidatedBatches,1);assert.equal(calls,1,'repeat restart does not replay');
+ await pipeline.close();pipeline=fixtureMemoryPipeline(options());assert.equal(pipeline.get(job.id).invalidatedBatches,1);assert.equal(calls,1,'repeat restart does not replay');
  // Counters stay transactional for subsequent state transitions and deletion.
- store.db.exec('BEGIN');store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','completed') WHERE id=?").run(clone.id);store.db.exec('ROLLBACK');assert.equal(pipeline.get(job.id).failedBatches,1);
- store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','completed') WHERE id=?").run(clone.id);assert.equal(pipeline.get(job.id).failedBatches,0);assert.equal(pipeline.get(job.id).outcome,'input_invalidated');
- store.db.prepare('DELETE FROM memory_batches WHERE id=?').run(clone.id);assert.equal(pipeline.get(job.id).totalBatches,1);
- for(const status of ['paused','cancelled']){store.db.prepare("UPDATE memory_jobs SET json=json_set(json,'$.status',?) WHERE id=?").run(status,job.id);assert.equal(pipeline.get(job.id).status,status);assert.equal(pipeline.get(job.id).outcome,undefined);}
+ store.db.exec('BEGIN');store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','completed') WHERE id=?").run(clone.id);store.db.exec('ROLLBACK');assert.equal(pipeline.get(job.id).failedBatches,1);countsMatch();
+ store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','completed') WHERE id=?").run(clone.id);assert.equal(pipeline.get(job.id).failedBatches,0);assert.equal(pipeline.get(job.id).outcome,'input_invalidated');countsMatch();
+ store.db.prepare('DELETE FROM memory_batches WHERE id=?').run(clone.id);assert.equal(pipeline.get(job.id).totalBatches,1);countsMatch();
+ for(const status of ['paused','cancelled']){store.db.prepare("UPDATE memory_jobs SET json=json_set(json,'$.status',?) WHERE id=?").run(status,job.id);assert.equal(pipeline.get(job.id).status,status);assert.equal(pipeline.get(job.id).outcome,undefined);countsMatch();}
+ // Deleting the job removes its batches and count row without leaving a stale aggregate.
+ store.db.prepare('DELETE FROM memory_jobs WHERE id=?').run(job.id);assert.equal(store.db.prepare('SELECT 1 FROM memory_job_counts WHERE job_id=?').get(job.id),undefined);countsMatch();
 });
