@@ -18,9 +18,9 @@ export const agentModelConnection=(identity:ModelAgentIdentity,settings:ModelSet
  * create a foreground request or original intake permission. */
 export class ModelAuthorizationHost {
   constructor(readonly control:BackgroundModelAuthorization,private readonly store:Store,private readonly materials:MaterialStore,private readonly files?:FileStore){}
-  capture(input:CaptureInput){this.control.receive(captureModelIdentity(input.id),{sourceId:input.provenance?.sourceId??'device:'+input.deviceId,dataKind:input.imageBase64?'image':'text'});}
-  source(input:{sourceId:string;inputKey:string;captureId?:string},automatic:boolean){const identity=sourceModelIdentity(input.sourceId,input.inputKey);if(input.captureId)this.control.derive(identity,[captureModelIdentity(input.captureId)]);else this.control.receive(identity,{sourceId:input.sourceId,dataKind:'text'},automatic);}
-  conversation(turnId:string){this.control.receive(conversationModelIdentity(turnId),{sourceId:'mote.conversations',dataKind:'conversation'});}
+  capture(input:CaptureInput){this.control.receive(captureModelIdentity(input.id),{sourceId:input.provenance?.sourceId??'device:'+input.deviceId});}
+  source(input:{sourceId:string;inputKey:string;captureId?:string},automatic:boolean){const identity=sourceModelIdentity(input.sourceId,input.inputKey);if(input.captureId)this.control.derive(identity,[captureModelIdentity(input.captureId)]);else this.control.receive(identity,{sourceId:input.sourceId},automatic);}
+  conversation(turnId:string){this.control.receive(conversationModelIdentity(turnId),{sourceId:'mote.conversations'});}
   /** Resolve original trigger candidates without changing or backfilling data.
    * A historical artifact with no original receipt remains reference-only. */
   evidenceTriggers(ids:readonly string[],seen=new Set<string>()):string[]{
@@ -63,9 +63,9 @@ export class ModelAuthorizationHost {
   }
   disclosure(ids:readonly string[]):ModelDisclosure[]{
     const records=[...this.store.evidence([...ids]),...this.materials.evidence([...ids]),...(this.files?.evidence([...ids])??[])];
-    return [...records.map(record=>({sourceId:record.provenance?.sourceId??'device:'+record.deviceId,dataKind:'text' as const})),...ids.flatMap(id=>{const root=retiredConversationRoot(this.store,id);return root?[{sourceId:root.scope.sourceId??'device:'+root.scope.deviceId,dataKind:'text' as const}]:[];})];
+    return [...records.map(record=>({sourceId:record.provenance?.sourceId??'device:'+record.deviceId})),...ids.flatMap(id=>{const root=retiredConversationRoot(this.store,id);return root?[{sourceId:root.scope.sourceId??'device:'+root.scope.deviceId}]:[];})];
   }
-  assertEvidence(ids:readonly string[],kind:'text'|'image'='text'){this.control.assertDisclosure(this.disclosure(ids).map(value=>({...value,dataKind:kind})));}
+  assertEvidence(ids:readonly string[]){this.control.assertDisclosure(this.disclosure(ids));}
   async manual<T>(id:string,connections:ModelConnection[],task:(signal:AbortSignal)=>Promise<T>,signal?:AbortSignal,kind:'manual'|'probe'='manual',identities:readonly string[]=[]){
     this.control.manual(id,kind,identities,connections);return this.control.run(id,task,signal);
   }

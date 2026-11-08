@@ -15,7 +15,7 @@ import {FileAttachments} from './file-attachments.js';
 import {PlaybackGrants,type FilePlaybackGrants} from './plugins/files-source.js';
 import type {IngressService} from './ingress.js';
 
-export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'>,diagnostics?:ServerDiagnostics,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>=async(_id,task)=>task(),withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>=async(_ids,task)=>task(),playback?:FilePlaybackGrants){
+export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'>,diagnostics:ServerDiagnostics|undefined,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>,withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>,playback?:FilePlaybackGrants){
   const measure=<T>(operation:Operation,task:()=>T|Promise<T>)=>diagnostics?diagnostics.measure('file',operation,task):Promise.resolve().then(task);
   const reviews=new FileReviews(files,processing);
   const attachments=new FileAttachments(files);

@@ -5,7 +5,7 @@ import type {ModelConnection} from './background-model-authorization.js';
 export type ModelProcessingRequest={
  operationId:string;captureId:string;ownerIntentId?:string;
  stage:'asr'|'ocr'|'diarization'|'file-summary'|'semantic-turns'|'image-understanding';
- dataKind:'text'|'image'|'audio';connection?:ModelConnection;
+ connection?:ModelConnection;
 };
 export type ModelProcessingAuthority={
  <T>(request:ModelProcessingRequest,signal:AbortSignal,task:(signal:AbortSignal,assertCurrent:()=>void)=>Promise<T>):Promise<T>;

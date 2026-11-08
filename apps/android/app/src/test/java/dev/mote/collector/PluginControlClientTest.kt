@@ -81,7 +81,7 @@ class PluginControlClientTest {
         val parsed = PluginControlProjection.instance(instance)
         assertTrue(parsed.desired); assertEquals("unconfigured", parsed.observed); assertEquals("unknown", parsed.capabilities.single().state)
         assertEquals(setOf("configure"), parsed.allowedActions); assertFalse("enable" in parsed.allowedActions)
-        val plan = JSONObject().put("id", "hindsight-name-is-not-proof").put("name", "Generated engine")
+        val plan = JSONObject().put("id", "generated-name-is-not-proof").put("name", "Generated engine")
             .put("mode", "engine").put("available", false).put("reason", "Generated adapter has not passed its contract")
             .put("modules", JSONArray()).put("capabilities", instance.getJSONArray("capabilities")).put("allowedActions", JSONArray())
         assertFalse(PluginControlProjection.plan(plan).available)

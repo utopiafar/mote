@@ -14,7 +14,7 @@ import {gunzipSync} from 'node:zlib';
 import sharp from 'sharp';
 import {type Plugin} from '@deepseek-ai/cordis';
 import {ProviderFailure,providerHttpFailure,type Transcript,diarizationSchema,transcriptSchema,fileProcessingSchema} from '@mote/shared';
-import {Store,sha256} from '../src/store.js';
+import {Store,StoreError,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing,HttpTranscriptionProvider} from '../src/file-processing.js';
@@ -444,7 +444,7 @@ test('A1-25: an image file received while off waits for the switch and processes
   }) as ModelProcessingAuthority});
  control=new BackgroundModelAuthorization(f.store,()=>[]);
  let calls=0;f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image text'}]};};
- f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone',dataKind:'image'});f.store.db.exec('COMMIT');
+ f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone'});f.store.db.exec('COMMIT');
  await f.processing.tick();assert.equal(calls,0,'closed switch sends no OCR or understanding request');assert.equal(f.files.detail(f.id).job?.error,'background_model_authorization_required');
  const due=()=>{f.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE operation_id=?').run('file:'+f.id);f.store.db.prepare('UPDATE file_jobs SET available_at=0 WHERE capture_id=?').run(f.id);};
  control.command({action:'on',revision:0,operationId:randomUUID()});due();await f.processing.tick();
@@ -464,7 +464,7 @@ test('A1-26: an explicit owner retry processes one file immediately while the sw
  const f=await fixture(t,{file:{name:'generated-retry.png',mimeType:'image/png',bytes},settings:{imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},modelAuthority:authority});
  control=new BackgroundModelAuthorization(f.store,()=>[]);
  let calls=0;f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated explicit retry text'}]};};
- f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone',dataKind:'image'});f.store.db.exec('COMMIT');
+ f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone'});f.store.db.exec('COMMIT');
  await f.processing.tick();assert.equal(calls,0);
  const work='generated-owner-retry:'+randomUUID();control.manual(work,'manual',['capture:'+f.id],f.processing.modelConnections());
  await control.run(work,async()=>{f.processing.retry(f.id,'transcribe');});
@@ -579,7 +579,7 @@ test('manual correction route rejects device credentials and validates owner seg
  const f=await fixture(t,{settings:{summarize:false}});await f.processing.tick();
  const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js');
  const app=Fastify();t.after(()=>app.close());
- registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},req=>req.headers['x-generated-device']?'generated-device':undefined,{evidence:()=>[{}]} as any);
+ registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},req=>req.headers['x-generated-device']?'generated-device':undefined,{evidence:()=>[{}]} as any,undefined,async(_id,task)=>task(),async(_ids,task)=>task());
  const before=f.files.chunks(f.id)[0],originalText=String(f.store.db.prepare('SELECT text FROM file_chunks WHERE id=?').get(before.id)!.text);
  const payload={artifactId:before.fileEvidence!.artifactId,chunkId:before.id,originalText,correctedText:'Generated manual correction'};
  const request={method:'POST' as const,url:'/api/files/'+f.id+'/corrections',payload};
@@ -675,11 +675,57 @@ test('late old processor cannot clear the replacement attempt token after restar
 test('file cancel/retry routes enforce owner access, completion races and explicit unknown consent',async t=>{
  const f=await fixture(t,{transcribe:async()=>{throw new TypeError('generated transport loss');}});await f.processing.tick();
  const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js');const app=Fastify();t.after(()=>app.close());
- registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},req=>req.headers['x-generated-device']?'generated-device':undefined,{evidence:()=>[{}]} as any);
+ registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},req=>req.headers['x-generated-device']?'generated-device':undefined,{evidence:()=>[{}]} as any,undefined,async(_id,task)=>task(),async(_ids,task)=>task());
  for(const action of ['cancel','retry'])assert.equal((await app.inject({method:'POST',url:'/api/files/'+f.id+'/'+action,payload:{},headers:{'x-generated-device':'true'}})).statusCode,403);
  assert.equal((await app.inject({method:'POST',url:'/api/files/'+f.id+'/cancel',payload:{}})).json().state,'cancelled');
  assert.equal((await app.inject({method:'POST',url:'/api/files/'+f.id+'/retry',payload:{}})).statusCode,409);
  assert.equal((await app.inject({method:'POST',url:'/api/files/'+f.id+'/retry',payload:{confirmUnknown:true}})).statusCode,200);
+});
+
+test('every retry reaches the owner intent wrapper with the file ID before processing is queued',async t=>{
+ const f=await fixture(t);
+ const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js');const app=Fastify();t.after(()=>app.close());
+ const calls:string[]=[];
+ registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},()=>undefined,{evidence:()=>[{}]} as any,undefined,async(id,task)=>{calls.push(id);return task();},async(_ids,task)=>task());
+ const response=await app.inject({method:'POST',url:'/api/files/'+f.id+'/retry',payload:{}});
+ assert.equal(response.statusCode,200,response.body);
+ assert.deepEqual(calls,[f.id],'retry must call the owner intent wrapper exactly once with this file ID');
+ assert.deepEqual(response.json(),{queued:true});
+ await f.processing.tick();
+ assert.equal(f.files.detail(f.id).job.state,'succeeded','the wrapped retry must still run the normal processing pipeline');
+ assert.equal(f.counts().asrCalls,1);
+});
+
+test('reprocessing passes the frozen file targets through the owner batch wrapper exactly once',async t=>{
+ const f=await fixture(t);
+ const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js');const app=Fastify();t.after(()=>app.close());
+ const batches:string[][]=[];
+ registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},()=>undefined,{evidence:()=>[{}]} as any,undefined,async(_id,task)=>task(),async(ids,task)=>{batches.push([...ids]);return task();});
+ const preview=f.processing.preview({revision:f.processing.view().revision});
+ assert.deepEqual(preview.items.map(item=>item.id),[f.id]);
+ const response=await app.inject({method:'POST',url:'/api/file-processing/reprocess',payload:{token:preview.token}});
+ assert.equal(response.statusCode,200,response.body);
+ assert.deepEqual(batches,[[f.id]],'reprocess must call the owner batch wrapper exactly once with the requested file IDs');
+ assert.deepEqual(response.json(),{queued:1});
+ await f.processing.tick();
+ assert.equal(f.files.detail(f.id).job.state,'succeeded');
+ assert.equal(f.counts().asrCalls,1);
+});
+
+test('a rejected owner wrapper returns 403 and leaves retry and reprocess without a processing call',async t=>{
+ const f=await fixture(t);
+ const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js');const app=Fastify();t.after(()=>app.close());
+ const calls:string[]=[],processing={retry:(id:string)=>{calls.push('retry:'+id);return {queued:true};},reprocessTargets:(raw:unknown)=>f.processing.reprocessTargets(raw),reprocess:()=>{calls.push('reprocess');return {queued:1};}} as any;
+ const denied=()=>{throw new StoreError('Owner access required',403);};
+ registerFileRoutes(app,f.files,processing,{} as any,()=>{},()=>undefined,{evidence:()=>[{}]} as any,undefined,async(_id,_task)=>denied(),async(_ids,_task)=>denied());
+ const preview=f.processing.preview({revision:f.processing.view().revision}),before=JSON.stringify(f.store.db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(f.id));
+ const retry=await app.inject({method:'POST',url:'/api/files/'+f.id+'/retry',payload:{}});
+ assert.equal(retry.statusCode,403,retry.body);
+ const reprocess=await app.inject({method:'POST',url:'/api/file-processing/reprocess',payload:{token:preview.token}});
+ assert.equal(reprocess.statusCode,403,reprocess.body);
+ assert.deepEqual(calls,[],'a rejected owner wrapper must not call retry or reprocess');
+ assert.equal(JSON.stringify(f.store.db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(f.id)),before);
+ assert.equal(f.files.detail(f.id).job.state,'waiting');
 });
 
 test('actual HTTP timeout persists unknown across restart and only explicit retry sends another request',async t=>{

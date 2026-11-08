@@ -75,10 +75,10 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     if(input)selectedQueryMaterial(input);
     if(modelAuthorization.currentId){
       modelAuthorizationHost.assertEvidence([...(input?.evidenceIds??[]),...modelContextGroups(input).flatMap(group=>group.ids)]);
-      modelAuthorization.assertDisclosure(sourceContextDependencies(input).map(pin=>({sourceId:pin.sourceId,dataKind:'text'})));
+      modelAuthorization.assertDisclosure(sourceContextDependencies(input).map(pin=>({sourceId:pin.sourceId})));
       const catalog=(input as QueryInput&{memoryCatalogMetadata?:MemoryCatalogMetadataReceipt}|undefined)?.memoryCatalogMetadata;
-      if(catalog)modelAuthorization.assertDisclosure(catalog.members.flatMap(member=>member.sourceId?[{sourceId:member.sourceId,dataKind:'text' as const}]:[]));
-      if((input?.taskContext as {turns?:unknown[]}|undefined)?.turns?.length)modelAuthorization.assertDisclosure([{sourceId:'mote.conversations',dataKind:'conversation'}]);
+      if(catalog)modelAuthorization.assertDisclosure(catalog.members.flatMap(member=>member.sourceId?[{sourceId:member.sourceId}]:[]));
+      if((input?.taskContext as {turns?:unknown[]}|undefined)?.turns?.length)modelAuthorization.assertDisclosure([{sourceId:'mote.conversations'}]);
     }
     if(input)selectedQueryEvidence(input);
     input?.assertContextAuthority?.();
