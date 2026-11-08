@@ -11,7 +11,7 @@ import org.json.JSONObject
 internal object RuntimeStatusReceipt {
     private val identifier = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
     private const val MAX_SAFE = 9007199254740991.0
-    private val sources = setOf("environment", "saved", "file")
+    private val sources = setOf("file")
     private val effects = setOf("immediate", "next-request", "next-admission", "restart", "migration")
     private val domainStatuses = setOf("applied", "restart-required", "invalid")
 

@@ -284,7 +284,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
       </form>}
     </section>
     {active && saved && <details className="model-effective-disclosure" open={profileId===undefined?true:undefined}><summary>{moteText("当前生效值")}</summary><section className="panel effective-settings model-effective-settings" aria-label={moteText("当前生效模型配置")}>
-      <div className="section-heading"><div><h2>{moteText("当前生效值")}</h2><p>{active.latest.source === 'saved' ? moteText("来自页面保存的配置；重启中央后仍然保留。") : moteText("来自中央的配置文件；页面和手改文件使用同一份设置。")}</p></div><span className="badge muted">{moteText("只读")}</span></div>
+      <div className="section-heading"><div><h2>{moteText("当前生效值")}</h2><p>{moteText("来自中央的配置文件；页面和手改文件使用同一份设置。")}</p></div><span className="badge muted">{moteText("只读")}</span></div>
       {([
                 [moteText("服务"), MODEL_PROVIDER_PRESETS.find(p => p.id === saved.provider)?.name || saved.provider], [moteText("模型"), saved.model || moteText("未设置（问答与模型回顾关闭）")],
                 [moteText("协议"), moteText(protocolNames[saved.protocol])], [moteText("服务地址"), saved.baseUrl], [moteText("推理强度"), moteText(reasoningNames[saved.reasoningEffort])],
@@ -292,7 +292,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
                 [moteText("输出上限 / 超时"), saved.protocol === 'codex-app-server' ? moteText("Codex 管理输出；Agent 总运行超时 {0}", saved.agentTimeoutMs === null ? moteText("未设置") : saved.agentTimeoutMs / 1000 + ' 秒') : moteText("{0}；单次模型请求 {1} 秒；Agent 总运行 {2} 秒", saved.maxTokens + ' tokens', saved.modelRequestTimeoutMs === null ? moteText("未设置") : saved.modelRequestTimeoutMs / 1000, saved.agentTimeoutMs === null ? moteText("未设置") : saved.agentTimeoutMs / 1000)],
                 ['API key', saved.apiKeyConfigured ? moteText("已配置") : moteText("未配置")], [moteText("自定义请求头"), saved.headersConfigured ? moteText("已配置") : moteText("未配置")], [moteText("高级请求参数"), saved.extraBodyConfigured ? moteText("已配置") : moteText("未配置")],
             ] as const).map(([label, value]) => <div className="effective-field" key={label}><div><strong>{label}</strong></div><div>{value}</div></div>)}
-      {profileId === undefined && active.latest.source === 'saved' && <div className="model-restore"><button className="button subtle" disabled={busy} onClick={() => setRestoreReview(v => !v)}><RotateCcw size={15}/>{moteText("恢复部署配置")}</button>{restoreReview && <div className="preference-note"><p>{moteText("将默认配置恢复为配置文件中的模型部署项，其他预设和功能分配保留。当前未保存的草稿会清空，保存结果写入同一份配置文件。")}</p><button className="button subtle" disabled={busy} onClick={() => void run('restore')}>{operation === 'restore' ? moteText("正在恢复…") : moteText("确认恢复部署配置")}</button></div>}</div>}
+      {profileId === undefined && <div className="model-restore"><button className="button subtle" disabled={busy} onClick={() => setRestoreReview(v => !v)}><RotateCcw size={15}/>{moteText("恢复部署配置")}</button>{restoreReview && <div className="preference-note"><p>{moteText("将默认配置恢复为配置文件中的模型部署项，其他预设和功能分配保留。当前未保存的草稿会清空，保存结果写入同一份配置文件。")}</p><button className="button subtle" disabled={busy} onClick={() => void run('restore')}>{operation === 'restore' ? moteText("正在恢复…") : moteText("确认恢复部署配置")}</button></div>}</div>}
     </section></details>}
   </>;
 }

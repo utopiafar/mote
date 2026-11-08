@@ -4,7 +4,7 @@ import type {ModelSettingsView} from '@mote/shared/models';
 import {createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation} from '../src/plugins/models-processing/model-settings-form.js';
 
 const snapshot: ModelSettingsView = {
-  version: 1, revision: 3, source: 'saved',
+  version: 1, revision: 3, source: 'file',
   settings: {
     provider: 'custom', protocol: 'openai-completions', baseUrl: 'https://fixture.example/v1', model: 'generated-model',
     reasoningEffort: 'auto', maxTokens: 4096, modelRequestTimeoutMs: 120000, agentTimeoutMs: 120000, allowUnauthenticatedLocal: false,

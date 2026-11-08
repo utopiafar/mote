@@ -33,7 +33,7 @@ const categories: {id:SettingsCategory;title:string;description:string;icon:type
   {id:'embedding',title:moteText("检索索引"),description:moteText("全文检索与可选向量模型"),icon:Search},
   {id:'connectors',title:moteText("来源与外部应用"),description:moteText("同步频率、Google 日历与 MCP"),icon:Link2},
 ];
-const origins = {environment:moteText("启动环境"),'env-file':moteText("配置文件"),'config-file':moteText("配置文件"),default:moteText("默认值"),derived:moteText("根据部署计算")};
+const origins = {'config-file':moteText("配置文件"),default:moteText("默认值"),derived:moteText("根据部署计算")};
 const effects = {immediate:moteText('立即生效'),'next-request':moteText('后续请求生效'),'next-admission':moteText('后续任务准入生效'),restart:moteText('重启后生效'),migration:moteText('需要迁移并重启')};
 function ConfigurationState({config}:{config:ServerConfiguration}) {
  return <>{config.lastError&&<p className="notice error" role="alert">{moteText('配置文件校验或应用失败，继续使用最后有效配置。请修正文件后重试。')}</p>}{config.restartRequired&&<p className="notice">{moteText('已保存到配置文件；标记的设置需要重启后生效。')}</p>}</>;

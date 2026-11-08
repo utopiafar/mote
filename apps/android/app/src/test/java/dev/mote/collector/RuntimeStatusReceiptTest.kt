@@ -52,6 +52,16 @@ class RuntimeStatusReceiptTest {
         assertTrue(summary.contains("尚未生效"))
     }
 
+    @Test fun onlyFileSourceIsAccepted() {
+        assertNotNull(RuntimeStatusReceipt.parse(receipt()))
+        for (source in listOf("saved", "environment")) {
+            assertNull(source, RuntimeStatusReceipt.parse(receipt().apply { getJSONObject("saved").put("source", source) }))
+            assertNull("profile $source", RuntimeStatusReceipt.parse(receipt().apply {
+                getJSONObject("saved").getJSONArray("profiles").getJSONObject(0).put("source", source)
+            }))
+        }
+    }
+
     @Test fun readinessNeverProjectsReadyWithoutConfiguredAppliedState() {
         val closed = receipt().apply { getJSONObject("runtime").put("closed", true) }
         assertEquals(RuntimeStatusReceipt.Readiness.CLOSED, RuntimeStatusReceipt.readiness(RuntimeStatusReceipt.parse(closed)!!))

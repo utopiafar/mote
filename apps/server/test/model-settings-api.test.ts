@@ -40,6 +40,7 @@ test('owner model saves apply to new queries while an existing query retains its
   }));
   const first = await app.inject({ url: '/api/model-settings', headers }), view = first.json<ModelSettingsView>();
   assert.equal(first.headers['cache-control'], 'no-store');
+  assert.equal(view.source, 'file'); assert.ok(view.profiles.every(profile => profile.source === 'file'), 'model profiles are backed by the shared configuration file');
   const pending = app.inject({ method: 'POST', url: '/api/query', headers, payload: { question: 'hold fixture' } });
   await began;
   const saved = await app.inject({ method: 'PUT', url: '/api/model-settings', headers, payload: {
