@@ -53,8 +53,8 @@ export async function fixture(t:Pick<TestContext,'after'>,options:{skipDeviceCon
  await request('/api/sources',{id:'generated-source',kind:'custom',name:'Generated source',deviceId:'generated-input',platform:'import'});
  // Model processing consent and calendar write consent remain separate owner decisions.
  const authorization=await request('/api/model-authorization');
- assert.equal(authorization.authorization.state,'unapproved');
- await request('/api/model-authorization/commands',{revision:authorization.authorization.revision,operationId:randomUUID(),action:'authorize',connections:authorization.connections,scope:{sourceIds:['generated-source'],dataKinds:['text']}});
+ assert.equal(authorization.authorization.state,'off');
+ await request('/api/model-authorization/commands',{revision:authorization.authorization.revision,operationId:randomUUID(),action:'on'});
  const settings=await request('/api/actions');await request('/api/actions/settings',{revision:settings.revision,authorizationRevision:settings.authorizationRevision,settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:[]}},owner,'PUT');
  const add=async(id=randomUUID())=>{const record=await node.sources.upsert('generated-source',{externalId:id,revision:'1',observedAt:'2026-01-01T00:00:00Z',text,title:'Generated original',kind:'message',layer:'original'});await node.actions.tick();const action=node.actions.list().find(value=>value.evidence.some(e=>e.id===record.id));assert.ok(action,'real extraction host publishes a validated proposal');return action;};
  const change=async(original:any,kind:'calendar.update'|'calendar.cancel'|'calendar.complete')=>{proposal={kind,sameAs:original.id,event:{...event,start:'2099-09-19T15:00:00Z',end:'2099-09-19T16:00:00Z'}};try{return await add();}finally{proposal={kind:'calendar.create',event,sameAs:null};}};

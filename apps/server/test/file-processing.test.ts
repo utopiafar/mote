@@ -5,6 +5,7 @@ import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-resul
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import {test} from 'node:test';
+import {randomUUID} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -17,6 +18,8 @@ import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing,HttpTranscriptionProvider} from '../src/file-processing.js';
+import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
+import type {ModelProcessingAuthority} from '../src/model-processing-authority.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {FileProcessorRuntime} from '../src/file-processors.js';
 import {alignDialogue,applySemanticGroups} from '../src/file-dialogue.js';
@@ -50,7 +53,7 @@ async function fixture(t:any,options:any={}){
  const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,bytes,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
  const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(input){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return options.diarize?options.diarize(input):options.diarization??diary;}});return()=>{disposed=true;dispose();};});}};
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
- const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async input=>{asrCalls++;return options.transcribe?options.transcribe(input):raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics,configuration:instances.at(-1)?.configurationSnapshot()});instances.push(instance);return instance;};const processing=createProcessing();
+ const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async input=>{asrCalls++;return options.transcribe?options.transcribe(input):raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics,configuration:instances.at(-1)?.configurationSnapshot(),...(options.modelAuthority?{modelAuthority:options.modelAuthority}:{})});instances.push(instance);return instance;};const processing=createProcessing();
  await processing.runtime.ready;
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},processing.runtime.registry)});
  t.after(async()=>{for(const instance of instances)await instance.close();await diagnostics.close();if(store.db.isOpen)store.close();rmSync(dir,{recursive:true,force:true});});
@@ -427,6 +430,46 @@ for(const change of ['geometry','text'] as const)test(`image ${change} changes p
   assert.deepEqual(decodeSourceText('speech-text-v2',materials.block(first.ref,1)!.block.text)!.imageLocation,before[0].fileEvidence!.imageLocation);
   assert.deepEqual(decodeSourceText('speech-text-v2',materials.block(second.ref,1)!.block.text)!.imageLocation,after[0].fileEvidence!.imageLocation);
  }finally{await organizers.close();}
+});
+
+test('A1-25: an image file received while off waits for the switch and processes once after opening',async t=>{
+ let control!:BackgroundModelAuthorization;
+ const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#ddeeff'}}).png().toBuffer();
+ const f=await fixture(t,{file:{name:'generated-authority.png',mimeType:'image/png',bytes},settings:{imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},
+  modelAuthority:(async(request,signal,task)=>{
+   const id=request.ownerIntentId??control.currentId??'automatic-media:'+request.captureId;
+   if(request.ownerIntentId)control.assertOwnerIntent(id,'capture:'+request.captureId);
+   if(!request.ownerIntentId&&!control.currentId)control.automatic(id,['capture:'+request.captureId],'file');
+   return control.run(id,async authorizedSignal=>{const check=()=>{authorizedSignal.throwIfAborted();control.assertCurrent(request.connection);};check();const result=await task(authorizedSignal,check);check();return result;},signal);
+  }) as ModelProcessingAuthority});
+ control=new BackgroundModelAuthorization(f.store,()=>[]);
+ let calls=0;f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image text'}]};};
+ f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone',dataKind:'image'});f.store.db.exec('COMMIT');
+ await f.processing.tick();assert.equal(calls,0,'closed switch sends no OCR or understanding request');assert.equal(f.files.detail(f.id).job?.error,'background_model_authorization_required');
+ const due=()=>{f.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE operation_id=?').run('file:'+f.id);f.store.db.prepare('UPDATE file_jobs SET available_at=0 WHERE capture_id=?').run(f.id);};
+ control.command({action:'on',revision:0,operationId:randomUUID()});due();await f.processing.tick();
+ assert.equal(calls,1);assert.equal(f.files.detail(f.id).job?.state,'succeeded');assert.equal(f.files.chunks(f.id)[0].ocrText,'Generated image text');
+});
+
+test('A1-26: an explicit owner retry processes one file immediately while the switch is off',async t=>{
+ let control!:BackgroundModelAuthorization;
+ const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#ffddee'}}).png().toBuffer();
+ const authority=(async(request,signal,task)=>{
+  const id=request.ownerIntentId??control.currentId??'automatic-media:'+request.captureId;
+  if(request.ownerIntentId)control.assertOwnerIntent(id,'capture:'+request.captureId);
+  if(!request.ownerIntentId&&!control.currentId)control.automatic(id,['capture:'+request.captureId],'file');
+  return control.run(id,async authorizedSignal=>{const check=()=>{authorizedSignal.throwIfAborted();control.assertCurrent(request.connection);};check();const result=await task(authorizedSignal,check);check();return result;},signal);
+ }) as ModelProcessingAuthority;
+ authority.ownerIntent=captureId=>{const id=control.currentId;if(id&&control.currentKind==='manual'){control.assertOwnerIntent(id,'capture:'+captureId);return id;}return undefined;};
+ const f=await fixture(t,{file:{name:'generated-retry.png',mimeType:'image/png',bytes},settings:{imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},modelAuthority:authority});
+ control=new BackgroundModelAuthorization(f.store,()=>[]);
+ let calls=0;f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated explicit retry text'}]};};
+ f.store.db.exec('BEGIN IMMEDIATE');control.receive('capture:'+f.id,{sourceId:'phone',dataKind:'image'});f.store.db.exec('COMMIT');
+ await f.processing.tick();assert.equal(calls,0);
+ const work='generated-owner-retry:'+randomUUID();control.manual(work,'manual',['capture:'+f.id],f.processing.modelConnections());
+ await control.run(work,async()=>{f.processing.retry(f.id,'transcribe');});
+ await f.processing.tick();assert.equal(calls,1);assert.equal(f.files.detail(f.id).job?.state,'succeeded');
+ await f.processing.tick();assert.equal(calls,1,'the single owner retry issues exactly one request');
 });
 
 test('local semantic grouping blocks without a local model and never invokes the default summarizer',async t=>{

@@ -274,7 +274,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
       view:()=>{if(phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);return control!.view();},
       command:body=>{if(phase!=='active')throw denied('authorization_unavailable',503);return control!.command(body);},
     };
-    registerModelAuthorizationRoutes(app,controlGate,()=>{if(phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);return dependencies.availableModelConnections();},context.credential);
+    registerModelAuthorizationRoutes(app,controlGate,context.credential);
   }
   function refreshFences(){
     for(const [request,value] of liveRequests)try{

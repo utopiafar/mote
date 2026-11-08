@@ -684,8 +684,9 @@ export class FileProcessing {
   private admit(id:string,phase:'pipeline'|'summary'){
     if(this.processorWaits(id).length)return new ExecutionFailure('blocked',this.cancellation(id).wait==='running'?'processor_still_running':'processor_response_unknown');
     // A prior model-bound execution already established the reason for this
-    // wait. A denied original cannot be approved retroactively; avoid claiming
-    // and reprojecting it on every timer while preserving explicit owner retry.
+    // wait. This original cannot be processed automatically right now (switch
+    // off, excluded source or ineligible receipt); avoid claiming and
+    // reprojecting it on every timer while preserving explicit owner retry.
     if(phase==='pipeline'&&this.files.store.db.prepare('SELECT error FROM file_jobs WHERE capture_id=?').get(id)?.error==='background_model_authorization_required'&&
       !this.modelIntent(id,phase)&&this.options.modelAuthority?.deniedOriginal?.(id))
       return new ExecutionFailure('waiting','background_model_authorization_required',BACKGROUND_MODEL_AUTHORIZATION_RECHECK_MS);

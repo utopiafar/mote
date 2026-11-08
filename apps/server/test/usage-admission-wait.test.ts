@@ -17,9 +17,9 @@ type Outcome='success'|'failure'|'cancel'|'usage-wait'|'admitted-wait'|'trace-wa
 async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{authorize:boolean;outcome:Outcome}){
   const directory=mkdtempSync(join(tmpdir(),'mote-usage-wait-')),store=new Store(directory),ledger=new UsageLedger(store),memories=new MemoryStore(store);
   const authorization=new BackgroundModelAuthorization(store,()=>[connection]);
-  // Approval is prospective: authorize first, then receive a new original, so
-  // the allowed cases exercise a genuinely admitted receipt.
-  if(authorize)authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'authorize',connections:[connection],scope:{sourceIds:null,dataKinds:['text']}});
+  // Opening the switch first lets the allowed cases exercise a genuinely
+  // admitted receipt; the closed case keeps the original withheld.
+  if(authorize)authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'on'});
   store.db.exec('BEGIN IMMEDIATE');authorization.receive('generated-original',{sourceId:'generated-source',dataKind:'text'});store.db.exec('COMMIT');
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   let sawOnTrace=false;
@@ -40,7 +40,7 @@ async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{au
     if(outcome==='cancel')throw new ProviderFailure({category:'blocked',code:'cancelled',executionStarted:true},'Generated cancellation');
     if(outcome==='usage-wait'||outcome==='admitted-wait'){
       // A later call hits a real admission wait after the first call was admitted.
-      authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'pause'});
+      authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'off'});
       authorization.automatic('generated-work-2',['generated-original'],'semantic');
     }
     return {answer:JSON.stringify({summary:'Generated summary',evidence:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[],trace:[],runId:randomUUID()};

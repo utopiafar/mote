@@ -29,7 +29,6 @@ export const vaultStorageMeters:Readonly<Record<string,StorageMeters>>=Object.fr
   }),
   'authorization-platform':Object.freeze({
     background_model_authorization:'length(CAST(json AS BLOB))+128',
-    background_model_connections_used:'length(CAST(work_id AS BLOB))+length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+64',
     background_model_lineage:'length(CAST(identity AS BLOB))+length(CAST(original AS BLOB))+64',
     background_model_receipts:'length(CAST(identity AS BLOB))+128',
     background_model_step_authority:'length(CAST(step_id AS BLOB))+length(CAST(work_id AS BLOB))+64',

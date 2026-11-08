@@ -35,7 +35,7 @@ test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity
  let calls=0;
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>{calls++;throw Error('Unauthorized originals must not reach the model');}})});
  t.after(async()=>{try{await node.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
- await node.app.ready();await authorizeFixtureModels(node,{sourceIds:['generated-approved'],dataKinds:['text']});
+ await node.app.ready();await authorizeFixtureModels(node,{excludedSourceIds:['generated-denied']});
  node.sources.register({id:'generated-denied',name:'Generated denied source',kind:'custom',deviceId:'generated',platform:'import'});
  // Each original exceeds half the transport budget, so the real intake creates
  // 20 independent jobs rather than combining the generated members into one.

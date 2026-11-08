@@ -59,7 +59,7 @@ test('overlapping grants retain manual review and multi-source evidence cannot e
  await f.request('/api/sources',{id:'generated-outside',kind:'custom',name:'Outside fixture',deviceId:'generated-input',platform:'import'});
  // Authorize model reading of both generated sources, while calendar write grants stay on generated-source only.
  const authorization=await f.request('/api/model-authorization');
- await f.request('/api/model-authorization/commands',{revision:authorization.authorization.revision,operationId:randomUUID(),action:'authorize',connections:authorization.connections,scope:{sourceIds:['generated-source','generated-outside'],dataKinds:['text']}});
+ await f.request('/api/model-authorization/commands',{revision:authorization.authorization.revision,operationId:randomUUID(),action:'on'});
  const outside=await f.node.sources.upsert('generated-outside',{externalId:'outside',revision:'1',observedAt:'2026-01-01T00:00:00Z',text,title:'Generated outside',kind:'message',layer:'original'});
  // A validated multi-source proposal is the input to the deterministic permission gate.
  // Keep the original real extraction and append a current fixture evidence snapshot.
