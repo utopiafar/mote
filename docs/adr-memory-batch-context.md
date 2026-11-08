@@ -1,5 +1,7 @@
 # ADR: Memory package context and batch coverage
 
+> **状态：历史。** 本文记录当时的决定与验证范围，不再描述当前实现；当前设计见 [Memory 当前设计](memory-current-design.md)。
+
 Date: 2026-10-09. Status: accepted for the internal Memory request correction.
 
 The 2026-10-13 [range-evaluation ADR](adr-memory-range-evaluation.md) supersedes

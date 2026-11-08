@@ -13,9 +13,9 @@
 3. **核验并启用**：实际供应方探测成功后才开放启用和可用方案。期望启用与实际 ready/enabled/blocked/failed 分别显示。缺依赖或错误配置不会静默改用另一供应方。
 4. **准备并应用 Memory 方案**：选择已授权历史范围，确认实际模型/Embedding 费用；迁移与核验完成后另行应用。安装或启用不会自动接管当前方案。
 
-下载的 worker 包、它们的配置实例和受信原生 build 使用同一份持久 build/instance 记录（`plugin_build_instances`）；安装包、实例配置和当前激活仍是不同事实。`/api/plugin-builds` 与 `/api/plugins` 中的 `builds` 投影 worker 和 native 相同的 id、package、version、desired、observed、blockers、source、configuration、capabilities 与 actions 字段，Web 和 Android 都消费这一投影。Mem0 与 Hindsight 的固定配方同样以 `runtime: "worker"` 的 build 安装和启停，不再走独立的包/实例表。
+下载的 worker 包、它们的配置实例和受信原生 build 使用同一份持久 build/instance 记录（`plugin_build_instances`）；安装包、实例配置和当前激活仍是不同事实。`/api/plugin-builds` 与 `/api/plugins` 中的 `builds` 投影 worker 和 native 相同的 id、package、version、desired、observed、blockers、source、configuration、capabilities 与 actions 字段，Web 和 Android 都消费这一投影。外部 Memory 模块与完整引擎的固定配方同样以 `runtime: "worker"` 的 build 安装和启停，不再走独立的包/实例表。
 
-当前整体方案支持内置、Mem0 正文+检索组合及受控 Hindsight 引擎。高级面板显示实际模块和绑定；同正文权威单独更换 retrieval、任意模块组合编辑尚未提供用户操作。
+当前整体方案支持内置、外部正文+检索模块组合及受控外部完整引擎。高级面板显示实际模块和绑定；同正文权威单独更换 retrieval、任意模块组合编辑尚未提供用户操作。本页只描述当前接口与行为；具体固定上游配方与制品记录在[历史 ADR](adr-plugin-center-memory-replacement.md)。
 
 一期控制目标是 `default` 空间。owner token 或现有配对 owner 会话可以管理；collector、MCP token 和只读查询 Agent 没有管理权。操作带 `operationId` 与 `expectedRevision`。断线重试保留同一请求身份和原始 body；revision 冲突需读取当前事实再作选择，不能把旧请求自动改为新授权。
 
@@ -26,20 +26,20 @@
 | 方案 | 安装来源与运行方式 | 必需配置与限制 |
 | --- | --- | --- |
 | Mote 内置 | 随 Central 分发；内置正文与检索 | 保留原提取、独立审核和整合；可与已核验模块方案互相迁移 |
-| Mem0 OSS 模块 | `mem0ai/mem0` 的 `ts-v3.3.1` 固定上游源码，作为 `runtime: "worker"` 的 build 安装；本 Mote 构建分发受控适配器与精确锁定 `mem0ai@3.3.1`、SQLite 依赖 | Embedding endpoint、model、dimension；受保护端点使用 `model:<已有预设 ID>` 凭据引用。接管正文与检索，保留 Mote 提取/审核/整合；不包含托管平台专属能力 |
-| Hindsight 完整引擎 | `vectorize-io/hindsight` 的 `v0.10.2` 固定官方 API source wheel（ZIP），作为 `runtime: "worker"` 的 build 安装；Mote 管理的 Docker API/DB 和独立受控 worker | 选择可用模型预设；服务器需可用 Docker。接管提取、整合、正文和检索；独立审核、原件授权和发布仍归 Mote。只有实际实例探测通过才可准备 |
+| 外部 CRUD/检索模块 | 固定上游源码，作为 `runtime: "worker"` 的 build 安装；本 Mote 构建分发受控适配器与精确锁定的上游 SQLite 依赖 | Embedding endpoint、model、dimension；受保护端点使用 `model:<已有预设 ID>` 凭据引用。接管正文与检索，保留 Mote 提取/审核/整合；不包含托管平台专属能力 |
+| 外部完整引擎 | 固定官方 API source wheel（ZIP），作为 `runtime: "worker"` 的 build 安装；Mote 管理的 Docker API/DB 和独立受控 worker | 选择可用模型预设；服务器需可用 Docker。接管提取、整合、正文和检索；独立审核、原件授权和发布仍归 Mote。只有实际实例探测通过才可准备 |
 
-这两个上游 release 不要求上游发布 Mote manifest：当前 Mote 的兼容配方提供适配器，固定源码制品用于来源身份与完整性记录，不执行上游 bootstrap/npm lifecycle 脚本。其他原始仓库或未支持的 tag 没有兼容 manifest 时明确拒绝；不能由包名推断兼容。
+这些上游 release 不要求上游发布 Mote manifest：当前 Mote 的兼容配方提供适配器，固定源码制品用于来源身份与完整性记录，不执行上游 bootstrap/npm lifecycle 脚本。其他原始仓库或未支持的 tag 没有兼容 manifest 时明确拒绝；不能由包名推断兼容。
 
-Mem0 使用持久存储与不可变完整版本，显式 opId journal 对账；它不把原生 add/update 当成宿主幂等。原生删除可能保留 history 字节，物理擦除保持未确认。远程 Embedding 连接需 TLS 和已有凭据引用，loopback HTTP 可用于本机服务；真实费用来自服务用量，未知不记零。
+外部模块使用持久存储与不可变完整版本，显式 opId journal 对账；它不把原生 add/update 当成宿主幂等。原生删除可能保留 history 字节，物理擦除保持未确认。远程 Embedding 连接需 TLS 和已有凭据引用，loopback HTTP 可用于本机服务；真实费用来自服务用量，未知不记零。
 
-已固定配置的 Mem0 本地历史不依赖继续持有 Embedding 凭据：删除模型预设或清空凭据后，原配置的 literal read/export/remove 仍可使用已有 SQLite 历史，不发送 Embedding 请求。新的 put/search/recover 必须重新检查准确预设，缺失或空凭据时失败，health 不再 ready；没有原生历史的新实例不能通过此路径启动，也不会改用默认预设。
+已固定配置的外部模块本地历史不依赖继续持有 Embedding 凭据：删除模型预设或清空凭据后，原配置的 literal read/export/remove 仍可使用已有 SQLite 历史，不发送 Embedding 请求。新的 put/search/recover 必须重新检查准确预设，缺失或空凭据时失败，health 不再 ready；没有原生历史的新实例不能通过此路径启动，也不会改用默认预设。
 
-Hindsight 安装来源是同一固定 release 的 `hindsight_api_slim-0.10.2-py3-none-any.whl`，核验实际 ZIP 字节摘要；不下载包含大体积文档/构建工具的整个仓库源码，也不执行 wheel。通用 ZIP 下载、展开和路径边界保持不变。
+外部完整引擎的安装来源是同一固定 release 的官方 API source wheel，核验实际 ZIP 字节摘要；不下载包含大体积文档/构建工具的整个仓库源码，也不执行 wheel。通用 ZIP 下载、展开和路径边界保持不变。
 
-Hindsight 固定运行镜像为 `ghcr.io/vectorize-io/hindsight@sha256:d1840062a5b79940ab7a9f4809ceb90fc776d4ad737cd9329e9b5836cc64ab70`。Central 为配置实例创建私有 volume、认证和 loopback API；禁用内嵌 worker，由宿主只对准确获准的 banks 启动受控 worker。首次能力检查会启动实际服务、加载本地 embedding/reranker，并可调用已选择模型，因此检查耗时与模型用量不等于零。
+外部完整引擎使用固定运行镜像与 digest；具体上游与制品见[历史 ADR](adr-plugin-center-memory-replacement.md)。Central 为配置实例创建私有 volume、认证和 loopback API；禁用内嵌 worker，由宿主只对准确获准的 banks 启动受控 worker。首次能力检查会启动实际服务、加载本地 embedding/reranker，并可调用已选择模型，因此检查耗时与模型用量不等于零。
 
-Hindsight 原生 retain/显式整合只生成隔离提案，经 Mote 独立审核后才发布；正文迁移使用 literal import，不能重提取历史。完整 reflect 只读取宿主固定可见的精确版本和原件摘录构成的独立 read bank，不能凭 tag 过滤访问 staging、退休版本或越权 facts。原生 cancelled 状态不证明停止写入；宿主控制 owned worker，并将迟到输出隔离在发布边界之外。更换模型语义配置需重新配置、核验与准备，旧历史不能被静默换模型解释。 原生 Reflect 属于已核验的适配器能力；当前 Ask 仍通过 scoped recall 与 Mote 只读 QueryAgent，尚无原生 Reflect UI。
+外部完整引擎的原生 retain/显式整合只生成隔离提案，经 Mote 独立审核后才发布；正文迁移使用 literal import，不能重提取历史。完整 reflect 只读取宿主固定可见的精确版本和原件摘录构成的独立 read bank，不能凭 tag 过滤访问 staging、退休版本或越权 facts。原生 cancelled 状态不证明停止写入；宿主控制 owned worker，并将迟到输出隔离在发布边界之外。更换模型语义配置需重新配置、核验与准备，旧历史不能被静默换模型解释。 原生 Reflect 属于已核验的适配器能力；当前 Ask 仍通过 scoped recall 与 Mote 只读 QueryAgent，尚无原生 Reflect UI。
 
 ## 通用兼容 release 与 worker ABI
 
@@ -57,7 +57,7 @@ Manifest `schemaVersion: 1` 声明：
 
 入口模块导出 `createMemoryProvider(configuration)`，返回实现 `health`、`put`、`read`、`remove`、`search`、`export`、`close` 的对象。宿主通过独立子进程 JSON-lines 调用，并验证返回结构、namespace、精确键和写回执摘要。namespace 是宿主发出的 `ownerId / instanceId / bindingRevision`；精确键是 `memoryId / version / fingerprint`。实现必须提供持久不可变正文、作用域隔离、精确版本/允许 keys 检索与幂等恢复；能力探测和后续运行仍由实际合同验证。
 
-所有者可在安装前通过 `GET /api/plugins/host-capabilities` 查询当前宿主合同。`memoryWorker` 列出 `runtime: "worker"`、`factoryExports: ["createMemoryProvider"]`、六个调用方法、`lifecycle: ["close"]` 和 `supportedCapabilities: ["repository", "retrieval"]`。完整引擎仍使用前述固定 Hindsight 宿主适配器；任意 worker 声明 `engine` 不构成可运行的完整引擎。宿主支持、release 声明和实例核验是三个不同状态；当前实例及其核验结果继续通过 `/api/plugins` 查看。MCP 与受限 collector 凭据不能读取宿主控制接口，响应不包含私有安装目录。
+所有者可在安装前通过 `GET /api/plugins/host-capabilities` 查询当前宿主合同。`memoryWorker` 列出 `runtime: "worker"`、`factoryExports: ["createMemoryProvider"]`、六个调用方法、`lifecycle: ["close"]` 和 `supportedCapabilities: ["repository", "retrieval"]`。完整引擎仍使用前述固定外部引擎宿主适配器；任意 worker 声明 `engine` 不构成可运行的完整引擎。宿主支持、release 声明和实例核验是三个不同状态；当前实例及其核验结果继续通过 `/api/plugins` 查看。MCP 与受限 collector 凭据不能读取宿主控制接口，响应不包含私有安装目录。
 
 source/processor 的仓库外开发入口是插件包与私有 `plugin-dev` 宿主：包 Manifest 声明 ingress/processing 贡献，开发宿主按声明装配，主 YAML 不再接受代码模块列表。它们通过现有 ConnectorRegistry、SourcePipelineRegistry、ProcessingRuntime 与 FileProcessorRuntime 的受信插件 API 注册贡献，具体组合见 [资料插件合同](library-plugin-contracts.md)。这些 API 不属于 Memory worker ABI。通用 source/processor 的生产安装、配置、核验、启用和 worker 调用流程仍需独立设计。
 
@@ -85,7 +85,7 @@ repository 更换迁移全部 Mote 保留记忆正文及更正/替代状态、�
 
 旧提取任务若需要所有者确认归属，却没有正式 Material 引用，会保留已审核结果并显示 `memory_owner_material_required` / 等待输入。该任务不能自动继续，也不显示资料处理中；所有者仍可手工重新检查既有结果或取消任务。立即停止会沿真实生命周期 checkpoint 撤销未完成的自动 child，独立手工任务及所有者后续明确授权的回复不随之撤销。
 
-受控 Hindsight 的正文 literal read/export 启动不发起语言模型请求；能力「核验」仍显式调用实际模型，原生提取、整合与 Reflect 也属于模型操作。不能把启动成功当成语义能力已核验，或把当前 API 不可见当成 PostgreSQL volume/WAL 已物理擦除。
+受控外部完整引擎的正文 literal read/export 启动不发起语言模型请求；能力「核验」仍显式调用实际模型，原生提取、整合与 Reflect 也属于模型操作。不能把启动成功当成语义能力已核验，或把当前 API 不可见当成 PostgreSQL volume/WAL 已物理擦除。
 
 ## 控制 API 与验证
 

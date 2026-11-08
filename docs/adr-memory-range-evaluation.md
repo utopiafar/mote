@@ -1,5 +1,7 @@
 # ADR: complete range evaluation and model-selected Memory
 
+> **状态：历史。** 本文记录当时的决定与验证范围，不再描述当前实现；当前设计见 [Memory 当前设计](memory-current-design.md)。
+
 Date: 2026-10-13. Status: accepted by the owner; implementation and validation are recorded separately. Deployment requires the owner's final confirmation.
 
 Updated 2026-10-14: the [simplification decision](adr-ask-evidence-quality-and-simple-context.md)

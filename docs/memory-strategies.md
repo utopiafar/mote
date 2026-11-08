@@ -169,7 +169,7 @@ node --import tsx scripts/review-memory-recipe-live.ts
 
 生成应用回归实际安装插件，并独立更换整合器、审核器，覆盖个人/Coding 共用原件、历史授权、跨重启定义固定、取消与删除、模型配置变化、错误引用/关系版本、两种失败顺序的局部恢复、最大输入长度和采集端鉴权。`scripts/test-memory-integration-live.ts` 在一个已完成自动回放的私有副本上，选择其全部（最多 8 张）个人 Memory，使用本地 Codex App Server `gpt-6-sol / max`，最多两次外层调用和 400 秒、一次实际尝试；复用原件、保存调用/用量/原文、验证旧产物不变及重启不重跑。`MOTE_INTEGRATION_BASELINE` 与新的 `MOTE_INTEGRATION_OUTPUT` 必须在 Git 之外。执行通过和语义价值分别判断，零产出不证明正向整合能力。
 
-调研依据（2026-09-27）：[Graphiti 当前 main 的去重提示代码](https://github.com/getzep/graphiti/blob/main/graphiti_core/prompts/dedupe_edges.py) 区分重复与冲突，并保留日期、数值和限定条件差异；[Mem0 Dream 官方产品说明](https://mem0.ai/blog/dream-background-memory-consolidation-for-ai-agents) 区分合并、替代和综合，使用条件写入并将启用范围限定于之后的新活动。后者是托管产品说明，不是已审计的开源实现。此前借鉴了这些边界且未引入新依赖；2026-09-27 的自动生效契约进一步采用版本绑定的审核后原子替代并保留历史。
+调研依据（2026-09-27）：[Graphiti 当前 main 的去重提示代码](https://github.com/getzep/graphiti/blob/main/graphiti_core/prompts/dedupe_edges.py) 区分重复与冲突，并保留日期、数值和限定条件差异；一份外部托管 Memory 产品的公开说明区分合并、替代和综合，使用条件写入并将启用范围限定于之后的新活动。后者是托管产品说明，不是已审计的开源实现。此前借鉴了这些边界且未引入新依赖；2026-09-27 的自动生效契约进一步采用版本绑定的审核后原子替代并保留历史。
 
 ## Rolling packages and reviewer-stage recovery (2026-10-10)
 

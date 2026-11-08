@@ -1,5 +1,7 @@
 # 插件中心与可替换 Memory：一期实施方案
 
+> **状态：历史。** 本文记录当时的一期实施方案，正文不改；当前设计见 [Memory 当前设计](../memory-current-design.md)。
+
 日期：2026-10-12。状态：**产品决策已接受；一期实现已接入，验证按层次记录**。
 
 所有者已确认 1A–8A，并在设计原型之后授权实际实施、完整链路验收以及 PR/合并。本文保留决策与实施分解；当前支持的接口、固定适配器和运行限制见[插件中心](../plugin-center.md)，实际结果见[验证账本](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/plugin-center-phase-one-validation-2026-10-12.md)。最初只读设计基线为 `9aecdb1`，不能将该历史基线或合成原型当作当前产品验证。
