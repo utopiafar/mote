@@ -83,7 +83,9 @@ export class MediaPreparation {
     }
     job.state='models';
     const roles:MediaRole[]=job.role==='speaker-wespeaker'?['dialogue','speaker-wespeaker']:[job.role];
-    for(const role of roles){this.check(job);if(!allowInstall&&!assets.ready(role))throw Error('media.runtime.not_prepared');await assets.installAsync(role,'official',job.controller.signal);}
+    // Match the settings install API: use the mirror fallback instead of
+    // failing when only one public Hugging Face endpoint is reachable.
+    for(const role of roles){this.check(job);if(!allowInstall&&!assets.ready(role))throw Error('media.runtime.not_prepared');await assets.installAsync(role,'auto',job.controller.signal);}
     this.check(job);job.state='starting';
     const workerRole=job.role==='ocr'?'ocr':'dialogue';let started:Worker|undefined;
     try{
