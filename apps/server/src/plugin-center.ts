@@ -61,7 +61,7 @@ export class PluginCenter {
       validate:step=>{const instance=this.instance(String(step.input.instanceId));return instance.view.revision===step.input.revision&&instance.stepId===step.id;},
       execute:async(step,signal)=>{
         const id=String(step.input.instanceId),pkg=this.packageForInstance(id);
-        this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));
+        this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
         const actions=(pkg.manifest.actionCapabilities??[]).map(value=>{calendarPluginCapabilitySchema.parse(value);return {id:value.id,state:'verified' as const,reason:'Host contract verified; device permission and owner execution grant are still required'};});
         const health=pkg.manifest.capabilities.every(value=>value==='calendar.manage')?{capabilities:[],issues:[]}:healthSchema.parse(this.probe?await this.probe(id,signal):await this.runtime(id).call('health',{namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}},signal));
         signal.throwIfAborted();return {...health,capabilities:[...health.capabilities.filter(value=>value.id!=='calendar.manage'),...actions]};
@@ -110,7 +110,7 @@ export class PluginCenter {
   view():PluginCenterView{
     const records=this.buildRecords(),instances=records.filter(record=>record.kind==='instance'&&!record.retired).map(record=>this.instanceView(record.instance!.view.id)),
       packages=records.filter(record=>record.kind==='package'&&!record.retired).map(record=>record.package!);
-    return {revision:this.revision(),installation:{supported:true,runtime:'worker',restartRequired:false},packages:packages.map(pkg=>({...pkg.view,configurationSchema:pkg.manifest.configuration,instanceIds:instances.filter(instance=>instance.packageId===pkg.view.id).map(instance=>instance.id),allowedActions:pkg.view.state==='installed'?['configure',...(!instances.some(instance=>instance.packageId===pkg.view.id&&(instance.desired||this.references(instance.id).length))?['uninstall' as const]:[])]:pkg.view.state==='failed'?['uninstall']:[]})),instances,builds:this.buildViews(),catalog:[{repository:'mem0ai/mem0',name:'Mem0',description:'Pinned ts-v3.3.1 with the bundled Mote storage/retrieval adapter'},{repository:'vectorize-io/hindsight',name:'Hindsight',description:'Pinned v0.10.2; controlled engine capability verification required'}]};
+    return {revision:this.revision(),installation:{supported:true,runtime:'worker',restartRequired:false},packages:packages.map(pkg=>({...pkg.view,configurationSchema:pkg.manifest.configuration,instanceIds:instances.filter(instance=>instance.packageId===pkg.view.id).map(instance=>instance.id),allowedActions:pkg.view.state==='installed'?['configure',...(!instances.some(instance=>instance.packageId===pkg.view.id&&(instance.desired||this.references(instance.id).length))?['uninstall' as const]:[])]:pkg.view.state==='failed'?['uninstall']:[]})),instances,builds:this.buildViews(),catalog:[]};
   }
   hostCapabilities(){return {
     memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
@@ -125,7 +125,7 @@ export class PluginCenter {
     return this.view().instances.flatMap(instance=>{
       if(!instance.desired||instance.observed!=='ready'||instance.issues.length)return [];
       const pkg=this.packageForInstance(instance.id);if(pkg.view.state!=='installed')return [];
-      try{this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));}catch{return [];}
+      try{this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);}catch{return [];}
       return (pkg.manifest.actionCapabilities??[]).filter(capability=>calendarPluginCapabilitySchema.safeParse(capability).success&&instance.capabilities.some(value=>value.id===capability.id&&value.state==='verified')).map(capability=>({
         identity:{packageId:pkg.view.id,releaseDigest:pkg.view.source.digest,instanceId:instance.id,instanceRevision:instance.revision,capabilityDigest:sha256(JSON.stringify(calendarPluginCapabilitySchema.parse(capability)))},name:instance.name,capability,
       }));
@@ -144,7 +144,7 @@ export class PluginCenter {
         existing.view.state='installing';existing.view.observed='installing';existing.view.issues=[];existing.view.operationId=input.operationId;existing.previewId=input.previewId;this.savePackage(existing);
         this.executor.enqueue(input.operationId,'plugin.install',{packageId:id,previewId:input.previewId},{id:'plugin-install:'+input.operationId});return;
       }
-      this.savePackage({installationId:prior?.package?.installationId??randomUUID(),previewId:input.previewId,manifest:release.manifest,hostAdapter:release.hostAdapter,view:{id,name:release.manifest.name,version:release.manifest.version,source:release.preview.source,runtime:release.preview.runtime,state:'installing',desired:false,observed:'installing',issues:[],instanceIds:[],allowedActions:[],operationId:input.operationId}});
+      this.savePackage({installationId:prior?.package?.installationId??randomUUID(),previewId:input.previewId,manifest:release.manifest,view:{id,name:release.manifest.name,version:release.manifest.version,source:release.preview.source,runtime:release.preview.runtime,state:'installing',desired:false,observed:'installing',issues:[],instanceIds:[],allowedActions:[],operationId:input.operationId}});
       this.executor.enqueue(input.operationId,'plugin.install',{packageId:id,previewId:input.previewId},{id:'plugin-install:'+input.operationId});
     });return this.view();
   }
@@ -188,7 +188,7 @@ export class PluginCenter {
    * without changing the current build selection. The executable process is
    * still constructed only here, never by an adapter or an HTTP handler. */
   runtimeFor(pkg:StoredPackage,instance:PluginInstanceView){this.assertCurrent();if(!pkg.directory||pkg.view.state!=='installed')throw new StoreError('The plugin artifact is unavailable',409);
-    const directory=pkg.directory;this.releases.verifyInstalled(directory,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));
+    const directory=pkg.directory;this.releases.verifyInstalled(directory,pkg.view.source.digest,pkg.manifest);
     const create=()=>{
       const actual=this.runtimeFactory?.(pkg,instance)??new WorkerPluginRuntime(join(directory,pkg.manifest.entry),instance.configuration,directory);
       const observed:PluginRuntime={ready:actual.ready?.bind(actual),close:actual.close.bind(actual),call:async(...args)=>{

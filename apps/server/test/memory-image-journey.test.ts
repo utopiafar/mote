@@ -14,7 +14,8 @@ import {StoreError,sha256} from '../src/store.js';
 import {memoryImageGrants,uninspectedMemoryImageTargets} from '../src/memory-image-grants.js';
 import {materialId} from '../src/materials.js';
 import {generatedMemoryOutput,planGeneratedMemory} from './fixtures/memory-planning.js';
-import {HindsightEngine} from '../src/hindsight-engine.js';
+import type {MemoryEngine} from '../src/memory-native-stage-contract.js';
+import {MemoryProviderError} from '../src/memory-provider-contract.js';
 import {taskTools,buildContextEnvelope} from '../../../packages/agent/dist/task-context.js';
 import {generatedNativeAdapter} from './fixtures/native-engine-adapter.js';
 
@@ -196,15 +197,14 @@ test('bounded deletion review keeps its exact original image grant while interpr
 test('actual app native visual preflight retains an empty integration delivery receipt without any remote operation',async t=>{
  const f=await fixture(t,{ocr:'empty',integration:true}),done=await f.node.memoryPipeline.run(f.jobId);assert.equal(done.status,'completed',JSON.stringify(done));
  const memory=f.node.memories.get(done.memoryIds[0]);assert.ok(memory.evidence[0].image);
- let remoteCalls=0,workerStarts=0,nativeCalls=0;
- const engine=new HindsightEngine({directory:join(f.node.featureServices.config.dataDir,'generated-native-preflight'),runtime:{service:async()=>{remoteCalls++;throw Error('Unexpected native service for unsupported visual input');},startWorker:async()=>{workerStarts++;},stopWorker:async()=>{},close:async()=>{}}});
- t.after(()=>engine.close());
- generatedNativeAdapter(f.node,{prepare:async input=>{nativeCalls++;return engine.prepare(input);}});
+ let remoteCalls=0,nativeCalls=0;
+ const engine:MemoryEngine={async prepare(input){nativeCalls++;if(input.relatedMemories?.some(memory=>memory.evidence.some(span=>span.image)))throw new MemoryProviderError('unsupported_input','This native Memory engine requires exact text provenance; visual parent proofs need native image support');remoteCalls++;throw Error('Unexpected generated engine input');}};
+ generatedNativeAdapter(f.node,engine);
  f.node.lifecycle.retirePending('extraction',Number(f.node.store.db.prepare('SELECT coalesce(max(seq),0) n FROM artifact_events').get()!.n));
  const before=f.node.lifecycle.view().extensions.find(extension=>extension.id==='consolidation')!;
  const request=await f.node.app.inject({method:'POST',url:'/api/memory-integrations',headers:{authorization:'Bearer generated-memory-image-owner'},payload:{recipe:{id:'mote.memory-integration',version:'2'},inputs:[{id:memory.id,version:memory.version,fingerprint:memory.fingerprint}]}});assert.equal(request.statusCode,202,request.body);
  await f.node.lifecycle.tick();
- const state=f.node.lifecycle.view().extensions.find(extension=>extension.id==='consolidation')!;assert.equal(state.error,'memory_provider_unsupported_input');assert.equal(state.manualRetryRequired,true);assert.equal(state.cursor,before.cursor);assert.equal(state.active?.id,request.json().id);assert.equal(remoteCalls,0);assert.equal(workerStarts,0);assert.equal(nativeCalls,1);
+ const state=f.node.lifecycle.view().extensions.find(extension=>extension.id==='consolidation')!;assert.equal(state.error,'memory_provider_unsupported_input');assert.equal(state.manualRetryRequired,true);assert.equal(state.cursor,before.cursor);assert.equal(state.active?.id,request.json().id);assert.equal(remoteCalls,0);assert.equal(nativeCalls,1);
  const receipt=JSON.parse(String(f.node.store.db.prepare('SELECT json FROM memory_integration_deliveries').get()!.json));assert.deepEqual(receipt.memoryIds,[]);assert.deepEqual(receipt.evidenceIds,[],'local input preparation cannot certify transport delivery');assert.equal(f.inputs.filter(input=>input.skill==='memory-integration').length,0);
  await f.node.lifecycle.tick();assert.equal(nativeCalls,1,'unsupported input is not retried automatically');
 });

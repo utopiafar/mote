@@ -1,24 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
-import {createServer} from 'node:http';
-import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
+import {createMemoryProvider} from '../../../examples/worker-plugin/main.mjs';
 import {Store,StoreError} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {createContextQuery} from '../src/plugins/query-context.js';
 import {registerContextRoutes} from '../src/context-routes.js';
 import {registerEvidenceRoutes} from '../src/evidence-routes.js';
-import {Mem0MemoryProvider} from '../src/mem0-memory-provider.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
-import {memoryProviderKey,type MemoryProviderNamespace} from '../src/memory-provider-contract.js';
+import {memoryProviderKey,type MemoryProvider,type MemoryProviderNamespace} from '../src/memory-provider-contract.js';
 import {memorySchema,type Memory} from '../src/memory-schema.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
@@ -29,18 +28,13 @@ const hash=(text:string)=>createHash('sha256').update(text).digest('hex');
 async function fixture(t:any){
  const directory=await mkdtemp(join(tmpdir(),'mote-provider-consumer-')),store=new Store(join(directory,'vault')),sources=new SourceStore(store),reader=new EvidenceReader(store,sources);
  const executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(directory,'plugins'))),bindings=new MemoryBindings(store,reader.memories,new MemoryAutomation(store),plugins,executor);reader.memoryBindings=bindings;
- // Constant embeddings verify real SDK/worker transport and host fences. A
- // separate opt-in run uses the pinned real MiniLM endpoint for retrieval.
- const endpoint=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw),input=Array.isArray(body.input)?body.input:[body.input];res.setHeader('content-type','application/json');res.end(JSON.stringify({object:'list',data:input.map((_:unknown,index:number)=>({object:'embedding',index,embedding:[1,0,0]})),model:'transport-fixture'}));});
- await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
- const real=process.env.MOTE_MEM0_TEST_EMBEDDING_CONFIG?JSON.parse(await readFile(process.env.MOTE_MEM0_TEST_EMBEDDING_CONFIG,'utf8')):undefined;
- const provider=new Mem0MemoryProvider({directory:join(directory,'mem0'),embedding:real?{baseUrl:real.baseUrl,apiKey:real.apiKey,model:real.model,dimension:real.dimension}:{baseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-fixture',model:'transport-fixture',dimension:3}});
+ const provider=await createMemoryProvider({dataFile:join(directory,'generated-provider.json')}) as MemoryProvider;
  bindings.providerFactory=()=>provider;
- const namespace:MemoryProviderNamespace={ownerId:'generated-owner',instanceId:'generated-mem0',bindingRevision:1};
+ const namespace:MemoryProviderNamespace={ownerId:'generated-owner',instanceId:'generated-provider',bindingRevision:1};
  const bind=(ns=namespace)=>store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify({planId:'instance:'+ns.instanceId,generation:ns.bindingRevision,namespace:ns}));
  const app=Fastify();app.setErrorHandler((error,_req,reply)=>reply.code(error instanceof StoreError?error.statusCode:500).send({error:error.message}));registerEvidenceRoutes(app,reader);registerContextRoutes(app,createContextQuery(store,sources,reader));
  const diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
- t.after(async()=>{await app.close();await diagnostics.close();await bindings.close();await plugins.close();await executor.close();await provider.close();store.close();endpoint.closeAllConnections();await new Promise<void>(resolve=>endpoint.close(()=>resolve()));await rm(directory,{recursive:true,force:true});});
+ t.after(async()=>{await app.close();await diagnostics.close();await bindings.close();await plugins.close();await executor.close();await provider.close();store.close();await rm(directory,{recursive:true,force:true});});
  let index=0;
  const add=async(sourceId='generated-notes',title='Generated observatory')=>{
   const evidenceId=randomUUID(),now=`2026-10-12T00:${String(index++).padStart(2,'0')}:00Z`;

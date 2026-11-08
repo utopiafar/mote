@@ -1,6 +1,5 @@
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {createServer} from 'node:http';
 import {execFileSync} from 'node:child_process';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -9,15 +8,15 @@ import {randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {zipSync,strToU8} from 'fflate';
 import type {QueryResult} from '@mote/shared';
+import {createMemoryProvider} from '../../../examples/worker-plugin/main.mjs';
 import {Store,sha256} from '../src/store.js';
 import {MemoryStore} from '../src/memory.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {PluginCenter} from '../src/plugin-center.js';
-import {GitHubPluginReleases} from '../src/plugin-release.js';
+import {GitHubPluginReleases,type PluginManifest,type PluginReleaseTransport} from '../src/plugin-release.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {MemoryPublication} from '../src/plugins/memory-publication.js';
-import {Mem0MemoryProvider} from '../src/mem0-memory-provider.js';
 import {memoryProviderKey,type MemoryProvider,type MemoryProviderRead} from '../src/memory-provider-contract.js';
 import {exportBoundMemories} from '../src/plugins/memory-backup.js';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -26,22 +25,38 @@ const journalTables=['memory_publications','memory_publication_outputs','memory_
 const journalRows=(db:DatabaseSync)=>Object.fromEntries(journalTables.map(table=>[table,db.prepare('SELECT id,json FROM '+table+' ORDER BY id').all()]));
 const withoutProse=(db:DatabaseSync,fragment:string)=>assert.ok(!JSON.stringify(journalRows(db)).includes(fragment),'host operation journals contain no explicitly retired original fragment');
 async function fixture(t:TestContext){
- const directory=await mkdtemp(join(tmpdir(),'mote-publication-retirement-')),vault=join(directory,'vault'),instanceId=randomUUID(),namespace={ownerId:'mote-owner',instanceId,bindingRevision:2},commit='a'.repeat(40),archive=zipSync({'generated-upstream/README.md':strToU8('Generated fixed source provenance')});
- // This endpoint validates real SDK persistence/transport, not model quality.
- const endpoint=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw),input=Array.isArray(body.input)?body.input:[body.input];res.setHeader('content-type','application/json');res.end(JSON.stringify({data:input.map((_:unknown,index:number)=>({object:'embedding',index,embedding:[1,0,0]})),model:'generated-transport'}));});await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
- const configuration={embeddingBaseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,embeddingModel:'generated-transport',embeddingDimension:3};
- let nativeDirectory='',providerOverride:MemoryProvider|undefined;
- const open=()=>{const store=new Store(vault),memories=new MemoryStore(store),executor=new ExecutionEngine(store),releases=new GitHubPluginReleases(join(vault,'plugins/packages'),async url=>({bytes:url.endsWith('/releases/tags/ts-v3.3.1')?strToU8(JSON.stringify({tag_name:'ts-v3.3.1',draft:false,assets:[]})):url.endsWith('/commits/ts-v3.3.1')?strToU8(JSON.stringify({sha:commit})):url.endsWith('/zipball/'+commit)?archive:(()=>{throw Error('Unexpected generated fixed-release request');})()})),plugins=new PluginCenter(store,executor,releases),bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor);let provider:Mem0MemoryProvider|undefined;
-  bindings.providerFactory=()=>providerOverride??(provider??=new Mem0MemoryProvider({directory:nativeDirectory,embedding:{baseUrl:configuration.embeddingBaseUrl,model:configuration.embeddingModel,dimension:3,apiKey:'generated-fixture'}}));
-  const publication=new MemoryPublication(store,memories,bindings);
-  return {store,memories,executor,plugins,bindings,publication,native:()=>{provider??=new Mem0MemoryProvider({directory:nativeDirectory,embedding:{baseUrl:configuration.embeddingBaseUrl,model:configuration.embeddingModel,dimension:3,apiKey:'generated-fixture'}});return provider;},close:async()=>{await publication.close();await provider?.close();await bindings.close();await plugins.close();await executor.close();store.close();}};
+ const directory=await mkdtemp(join(tmpdir(),'mote-publication-retirement-')),vault=join(directory,'vault'),instanceId=randomUUID(),namespace={ownerId:'mote-owner',instanceId,bindingRevision:2},repository='generated-fixture/publication-retirement',tag='v1.0.0',commit='a'.repeat(40);
+ const dataFile=join(vault,'plugins/instances',instanceId,'configuration-'+sha256(instanceId),'provider.json');
+ const worker=String.raw`export async function createMemoryProvider(){return {async health(){return {providerId:'generated.retirement-worker',version:'1.0.0',ready:true,verified:{persistentCrud:true,scopedRetrieval:true,immutableRecords:true,idempotentReplay:true,history:true,physicalErase:false},problems:[]};},async put(){throw Error('generated artifact transport is not used')},async read(){return null},async remove(){throw Error('generated artifact transport is not used')},async search(){return []},async export(){return []},async close(){}};}`;
+ const archive=zipSync({'worker.mjs':strToU8(worker)}),manifest:PluginManifest={schemaVersion:1,id:'generated.retirement-worker',name:'Generated retirement worker',version:'1.0.0',runtime:'worker',entry:'worker.mjs',archive:{asset:'worker.zip',sha256:sha256(archive)},capabilities:['repository','retrieval'],configuration:[{id:'dataFile',label:'Generated data file',type:'text',required:true}],dependencies:[],access:['Generated fixture directory only']};
+ const base=`https://github.com/${repository}/releases/download/${tag}/`,transport:PluginReleaseTransport=async url=>{
+  if(url.endsWith('/releases/tags/'+tag))return {bytes:strToU8(JSON.stringify({tag_name:tag,draft:false,assets:[{name:'mote-plugin.json',browser_download_url:base+'mote-plugin.json'},{name:'worker.zip',browser_download_url:base+'worker.zip'}]}))};
+  if(url.endsWith('/commits/'+tag))return {bytes:strToU8(JSON.stringify({sha:commit}))};
+  if(url===base+'mote-plugin.json')return {bytes:strToU8(JSON.stringify(manifest))};
+  if(url===base+'worker.zip')return {bytes:archive};
+  throw Error('Unexpected generated release request');
  };
- let host=open(),closed=false;
- t.after(async()=>{if(!closed)await host.close();endpoint.closeAllConnections();await new Promise<void>(resolve=>endpoint.close(()=>resolve()));await rm(directory,{recursive:true,force:true});});
- const preview=await host.plugins.resolve({repository:'mem0ai/mem0'}),installId=randomUUID();host.plugins.install({previewId:preview.id,expectedRevision:host.plugins.revision(),operationId:installId});await host.executor.drain(['plugin-install:'+installId]);const pkg=host.plugins.view().packages[0]!;assert.equal(pkg.state,'installed');
- host.plugins.configure(undefined,{packageId:pkg.id,name:'Generated Mem0',scope:'default',configuration,operationId:instanceId,expectedRevision:host.plugins.revision()});nativeDirectory=join(vault,'plugins/instances',instanceId,'configuration-'+sha256(host.plugins.configurationIdentity(instanceId)));
+ const bodyDigest=(memory:any)=>{const {status:_,staleReason:__,updatedAt:___,...body}=memory;return sha256(JSON.stringify(body));};
+ let providerOverride:MemoryProvider|undefined;
+ const open=async()=>{const store=new Store(vault),memories=new MemoryStore(store),executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(vault,'plugins/packages'),transport)),bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor),base=await createMemoryProvider({dataFile}) as MemoryProvider,basePut=base.put.bind(base),provider=Object.assign(base,{
+   recover:(input:Parameters<MemoryProvider['recover']>[0])=>base.health(input),
+   async put(input:Parameters<MemoryProvider['put']>[0]){
+    // Host validity fields may change without advancing the immutable version.
+    const existing=await base.read({namespace:input.namespace,key:input.key});
+    if(existing&&bodyDigest(existing)===bodyDigest(input.memory)&&JSON.stringify(existing)!==JSON.stringify(input.memory))await base.remove({namespace:input.namespace,key:input.key,opId:'generated-host-state:'+input.opId});
+    return basePut(input);
+   },
+  }) as MemoryProvider;
+  bindings.providerFactory=()=>providerOverride??provider;
+  const publication=new MemoryPublication(store,memories,bindings);
+  return {store,memories,executor,plugins,bindings,publication,provider,native:()=>providerOverride??provider,close:async()=>{await publication.close();await provider.close();await bindings.close();await plugins.close();await executor.close();store.close();}};
+ };
+ let host=await open(),closed=false;
+ t.after(async()=>{if(!closed)await host.close();await rm(directory,{recursive:true,force:true});});
+ const preview=await host.plugins.resolve({repository,tag}),installId=randomUUID();host.plugins.install({previewId:preview.id,expectedRevision:host.plugins.revision(),operationId:installId});await host.executor.drain(['plugin-install:'+installId]);const pkg=host.plugins.view().packages[0]!;assert.equal(pkg.state,'installed');
+ host.plugins.configure(undefined,{packageId:pkg.id,name:'Generated retirement provider',scope:'default',configuration:{dataFile},operationId:instanceId,expectedRevision:host.plugins.revision()});
  host.store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify({planId:'instance:'+instanceId,generation:2,namespace}));
- return {directory,vault,namespace,get host(){return host;},override:(value?:MemoryProvider)=>{providerOverride=value;},restart:async()=>{await host.close();providerOverride=undefined;host=open();},close:async()=>{await host.close();closed=true;}};
+ return {directory,vault,namespace,get host(){return host;},override:(value?:MemoryProvider)=>{providerOverride=value;},restart:async()=>{await host.close();providerOverride=undefined;host=await open();},close:async()=>{await host.close();closed=true;}};
 }
 async function original(f:Awaited<ReturnType<typeof fixture>>,fragment:string){const id=randomUUID(),at='2026-10-12T00:00:00Z';await f.host.store.ingest({id,deviceId:'generated-device',deviceName:'Generated',platform:'import',source:'message',capturedAt:at,durationMs:0,appId:'generated',appName:'Generated',ocrText:fragment,privacy:{excluded:false,redacted:false,mode:'none'}});return {id,at};}
 function result(id:string,at:string,fragment:string):QueryResult{return {runId:randomUUID(),answer:JSON.stringify({memories:[{title:'Generated telescope choice',statement:fragment+` [${id}]`,uncertainty:'Generated fixture only',evidenceIds:[id],evidence:[{id,quote:fragment}],admission:{layer:'memory',reason:'Generated explicitly authorized fixture',scope:'Generated telescope only',attribution:'user'}}]}),citations:[{id,capturedAt:at,appName:'Generated',excerpt:fragment}],trace:[]};}
@@ -60,12 +75,12 @@ test('real source deletion retires all host publication prose in maintenance tra
  // trigger. The helper is not dependent on process-local callback ordering.
  for(const table of journalTables)for(const row of before[table] as {id:string;json:string}[])f.host.store.db.prepare('UPDATE '+table+' SET json=? WHERE id=?').run(row.json,row.id);
  withoutProse(f.host.store.db,fragment);await f.host.publication.reconcile();assert.equal(f.host.publication.pending(),0);assert.equal(await f.host.native().read({namespace:f.namespace,key:memoryProviderKey(published)}),null);assert.deepEqual(await exportBoundMemories(f.host.bindings),[]);assert.ok(!JSON.stringify(f.host.store.exportArchive(1024*1024)).includes(fragment));
- await f.close();const snapshot=join(f.directory,'backup');execFileSync(process.execPath,[new URL('../../../scripts/backup.ts',import.meta.url).pathname,'--data',f.vault,'--out',snapshot],{stdio:'pipe'});const db=new DatabaseSync(join(snapshot,'mote.sqlite'),{readOnly:true});try{withoutProse(db,fragment);}finally{db.close();}assert.deepEqual(JSON.parse(await readFile(join(snapshot,'memory-provider-export.json'),'utf8')).memories,[]);
+ await f.close();const snapshot=join(f.directory,'backup');execFileSync(process.execPath,[new URL('../../../scripts/backup.ts',import.meta.url).pathname,'--data',f.vault,'--out',snapshot],{stdio:'pipe'});const db=new DatabaseSync(join(snapshot,'mote.sqlite'),{readOnly:true});try{withoutProse(db,fragment);}finally{db.close();}assert.ok(!JSON.stringify(JSON.parse(await readFile(join(snapshot,'backup-manifest.json'),'utf8')).checksums).includes('memory-provider-export.json'),'generic provider storage is copied without a SQL-body export');
  // This asserts logical SQL/export retirement only. Native SDK history and
  // filesystem/WAL physical erasure remain explicitly unverified.
 });
 
-test('a deleted unpublished stage keeps only reconciliation identities; one real late Mem0 write is read and erased after complete restart',async t=>{
+test('a deleted unpublished stage keeps only reconciliation identities; one real late worker write is read and erased after complete restart',async t=>{
  const f=await fixture(t),fragment='Generated secret fragment late unpublished BETA.',source=await original(f,fragment),draft=result(source.id,source.at,fragment),native=f.host.native();let enter!:()=>void,release!:()=>void,puts=0;const entered=new Promise<void>(resolve=>{enter=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
  f.override(new Proxy(native,{get(target,property){if(property==='put')return async(input:Parameters<MemoryProvider['put']>[0])=>{puts++;enter();await held;await target.put(input);throw Error('Generated lost acknowledgement');};const value=Reflect.get(target,property);return typeof value==='function'?value.bind(target):value;}}));
  const operationId='generated-unpublished';f.host.publication.retainOutput(operationId,{result:draft,privateDraft:fragment},{evidenceIds:[source.id]});const work=f.host.publication.stageExtract(operationId,draft,'generated-no-model',{},()=>{}),rejected=assert.rejects(work,/lost acknowledgement/);await entered;
@@ -96,7 +111,7 @@ test('source invalidation removes only the unpublished exact staged version whil
  f.host.store.invalidateMemoryEvidence(source.id);withoutProse(f.host.store.db,fragment);await f.host.publication.reconcile();assert.equal(f.host.publication.pending(),0);assert.deepEqual(await f.host.native().read({namespace:f.namespace,key:memoryProviderKey(proposal)}),proposal,'earlier legitimate proposal revision survives');assert.deepEqual(await f.host.native().read({namespace:f.namespace,key:memoryProviderKey(published)}),published,'committed current native body survives as historical evidence');assert.equal(await f.host.native().read({namespace:f.namespace,key:memoryProviderKey(unpublished)}),null,'only the abandoned immutable version is actually removed');const exported=await exportBoundMemories(f.host.bindings);assert.deepEqual(exported,[f.host.memories.get(published.id)]);
 });
 
-test('actual migration copy journals a lost late SDK acknowledgement before source deletion and clears its target namespace after host restart',async t=>{
+test('actual migration copy journals a lost late provider acknowledgement before source deletion and clears its target namespace after host restart',async t=>{
  const f=await fixture(t),fragment='Generated migration late source IOTA.',source=await original(f,fragment),proposal=proposed(f,result(source.id,source.at,fragment)),native=f.host.native();f.host.store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify({planId:'mote.builtin',generation:3}));
  f.host.plugins.probe=async id=>{const health=await native.recover({namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}});assert.equal(health.ready,true);return {capabilities:[{id:'repository',state:'verified'},{id:'retrieval',state:'verified'}],issues:health.problems};};const checkId=randomUUID();f.host.plugins.action(f.namespace.instanceId,'check',{operationId:checkId,expectedRevision:f.host.plugins.instanceView(f.namespace.instanceId).revision});await f.host.executor.drain(['plugin-check:'+checkId]);f.host.plugins.action(f.namespace.instanceId,'enable',{operationId:randomUUID(),expectedRevision:f.host.plugins.instanceView(f.namespace.instanceId).revision});
  let enter!:()=>void,release!:()=>void,puts=0;const entered=new Promise<void>(resolve=>{enter=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});f.override(new Proxy(native,{get(target,property){if(property==='put')return async(input:Parameters<MemoryProvider['put']>[0])=>{puts++;enter();await held;await target.put(input);throw Error('Generated migration lost acknowledgement');};const value=Reflect.get(target,property);return typeof value==='function'?value.bind(target):value;}}));

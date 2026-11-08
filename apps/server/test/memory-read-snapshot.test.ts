@@ -20,7 +20,7 @@ import {memoryEvidenceFingerprint} from '../src/memory.js';
 
 // The provider is the external service boundary; the snapshot path under test
 // runs on real SQLite and real HTTP inject. Deeper provider verification stays
-// in memory-provider-consumers.test.ts against the real mem0 transport.
+// in memory-provider-consumers.test.ts against the generated worker transport.
 function generatedProvider(){
  const bodies=new Map<string,{namespace:MemoryProviderNamespace;key:MemoryProviderRead['key'];memory:Memory}>();
  const id=(input:{namespace:MemoryProviderNamespace;key:MemoryProviderRead['key']})=>JSON.stringify({namespace:input.namespace,key:input.key});

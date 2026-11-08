@@ -20,8 +20,8 @@ import {fixtureMemoryPipeline, fixtureMemoryResult} from './fixtures/memory-resu
 import {memoryBodyDigest, type MemoryProvider, type MemoryProviderWrite} from '../src/memory-provider-contract.js';
 
 // Generated semantic transport and provider only. This exercises real host
-// Store/ExecutionEngine/MemoryPipeline/MemoryPublication ordering, not native
-// Hindsight quality, Docker, network, or an actual model.
+// Store/ExecutionEngine/MemoryPipeline/MemoryPublication ordering, not installed
+// engine quality, a native service, network, or an actual model.
 async function fixture(t: TestContext, sharedEngine=false) {
   const directory = mkdtempSync(join(tmpdir(), 'mote-native-checkpoint-'));
   const providerPath = join(directory, 'generated-provider.json');
