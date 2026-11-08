@@ -1,6 +1,6 @@
-# iOS 开发与测试
+# iOS 开发与测试（实验）
 
-iOS 客户端使用原生 SwiftUI 和 Swift 6，最低支持 iOS 18.0。核心逻辑位于 `apps/ios/MoteKit`，分为 `MoteDesign`、`MoteCore`、`MoteCentral`、`MoteStorage` 四个模块；App 与 UI 测试分别位于 `apps/ios/App` 和 `apps/ios/MoteUITests`。
+iOS 客户端是实验性客户端，不进入首发正式支持矩阵；Central、macOS 与 Android 为正式支持产品。客户端使用原生 SwiftUI 和 Swift 6，最低支持 iOS 18.0。核心逻辑位于 `apps/ios/MoteKit`，分为 `MoteDesign`、`MoteCore`、`MoteCentral`、`MoteStorage` 四个模块；App 与 UI 测试分别位于 `apps/ios/App` 和 `apps/ios/MoteUITests`。
 
 开发版 Bundle ID 为 `dev.mote.ios`，App Group 为 `group.dev.mote`。当前以模拟器验证为主，不包含真机发布配置。
 

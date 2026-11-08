@@ -21,7 +21,7 @@ For example, ask: “What did I work on this week?”, “Where did I see that d
 
 ## Quick start
 
-Mote has two parts: **Central**, your archive and web interface, and optional **macOS / Android apps** that collect and sync context. Central can run on your Mac, a Linux server, or a NAS. You can try it with a note before enabling screen collection.
+Mote has two parts: **Central**, your archive and web interface, and optional **macOS / Android collectors** that sync context. Central, macOS, and Android are formally supported; iOS is experimental. Central can run on your Mac, a Linux server, or a NAS. You can try it with a note before enabling screen collection.
 
 > **Development preview:** Central, macOS, and Android have separate releases and use manual updates. Dev builds and Prod Beta/stable builds have separate installation identities. If you already use Mote, read the [upgrade guide](docs/updating.md) first: older archive formats are rejected rather than migrated automatically.
 
@@ -131,7 +131,7 @@ Detailed guides are currently primarily in Chinese. Both READMEs cover the same 
 | Understand memory and processing | [Memory lifecycle](docs/memory-lifecycle.md) · [Local OCR and transcription](docs/ocr-asr-implementation-plan.md) |
 | Diagnose a problem | [Troubleshooting](docs/troubleshooting.md) · [Documentation index](docs/README.md) |
 
-Current collectors support macOS and Android; Windows/Linux screen collection is not implemented. Mac DEV apps use ad-hoc signing and are not notarized. Android background behavior and battery use vary by device; fixture, emulator, physical-device, and live-model checks are documented separately.
+Formal support covers Central, macOS, and Android. iOS is an experimental collector outside the formal support matrix; Windows/Linux screen collection is not implemented. Mac DEV apps use ad-hoc signing and are not notarized. Android background behavior and battery use vary by device; fixture, emulator, physical-device, and live-model checks are documented separately.
 
 For bugs, use [GitHub Issues](https://github.com/utopiafar/mote/issues) or **Settings → Feedback** in the app. Include the component version, platform, and reproduction steps. Issues are public: check attachments for personal content and never include access tokens or private archives.
 
