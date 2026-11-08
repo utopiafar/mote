@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 import {parseAnswer} from '../dist/index.js';
-const record={id:'7bf5329c-d280-5361-8753-c0fdd3e5fc38',capturedAt:'2026-09-12T10:00:00Z',appName:'合成日历',deviceId:'allowed',ocrText:'计划讨论，实际参加未知',provenance:{sourceId:'calendar',layer:'snapshot',revision:'v1',calendar:{start:'2026-11-01T10:00:00+08:00',end:'2026-11-01T11:00:00+08:00'},uri:'file:///private/original'}};
+const record={id:'7bf5329c-d280-5361-8753-c0fdd3e5fc38',capturedAt:'2026-09-12T10:00:00Z',appName:'合成日历',deviceId:'allowed',ocrText:'计划讨论，实际参加未知',provenance:{sourceId:'calendar',layer:'snapshot',revision:'v1',calendar:{start:'2026-11-01T10:00:00+08:00',end:'2026-11-01T11:00:00+08:00'},document:{timeBasis:'occurred',occurredAt:'2026-11-01T10:00:00+08:00'},uri:'file:///private/original'}};
 function reader(overrides={}){return {search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],...overrides};}
 async function request(b,tool,body={}){const r=await catalogRequest(b,tool,body);return {status:r.status,body:await r.json()};}
 test('source discovery passes scope and planned event provenance without disclosing local URI',async t=>{

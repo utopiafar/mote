@@ -19,6 +19,12 @@ struct MoteApp: App {
 
     init() {
         editorStore = try? MoteStorage.editorDraftStore()
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["MOTE_TEST_RESET_SEND_QUEUE"] == "1",
+           let queue = try? MoteStorage.sendQueue() {
+            try? queue.removeAllForTesting()
+        }
+        #endif
         try? MoteStorage.runtimeLog().record(.appStarted)
         RecordingLiveActivity.initialize()
     }

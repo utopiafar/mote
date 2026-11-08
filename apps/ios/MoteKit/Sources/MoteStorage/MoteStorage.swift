@@ -225,6 +225,15 @@ public final class SendQueue: @unchecked Sendable {
         return try readItems()
     }
 
+    #if DEBUG
+    /// Test-only cleanup for a generated first-use home. Never used in Prod.
+    public func removeAllForTesting() throws {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        if fileManager.fileExists(atPath: directoryURL.path) { try fileManager.removeItem(at: directoryURL) }
+    }
+    #endif
+
     public func acknowledge(id: String) throws {
         Self.lock.lock()
         defer { Self.lock.unlock() }

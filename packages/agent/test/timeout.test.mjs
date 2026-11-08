@@ -32,17 +32,29 @@ test('only the SDK timeout class converts, without preserving its stderr or prov
 
 test('deadline remains primary when cleanup fails, and cleanup is still awaited',async t=>{
   let cleaned=false;
+  const close=DeepSeekHarness.prototype.close;
   t.mock.method(DeepSeekHarness.prototype,'run',async()=>new Promise(()=>{}));
-  t.mock.method(DeepSeekHarness.prototype,'close',async()=>{await delay(15);cleaned=true;throw new Error(marker);});
+  t.mock.method(DeepSeekHarness.prototype,'close',async function(){
+    // Current runtime preparation starts the SDK before the first model call.
+    // Simulate the cleanup failure only after the real child teardown runs, so
+    // the fixture cannot leak an SDK process and keep the test file alive.
+    await delay(15);cleaned=true;
+    try{await close.call(this);}catch{/* the generated cleanup failure still surfaces below */}
+    throw new Error(marker);
+  });
   const agent=createAgent({...options,agentTimeoutMs:10});t.after(()=>agent.close());
   await assert.rejects(agent.query({question:'Synthetic deadline and cleanup failure'}),error=>error instanceof AgentTimeoutError&&!String(error).includes(marker));
   assert.equal(cleaned,true);
 });
 
 test('lookalike timeouts are sanitized as provider failures and validation remains primary during cleanup errors',async t=>{
-  const primary=new AgentResponseError('Synthetic invalid final JSON'),fake=Object.assign(new Error('Request timed out '+marker),{name:'RequestTimeoutError'});
+  const primary=new AgentResponseError('Synthetic invalid final JSON'),fake=Object.assign(new Error('Request timed out '+marker),{name:'RequestTimeoutError'}),close=DeepSeekHarness.prototype.close;
   let next=primary;t.mock.method(DeepSeekHarness.prototype,'run',async()=>{throw next;});
-  t.mock.method(DeepSeekHarness.prototype,'close',async()=>{throw new Error('Synthetic cleanup failed');});
+  t.mock.method(DeepSeekHarness.prototype,'close',async function(){
+    // Surface the generated cleanup failure after the real SDK child is closed.
+    try{await close.call(this);}catch{/* keep the generated failure below */}
+    throw new Error('Synthetic cleanup failed');
+  });
   const agent=createAgent(options);t.after(()=>agent.close());
   await assert.rejects(agent.query({question:'Synthetic invalid output'}),error=>error===primary&&error.statusCode===502);
   next=fake;await assert.rejects(agent.query({question:'Synthetic lookalike text'}),error=>error instanceof AgentProviderError&&!(error instanceof AgentTimeoutError)&&!String(error).includes(marker));

@@ -197,11 +197,21 @@ class ManagedHostRunSession implements HostRunSession {
         try { this.assembly.trace?.({...event, runId: dependencies.identity.runId}); } catch { /* Diagnostics never change execution. */ }
       }),
       assertCurrent: () => this.assertCurrent(),
-      runModel: (attempt, task) => this.track(async () => {
+      runModel: <T>(attempt: RuntimeAttempt, task: () => Promise<T>) => this.track(async () => {
         this.assertAttempt(attempt);
         const admitted = async () => {
           this.assertAttempt(attempt);
-          return dependencies.activeBudget.run(() => this.track(async () => { this.assertAttempt(attempt); return task(); }));
+          // The active budget can reject before an uncooperative provider task
+          // settles. Stop tracking that abandoned model call after the admitted
+          // operation returns so cleanup still closes the runtime instead of
+          // waiting forever; a cooperative provider settles it through cancel.
+          let work: Promise<T> | undefined;
+          try {
+            return await dependencies.activeBudget.run(() => {
+              work = this.track(async () => { this.assertAttempt(attempt); return task(); });
+              return work;
+            });
+          } finally { if (work) this.pending.delete(work); }
         };
         const result = await (assembly.admit ? assembly.admit(admitted, signal) : admitted());
         this.assertAttempt(attempt);
