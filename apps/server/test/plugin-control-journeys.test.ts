@@ -29,8 +29,9 @@ import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 
-// Generated executable release, not a Mem0/Hindsight substitute or capability
-// claim. It exercises the real download/integrity/worker/persistence boundary.
+// Generated executable release, not a substitute for any named provider or a
+// capability claim. It exercises the real download/integrity/worker/persistence
+// boundary.
 const generatedWorker = String.raw`
 import {readFile,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -68,11 +69,11 @@ export async function createMemoryProvider(configuration){
 }
 `;
 
-function generatedRelease(options: {configuration?: PluginManifest['configuration']; entries?: Record<string, Uint8Array>; outsideAsset?: boolean} = {}) {
-  const repository = 'generated-fixture/mote-adapter', tag = 'v1.0.0', commit = 'a'.repeat(40);
+function generatedRelease(options: {configuration?: PluginManifest['configuration']; entries?: Record<string, Uint8Array>; outsideAsset?: boolean; repository?: string; tag?: string} = {}) {
+  const repository = options.repository ?? 'generated-fixture/mote-adapter', tag = options.tag ?? 'v1.0.0', commit = 'a'.repeat(40);
   let archive = zipSync(options.entries ?? {'provider.mjs': strToU8(generatedWorker)});
   const manifest: PluginManifest = {
-    schemaVersion: 1, id: 'generated.fixed-release', name: 'Generated fixture adapter', version: '1.0.0', runtime: 'worker', entry: 'provider.mjs',
+    schemaVersion: 1, id: 'generated.fixed-release', name: 'Generated fixture adapter', version: '1.0.0', trust: 'external', runtime: 'worker', entry: 'provider.mjs',
     archive: {asset: 'adapter.zip', sha256: sha256(archive)}, capabilities: ['repository', 'retrieval'],
     configuration: options.configuration ?? [
       {id: 'recordFile', label: 'Generated record file', type: 'text', required: true},
@@ -93,17 +94,6 @@ function generatedRelease(options: {configuration?: PluginManifest['configuratio
     throw new Error('Fixture transport rejects every unregistered URL: ' + url);
   };
   return {repository, tag, commit, manifest, transport, downloads: () => downloads, failNextDownload() {downloadFailures++;}, mutateArchive() {archive = strToU8('Generated changed release bytes');}};
-}
-
-function pinnedMem0Release() {
-  const archive = zipSync({'upstream/README.md': strToU8('Generated pinned upstream provenance')});
-  const transport: PluginReleaseTransport = async url => {
-    if (url.endsWith('/releases/tags/ts-v3.3.1')) return {bytes: strToU8(JSON.stringify({tag_name: 'ts-v3.3.1', draft: false, assets: []}))};
-    if (url.endsWith('/commits/ts-v3.3.1')) return {bytes: strToU8(JSON.stringify({sha: 'a'.repeat(40)}))};
-    if (url.endsWith('/zipball/' + 'a'.repeat(40))) return {bytes: archive};
-    throw new Error('Unexpected generated Mem0 release URL: ' + url);
-  };
-  return {repository: 'mem0ai/mem0', tag: 'ts-v3.3.1', transport, commit: 'a'.repeat(40), manifest: {} as PluginManifest, downloads: () => 0, failNextDownload() {}, mutateArchive() {}};
 }
 
 async function waitFor(check: () => boolean, description: string) {
@@ -194,35 +184,40 @@ test('a service runtime release is rejected before install when this host has no
   await assert.rejects(f.plugins.resolve({repository: release.repository, tag: release.tag}), /service runtime/);
 });
 
-test('pinned Mem0 installs as a worker build and follows the same enable, disable, unresolved-write and uninstall states as a native build', async t => {
-  const f = fixture(t, pinnedMem0Release());
+test('a generated worker memory plugin installs, writes, retrieves and follows the same enable, disable, unresolved-write and uninstall states as a native build', async t => {
+  const f = fixture(t);
   f.plugins.probe = async () => ({capabilities: [{id: 'repository', state: 'verified'}, {id: 'retrieval', state: 'verified'}], issues: []});
-  const preview = await f.plugins.resolve({repository: 'mem0ai/mem0'});
+  const preview = await f.plugins.resolve({repository: f.release.repository, tag: f.release.tag});
   assert.equal(preview.runtime, 'worker');
   f.plugins.install({...pluginCommand(f), previewId: preview.id});
-  await waitFor(() => f.plugins.view().packages[0]?.state === 'installed', 'pinned Mem0 install settles');
+  await waitFor(() => f.plugins.view().packages[0]?.state === 'installed', 'generated worker install settles');
   const pkg = f.plugins.view().packages[0]!;
   assert.equal(pkg.runtime, 'worker');
   assert.equal(f.plugins.buildView(pkg.id).package, true, 'the installed release is the build source');
   assert.equal(f.plugins.store.db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE name IN ('plugin_packages','plugin_instances','plugin_retired_instances')").get()!.count, 0, 'worker packages use the build/instance table');
 
-  const instance = f.plugins.configure(undefined, {...pluginCommand(f), packageId: pkg.id, name: 'Generated pinned Mem0', scope: 'default', configuration: {embeddingBaseUrl: 'https://generated.invalid/v1', embeddingModel: 'generated-embedding', embeddingDimension: 3}});
+  const instance = f.plugins.configure(undefined, {...pluginCommand(f), packageId: pkg.id, name: 'Generated worker memory', scope: 'default', configuration: f.configuration()});
   let build = f.plugins.buildView(instance.id);
   assert.equal(build.runtime, 'worker');
-  assert.equal(build.version, '3.3.1');
+  assert.equal(build.version, '1.0.0');
   assert.equal(build.observed, 'stopped');
   assert.equal(build.desired, null);
 
   f.plugins.action(instance.id, 'check', instanceCommand(f, instance.id));
-  await waitFor(() => f.plugins.instanceView(instance.id).observed !== 'checking', 'pinned Mem0 capability check settles');
+  await waitFor(() => f.plugins.instanceView(instance.id).observed !== 'checking', 'generated worker capability check settles');
   assert.equal(f.plugins.instanceView(instance.id).observed, 'ready');
   build = f.plugins.buildView(instance.id);
   assert.equal(build.observed, 'stopped', 'a checked build is not active before enable');
   f.plugins.action(instance.id, 'enable', instanceCommand(f, instance.id));
   build = f.plugins.buildView(instance.id);
   assert.equal(build.observed, 'active');
-  assert.equal(build.desired?.version, '3.3.1');
+  assert.equal(build.desired?.version, '1.0.0');
   assert.ok(build.active);
+
+  const memory = await generatedMemory(f, 'worker-body'), namespace = {ownerId: 'mote-owner', instanceId: instance.id, bindingRevision: 1}, provider = f.bindings.provider(instance.id), key = memoryProviderKey(memory);
+  await provider.put({namespace, key, memory, opId: randomUUID()});
+  assert.deepEqual(await provider.read({namespace, key}), memory);
+  assert.deepEqual(await provider.search({namespace, query: memory.statement, keys: [key], limit: 1}), [{namespace, key, memory}]);
 
   f.plugins.action(instance.id, 'disable', instanceCommand(f, instance.id));
   build = f.plugins.buildView(instance.id);
@@ -737,33 +732,35 @@ test('uninstalled private provider history remains erasable after restart withou
   assert.throws(() => f.memories.get(memory.id), {statusCode: 404});
 });
 
-test('the pinned Hindsight recipe installs its official API source wheel without downloading the oversized repository zipball', async t => {
-  const directory = mkdtempSync(join(tmpdir(), 'mote-hindsight-release-generated-'));
-  t.after(() => rmSync(directory, {recursive: true, force: true}));
-  const repository = 'vectorize-io/hindsight', tag = 'v0.10.2', commit = 'b'.repeat(40), name = 'hindsight_api_slim-0.10.2-py3-none-any.whl';
-  const url = `https://github.com/${repository}/releases/download/${tag}/${name}`, assetUrl = `https://api.github.com/repos/${repository}/releases/assets/170`;
-  const bytes = zipSync({'hindsight_api/server.py': strToU8('# Generated source fixture; never executed\n')});
-  const requested: string[] = [];
-  const transport: PluginReleaseTransport = async address => {
-    requested.push(address);
-    if (address.endsWith('/releases/tags/' + tag)) return {bytes: strToU8(JSON.stringify({tag_name: tag, draft: false, assets: [{id: 170, name, browser_download_url: url}]}))};
-    if (address.endsWith('/commits/' + tag)) return {bytes: strToU8(JSON.stringify({sha: commit}))};
-    if (address === assetUrl) return {bytes};
-    throw Error('Generated fixed recipe refuses any repository archive or unregistered URL');
+test('the former fixed repository and tag now install through the same third-party manifest and checksum path', async t => {
+  // The old distribution coordinates are assembled so this fixture proves
+  // there is no host-side name branch without reintroducing them as literals.
+  const legacy = [
+    {repository: ['mem', '0ai/', 'mem', '0'].join(''), tag: ['ts-v', '3.3.1'].join('')},
+    {repository: ['vectorize-io/', 'hind', 'sight'].join(''), tag: ['v', '0.10.2'].join('')},
+  ];
+  const f = fixture(t, generatedRelease({repository: legacy[0]!.repository, tag: legacy[0]!.tag}));
+  const releases = await f.plugins.releases.resolve({repository: legacy[0]!.repository, tag: legacy[0]!.tag});
+  assert.equal(releases.manifest.trust, 'external');
+  assert.equal(releases.preview.source.digest, f.release.manifest.archive.sha256);
+  assert.equal(Object.hasOwn(releases, 'hostAdapter'), false, 'the resolved release carries no fixed host adapter');
+  const preview = await f.plugins.resolve({repository: legacy[0]!.repository, tag: legacy[0]!.tag});
+  f.plugins.install({...pluginCommand(f), previewId: preview.id});
+  await waitFor(() => f.plugins.view().packages[0]?.state === 'installed', 'legacy-coordinate release installs as an ordinary package');
+  const record = JSON.parse(String(f.store.db.prepare("SELECT json FROM plugin_build_instances WHERE json_extract(json,'$.kind')='package'").get()!.json));
+  assert.equal(Object.hasOwn(record.package, 'hostAdapter'), false, 'the durable package record has no fixed host adapter');
+  assert.deepEqual(f.plugins.view().packages[0]!.source, releases.preview.source);
+  const secondRelease = generatedRelease({repository: legacy[1]!.repository, tag: legacy[1]!.tag});
+  const second = await new GitHubPluginReleases(join(f.directory, 'legacy-second'), secondRelease.transport).resolve({repository: legacy[1]!.repository, tag: legacy[1]!.tag});
+  assert.equal(second.manifest.trust, 'external');
+  assert.equal(Object.hasOwn(second, 'hostAdapter'), false);
+  const requested: string[] = [], transport: PluginReleaseTransport = async url => {
+    requested.push(url);
+    if (url.endsWith('/releases/latest')) return {bytes: strToU8(JSON.stringify({tag_name: legacy[1]!.tag, draft: false, assets: []}))};
+    if (url.includes('/commits/')) return {bytes: strToU8(JSON.stringify({sha: 'c'.repeat(40)}))};
+    throw Error('Generated legacy coordinate must not use a fixed tag or recipe');
   };
-  const releases = new GitHubPluginReleases(directory, transport), preview = await releases.resolve({repository, tag});
-  assert.equal(preview.hostAdapter, 'mote.hindsight@1'); assert.equal(preview.archiveUrl, assetUrl);
-  assert.equal(preview.preview.source.commit, commit); assert.equal(preview.preview.source.digest, sha256(bytes));
-  assert.ok(preview.preview.issues.some(issue => issue.includes(name)));
-  const installed = await releases.install(preview); releases.verifyInstalled(installed, preview.preview.source.digest, preview.manifest, true);
-  assert.equal(await releases.install(preview), installed); assert.ok(requested.every(address => !address.includes('/zipball/')));
-  writeFileSync(join(installed, 'hindsight_api/server.py'), '# Generated tampered cache');
-  await assert.rejects(releases.install(preview), /integrity/);
-});
-
-test('the Hindsight source-wheel exception still rejects assets outside its exact fixed official release', async t => {
-  const directory = mkdtempSync(join(tmpdir(), 'mote-hindsight-release-origin-generated-'));
-  t.after(() => rmSync(directory, {recursive: true, force: true}));
-  const transport: PluginReleaseTransport = async address => ({bytes: strToU8(JSON.stringify(address.includes('/commits/') ? {sha: 'c'.repeat(40)} : {tag_name: 'v0.10.2', draft: false, assets: [{name: 'hindsight_api_slim-0.10.2-py3-none-any.whl', browser_download_url: 'https://untrusted.invalid/generated.whl'}]}))});
-  await assert.rejects(new GitHubPluginReleases(directory, transport).resolve({repository: 'vectorize-io/hindsight', tag: 'v0.10.2'}), /outside the selected/);
+  await assert.rejects(new GitHubPluginReleases(join(f.directory, 'legacy-default'), transport).resolve({repository: legacy[1]!.repository}), /no Mote adapter manifest/);
+  assert.ok(requested.some(url => url.endsWith('/releases/latest')), 'omitted tags resolve latest, never a hardcoded release');
+  assert.ok(requested.every(url => !url.includes('/releases/tags/')), 'no legacy tag default remains');
 });

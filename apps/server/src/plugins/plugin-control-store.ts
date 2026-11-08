@@ -24,7 +24,6 @@ export interface BuildInstance {
 }
 export interface BuildPackageRecord {
   installationId:string;view:PluginPackageView;manifest:PluginManifest;directory?:string;previewId:string;
-  hostAdapter?:'mote.mem0@1'|'mote.hindsight@1';
 }
 export interface BuildInstanceRecord {view:PluginInstanceView;configurationId?:string;stepId?:string}
 

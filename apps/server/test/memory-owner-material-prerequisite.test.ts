@@ -21,8 +21,8 @@ import {reviewMemory} from '../src/memory-review.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
 // Real durable pipeline/reviewer/question host and restart ordering. Discovery,
-// native preparation and model transport are generated fixtures, not a native
-// Hindsight, live-model, or device validation claim.
+// native preparation and model transport are generated fixtures, not an installed
+// engine, live-model, or device validation claim.
 async function fixture(t:TestContext){
   const directory=await mkdtemp(join(tmpdir(),'mote-owner-material-prerequisite-'));
   const namespace={ownerId:'generated-owner',instanceId:'generated-engine',bindingRevision:1},binding={planId:'instance:generated-engine',generation:1,namespace};

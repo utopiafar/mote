@@ -8,10 +8,15 @@ const bodyDigest=memory=>{const {status:_,staleReason:__,updatedAt:___,...body}=
 const hostState=(memory,expected)=>{const {status:_,staleReason:__,updatedAt:___,...body}=memory;return {...body,status:expected.status,...(expected.staleReason===undefined?{}:{staleReason:expected.staleReason}),...(expected.updatedAt===undefined?{}:{updatedAt:expected.updatedAt})};};
 const hasTable=(db,name)=>Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
 const safeId=value=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/.test(value)&&!['.','..'].includes(value);
+const safeSegment=part=>Boolean(part)&&!['.','..'].includes(part)&&!/[\\\x00-\x1f\x7f]/.test(part);
 export const safePluginBackupPath=name=>{
  const packageFile=/^plugins\/packages\/[a-f0-9]{64}\/(.+)$/.exec(name);
- if(packageFile)return !packageFile[1].includes('\\')&&packageFile[1].split('/').every(part=>part&&!['.','..'].includes(part)&&!/[\x00-\x1f\x7f]/.test(part));
- return /^plugins\/instances\/[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\/configuration-[a-f0-9]{64}\/(?:(?:vectors|vectors_entities|operations|history)\.db|hindsight-backup\/(?:manifest\.json|runtime-descriptor\.json|provider-control\.json|canonical-records\.json|volume\.tar))$/.test(name)||name==='memory-provider-export.json';
+ if(packageFile)return safeSegment(packageFile[1])&&packageFile[1].split('/').every(safeSegment);
+ if(name==='memory-provider-export.json')return true;
+ const instanceFile=/^plugins\/instances\/[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\/configuration-[a-f0-9]{64}\/(.+)$/.exec(name);
+ if(!instanceFile)return false;
+ const parts=instanceFile[1].split('/');
+ return parts.every(safeSegment)&&!parts.some(part=>part.includes('credentials')||part.includes('sdk-state'))&&parts[parts.length-1]!=='provider.lock';
 };
 async function plainDirectory(path){const info=await lstat(path);if(!info.isDirectory()||await realpath(path)!==path)throw Error('Plugin backup links and special files are not allowed');}
 async function ordinary(path){const info=await lstat(path);if(!info.isFile()||info.nlink!==1||await realpath(path)!==path)throw Error('Plugin backup links and special files are not allowed');}
@@ -41,10 +46,10 @@ export async function pluginMemoryBackup(source,db){
  const packages=[...new Map([...builds.filter(value=>value.kind==='package'&&value.package).map(value=>value.package),...configurations.map(value=>value.package)].map(value=>[value.view.id+':'+value.view.source.digest,value])).values()];
  const storedInstances=builds.filter(value=>value.kind==='instance'&&value.instance).map(value=>value.instance);
  const instances=storedInstances.map(value=>value.view);
- // Remote/generic code can retain authoritative data outside this vault. A
- // complete backup needs that provider's declared native snapshot protocol.
- for(const instance of instances){const pkg=packages.find(value=>value.view.id===instance.packageId);if(!pkg)throw Error('A retained plugin instance has no package');if(!['mote.mem0@1','mote.hindsight@1'].includes(pkg.hostAdapter))throw Error('Complete backup for this external Memory provider requires its native service snapshot and restore procedure; no verified protocol is available. Existing data was preserved.');}
- if(configurations.some(value=>!['mote.mem0@1','mote.hindsight@1'].includes(value.package.hostAdapter)))throw Error('Complete backup for a retained external Memory configuration requires its verified native service snapshot and restore procedure');
+ // Provider-owned storage is copied opaquely from its instance configuration
+ // directory. Remote services without a stopped snapshot protocol remain the
+ // provider's responsibility and are never replaced with SQL control bodies.
+ for(const instance of instances){const pkg=packages.find(value=>value.view.id===instance.packageId);if(!pkg)throw Error('A retained plugin instance has no package');}
  for(const pkg of packages){if(pkg.view.state!=='installed')continue;const digest=pkg.view.source?.digest;if(!/^[a-f0-9]{64}$/.test(digest))throw Error('Invalid fixed plugin artifact digest');const relative='plugins/packages/'+digest;await plainDirectory(join(source,relative));const lock=JSON.parse(await readFile(join(source,relative,'mote-install-lock.json'),'utf8'));if(lock.digest!==digest||JSON.stringify(lock.source)!==JSON.stringify(pkg.view.source))throw Error('The fixed plugin artifact lock does not match its retained package');paths.push(...await artifactFiles(source,relative));}
  const instanceRoot='plugins/instances';
  for(const id of await entriesOrEmpty(join(source,instanceRoot))){if(!safeId(id))throw Error('Invalid Memory provider storage path');const instanceDirectory=join(source,instanceRoot,id);await plainDirectory(instanceDirectory);
@@ -55,8 +60,21 @@ export async function pluginMemoryBackup(source,db){
     const archiveRelative=relative+'/hindsight-backup';nativeSnapshots.push({runtimeDirectory,providerDirectory,relative:archiveRelative});providers.push({instanceId:id,configuration,provider:'mote.hindsight',archiveRelative});continue;
    }
    for(const filename of ['vectors.db','vectors_entities.db','history.db','operations.db']){const path=relative+'/'+filename;try{await ordinary(join(source,path));databases.push(path);}catch(error){if(error.code!=='ENOENT')throw error;}}
-   const databasePaths=databases.filter(path=>path.startsWith(relative+'/'));if(databasePaths.length&&databasePaths.length!==4)throw Error('A retained Memory provider database is missing; recover it before taking a complete backup');
-   providers.push({instanceId:id,configuration,databasePaths});
+   const databasePaths=databases.filter(path=>path.startsWith(relative+'/')),genericFiles=[];
+   const collect=async(folder,nameBase)=>{
+    for(const name of await readdir(folder)){
+     if(name==='provider.lock'||name.includes('credentials')||name.includes('sdk-state')||['runtime','provider','vectors.db','vectors_entities.db','history.db','operations.db'].includes(name))continue;
+     const path=nameBase+'/'+name,info=await lstat(join(source,path));
+     if(info.isSymbolicLink()||!info.isFile()&&!info.isDirectory())throw Error('Plugin backup links and special files are not allowed');
+     if(info.isDirectory()){await plainDirectory(join(source,path));await collect(join(source,path),path);continue;}
+     if(!safePluginBackupPath(path))throw Error('Invalid plugin artifact path');
+     genericFiles.push(path);
+    }
+   };
+   await collect(directory,relative);
+   if(databasePaths.length&&databasePaths.length!==4)throw Error('A retained Memory provider database is missing; recover it before taking a complete backup');
+   paths.push(...genericFiles);
+   providers.push({instanceId:id,configuration,databasePaths,paths:genericFiles});
   }
  }
  let canonical;
@@ -69,6 +87,9 @@ export async function pluginMemoryBackup(source,db){
    // portable provider export and never starts the API to synthesize one.
    return {paths:[...new Set(paths)],databases:[...new Set(databases)],providers,nativeSnapshots,canonicalFromNative:{binding,controlMemories:db.prepare('SELECT json FROM memories ORDER BY id').all().map(row=>JSON.parse(String(row.json))),relative:relative+'/hindsight-backup'}};
   }
+  // Generic worker/engine providers keep their own authoritative storage in the
+  // copied configuration directory; the host control mirror is not exported.
+  if(pkg.hostAdapter!=='mote.mem0@1')return {paths:[...new Set(paths)],databases:[...new Set(databases)],providers,nativeSnapshots};
   for(const filename of ['vectors.db','vectors_entities.db','history.db','operations.db'])if(!databases.includes(relative+'/'+filename))throw Error('The active Memory provider database is missing; the backup cannot fall back to SQL bodies');
   const vectorDb=new DatabaseSync(join(source,relative,'vectors.db'),{readOnly:true}),journal=new DatabaseSync(join(source,relative,'operations.db'),{readOnly:true});
   try{
