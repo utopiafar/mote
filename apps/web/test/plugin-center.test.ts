@@ -166,6 +166,41 @@ test('plugin deep links and same-page browser history retain the selected tab',a
  assert.equal(button(element,'自动记忆').getAttribute('aria-pressed'),'true');
 });
 
+test('discover keeps repository installation after fixed quick-add recipes are removed',async t=>{
+ const {plugins,binding}=fixtures(),api={request:async(path:string)=>readFixture(path,plugins,binding)} as unknown as Api;
+ const {element}=await mount(t,api,'#/system/plugins?tab=discover');
+ assert.equal(element.querySelector('.plugin-quick-add'),null,'discover has no fixed recipe quick-add area');
+ assert.doesNotMatch(element.textContent!,/常用插件快捷添加/);
+ await act(async()=>{element.querySelector<HTMLElement>('.plugin-discovery summary')!.click();await tick();});
+ const fields=element.querySelectorAll<HTMLInputElement>('.plugin-discovery input');
+ assert.equal(fields.length,2);
+ assert.equal(fields[0].placeholder,'https://github.com/owner/repository');
+ assert.equal(button(element,'预览发布包').disabled,true,'an empty repository cannot be submitted');
+ await input(element,'GitHub 仓库',source.repository);
+ assert.equal(button(element,'预览发布包').disabled,false);
+});
+
+test('repository installation sends the same resolve path and body as before quick-add removal',async t=>{
+ const {plugins,binding}=fixtures(),calls:{path:string;body:Record<string,unknown>}[]=[];
+ const api={request:async(path:string,init?:RequestInit)=>{
+  if(!init?.method)return readFixture(path,plugins,binding);
+  calls.push({path,body:JSON.parse(String(init.body))});
+  if(path==='/api/plugins/resolve')return structuredClone(preview);
+  throw new Error('Unexpected mutation '+path);
+ }} as unknown as Api;
+ const {element}=await mount(t,api,'#/system/plugins?tab=discover');
+ await act(async()=>{element.querySelector<HTMLElement>('.plugin-discovery summary')!.click();await tick();});
+ await input(element,'GitHub 仓库','  '+source.repository+'  ');
+ await input(element,'发布标签（可选）','generated-test-release');
+ await click(element,'预览发布包');
+ assert.deepEqual(calls,[{path:'/api/plugins/resolve',body:{repository:source.repository,tag:'generated-test-release'}}],'the generic entry keeps the exact resolve path and trimmed body');
+ assert.equal(Boolean(element.querySelector('[role=dialog]')),true);
+ await click(element.querySelector('[role=dialog]')!,'取消');
+ await input(element,'发布标签（可选）','');
+ await click(element,'预览发布包');
+ assert.deepEqual(calls[1],{path:'/api/plugins/resolve',body:{repository:source.repository}},'an omitted tag stays omitted, so the guard observes real input');
+});
+
 test('automatic Memory desire is separate from the real global authorization; failed reads remain unavailable without implying approval',async t=>{
  const {plugins,binding}=fixtures();let state='unapproved',denied=false,writes=0;const api={request:async(path:string,init?:RequestInit)=>{if(init?.method){writes++;throw Error('No authorization mutation belongs to this read-only status');}if(path==='/api/model-authorization'){if(denied)throw new ApiError('Generated automatic processing authorization denied',403);return {authorization:{revision:1,state}};}return readFixture(path,plugins,binding);}} as Api;
  const {element}=await mount(t,api);assert.equal(button(element,'自动记忆').getAttribute('aria-pressed'),'true');assert.match(element.querySelector('.plugin-memory-control [role=status]')!.textContent!,/等待开启自动处理/);assert.equal(element.querySelector('[role=switch]')!.getAttribute('aria-checked'),'true');assert.equal(element.querySelector<HTMLAnchorElement>('.plugin-waiting-authorization a')!.hash,'#/system/models?category=processing');
