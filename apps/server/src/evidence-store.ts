@@ -63,14 +63,14 @@ export class EvidenceStore {
       if(!profile)return null;
       return JSON.stringify({revision:saved.revision,rule,profile,services:saved.policy.services.filter(s=>s.id===profile.serviceId||s.id===profile.modelServiceId)});
     });
-    // Backend epoch 6 is a deliberate vault cutover. Never infer that an old
+    // Backend epoch 7 is a deliberate vault cutover. Never infer that an old
     // populated schema has the new archive and visibility semantics.
     const priorTable=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get();
     if(priorTable){
       const settingsTable=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
       const epoch=settingsTable?this.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value:undefined;
-      if(epoch!=='6'){
-        throw new StoreError('Unsupported Mote vault epoch. Backend epoch 6 requires a new empty data directory; existing data is retained.',409);
+      if(epoch!=='7'){
+        throw new StoreError('Unsupported Mote vault epoch. Backend epoch 7 requires a new empty data directory; existing data is retained.',409);
       }
     }
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000');
@@ -83,8 +83,8 @@ export class EvidenceStore {
     this.db.function('mote_context_time',{deterministic:true},json=>new Date(sourceContentTime(JSON.parse(String(json)))).toISOString());
     this.db.function('mote_search_text',{deterministic:true},json=>searchText(JSON.parse(String(json))));
     installVaultSchema(this.db);
-    this.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('backend_epoch','6')").run();
-    this.db.exec('PRAGMA user_version=6');
+    this.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('backend_epoch','7')").run();
+    this.db.exec('PRAGMA user_version=7');
     this.contentEncryption=new ContentEncryption(directory,this.db,options);
     this.assets=new AssetStore(this);
     this.archive=new EvidenceArchive(this);
