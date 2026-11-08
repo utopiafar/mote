@@ -28,7 +28,7 @@ const readonly={readOnlyHint:true,destructiveHint:false,idempotentHint:true,open
 const boundedJson=(value:unknown)=>{const text=JSON.stringify(value);if(text.length>24000||Buffer.byteLength(text)>96000)throw new ConnectorError('response_budget_exceeded_reduce_limit',413);return text;};
 const json=(value:unknown)=>({content:[{type:'text' as const,text:boundedJson(value)}]});
 const safeResult=async(operation:()=>unknown)=>{try{return json(await operation());}catch(error){return {...json({error:error instanceof ConnectorError?error.code:'source_operation_failed'}),isError:true};}};
-const structuredResult=async(operation:()=>unknown,compatibility?:(value:any)=>unknown)=>{try{const value=await operation();boundedJson(value);return {content:[{type:'text' as const,text:boundedJson(compatibility?compatibility(value):value)}],structuredContent:value as Record<string,unknown>};}catch(error){return {...json({error:error instanceof ConnectorError?error.code:'source_operation_failed'}),isError:true};}};
+const structuredResult=async(operation:()=>unknown)=>{try{const value=await operation();boundedJson(value);return {content:[{type:'text' as const,text:boundedJson(value)}],structuredContent:value as Record<string,unknown>};}catch(error){return {...json({error:error instanceof ConnectorError?error.code:'source_operation_failed'}),isError:true};}};
 const contextCardShape={ref:z.string(),id:z.string(),kind:z.string(),title:z.string(),snippet:z.string(),matchReasons:z.array(z.string()),origin:z.record(z.unknown()),revision:z.string().optional(),locator:z.record(z.unknown()).optional(),evidenceRefs:z.array(z.string()),status:z.string().optional(),applicability:z.string().optional(),expansion:z.object({kind:z.literal('search'),scope:z.record(z.unknown()),refs:z.array(z.string())}).optional()};
 const contextPageShape={items:z.array(z.object(contextCardShape)),coverage:z.record(z.unknown()),nextCursor:z.string().nullable(),truncated:z.boolean()};
 const readPageShape={items:z.array(z.record(z.unknown())),missingRefs:z.array(z.string()),truncated:z.boolean()};
@@ -39,7 +39,7 @@ export function createMoteMcp(ctx:McpReadContext,track?:<T>(work:Promise<T>)=>Pr
     const context={};return memoryContexts.run(context,async()=>{ctx.reader.retainMemorySnapshot(context);try{return await operation();}finally{ctx.reader.releaseMemorySnapshot(context);}});
   };
   const safe=(operation:()=>unknown)=>{const work=safeResult(()=>{authorize?.();return operation();});return track?track(work):work;};
-  const structuredSafe=(operation:()=>unknown,compatibility?:(value:any)=>unknown)=>{const work=structuredResult(()=>{authorize?.();return memoryRead(operation);},compatibility);return track?track(work):work;};
+  const structuredSafe=(operation:()=>unknown)=>{const work=structuredResult(()=>{authorize?.();return memoryRead(operation);});return track?track(work):work;};
   const server=new McpServer({name:'mote',version:serverVersion});
   const reader=ctx.reader,context=ctx.context;
   // MCP is an external model query surface. It has no trusted cross-request

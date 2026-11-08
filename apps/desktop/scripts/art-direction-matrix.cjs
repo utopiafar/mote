@@ -10,7 +10,7 @@ module.exports = async function({window,js,navigate,outputDirectory,round,profil
   const dirty=spawnSync('git',['status','--porcelain','--','apps/desktop','packages/shared/design-tokens.json','scripts/generate-design-tokens.mjs'],{cwd:repo,encoding:'utf8'}).stdout;
   assert.equal(dirty,'','Capture requires the committed desktop source and token build');
   const digest=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
-  const buildIdentity=Object.fromEntries(['main.js','ui-bundle.js','index.html','styles.css','design-tokens.css','art-direction.css'].map(file=>[file,digest(join(__dirname,'../dist',file))]));
+  const buildIdentity=Object.fromEntries(['main.js','ui-bundle.js','index.html','styles.css','design-tokens.css'].map(file=>[file,digest(join(__dirname,'../dist',file))]));
   const captures=[],journeys=[],delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   async function until(read,label) {const end=Date.now()+15000;while(Date.now()<end){try{if(await read())return;}catch{}await delay(40);}throw Error('Mac scene did not become ready: '+label);}
   function ready(scene) {
