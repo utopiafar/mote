@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
+import {randomUUID} from 'node:crypto';
 import {FILE_PART_BYTES} from '@mote/shared';
 import {Store,sha256} from '../src/store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
@@ -35,6 +36,30 @@ test('restored import rebases all paths and replays a partial import without los
  assert.equal(resumed.get(completed.id).status,'completed');assert.equal((await resumed.confirm(completed.id)).status,'completed');assert.deepEqual(resumedIds,[]);
  assert.equal((await resumed.retry(job.id)).status,'awaiting_confirmation');const finished=await resumed.confirm(job.id);assert.equal(finished.status,'completed');assert.equal(finished.progress.duplicates,1);assert.equal(finished.progress.imported,1);assert.equal(finished.captureIds.length,2);assert.deepEqual(resumedIds,[finished.captureIds]);assert.equal(restored.list().items.length,4);
  resumed.delete(job.id);assert.equal(readFileSync(join(oldWorkspace,'generated-secret-script.mjs'),'utf8'),'synthetic original marker');
+});
+
+test('current backups omit the retired empty blob directory and native snapshots while restoring generic plugin memory after restart',async t=>{
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-backup-current-plugin-'))),source=join(root,'source'),snapshot=join(root,'snapshot'),target=join(root,'restored');
+ let original:Store|undefined,restored:Store|undefined,reopened:Store|undefined;
+ t.after(()=>{reopened?.close();restored?.close();original?.close();rmSync(root,{recursive:true,force:true});});
+ original=new Store(source);
+ original.db.exec('CREATE TABLE memory_plan_binding(id INTEGER PRIMARY KEY,json TEXT NOT NULL)');
+ original.db.prepare('INSERT INTO memory_plan_binding VALUES(1,?)').run(JSON.stringify({planId:'mote.builtin',generation:1}));
+ const archived=new ArchivedFileStore(original),file=archived.put({name:'generated.txt',bytes:Buffer.from('Generated backup roundtrip')});
+ const sources=new SourceStore(original);sources.register({id:'generated-backup-source',name:'Generated backup source',kind:'custom',deviceId:'generated-device',platform:'import'});
+ const retained=await sources.upsert('generated-backup-source',{externalId:'generated-note',revision:'v1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated retained source'});
+ const instanceId=randomUUID(),configuration='configuration-'+sha256(instanceId),providerRelative=`plugins/instances/${instanceId}/${configuration}`,providerFile=providerRelative+'/provider.json',providerBody=JSON.stringify({version:1,records:[{key:'generated',body:'Generated plugin memory'}]});
+ mkdirSync(join(source,providerRelative),{recursive:true});writeFileSync(join(source,providerFile),providerBody);
+ takeBackup(source,snapshot);
+ assert.deepEqual(readdirSync(snapshot).sort(),['backup-manifest.json','files','mote.sqlite','plugins']);
+ const manifest=JSON.parse(readFileSync(join(snapshot,'backup-manifest.json'),'utf8'));
+ assert.equal(existsSync(join(snapshot,'blobs')),false);
+ assert.equal(Object.keys(manifest.checksums).some(name=>/hindsight/i.test(name)),false);
+ assert.equal(manifest.checksums[providerFile],sha256(providerBody));
+ await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'missing-process.json')},snapshot);
+ const verify=(store:Store)=>{assert.equal(new ArchivedFileStore(store).read(file.id).toString(),'Generated backup roundtrip');assert.equal(new SourceStore(store).history('generated-backup-source','generated-note')[0]?.captureId,retained.id);assert.equal(readFileSync(join(target,providerFile),'utf8'),providerBody);};
+ restored=new Store(target);verify(restored);restored.close();restored=undefined;
+ reopened=new Store(target);verify(reopened);
 });
 
 for(const mode of ['plain','encrypted','mixed'] as const)test(`${mode} backup restores imported originals and multipart client files through their original readers`,async t=>{

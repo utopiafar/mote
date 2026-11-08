@@ -55,9 +55,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with: { node-version: '24', cache: npm }
       - run: npm ci --ignore-scripts
-      - name: Build the pinned Mem0 SQLite runtime for server fixtures
-        if: startsWith(matrix.task, 'server-') && matrix.task != 'server-build'
-        run: npm rebuild better-sqlite3
       - env:
           CHECK_TASK: ${{ matrix.task }}
           CHECK_SERVER_GROUPS: ${{ needs.affected.outputs.server_groups }}

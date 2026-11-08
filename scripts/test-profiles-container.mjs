@@ -101,7 +101,7 @@ try {
   assert.equal((await request(dev, `/api/notes/${saved.id}`)).ocrText, saved.text);
   await run(dev, 'stop');
   const snapshot = join(directory, 'snapshot'); await run(dev, 'backup', ['--out', snapshot]);
-  assert.deepEqual((await readdir(snapshot)).sort(), ['backup-manifest.json', 'blobs', 'files', 'mote.sqlite']);
+  assert.deepEqual((await readdir(snapshot)).sort(), ['backup-manifest.json', 'files', 'mote.sqlite']);
   const manifest = JSON.parse(await readFile(join(snapshot, 'backup-manifest.json'), 'utf8'));
   const blob = Object.keys(manifest.checksums).find(name => name.startsWith('files/objects/') && name.endsWith('/0.aes'));
   assert.notDeepEqual(await readFile(join(snapshot, blob)), image);
@@ -160,7 +160,7 @@ try {
   const backupFolders = await readdir(join(dev.directory, 'backups'));
   assert.equal(backupFolders.some(name => name.startsWith('.connectors-')), false, 'Private handoff must be removed after rollback');
   for (const path of [current.meta.previous.backup, upgraded.meta.previous.backup]) {
-    assert.deepEqual((await readdir(path)).sort(), ['backup-manifest.json', 'blobs', 'files', 'mote.sqlite']);
+    assert.deepEqual((await readdir(path)).sort(), ['backup-manifest.json', 'files', 'mote.sqlite']);
     const snapshotManifest = JSON.parse(await readFile(join(path, 'backup-manifest.json'), 'utf8'));
     assert.ok(Object.keys(snapshotManifest.checksums).every(name => !name.includes('connectors')));
   }
