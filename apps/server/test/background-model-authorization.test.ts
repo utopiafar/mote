@@ -13,7 +13,7 @@ function fixture(t:import('node:test').TestContext){
   let connections=[modelConnection('fixture',{provider:'generated',model:'small',apiKey:'fixture-only'})];
   let control=new BackgroundModelAuthorization(store,()=>connections);
   t.after(()=>{control.close();store.close();rmSync(directory,{recursive:true,force:true});});
-  const receive=(id:string,sourceId='fixture',eligible=true)=>{store.db.exec('BEGIN IMMEDIATE');try{control.receive(id,{sourceId,dataKind:'text'},eligible);store.db.exec('COMMIT');}catch(error){store.db.exec('ROLLBACK');throw error;}};
+  const receive=(id:string,sourceId='fixture',eligible=true)=>{store.db.exec('BEGIN IMMEDIATE');try{control.receive(id,{sourceId},eligible);store.db.exec('COMMIT');}catch(error){store.db.exec('ROLLBACK');throw error;}};
   const command=(action:'on'|'off'|'stop'|'exclude',excludedSourceIds?:string[])=>control.command({action,operationId:randomUUID(),revision:control.view().revision,...(action==='exclude'?{excludedSourceIds:excludedSourceIds??[]}:{})});
   /** Generated stand-in for a domain that already owns the received originals:
    * every fresh trigger becomes one durable automatic job. */
@@ -134,11 +134,11 @@ test('A1-17: automatic disclosure rejects only excluded sources while manual ass
   const f=fixture(t);f.command('on');f.receive('allowed','T');f.receive('blocked','S');f.command('exclude',['S']);
   f.control.automatic('automatic-disclosure',['allowed'],'working');
   await f.control.run('automatic-disclosure',async()=>{
-    f.control.assertDisclosure([{sourceId:'T',dataKind:'text'}]);
-    assert.throws(()=>f.control.assertDisclosure([{sourceId:'S',dataKind:'text'}]));
+    f.control.assertDisclosure([{sourceId:'T'}]);
+    assert.throws(()=>f.control.assertDisclosure([{sourceId:'S'}]));
   });
   f.control.manual('manual-disclosure','manual');
-  await f.control.run('manual-disclosure',async()=>{f.control.assertDisclosure([{sourceId:'S',dataKind:'text'}]);});
+  await f.control.run('manual-disclosure',async()=>{f.control.assertDisclosure([{sourceId:'S'}]);});
 });
 
 test('A1-18: replacing the model connection leaves in-flight and new automatic work running',async t=>{

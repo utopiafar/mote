@@ -8,9 +8,7 @@ import type {ExecutionStep} from './execution-engine.js';
 /** Host identities only. None of these values grants access to an original;
  * every consumer must also enforce its existing source and privacy authority. */
 export type ModelConnection={id:string;fingerprint:string};
-const dataKind=z.enum(['text','image','audio','conversation']);
-export type ModelDataKind=z.infer<typeof dataKind>;
-export type ModelDisclosure={sourceId:string;dataKind:ModelDataKind};
+export type ModelDisclosure={sourceId:string};
 /** The owner switch. `excludedSourceIds` is the only remaining scope: new
  * sources participate by default, and an excluded source can be re-included. */
 export type ModelAuthorityView={revision:number;state:'off'|'on';excludedSourceIds:string[]};

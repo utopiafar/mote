@@ -174,7 +174,7 @@ const meteringConnection={id:'generated-metering-connection',fingerprint:'b'.rep
 function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wait'|'admitted-wait'|'trace-wait'){
  const ledger=new UsageLedger(f.store),authorization=new BackgroundModelAuthorization(f.store,()=>[meteringConnection]);
  if(outcome==='usage-wait'||outcome==='admitted-wait')authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'on'});
- f.store.db.exec('BEGIN IMMEDIATE');authorization.receive(f.anchor,{sourceId:'fixture',dataKind:'text'});f.store.db.exec('COMMIT');
+ f.store.db.exec('BEGIN IMMEDIATE');authorization.receive(f.anchor,{sourceId:'fixture'});f.store.db.exec('COMMIT');
  let sawOnTrace=false;
  const query=async(input:QueryInput):Promise<QueryResult>=>{
   sawOnTrace=typeof input.onTrace==='function';

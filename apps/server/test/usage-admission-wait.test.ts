@@ -20,7 +20,7 @@ async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{au
   // Opening the switch first lets the allowed cases exercise a genuinely
   // admitted receipt; the closed case keeps the original withheld.
   if(authorize)authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'on'});
-  store.db.exec('BEGIN IMMEDIATE');authorization.receive('generated-original',{sourceId:'generated-source',dataKind:'text'});store.db.exec('COMMIT');
+  store.db.exec('BEGIN IMMEDIATE');authorization.receive('generated-original',{sourceId:'generated-source'});store.db.exec('COMMIT');
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   let sawOnTrace=false;
   const query=async(input:never)=>{

@@ -53,8 +53,8 @@ export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
 /** Trusted hosting callbacks for one agent view. The view still rechecks
  * exposure, currentness and source authority on every read. */
 export interface EvidenceReaderAgentOptions {
-  assertSources?:(ids:readonly string[],kind?:'text'|'image')=>void;
-  assertEvidence?:(ids:readonly string[],kind?:'text'|'image')=>void;
+  assertSources?:(ids:readonly string[])=>void;
+  assertEvidence?:(ids:readonly string[])=>void;
   diagnostics:ServerDiagnostics;
   allowQueryImages?:()=>boolean;
   exposurePolicy?:EvidenceExposurePolicy;
@@ -1159,7 +1159,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       },
       readImage:async (input)=>{
         const {id,attachmentId}=input;
-        options.assertEvidence?.([id],'image');
+        options.assertEvidence?.([id]);
         if(!options.allowQueryImages?.())throw new ContextToolError('image_disclosure_disabled','Original-image access for queries is off. The owner must enable on-demand image access in Central Perception settings before a new query. Do not repeat this image request.','stop');
         const context=options.currentGrantContext?.() as {processingImages?:readonly MemoryImageGrant[]}|undefined;
         if(context?.processingImages?.length){

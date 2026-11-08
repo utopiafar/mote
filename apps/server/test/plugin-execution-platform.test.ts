@@ -63,7 +63,7 @@ test('restored jobs retain real C04 model grants and fail closed after an explic
   const f=await fixture(t),control=f.authorization.assembly.modelAuthorization,connection=f.model;let calls=0;
   const handler={...base,execute:async()=>{calls++;return null;}};await f.install([handler]);
   control.command({action:'on',revision:0,operationId:randomUUID()});
-  f.store.db.exec('BEGIN IMMEDIATE');control.receive('generated-original',{sourceId:'generated-source',dataKind:'text'});f.store.db.exec('COMMIT');control.automatic('generated-authorized-work',['generated-original'],'working');
+  f.store.db.exec('BEGIN IMMEDIATE');control.receive('generated-original',{sourceId:'generated-source'});f.store.db.exec('COMMIT');control.automatic('generated-authorized-work',['generated-original'],'working');
   const id=await control.run('generated-authorized-work',async()=>f.platform.submission.enqueue('generated:grant',handler.kind,{revision:1}));
   control.command({action:'stop',revision:control.view().revision,operationId:randomUUID()});await f.restart();await f.install([handler]);await f.platform.submission.drain([id]);
   assert.equal(calls,0);assert.equal(f.platform.receipt(id).step?.state,'waiting');assert.equal(f.platform.receipt(id).step?.attempts,0);assert.equal(f.platform.receipt(id).failure?.code,'background_model_authorization_required');

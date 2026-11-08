@@ -154,12 +154,12 @@ test('serialized Memory pins are consumed by their exact real SQLite claim and s
 test('automatic work keeps running across model connection changes while platform close fences a captured relay',async t=>{
   const f=await fixture(t),control=f.platform.assembly.modelAuthorization,original=f.model;
   control.command({action:'on',revision:0,operationId:randomUUID()});
-  f.store.db.exec('BEGIN IMMEDIATE');control.receive('generated-pinned',{sourceId:'generated-source-a',dataKind:'text'});f.store.db.exec('COMMIT');control.automatic('generated-pinned-work',['generated-pinned']);let captured:(()=>void)|undefined;
+  f.store.db.exec('BEGIN IMMEDIATE');control.receive('generated-pinned',{sourceId:'generated-source-a'});f.store.db.exec('COMMIT');control.automatic('generated-pinned-work',['generated-pinned']);let captured:(()=>void)|undefined;
   await control.run('generated-pinned-work',async()=>{captured=control.capture(original);control.assertCurrent(original);f.addModel();f.platform.refreshFences();control.assertCurrent(original);});
   captured!();await f.platform.close();assert.throws(()=>captured!());
   await f.restart();const replacement=f.platform.assembly.modelAuthorization;
   replacement.command({action:'on',revision:replacement.view().revision,operationId:randomUUID()});
-  f.store.db.exec('BEGIN IMMEDIATE');replacement.receive('generated-original',{sourceId:'generated-source-a',dataKind:'text'});f.store.db.exec('COMMIT');replacement.automatic('generated-automatic',['generated-original']);
+  f.store.db.exec('BEGIN IMMEDIATE');replacement.receive('generated-original',{sourceId:'generated-source-a'});f.store.db.exec('COMMIT');replacement.automatic('generated-automatic',['generated-original']);
   await replacement.run('generated-automatic',async()=>{replacement.assertCurrent(original);f.withdrawOriginalModel();replacement.assertCurrent(original);},undefined);
 });
 
