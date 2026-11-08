@@ -7,14 +7,14 @@
   },
   "packages": [
     {
-      "id": "generated.plugin-control@4eed0ad61040515bf3707d609758e5c75dee1d2428288046d4d01faaadf2a803",
+      "id": "generated.plugin-control@9ad62a632bdda140b8fc93a923f5c034eea04999d5115e444f6a1a2d1e5a4da6",
       "name": "Generated control package",
       "version": "fixture-1",
       "source": {
         "repository": "generated-fixture/plugin-control",
         "tag": "v1",
         "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "digest": "4eed0ad61040515bf3707d609758e5c75dee1d2428288046d4d01faaadf2a803"
+        "digest": "9ad62a632bdda140b8fc93a923f5c034eea04999d5115e444f6a1a2d1e5a4da6"
       },
       "runtime": "worker",
       "state": "installed",
@@ -22,13 +22,13 @@
       "observed": "installed",
       "issues": [],
       "instanceIds": [
-        "5a961459-42c7-4140-af70-0c54d7c53aa9"
+        "e4ef58d9-bd76-40e3-889d-8907f6b1f0c3"
       ],
       "allowedActions": [
         "configure",
         "uninstall"
       ],
-      "operationId": "af30d4ee-8d72-4e37-b2b2-f787491f5c17",
+      "operationId": "0bd182a8-9195-4ba2-9080-a753234aa46e",
       "configurationSchema": [
         {
           "id": "endpoint",
@@ -41,8 +41,8 @@
   ],
   "instances": [
     {
-      "id": "5a961459-42c7-4140-af70-0c54d7c53aa9",
-      "packageId": "generated.plugin-control@4eed0ad61040515bf3707d609758e5c75dee1d2428288046d4d01faaadf2a803",
+      "id": "e4ef58d9-bd76-40e3-889d-8907f6b1f0c3",
+      "packageId": "generated.plugin-control@9ad62a632bdda140b8fc93a923f5c034eea04999d5115e444f6a1a2d1e5a4da6",
       "name": "Generated control instance",
       "scope": "default",
       "revision": 1,
@@ -76,24 +76,60 @@
   ],
   "builds": [
     {
-      "id": "5a961459-42c7-4140-af70-0c54d7c53aa9",
-      "packageId": "generated.plugin-control@4eed0ad61040515bf3707d609758e5c75dee1d2428288046d4d01faaadf2a803",
-      "installationId": "generated-installation",
-      "name": "Generated control instance",
-      "version": "fixture-1",
-      "revision": 2,
-      "runtime": "worker",
+      "id": "generated.plugin-control@9ad62a632bdda140b8fc93a923f5c034eea04999d5115e444f6a1a2d1e5a4da6",
+      "packageId": "generated.plugin-control@9ad62a632bdda140b8fc93a923f5c034eea04999d5115e444f6a1a2d1e5a4da6",
+      "installationId": "cbd518e9-b400-42f5-a68f-1195dd699203",
+      "revision": 1,
       "desired": null,
-      "active": null,
       "retired": false,
       "observed": "stopped",
       "blockers": [],
-      "operationId": "af30d4ee-8d72-4e37-b2b2-f787491f5c17",
+      "operationId": "0bd182a8-9195-4ba2-9080-a753234aa46e",
+      "active": null,
+      "restartRequired": false,
+      "version": "fixture-1",
+      "name": "Generated control package",
+      "runtime": "worker",
       "source": {
         "repository": "generated-fixture/plugin-control",
         "tag": "v1",
         "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "digest": "4eed0ad61040515bf3707d609758e5c75dee1d2428288046d4d01faaadf2a803"
+        "digest": "9ad62a632bdda140b8fc93a923f5c034eea04999d5115e444f6a1a2d1e5a4da6"
+      },
+      "configuration": {},
+      "configurationSchema": [
+        {
+          "id": "endpoint",
+          "label": "Generated endpoint",
+          "type": "text",
+          "required": true
+        }
+      ],
+      "capabilities": [],
+      "issues": [],
+      "allowedActions": [],
+      "package": true
+    },
+    {
+      "id": "e4ef58d9-bd76-40e3-889d-8907f6b1f0c3",
+      "packageId": "generated.plugin-control@9ad62a632bdda140b8fc93a923f5c034eea04999d5115e444f6a1a2d1e5a4da6",
+      "installationId": "cbd518e9-b400-42f5-a68f-1195dd699203",
+      "revision": 1,
+      "desired": null,
+      "retired": false,
+      "observed": "stopped",
+      "blockers": [],
+      "operationId": "e4ef58d9-bd76-40e3-889d-8907f6b1f0c3",
+      "active": null,
+      "restartRequired": false,
+      "version": "fixture-1",
+      "name": "Generated control instance",
+      "runtime": "worker",
+      "source": {
+        "repository": "generated-fixture/plugin-control",
+        "tag": "v1",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "digest": "9ad62a632bdda140b8fc93a923f5c034eea04999d5115e444f6a1a2d1e5a4da6"
       },
       "configuration": {
         "endpoint": "generated-reference"
@@ -114,47 +150,9 @@
         }
       ],
       "issues": [],
-      "allowedActions": [
-        "configure",
-        "check"
-      ],
-      "package": false,
-      "restartRequired": false
-    },
-    {
-      "id": "generated-native-build",
-      "packageId": "generated.native",
-      "installationId": "generated-native-installation",
-      "name": "Generated native build",
-      "version": "1.0.0",
-      "revision": 1,
-      "runtime": "host",
-      "desired": null,
-      "active": null,
-      "retired": false,
-      "observed": "stopped",
-      "blockers": [],
-      "operationId": "af30d4ee-8d72-4e37-b2b2-f787491f5c18",
-      "source": null,
-      "configuration": {},
-      "configurationSchema": [],
-      "capabilities": [],
-      "issues": [],
       "allowedActions": [],
-      "package": false,
-      "restartRequired": false
+      "package": false
     }
   ],
-  "catalog": [
-    {
-      "repository": "mem0ai/mem0",
-      "name": "Mem0",
-      "description": "Pinned ts-v3.3.1 with the bundled Mote storage/retrieval adapter"
-    },
-    {
-      "repository": "vectorize-io/hindsight",
-      "name": "Hindsight",
-      "description": "Pinned v0.10.2; controlled engine capability verification required"
-    }
-  ]
+  "catalog": []
 }
