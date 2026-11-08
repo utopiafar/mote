@@ -119,9 +119,9 @@ test('incompatible upgrade and rollback reject before stopping the process, back
   let p = await fixture(t), legacy = await releaseFixture(p.home, 'legacy');
   const snapshot = join(p.home, 'generated-previous-snapshot'); await mkdir(snapshot);
   const database = new DatabaseSync(join(snapshot, 'mote.sqlite'));
-  database.exec("CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT); INSERT INTO settings VALUES ('backend_epoch','6')"); database.close();
+  database.exec("CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT); INSERT INTO settings VALUES ('backend_epoch','7')"); database.close();
   const hash = createHash('sha256').update(await readFile(join(snapshot, 'mote.sqlite'))).digest('hex');
-  await atomicJson(join(snapshot, 'backup-manifest.json'), { version: 1, storageEpoch: 6, checksums: { 'mote.sqlite': hash } });
+  await atomicJson(join(snapshot, 'backup-manifest.json'), { version: 1, storageEpoch: 7, checksums: { 'mote.sqlite': hash } });
   await atomicJson(p.metaFile, { ...p.meta, previous: { ...p.meta, release: legacy, backup: snapshot } }); p = await loadProfile(profilePaths('dev', p.home));
   await writeFile(join(p.dataDir, 'generated-evidence.txt'), 'Generated current evidence'); await cli(p.home, 'dev', 'start');
   const raw = await readFile(p.configFile), meta = await readFile(p.metaFile), processRecord = await readFile(p.processFile);

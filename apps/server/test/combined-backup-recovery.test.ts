@@ -23,7 +23,7 @@ const backupScript=fileURLToPath(new URL('../../../scripts/backup.ts',import.met
 const takeBackup=(source:string,out:string)=>execFileSync(process.execPath,[backupScript,'--data',source,'--out',out],{stdio:'pipe'});
 const empty=()=>({answer:JSON.stringify({memories:[]}),citations:[],trace:[],runId:randomUUID()});
 
-test('current epoch 6 backup restores original identities, Memory history and interrupted execution without replaying completed work',async t=>{
+test('current epoch 7 backup restores original identities, Memory history and interrupted execution without replaying completed work',async t=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-combined-restore-'))),source=join(root,'source'),before=join(root,'earlier-snapshot'),snapshot=join(root,'snapshot'),target=join(root,'restored'),rollback=join(root,'rollback'),key='31'.repeat(32);
  const original=new Store(source,{dataKey:key,contentEncryptionEnabled:true}),sources=new SourceStore(original),archived=new ArchivedFileStore(original),memories=new MemoryStore(original);
  const stores=[original],engines:ExecutionEngine[]=[],pipelines:MemoryPipeline[]=[],insights:InsightRuns[]=[];
@@ -72,6 +72,7 @@ test('current epoch 6 backup restores original identities, Memory history and in
  takeBackup(source,snapshot);await verifiedBackup(snapshot);
  await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'missing-process')},snapshot);
  const restored=new Store(target,{dataKey:key});stores.push(restored);const restoredSources=new SourceStore(restored),restoredFiles=new ArchivedFileStore(restored),restoredMemory=new MemoryStore(restored),executor=new ExecutionEngine(restored);engines.push(executor);
+ assert.equal(restored.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()!.value,'7');assert.equal(restored.db.prepare('PRAGMA user_version').get()!.user_version,7);
  assert.deepEqual(restoredFiles.read(legacy.id),bytes);assert.equal(sha256(restoredFiles.read(legacy.id)),legacy.hash);assert.deepEqual(restoredSources.history('generated-source','generated-note').map(row=>({id:row.captureId,revision:row.revision})),history);
  const restoredBinary=new FileStore(restored,restoredSources);assert.deepEqual(Buffer.concat([...restoredBinary.bytes(fileAck.id)]),binary);assert.equal(restoredBinary.detail(fileAck.id).sha256,sha256(binary));
  assert.equal(restoredMemory.get(prior.id).supersededBy,corrected.id);assert.deepEqual(restoredMemory.get(corrected.id),memories.get(corrected.id));
