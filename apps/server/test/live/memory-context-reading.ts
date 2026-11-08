@@ -79,7 +79,7 @@ try{
  pipeline=new MemoryPipeline({store:vault,memories,strategies,concurrency:()=>1,requireAdmission:true,admission:{materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:()=>['source-body'],materialAllowedForMemory:ref=>Boolean(materials.input(ref,['source-body'])?.ready)},models:{configured:()=>true,model:()=>model},phases:{query,
   review:(input,draft,strategy)=>reviewMemory(input,draft,query,{strategy})}});
  const job=pipeline.create({evidenceIds:[evidenceId],recipes:[{id:'mote.personal-memory',version:'5'}],batchCharacters:512,timeZone:'Asia/Shanghai',contextTime:observedAt,workPackage:{id:randomUUID(),goal:'Independently inspect each generated diary target range',instruction:'Preserve each original narrator, temporal frame, quoted participant, action status and uncertainty; only target ranges are completion targets.'}});
- assert.equal(job.totalBatches,2);assert.equal(job.contextReadVersion,1);
+ assert.equal(job.totalBatches,2);assert.ok(job.authorizedChunks.length>0);
  report.status='running';await save();progress('live-launch',{directory,batches:job.totalBatches,maximumQueries,maximumModelTurns,reasoningEffort});
  const done=await pipeline.run(job.id);report.job=done;report.memories=done.memoryIds.map(id=>memories.get(id));
  report.originalSnapshotAfter=sourceSnapshot();report.sourceOriginalsUnchanged=report.originalSnapshotBefore===report.originalSnapshotAfter;

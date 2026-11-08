@@ -63,7 +63,7 @@ test('HTTP composed personal policy reads context, reviews over 32 selected cand
  assert.equal(ids.length,1,'select only the formal source-body output');
  const started=await api('POST','/api/memory-jobs',{evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'5'}]});assert.equal(started.statusCode,202,started.body);
  const done=await node.memoryPipeline.run(started.json().id);assert.equal(done.status,'completed',JSON.stringify({spyFailures,batches:done.batches.map(batch=>({status:batch.status,error:batch.errorCode,validation:batch.validationFailures}))}));assert.equal(done.memoryCount,40);
- assert.equal(done.contextReadVersion,1);
+ assert.ok(done.authorizedChunks.length>0);
  assert.ok(done.batches.every(batch=>batch.strategy?.workContract==='range-evaluation@1'&&!batch.supersededBy));
  const selected=done.batches.find(batch=>batch.memoryIds.length===40)!;assert.ok(selected);assert.equal(selected.coverage!.length,1,'context reads do not add coverage rows');
  const phases=calls.filter(call=>call.jobId===done.id&&call.contextRead);assert.deepEqual(phases.map(call=>call.phase),['extract','review']);

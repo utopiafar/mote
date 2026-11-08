@@ -5,14 +5,14 @@ import type {MemoryWorkMember} from './memory-work-contract.js';
 type State=Exclude<keyof ImportMemoryProgress,'total'|'receipts'|'jobIds'>;
 const priority:State[]=['unavailable','failed','waitingForModel','running','pending','paused','cancelled','disabled','completed'];
 type Chunk={id:string;key:string;offset:number;length:number;fingerprint:string};
-type Job={status:string;workPackage?:{inputs?:{ref:string;sourceId:string;inputKey:string;scope:string}[]};authorizedChunks?:Chunk[];materialRefs?:Record<string,string>};
+type Job={status:string;workPackage?:{inputs?:{ref:string;sourceId:string;inputKey:string;scope:string}[]};authorizedChunks:Chunk[];materialRefs:Record<string,string>};
 type Batch={status:string;errorCode?:string;supersededBy?:string[];chunks:Chunk[];coverage?:MemoryWorkMember[];materialRefs?:Record<string,string>};
 
 function memberProgress(job:Job,batches:Batch[],checkpoints:Set<string>,sourceId:string,inputKey:string,scope:string):State|undefined {
   if(!job.workPackage)return;
   const input=job.workPackage.inputs?.find(input=>input.sourceId===sourceId&&input.inputKey===inputKey&&input.scope===scope);
   if(!input)return;
-  const targets=(job.authorizedChunks??[]).filter(chunk=>job.materialRefs?.[chunk.id]===input.ref);
+  const targets=job.authorizedChunks.filter(chunk=>job.materialRefs[chunk.id]===input.ref);
   if(!targets.length)return job.status==='completed'?'completed':undefined;
   const leaves=batches.filter(batch=>!batch.supersededBy?.length&&batch.chunks.some(chunk=>batch.materialRefs?.[chunk.id]===input.ref&&targets.some(target=>target.id===chunk.id&&target.fingerprint===chunk.fingerprint)));
   const committed=leaves.filter(batch=>batch.status==='completed').flatMap(batch=>batch.chunks.filter(chunk=>checkpoints.has(chunk.key)&&batch.coverage?.some(member=>member.id===chunk.id&&member.offset===chunk.offset&&member.length===chunk.length&&member.fingerprint===chunk.fingerprint&&member.inputKey===inputKey&&member.scope===scope&&(member.state==='checked'||member.state==='no_candidates'))));
@@ -56,7 +56,7 @@ export function importMemoryProgress(store:Store,captureIds:readonly string[]):I
     const id=String(row.job_id),batch=JSON.parse(String(row.json)) as Batch,list=batches.get(id)??[];list.push(batch);batches.set(id,list);
     for(const chunk of batch.chunks??[])checkpointKeys.add(chunk.key);
   }
-  for(const id of packageIds)for(const chunk of jobValues.get(id)!.authorizedChunks??[])checkpointKeys.add(chunk.key);
+  for(const id of packageIds)for(const chunk of jobValues.get(id)!.authorizedChunks)checkpointKeys.add(chunk.key);
   const checkpoints=new Set(store.db.prepare('SELECT key FROM memory_checkpoints WHERE key IN (SELECT value FROM json_each(?))').all(JSON.stringify([...checkpointKeys])).map(row=>String(row.key)));
   for(const row of rows){
     const id=String(row.id),states=records.get(id)??[];records.set(id,states);
