@@ -80,9 +80,9 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
       const keys=new Set(store.db.prepare('SELECT json FROM memories').all().map(row=>JSON.stringify(memoryProviderKey(JSON.parse(String(row.json))))));
       for(const row of store.db.prepare("SELECT id,json FROM memory_provider_writes WHERE state='acknowledged'").all()){const write=JSON.parse(String(row.json));if(JSON.stringify(write.namespace)===JSON.stringify(namespace)&&keys.has(JSON.stringify(write.key)))store.db.prepare("UPDATE memory_provider_writes SET json=json_set(json,'$.hostPublished',json('true')) WHERE id=?").run(row.id);}
     };
-    // Upgrade earlier journals before any new asynchronous work. Identity and
-    // digest remain sufficient to reconcile a subsequently retired late write.
-    for(const row of store.db.prepare('SELECT id,parent_id,json FROM memory_provider_writes').all()){const value=JSON.parse(String(row.json));if(value.memory){this.register(String(row.parent_id),recordDependencies([value.memory]));if(!value.bodyDigest){value.bodyDigest=memoryBodyDigest(value.memory);store.db.prepare('UPDATE memory_provider_writes SET json=? WHERE id=?').run(JSON.stringify(value),row.id);}}}
+    // Re-register interruption identities before any new asynchronous work;
+    // identity and digest remain sufficient to reconcile a retired late write.
+    for(const row of store.db.prepare('SELECT id,parent_id,json FROM memory_provider_writes').all()){const value=JSON.parse(String(row.json));if(value.memory)this.register(String(row.parent_id),recordDependencies([value.memory]));}
     for(const row of store.db.prepare('SELECT id,json FROM memory_publications').all()){const value=JSON.parse(String(row.json));if(value.prepared)this.register(String(row.id),recordDependencies([...value.prepared.items,...value.prepared.changed]));}
     for(const row of store.db.prepare('SELECT id,json FROM memory_publication_outputs').all())this.register(String(row.id),outputDependencies(JSON.parse(String(row.json))));
     for(const row of store.db.prepare('SELECT id,json FROM memory_owner_mutations').all()){const value=JSON.parse(String(row.json));this.register(String(row.id),recordDependencies([...(value.changed??[]),...(value.result?[value.result]:[]),...(value.before??[]).map((prior:any)=>JSON.parse(prior.json))]));}
