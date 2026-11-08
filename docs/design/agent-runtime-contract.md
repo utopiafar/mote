@@ -1,5 +1,7 @@
 # Agent Runtime and Host output contract (A01)
 
+Status: frozen. The Host runtime contract accepts no new concepts; see [AGENTS.md](../../AGENTS.md) Product invariants.
+
 This is the P0 contract for A03–A17, following [H01](native-plugin-architecture.md). Its common service, identity and lifecycle vocabulary is frozen H02 commit `020a50996e917fa52852034943a1e486893169d5`. This document and the two new contract modules do not switch the current runtime, create a Host implementation or establish a real runtime/consumer journey. H02 integration and dependency wiring remain coordinated by root.
 
 ## Responsibility and trust
