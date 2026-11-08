@@ -75,8 +75,9 @@ export function createMaterialRepositoryFactory(platform:MaterialRepository,onSt
       prepare:platform.prepare,
       start(){
         platform.start();
-        // The legacy feature bag still needs the complete store until MAT05.
-        // Ordinary consumers see only MaterialRepositoryRead in their contract.
+        // Trusted composition still borrows the complete MaterialStore while
+        // remaining Material consumers migrate. Ordinary consumers see only
+        // the MaterialRepositoryRead contract.
         const repository=context.provide(materialRepositoryContribution.id,centralServices.materialRepository,platform.storeForAssembly);
         const publication=context.provide(materialRepositoryContribution.id,centralServices.materialPublication,platform.publication);
         onStarted?.({repository,publication});

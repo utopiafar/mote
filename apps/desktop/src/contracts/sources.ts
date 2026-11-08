@@ -20,7 +20,7 @@ export interface SourceOptions {
   name?: string;
   /** Optional initial owner declaration, transported separately from source content. */
   description?: string;
-  /** Collector-only policy: false captures one immutable import; undefined preserves legacy watching. */
+  /** Collector-only policy: false captures one immutable import; undefined keeps continuous watching. */
   syncContinuously?: boolean;
   /** Explicit owner confirmation that snapshot file bytes are sent for central processing. */
   centralProcessingConsent?: boolean;

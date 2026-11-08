@@ -8,7 +8,7 @@ import type {ModelProtocol,ModelReasoningEffort,CodexServiceTier} from '@mote/sh
 /** Local trusted control handoff for one query. Composites forward the same lease;
  * only the chosen leaf reports its finalizer, synchronously before execution. */
 export interface QueryRunLease {
-  onFinalizer?(mode: 'host' | 'legacy'): void;
+  onFinalizer?(mode: 'host'): void;
 }
 
 export interface AgentOptions {

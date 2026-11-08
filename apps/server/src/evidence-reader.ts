@@ -480,8 +480,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     }else{
       let cursor:string|undefined;
       do{const page=this.materialCatalog({...scope,cursor,limit:100});for(const material of page.items)addMaterial(material);cursor=page.nextCursor??undefined;}while(cursor);
-      // Legacy capture-only records retain their existing admission boundary.
-      // Formal materials above must not also be sent as raw source items.
+      // Capture-only records keep their existing admission boundary: ingestion
+      // and Material publication are separate, so catalog entries may not have
+      // a Material yet. Formal materials above must not also be sent as raw items.
       do{const page=this.store.list({...scope,cursor,limit:200});
         for(const record of page.items){
           if(materialOriginals.has(record.id)||this.sourceItemMaterial(record,scope)||record.provenance?.document?.coding)continue;
