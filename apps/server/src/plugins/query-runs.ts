@@ -28,7 +28,6 @@ import {modelConfiguration} from '../model-configuration.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
 import {queryWithAttachmentsSchema} from '../query-request.js';
 import type {QueryScope} from '../query-scope.js';
-import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityCheckpoint} from '../query-quality-experiment.js';
 import {assertSourceContextDependencies} from '../source-context-lineage.js';
 import {safeError} from '../diagnostics.js';
 import type {QueryRuntime} from './query-runtime.js';
@@ -66,7 +65,6 @@ export interface QueryRunDependencies {
   readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
   /** Resolved from the already-active admitted query runtime. */
   readonly queryRuntime:()=>QueryRuntime;
-  readonly qualityStrategy?:QueryQualityStrategy;
   readonly semanticContextTime?:()=>string;
   readonly usageLedger:UsageLedger;
   readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'> & {readonly control:Pick<BackgroundModelAuthorization,'workState'>};
@@ -109,7 +107,7 @@ function delegationOptions(dependencies:QueryRunDependencies){
 /** Callbacks captured by one DelegatedQueryRuns generation. A stopped
  * activation never installs another runtime's callbacks as its own. */
 function createRunCallbacks(dependencies:QueryRunDependencies,runtime:DelegationRuntime,queryRuntime:QueryRuntime):ConstructorParameters<typeof DelegatedQueryRuns>[2]{
-  const {store,files,conversations,executor,modelSettings,working,lifecycleSettings,archiveReader,agent,modelEvidenceAuthority,qualityStrategy,semanticContextTime,usageLedger,sourceContexts,assertModelEvidence,evidenceReader,modelAuthorizationHost}=dependencies;
+  const {store,files,conversations,executor,modelSettings,working,lifecycleSettings,archiveReader,agent,modelEvidenceAuthority,semanticContextTime,usageLedger,sourceContexts,assertModelEvidence,evidenceReader,modelAuthorizationHost}=dependencies;
   const pinnedConfigurationCurrent=(prepared:QueryInput,fingerprint:string)=>{
     const profile=modelSettings.select('chat',prepared.modelProfileId),model=prepared.modelOverride??profile.settings.model;
     return modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision).fingerprint===fingerprint;
@@ -119,33 +117,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
     if(states.includes('revoked'))throw new ExecutionFailure('stale','ask_revoked');
   };
   const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,archiveReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
-    query:input=>queryRuntime.queryAgent(input,'query','conversations'),qualityStrategy});
-  function qualityCheckpoint(input:QueryInput):QueryQualityCheckpoint|undefined{
-    if(!qualityStrategy||!input.hostControlChannel)return;
-    const work=runtime.get(input.traceContext!.operationId!),stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
-    const assertCurrent=()=>{
-      input.signal?.throwIfAborted();
-      if(!fence||!executor.isCurrentInputGrant(stepId,fence))throw new StoreError('Query stage grant expired',409);
-      const saved=runtime.journal.payload<SavedQuery>(work.id);
-      if(saved.qualityStrategy!==qualityStrategy)throw new StoreError('Query experiment strategy changed',409);
-      const selected=modelSettings.select('chat',saved.prepared!.modelProfileId),current=modelConfiguration(selected.id,{...selected.settings,model:saved.prepared!.modelOverride??selected.settings.model},modelSettings.view().revision);
-      if(saved.configurationFingerprint!==current.fingerprint)throw new StoreError('Query model configuration changed',409);
-      assertModelEvidence(saved.prepared);
-    };
-    const assertResult=(result:QueryResult)=>{assertModelEvidence({...runtime.journal.payload<SavedQuery>(work.id).prepared!,contextEvidenceDependencies:result.evidenceDependencies});assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);};
-    return {assertCurrent,read:stage=>{
-      assertCurrent();const result=runtime.journal.payload<SavedQuery>(work.id).qualityStages?.[stage];if(result)assertResult(result);return result;
-    },write:(stage,result)=>{
-      const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');
-      try{
-        assertCurrent();assertResult(result);
-        runtime.recordEvidence(work.id,[...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
-        runtime.recordSourceContextDependencies(work.id,result.sourceContextDependencies??[]);
-        const saved=runtime.journal.payload<SavedQuery>(work.id);saved.qualityStages={...saved.qualityStages,[stage]:result};runtime.journal.savePayload(work.id,saved);
-        if(own)store.db.exec('COMMIT');
-      }catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}
-    }};
-  }
+    query:input=>queryRuntime.queryAgent(input,'query','conversations')});
   return {
     contextTime:()=>freezeSemanticContextTime(semanticContextTime),
     resolveInput:(raw:unknown)=>{
@@ -162,7 +134,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       return selected;
     },
     prepare:prepareDelegatedQuery.prepare,
-    query:(input:QueryInput)=>runQueryQualityExperiment(input,qualityStrategy??'base',(next,stage)=>queryRuntime.queryAgent({...next,traceContext:{...next.traceContext,phase:'quality.'+stage}},'query',stage==='base'?'conversations':'query.'+stage),qualityCheckpoint(input)),
+    query:(input:QueryInput)=>queryRuntime.queryAgent(input,'query','conversations'),
     operationUsage:(operationId:string,createdAt:string,finishedAt:string)=>usageLedger.operation(operationId,createdAt,finishedAt),
     pinnedConfigurationCurrent,
     assertModelWork,

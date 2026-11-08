@@ -189,3 +189,48 @@ test('an explicit plugin stop cancels accepted runs, aborts the model and fences
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversation_turns').get()!.n,0);
   assert.throws(()=>node.queryRuns.start(randomUUID(),{question:'Generated closed query'}),{statusCode:503});
 });
+
+test('an interrupted query run resumes its durable checkpoint after a full restart and completes exactly once',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-query-run-resume-'));
+  let node:Awaited<ReturnType<typeof buildApp>>=undefined as never;
+  t.after(async()=>{await node?.app.close();rmSync(directory,{recursive:true,force:true});});
+  let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
+  node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
+    entered();
+    await new Promise((_resolve,reject)=>{
+      const interrupted=()=>reject(Object.assign(new Error('Generated model interrupted'),{name:'AbortError'}));
+      if(input.signal?.aborted)return interrupted();
+      input.signal?.addEventListener('abort',interrupted,{once:true});
+    });
+    return plain('Generated interrupted answer');
+  }}});
+  const id=randomUUID(),accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated resumable question'}}});
+  assert.equal(accepted.statusCode,202,accepted.body);
+  await started;
+  assert.equal(node.queryRuns.get(id).status,'running');
+  const checkpoint=node.delegation.journal.payload<Record<string,unknown>>('query:'+id);
+  assert.equal(Object.hasOwn(checkpoint,'qualityStrategy'),false,'the checkpoint never stores a removed experiment strategy');
+  assert.equal(Object.hasOwn(checkpoint,'qualityStages'),false,'the checkpoint never stores removed experiment stages');
+  assert.equal(typeof checkpoint.configurationFingerprint,'string','the durable generation pin stays');
+  assert.ok(checkpoint.prepared,'the accepted run has a durable prepared checkpoint');
+  await node.app.close();
+
+  let resumed=0;
+  node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{resumed++;return plain('Generated resumed answer');}}});
+  const completed=await until(()=>{const run=node.queryRuns.get(id);return run.status==='completed'?run:undefined;},()=>node.queryRuns.get(id));
+  assert.equal(resumed,1,'only the restarted run executes the model');
+  assert.equal(completed.status,'completed');
+  assert.equal(Object.hasOwn(node.delegation.journal.payload<Record<string,unknown>>('query:'+id),'qualityStrategy'),false);
+  const conversation=(await node.app.inject({url:'/api/conversations/'+completed.conversationId,headers})).json() as {turns:{status:string;result:{answer:string}}[]};
+  assert.equal(conversation.turns.length,1,'the interrupted attempt publishes no duplicate turn');
+  assert.equal(conversation.turns[0]!.status,'completed');
+  assert.equal(conversation.turns[0]!.result.answer,'Generated resumed answer');
+  await node.app.close();
+
+  node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{resumed++;return plain('Generated duplicate answer');}}});
+  assert.equal(node.queryRuns.get(id).status,'completed','a later restart reopens the completed receipt');
+  assert.equal(resumed,1,'a completed run is never executed twice');
+  const reopened=(await node.app.inject({url:'/api/conversations/'+completed.conversationId,headers})).json() as {turns:unknown[]};
+  assert.equal(reopened.turns.length,1);
+});
+

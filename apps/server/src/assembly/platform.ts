@@ -4,12 +4,11 @@ import {AgentYieldError} from '@mote/agent';
 import type {QueryInput} from '@mote/agent';
 import type {Config} from '../config.js';
 import type {Connections} from '../connections.js';
-import {StoreError,type Store} from '../store.js';
+import type {Store} from '../store.js';
 import {moteText} from '../i18n.js';
 import {defaultLogMaxBytes} from '../log-retention-config.mjs';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ObservationIdentity,ObservationName} from '../execution-observability.js';
-import type {QueryQualityStrategy} from '../query-quality-experiment.js';
 import type {ServerResources} from '../server-resources.js';
 import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import {createAuthorizationPlatform,authorizationPlatformContribution,authorizationPlatformDeclaration,authorizationPlatformReplacement} from '../plugins/authorization-platform.js';
@@ -34,7 +33,6 @@ export interface PlatformAssemblyDependencies {
   readonly serverVersion:string;
   readonly availableModelConnections:()=>ModelConnection[];
   readonly connections?:Connections;
-  readonly queryQualityExperiment?:QueryQualityStrategy;
   /** Late-bound by the trusted root once the evidence authority exists; the
    * model gates only invoke it inside admitted work, never during assembly. */
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
@@ -69,7 +67,7 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
   // Accounting observes trusted admission boundaries, independently of model
   // input. A host cooldown or gate cancellation can happen before any call.
   const queryAccounting=new AsyncLocalStorage<{agentStarted:()=>void;modelQueued:()=>void;modelStarted:()=>void}>();
-  const assertModelPurpose=(input:QueryInput|undefined)=>{if(dependencies.queryQualityExperiment&&!input?.traceContext?.operationId?.startsWith('query:'))throw new StoreError('Isolated Ask experiment does not authorize background model work',409);};
+  const assertModelPurpose=(_input?:QueryInput)=>{};
   const authorizeModelRequest=()=>{modelAuthorization.assertCurrent();assertModelPurpose(modelContext.getStore());dependencies.assertModelEvidence(modelContext.getStore());};
   const runModelFor=(settings:import('@mote/shared/models').ModelSettings,connection?:ModelConnection):NonNullable<import('@mote/agent').AgentOptions['runModel']>=>(task,signal)=>{
     const assertAuthority=connection?modelAuthorization.capture(connection):undefined;assertAuthority?.();
