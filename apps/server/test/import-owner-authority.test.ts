@@ -51,7 +51,7 @@ for(const scenario of ['initial','retry-after-restart','unbound-retry'] as const
  const confirmed=await node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers});assert.equal(confirmed.statusCode,202,confirmed.body);
  await node.importServices.importTasks.get(id);job=node.imports.get(id);
  assert.equal(job.status,'completed');assert.equal(job.progress.imported,1);
- assert.equal(node.modelAuthorization.view().state,'unapproved','a manual import must not authorize unrelated background work');
+ assert.equal(node.modelAuthorization.view().state,'off','a manual import must not switch on unrelated background work');
 });
 
 test('an explicitly retried import reports queued while another import is using the worker',async t=>{

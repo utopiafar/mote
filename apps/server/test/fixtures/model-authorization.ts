@@ -2,18 +2,23 @@ import assert from 'node:assert/strict';
 import {TOPIC_CLASSIFICATION_INSTRUCTION} from '../../src/automatic-topics.js';
 import {randomUUID} from 'node:crypto';
 import type {buildApp} from '../../src/app.js';
-import type {ModelConnection,ModelDataScope} from '../../src/background-model-authorization.js';
+import type {ModelConnection} from '../../src/background-model-authorization.js';
 
 type Node=Pick<Awaited<ReturnType<typeof buildApp>>,'app'|'featureServices'|'modelAuthorizationHost'>;
-/** Explicit test-owner consent through the production HTTP boundary. Call after
- * configuring fixture connections and before original intake. Never call on
- * every intake/tick/restart: denied receipts and revocation must stay denied. */
-export async function authorizeFixtureModels(node:Node,scope:ModelDataScope={sourceIds:null,dataKinds:['text','image','audio','conversation']}){
+/** Explicit test-owner consent through the production HTTP boundary. Turn the
+ * background model switch on once, after configuring fixture connections and
+ * before original intake; sources in `excludedSourceIds` then stay out until a
+ * later exclude command re-includes them. To observe the closed switch, do not
+ * call this helper. */
+export async function authorizeFixtureModels(node:Node,options:{excludedSourceIds?:string[]}={}){
  const headers={authorization:'Bearer '+node.featureServices.config.token};
- const response=await node.app.inject({url:'/api/model-authorization',headers});assert.equal(response.statusCode,200,response.body);
- const view=response.json();
- const command=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action:'authorize',connections:view.connections,scope}});
- assert.equal(command.statusCode,200,command.body);return command.json();
+ const view=(await node.app.inject({url:'/api/model-authorization',headers})).json();
+ const command=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action:'on'}});
+ assert.equal(command.statusCode,200,command.body);
+ const current=command.json();
+ if(options.excludedSourceIds===undefined)return current;
+ const exclude=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:current.revision,operationId:randomUUID(),action:'exclude',excludedSourceIds:options.excludedSourceIds}});
+ assert.equal(exclude.statusCode,200,exclude.body);return exclude.json();
 }
 /** For a fixture that deliberately calls an internal foreground operation
  * instead of its HTTP owner route. Wrap only that explicit operation, including

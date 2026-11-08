@@ -17,7 +17,7 @@ import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-plann
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {generatedNativeAdapter} from './fixtures/native-engine-adapter.js';
 
-type Mode='read'|'skip'|'empty-wire'|'revoke'|'bad-proof';
+type Mode='read'|'skip'|'empty-wire'|'revoke'|'bad-proof'|'deferred';
 async function fixture(t:TestContext,providerId:'feishu'|'dingtalk',mode:Mode){
  const dataDir=await mkdtemp(join(tmpdir(),'mote-recording-integration-')),token='generated-integration-owner',headers={authorization:'Bearer '+token};
  const original='Owner 00:00:00.000\nI prefer quiet mornings for focused work.\n';
@@ -50,7 +50,7 @@ async function fixture(t:TestContext,providerId:'feishu'|'dingtalk',mode:Mode){
  const settings=node.lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});await node.app.ready();
  const api=async(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>{const response=await node.app.inject({method,url,headers,...(payload?{payload}:{})});assert.equal(response.statusCode,200,response.body);return response.json();};
  const authorization=(await node.app.inject({url:'/api/model-authorization',headers:{authorization:'Bearer '+token}})).json();
- const consent=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:{authorization:'Bearer '+token},payload:{revision:authorization.authorization.revision,operationId:randomUUID(),action:'authorize',connections:authorization.connections,scope:{sourceIds:null,dataKinds:['text','image','audio','conversation']}}});assert.equal(consent.statusCode,200,consent.body);
+ const consent=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:{authorization:'Bearer '+token},payload:{revision:authorization.authorization.revision,operationId:randomUUID(),action:'on'}});assert.equal(consent.statusCode,200,consent.body);
  await api('PUT','/api/memory-integration-settings',{recipe:{id:'mote.memory-integration',version:'2'}});
  await api('POST',`/api/connectors/${providerId}-recordings/connect`);await api('PUT',`/api/connectors/${providerId}-recordings/selection`,{enabled:true,start:'2026-09-01T00:00:00Z',end:'2026-10-01T00:00:00Z',autoSync:false,backupAudio:true});
  for(let n=0;n<30;n++){const rows=node.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE ? AND state IN ('waiting','running') AND available_at<=? LIMIT 100").all('recording.'+providerId+'.%',Date.now());if(!rows.length)break;await node.executor.drain(rows.map(row=>String(row.id)));}
@@ -59,9 +59,10 @@ async function fixture(t:TestContext,providerId:'feishu'|'dingtalk',mode:Mode){
  const cards=node.memories.list().map(card=>node.memories.get(card.id)).filter(card=>card.status==='published'&&card.admission?.layer==='memory');assert.equal(cards.length,1);assert.deepEqual(seedDeliveries,[1,1]);
  const originalDependencies=node.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(cards[0].id).map(row=>String(row.evidence_id));assert.ok(originalDependencies.includes(rawId));
  if(mode==='bad-proof')node.store.db.prepare("UPDATE memories SET json=json_set(json,'$.evidence[0].contentHash',?) WHERE id=?").run('0'.repeat(64),cards[0].id);
+ if(mode==='deferred'){const current=(await node.app.inject({url:'/api/model-authorization',headers:{authorization:'Bearer '+token}})).json();const closed=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:{authorization:'Bearer '+token},payload:{revision:current.authorization.revision,operationId:randomUUID(),action:'off'}});assert.equal(closed.statusCode,200,closed.body);}
  const next=node.lifecycle.settings();next.consolidation.enabled=true;next.consolidation.minChanges=1;await node.lifecycle.save({revision:node.configService.revision,settings:next});
  const view=()=>node.lifecycle.view().extensions.find(item=>item.id==='consolidation')!;const before=view();await node.lifecycle.tick();
- return {get node(){return node;},cards,rawId,sourceId:source.sourceId,calls,wire,before,view,get transportDenied(){return transportDenied;},async restart(){await node.app.close();node=await buildApp(cfg,dependencies);await node.app.ready();},receipts:()=>node.store.db.prepare('SELECT json FROM memory_integration_deliveries').all().map(row=>JSON.parse(String(row.json)))};
+ return {get node(){return node;},cards,rawId,sourceId:source.sourceId,calls,wire,before,view,headers:{authorization:'Bearer '+token},get transportDenied(){return transportDenied;},async restart(){await node.app.close();node=await buildApp(cfg,dependencies);await node.app.ready();},receipts:()=>node.store.db.prepare('SELECT json FROM memory_integration_deliveries').all().map(row=>JSON.parse(String(row.json)))};
 }
 
 for(const source of ['feishu','dingtalk'] as const)test(`${source} recording reaches actual Memory tools through its exact Material proof without granting raw reads`,async t=>{
@@ -69,6 +70,20 @@ for(const source of ['feishu','dingtalk'] as const)test(`${source} recording rea
  assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1,'a genuine read followed by no useful relation stays a valid zero result');assert.equal(f.receipts()[0].memoryIds.length,1);assert.equal(f.receipts()[0].evidenceIds.length,1);
  await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1,'success does not replay the old paid window after restart');assert.equal(f.receipts()[0].memoryIds.length,1);
 });
+test('A1: automatic consolidation waits while the switch is off and completes once after reopening',async t=>{
+ const f=await fixture(t,'feishu','deferred');
+ const integrationCalls=()=>f.calls.filter(call=>call.skill==='memory-integration').length;
+ assert.equal(integrationCalls(),0,'closed switch admits no automatic integration model call');
+ const active=f.view().active!;assert.ok(active);assert.equal(active.manual,false);
+ const current=(await f.node.app.inject({url:'/api/model-authorization',headers:f.headers})).json();
+ const opened=await f.node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:f.headers,payload:{revision:current.authorization.revision,operationId:randomUUID(),action:'on'}});
+ assert.equal(opened.statusCode,200,opened.body);
+ f.node.store.db.prepare("UPDATE memory_lifecycle_state SET json=json_remove(json,'$.retryAt','$.error','$.failures') WHERE id='consolidation'").run();f.node.executor.retry('lifecycle:'+active.id,true);await f.node.lifecycle.tick();
+ assert.equal(integrationCalls(),1,'opening backfills the automatic consolidation exactly once');
+ assert.equal(f.view().active,undefined);assert.equal(f.view().error,undefined);assert.ok(f.view().cursor>f.before.cursor);
+ assert.equal(f.receipts().length,1);assert.deepEqual(f.receipts()[0].memoryIds,f.cards.map(card=>card.id));
+});
+
 for(const mode of ['skip','empty-wire'] as const)test(`${mode} cannot turn absent actual body delivery into a successful integration window`,async t=>{
  const f=await fixture(t,'feishu',mode);assert.equal(f.view().cursor,f.before.cursor);assert.ok(f.view().active);assert.equal(f.view().error,'memory_integration_no_delivery');assert.equal(f.view().manualRetryRequired,true);assert.equal(f.receipts()[0].memoryIds.length,0);assert.equal(f.receipts()[0].evidenceIds.length,0);
  await f.restart();await f.node.lifecycle.tick();assert.equal(f.view().manualRetryRequired,true);assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1,'a host delivery gap never schedules another paid attempt automatically after restart');assert.equal(f.receipts()[0].memoryIds.length,0);

@@ -128,7 +128,7 @@ for(const cause of ['credential-revocation','request-release','platform-stop'] a
 
 test('serialized Memory pins are consumed by their exact real SQLite claim and source withdrawal is not revived',async t=>{
   const f=await fixture(t),p=f.platform,control=p.assembly.modelAuthorization;
-  control.command({action:'authorize',revision:0,operationId:randomUUID(),connections:[f.model],scope:{sourceIds:['generated-source-a'],dataKinds:['text']}});
+  control.command({action:'on',revision:0,operationId:randomUUID()});
   const request=p.bindRequest({authorization:'Bearer '+ownerToken,method:'PUT',route:'/api/sources/:id/items',params:{id:'generated-source-a'}}),raw=item();
   const receipt=await p.withSource(request,'generated-source-a',raw,()=>p.sourceIntake.sourceItem('generated-source-a',raw,p.commits.capture()));p.releaseRequest(request);
   const pin=JSON.parse(JSON.stringify({sourceId:'generated-source-a',inputKey:receipt.id,scope:DEFAULT_MEMORY_INPUT_SCOPE}));
@@ -151,16 +151,16 @@ test('serialized Memory pins are consumed by their exact real SQLite claim and s
   await f.restart();assert.throws(()=>f.platform.withMemoryGrant(pin,jobId,async()=>{published=true;}));assert.equal(published,false);
 });
 
-test('ordinary selection retains the admitted model snapshot while explicit connection withdrawal and platform close fence it',async t=>{
+test('automatic work keeps running across model connection changes while platform close fences a captured relay',async t=>{
   const f=await fixture(t),control=f.platform.assembly.modelAuthorization,original=f.model;
-  control.command({action:'authorize',revision:0,operationId:randomUUID(),connections:[original],scope:{sourceIds:['generated-source-a'],dataKinds:['text']}});
+  control.command({action:'on',revision:0,operationId:randomUUID()});
   f.store.db.exec('BEGIN IMMEDIATE');control.receive('generated-pinned',{sourceId:'generated-source-a',dataKind:'text'});f.store.db.exec('COMMIT');control.automatic('generated-pinned-work',['generated-pinned']);let captured:(()=>void)|undefined;
   await control.run('generated-pinned-work',async()=>{captured=control.capture(original);control.assertCurrent(original);f.addModel();f.platform.refreshFences();control.assertCurrent(original);});
   captured!();await f.platform.close();assert.throws(()=>captured!());
   await f.restart();const replacement=f.platform.assembly.modelAuthorization;
-  replacement.command({action:'authorize',revision:replacement.view().revision,operationId:randomUUID(),connections:[original],scope:{sourceIds:['generated-source-a'],dataKinds:['text']}});
+  replacement.command({action:'on',revision:replacement.view().revision,operationId:randomUUID()});
   f.store.db.exec('BEGIN IMMEDIATE');replacement.receive('generated-original',{sourceId:'generated-source-a',dataKind:'text'});f.store.db.exec('COMMIT');replacement.automatic('generated-automatic',['generated-original']);
-  await assert.rejects(replacement.run('generated-automatic',async()=>{replacement.assertCurrent(original);f.withdrawOriginalModel();assert.throws(()=>replacement.assertCurrent(original));}));
+  await replacement.run('generated-automatic',async()=>{replacement.assertCurrent(original);f.withdrawOriginalModel();replacement.assertCurrent(original);},undefined);
 });
 
 
@@ -231,7 +231,7 @@ test('partial binding rejects a foreign-vault Connections without taking ownersh
 test('two selected recipe scopes independently consume the same original through real Memory jobs',async t=>{
   const f=await fixture(t,true),p=f.platform,control=p.assembly.modelAuthorization;
   f.recipes!.configure({sourceId:'generated-source-a',recipes:[{id:'mote.personal-memory',version:'5'},{id:'mote.coding-memory',version:'3'}]});
-  control.command({action:'authorize',revision:0,operationId:randomUUID(),connections:[f.model],scope:{sourceIds:['generated-source-a'],dataKinds:['text']}});
+  control.command({action:'on',revision:0,operationId:randomUUID()});
   const request=p.bindRequest({authorization:'Bearer '+ownerToken,method:'PUT',route:'/api/sources/:id/items',params:{id:'generated-source-a'}}),raw=item();
   const receipt=await p.withSource(request,'generated-source-a',raw,()=>p.sourceIntake.sourceItem('generated-source-a',raw,p.commits.capture()));p.releaseRequest(request);
   const material=f.materials.publish({id:materialId('generated-source-a','generated-sibling-recipes'),kind:'mote.file',schemaVersion:1,title:'Generated sibling recipe input',origin:{sourceId:'generated-source-a',externalId:'generated-sibling-recipes'},members:[{id:'original',kind:'capture',ref:'capture:'+receipt.id}],blocks:[{id:'body',kind:'text',format:'plain',text:'Generated shared original',memberIds:['original']}],coverage:{state:'complete'},artifacts:[{key:'source-body',state:'ready'}],fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});

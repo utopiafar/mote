@@ -173,7 +173,7 @@ import {randomUUID} from 'node:crypto';
 const meteringConnection={id:'generated-metering-connection',fingerprint:'b'.repeat(64)};
 function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wait'|'admitted-wait'|'trace-wait'){
  const ledger=new UsageLedger(f.store),authorization=new BackgroundModelAuthorization(f.store,()=>[meteringConnection]);
- if(outcome==='usage-wait'||outcome==='admitted-wait')authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'authorize',connections:[meteringConnection],scope:{sourceIds:null,dataKinds:['text']}});
+ if(outcome==='usage-wait'||outcome==='admitted-wait')authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'on'});
  f.store.db.exec('BEGIN IMMEDIATE');authorization.receive(f.anchor,{sourceId:'fixture',dataKind:'text'});f.store.db.exec('COMMIT');
  let sawOnTrace=false;
  const query=async(input:QueryInput):Promise<QueryResult>=>{
@@ -187,7 +187,7 @@ function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wa
    input.onTrace!({type:'model.admitted',stage:'model'} as never);
   }else input.onUsage?.({requests:1,reportedRequests:1,inputTokens:19,outputTokens:3,totalTokens:22});
   if(outcome==='usage-wait'||outcome==='admitted-wait'){
-   authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'pause'});
+   authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'off'});
    authorization.automatic('conversation-work-2',[f.anchor],'semantic');
   }
   throw new Error('Generated unmet model admission');

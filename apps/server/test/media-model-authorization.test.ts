@@ -43,7 +43,7 @@ async function fixture(t:import('node:test').TestContext){
  await create();
  t.after(async()=>{release();service.closeAllConnections();await new Promise<void>(resolve=>service.close(()=>resolve()));await images?.close();await processing.close();await engine.close();control.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
  const upload=async(bytes=audio,mimeType='audio/wav')=>{const begun=files.begin({sourceId:'phone',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),title:'Generated original',kind:'file',layer:'original',text:'',mimeType,deleted:false},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});files.part(begun.uploadId,0,bytes,()=>{});return (await files.commit(begun.uploadId,()=>{})).id;};
- const command=(action:'authorize'|'pause'|'stop',dataKinds=['text','image','audio'])=>control.command({action,revision:control.view().revision,operationId:randomUUID(),...(action==='authorize'?{connections:processing.modelConnections(),scope:{sourceIds:['phone'],dataKinds}}:{})});
+ const command=(action:'on'|'off'|'stop'|'exclude',excludedSourceIds?:string[])=>control.command({action,revision:control.view().revision,operationId:randomUUID(),...(action==='exclude'?{excludedSourceIds:excludedSourceIds??[]}:{})});
  return {store,files,sources,requests,seen,url,setQuota:(bytes?:number)=>{quota.maxStorageBytes=bytes;},failTranscription:(fail:boolean)=>{transcriptionFails=fail;},get processing(){return processing;},get engine(){return engine;},get control(){return control;},upload,command,get summaryCalls(){return summaryCalls;},get ownerIntentCalls(){return ownerIntentCalls;},
   async manual(id:string|string[],run:()=>unknown){const work='generated-manual:'+randomUUID();control.manual(work,'manual',typeof id==='string'?[id]:id);await control.run(work,async()=>{run();});return work;},
   hold(){let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);arrived=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release:()=>release()};},
@@ -52,10 +52,13 @@ async function fixture(t:import('node:test').TestContext){
  };
 }
 
-test('unapproved intake retains its original but cannot send an ASR body after later approval or restart',async t=>{
- const f=await fixture(t),id=await f.upload();assert.equal(f.files.detail(id).hasOriginal,true);await f.processing.tick();assert.equal(f.requests.length,0);
- f.command('authorize');await f.processing.tick();assert.equal(f.requests.length,0,'approval cannot fill the old gap');await f.restart();await f.processing.tick();assert.equal(f.requests.length,0);
- const fresh=await f.upload();await f.processing.tick();assert.equal(f.requests.length,1);assert.deepEqual(f.requests[0].bytes,audio);assert.equal(f.files.detail(fresh).job?.state,'succeeded');assert.equal(f.files.chunks(fresh)[0].ocrText,transcript.segments[0].text);
+test('A1-28: audio received while off keeps its original and is transcribed once when the switch opens',async t=>{
+ const f=await fixture(t),id=await f.upload(),due=()=>{f.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE operation_id=?').run('file:'+id);f.store.db.prepare('UPDATE file_jobs SET available_at=0 WHERE capture_id=?').run(id);};
+ assert.equal(f.files.detail(id).hasOriginal,true);await f.processing.tick();assert.equal(f.requests.length,0);
+ f.command('on');due();await f.processing.tick();
+ assert.equal(f.requests.length,1);assert.deepEqual(f.requests[0].bytes,audio);assert.equal(f.files.detail(id).job?.state,'succeeded');assert.equal(f.files.chunks(id)[0].ocrText,transcript.segments[0].text);
+ await f.restart();await f.processing.tick();assert.equal(f.requests.length,1,'restart repeats no completed transcription');
+ const fresh=await f.upload();await f.processing.tick();assert.equal(f.requests.length,2);assert.deepEqual(f.requests[1].bytes,audio);
 });
 
 test('explicit same-target retry gets new durable steps without resetting previous automatic failures',async t=>{
@@ -65,7 +68,7 @@ test('explicit same-target retry gets new durable steps without resetting previo
 });
 
 test('file detail follows the current owner retry receipt through work, success, restart and another failure',async t=>{
- const f=await fixture(t);f.command('authorize');f.failTranscription(true);const id=await f.upload();await f.processing.tick();
+ const f=await fixture(t);f.command('on');f.failTranscription(true);const id=await f.upload();await f.processing.tick();
  const extract=()=>f.files.detail(id).steps.find(step=>step.step==='extract')!;
  assert.equal(f.files.detail(id).job?.state,'failed');assert.equal(extract().state,'failed');
  const oldFailure=f.engine.list({operationId:'file:'+id}).items.find(row=>row.kind.startsWith('file-step.')&&row.state==='failed')!;assert.ok(oldFailure);
@@ -81,9 +84,11 @@ test('file detail follows the current owner retry receipt through work, success,
 });
 
 test('stop fences late ASR and only an explicit same-original owner confirmation can retry unknown work',async t=>{
- const f=await fixture(t);f.command('authorize');const id=await f.upload(),barrier=f.hold(),tick=f.processing.tick();await barrier.started;f.command('stop');barrier.release();await tick;
+ const f=await fixture(t);f.command('on');const id=await f.upload(),barrier=f.hold(),tick=f.processing.tick();await barrier.started;f.command('stop');barrier.release();await tick;
  assert.equal(f.requests.length,1);assert.equal(f.files.chunks(id).length,0);assert.equal(f.files.detail(id).hasOriginal,true);
  assert.equal(f.processing.cancellation(id).wait,'unknown');
+ f.command('on');f.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE operation_id=?').run('file:'+id);f.store.db.prepare('UPDATE file_jobs SET available_at=0 WHERE capture_id=?').run(id);await f.processing.tick();
+ assert.equal(f.requests.length,1,'an unknown media outcome is never resent automatically after reopening');
  assert.throws(()=>f.processing.retry(id,'transcribe',false,true));
  await assert.rejects(f.manual('unrelated-original',()=>f.processing.retry(id,'transcribe',false,true)));
  await assert.rejects(f.manual(id,()=>f.processing.retry(id,'transcribe',false,false)));
@@ -92,23 +97,26 @@ test('stop fences late ASR and only an explicit same-original owner confirmation
  assert.equal(f.requests.length,2);assert.equal(f.files.chunks(id)[0].ocrText,'Generated orchard transcript.');
 });
 
-test('pause gaps and replaced media connections cannot inherit a previous approval',async t=>{
- const f=await fixture(t);f.command('authorize',['audio']);f.command('pause');const gap=await f.upload();f.command('authorize',['audio']);await f.processing.tick();assert.equal(f.requests.length,0);assert.equal(f.files.detail(gap).hasOriginal,true);
+test('A1-28/A1-29: audio received while off and after a media connection replacement is transcribed once',async t=>{
+ const f=await fixture(t),due=()=>{f.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE kind LIKE 'files.%'").run();f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();};
+ f.command('off');const gap=await f.upload();await f.processing.tick();assert.equal(f.requests.length,0);assert.equal(f.files.detail(gap).hasOriginal,true);
  const approved=f.processing.modelConnections(),config=f.processing.configurationSnapshot();config.policy.services.find(s=>s.id==='asr-api')!.apiKey='generated-replacement-secret';f.processing.update({revision:f.processing.view().revision,...config});assert.notDeepEqual(f.processing.modelConnections(),approved);
- const id=await f.upload();await f.processing.tick();assert.equal(f.requests.length,0);assert.equal(f.files.chunks(id).length,0);assert.equal(JSON.stringify(f.processing.modelConnections()).includes('generated-replacement-secret'),false);
+ f.command('on');due();await f.processing.tick();assert.equal(f.requests.length,1);assert.deepEqual(f.requests[0].bytes,audio);assert.equal(f.files.chunks(gap)[0].ocrText,transcript.segments[0].text,'a replaced media connection needs no new confirmation');
+ const id=await f.upload();due();await f.processing.tick();assert.equal(f.requests.length,2);assert.deepEqual(f.requests[1].bytes,audio);assert.equal(f.files.chunks(id)[0].ocrText,transcript.segments[0].text);
+ assert.equal(JSON.stringify(f.processing.modelConnections()).includes('generated-replacement-secret'),false);
 });
 
 test('deterministic text extraction needs no approval while summary inherits the original grant',async t=>{
  const f=await fixture(t),plain=await f.upload(Buffer.from('Generated plain text before approval.'),'text/plain');await f.processing.tick();assert.equal(f.files.chunks(plain)[0].ocrText,'Generated plain text before approval.');assert.equal(f.requests.length,0);
  const config=f.processing.configurationSnapshot();config.policy.profiles.filter(p=>p.processorId==='text.utf8').forEach(p=>p.summarize=true);config.settings.summarize=true;f.processing.update({revision:f.processing.view().revision,...config});
  const old=await f.upload(Buffer.from('Generated no automatic summary.'),'text/plain');await f.processing.tick();assert.equal(f.summaryCalls,0);assert.equal(f.files.chunks(old)[0].ocrText,'Generated no automatic summary.');
- f.command('authorize');const fresh=await f.upload(Buffer.from('Generated approved summary input.'),'text/plain');await f.processing.tick();assert.equal(f.summaryCalls,1);assert.ok(f.files.detail(fresh).artifacts.some(a=>a.kind==='summary'));assert.ok(f.seen.some(s=>s.stage==='file-summary'));
+ f.command('on');const fresh=await f.upload(Buffer.from('Generated approved summary input.'),'text/plain');await f.processing.tick();assert.equal(f.summaryCalls,1);assert.ok(f.files.detail(fresh).artifacts.some(a=>a.kind==='summary'));assert.ok(f.seen.some(s=>s.stage==='file-summary'));
 });
 
-test('image OCR sends the exact approved bytes and retains denied originals',async t=>{
- const f=await fixture(t),images=await f.imageProcessor(),bytes=await sharp({create:{width:4,height:4,channels:3,background:'#ffee00'}}).png().toBuffer();
- f.command('authorize',['audio']);const denied=await f.upload(bytes,'image/png');await images.tick();assert.equal(f.requests.length,0);assert.equal(f.files.detail(denied).hasOriginal,true);
- f.command('authorize');const freshBytes=await sharp({create:{width:4,height:4,channels:3,background:'#aabb00'}}).png().toBuffer(),fresh=await f.upload(freshBytes,'image/png');await images.tick();assert.equal(f.requests.length,1);assert.equal(f.requests[0].path,'/ocr');assert.deepEqual(f.requests[0].bytes,freshBytes);assert.ok(images.detail(fresh).products.some(p=>p.kind==='ocr'));
+test('A1-25: image OCR sends the exact bytes of an original received while off',async t=>{
+ const f=await fixture(t),images=await f.imageProcessor(),bytes=await sharp({create:{width:4,height:4,channels:3,background:'#ffee00'}}).png().toBuffer(),due=(id:string)=>{f.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE operation_id=?').run('image:'+id);f.store.db.prepare('UPDATE perception_jobs SET available_at=0 WHERE capture_id=?').run(id);};
+ const denied=await f.upload(bytes,'image/png');await images.tick();assert.equal(f.requests.length,0);assert.equal(f.files.detail(denied).hasOriginal,true);
+ f.command('on');due(denied);await images.tick();assert.equal(f.requests.length,1);assert.equal(f.requests[0].path,'/ocr');assert.deepEqual(f.requests[0].bytes,bytes);assert.ok(images.detail(denied).products.some(p=>p.kind==='ocr'));
 });
 
 test('remote ASR cannot read an original or invoke its transport before the host check',async t=>{
@@ -120,7 +128,7 @@ test('remote ASR cannot read an original or invoke its transport before the host
 
 
 test('local dialogue preserves one original authority across ASR, diarization and semantic grouping',async t=>{
- const f=await fixture(t),config=f.processing.configurationSnapshot();const settings={...config.settings,audioProcessor:'audio.local-dialogue',diarizationProcessor:'audio.diarize',speakerCount:null,semanticTurns:true};f.processing.update({revision:f.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.processing.runtime.registry)});f.command('authorize');const id=await f.upload();await f.processing.tick();
+ const f=await fixture(t),config=f.processing.configurationSnapshot();const settings={...config.settings,audioProcessor:'audio.local-dialogue',diarizationProcessor:'audio.diarize',speakerCount:null,semanticTurns:true};f.processing.update({revision:f.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.processing.runtime.registry)});f.command('on');const id=await f.upload();await f.processing.tick();
  assert.equal(f.files.detail(id).job?.state,'succeeded');assert.deepEqual(f.requests.map(r=>r.path),['/transcribe','/diarize']);for(const request of f.requests)assert.deepEqual(request.bytes,audio);
  assert.ok(f.files.detail(id).artifacts.some(a=>a.kind==='dialogue'&&a.semanticGrouping===true));assert.ok(f.seen.some(r=>r.stage==='diarization'));assert.ok(f.seen.some(r=>r.stage==='semantic-turns'));
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM background_model_work WHERE id=?').get('automatic-media:'+id)!.n,1);
@@ -132,27 +140,28 @@ test('manual image retry leaves the old terminal step and preserves its new owne
 });
 
 
-for(const action of ['pause','stop'] as const)test(`${action} during VLM pixel processing preserves the original and fences publication correctly`,async t=>{
+for(const action of ['off','stop'] as const)test(`${action} during VLM pixel processing preserves the original and fences publication correctly`,async t=>{
  const f=await fixture(t),bytes=await sharp({create:{width:4,height:4,channels:3,background:'#448899'}}).png().toBuffer();
  const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'generated-model',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',headers:{},extraBody:{},maxTokens:8192,agentTimeoutMs:2000,modelRequestTimeoutMs:1000,reasoningEffort:'auto',allowUnauthenticatedLocal:true};
  let arrive!:()=>void,release!:()=>void,calls=0,closed=0,activeSignal:AbortSignal|undefined;
- const started=new Promise<void>(resolve=>arrive=resolve),held=new Promise<void>(resolve=>release=resolve),outcomes:string[]=[];t.after(()=>release());
+ const started=new Promise<void>(resolve=>arrive=resolve),held=new Promise<void>(resolve=>release=resolve),outcomes:string[]=[],pixelBodies:string[]=[];t.after(()=>release());
  const adapter=imageUnderstanding({selection:()=>({fingerprint:'generated-vlm',configured:true,receipt:{model:settings.model},settings,identity:{kind:'profile',id:'generated-vlm'}}),metered:async(_settings,_attribution,task)=>{try{const result=await task(()=>{});outcomes.push('completed');return result;}catch(error){outcomes.push('failed');throw error;}},factory:async(_settings,reader,_host,identity)=>{
   assert.deepEqual(identity,{kind:'profile',id:'generated-vlm'});
   return {configured:true,close:async()=>{closed++;},query:async input=>{
    calls++;activeSignal=input.signal;input.assertContextAuthority?.();
-   const pixels=await reader.readImage!({id:input.directImages![0].id});assert.equal(pixels.data,bytes.toString('base64'));arrive();await held;
+   const pixels=await reader.readImage!({id:input.directImages![0].id});pixelBodies.push(pixels.data);arrive();await held;
    // Deliberately emulate a provider returning after cancellation.
    return {answer:JSON.stringify({text:'Generated blue image observation.',regions:[]}),citations:[],trace:[],runId:randomUUID()};
   }};
  }});
- const images=await f.imageProcessor(adapter);f.command('authorize');const id=await f.upload(bytes,'image/png'),tick=images.tick();await started;
+ const images=await f.imageProcessor(adapter);f.command('on');const id=await f.upload(bytes,'image/png'),tick=images.tick();await started;assert.equal(pixelBodies[0],bytes.toString('base64'));
  assert.ok(f.seen.some(request=>request.stage==='image-understanding'&&request.captureId===id));f.command(action);assert.equal(activeSignal?.aborted,action==='stop');release();await tick;
  assert.equal(calls,1);assert.equal(closed,1);assert.equal(f.files.detail(id).hasOriginal,true);
  assert.deepEqual(outcomes,[action==='stop'?'failed':'completed'],'a revoked late response stays failed in the usage receipt');
- assert.equal(images.detail(id).products.some(product=>product.kind==='understanding'),action==='pause');
+ assert.equal(images.detail(id).products.some(product=>product.kind==='understanding'),action==='off');
  await images.tick();assert.equal(calls,1,'refresh must neither resend a completed VLM job nor resurrect stopped work');
  const gapBytes=await sharp({create:{width:4,height:4,channels:3,background:'#994488'}}).png().toBuffer(),gap=await f.upload(gapBytes,'image/png');await images.tick();assert.equal(calls,1);assert.equal(f.files.detail(gap).hasOriginal,true);
+ f.command('on');f.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE operation_id=?').run('image:'+gap);f.store.db.prepare('UPDATE perception_jobs SET available_at=0 WHERE capture_id=?').run(gap);await images.tick();assert.equal(calls,2,'the reopened switch backfills the gap once');assert.ok(images.detail(gap).products.some(product=>product.kind==='understanding'));
 });
 
 

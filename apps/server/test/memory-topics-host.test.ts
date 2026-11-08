@@ -36,7 +36,7 @@ async function fixture(t:TestContext){
  }})};
  let node=await buildApp(config,dependencies);
  t.after(async()=>{release();await node.app.close();await rm(directory,{recursive:true,force:true});});
- const command=async(action:'authorize'|'stop'|'pause')=>{const view=(await node.app.inject({url:'/api/model-authorization',headers})).json();const result=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action,...(action==='authorize'?{connections:view.connections,scope:{sourceIds:['generated-topics'],dataKinds:['text']}}:{})}});assert.equal(result.statusCode,200,result.body);};
+ const command=async(action:'on'|'off'|'stop')=>{const view=(await node.app.inject({url:'/api/model-authorization',headers})).json();const result=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action}});assert.equal(result.statusCode,200,result.body);};
  node.sources.register({id:'generated-topics',name:'Generated topics',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});
  node.memoryRecipeSettings.configure({sourceId:'generated-topics',recipes:[{id:'mote.personal-memory',version:'5'}]});
  return {get node(){return node;},headers,command,get calls(){return calls;},get validatedTopics(){return validatedTopics;},checkTopicValidation(){checkTopicValidation=true;},hold(canInterrupt=false,memoryReview=false){interruptible=canInterrupt;holdMemoryReview=memoryReview;let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);entered=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release};},
@@ -47,7 +47,7 @@ async function fixture(t:TestContext){
 }
 
 test('actual fresh Memory publication schedules durable topics under its original admission exactly once',async t=>{
- const f=await fixture(t);await f.command('authorize');const done=await f.intake();assert.equal(done.status,'completed',JSON.stringify(done));await f.settle();assert.equal(f.calls,1,JSON.stringify({steps:f.node.store.db.prepare("SELECT id,kind,state,error,input FROM execution_steps WHERE kind IN ('memory.topics','memory.batch')").all(),memories:f.node.memories.list().map(row=>({id:row.id,status:row.status})),authority:f.node.store.db.prepare('SELECT * FROM background_model_step_authority').all()}));
+ const f=await fixture(t);await f.command('on');const done=await f.intake();assert.equal(done.status,'completed',JSON.stringify(done));await f.settle();assert.equal(f.calls,1,JSON.stringify({steps:f.node.store.db.prepare("SELECT id,kind,state,error,input FROM execution_steps WHERE kind IN ('memory.topics','memory.batch')").all(),memories:f.node.memories.list().map(row=>({id:row.id,status:row.status})),authority:f.node.store.db.prepare('SELECT * FROM background_model_step_authority').all()}));
  const step=f.node.store.db.prepare("SELECT id,input FROM execution_steps WHERE kind='memory.topics'").get()!;assert.ok(step);
  const parent=JSON.parse(String(step.input)).parentId;
  assert.equal(f.node.modelAuthorization.stepAuthority(String(step.id)),f.node.modelAuthorization.stepAuthority(parent));
@@ -60,7 +60,7 @@ test('actual fresh Memory publication schedules durable topics under its origina
 });
 
 test('topic output reaches the Agent repair validator before a corrected classification publishes',async t=>{
- const f=await fixture(t);f.checkTopicValidation();await f.command('authorize');
+ const f=await fixture(t);f.checkTopicValidation();await f.command('on');
  const done=await f.intake();assert.equal(done.status,'completed');await f.settle();
  assert.equal(f.validatedTopics,1,'invalid topic structure and membership must be rejected within the model conversation');
  assert.equal(f.calls,1,'output repair must not require a new topic operation');
@@ -70,16 +70,16 @@ test('topic output reaches the Agent repair validator before a corrected classif
 });
 
 test('stop fences a late topic result without deleting its already published Memory',async t=>{
- const f=await fixture(t);await f.command('authorize');const held=f.hold(),working=f.intake();await held.started;await f.command('stop');held.release();await working;await f.settle();
+ const f=await fixture(t);await f.command('on');const held=f.hold(),working=f.intake();await held.started;await f.command('stop');held.release();await working;await f.settle();
  assert.equal(f.calls,1);assert.ok(f.node.memories.list().length>0);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,0);
  await f.restart();await f.settle();assert.equal(f.calls,1);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,0);
 });
 
 
 test('interrupted topic work resumes after restart and pause with its original admission and no fresh trigger',async t=>{
- const f=await fixture(t);await f.command('authorize');const held=f.hold(true),working=f.intake();await held.started;await working;
+ const f=await fixture(t);await f.command('on');const held=f.hold(true),working=f.intake();await held.started;await working;
  const step=f.node.store.db.prepare("SELECT id FROM execution_steps WHERE kind='memory.topics'").get()!,admission=f.node.modelAuthorization.stepAuthority(String(step.id));assert.ok(admission);
- await f.command('pause');await f.restart();held.release();await f.settle();
+ await f.command('off');await f.restart();await f.command('on');f.node.executor.retry(String(step.id),true);held.release();await f.settle();
  assert.equal(f.calls,2);assert.equal(f.node.modelAuthorization.stepAuthority(String(step.id)),admission);
  const claims=f.node.store.db.prepare('SELECT work_id,purpose FROM background_model_trigger_claims').all();
  assert.equal(claims.length,1);assert.equal(claims[0].work_id,f.node.modelAuthorization.stepAuthority(String(step.id)));assert.match(String(claims[0].purpose),/^memory:recipe\//);
@@ -89,7 +89,7 @@ test('interrupted topic work resumes after restart and pause with its original a
 
 
 test('stopping the original Memory review blocks both Memory publication and its topic dependent',async t=>{
- const f=await fixture(t);await f.command('authorize');const held=f.hold(false,true),working=f.intake();await held.started;await f.command('stop');held.release();
+ const f=await fixture(t);await f.command('on');const held=f.hold(false,true),working=f.intake();await held.started;await f.command('stop');held.release();
  // Model completion may be retained as an error, but neither publication is allowed.
  await f.node.executor.drain(f.node.store.db.prepare('SELECT id FROM execution_steps').all().map(row=>String(row.id)));void working.catch(()=>{});
  assert.equal(f.node.memories.list().length,0);assert.equal(f.calls,0);
@@ -98,7 +98,7 @@ test('stopping the original Memory review blocks both Memory publication and its
 
 
 test('revoked original blocks the next topic send and publication while the frozen Memory body still exists',async t=>{
- const f=await fixture(t);await f.command('authorize');const held=f.hold(),working=f.intake();await held.started;await working;
+ const f=await fixture(t);await f.command('on');const held=f.hold(),working=f.intake();await held.started;await working;
  const original=f.node.store.db.prepare('SELECT id FROM captures LIMIT 1').get()!;f.node.store.delete(String(original.id));held.release();await f.settle();
  assert.equal(f.calls,1);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,0);
 });
