@@ -2,37 +2,7 @@
 import {uiRulesSchema} from './ui-page.js';
 export const builtinUiRules=uiRulesSchema.parse([
   {
-    "id": "wechat-macos-visible",
-    "version": "1",
-    "platform": "macos",
-    "appId": "com.tencent.xinWeChat",
-    "required": [
-      {
-        "role": "AXStaticText"
-      }
-    ],
-    "select": {
-      "role": "AXStaticText"
-    },
-    "complete": false
-  },
-  {
-    "id": "feishu-macos-visible",
-    "version": "1",
-    "platform": "macos",
-    "appId": "com.electron.lark",
-    "required": [
-      {
-        "role": "AXStaticText"
-      }
-    ],
-    "select": {
-      "role": "AXStaticText"
-    },
-    "complete": false
-  },
-  {
-    "formatVersion": 2,
+    "formatVersion": 3,
     "id": "wechat-article-android-8.0.78",
     "version": "1",
     "platform": "android",
@@ -69,12 +39,13 @@ export const builtinUiRules=uiRulesSchema.parse([
         "ancestor": {
           "resourceId": "js_content"
         },
-        "required": true
+        "required": true,
+        "cardinality": "many"
       }
     }
   },
   {
-    "formatVersion": 2,
+    "formatVersion": 3,
     "id": "taobao-products-android-10.66.22",
     "version": "1",
     "platform": "android",

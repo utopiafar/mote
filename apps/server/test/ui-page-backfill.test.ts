@@ -77,30 +77,33 @@ test('durable screen version upgrade and field-page backfill preserve rebuild st
   assert.deepEqual(rebuilt.map(item=>item.change).sort(),['source','source','source']);
 });
 
-test('active Desktop selected nodes and Android named fields retain separate materials while retired Android nodes are rejected',async t=>{
+test('retired selected-node pages are rejected while current Desktop and Android named fields retain separate materials',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-field-legacy-group-'));
   const runtime=await buildApp(config(directory),{agent,backgroundWorker:false});
   t.after(async()=>{await runtime.app.close();rmSync(directory,{recursive:true,force:true});});
-  const current=record('ui_page',30),generatedLegacy=record('ui_page',0);
-  const legacy={...generatedLegacy,platform:'macos',deviceId:'generated-desktop',ocrText:'Generated legacy selected-node original',metadata:{version:1,observedAt:at(0),collector:{method:'accessibility'},uiPage:{
-    version:1,scope:'visible_window',adapterId:'generated.legacy',adapterVersion:'1',appVersion:'1',activity:'fixture.ArticleActivity',status:'partial',truncated:false,
-    nodes:[{id:'fixture-title',resourceId:'fixture:id/title',role:'android.widget.TextView',text:'Generated legacy selected-node original',bounds:{x:0,y:0,width:100,height:40}}],
-  }}};
-  const rejected=await runtime.app.inject({method:'POST',url:'/api/captures',headers,payload:{...legacy,id:randomUUID(),platform:'android'}});assert.equal(rejected.statusCode,400,rejected.body);
-  for(const payload of [legacy,current]){
+  const current=record('ui_page',30),desktop={...record('ui_page',1),platform:'macos',deviceId:'generated-desktop',deviceName:'Generated desktop',appName:'Generated desktop app'};
+  const legacyPage={version:1,scope:'visible_window',adapterId:'generated.legacy',adapterVersion:'1',appVersion:'1',activity:'fixture.ArticleActivity',status:'partial',truncated:false,
+    nodes:[{id:'fixture-title',resourceId:'fixture:id/title',role:'android.widget.TextView',text:'Generated legacy selected-node original',bounds:{x:0,y:0,width:100,height:40}}]};
+  for(const platform of ['android','macos']){
+    const rejected=await runtime.app.inject({method:'POST',url:'/api/captures',headers,payload:{...record('ui_page',0),id:randomUUID(),platform,deviceId:'generated-'+platform,ocrText:'Generated legacy selected-node original',metadata:{version:1,observedAt:at(0),collector:{method:'accessibility'},uiPage:legacyPage}}});
+    assert.equal(rejected.statusCode,400,rejected.body);
+  }
+  for(const payload of [desktop,current]){
     const response=await runtime.app.inject({method:'POST',url:'/api/captures',headers,payload});
     assert.equal(response.statusCode,201,response.body);
   }
-  const groups=runtime.store.db.prepare('SELECT group_key FROM context_observations WHERE id IN (?,?)').all(legacy.id,current.id);
+  const groups=runtime.store.db.prepare('SELECT group_key FROM context_observations WHERE id IN (?,?)').all(desktop.id,current.id);
   assert.equal(groups.length,2);assert.notEqual(groups[0]?.group_key,groups[1]?.group_key,'independent active devices keep their mechanical observation groups');
   await runtime.materialOrganizer.tick(100);
-  const screen=runtime.materials.list({kind:'mote.screen-segment'}).items[0]!,field=runtime.materials.list({kind:'mote.ui-page-object'}).items[0]!;
-  assert.ok(screen);assert.ok(field);
-  assert.deepEqual(runtime.materials.members(screen.id).items.map(item=>item.id),[legacy.id]);
-  assert.deepEqual(runtime.materials.members(field.id).items.map(item=>item.id),[current.id]);
-  assert.match(runtime.materials.read(screen.id).text,/Generated legacy selected-node original/);
-  assert.doesNotMatch(runtime.materials.read(screen.id).text,/Generated retained paragraph/,'field originals never enter compressed legacy screen materials');
-  assert.match(runtime.materials.read(field.id).text,/Generated retained paragraph/);
+  assert.equal(runtime.materials.list({kind:'mote.screen-segment'}).items.length,0,'retired selected-node pages no longer create screen materials');
+  const fields=runtime.materials.list({kind:'mote.ui-page-object'}).items;
+  assert.equal(fields.length,2);
+  const desktopMaterial=fields.find(material=>runtime.materials.members(material.id).items.some(item=>item.id===desktop.id))!,androidMaterial=fields.find(material=>runtime.materials.members(material.id).items.some(item=>item.id===current.id))!;
+  assert.ok(desktopMaterial&&androidMaterial);
+  assert.deepEqual(runtime.materials.members(desktopMaterial.id).items.map(item=>item.id),[desktop.id]);
+  assert.deepEqual(runtime.materials.members(androidMaterial.id).items.map(item=>item.id),[current.id]);
+  assert.match(runtime.materials.read(desktopMaterial.id).text,/Generated retained paragraph/);
+  assert.match(runtime.materials.read(androidMaterial.id).text,/Generated retained paragraph/);
 });
 
 test('a long repeated article group keeps newest bounded material text while every original remains pageable',async t=>{

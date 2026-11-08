@@ -7,7 +7,7 @@ import org.json.JSONObject
 internal object AppPageSetup {
     data class Adapter(val id: String, val kind: String, val fields: Set<String>)
     fun adapters(raw: String, appId: String, appVersion: String): List<Adapter> = UiPageRules.parse(raw)
-        .filter { it.optInt("formatVersion") in setOf(2, 3) && it.optString("platform") == "android" &&
+        .filter { it.optInt("formatVersion") == 3 && it.optString("platform") == "android" &&
             it.optString("appId") == appId && appVersion.isNotBlank() && it.optString("appVersion") == appVersion }
         .map { Adapter(it.getString("id"), it.getString("kind"), it.getJSONObject("fields").keys().asSequence().toSet()) }
 
@@ -15,7 +15,7 @@ internal object AppPageSetup {
     fun merge(current: String, imported: String, appId: String, appVersion: String): String {
         val incoming = UiPageRules.parse(imported)
         require(appVersion.isNotBlank() && incoming.isNotEmpty() && incoming.all {
-            it.optInt("formatVersion") in setOf(2, 3) && it.optString("platform") == "android" &&
+            it.optInt("formatVersion") == 3 && it.optString("platform") == "android" &&
                 it.optString("appId") == appId && it.optString("appVersion") == appVersion
         }) { MoteI18n.text("规则必须匹配所选应用的当前安装版本") }
         val replace = incoming.map { it.getString("id") }.toSet()
@@ -36,10 +36,12 @@ internal object AppPageSetup {
         }
         val fields = JSONObject()
         selectors.filterValues { it.isNotBlank() }.forEach { (field, id) ->
-            fields.put(field, JSONObject().put("select", JSONObject().put("resourceId", id.trim()))
-                .put("required", field == "title" || kind == "article" && field == "body"))
+            val name = if (field == "itemId") "item_id" else field
+            fields.put(name, JSONObject().put("select", JSONObject().put("resourceId", id.trim()))
+                .put("required", name == "title" || kind == "article" && name == "body")
+                .apply { if (name == "body") put("cardinality", "many") })
         }
-        val rule = JSONObject().put("formatVersion", 2).put("id", "$appId.$appVersion.$kind")
+        val rule = JSONObject().put("formatVersion", 3).put("id", "$appId.$appVersion.$kind")
             .put("version", "1").put("platform", "android").put("appId", appId).put("appVersion", appVersion)
             .put("kind", kind).put("fields", fields)
         if (activity.isNotBlank()) rule.put("activity", activity.trim())

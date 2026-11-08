@@ -4,7 +4,7 @@ import {actionSourceIdentitySchema,captureSchema,platformSchema,recordMetadataSc
 
 const at='2026-11-06T01:00:00.000Z';
 const observation={version:1,observedAt:at,collector:{method:'notification_listener'},observation:{sessionId:'22222222-2222-4222-8222-222222222222',elapsedRealtimeMs:1}};
-const page={scope:'visible_window',adapterId:'generated.ios',adapterVersion:'1',appVersion:'1',activity:'GeneratedPage',status:'ok',truncated:false,version:1,nodes:[{id:'1',resourceId:'fixture:text',role:'text',bounds:{x:0,y:0,width:1,height:1},text:'Generated page text'}]};
+const page={scope:'visible_window',adapterId:'generated.ios',adapterVersion:'1',appVersion:'1',activity:'GeneratedPage',status:'ok',truncated:false,version:3,observations:{firstAt:at,lastAt:at,count:1},objects:[{kind:'article',fields:[{name:'body',values:[{text:'Generated page text',source:'text'}]}]}]};
 
 test('one platform schema admits iOS for captures, sources and action source identities',()=>{
   assert.deepEqual(platformSchema.options,['macos','windows','linux','android','ios','import']);

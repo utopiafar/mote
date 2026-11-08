@@ -11,9 +11,9 @@ class UiPageCaptureTest {
         JSONObject().put("id",id).put("parentId",parent).put("resourceId",resource).put("role","Text").put("text",text).put("childIndex",index)
     private fun snapshot(nodes: List<JSONObject>, version: String = "1") = JSONObject().put("appId","fixture").put("appVersion",version).put("activity","fixture.Page")
         .put("observedAt",at).put("truncated",false).put("nodes",JSONArray(nodes))
-    private fun field(id: String, required: Boolean = false) = JSONObject().put("select",JSONObject().put("resourceId","fixture:id/$id")).put("required",required)
-    private fun articleRule() = JSONObject().put("formatVersion",2).put("id","fixture.article").put("version","1").put("platform","android").put("appId","fixture").put("appVersion","1").put("kind","article")
-        .put("fields",JSONObject().put("title",field("title",true)).put("author",field("author")).put("url",field("url")).put("body",field("body",true)))
+    private fun field(id: String, required: Boolean = false, cardinality: String = "one") = JSONObject().put("select",JSONObject().put("resourceId","fixture:id/$id")).put("required",required).put("cardinality",cardinality)
+    private fun articleRule() = JSONObject().put("formatVersion",3).put("id","fixture.article").put("version","1").put("platform","android").put("appId","fixture").put("appVersion","1").put("kind","article")
+        .put("fields",JSONObject().put("title",field("title",true)).put("author",field("author")).put("url",field("url")).put("body",field("body",true,"many")))
     private fun rules(rule: JSONObject) = UiPageRules.parse(JSONArray().put(rule).toString())
     private fun article(body: List<String>, identity: Boolean = true, whenAt: String = at): JSONObject {
         val fields=JSONArray().put(JSONObject().put("name","title").put("values",JSONArray().put(JSONObject().put("text","Generated article").put("source","text"))))
@@ -40,14 +40,14 @@ class UiPageCaptureTest {
         val ambiguous=snapshot(listOf(node("title","A"),node("title2","B",resource="fixture:id/title"),node("body","text")))
         assertTrue(UiPageRules.extractAll(ambiguous,rules(articleRule())).isEmpty())
     }
-    @Test fun productCardsRemainSeparateAndNeverInventALink() {
+    @Test fun productCardsRemainSeparateAndKeepUnverifiedLinksAsLiteralTextWithoutIdentity() {
         val rule=articleRule().put("kind","product").put("region",JSONObject().put("resourceId","fixture:id/list")).put("repeat",JSONObject().put("resourceId","fixture:id/card"))
             .put("repeatParent",JSONObject().put("resourceId","fixture:id/list")).put("fields",JSONObject().put("title",field("title",true)).put("url",field("url")))
         val input=snapshot(listOf(node("list"),node("one",parent="list",resource="fixture:id/card"),node("title","Generated product",parent="one"),node("url","javascript:alert(1)",parent="one"),
             node("two",parent="list",resource="fixture:id/card",index=1),node("title2","Generated product",parent="two",resource="fixture:id/title"),node("url2","https://example.invalid/item/2",parent="two",resource="fixture:id/url")))
         val pages=UiPageRules.extractAll(input,rules(rule))
         assertEquals(2,pages.size)
-        assertTrue(values(pages[0],"url").isEmpty())
+        assertEquals(listOf("javascript:alert(1)"),values(pages[0],"url"))
         assertFalse(pages[0].getJSONArray("objects").getJSONObject(0).has("identity"))
         assertEquals(listOf("https://example.invalid/item/2"),values(pages[1],"url"))
         assertTrue(pages.all { it.getJSONArray("objects").length()==1 })
@@ -142,9 +142,9 @@ class UiPageCaptureTest {
             assertEquals(outcome.name,outcome !in setOf(UiPageOutcome.PRIVACY_REJECTED,UiPageOutcome.STATE_CHANGED),UiPageCaptureChoice.screenshot(true,outcome))
         }
     }
-    @Test fun rejectNewRulesWithoutVersionAndFieldContracts() {
-        for(rule in listOf(JSONObject(articleRule().toString()).apply { remove("appVersion") }, articleRule().put("fields",JSONObject().put("title",field("title",false))),
-            articleRule().put("fields",JSONObject().put("title",field("title",true))), articleRule().put("script","execute"), articleRule().put("repeatParent",JSONObject().put("role","Text")))) {
+    @Test fun rejectNewRulesWithoutVersionOrSafeFieldContracts() {
+        for(rule in listOf(JSONObject(articleRule().toString()).apply { remove("appVersion") }, articleRule().put("formatVersion",2),
+            articleRule().put("fields",JSONObject().put("Title",field("title",true))), articleRule().put("script","execute"), articleRule().put("repeatParent",JSONObject().put("role","Text")))) {
             try { rules(rule);fail(rule.toString()) } catch(_:IllegalArgumentException) { }
         }
     }

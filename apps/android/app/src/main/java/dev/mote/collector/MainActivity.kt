@@ -2382,14 +2382,14 @@ class MainActivity : MoteActivity() {
             val kind = when (rule.kind) { "article" -> MoteI18n.text("文章"); "product" -> MoteI18n.text("商品"); else -> rule.kind }
             MoteI18n.text("已配置 {0} · {1}；实际页面仍需匹配", kind, rule.fields.joinToString("、") { field -> when (field) {
                 "title" -> MoteI18n.text("标题"); "author" -> MoteI18n.text("作者"); "body" -> MoteI18n.text("正文")
-                "url" -> MoteI18n.text("链接"); "itemId" -> MoteI18n.text("商品 ID"); else -> field
+                "url" -> MoteI18n.text("链接"); "item_id" -> MoteI18n.text("商品 ID"); else -> field
             } })
         }
     }
     private fun loadAppPageRules(id: String, version: String) {
         runCatching {
             val builtin = UiPageRules.parse(assets.open("ui-page-rules.json").bufferedReader().use { it.readText() })
-                .filter { it.optInt("formatVersion") in setOf(2, 3) && it.optString("platform") == "android" && it.optString("appId") == id && version.isNotBlank() && it.optString("appVersion") == version }
+                .filter { it.optInt("formatVersion") == 3 && it.optString("platform") == "android" && it.optString("appId") == id && version.isNotBlank() && it.optString("appVersion") == version }
             require(builtin.isNotEmpty()) { MoteI18n.text("内置规则没有适配当前安装版本，请配置字段或导入规则") }
             uiPageRules.setText(AppPageSetup.merge(uiPageRules.text.toString(), org.json.JSONArray(builtin).toString(), id, version))
             uiPageMode.setSelection(uiPageModes.indexOf("ui_preferred")); renderAppRules()

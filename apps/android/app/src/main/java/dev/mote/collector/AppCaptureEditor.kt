@@ -273,7 +273,7 @@ internal class AppCaptureEditor(
     }
     private fun needsWarning(current: AppCapturePresentation.Snapshot, app: AppCapturePresentation.App) = AppCapturePresentation.needsAttention(current, app, current.ruleCatalog[app.id].orEmpty())
     private fun modeLabel(mode: AppCollectionMode): String = listOfNotNull(if (mode.duration) MoteI18n.text("应用时长") else null, if (mode.screenshots) MoteI18n.text("截图") else null, if (mode.structured) MoteI18n.text("结构化内容") else null).joinToString(" · ").ifBlank { MoteI18n.text("不采集") }
-    private fun fieldLabel(field: String) = when (field) { "title" -> MoteI18n.text("标题"); "author" -> MoteI18n.text("作者"); "body" -> MoteI18n.text("正文"); "url" -> MoteI18n.text("链接"); "itemId" -> MoteI18n.text("商品 ID"); else -> field }
+    private fun fieldLabel(field: String) = when (field) { "title" -> MoteI18n.text("标题"); "author" -> MoteI18n.text("作者"); "body" -> MoteI18n.text("正文"); "url" -> MoteI18n.text("链接"); "item_id" -> MoteI18n.text("商品 ID"); else -> field }
     private fun label(value: String, role: NativeFontRole, color: NativeColorRole = NativeColorRole.INK) = TextView(activity).apply {
         text = value; MoteUi.type(this, role); MoteUi.textColor(this, color); setPadding(0, dp(4), 0, dp(4))
     }

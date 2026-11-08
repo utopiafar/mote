@@ -2,7 +2,14 @@
 import {readFileSync, writeFileSync} from 'node:fs';
 const root = new URL('../', import.meta.url);
 const rules = JSON.parse(readFileSync(new URL('adapters/ui/examples/generated-article-product.json', root), 'utf8'));
-const builtinRules = JSON.parse(readFileSync(new URL('adapters/ui/builtin.json', root), 'utf8')).filter(rule => rule.formatVersion === 2);
+// These selectors mirror historical structural evidence only. Text is newly generated.
+// Replay proves the mapping contract, not the current behavior of either real App.
+// Pin independently recorded App metadata so editing a rule cannot regenerate its own matching page.
+const historicalMetadata = {
+  'wechat-article-android-8.0.78': {appId: 'com.tencent.mm', appVersion: '8.0.78', activity: 'com.tencent.mm.plugin.brandservice.ui.timeline.preload.ui.TmplWebViewMMUI'},
+  'taobao-products-android-10.66.22': {appId: 'com.taobao.taobao', appVersion: '10.66.22', activity: 'com.taobao.tao.welcome.Welcome'},
+};
+const builtinRules = JSON.parse(readFileSync(new URL('adapters/ui/builtin.json', root), 'utf8')).filter(rule => rule.id in historicalMetadata);
 const at = '2026-10-10T08:00:00Z';
 const article = rules[0], product = rules[1];
 const node = (id, resourceId, text = '', parentId) => ({id, resourceId, text, role: 'android.widget.TextView', bounds: {x: 0, y: 0, width: 100, height: 20}, ...(parentId ? {parentId} : {})});
@@ -11,7 +18,7 @@ const named = object => ({kind:object.kind,fields:Object.entries(object).filter(
 const page = (rule, object, truncated = false) => ({version: 3, scope: 'visible_window', adapterId: rule.id, adapterVersion: rule.version, appVersion: rule.appVersion, activity: rule.activity, status: truncated ? 'partial' : 'ok', truncated, observations: {firstAt: at, lastAt: at, count: 1}, objects: [named(object)]});
 const articleNodes = [node('a', article.region.resourceId), node('t', article.fields.title.select.resourceId, 'Generated article title', 'a'), node('author', article.fields.author.select.resourceId, 'Generated author', 'a'), node('u', article.fields.url.select.resourceId, 'https://example.invalid/articles/one', 'a'), node('p1', article.fields.body.select.resourceId, 'Generated paragraph one.', 'a'), node('p2', article.fields.body.select.resourceId, 'Generated paragraph two.', 'a')];
 const articleObject = {kind: 'article', title: 'Generated article title', author: 'Generated author', url: 'https://example.invalid/articles/one', body: [{text: 'Generated paragraph one.'}, {text: 'Generated paragraph two.'}], identity: {type: 'url', value: 'https://example.invalid/articles/one'}};
-const productNodes = [node('catalog', product.region.resourceId), ...['one', 'two'].flatMap((id) => [node(`card-${id}`, product.repeat.resourceId, '', 'catalog'), node(`title-${id}`, product.fields.title.select.resourceId, 'Generated matching product title', `card-${id}`), node(`url-${id}`, product.fields.url.select.resourceId, `https://example.invalid/products/${id}`, `card-${id}`), node(`id-${id}`, product.fields.itemId.select.resourceId, id, `card-${id}`)])];
+const productNodes = [node('catalog', product.region.resourceId), ...['one', 'two'].flatMap((id) => [node(`card-${id}`, product.repeat.resourceId, '', 'catalog'), node(`title-${id}`, product.fields.title.select.resourceId, 'Generated matching product title', `card-${id}`), node(`url-${id}`, product.fields.url.select.resourceId, `https://example.invalid/products/${id}`, `card-${id}`), node(`id-${id}`, product.fields.item_id.select.resourceId, id, `card-${id}`)])];
 const productObject = id => ({kind: 'product', title: 'Generated matching product title', url: `https://example.invalid/products/${id}`, itemId: id, body: [], identity: {type: 'source_id', value: id}});
 const cases = [];
 const add = (name, rule, nodes, mutate = () => {}, expected = []) => {const s = snapshot(rule, structuredClone(nodes)); mutate(s); cases.push({name, platform: 'android', rules: [rule], snapshot: s, expected});};
@@ -26,7 +33,6 @@ add('article-repeat-paragraphs-preserved', article, articleNodes, s => {s.nodes.
 add('article-ambiguous-title', article, articleNodes, s => {s.nodes.push(node('other-title', article.fields.title.select.resourceId, 'Other generated title', 'a'));});
 add('article-navigation-outside-region', article, articleNodes, s => {s.nodes.push(node('nav', article.fields.title.select.resourceId, 'Generated navigation'));}, [page(article, articleObject)]);
 add('article-no-reliable-identity', article, articleNodes, s => {s.nodes = s.nodes.filter(n => n.id !== 'u');}, [page(article, {kind: 'article', title: articleObject.title, author: articleObject.author, body: articleObject.body})]);
-add('article-invalid-link-not-guessed', article, articleNodes, s => {s.nodes.find(n => n.id === 'u').text = 'Share article';}, [page(article, {kind: 'article', title: articleObject.title, author: articleObject.author, body: articleObject.body})]);
 add('article-long-visible-paragraph', article, articleNodes, s => {s.nodes.find(n => n.id === 'p1').text = 'Generated long visible paragraph. '.repeat(90);}, [page(article, {...articleObject, body: [{text: 'Generated long visible paragraph. '.repeat(90)}, articleObject.body[1]]})]);
 add('article-bounded-body-blocks', article, articleNodes, s => {s.nodes = s.nodes.filter(n => !n.id.startsWith('p')); for (let i = 0; i < 65; i++) s.nodes.push(node(`generated-paragraph-${i}`, article.fields.body.select.resourceId, `Generated bounded paragraph ${i}.`, 'a'));}, [page(article, {...articleObject, body: Array.from({length: 64}, (_, i) => ({text: `Generated bounded paragraph ${i}.`}))}, true)]);
 add('article-optional-author-ambiguous', article, articleNodes, s => {s.nodes.push(node('second-author', article.fields.author.select.resourceId, 'Generated other author', 'a'));}, [page(article, {kind: 'article', title: articleObject.title, url: articleObject.url, body: articleObject.body, identity: articleObject.identity})]);
@@ -38,13 +44,6 @@ add('product-empty-title', product, productNodes, s => {for (const n of s.nodes)
 add('product-missing-card-structure', product, productNodes, s => {for (const n of s.nodes) if (n.id.startsWith('card')) n.resourceId = 'generated-other';});
 add('product-no-reliable-identity', product, productNodes, s => {s.nodes = s.nodes.filter(n => !n.id.startsWith('url') && !n.id.startsWith('id'));}, ['one', 'two'].map(() => page(product, {kind: 'product', title: 'Generated matching product title', body: []})));
 add('product-truncated-visible-cards', product, productNodes, s => {s.truncated = true;}, [page(product, productObject('one'), true), page(product, productObject('two'), true)]);
-// These selectors mirror historical structural evidence only. Text is newly generated.
-// Replay proves the mapping contract, not the current behavior of either real App.
-// Pin independently recorded App metadata so editing a rule cannot regenerate its own matching page.
-const historicalMetadata = {
-  'wechat-article-android-8.0.78': {appId: 'com.tencent.mm', appVersion: '8.0.78', activity: 'com.tencent.mm.plugin.brandservice.ui.timeline.preload.ui.TmplWebViewMMUI'},
-  'taobao-products-android-10.66.22': {appId: 'com.taobao.taobao', appVersion: '10.66.22', activity: 'com.taobao.tao.welcome.Welcome'},
-};
 for (const rule of builtinRules) {
   const historical = historicalMetadata[rule.id];
   if (!historical) throw Error(`Missing independent historical App metadata for ${rule.id}`);

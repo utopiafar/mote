@@ -8,7 +8,7 @@ internal object AppCapturePresentation {
     data class Snapshot(val collection: AppCollectionRules, val excluded: Set<String>, val rules: String,
         val projection: Boolean, val ocr: Boolean) {
         val ruleCatalog: Map<String, List<Rule>> by lazy { UiPageRules.parse(rules)
-            .filter { it.optInt("formatVersion") in setOf(2, 3) && it.optString("platform") == "android" }
+            .filter { it.optInt("formatVersion") == 3 && it.optString("platform") == "android" }
             .groupBy { it.getString("appId") }.mapValues { (_, entries) -> entries.map { rule(it) } } }
     }
 
@@ -16,11 +16,11 @@ internal object AppCapturePresentation {
         value.getJSONObject("fields").keys().asSequence().toSortedSet())
 
     fun rules(raw: String, appId: String): List<Rule> = UiPageRules.parse(raw)
-        .filter { it.optInt("formatVersion") in setOf(2, 3) && it.optString("platform") == "android" && it.optString("appId") == appId }
+        .filter { it.optInt("formatVersion") == 3 && it.optString("platform") == "android" && it.optString("appId") == appId }
         .map(::rule)
 
     fun ruleApps(raw: String): Set<String> = UiPageRules.parse(raw)
-        .filter { it.optInt("formatVersion") in setOf(2, 3) && it.optString("platform") == "android" }
+        .filter { it.optInt("formatVersion") == 3 && it.optString("platform") == "android" }
         .map { it.getString("appId") }.toSet()
 
     fun mode(snapshot: Snapshot, id: String): AppCollectionMode = if (id in snapshot.excluded) AppCollectionMode.OFF

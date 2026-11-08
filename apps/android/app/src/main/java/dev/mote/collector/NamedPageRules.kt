@@ -8,16 +8,16 @@ internal object NamedPageRules {
     private val fieldName = Regex("[a-z][a-z0-9_]{0,99}")
     fun validate(rule: JSONObject) {
         require(rule.keys().asSequence().all { it in setOf("formatVersion","id","version","platform","appId","appVersion","activity","kind","region","repeat","repeatParent","repeatSubtreeHash","required","fields") })
-        for (key in listOf("id","version","platform","appId","appVersion","kind")) require(rule.get(key) is String && rule.getString(key).isNotBlank() && rule.getString(key).length <= if(key=="kind") 100 else 300)
+        for (key in listOf("id","version","platform","appId","appVersion","kind")) require(rule.has(key) && rule.get(key) is String && rule.getString(key).isNotBlank() && rule.getString(key).length <= if(key=="kind") 100 else 300)
         require(rule.getInt("formatVersion")==3 && rule.getDouble("formatVersion")==3.0 && rule.getString("platform") in setOf("android","macos"))
         for(key in listOf("region","repeat","repeatParent")) rule.optJSONObject(key)?.let(::selector)
         if(rule.has("repeatParent") || rule.has("repeatSubtreeHash"))require(rule.has("repeat"))
         if(rule.has("repeatSubtreeHash"))require(Regex("[a-f0-9]{64}").matches(rule.getString("repeatSubtreeHash")))
         val required=rule.optJSONArray("required")?:JSONArray();require(required.length()<=8);for(i in 0 until required.length())selector(required.getJSONObject(i))
-        val fields=rule.getJSONObject("fields");require(fields.length() in 1..32)
+        require(rule.has("fields"));val fields=rule.getJSONObject("fields");require(fields.length() in 1..32)
         for(name in fields.keys()) {
             require(fieldName.matches(name));val f=fields.getJSONObject(name)
-            require(f.keys().asSequence().all { it in setOf("select","ancestor","childPath","required","source","cardinality") });selector(f.getJSONObject("select"));f.optJSONObject("ancestor")?.let(::selector)
+            require(f.has("select")&&f.keys().asSequence().all { it in setOf("select","ancestor","childPath","required","source","cardinality") });selector(f.getJSONObject("select"));f.optJSONObject("ancestor")?.let(::selector)
             require(f.optString("source","text") in setOf("text","description","state") && f.optString("cardinality","one") in setOf("one","many"))
             if(f.has("required"))require(f.get("required") is Boolean)
             f.optJSONArray("childPath")?.let { path ->require(rule.has("region")||rule.has("repeat"));require(path.length() in 0..24);for(i in 0 until path.length())require(path.getDouble(i)==path.getInt(i).toDouble()&&path.getInt(i) in 0..4095) }
@@ -69,15 +69,6 @@ internal object NamedPageRules {
             if(!failed&&fields.length()>0)results+=page(snapshot,rule,fields,at,snapshot.optBoolean("truncated")||clipped)
         }
         return results
-    }
-    fun fromArticle(page:JSONObject):JSONObject {
-        val value=page.getJSONArray("objects").getJSONObject(0);val fields=JSONArray()
-        for(key in listOf("title","author","url","itemId","body")) {
-            val values=JSONArray();if(key=="body"){val b=value.getJSONArray("body");for(i in 0 until b.length())values.put(JSONObject().put("text",b.getJSONObject(i).getString("text")).put("source","text"))}
-            else if(value.has(key))values.put(JSONObject().put("text",value.getString(key)).put("source","text"))
-            if(values.length()>0)fields.put(JSONObject().put("name",if(key=="itemId")"item_id" else key).put("values",values))
-        }
-        page.put("version",3).put("objects",JSONArray().put(JSONObject().put("kind",value.getString("kind")).put("fields",sorted(fields))));return page
     }
     fun text(page:JSONObject)=page.getJSONArray("objects").getJSONObject(0).getJSONArray("fields").let{fields->(0 until fields.length()).flatMap{i->val values=fields.getJSONObject(i).getJSONArray("values");(0 until values.length()).map{values.getJSONObject(it).getString("text")}}.joinToString("\n")}
     fun validatePage(p:JSONObject){

@@ -4,7 +4,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -41,7 +41,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -202,7 +203,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -239,7 +240,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -337,7 +339,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -374,7 +376,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -472,7 +475,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -509,7 +512,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -607,7 +611,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -644,7 +648,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -742,7 +747,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -779,7 +784,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -851,7 +857,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -888,7 +894,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -1049,7 +1056,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -1086,7 +1093,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -1247,7 +1255,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -1284,7 +1292,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -1395,7 +1404,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -1432,7 +1441,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -1605,7 +1615,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -1642,7 +1652,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -1682,195 +1693,6 @@
           "id": "author",
           "resourceId": "dev.mote.generated.reader:id/author",
           "text": "Generated author",
-          "role": "android.widget.TextView",
-          "bounds": {
-            "x": 0,
-            "y": 0,
-            "width": 100,
-            "height": 20
-          },
-          "parentId": "a"
-        },
-        {
-          "id": "p1",
-          "resourceId": "dev.mote.generated.reader:id/paragraph",
-          "text": "Generated paragraph one.",
-          "role": "android.widget.TextView",
-          "bounds": {
-            "x": 0,
-            "y": 0,
-            "width": 100,
-            "height": 20
-          },
-          "parentId": "a"
-        },
-        {
-          "id": "p2",
-          "resourceId": "dev.mote.generated.reader:id/paragraph",
-          "text": "Generated paragraph two.",
-          "role": "android.widget.TextView",
-          "bounds": {
-            "x": 0,
-            "y": 0,
-            "width": 100,
-            "height": 20
-          },
-          "parentId": "a"
-        }
-      ],
-      "truncated": false
-    },
-    "expected": [
-      {
-        "version": 3,
-        "scope": "visible_window",
-        "adapterId": "generated-reader.article",
-        "adapterVersion": "1",
-        "appVersion": "1.0.0",
-        "activity": "dev.mote.generated.reader.ArticleActivity",
-        "status": "ok",
-        "truncated": false,
-        "observations": {
-          "firstAt": "2026-10-10T08:00:00Z",
-          "lastAt": "2026-10-10T08:00:00Z",
-          "count": 1
-        },
-        "objects": [
-          {
-            "kind": "article",
-            "fields": [
-              {
-                "name": "author",
-                "values": [
-                  {
-                    "text": "Generated author",
-                    "source": "text"
-                  }
-                ]
-              },
-              {
-                "name": "body",
-                "values": [
-                  {
-                    "text": "Generated paragraph one.",
-                    "source": "text"
-                  },
-                  {
-                    "text": "Generated paragraph two.",
-                    "source": "text"
-                  }
-                ]
-              },
-              {
-                "name": "title",
-                "values": [
-                  {
-                    "text": "Generated article title",
-                    "source": "text"
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "name": "article-invalid-link-not-guessed",
-    "platform": "android",
-    "rules": [
-      {
-        "formatVersion": 2,
-        "id": "generated-reader.article",
-        "version": "1",
-        "platform": "android",
-        "appId": "dev.mote.generated.reader",
-        "appVersion": "1.0.0",
-        "activity": "dev.mote.generated.reader.ArticleActivity",
-        "required": [
-          {
-            "resourceId": "dev.mote.generated.reader:id/article"
-          }
-        ],
-        "region": {
-          "resourceId": "dev.mote.generated.reader:id/article"
-        },
-        "kind": "article",
-        "fields": {
-          "title": {
-            "select": {
-              "resourceId": "dev.mote.generated.reader:id/title"
-            },
-            "required": true
-          },
-          "author": {
-            "select": {
-              "resourceId": "dev.mote.generated.reader:id/author"
-            }
-          },
-          "url": {
-            "select": {
-              "resourceId": "dev.mote.generated.reader:id/url"
-            }
-          },
-          "body": {
-            "select": {
-              "resourceId": "dev.mote.generated.reader:id/paragraph"
-            },
-            "required": true
-          }
-        }
-      }
-    ],
-    "snapshot": {
-      "appId": "dev.mote.generated.reader",
-      "appVersion": "1.0.0",
-      "activity": "dev.mote.generated.reader.ArticleActivity",
-      "observedAt": "2026-10-10T08:00:00Z",
-      "nodes": [
-        {
-          "id": "a",
-          "resourceId": "dev.mote.generated.reader:id/article",
-          "text": "",
-          "role": "android.widget.TextView",
-          "bounds": {
-            "x": 0,
-            "y": 0,
-            "width": 100,
-            "height": 20
-          }
-        },
-        {
-          "id": "t",
-          "resourceId": "dev.mote.generated.reader:id/title",
-          "text": "Generated article title",
-          "role": "android.widget.TextView",
-          "bounds": {
-            "x": 0,
-            "y": 0,
-            "width": 100,
-            "height": 20
-          },
-          "parentId": "a"
-        },
-        {
-          "id": "author",
-          "resourceId": "dev.mote.generated.reader:id/author",
-          "text": "Generated author",
-          "role": "android.widget.TextView",
-          "bounds": {
-            "x": 0,
-            "y": 0,
-            "width": 100,
-            "height": 20
-          },
-          "parentId": "a"
-        },
-        {
-          "id": "u",
-          "resourceId": "dev.mote.generated.reader:id/url",
-          "text": "Share article",
           "role": "android.widget.TextView",
           "bounds": {
             "x": 0,
@@ -1970,7 +1792,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -2007,7 +1829,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -2168,7 +1991,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -2205,7 +2028,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -3433,7 +3257,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -3470,7 +3294,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -3635,7 +3460,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-reader.article",
         "version": "1",
         "platform": "android",
@@ -3672,7 +3497,8 @@
             "select": {
               "resourceId": "dev.mote.generated.reader:id/paragraph"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -3833,7 +3659,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-shop.products",
         "version": "1",
         "platform": "android",
@@ -3864,7 +3690,7 @@
               "resourceId": "dev.mote.generated.shop:id/url"
             }
           },
-          "itemId": {
+          "item_id": {
             "select": {
               "resourceId": "dev.mote.generated.shop:id/item_id"
             }
@@ -4103,7 +3929,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-shop.products",
         "version": "1",
         "platform": "android",
@@ -4134,7 +3960,7 @@
               "resourceId": "dev.mote.generated.shop:id/url"
             }
           },
-          "itemId": {
+          "item_id": {
             "select": {
               "resourceId": "dev.mote.generated.shop:id/item_id"
             }
@@ -4274,7 +4100,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-shop.products",
         "version": "1",
         "platform": "android",
@@ -4305,7 +4131,7 @@
               "resourceId": "dev.mote.generated.shop:id/url"
             }
           },
-          "itemId": {
+          "item_id": {
             "select": {
               "resourceId": "dev.mote.generated.shop:id/item_id"
             }
@@ -4445,7 +4271,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-shop.products",
         "version": "1",
         "platform": "android",
@@ -4476,7 +4302,7 @@
               "resourceId": "dev.mote.generated.shop:id/url"
             }
           },
-          "itemId": {
+          "item_id": {
             "select": {
               "resourceId": "dev.mote.generated.shop:id/item_id"
             }
@@ -4616,7 +4442,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-shop.products",
         "version": "1",
         "platform": "android",
@@ -4647,7 +4473,7 @@
               "resourceId": "dev.mote.generated.shop:id/url"
             }
           },
-          "itemId": {
+          "item_id": {
             "select": {
               "resourceId": "dev.mote.generated.shop:id/item_id"
             }
@@ -4787,7 +4613,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-shop.products",
         "version": "1",
         "platform": "android",
@@ -4818,7 +4644,7 @@
               "resourceId": "dev.mote.generated.shop:id/url"
             }
           },
-          "itemId": {
+          "item_id": {
             "select": {
               "resourceId": "dev.mote.generated.shop:id/item_id"
             }
@@ -4969,7 +4795,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "generated-shop.products",
         "version": "1",
         "platform": "android",
@@ -5000,7 +4826,7 @@
               "resourceId": "dev.mote.generated.shop:id/url"
             }
           },
-          "itemId": {
+          "item_id": {
             "select": {
               "resourceId": "dev.mote.generated.shop:id/item_id"
             }
@@ -5239,7 +5065,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -5276,7 +5102,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -5437,7 +5264,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -5474,7 +5301,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -5585,7 +5413,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -5622,7 +5450,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -5733,7 +5562,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -5770,7 +5599,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -5881,7 +5711,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -5918,7 +5748,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -6029,7 +5860,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -6066,7 +5897,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -6086,7 +5918,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -6123,7 +5955,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -6284,7 +6117,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -6321,7 +6154,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -6432,7 +6266,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -6469,7 +6303,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -6642,7 +6477,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "wechat-article-android-8.0.78",
         "version": "1",
         "platform": "android",
@@ -6679,7 +6514,8 @@
             "ancestor": {
               "resourceId": "js_content"
             },
-            "required": true
+            "required": true,
+            "cardinality": "many"
           }
         }
       }
@@ -7169,7 +7005,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -7365,7 +7201,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -7529,7 +7365,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -7693,7 +7529,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -7857,7 +7693,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -8021,7 +7857,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -8074,7 +7910,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -8270,7 +8106,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -8433,7 +8269,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -8597,7 +8433,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -8761,7 +8597,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
@@ -8943,7 +8779,7 @@
     "platform": "android",
     "rules": [
       {
-        "formatVersion": 2,
+        "formatVersion": 3,
         "id": "taobao-products-android-10.66.22",
         "version": "1",
         "platform": "android",
