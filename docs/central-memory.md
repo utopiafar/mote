@@ -2,7 +2,7 @@
 
 > 用户自身表达、代办任务和项目归属见[个人记忆归属](personal-memory-attribution.md)。用户的日常、重复主观表达可以成为个人记忆；第三方或身份未知的有用内容可成为来源限定观察。当前个人 v5 组合按需原件上下文读取与完整范围评估，由模型择要保存，见[范围评估 ADR](adr-memory-range-evaluation.md)。上下文解释责任及旧 v4 固定定义见[上下文读取 ADR](adr-memory-context-reading.md)，旧 v3 固定定义见[有限个人 Memory ADR](adr-bounded-personal-memory.md)。
 
-> 当前 Central epoch 6：新产物须经过 admission 分层与独立审核；已授权且就绪的新输入采用有界滚动package，保留artifact/history的固定窗口。当前规则见 [系统改造ADR](adr-system-refactor.md)、[记忆准入设计](memory-admission.md)，存储边界见 [MVP 基线 ADR](adr-mvp-baseline.md)。
+> 当前 Central epoch 7：新产物须经过 admission 分层与独立审核；已授权且就绪的新输入采用有界滚动package，保留artifact/history的固定窗口。当前规则见 [系统改造ADR](adr-system-refactor.md)、[记忆准入设计](memory-admission.md)，存储边界见 [MVP 基线 ADR](adr-mvp-baseline.md)。
 
 本文的通用导入与 [文件原件同步](files.md) 是不同入口。当前已共享 PDF/DOCX/XLSX 解码，已知文档可直接提取；需要模型映射的资料仍走预览确认。自动记忆调度与审核以 [生命周期](memory-lifecycle.md)、[准入](memory-admission.md) 和 [版本化更新](memory-updates.md) 为准。
 
