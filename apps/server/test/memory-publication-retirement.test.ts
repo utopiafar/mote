@@ -17,7 +17,7 @@ import {GitHubPluginReleases,type PluginManifest,type PluginReleaseTransport} fr
 import {MemoryBindings} from '../src/memory-bindings.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {MemoryPublication} from '../src/plugins/memory-publication.js';
-import {memoryProviderKey,type MemoryProvider,type MemoryProviderRead} from '../src/memory-provider-contract.js';
+import {memoryBodyDigest,memoryProviderKey,type MemoryProvider,type MemoryProviderRead} from '../src/memory-provider-contract.js';
 import {exportBoundMemories} from '../src/plugins/memory-backup.js';
 import {setTimeout as delay} from 'node:timers/promises';
 
@@ -118,4 +118,11 @@ test('actual migration copy journals a lost late provider acknowledgement before
  const prepareId=randomUUID(),targetNamespace={...f.namespace,bindingRevision:4};f.host.bindings.prepare({targetPlanId:'instance:'+f.namespace.instanceId,scope:'default',feeAcknowledged:true,operationId:prepareId,expectedRevision:f.host.bindings.view().revision});await entered;
  const writeRow=f.host.store.db.prepare("SELECT json,state FROM memory_provider_writes WHERE json_extract(json,'$.namespace.bindingRevision')=4 AND json_extract(json,'$.key.memoryId')=?").get(proposal.id);assert.ok(writeRow,'copy records the remote intent before actual SDK submission completes');assert.equal(writeRow.state,'submitted');f.host.store.delete(source.id);withoutProse(f.host.store.db,fragment);await f.host.publication.reconcile();assert.ok(f.host.publication.pending()>0);release();for(let i=0;i<100&&f.host.executor.get('memory-prepare:'+prepareId).state==='running';i++)await delay(10);assert.notEqual(f.host.executor.get('memory-prepare:'+prepareId).state,'running');assert.ok(await native.read({namespace:targetNamespace,key:memoryProviderKey(proposal)}),'the late migration write actually committed in the never-activated namespace');assert.equal(f.host.bindings.binding().planId,'mote.builtin');
  await f.restart();await f.host.publication.reconcile();assert.equal(f.host.publication.pending(),0);assert.equal(await f.host.native().read({namespace:targetNamespace,key:memoryProviderKey(proposal)}),null);assert.equal(puts,1,'restart observes and erases the migration write without a second put');withoutProse(f.host.store.db,fragment);
+});
+
+test('a fresh database publishes every Memory with its reviewed body digest already in the provider journal',async t=>{
+ const f=await fixture(t),fragments=['Generated new database ALPHA.','Generated new database BETA.','Generated new database GAMMA.'];
+ for(const fragment of fragments){const source=await original(f,fragment),proposal=proposed(f,result(source.id,source.at,fragment));await f.host.publication.publish(proposal.id,proposal.version);}
+ const writes=f.host.store.db.prepare('SELECT json FROM memory_provider_writes ORDER BY id').all();assert.equal(writes.length,fragments.length);
+ for(const row of writes){const write=JSON.parse(String(row.json));assert.equal(write.bodyDigest,memoryBodyDigest(write.memory),'every published write carries its reviewed body digest');}
 });

@@ -7,7 +7,6 @@ import type {BuiltinWebPlugin} from '../types';
 const LazyProcessing = React.lazy(() => import('./Processing').then(module => ({default: module.Processing})));
 
 export {ModelAssignments} from './ModelAssignments';
-export {ModelAuthorizationSettings} from './ModelAuthorizationSettings';
 export {ModelProfiles} from './ModelProfiles';
 export {ModelSettingsEditor} from './ModelSettingsEditor';
 export {modelSetupHref,ModelStartGuide} from './ModelStartGuide';
