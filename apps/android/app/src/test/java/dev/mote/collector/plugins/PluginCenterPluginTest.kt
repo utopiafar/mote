@@ -40,20 +40,22 @@ class PluginCenterPluginTest {
         assertFalse(instance.desired)
         assertEquals("unknown", instance.capabilities.single().state)
         assertEquals(setOf("configure", "check"), instance.allowedActions)
-        assertEquals(listOf("mem0ai/mem0", "vectorize-io/hindsight"), inventory.catalog.map { it.getString("repository") })
+        assertEquals(emptyList<String>(), inventory.catalog.map { it.getString("repository") })
 
-        val worker = inventory.builds[0]
-        val native = inventory.builds[1]
+        val packageBuild = inventory.builds[0]
+        val worker = inventory.builds[1]
+        assertEquals("worker", packageBuild.runtime)
         assertEquals("worker", worker.runtime)
-        assertEquals("host", native.runtime)
+        assertEquals(pkg.id, packageBuild.id)
+        assertEquals("Generated control package", packageBuild.name)
         assertEquals(worker.packageId, instance.packageId)
+        assertEquals("stopped", packageBuild.observed)
         assertEquals("stopped", worker.observed)
-        assertEquals("stopped", native.observed)
         assertEquals("generated-reference", worker.configuration.getString("endpoint"))
+        assertEquals(emptyList<String>(), packageBuild.blockers)
         assertEquals(emptyList<String>(), worker.blockers)
-        assertEquals(emptyList<String>(), native.blockers)
+        assertEquals("fixture-1", packageBuild.version)
         assertEquals("fixture-1", worker.version)
-        assertEquals("1.0.0", native.version)
     }
 
     @Test fun `missing native provider displays requires-build while a registered build is active`() {
