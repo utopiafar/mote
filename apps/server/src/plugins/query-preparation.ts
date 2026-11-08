@@ -14,12 +14,11 @@ import {memoryEvidenceFingerprint} from '../memory.js';
 import {openingMemoryContext} from '../opening-memory.js';
 import {queryWithAttachmentsSchema,insightSchema} from '../query-request.js';
 import type {QueryScope} from '../query-scope.js';
-import type {QueryQualityStage,QueryQualityStrategy} from '../query-quality-experiment.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 
 type QueryPreparationStore=ConstructorParameters<typeof DelegationRuntime>[0];
 
-export type SavedQuery={hostRequest:unknown;language?:QueryInput['language'];prepared?:QueryInput;configurationFingerprint?:string;qualityStrategy?:QueryQualityStrategy;qualityStages?:Partial<Record<QueryQualityStage,QueryResult>>};
+export type SavedQuery={hostRequest:unknown;language?:QueryInput['language'];prepared?:QueryInput;configurationFingerprint?:string};
 export interface QueryPreparationDependencies {
   store:QueryPreparationStore;
   files:Pick<FileStore,'detail'|'version'>;
@@ -33,11 +32,10 @@ export interface QueryPreparationDependencies {
   configured:()=>boolean;
   authority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
   query:(input:QueryInput)=>Promise<QueryResult>;
-  qualityStrategy?:QueryQualityStrategy;
 }
 /** Prepare and pin the accepted request under its current coordinator lease. */
 export function createQueryPreparation(dependencies:QueryPreparationDependencies){
-  const {store,files,conversations,delegation,executor,modelSettings,working,lifecycleSettings,archiveReader,configured,authority,query,qualityStrategy}=dependencies;
+  const {store,files,conversations,delegation,executor,modelSettings,working,lifecycleSettings,archiveReader,configured,authority,query}=dependencies;
   const {assert:assertModelEvidence,contextDependencies,selectedQueryEvidence,selectedQueryMaterial}=authority;
   const queryImages=(ids:string[])=>ids.map(id=>{
     const detail=files.detail(id),version=files.version(id),mimeType=detail.item.mimeType;
@@ -50,8 +48,8 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     if(saved.prepared){
       // An accepted run keeps the model identity pinned by its first
       // preparation. An ordinary model-settings switch affects only new runs;
-      // the preparation fingerprint stays for the explicit quality-experiment
-      // checkpoint, not a transport fence on the durable run.
+      // the preparation fingerprint stays for the durable generation pin, not
+      // a transport fence on the durable run.
       assertModelEvidence(saved.prepared);return {...saved.prepared,signal,onProgress};
     }
     const {conversationId,question,modelProfileId,modelOverride,evidenceIds:selectedIds,anchorEvidenceIds:anchorIds,anchorMaterialRef,attachmentIds=[],...selected}=queryWithAttachmentsSchema.parse(body);
@@ -93,7 +91,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
       if(freshImages.some((image,index)=>image.hash!==directImages[index].hash||image.mimeType!==directImages[index].mimeType||image.sizeBytes!==directImages[index].sizeBytes))throw new StoreError('Query attachment changed during preparation',409);
       for(const image of directImages){const version=files.version(image.id);if(!store.evidence([image.id]).length||!fileAttachmentAvailable(store,image.id)||store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted)throw new StoreError('Query attachment is no longer available',409);}
       delegation.recordEvidence(work.id,[...(contextDependencies(prepared)?.ids??[]),...directImages.map(image=>image.id)]);
-      delegation.journal.savePayload(work.id,{...saved,prepared,configurationFingerprint:modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision).fingerprint,...(qualityStrategy?{qualityStrategy}:{})});
+      delegation.journal.savePayload(work.id,{...saved,prepared,configurationFingerprint:modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision).fingerprint});
     });
     return {...prepared,signal,onProgress};
   }

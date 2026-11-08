@@ -24,7 +24,7 @@ for(const mutation of ['lease-renewal','delete-during-validation','delete-during
   send({id:'generated-large-'+providerStarts,choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});res.end('data: [DONE]\n\n');
  });await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
  const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:60_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-provider',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-fixture-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
- node=await buildApp(config,{backgroundWorker:false,queryQualityExperiment:'base'});await node.app.ready();
+ node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
  t.after(async()=>{await node.app.close();endpoint.closeAllConnections();await new Promise<void>(resolve=>endpoint.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
  const dependencies:string[]=[];
  for(let index=0;index<3;index++){

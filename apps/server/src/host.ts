@@ -36,7 +36,6 @@ import { randomUUID } from 'node:crypto';
 import { existsSync,readFileSync } from 'node:fs';
 import { join,relative,sep } from 'node:path';
 import { z } from 'zod';
-import type {QueryQualityStrategy} from './query-quality-experiment.js';
 import {installAgentReadTools} from './plugins/agent-read-tools.js';
 import { repositoryRoot,type Config } from './config.js';
 import {contributeDomainRoutes} from './plugins/domain-routes.js';
@@ -59,7 +58,7 @@ import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import type {LifecycleExtension,LifecycleSettings } from './memory-lifecycle.js';
 import type {WorkingMemory} from './working-memory.js';
 import {openPluginControlRoot} from './plugin-center.js';
-import {registerPluginRoutes} from './plugin-routes.js';
+import {registerPluginControlHttp} from './plugins/plugin-control-http.js';
 import type { ModelAgentFactory } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
@@ -84,7 +83,7 @@ import { UsageLedger } from './usage.js';
 
 export type {QueryAgent} from './query-agent.js';
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export type HostDependencies={distribution?:CentralDistribution;configService?:ConfigService;queryQualityExperiment?:QueryQualityStrategy;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;connectorManifests?:readonly ConnectorManifest[];processingPlugins?:readonly Plugin[];semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void};
+export type HostDependencies={distribution?:CentralDistribution;configService?:ConfigService;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;connectorManifests?:readonly ConnectorManifest[];processingPlugins?:readonly Plugin[];semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void};
 export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const resources=new ServerResources();
   let startupApp:FastifyInstance|undefined;
@@ -97,7 +96,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync}=await assemblePlatform({
     bootstrap,config,store,resources,serverVersion,
     availableModelConnections:()=>availableModelConnections(),connections:dependencies?.connections,
-    queryQualityExperiment:dependencies?.queryQualityExperiment,
     assertModelEvidence:input=>assertModelEvidence(input)});
   const {memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,memoryBindingControl,topics}=memoryInputs({store,configService});
   const {materials,materialMemoryWork}=await prepareMaterials({bootstrap,store,authorization:authorizationPlatform.commits,resources,memoryRecipeSettings,newInputAdmission:()=>memoryBindingControl.accepting()});
@@ -398,7 +396,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
 
   const {delegation,queryRuns,queryRunServices}=await prepareQueryRuns({bootstrap,backendContext,resources,store,executor,executionObserver,runtimeSettings,evidenceReader,sourceContexts,assertModelEvidence,files,conversations,working:queryWorking,
     lifecycleSettings:queryLifecycleSettings,archiveReader,agent,modelEvidenceAuthority,modelSettings,queryRuntime:()=>queryRuntimeServices.runtime,
-    qualityStrategy:dependencies?.queryQualityExperiment,semanticContextTime:dependencies?.semanticContextTime,usageLedger,
+    semanticContextTime:dependencies?.semanticContextTime,usageLedger,
     modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
   memoryPhasePipeline.attachDelegation({runtime:delegation,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
     const input=materialMemoryWork.planningInput(candidate);
@@ -475,7 +473,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   });
   const featureRoutes=new FeatureRoutes(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   resources.defer(()=>featureRoutes.close());
-  registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
+  registerPluginControlHttp(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   const domainRoutes=backendContext.get('moteDomainRoutes')??{};
   const selected=(id:string)=>bootstrap.selectsFeature(id);
   const routes:FeatureRoute[]=[];
