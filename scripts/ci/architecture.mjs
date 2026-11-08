@@ -17,6 +17,80 @@ function sourceFiles(directory){
   return readdirSync(directory,{withFileTypes:true}).filter(entry=>entry.name!=='node_modules').flatMap(entry=>entry.isDirectory()?sourceFiles(resolve(directory,entry.name)):sourceExtension.test(entry.name)?[resolve(directory,entry.name)]:[]);
 }
 
+const generatedDirectories=new Set(['node_modules','dist','build','coverage','.git','.next','out','target']);
+
+function repositorySourceFiles(directory,files=[]){
+  if(!existsSync(directory))return files;
+  for(const entry of readdirSync(directory,{withFileTypes:true})){
+    if(entry.name.startsWith('.')||generatedDirectories.has(entry.name))continue;
+    const path=resolve(directory,entry.name);
+    if(entry.isDirectory())repositorySourceFiles(path,files);
+    else if(sourceExtension.test(entry.name))files.push(path);
+  }
+  return files;
+}
+
+/** Tests are the only non-Agent code allowed to load the native DSH runtime. */
+function isTestFile(file){
+  return /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)/.test(file)||/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file);
+}
+
+function isDshSpecifier(specifier){
+  return typeof specifier==='string'&&/^@deepseek-ai\/dsh(?:-|\/|$)/.test(specifier);
+}
+
+/** Existing comments may name a plan card until the repository-wide rewrite removes them.
+ * L1/L2 are perception layers, not cards, so the cardinality marker excludes L. */
+const cardNumber=/\b[A-KM-Z]\d{1,3}\b/g;
+
+function commentCardCounts(file,text){
+  const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);
+  const scanner=ts.createScanner(ts.ScriptTarget.Latest,false,ts.LanguageVariant.Standard,text);
+  const counts=new Map();
+  for(let token=scanner.scan();token!==ts.SyntaxKind.EndOfFileToken;token=scanner.scan()){
+    if(token!==ts.SyntaxKind.SingleLineCommentTrivia&&token!==ts.SyntaxKind.MultiLineCommentTrivia)continue;
+    const line=source.getLineAndCharacterOfPosition(scanner.getTokenPos()).line+1;
+    for(const match of scanner.getTokenText().matchAll(cardNumber))counts.set(match[0],{count:(counts.get(match[0])?.count??0)+1,line});
+  }
+  return counts;
+}
+
+function serverContextConstruction(file,text){
+  const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);
+  const calls=[];
+  const visit=node=>{
+    if(ts.isNewExpression(node)&&ts.isIdentifier(node.expression)&&node.expression.text==='Context')calls.push({line:source.getLineAndCharacterOfPosition(node.getStart(source)).line+1});
+    ts.forEachChild(node,visit);
+  };
+  visit(source);
+  return calls;
+}
+
+/** Lexical boundaries that do not depend on module resolution. */
+export function sourceBoundaryViolations(root){
+  root=realpathSync(resolve(root));
+  const issues=[];
+  const applicationFiles=repositorySourceFiles(resolve(root,'apps')),packageFiles=repositorySourceFiles(resolve(root,'packages'));
+  for(const file of applicationFiles.concat(packageFiles)){
+    const name=slash(relative(root,file)),text=readFileSync(file,'utf8');
+    if(text.includes('@deepseek-ai/dsh')){
+      for(const reference of moduleReferences(file,text)){
+        if(!isDshSpecifier(reference.specifier)||inside(name,'packages/agent')||isTestFile(name))continue;
+        issues.push({rule:'dsh-agent-only',from:name,to:reference.specifier,kind:reference.kind,line:reference.line});
+      }
+    }
+  }
+  for(const file of sourceFiles(resolve(root,'apps/server/src'))){
+    const name=slash(relative(root,file));
+    serverContextConstruction(name,readFileSync(file,'utf8')).forEach((call,index)=>issues.push({rule:'server-new-context',from:name,to:'new Context(',kind:'runtime',symbol:`occurrence:${index+1}`,line:call.line}));
+  }
+  for(const file of applicationFiles.concat(packageFiles,repositorySourceFiles(resolve(root,'scripts')))){
+    const name=slash(relative(root,file));
+    for(const [card,{count,line}] of commentCardCounts(file,readFileSync(file,'utf8')))issues.push({rule:'comment-card-number',from:name,to:card,kind:'comment',symbol:`count:${count}`,line});
+  }
+  return issues;
+}
+
 /** Parse dependency syntax, retaining erased type edges separately from runtime edges. */
 export function moduleReferences(file,text){
   const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);
@@ -263,7 +337,7 @@ export function architectureViolations({nodes,browserEntries,unresolved=[]}){
 
 export function checkArchitecture(root='.',baseline){
   root=resolve(root);
-  const graph=dependencyGraph(root),issues=architectureViolations(graph);
+  const graph=dependencyGraph(root),issues=[...architectureViolations(graph),...sourceBoundaryViolations(root)];
   const exceptions=baseline??JSON.parse(readFileSync(resolve(root,'scripts/ci/architecture-baseline.json'),'utf8'));
   const allowed=new Map();
   for(const exception of exceptions){

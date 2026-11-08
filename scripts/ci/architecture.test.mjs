@@ -264,6 +264,73 @@ test('Server plugins cannot import Store by value or type, and exceptions go sta
   assert.throws(()=>f.check([exception,exception]),/unique concrete edge/);
 });
 
+test('non-Agent production code cannot import the native DSH runtime',t=>{
+  const f=fixture(t);
+  f.write('apps/server/src/dsh.ts',"import {DeepSeekHarness} from '@deepseek-ai/dsh-sdk-client'; export const harness=DeepSeekHarness;");
+  const result=f.check();
+  assert.deepEqual(rule(result),['dsh-agent-only']);
+  assert.equal(result.violations[0].from,'apps/server/src/dsh.ts');
+  assert.equal(result.violations[0].to,'@deepseek-ai/dsh-sdk-client');
+  const failed=f.run();
+  assert.equal(failed.status,1);
+  assert.match(failed.stderr,/dsh-agent-only: apps\/server\/src\/dsh\.ts/);
+});
+
+test('Agent source and test files may import the native DSH runtime',t=>{
+  const f=fixture(t);
+  f.write('packages/agent/src/dsh.ts',"import {DeepSeekHarness} from '@deepseek-ai/dsh-sdk-client'; export const harness=DeepSeekHarness;");
+  f.write('packages/agent/test/dsh.test.mjs',"import {DeepSeekHarness} from '@deepseek-ai/dsh-sdk-client'; export const harness=DeepSeekHarness;");
+  f.write('apps/server/test/dsh.test.ts',"import {DeepSeekHarness} from '@deepseek-ai/dsh-sdk-client'; export const harness=DeepSeekHarness;");
+  assert.deepEqual(f.check().violations,[]);
+});
+
+test('Server Context construction is limited to the five registered sites',t=>{
+  const f=fixture(t);
+  for(let index=0;index<5;index++)f.write(`apps/server/src/context-${index}.ts`,"import {Context} from 'cordis'; export const value=new Context();");
+  const present=f.check().violations.filter(issue=>issue.rule==='server-new-context');
+  assert.equal(present.length,5);
+  const baseline=present.map(issue=>({...issue,reason:'Existing server-owned Cordis root'}));
+  const accepted=f.check(baseline);
+  assert.deepEqual(accepted.violations,[]);
+  assert.equal(accepted.exceptions.length,5);
+  f.write('apps/server/src/context-5.ts',"import {Context} from 'cordis'; export const value=new Context();");
+  const added=f.check(baseline);
+  assert.deepEqual(rule(added),['server-new-context']);
+  assert.equal(added.violations[0].from,'apps/server/src/context-5.ts');
+  assert.equal(added.violations[0].symbol,'occurrence:1');
+});
+
+test('Existing card-number comments are registered and new ones fail, then stale when removed',t=>{
+  const f=fixture(t);
+  f.write('apps/server/src/existing.ts','// H04 owns cleanup; H04 stays registered once.\nexport const value=1;');
+  const issue=f.check().violations.find(candidate=>candidate.rule==='comment-card-number');
+  assert.equal(issue.to,'H04');
+  assert.equal(issue.symbol,'count:2');
+  const baseline=[{...issue,reason:'Existing card-number comment'}];
+  assert.deepEqual(f.check(baseline).violations,[]);
+  f.write('apps/server/src/new.ts','// G9 is a new card reference.\nexport const value=2;');
+  const added=f.check(baseline);
+  assert.deepEqual(rule(added),['comment-card-number']);
+  assert.equal(added.violations[0].from,'apps/server/src/new.ts');
+  assert.equal(added.violations[0].to,'G9');
+  f.write('apps/server/src/new.ts','export const value=2;');
+  f.write('apps/server/src/existing.ts','export const value=1;');
+  const stale=f.check(baseline);
+  assert.deepEqual(stale.violations,[]);
+  assert.deepEqual(stale.stale,baseline);
+});
+
+test('card-number comments do not flag ordinary words, versions, dates or commit hashes',t=>{
+  const f=fixture(t);
+  f.write('apps/server/src/prose.ts',[
+    '// UTF8 SHA256 HTTP2 IPv4 ABI v1.2.3 0.2.0-rc.2',
+    '// released 2026-11-08 at commit 91b3f4c27 and a1c6a3202',
+    '// L1/L2 layers, IDs and hashes stay prose here.',
+    'export const value=1;',
+  ].join('\n'));
+  assert.deepEqual(f.check().violations,[]);
+});
+
 test('repository boundaries pass with only exact reviewed existing exceptions',()=>{
   const result=checkArchitecture(repository);
   assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);

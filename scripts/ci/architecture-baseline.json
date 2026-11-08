@@ -14,6 +14,1622 @@
     "reason": "Existing trusted plugin loader: the configured module location is resolved by this host adapter; not a statically named application dependency."
   },
   {
+    "rule": "comment-card-number",
+    "from": "apps/desktop/scripts/final-source-permission-smoke.cjs",
+    "to": "M23",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/desktop/scripts/final-source-permission-smoke.cjs",
+    "to": "M24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/desktop/src/plugin-host/native-registry.ts",
+    "to": "U01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/desktop/test/plugin-stage-smoke.cjs",
+    "to": "G4",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/agent-runtime-events.ts",
+    "to": "C06",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/agent-runtime-registry.ts",
+    "to": "A05",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/agent-runtime-registry.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/activity.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/activity.ts",
+    "to": "K04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/agent.ts",
+    "to": "A09",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/materials.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/materials.ts",
+    "to": "K04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/memory.ts",
+    "to": "C23",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/memory.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/query.ts",
+    "to": "C27",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/work.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/assembly/work.ts",
+    "to": "K04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/bootstrap.ts",
+    "to": "C02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/bootstrap.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/bootstrap.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/bootstrap.ts",
+    "to": "H05",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/bootstrap.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/features/files.ts",
+    "to": "C11",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/features/memory/control.ts",
+    "to": "C21",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/features/memory/publication.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/features/memory/runtime.ts",
+    "to": "C22",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/features/notes.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/features/notes.ts",
+    "to": "C10",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/features/processing/processing-services.ts",
+    "to": "C17",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/features/sources.ts",
+    "to": "C10",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/file-routes.ts",
+    "to": "C11",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/host.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/memory-pipeline.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/platform-close-order.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/platform-close-order.ts",
+    "to": "C05",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/platform-close-order.ts",
+    "to": "C09",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/platform-close-order.ts",
+    "to": "C11",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugin-center.ts",
+    "to": "C08",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugin-center.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/actions-services.ts",
+    "to": "C25",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/activity-services.ts",
+    "to": "C05",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/activity-services.ts",
+    "to": "C26",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/activity-services.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/agent-runtime.ts",
+    "to": "A09",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/agent-runtime.ts",
+    "to": "C03",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/agent-runtime.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/agent-runtime.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/agent-view-routes.ts",
+    "to": "C26",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/archive-export.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/authorization-platform.ts",
+    "to": "H05",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/authorization-platform.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/c10-integration.ts",
+    "to": "C01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/c10-integration.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:3",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/c10-integration.ts",
+    "to": "C11",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/c10-integration.ts",
+    "to": "C12",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/capture-intake.ts",
+    "to": "C02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/capture-intake.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:9",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/capture-intake.ts",
+    "to": "C09",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/capture-intake.ts",
+    "to": "C10",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/capture-intake.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/capture-intake.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/central-contracts.ts",
+    "to": "C01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/central-contracts.ts",
+    "to": "C02",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/central-contracts.ts",
+    "to": "C03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/central-contracts.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:7",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/central-contracts.ts",
+    "to": "C23",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/central-contracts.ts",
+    "to": "C27",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/connector-host-adapter.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/connector-host-adapter.ts",
+    "to": "H05",
+    "kind": "comment",
+    "symbol": "count:3",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/conversations.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/devices-source.ts",
+    "to": "C01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/devices-source.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/devices-source.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/evidence-context-reader.ts",
+    "to": "C21",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/evidence-context-reader.ts",
+    "to": "C27",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/evidence-context-reader.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/evidence-deletion.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/execution-platform.ts",
+    "to": "C02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/execution-platform.ts",
+    "to": "C03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/execution-platform.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/execution-platform.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "C01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "C02",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "C10",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "C11",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "H05",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/files-source.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:3",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/image-processing-service.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/insight-services.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/insight-services.ts",
+    "to": "H05",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/insight-services.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/insight-services.ts",
+    "to": "K04",
+    "kind": "comment",
+    "symbol": "count:3",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/lark-source.ts",
+    "to": "C14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/material-context.ts",
+    "to": "C19",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/material-context.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/material-memory-intake.ts",
+    "to": "K04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/mcp-source-transport.ts",
+    "to": "C16",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/media-assets-service.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/media-assets-service.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/media-assets-service.ts",
+    "to": "H05",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/memory-automation-admission.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/memory-automation-admission.ts",
+    "to": "K04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/memory-backup.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/memory-deletions.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/memory-provider-adapters.ts",
+    "to": "C23",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/memory-publication.ts",
+    "to": "C23",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/memory-publication.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:5",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/memory-record-repository.ts",
+    "to": "K04",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/notes-source.ts",
+    "to": "C10",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/notes-source.ts",
+    "to": "C24",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/notes-source.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/notes-source.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/observability-platform.ts",
+    "to": "C02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/observability-platform.ts",
+    "to": "C06",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/observability-platform.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/observability-platform.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/observability-platform.ts",
+    "to": "H05",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/owner-question-services.ts",
+    "to": "H14",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/processing-services.ts",
+    "to": "C17",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/query-runs.ts",
+    "to": "C27",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/query-runtime.ts",
+    "to": "C27",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/recording-sources.ts",
+    "to": "C15",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/source-runtime.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/source-runtime.ts",
+    "to": "C10",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/vault-platform.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/vault-platform.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/plugins/vault-platform.ts",
+    "to": "H05",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/src/source-routes.ts",
+    "to": "C10",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/memory-route-ownership.test.ts",
+    "to": "C21",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/memory-route-ownership.test.ts",
+    "to": "C22",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/plugin-central-contracts.test.ts",
+    "to": "C01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/plugin-central-contracts.test.ts",
+    "to": "T1",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/plugin-central-contracts.test.ts",
+    "to": "T3",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/plugin-declarative-consumer.test.ts",
+    "to": "T3",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/plugin-devices-source.test.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/plugin-startup-contract.test.ts",
+    "to": "G1",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/server/test/plugin-vault-platform.test.ts",
+    "to": "C04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/web/src/features/runtime.tsx",
+    "to": "U07",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/web/src/plugin-host/contributions.ts",
+    "to": "U02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/web/src/plugin-host/contributions.ts",
+    "to": "U08",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/web/src/plugin-host/declarative-view.tsx",
+    "to": "U01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/web/src/plugin-host/declarative-view.tsx",
+    "to": "U02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/web/src/plugins/ask/controller.ts",
+    "to": "U02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/web/test/final-terra-actions-browser.cjs",
+    "to": "H11",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "apps/web/test/plugin-stage-browser.cjs",
+    "to": "G4",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/host/run-contracts.ts",
+    "to": "A04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/host/run-contracts.ts",
+    "to": "C27",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/host/run-session.ts",
+    "to": "A08",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/contracts.ts",
+    "to": "A02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/contracts.ts",
+    "to": "A05",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/contracts.ts",
+    "to": "A10",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/contracts.ts",
+    "to": "A12",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/dsh/profile-compiler.ts",
+    "to": "A03",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/dsh/profile-compiler.ts",
+    "to": "A07",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/dsh/profile-compiler.ts",
+    "to": "H07",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/profile.ts",
+    "to": "A01",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/profile.ts",
+    "to": "A09",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/profile.ts",
+    "to": "A10",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/runtime/profile.ts",
+    "to": "C03",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/tools/descriptor.ts",
+    "to": "A08",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/tools/host-session.ts",
+    "to": "A01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/tools/host-session.ts",
+    "to": "A08",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/tools/image-result.ts",
+    "to": "A12",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/tools/packs/materials.ts",
+    "to": "A08",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/src/tools/packs/originals.ts",
+    "to": "C10",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/test/dsh-provider.test.mjs",
+    "to": "A05",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/test/runtime-contracts.test.mjs",
+    "to": "P0",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/test/runtime-contracts.types.ts",
+    "to": "A01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/test/runtime-contracts.types.ts",
+    "to": "A04",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/agent/test/runtime-contracts.types.ts",
+    "to": "T3",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/plugin-api/src/contracts/identity.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/plugin-api/test/plugin-surfaces.test.mjs",
+    "to": "T3",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/plugin-api/test/public.types.ts",
+    "to": "T3",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/plugin-host/src/extensions.ts",
+    "to": "H04",
+    "kind": "comment",
+    "symbol": "count:3",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/plugin-host/test/import-boundary.test.mjs",
+    "to": "H07",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/plugin-host/test/import-boundary.test.mjs",
+    "to": "H11",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/src/agent-runtimes.ts",
+    "to": "A07",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/src/agent-runtimes.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/src/plugin-ui.ts",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/src/plugin-ui.ts",
+    "to": "U02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/test/appearance.test.mjs",
+    "to": "D34",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/test/ui-navigation-icons.test.mjs",
+    "to": "G11",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/test/ui-wording.test.mjs",
+    "to": "D26",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/test/ui-wording.test.mjs",
+    "to": "G02",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "packages/shared/test/ui-wording.test.mjs",
+    "to": "K07",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/agent-extension-matrix.mjs",
+    "to": "G4",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/agent-runtime-live-acceptance.mjs",
+    "to": "G4",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/android-history-fixture.ts",
+    "to": "H01",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/ci/native-plugin-contracts.test.mjs",
+    "to": "H07",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/fixtures/conversation-origin-server.ts",
+    "to": "J5",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/journeys/plugin-central-release.ts",
+    "to": "G5",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/journeys/plugin-central-stage.ts",
+    "to": "G1",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/journeys/plugin-central-stage.ts",
+    "to": "H08",
+    "kind": "comment",
+    "symbol": "count:2",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "comment-card-number",
+    "from": "scripts/plugin-pack.mjs",
+    "to": "H03",
+    "kind": "comment",
+    "symbol": "count:1",
+    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
+  },
+  {
+    "rule": "server-new-context",
+    "from": "apps/server/src/connectors/index.ts",
+    "to": "new Context(",
+    "kind": "runtime",
+    "symbol": "occurrence:1",
+    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
+  },
+  {
+    "rule": "server-new-context",
+    "from": "apps/server/src/file-processors.ts",
+    "to": "new Context(",
+    "kind": "runtime",
+    "symbol": "occurrence:1",
+    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
+  },
+  {
+    "rule": "server-new-context",
+    "from": "apps/server/src/host.ts",
+    "to": "new Context(",
+    "kind": "runtime",
+    "symbol": "occurrence:1",
+    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
+  },
+  {
+    "rule": "server-new-context",
+    "from": "apps/server/src/processing-runtime.ts",
+    "to": "new Context(",
+    "kind": "runtime",
+    "symbol": "occurrence:1",
+    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
+  },
+  {
+    "rule": "server-new-context",
+    "from": "apps/server/src/source-pipelines.ts",
+    "to": "new Context(",
+    "kind": "runtime",
+    "symbol": "occurrence:1",
+    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
+  },
+  {
     "rule": "server-plugins-no-store",
     "from": "apps/server/src/plugins/authorization-platform.ts",
     "to": "apps/server/src/store.ts",
