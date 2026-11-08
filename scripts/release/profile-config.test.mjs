@@ -8,19 +8,38 @@ const composeAvailable = spawnSync('docker', ['compose', 'version'], { stdio: 'i
 import {profilePaths,initialize,loadProfile,effectiveConfiguration,isolatedEnvironment,setPublicUrl,compose,composeEnvironment,dockerConfigurationUser} from '../profile-lib.mjs';
 import {parseConfigDocument,serializeConfigDocument} from '../../packages/shared/src/config-file.ts';
 async function fixture(t) {const directory=await mkdtemp(join(tmpdir(),'mote-yaml-profile-'));t.after(()=>rm(directory,{recursive:true,force:true}));return directory;}
-test('init creates one private YAML, preserves secret references during atomic edits, and rejects ambient server overrides',async t=>{
+function changedPaths(before,after,path=[]) {
+ if(Object.is(before,after))return [];
+ if(!before||!after||typeof before!=='object'||typeof after!=='object'||Array.isArray(before)!==Array.isArray(after))return [path];
+ const keys=new Set([...Object.keys(before),...Object.keys(after)]);
+ return [...keys].flatMap(key=>changedPaths(before[key],after[key],[...path,key]));
+}
+test('init creates one private YAML without a model, preserves secret references during atomic edits, and rejects ambient server overrides',async t=>{
  const home=await fixture(t),paths=profilePaths('test',home);await initialize(paths);let p=await loadProfile(paths);
  assert.equal((await stat(paths.configFile)).mode&0o777,0o600);assert.equal(await stat(paths.legacyEnvFile).then(()=>true,()=>false),false);
- const source=parseConfigDocument(await readFile(paths.configFile,'utf8')).savedDocument;source.server.token='${GENERATED_OWNER}';source.models.deployment.extraBody={private:'${GENERATED_BODY}'};
+ const initialized=await readFile(paths.configFile,'utf8');assert.deepEqual(p.savedDocument.models,{});assert.equal(initialized.includes('codex'),false);assert.equal(initialized.includes('gpt-6.1-sol'),false);
+ const source=parseConfigDocument(initialized).savedDocument;source.server.token='${GENERATED_OWNER}';
+ source.models={deployment:{provider:'deepseek',protocol:'deepseek',baseUrl:'https://generated-model.invalid/anthropic',model:'generated-model',reasoningEffort:'high',maxTokens:4096,modelRequestTimeoutMs:10000,agentTimeoutMs:20000,allowUnauthenticatedLocal:false,apiKey:'${GENERATED_OWNER}',headers:{},extraBody:{private:'${GENERATED_BODY}'}}};
  const oldOwner=process.env.GENERATED_OWNER,oldBody=process.env.GENERATED_BODY;process.env.GENERATED_OWNER='generated-owner-'.repeat(4);process.env.GENERATED_BODY='generated-body-secret';
  t.after(()=>{if(oldOwner===undefined)delete process.env.GENERATED_OWNER;else process.env.GENERATED_OWNER=oldOwner;if(oldBody===undefined)delete process.env.GENERATED_BODY;else process.env.GENERATED_BODY=oldBody;});
  await writeFile(paths.configFile,serializeConfigDocument(source));p=await loadProfile(paths);await setPublicUrl(p,'https://generated.invalid');
- assert.equal(p.savedDocument.server.token,'${GENERATED_OWNER}');assert.equal(p.savedDocument.models.deployment.extraBody.private,'${GENERATED_BODY}');assert.equal(p.savedDocument.revision,1);
+ assert.equal(p.savedDocument.server.token,'${GENERATED_OWNER}');assert.equal(p.savedDocument.models.deployment.apiKey,'${GENERATED_OWNER}');assert.equal(p.savedDocument.models.deployment.extraBody.private,'${GENERATED_BODY}');assert.equal(p.savedDocument.revision,1);
+ assert.equal(p.document.models.deployment.apiKey,'generated-owner-'.repeat(4));assert.equal(p.document.models.deployment.extraBody.private,'generated-body-secret');
  const env=isolatedEnvironment(p,{MOTE_UNUSED:'client-only'});assert.equal(env.MOTE_CONFIG_FILE,paths.configFile);assert.equal(env.MOTE_PORT,undefined);assert.equal(env.MOTE_LOG_DIR,undefined);assert.equal(env.GENERATED_BODY,'generated-body-secret');
- const offline=JSON.stringify(effectiveConfiguration(p));for(const secret of [p.env.MOTE_TOKEN,'generated-body-secret',p.document.media.workerToken])assert.equal(offline.includes(secret),false);
+ const offline=JSON.stringify(effectiveConfiguration(p));for(const secret of [p.env.MOTE_TOKEN,p.env.MOTE_MODEL_API_KEY,'generated-body-secret',p.document.media.workerToken])assert.equal(offline.includes(secret),false);
  await assert.rejects(initialize(paths),/already exists/);
  const replaced=join(p.directory,'replacement.yaml');await writeFile(replaced,serializeConfigDocument({...p.savedDocument,revision:2,server:{...p.savedDocument.server,port:47953}}));await rename(replaced,p.configFile);
  assert.equal((await loadProfile(paths)).port,47953);
+});
+test('init changes only the model domain and keeps listener, port and origin defaults',async t=>{
+ const home=await fixture(t),paths=profilePaths('test',home);await initialize(paths,{port:49160});
+ const current=parseConfigDocument(await readFile(paths.configFile,'utf8')).savedDocument;
+ assert.deepEqual(current.models,{});assert.equal(current.server.host,'127.0.0.1');assert.equal(current.server.port,49160);
+ assert.deepEqual(current.server.allowedOrigins,['http://localhost:5174','http://127.0.0.1:5174']);
+ const previous=structuredClone(current);previous.models={deployment:{provider:'codex',protocol:'codex-app-server',model:'gpt-6.1-sol',reasoningEffort:'high',serviceTier:'fast'}};
+ const differences=changedPaths(previous,current);assert.ok(differences.length>0);assert.ok(differences.every(path=>path[0]==='models'),JSON.stringify(differences));
+ const portChanged=structuredClone(current);portChanged.server.port+=1;
+ assert.deepEqual(changedPaths(current,portChanged),[['server','port']],'the comparison must report a deliberate port change');
 });
 test('legacy profile refusal leaves the selected old configuration and data untouched',async t=>{
  const home=await fixture(t),paths=profilePaths('test',home);await mkdir(join(paths.directory,'data'),{recursive:true});const body='MOTE_TOKEN=generated-old-private-token';await writeFile(paths.legacyEnvFile,body);await writeFile(join(paths.directory,'data/sentinel'),'generated archive');
@@ -53,7 +72,7 @@ test('offline configuration hides credentials embedded in invalid endpoint edits
  const home = await fixture(t), paths = profilePaths('test', home); await initialize(paths);
  const raw = parseConfigDocument(await readFile(paths.configFile, 'utf8')).savedDocument;
  raw.server.publicUrl = 'https://generated:private-password@fixture.invalid/?key=private-query';
- raw.models.deployment.baseUrl = 'https://generated:private-model-password@fixture.invalid/?key=private-model-query';
+ raw.models.deployment = { baseUrl: 'https://generated:private-model-password@fixture.invalid/?key=private-model-query' };
  raw.models.embedding = { baseUrl: 'https://generated:private-embedding-password@fixture.invalid/?key=private-embedding-query' };
  raw.connectors.googleRedirectUri = 'https://generated:private-google-password@fixture.invalid/?key=private-google-query';
  await writeFile(paths.configFile, serializeConfigDocument(raw));
