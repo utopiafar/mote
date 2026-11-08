@@ -98,3 +98,4 @@ Central 是单所有者仓库，server/web 同版本发布。首发正式支持 
 扩展应复用宿主来源、recipe、processor、Material 与只读证据契约。更大存储、多租户、其他硬件或新模型运行时需要各自明确设计与验证，不能从现有接口推断已经支持。
 
 细节见 [正式资料](material-architecture.md)、[来源流水线](source-pipelines.md)、[执行器](execution-engine.md)、[委派与活动](delegation-and-activity.md)、[Memory](memory-lifecycle.md)、[部署](deployment.md) 和 [文档索引](README.md)。
+一条资料从接入到问答的逐步路径见 [资料生命周期](material-lifecycle.md)。
