@@ -1,51 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, realpathSync, rmSync} from 'node:fs';
+import {mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {Store, StoreError} from '../src/store.js';
+import {DatabaseSync} from 'node:sqlite';
+import {Store} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {DelegationRuntime} from '../src/delegation-runtime.js';
 import {SourceStore} from '../src/sources.js';
 import {restoreProfile} from '../../../scripts/profile-lib.mjs';
 
 const table = 'delegation_source_context_dependencies';
-const schema = (store: Store) => store.db.prepare('SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name').all();
 
-for (const transaction of [false, true]) test(`unsupported populated delegation schema is rejected without rewriting data${transaction ? ' inside the caller transaction' : ''}`, async t => {
+test('an old-epoch vault holding the retired delegation schema is refused without rewriting data', t => {
   const directory = mkdtempSync(join(tmpdir(), 'mote-delegation-schema-'));
-  const store = new Store(directory), engine = new ExecutionEngine(store);
-  let runtime: DelegationRuntime | undefined;
-  t.after(async () => {
-    if (store.db.isTransaction) store.db.exec('ROLLBACK');
-    await runtime?.close();
-    await engine.close();
-    store.close();
-    rmSync(directory, {recursive: true, force: true});
-  });
-  store.db.exec(`CREATE TABLE delegation_works(id TEXT PRIMARY KEY,json TEXT NOT NULL);
+  t.after(() => rmSync(directory, {recursive: true, force: true}));
+  const db = new DatabaseSync(join(directory, 'mote.sqlite'));
+  db.exec(`CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+    CREATE TABLE delegation_works(id TEXT PRIMARY KEY,json TEXT NOT NULL);
     CREATE TABLE ${table}(work_id TEXT NOT NULL REFERENCES delegation_works(id) ON DELETE CASCADE,
       unit_id TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,fingerprint TEXT NOT NULL,
       PRIMARY KEY(work_id,unit_id,source_id,version,fingerprint));`);
-  store.db.prepare('INSERT INTO delegation_works VALUES(?,?)').run('generated-work', '{"goal":"Preserve generated work"}');
-  store.db.prepare(`INSERT INTO ${table} VALUES(?,?,?,?,?)`).run('generated-work', '', 'generated-source', 7, 'a'.repeat(64));
-  if (transaction) {
-    store.db.exec('BEGIN IMMEDIATE');
-    store.db.prepare('INSERT INTO delegation_works VALUES(?,?)').run('caller-pending-work', '{"goal":"Preserve caller transaction"}');
-  }
-  const before = {schema: schema(store), works: store.db.prepare('SELECT * FROM delegation_works ORDER BY id').all(), dependencies: store.db.prepare(`SELECT * FROM ${table}`).all()};
-  assert.throws(() => { runtime = new DelegationRuntime(store, engine, {autoPump: false}); }, error => {
-    assert.ok(error instanceof StoreError);
-    assert.equal(error.statusCode, 409);
-    assert.match(error.message, /unsupported.*delegation.*schema/i);
+  db.prepare("INSERT INTO settings VALUES('backend_epoch','6')").run();
+  db.prepare('INSERT INTO delegation_works VALUES(?,?)').run('generated-work', '{"goal":"Preserve generated work"}');
+  db.prepare(`INSERT INTO ${table} VALUES(?,?,?,?,?)`).run('generated-work', '', 'generated-source', 7, 'a'.repeat(64));
+  db.close();
+  const path = join(directory, 'mote.sqlite'), before = readFileSync(path), entries = readdirSync(directory).sort();
+  assert.throws(() => new Store(directory), error => {
+    assert.equal((error as Error & {statusCode?: number}).statusCode, 409);
+    assert.match((error as Error).message, /Backend epoch 7 requires a new empty data directory/);
     return true;
   });
-  assert.equal(store.db.isTransaction, transaction, 'rejection must neither commit nor roll back the caller transaction');
-  assert.deepEqual(schema(store), before.schema, 'no journal, replacement table, or trigger repair is installed');
-  assert.deepEqual(store.db.prepare('SELECT * FROM delegation_works ORDER BY id').all(), before.works);
-  assert.deepEqual(store.db.prepare(`SELECT * FROM ${table}`).all(), before.dependencies);
+  assert.deepEqual(readFileSync(path), before, 'the refused vault keeps its exact bytes and retired rows');
+  assert.deepEqual(readdirSync(directory).sort(), entries);
 });
 
 test('fresh and repeated current delegation initialization retain kind-qualified source versions across current backup restore', async t => {

@@ -70,12 +70,6 @@ export class EvidenceArchive {
       CREATE TRIGGER IF NOT EXISTS artifacts_search_delete AFTER DELETE ON context_artifacts BEGIN DELETE FROM artifacts_fts WHERE id=old.id; END;
 `);
     store.installContextHistoryInvalidation();
-    if(!db.prepare("SELECT 1 FROM settings WHERE key='notification-evidence-version'").get()){
-      db.exec(`INSERT INTO context_dirty(group_key) SELECT DISTINCT o.group_key FROM context_observations o JOIN captures c ON c.id=o.id
-        WHERE json_extract(c.json,'$.source')='notification' ON CONFLICT(group_key) DO UPDATE SET generation=generation+1,error=NULL;
-        INSERT INTO settings VALUES('notification-evidence-version','1');`);
-    }
-
   }
   revision(id:string){return this.store.db.prepare('SELECT revision FROM context_artifacts WHERE id=?').get(id)?.revision;}
   /** Installed after MaterialStore creates its tables. Revision changes invalidate

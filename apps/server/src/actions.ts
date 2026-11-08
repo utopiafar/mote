@@ -78,11 +78,7 @@ export class Actions {
   private meta<T>(key:string,fallback:T):T {const r=this.store.db.prepare('SELECT json FROM action_meta WHERE key=?').get(key) as {json:string}|undefined;return r?JSON.parse(r.json):fallback;}
   private setMeta(key:string,value:unknown){this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.store.db.prepare('INSERT INTO action_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json').run(key,JSON.stringify(value));}
   private reviewAuthorization():z.infer<typeof authorizationSchema>{
-    const saved=this.meta<unknown>('review-devices',undefined);
-    if(saved!==undefined)return authorizationSchema.parse(saved);
-    const legacy=this.meta<Partial<ActionSettings>>('settings',{});
-    // Only the historical grant list is retained. Old enabled/timeZone values never override YAML.
-    return authorizationSchema.parse({revision:0,reviewDeviceIds:legacy.reviewDeviceIds??[]});
+    return authorizationSchema.parse(this.meta<unknown>('review-devices',{revision:0,reviewDeviceIds:[]}));
   }
   authorizationRevision():number{return this.reviewAuthorization().revision;}
   settings():ActionSettings{return {...structuredClone(this.runtimeSettings),reviewDeviceIds:this.reviewAuthorization().reviewDeviceIds};}
@@ -94,11 +90,10 @@ export class Actions {
       if(JSON.stringify(previous.reviewDeviceIds)===JSON.stringify(reviewDeviceIds)){if(own)db.exec('COMMIT');return previous.revision;}
       if(previous.revision===Number.MAX_SAFE_INTEGER)throw new StoreError('Action review authorization is unavailable',503);
       const json=JSON.stringify(authorizationSchema.parse({revision:previous.revision+1,reviewDeviceIds}));
-      const replaced=db.prepare("SELECT json FROM action_meta WHERE key='review-devices'").get()??db.prepare("SELECT json FROM action_meta WHERE key='settings'").get();
+      const replaced=db.prepare("SELECT json FROM action_meta WHERE key='review-devices'").get();
       // Replacing a grant record reserves only growth; removing grants remains possible at quota.
       const growth=Buffer.byteLength(json)-Buffer.byteLength(String(replaced?.json??''));if(growth>0)this.store.reserveMetadata(growth);
       db.prepare("INSERT INTO action_meta VALUES('review-devices',?) ON CONFLICT(key) DO UPDATE SET json=excluded.json").run(json);
-      db.prepare("DELETE FROM action_meta WHERE key='settings'").run();
       if(own)db.exec('COMMIT');return previous.revision+1;
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
