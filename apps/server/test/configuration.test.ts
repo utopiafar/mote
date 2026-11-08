@@ -25,7 +25,7 @@ function fixture(directory: string): Config {
       baseDir: '/app/deploy', hostConfigFile: join(directory, 'mote.env'), runtime: 'docker',
       publicUrl: 'https://mote.example.invalid', storageKind: 'docker-volume', storageSource: 'synthetic-private-volume-name', storageMount: '/data',
       tunnelEnabled: true, tunnelProvider: 'cloudflare', tunnelProtocol: 'http2',
-      sources: { MOTE_PORT: 'environment', MOTE_MODEL: 'env-file', MOTE_TOKEN: 'env-file', MOTE_DATA_DIR: 'environment', MOTE_CONFIG_FILE: 'environment', MOTE_STORAGE_SOURCE: 'environment' },
+      sources: { MOTE_PORT: 'default', MOTE_MODEL: 'config-file', MOTE_TOKEN: 'config-file', MOTE_DATA_DIR: 'config-file', MOTE_CONFIG_FILE: 'config-file', MOTE_STORAGE_SOURCE: 'config-file' },
     },
   };
 }
@@ -44,11 +44,27 @@ test('configuration projection is serializable, preserves effective values and s
   assert.equal(all.get('agentTimeoutMs')!.value,300000); assert.equal(all.get('agentTimeoutMs')!.envVar,'MOTE_AGENT_TIMEOUT_MS');
   assert.equal(all.get('agentTraceEnabled')!.value, false); assert.equal(all.get('agentTraceEnabled')!.envVar,'MOTE_AGENT_TRACE_ENABLED');
   assert.equal(all.get('retentionDays')!.value, 17); assert.equal(all.get('modelMaxTokens')!.value, 4096);
-  assert.equal(all.get('model')!.source, 'env-file'); assert.equal(all.get('listenPort')!.source, 'environment'); assert.equal(all.get('logMaxFiles')!.source, 'default');
+  const allowedSources = new Set(['config-file', 'default', 'derived']);
+  for (const field of all.values()) assert.ok(allowedSources.has(field.source), `${field.key} reports ${field.source}`);
+  assert.equal(all.get('model')!.source, 'config-file'); assert.equal(all.get('listenPort')!.source, 'default'); assert.equal(all.get('sqlitePath')!.source, 'derived');
   for (const key of ['accessTokenConfigured', 'modelApiKeyConfigured', 'embeddingApiKeyConfigured', 'dataKeyConfigured']) { assert.equal(all.get(key)!.value, true); assert.equal(all.get(key)!.visibility, 'secret-status'); }
   for (const secret of [config.token, config.apiKey, config.embeddingApiKey, config.dataKey!]) assert.ok(!JSON.stringify(view).includes(secret));
   assert.equal(all.get('tunnelConfigured')!.value, true); assert.match(all.get('tunnelConfigured')!.description, /不代表/);
   assert.ok(all.size > 40); assert.equal(all.size, view.groups.reduce((n, group) => n + group.fields.length, 0), 'Field keys must be unique for stable UI rendering');
+});
+
+test('the served configuration view reports only config-file, default and derived sources', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'mote-configuration-sources-')), config = fixture(directory);
+  const { app } = await buildApp(config, { agent: inactive, backgroundWorker: false });
+  t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
+  const response = await app.inject({ url: '/api/configuration', headers: { authorization: `Bearer ${config.token}` } });
+  assert.equal(response.statusCode, 200);
+  const view = response.json<ServerConfiguration>(), allowed = new Set(['config-file', 'default', 'derived']), seen = new Set<string>();
+  for (const field of view.groups.flatMap(group => group.fields)) {
+    assert.ok(allowed.has(field.source), `${field.key} reports ${field.source}`);
+    seen.add(field.source);
+  }
+  assert.ok(seen.has('config-file')); assert.ok(seen.has('derived'));
 });
 
 test('URL projections strip credentials, query and fragment even when Config bypasses environment validation', () => {

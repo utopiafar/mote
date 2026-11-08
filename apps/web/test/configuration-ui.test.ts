@@ -10,6 +10,7 @@ import {MemorySettings} from '../src/MemorySettings.js';
 import {ContentStorage} from '../src/plugins/maintenance/ContentStorage.js';
 import {PerceptionSettings} from '../src/PerceptionSettings.js';
 import {Actions} from '../src/plugins/work/Actions.js';
+import {AdvancedConfiguration} from '../src/ServerSettings.js';
 import {ApiError, type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 import {configureLocale} from '@mote/shared/i18n';
@@ -32,6 +33,22 @@ function configuration(revision:number,savedDays=30):ServerConfiguration {
   ]}]};
 }
 const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent===label)!;
+
+test('effective configuration labels keep only file, default and derived sources',async t=>{
+  const {root,d}=await fixture(t);
+  const view:ServerConfiguration={...configuration(1),groups:[{id:'generated',title:'Generated',description:'Generated',fields:[
+    {key:'generatedFile',label:'Generated file',description:'Generated',value:'generated',source:'config-file',restartRequired:false},
+    {key:'generatedDefault',label:'Generated default',description:'Generated',value:'generated',source:'default',restartRequired:false},
+    {key:'generatedDerived',label:'Generated derived',description:'Generated',value:'generated',source:'derived',restartRequired:false},
+  ]}]};
+  const api={request:async()=>view} as Api;
+  await act(async()=>root.render(React.createElement(AdvancedConfiguration,{api,includeRuntime:false})));
+  const origin=(key:string)=>d.querySelector(`[data-config-key="${key}"] > div:nth-child(2) > small`)?.textContent;
+  assert.equal(origin('generatedFile'),'配置文件');
+  assert.equal(origin('generatedDefault'),'默认值');
+  assert.equal(origin('generatedDerived'),'根据部署计算');
+  assert.doesNotMatch(d.body.textContent!,/启动环境/);
+});
 
 test('configuration page saves an edited field into the shared file with its original revision',async t=>{
   const {root,d}=await fixture(t),writes:any[]=[];

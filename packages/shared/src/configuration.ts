@@ -1,5 +1,5 @@
 /** Authenticated owner view. Contains private server paths; never embed in support bundles. */
-export type ConfigurationSource = 'environment' | 'env-file' | 'config-file' | 'default' | 'derived';
+export type ConfigurationSource = 'config-file' | 'default' | 'derived';
 export type ConfigurationEffect = 'immediate' | 'next-request' | 'next-admission' | 'restart' | 'migration';
 export interface ConfigFieldMetadata {
   path: string;

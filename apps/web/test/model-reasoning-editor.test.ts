@@ -18,7 +18,7 @@ test('Codex editor renders the selected model effort levels from model/list',asy
   dom.window.localStorage.setItem('mote.language','zh-CN');
   const root=createRoot(dom.window.document.getElementById('root')!);
   t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of saved){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
-  const view:ModelSettingsView={...modelView(),version:1,revision:1,source:'saved',settings:{provider:'codex',protocol:'codex-app-server',serviceTier:'default',baseUrl:'',model:'first',reasoningEffort:'medium',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:null,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}};
+  const view:ModelSettingsView={...modelView(),version:1,revision:1,source:'file',settings:{provider:'codex',protocol:'codex-app-server',serviceTier:'default',baseUrl:'',model:'first',reasoningEffort:'medium',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:null,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}};
   let saves=0;
   const api={request:async(path:string,init?:RequestInit)=>{if(init?.method==='PUT')saves++;return path==='/api/model-settings'?view:{items:[
     {id:'first',name:'First',defaultReasoningEffort:'medium',reasoningEfforts:['low','medium','high','max']},
@@ -26,6 +26,7 @@ test('Codex editor renders the selected model effort levels from model/list',asy
   ]};},setAgentTimeout:()=>{}} as Api;
   await act(async()=>root.render(React.createElement(ModelSettingsEditor,{api,revision:1,onApplied:()=>{}})));
   await act(async()=>{await new Promise(resolve=>setTimeout(resolve,550));});
+  assert.match(dom.window.document.body.textContent!,/来自中央的配置文件/);assert.doesNotMatch(dom.window.document.body.textContent!,/来自页面保存的配置/);
   const select=dom.window.document.querySelector<HTMLSelectElement>('select[aria-label="推理强度"]')!;
   assert.deepEqual(Array.from(select.options).filter(option=>!option.disabled).map(option=>option.value),['auto','low','medium','high','max']);
   const model=dom.window.document.querySelector<HTMLInputElement>('input[aria-label="模型名称"]')!;
@@ -49,7 +50,7 @@ test('Codex editor saves Fast, blocks unsupported models and clears speed when s
   dom.window.localStorage.setItem('mote.language','zh-CN');
   const root=createRoot(dom.window.document.getElementById('root')!);
   t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of saved){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
-  let view:ModelSettingsView={...modelView(),version:1,revision:1,source:'saved',settings:{provider:'codex',protocol:'codex-app-server',serviceTier:'default',baseUrl:'',model:'first',reasoningEffort:'max',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:120000,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}};
+  let view:ModelSettingsView={...modelView(),version:1,revision:1,source:'file',settings:{provider:'codex',protocol:'codex-app-server',serviceTier:'default',baseUrl:'',model:'first',reasoningEffort:'max',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:120000,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}};
   const bodies:any[]=[];
   const api={request:async(path:string,init?:RequestInit)=>{
     if(init?.method==='PUT'){const body=JSON.parse(String(init.body));bodies.push(body);view={...view,revision:view.revision+1,settings:{...view.settings,...body.settings}};return view;}

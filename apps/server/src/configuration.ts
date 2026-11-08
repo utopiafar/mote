@@ -17,7 +17,7 @@ export function configurationUrl(value: string | null | undefined): string | nul
 }
 
 /** Explicit owner-only projection. Never spread Config or read mutable env files while serving requests. */
-export function serverConfiguration(config: Config, options: { modelSource?: 'environment' | 'saved' | 'file'; service?: ConfigServiceView } = {}): ServerConfiguration {
+export function serverConfiguration(config: Config, options: { modelSource?: 'file'; service?: ConfigServiceView } = {}): ServerConfiguration {
   const context = config.configuration;
   const runtime = context?.runtime ?? 'unknown';
   const dataDir = resolve(config.dataDir), logDir = resolve(config.logDirectory ?? join(dataDir, 'logs'));
@@ -25,7 +25,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
   const field = (key: string, label: string, value: ConfigurationValue, description: string, envVar?: string, extra: Partial<Pick<ConfigurationField, 'unit' | 'visibility' | 'restartRequired' | 'source'>> = {}): ConfigurationField => ({
     key, label, value, description, ...(envVar ? { envVar } : {}),
     source: envVar && context ? context.sources[envVar] ?? 'default' : 'derived', restartRequired: Boolean(envVar), ...extra,
-    ...((envVar === 'MOTE_MODEL' || envVar?.startsWith('MOTE_MODEL_')) ? { restartRequired: false, ...(options.modelSource === 'saved' ? { source: 'derived' as const } : {}) } : {}),
+    ...((envVar === 'MOTE_MODEL' || envVar?.startsWith('MOTE_MODEL_')) ? { restartRequired: false } : {}),
   });
   const ownerPath = { visibility: 'owner-path' as const };
   const secret = { visibility: 'secret-status' as const };
@@ -54,7 +54,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
       { id: 'deployment', title: moteText("部署与配置来源"), description: moteText("环境文件修改后不会立即影响运行中的进程。容器中的加载文件与宿主机可编辑配置可能不同。"), fields: [
         field('profile', moteText("环境"), config.profile ?? 'default', moteText("dev、test、prod 或显式命名的独立环境。"), 'MOTE_PROFILE'),
         field('runtime', moteText("运行方式"), runtime, moteText("部署工具声明的运行方式；缺少元数据时显示 unknown，不探测宿主环境。"), 'MOTE_RUNTIME'),
-        field('configurationFile', moteText("部署配置文件"), context?.hostConfigFile ?? context?.configFile ?? null, moteText("部署工具提供的宿主配置路径；请在部署机器修改。未提供时显示实际加载文件。"), 'MOTE_CONFIG_FILE', { ...ownerPath, source: context?.hostConfigFile ? context.sources.MOTE_CONFIG_FILE ?? 'environment' : 'derived' }),
+        field('configurationFile', moteText("部署配置文件"), context?.hostConfigFile ?? context?.configFile ?? null, moteText("部署工具提供的宿主配置路径；请在部署机器修改。未提供时显示实际加载文件。"), 'MOTE_CONFIG_FILE', { ...ownerPath, source: context?.hostConfigFile ? context.sources.MOTE_CONFIG_FILE ?? 'config-file' : 'derived' }),
         field('baseDirectory', moteText("相对路径基准"), baseDir, moteText("MOTE_DATA_DIR 与 MOTE_LOG_DIR 的相对路径以此目录解析。"), undefined, ownerPath),
       ] },
       { id: 'storage', title: moteText("数据与空间"), description: storage.description, fields: [
@@ -62,17 +62,17 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
         field('sqlitePath', moteText("SQLite 数据库"), storage.sqlitePath, moteText("保存原文、元数据、全文索引和可选向量；运行时还有 WAL/SHM 文件。"), undefined, ownerPath),
         field('assetDirectory', moteText("原件资产目录"), storage.assetDir??join(dataDir,'files','objects'), moteText("图片、导入文件与目录原件按内容哈希共享分片；观察记录和来源版本各自保留。"), undefined, ownerPath),
         field('storageKind', moteText("存储类型"), storage.kind, moteText("部署声明的本地目录、Docker 命名卷或 bind mount；不是磁盘自动检测结果。"), 'MOTE_STORAGE_KIND'),
-        field('storageSource', moteText("宿主存储来源"), storage.source, moteText("Docker 卷名或宿主挂载源。未声明则无法从容器内部可靠获知。"), 'MOTE_STORAGE_SOURCE', { ...ownerPath, source: context?.storageSource ? context.sources.MOTE_STORAGE_SOURCE ?? 'environment' : 'derived' }),
+        field('storageSource', moteText("宿主存储来源"), storage.source, moteText("Docker 卷名或宿主挂载源。未声明则无法从容器内部可靠获知。"), 'MOTE_STORAGE_SOURCE', { ...ownerPath, source: context?.storageSource ? context.sources.MOTE_STORAGE_SOURCE ?? 'config-file' : 'derived' }),
         field('storageMount', moteText("容器挂载点"), storage.mountPath, moteText("例如 /data；原生部署无需容器挂载。"), 'MOTE_STORAGE_MOUNT', ownerPath),
         field('maxStorageBytes', moteText("资料容量上限"), config.maxStorageBytes, moteText("限制去重原件、记录和处理元数据的逻辑字节；SQLite 索引、WAL、日志等额外占盘。达到上限返回 507，端点保留待传队列。"), 'MOTE_MAX_STORAGE_MB', { unit: 'bytes' }),
         field('retentionDays', moteText("历史保留天数"), config.retentionDays, moteText("0 表示不自动按时间删除；正数按采集时间清理过期记录和无引用图片，并使关联洞察失效。"), 'MOTE_RETENTION_DAYS', { unit: 'days' }),
         field('maxExportBytes', moteText("HTTP 归档大小上限"), config.maxExportBytes, moteText("应用于 HTTP 导出/导入；最多 20,000 条记录，较大仓库使用离线备份。导出含可读原文与图片。"), 'MOTE_MAX_EXPORT_MB', { unit: 'bytes' }),
         field('dataKeyConfigured', moteText("图片加密密钥已配置"), Boolean(config.dataKey), moteText("只表示部署密钥是否配置，不表示已启用加密；默认明文保存，可在开发者选项单独开启。已有密文需保留原密钥。"), 'MOTE_DATA_KEY', secret),
       ] },
-      { id: 'model', title: moteText("问答与洞察模型"), description: moteText("{0}模型设置保存后立即生效，现有问答继续使用原配置。此投影不展示 API key 或高级参数原文。", options.modelSource === 'saved' ? moteText("使用已保存的模型设置。") : moteText("使用部署环境中的模型设置。")), fields: [
+      { id: 'model', title: moteText("问答与洞察模型"), description: moteText("{0}模型设置保存后立即生效，现有问答继续使用原配置。此投影不展示 API key 或高级参数原文。", moteText("使用部署环境中的模型设置。")), fields: [
         field('modelProvider', moteText("模型服务商"), modelProvider(config.modelProvider ?? 'deepseek')?.name ?? config.modelProvider ?? 'DeepSeek', moteText("提供商预设只设置协议与地址；模型 ID 和账户权限由服务商确定。"), 'MOTE_MODEL_PROVIDER'),
         field('modelProtocol', moteText("模型接口协议"), config.modelProtocol ?? 'deepseek', moteText("按选择的协议发送请求，支持原生与兼容接口。"), 'MOTE_MODEL_PROTOCOL'),
-        field('modelSettingsSource', moteText("模型配置来源"), options.modelSource ?? 'environment', moteText("saved 为页面保存的设置，environment 为部署环境；恢复部署配置会立即切换。")),
+        field('modelSettingsSource', moteText("模型配置来源"), options.modelSource ?? 'file', moteText("模型配置保存在同一份配置文件中。新请求使用新配置，正在进行的请求保留原快照。")),
         field('agentConfigured', moteText("Agent 已具备配置"), Boolean(config.model.trim() && (config.modelProtocol==='codex-app-server' || hasAgentKey || localWithoutKey)), moteText("仅判断模型名称和认证配置是否齐全，不代表提供商可达或当前请求成功。")),
         field('model', moteText("模型名称"), config.model || null, moteText("使用模型服务支持的准确标识，留空禁用 Agent。"), 'MOTE_MODEL'),
         field('modelBaseUrl', moteText("模型服务地址"), configurationUrl(config.modelBaseUrl), moteText("所选协议的服务基址；显示时移除 URL 凭据、查询与片段，认证使用独立 API key 或请求头。"), 'MOTE_MODEL_BASE_URL'),
@@ -125,7 +125,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
         field('listenUrl', moteText("进程 HTTP 地址"), `http://${host}:${config.port}`, moteText("绑定地址用于排查进程监听；0.0.0.0 或 :: 不是应填写给远端客户端的公共节点地址。")),
         field('publicUrl', moteText("公开节点地址"), configurationUrl(context?.publicUrl), moteText("用户明确设置的 HTTPS 或本机测试地址，不改变中央监听，不自动配置 DNS、TLS 或隧道路由。"), 'MOTE_PUBLIC_URL'),
         field('allowedOrigins', moteText("允许的浏览器来源"), config.allowedOrigins.map(origin => { const url = configurationUrl(origin); return url ? new URL(url).origin : null; }).filter((origin): origin is string => origin !== null), moteText("CORS 浏览器 origin 白名单。配置仅控制浏览器跨源请求，不能替代令牌鉴权。"), 'MOTE_ALLOWED_ORIGINS'),
-        field('accessTokenConfigured', moteText("访问令牌已配置"), Boolean(config.token), moteText("只显示状态，不显示令牌、哈希、前后缀或可恢复片段。"), 'MOTE_TOKEN', { ...secret, source: config.tokenFromEnvironment ? context?.sources.MOTE_TOKEN ?? 'environment' : 'derived' }),
+        field('accessTokenConfigured', moteText("访问令牌已配置"), Boolean(config.token), moteText("只显示状态，不显示令牌、哈希、前后缀或可恢复片段。"), 'MOTE_TOKEN', { ...secret, source: config.tokenFromEnvironment ? context?.sources.MOTE_TOKEN ?? 'config-file' : 'derived' }),
         field('accessTokenSource', moteText("访问令牌来源"), config.tokenFromEnvironment === undefined ? 'programmatic' : config.tokenFromEnvironment ? 'configured-value' : 'private-token-file', moteText("configured-value 来自 server.token；private-token-file 来自资料库私有 access-token 文件；programmatic 表示由调用方传入。文件内容不返回。")),
         field('clientConnectionsPath', moteText("独立连接凭据位置"), join(dataDir, 'connectors', 'client-connections.json'), moteText("保存凭据哈希、权限和撤销状态，不保存明文令牌。随本数据目录使用，最多 500 条／2 MiB；在设备页管理。"), undefined, ownerPath),
         field('tunnelConfigured', moteText("隧道已声明启用"), context?.tunnelEnabled ?? false, moteText("只有部署配置状态，不代表隧道已经连接或公网路由可达。"), 'MOTE_TUNNEL_ENABLED'),

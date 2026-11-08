@@ -11,7 +11,7 @@ const identifier = z.string().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]
 const text = (min: number, max: number) => z.string().min(min).max(max);
 const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const source = z.enum(['environment', 'saved', 'file']);
+const source = z.enum(['file']);
 const domainStatus = z.enum(['applied', 'restart-required', 'invalid']);
 
 /** A model settings view minus credentials: secret material appears only as
