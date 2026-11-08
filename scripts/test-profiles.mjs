@@ -134,7 +134,7 @@ try {
 
   await cli(home, 'dev', 'stop');
   const snapshot = join(directory, 'snapshot'); await cli(home, 'dev', 'backup', ['--out', snapshot]);
-  const entries = await readdir(snapshot); assert.deepEqual(entries.sort(), ['backup-manifest.json', 'blobs', 'files', 'mote.sqlite']);
+  const entries = await readdir(snapshot); assert.deepEqual(entries.sort(), ['backup-manifest.json', 'files', 'mote.sqlite']);
   const manifest = JSON.parse(await readFile(join(snapshot, 'backup-manifest.json'), 'utf8'));
   assert.ok(Object.hasOwn(manifest.checksums, 'mote.sqlite')); assert.ok(Object.keys(manifest.checksums).length >= 2, 'Backup includes the database and encrypted evidence; formal Material assets may add objects');
   const blob = Object.keys(manifest.checksums).find(name => name.startsWith('files/objects/') && name.endsWith('/0.aes'));

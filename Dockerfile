@@ -41,11 +41,11 @@ COPY scripts/connector-runtime.mjs ./scripts/connector-runtime.mjs
 RUN node scripts/connector-runtime.mjs && chmod a+rx .mote && chmod -R a+rX .mote/connectors
 COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
-RUN test -x /bin/bash && node --input-type=module -e "import {accessSync} from 'node:fs'; import {createRequire} from 'node:module'; import {bundledSkills} from './packages/agent/dist/skills.js'; const require=createRequire(import.meta.url); accessSync('./apps/server/dist/import-parser.mjs'); accessSync('./apps/server/dist/plugin-worker.mjs'); accessSync('./apps/server/dist/hindsight-worker.py'); if(!['personal-insight','memory-extraction','memory-consolidation','working-memory','document-import','calendar-extraction','coding-memory'].every(id=>bundledSkills.some(s=>s.id===id && s.content.length>0)) || typeof require('node-pty').spawn!=='function') throw Error('Import runtime is incomplete'); const db=new (require('better-sqlite3'))(':memory:'); if(db.prepare('SELECT 1 AS value').get().value!==1) throw Error('Mem0 SQLite runtime is incomplete'); db.close();"
+RUN test -x /bin/bash && node --input-type=module -e "import {accessSync} from 'node:fs'; import {createRequire} from 'node:module'; import {bundledSkills} from './packages/agent/dist/skills.js'; const require=createRequire(import.meta.url); accessSync('./apps/server/dist/import-parser.mjs'); accessSync('./apps/server/dist/plugin-worker.mjs'); if(!['personal-insight','memory-extraction','memory-consolidation','working-memory','document-import','calendar-extraction','coding-memory'].every(id=>bundledSkills.some(s=>s.id===id && s.content.length>0)) || typeof require('node-pty').spawn!=='function') throw Error('Import runtime is incomplete');"
 COPY deploy/empty.env ./deploy/empty.env
 COPY packages/shared/src/config-file.ts ./packages/shared/src/config-file.ts
 COPY scripts/media-worker-entry.mjs scripts/media-workers.mjs scripts/storage-owner-entry.mjs ./scripts/
-COPY scripts/backup.ts scripts/plugin-memory-backup.mjs scripts/hindsight-backup.mjs ./scripts/
+COPY scripts/backup.ts scripts/plugin-memory-backup.mjs ./scripts/
 COPY scripts/transcription-server.py scripts/mote_audio.py scripts/ocr-server.py scripts/mote_ocr.py scripts/mote_execution_facts.py ./scripts/
 COPY scripts/media-import.mjs ./scripts/media-import.mjs
 RUN mkdir -p /data /models && chown node:node /data /models

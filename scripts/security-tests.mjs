@@ -37,8 +37,8 @@ test('backup makes private files and preserves only the database and ordinary re
   const { source, hash } = await vault(directory), out = join(directory, 'snapshot');
   await writeFile(join(source, 'access-token'), 'synthetic-owner-token');
   await backup(source, out);
-  assert.deepEqual((await readdir(out)).sort(), ['backup-manifest.json', 'blobs', 'files', 'mote.sqlite']);
-  for (const path of [out, join(out, 'blobs')]) assert.equal((await stat(path)).mode & 0o777, 0o700);
+  assert.deepEqual((await readdir(out)).sort(), ['backup-manifest.json', 'files', 'mote.sqlite']);
+  assert.equal((await stat(out)).mode & 0o777, 0o700);
   for (const name of ['mote.sqlite', 'backup-manifest.json', `files/objects/${hash}/0.plain`]) assert.equal((await stat(join(out, name))).mode & 0o777, 0o600);
   assert.equal(await readFile(join(out, 'files','objects', hash,'0.plain'), 'utf8'), 'generated blob');
 }));
@@ -85,7 +85,7 @@ test('backup includes private file originals, excludes workspaces, and restores 
   const job={id:'synthetic',status:'importing',workspace:join(source,'imports','synthetic'),inputs:[{path:join(source,'imports','synthetic','input.txt')}],captureIds:['retained-evidence-id'],progress:{total:2,processed:1,imported:1,duplicates:0},preview:{count:2},manifestHash:'old-manifest'};
   const db=new DatabaseSync(join(source,'mote.sqlite'));db.exec('CREATE TABLE import_jobs(id TEXT PRIMARY KEY,json TEXT)');db.prepare('INSERT INTO import_jobs VALUES(?,?)').run('synthetic',JSON.stringify(job));db.close();
   const file=`files/objects/${hash}/0.aes`;
-  await backup(source,out);assert.deepEqual((await readdir(out)).sort(),['backup-manifest.json','blobs','files','mote.sqlite']);assert.deepEqual(await readdir(join(out,'files')),['objects']);
+  await backup(source,out);assert.deepEqual((await readdir(out)).sort(),['backup-manifest.json','files','mote.sqlite']);assert.deepEqual(await readdir(join(out,'files')),['objects']);
   assert.equal((await stat(join(out,'files'))).mode&0o777,0o700);assert.equal((await stat(join(out,file))).mode&0o777,0o600);
   const checked=await verifiedBackup(out);assert.ok(checked.names.includes(file));
   const snapshot=new DatabaseSync(join(out,'mote.sqlite'),{readOnly:true});const saved=JSON.parse(snapshot.prepare('SELECT json FROM import_jobs').get().json);snapshot.close();

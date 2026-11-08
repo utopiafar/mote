@@ -25,7 +25,7 @@ async function fixture(operation) {
 const build = async path => { await mkdir(join(path, 'apps/server/dist'), { recursive: true }); await mkdir(join(path, 'apps/web/dist'), { recursive: true }); await writeFile(join(path, 'apps/server/dist/index.js'), '// synthetic build artifact'); await writeFile(join(path, 'apps/web/dist/index.html'), '<!doctype html>synthetic'); };
 test('ordinary Docker profile commands need only the locked YAML runtime without compiled shared or server code', async () => fixture(async directory => {
   await mkdir(join(directory, 'scripts'));
-  for (const name of ['mote.mjs', 'profile-lib.mjs', 'media-workers.mjs', 'tunnel-lib.mjs', 'update-deploy.mjs', 'update-private.mjs', 'plugin-memory-backup.mjs', 'hindsight-backup.mjs']) await copyFile(join(repository, 'scripts', name), join(directory, 'scripts', name));
+  for (const name of ['mote.mjs', 'profile-lib.mjs', 'media-workers.mjs', 'tunnel-lib.mjs', 'update-deploy.mjs', 'update-private.mjs', 'plugin-memory-backup.mjs']) await copyFile(join(repository, 'scripts', name), join(directory, 'scripts', name));
   await copyFile(join(repository, 'package.json'), join(directory, 'package.json'));
   await mkdir(join(directory,'apps/server'),{recursive:true}); await copyFile(join(repository,'apps/server/package.json'),join(directory,'apps/server/package.json'));
   await mkdir(join(directory, 'apps/server/src'), { recursive: true });

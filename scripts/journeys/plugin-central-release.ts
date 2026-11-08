@@ -280,7 +280,7 @@ const backup = await scenario('backup-restore', async checks => {
   checks.push(revoked);
   assert.ok(revoked.passed, 'the revoked-source retirement did not pass');
 
-  const native = runTests('apps/server/test/hindsight-checkpoint.test.ts', 'pending native cleanup permits|restart replays (failed|stale|cancelled|blocked) native cleanup');
+  const native = runTests('apps/server/test/native-engine-checkpoint.test.ts', 'pending native cleanup permits|restart replays (failed|stale|cancelled|blocked) native cleanup');
   checks.push(native);
   assert.ok(native.passed, 'native prepared-cleanup recovery did not pass');
 

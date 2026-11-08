@@ -9,7 +9,6 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
 import {safePluginBackupPath} from './plugin-memory-backup.mjs';
-import {restoreHindsight} from './hindsight-backup.mjs';
 import { validateTunnel, tunnelTokenPath, dockerTunnelUser, removeTunnelSidecars, assertTunnelToken } from './tunnel-lib.mjs';
 import { logRetentionFromDocument, MiB } from '../apps/server/src/log-retention-config.mjs';
 
@@ -439,22 +438,13 @@ export async function verifiedBackup(backup) {
 export async function restoreProfile(p, backup) {
   const checked = await verifiedBackup(backup);
   const stage = join(p.meta.runtime === 'native' ? dirname(p.dataDir) : p.directory, `.mote-restore-${randomUUID()}`); await mkdir(join(stage, 'blobs'), { recursive: true, mode: 0o700 });
-  const createdNativeVolumes=[];let restored=false;
+  let restored=false;
   try {
     for (const name of checked.names) {
       await mkdir(dirname(join(stage,name)),{recursive:true,mode:0o700});
       await copyFile(join(checked.directory, name), join(stage, name));
       await chmod(join(stage,name),0o600);
       if (await sha(join(stage, name)) !== checked.checksums[name]) throw Error('Backup changed while copying; active data was not changed');
-    }
-    for(const name of checked.names.filter(value=>value.endsWith('/hindsight-backup/manifest.json'))){
-      const archiveDirectory=dirname(join(stage,name)),configurationDirectory=dirname(archiveDirectory);
-      const result=await restoreHindsight({archiveDirectory,runtimeDirectory:join(configurationDirectory,'runtime'),providerDirectory:join(configurationDirectory,'provider')});
-      createdNativeVolumes.push(result.volume);
-      // This restores only storage. It starts no Central, API, model or worker.
-      // A later explicit Central start retains the host's restored desired state
-      // and prior task authorizations, subject to normal credential validation.
-      await rm(archiveDirectory,{recursive:true});
     }
     if (p.meta.runtime === 'docker') {
       const existing = (await compose(p, ['ps', '--all', '--quiet', 'mote'], { capture: true })).trim();
@@ -473,7 +463,6 @@ export async function restoreProfile(p, backup) {
     }
     restored=true;return { restored: true, source: checked.directory };
   } finally {
-    if(!restored)for(const volume of createdNativeVolumes)await execute('docker',['volume','rm',volume],{capture:true}).catch(()=>{});
     await rm(stage, { recursive: true, force: true });
   }
 }
