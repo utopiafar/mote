@@ -1,6 +1,7 @@
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
+import {AgentNotConfiguredError,AgentResponseError,AgentTimeoutError} from '@mote/agent';
 import {ProviderFailure,fileProcessingSchema,transcriptSchema,unknownAttributionContext,type CaptureRecord,type Transcript,type ProcessingService} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
@@ -8,7 +9,8 @@ import {FileProcessing} from './file-processing.js';
 import {processorSettingsFingerprint,processorContract} from './file-configuration.js';
 import type {AppliedFilePolicy} from './file-policy.js';
 import {ImageInputRegistry,ImageAttachmentIntake,installImageInputs,installImageSchema,type ImageInputRow,type ImageOriginal} from './image-inputs.js';
-import {DEFAULT_IMAGE_RECIPE,ImageInterpretationError,imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
+import {DEFAULT_IMAGE_RECIPE,ImageInterpretationError,ImagePixelsNotInspectedError,ImageRegionOutOfBoundsError,imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
+import {retainErrorIdentity} from './execution-failures.js';
 import {linkOperationParent} from './operation-projection.js';
 import {imageOutput} from './evidence-image.js';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
@@ -34,6 +36,28 @@ type PlanStep={name:string;kind:string;stage:{id:string;version:string};dependsO
 type JobRow={capture_id:string;kind:string;state:string;error:string|null;attempts:number;available_at:number;auto_eligible:number};
 const historicalSchema=z.object({after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),sourceId:z.string().max(128).optional(),mode:z.enum(['complete','recompute']).default('complete')}).strict();
 import {mediaRuntimeSettings,type MediaRuntimeSettings} from './media-configuration.js';
+/** Image work keeps its own operator-visible outcome table. The bare fallback
+ * remains only for an unexpected error from a trusted stage; typed host,
+ * provider and pixel-contract failures always retain their own code. */
+function classifyImageFailure(error:unknown):ExecutionFailure {
+ retainErrorIdentity(error);
+ if(error instanceof ImagePixelsNotInspectedError)return new ExecutionFailure('permanent','pixels_not_inspected');
+ if(error instanceof ImageRegionOutOfBoundsError)return new ExecutionFailure('permanent','invalid_image_region');
+ if(error instanceof StoreError&&error.statusCode===507)return new ExecutionFailure('blocked','storage_full');
+ if(error instanceof z.ZodError||error instanceof ImageInterpretationError)return new ExecutionFailure('permanent','invalid_image_product');
+ if(error instanceof AgentResponseError){
+  if(['invalid_json','invalid_shape','unretrieved_citation','undeclared_citation','truncated_citation','output_limit','host_validation','response_too_large'].includes(error.reason))return new ExecutionFailure('permanent','invalid_image_product');
+  if(error.reason==='tool_failure')return new ExecutionFailure('transient','image_tool_failure');
+  if(error.reason==='tools_unverified')return new ExecutionFailure('permanent','image_tools_unverified');
+  if(error.reason==='image_disclosure_disabled')return new ExecutionFailure('blocked','image_disclosure_disabled');
+  return new ExecutionFailure('permanent','invalid_model_output');
+ }
+ if(error instanceof AgentTimeoutError)return new ExecutionFailure('permanent','provider_timeout');
+ if(error instanceof AgentNotConfiguredError)return new ExecutionFailure('blocked','model_unconfigured');
+ if(error instanceof ProviderFailure)return new ExecutionFailure(error.details.category,error.details.code,error.details.retryAfterMs);
+ if(error instanceof StoreError&&[400,413,415,422].includes(error.statusCode))return new ExecutionFailure('permanent','unsupported_image');
+ return new ExecutionFailure('permanent','image_processing_failed');
+}
 /** One intake ledger and one executor for all accepted image originals. The
  * adapters only retain source-specific publication/retention semantics. */
 export class ImageProcessing {
@@ -71,7 +95,7 @@ export class ImageProcessing {
   for(const kind of ['ocr','understanding','derived'])this.unregister.push(engine.register({kind:'images.'+kind,pool:'images.'+kind,concurrency:()=>this.settings().concurrency,policy:kind==='ocr'?EXECUTION_POLICIES.localProcessing:kind==='understanding'?EXECUTION_POLICIES.modelCall:EXECUTION_POLICIES.deterministic,timeoutMs:()=>kind==='ocr'?this.processing.currentSettings().timeoutMs:kind==='derived'?900000:null,
    resourceKeys:step=>{const endpoint=this.processorEndpoint(step);return ['image-product:'+String(step.input.fingerprint),...(endpoint&&this.processorAdmission.resourceKey(endpoint)===this.processorAdmission.resourceKey(this.media.ocrEndpoint)?[this.processorAdmission.resourceKey(endpoint)]:[])];},validate:step=>this.valid(step),
    admit:step=>this.admit(step),execute:(step,signal)=>this.execute(step,signal),commit:(step,result)=>this.commit(step,result),project:step=>this.project(step),
-   classify:error=>error instanceof StoreError&&error.statusCode===507?new ExecutionFailure('blocked','storage_full'):error instanceof z.ZodError?new ExecutionFailure('permanent','invalid_image_product'):error instanceof ImageInterpretationError?new ExecutionFailure('permanent','invalid_image_product'):error instanceof StoreError&&[400,413,415,422].includes(error.statusCode)?new ExecutionFailure('permanent','unsupported_image'):new ExecutionFailure('permanent','image_processing_failed'),
+   classify:classifyImageFailure,
   }));
  }
  owns(id:string){return Boolean(this.store.db.prepare('SELECT 1 FROM image_inputs WHERE capture_id=?').get(id));}
@@ -326,7 +350,7 @@ export class ImageProcessing {
   signal.throwIfAborted();assertCurrent();
   if(stage.kind==='ocr'){const transcript=transcriptSchema.parse(payload);if(transcript.durationMs!==0||transcript.segments.map(s=>s.text).join('\n').length>100000)throw new StoreError('Invalid image OCR output',422);return {payload:transcript,kind:'ocr'};}
   const interpretation=imageInterpretationSchema.parse(payload),metadata=await readImage({view:'metadata'}),imageView=metadata.imageView!;
-  if(interpretation.regions.some(r=>r.x+r.width>imageView.original.width||r.y+r.height>imageView.original.height))throw new StoreError('Image interpretation region is outside the original',422);
+  if(interpretation.regions.some(r=>r.x+r.width>imageView.original.width||r.y+r.height>imageView.original.height))throw new ImageRegionOutOfBoundsError();
   return {payload:interpretation,kind:stage.kind,evidence:{ref:'capture:'+row.capture_id,revision:row.revision,original:imageView.original,coordinateSpace:imageView.coordinateSpace},model:stage.kind==='understanding'?this.options.understanding?.selection(plan.binding.settings.analysisModel).receipt:undefined};
  }
  private commit(step:ExecutionStep,raw:unknown){

@@ -1,5 +1,6 @@
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
+import {randomUUID} from 'node:crypto';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
@@ -13,6 +14,7 @@ import type {MediaRuntimeSettings} from '../media-configuration.js';
 import type {ModelAgentFactory,ModelAgentIdentity} from '../model-agent.js';
 import type {ModelProcessingAuthority} from '../model-processing-authority.js';
 import type {ModelSettingsStore} from '../model-settings.js';
+import type {ServerDiagnostics} from '../diagnostics.js';
 import type {UsageLedger} from '../usage.js';
 import {ImageProcessing} from '../image-processing.js';
 import {imageUnderstanding} from '../image-understanding.js';
@@ -61,6 +63,9 @@ export interface ImageProcessingServiceDependencies {
   /** Late-bound because the agent registry is assembled after processing. */
   readonly configuredFor?:(id:string)=>boolean;
   readonly probeOcr?:()=>Promise<boolean>;
+  /** Image background model runs use their own trace context instead of the
+   * interactive query runtime, so retain their events in the same log. */
+  readonly diagnostics?:Pick<ServerDiagnostics,'agentTrace'|'requestId'>;
 }
 export interface ImageProcessingServiceBindings {readonly imageProcessing:ServiceBinding}
 export interface ImageProcessingService extends PluginLifecycle {
@@ -106,6 +111,12 @@ export function createImageProcessingService(dependencies:ImageProcessingService
       const configuration=modelConfiguration(service?.id??selected.id,settings,dependencies.modelSettings.view().revision);
       return {identity:resolved.identity,fingerprint:configuration.fingerprint,configured:service?Boolean(service.apiKey||service.execution==='local'):configuredFor(selected.id),settings,
         receipt:{profileId:service?.id??selected.id,provider:settings.provider,model:settings.model,revision:dependencies.modelSettings.view().revision}};
+    },
+    onTrace:(event,context)=>{
+      const diagnostics=dependencies.diagnostics;if(!diagnostics)return;
+      diagnostics.agentTrace(event,{traceId:randomUUID(),requestId:diagnostics.requestId(),operation:'query',moduleId:'images',operationId:context.operationId,jobId:context.jobId,
+        profileId:typeof context.selection.receipt.profileId==='string'?context.selection.receipt.profileId:context.selection.identity?.id,
+        provider:context.selection.settings.provider,protocol:context.selection.settings.protocol,model:context.selection.settings.model});
     },
   });
   const track=(task:Promise<void>)=>{

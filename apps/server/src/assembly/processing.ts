@@ -186,7 +186,7 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   const imageRoutes=createImageProcessingRoutes({withMediaOwnerBatch,withMediaOwnerIntent});
   const imageService=createImageProcessingService({
     store,processing,executor,configService,materials,mediaAssets,media:config.media,modelAuthority:mediaModelAuthority,
-    modelSettings,resolveFileModel,factory,admittedUsage,
+    modelSettings,resolveFileModel,factory,admittedUsage,diagnostics,
   });
   const imageHandle=await bootstrap.host.install({
     identity:{host:bootstrap.snapshot().host,packageId:'mote.image-processing',installationId:'build:image-processing@1.0.0',instanceId:'image-processing',activationId:randomUUID()},
