@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util';
 import { writeFile,readFile,stat } from 'node:fs/promises';
 import { join,resolve } from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import { profilePaths, initialize, loadProfile, isolatedEnvironment, withProfileLock, startNative, nativeIdentity, health, compose, execute, backupProfile, restoreProfile, atomicJson, launchdXml, effectiveConfiguration, setPublicUrl, updateProfileConfiguration, migrateStorageOwner, setDevLogRetentionDefaults } from './profile-lib.mjs';
+import { profilePaths, initialize, loadProfile, isolatedEnvironment, inheritedProxyEnvironment, withProfileLock, startNative, nativeIdentity, health, compose, execute, backupProfile, restoreProfile, atomicJson, launchdXml, effectiveConfiguration, setPublicUrl, updateProfileConfiguration, migrateStorageOwner, setDevLogRetentionDefaults } from './profile-lib.mjs';
 import { configureTunnel, runNativeTunnel, nativeTunnelArgs, nativeTunnelIdentity, stopNativeTunnel } from './tunnel-lib.mjs';
 import { startProfile as start, stopProfile as stop, changeProfileDeployment } from './update-deploy.mjs';
 const help = `Mote central profiles (Node 24+, default: dev; prod requires --profile prod)
@@ -185,7 +185,8 @@ async function main() {
   await withProfileLock(p, async () => {
     if (command === 'connectors-prepare') {
       if (p.meta.runtime !== 'native') throw Error('Docker prepares connector CLIs when building the image');
-      await execute(process.execPath, [join(resolve(p.meta.release), 'scripts/connector-runtime.mjs')], { cwd: resolve(p.meta.release), env: Object.fromEntries(['PATH','HOME','TMPDIR','LANG','HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]])), capture: false, timeoutMs: 15 * 60 * 1000 });
+      const environment = { ...Object.fromEntries(['PATH','HOME','TMPDIR','LANG'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]])), ...inheritedProxyEnvironment(), NODE_USE_ENV_PROXY: '1' };
+      await execute(process.execPath, [join(resolve(p.meta.release), 'scripts/connector-runtime.mjs')], { cwd: resolve(p.meta.release), env: environment, capture: false, timeoutMs: 15 * 60 * 1000 });
       return;
     }
     if (command === 'start') result = await start(p);

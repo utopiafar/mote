@@ -3,23 +3,54 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import {spawn} from 'node:child_process';
 import {connect} from 'node:net';
-import {isolatedEnvironment} from '../profile-lib.mjs';
+import {isolatedEnvironment,launchdXml} from '../profile-lib.mjs';
 
-const profile={profile:'test',env:{MOTE_TOKEN:'generated-profile-token'},meta:{runtime:'native'},project:'generated-profile-proxy',directory:'/tmp/generated-profile-proxy',dataDir:'/tmp/generated-profile-proxy/data',configFile:'/tmp/generated-profile-proxy/mote.yaml',url:'http://127.0.0.1:47852'};
-const cleanProxy={HTTP_PROXY:undefined,http_proxy:undefined,HTTPS_PROXY:undefined,https_proxy:undefined,NO_PROXY:undefined,no_proxy:undefined};
+const profile={profile:'test',env:{MOTE_TOKEN:'generated-profile-token'},meta:{runtime:'native'},home:'/tmp/generated-profile-proxy-home',project:'generated-profile-proxy',directory:'/tmp/generated-profile-proxy',dataDir:'/tmp/generated-profile-proxy/data',configFile:'/tmp/generated-profile-proxy/mote.yaml',url:'http://127.0.0.1:47852'};
+const cleanProxy={HTTP_PROXY:undefined,http_proxy:undefined,HTTPS_PROXY:undefined,https_proxy:undefined,ALL_PROXY:undefined,all_proxy:undefined,NO_PROXY:undefined,no_proxy:undefined};
+function plistEnvironment(xml){
+  const match=/<key>EnvironmentVariables<\/key><dict>([\s\S]*?)<\/dict>/.exec(xml);
+  if(!match)return {};
+  const decode=value=>value.replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('&amp;','&');
+  return Object.fromEntries([...match[1].matchAll(/<key>([^<]+)<\/key><string>([^<]*)<\/string>/g)].map(([,key,value])=>[decode(key),decode(value)]));
+}
 
 test('profile proxies preserve configured bypasses and always bypass IPv4/IPv6 loopback in both cases',()=>{
-  const env=isolatedEnvironment(profile,{...cleanProxy,HTTP_PROXY:'http://upper.fixture:1',http_proxy:'http://lower.fixture:2',HTTPS_PROXY:'http://tls.fixture:3',NO_PROXY:'internal.fixture, localhost',no_proxy:'.private.fixture,internal.fixture'});
+  const env=isolatedEnvironment(profile,{...cleanProxy,HTTP_PROXY:'http://upper.fixture:1',http_proxy:'http://lower.fixture:2',HTTPS_PROXY:'http://tls.fixture:3',ALL_PROXY:'socks5://all-upper.fixture:6',all_proxy:'socks5://all-lower.fixture:7',NO_PROXY:'internal.fixture, localhost',no_proxy:'.private.fixture,internal.fixture'});
   assert.equal(env.NODE_USE_ENV_PROXY,'1');
   assert.equal(env.HTTP_PROXY,'http://lower.fixture:2');assert.equal(env.http_proxy,env.HTTP_PROXY);
   assert.equal(env.HTTPS_PROXY,'http://tls.fixture:3');assert.equal(env.https_proxy,env.HTTPS_PROXY);
+  assert.equal(env.ALL_PROXY,'socks5://all-lower.fixture:7');assert.equal(env.all_proxy,env.ALL_PROXY);
   assert.equal(env.NO_PROXY,env.no_proxy);
   assert.deepEqual(new Set(env.NO_PROXY.split(',')),new Set(['internal.fixture','.private.fixture','127.0.0.1','localhost','::1','[::1]']));
   const empty=isolatedEnvironment(profile,{...cleanProxy,NO_PROXY:'keep.fixture',no_proxy:''});
   assert.ok(empty.NO_PROXY.split(',').includes('keep.fixture'));assert.equal(empty.NO_PROXY,empty.no_proxy);
   const emptyLower=isolatedEnvironment(profile,{...cleanProxy,HTTP_PROXY:'http://upper.fixture:1',http_proxy:''});
   assert.equal(emptyLower.HTTP_PROXY,'http://upper.fixture:1');assert.equal(emptyLower.http_proxy,emptyLower.HTTP_PROXY,'empty lowercase preserves Node uppercase fallback');
+  const allUpper=isolatedEnvironment(profile,{...cleanProxy,ALL_PROXY:'socks5://all-upper.fixture:6'});
+  assert.equal(allUpper.ALL_PROXY,'socks5://all-upper.fixture:6');assert.equal(allUpper.all_proxy,allUpper.ALL_PROXY);
+  const allLower=isolatedEnvironment(profile,{...cleanProxy,all_proxy:'socks5://all-lower.fixture:7'});
+  assert.equal(allLower.ALL_PROXY,'socks5://all-lower.fixture:7');assert.equal(allLower.all_proxy,allLower.ALL_PROXY);
+  const allEmptyLower=isolatedEnvironment(profile,{...cleanProxy,ALL_PROXY:'socks5://all-upper.fixture:6',all_proxy:''});
+  assert.equal(allEmptyLower.ALL_PROXY,'socks5://all-upper.fixture:6');assert.equal(allEmptyLower.all_proxy,allEmptyLower.ALL_PROXY,'empty lowercase preserves Node uppercase fallback');
+  const noAll=isolatedEnvironment(profile,{...cleanProxy});
+  assert.equal(noAll.ALL_PROXY,undefined);assert.equal(noAll.all_proxy,undefined);
   const all=isolatedEnvironment(profile,{...cleanProxy,no_proxy:'*'});assert.ok(all.NO_PROXY.split(',').includes('*'),'explicit all-traffic bypass is retained');
+});
+
+test('launchd generation snapshots only proxy variables present in the generating process',()=>{
+  const env={PATH:'/generated/bin',HTTP_PROXY:'http://upper.fixture:1',http_proxy:'http://lower.fixture:2',HTTPS_PROXY:'http://tls.fixture:3',all_proxy:'socks5://all.fixture:4',NO_PROXY:'internal.fixture',no_proxy:'private.fixture',NODE_USE_ENV_PROXY:'0'};
+  const xml=launchdXml(profile,'/generated/node',env).contents;
+  assert.deepEqual(plistEnvironment(xml),{HTTP_PROXY:'http://upper.fixture:1',http_proxy:'http://lower.fixture:2',HTTPS_PROXY:'http://tls.fixture:3',all_proxy:'socks5://all.fixture:4',NO_PROXY:'internal.fixture',no_proxy:'private.fixture'});
+  assert.equal(xml.includes('NODE_USE_ENV_PROXY'),false);
+  assert.equal(xml.includes(profile.env.MOTE_TOKEN),false);
+  const runtime=isolatedEnvironment(profile,plistEnvironment(xml));
+  assert.equal(runtime.NODE_USE_ENV_PROXY,'1');
+  assert.equal(runtime.http_proxy,'http://lower.fixture:2');assert.equal(runtime.ALL_PROXY,'socks5://all.fixture:4');assert.equal(runtime.all_proxy,runtime.ALL_PROXY);
+  assert.ok(runtime.NO_PROXY.split(',').includes('127.0.0.1'));
+  const noProxy=launchdXml(profile,'/generated/node',{PATH:'/generated/bin'}).contents;
+  assert.equal(noProxy.includes('EnvironmentVariables'),false);
+  const allOnly=plistEnvironment(launchdXml(profile,'/generated/node',{ALL_PROXY:'socks5://all-upper.fixture:6'}).contents);
+  assert.deepEqual(allOnly,{ALL_PROXY:'socks5://all-upper.fixture:6'});
 });
 
 test('profile startup bypasses local authenticated HTTP and fetch while remote model downloads still use the proxy',async t=>{
