@@ -223,6 +223,16 @@ test('disabled archive image disclosure removes image tools and guides OCR-only 
 });
 
 
+test('a host-selected tool surface exposes only contributed tools and never widens dispatch',()=>{
+ const directImages=[{id:'generated-image',name:'Generated image',mimeType:'image/png',hash:'a'.repeat(64),sizeBytes:1}];
+ const input={question:'Generated image pass',directImages,hostToolSelection:['read_image','not_a_tool']};
+ assert.deepEqual(taskTools(input),['read_image']);
+ assert.deepEqual(dispatchTools(input),['read_image']);
+ assert.ok(!taskTools(input).includes('search_context'));
+ assert.deepEqual(taskTools({...input,hostToolSelection:[]}),[]);
+});
+
+
 test('selected original Ask answers normally while explicit Memory and Calendar tasks retain extraction output',async t=>{
  const input={question:'Distinguish this generated original from my comment',evidenceIds:[record.id]};
  assert.deepEqual(buildContextEnvelope(input,[record]).taskProfile,{output:'answer',retrieval:'evidence'});

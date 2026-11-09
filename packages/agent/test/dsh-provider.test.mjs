@@ -28,7 +28,7 @@ import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
 import {AgentYieldError} from '../dist/host-controls.js';
 import {SYSTEM_PROMPT} from '../dist/instructions.js';
 import {createAgent, AgentResponseError} from '@mote/agent';
-import {ProviderFailure} from '@mote/shared';
+import {ProviderFailure, IMAGE_MAX_BYTES, IMAGE_MAX_PIXELS} from '@mote/shared';
 import {ContextToolError} from '../dist/tool-errors.js';
 
 const manualJourneys = process.env.MOTE_TEST_DSH_JOURNEYS === '1';
@@ -67,6 +67,10 @@ test('DSH compiler emits static loader entries and privacy defaults without sour
   assert.ok(patch.some(entry => entry.id === 'plugin-package-inventory-deepseek' && entry.disabled === true));
   assert.ok(patch.some(entry => entry.id === 'sdk-jsonrpc-server' && entry.inject.includes('moteReady')));
   assert.equal(patch.flatMap(entry => entry.insert ?? []).find(entry => entry.id === 'mote-context').name, '/generated/public/context.mjs');
+  const attachments = patch.flatMap(entry => entry.insert ?? []).find(entry => entry.id === 'mote-attachments');
+  assert.equal(attachments.config.maxImageBytes, IMAGE_MAX_BYTES);
+  assert.equal(attachments.config.maxImagePixels, IMAGE_MAX_PIXELS);
+  assert.equal(attachments.config.maxImageDimension, IMAGE_MAX_PIXELS, 'long originals admitted by Mote must not fail attachment preparation before read_image');
 });
 
 const definition = {name: 'generated_read', version: '1', fingerprint: 'c'.repeat(64), description: 'Generated read', inputSchema: {type: 'object', properties: {}, additionalProperties: false}};
@@ -116,6 +120,20 @@ test('child ACK response waits for Host post-sender eligibility and cannot repor
   const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}}), frame = await response.json();
   assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 400);
   await assert.rejects(f.channel.failure, {reason: 'tool_failure'}); assert.equal(f.delivered, false);
+});
+
+test('a correctable tool-result preparation rejection reaches the model without ending the DSH run', async t => {
+  const f = await channelFixture(t); let failed = false; void f.channel.failure.catch(() => { failed = true; });
+  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0}, {});
+  const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}});
+  const frame = await response.json();
+  const ack = await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: false});
+  const body = await ack.json();
+  assert.equal(ack.status, 400);
+  assert.equal(body.toolError.code, 'tool_delivery_failed');
+  assert.equal(body.toolError.recovery, 'correct_arguments');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(failed, false, 'a model-correctable preparation rejection must not poison the channel');
 });
 
 test('runtime delivery receipt is bound to the run, fixed attempt, native call and exact payload and is one-shot', async t => {

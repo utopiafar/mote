@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
+import {IMAGE_MAX_BYTES,IMAGE_MAX_PIXELS} from '@mote/shared';
 import {runtimeAssemblySchema, RUNTIME_HOST_CAPABILITIES, type RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {SYSTEM_PROMPT} from '../../instructions.js';
@@ -115,7 +116,12 @@ export function createRuntimePatch(
     ...modelRuntimeEntries({...connection, model, baseUrl, reasoningEffort, maxTokens}),
     {id: 'sdk-jsonrpc-server', inject: ['sdkAppStartup', 'loader', 'moteReady']},
     {insert: [
-      {id: 'mote-attachments', name: import.meta.resolve('@deepseek-ai/dsh-attachment-local'), config: {maxImageBytes: 8388608, maxMessageImageBytes: 33554432}},
+      // Mote admits an original by encoded bytes and decoded pixels below. The
+      // attachment default of 8192 px per side would reject long screenshots
+      // before read_image could deliver them, so bind both limits to the same
+      // product contract; request-time normalization still scales the image to
+      // the provider budget.
+      {id: 'mote-attachments', name: import.meta.resolve('@deepseek-ai/dsh-attachment-local'), config: {maxImageBytes: IMAGE_MAX_BYTES, maxImagePixels: IMAGE_MAX_PIXELS, maxImageDimension: IMAGE_MAX_PIXELS, maxMessageImageBytes: 33554432}},
       {id: 'mote-skills', name: import.meta.resolve('@deepseek-ai/dsh-skill')},
       ...native.map(entry => ({id: entry.id, name: entry.specifier})),
       {id: 'mote-context', name: pluginPath},

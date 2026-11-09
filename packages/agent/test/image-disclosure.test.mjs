@@ -28,6 +28,15 @@ test('an exact direct image read absorbs echoed metadata and placeholder argumen
  assert.equal(result.body.imageView.region,null,'the answer-schema placeholder does not narrow the inspection to one pixel');
  assert.deepEqual(selections,[{id}],'the placeholder hash pin is dropped with its non-crop placeholder');
 });
+test('a direct image crop without a redundant hash is pinned to the host-known original',async t=>{
+ const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#abcabc'}}).png().toBuffer(),id=record.id,selections=[];
+ const reader={search:async()=>[],timeline:async()=>[],evidence:async()=>[],activity:async()=>({}),devices:async()=>[],readImage:async args=>{selections.push(args);return generatedImageRead(bytes,args);}};
+ const b=await startBridge(reader,{question:'Generated direct image crop',directImages:[{id,name:'Generated image',mimeType:'image/png',hash:digest(bytes),sizeBytes:bytes.length}]},12);t.after(()=>b.close());
+ const region={x:1,y:2,width:2,height:2},result=await invoke(b,'read_image',{id,region});
+ assert.equal(result.status,200);
+ assert.deepEqual(result.body.imageView.region,region);
+ assert.deepEqual(selections,[{id,expectedImageSha256:digest(bytes),region}]);
+});
 test('failed local image delivery releases concurrent readers and permits a fresh first image',async t=>{
  const data=(await sharp({create:{width:8,height:8,channels:3,background:'#abcabc'}}).png().toBuffer()).toString('base64');let reads=0;
  const reader={search:async()=>[record],timeline:async()=>({items:([record]),nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],readImage:async()=>{reads++;return {mimeType:'image/png',data};}};

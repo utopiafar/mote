@@ -28,11 +28,14 @@ export function normalizeOptionalToolArguments(
  * value for the existing validators. */
 const imageReadEchoKeys=new Set(['name','mimeType','hash','sizeBytes']);
 const imageRegionKeys=new Set(['x','y','width','height']);
+const imageFullViewAliases=new Set(['full','original']);
 export function normalizeImageReadArguments(args: Record<string, unknown>): Record<string, unknown> {
   let normalized: Record<string, unknown> | undefined;
   const copy=()=>normalized??={...args};
   const hashAlias=args.expectedImageSha256===undefined&&typeof args.hash==='string'&&args.hash.trim()!==''?args.hash.trim():undefined;
   for(const key of imageReadEchoKeys)if(args[key]!==undefined){copy();delete normalized![key];}
+  // `full`/`original` are unambiguous aliases for the declared full-image view.
+  if(typeof args.view==='string'&&imageFullViewAliases.has(args.view)){copy();delete normalized!.view;}
   if(args.view==='metadata'){copy();delete normalized!.region;return normalized!;}
   const region=args.region;
   if(region===undefined){
@@ -43,8 +46,8 @@ export function normalizeImageReadArguments(args: Record<string, unknown>): Reco
   }
   if(region!==null&&(typeof region!=='object'||Array.isArray(region)))return normalized??args;
   const value=region as Record<string,unknown>|null;
-  const hash=args.expectedImageSha256;
-  const emptyHash=hash===undefined||hash===null||typeof hash==='string'&&hash.trim()==='';
+  const pinned=args.expectedImageSha256??hashAlias;
+  const emptyHash=pinned===undefined||pinned===null||typeof pinned==='string'&&pinned.trim()==='';
   const annotated=value!==null&&Object.keys(value).some(key=>!imageRegionKeys.has(key));
   const placeholder=value===null||value.x===0&&value.y===0&&value.width===1&&value.height===1;
   // The 1x1 origin region is the interpretation-schema placeholder when it is

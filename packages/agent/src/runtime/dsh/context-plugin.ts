@@ -65,7 +65,7 @@ export async function createDshHostChannel(host: HostRunPort) {
           const ack = acknowledgements.get(body.id);
           if (!ack || !isDeepStrictEqual(ack.receipt, {runId: body.runId, attemptId: body.attemptId, callId: body.callId, payloadFingerprint: body.payloadFingerprint})) throw failure();
           acknowledgements.delete(body.id);
-          body.delivered ? ack.resolve() : ack.reject(new AgentResponseError('Native tool preparation failed.', 'tool_failure'));
+          body.delivered ? ack.resolve() : ack.reject(new ContextToolError('tool_delivery_failed','The Host could not prepare this tool result for the model. Correct the request or use existing evidence.','correct_arguments'));
           await ack.completed;
           res.writeHead(200).end('{}'); return;
         }
@@ -90,7 +90,14 @@ export async function createDshHostChannel(host: HostRunPort) {
       } catch (error) {
         if (error instanceof AgentYieldError || error instanceof AgentResponseError || error instanceof ContextToolError && error.recovery === 'stop') rejectFailure(error);
         if (req.url === '/ready') rejectFailure(failure());
-        if (res.headersSent) { rejectFailure(error instanceof AgentResponseError ? error : new AgentResponseError('Native delivery did not complete.', 'tool_failure')); return; }
+        if (res.headersSent) {
+          // The model already received this tool result. A correctable rejection
+          // is the model's chance to fix the request; only unverifiable or
+          // stop-level failures end the whole run here.
+          if (error instanceof ContextToolError && error.recovery !== 'stop') return;
+          rejectFailure(error instanceof AgentResponseError ? error : new AgentResponseError('Native delivery did not complete.', 'tool_failure'));
+          return;
+        }
         const toolError = error instanceof ContextToolError ? error.toJSON() : {code: 'host_tool_rejected', message: 'The Host rejected this tool call.', recovery: 'stop', details: {}};
         res.writeHead(400, {'Content-Type': 'application/json'}).end(JSON.stringify({toolError}));
       }
