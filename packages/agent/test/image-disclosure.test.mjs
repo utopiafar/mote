@@ -18,6 +18,16 @@ test('direct image metadata, pending and failed delivery never authorize visual 
  const pending=await invoke(b,'read_image',{id},false);assert.throws(cite,{reason:'unretrieved_citation'});b.imageDelivery(pending.body.imageDelivery,false);assert.throws(cite,{reason:'unretrieved_citation'});assert.deepEqual(b.evidenceDependencies.ids,[]);
  const delivered=await invoke(b,'read_image',{id},false);b.imageDelivery(delivered.body.imageDelivery,true);assert.equal(cite().citations[0].id,id);assert.equal(b.records.get(id).ocrText,'');assert.deepEqual(b.evidenceDependencies.ids,[id]);assert.equal(b.evidenceDependencies.complete,true,'confirmed pixels resolve the metadata original without breaking later dialogue');
 });
+test('an exact direct image read absorbs echoed metadata and placeholder arguments',async t=>{
+ const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#abcabc'}}).png().toBuffer(),id=record.id,selections=[];
+ const reader={search:async()=>[],timeline:async()=>[],evidence:async()=>[],activity:async()=>({}),devices:async()=>[],readImage:async args=>{selections.push(args);return generatedImageRead(bytes,args);}};
+ const b=await startBridge(reader,{question:'Generated direct image arguments',directImages:[{id,name:'Generated image',mimeType:'image/png',hash:digest(bytes),sizeBytes:bytes.length}]},12);t.after(()=>b.close());
+ const result=await invoke(b,'read_image',{id,name:'Generated image',mimeType:'image/png',hash:digest(bytes),sizeBytes:bytes.length,attachmentId:id,expectedImageSha256:digest(bytes),region:{x:0,y:0,width:1,height:1,description:'Generated placeholder'}});
+ assert.equal(result.status,200);
+ assert.ok(result.body.image,'the only authorized direct image is inspected instead of rejected as a parameter error');
+ assert.equal(result.body.imageView.region,null,'the answer-schema placeholder does not narrow the inspection to one pixel');
+ assert.deepEqual(selections,[{id}],'the placeholder hash pin is dropped with its non-crop placeholder');
+});
 test('failed local image delivery releases concurrent readers and permits a fresh first image',async t=>{
  const data=(await sharp({create:{width:8,height:8,channels:3,background:'#abcabc'}}).png().toBuffer()).toString('base64');let reads=0;
  const reader={search:async()=>[record],timeline:async()=>({items:([record]),nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],readImage:async()=>{reads++;return {mimeType:'image/png',data};}};

@@ -20,21 +20,38 @@ export function normalizeOptionalToolArguments(
 }
 
 /** A crop is only meaningful when pinned to an exact original hash in image
- * view. Models sometimes echo the answer-schema placeholder region while
- * leaving expectedImageSha256 empty; that exact unverifiable placeholder is an
- * omitted optional argument, not a request for different pixels. Keep every
- * valid pinned crop, every metadata crop (which has no pixel meaning) and every
- * other unsupported value for the existing validators. */
+ * view. Models sometimes echo the answer-schema placeholder region (including
+ * its description), the directImages metadata object, or a `hash` alias for the
+ * declared pin. Those lossless shape normalizations are omitted optional
+ * arguments, not requests for different pixels. Keep every valid pinned crop,
+ * every metadata crop (which has no pixel meaning) and every other unsupported
+ * value for the existing validators. */
+const imageReadEchoKeys=new Set(['name','mimeType','hash','sizeBytes']);
+const imageRegionKeys=new Set(['x','y','width','height']);
 export function normalizeImageReadArguments(args: Record<string, unknown>): Record<string, unknown> {
-  const region = args.region;
-  if (region === undefined) return args;
-  if (region !== null && (typeof region !== 'object' || Array.isArray(region))) return args;
-  const hash = args.expectedImageSha256;
-  const emptyHash = hash === undefined || hash === null || typeof hash === 'string' && hash.trim() === '';
-  const value = region as Record<string, unknown> | null;
-  const placeholder = value === null || Object.keys(value).length === 4 && value.x === 0 && value.y === 0 && value.width === 1 && value.height === 1;
-  if (!(args.view === 'metadata' || emptyHash && placeholder)) return args;
-  const normalized = {...args};
-  delete normalized.region;
-  return normalized;
+  let normalized: Record<string, unknown> | undefined;
+  const copy=()=>normalized??={...args};
+  const hashAlias=args.expectedImageSha256===undefined&&typeof args.hash==='string'&&args.hash.trim()!==''?args.hash.trim():undefined;
+  for(const key of imageReadEchoKeys)if(args[key]!==undefined){copy();delete normalized![key];}
+  if(args.view==='metadata'){copy();delete normalized!.region;return normalized!;}
+  const region=args.region;
+  if(region===undefined){
+    // expectedImageSha256 pins a crop; without one it only makes a full read
+    // fail against readers that cannot verify views.
+    if(args.expectedImageSha256!==undefined){copy();delete normalized!.expectedImageSha256;}
+    return normalized??args;
+  }
+  if(region!==null&&(typeof region!=='object'||Array.isArray(region)))return normalized??args;
+  const value=region as Record<string,unknown>|null;
+  const hash=args.expectedImageSha256;
+  const emptyHash=hash===undefined||hash===null||typeof hash==='string'&&hash.trim()==='';
+  const annotated=value!==null&&Object.keys(value).some(key=>!imageRegionKeys.has(key));
+  const placeholder=value===null||value.x===0&&value.y===0&&value.width===1&&value.height===1;
+  // The 1x1 origin region is the interpretation-schema placeholder when it is
+  // unpinned or carries annotation fields such as description. An exact pinned
+  // 1x1 crop without annotations remains a valid requested region.
+  if(placeholder&&(emptyHash||annotated||value===null)){copy();delete normalized!.region;delete normalized!.expectedImageSha256;return normalized!;}
+  if(hashAlias){copy();normalized!.expectedImageSha256=hashAlias;}
+  if(annotated&&value){copy();normalized!.region=Object.fromEntries(Object.entries(value).filter(([key])=>imageRegionKeys.has(key)));}
+  return normalized??args;
 }

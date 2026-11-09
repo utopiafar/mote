@@ -111,8 +111,13 @@ export interface QueryHooks {
   onMemoryBodies?:(cards:readonly {id:string;version?:number;fingerprint:string}[])=>void;
   /** Host receipt of source metadata actually disclosed, including fragments that yield. */
   onSourceContextDependencies?:(pins:readonly import('@mote/shared').SourceContextDeclaration[])=>void;
-  /** Pure host validation before the session closes. Return only trusted repair guidance; never commit output here. */
-  validateOutput?: (answer: AgentAnswer) => Promise<{code:string;feedback:string}|undefined> | {code:string;feedback:string}|undefined;
+  /** Pure host validation before the session closes. Return only trusted repair guidance; never commit output here.
+   * `requiresToolUse` marks a rejection that cannot be repaired by rewriting the answer alone: the model must call
+   * the required read-only tool (for example read_image) again before returning the product. */
+  validateOutput?: (answer: AgentAnswer) => Promise<{code:string;feedback:string;requiresToolUse?:boolean}|undefined> | {code:string;feedback:string;requiresToolUse?:boolean}|undefined;
+  /** Host-only live fact for repair prompts. While true, even an output-limit repair must allow the read-only
+   * tool call that is still required (for example an image whose pixels were never inspected). */
+  repairRequiresToolUse?: () => boolean;
   /** Host-only observation, never serialized into model prompts or tool arguments. */
   onProgress?: (event: AgentProgress) => void;
   /** Host-only detailed execution trace. The host must explicitly opt in before persisting it. */

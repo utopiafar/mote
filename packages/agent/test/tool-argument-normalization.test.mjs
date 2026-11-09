@@ -54,7 +54,7 @@ test('non-empty values are preserved for the existing validators', () => {
 
 test('an unpinned read_image placeholder region is treated as an omitted crop', () => {
   const placeholder = {id: 'generated-image', attachmentId: '', view: 'image', expectedImageSha256: '', region: {x: 0, y: 0, width: 1, height: 1}};
-  assert.deepEqual(normalizeImageReadArguments(placeholder), {id: 'generated-image', attachmentId: '', view: 'image', expectedImageSha256: ''});
+  assert.deepEqual(normalizeImageReadArguments(placeholder), {id: 'generated-image', attachmentId: '', view: 'image'});
   const nullRegion = {id: 'generated-image', region: null};
   assert.deepEqual(normalizeImageReadArguments(nullRegion), {id: 'generated-image'});
   const pinned = {id: 'generated-image', expectedImageSha256: 'a'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}};
@@ -65,6 +65,23 @@ test('an unpinned read_image placeholder region is treated as an omitted crop', 
   assert.equal(normalizeImageReadArguments(malformed), malformed, 'a nonempty malformed hash still reaches the validator');
   const unsupported = {id: 'generated-image', region: {x: 0, y: 0, width: 2, height: 2}};
   assert.equal(normalizeImageReadArguments(unsupported), unsupported, 'an unpinned non-placeholder crop still reaches the validator');
+});
+
+test('read_image absorbs the interpretation placeholder and directImages echoes', () => {
+  const described = {id: 'generated-image', expectedImageSha256: '', region: {x: 0, y: 0, width: 1, height: 1, description: 'Generated placeholder'}};
+  assert.deepEqual(normalizeImageReadArguments(described), {id: 'generated-image'}, 'the answer-schema description does not make the placeholder a real crop');
+  const pinnedPlaceholder = {id: 'generated-image', expectedImageSha256: 'a'.repeat(64), region: {x: 0, y: 0, width: 1, height: 1, description: 'Generated placeholder'}};
+  assert.deepEqual(normalizeImageReadArguments(pinnedPlaceholder), {id: 'generated-image'}, 'a pinned annotated placeholder still inspects the full original');
+  const pinnedPixel = {id: 'generated-image', expectedImageSha256: 'a'.repeat(64), region: {x: 0, y: 0, width: 1, height: 1}};
+  assert.equal(normalizeImageReadArguments(pinnedPixel), pinnedPixel, 'an exact pinned 1x1 crop without annotations stays a valid region');
+  const fullRead = {id: 'generated-image', expectedImageSha256: 'a'.repeat(64)};
+  assert.deepEqual(normalizeImageReadArguments(fullRead), {id: 'generated-image'}, 'a full read drops a crop-only hash pin that view-less readers cannot verify');
+  const describedCrop = {id: 'generated-image', expectedImageSha256: 'a'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4, description: 'Generated crop note'}};
+  assert.deepEqual(normalizeImageReadArguments(describedCrop), {id: 'generated-image', expectedImageSha256: 'a'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}}, 'annotation keys are removed while valid geometry is preserved');
+  const hashAlias = {id: 'generated-image', hash: 'b'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}};
+  assert.deepEqual(normalizeImageReadArguments(hashAlias), {id: 'generated-image', expectedImageSha256: 'b'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}}, 'a crop hash alias becomes the declared pin');
+  const echoed = {id: 'generated-image', name: 'Generated image', mimeType: 'image/png', hash: 'a'.repeat(64), sizeBytes: 7};
+  assert.deepEqual(normalizeImageReadArguments(echoed), {id: 'generated-image'}, 'directImages metadata is not a read_image argument');
 });
 
 const record = {

@@ -148,6 +148,34 @@ test('output_limit is rejected even with valid JSON, then requests a shorter com
   const s = await f.create(); await s.execute(); assert.equal(s.repairs, 1);
 });
 
+test('every pixel-required validation repair, including the third, still requires read_image', async () => {
+  const prompts = [];
+  const f = fixture({input: {validateOutput: () => ({code: 'image_pixels_not_inspected', feedback: 'Generated pixels missing', requiresToolUse: true})},
+    run: async () => outcome(),
+    repair: async request => { prompts.push(JSON.parse(request.prompt)); return outcome(); },
+  });
+  await assert.rejects((await f.create()).execute(), error => error instanceof AgentResponseError && error.reason === 'host_validation' && error.requiresToolUse === true);
+  assert.equal(prompts.length, 3, 'the Host keeps its three-correction output budget');
+  for (const prompt of prompts) {
+    assert.match(prompt.instruction, /read_image/);
+    assert.doesNotMatch(prompt.instruction, /ONLY a JSON object/);
+  }
+});
+
+test('an output-limit repair still requires read_image while pixels remain uninspected', async () => {
+  let inspected = false; const prompts = [];
+  const f = fixture({input: {repairRequiresToolUse: () => !inspected},
+    run: async () => ({...outcome(), terminal: {kind: 'output_limit'}}),
+    repair: async request => { prompts.push(JSON.parse(request.prompt)); inspected = true; return outcome(); },
+  });
+  await (await f.create()).execute();
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0].instruction, /read_image/);
+  assert.doesNotMatch(prompts[0].instruction, /ONLY a JSON object/);
+  assert.match(prompts[0].recovery, /shorter/);
+  assert.doesNotMatch(prompts[0].recovery, /Do not call more tools/);
+});
+
 test('Memory coverage identities are restored before the real Host domain validator', async () => {
   const key = 'd'.repeat(64); let validations = 0;
   const f = fixture({input: {taskContext: {memoryWork: {members: [{key}], contextMembers: [], authorizedMembers: []}}, validateOutput(answer) {

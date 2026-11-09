@@ -43,7 +43,7 @@ export interface HostOutputInput {
 }
 export type HostOutputDecision =
   | {readonly kind: 'accepted'; readonly result: AgentAnswer}
-  | {readonly kind: 'rejected'; readonly reason: AgentResponseReason; readonly feedback: string};
+  | {readonly kind: 'rejected'; readonly reason: AgentResponseReason; readonly feedback: string; readonly requiresToolUse?: boolean};
 
 /** Trusted restart-replaceable Host foundation, not a RuntimeProvider capability.
  * Owns parseAnswer -> restoreMemoryCoverageKeys -> domain validation and Host result construction.

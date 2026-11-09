@@ -41,7 +41,10 @@ import {mediaRuntimeSettings,type MediaRuntimeSettings} from './media-configurat
  * provider and pixel-contract failures always retain their own code. */
 function classifyImageFailure(error:unknown):ExecutionFailure {
  retainErrorIdentity(error);
- if(error instanceof ImagePixelsNotInspectedError)return new ExecutionFailure('permanent','pixels_not_inspected');
+ // Missing pixels are recoverable: a fresh understanding attempt still has a
+ // tool-using repair available. The model-call attempt budget ends it as failed
+ // only after that recovery is truly exhausted.
+ if(error instanceof ImagePixelsNotInspectedError)return new ExecutionFailure('transient','pixels_not_inspected');
  if(error instanceof ImageRegionOutOfBoundsError)return new ExecutionFailure('permanent','invalid_image_region');
  if(error instanceof StoreError&&error.statusCode===507)return new ExecutionFailure('blocked','storage_full');
  if(error instanceof z.ZodError||error instanceof ImageInterpretationError)return new ExecutionFailure('permanent','invalid_image_product');
