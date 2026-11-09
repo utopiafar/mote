@@ -7,6 +7,7 @@ import {dirname,join} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {ProviderFailure} from '@mote/shared';
+import {AgentNotConfiguredError,AgentResponseError,AgentTimeoutError} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {Store,StoreError,sha256} from '../src/store.js';
@@ -27,7 +28,7 @@ import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-plann
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {processorContract,processorSettingsFingerprint} from '../src/file-configuration.js';
-import {DEFAULT_IMAGE_RECIPE,ImageInterpretationError} from '../src/image-recipes.js';
+import {DEFAULT_IMAGE_RECIPE,ImageInterpretationError,ImagePixelsNotInspectedError} from '../src/image-recipes.js';
 import {generatedAppleDouble} from './fixtures/appledouble.js';
 import {isAppleDouble} from '../src/appledouble.js';
 import {Operations} from '../src/operations.js';
@@ -262,25 +263,38 @@ test('the real harness adapter requires a pixel read, scopes evidence and meters
   return {answer:invalid?'invalid generated JSON':JSON.stringify({text:'Generated visual observation with uncertain ownership',regions:[]}),citations:[],trace:[],runId:randomUUID()};
  }})});
  const input={record,ocr:{durationMs:0,segments:[{startMs:0,endMs:0,text:poison}]},original:{hash:sha256(f.bytes),mimeType:'image/png',sizeBytes:f.bytes.length,read:async function*(){yield f.bytes;}},signal:new AbortController().signal,operationId:'image:'+id,readImage:(args:import('@mote/shared').ImageReadInput)=>imageOutput(f.bytes,'image/png',args,()=>true)};
- await assert.rejects(adapter.run(input),{statusCode:422});pixels=true;invalid=true;await assert.rejects(adapter.run(input),{name:'ImageInterpretationError'});invalid=false;assert.match((await adapter.run(input)).text,/uncertain ownership/);
+ await assert.rejects(adapter.run(input),{name:'ImagePixelsNotInspectedError',statusCode:422});pixels=true;invalid=true;await assert.rejects(adapter.run(input),{name:'ImageInterpretationError'});invalid=false;assert.match((await adapter.run(input)).text,/uncertain ownership/);
  const receipts=f.store.db.prepare('SELECT json FROM model_usage ORDER BY rowid').all().map(r=>JSON.parse(String(r.json)));
  assert.deepEqual(receipts.map(r=>r.status),['failed','failed','completed']);assert.ok(receipts.every(r=>r.attribution.moduleId==='images'));
 });
 
 test('the image harness repairs a non-JSON interpretation through host validation',async t=>{
  const f=await fixture(t),id=await f.upload(),record=f.store.evidence([id])[0],settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'generated-model',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',headers:{},extraBody:{},maxTokens:8192,agentTimeoutMs:2000,modelRequestTimeoutMs:1000,reasoningEffort:'auto',allowUnauthenticatedLocal:true};
- let issue:unknown,accepted:unknown;
+ let issue:unknown,pixelsIssue:unknown,accepted:unknown;
  const adapter=imageUnderstanding({selection:()=>({fingerprint:'generated-model',configured:true,receipt:{model:settings.model},settings}),metered:async(_settings,_attribution,task)=>task(()=>{}),factory:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   issue=await input.validateOutput?.({answer:'not interpretation JSON'} as never);
-  accepted=await input.validateOutput?.({answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]})} as never);
+  pixelsIssue=await input.validateOutput?.({answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]})} as never);
   await reader.readImage!({id});
+  accepted=await input.validateOutput?.({answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]})} as never);
   return {answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]}),citations:[],trace:[],runId:randomUUID()};
  }})});
  const input={record,original:{hash:sha256(f.bytes),mimeType:'image/png',sizeBytes:f.bytes.length,read:async function*(){yield f.bytes;}},signal:new AbortController().signal,operationId:'image:'+id,readImage:(args:import('@mote/shared').ImageReadInput)=>imageOutput(f.bytes,'image/png',args,()=>true)};
  const result=await adapter.run(input);
  assert.deepEqual(issue,{code:'image_interpretation',feedback:'The image interpretation answer is not valid JSON. Return only one JSON object string in answer with exactly a nonempty text string and optional regions; each region needs integer x/y/width/height in original encoded pixels and a description. Do not include Markdown fences or prose.'});
+ assert.equal((pixelsIssue as {code?:string}|undefined)?.code,'image_pixels_not_inspected');
  assert.equal(accepted,undefined);
  assert.equal(result.text,'Generated repaired interpretation');
+});
+
+test('the image harness reports missing pixels distinctly after host repairs are exhausted',async t=>{
+ const f=await fixture(t),id=await f.upload(),record=f.store.evidence([id])[0],settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'generated-model',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',headers:{},extraBody:{},maxTokens:8192,agentTimeoutMs:2000,modelRequestTimeoutMs:1000,reasoningEffort:'auto',allowUnauthenticatedLocal:true};
+ const adapter=imageUnderstanding({selection:()=>({fingerprint:'generated-model',configured:true,receipt:{model:settings.model},settings}),metered:async(_settings,_attribution,task)=>task(()=>{}),factory:async()=>({configured:true,close:async()=>{},query:async input=>{
+  const issue=await input.validateOutput?.({answer:JSON.stringify({text:'Generated answer without pixels',regions:[]})} as never);
+  assert.equal((issue as {code?:string}|undefined)?.code,'image_pixels_not_inspected');
+  throw new AgentResponseError('host_validation: '+issue!.feedback,'host_validation');
+ }})});
+ const input={record,original:{hash:sha256(f.bytes),mimeType:'image/png',sizeBytes:f.bytes.length,read:async function*(){yield f.bytes;}},signal:new AbortController().signal,operationId:'image:'+id,readImage:(args:import('@mote/shared').ImageReadInput)=>imageOutput(f.bytes,'image/png',args,()=>true)};
+ await assert.rejects(adapter.run(input),{name:'ImagePixelsNotInspectedError',statusCode:422});
 });
 
 test('invalid image interpretation output is classified as invalid_image_product',async t=>{
@@ -289,6 +303,45 @@ test('invalid image interpretation output is classified as invalid_image_product
  await f.images.tick();
  const step=f.engine.list({operationId:'image:'+id}).items.find(s=>s.kind==='images.understanding')!;
  assert.equal(step.state,'failed');assert.equal(step.error,'invalid_image_product');
+});
+
+test('missing pixel inspection and out-of-bounds regions retain distinct diagnosable codes',async t=>{
+ const f=await fixture(t),stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),original=stage.run;
+ try{
+  stage.run=async()=>{throw new ImagePixelsNotInspectedError();};
+  const pixels=await f.upload();await f.images.tick();
+  const pixelStep=f.engine.list({operationId:'image:'+pixels}).items.find(s=>s.kind==='images.understanding')!,pixelFailure=f.engine.failure(pixelStep.id)!;
+  assert.equal(pixelStep.state,'failed');assert.equal(pixelStep.error,'pixels_not_inspected');
+  assert.equal(pixelFailure.category,'permanent');assert.equal(pixelFailure.errorName,'ImagePixelsNotInspectedError');assert.match(String(pixelFailure.errorDetail),/did not inspect image pixels/);
+  stage.run=async()=>({text:'Generated interpretation with an area outside the original',regions:[{x:100,y:100,width:1,height:1,description:'Generated out-of-bounds area'}]});
+  const region=await f.upload();await f.images.tick();
+  const regionStep=f.engine.list({operationId:'image:'+region}).items.find(s=>s.kind==='images.understanding')!,regionFailure=f.engine.failure(regionStep.id)!;
+  assert.equal(regionStep.state,'failed');assert.equal(regionStep.error,'invalid_image_region');
+  assert.equal(regionFailure.category,'permanent');assert.equal(regionFailure.errorName,'ImageRegionOutOfBoundsError');
+ }finally{stage.run=original;}
+});
+
+test('typed agent failures classify specifically instead of falling back to image_processing_failed',async t=>{
+ const f=await fixture(t),stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),original=stage.run;
+ const cases:[string,string,string,Error][]=[
+  ['tool recovery','image_tool_failure','transient',new AgentResponseError('Tool failure recovery exhausted.','tool_failure')],
+  ['tool verification','image_tools_unverified','permanent',new AgentResponseError('The read-only agent tools were not verified.','tools_unverified')],
+  ['timeout','provider_timeout','permanent',new AgentTimeoutError()],
+  ['not configured','model_unconfigured','blocked',new AgentNotConfiguredError()],
+  ['image disclosure','image_disclosure_disabled','blocked',new AgentResponseError('Original-image access for queries is off.','image_disclosure_disabled')],
+  ['invalid response','invalid_model_output','permanent',new AgentResponseError('Generated malformed response','invalid_response')],
+ ];
+ try{
+  for(const [name,code,category,failure] of cases){
+   stage.run=async()=>{throw failure;};
+   const id=await f.upload();await f.images.tick();
+   const step=f.engine.list({operationId:'image:'+id}).items.find(s=>s.kind==='images.understanding')!,receipt=f.engine.failure(step.id)!;
+   assert.equal(step.error,code,`${name} keeps its specific code`);
+   assert.equal(receipt.category,category,`${name} keeps its retry category`);
+   assert.equal(receipt.errorName,failure.name,`${name} persists the thrown error name`);
+   assert.match(String(receipt.errorDetail),new RegExp(failure.message.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),`${name} persists the thrown error message`);
+  }
+ }finally{stage.run=original;}
 });
 
 

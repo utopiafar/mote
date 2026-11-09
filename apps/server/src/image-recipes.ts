@@ -17,6 +17,15 @@ export type ImageInterpretation=z.infer<typeof imageInterpretationSchema>;
 export class ImageInterpretationError extends Error {
  constructor(message='The selected model did not return a valid image interpretation JSON object.'){super(message);this.name='ImageInterpretationError';}
 }
+/** The harness completed but never received pixels from read_image. This is a
+ * contract failure distinct from an unsupported format or region. */
+export class ImagePixelsNotInspectedError extends StoreError {
+ constructor(message='The selected model did not inspect image pixels'){super(message,422);this.name='ImagePixelsNotInspectedError';}
+}
+/** A parsed interpretation named an area outside the original raster. */
+export class ImageRegionOutOfBoundsError extends StoreError {
+ constructor(message='Image interpretation region is outside the original'){super(message,422);this.name='ImageRegionOutOfBoundsError';}
+}
 export type ImageStageContext={
  record:CaptureRecord;hash:string;mimeType:string;dependencies:Readonly<Record<string,unknown>>;signal:AbortSignal;
  readImage(input:Omit<ImageReadInput,'id'>):Promise<ImageReadResult>;

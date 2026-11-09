@@ -21,7 +21,7 @@ import {createImageProcessingRoutes,createImageProcessingService} from '../src/p
 
 const model:ModelSettings={provider:'custom',protocol:'openai-completions',model:'generated-image-model',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',headers:{},extraBody:{},reasoningEffort:'auto',allowUnauthenticatedLocal:true};
 
-async function fixture(t:import('node:test').TestContext,options:{hold?:boolean;prepare?:boolean;beforePrepare?:(processing:FileProcessing)=>void}={}){
+async function fixture(t:import('node:test').TestContext,options:{hold?:boolean;prepare?:boolean;beforePrepare?:(processing:FileProcessing)=>void;diagnostics?:Pick<import('../src/diagnostics.js').ServerDiagnostics,'agentTrace'|'requestId'>}={}){
  const directory=mkdtempSync(join(tmpdir(),'mote-image-plugin-')),store=new Store(directory),materials=new MaterialStore(store);
  const memoryWork=new MaterialMemoryWork(store,materials,()=>Date.now(),()=>true);
  const sources=new SourceStore(store,undefined,memoryWork.inputs),files=new FileStore(store,sources);
@@ -37,7 +37,7 @@ async function fixture(t:import('node:test').TestContext,options:{hold?:boolean;
   store,processing,executor:engine,materials,modelSettings,
   resolveFileModel:()=>({settings:{...model},identity:{kind:'profile',id:'generated-file'}}),
   factory:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
-   calls.understanding++;await reader.readImage!({id:input.directImages![0].id});
+   calls.understanding++;input.onTrace?.({type:'fixture.model',stage:'model'});await reader.readImage!({id:input.directImages![0].id});
    if(options.hold){entered();await held;}
    return {answer:JSON.stringify({text:'Generated plugin interpretation',regions:[]}),citations:[],trace:[],runId:randomUUID()};
   }}),
@@ -45,6 +45,7 @@ async function fixture(t:import('node:test').TestContext,options:{hold?:boolean;
    run:async task=>task(),update(){},completed(){outcomes.push('completed');return undefined;},failed(){outcomes.push('failed');return undefined;},
   }),
   configuredFor:()=>true,probeOcr:async()=>false,
+  ...(options.diagnostics?{diagnostics:options.diagnostics}:{}),
  });
  options.beforePrepare?.(processing);
  if(options.prepare!==false){await service.prepare();service.start();}
@@ -83,6 +84,16 @@ test('image plugin publishes matching original revision, output name and evidenc
  assert.deepEqual(understanding.evidenceIds,f.materials.evidenceIds(material.ref,artifact.blockIds),'the selected output resolves the exact evidence range');
  assert.equal(understanding.fingerprint,f.materials.input(material.ref,['image-understanding'])!.fingerprint);
  assert.deepEqual(f.outcomes,['completed']);
+});
+
+test('image understanding events retain their background trace context',async t=>{
+ const traces:{event:{type:string};context:Record<string,unknown>}[]=[];
+ const f=await fixture(t,{diagnostics:{agentTrace:(event,context)=>{traces.push({event,context});},requestId:()=>'generated-request'}}),{id}=await f.upload();
+ await f.service.tick();
+ const trace=traces.find(value=>value.event.type==='fixture.model')!;
+ assert.ok(trace,'the image model trace reached diagnostics');
+ assert.equal(trace.context.moduleId,'images');assert.equal(trace.context.operationId,'image:'+id);assert.equal(trace.context.jobId,id);
+ assert.equal(trace.context.provider,'custom');assert.equal(trace.context.model,'generated-image-model');assert.equal(trace.context.requestId,'generated-request');
 });
 
 test('quiesce rejects new image writes, stop leaves non-image processing live and a fresh activation reuses the same routes',async t=>{
