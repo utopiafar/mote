@@ -95,7 +95,7 @@ export class AgentNotConfiguredError extends Error {
 export type AgentResponseReason = 'invalid_response' | 'invalid_json' | 'invalid_shape' | 'response_too_large' | 'unretrieved_citation' | 'truncated_citation' | 'undeclared_citation' | 'output_limit' | 'tools_unverified' | 'host_validation' | 'tool_failure' | 'image_disclosure_disabled';
 export class AgentResponseError extends Error {
   readonly statusCode = 502;
-  constructor(message: string, readonly reason: AgentResponseReason = 'invalid_response') {
+  constructor(message: string, readonly reason: AgentResponseReason = 'invalid_response', readonly requiresToolUse = false) {
     super(message);
     this.name = "AgentResponseError";
   }
@@ -136,7 +136,7 @@ export class AgentTimeoutError extends Error {
 /** Runs before closing the model conversation, so a rejected output can be repaired in place. */
 export async function validateHostOutput(input:Pick<QueryInput, 'validateOutput' | 'onTrace'>, answer:AgentAnswer):Promise<void> {
   const issue=await input.validateOutput?.(answer);
-  if(issue){reportTrace(input,{type:'validation.host_rejected',runId:answer.runId,stage:'validating',status:'rejected',payload:{code:issue.code,feedback:issue.feedback}});throw new AgentResponseError(`${issue.code}: ${issue.feedback}`,'host_validation');}
+  if(issue){reportTrace(input,{type:'validation.host_rejected',runId:answer.runId,stage:'validating',status:'rejected',payload:{code:issue.code,feedback:issue.feedback}});throw new AgentResponseError(`${issue.code}: ${issue.feedback}`,'host_validation',issue.requiresToolUse===true);}
 }
 
 /** Shared output-repair budget: initial result plus at most three corrections. */

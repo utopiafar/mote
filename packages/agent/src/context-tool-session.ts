@@ -610,6 +610,14 @@ export async function createContextToolSession(
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:state().trace.at(-1)!.count});res.end(serialized);return;
       }
       if(pin.requires.includes('readImage')){
+        // A direct dialogue image is already identified by its exact id and has
+        // no parent/attachment selector. Ignore an echoed attachment id instead
+        // of rejecting the only authorized image as a parameter error; the
+        // reader still performs its fresh authorization and bytes check.
+        if(directImages.some(image=>image.id===args.id)){
+          const {attachmentId:_attachmentId,...direct}=args;
+          args=direct;
+        }
         const parsed=imageReadSchema.safeParse(args);
         if(!parsed.success)throw new ContextToolError('invalid_image_region','Use the declared image arguments. Regions require expectedImageSha256, integer original coordinates and sides of 1–2048.','correct_arguments',{maxRegionSide:IMAGE_REGION_MAX_SIDE});
         const selection=parsed.data;

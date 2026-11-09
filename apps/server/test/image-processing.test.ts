@@ -274,14 +274,18 @@ test('the image harness repairs a non-JSON interpretation through host validatio
  const adapter=imageUnderstanding({selection:()=>({fingerprint:'generated-model',configured:true,receipt:{model:settings.model},settings}),metered:async(_settings,_attribution,task)=>task(()=>{}),factory:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   issue=await input.validateOutput?.({answer:'not interpretation JSON'} as never);
   pixelsIssue=await input.validateOutput?.({answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]})} as never);
+  assert.equal(input.repairRequiresToolUse?.(),true,'the live repair fact requires tool use until pixels arrive');
   await reader.readImage!({id});
+  assert.equal(input.repairRequiresToolUse?.(),false,'a delivered pixel read satisfies the repair tool requirement');
   accepted=await input.validateOutput?.({answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]})} as never);
   return {answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]}),citations:[],trace:[],runId:randomUUID()};
  }})});
  const input={record,original:{hash:sha256(f.bytes),mimeType:'image/png',sizeBytes:f.bytes.length,read:async function*(){yield f.bytes;}},signal:new AbortController().signal,operationId:'image:'+id,readImage:(args:import('@mote/shared').ImageReadInput)=>imageOutput(f.bytes,'image/png',args,()=>true)};
  const result=await adapter.run(input);
- assert.deepEqual(issue,{code:'image_interpretation',feedback:'The image interpretation answer is not valid JSON. Return only one JSON object string in answer with exactly a nonempty text string and optional regions; each region needs integer x/y/width/height in original encoded pixels and a description. Do not include Markdown fences or prose.'});
- assert.equal((pixelsIssue as {code?:string}|undefined)?.code,'image_pixels_not_inspected');
+ assert.equal((issue as {code?:string}|undefined)?.code,'image_interpretation');
+ assert.equal((issue as {requiresToolUse?:boolean}|undefined)?.requiresToolUse,true,'a missing pixel read keeps tool use available even when the JSON shape also fails');
+ assert.match((issue as {feedback?:string}|undefined)?.feedback??'',new RegExp('read_image with id '+id));
+ assert.deepEqual(pixelsIssue,{code:'image_pixels_not_inspected',feedback:`Call read_image with id ${id} before answering; the host rejects an interpretation produced without receiving its pixels.`,requiresToolUse:true});
  assert.equal(accepted,undefined);
  assert.equal(result.text,'Generated repaired interpretation');
 });
@@ -291,7 +295,7 @@ test('the image harness reports missing pixels distinctly after host repairs are
  const adapter=imageUnderstanding({selection:()=>({fingerprint:'generated-model',configured:true,receipt:{model:settings.model},settings}),metered:async(_settings,_attribution,task)=>task(()=>{}),factory:async()=>({configured:true,close:async()=>{},query:async input=>{
   const issue=await input.validateOutput?.({answer:JSON.stringify({text:'Generated answer without pixels',regions:[]})} as never);
   assert.equal((issue as {code?:string}|undefined)?.code,'image_pixels_not_inspected');
-  throw new AgentResponseError('host_validation: '+issue!.feedback,'host_validation');
+  throw new AgentResponseError('host_validation: '+issue!.feedback,'host_validation',issue!.requiresToolUse===true);
  }})});
  const input={record,original:{hash:sha256(f.bytes),mimeType:'image/png',sizeBytes:f.bytes.length,read:async function*(){yield f.bytes;}},signal:new AbortController().signal,operationId:'image:'+id,readImage:(args:import('@mote/shared').ImageReadInput)=>imageOutput(f.bytes,'image/png',args,()=>true)};
  await assert.rejects(adapter.run(input),{name:'ImagePixelsNotInspectedError',statusCode:422});
@@ -311,8 +315,9 @@ test('missing pixel inspection and out-of-bounds regions retain distinct diagnos
   stage.run=async()=>{throw new ImagePixelsNotInspectedError();};
   const pixels=await f.upload();await f.images.tick();
   const pixelStep=f.engine.list({operationId:'image:'+pixels}).items.find(s=>s.kind==='images.understanding')!,pixelFailure=f.engine.failure(pixelStep.id)!;
-  assert.equal(pixelStep.state,'failed');assert.equal(pixelStep.error,'pixels_not_inspected');
-  assert.equal(pixelFailure.category,'permanent');assert.equal(pixelFailure.errorName,'ImagePixelsNotInspectedError');assert.match(String(pixelFailure.errorDetail),/did not inspect image pixels/);
+  assert.equal(pixelStep.state,'waiting','another tool-using understanding attempt remains');
+  assert.equal(pixelStep.error,'pixels_not_inspected');
+  assert.equal(pixelFailure.category,'transient');assert.equal(pixelFailure.errorName,'ImagePixelsNotInspectedError');assert.match(String(pixelFailure.errorDetail),/did not inspect image pixels/);
   stage.run=async()=>({text:'Generated interpretation with an area outside the original',regions:[{x:100,y:100,width:1,height:1,description:'Generated out-of-bounds area'}]});
   const region=await f.upload();await f.images.tick();
   const regionStep=f.engine.list({operationId:'image:'+region}).items.find(s=>s.kind==='images.understanding')!,regionFailure=f.engine.failure(regionStep.id)!;
@@ -321,21 +326,43 @@ test('missing pixel inspection and out-of-bounds regions retain distinct diagnos
  }finally{stage.run=original;}
 });
 
+test('missing pixel inspection stays retryable until the understanding attempt budget is exhausted',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:Date.now()});
+ const f=await fixture(t),stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),original=stage.run;
+ try{
+  let calls=0;
+  stage.run=async()=>{calls++;throw new ImagePixelsNotInspectedError();};
+  const id=await f.upload();await f.images.tick();
+  const stepId=f.engine.list({operationId:'image:'+id}).items.find(s=>s.kind==='images.understanding')!.id;
+  let step=f.engine.get(stepId)!;
+  assert.equal(step.state,'waiting');assert.equal(step.error,'pixels_not_inspected');assert.equal(step.attempts,1);
+  assert.equal(f.engine.failure(stepId)!.category,'transient');
+  t.mock.timers.tick(2000);await f.images.tick();
+  step=f.engine.get(stepId)!;assert.equal(step.state,'waiting');assert.equal(step.attempts,2);
+  t.mock.timers.tick(4000);await f.images.tick();
+  step=f.engine.get(stepId)!;
+  assert.equal(step.state,'failed','the model-call attempt budget is now truly exhausted');
+  assert.equal(step.error,'pixels_not_inspected');assert.equal(step.attempts,3);assert.equal(calls,3);
+  assert.equal(f.engine.failure(stepId)!.category,'transient','the terminal receipt keeps the recoverable category');
+ }finally{stage.run=original;}
+});
+
 test('typed agent failures classify specifically instead of falling back to image_processing_failed',async t=>{
  const f=await fixture(t),stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),original=stage.run;
- const cases:[string,string,string,Error][]=[
-  ['tool recovery','image_tool_failure','transient',new AgentResponseError('Tool failure recovery exhausted.','tool_failure')],
-  ['tool verification','image_tools_unverified','permanent',new AgentResponseError('The read-only agent tools were not verified.','tools_unverified')],
-  ['timeout','provider_timeout','permanent',new AgentTimeoutError()],
-  ['not configured','model_unconfigured','blocked',new AgentNotConfiguredError()],
-  ['image disclosure','image_disclosure_disabled','blocked',new AgentResponseError('Original-image access for queries is off.','image_disclosure_disabled')],
-  ['invalid response','invalid_model_output','permanent',new AgentResponseError('Generated malformed response','invalid_response')],
+ const cases:[string,string,string,'waiting'|'blocked'|'failed',Error][]=[
+  ['tool recovery','image_tool_failure','transient','waiting',new AgentResponseError('Tool failure recovery exhausted.','tool_failure')],
+  ['tool verification','image_tools_unverified','permanent','failed',new AgentResponseError('The read-only agent tools were not verified.','tools_unverified')],
+  ['timeout','provider_timeout','permanent','failed',new AgentTimeoutError()],
+  ['not configured','model_unconfigured','blocked','blocked',new AgentNotConfiguredError()],
+  ['image disclosure','image_disclosure_disabled','blocked','blocked',new AgentResponseError('Original-image access for queries is off.','image_disclosure_disabled')],
+  ['invalid response','invalid_model_output','permanent','failed',new AgentResponseError('Generated malformed response','invalid_response')],
  ];
  try{
-  for(const [name,code,category,failure] of cases){
+  for(const [name,code,category,expectedState,failure] of cases){
    stage.run=async()=>{throw failure;};
    const id=await f.upload();await f.images.tick();
    const step=f.engine.list({operationId:'image:'+id}).items.find(s=>s.kind==='images.understanding')!,receipt=f.engine.failure(step.id)!;
+   assert.equal(step.state,expectedState,`${name} keeps its recovery state`);
    assert.equal(step.error,code,`${name} keeps its specific code`);
    assert.equal(receipt.category,category,`${name} keeps its retry category`);
    assert.equal(receipt.errorName,failure.name,`${name} persists the thrown error name`);

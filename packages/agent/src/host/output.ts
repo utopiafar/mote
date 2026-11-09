@@ -56,7 +56,7 @@ async function decide(evaluate: () => Promise<AgentAnswer>): Promise<HostOutputD
   try { return {kind: 'accepted', result: await evaluate()}; }
   catch (error) {
     if (!(error instanceof AgentResponseError)) throw error;
-    return {kind: 'rejected', reason: error.reason, feedback: error.message};
+    return {kind: 'rejected', reason: error.reason, feedback: error.message, ...(error.requiresToolUse ? {requiresToolUse: true} : {})};
   }
 }
 
