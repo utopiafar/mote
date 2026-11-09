@@ -8,7 +8,7 @@ import {FileProcessing} from './file-processing.js';
 import {processorSettingsFingerprint,processorContract} from './file-configuration.js';
 import type {AppliedFilePolicy} from './file-policy.js';
 import {ImageInputRegistry,ImageAttachmentIntake,installImageInputs,installImageSchema,type ImageInputRow,type ImageOriginal} from './image-inputs.js';
-import {DEFAULT_IMAGE_RECIPE,imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
+import {DEFAULT_IMAGE_RECIPE,ImageInterpretationError,imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
 import {linkOperationParent} from './operation-projection.js';
 import {imageOutput} from './evidence-image.js';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
@@ -71,7 +71,7 @@ export class ImageProcessing {
   for(const kind of ['ocr','understanding','derived'])this.unregister.push(engine.register({kind:'images.'+kind,pool:'images.'+kind,concurrency:()=>this.settings().concurrency,policy:kind==='ocr'?EXECUTION_POLICIES.localProcessing:kind==='understanding'?EXECUTION_POLICIES.modelCall:EXECUTION_POLICIES.deterministic,timeoutMs:()=>kind==='ocr'?this.processing.currentSettings().timeoutMs:kind==='derived'?900000:null,
    resourceKeys:step=>{const endpoint=this.processorEndpoint(step);return ['image-product:'+String(step.input.fingerprint),...(endpoint&&this.processorAdmission.resourceKey(endpoint)===this.processorAdmission.resourceKey(this.media.ocrEndpoint)?[this.processorAdmission.resourceKey(endpoint)]:[])];},validate:step=>this.valid(step),
    admit:step=>this.admit(step),execute:(step,signal)=>this.execute(step,signal),commit:(step,result)=>this.commit(step,result),project:step=>this.project(step),
-   classify:error=>error instanceof StoreError&&error.statusCode===507?new ExecutionFailure('blocked','storage_full'):error instanceof z.ZodError?new ExecutionFailure('permanent','invalid_image_product'):error instanceof StoreError&&[400,413,415,422].includes(error.statusCode)?new ExecutionFailure('permanent','unsupported_image'):new ExecutionFailure('permanent','image_processing_failed'),
+   classify:error=>error instanceof StoreError&&error.statusCode===507?new ExecutionFailure('blocked','storage_full'):error instanceof z.ZodError?new ExecutionFailure('permanent','invalid_image_product'):error instanceof ImageInterpretationError?new ExecutionFailure('permanent','invalid_image_product'):error instanceof StoreError&&[400,413,415,422].includes(error.statusCode)?new ExecutionFailure('permanent','unsupported_image'):new ExecutionFailure('permanent','image_processing_failed'),
   }));
  }
  owns(id:string){return Boolean(this.store.db.prepare('SELECT 1 FROM image_inputs WHERE capture_id=?').get(id));}

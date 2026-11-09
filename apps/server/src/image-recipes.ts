@@ -11,6 +11,12 @@ export const imageInterpretationSchema=z.object({
  regions:z.array(z.object({x:z.number().int().nonnegative(),y:z.number().int().nonnegative(),width:z.number().int().positive(),height:z.number().int().positive(),description:z.string().max(4000)}).strict()).max(32).default([]),
 }).strict();
 export type ImageInterpretation=z.infer<typeof imageInterpretationSchema>;
+/** The model completed its harness run but its answer was not the required
+ * interpretation JSON. This is a product-output failure, distinct from a
+ * provider or transport failure. */
+export class ImageInterpretationError extends Error {
+ constructor(message='The selected model did not return a valid image interpretation JSON object.'){super(message);this.name='ImageInterpretationError';}
+}
 export type ImageStageContext={
  record:CaptureRecord;hash:string;mimeType:string;dependencies:Readonly<Record<string,unknown>>;signal:AbortSignal;
  readImage(input:Omit<ImageReadInput,'id'>):Promise<ImageReadResult>;

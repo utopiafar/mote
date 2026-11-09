@@ -12,6 +12,13 @@ async function fixture(t){
  const open=async()=>{const bridge=await startBridge(reader,{question:'Generated regions'},40);t.after(()=>bridge.close());await call(bridge,'timeline',{});await call(bridge,'evidence',{ids:[record.id,alias.id]});return bridge;};
  return {open,alias,get bytes(){return bytes;},set bytes(value){bytes=value;},set allowed(value){allowed=value;},set deleted(value){deleted=value;},get reads(){return reads;}};
 }
+test('a model placeholder region without a pinned hash reads the full authorized image',async t=>{
+ const f=await fixture(t),b=await f.open();
+ const result=await call(b,'read_image',{id:record.id,attachmentId:'',view:'image',expectedImageSha256:'',region:{x:0,y:0,width:1,height:1}});
+ assert.equal(result.status,200);
+ assert.ok(result.body.image,'the full image is delivered instead of rejecting the optional placeholder crop');
+ assert.equal(result.body.imageView.region,null);
+});
 test('metadata, regions, aliases and identical pixels retain current and first source geometry',async t=>{
  const f=await fixture(t),b=await f.open(),expectedImageSha256=digest(f.bytes),region={x:0,y:0,width:8,height:8};
  const meta=await call(b,'read_image',{id:record.id,view:'metadata'});assert.equal(meta.status,200);assert.equal(meta.body.image,undefined);assert.equal(meta.body.imageBudget.remainingPayloads,4);assert.equal(meta.body.imageView.original.sha256,expectedImageSha256);

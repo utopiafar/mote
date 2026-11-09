@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
-import {normalizeOptionalToolArguments} from '../dist/tools/argument-normalization.js';
+import {normalizeImageReadArguments,normalizeOptionalToolArguments} from '../dist/tools/argument-normalization.js';
 import {catalogRequest} from './catalog-request.mjs';
 
 const schema = {
@@ -50,6 +50,21 @@ test('required empty values and unknown keys are never dropped', () => {
 test('non-empty values are preserved for the existing validators', () => {
   const args = {query: 'generated', after: 'not-a-time', source: 'not-a-source', cursor: 'not-a-token', limit: 0};
   assert.deepEqual(normalizeOptionalToolArguments(schema, args), args);
+});
+
+test('an unpinned read_image placeholder region is treated as an omitted crop', () => {
+  const placeholder = {id: 'generated-image', attachmentId: '', view: 'image', expectedImageSha256: '', region: {x: 0, y: 0, width: 1, height: 1}};
+  assert.deepEqual(normalizeImageReadArguments(placeholder), {id: 'generated-image', attachmentId: '', view: 'image', expectedImageSha256: ''});
+  const nullRegion = {id: 'generated-image', region: null};
+  assert.deepEqual(normalizeImageReadArguments(nullRegion), {id: 'generated-image'});
+  const pinned = {id: 'generated-image', expectedImageSha256: 'a'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}};
+  assert.equal(normalizeImageReadArguments(pinned), pinned, 'a valid pinned crop is preserved');
+  const metadata = {id: 'generated-image', view: 'metadata', expectedImageSha256: 'a'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}};
+  assert.deepEqual(normalizeImageReadArguments(metadata), {id: 'generated-image', view: 'metadata', expectedImageSha256: 'a'.repeat(64)});
+  const malformed = {id: 'generated-image', expectedImageSha256: 'not-a-hash', region: {x: 1, y: 2, width: 3, height: 4}};
+  assert.equal(normalizeImageReadArguments(malformed), malformed, 'a nonempty malformed hash still reaches the validator');
+  const unsupported = {id: 'generated-image', region: {x: 0, y: 0, width: 2, height: 2}};
+  assert.equal(normalizeImageReadArguments(unsupported), unsupported, 'an unpinned non-placeholder crop still reaches the validator');
 });
 
 const record = {
