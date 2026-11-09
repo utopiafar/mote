@@ -186,12 +186,19 @@ export async function setDevLogRetentionDefaults(p) {
   const summary = limits => ({ maxFileMiB: limits.logMaxMiB, maxFiles: limits.logMaxFiles });
   return { profile: p.profile, changed, before: summary(before), after: summary(after), restartRequired: true };
 }
+const proxyEnvironmentNames = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'];
+// Only proxy variables already present in the source environment are forwarded; system
+// settings and shell startup files are never read.
+export function inheritedProxyEnvironment(env = process.env) {
+  return Object.fromEntries([...proxyEnvironmentNames.flatMap(name => [name, name.toLowerCase()]), 'NO_PROXY', 'no_proxy']
+    .filter(name => env[name] !== undefined).map(name => [name, env[name]]));
+}
 export function isolatedEnvironment(p, extra = {}) {
   const env = { ...process.env }, secretEnv = configSecretEnvironment(p.savedDocument ?? {}, env);
   for (const key of Object.keys(env)) if (key.startsWith('MOTE_') || key.startsWith('COMPOSE_') || key.startsWith('TUNNEL_') || key.startsWith('CLOUDFLARED_') || key === 'NO_AUTOUPDATE') delete env[key];
   const result = { ...env, ...secretEnv, NODE_USE_ENV_PROXY: '1', NODE_ENV: p.profile === 'prod' ? 'production' : p.profile === 'test' ? 'test' : 'development',
     MOTE_CONFIG_FILE: p.configFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN: p.env.MOTE_TOKEN, ...extra };
-  for (const name of ['HTTP_PROXY', 'HTTPS_PROXY']) {
+  for (const name of proxyEnvironmentNames) {
     const lower = name.toLowerCase(), value = result[lower] || result[name];
     if (value !== undefined || result[lower] !== undefined) result[name] = result[lower] = value ?? '';
   }
@@ -466,12 +473,14 @@ export async function restoreProfile(p, backup) {
     await rm(stage, { recursive: true, force: true });
   }
 }
-export function launchdXml(p, nodePath = process.execPath) {
+export function launchdXml(p, nodePath = process.execPath, env = process.env) {
   const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
   const label = `dev.mote.central.${p.profile}.${p.project.split('-').at(-1)}`;
   const args = [resolve(nodePath), join(repository, 'scripts/mote.mjs'), 'run', '--profile', p.profile, '--home', p.home];
   const strings = args.map(value => `<string>${escape(value)}</string>`).join('');
-  return { label, contents: `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${strings}</array><key>WorkingDirectory</key><string>${escape(repository)}</string><key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer><key>ProcessType</key><string>Background</string><key>Umask</key><integer>63</integer><key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string></dict></plist>\n` };
+  const proxyEnvironment = inheritedProxyEnvironment(env);
+  const environment = Object.keys(proxyEnvironment).length ? `<key>EnvironmentVariables</key><dict>${Object.entries(proxyEnvironment).map(([name, value]) => `<key>${escape(name)}</key><string>${escape(value)}</string>`).join('')}</dict>` : '';
+  return { label, contents: `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${strings}</array><key>WorkingDirectory</key><string>${escape(repository)}</string>${environment}<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer><key>ProcessType</key><string>Background</string><key>Umask</key><integer>63</integer><key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string></dict></plist>\n` };
 }
 
 export async function updateProfileConfiguration(p, change) {

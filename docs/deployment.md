@@ -43,9 +43,9 @@ node scripts/mote.mjs stop --profile prod --home "$HOME/Library/Application Supp
 
 `start` 启动独立后台进程，并等待经过认证的健康检查；`run` 在前台等待，适合进程管理器。`stop` 只向带有本次唯一进程标记的托管进程发送 SIGTERM，拒绝误杀复用 PID 的其它进程。端口占用会报错，不会停止占用者。普通 `start` 不提供系统级崩溃重启；长期部署使用下面的 launchd 或 Docker。
 
-原生启动脚本（包括 `scripts/dev-server.mjs`）为子进程设置 `NODE_USE_ENV_PROXY=1`，Node 下载请求会使用启动环境里的 `HTTP_PROXY` / `HTTPS_PROXY`（或小写同名变量）与 `NO_PROXY`。无需在每个 `mote.yaml` 中单独开启；代理地址仍由启动环境配置。
+原生启动脚本（包括 `scripts/dev-server.mjs`）为子进程设置 `NODE_USE_ENV_PROXY=1`，并原样转发启动环境里的 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`（或小写同名变量）与 `NO_PROXY`。Node 下载请求在 `NODE_USE_ENV_PROXY=1` 下使用 `HTTP_PROXY` / `HTTPS_PROXY` 与 `NO_PROXY`；无需在每个 `mote.yaml` 中单独开启，代理地址仍由启动环境配置。
 
-启动环境保留原有绕过规则并补齐 IPv4/IPv6 loopback，统一大小写代理变量。本机语音、图像处理和 worker 健康探测另使用强制直连传输，即使直接启动中央并遗漏 `NO_PROXY`，也不会通过环境代理发送本机处理原件或授权头。
+启动环境保留原有绕过规则并补齐 IPv4/IPv6 loopback，统一大小写代理变量。`launchd` 生成的 plist 会把生成时进程环境中已存在的代理变量原样写入 `EnvironmentVariables`，缺失的变量不会补造；运行仍由 `mote run` 补齐 `NODE_USE_ENV_PROXY=1`。本机语音、图像处理和 worker 健康探测另使用强制直连传输，即使直接启动中央并遗漏 `NO_PROXY`，也不会通过环境代理发送本机处理原件或授权头。
 
 原生 stdout/stderr 先经监督进程白名单化：保留固定启动/停止事件，未知 SDK 输出只记流类型与字节数，再写入有上限的 `central.log`。DEV 默认每份 100 MiB、总共 3 份，其它 profile 默认每份 2 MiB、3 份；包括单次大输出与反复重启。中央结构化诊断独立写入 `diagnostics.directory`，使用同样的容量配置，并默认限制 2000 条记录。两组日志各自轮转，所以 DEV 默认合计最多 600 MiB；容量不保证固定保留时长。省略 `diagnostics.debug` 时 Dev 默认开启调试级别，其它 Profile 默认关闭；显式 `false` 或 `silent` 保留。开关、级别与 trace 经校验热应用，目录与日志容量修改需重启。
 
