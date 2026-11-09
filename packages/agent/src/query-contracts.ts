@@ -38,6 +38,10 @@ export interface QueryRequest {
 export interface QueryExecutionContext {
   /** Internal adapter selection for the trusted benchmark arm. */
   hostContextToolMode?:'all-native'|'catalog';
+  /** Host-only exact runtime tool surface for one bounded task (for example an
+   * image pass that only needs read_image). Unknown names are ignored and no
+   * catalog or control tool is implied. Never parsed from model input. */
+  hostToolSelection?:readonly string[];
   /** Host-local task contributions and exact selection; never parsed from model or query text. */
   taskRegistry?:import('./tasks/registry.js').TaskRegistry;
   taskSelection?:import('./tasks/descriptor.js').TaskSelection;

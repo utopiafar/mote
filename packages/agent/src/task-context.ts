@@ -35,6 +35,10 @@ export function taskProfile(input:QueryInput){return prepareTaskContext(input).p
 export function taskTools(input:QueryInput):string[]{
   const profile=taskProfile(input);
   const controls=(input.hostControlChannel?.definitions??[]).map(tool=>tool.name);
+  if(input.hostToolSelection!==undefined){
+    const available=new Set(contextToolDefinitions(input).map(([name])=>name));
+    return [...new Set(input.hostToolSelection.filter(name=>available.has(name)))];
+  }
   if(profile.retrieval==='none')return controls;
   if(input.evidenceIds!==undefined)return [...(input.skill==='calendar-extraction'&&input.actionCatalog?['evidence','action_catalog']:['evidence']),...(input.evidenceReadRanges?.length?['context_evidence']:[]),...(input.processingImages?.length&&imageToolAvailable(input)?['read_image']:[]),...controls];
   return contextToolDefinitions(input).map(([name])=>name).filter(name=>name!=='action_catalog');
@@ -42,6 +46,7 @@ export function taskTools(input:QueryInput):string[]{
 /** Internal dispatch keeps every authorized capability; runtime declarations
  * use taskTools, which exposes only the native surface plus catalog controls. */
 export function dispatchTools(input:QueryInput):string[]{
+ if(input.hostToolSelection!==undefined)return taskTools(input);
  if(taskProfile(input).retrieval!=='archive'||input.evidenceIds!==undefined)return taskTools(input);
  return registeredContextToolDefinitions(input).map(([name])=>name).filter(name=>name!=='action_catalog');
 }

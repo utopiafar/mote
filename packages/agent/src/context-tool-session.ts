@@ -618,6 +618,14 @@ export async function createContextToolSession(
           const {attachmentId:_attachmentId,...direct}=args;
           args=direct;
         }
+        // A direct image's exact original hash is already host-known. Bind a
+        // requested crop to that pin instead of rejecting the only authorized
+        // read because the model omitted the redundant hash. Non-direct images
+        // keep the fail-closed requirement to present metadata first.
+        if(args.region!==undefined&&(args.expectedImageSha256===undefined||args.expectedImageSha256===null||typeof args.expectedImageSha256==='string'&&args.expectedImageSha256.trim()==='')){
+          const image=directImages.find(image=>image.id===args.id);
+          if(image)args={...args,expectedImageSha256:image.hash};
+        }
         const parsed=imageReadSchema.safeParse(args);
         if(!parsed.success)throw new ContextToolError('invalid_image_region','Use the declared image arguments. Regions require expectedImageSha256, integer original coordinates and sides of 1–2048.','correct_arguments',{maxRegionSide:IMAGE_REGION_MAX_SIDE});
         const selection=parsed.data;

@@ -80,6 +80,8 @@ test('read_image absorbs the interpretation placeholder and directImages echoes'
   assert.deepEqual(normalizeImageReadArguments(describedCrop), {id: 'generated-image', expectedImageSha256: 'a'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}}, 'annotation keys are removed while valid geometry is preserved');
   const hashAlias = {id: 'generated-image', hash: 'b'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}};
   assert.deepEqual(normalizeImageReadArguments(hashAlias), {id: 'generated-image', expectedImageSha256: 'b'.repeat(64), region: {x: 1, y: 2, width: 3, height: 4}}, 'a crop hash alias becomes the declared pin');
+  for (const view of ['full', 'original'])
+    assert.deepEqual(normalizeImageReadArguments({id: 'generated-image', view}), {id: 'generated-image'}, `${view} is the declared full-image view`);
   const echoed = {id: 'generated-image', name: 'Generated image', mimeType: 'image/png', hash: 'a'.repeat(64), sizeBytes: 7};
   assert.deepEqual(normalizeImageReadArguments(echoed), {id: 'generated-image'}, 'directImages metadata is not a read_image argument');
 });
