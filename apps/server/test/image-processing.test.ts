@@ -27,7 +27,7 @@ import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-plann
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {processorContract,processorSettingsFingerprint} from '../src/file-configuration.js';
-import {DEFAULT_IMAGE_RECIPE} from '../src/image-recipes.js';
+import {DEFAULT_IMAGE_RECIPE,ImageInterpretationError} from '../src/image-recipes.js';
 import {generatedAppleDouble} from './fixtures/appledouble.js';
 import {isAppleDouble} from '../src/appledouble.js';
 import {Operations} from '../src/operations.js';
@@ -262,9 +262,33 @@ test('the real harness adapter requires a pixel read, scopes evidence and meters
   return {answer:invalid?'invalid generated JSON':JSON.stringify({text:'Generated visual observation with uncertain ownership',regions:[]}),citations:[],trace:[],runId:randomUUID()};
  }})});
  const input={record,ocr:{durationMs:0,segments:[{startMs:0,endMs:0,text:poison}]},original:{hash:sha256(f.bytes),mimeType:'image/png',sizeBytes:f.bytes.length,read:async function*(){yield f.bytes;}},signal:new AbortController().signal,operationId:'image:'+id,readImage:(args:import('@mote/shared').ImageReadInput)=>imageOutput(f.bytes,'image/png',args,()=>true)};
- await assert.rejects(adapter.run(input),{statusCode:422});pixels=true;invalid=true;await assert.rejects(adapter.run(input),SyntaxError);invalid=false;assert.match((await adapter.run(input)).text,/uncertain ownership/);
+ await assert.rejects(adapter.run(input),{statusCode:422});pixels=true;invalid=true;await assert.rejects(adapter.run(input),{name:'ImageInterpretationError'});invalid=false;assert.match((await adapter.run(input)).text,/uncertain ownership/);
  const receipts=f.store.db.prepare('SELECT json FROM model_usage ORDER BY rowid').all().map(r=>JSON.parse(String(r.json)));
  assert.deepEqual(receipts.map(r=>r.status),['failed','failed','completed']);assert.ok(receipts.every(r=>r.attribution.moduleId==='images'));
+});
+
+test('the image harness repairs a non-JSON interpretation through host validation',async t=>{
+ const f=await fixture(t),id=await f.upload(),record=f.store.evidence([id])[0],settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'generated-model',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',headers:{},extraBody:{},maxTokens:8192,agentTimeoutMs:2000,modelRequestTimeoutMs:1000,reasoningEffort:'auto',allowUnauthenticatedLocal:true};
+ let issue:unknown,accepted:unknown;
+ const adapter=imageUnderstanding({selection:()=>({fingerprint:'generated-model',configured:true,receipt:{model:settings.model},settings}),metered:async(_settings,_attribution,task)=>task(()=>{}),factory:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+  issue=await input.validateOutput?.({answer:'not interpretation JSON'} as never);
+  accepted=await input.validateOutput?.({answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]})} as never);
+  await reader.readImage!({id});
+  return {answer:JSON.stringify({text:'Generated repaired interpretation',regions:[]}),citations:[],trace:[],runId:randomUUID()};
+ }})});
+ const input={record,original:{hash:sha256(f.bytes),mimeType:'image/png',sizeBytes:f.bytes.length,read:async function*(){yield f.bytes;}},signal:new AbortController().signal,operationId:'image:'+id,readImage:(args:import('@mote/shared').ImageReadInput)=>imageOutput(f.bytes,'image/png',args,()=>true)};
+ const result=await adapter.run(input);
+ assert.deepEqual(issue,{code:'image_interpretation',feedback:'The image interpretation answer is not valid JSON. Return only one JSON object string in answer with exactly a nonempty text string and optional regions; each region needs integer x/y/width/height in original encoded pixels and a description. Do not include Markdown fences or prose.'});
+ assert.equal(accepted,undefined);
+ assert.equal(result.text,'Generated repaired interpretation');
+});
+
+test('invalid image interpretation output is classified as invalid_image_product',async t=>{
+ const f=await fixture(t),id=await f.upload();
+ f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}).run=async()=>{throw new ImageInterpretationError();};
+ await f.images.tick();
+ const step=f.engine.list({operationId:'image:'+id}).items.find(s=>s.kind==='images.understanding')!;
+ assert.equal(step.state,'failed');assert.equal(step.error,'invalid_image_product');
 });
 
 

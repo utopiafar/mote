@@ -8,7 +8,7 @@ import {CONTEXT_TOOLS} from './context-tools.js';
 import {pinContextTools,contextToolSnapshot,releaseContextTools,hasPinnedContextTools,CAPABILITY_TOOLS} from './tool-contributions.js';
 import type {HostSessionPort,HostReadOperation} from './tools/host-session.js';
 import {validateCapabilityArguments} from './capability-schema.js';
-import {normalizeOptionalToolArguments} from './tools/argument-normalization.js';
+import {normalizeImageReadArguments,normalizeOptionalToolArguments} from './tools/argument-normalization.js';
 import {toolInputSchema} from './tools/runtime-schema.js';
 import {rememberEvidence,evidenceLayers,copyEvidencePresentation,snapshotEvidenceLedger,restoreEvidenceLedger} from './evidence-ledger.js';
 import {projectEvidence as project} from './evidence-receipt.js';
@@ -299,6 +299,7 @@ export async function createContextToolSession(
     let tool=request.tool,args:Record<string,unknown>={},metadataOnly=false,dispatchedViaCatalog=false,disclosureDependencies:unknown,disclosureSourceContextDependencies:unknown;
     try {
       args = normalizeOptionalToolArguments(argumentSchemas.get(tool), await request.readArguments());
+      if (tool === 'read_image') args = normalizeImageReadArguments(args);
 
       // Adapter-only receipt; absent from every model tool declaration. The
       // authenticated adapter strips the opaque token before returning a tool.
