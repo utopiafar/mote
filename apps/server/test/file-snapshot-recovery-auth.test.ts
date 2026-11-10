@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
+import {FILE_MAX_BYTES,FILE_PART_BYTES,type FileRevision} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {sha256} from '../src/store.js';
@@ -116,10 +116,17 @@ test('source revocation, reference retention, head replacement and forgotten fil
 test('snapshot restoration verifies exact manifest, bounded bytes and content hash before granting input',async t=>{
  const f=await fixture(t),bytes=Buffer.from('Generated digest validation'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.expire(ack.id);
  assert.equal((await f.begin({...input,sizeBytes:input.sizeBytes+1})).statusCode,409);assert.equal((await f.begin({...input,item:{...input.item,title:'Changed metadata'}})).statusCode,409);
- assert.equal((await f.begin({...input,sizeBytes:16*1024*1024+1})).statusCode,400);assert.equal((await f.begin({...input,sha256:'invalid'})).statusCode,400);
+ assert.equal((await f.begin({...input,sizeBytes:FILE_MAX_BYTES+1})).statusCode,400);assert.equal((await f.begin({...input,sha256:'invalid'})).statusCode,400);
  const wrongHash='a'.repeat(64);assert.equal((await f.begin({...input,sha256:wrongHash,item:{...input.item,document:{...input.item.document,fileIndex:{...input.item.document!.fileIndex!,contentVersion:wrongHash}}}})).statusCode,409);
  const session=(await f.begin(input)).json();const undersized=await f.request('PUT',`/api/file-sync/v1/uploads/${session.uploadId}/parts/0`,bytes.subarray(1),{...f.headers,'content-type':'application/octet-stream'});assert.equal(undersized.statusCode,400);
  const wrong=Buffer.alloc(bytes.length,7);await f.sendParts(session.uploadId,wrong);const rejected=await f.commit(session.uploadId);assert.equal(rejected.statusCode,409,rejected.body);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs').get()!.n,0);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_versions').get()!.n,1);
+});
+
+test('snapshot upload accepts a processing input larger than 16 MiB within the file limit',async t=>{
+ const f=await fixture(t),bytes=Buffer.alloc(16*1024*1024+4096,0x47),input=manifest(bytes,'generated-large-recording');
+ const {ack}=await f.upload(input,bytes);
+ assert.equal(ack.sizeBytes,bytes.length);
+ assert.deepEqual(Buffer.concat([...f.node.files.processingBytes(ack.id)]),bytes);
 });
 
 test('snapshot recovery is admitted beyond 64 unfinished uploads and still verifies exact bytes',async t=>{

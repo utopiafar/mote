@@ -17,7 +17,7 @@ test('ASR shutdown reaps its actual normalization subprocess after recognizer ex
 async function fixture(t:Parameters<Parameters<typeof test>[1]>[0]){
  const directory=await mkdtemp(join(tmpdir(),'mote-prepare-'));t.after(()=>rm(directory,{recursive:true,force:true}));await mkdir(join(directory,'scripts'));
  const reservation=createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');const port=(reservation.address() as {port:number}).port;await new Promise<void>(resolve=>reservation.close(()=>resolve()));
- class Assets extends MediaAssets { installed=new Set<MediaRole>();installs=0;override ready(role:MediaRole){return this.installed.has(role);}override async installAsync(role:MediaRole,_source?:'auto'|'official'|'mirror',signal?:AbortSignal){signal?.throwIfAborted();this.installs++;this.installed.add(role);}}
+ class Assets extends MediaAssets { installed=new Set<MediaRole>();installs=0;sources:(('auto'|'official'|'mirror')|undefined)[]=[];override ready(role:MediaRole){return this.installed.has(role);}override async installAsync(role:MediaRole,source?:'auto'|'official'|'mirror',signal?:AbortSignal){signal?.throwIfAborted();this.installs++;this.sources.push(source);this.installed.add(role);}}
  const assets=new Assets(join(directory,'models'));
  const media={modelDirectory:assets.root,python:process.execPath,workerToken:'generated-worker-token',ocrPort:port,asrPort:port,ocrEndpoint:`http://127.0.0.1:${port}/ocr`,asrEndpoint:`http://127.0.0.1:${port}/transcribe`};
  return {directory,assets,media};
@@ -46,6 +46,10 @@ test('native start failure is not ready, retry runs an owned authenticated HTTP 
 test('Docker prepares model files and checks its existing sidecar without invoking native dependency installation',async t=>{
  const f=await fixture(t);let native=0;const preparation=new MediaPreparation({runtime:'docker',...f,prepare:async()=>{native++;throw Error('must not run');},fetch:async()=>Response.json({asr:true,diarization:true})});t.after(()=>preparation.close());
  await preparation.start('dialogue');assert.equal((await settled(preparation,'dialogue')).state,'ready');assert.equal(native,0);assert.equal(f.assets.installs,1);
+});
+test('preparation uses the automatic model source so an unreachable official host can fall back to the mirror',async t=>{
+ const f=await fixture(t),preparation=new MediaPreparation({runtime:'docker',...f,fetch:async()=>Response.json({asr:true,diarization:true})});t.after(()=>preparation.close());
+ await preparation.start('dialogue');assert.equal((await settled(preparation,'dialogue')).state,'ready');assert.deepEqual(f.assets.sources,['auto']);
 });
 test('cancelling startup waits for its owned unready worker to exit before reporting cancelled',async t=>{
  const f=await fixture(t);await writeFile(join(f.directory,'scripts','ocr-server.py'),"const http=require('node:http');http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({ocr:false}));}).listen(Number(process.argv[process.argv.indexOf('--port')+1]),'127.0.0.1');");

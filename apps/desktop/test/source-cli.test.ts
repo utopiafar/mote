@@ -79,9 +79,8 @@ it('CLI refuses snapshot bytes without explicit consent before creating an outbo
 },15000);
 
 
-it('CLI resumes a persisted directory checkpoint after a generated file exceeds the per-pass byte budget',async()=>{
+it('CLI drains a directory beyond the per-pass byte budget in one non-watch invocation',async()=>{
  await mkdir(join(root,'selected'));await writeFile(join(root,'selected','a.md'),Buffer.alloc(17*1024*1024+19,65));await writeFile(join(root,'selected','b.md'),'Generated file after large snapshot');
- const first=await run('dev');expect(first.code).toBe(0);expect(first.output).toContain('Received 1 changed');expect(items).toHaveLength(1);
- const second=await run('dev');expect(second.code).toBe(0);expect(second.output).toContain('Received 1 changed');expect(items).toHaveLength(2);expect(new Set(items.map(item=>item.title))).toEqual(new Set(['a.md','b.md']));
+ const imported=await run('dev');expect(imported.code).toBe(0);expect(imported.output).toContain('Received 2 changed');expect(items).toHaveLength(2);expect(new Set(items.map(item=>item.title))).toEqual(new Set(['a.md','b.md']));
  const reconciled=await run('dev');expect(reconciled.code).toBe(0);expect(reconciled.output).toContain('Received 0 changed');expect(items).toHaveLength(2);
 },20000);

@@ -4,7 +4,7 @@ import { hostname } from 'node:os';
 import { apiClient, resolvedConnection } from './client.js';
 import { SourceSync, sourceHash } from '../apps/desktop/src/source-sync.js';
 import { scanSourceFiles } from '../apps/desktop/src/source-files.js';
-import { DEFAULT_SOURCE_OPTIONS, normalizeSourceOptions, redactSourceText, type SourceDefinition, type SourceRequest } from '../apps/desktop/src/source-types.js';
+import { DEFAULT_SOURCE_OPTIONS, normalizeSourceOptions, redactSourceText, type LocalFileCheckpoint, type SourceDefinition, type SourceRequest } from '../apps/desktop/src/source-types.js';
 import {initializeCliIngressState} from './cli-ingress-state.js';
 const args = process.argv.slice(2);
 const usage = 'Usage: npm run import:files -- --root /explicit/folder-or-file [--extensions .md,.txt,.json,.csv,.ics] [--retention snapshot|reference|archive] [--initial-sync all|new_only] [--exclude relative/path,...] [--redact-literal exact-text] [--track-deletions] [--allow-transient-upload] [--dry-run] [--watch]\nOnly explicitly selected files; no symlinks or hidden traversal. Reference sends metadata only; snapshot sends complete files for central processing then deletes temporary originals; archive retains originals. Snapshot transmission requires --allow-transient-upload. Deletion tracking is opt-in; historical versions remain. Select a node with MOTE_CONFIG_FILE pointing to mote.yaml or the profile CLI.';
@@ -66,23 +66,36 @@ try {
     await engine.ensurePolicy(policy);await engine.ensureAdapterVersion(2);
   }
   async function scan(): Promise<void> {
-    const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined, engine?.fileCheckpoint());
-    let count = result.items.length;
-    if (request && engine) {
-      const prepare = async () => {
-      const registered = await request('/api/sources', source, 'POST', controller.signal) as { id?: unknown };
+    const drain = !values.has('--watch');
+    let checkpoint: LocalFileCheckpoint | undefined, total = 0, skipped = 0, complete = false, passes = 0;
+    const prepare = async () => {
+      const registered = await request!('/api/sources', source, 'POST', controller.signal) as { id?: unknown };
       if (registered?.id !== id) throw new Error('Source registration ACK mismatch');
       // Explicit CLI options are the local owner's desired retention. Never override central enabled/pause.
-      const patched = await request('/api/sources/' + id, { retention: options.retention, initialSync:options.initialSync, name: source.name }, 'PATCH', controller.signal) as { id?: unknown };
+      const patched = await request!('/api/sources/' + id, { retention: options.retention, initialSync:options.initialSync, name: source.name }, 'PATCH', controller.signal) as { id?: unknown };
       if (patched?.id !== id) throw new Error('Source configuration ACK mismatch');
-      };
-      // SourceSync checks every v2 receipt before removing a pending revision.
-      const synced = await engine.syncScan(result, options.trackDeletions, source, request, controller.signal, prepare);
-      count = synced.changes; const state = synced.state;
-      if (state === 'paused') { console.info('Central source is paused; pending revisions retained locally.'); return; }
-
+    };
+    // A scan bounds memory to one shard; the CLI must keep scanning until the
+    // catalog pass is complete instead of leaving the rest for a later run.
+    for (;;) {
+      passes++;
+      const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined, engine?.fileCheckpoint() ?? checkpoint);
+      checkpoint = result.checkpoint as LocalFileCheckpoint | undefined;
+      let count = result.items.length;
+      skipped += result.skipped;
+      if (request && engine) {
+        // SourceSync checks every v2 receipt before removing a pending revision.
+        const synced = await engine.syncScan(result, options.trackDeletions, source, request, controller.signal, prepare);
+        count = synced.changes;
+        if (synced.state === 'paused') { console.info('Central source is paused; pending revisions retained locally.'); return; }
+      }
+      total += count;
+      complete = result.complete;
+      if (complete || !drain) break;
+      console.info(`${request ? 'Received' : 'Would send'} ${count} changed files; skipped ${result.skipped}; directory pass ${passes} incomplete, continuing.`);
+      if (passes >= 10_000) throw new Error('Directory sync did not converge; preserve local state and inspect the selected path');
     }
-    console.info(`${request ? 'Received' : 'Would send'} ${count} changed files; skipped ${result.skipped}; deletion scan ${result.complete && options.trackDeletions ? 'enabled' : 'not applied'}.`);
+    console.info(`${request ? 'Received' : 'Would send'} ${total} changed files; skipped ${skipped}; deletion scan ${complete && options.trackDeletions ? 'enabled' : 'not applied'}${complete ? '' : '; directory scan incomplete'}.`);
   }
   do {
     try { await scan(); }
