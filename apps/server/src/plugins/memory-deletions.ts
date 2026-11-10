@@ -8,7 +8,7 @@ import {StoreError,sha256} from '../store.js';
 import {memoryDeletionDependencyBytes} from '../storage-ledger.js';
 import {memoryRelationSchema,type Memory} from '../memory-schema.js';
 
-export const memoryDeletionSchema=z.object({id:z.string().uuid(),memoryId:z.string().uuid(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),deletedAt:z.string().datetime({offset:true}),originKeys:z.array(z.string().regex(/^(bytes|event|source):[a-f0-9]{64}$/)).min(1).max(60000),lineageKeys:z.array(z.string().regex(/^source:[a-f0-9]{64}$/)).max(20000),originalTexts:z.array(z.string().max(12000)).max(100),dependencies:z.array(z.string().uuid()).min(1).max(20000),derivationSourceIds:z.array(sourceIdSchema).max(40000),sourceLineageComplete:z.boolean()}).strict();
+export const memoryDeletionSchema=z.object({id:z.string().uuid(),memoryId:z.string().uuid(),title:z.string(),statement:z.string(),uncertainty:z.string(),deletedAt:z.string().datetime({offset:true}),originKeys:z.array(z.string().regex(/^(bytes|event|source):[a-f0-9]{64}$/)).min(1).max(60000),lineageKeys:z.array(z.string().regex(/^source:[a-f0-9]{64}$/)).max(20000),originalTexts:z.array(z.string().max(12000)).max(100),dependencies:z.array(z.string().uuid()).min(1).max(20000),derivationSourceIds:z.array(sourceIdSchema).max(40000),sourceLineageComplete:z.boolean()}).strict();
 type Rejection=z.infer<typeof memoryDeletionSchema>;
 type Candidate={title:string;statement:string;uncertainty:string;evidenceIds:string[];evidence?:{id:string;quote?:string;image?:{originalSha256:string;viewId:string}}[]};
 /** Canonical original reads stay a host port; the ledger never reaches through

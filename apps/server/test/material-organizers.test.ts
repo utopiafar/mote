@@ -191,7 +191,61 @@ test('real FileStore original stays pinned while processing and late attachment 
   assert.equal(corrected.provenance?.document?.recordedAt,at(-86_400));
 });
 
-test('coding session keeps the newest 2000 complete JSON events and declares older coverage partial',async t=>{
+test('provider transcripts beyond the old segment cap remain complete and losslessly blocked',async t=>{
+  const {store,sources,files,materials,organizers}=fixture(t);
+  sources.register({id:'fixture-long-transcript',name:'Generated long transcript',kind:'local-files',deviceId:'fixture-device',platform:'import',retention:'archive'});
+  const bytes=Buffer.from('Generated transcript original'),hash=sha256(bytes);
+  const upload=files.begin({sourceId:'fixture-long-transcript',previousRevision:null,item:{externalId:'long-recording',revision:'v1',observedAt:at(0),title:'Generated long recording',text:'',kind:'file',layer:'original',mimeType:'audio/wav'},relativePath:'generated-long.wav',sizeBytes:bytes.length,sha256:hash},()=>{});
+  files.part(upload.uploadId,0,bytes,()=>{});const receipt=await files.commit(upload.uploadId,()=>{});
+  await organizers.tick(20);
+  const artifactId=randomUUID();
+  store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifactId,receipt.id,'transcript',at(1),'fixture',JSON.stringify({complete:true,coverage:'full',providerSupplied:true}));
+  store.db.exec('BEGIN IMMEDIATE');
+  try{
+    const insert=store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,start_ms,end_ms,text,metadata) VALUES(?,?,?,?,?,?,?)');
+    for(let index=0;index<19992;index++)insert.run(randomUUID(),artifactId,receipt.id,index*1000,index*1000+1000,index===19991?'Generated final transcript segment':`Generated transcript segment ${index}`,'{}');
+    store.db.exec('COMMIT');
+  }catch(error){if(store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}
+  // Each fixture chunk is one insert and therefore one change. Collapse that
+  // construction backlog to the job completion change this test exercises.
+  store.db.prepare("UPDATE settings SET value=CAST((SELECT max(seq) FROM changes) AS TEXT) WHERE key='material-organizer-cursor'").run();
+  store.db.prepare("UPDATE file_jobs SET state='succeeded' WHERE capture_id=?").run(receipt.id);
+  await organizers.tick(20);
+  const material=materials.get(materialId('fixture-long-transcript','long-recording'))!;
+  assert.ok(material);assert.equal(material.coverage.state,'complete');
+  assert.ok(material.blockCount>19991,'every transcript segment is published rather than dropped at the old limit');
+  assert.match(materials.block(material.ref,material.blockCount-2)!.block.text,/Generated final transcript segment/);
+  assert.ok(!material.fidelity.limitations?.includes('recording_segment_limit'));
+});
+
+test('notes keep every attachment beyond the old 2000-row attachment projection',async t=>{
+  const {store,materials,organizers}=fixture(t);
+  const captureId=randomUUID(),createdAt=at(0);
+  await store.ingest({id:captureId,deviceId:'fixture-device',deviceName:'Generated device',platform:'import',source:'note',capturedAt:createdAt,durationMs:0,ocrText:'Generated note with many attachments'});
+  const asset=store.assets.put(Buffer.from('G')),hash=asset.hash,now=new Date().toISOString();
+  store.db.prepare('INSERT OR IGNORE INTO file_blobs(hash,bytes) VALUES(?,?)').run(hash,1);
+  store.db.exec('BEGIN IMMEDIATE');
+  try{
+    for(let index=0;index<2001;index++){
+      const id=randomUUID(),value={id,hash,name:`generated-${index}.txt`,relativePath:`generated/${index}.txt`,mimeType:'text/plain',sizeBytes:1,createdAt:now};
+      store.db.prepare('INSERT INTO archived_files(id,hash,json) VALUES(?,?,?)').run(id,hash,JSON.stringify(value));
+      store.db.prepare('INSERT INTO capture_files(capture_id,file_id) VALUES(?,?)').run(captureId,id);
+    }
+    store.db.exec('COMMIT');
+  }catch(error){if(store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}
+  // Attachment triggers record one change per fixture row; skip that construction
+  // backlog and treat the completed note as the next observed change.
+  store.db.prepare("UPDATE settings SET value=CAST((SELECT max(seq) FROM changes) AS TEXT) WHERE key='material-organizer-cursor'").run();
+  store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(captureId,new Date().toISOString());
+  await organizers.tick(20);
+  const material=materials.list({kind:'mote.note'}).items[0]!;
+  assert.ok(material);assert.equal(material.assetCount,2001);
+  assert.ok(!material.fidelity.limitations?.includes('attachment_limit'));
+  assert.equal(materials.members(material.ref,{limit:1}).items.length,1);
+  asset.release();
+});
+
+test('coding session keeps every complete JSON event without an old newest-2000 truncation',async t=>{
   const {sources,materials,organizers}=fixture(t);
   sources.register({id:'fixture-coding',name:'Generated coding',kind:'coding-agent',deviceId:'fixture-code-device',platform:'import',retention:'archive'});
   const ids:string[]=[];
@@ -204,11 +258,11 @@ test('coding session keeps the newest 2000 complete JSON events and declares old
   }
   while(organizers.status().pendingChanges>0)await organizers.tick(500);
   const externalId=JSON.stringify(['codex','fixture-project','fixture-session']),record=materials.get(materialId('fixture-coding',externalId))!;
-  assert.equal(record.coverage.state,'partial');
-  assert.equal(record.memberCount,2000);
+  assert.equal(record.coverage.state,'complete');
+  assert.equal(record.memberCount,2001);
   assert.equal(record.origin.provider,'codex');assert.equal(record.origin.projectKey,'fixture-project');assert.equal(record.origin.sessionId,'fixture-session');
-  assert.equal(materials.members(record.ref,{limit:1}).items[0]?.id,ids[1]);
-  assert.equal(materials.members(record.ref,{offset:1999,limit:1}).items[0]?.id,ids[2000]);
+  assert.equal(materials.members(record.ref,{limit:1}).items[0]?.id,ids[0]);
+  assert.equal(materials.members(record.ref,{offset:2000,limit:1}).items[0]?.id,ids[2000]);
   assert.equal(record.origin.deviceId,'fixture-code-device');
 });
 
@@ -404,9 +458,9 @@ test('organizer plugins build from a bounded group reader without a Store handle
       assert.equal('store' in reader,false);
       assert.equal('ingest' in reader,false);
       assert.equal(reader.capture(),undefined);
-      assert.deepEqual(reader.codingSession(),{records:[],truncated:false});
-      assert.deepEqual(reader.screenGroup(),{records:[],truncated:false});
-      assert.deepEqual(reader.uiPageGroup(),{records:[],truncated:false});
+      assert.deepEqual(reader.codingSession(),{records:[]});
+      assert.deepEqual(reader.screenGroup(),{records:[]});
+      assert.deepEqual(reader.uiPageGroup(),{records:[]});
       assert.equal(reader.file(other.id),undefined);
       const record=reader.sourceHead();assert.equal(record?.id,first.id);
       assert.equal(reader.file(other.id),undefined);

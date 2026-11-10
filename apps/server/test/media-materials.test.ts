@@ -19,6 +19,6 @@ test('an earlier media ID stays readable after 2001 newer same-label samples fro
   while(await organizers.tick(500));
   store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(original.id,new Date().toISOString());await organizers.tick(500);
   const retained=materials.get(initial.id);assert.ok(retained,'unrelated newer records cannot empty an earlier exact media group');assert.equal(retained.memberCount,1);assert.equal(retained.coverage.state,'complete');assert.match(materials.read(retained.ref).text,/generated-content-A/);
-  const other=materials.list({kind:'mote.state-series',limit:100}).items.find(material=>material.id!==initial.id)!;assert.ok(other,'explicit mediaId separates identical display labels in one persistent session');assert.equal(other.memberCount,2000);assert.equal(other.coverage.reason,'media_interval_member_limit');
-  const summary=JSON.parse(materials.block(other.ref,0)!.block.text);assert.equal(summary.measuredPlaybackMs,2000000);assert.equal(summary.intervals.length,1);assert.equal(store.list({source:'media',limit:100}).totalCount,2002);
+  const other=materials.list({kind:'mote.state-series',limit:100}).items.find(material=>material.id!==initial.id)!;assert.ok(other,'explicit mediaId separates identical display labels in one persistent session');assert.equal(other.memberCount,2001);assert.equal(other.coverage.state,'complete');
+  const summary=JSON.parse(materials.block(other.ref,0)!.block.text);assert.equal(summary.measuredPlaybackMs,2001000);assert.equal(summary.intervals.length,1);assert.equal(store.list({source:'media',limit:100}).totalCount,2002);
 });

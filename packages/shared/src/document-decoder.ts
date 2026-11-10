@@ -3,7 +3,7 @@ export const DOCUMENT_MIME_TYPES=['application/pdf','application/vnd.openxmlform
 export type DocumentLocation={pageNumber?:number;sheetName?:string;rowNumber?:number;offset:number;length:number};
 export type DecodedDocument={text:string;parser:string;status:'ready'|'unsupported';coverage:'full'|'partial'|'none';warnings:string[];pages?:{pageNumber:number;text:string}[];pageCount?:number;sheets?:{name:string;rows:{rowNumber:number;cells:{column:number;value:unknown}[]}[]}[]};
 export type DocumentLibraries={pdf:()=>Promise<any>;docx:()=>Promise<any>;xlsx?:()=>Promise<any>;pdfOptions?:Record<string,unknown>};
-const MAX_BYTES=64*1024*1024,MAX_CHARS=2_000_000;
+const MAX_BYTES=64*1024*1024;
 /** Inspect ZIP metadata before an Office parser can allocate decompressed entries. */
 function inspectOffice(bytes:Uint8Array){
  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);let end=-1;
@@ -24,34 +24,33 @@ export async function decodeDocument(bytes:Uint8Array,mime:string,libraries:Docu
   if(mime==='application/pdf'){
    parser='pdfjs';const pdf=await libraries.pdf();signal?.throwIfAborted();
    const document=await pdf.getDocument({data:new Uint8Array(bytes),useWorkerFetch:false,isEvalSupported:false,disableFontFace:true,useSystemFonts:false,...libraries.pdfOptions}).promise;
-   const pages:{pageNumber:number;text:string}[]=[];let count=0,truncated=false;
-   try{for(let pageNumber=1;pageNumber<=Math.min(document.numPages,500);pageNumber++){
-    signal?.throwIfAborted();const page=await document.getPage(pageNumber);try{const content=await page.getTextContent();let text=content.items.map((item:any)=>'str'in item?item.str+(item.hasEOL?'\n':' '):'').join('').trimEnd();if(count+text.length>MAX_CHARS){text=text.slice(0,MAX_CHARS-count);truncated=true;}pages.push({pageNumber,text});count+=text.length;if(truncated)break;}finally{page.cleanup();}
+   const pages:{pageNumber:number;text:string}[]=[];let count=0;
+   try{for(let pageNumber=1;pageNumber<=document.numPages;pageNumber++){
+    signal?.throwIfAborted();const page=await document.getPage(pageNumber);try{const content=await page.getTextContent();const text=content.items.map((item:any)=>'str'in item?item.str+(item.hasEOL?'\n':' '):'').join('').trimEnd();pages.push({pageNumber,text});count+=text.length;}finally{page.cleanup();}
    }
-   truncated ||= pages.length<document.numPages;const empty=pages.filter(page=>!page.text.trim()).map(page=>page.pageNumber),warnings=[];
+   const empty=pages.filter(page=>!page.text.trim()).map(page=>page.pageNumber),warnings=[];
    if(empty.length)warnings.push(`Pages without a text layer: ${empty.slice(0,100).join(', ')}. No OCR was performed; image text may be missing.`);
-   if(truncated)warnings.push('PDF extraction stopped at the 500-page or 2,000,000-character limit.');
-   return {text:pages.map(page=>page.text).join('\n'),parser,status:count?'ready':'unsupported',coverage:!count?'none':truncated||empty.length?'partial':'full',warnings:count?warnings:['No text layer was found. This may be a scanned PDF; no OCR was performed.'],pages,pageCount:document.numPages};
+   return {text:pages.map(page=>page.text).join('\n'),parser,status:count?'ready':'unsupported',coverage:!count?'none':empty.length?'partial':'full',warnings:count?warnings:['No text layer was found. This may be a scanned PDF; no OCR was performed.'],pages,pageCount:document.numPages};
    }finally{await document.destroy();}
   }
   if(mime===DOCUMENT_MIME_TYPES[1]){
    parser='mammoth';inspectOffice(bytes);const module=await libraries.docx();signal?.throwIfAborted();const result=await (module.default??module).extractRawText({buffer:bytes});signal?.throwIfAborted();
-   const truncated=result.value.length>MAX_CHARS,warnings=result.messages.map((message:any)=>String(message.message).slice(0,1000)).slice(0,28);
-   warnings.push('DOCX plain text preserves paragraph breaks; page layout and embedded image text are not extracted.');if(truncated)warnings.push('Text was truncated at 2,000,000 characters.');
-   return {text:result.value.slice(0,MAX_CHARS),parser,status:result.value.trim()?'ready':'unsupported',coverage:!result.value.trim()?'none':truncated?'partial':'full',warnings};
+   const warnings=result.messages.map((message:any)=>String(message.message).slice(0,1000)).slice(0,28);
+   warnings.push('DOCX plain text preserves paragraph breaks; page layout and embedded image text are not extracted.');
+   return {text:result.value,parser,status:result.value.trim()?'ready':'unsupported',coverage:!result.value.trim()?'none':'full',warnings};
   }
   if(mime===DOCUMENT_MIME_TYPES[2]){
    parser='exceljs';inspectOffice(bytes);if(!libraries.xlsx)return unsupported(parser,'Spreadsheet decoder is unavailable');const module=await libraries.xlsx(),book=new (module.default??module).Workbook();await book.xlsx.load(bytes);signal?.throwIfAborted();
    const cellValue=(value:any):unknown=>{if(value instanceof Date)return value.toISOString();if(value&&typeof value==='object'){if('richText'in value)return value.richText.map((part:any)=>part.text).join('');if('formula'in value||'sharedFormula'in value)return {formula:value.formula??value.sharedFormula,result:cellValue(value.result??null)};if('hyperlink'in value)return {text:value.text??'',hyperlink:value.hyperlink};if('error'in value)return {error:value.error};}return value??null;};
-   const sheets:NonNullable<DecodedDocument['sheets']>=[];let rows=0,characters=0,truncated=false;const lines:string[]=[];
-   for(const sheet of book.worksheets.slice(0,100)){signal?.throwIfAborted();const decoded:{name:string;rows:{rowNumber:number;cells:{column:number;value:unknown}[]}[]}={name:sheet.name,rows:[]};
-    sheet.eachRow({includeEmpty:false},(row:any,rowNumber:number)=>{if(truncated)return;const cells:{column:number;value:unknown}[]=[];row.eachCell({includeEmpty:true},(cell:any,column:number)=>{if(column>500){truncated=true;return;}cells.push({column,value:cellValue(cell.value)});});const line=JSON.stringify({sheet:sheet.name,rowNumber,cells})+'\n';if(truncated||rows>=20000||characters+line.length>MAX_CHARS){truncated=true;return;}decoded.rows.push({rowNumber,cells});rows++;characters+=line.length;lines.push(line);});sheets.push(decoded);if(truncated)break;
+   const sheets:NonNullable<DecodedDocument['sheets']>=[];const lines:string[]=[];
+   for(const sheet of book.worksheets){signal?.throwIfAborted();const decoded:{name:string;rows:{rowNumber:number;cells:{column:number;value:unknown}[]}[]}={name:sheet.name,rows:[]};
+    sheet.eachRow({includeEmpty:false},(row:any,rowNumber:number)=>{const cells:{column:number;value:unknown}[]=[];row.eachCell({includeEmpty:true},(cell:any,column:number)=>{cells.push({column,value:cellValue(cell.value)});});const line=JSON.stringify({sheet:sheet.name,rowNumber,cells})+'\n';decoded.rows.push({rowNumber,cells});lines.push(line);});sheets.push(decoded);
    }
-   truncated ||= book.worksheets.length>100;return {text:lines.join(''),parser,status:'ready',coverage:truncated?'partial':'full',sheets,warnings:['Formula expressions and cached results are preserved; formulas were not recalculated.',...(truncated?['Spreadsheet extraction reached the 100-sheet, 20,000-row, 500-column or 2,000,000-character limit.']:[])]};
+   return {text:lines.join(''),parser,status:'ready',coverage:'full',sheets,warnings:['Formula expressions and cached results are preserved; formulas were not recalculated.']};
   }
   if(mime.startsWith('text/')||mime==='application/json'){
    parser='utf8';const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);if(text.includes('\u0000'))return unsupported(parser,'Input contains NUL bytes and may not be plain text');
-   const truncated=text.length>MAX_CHARS;return {text:text.slice(0,MAX_CHARS),parser,status:'ready',coverage:truncated?'partial':'full',warnings:truncated?['Text was truncated at 2,000,000 characters.']:[]};
+   return {text,parser,status:'ready',coverage:'full',warnings:[]};
   }
   return unsupported(parser,'No generic decoder is available for this format');
  }catch(error){signal?.throwIfAborted();return unsupported(parser,`Parser failed: ${String(error instanceof Error?error.message:error).slice(0,900)}`);}

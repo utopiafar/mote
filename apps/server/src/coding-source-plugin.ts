@@ -65,7 +65,7 @@ async function codingPageRange(reader:RawReader,source:SourceConnection,identity
         signal.throwIfAborted();
         const part=await reader.read(entry.ref,{offset,length:MAX_RAW_READ_BYTES});
         if(part.status!=='available')throw new StoreError(`Coding raw read ${part.status}`,409);
-        if(part.ref!==entry.ref||part.offset!==offset||!Number.isSafeInteger(part.totalBytes)||part.totalBytes<1||part.totalBytes>1_000_000||part.bytes.length<1||part.bytes.length>MAX_RAW_READ_BYTES||expectedBytes!==undefined&&part.totalBytes!==expectedBytes)throw new StoreError('Coding raw range changed',409);
+        if(part.ref!==entry.ref||part.offset!==offset||!Number.isSafeInteger(part.totalBytes)||part.totalBytes<1||part.bytes.length<1||part.bytes.length>MAX_RAW_READ_BYTES||expectedBytes!==undefined&&part.totalBytes!==expectedBytes)throw new StoreError('Coding raw range changed',409);
         expectedBytes=part.totalBytes;const next=offset+part.bytes.length;
         if(part.nextOffset!==null&&part.nextOffset!==next||part.nextOffset===null&&next!==part.totalBytes)throw new StoreError('Coding raw range is incomplete',409);
         chunks.push(Buffer.from(part.bytes));offset=next;
@@ -131,7 +131,7 @@ const organize=({source,items,group:identity}:{source:SourceConnection;items:Sou
       // Keep the logical document complete. Physical blocks are bounded reads,
       // not event records; a block may contain many messages or part of one.
       const body=new CodingMaterialBody();
-      body.append(`# Coding dialogue\n\nProvider: ${provider}\nSession: ${sessionId}\n\nUntrusted evidence: human messages and protocol-confirmed final replies only. Process text, tools, host envelopes, unconfirmed replies and oversized messages are excluded by rules before indexing or model processing. Agent reports are not independently verified.\n\n`);
+      body.append(`# Coding dialogue\n\nProvider: ${provider}\nSession: ${sessionId}\n\nUntrusted evidence: human messages and protocol-confirmed final replies only. Process text, tools, host envelopes and unconfirmed replies are excluded by rules before indexing or model processing. Agent reports are not independently verified.\n\n`);
       for(const item of records)body.append(eventText(item),item.observedAt);
       body.flush();const times=records.map(item=>new Date(item.document?.recordedAt??item.observedAt).toISOString()).sort();
       const events=new Map<string,{parts:number;seen:Set<number>}>();for(const item of items.filter(item=>!item.deleted&&codingConversationEvidence(item.document!.coding!))){const c=item.document!.coding!;const event=events.get(c.eventId)??{parts:c.parts,seen:new Set<number>()};event.parts=Math.max(event.parts,c.parts);event.seen.add(c.part);events.set(c.eventId,event);}
@@ -145,7 +145,7 @@ const organize=({source,items,group:identity}:{source:SourceConnection;items:Sou
         members:[{id:'archive',kind:'archive',ref:'archive:'+archiveHash([source.id,identity])}],
         coverage:partial?{state:'partial',reason:partial}:{state:'complete'},
         artifacts:[{key:'conversation',state:conversationState,revision:conversationRevision(records),...(partial?{reason:partial}:{})}],
-        fidelity:{state:'derived',limitations:['metadata_projected','tool_bodies_omitted','host_context_omitted','process_messages_omitted','unconfirmed_replies_omitted','oversized_messages_omitted']},retention:{original:'retained',policy:'keep'}};
+        fidelity:{state:'derived',limitations:['metadata_projected','tool_bodies_omitted','host_context_omitted','process_messages_omitted','unconfirmed_replies_omitted']},retention:{original:'retained',policy:'keep'}};
 };
 const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSnapshot):MaterialAppendDraft=>{
   const base=snapshot.base!;const prior=base.record;

@@ -103,6 +103,21 @@ test('multi-part host envelopes and confirmed final replies retain exact provena
   assert.equal(kimiRecord.origin.firstAt,'2026-06-01T00:00:02.000Z');assert.equal(kimiRecord.origin.lastAt,'2026-06-01T00:00:03.000Z');
 });
 
+test('human and final assistant messages longer than the former 12000-character budget remain in the Coding material',async t=>{
+  const {materials,runtime,sources}=await fixture(t);
+  const humanText='Generated long human request '+ 'h'.repeat(13000)+' HUMAN_END';
+  const assistantText='Generated long final answer '+ 'a'.repeat(13000)+' ASSISTANT_END';
+  const reply=event(1,assistantText);
+  await sources.upsertBatch('coding',[event(0,humanText),{...reply,document:{...reply.document,coding:{...reply.document.coding,role:'assistant',attribution:'agent',channel:'final'}}}]);
+  await runtime.tick();
+  const record=materials.list().items[0]!;
+  assert.ok(record);assert.ok(record.blockCount>1,'long dialogue remains losslessly split across blocks');
+  assert.ok(!record.fidelity.limitations?.includes('oversized_messages_omitted'));
+  let text='',offset=0;for(;;){const page=materials.read(record.ref,{offset,length:12000});text+=page.text;if(page.textRange.nextOffset===null)break;offset=page.textRange.nextOffset;}
+  assert.match(text,/Generated long human request/);assert.match(text,/HUMAN_END/);
+  assert.match(text,/Generated long final answer/);assert.match(text,/ASSISTANT_END/);
+});
+
 test('append reads only new refs, reuses prefix blocks and anchors, and keeps the pinned old revision',async t=>{
   const {store,materials,runtime,sources}=await fixture(t);
   await sources.upsertBatch('coding',Array.from({length:301},(_,i)=>event(i)));

@@ -101,14 +101,11 @@ export class SourceRecipeExecutor {
     // Bounded snapshot policies share the archive checkpoint and durable engine step.
     // No policy obtains an unrestricted archive reader or creates another scheduler.
     for(const kind of ['window','join'] as const)if(recipe.definition[kind]){
-      signal.throwIfAborted();this.assertBounded(snapshot.items);
+      signal.throwIfAborted();
       const items=await this.handler(recipe,kind+'.policy',kind).run({source,group,snapshot,config:recipe.definition[kind]!.policy.config,signal});
-      signal.throwIfAborted();this.assertBounded(items);snapshot={...snapshot,items:[...items],mode:'full',base:undefined};
+      signal.throwIfAborted();snapshot={...snapshot,items:[...items],mode:'full',base:undefined};
     }
     return snapshot;
-  }
-  private assertBounded(items:readonly SourceItem[]){
-    if(items.length>10000||Buffer.byteLength(JSON.stringify(items))>16*1024*1024)throw Error('Recipe policy input/output exceeds limits');
   }
   organize(recipe:InstalledRecipe,source:SourceConnection,group:string,snapshot:RecipeSnapshot):MaterialDraft|MaterialAppendDraft|undefined {
     const outputs=Object.create(null) as Record<string,unknown>;
@@ -119,7 +116,7 @@ export class SourceRecipeExecutor {
       for(const id of step.dependsOn)dependencies[id]=outputs[id];
       outputs[stepId]=this.handler(recipe,`steps.${stepId}`,'step').run({source,group,items:snapshot.items,dependencies,config:step.use.config,snapshot});
     }
-    if(recipe.definition.aggregation){this.assertBounded(snapshot.items);outputs.aggregation=this.handler(recipe,'aggregation.policy','aggregation').run({source,group,items:snapshot.items,outputs:{...outputs},config:recipe.definition.aggregation.policy.config});if(outputs.aggregation&&typeof (outputs.aggregation as {then?:unknown}).then==='function')throw Error('Recipe aggregation must return a synchronous value');if(Buffer.byteLength(JSON.stringify(outputs.aggregation)??'null')>1024*1024)throw Error('Recipe aggregation output exceeds limits');}
+    if(recipe.definition.aggregation){outputs.aggregation=this.handler(recipe,'aggregation.policy','aggregation').run({source,group,items:snapshot.items,outputs:{...outputs},config:recipe.definition.aggregation.policy.config});if(outputs.aggregation&&typeof (outputs.aggregation as {then?:unknown}).then==='function')throw Error('Recipe aggregation must return a synchronous value');}
     return this.handler(recipe,'publish.use','publish').run({source,group,items:snapshot.items,outputs,config:recipe.definition.publish.use.config});
   }
 }

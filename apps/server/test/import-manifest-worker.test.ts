@@ -13,6 +13,17 @@ test('manifest worker rejects an invalid later line before publishing any prepar
  await assert.rejects(formatWork(task),/manifest line 2/);assert.equal(existsSync(output),false);
  writeFileSync(manifest,JSON.stringify(record)+'\n');const result=await formatWork(task);assert.equal(result.count,1);assert.equal(result.samples[0].text,record.item.text);assert.ok(existsSync(output));
 });
+test('manifest validation no longer rejects more than 10000 records while keeping the 32 MiB manifest limit',async t=>{
+ const {task,manifest,record}=fixture(t);
+ const lines=Array.from({length:10001},(_,index)=>JSON.stringify({...record,item:{...record.item,externalId:`generated-${index}`}})).join('\n')+'\n';
+ writeFileSync(manifest,lines);
+ const result=await formatWork(task);
+ assert.equal(result.count,10001);assert.equal(result.samples[0].text,record.item.text);
+ assert.ok(Buffer.byteLength(lines)<32*1024*1024);
+ writeFileSync(manifest,Buffer.alloc(32*1024*1024+1,10));
+ await assert.rejects(formatWork(task),/exceeds 32 MiB/);
+});
+
 test('manifest validation streams original hashes and enforces reviewed preview identity',async t=>{
  const {task,path,manifest}=fixture(t);writeFileSync(path,'Modified generated original');await assert.rejects(formatWork(task),/input file changed/);
  writeFileSync(path,'Generated original');await assert.rejects(formatWork({...task,expectedHash:'0'.repeat(64)}),/preview changed/);

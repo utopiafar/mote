@@ -1,7 +1,7 @@
 import type { CodingProvider } from './contracts/sources';
 export type { CodingProvider } from './contracts/sources';
 import { moteText } from '@mote/shared/i18n';
-import {codingHostEnvelope,MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS,type CodingEvidence} from '@mote/shared';
+import {codingHostEnvelope,type CodingEvidence} from '@mote/shared';
 import {constants,lstatSync} from 'node:fs';
 import {lstat,open,readdir,realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
@@ -30,7 +30,7 @@ export function codingRoot(provider:CodingProvider,home=homedir(),env:NodeJS.Pro
 export async function discoverCodingAgents(home=homedir(),env:NodeJS.ProcessEnv=process.env): Promise<import('./contracts/sources').CodingAgentDiscovery[]> {
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>{const path=codingRoot(provider,home,env);return {provider,name:codingProviders[provider],path,available:await lstat(path).then(s=>provider==='opencode'?s.isFile()&&!s.isSymbolicLink():s.isDirectory()&&!s.isSymbolicLink(),()=>false)};}));
 }
-type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;kimiText?:string;kimiOverflow?:boolean;kimiAt?:string;kimiToolStep?:boolean;kimiHostTurn?:boolean;kimiCodeTurnId?:string};
+type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;kimiText?:string;kimiAt?:string;kimiToolStep?:boolean;kimiHostTurn?:boolean;kimiCodeTurnId?:string};
 type Cursor={offset:number;anchor:string;ino:number;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;generation:number;context:Context;pendingEvent?:{hash:string;nextItem:number}};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
 export type CodingOpenCodeCursor={lastSeq:number;lastUpdated:number;incomplete:string[];continuation?:{id:string;hash:string;nextItem:number}};
@@ -121,7 +121,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
   }else if(wire&&typeof row.type==='string'){
     // Kimi Code persists prompts and loop events separately. The matching
     // context.append_message is a duplicate, and need not be imported.
-    const clearStep=()=>{context.kimiText='';context.kimiOverflow=false;context.kimiAt=undefined;};
+    const clearStep=()=>{context.kimiText='';context.kimiAt=undefined;};
     if(row.type==='config.update'&&typeof row.cwd==='string')context.cwd=row.cwd;
     if(row.type==='turn.prompt'||row.type==='turn.steer'){
       // Only explicitly tagged skill and hook parts can be separated from a
@@ -142,7 +142,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
       if(event?.type==='content.part'&&event.part?.type==='text'&&typeof event.part.text==='string'){
         const text=event.part.text;add('assistant_delta',text,undefined,'commentary');
         if(context.kimiHostTurn!==false)for(const output of events)output.attribution='host';
-        if(!context.kimiToolStep){context.kimiAt??=at;if((context.kimiText?.length??0)+text.length>MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS){context.kimiOverflow=true;context.kimiText='';}else if(!context.kimiOverflow)context.kimiText=(context.kimiText??'')+text;}
+        if(!context.kimiToolStep){context.kimiAt??=at;context.kimiText=(context.kimiText??'')+text;}
       }
       if(event?.type==='tool.call'){clearStep();context.kimiToolStep=true;add('tool_call',JSON.stringify({name:event.name,arguments:event.args}),event.toolCallId);}
       if(event?.type==='tool.result')add('tool_result',typeof event.result==='string'?event.result:JSON.stringify(event.result??''),event.toolCallId);
@@ -150,23 +150,22 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
     }
     if(row.type==='turn.ended'){
       if(context.kimiCodeTurnId&&row.turnId!=null&&context.kimiCodeTurnId!==String(row.turnId))return events;
-      if(row.reason==='completed'&&!context.kimiToolStep&&!context.kimiOverflow&&context.kimiText){add('assistant',context.kimiText,undefined,'final');events.at(-1)!.at=context.kimiAt??at;if(context.kimiHostTurn!==false)events.at(-1)!.attribution='host';}
+      if(row.reason==='completed'&&!context.kimiToolStep&&context.kimiText){add('assistant',context.kimiText,undefined,'final');events.at(-1)!.at=context.kimiAt??at;if(context.kimiHostTurn!==false)events.at(-1)!.attribution='host';}
       clearStep();context.kimiToolStep=false;context.kimiHostTurn=undefined;context.kimiCodeTurnId=undefined;
     }
   }else if(wire){
     const m=row.message,p=m?.payload;
     if(!m||!p)return [];
-    if(['TurnBegin','StepBegin','ToolCall','TurnInterrupted'].includes(m.type)){context.kimiText='';context.kimiOverflow=false;context.kimiAt=undefined;}
+    if(['TurnBegin','StepBegin','ToolCall','TurnInterrupted'].includes(m.type)){context.kimiText='';context.kimiAt=undefined;}
     if(m.type==='TurnBegin')add('user',textParts(p.user_input));
     if(m.type==='ContentPart'&&p.type==='text'){
       const text=String(p.text??'');add('assistant_delta',text,undefined,'commentary');
       context.kimiAt??=at;
-      if((context.kimiText?.length??0)+text.length>MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS){context.kimiOverflow=true;context.kimiText='';}
-      else if(!context.kimiOverflow)context.kimiText=(context.kimiText??'')+text;
+      context.kimiText=(context.kimiText??'')+text;
     }
     if(m.type==='TurnEnd'){
-      if(!context.kimiOverflow&&context.kimiText){add('assistant',context.kimiText,undefined,'final');events.at(-1)!.at=context.kimiAt??at;}
-      context.kimiText='';context.kimiOverflow=false;context.kimiAt=undefined;
+      if(context.kimiText){add('assistant',context.kimiText,undefined,'final');events.at(-1)!.at=context.kimiAt??at;}
+      context.kimiText='';context.kimiAt=undefined;
     }
     if(m.type==='ToolCall'){context.callId=p.id;add('tool_call',JSON.stringify({name:p.function?.name,arguments:p.function?.arguments}),p.id);}
     if(m.type==='ToolCallPart')add('tool_call_delta',String(p.arguments_part??''),context.callId);

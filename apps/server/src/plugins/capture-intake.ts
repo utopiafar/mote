@@ -12,7 +12,7 @@ import type {FileStore} from '../files.js';
 import type {MaterialStore} from '../materials.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import {safeError} from '../diagnostics.js';
-import {CAPTURE_BATCH_MAX_BYTES,CAPTURE_BATCH_MAX_RECORDS} from '../capture-limits.js';
+import {CAPTURE_BATCH_MAX_BYTES} from '../capture-limits.js';
 import {centralServices,type CaptureIntake,type CommitAuthority,type RequestAuthority,type SourceIntake,type SourceRepository} from './central-contracts.js';
 import type {AuthorizationPlatform} from './authorization-platform.js';
 
@@ -66,7 +66,7 @@ export function parseCaptureBundle(body:unknown):CaptureInput[]{
   catch{throw new StoreError('Invalid capture bundle compression');}
   const text=inflated.toString('utf8');
   const lines=text.endsWith('\n')?text.slice(0,-1).split('\n'):text.split('\n');
-  if(lines.length<1||lines.length>CAPTURE_BATCH_MAX_RECORDS||lines.some(line=>line.length===0))throw new StoreError('Capture bundle JSONL is empty or too large');
+  if(lines.length<1||lines.some(line=>line.length===0))throw new StoreError('Capture bundle JSONL is empty or contains empty lines');
   try{return lines.map(line=>captureSchema.parse(JSON.parse(line)));}
   catch(error){if(error instanceof z.ZodError)throw error;throw new StoreError('Invalid capture bundle JSONL');}
 }
