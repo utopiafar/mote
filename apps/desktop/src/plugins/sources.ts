@@ -113,7 +113,7 @@ export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugi
 
         register(sourcesChannels.coding, sourcesWriteCapability, args => execute(sourcesChannels.coding, () => serialize(async () => {
           const provider = args[0];
-          if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error(moteText("不支持的 Coding Agent"));
+          if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi' && provider !== 'opencode') throw new Error(moteText("不支持的 Coding Agent"));
           return manager.addCodingAgent(provider, args[1]);
         })));
         register(sourcesChannels.list, sourcesReadCapability, () => execute(sourcesChannels.list, () => manager.status()));

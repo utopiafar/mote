@@ -5106,7 +5106,7 @@
   "连接系统日历": "Systemkalender verbinden",
   "连接 Coding Agent": "Coding-Agent verbinden",
   "采集所选 Agent": "Ausgewählte Agents erfassen",
-  "支持本机 Claude Code、Codex、Kimi Code。读取对话与工具记录，按下方首次同步及过滤规则归档，并在中央沉淀编码经验；不回写 Agent 配置。": "Unterstützt lokale Claude Code-, Codex- und Kimi Code-Instanzen. Archiviert Unterhaltungen und Werkzeugaufzeichnungen nach den untenstehenden Regeln für Erstsynchronisierung und Filterung und sammelt zentral Coding-Erinnerungen. Die Agent-Konfiguration wird nie geändert.",
+  "支持本机 Claude Code、Codex、Kimi Code、OpenCode。读取对话与工具记录，按下方首次同步及过滤规则归档，并在中央沉淀编码经验；不回写 Agent 配置。": "Unterstützt lokale Claude Code-, Codex-, Kimi Code- und OpenCode-Instanzen. Archiviert Unterhaltungen und Werkzeugaufzeichnungen nach den untenstehenden Regeln für Erstsynchronisierung und Filterung und sammelt zentral Coding-Erinnerungen. Die Agent-Konfiguration wird nie geändert.",
   "选择一个已授权日历": "Autorisierten Kalender wählen",
   "同步所选日历": "Ausgewählten Kalender synchronisieren",
   "已连接的来源": "Verbundene Quellen",

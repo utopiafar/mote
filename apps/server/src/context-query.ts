@@ -11,7 +11,7 @@ export type ContextQueryInput = Range & {
   query?:string;
   projectKey?:string;
   repositoryKey?:string;
-  provider?:'claude'|'codex'|'kimi';
+  provider?:'claude'|'codex'|'kimi'|'opencode';
   sessionId?:string;
   cursor?:string;
   limit?:number;
@@ -27,7 +27,7 @@ export type ContextOrigin = {
   appName:string;
   capturedAt:string;
   receivedAt:string;
-  provider?:'claude'|'codex'|'kimi';
+  provider?:'claude'|'codex'|'kimi'|'opencode';
   sessionId?:string;
   projectKey?:string;
   repositoryKey?:string;
@@ -100,7 +100,7 @@ export type ContextBundle = {
   truncated:boolean;
 };
 
-type CodingScope={provider:'claude'|'codex'|'kimi';sessionId:string;projectKey:string;repositoryKey?:string;projectName?:string;branch?:string};
+type CodingScope={provider:'claude'|'codex'|'kimi'|'opencode';sessionId:string;projectKey:string;repositoryKey?:string;projectName?:string;branch?:string};
 type Cursor={kind:'browse'|'search';hash:string;inner?:string|null};
 const position=(r:CaptureRecord)=>Buffer.from(JSON.stringify({t:new Date(sourceContentTime(r)).toISOString(),id:r.id})).toString('base64url');
 

@@ -8,7 +8,7 @@ export const navigationScopeSchema=z.object({
   deviceId:z.string().max(128).optional(),appId:z.string().max(300).optional(),source:sourceSchema.optional(),
   sourceId:z.string().max(128).optional(),collection:z.enum(['content','activity']).optional(),
   projectKey:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),
-  provider:z.enum(['claude','codex','kimi']).optional(),sessionId:z.string().max(500).optional(),
+  provider:z.enum(['claude','codex','kimi','opencode']).optional(),sessionId:z.string().max(500).optional(),
 }).strict();
 export type NavigationScope=z.infer<typeof navigationScopeSchema>;
 export type NavigationExpansion={kind:'search';scope:NavigationScope;refs:string[]};

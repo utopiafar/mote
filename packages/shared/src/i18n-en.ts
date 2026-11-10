@@ -5107,7 +5107,7 @@ export const english: Readonly<Record<string, string>> = {
   "连接系统日历": "Connect system calendar",
   "连接 Coding Agent": "Connect coding agent",
   "采集所选 Agent": "Collect selected agents",
-  "支持本机 Claude Code、Codex、Kimi Code。读取对话与工具记录，按下方首次同步及过滤规则归档，并在中央沉淀编码经验；不回写 Agent 配置。": "Supports local Claude Code, Codex, and Kimi Code. Archives conversations and tool records under the initial sync and filter rules below, and builds coding memories centrally. Agent configuration is never modified.",
+  "支持本机 Claude Code、Codex、Kimi Code、OpenCode。读取对话与工具记录，按下方首次同步及过滤规则归档，并在中央沉淀编码经验；不回写 Agent 配置。": "Supports local Claude Code, Codex, Kimi Code, and OpenCode. Archives conversations and tool records under the initial sync and filter rules below, and builds coding memories centrally. Agent configuration is never modified.",
   "选择一个已授权日历": "Choose an authorized calendar",
   "同步所选日历": "Sync selected calendar",
   "已连接的来源": "Connected sources",

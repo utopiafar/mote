@@ -59,7 +59,7 @@ export function captureOcrState(record: {source: string; ocr?: OcrResult; ocrTex
 }
 
 /** Explicit, bounded fields only: never an arbitrary bag of device identifiers or content. */
-export const memoryScopeRefSchema=z.object({projectName:z.string().max(400).optional(),projectIdentity:z.enum(['workspace','session','unknown']).optional(),sourceId:z.string().max(128).optional(),deviceId:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict();
+export const memoryScopeRefSchema=z.object({projectName:z.string().max(400).optional(),projectIdentity:z.enum(['workspace','session','unknown']).optional(),sourceId:z.string().max(128).optional(),deviceId:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),provider:z.enum(['claude','codex','kimi','opencode']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict();
 export const recordMetadataSchema = z.object({
   /** Explicit owner input, moved by ingress to private immutable context.
    * Never captured text, OCR, source facts or a declaration of owner identity. */

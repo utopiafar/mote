@@ -29,6 +29,16 @@ async function fixture(t:import('node:test').TestContext){
   return {store,materials,runtime,sources};
 }
 
+test('OpenCode sessions share the Coding archive and material contract',async t=>{
+  const {materials,runtime,sources}=await fixture(t);
+  const item=event(0,'Generated OpenCode request');
+  await sources.upsert('coding',{...item,externalId:'opencode-0',document:{...item.document,coding:{...item.document.coding,provider:'opencode',projectKey:'opencode-project',sessionId:'opencode-session',eventId:'opencode-0'}}});
+  await runtime.tick();
+  const record=materials.list().items.find(material=>material.origin.provider==='opencode');
+  assert.ok(record);
+  assert.match(materials.read(record.ref,{length:12000}).text,/Generated OpenCode request/);
+});
+
 test('the Coding conversation projection excludes tool bodies and host envelopes from catalog, reads and evidence',async t=>{
   const {materials,runtime,sources}=await fixture(t);
   const withRole=(i:number,role:string,text:string,metadata:Record<string,unknown>={})=>{const item=event(i,text);return {...item,document:{...item.document,coding:{...item.document.coding,role,...metadata}}};};
