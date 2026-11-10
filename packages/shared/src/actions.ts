@@ -14,10 +14,22 @@ export type CalendarChoice=z.infer<typeof calendarChoiceSchema>;
 export type ActionStatus='proposed'|'dismissed'|'approved'|'executing'|'succeeded'|'uncertain'|'stale';
 export interface ActionEvidence {id:string;quote:string;fingerprint:string;source:string;capturedAt:string}
 export type ActionKind='calendar.create'|'calendar.update'|'calendar.cancel'|'calendar.complete';
-export interface ActionRelation {operationId?:string;actionId:string;version:number;status:ActionStatus;event:CalendarDraft;target?:{deviceId:string;calendarId:string};externalId?:string}
+/** The legacy device-calendar target keeps its exact `{deviceId,calendarId}`
+ * shape. A central connector target is a separate, explicitly located shape. */
+export const deviceActionProposalTargetSchema=z.object({deviceId:z.string().min(1).max(200),calendarId:z.string().min(1).max(1000)}).strict();
+export const centralConnectorActionTargetSchema=z.object({executionLocation:z.literal('central-connector'),packageId:z.string().min(1).max(300),instanceId:z.string().min(1).max(128),instanceRevision:z.number().int().positive(),capabilityId:z.string().min(1).max(128),capabilityVersion:z.number().int().positive()}).strict();
+export const actionProposalTargetSchema=z.union([deviceActionProposalTargetSchema,centralConnectorActionTargetSchema]);
+export type DeviceActionProposalTarget=z.infer<typeof deviceActionProposalTargetSchema>;
+export type CentralConnectorActionTarget=z.infer<typeof centralConnectorActionTargetSchema>;
+export type ActionProposalTarget=z.infer<typeof actionProposalTargetSchema>;
+export const isCentralConnectorActionTarget=(value:ActionProposalTarget|undefined):value is CentralConnectorActionTarget=>Boolean(value&&'executionLocation' in value&&value.executionLocation==='central-connector');
+export interface ActionConnectorChoice {name:string;capability:{id:string;version:number};target:CentralConnectorActionTarget}
+export interface ConnectorActionExecution {capability:{id:string;version:number};operationId:string;input:{kind:ActionKind;event:CalendarDraft;target:ActionProposalTarget}}
+export interface ConnectorActionReceipt {status:'succeeded'|'uncertain';externalId?:string}
+export interface ActionRelation {operationId?:string;actionId:string;version:number;status:ActionStatus;event:CalendarDraft;target?:ActionProposalTarget;externalId?:string}
 export type ManagedActionState='waiting_device'|'executing'|'cancel_requested'|'cancelled'|'succeeded'|'uncertain';
 export interface ManagedAction {cancelRequestedAt?:string;grantId:string;grantRevision:number;connectionId:string;state:ManagedActionState}
-export interface ActionProposal {managed?:ManagedAction;id:string;kind:ActionKind;related?:ActionRelation;resolution?:'cancelled'|'completed';version:number;status:ActionStatus;event:CalendarDraft;uncertainty:string;evidence:ActionEvidence[];createdAt:string;updatedAt:string;operationId?:string;nativeOperationId?:string;target?:{deviceId:string;calendarId:string};externalId?:string;error?:string}
+export interface ActionProposal {managed?:ManagedAction;id:string;kind:ActionKind;related?:ActionRelation;resolution?:'cancelled'|'completed';version:number;status:ActionStatus;event:CalendarDraft;uncertainty:string;evidence:ActionEvidence[];createdAt:string;updatedAt:string;operationId?:string;nativeOperationId?:string;target?:ActionProposalTarget;externalId?:string;error?:string}
 export interface ActionSettings {enabled:boolean;timeZone:string;reviewDeviceIds:string[]}
 export interface ActionTarget {deviceId:string;deviceName:string;calendars:CalendarChoice[];updatedAt:string}
 export const moteActionMarker=(id:string)=>`[Mote:${z.string().uuid().parse(id)}]`;

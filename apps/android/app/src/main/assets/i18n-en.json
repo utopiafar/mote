@@ -10202,5 +10202,18 @@
   "可连接": "Ready to connect",
   "已启用，待授权": "Enabled, awaiting authorization",
   "可挂到已有账号绑定": "Can attach to an existing account binding",
-  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "The official catalog is above; this entry matches Settings → Runtime and diagnostics on the web."
+  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "The official catalog is above; this entry matches Settings → Runtime and diagnostics on the web.",
+  "中央连接器": "Central connector",
+  "授权后，范围内明确的日历写入可自动执行；消息发送仍需逐条确认。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大目标范围。": "After authorization, calendar writes that are clear and in scope may run automatically; message sends still require confirmation for every message. Updates and cancellations only affect original events created by Mote; completion is recorded only in Mote. Participants are never invited and the target scope is never widened.",
+  "先在设备连接日历，或在插件中心安装、检查和启用声明行动能力的官方连接器。安装和升级不会自动授予执行权限。": "First connect a calendar on a device, or install, check and enable an official connector that declares an action capability in Plugin Center. Installing or upgrading never grants execution by itself.",
+  "行动能力或范围已变化，请刷新后重新保存并确认新的范围。": "The action capability or scope changed. Refresh, then save and confirm the new scope again.",
+  "暂无已检查并启用的行动能力插件。": "No checked and enabled action capability plugin yet.",
+  "暂无已连接的可写日历或中央连接器。": "No writable calendar or Central connector is connected.",
+  "选择执行位置": "Select execution location",
+  "请选择执行位置": "Select an execution location",
+  "行动能力插件": "Action capability plugin",
+  "我允许此插件按以上资料范围，在所选中央连接器中发送消息。": "I allow this plugin to send messages through the selected Central connector using the input scope above.",
+  "我允许此插件按以上资料范围，在所选中央连接器中创建日程、更新或取消原事件，并在 Mote 中标记完成。": "I allow this plugin to create events, update or cancel original events through the selected Central connector, and mark arrangements complete in Mote, using the selected sources.",
+  "目标连接器不可用，请刷新后重试": "The target connector is unavailable. Refresh and try again.",
+  "已收到执行回执。": "An execution receipt has been received."
 }

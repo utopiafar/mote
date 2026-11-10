@@ -1,6 +1,6 @@
 import type {HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
-import type {SourceCapabilityDescriptor} from '@mote/shared';
+import type {ConnectorActionExecution,ConnectorActionReceipt,SourceCapabilityDescriptor} from '@mote/shared';
 import type {ConnectorContext} from '../connectors/types.js';
 import {ConnectorRegistry,connectorCleanupFailure,isConnectorCleanupFailure,type ConnectorHttpHost,type ConnectorInstance,type ConnectorManifest} from '../connectors/registry.js';
 import type {DynamicHttpDispatcher} from './dynamic-http-dispatcher.js';
@@ -44,6 +44,8 @@ export interface ConnectorHostAdapter {
   restart(id:string):Promise<void>;
   /** Hot-stop one installed instance; sibling instances keep running. */
   stop(id:string):Promise<void>;
+  /** Dispatch one host-authorized action to an active connector instance. */
+  executeAction(id:string,request:ConnectorActionExecution):Promise<ConnectorActionReceipt>;
   close():Promise<void>;
 }
 
@@ -238,6 +240,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       return startTask;
     },
     inventory:()=>registry.inventory(),
+    executeAction:(id:string,request:ConnectorActionExecution)=>registry.executeAction(id,request),
     contributions:():HostContributionDescriptor[]=>registry.inventory().map(connector=>({
       id:'connector-instance:'+connector.id,version:connector.version,surface:'ingress',runtime:'host',
       featureId:'mote.connector.'+connector.id,featureVersion:connector.version,self:false,

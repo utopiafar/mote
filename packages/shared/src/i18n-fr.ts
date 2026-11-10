@@ -10203,5 +10203,18 @@ export const french: Readonly<Record<string, string>> = {
   "可连接": "Prêt à connecter",
   "已启用，待授权": "Activé, autorisation en attente",
   "可挂到已有账号绑定": "Peut s'attacher à une liaison de compte existante",
-  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "Le catalogue officiel est ci-dessus ; cette entrée correspond à Réglages → Exécution et diagnostic sur le web."
+  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "Le catalogue officiel est ci-dessus ; cette entrée correspond à Réglages → Exécution et diagnostic sur le web.",
+  "中央连接器": "Connecteur central",
+  "授权后，范围内明确的日历写入可自动执行；消息发送仍需逐条确认。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大目标范围。": "Après autorisation, les écritures de calendrier claires et dans le périmètre peuvent s'exécuter automatiquement ; les envois de messages nécessitent toujours une confirmation individuelle. Les mises à jour et annulations ne concernent que les événements d'origine créés par Mote ; l'achèvement est enregistré uniquement dans Mote. Aucun participant n'est invité et le périmètre cible n'est jamais élargi.",
+  "先在设备连接日历，或在插件中心安装、检查和启用声明行动能力的官方连接器。安装和升级不会自动授予执行权限。": "Connectez d'abord un calendrier sur un appareil, ou installez, vérifiez et activez dans le centre de plugins un connecteur officiel déclarant une capacité d'action. Une installation ou mise à niveau n'accorde jamais l'exécution à elle seule.",
+  "行动能力或范围已变化，请刷新后重新保存并确认新的范围。": "La capacité d'action ou le périmètre a changé. Actualisez, puis enregistrez et confirmez à nouveau le nouveau périmètre.",
+  "暂无已检查并启用的行动能力插件。": "Aucun plugin de capacité d'action vérifié et activé pour le moment.",
+  "暂无已连接的可写日历或中央连接器。": "Aucun calendrier inscriptible ni connecteur central n'est connecté.",
+  "选择执行位置": "Sélectionner l'emplacement d'exécution",
+  "请选择执行位置": "Sélectionnez un emplacement d'exécution",
+  "行动能力插件": "Plugin de capacité d'action",
+  "我允许此插件按以上资料范围，在所选中央连接器中发送消息。": "J'autorise ce plugin à envoyer des messages via le connecteur central sélectionné avec le périmètre de sources ci-dessus.",
+  "我允许此插件按以上资料范围，在所选中央连接器中创建日程、更新或取消原事件，并在 Mote 中标记完成。": "J'autorise ce plugin à créer des événements, mettre à jour ou annuler des événements d'origine via le connecteur central sélectionné, et à marquer les échéances comme terminées dans Mote, avec les sources sélectionnées.",
+  "目标连接器不可用，请刷新后重试": "Le connecteur cible est indisponible. Actualisez et réessayez.",
+  "已收到执行回执。": "Une confirmation d'exécution a été reçue."
 };

@@ -154,7 +154,7 @@ test('image settings submit the shared revision and retain their original draft 
 });
 
 const actionView=(revision:number,authorizationRevision:number,enabled=false,reviewDeviceIds:string[]=['generated-phone'])=>({revision,authorizationRevision,items:[],total:0,nextCursor:null,targets:[],settings:{enabled,timeZone:'UTC',reviewDeviceIds},progress:{configured:true,running:false,jobs:[],error:null}});
-const emptyCapabilities=()=>({providers:[],declarations:[],sources:[],drafts:[],grants:[],deviceCapabilities:[]});
+const emptyCapabilities=()=>({providers:[],declarations:[],sources:[],drafts:[],grants:[],deviceCapabilities:[],centralConnectors:[]});
 function actionApi(read:(path:string,init?:RequestInit)=>unknown):Api {
   return {request:async(path:string,init?:RequestInit)=>{
     if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});

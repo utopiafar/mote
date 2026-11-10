@@ -6,8 +6,8 @@ import {isDeepStrictEqual} from 'node:util';
 import {lstatSync,readFileSync,readdirSync,realpathSync,statSync} from 'node:fs';
 import {unzipSync,zipSync} from 'fflate';
 import {z} from 'zod';
-import {calendarPluginCapabilitySchema} from '@mote/shared';
-import type {CalendarPluginCapability,PluginConfigurationField,PluginReleasePreview} from '@mote/shared';
+import {actionPluginCapabilitySchema} from '@mote/shared';
+import type {ActionPluginCapability,PluginConfigurationField,PluginReleasePreview} from '@mote/shared';
 import {
   packageManifestSchema, PluginContractError,
   type ManifestDependency, type PackageManifest,
@@ -16,13 +16,14 @@ import {StoreError} from './store.js';
 import {isOfficialLocalPluginRepository,officialLocalPluginEntry,type OfficialPluginCatalogEntry} from './official-plugin-catalog.js';
 
 /** The one current package Manifest is owned by @mote/plugin-api. This wrapper
- * adds the existing calendar host declaration only; the archive/source
- * identity remains in the resolver below. */
-export type PluginManifest = Omit<PackageManifest,'actionCapabilities'> & {actionCapabilities?:readonly CalendarPluginCapability[]};
+ * adds host-validated action declarations; the archive/source identity remains
+ * in the resolver below. */
+export type PluginManifest = Omit<PackageManifest,'actionCapabilities'> & {actionCapabilities?:readonly ActionPluginCapability[]};
 const parsePluginManifest=(input:unknown):PluginManifest=>{
-  const base=packageManifestSchema.parse(input),actions=base.actionCapabilities?.map(value=>calendarPluginCapabilitySchema.parse(value));
-  if(actions&&actions.length>1)throw new PluginContractError('invalid_contract','$.actionCapabilities');
-  if(base.capabilities.includes('calendar.manage')!==Boolean(actions?.length))throw new PluginContractError('invalid_contract','$.actionCapabilities');
+  const base=packageManifestSchema.parse(input),actions=base.actionCapabilities?.map(value=>actionPluginCapabilitySchema.parse(value));
+  if(actions&&new Set(actions.map(value=>value.id+'@'+value.version)).size!==actions.length)throw new PluginContractError('invalid_contract','$.actionCapabilities');
+  const calendar=actions?.some(value=>value.id==='calendar.manage')??false;
+  if(base.capabilities.includes('calendar.manage')!==calendar)throw new PluginContractError('invalid_contract','$.actionCapabilities');
   return (actions?{...base,actionCapabilities:actions}:base) as PluginManifest;
 };
 export const pluginManifestSchema={

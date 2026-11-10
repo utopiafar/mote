@@ -4,6 +4,16 @@ import {Context} from '@deepseek-ai/cordis';
 import type {ContextReader,ContextRecord} from '@mote/agent';
 import {installAgentReadTools} from '../src/plugins/agent-read-tools.js';
 
+test('query tool definitions expose no Central connector or calendar write tool',async()=>{
+ const {contextToolDefinitions}=await import('../../../packages/agent/dist/tool-contributions.js');
+ for(const input of [{question:'Generated read only',hostContextToolMode:'all-native' as const},{question:'Generated read only'}]){
+  const definitions=contextToolDefinitions(input),names=definitions.map(([name])=>name),write=names.filter(name=>/send|write|calendar|connector/i.test(name));
+  assert.deepEqual(write,[],'a read-only query run never receives a write tool');
+  assert.ok(names.includes('search_context'));
+  for(const [name,description] of definitions)if(name==='capability_execute')assert.match(description,/read-only/);
+ }
+});
+
 test('feature unload rejects an in-flight reader result and new reads while a sibling remains usable',async t=>{
   const root=new Context();t.after(()=>root.fiber.dispose());
   let entered!:()=>void,release!:(records:ContextRecord[])=>void,reads=0;

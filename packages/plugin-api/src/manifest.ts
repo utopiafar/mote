@@ -192,7 +192,7 @@ const parseManifest: Parser<PackageManifest> = (input, field) => {
     archive: (value, path) => object<{readonly asset: string; readonly sha256: string}>(value, path, {asset: archiveAsset, sha256}),
     contributions: optional(array(parseContribution, 256)),
     capabilities: array(token, 64),
-    actionCapabilities: optional(array(parseJsonObject, 1)),
+    actionCapabilities: optional(array(parseJsonObject, 8)),
     configuration: array(parseConfigurationField, 128),
     dependencies: array(parseDependency, 64),
     access: array(displayText, 64),

@@ -10202,5 +10202,18 @@
   "可连接": "Listo para conectar",
   "已启用，待授权": "Habilitado, pendiente de autorización",
   "可挂到已有账号绑定": "Puede adjuntarse a un enlace de cuenta existente",
-  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "El catálogo oficial está arriba; esta entrada equivale a Ajustes → Ejecución y diagnóstico en la web."
+  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "El catálogo oficial está arriba; esta entrada equivale a Ajustes → Ejecución y diagnóstico en la web.",
+  "中央连接器": "Conector central",
+  "授权后，范围内明确的日历写入可自动执行；消息发送仍需逐条确认。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大目标范围。": "Tras la autorización, las escrituras de calendario claras y dentro del alcance pueden ejecutarse automáticamente; el envío de mensajes sigue requiriendo confirmación individual. Las actualizaciones y cancelaciones solo afectan a eventos originales creados por Mote; la finalización se registra solo en Mote. Nunca se invita a participantes ni se amplía el alcance del destino.",
+  "先在设备连接日历，或在插件中心安装、检查和启用声明行动能力的官方连接器。安装和升级不会自动授予执行权限。": "Primero conecta un calendario en un dispositivo, o instala, comprueba y habilita en el centro de plugins un conector oficial que declare una capacidad de acción. Instalar o actualizar nunca concede ejecución por sí solo.",
+  "行动能力或范围已变化，请刷新后重新保存并确认新的范围。": "La capacidad de acción o el alcance cambiaron. Actualiza y vuelve a guardar y confirmar el nuevo alcance.",
+  "暂无已检查并启用的行动能力插件。": "Aún no hay ningún plugin de capacidad de acción comprobado y habilitado.",
+  "暂无已连接的可写日历或中央连接器。": "No hay ningún calendario escribible ni conector central conectado.",
+  "选择执行位置": "Seleccionar ubicación de ejecución",
+  "请选择执行位置": "Selecciona una ubicación de ejecución",
+  "行动能力插件": "Plugin de capacidad de acción",
+  "我允许此插件按以上资料范围，在所选中央连接器中发送消息。": "Permito que este plugin envíe mensajes mediante el conector central seleccionado con el alcance de fuentes anterior.",
+  "我允许此插件按以上资料范围，在所选中央连接器中创建日程、更新或取消原事件，并在 Mote 中标记完成。": "Permito que este plugin cree eventos, actualice o cancele eventos originales mediante el conector central seleccionado y marque tareas como completadas en Mote, con las fuentes seleccionadas.",
+  "目标连接器不可用，请刷新后重试": "El conector de destino no está disponible. Actualiza e inténtalo de nuevo.",
+  "已收到执行回执。": "Se ha recibido una confirmación de ejecución."
 }
