@@ -12,6 +12,7 @@ import {sourceItemSchema,sourceSchema,evidenceRefId,formatEvidenceRef,parseArtif
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {McpContext,McpReadContext,McpWriteContext,RemoteMcpContext} from './mcp-context.js';
 import {ConnectorError} from './types.js';
+import {mcpResourceUrl,mcpUnauthorized} from './mcp-oauth-routes.js';
 import {remoteUrl,restrictedFetch} from './network.js';
 import type {CaptureRecord} from '@mote/shared';
 import {contextCard,cardFromMemory,type ContextQueryInput} from '../context-query.js';
@@ -182,9 +183,9 @@ function mountTransport(app:FastifyInstance):McpRouteMount {
     // Reject unauthenticated uploads before Fastify allocates and parses their bodies.
     const options=activation.context.configuration();
     if(!options?.mcpEnabled)return reply.code(503).send({error:'mcp_disabled'});
-    const issued=activation.context.authorizeCredential?.(req.headers.authorization);
+    const issued=activation.context.authorizeCredential?.(req.headers.authorization,mcpResourceUrl(activation.context.publicUrl,req));
     const write=Boolean(issued?.write||(options.mcpWriteEnabled&&options.mcpWriteSourceIds?.length&&equalToken(req.headers.authorization,options.mcpWriteToken)));
-    if(!issued&&!write&&!equalToken(req.headers.authorization,options.mcpReadToken))return reply.header('WWW-Authenticate','Bearer').code(401).send({error:'mcp_unauthorized'});
+    if(!issued&&!write&&!equalToken(req.headers.authorization,options.mcpReadToken))return mcpUnauthorized(activation.context.publicUrl,activation.context.allowedOrigins,req,reply);
     if(req.headers.origin&&!activation.context.allowedOrigins.includes(req.headers.origin))return reply.code(403).send({error:'mcp_origin_denied'});
     reply.header('Cache-Control','no-store');reply.raw.setHeader('Cache-Control','no-store');
     // Stateless JSON responses avoid persistent sessions carrying privilege between credentials.
