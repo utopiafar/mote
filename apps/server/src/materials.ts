@@ -22,8 +22,8 @@ const materialIdSchema=z.string().regex(/^mat_[a-f0-9]{64}$/);
 const revisionSchema=z.string().regex(/^[a-f0-9]{64}$/);
 const nameSchema=z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._/-]*$/);
 const locatorSchema=z.record(z.unknown()).refine(value=>{
-  try{return Buffer.byteLength(JSON.stringify(value))<=4096;}catch{return false;}
-},'Locator is too large or not serializable');
+  try{JSON.stringify(value);return true;}catch{return false;}
+},'Locator is not serializable');
 const memberSchema=z.object({
   id:z.string().min(1).max(128),kind:nameSchema,ref:z.string().min(1).max(2048),
   revision:z.string().min(1).max(256).optional(),locator:locatorSchema.optional(),
@@ -32,11 +32,11 @@ const memberSchema=z.object({
 export const materialEvidenceContextSchema=z.object({attributionContext:attributionContextSchema.optional(),observedAt:z.string().datetime({offset:true}),
   document:documentSchema.pick({recordedAt:true,occurredAt:true,timeBasis:true,contentRole:true}).strict()}).strict();
 export type MaterialEvidenceContext=z.infer<typeof materialEvidenceContextSchema>;
-const blockBase={id:z.string().min(1).max(128),memberIds:z.array(z.string().min(1).max(128)).max(32).default([]),locator:locatorSchema.optional(),
+const blockBase={id:z.string().min(1).max(128),memberIds:z.array(z.string().min(1).max(128)).default([]),locator:locatorSchema.optional(),
   /** Fine-grained inputs supplement the original members used for authorization. */
-  evidenceIds:z.array(z.string().uuid()).max(32).optional()};
+  evidenceIds:z.array(z.string().uuid()).optional()};
 const blockSchema=z.discriminatedUnion('kind',[
-  z.object({...blockBase,kind:z.literal('text'),format:nameSchema,text:z.string().max(250_000),evidenceContext:materialEvidenceContextSchema.optional()}).strict(),
+  z.object({...blockBase,kind:z.literal('text'),format:nameSchema,text:z.string(),evidenceContext:materialEvidenceContextSchema.optional()}).strict(),
   z.object({...blockBase,kind:z.literal('asset'),hash:revisionSchema,mimeType:z.string().min(1).max(200)}).strict(),
 ]);
 const draftSchema=z.object({
@@ -53,7 +53,7 @@ const draftSchema=z.object({
   coverage:z.object({state:z.enum(['complete','partial','pending']),reason:z.string().max(500).optional()}).strict(),
   /** Named processing outputs let each consumer declare only the dependencies
    * it actually needs. A query may use a partial material while Memory waits. */
-  artifacts:z.array(z.object({key:nameSchema,state:z.enum(['ready','pending','failed','unavailable']),revision:z.string().min(1).max(256).optional(),reason:z.string().max(500).optional(),blockIds:z.array(z.string().min(1).max(128)).max(20000).optional()}).strict()).max(256).optional(),
+  artifacts:z.array(z.object({key:nameSchema,state:z.enum(['ready','pending','failed','unavailable']),revision:z.string().min(1).max(256).optional(),reason:z.string().max(500).optional(),blockIds:z.array(z.string().min(1).max(128)).optional()}).strict()).optional(),
   fidelity:z.object({state:z.enum(['lossless','derived','summary-only']),limitations:z.array(z.string().max(500)).max(20).optional()}).strict(),
   retention:z.object({original:z.enum(['retained','unavailable']),policy:z.enum(['keep','allow-expiry'])}).strict(),
 }).strict();

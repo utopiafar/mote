@@ -33,7 +33,7 @@ export function validateImportManifest(task:ManifestTask){
  const inputDigest=createHash('sha256');const samples:{title:string;text:string;kind:string;attachmentCount:number}[]=[];let count=0,outputBytes=0,closed=false;
  try{
   for(const {line,lineNumber} of lines(path,inputDigest)){
-   if(++count>10000)fail('Records manifest exceeds 10000 records',413);let raw:unknown;try{raw=JSON.parse(line);}catch{fail(`Invalid JSON on manifest line ${lineNumber}`);}
+   count++;let raw:unknown;try{raw=JSON.parse(line);}catch{fail(`Invalid JSON on manifest line ${lineNumber}`);}
    const parsed=importRecordSchema.safeParse(raw);if(!parsed.success)fail(`Invalid record on manifest line ${lineNumber}`);
    const record=parsed.data!,key=JSON.stringify([record.item.externalId,record.item.revision]);if(identities.has(key))fail(`Duplicate record identity on manifest line ${lineNumber}`);identities.add(key);
    if(record.evidencePaths.some(path=>hostAttachments.has(resolve(task.workspace,path))))fail('Host-managed media cannot be claimed as parsed evidence');

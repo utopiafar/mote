@@ -22,7 +22,7 @@ export async function contextBundle(reader:Pick<EvidenceReader,'queryPage'>,quer
   const result={stableMemories:[] as ContextCard[],recentSessions:[] as ContextCard[],recentRecords:[] as ContextCard[],coverage:{recordsReturned:0,memoriesReturned:0,sessionsReturned:0},nextCursor:encode(position),truncated:true};
   const maximum=Math.min(24000,Math.max(1000,maxCharacters));
   let returned=0;
-  for(let scanned=0;scanned<300&&position.p<3&&returned<limit;scanned++){
+  while(position.p<3&&returned<limit){
     if(position.p===0&&args.includeMemories===false||position.p===1&&args.includeRecentSessions===false){position={v:1,h,p:position.p+1};continue;}
     const inner=pack(position.c),channel=position.p;let card:ContextCard|undefined,next:string|null=null;
     if(channel===0){const page=await query.memories?.({...scope,cursor:inner,limit:1,status:'published',layer:'memory'});

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {Store} from '../src/store.js';
+import {Store,StoreError} from '../src/store.js';
 import {MaterialStore} from '../src/materials.js';
 import {SourceStore} from '../src/sources.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';
@@ -68,6 +68,28 @@ test('pausing a Coding source between raw chunks preserves accepted publication'
   try{await runtime.tick();}finally{SourceArchiveRawReader.prototype.read=originalRead;}
   assert.ok(reads>=2);assert.equal(materials.list().items.length,1);
   await assert.rejects(sources.upsert('coding',event('next','New input')),/paused/i);
+});
+
+test('a single raw Coding item larger than 1 MiB is assembled instead of failing as a changed range',async t=>{
+  const {materials,runtime,sources}=await fixture(t);
+  const tail='Generated end of oversized raw item';
+  await sources.upsert('coding',event('oversized','x'.repeat(1_100_000)+tail));
+  await runtime.tick();
+  const material=materials.list().items[0];assert.ok(material);
+  assert.ok(material.textLength>1_100_000);
+  assert.match(materials.block(material.ref,material.blockCount-1)!.block.text,new RegExp(tail));
+});
+
+test('a genuinely inconsistent raw range still fails visibly as 409',async t=>{
+  const {runtime,sources}=await fixture(t);
+  await sources.upsert('coding',event('range','Generated range proof'));
+  const recipe=runtime.recipes.resolve('mote.coding','8'),source=sources.getSource('coding'),group=JSON.stringify(['codex','fixture-project','fixture-session']);
+  const reader={
+    page:async()=>({status:'available' as const,items:[{ref:'generated-ref',observedAt:'2026-09-24T01:00:00.000Z'}],nextCursor:null,snapshot:'generated-snapshot',total:1,appendEpoch:1}),
+    read:async(ref:string,request:{offset:number;length:number})=>({status:'available' as const,ref,mediaType:'application/json',totalBytes:2,offset:request.offset+1,bytes:new Uint8Array([123,125]),nextOffset:null}),
+  };
+  await assert.rejects(runtime.recipes.snapshot(recipe,reader,source,group,new AbortController().signal),
+    error=>error instanceof StoreError&&error.statusCode===409&&/Coding raw range changed/.test(error.message));
 });
 
 test('new Coding revision during raw consumption invalidates the old execution',async t=>{

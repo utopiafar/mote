@@ -21,6 +21,19 @@ import {contextBundle} from '../src/context-bundle.js';
 import type {Config} from '../src/config.js';
 import type {ConnectorManifest} from '../src/connectors/registry.js';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
+test('context bundles continue past the former 300-stop instead of declaring the remaining sessions absent',async()=>{
+  const sessions=Array.from({length:301},(_,index)=>({id:`mat_${String(index).padStart(64,'0')}`,ref:`material:mat_${String(index).padStart(64,'0')}@${'a'.repeat(64)}`,revision:'a'.repeat(64),kind:'mote.coding-session',title:`Generated session ${index}`,
+    origin:{sourceId:'generated-coding',deviceId:'generated-device',projectKey:index===300?'generated-project':'other-project',sessionId:`session-${index}`,firstAt:'2026-09-24T01:00:00.000Z'},
+    coverage:{state:'complete'},createdAt:'2026-09-24T01:00:00.000Z',updatedAt:'2026-09-24T01:00:00.000Z'}));
+  const encode=(index:number)=>Buffer.from(JSON.stringify({index})).toString('base64url');
+  const query={memories:async()=>({items:[],nextCursor:null}),materialCatalog:async({cursor}:{cursor?:string})=>{
+    const index=cursor?Number(JSON.parse(Buffer.from(cursor,'base64url').toString()).index):0;
+    return {items:index<sessions.length?[sessions[index]]:[],nextCursor:index<sessions.length-1?encode(index+1):null};
+  }};
+  const bundle=await contextBundle({queryPage:()=>({items:[],nextCursor:null})} as never,query as never,{projectKey:'generated-project'});
+  assert.equal(bundle.recentSessions.length,1);assert.equal(bundle.recentSessions[0]!.id,sessions[300]!.id);
+});
+
 test('server feature disposal revokes routes without deleting retained data',async t=>{
   const app=Fastify(),root=new Context(),host=new FeatureRoutes(root,app);let retained=1;
   const fiber=await host.install({id:'fixture.feature',version:'1',mount:server=>server.get('/fixture',async()=>({retained}))});

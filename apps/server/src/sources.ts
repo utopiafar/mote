@@ -77,7 +77,7 @@ export class SourceStore {
     return (await this.serialized(sourceId,()=>this.commitBatch(sourceId,[sourceItemSchema.parse(raw)],authorize,transaction))).receipts[0];
   }
   async upsertBatch(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
-    const items=z.array(sourceItemSchema).min(1).max(500).parse(raw);
+    const items=z.array(sourceItemSchema).min(1).parse(raw);
     const identities=new Set<string>();
     for(const item of items){const key=JSON.stringify([item.externalId,item.revision]);if(identities.has(key))throw new StoreError('Batch contains duplicate source revisions',409);identities.add(key);}
     return this.serialized(sourceId,()=>this.commitBatch(sourceId,items,authorize,transaction));

@@ -937,7 +937,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const position=(record:CaptureRecord)=>Buffer.from(JSON.stringify({t:new Date(sourceContentTime(record)).toISOString(),id:record.id})).toString('base64url');
     const materialPosition=(material:MaterialRecord)=>Buffer.from(JSON.stringify({u:material.updatedAt,id:material.id})).toString('base64url');
     const range={...args,query:query||undefined,cursor:undefined,limit:200,includeTotal:false};
-    while(selected.length<limit&&scanned<2000&&!done){
+    while(selected.length<limit&&!done){
       if(phase==='material'){
         const page=this.materials!.list({query:query||undefined,sourceId:args.sourceId,deviceId:args.deviceId,
           after:args.after,before:args.before,cursor:inner??undefined,limit:100});
@@ -948,7 +948,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
             const card=this.materialView(material,args,query||undefined);
             if(card&&this.captureExposure(card,'discover',defaultEvidenceExposurePolicy))selected.push(card);
           }
-          if(selected.length===limit||scanned>=2000)break;
+          if(selected.length===limit)break;
         }
         if(inner===materialPosition(page.items.at(-1)!)&&!page.nextCursor){phase='capture';inner=null;}
         continue;
@@ -965,7 +965,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
               if(card&&withinEvidenceScope(card,args)&&this.captureExposure(card,'discover',defaultEvidenceExposurePolicy))selected.push(card);
             }
           }else if(this.captureExposure(record,'discover',defaultEvidenceExposurePolicy))selected.push(record);
-          if(selected.length===limit||scanned>=2000)break;
+          if(selected.length===limit)break;
         }
         if(inner===position(page.items.at(-1)!)&&!page.nextCursor){phase='file';inner=null;}
         continue;
@@ -975,7 +975,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       for(const record of page.items){
         scanned++;inner=position(record);
         if(!this.sourceItemMaterial(record,args)&&this.captureExposure(record,'discover',defaultEvidenceExposurePolicy))selected.push(record);
-        if(selected.length===limit||scanned>=2000)break;
+        if(selected.length===limit)break;
       }
       if(inner===position(page.items.at(-1)!)&&!page.nextCursor)done=true;
     }

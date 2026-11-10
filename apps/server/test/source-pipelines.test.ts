@@ -238,6 +238,22 @@ test('HTTP source upload, material search and actual agent bridge cite assembled
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,0);
 });
 
+test('source batch accepts more than 500 items and long bodies/titles under the 32 MiB HTTP limit',async t=>{
+  const {buildApp}=await import('../src/app.js');
+  const directory=mkdtempSync(join(tmpdir(),'mote-source-batch-limit-'));
+  const config={dataDir:directory,token:'generated-batch-token',tokenPath:'fixture',host:'127.0.0.1',port:0,dataKey:undefined,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
+  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  const headers={authorization:'Bearer '+config.token};
+  assert.equal((await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'generated-batch',name:'Generated batch',kind:'custom',deviceId:'generated-device',platform:'import'}})).statusCode,200);
+  const long={externalId:'batch-0',revision:'1',observedAt:'2026-09-24T01:00:00.000Z',title:'Generated title '.repeat(200),text:'Generated body '.repeat(12000),kind:'message',layer:'original'};
+  const items=[long,...Array.from({length:500},(_,index)=>({externalId:`batch-${index+1}`,revision:'1',observedAt:'2026-09-24T01:00:00.000Z',title:`Generated item ${index+1}`,text:`Generated batch item ${index+1}`,kind:'message',layer:'original'}))];
+  const response=await node.app.inject({method:'POST',url:'/api/sources/generated-batch/items/batch',headers,payload:{items}});
+  assert.equal(response.statusCode,200,response.body);assert.equal(response.json().receipts.length,501);
+  const stored=await node.app.inject({url:'/api/sources/generated-batch/item?externalId=batch-0',headers});
+  assert.equal(stored.statusCode,200,stored.body);assert.equal(stored.json().item.text.length,long.text.length);assert.equal(stored.json().item.title.length,long.title.length);
+});
+
 test('fragment boundaries preserve exact text and partial messages wait for their remaining parts',async t=>{
   const {runtime,sources,materials,store}=await fixture(t);
   const body='甲🙂乙'.repeat(2200);const first=item(1,'session-a',body);first.document.coding.parts=2;

@@ -23,14 +23,12 @@ export interface MaterialOrganizerFile {
   image?:ImageMaterialProjection;
   extraction?:{complete?:boolean;coverage?:string};
   processingRequired?:boolean;
-  providerTranscript?:boolean;
   objectHash?:string;
   attachments:{id:string;hash:string;mimeType:string;relativePath?:string}[];
   chunks:{id:string;text:string;startMs:number|null;endMs:number|null;kind:string;speaker?:string;
     imageLocation?:Transcript['segments'][number]['imageLocation'];
     speakerAttribution?:ReturnType<typeof readFileSpeakerAttributions>[string];artifact:{complete?:boolean;coverage?:string}}[];
   job?:{state:string;error:string|null};
-  attachmentsTruncated:boolean;
   attachedFiles?:{fileId:string;record:CaptureRecord;file:MaterialOrganizerFile}[];
 }
 
@@ -38,10 +36,10 @@ export interface MaterialOrganizerFile {
 export interface MaterialOrganizerReader {
   capture():CaptureRecord|undefined;
   sourceHead():CaptureRecord|undefined;
-  codingSession():{records:CaptureRecord[];truncated:boolean};
-  screenGroup():{records:CaptureRecord[];truncated:boolean};
-  uiPageGroup():{records:CaptureRecord[];truncated:boolean};
-  mediaIntervals():{records:CaptureRecord[];truncated:boolean};
+  codingSession():{records:CaptureRecord[]};
+  screenGroup():{records:CaptureRecord[]};
+  uiPageGroup():{records:CaptureRecord[]};
+  mediaIntervals():{records:CaptureRecord[]};
   file(captureId:string):MaterialOrganizerFile|undefined;
 }
 
@@ -135,7 +133,8 @@ const origin=(sourceId:string,externalId:string,records:CaptureRecord[],extra:Pa
   const times=records.map(sourceContentTime).map(iso).sort();
   return {sourceId,externalId,deviceId:records[0]?.deviceId,firstAt:times[0],lastAt:times.at(-1),...extra};
 };
-const MAX_BLOCKS=2000,MAX_MEMBERS=2000,MAX_BLOCK_TEXT=250_000,MAX_TEXT=4_000_000;
+/** Chunk granularity only: text is split losslessly and never dropped. */
+const MAX_BLOCK_TEXT=250_000;
 
 function organizerReader(store:Store,selection:Record<string,string>,pinnedSourceHead?:CaptureRecord):MaterialOrganizerReader {
   const group={...selection},allowed=new Set<string>();
@@ -149,25 +148,25 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
     return row&&!row.deleted&&(pinnedSourceHead===undefined||row.capture_id===pinnedSourceHead.id)?permit(pinnedSourceHead??capture(store,row.capture_id)):undefined;
   };
   const codingSession=()=>{
-    if(!group.sourceId||!group.provider||!group.projectKey||!group.sessionId)return {records:[],truncated:false};
+    if(!group.sourceId||!group.provider||!group.projectKey||!group.sessionId)return {records:[]};
     const rows=store.db.prepare(`SELECT c.id FROM captures c JOIN source_heads h ON h.capture_id=c.id
       WHERE h.source_id=? AND h.deleted=0 AND json_extract(c.json,'$.provenance.document.coding.provider')=?
       AND json_extract(c.json,'$.provenance.document.coding.projectKey')=?
       AND json_extract(c.json,'$.provenance.document.coding.sessionId')=?
-      ORDER BY c.captured_at DESC,c.id DESC LIMIT 2001`).all(group.sourceId,group.provider,group.projectKey,group.sessionId) as {id:string}[];
-    return {records:rows.slice(0,MAX_MEMBERS).map(row=>permit(capture(store,row.id))).filter((r):r is CaptureRecord=>Boolean(r)),truncated:rows.length>MAX_MEMBERS};
+      ORDER BY c.captured_at DESC,c.id DESC`).all(group.sourceId,group.provider,group.projectKey,group.sessionId) as {id:string}[];
+    return {records:rows.map(row=>permit(capture(store,row.id))).filter((r):r is CaptureRecord=>Boolean(r))};
   };
   const screenGroup=()=>{
-    if(!group.groupKey||!group.deviceId)return {records:[],truncated:false};
+    if(!group.groupKey||!group.deviceId)return {records:[]};
     const rows=store.db.prepare(`SELECT o.id FROM context_observations o JOIN captures c ON c.id=o.id
       WHERE o.group_key=? AND c.device_id=?
       AND (json_extract(c.json,'$.source')='screen' OR (json_extract(c.json,'$.source')='ui_page' AND json_extract(c.json,'$.metadata.uiPage.version')=1))
-      ORDER BY c.captured_at,o.id LIMIT 1001`).all(group.groupKey,group.deviceId) as {id:string}[];
-    return {records:rows.slice(0,1000).map(row=>permit(capture(store,row.id))).filter((r):r is CaptureRecord=>Boolean(r)),truncated:rows.length>1000};
+      ORDER BY c.captured_at,o.id`).all(group.groupKey,group.deviceId) as {id:string}[];
+    return {records:rows.map(row=>permit(capture(store,row.id))).filter((r):r is CaptureRecord=>Boolean(r))};
   };
   const uiPageGroup=()=>{
-    if(group.captureId)return {records:[permit(capture(store,group.captureId))].filter((r):r is CaptureRecord=>Boolean(r)),truncated:false};
-    if(!group.deviceId||!group.appId||!group.kind||!group.identityType||!group.identityValue)return {records:[],truncated:false};
+    if(group.captureId)return {records:[permit(capture(store,group.captureId))].filter((r):r is CaptureRecord=>Boolean(r))};
+    if(!group.deviceId||!group.appId||!group.kind||!group.identityType||!group.identityValue)return {records:[]};
     const rows=store.db.prepare(`SELECT id FROM captures WHERE device_id=?
       AND json_extract(json,'$.source')='ui_page' AND json_extract(json,'$.metadata.uiPage.version')=3
       AND json_extract(json,'$.appId')=? AND json_extract(json,'$.metadata.uiPage.objects[0].kind')=?
@@ -176,32 +175,25 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
           AND json_extract(field.value,'$.values[0].text')=?)
       ORDER BY captured_at DESC,id DESC`).iterate(group.deviceId,group.appId,group.kind,group.identityType,group.identityValue);
     const records:CaptureRecord[]=[];
-    let characters=2,truncated=false;
-    // Parse newest originals one at a time. The existing Material text budget
-    // bounds retained field text and observation metadata before grouping copies.
+    // Parse newest originals one at a time; the complete group remains available.
     for(const row of rows){
       const record=capture(store,String(row.id));if(!record||!current(store,record.id))continue;
       const page=record.metadata?.uiPage;if(page?.version!==3)continue;
       const identity=observedUiIdentity(record);if(identity?.name!==group.identityType||identity.values[0]!.text!==group.identityValue)continue;
-      if(records.length===MAX_MEMBERS){truncated=true;break;}
-      const cost=JSON.stringify(page.objects[0]).length+JSON.stringify(uiPageObservation(record)).length+1;
-      if(characters+cost>MAX_TEXT){truncated=true;break;}
-      characters+=cost;records.push(permit(record)!);
+      records.push(permit(record)!);
     }
-    return {records,truncated};
+    return {records};
   };
   const file=(captureId:string,includeAttached=true):MaterialOrganizerFile|undefined=>{
     if(!allowed.has(captureId))return;
     const original=store.db.prepare('SELECT object_hash FROM file_versions WHERE capture_id=?').get(captureId) as {object_hash:string|null}|undefined;
-    const attachmentRows=store.db.prepare('SELECT f.id,f.hash,f.json FROM capture_files c JOIN archived_files f ON f.id=c.file_id WHERE c.capture_id=? ORDER BY f.id LIMIT 2001').all(captureId) as {id:string;hash:string;json:string}[];
-    const providerTranscript=Boolean(store.db.prepare("SELECT 1 FROM file_artifacts WHERE capture_id=? AND kind='transcript' AND current=1 AND json_extract(json,'$.providerSupplied')=1").get(captureId));
-    const chunkLimit=providerTranscript?19991:2001;
+    const attachmentRows=store.db.prepare('SELECT f.id,f.hash,f.json FROM capture_files c JOIN archived_files f ON f.id=c.file_id WHERE c.capture_id=? ORDER BY f.id').all(captureId) as {id:string;hash:string;json:string}[];
     const chunkRows=store.db.prepare(`SELECT c.id,c.artifact_id,c.text,c.metadata,c.start_ms,c.end_ms,a.kind FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id
       WHERE c.capture_id=? AND a.current=1 AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')
       AND NOT EXISTS(SELECT 1 FROM file_artifacts preferred WHERE preferred.capture_id=a.capture_id AND preferred.current=1
         AND ((preferred.kind='corrected-dialogue' AND a.kind!='corrected-dialogue')
           OR (preferred.kind='dialogue' AND a.kind IN ('transcript','text','image-text'))))
-      ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT ${chunkLimit}`).all(captureId) as {id:string;artifact_id:string;text:string;metadata:string|null;start_ms:number|null;end_ms:number|null;kind:string}[];
+      ORDER BY c.start_ms,c.ordinal,c.rowid`).all(captureId) as {id:string;artifact_id:string;text:string;metadata:string|null;start_ms:number|null;end_ms:number|null;kind:string}[];
     const confirmations=new Map([...new Set(chunkRows.map(row=>row.artifact_id))].map(id=>[id,readFileSpeakerAttributions(store,captureId,id)]));
     // A transcript artifact contains the complete segment array. Project its
     // coverage once instead of copying that array into every segment, which
@@ -226,8 +218,8 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
     }
     const extraction=store.db.prepare("SELECT json FROM file_artifacts WHERE capture_id=? AND current=1 AND kind IN ('text','image-text','transcript','dialogue','corrected-dialogue') ORDER BY rowid DESC LIMIT 1").get(captureId);
     const extracted=extraction?JSON.parse(String(extraction.json)):undefined;
-    return {image:imageMaterialProjection(store,captureId),extraction:extracted?{complete:extracted.complete,coverage:extracted.coverage}:undefined,processingRequired:!!original,providerTranscript,objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
-      attachments:attachmentRows.slice(0,2000).map(row=>{
+    return {image:imageMaterialProjection(store,captureId),extraction:extracted?{complete:extracted.complete,coverage:extracted.coverage}:undefined,processingRequired:!!original,objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
+      attachments:attachmentRows.map(row=>{
         const metadata=JSON.parse(row.json) as {mimeType?:string;relativePath?:string};
         return {id:row.id,hash:row.hash,mimeType:metadata.mimeType??'application/octet-stream',...(metadata.relativePath?{relativePath:metadata.relativePath}:{})};
       }),
@@ -238,17 +230,16 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
           ...(speaker?{speaker}:{}),...(speakerAttribution?{speakerAttribution}:{}),
           ...(metadata.imageLocation?{imageLocation:imageLocationSchema.parse(metadata.imageLocation)}:{}),
           artifact:artifactCoverage.get(row.artifact_id)!};
-      }),job,
-      attachmentsTruncated:attachmentRows.length>2000};
+      }),job};
   };
   const mediaIntervals=()=>{
-    if(!group.deviceId||group.appId===undefined||!group.mediaKey)return {records:[],truncated:false};
+    if(!group.deviceId||group.appId===undefined||!group.mediaKey)return {records:[]};
     const rows=store.db.prepare("SELECT id,json FROM captures WHERE device_id=? AND json_extract(json,'$.source')='media' AND json_extract(json,'$.appId')=? ORDER BY captured_at DESC,id DESC").iterate(group.deviceId,group.appId);
     const records:CaptureRecord[]=[];
     for(const row of rows){if(mediaIntervalIdentity(JSON.parse(String(row.json)) as CaptureRecord)!==group.mediaKey)continue;
-      if(records.length===MAX_MEMBERS)return {records,truncated:true};const record=permit(capture(store,String(row.id)));if(record)records.push(record);
+      const record=permit(capture(store,String(row.id)));if(record)records.push(record);
     }
-    return {records,truncated:false};
+    return {records};
   };
   return Object.freeze({capture:()=>group.captureId?permit(capture(store,group.captureId)):undefined,sourceHead,codingSession,screenGroup,uiPageGroup,mediaIntervals,file});
 }
@@ -277,43 +268,32 @@ function readerStillCurrent(store:Store,group:Record<string,string>,calls:readon
   return true;
 }
 
-/** Structural size accounting; a limit always appears in the material coverage. */
+/** Lossless text blocks: MAX_BLOCK_TEXT is only a chunk granularity. */
 class MaterialBody {
-  constructor(private readonly maxBlocks=MAX_BLOCKS,private readonly maxText=MAX_TEXT){}
   readonly blocks:MaterialDraft['blocks']=[];
   readonly members:MaterialDraft['members']=[];
+  /** Declared evidence limitations unrelated to content size. */
   readonly limitations=new Set<string>();
-  private characters=0;
-  get limited(){return this.limitations.size>0;}
-  get full(){return this.blocks.length>=this.maxBlocks||this.characters>=this.maxText;}
-  addMember(record:CaptureRecord){
-    if(this.members.length>=MAX_MEMBERS){this.limitations.add('member_limit');return false;}
-    this.members.push(member(record));return true;
-  }
+  addMember(record:CaptureRecord){this.members.push(member(record));return true;}
   text(id:string,text:string,memberId:string|string[],format:'plain'|'json'|'transcript'|'speech-text'='plain',locator?:Record<string,unknown>,evidenceIds?:string[],context?:MaterialEvidenceContext){
     if(!text)return;
     let position=0,part=0;
     while(position<text.length){
-      const room=Math.min(MAX_BLOCK_TEXT,this.maxText-this.characters);
-      if(this.blocks.length>=this.maxBlocks||room<=0){this.limitations.add(this.blocks.length>=this.maxBlocks?'block_limit':'text_limit');return;}
-      let end=Math.min(text.length,position+room);
+      let end=Math.min(text.length,position+MAX_BLOCK_TEXT);
       if(end<text.length&&/[\uD800-\uDBFF]/.test(text[end-1])&&/[\uDC00-\uDFFF]/.test(text[end]))end--;
-      if(end===position){this.limitations.add('text_limit');return;}
       const slice=text.slice(position,end);
       this.blocks.push({id:part?`${id}:${part}`:id,kind:'text',format,text:slice,memberIds:Array.isArray(memberId)?memberId:[memberId],
         ...(evidenceIds?{evidenceIds}:{}),
         ...(context?{evidenceContext:context}:{}),
         ...(locator||part?{locator:{...locator,textStart:position,textEnd:end}}:{})});
-      this.characters+=slice.length;position=end;part++;
+      position=end;part++;
     }
   }
   asset(id:string,hash:string,mimeType:string,memberId:string,locator?:Record<string,unknown>){
-    if(this.blocks.length>=this.maxBlocks){this.limitations.add('block_limit');return;}
     this.blocks.push({id,kind:'asset',hash,mimeType,memberIds:[memberId],...(locator?{locator}:{})});
   }
   coverage(state:'complete'|'pending'|'partial'='complete',reason?:string):MaterialDraft['coverage'] {
-    const limit=[...this.limitations][0];
-    return limit?{state:'partial',reason:limit}:reason?{state,reason}:{state};
+    return reason?{state,reason}:{state};
   }
   fidelity(base:'lossless'|'derived'='lossless',limitations:string[]=[]):MaterialDraft['fidelity'] {
     const all=[...limitations,...this.limitations];
@@ -354,7 +334,7 @@ const sourceItem:MaterialOrganizer={
     const r=reader.sourceHead();if(!r)return;
     const file=reader.file(r.id);if(!file)return;
     const {attachments,chunks,job}=file;
-    const body=file.providerTranscript?new MaterialBody(20000,16*1024*1024):new MaterialBody();body.addMember(r);
+    const body=new MaterialBody();body.addMember(r);
     const {text:_body,...metadata}=JSON.parse(captureText(r));
     body.text('source-record',r.ocrText,r.id,'plain',undefined,undefined,evidenceContext(r));
     const sourceBodyBlocks=body.blocks.map(block=>block.id);
@@ -376,7 +356,6 @@ const sourceItem:MaterialOrganizer={
     let attachmentPartial=false;
     for(const {fileId,record:attached,file:processed} of file.attachedFiles??[]){
       if(!body.addMember(attached))break;
-      if(processed.attachmentsTruncated)body.limitations.add('attachment_processing_truncated');
       if(processed.chunks.some(c=>c.artifact.complete===false||c.artifact.coverage==='partial'))attachmentPartial=true;
       const blockIds:string[]=[];
       for(const c of processed.chunks){
@@ -400,8 +379,6 @@ const sourceItem:MaterialOrganizer={
       body.asset(`attachment:${attachment.id}`,attachment.hash,attachment.mimeType,r.id,
         {fileId:attachment.id,...(attachment.relativePath?{relativePath:attachment.relativePath}:{})});
     }
-    if(file.attachmentsTruncated)body.limitations.add('attachment_limit');
-    if(file.providerTranscript&&chunks.length>=19991)body.limitations.add('recording_segment_limit');
     const artifact=file.extraction??chunks[0]?.artifact;
     // OCR publishes an independent product: a later visual interpretation can
     // fail without invalidating that completed extraction. Other file recipes
@@ -456,19 +433,16 @@ const codingSession:MaterialOrganizer={
   select:r=>{const c=r.provenance?.document?.coding;return c?{sourceId:r.provenance!.sourceId,provider:c.provider,projectKey:c.projectKey,sessionId:c.sessionId}:undefined;},
   identity:g=>materialId(g.sourceId,codingExternalId(g)),
   build(reader,g){
-    const {records,truncated}=reader.codingSession();
+    const {records}=reader.codingSession();
     if(!records.length)return;
     const externalId=codingExternalId(g),body=new MaterialBody();
-    // Consume newest first when the session exceeds one bounded revision. Display remains chronological.
     for(const [index,r] of records.entries()){
-      if(body.full){body.limitations.add('session_text_limit');break;}
       if(!body.addMember(r))break;
       body.text(`event:${r.id}`,captureText(r),r.id,'json',{newestIndex:index},undefined,evidenceContext(r,'transcript'));
     }
     const order=new Map(records.map((r,index)=>[r.id,index]));
     body.blocks.sort((a,b)=>(order.get(b.memberIds[0]!)??0)-(order.get(a.memberIds[0]!)??0));
     body.members.reverse();
-    if(truncated)body.limitations.add('session_member_limit');
     const byId=new Map(records.map(r=>[r.id,r]));
     const included=body.members.map(m=>byId.get(m.id)!).filter(Boolean);
     const project=codingProjectContext(included.map(r=>r.provenance!.document!.coding!));
@@ -492,11 +466,10 @@ const uiPageObject:MaterialOrganizer={
   },
   identity:g=>materialId(uiPageCaptureSource(g.deviceId),uiPageExternalId(g)),
   build(reader,g){
-    const {records:input,truncated}=reader.uiPageGroup();
+    const {records:input}=reader.uiPageGroup();
     const records=input.sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt)||(a.metadata?.captureObservation?.objectIndex??0)-(b.metadata?.captureObservation?.objectIndex??0)||a.id.localeCompare(b.id));
     if(!records.length)return;
     const body=new MaterialBody(),observations:unknown[]=[];
-    if(truncated)body.limitations.add('ui_page_group_limit');
     const values:{name:string;source:string;text:string;members:string[]}[]=[];
     // Exact equality and contiguous suffix/prefix overlap preserve repeated
     // displays without model-free semantic object/event inference.
@@ -507,12 +480,11 @@ const uiPageObject:MaterialOrganizer={
         const prior=values.filter(value=>value.name===field.name),incoming=field.values;
         let overlap=0;
         for(let size=Math.min(prior.length,incoming.length);size>0;size--)if(incoming.slice(0,size).every((value,index)=>value.text===prior[prior.length-size+index]!.text&&value.source===prior[prior.length-size+index]!.source)){overlap=size;break;}
-        for(let index=0;index<overlap;index++){const members=prior[prior.length-overlap+index]!.members;if(!members.includes(r.id)){if(members.length<32)members.push(r.id);else body.limitations.add('block_evidence_limit');}}
+        for(let index=0;index<overlap;index++){const members=prior[prior.length-overlap+index]!.members;if(!members.includes(r.id))members.push(r.id);}
         for(const value of incoming.slice(overlap))values.push({name:field.name,source:value.source,text:value.text,members:[r.id]});
       }
     }
     if(!body.members.length)return;
-    if(truncated)body.limitations.add('ui_page_group_limit');
     for(const [index,value] of values.entries())body.text(`field:${index}`,JSON.stringify({name:value.name,source:value.source,text:value.text}),value.members,'json',{field:value.name},undefined,evidenceContext(records.find(record=>record.id===value.members[0])!));
     body.text('observations',JSON.stringify(observations),records[0]!.id,'json',undefined,undefined,evidenceContext(records[0]!));
     const pages=records.map(r=>r.metadata!.uiPage!).filter(p=>p.version===3),sourceId=uiPageCaptureSource(g.deviceId),externalId=uiPageExternalId(g);
@@ -531,11 +503,10 @@ const screenGroup:MaterialOrganizer={
   identity:g=>g.groupKey?materialId(sourceKey('screen',g.deviceId),g.groupKey):undefined,
   build(reader,g){
     if(!g.groupKey)return;
-    const {records,truncated}=reader.screenGroup();
+    const {records}=reader.screenGroup();
     if(!records.length)return;
     const sourceId=sourceKey('screen',g.deviceId),externalId=g.groupKey,body=new MaterialBody();
     for(const r of records)body.addMember(r);
-    if(truncated)body.limitations.add('screen_group_member_limit');
     const frameIndices=[...new Set([0,Math.floor((records.length-1)/2),records.length-1])];
     const durationMs=records.reduce((sum,r)=>sum+Math.max(0,r.durationMs??0),0);
     const applications=new Map<string,{appId:string;appName:string;samples:number;durationMs:number}>();
@@ -552,7 +523,8 @@ const screenGroup:MaterialOrganizer={
     const apps=[...applications.values()].sort((a,b)=>b.durationMs-a.durationMs||a.appId.localeCompare(b.appId));
     body.text('overview',JSON.stringify({sampleCount:records.length,firstAt:sourceContentTime(records[0]!),lastAt:sourceContentTime(records.at(-1)!),
       observedDurationMs:durationMs,applicationCount:apps.length,applications:apps.slice(0,8),distinctOcrCount:distinctOcr.size,
-      keyframeCount:frameIndices.length,originalsRetained:true}),records[0]!.id,'json',undefined,undefined,
+      keyframeCount:frameIndices.length,originalsRetained:true,
+      sampleQualification:'Application and OCR entries here are overview samples, not complete evidence. Complete originals remain in this material and the source archive.'}),records[0]!.id,'json',undefined,undefined,
       {observedAt:records[0]!.capturedAt,document:{timeBasis:'unknown',contentRole:'summary'}});
     for(const [index,position] of frameIndices.entries()){
       const r=records[position]!;
@@ -598,9 +570,9 @@ const mediaIntervals:MaterialOrganizer={
   select:record=>record.source==='media'?{deviceId:record.deviceId,appId:record.appId,mediaKey:mediaIntervalIdentity(record)}:undefined,
   identity:group=>materialId(sourceKey('state',group.deviceId),'media:'+group.mediaKey),
   build(reader,group){
-    const {records,truncated}=reader.mediaIntervals();if(!records.length)return;
+    const {records}=reader.mediaIntervals();if(!records.length)return;
     records.sort((a,b)=>Date.parse(a.capturedAt)-a.durationMs-(Date.parse(b.capturedAt)-b.durationMs)||a.id.localeCompare(b.id));
-    const body=new MaterialBody();if(truncated)body.limitations.add('media_interval_member_limit');
+    const body=new MaterialBody();
     const intervals:{startAt:string;endAt:string}[]=[];
     for(const record of records){
       body.addMember(record);const measured=mediaActivity([record]),end=Date.parse(record.capturedAt),start=end-measured.totalDurationMs;
@@ -648,7 +620,6 @@ const authored:MaterialOrganizer={
     const artifacts:NonNullable<MaterialDraft['artifacts']>=[{key:'authored-record',state:'ready'}];
     for(const {record:attached,file:processed} of file.attachedFiles??[]){
       if(!body.addMember(attached))break;
-      if(processed.attachmentsTruncated)body.limitations.add('attachment_processing_truncated');
       if(processed.extraction?.complete===false||processed.extraction?.coverage==='partial'||processed.chunks.some(chunk=>chunk.artifact.complete===false||chunk.artifact.coverage==='partial'))body.limitations.add('attachment_processing_incomplete');
       if(processed.objectHash)body.asset(`record-attachment:${attached.id}`,processed.objectHash,attached.provenance?.mimeType??'application/octet-stream',attached.id);
       const blockIds:string[]=[];
@@ -661,7 +632,6 @@ const authored:MaterialOrganizer={
       artifacts.push({key:`attachment/${attached.id}/text`,blockIds,state:processed.extraction?'ready':['failed','blocked'].includes(processed.job?.state??'')?'failed':['waiting','running'].includes(processed.job?.state??'waiting')?'pending':'unavailable'});
       artifacts.push(...imageBlocks(body,attached,processed.image,`attachment/${attached.id}`));
     }
-    if(file.attachmentsTruncated)body.limitations.add('attachment_limit');
     if((file.attachedFiles?.length??0)!==(r.metadata?.attachments?.length??0))body.limitations.add('attachment_unavailable');
     return {id:materialId(sourceId,r.id),kind:`mote.${r.source}`,schemaVersion:2,title:r.windowTitle||r.metadata?.notification?.title?.slice(0,500)||r.appName||r.source,
       origin:origin(sourceId,r.id,[r]),blocks:body.blocks,members:body.members,coverage:body.coverage(artifacts.some(item=>item.state!=='ready')?'partial':'complete'),artifacts,fidelity:body.fidelity('derived',['metadata_projected']),retention:{original:'retained',policy:'keep'}};

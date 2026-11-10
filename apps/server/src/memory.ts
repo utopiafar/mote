@@ -13,10 +13,10 @@ import {memoryImageReadReceipts,memoryImageSelectorSchema} from './memory-image-
 import {memoryImageInterpretation,memoryImageLocator} from './memory-image-grants.js';
 export type {Memory,MemoryEvidence,EvidenceRange} from './memory-schema.js';
 
-const spanSchema=z.object({id:z.string().uuid(),offset:z.number().int().min(0).max(100000).optional(),length:z.number().int().min(1).max(12000).optional(),quote:z.string().min(1).max(12000).optional(),image:memoryImageSelectorSchema.optional()}).strict().superRefine((value,context)=>{
+const spanSchema=z.object({id:z.string().uuid(),offset:z.number().int().min(0).max(100000).optional(),length:z.number().int().min(1).max(12000).optional(),quote:z.string().min(1).optional(),image:memoryImageSelectorSchema.optional()}).strict().superRefine((value,context)=>{
   if(value.image?value.quote!==undefined||value.offset!==undefined||value.length!==undefined:!value.quote)context.addIssue({code:'custom',message:'Evidence requires either an exact text quote or a delivered image view'});
 });
-export const claimSchema=z.object({domain:z.enum(['personal','coding']).optional(),relations:z.array(memoryRelationSchema).max(20).optional(),admission:memoryAdmissionSchema.optional(),relatedMemoryIds:z.array(z.string().uuid()).max(50).optional(),coding:codingMemorySchema.optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),validFrom:z.string().datetime({offset:true}).optional(),validUntil:z.string().datetime({offset:true}).optional(),title:z.string().trim().min(1).max(160),statement:z.string().trim().min(1).max(6000),uncertainty:z.string().max(2000),evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(spanSchema).min(1).max(30).optional()}).strict();
+export const claimSchema=z.object({domain:z.enum(['personal','coding']).optional(),relations:z.array(memoryRelationSchema).max(20).optional(),admission:memoryAdmissionSchema.optional(),relatedMemoryIds:z.array(z.string().uuid()).max(50).optional(),coding:codingMemorySchema.optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),validFrom:z.string().datetime({offset:true}).optional(),validUntil:z.string().datetime({offset:true}).optional(),title:z.string().trim().min(1),statement:z.string().trim().min(1),uncertainty:z.string(),evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(spanSchema).min(1).max(30).optional()}).strict();
 export {type MemoryOutputValidationCode,type MemoryValidationDetails} from './memory-validation.js';
 import {memoryValidationInstruction,validationLocation,validationProblem,type MemoryOutputValidationCode,type MemoryValidationDetails} from './memory-validation.js';
 /** Feedback contains only host-owned instructions and numeric locations, never model text. */
@@ -309,7 +309,7 @@ export class MemoryStore {
   }
   /** An explicit owner correction is original user evidence, never an automatic model overwrite. */
   async correct(id:string,raw:unknown,stage?: (records:Memory[],assert:()=>void)=>Promise<void>,identity?:{noteId:string;memoryId:string;at:string},committed?:()=>void){
-    const input=z.object({version:z.number().int().positive(),title:z.string().trim().min(1).max(160),statement:z.string().trim().min(1).max(6000),uncertainty:z.string().max(2000).default(''),validFrom:z.string().datetime({offset:true}).optional(),validUntil:z.string().datetime({offset:true}).optional()}).strict().parse(raw);
+    const input=z.object({version:z.number().int().positive(),title:z.string().trim().min(1),statement:z.string().trim().min(1),uncertainty:z.string().default(''),validFrom:z.string().datetime({offset:true}).optional(),validUntil:z.string().datetime({offset:true}).optional()}).strict().parse(raw);
     const original=this.get(id);if(original.version!==input.version||original.supersededBy)throw new StoreError('Memory changed; refresh before correcting',409);
     if(input.validUntil&&Date.parse(input.validFrom??new Date().toISOString())>=Date.parse(input.validUntil))throw new StoreError('Correction validity dates are reversed',400);
     const noteId=identity?.noteId??randomUUID(),memoryId=identity?.memoryId??randomUUID(),now=identity?.at??new Date().toISOString();

@@ -6,7 +6,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Store} from '../src/store.js';
-import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
+import {MaterialStore,materialId,materialManifestSchema,type MaterialDraft} from '../src/materials.js';
 import {buildApp} from '../src/app.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import type {Config} from '../src/config.js';
@@ -49,6 +49,20 @@ test('formal material revisions are immutable, independently readable, deduplica
   assert.deepEqual(materials.list().items,[]);
   assert.equal(materials.forget(first.id),true);
   assert.equal(store.db.prepare('SELECT COUNT(*) n FROM material_block_payloads').get()!.n,0);
+});
+
+test('published blocks and artifact references are not rejected by fixed text, member or locator counts',t=>{
+  const {materials}=fixture(t),members=Array.from({length:33},(_,index)=>({id:`archive-${index}`,kind:'archive' as const,ref:`archive:${String(index).padStart(64,'0')}`}));
+  const text='x'.repeat(250_001),locator={generated:Array.from({length:800},(_,index)=>`generated-value-${index}`)};
+  const draft:MaterialDraft={id:materialId('fixture-source','large-block'),kind:'mote.note',schemaVersion:1,title:'Generated large block',origin:{sourceId:'fixture-source',externalId:'large-block'},
+    members,blocks:[{id:'body',kind:'text',format:'plain',text,memberIds:members.map(member=>member.id),locator}],
+    coverage:{state:'complete'},artifacts:[{key:'source-body',state:'ready',blockIds:['body']}],fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};
+  const published=materials.publish(draft);
+  assert.equal(materials.block(published.ref,0)!.block.text.length,text.length);
+  assert.equal(materials.block(published.ref,0)!.block.locator?.generated.length,800);
+  const {blocks:_blocks,...manifestDraft}=draft;
+  const manifest=materialManifestSchema.parse({...manifestDraft,artifacts:[{key:'source-body',state:'ready',blockIds:Array.from({length:20_001},(_,index)=>`block-${index}`)}]});
+  assert.equal(manifest.artifacts![0]!.blockIds!.length,20_001);
 });
 
 test('compiled Material metadata reads remain fresh across revisions, transactions, schema changes and reopen',async t=>{

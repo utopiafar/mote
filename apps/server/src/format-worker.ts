@@ -27,14 +27,14 @@ async function plain(task:Extract<FormatTask,{kind:'plain'}>){
     warnings.push(...decoded.warnings.map(warning=>file.name+': '+warning).slice(0,Math.max(0,30-warnings.length)));
     let part=0;for(const {text,documentLocation} of documentChunks(decoded,24000)){
      const item=sourceItemSchema.parse({externalId:file.relativePath+':'+part++,revision:createHash('sha256').update(JSON.stringify([file.hash,'document-v1'])).digest('hex'),observedAt:task.createdAt,title:file.name,text,kind:'file',layer:'original',mimeType:file.mimeType,document:{fileId:file.id,path:file.relativePath,contentRole:'other',timeBasis:'unknown',originalMetadata:{decoder:'document-v1',...documentLocation,coverage:decoded.coverage,warnings:decoded.warnings}}});
-     const line=Buffer.from(JSON.stringify({item,evidencePaths:[input.path],attachments:[]})+'\n');size+=line.length;if(++count>10000||size>32*1024*1024)fail('decoded_limit');writeSync(fd,line);digest.update(line);if(samples.length<12)samples.push({title:item.title,text:item.text.slice(0,1800),kind:'file',attachmentCount:0});
+     const line=Buffer.from(JSON.stringify({item,evidencePaths:[input.path],attachments:[]})+'\n');size+=line.length;if(size>32*1024*1024)fail('decoded_limit');count++;writeSync(fd,line);digest.update(line);if(samples.length<12)samples.push({title:item.title,text:item.text.slice(0,1800),kind:'file',attachmentCount:0});
     }
     const check=createHash('sha256');for(const part of bytes(input.path))check.update(part);if(check.digest('hex')!==file.hash)fail('original_changed');continue;
    }
    const totalCharacters=inspect(file,input.path);
    let part=0;for(const {text,offset} of textParts(input.path,24000)){
     const item=sourceItemSchema.parse({externalId:file.relativePath+':'+part++,revision:createHash('sha256').update(JSON.stringify([file.hash,'utf8-v2'])).digest('hex'),observedAt:task.createdAt,title:file.name,text,kind:'file',layer:'original',mimeType:file.mimeType,document:{fileId:file.id,path:file.relativePath,contentRole:'other',timeBasis:'unknown',originalMetadata:{decoder:'utf8-v2',offset,length:text.length,totalCharacters}}});
-    const line=Buffer.from(JSON.stringify({item,evidencePaths:[input.path],attachments:[]})+'\n');size+=line.length;if(++count>10000||size>32*1024*1024)fail('decoded_limit');writeSync(fd,line);digest.update(line);if(samples.length<12)samples.push({title:item.title,text:item.text.slice(0,1800),kind:'file',attachmentCount:0});
+    const line=Buffer.from(JSON.stringify({item,evidencePaths:[input.path],attachments:[]})+'\n');size+=line.length;if(size>32*1024*1024)fail('decoded_limit');count++;writeSync(fd,line);digest.update(line);if(samples.length<12)samples.push({title:item.title,text:item.text.slice(0,1800),kind:'file',attachmentCount:0});
    }
    // Detect an edit between the inspection and decoding passes before publication.
    inspect(file,input.path);

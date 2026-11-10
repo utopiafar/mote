@@ -38,7 +38,6 @@ export type CodingEvidence=z.infer<typeof codingEvidenceSchema>;
 /** Model-visible Coding evidence is a protocol-selected dialogue, never a raw
  * transcript. These bounds apply before indexing or any model invocation. */
 export const CODING_DIALOGUE_SCHEMA_VERSION=6;
-export const MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS=12000;
 /** Recognize complete provider-owned envelopes only. Mentioning these names,
  * quoting an envelope, or appending a human request does not match. This is a
  * protocol parser; it never dispatches intent, topics or memory value. */
@@ -77,8 +76,7 @@ export function codingDialogueText(coding:CodingEvidence,text:string):string {
 export function codingConversationEvidence(coding:CodingEvidence,text?:string):boolean {
   const dialogue=coding.role==='user'&&coding.attribution==='human'||
     coding.role==='assistant'&&coding.attribution==='agent'&&coding.channel==='final';
-  return dialogue&&(!text||text.length<=MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS)&&
-    !(coding.role==='user'&&text!==undefined&&codingHostEnvelope(coding.provider,text));
+  return dialogue&&!(coding.role==='user'&&text!==undefined&&codingHostEnvelope(coding.provider,text));
 }
 /** Provider activity evidence is a bounded observation, never proof of attention,
  * reading duration, endorsement, or of the revision a human saw. */
@@ -140,7 +138,7 @@ export const calendarSchema=z.object({start:timestamp,end:timestamp,allDay:z.boo
 export const sourceItemKinds=['calendar','file','event','message','metric','memory'] as const;
 export const sourceItemSchema=z.object({
   externalId:z.string().min(1).max(1000),revision:z.string().min(1).max(200),observedAt:timestamp.describe('Actual source observation time. For document imports without an explicit source observation timestamp, copy the request importedAt exactly. Never substitute recordedAt, createdAt, modifiedAt, or an event date.'),modifiedAt:timestamp.optional(),
-  title:z.string().max(2000).default(''),text:z.string().max(100000).default(''),
+  title:z.string().default(''),text:z.string().default(''),
   uri:z.string().max(4000).optional(),kind:z.enum(sourceItemKinds),
   layer:z.enum(['snapshot','reference','original','derived']),mimeType:z.string().max(200).optional(),calendar:calendarSchema.optional(),
   deleted:z.boolean().default(false),

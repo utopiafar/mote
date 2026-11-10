@@ -19,6 +19,21 @@ async function fixture(t:any){
   const reader=new EvidenceReader(store,sources);
   return {store,sources,reader,query:createContextQuery(store,sources,reader)};
 }
+test('query pages scan past the former 2000-candidate stop instead of calling the archive exhausted',async t=>{
+  const {store,reader}=await fixture(t),base=Date.parse('2026-09-18T00:00:00.000Z');
+  for(let offset=0;offset<2001;offset+=500){
+    await store.ingestBatch(Array.from({length:Math.min(500,2001-offset)},(_,position)=>{
+      const index=offset+position;
+      return {id:randomUUID(),deviceId:'generated-screen',deviceName:'Generated device',platform:'macos',source:'screen',capturedAt:new Date(base+index*1000).toISOString(),durationMs:1000,ocrText:`SCAN_ANCHOR hidden screen ${index}`};
+    }));
+  }
+  const noteId=randomUUID();
+  await store.ingest({id:noteId,deviceId:'generated-note',deviceName:'Generated device',platform:'import',source:'note',capturedAt:new Date(base-1000).toISOString(),durationMs:0,ocrText:'SCAN_ANCHOR visible note'});
+  const page=reader.queryPage({query:'SCAN_ANCHOR',limit:1},'search');
+  assert.equal(page.items.length,1);assert.equal(page.items[0]!.id,noteId);
+  assert.ok(page.scanned>2000,'the visible note lies beyond the former fixed scan prefix');
+});
+
 async function coding(store:Store,minutes:number,projectKey:string,sessionId:string,text:string,provider:'codex'|'claude'='codex'){
   const id=randomUUID();await store.ingest({id,deviceId:sessionId==='s-a'?'device-a':'device-b',deviceName:'Generated device',platform:'import',capturedAt:captured(minutes),durationMs:0,appId:'generated.agent',appName:'Generated Agent',windowTitle:'Generated coding turn',ocrText:text,source:'message',provenance:{sourceId:'coding',externalId:id,revision:'1',layer:'snapshot',document:{contentRole:'transcript',coding:{version:1,provider,sessionId,projectKey,eventId:id,role:'user',part:0,parts:1}}},privacy:{excluded:false,redacted:false,mode:'none'}});return id;
 }

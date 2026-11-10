@@ -106,7 +106,7 @@ test('retired selected-node pages are rejected while current Desktop and Android
   assert.match(runtime.materials.read(androidMaterial.id).text,/Generated retained paragraph/);
 });
 
-test('a long repeated article group keeps newest bounded material text while every original remains pageable',async t=>{
+test('a long repeated article group keeps every original and chunks the full text without a total-text cap',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-field-text-budget-'));
   const runtime=await buildApp({...config(directory),maxStorageBytes:100_000_000},{agent,backgroundWorker:false});
   t.after(async()=>{await runtime.app.close();rmSync(directory,{recursive:true,force:true});});
@@ -133,14 +133,16 @@ test('a long repeated article group keeps newest bounded material text while eve
     await new Promise<void>(resolve=>setImmediate(resolve));
   }
   const material=runtime.materials.list({kind:'mote.ui-page-object'}).items[0]!;
-  assert.ok(material);assert.equal(material.coverage.state,'partial');assert.equal(material.coverage.reason,'ui_page_group_limit');
-  assert.ok(material.memberCount>0&&material.memberCount<originals.length);
+  assert.ok(material);assert.equal(material.coverage.state,'partial');assert.equal(material.coverage.reason,'visible_window');
+  assert.equal(material.memberCount,originals.length);
   const members=runtime.materials.members(material.id,{limit:200}).items.map(item=>item.id);
   assert.ok(members.includes(originals.at(-1)!.id),'newest full original participates');
-  assert.ok(!members.includes(originals[0]!.id),'older originals remain outside the bounded material');
+  assert.ok(members.includes(originals[0]!.id),'older originals are no longer dropped by a total text budget');
   let text='',offset=0;
   do{const page=runtime.materials.read(material.id,{offset,length:12000});text+=page.text;offset=page.textRange.nextOffset??-1;}while(offset>=0);
-  assert.ok(text.length<=4_000_000);assert.match(text,/Generated observation 79, paragraph 2\./);
+  assert.ok(text.length>4_000_000,'the former total-text cap no longer drops the tail');
+  assert.ok(material.blockCount>1,'long field text remains losslessly chunked');
+  assert.match(text,/Generated observation 79, paragraph 2\./);
   assert.equal(runtime.store.db.prepare("SELECT count(*) AS n FROM captures WHERE json_extract(json,'$.source')='ui_page'").get()?.n,80);
   for(const value of [originals[0]!,originals.at(-1)!]){
     const response=await runtime.app.inject({url:`/api/capture-browser/${value.id}`,headers});

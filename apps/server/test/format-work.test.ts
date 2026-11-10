@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash,randomUUID} from 'node:crypto';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -14,6 +15,14 @@ test('aborted decoding does not consume a worker slot and leaves no resumable mo
  const controller=new AbortController();controller.abort();async function* body(){yield Buffer.from('fixture');}
  await assert.rejects(extractUtf8(body(),7,controller.signal));
  const result=await extractUtf8(body(),7,new AbortController().signal);assert.equal(result.segments[0].text,'fixture');
+});
+
+test('plain decoding no longer rejects more than 10000 chunks while the 32 MiB manifest capacity remains',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-plain-limit-')),path=join(directory,'generated.txt'),manifest=join(directory,'generated.jsonl'),text='Generated plain input',createdAt='2025-01-01T00:00:00.000Z';
+ writeFileSync(path,text);t.after(()=>rmSync(directory,{recursive:true,force:true}));
+ const hash=createHash('sha256').update(text).digest('hex'),file=(index:number)=>({id:randomUUID(),hash,sizeBytes:Buffer.byteLength(text),name:`generated-${index}.txt`,relativePath:`generated-${index}.txt`,mimeType:'text/plain',createdAt});
+ const result=await formatWork({kind:'plain',inputs:Array.from({length:10001},(_,index)=>({file:file(index),path})),createdAt,manifest});
+ assert.equal(result.count,10001);assert.ok(result.samples.length>0);
 });
 
 test('a queued format worker receives a fresh execution budget after occupied workers time out',async t=>{

@@ -223,7 +223,7 @@ export class EvidenceStore {
   /** Validation and image decoding happen before a single bounded durable commit.
    * No await is allowed inside the transaction. A failed item acknowledges nothing. */
   async ingestBatch(raw:unknown[],transaction?:(result:{id:string;duplicate:boolean},index:number)=>void,before?:()=>void) {
-    if(!Array.isArray(raw)||!raw.length||raw.length>CAPTURE_BATCH_MAX_RECORDS)throw new StoreError('Expected 1–500 observations',413);
+    if(!Array.isArray(raw)||!raw.length)throw new StoreError('Expected at least one observation',413);
     if(Buffer.byteLength(JSON.stringify(raw))>CAPTURE_BATCH_MAX_BYTES)throw new StoreError('Observation batch exceeds 32 MiB',413);
     const prepared:Prepared[]=[];
     // Bound decoder memory independently of caller batch size.
