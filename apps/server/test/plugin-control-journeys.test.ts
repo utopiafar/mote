@@ -271,6 +271,11 @@ test('scope, undeclared credentials, missing model references, revisions and reu
   ]}), f = fixture(t, release), {packageId} = await install(f);
   f.plugins.configurationAllowed = (field, value) => field.id === 'model' ? value === 'generated-existing-profile' : value === 'model:generated-existing-profile';
   const create = () => ({...pluginCommand(f), packageId, name: 'Generated references', scope: 'default', configuration: {model: 'generated-existing-profile', secret: 'model:generated-existing-profile'}});
+  const workerSecretName = 'GENERATED_WORKER_SECRET_' + randomUUID().replaceAll('-', '_').toUpperCase();
+  process.env[workerSecretName] = 'generated-worker-secret-that-must-not-be-resolved';
+  try {
+    assert.throws(() => f.plugins.configure(undefined, {...create(), configuration: {...create().configuration, secret: '${' + workerSecretName + '}'}}), /unavailable/, 'worker Memory packages keep their existing model-reference contract');
+  } finally { delete process.env[workerSecretName]; }
   assert.throws(() => f.plugins.configure(undefined, {...create(), scope: 'another-owner'}));
   assert.throws(() => f.plugins.configure(undefined, {...create(), configuration: {model: 'missing-profile'}}), /unavailable/);
   assert.throws(() => f.plugins.configure(undefined, {...create(), configuration: {model: 'generated-existing-profile', secret: 'plaintext-generated-not-a-secret'}}), /unavailable/);

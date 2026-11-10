@@ -22,7 +22,7 @@ export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthC
 export {recordingManifest,RecordingConnector} from '../plugins/recording-sources.js';
 export type {RecordingProvider,RecordingAccount,RecordingMetadata} from '../plugins/recording-sources.js';
 
-export type ConnectorTestDependencies={recordings?:RecordingProvider[];google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner};
+export type ConnectorTestDependencies={recordings?:RecordingProvider[];google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner;fetch?:typeof fetch};
 
 function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return [
   ...recordingSourceManifests(testing?.recordings),
@@ -56,7 +56,7 @@ function connectorScope(packageId:string,instanceId:string,errorMessage:string):
  * Owner routes and OAuth callbacks reach only the one dynamic dispatcher; each
  * installed connector gets its own host scope and failure rollback. */
 export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[],dispatcherInput?:DynamicHttpDispatcher):Promise<ConnectorHostAdapter>{
-  const ctx={...context,config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
+  const ctx={...context,...(testing?.fetch?{fetch:testing.fetch}:{}),config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
   const removeMemory=installRecordingSources(context.memoryStrategies);
   if(removeMemory)app.addHook('onClose',async()=>removeMemory());
   const manifests=[...builtins(testing),...additionalManifests];
@@ -88,7 +88,7 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   catch(error){try{await closeHost();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host startup and disposal failed',{cause:error});}throw error;}
   return Object.freeze({
     start:adapter.start,inventory:adapter.inventory,contributions:adapter.contributions,configureSyncInterval:adapter.configureSyncInterval,
-    install:adapter.install,restart:adapter.restart,stop:adapter.stop,executeAction:adapter.executeAction,close:closeHost,
+    install:adapter.install,known:adapter.known,restart:adapter.restart,stop:adapter.stop,executeAction:adapter.executeAction,close:closeHost,
   });
 }
 
