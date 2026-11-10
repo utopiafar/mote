@@ -2,7 +2,7 @@ import {retainConversationRoots,retainedConversationResult} from './conversation
 import {captureSessionMembersSql} from './capture-session-members.js';
 import {installVaultSchema} from './vault-schema-installation.js';
 import {centralOcrState} from './plugins/central-ocr-state.js';
-import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
+import {CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
 import {AssetStore} from './assets.js';
 import {archivedTodoSchema} from './todos.js';
 import {EvidenceArchive} from './evidence-archive.js';
@@ -235,7 +235,7 @@ export class EvidenceStore {
     catch(e){this.db.exec('ROLLBACK');this.sweep();throw e;}
   }
   async ingestSettled(raw:CaptureInput[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
-    if(!raw.length||raw.length>CAPTURE_BATCH_MAX_RECORDS)throw new StoreError('Expected 1–500 observations',413);
+    if(!raw.length)throw new StoreError('Expected at least one observation',413);
     if(Buffer.byteLength(JSON.stringify(raw))>CAPTURE_BATCH_MAX_BYTES)throw new StoreError('Observation batch exceeds 32 MiB',413);
     const prepared:PromiseSettledResult<Prepared>[]=[];
     for(let i=0;i<raw.length;i+=4)prepared.push(...await Promise.allSettled(raw.slice(i,i+4).map(item=>this.prepare(item))));

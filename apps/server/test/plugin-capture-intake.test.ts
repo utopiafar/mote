@@ -177,3 +177,13 @@ test('shared ingress identity accepts only its exact repositories',async t=>{
   try{assert.equal(f.intake.ingress.usesRepositories(otherStore,otherSources,otherFiles),false,'a different Store is not the same ingress');}
   finally{await otherFiles.close();otherStore.close();rmSync(other,{recursive:true,force:true});}
 });
+
+test('capture bundle accepts more than 500 observations under the gzip and 32 MiB byte limits',async t=>{
+  const f=await fixture(t);
+  const inputs=Array.from({length:501},()=>capture());
+  const accepted=await f.post('/api/captures/bundle',ownerToken,f.bundleBody(inputs),'application/gzip');
+  assert.equal(accepted.statusCode,200,accepted.body);
+  const results=accepted.json().results as Array<{status:number}>;
+  assert.equal(results.length,501);
+  assert.ok(results.every(result=>result.status===201));
+});
