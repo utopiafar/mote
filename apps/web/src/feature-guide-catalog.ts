@@ -866,10 +866,10 @@ export const guideSections:GuideSection[] = [
               "categoryId": null,
               "label": "AI 接入",
               "path": "AI 接入",
-              "where": "生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。"
+              "where": "生成标准 HTTP MCP 连接 JSON，或复制 OAuth 服务地址交给只走标准发现的客户端。"
             },
             "otherTargets": [],
-            "setup": "先在部署配置中启用 MCP、独立令牌；写入还需单独启用及来源允许列表，合并配置后重启。客户端需支持 Streamable HTTP、URL 和 Bearer 请求头。",
+            "setup": "先在部署配置中启用 MCP、独立令牌；写入还需单独启用及来源允许列表，合并配置后重启。Bearer 客户端需要 URL 和请求头；OAuth 客户端只需服务地址，并在「AI 接入」批准发现请求。",
             "setupTargets": [
               {
                 "pageId": "settings",
@@ -883,7 +883,7 @@ export const guideSections:GuideSection[] = [
             ],
             "caveats": [
               "只读和写入凭据分别授予；写入凭据没有读取工具。",
-              "只接受 OAuth 的客户端不能直接使用这份 JSON。"
+              "只接受 OAuth 的客户端使用同一服务地址自动发现授权，需由所有者批准。"
             ],
             "condition": null
           }

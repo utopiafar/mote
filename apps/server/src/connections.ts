@@ -13,7 +13,7 @@ const deviceId=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 const label=z.string().trim().min(1).max(120);
 const platform=z.enum([...connectionClientPlatforms,'other'] as const);
 const timestamp=z.string().datetime();
-const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict().refine(c=>c.scope!=='collector'||Boolean(c.deviceId&&c.platform),'Collector credentials require a device and platform');
+const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional(),mcpResource:z.string().max(2048).optional()}).strict().refine(c=>c.scope!=='collector'||Boolean(c.deviceId&&c.platform),'Collector credentials require a device and platform');
 const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema)}).strict();
 export type ConnectionCredential=z.infer<typeof credentialSchema>;
 type Saved=z.infer<typeof savedSchema>;
@@ -111,7 +111,7 @@ export class Connections {
     const hash=digest(header.slice(7));return this.credentials.find(c=>c.hash===hash&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock()));
   }
   assertActive(credential:ConnectionCredential){if(!this.credentials.some(c=>c.id===credential.id&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock())))throw new ConnectionError('connection_revoked',401,moteText("此设备连接已撤销，请重新配对。"));if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央正在关闭。稍后重试。"));}
-  publicCredential(c:ConnectionCredential){const {hash:_,writeSourceIds,...visible}=c;return {...visible,tokenHint:`…${c.id.slice(-8)}`,...(writeSourceIds?{writeSourceIds:[...writeSourceIds]}:{})};}
+  publicCredential(c:ConnectionCredential){const {hash:_,writeSourceIds,mcpResource:__,...visible}=c;return {...visible,tokenHint:`…${c.id.slice(-8)}`,...(writeSourceIds?{writeSourceIds:[...writeSourceIds]}:{})};}
   inventory(config?:ConnectorConfig){return {items:this.credentials.map(c=>this.publicCredential(c)),mcp:{enabled:Boolean(config?.mcpEnabled),writeEnabled:Boolean(config?.mcpEnabled&&config.mcpWriteEnabled&&config.mcpWriteSourceIds?.length),writeSourceIds:config?.mcpWriteSourceIds??[]}};}
   revoke(id:string){z.string().uuid().parse(id);return this.serialize(async()=>{const found=this.credentials.find(c=>c.id===id);if(!found)throw new ConnectionError('connection_not_found',404,moteText("未找到此连接。"));if(!found.revokedAt)await this.persist(this.credentials.map(c=>c.id===id?{...c,revokedAt:new Date(this.clock()).toISOString()}:c));return {revoked:true as const,id};});}
   mintMcp(raw:unknown,config?:ConnectorConfig){
@@ -124,8 +124,40 @@ export class Connections {
       await this.persist([...this.credentials,c]);return {credential:this.publicCredential(c),config:{mcpServers:{mote:{type:'http' as const,url:url+'/mcp',headers:{Authorization:`Bearer ${token}`}}}}};
     });
   }
-  mcpAuthorization(header:string|undefined,config?:ConnectorConfig){
+  /** OAuth access tokens are ordinary MCP credentials, so revocation and the
+   * existing /mcp authorization path cover them without a second token store. */
+  mintMcpOAuth(input:{serverUrl:string;label:string;access:'read'|'write';expiresAt:string;resource:string},policy:{enabled:boolean;writeEnabled:boolean;writeSourceIds:readonly string[]}){
+    const url=serverUrl(input.serverUrl),access=z.enum(['read','write']).parse(input.access),expiresAt=z.string().datetime().parse(input.expiresAt);
+    if(!policy.enabled)throw new ConnectionError('mcp_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，然后重启节点。"));
+    const sourceIds=access==='write'?z.array(z.string().min(1).max(128)).min(1).max(500).parse([...new Set(policy.writeSourceIds)]):[];
+    if(access==='write'&&(!policy.writeEnabled||!sourceIds.length))throw new ConnectionError('mcp_write_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpWriteToken、connectors.mcpWriteSourceIds，并开启 connectors.mcpWriteEnabled 后重启节点。"));
+    if(Date.parse(expiresAt)<=this.clock())throw new ConnectionError('mcp_token_expired',400,'MCP token lifetime is invalid');
+    return this.serialize(async()=>{
+      const token=randomBytes(32).toString('base64url');
+      const c:ConnectionCredential={id:randomUUID(),label:label.parse(input.label),scope:access==='write'?'mcp-write':'mcp-read',createdAt:new Date(this.clock()).toISOString(),serverUrl:url,hash:digest(token),expiresAt,...(sourceIds.length?{writeSourceIds:sourceIds}:{}),mcpResource:z.string().url().max(2048).parse(input.resource)};
+      await this.persist([...this.credentials,c]);
+      return {token,credential:this.publicCredential(c)};
+    });
+  }
+  /** Refresh rotates the existing credential in place so an owner revocation
+   * of that ID cannot race into a surviving second credential. */
+  rotateMcpOAuth(input:{credentialId:string;write:boolean;expiresAt:string},policy:{enabled:boolean;writeEnabled:boolean;writeSourceIds:readonly string[]}){
+    const expiresAt=z.string().datetime().parse(input.expiresAt);
+    if(!policy.enabled)throw new ConnectionError('mcp_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，然后重启节点。"));
+    if(Date.parse(expiresAt)<=this.clock())throw new ConnectionError('mcp_token_expired',400,'MCP token lifetime is invalid');
+    return this.serialize(async()=>{
+      const found=this.credentials.find(c=>c.id===input.credentialId);
+      if(!found||found.revokedAt)throw new ConnectionError('connection_revoked',401,moteText("此连接已撤销，请重新授权。"));
+      if(found.scope!==(input.write?'mcp-write':'mcp-read'))throw denied();
+      if(found.scope==='mcp-write'&&(!policy.writeEnabled||!policy.writeSourceIds.length))throw new ConnectionError('mcp_write_disabled',409,moteText("MCP 写入权限已关闭。"));
+      const token=randomBytes(32).toString('base64url'),updated={...found,hash:digest(token),expiresAt};
+      await this.persist(this.credentials.map(c=>c.id===found.id?updated:c));
+      return {token,credential:this.publicCredential(updated)};
+    });
+  }
+  mcpAuthorization(header:string|undefined,config?:ConnectorConfig,resource?:string){
     const c=this.authenticate(header);if(!c||!['mcp-read','mcp-write'].includes(c.scope)||!config?.mcpEnabled)return;
+    if(c.mcpResource&&c.mcpResource!==resource)return;
     const write=c.scope==='mcp-write',sourceIds=write?(c.writeSourceIds??[]).filter(id=>config.mcpWriteSourceIds?.includes(id)):undefined;
     if(write&&(!config.mcpWriteEnabled||!sourceIds?.length))return;
     return {write,sourceIds,authorize:()=>this.assertActive(c)};

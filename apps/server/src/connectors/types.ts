@@ -51,9 +51,9 @@ export interface ConnectorContext {
   bindings?: {
     readonly lark?: import('./lark-binding.js').LarkBinding;
   };
-  config: {dataDir: string;token: string;allowedOrigins: string[];connectors?: ConnectorConfig};
+  config: {dataDir: string;token: string;allowedOrigins: string[];publicUrl?: string;connectors?: ConnectorConfig};
   ownerAuthorization?:(header:string|undefined)=>boolean;
-  mcpAuthorization?:(header:string|undefined)=>{write:boolean;sourceIds?:string[];authorize:()=>void}|undefined;
+  mcpAuthorization?:(header:string|undefined,resource?:string)=>{write:boolean;sourceIds?:string[];authorize:()=>void}|undefined;
 }
 export class ConnectorError extends Error {
   constructor(readonly code: string, readonly statusCode=400) {super(code);this.name='ConnectorError';}
