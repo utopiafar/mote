@@ -17,7 +17,7 @@ import {GmailConnector,gmailScope} from '../src/connectors/gmail.js';
 import {LarkConnector,LARK_SCOPES} from '../src/connectors/lark.js';
 import {RecordingConnector,type RecordingProvider} from '../src/connectors/recordings.js';
 import type {LarkRunner} from '../src/connectors/lark-cli.js';
-import type {ConnectorContext} from '../src/connectors/types.js';
+import {ConnectorError,type ConnectorContext} from '../src/connectors/types.js';
 import {connectorReader} from './fixtures/connector-reader.js';
 
 async function fixture(t:TestContext){
@@ -149,4 +149,34 @@ test('recording interval reload preserves a running durable discovery step',asyn
   connector.configureSyncInterval(60000);t.mock.timers.tick(60000);await Promise.resolve();
   assert.equal(signal?.aborted,false);assert.equal(discoveries,1);
   release();await connector.drain();assert.equal(connector.status().counts.pending,0);assert.equal(connector.status().counts.failed,0);await connector.close();
+});
+
+test('recording autoSync resumes a failed discovery on the next wake instead of opening another full-range poll',async t=>{
+ const {ctx}=await fixture(t);t.mock.timers.enable({apis:['setInterval']});
+ ctx.sources.capabilities.register('generated.recordings',{lifecycle:'continuous',discovery:'provider-list',listening:'polling',readOriginal:'explicit-provider-read',synchronization:'revisions',externalWrite:false});
+ let discoveries=0;
+ const provider=generatedRecording();provider.discover=async()=>{discoveries++;if(discoveries<3)throw new ConnectorError('lark_command_failed',502);return {ids:[]};};
+ const connector=new RecordingConnector(ctx,provider);t.after(()=>connector.close());
+ const rows=()=>ctx.store.db.prepare("SELECT id,state,attempts FROM execution_steps WHERE kind='recording.generated.discover'").all() as {id:string;state:string;attempts:number}[];
+ await connector.init();await connector.connect();await connector.select({enabled:true,start:'2026-09-01T00:00:00Z',end:'2026-09-02T00:00:00Z',autoSync:true,backupAudio:true});await connector.drain();
+ assert.equal(discoveries,1);assert.deepEqual(rows().map(row=>[row.state,row.attempts]),[['failed',1]]);
+ assert.equal(connector.status().counts.failed,1);
+ connector.configureSyncInterval(60000);t.mock.timers.tick(60000);await connector.drain();
+ assert.equal(discoveries,2);assert.deepEqual(rows().map(row=>[row.state,row.attempts]),[['failed',1]]);
+ assert.equal(connector.status().counts.failed,1,'a wake retries the existing window without multiplying it');
+ t.mock.timers.tick(60000);await connector.drain();
+ assert.equal(discoveries,3);assert.deepEqual(rows().map(row=>[row.state,row.attempts]),[['succeeded',1]]);
+ assert.equal(connector.status().counts.failed,0);await connector.close();
+});
+
+test('recording autoSync leaves an authorization-blocked discovery for explicit retry',async t=>{
+ const {ctx}=await fixture(t);t.mock.timers.enable({apis:['setInterval']});
+ ctx.sources.capabilities.register('generated.recordings',{lifecycle:'continuous',discovery:'provider-list',listening:'polling',readOriginal:'explicit-provider-read',synchronization:'revisions',externalWrite:false});
+ let discoveries=0;
+ const provider=generatedRecording();provider.discover=async()=>{discoveries++;throw new ConnectorError('lark_permission_required');};
+ const connector=new RecordingConnector(ctx,provider);t.after(()=>connector.close());
+ await connector.init();await connector.connect();await connector.select({enabled:true,start:'2026-09-01T00:00:00Z',end:'2026-09-02T00:00:00Z',autoSync:true,backupAudio:true});await connector.drain();
+ const discover=connector.status().steps.find(step=>step.phase==='discover')!;assert.equal(discover.state,'blocked');assert.equal(discover.error,'recording_authorization_required');
+ connector.configureSyncInterval(60000);t.mock.timers.tick(60000);await connector.drain();
+ assert.equal(discoveries,1,'blocked authorization does not hammer the provider without a new grant');await connector.close();
 });
