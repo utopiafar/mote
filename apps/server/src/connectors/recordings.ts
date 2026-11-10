@@ -120,6 +120,10 @@ class RecordingRuntime {
   return this.execution.enqueue(operationId,this.kind(phase),bound,phase==='media'?{id:hash([this.kind(phase),bound])}:{});}
  sync(full=true){if(this.closed)throw new ConnectorError('connector_closed',503);if(!this.saved.account||!this.saved.selection.enabled)throw new ConnectorError('recording_not_connected');
   const existing=this.ctx.work.activeDiscovery(this.kind('discover'),this.saved.epoch);if(existing)return this.status();
+  // A settled discover failure must not retire autoSync. Resume that same
+  // window on the next wake; a fresh poll would multiply full-range work.
+  let resumed=false;for(const id of this.ctx.work.failedDiscoveries(this.kind('discover'),this.saved.epoch)){const step=this.execution.get(id);if(step&&this.valid(step)){this.execution.retry(id,true);resumed=true;}}
+  if(resumed){void this.execution.tick();return this.status();}
   const end=this.saved.selection.end??new Date().toISOString();const cursor=this.ctx.state.cursor(this.sourceId()!,this.saved.epoch);
   const isFull=full||!cursor||Date.now()-Number(cursor.full_at)>86400000;
   const start=isFull?this.saved.selection.start:new Date(Math.max(Date.parse(this.saved.selection.start),Date.parse(String(cursor!.scanned_until))-7*86400000)).toISOString();
