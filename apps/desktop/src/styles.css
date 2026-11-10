@@ -356,7 +356,10 @@ small { display: block; margin-top: 7px; font-weight: 400; font-size: var(--mote
 .sidebar-titlebar { flex: 0 0 40px; -webkit-app-region: drag; }
 /* Brand mark sizes are fixed artwork shared with Web, not type roles. */
 .brand strong { line-height: 1; font: 500 15px/1.2 var(--mote-font); letter-spacing: -.02em; }
-.brand-icon { display: grid; place-items: center; flex: 0 0 auto; padding-bottom: 5px; font-size: var(--mote-font-title); font-family: var(--mote-font); border-color: var(--mote-accent); width: 28px; height: 28px; padding: 0 1px 3px 0; font: 600 23px/1 var(--mote-font); letter-spacing: -1.5px; border: 0; background: var(--mote-primary-background); color: var(--mote-primary-ink); border-radius: 6px; box-shadow: none; }
+/* The mark follows the wordmark beside it; only the dot carries the accent. */
+.brand-icon { display: block; flex: 0 0 auto; width: 28px; height: 28px; }
+.brand-icon path { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.brand-icon circle { fill: var(--mote-accent); }
 .nav-item { width: 100%; display: flex; align-items: center; font-weight: 400; text-align: left; border-radius: var(--mote-radius-control); min-height: 34px; padding: 0 10px; gap: 10px; margin: 0; color: var(--mote-ink); background: transparent; border: 0; font-size: 14px; }
 .nav-item .icon { color: var(--mote-muted); }
 .nav-item:hover { color: var(--mote-ink); background: var(--mote-surface-hover); }
@@ -565,7 +568,7 @@ summary { position: relative; cursor: pointer; color: var(--mote-ink); font-weig
 #feedback.success { color: var(--mote-success); border-color: var(--mote-success); background: color-mix(in srgb,var(--mote-success) 8%,var(--mote-surface)); }
 .compression-compare h3 { font-size: var(--mote-font-row); }
 .about-brand { display: flex; align-items: center; gap: var(--mote-space-panel); padding: var(--mote-space-item) 0 var(--mote-space-group); flex-wrap: wrap; }
-.about-brand .brand-icon { width: 60px; height: 60px; font-size: 49px; padding-bottom: 8px; border-radius: var(--mote-radius-container); }
+.about-brand .brand-icon { width: 48px; height: 48px; }
 .about-brand strong { font-weight: 550; color: var(--mote-ink); font-size: var(--mote-font-section); }
 .upload-badge.received { color: var(--mote-success); background: color-mix(in srgb,var(--mote-success) 8%,var(--mote-surface)); }
 .upload-badge.needs-attention { color: var(--mote-warning); background: color-mix(in srgb,var(--mote-warning) 8%,var(--mote-surface)); }
@@ -665,7 +668,7 @@ body[data-detail=stack] .records-browser { display: block; }
  .brand { gap: 9px; padding-inline: 9px; }
  .brand strong { font-size: var(--mote-font-section); }
  .brand strong span { font-size: var(--mote-font-meta); letter-spacing: .4px; }
- .brand-icon { width: 28px; height: 28px; font-size: var(--mote-font-title); }
+ .brand-icon { width: 28px; height: 28px; }
  .nav-item { gap: 10px; padding-inline: 12px; }
  .central-link { padding-inline: 12px; font-size: var(--mote-font-support); gap: 8px; }
  main { padding: var(--mote-space-page); }
@@ -765,7 +768,7 @@ body[data-detail=stack] .records-browser { display: block; }
  .brand strong { font-size: var(--mote-font-section); }
  .brand strong span { display: none; }
  .brand { gap: 8px; }
- .brand-icon { width: 28px; height: 28px; font-size: var(--mote-font-title); }
+ .brand-icon { width: 28px; height: 28px; }
  .nav-item { font-size: var(--mote-font-support); gap: 9px; }
  .home-status { align-items: flex-start; }
  .content-type { width: 45px; }
