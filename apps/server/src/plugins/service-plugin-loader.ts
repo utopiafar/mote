@@ -25,6 +25,25 @@ export function connectorFromModule(module: Record<string, unknown>, contributio
   return connector;
 }
 
+/** An outbound package declares presentation choices only. The Central host
+ * still owns the export cursor, target sandbox, sensitive filtering and all
+ * conflict decisions; this descriptor never contains a path to write. */
+export type OutboundExportDescriptor = {
+  apiVersion: 1;
+  id: string;
+  format: {extension: 'md'; frontmatter: 'yaml' | 'none'; folder: string};
+};
+export const isOutboundExportCapability = (id: string) => id === 'outbound.export' || id.startsWith('outbound.');
+export function outboundExportFromModule(module: Record<string, unknown>): OutboundExportDescriptor {
+  const value = (module.outboundExport ?? module.default) as Partial<OutboundExportDescriptor> | undefined;
+  const format = value?.format;
+  if (!value || value.apiVersion !== 1 || typeof value.id !== 'string' || !/^[a-z][a-z0-9.-]{2,127}$/.test(value.id)
+    || !format || format.extension !== 'md' || !['yaml', 'none'].includes(format.frontmatter)
+    || typeof format.folder !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(format.folder) || format.folder.includes('..'))
+    throw new StoreError('Outbound export contribution has no valid host contract', 422);
+  return Object.freeze({apiVersion: 1, id: value.id, format: Object.freeze({extension: 'md', frontmatter: format.frontmatter, folder: format.folder})});
+}
+
 /** Surfaces this Central host can activate for service-runtime packages. */
 export function servicePackageSurfaces(manifest: PluginManifest) {
   const surfaces = new Set((manifest.contributions ?? []).map(contribution => contribution.surface));

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "mote.official.markdown-export",
+  "name": "Markdown / Obsidian 导出",
+  "version": "0.1.0",
+  "trust": "official",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "mote-official-markdown-export-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "mote.official.markdown-export.processing",
+      "version": "1",
+      "surface": "processing",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "outbound.export"
+      ]
+    }
+  ],
+  "capabilities": [
+    "outbound.export"
+  ],
+  "configuration": [
+    {
+      "id": "targetFolder",
+      "label": "目标文件夹",
+      "type": "text",
+      "required": false,
+      "description": "本地或已连接设备上的绝对文件夹路径，例如 Obsidian vault 或其中的一个目录。Mote 只写此目录内的 Mote 子目录；留空时不会写出任何文件。"
+    },
+    {
+      "id": "sourceIds",
+      "label": "导出范围（来源 ID）",
+      "type": "text",
+      "required": false,
+      "description": "要导出的来源 ID，逗号分隔；留空表示导出范围为空。不接受 * 通配符，也不会默认导出整个资料库。"
+    }
+  ],
+  "dependencies": [],
+  "access": [
+    "Writes Markdown only below the owner-configured target folder",
+    "Export cursor, path sandbox, sensitive-source filtering and hand-edit conflict detection stay in the Central host",
+    "The package declares a safe folder name, .md extension and optional YAML frontmatter; it never writes files itself",
+    "No network calls, no Google Drive or Dropbox connector, no model calls and no inbound source recipe"
+  ]
+}

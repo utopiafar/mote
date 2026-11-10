@@ -26,6 +26,10 @@ export function registerPluginControlHttp(app: FastifyInstance, {plugins, bindin
   app.patch('/api/plugin-instances/:id', async request => { owner(request); return plugins.configure(id(request), request.body); });
   for (const action of ['check', 'enable', 'disable'] as const)
     app.post('/api/plugin-instances/:id/' + action, async request => { owner(request); return plugins.action(id(request), action, request.body); });
+  // Owner-only outbound export status and explicit retry. Query agents, MCP
+  // tokens and collector credentials never register or reach these routes.
+  app.get('/api/plugin-instances/:id/outbound-export', async request => { owner(request); return plugins.outboundStatus(id(request)); });
+  app.post('/api/plugin-instances/:id/outbound-export/sync', async request => { owner(request); return plugins.outboundSync(id(request), request.body); });
 
   // Trusted build views are separate from package/instance views: no
   // restartPlan/blockedActions fields are invented here.

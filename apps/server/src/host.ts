@@ -58,6 +58,7 @@ import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import type {LifecycleExtension,LifecycleSettings } from './memory-lifecycle.js';
 import type {WorkingMemory} from './working-memory.js';
 import {openPluginControlRoot} from './plugin-center.js';
+import {OutboundExportHost} from './plugins/outbound-export-host.js';
 import {registerPluginControlHttp} from './plugins/plugin-control-http.js';
 import type { ModelAgentFactory } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
@@ -135,6 +136,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,{conversations}=await prepareConversations({bootstrap,store,resources,backendContext,modelAuthorizationHost});
   const {pluginCenter,close:closePluginCenter}=openPluginControlRoot({store,executor,directory:join(config.dataDir,'plugins','packages')});
+  // Outbound packages never write through their own code. This host owns the
+  // cursor, sandbox, sensitive-source filter and hand-edit conflict ledger.
+  pluginCenter.outboundHost=new OutboundExportHost({store,materials,repoRoot:repositoryRoot,dataDir:config.dataDir,
+    sourceKind:sourceId=>{try{return sources.getSource(sourceId).kind;}catch{return undefined;}}});
+  pluginCenter.resumeOutboundInstances();
   resources.beforeClose(closePluginCenter);
   // Binding control is prepared by memoryRuntime below, but its disposer keeps
   // its original slot: released after active queries, connectors and the agent.
