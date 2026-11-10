@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify,{type FastifyInstance} from 'fastify';
 import {PluginHost} from '@mote/plugin-host';
-import {calendarPluginCapabilitySchema,type ActionPluginProvider} from '@mote/shared';
+import {calendarPluginCapabilitySchema,centralCalendarPluginCapabilitySchema,type ActionPluginProvider} from '@mote/shared';
 import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
@@ -18,6 +18,8 @@ const text='Generated appointment is scheduled on 18 September 2099.',ownerToken
 const event={title:'Generated appointment',start:'2099-09-18T15:00:00Z',end:'2099-09-18T16:00:00Z',timeZone:'UTC',allDay:false,location:'Generated room',description:''};
 const capability=calendarPluginCapabilitySchema.parse({id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'device',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,sameDeviceCalendar:true,completionInMoteOnly:true}});
 const provider=():ActionPluginProvider=>({identity:{packageId:'generated.calendar',releaseDigest:sha256('generated-release'),instanceId:'generated-instance',instanceRevision:1,capabilityDigest:sha256(JSON.stringify(capability))},name:'Generated calendar',capability});
+const centralCapability=centralCalendarPluginCapabilitySchema.parse({id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'central-connector',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,completionInMoteOnly:true}});
+const centralProvider=():ActionPluginProvider=>({identity:{packageId:'mote.official.fixture-connector',releaseDigest:sha256('generated-central-release'),instanceId:'generated-central-instance',instanceRevision:1,capabilityDigest:sha256(JSON.stringify(centralCapability))},name:'Generated central connector',capability:centralCapability});
 const command=(expectedRevision:number)=>({operationId:randomUUID(),expectedRevision});
 const answer=(id:string)=>({answer:JSON.stringify({actions:[{kind:'calendar.create',event,uncertainty:'',sameAs:null,evidence:[{id,quote:text}]}]}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}],trace:[],runId:randomUUID()});
 
@@ -35,10 +37,11 @@ async function fixture(t:TestContext){
 }
 type State=Awaited<ReturnType<typeof fixture>>['state'];
 
-function platform(state:State,providers:ActionPluginProvider[]=[provider()]){
+function platform(state:State,providers:ActionPluginProvider[]=[provider()],connectorAction?:(input:any)=>Promise<any>){
   const connectionIdentity=(request:{headers:{authorization?:string}})=>state.connections.authenticate(String(request.headers.authorization??''));
   return createActionsServices({store:state.store,files:state.files,sources:state.sources,connections:state.connections,executor:state.executor,
     actionProviders:()=>providers,
+    ...(connectorAction?{connectorAction}:{}),
     query:async input=>answer(String(input.evidenceIds![0])),configured:()=>true,
     authorization:{connectionIdentity,credential:request=>{const c=connectionIdentity(request);return c&&!state.connections.isOwner(c)?c:undefined;}}});
 }
@@ -92,6 +95,43 @@ test('an approved proposal is serialized to the native consumer once with matchi
   assert.equal(replay.status,'succeeded');assert.equal(replay.operationId,claim.operationId);
   assert.equal((await app.inject({method:'POST',url:`/api/managed-calendar/${action.id}/claim`,headers:headers.device,payload:{}})).json().mutationAllowed,false);
   await handle.close('disabled');
+});
+
+test('a Central connector grant stays manual until confirm, then the host dispatches once and records the connector receipt',async t=>{
+ const f=await fixture(t),s=f.state,calls:{target:any;request:any}[]=[];
+ const services=platform(s,[centralProvider()],async input=>{calls.push(input);return {status:'succeeded',externalId:'generated-central-event-1'};}),handle=await install(s.host,services),app=routed(t,services);
+ services.actionsForAssembly.configure({enabled:true,timeZone:'UTC',reviewDeviceIds:[]});
+ const headers=await pair(s);
+ const action=await propose(s,services);
+ const inventory=(await app.inject({url:'/api/action-capabilities',headers:headers.owner})).json();
+ assert.equal(inventory.centralConnectors.length,1);assert.equal(inventory.executionEnabled,false,'an enabled declaration is not a grant');
+ const target=inventory.centralConnectors[0].target;
+ const draft=await app.inject({method:'PUT',url:'/api/action-capability-drafts',headers:headers.owner,payload:{...command(0),id:randomUUID(),capability:{id:'calendar.manage',version:1},target,inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-input',platform:'import'}],existingArchived:true,futureInputs:true}}});
+ assert.equal(draft.statusCode,200,draft.body);
+ const granted=await app.inject({method:'PUT',url:'/api/action-capability-grants',headers:headers.owner,payload:{...command(0),id:randomUUID(),draftId:draft.json().id,draftRevision:draft.json().revision,plugin:centralProvider().identity,acknowledgeCalendarWrites:true}});
+ assert.equal(granted.statusCode,200,granted.body);
+ assert.equal(services.actionsForAssembly.get(action.id).status,'proposed','the grant alone never executes');
+ assert.equal(calls.length,0);
+ const confirmed=await app.inject({method:'POST',url:`/api/actions/${action.id}/confirm`,headers:headers.owner,payload:{version:action.version,event:action.event,target}});
+ assert.equal(confirmed.statusCode,200,confirmed.body);
+ const until=Date.now()+5000;while(services.actionsForAssembly.get(action.id).status!=='succeeded'){assert.ok(Date.now()<until,'Central connector dispatch settles');await new Promise(resolve=>setTimeout(resolve,10));}
+ const result=services.actionsForAssembly.get(action.id);
+ assert.equal((result.target as any).executionLocation,'central-connector');assert.equal(result.externalId,'generated-central-event-1');assert.ok(result.operationId);
+ assert.equal(calls.length,1);assert.deepEqual(calls[0].request.capability,{id:'calendar.manage',version:1});assert.equal(calls[0].request.operationId,result.operationId);
+ await handle.close('disabled');
+});
+
+test('a failing Central connector action stays uncertain and never claims success',async t=>{
+ const f=await fixture(t),s=f.state;let calls=0;
+ const services=platform(s,[centralProvider()],async()=>{calls++;throw Error('Generated connector failure');}),handle=await install(s.host,services),app=routed(t,services);
+ services.actionsForAssembly.configure({enabled:true,timeZone:'UTC',reviewDeviceIds:[]});
+ const headers=await pair(s),action=await propose(s,services),inventory=(await app.inject({url:'/api/action-capabilities',headers:headers.owner})).json(),target=inventory.centralConnectors[0].target;
+ const draft=(await app.inject({method:'PUT',url:'/api/action-capability-drafts',headers:headers.owner,payload:{...command(0),id:randomUUID(),capability:{id:'calendar.manage',version:1},target,inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-input',platform:'import'}],existingArchived:true,futureInputs:true}}})).json();
+ assert.equal((await app.inject({method:'PUT',url:'/api/action-capability-grants',headers:headers.owner,payload:{...command(0),id:randomUUID(),draftId:draft.id,draftRevision:draft.revision,plugin:centralProvider().identity,acknowledgeCalendarWrites:true}})).statusCode,200);
+ assert.equal((await app.inject({method:'POST',url:`/api/actions/${action.id}/confirm`,headers:headers.owner,payload:{version:action.version,event:action.event,target}})).statusCode,200);
+ const until=Date.now()+5000;while(services.actionsForAssembly.get(action.id).status!=='uncertain'){assert.ok(Date.now()<until,'failed Central connector action settles as uncertain');await new Promise(resolve=>setTimeout(resolve,10));}
+ const result=services.actionsForAssembly.get(action.id);assert.equal(result.status,'uncertain');assert.equal(result.externalId,undefined);assert.equal(calls,1);
+ await handle.close('disabled');
 });
 
 test('a revoked grant rejects the queued proposal while the lost in-flight ACK reconciles once without a new execution',async t=>{

@@ -2,7 +2,7 @@ import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import type {StopReason} from '@mote/plugin-api/contracts';
-import {sourceKindSchema,type SourceCapabilityDescriptor} from '@mote/shared';
+import {sourceKindSchema,type ConnectorActionExecution,type ConnectorActionReceipt,type SourceCapabilityDescriptor} from '@mote/shared';
 import {z} from 'zod';
 import type {ConnectorContext} from './types.js';
 
@@ -54,6 +54,9 @@ export interface ConnectorInstance {
   configureSyncInterval?(intervalMs:number):void;
   configure?(host:ConnectorHost):void;
   status?():unknown;
+  /** Source-specific adapter for one already-confirmed Central action. The host
+   * owns validation, authorization, operation identity and receipts. */
+  executeAction?(request:ConnectorActionExecution):ConnectorActionReceipt|Promise<ConnectorActionReceipt>;
   /** Only trusted deployment modules should mount a custom transport with its own authorization. */
   mountTransport?(app:FastifyInstance):void|Promise<void>;
   close?():void|Promise<void>;
@@ -214,6 +217,12 @@ export class ConnectorRegistry {
       if(!entry.disposed){entry.disposed=true;try{await instance.close?.();}catch(cleanup){throw connectorCleanupFailure([error,cleanup]);}}
       throw error;
     }
+  }
+  async executeAction(id:string,request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
+    if(this.closed)throw Error('Connector registry is closed');
+    const entry=this.instances.find(item=>item.manifest.id===id);
+    if(!entry||typeof entry.instance.executeAction!=='function')throw Error(`Connector ${id} cannot execute actions`);
+    return entry.instance.executeAction(request);
   }
   async stop(id:string,beforeClose?:()=>void|Promise<void>){
     const index=this.instances.findIndex(item=>item.manifest.id===id);if(index<0){this.clearFailure(id);return;}

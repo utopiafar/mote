@@ -95,7 +95,7 @@ export interface ActionsAssemblyDependencies {
   readonly files:FileStore;
   readonly sources:SourceStore;
   readonly connections:Connections;
-  readonly pluginCenter:Pick<PluginCenter,'actionProviders'>;
+  readonly pluginCenter:Pick<PluginCenter,'actionProviders'|'executeConnectorAction'>;
   readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
   readonly executor:ExecutionEngine;
   readonly configService:ConfigService;
@@ -113,6 +113,7 @@ export async function assembleActions(dependencies:ActionsAssemblyDependencies){
   const {store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent}=dependencies;
   const services=createActionsServices({store,files,sources,connections,executor,configService,semanticArtifacts,
     actionProviders:()=>pluginCenter.actionProviders(),
+    connectorAction:input=>pluginCenter.executeConnectorAction(input),
     query:input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),
     configured:()=>agent.configured,
     authorization:{credential,connectionIdentity}});

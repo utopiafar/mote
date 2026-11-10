@@ -1,4 +1,4 @@
-import {calendarPluginCapabilitySchema,type ActionPluginProvider,type PluginSourceContribution} from '@mote/shared';
+import {actionPluginCapabilitySchema,type ActionPluginProvider,type CentralConnectorActionTarget,type ConnectorActionExecution,type ConnectorActionReceipt,type PluginSourceContribution} from '@mote/shared';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
@@ -24,6 +24,7 @@ export type PluginConnectorHost={
   stop(id:string):Promise<void>;
   restart(id:string):Promise<void>;
   inventory():readonly {id:string;active:boolean}[];
+  executeAction?(id:string,request:ConnectorActionExecution):Promise<ConnectorActionReceipt>;
 };
 
 const configurationSchema=z.record(z.union([z.string(),z.number().finite(),z.boolean()]));
@@ -76,11 +77,11 @@ export class PluginCenter {
       execute:async(step,signal)=>{
         const id=String(step.input.instanceId),pkg=this.packageForInstance(id);
         this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
-        const actions=(pkg.manifest.actionCapabilities??[]).map(value=>{calendarPluginCapabilitySchema.parse(value);return {id:value.id,state:'verified' as const,reason:'Host contract verified; device permission and owner execution grant are still required'};});
+        const actions=(pkg.manifest.actionCapabilities??[]).map(value=>{const capability=actionPluginCapabilitySchema.parse(value);return {id:capability.id,state:'verified' as const,reason:capability.executionLocation==='central-connector'?'Host connector contract verified; owner execution grant is still required':'Host contract verified; device permission and owner execution grant are still required'};});
         const health=pkg.manifest.runtime==='service'
           ?await this.probeServicePackage(pkg,signal)
           :pkg.manifest.capabilities.every(value=>value==='calendar.manage')?{capabilities:[],issues:[]}:healthSchema.parse(this.probe?await this.probe(id,signal):await this.runtime(id).call('health',{namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}},signal));
-        signal.throwIfAborted();return {...health,capabilities:[...health.capabilities.filter(value=>value.id!=='calendar.manage'),...actions]};
+        signal.throwIfAborted();const actionIds=new Set<string>(actions.map(value=>value.id));return {...health,capabilities:[...health.capabilities.filter(value=>!actionIds.has(value.id)),...actions]};
       },
       commit:(step,result)=>{const instance=this.instance(String(step.input.instanceId)),health=healthSchema.parse(result),pkg=this.package(instance.view.packageId);
         instance.view.capabilities=pkg.manifest.capabilities.map(id=>health.capabilities.find(capability=>capability.id===id)??{id,state:'unknown',reason:'The runtime did not verify this capability'});
@@ -161,10 +162,21 @@ export class PluginCenter {
       if(!instance.desired||instance.observed!=='ready'||instance.issues.length)return [];
       const pkg=this.packageForInstance(instance.id);if(pkg.view.state!=='installed')return [];
       try{this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);}catch{return [];}
-      return (pkg.manifest.actionCapabilities??[]).filter(capability=>calendarPluginCapabilitySchema.safeParse(capability).success&&instance.capabilities.some(value=>value.id===capability.id&&value.state==='verified')).map(capability=>({
-        identity:{packageId:pkg.view.id,releaseDigest:pkg.view.source.digest,instanceId:instance.id,instanceRevision:instance.revision,capabilityDigest:sha256(JSON.stringify(calendarPluginCapabilitySchema.parse(capability)))},name:instance.name,capability,
+      return (pkg.manifest.actionCapabilities??[]).filter(capability=>actionPluginCapabilitySchema.safeParse(capability).success&&instance.capabilities.some(value=>value.id===capability.id&&value.state==='verified')).map(capability=>({
+        identity:{packageId:pkg.view.id,releaseDigest:pkg.view.source.digest,instanceId:instance.id,instanceRevision:instance.revision,capabilityDigest:sha256(JSON.stringify(actionPluginCapabilitySchema.parse(capability)))},name:instance.name,capability,
       }));
     });
+  }
+  /** Host dispatch for a confirmed Central connector action. The provider,
+   * enabled instance and capability are revalidated here; the connector only
+   * adapts its source-specific write and never decides authority or idempotency. */
+  async executeConnectorAction(input:{target:CentralConnectorActionTarget;request:ConnectorActionExecution}):Promise<ConnectorActionReceipt>{
+    if(this.closed)throw new StoreError('Plugin Center is closed',503);
+    const target=input.target,provider=this.actionProviders().find(value=>value.identity.packageId===target.packageId&&value.identity.instanceId===target.instanceId&&value.identity.instanceRevision===target.instanceRevision&&value.capability.id===target.capabilityId&&value.capability.version===target.capabilityVersion&&value.capability.executionLocation==='central-connector');
+    if(!provider)throw new StoreError('The Central connector action provider is unavailable',409);
+    const owned=this.activeConnectors.get(provider.identity.instanceId);
+    if(!owned||!this.connectorHost?.executeAction)throw new StoreError('The Central connector instance is unavailable',503);
+    return this.connectorHost.executeAction(owned.connectorId,{capability:{id:provider.capability.id,version:provider.capability.version},operationId:input.request.operationId,input:input.request.input});
   }
   /** Host-issued data namespace, distinct from the default domain and each activation. */
   instanceIdentity(id:string){const pkg=this.packageForInstance(id);if(!pkg.installationId)throw new StoreError('Plugin installation identity is unavailable',409);return Object.freeze({packageId:pkg.manifest.id,installationId:pkg.installationId,instanceId:id});}

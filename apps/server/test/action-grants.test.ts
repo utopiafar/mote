@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {zipSync,strToU8} from 'fflate';
-import {calendarPluginCapabilitySchema} from '@mote/shared';
+import {calendarPluginCapabilitySchema,centralCalendarPluginCapabilitySchema,messageSendPluginCapabilitySchema} from '@mote/shared';
 import {Store,StoreError,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {Connections} from '../src/connections.js';
@@ -55,6 +55,21 @@ test('installed checked plugin scopes require explicit owner grant, bind exact r
  assert.equal(restored.inventory().executionEnabled,false,'no execution consumer has been enabled by this control-plane test');
 });
 
+test('an enabled Central connector declares message.send as a selectable target, but only an explicit owner grant with its own acknowledgement authorizes it',async t=>{
+ const f=await fixture(t),message=messageSendPluginCapabilitySchema.parse({id:'message.send',version:1,inputSchema:'message.send.v1',outputSchema:'message.receipt.v1',operations:['message.send'],executionLocation:'central-connector',risk:'message-send',constraints:{confirmsEveryMessage:true,currentEvidence:true}});
+ const identity={packageId:'mote.official.fixture-connector',releaseDigest:'c'.repeat(64),instanceId:'generated-connector',instanceRevision:1,capabilityDigest:sha256(JSON.stringify(message))},provider=()=>({identity,name:'Generated connector',capability:message});
+ const central=new ActionCapabilities(f.store,f.sources,f.connections,()=>[provider()]);
+ const target={executionLocation:'central-connector' as const,packageId:identity.packageId,instanceId:identity.instanceId,instanceRevision:1,capabilityId:'message.send',capabilityVersion:1};
+ assert.deepEqual(central.centralConnectors(),[{name:'Generated connector',capability:{id:'message.send',version:1},target}]);
+ assert.equal(central.inventory().executionEnabled,false,'a declaration is not an owner grant');
+ const draft=central.saveDraft({...command(0),id:randomUUID(),capability:{id:'message.send',version:1},target,inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-input-device',platform:'import'}],existingArchived:true,futureInputs:true}});
+ assert.equal(draft.executionEnabled,false);
+ const input={...command(0),id:randomUUID(),draftId:draft.id,draftRevision:draft.revision,plugin:identity,acknowledgeMessageSends:true};
+ assert.throws(()=>central.authorize({...input,acknowledgeMessageSends:undefined,acknowledgeCalendarWrites:true}),/Acknowledge/);
+ const granted=central.authorize(input);assert.equal(granted.executionEnabled,true);assert.equal(central.available(granted),true);
+ assert.equal(central.inventory().executionEnabled,true);
+});
+
 test('plugin disable/re-enable and device permission changes never inherit the original active grant',async t=>{
  const f=await fixture(t),grant=f.capabilities.authorize(f.grant());
  f.plugins.action(f.instance.id,'disable',command(f.plugins.instanceView(f.instance.id).revision));assert.equal(f.capabilities.available(grant),false);
@@ -67,8 +82,14 @@ test('plugin disable/re-enable and device permission changes never inherit the o
 
 test('a plugin manifest cannot add participants, unknown execution locations or an undeclared calendar capability',()=>{
  for(const change of [{constraints:{...capability.constraints,noParticipants:false}},{executionLocation:'central'},{inputSchema:'arbitrary-script'}])assert.equal(calendarPluginCapabilitySchema.safeParse({...capability,...change}).success,false);
+ assert.equal(calendarPluginCapabilitySchema.safeParse({...capability,executionLocation:'central-connector'}).success,false,'the device calendar contract stays device-only');
+ const central={...capability,executionLocation:'central-connector',constraints:{...capability.constraints}};delete (central.constraints as any).sameDeviceCalendar;
+ assert.equal(centralCalendarPluginCapabilitySchema.safeParse(central).success,true);
+ assert.equal(messageSendPluginCapabilitySchema.safeParse({id:'message.send',version:1,inputSchema:'message.send.v1',outputSchema:'message.receipt.v1',operations:['message.send'],executionLocation:'central-connector',risk:'message-send',constraints:{confirmsEveryMessage:true,currentEvidence:true}}).success,true);
+ assert.equal(calendarPluginCapabilitySchema.safeParse({...capability,executionLocation:'central'}).success,false,'only the explicit official location is accepted');
  const base={schemaVersion:1,id:'generated.calendar',name:'Generated',version:'2',runtime:'worker',entry:'device.mjs',archive:{asset:'adapter.zip',sha256:'a'.repeat(64)},capabilities:['calendar.manage'],configuration:[],dependencies:[],access:[]};
  assert.equal(pluginManifestSchema.safeParse(base).success,false);assert.equal(pluginManifestSchema.safeParse({...base,actionCapabilities:[capability]}).success,true);
+ assert.equal(pluginManifestSchema.safeParse({...base,actionCapabilities:[capability,messageSendPluginCapabilitySchema.parse({id:'message.send',version:1,inputSchema:'message.send.v1',outputSchema:'message.receipt.v1',operations:['message.send'],executionLocation:'central-connector',risk:'message-send',constraints:{confirmsEveryMessage:true,currentEvidence:true}})]}).success,true,'a package may declare more than one write kind');
 });
 
 

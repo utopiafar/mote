@@ -10203,5 +10203,18 @@ export const german: Readonly<Record<string, string>> = {
   "可连接": "Bereit zur Verbindung",
   "已启用，待授权": "Aktiviert, Autorisierung ausstehend",
   "可挂到已有账号绑定": "Kann an bestehende Kontenbindung angehängt werden",
-  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "Der offizielle Katalog steht oben; dieser Einstieg entspricht Einstellungen → Betrieb und Diagnose im Web."
+  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "Der offizielle Katalog steht oben; dieser Einstieg entspricht Einstellungen → Betrieb und Diagnose im Web.",
+  "中央连接器": "Zentraler Konnektor",
+  "授权后，范围内明确的日历写入可自动执行；消息发送仍需逐条确认。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大目标范围。": "Nach der Autorisierung können eindeutige Kalender-Schreibvorgänge im Bereich automatisch ausgeführt werden; Nachrichtenversand erfordert weiterhin eine Bestätigung pro Nachricht. Aktualisierungen und Absagen betreffen nur von Mote erstellte Originaltermine; Abschluss wird nur in Mote vermerkt. Es werden keine Teilnehmer eingeladen und der Zielbereich wird nicht erweitert.",
+  "先在设备连接日历，或在插件中心安装、检查和启用声明行动能力的官方连接器。安装和升级不会自动授予执行权限。": "Verbinde zuerst einen Kalender auf einem Gerät oder installiere, prüfe und aktiviere im Plugin-Center einen offiziellen Konnektor, der eine Aktionsfähigkeit deklariert. Installation oder Upgrade erteilt niemals allein die Ausführungsberechtigung.",
+  "行动能力或范围已变化，请刷新后重新保存并确认新的范围。": "Aktionsfähigkeit oder Bereich haben sich geändert. Aktualisiere und speichere den neuen Bereich anschließend erneut und bestätige ihn.",
+  "暂无已检查并启用的行动能力插件。": "Noch kein geprüftes und aktiviertes Aktionsfähigkeits-Plugin.",
+  "暂无已连接的可写日历或中央连接器。": "Kein beschreibbarer Kalender und kein zentraler Konnektor verbunden.",
+  "选择执行位置": "Ausführungsort auswählen",
+  "请选择执行位置": "Ausführungsort auswählen",
+  "行动能力插件": "Aktionsfähigkeits-Plugin",
+  "我允许此插件按以上资料范围，在所选中央连接器中发送消息。": "Ich erlaube diesem Plugin, Nachrichten über den ausgewählten zentralen Konnektor im oben genannten Quellbereich zu senden.",
+  "我允许此插件按以上资料范围，在所选中央连接器中创建日程、更新或取消原事件，并在 Mote 中标记完成。": "Ich erlaube diesem Plugin, Termine über den ausgewählten zentralen Konnektor zu erstellen, Originaltermine zu aktualisieren oder abzusagen und Abschlüsse in Mote zu markieren, im Rahmen der ausgewählten Quellen.",
+  "目标连接器不可用，请刷新后重试": "Der Ziel-Konnektor ist nicht verfügbar. Aktualisiere und versuche es erneut.",
+  "已收到执行回执。": "Eine Ausführungsbestätigung ist eingegangen."
 };
