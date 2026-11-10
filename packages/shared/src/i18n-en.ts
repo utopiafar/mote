@@ -10187,5 +10187,21 @@ export const english: Readonly<Record<string, string>> = {
   "保存在当前浏览器的站点存储中；清除站点数据会删除日志。": "Stored in this browser’s site storage. Clearing site data deletes the logs.",
   "数值诊断和运行日志分别设置。": "Numeric diagnostics and runtime logging are configured separately.",
   "启用本机数值诊断": "Enable local numeric diagnostics",
-  "日志已导出。": "Logs exported."
+  "日志已导出。": "Logs exported.",
+  "官方目录": "Official catalog",
+  "连接器": "Connectors",
+  "Memory 方案": "Memory plans",
+  "出站与处理": "Outbound and processing",
+  "浏览官方目录": "Browse official catalog",
+  "只展示主线签发的固定制品。安装不等于授权，也不等于切换 Memory 方案或开始扫描历史。": "Only mainline-signed fixed artifacts are listed. Installation is not authorization, Memory plan switching, or a history scan.",
+  "当前没有可安装的官方制品。": "No official artifacts are available to install.",
+  "预览并安装": "Preview and install",
+  "已移至「设置 → 运行与诊断」。": " Moved to Settings → Runtime and diagnostics.",
+  "官方目录在「自动记忆与插件」。": "The official catalog is under Automatic memory and plugins.",
+  "已安装，待配置": "Installed, awaiting configuration",
+  "已配置，待核验": "Configured, awaiting verification",
+  "可连接": "Ready to connect",
+  "已启用，待授权": "Enabled, awaiting authorization",
+  "可挂到已有账号绑定": "Can attach to an existing account binding",
+  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "The official catalog is above; this entry matches Settings → Runtime and diagnostics on the web."
 };

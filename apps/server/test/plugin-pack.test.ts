@@ -124,9 +124,14 @@ test('archive validation rejects traversal, missing entries and tampered payload
   assert.throws(() => validatePluginArchive(zipSync({'other.mjs': new Uint8Array([0])}), packed.manifest));
 });
 
-test('validation rejects a generic service runtime before the release consumer would fail', () => {
+test('validation rejects a service runtime without ingress or processing contributions', () => {
   assert.deepEqual(releaseCompatibilityFailures(manifest), []);
   assert.deepEqual(releaseCompatibilityFailures({...manifest, runtime: 'service'}).map(failure => failure.code), ['unsupported_runtime']);
+  assert.deepEqual(releaseCompatibilityFailures({
+    ...manifest, runtime: 'service',
+    contributions: [{id: 'generated.ingress', version: '1', surface: 'ingress', runtime: 'service', entry: 'plugin.mjs', capabilities: ['source.connector']}],
+    capabilities: ['source.connector'],
+  }), []);
 });
 
 test('a packed release is accepted by the real GitHubPluginReleases resolve/install/verify consumer', async t => {

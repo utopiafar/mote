@@ -5,10 +5,24 @@ export type CapabilityState='verified'|'unsupported'|'unknown';
 export type PluginCapability={id:string;state:CapabilityState;reason?:string};
 export type PluginSource={repository:string;tag:string;commit:string;digest:string};
 export type PluginConfigurationField={id:string;label:string;type:'text'|'number'|'boolean'|'select'|'model-profile'|'secret-reference';required?:boolean;options?:{value:string;label:string}[];description?:string};
+export type PluginCatalogGroup='connectors'|'memory'|'outbound-processing';
+/** Mainline-signed fixed artifacts shown in the official catalog. GitHub free-form
+ * install stays off this surface. */
+export type PluginCatalogEntry={repository:string;tag?:string;name:string;description:string;group:PluginCatalogGroup;runtime:'worker'|'service';packageId?:string};
+/** Declarative "添加来源" card projected from an installed connector package.
+ * Install/config state is separate from OAuth/account connection. */
+export type PluginSourceContribution={
+  packageId:string;packageName:string;contributionId:string;title:string;body:string;note:string;icon:string;
+  kinds:string[];target:{pageId:string;href:string};setupChoiceId?:string;
+  /** Existing account binding key a new source kind may attach to. */
+  attachToBinding?:string;
+  state:'installed'|'configured'|'ready'|'enabled'|'needs_attention';
+  instanceId?:string;
+};
 export type PluginPackageView={id:string;name:string;version:string;source:PluginSource;runtime:'worker'|'service';state:'installed'|'installing'|'failed'|'restart-required';desired:boolean;observed:string;issues:string[];instanceIds:string[];allowedActions:PluginAction[];operationId?:string;configurationSchema?:PluginConfigurationField[]};
 export type PluginInstanceView={id:string;packageId:string;name:string;revision:number;scope:string;configurationSchema:PluginConfigurationField[];configuration:Record<string,string|number|boolean>;secretStatus:Record<string,boolean>;capabilities:PluginCapability[];desired:boolean;observed:string;issues:string[];allowedActions:PluginAction[]};
 export type PluginReleasePreview={id:string;name:string;version:string;source:PluginSource;runtime:'worker'|'service';restartRequired:boolean;capabilities:PluginCapability[];dependencies:string[];access:string[];issues:string[];installable:boolean};
-export type PluginCenterView={revision:number;installation:{supported:boolean;reason?:string;runtime:'worker'|'service';restartRequired:boolean};packages:PluginPackageView[];instances:PluginInstanceView[];builds?:PluginBuildView[];catalog:{repository:string;name:string;description:string}[]};
+export type PluginCenterView={revision:number;installation:{supported:boolean;reason?:string;runtime:'worker'|'service';restartRequired:boolean};packages:PluginPackageView[];instances:PluginInstanceView[];builds?:PluginBuildView[];catalog:PluginCatalogEntry[];sourceContributions?:PluginSourceContribution[]};
 export type PluginBuildSelection={packageId:string;version:string;configurationRevision:number};
 export type PluginBuildObserved='queued'|'starting'|'active'|'stopped'|'blocked'|'restart_required'|'draining';
 /** One build projection shared by trusted native builds and downloaded worker

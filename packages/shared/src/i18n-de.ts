@@ -10187,5 +10187,21 @@ export const german: Readonly<Record<string, string>> = {
   "保存在当前浏览器的站点存储中；清除站点数据会删除日志。": "Im Website-Speicher dieses Browsers gespeichert. Beim Löschen der Websitedaten werden die Protokolle entfernt.",
   "数值诊断和运行日志分别设置。": "Numerische Diagnose und Laufzeitprotokolle werden getrennt eingestellt.",
   "启用本机数值诊断": "Lokale numerische Diagnose aktivieren",
-  "日志已导出。": "Protokolle exportiert."
+  "日志已导出。": "Protokolle exportiert.",
+  "官方目录": "Offizieller Katalog",
+  "连接器": "Konnektoren",
+  "Memory 方案": "Memory-Pläne",
+  "出站与处理": "Ausgang und Verarbeitung",
+  "浏览官方目录": "Offiziellen Katalog durchsuchen",
+  "只展示主线签发的固定制品。安装不等于授权，也不等于切换 Memory 方案或开始扫描历史。": "Es werden nur von der Hauptlinie signierte feste Artefakte angezeigt. Installation ist keine Autorisierung, kein Memory-Planwechsel und kein Verlaufsscan.",
+  "当前没有可安装的官方制品。": "Keine offiziellen Artefakte zum Installieren verfügbar.",
+  "预览并安装": "Vorschau und installieren",
+  "已移至「设置 → 运行与诊断」。": " Nach Einstellungen → Betrieb und Diagnose verschoben.",
+  "官方目录在「自动记忆与插件」。": "Der offizielle Katalog liegt unter Automatisches Memory und Plugins.",
+  "已安装，待配置": "Installiert, Konfiguration ausstehend",
+  "已配置，待核验": "Konfiguriert, Prüfung ausstehend",
+  "可连接": "Bereit zur Verbindung",
+  "已启用，待授权": "Aktiviert, Autorisierung ausstehend",
+  "可挂到已有账号绑定": "Kann an bestehende Kontenbindung angehängt werden",
+  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "Der offizielle Katalog steht oben; dieser Einstieg entspricht Einstellungen → Betrieb und Diagnose im Web."
 };

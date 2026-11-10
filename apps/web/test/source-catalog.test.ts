@@ -22,7 +22,7 @@ const provider='generated-recorder',recorderKey=provider+'-recordings';
 const providerDetailId='connector:'+recorderKey;
 const recorder:RecordingStatus={provider,category:'recordings',label:'Generated recording provider',connected:false,selection:{enabled:false,start:'2026-01-01T00:00:00Z',autoSync:false,backupAudio:true},steps:[],counts:{transcripts:0,audio:0,pending:0,failed:0}};
 
-async function fixture(t:import('node:test').TestContext,options:{capabilities:FeatureCapability[];pageIds?:string[];coding?:boolean;statusKey?:string;emptyStatus?:boolean;statusError?:boolean;recorderStatus?:RecordingStatus}){
+async function fixture(t:import('node:test').TestContext,options:{capabilities:FeatureCapability[];pageIds?:string[];coding?:boolean;statusKey?:string;emptyStatus?:boolean;statusError?:boolean;recorderStatus?:RecordingStatus;plugins?:Record<string,unknown>}){
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/connections/add',pretendToBeVisual:true});
   const previousLocale=getLocale(),previous=new Map<string,PropertyDescriptor|undefined>();
   let locale:'zh-CN'|'en'='zh-CN';
@@ -40,6 +40,7 @@ async function fixture(t:import('node:test').TestContext,options:{capabilities:F
     if(path==='/api/connectors/status'){if(options.statusError)throw new Error('Generated connector status read failed');return options.emptyStatus?{}:{[options.statusKey??recorderKey]:structuredClone(options.recorderStatus??recorder),gmail:{category:'mail',provider:'gmail'}};}
     if(path==='/api/connectors/lark')return {installed:false,configured:false,connected:false,missingScopes:[],selection:{documents:[],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:false}};
     if(path==='/api/sources')return {items:[]};
+    if(path==='/api/plugins')return options.plugins??{revision:1,installation:{supported:true,runtime:'worker',restartRequired:false},packages:[],instances:[],catalog:[],sourceContributions:[]};
     if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
     throw new Error('Unexpected generated catalog read '+path);
   }} as Api;
@@ -231,4 +232,20 @@ test('the default catalog is nine compact entries with recording providers one e
  assert.equal(f.d.querySelector<HTMLDetailsElement>('.source-catalog-more')!.open,false);assert.equal(f.d.querySelector('a[href*="provider="]'),null);
  await f.openRecorders();assert.ok(f.d.querySelector('a[href*="provider=generated-recorder"]'));
  await act(async()=>f.d.querySelector<HTMLButtonElement>('.source-catalog-back')!.click());assert.equal(entries().length,9);assert.equal(f.d.querySelector('a[href*="provider="]'),null);
+});
+
+test('installed connector packages declare 添加来源 cards without hardcoded registry entries',async t=>{
+ const contribution={
+  packageId:'mote.official.fixture-connector@digest',packageName:'官方连接器夹具',contributionId:'official-fixture-connector',
+  title:'官方连接器夹具',body:'验收用最小官方连接器；安装后出现在添加来源',note:'安装不等于授权。',icon:'link',
+  kinds:['mote.official.fixture-connector'],target:{pageId:'sources',href:'#/connections?setup=official-fixture-connector'},
+  setupChoiceId:'official-fixture-connector',state:'installed',
+ };
+ const f=await fixture(t,{capabilities:[capability(activityId)],plugins:{revision:1,installation:{supported:true,runtime:'worker',restartRequired:false},packages:[],instances:[],catalog:[],sourceContributions:[contribution]}});
+ await f.render();
+ assert.ok(f.reads.includes('/api/plugins'));
+ const cardTitle=card(f.d,'官方连接器夹具');
+ assert.match(cardTitle.textContent!,/已安装，待配置/);
+ assert.equal((cardTitle as HTMLAnchorElement).getAttribute('href'),'#/connections?setup=official-fixture-connector');
+ assert.equal(f.d.querySelectorAll('.source-catalog-final>.discovery-source-grid>.source-catalog-entry h3').length,10);
 });

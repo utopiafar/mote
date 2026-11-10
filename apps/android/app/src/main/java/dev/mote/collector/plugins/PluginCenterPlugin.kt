@@ -36,6 +36,30 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
     fun clearPrivateState() { close(); inventory = null; binding = null; pending = null; retryPanel = null; listVisible = false }
     fun resume() { if (listVisible && inventory != null) load() }
     fun show() { clearPrivateState(); load() }
+    /** Advanced owner path under Runtime and diagnostics. Official catalog stays on the plugins surface. */
+    fun showTrustedGithubInstall() {
+        clearPrivateState(); listVisible = false; body.removeAllViews(); screens.clearBack()
+        ui.text(MoteI18n.text("从 GitHub 添加其他可信插件"), NativeFontRole.TITLE_MOBILE)
+        ui.text(MoteI18n.text("读取兼容发布包，预览版本、能力与访问范围后安装。GitHub 数据连接器仍在资料来源中管理。") + " " + MoteI18n.text("官方目录在「自动记忆与插件」。"))
+        val control = api
+        ui.work(MoteI18n.text("正在读取…"), { runCatching { control.inventory() } }) { result ->
+            result.onSuccess { packages ->
+                inventory = packages
+                val repository = ui.field(MoteI18n.text("GitHub 仓库"))
+                val tag = ui.field(MoteI18n.text("发布标签（可选）"))
+                ui.button(MoteI18n.text("预览发布包"), true) {
+                    val selectedRepository = repository.text.toString().trim(); val selectedTag = tag.text.toString().trim()
+                    require(selectedRepository.isNotBlank()) { MoteI18n.text("请填写 GitHub 仓库。") }
+                    ui.work(MoteI18n.text("正在解析…"), { control.resolve(selectedRepository, selectedTag) }) { preview ->
+                        installation(preview, packages.revision)
+                    }
+                }.isEnabled = packages.installation.optBoolean("supported")
+                if (!packages.installation.optBoolean("supported")) {
+                    ui.text(packages.installation.optString("reason", MoteI18n.text("当前节点不支持在线安装。")))
+                }
+            }.onFailure { failure -> readFailure(failure) }
+        }
+    }
     private fun load() {
         close(); screens.clearBack(); val control = api
         ui.work(MoteI18n.text("正在读取…"), { runCatching { control.inventory() to if (tab == "memory") control.binding() else null } }) { result ->
@@ -75,7 +99,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
         body.removeAllViews(); retryPanel = null; listVisible = true
         ui.text(MoteI18n.text("管理安装、运行与记忆方案。资料连接仍在来源中管理。"))
         ui.button(MoteI18n.text("刷新")) { load() }
-        val tabs = listOf("installed" to MoteI18n.text("已安装"), "discover" to MoteI18n.text("发现"), "memory" to MoteI18n.text("记忆方案"))
+        val tabs = listOf("installed" to MoteI18n.text("已安装"), "discover" to MoteI18n.text("官方目录"), "memory" to MoteI18n.text("记忆方案"))
         val select = Spinner(ui).apply {
             contentDescription = MoteI18n.text("插件页面")
             adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, tabs.map { it.second })
@@ -112,7 +136,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
                 capabilities(build.capabilities, card)
             }
         }
-        if (data.packages.isEmpty()) { ui.text(MoteI18n.text("还没有安装外部插件。")); ui.button(MoteI18n.text("从 GitHub 添加")) { tab = "discover"; load() } }
+        if (data.packages.isEmpty()) { ui.text(MoteI18n.text("还没有安装外部插件。")); ui.button(MoteI18n.text("浏览官方目录")) { tab = "discover"; load() } }
         data.packages.forEach { item ->
             val card = ui.card(); ui.text(item.name + " · " + item.version, NativeFontRole.ROW, card)
             ui.text(state(item.state) + " · " + state(item.observed), parent = card); source(item.source, card)
@@ -149,15 +173,31 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
     }
     private fun discover() {
         val data = inventory ?: return
-        ui.text(MoteI18n.text("读取兼容发布包，预览版本、能力与访问范围后安装。GitHub 数据连接器仍在资料来源中管理。"))
+        ui.text(MoteI18n.text("只展示主线签发的固定制品。安装不等于授权，也不等于切换 Memory 方案或开始扫描历史。"))
         if (!data.installation.optBoolean("supported")) ui.text(data.installation.optString("reason", MoteI18n.text("当前节点不支持在线安装。")))
-        val repository = ui.field(MoteI18n.text("GitHub 仓库")); val tag = ui.field(MoteI18n.text("发布标签（可选）"))
-        ui.button(MoteI18n.text("预览发布包"), true) {
-            val control = api; val selectedRepository = repository.text.toString().trim(); val selectedTag = tag.text.toString().trim()
-            require(selectedRepository.isNotBlank()) { MoteI18n.text("请填写 GitHub 仓库。") }
-            ui.work(MoteI18n.text("正在解析…"), { control.resolve(selectedRepository, selectedTag) }) { preview -> installation(preview, data.revision) }
-        }.isEnabled = data.installation.optBoolean("supported")
-        data.catalog.forEach { entry -> val target = ui.card(); ui.text(entry.getString("name"), NativeFontRole.SECTION, target); ui.text(entry.getString("description"), parent = target); ui.text(entry.getString("repository"), NativeFontRole.META, target); ui.button(MoteI18n.text("选择仓库"), parent = target) { repository.setText(entry.getString("repository")); tag.setText("") } }
+        if (data.catalog.isEmpty()) ui.text(MoteI18n.text("当前没有可安装的官方制品。"))
+        val groups = listOf(
+            "connectors" to MoteI18n.text("连接器"),
+            "memory" to MoteI18n.text("Memory 方案"),
+            "outbound-processing" to MoteI18n.text("出站与处理"),
+        )
+        groups.forEach { (groupId, label) ->
+            val items = data.catalog.filter { it.optString("group") == groupId }
+            if (items.isEmpty()) return@forEach
+            ui.text(label, NativeFontRole.SECTION)
+            items.forEach { entry ->
+                val target = ui.card()
+                ui.text(entry.getString("name"), NativeFontRole.ROW, target)
+                ui.text(entry.optString("description"), parent = target)
+                val tag = entry.optString("tag")
+                ui.text(entry.getString("repository") + (if (tag.isNotBlank()) " · $tag" else "") + " · " + if (entry.optString("runtime") == "worker") MoteI18n.text("中央 Worker") else MoteI18n.text("独立服务"), NativeFontRole.META, target)
+                ui.button(MoteI18n.text("预览并安装"), parent = target) {
+                    val control = api
+                    ui.work(MoteI18n.text("正在解析…"), { control.resolve(entry.getString("repository"), tag) }) { preview -> installation(preview, data.revision) }
+                }.isEnabled = data.installation.optBoolean("supported")
+            }
+        }
+        ui.text(MoteI18n.text("从 GitHub 添加其他可信插件") + MoteI18n.text("已移至「设置 → 运行与诊断」。"), NativeFontRole.META)
     }
     private fun installation(preview: JSONObject, revision: Long) {
         close(); listVisible = false; body.removeAllViews(); screens.setBack { load() }
@@ -337,7 +377,7 @@ internal data class PluginPackage(val id: String, val name: String, val version:
 /** Native and worker builds share one projection: identity, candidate/active
  * selection, observed state, blockers, source, configuration and capabilities. */
 internal data class PluginBuild(val id: String, val packageId: String, val installationId: String, val name: String, val version: String, val revision: Long, val runtime: String, val retired: Boolean, val observed: String, val desired: JSONObject?, val active: JSONObject?, val blockers: List<String>, val issues: List<String>, val source: JSONObject?, val configuration: JSONObject, val capabilities: List<PluginCapability>)
-internal data class PluginInventory(val revision: Long, val installation: JSONObject, val packages: List<PluginPackage>, val instances: List<PluginInstance>, val builds: List<PluginBuild>, val catalog: List<JSONObject>)
+internal data class PluginInventory(val revision: Long, val installation: JSONObject, val packages: List<PluginPackage>, val instances: List<PluginInstance>, val builds: List<PluginBuild>, val catalog: List<JSONObject>, val sourceContributions: List<JSONObject> = emptyList())
 internal data class MemoryPlan(val id: String, val name: String, val mode: String, val available: Boolean, val reason: String, val modules: List<JSONObject>, val capabilities: List<PluginCapability>, val allowedActions: Set<String>)
 internal data class MemoryBinding(val revision: Long, val generation: Long, val mode: String, val activePlan: MemoryPlan, val plans: List<MemoryPlan>, val modules: List<JSONObject>, val admission: JSONObject, val preparation: JSONObject?, val allowedActions: Set<String>)
 
@@ -351,7 +391,7 @@ internal object PluginControlProjection {
     }
     fun instance(value: JSONObject) = PluginInstance(value.getString("id"), value.getString("packageId"), value.getString("name"), value.getLong("revision"), value.getString("scope"), value.getJSONObject("configuration"), fields(value.getJSONArray("configurationSchema")), capabilities(value.getJSONArray("capabilities")), value.getBoolean("desired"), value.getString("observed"), strings(value.getJSONArray("issues")), actions(value), value.getJSONObject("secretStatus"))
     fun build(value: JSONObject) = PluginBuild(value.getString("id"), value.getString("packageId"), value.getString("installationId"), value.optString("name", value.getString("id")), value.optString("version"), value.getLong("revision"), value.optString("runtime", "host"), value.optBoolean("retired"), value.getString("observed"), value.optJSONObject("desired"), value.optJSONObject("active"), strings(value.optJSONArray("blockers")), strings(value.optJSONArray("issues")), value.optJSONObject("source"), value.optJSONObject("configuration") ?: JSONObject(), capabilities(value.optJSONArray("capabilities")))
-    fun inventory(value: JSONObject) = PluginInventory(value.getLong("revision"), value.getJSONObject("installation"), objects(value.getJSONArray("packages")).map { PluginPackage(it.getString("id"), it.getString("name"), it.getString("version"), it.getJSONObject("source"), it.getString("runtime"), it.getString("state"), it.getString("observed"), strings(it.getJSONArray("issues")), actions(it), fields(it.optJSONArray("configurationSchema"))) }, objects(value.getJSONArray("instances")).map(::instance), objects(value.optJSONArray("builds")).map(::build), objects(value.getJSONArray("catalog")))
+    fun inventory(value: JSONObject) = PluginInventory(value.getLong("revision"), value.getJSONObject("installation"), objects(value.getJSONArray("packages")).map { PluginPackage(it.getString("id"), it.getString("name"), it.getString("version"), it.getJSONObject("source"), it.getString("runtime"), it.getString("state"), it.getString("observed"), strings(it.getJSONArray("issues")), actions(it), fields(it.optJSONArray("configurationSchema"))) }, objects(value.getJSONArray("instances")).map(::instance), objects(value.optJSONArray("builds")).map(::build), objects(value.getJSONArray("catalog")), objects(value.optJSONArray("sourceContributions")))
     fun plan(value: JSONObject) = MemoryPlan(value.getString("id"), value.getString("name"), value.getString("mode"), value.getBoolean("available"), value.optString("reason"), objects(value.getJSONArray("modules")), capabilities(value.getJSONArray("capabilities")), actions(value))
     fun binding(value: JSONObject) = MemoryBinding(value.getLong("revision"), value.getLong("generation"), value.getString("mode"), plan(value.getJSONObject("activePlan")), objects(value.getJSONArray("plans")).map(::plan), objects(value.getJSONArray("modules")), value.getJSONObject("admission"), value.optJSONObject("preparation"), actions(value))
     fun configured(fields: List<PluginField>, configuration: JSONObject): Boolean = fields.all { field ->

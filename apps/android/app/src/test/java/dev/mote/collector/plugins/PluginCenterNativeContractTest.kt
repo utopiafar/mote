@@ -4,6 +4,7 @@ import dev.mote.collector.CentralClient
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -67,7 +68,10 @@ class PluginCenterNativeContractTest {
         assertEquals("configured", instance.observed)
         assertFalse(instance.desired)
         assertEquals("unknown", instance.capabilities.single().state)
-        assertEquals(emptyList<String>(), inventory.catalog.map { it.getString("repository") })
+        assertTrue(inventory.catalog.any { it.getString("group") == "memory" })
+        assertTrue(inventory.catalog.any { it.getString("group") == "connectors" })
+        assertTrue(inventory.catalog.all { it.has("repository") && it.has("name") && it.has("description") })
+        assertNotNull(inventory.sourceContributions)
 
         val build = inventory.builds.single { it.id == instanceId }
         assertEquals("worker", build.runtime)

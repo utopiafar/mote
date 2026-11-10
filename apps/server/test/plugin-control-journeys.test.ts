@@ -178,7 +178,7 @@ async function verifiedPreparation(f: Fixture, targetPlanId: string) {
   return result.preparation!.operationId;
 }
 
-test('a service runtime release is rejected before install when this host has no service runtime', async t => {
+test('a service runtime release without ingress or processing contributions is rejected before install', async t => {
   const release = generatedRelease(); (release.manifest as any).runtime = 'service';
   const f = fixture(t, release);
   await assert.rejects(f.plugins.resolve({repository: release.repository, tag: release.tag}), /service runtime/);
@@ -511,6 +511,8 @@ test('actual HTTP plugin controls authorize owner sessions, reject MCP credentia
     assert.equal(discovery.statusCode,200);
     assert.deepEqual(discovery.json(),{
       memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
+      connectorService:{runtime:'service',factoryExports:['connector','default'],surfaces:['ingress'],supportedCapabilities:['source.connector']},
+      processingService:{runtime:'service',factoryExports:['backendPlugin','default'],surfaces:['processing'],supportedCapabilities:['processing.pack']},
     });
     assert.ok(!discovery.body.includes(directory),'discovery never exposes private installation paths');
     assert.equal((await node.app.inject({url: '/api/memory-spaces/default/binding', headers: headers(token)})).statusCode, 200);

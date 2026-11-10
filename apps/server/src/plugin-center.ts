@@ -1,4 +1,4 @@
-import {calendarPluginCapabilitySchema,type ActionPluginProvider} from '@mote/shared';
+import {calendarPluginCapabilitySchema,type ActionPluginProvider,type PluginSourceContribution} from '@mote/shared';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
@@ -14,6 +14,17 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,ScopeIdentity} from '@mote/plugin-api/contracts';
 import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext} from '@mote/plugin-host';
 import {centralServices} from './plugins/central-contracts.js';
+import {officialPluginCatalog} from './official-plugin-catalog.js';
+import {assertServicePackageSupported,connectorFromModule,loadServicePackageModule,servicePackageSurfaces} from './plugins/service-plugin-loader.js';
+import type {ConnectorManifest} from './connectors/registry.js';
+
+/** Hot connector host used by service-runtime ingress packages. */
+export type PluginConnectorHost={
+  install(manifest:ConnectorManifest):Promise<void>;
+  stop(id:string):Promise<void>;
+  restart(id:string):Promise<void>;
+  inventory():readonly {id:string;active:boolean}[];
+};
 
 const configurationSchema=z.record(z.union([z.string(),z.number().finite(),z.boolean()]));
 const instanceSchema=z.object({name:z.string().trim().min(1).max(160),scope:z.literal('default'),configuration:configurationSchema,expectedRevision:z.number().int().positive(),operationId:z.string().uuid()}).strict();
@@ -46,6 +57,9 @@ export class PluginCenter {
   runtimeFactory?:(pkg:StoredPackage,instance:PluginInstanceView)=>PluginRuntime;
   configurationAllowed?:(field:PluginManifest['configuration'][number],value:string|number|boolean)=>boolean;
   probe?:(instanceId:string,signal:AbortSignal)=>Promise<{capabilities:PluginCapability[];issues:string[]}>;
+  /** Bound after connector assembly starts; Memory-only fixtures may omit it. */
+  connectorHost?:PluginConnectorHost;
+  private readonly activeConnectors=new Map<string,{connectorId:string;instanceId:string}>();
   constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;assertCurrent?:()=>void;hostDependencies?:readonly TrustedHostDependency[]}){
     this.control=new PluginControlStore(store);
     store.db.exec(`CREATE TABLE IF NOT EXISTS plugin_release_previews(id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
@@ -63,7 +77,9 @@ export class PluginCenter {
         const id=String(step.input.instanceId),pkg=this.packageForInstance(id);
         this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
         const actions=(pkg.manifest.actionCapabilities??[]).map(value=>{calendarPluginCapabilitySchema.parse(value);return {id:value.id,state:'verified' as const,reason:'Host contract verified; device permission and owner execution grant are still required'};});
-        const health=pkg.manifest.capabilities.every(value=>value==='calendar.manage')?{capabilities:[],issues:[]}:healthSchema.parse(this.probe?await this.probe(id,signal):await this.runtime(id).call('health',{namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}},signal));
+        const health=pkg.manifest.runtime==='service'
+          ?await this.probeServicePackage(pkg,signal)
+          :pkg.manifest.capabilities.every(value=>value==='calendar.manage')?{capabilities:[],issues:[]}:healthSchema.parse(this.probe?await this.probe(id,signal):await this.runtime(id).call('health',{namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}},signal));
         signal.throwIfAborted();return {...health,capabilities:[...health.capabilities.filter(value=>value.id!=='calendar.manage'),...actions]};
       },
       commit:(step,result)=>{const instance=this.instance(String(step.input.instanceId)),health=healthSchema.parse(result),pkg=this.package(instance.view.packageId);
@@ -110,11 +126,30 @@ export class PluginCenter {
   view():PluginCenterView{
     const records=this.buildRecords(),instances=records.filter(record=>record.kind==='instance'&&!record.retired).map(record=>this.instanceView(record.instance!.view.id)),
       packages=records.filter(record=>record.kind==='package'&&!record.retired).map(record=>record.package!);
-    return {revision:this.revision(),installation:{supported:true,runtime:'worker',restartRequired:false},packages:packages.map(pkg=>({...pkg.view,configurationSchema:pkg.manifest.configuration,instanceIds:instances.filter(instance=>instance.packageId===pkg.view.id).map(instance=>instance.id),allowedActions:pkg.view.state==='installed'?['configure',...(!instances.some(instance=>instance.packageId===pkg.view.id&&(instance.desired||this.references(instance.id).length))?['uninstall' as const]:[])]:pkg.view.state==='failed'?['uninstall']:[]})),instances,builds:this.buildViews(),catalog:[]};
+    return {revision:this.revision(),installation:{supported:true,runtime:'worker',restartRequired:false},packages:packages.map(pkg=>({...pkg.view,configurationSchema:pkg.manifest.configuration,instanceIds:instances.filter(instance=>instance.packageId===pkg.view.id).map(instance=>instance.id),allowedActions:pkg.view.state==='installed'?['configure',...(!instances.some(instance=>instance.packageId===pkg.view.id&&(instance.desired||this.references(instance.id).length))?['uninstall' as const]:[])]:pkg.view.state==='failed'?['uninstall']:[]})),instances,builds:this.buildViews(),catalog:officialPluginCatalog(),sourceContributions:this.sourceContributions(packages,instances)};
   }
   hostCapabilities(){return {
     memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
+    connectorService:{runtime:'service',factoryExports:['connector','default'],surfaces:['ingress'],supportedCapabilities:['source.connector']},
+    processingService:{runtime:'service',factoryExports:['backendPlugin','default'],surfaces:['processing'],supportedCapabilities:['processing.pack']},
   };}
+  private sourceContributions(packages:StoredPackage[],instances:PluginInstanceView[]):PluginSourceContribution[]{
+    const result:PluginSourceContribution[]=[];
+    for(const pkg of packages){
+      if(pkg.view.state!=='installed'||!pkg.manifest.sourceCatalog?.length)continue;
+      const related=instances.filter(instance=>instance.packageId===pkg.view.id);
+      const primary=related.find(instance=>instance.desired)||related[0];
+      const state:PluginSourceContribution['state']=!primary?'installed':primary.desired&&primary.observed==='ready'?'enabled':primary.issues.length||primary.observed==='blocked'?'needs_attention':primary.capabilities.some(value=>value.state==='verified')?'ready':primary.observed==='configured'||Object.keys(primary.configuration).length?'configured':'installed';
+      for(const entry of pkg.manifest.sourceCatalog){
+        result.push({
+          packageId:pkg.view.id,packageName:pkg.manifest.name,contributionId:entry.id,title:entry.title,body:entry.body,note:entry.note,icon:entry.icon,
+          kinds:[...entry.kinds],target:{...entry.target},...(entry.setupChoiceId?{setupChoiceId:entry.setupChoiceId}:{}),
+          ...(entry.attachToBinding?{attachToBinding:entry.attachToBinding}:{}),state,...(primary?{instanceId:primary.id}:{}),
+        });
+      }
+    }
+    return result;
+  }
   instanceView(id:string):PluginInstanceView{const record=this.instanceBuild(id),{view,stepId}=this.instance(id),references=this.references(id),pending=stepId&&['waiting','running'].includes(this.executor.get(stepId)?.state??'');
     if(!record||record.retired)return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};
     return {...view,issues:[...view.issues,...references],allowedActions:pending?[]:[...(!view.desired&&!references.length?['configure' as const,'check' as const]:[]),...(view.desired?['disable' as const]:!view.issues.length&&view.capabilities.every(value=>value.state!=='unknown')&&view.capabilities.some(value=>value.state==='verified')?['enable' as const]:[])]};
@@ -171,7 +206,21 @@ export class PluginCenter {
   action(id:string,kind:'check'|'enable'|'disable',raw:unknown){const input=memoryControlCommandSchema.parse(raw);
     this.command(kind+':'+id,input,()=>this.instance(id).view.revision,()=>{const instance=this.instance(id),view=this.instanceView(id);if(!view.allowedActions.includes(kind))throw new StoreError('This plugin action is unavailable in its current state',409);
       if(kind==='check'){this.validateConfiguration(this.package(instance.view.packageId).manifest,instance.view.configuration,true);instance.view.observed='checking';instance.view.issues=[];instance.stepId='plugin-check:'+input.operationId;instance.view.revision++;this.saveInstance(instance);this.executor.enqueue(input.operationId,'plugin.check',{instanceId:id,revision:instance.view.revision},{id:instance.stepId});}
-      else{instance.view.desired=kind==='enable';instance.view.observed=kind==='enable'?'ready':this.references(id).length?'draining':'disabled';instance.view.revision++;this.saveInstance(instance);this.admissionChanged?.(id,kind==='enable');}
+      else{
+        const pkg=this.package(instance.view.packageId);
+        if(kind==='enable'&&pkg.manifest.runtime==='service'){
+          // Connector activation is awaited after the durable command commits.
+          instance.view.desired=true;instance.view.observed='ready';instance.view.revision++;this.saveInstance(instance);
+          this.admissionChanged?.(id,true);
+          void this.activateServiceInstance(id).catch(()=>{});
+        }else if(kind==='disable'&&pkg.manifest.runtime==='service'){
+          instance.view.desired=false;instance.view.observed=this.references(id).length?'draining':'disabled';instance.view.revision++;this.saveInstance(instance);
+          this.admissionChanged?.(id,false);
+          void this.deactivateServiceInstance(id).catch(()=>{});
+        }else{
+          instance.view.desired=kind==='enable';instance.view.observed=kind==='enable'?'ready':this.references(id).length?'draining':'disabled';instance.view.revision++;this.saveInstance(instance);this.admissionChanged?.(id,kind==='enable');
+        }
+      }
     });return this.instanceView(id);
   }
   uninstall(id:string,raw:unknown){const input=memoryControlCommandSchema.parse(raw);let retired:string[]=[];const applied=this.command('uninstall:'+id,input,()=>this.revision(),()=>{
@@ -181,13 +230,65 @@ export class PluginCenter {
     const pkg=this.package(id);if(pkg.view.state==='installing')throw new StoreError('Wait for installation to settle before uninstalling',409);
     for(const record of records)if(!record.retired&&(record.id===packageRecord.id||record.kind==='instance'&&record.packageId===id))this.saveBuild({...record,retired:true,activeSelection:null});
     retired=instances.map(instance=>instance.id);
-    // Immutable code remains cached; uninstall never destroys retained Memory.
-  });if(applied)for(const id of retired){const runtime=this.runtimes.get(id);this.runtimes.delete(id);void runtime?.close().catch(()=>{});this.retired?.(id);}return this.view();}
+    // Immutable code remains cached; uninstall never destroys retained Memory or archived source history.
+  });if(applied)for(const retiredId of retired){const runtime=this.runtimes.get(retiredId);this.runtimes.delete(retiredId);void runtime?.close().catch(()=>{});void this.deactivateServiceInstance(retiredId).catch(()=>{});this.retired?.(retiredId);}return this.view();}
   runtime(id:string){this.assertCurrent();const existing=this.runtimes.get(id);if(existing)return existing;const runtime=this.runtimeFor(this.packageForInstance(id),this.instance(id).view);this.runtimes.set(id,runtime);return runtime;}
+  private async probeServicePackage(pkg:StoredPackage,signal:AbortSignal){
+    assertServicePackageSupported(pkg.manifest);
+    const directory=pkg.directory!;this.releases.verifyInstalled(directory,pkg.view.source.digest,pkg.manifest);
+    const module=await loadServicePackageModule(directory,pkg.manifest) as Record<string,unknown>;
+    signal.throwIfAborted();
+    const surfaces=servicePackageSurfaces(pkg.manifest);
+    const capabilities:PluginCapability[]=[];
+    const issues:string[]=[];
+    if(surfaces.ingress){
+      try{connectorFromModule(module);capabilities.push(...pkg.manifest.capabilities.filter(id=>id==='source.connector'||id.startsWith('source.')).map(id=>({id,state:'verified' as const,reason:'Connector export verified; OAuth and first sync remain in Sources'})));}
+      catch(error){issues.push(error instanceof Error?error.message:'connector_export_invalid');}
+    }
+    if(surfaces.processing){
+      const plugin=module.backendPlugin??module.default;
+      if(!plugin)issues.push('processing_export_missing');
+      else capabilities.push(...pkg.manifest.capabilities.filter(id=>id==='processing.pack'||id.startsWith('processing.')).map(id=>({id,state:'verified' as const,reason:'Processing export verified; target configuration remains in its settings surface'})));
+    }
+    if(!capabilities.length&&!issues.length){
+      for(const id of pkg.manifest.capabilities)capabilities.push({id,state:'verified',reason:'Service package entry loaded'});
+    }
+    for(const id of pkg.manifest.capabilities)if(!capabilities.some(value=>value.id===id)&&!issues.length)capabilities.push({id,state:'unknown',reason:'Requires a capability check'});
+    return {capabilities,issues};
+  }
+  private async loadConnectorManifest(instanceId:string){
+    const pkg=this.packageForInstance(instanceId);
+    assertServicePackageSupported(pkg.manifest);
+    if(!servicePackageSurfaces(pkg.manifest).ingress)throw new StoreError('This package does not declare an ingress connector',409);
+    this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
+    return connectorFromModule(await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>);
+  }
+  private async activateServiceInstance(instanceId:string){
+    const pkg=this.packageForInstance(instanceId);
+    if(!servicePackageSurfaces(pkg.manifest).ingress)return;
+    if(!this.connectorHost){
+      const instance=this.instance(instanceId);instance.view.observed='blocked';instance.view.issues=['connector_host_unavailable'];instance.view.desired=false;instance.view.revision++;this.saveInstance(instance);this.bump();return;
+    }
+    try{
+      const connector=await this.loadConnectorManifest(instanceId);
+      const known=this.connectorHost.inventory().some(entry=>entry.id===connector.id);
+      if(known)await this.connectorHost.restart(connector.id);else await this.connectorHost.install(connector);
+      this.activeConnectors.set(instanceId,{connectorId:connector.id,instanceId});
+      const instance=this.instance(instanceId);if(instance.view.desired){instance.view.observed='ready';instance.view.issues=[];instance.view.revision++;this.saveInstance(instance);this.bump();}
+    }catch(error){
+      const instance=this.instance(instanceId);instance.view.observed='blocked';instance.view.desired=false;instance.view.issues=[error instanceof Error?error.message:'connector_activation_failed'];instance.view.revision++;this.saveInstance(instance);this.bump();
+    }
+  }
+  private async deactivateServiceInstance(instanceId:string){
+    const owned=this.activeConnectors.get(instanceId);this.activeConnectors.delete(instanceId);
+    if(!owned||!this.connectorHost)return;
+    try{await this.connectorHost.stop(owned.connectorId);}catch{/* Stop failures stay visible on the next inventory/status read. */}
+  }
   /** A retained namespace can recreate its exact historical configuration
    * without changing the current build selection. The executable process is
    * still constructed only here, never by an adapter or an HTTP handler. */
   runtimeFor(pkg:StoredPackage,instance:PluginInstanceView){this.assertCurrent();if(!pkg.directory||pkg.view.state!=='installed')throw new StoreError('The plugin artifact is unavailable',409);
+    if(pkg.manifest.runtime==='service')throw new StoreError('Service packages do not use the Memory worker runtime',409);
     const directory=pkg.directory;this.releases.verifyInstalled(directory,pkg.view.source.digest,pkg.manifest);
     const create=()=>{
       const actual=this.runtimeFactory?.(pkg,instance)??new WorkerPluginRuntime(join(directory,pkg.manifest.entry),instance.configuration,directory);
@@ -287,9 +388,12 @@ export class PluginCenter {
       if(record.kind==='instance'){
         if(!record.desired){if(record.observed==='restart_required'){record.observed='stopped';record.blockers=[];this.control.saveBuild(record);}continue;}
         // Worker package instances resume their persisted desired selection
-        // without a second lazy installation path.
+        // without a second lazy installation path. Service connectors reattach
+        // through the live connector host after inventory is available.
         const ready=record.instance?.view.capabilities.every(capability=>capability.state!=='unknown')&&record.instance.view.capabilities.some(capability=>capability.state==='verified');
-        record.observed=ready?'active':'blocked';record.blockers=ready?[]:['capability_unverified'];this.control.saveBuild(record);continue;
+        record.observed=ready?'active':'blocked';record.blockers=ready?[]:['capability_unverified'];this.control.saveBuild(record);
+        if(record.instance&&this.package(record.instance.view.packageId).manifest.runtime==='service'&&ready)void this.activateServiceInstance(record.instance.view.id).catch(()=>{});
+        continue;
       }
       if(!record.desired){if(record.observed==='restart_required'){record.observed='stopped';record.blockers=[];this.control.saveBuild(record);}continue;}
       // Interrupted/failed activation needs an explicit new command. Boot must

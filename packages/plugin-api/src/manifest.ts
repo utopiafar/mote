@@ -74,6 +74,22 @@ export interface ManifestConfigurationField {
   readonly description?: string;
 }
 
+/** Declarative source-directory card. The host projects this after install;
+ * OAuth and first sync stay in Sources, not in Plugin Center. */
+export interface ManifestSourceCatalogEntry {
+  readonly id: string;
+  readonly title: string;
+  readonly body: string;
+  readonly note: string;
+  /** Host glyph token (for example lucide icon id); never a remote URL. */
+  readonly icon: string;
+  readonly kinds: readonly string[];
+  readonly target: {readonly pageId: string; readonly href: string};
+  readonly setupChoiceId?: string;
+  /** Existing account binding key a new kind may attach to without re-OAuth. */
+  readonly attachToBinding?: string;
+}
+
 /** Current unique package Manifest. `contributions` is the single source of
  * feature/native/UI projection; `FeatureManifest` is a derived browser view,
  * not a second package authority. `actionCapabilities` is an opaque domain
@@ -96,6 +112,7 @@ export interface PackageManifest {
   readonly configuration: ManifestConfigurationField[];
   readonly dependencies: readonly ManifestDependency[];
   readonly access: readonly string[];
+  readonly sourceCatalog?: readonly ManifestSourceCatalogEntry[];
 }
 
 const displayText: Parser<string> = (input, field) =>
@@ -130,6 +147,18 @@ const parseConfigurationField: Parser<ManifestConfigurationField> = (input, fiel
   id: (value, path) => typeof value === 'string' && /^[a-zA-Z][a-zA-Z0-9_]*$/.test(value) ? value : invalid(path),
   label: displayText, type: configurationType, required: optional(boolean),
   options: optional(array(parseOption, 64)), description: optional(displayText),
+});
+const pageId: Parser<string> = (input, field) =>
+  typeof input === 'string' && /^[a-z][a-zA-Z0-9-]{0,63}$/.test(input) ? input : invalid(field);
+const catalogHref: Parser<string> = (input, field) =>
+  typeof input === 'string' && input.startsWith('#/') && input.length <= 512 && !/[\r\n\0]/.test(input) ? input : invalid(field);
+const sourceKindToken: Parser<string> = (input, field) =>
+  typeof input === 'string' && /^[a-z][a-z0-9.-]{0,63}$/.test(input) ? input : invalid(field);
+const parseSourceCatalogEntry: Parser<ManifestSourceCatalogEntry> = (input, field) => object<ManifestSourceCatalogEntry>(input, field, {
+  id: token, title: displayText, body: displayText, note: displayText, icon: token,
+  kinds: array(sourceKindToken, 20),
+  target: (value, path) => object<{readonly pageId: string; readonly href: string}>(value, path, {pageId, href: catalogHref}),
+  setupChoiceId: optional(token), attachToBinding: optional(token),
 });
 function parseJsonValue(input: unknown, field: string): ManifestJsonValue {
   if (input === null || typeof input === 'boolean' || typeof input === 'string') return input;
@@ -167,12 +196,18 @@ const parseManifest: Parser<PackageManifest> = (input, field) => {
     configuration: array(parseConfigurationField, 128),
     dependencies: array(parseDependency, 64),
     access: array(displayText, 64),
+    sourceCatalog: optional(array(parseSourceCatalogEntry, 32)),
   });
   const contributionIds = new Set<string>();
   for (const contribution of manifest.contributions ?? []) {
     if (contributionIds.has(contribution.id)) return invalid(`${field}.contributions`);
     contributionIds.add(contribution.id);
     if (contribution.entry !== undefined) relativePath(contribution.entry, `${field}.contributions`);
+  }
+  const catalogIds = new Set<string>();
+  for (const entry of manifest.sourceCatalog ?? []) {
+    if (catalogIds.has(entry.id)) return invalid(`${field}.sourceCatalog`);
+    catalogIds.add(entry.id);
   }
   return manifest;
 };

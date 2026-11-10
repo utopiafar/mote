@@ -41,6 +41,7 @@ class PluginCenterPluginTest {
         assertEquals("unknown", instance.capabilities.single().state)
         assertEquals(setOf("configure", "check"), instance.allowedActions)
         assertEquals(emptyList<String>(), inventory.catalog.map { it.getString("repository") })
+        assertEquals(emptyList<String>(), inventory.sourceContributions.map { it.optString("contributionId") })
 
         val packageBuild = inventory.builds[0]
         val worker = inventory.builds[1]

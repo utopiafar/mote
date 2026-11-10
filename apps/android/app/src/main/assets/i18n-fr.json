@@ -10186,5 +10186,21 @@
   "保存在当前浏览器的站点存储中；清除站点数据会删除日志。": "Stockés dans les données de ce navigateur. Effacer les données du site supprime les journaux.",
   "数值诊断和运行日志分别设置。": "Les diagnostics numériques et les journaux sont configurés séparément.",
   "启用本机数值诊断": "Activer les diagnostics numériques locaux",
-  "日志已导出。": "Journaux exportés."
+  "日志已导出。": "Journaux exportés.",
+  "官方目录": "Catalogue officiel",
+  "连接器": "Connecteurs",
+  "Memory 方案": "Plans Memory",
+  "出站与处理": "Sortie et traitement",
+  "浏览官方目录": "Parcourir le catalogue officiel",
+  "只展示主线签发的固定制品。安装不等于授权，也不等于切换 Memory 方案或开始扫描历史。": "Seuls les artefacts fixes signés par la ligne principale sont listés. L'installation n'autorise pas, ne change pas le plan Memory et ne scanne pas l'historique.",
+  "当前没有可安装的官方制品。": "Aucun artefact officiel disponible à installer.",
+  "预览并安装": "Prévisualiser et installer",
+  "已移至「设置 → 运行与诊断」。": " Déplacé vers Réglages → Exécution et diagnostic.",
+  "官方目录在「自动记忆与插件」。": "Le catalogue officiel se trouve sous Mémoire automatique et plugins.",
+  "已安装，待配置": "Installé, configuration en attente",
+  "已配置，待核验": "Configuré, vérification en attente",
+  "可连接": "Prêt à connecter",
+  "已启用，待授权": "Activé, autorisation en attente",
+  "可挂到已有账号绑定": "Peut s'attacher à une liaison de compte existante",
+  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "Le catalogue officiel est ci-dessus ; cette entrée correspond à Réglages → Exécution et diagnostic sur le web."
 }

@@ -83,7 +83,12 @@ export class GitHubPluginReleases {
     let manifest:PluginManifest;
     try{manifest=pluginManifestSchema.parse(parseJson((await this.transport(trustedAsset(manifestAsset.browser_download_url))).bytes));}
     catch(error){if(error instanceof PluginContractError)throw new StoreError('The plugin manifest is invalid or uses an unsupported contract version',400);throw error;}
-    if(manifest.runtime==='service')throw new StoreError('This release requires a service runtime that this host does not provide',422);
+    if(manifest.runtime==='service'){
+      const surfaces=new Set((manifest.contributions??[]).map(contribution=>contribution.surface));
+      // Central activates connector/processing service packages; other service
+      // ABIs still require a host that publishes them.
+      if(!surfaces.has('ingress')&&!surfaces.has('processing'))throw new StoreError('This release requires a service runtime that this host does not provide',422);
+    }
     const asset=release.assets.find(asset=>asset.name===manifest.archive.asset);if(!asset)throw new StoreError('The adapter archive is absent from the release',422);
     const archiveUrl=trustedAsset(asset.browser_download_url),bytes=(await this.transport(archiveUrl)).bytes,digest=hash(bytes);
     if(digest!==manifest.archive.sha256)throw new StoreError('The adapter archive failed integrity verification',422);
