@@ -31,7 +31,7 @@ export interface SourceOptions {
 }
 export interface LocalSource extends SourceDefinition, Omit<SourceOptions, 'name'> {
   importCompletedAt?: string;
-  path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi';
+  path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi' | 'opencode';
 }
 export interface SourceStatus {
   context?: SourceContextState;
@@ -46,6 +46,6 @@ export interface SourceStatus {
   message: string; pending: number; lastSyncAt?: string; items: number; skipped: number;
 }
 export interface CalendarChoice { id: string; title: string }
-export type CodingProvider='claude'|'codex'|'kimi';
+export type CodingProvider='claude'|'codex'|'kimi'|'opencode';
 
 export interface CodingAgentDiscovery { provider: CodingProvider; name: string; path: string; available: boolean }

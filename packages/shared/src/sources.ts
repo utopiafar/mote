@@ -24,7 +24,7 @@ const originalMetadataSchema=z.record(z.unknown()).superRefine((value,ctx)=>{
   if(!valid||JSON.stringify(value).length>32000)ctx.addIssue({code:'custom',message:'Original metadata must be bounded JSON (32,000 characters, depth 8)'});
 });
 export const codingEvidenceSchema=z.object({
-  version:z.literal(1),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().min(1).max(500),
+  version:z.literal(1),provider:z.enum(['claude','codex','kimi','opencode']),sessionId:z.string().min(1).max(500),
   projectIdentity:z.enum(['workspace','session','unknown']).optional(),
   projectKey:z.string().min(1).max(200),cwd:z.string().max(4000).optional(),
   projectName:z.string().max(400).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),

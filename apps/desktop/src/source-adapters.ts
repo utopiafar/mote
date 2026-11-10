@@ -58,7 +58,7 @@ export class SourceAdapterRegistry {
 export function builtInSourceAdapters(): SourceAdapterRegistry {
   return new SourceAdapterRegistry()
     .register({ kind: 'coding-agent', version: 1, watchesPath: true, tracksDeletions: false, allowsArchive: false,
-      validateConfiguration(source) { if (typeof source.path !== 'string' || !['claude', 'codex', 'kimi'].includes(source.agent ?? '')) throw new Error('Invalid coding agent source'); },
+      validateConfiguration(source) { if (typeof source.path !== 'string' || !['claude', 'codex', 'kimi', 'opencode'].includes(source.agent ?? '')) throw new Error('Invalid coding agent source'); },
       async scan({ source, checkpoint,signal }) {
         const scan = await sourceWork.run<SourceScan>({ kind: 'coding-scan', root: source.path!, provider: source.agent!, options: source, checkpoint: checkpoint as CodingCheckpoint | undefined },undefined,signal);
         return { version: 1, scan };

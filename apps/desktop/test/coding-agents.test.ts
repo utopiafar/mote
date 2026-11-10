@@ -2,7 +2,8 @@ import {afterAll,afterEach,beforeEach,expect,it} from 'vitest';
 import {mkdtemp,mkdir,writeFile,appendFile,rm,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {scanCodingAgent,decodeCodingEvent,discoverCodingAgents,codingRoot} from '../src/coding-agents';
+import {DatabaseSync} from 'node:sqlite';
+import {scanCodingAgent,decodeCodingEvent,discoverCodingAgents,codingRoot,openCodeDatabasePath} from '../src/coding-agents';
 import {DEFAULT_SOURCE_OPTIONS} from '../src/source-types';
 import {SourceSync} from '../src/source-sync';
 import {sourceAck} from './fixtures';
@@ -18,6 +19,19 @@ afterAll(async()=>{await sourceWork.close();});
 async function remaining(options=DEFAULT_SOURCE_OPTIONS,checkpoint?:any){const items=[];let scan;do{scan=await scanCodingAgent(root,'codex',options,checkpoint);items.push(...scan.items);checkpoint=scan.checkpoint;}while(!scan.complete);return {items,checkpoint};}
 const line=(v:unknown)=>JSON.stringify(v)+'\n';
 const codex=(text:string)=>({type:'response_item',timestamp:'2026-09-10T01:00:00Z',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}});
+type OpenCodeMessage={id:string;session_id:string;type:string;seq:number;time_created:number;time_updated:number;data:string};
+function openCodeDatabase(path:string,sessions:Array<Record<string,unknown>>,messages:OpenCodeMessage[]){
+ const database=new DatabaseSync(path);
+ database.exec(`CREATE TABLE session_v2 (id TEXT PRIMARY KEY,parent_id TEXT,directory TEXT NOT NULL,title TEXT,time_created INTEGER NOT NULL,time_updated INTEGER NOT NULL);
+CREATE TABLE session_message (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,type TEXT NOT NULL,seq INTEGER NOT NULL,time_created INTEGER NOT NULL,time_updated INTEGER NOT NULL,data TEXT NOT NULL);
+CREATE TABLE credential (id TEXT PRIMARY KEY,value TEXT NOT NULL);`);
+ const session=database.prepare('INSERT INTO session_v2 (id,parent_id,directory,title,time_created,time_updated) VALUES (?,?,?,?,?,?)');
+ for(const row of sessions)session.run(String(row.id),row.parent_id??null,String(row.directory??''),String(row.title??''),Number(row.time_created),Number(row.time_updated));
+ const message=database.prepare('INSERT INTO session_message (id,session_id,type,seq,time_created,time_updated,data) VALUES (?,?,?,?,?,?,?)');
+ for(const row of messages)message.run(row.id,row.session_id,row.type,row.seq,row.time_created,row.time_updated,row.data);
+ database.prepare('INSERT INTO credential (id,value) VALUES (?,?)').run('fixture-credential','fixture-secret-that-must-not-be-read');
+ database.close();
+}
 it('finds Kimi Code at its actual data directory and respects an explicitly configured home',async()=>{
  const defaultRoot=join(root,'.kimi-code','sessions');await mkdir(defaultRoot,{recursive:true});
  expect((await discoverCodingAgents(root,{})).find(a=>a.provider==='kimi')).toMatchObject({available:true,path:defaultRoot});
@@ -30,6 +44,91 @@ it('finds Kimi Code at its actual data directory and respects an explicitly conf
  expect((await discoverCodingAgents(root,{})).find(a=>a.provider==='kimi')).toMatchObject({available:true,path:cliRoot});
  const missing=join(root,'missing');expect((await discoverCodingAgents(root,{KIMI_CODE_HOME:missing})).find(a=>a.provider==='kimi')).toMatchObject({available:false,path:join(missing,'sessions')});
  await symlink(customRoot,defaultRoot);expect((await discoverCodingAgents(root,{})).find(a=>a.provider==='kimi')?.path).toBe(cliRoot);
+});
+it('discovers OpenCode at its SQLite data path and respects configured database locations',async()=>{
+ const defaultDb=join(root,'.local','share','opencode','opencode.db');await mkdir(join(root,'.local','share','opencode'),{recursive:true});await writeFile(defaultDb,'');
+ expect(codingRoot('opencode',root,{})).toBe(defaultDb);expect(openCodeDatabasePath(root,{})).toBe(defaultDb);
+ expect((await discoverCodingAgents(root,{})).find(agent=>agent.provider==='opencode')).toMatchObject({available:true,path:defaultDb});
+ const xdg=join(root,'xdg');expect(openCodeDatabasePath(root,{XDG_DATA_HOME:xdg})).toBe(join(xdg,'opencode','opencode.db'));
+ const dataHome=join(root,'opencode-data');expect(openCodeDatabasePath(root,{OPENCODE_DATA_HOME:dataHome})).toBe(join(dataHome,'opencode.db'));
+ const custom=join(root,'custom-opencode.db');await writeFile(custom,'');expect(codingRoot('opencode',root,{OPENCODE_DB:custom})).toBe(custom);expect(openCodeDatabasePath(root,{OPENCODE_DB:custom})).toBe(custom);
+ await rm(defaultDb);await symlink(custom,defaultDb);expect((await discoverCodingAgents(root,{})).find(agent=>agent.provider==='opencode')?.available).toBe(false);
+});
+it('imports OpenCode SQLite sessions without reading credentials and keeps host context out of dialogue',async()=>{
+ const at=Date.parse('2026-09-10T01:00:00Z'),db=join(root,'opencode.db');
+ const session={id:'ses_generated',parent_id:null,directory:'/generated/opencode-project',title:'Generated OpenCode',time_created:at,time_updated:at+5000};
+ const child={...session,id:'ses_child',parent_id:'ses_generated',directory:'/generated/delegated',title:'Delegated'};
+ const message=(id:string,type:string,seq:number,time:number,data:unknown):OpenCodeMessage=>({id,session_id:'ses_generated',type,seq,time_created:time,time_updated:time,data:JSON.stringify(data)});
+ openCodeDatabase(db,[session,child],[
+  message('msg-user','user',1,at,{time:{created:at},text:'Generated question',files:[],agents:[]}),
+  message('msg-final','assistant',2,at+2000,{time:{created:at+1000,completed:at+2000},finish:'stop',content:[{type:'reasoning',text:'Private reasoning'},{type:'text',text:'Final answer',time:{created:at+1500,completed:at+1600}}]}),
+  message('msg-tools','assistant',3,at+4000,{time:{created:at+3000,completed:at+4000},finish:'tool-calls',content:[{type:'text',text:'Working note',time:{created:at+3100}},{type:'tool',id:'call-1',name:'shell',state:{status:'completed',input:{command:'generated command'},content:[{type:'text',text:'Generated output'}]},time:{created:at+3200}}]}),
+  message('msg-system','system',4,at+4100,{time:{created:at+4100},text:'Generated host instructions',description:'generated'}),
+  message('msg-synthetic','synthetic',5,at+4200,{time:{created:at+4200},text:'Generated synthetic context',description:'generated'}),
+  {id:'msg-child',session_id:'ses_child',type:'user',seq:1,time_created:at,time_updated:at,data:JSON.stringify({time:{created:at},text:'Delegated internal instruction'})},
+ ]);
+ const scan=await scanCodingAgent(db,'opencode',DEFAULT_SOURCE_OPTIONS);
+ for(const item of scan.items)codingEvidenceSchema.parse(item.document!.coding);
+ expect(scan.complete).toBe(true);
+ expect(scan.items.filter(item=>item.document?.coding?.role==='user').map(item=>[item.text,item.document?.coding?.attribution])).toEqual([
+  ['Generated question','human'],['Generated host instructions','host'],['Generated synthetic context','host'],
+ ]);
+ expect(scan.items.filter(item=>item.document?.coding?.channel==='final').map(item=>[item.text,item.document?.coding?.attribution])).toEqual([['Final answer','agent']]);
+ expect(scan.items.find(item=>item.text==='Working note')?.document?.coding).toMatchObject({role:'assistant',channel:'commentary',attribution:'agent'});
+ expect(scan.items.find(item=>item.document?.coding?.role==='tool_call')).toMatchObject({text:expect.stringContaining('generated command'),document:{coding:{callId:'call-1'}}});
+ expect(scan.items.find(item=>item.document?.coding?.role==='tool_result')?.text).toBe('Generated output');
+ expect(scan.items.find(item=>item.text==='Final answer')?.document?.recordedAt).toBe(new Date(at+1500).toISOString());
+ expect(scan.items.every(item=>item.document?.coding?.sessionId==='ses_generated'&&item.document?.coding?.cwd==='/generated/opencode-project'&&item.document?.coding?.projectName==='opencode-project')).toBe(true);
+ expect(JSON.stringify(scan.items)).not.toContain('Private reasoning');
+ expect(JSON.stringify(scan.items)).not.toContain('Delegated internal instruction');
+ expect(JSON.stringify(scan.items)).not.toContain('fixture-secret-that-must-not-be-read');
+});
+it('incrementally completes a running OpenCode message and appends later messages without duplicates',async()=>{
+ const at=Date.parse('2026-09-10T02:00:00Z'),db=join(root,'opencode.db');
+ openCodeDatabase(db,[{id:'ses_incremental',parent_id:null,directory:'/generated/incremental',title:'Generated',time_created:at,time_updated:at}],[
+  {id:'msg-user',session_id:'ses_incremental',type:'user',seq:1,time_created:at,time_updated:at,data:JSON.stringify({time:{created:at},text:'Generated request'})},
+  {id:'msg-running',session_id:'ses_incremental',type:'assistant',seq:2,time_created:at+1000,time_updated:at+1000,data:JSON.stringify({time:{created:at+1000},finish:null,content:[{type:'text',text:'PARTIAL_ONLY',time:{created:at+1000}}]})},
+ ]);
+ const first=await scanCodingAgent(db,'opencode',DEFAULT_SOURCE_OPTIONS);
+ expect(first.complete).toBe(false);expect(first.items.map(item=>item.text)).toEqual(['Generated request']);
+ const writer=new DatabaseSync(db);
+ writer.prepare('UPDATE session_message SET time_updated=?,data=? WHERE id=?').run(at+2000,JSON.stringify({time:{created:at+1000,completed:at+2000},finish:'stop',content:[{type:'text',text:'Completed answer',time:{created:at+1000,completed:at+2000}}]}),'msg-running');
+ writer.prepare('INSERT INTO session_message (id,session_id,type,seq,time_created,time_updated,data) VALUES (?,?,?,?,?,?,?)').run('msg-next','ses_incremental','user',3,at+3000,at+3000,JSON.stringify({time:{created:at+3000},text:'Generated follow-up'}));
+ writer.close();
+ const second=await scanCodingAgent(db,'opencode',DEFAULT_SOURCE_OPTIONS,first.checkpoint);
+ expect(second.complete).toBe(true);expect(second.items.map(item=>item.text)).toEqual(['Completed answer','Generated follow-up']);
+ expect(second.items.some(item=>item.text==='Generated request')).toBe(false);
+ expect((await scanCodingAgent(db,'opencode',DEFAULT_SOURCE_OPTIONS,second.checkpoint)).items).toEqual([]);
+});
+it('OpenCode new-only baselines existing messages and later imports appended ones',async()=>{
+ const at=Date.parse('2026-09-10T03:00:00Z'),db=join(root,'opencode.db');
+ const row=(id:string,type:string,seq:number,time:number,data:unknown):OpenCodeMessage=>({id,session_id:'ses_new_only',type,seq,time_created:time,time_updated:time,data:JSON.stringify(data)});
+ openCodeDatabase(db,[{id:'ses_new_only',parent_id:null,directory:'/generated/new-only',title:'Generated',time_created:at,time_updated:at}],[
+  row('old-user','user',1,at,{time:{created:at},text:'Old generated request'}),
+  row('old-final','assistant',2,at+1000,{time:{created:at+500,completed:at+1000},finish:'stop',content:[{type:'text',text:'Old generated answer'}]}),
+ ]);
+ const options={...DEFAULT_SOURCE_OPTIONS,initialSync:'new_only' as const},first=await scanCodingAgent(db,'opencode',options);
+ expect(first.items).toEqual([]);expect(first.complete).toBe(true);expect(first.checkpoint?.initialized).toBe(true);
+ const writer=new DatabaseSync(db);
+ writer.prepare('INSERT INTO session_message (id,session_id,type,seq,time_created,time_updated,data) VALUES (?,?,?,?,?,?,?)').run('new-user','ses_new_only','user',3,at+2000,at+2000,JSON.stringify({time:{created:at+2000},text:'New generated request'}));
+ writer.prepare('INSERT INTO session_message (id,session_id,type,seq,time_created,time_updated,data) VALUES (?,?,?,?,?,?,?)').run('new-final','ses_new_only','assistant',4,at+3000,at+3000,JSON.stringify({time:{created:at+2500,completed:at+3000},finish:'stop',content:[{type:'text',text:'New generated answer'}]}));
+ writer.close();
+ const next=await scanCodingAgent(db,'opencode',options,first.checkpoint);
+ expect(next.items.filter(item=>item.document?.coding?.channel==='final').map(item=>item.text)).toEqual(['New generated answer']);
+ expect(next.items.find(item=>item.text==='New generated request')?.document?.coding?.sessionId).toBe('ses_new_only');
+});
+it('OpenCode continues a large event across scans without mixing its output pieces',async()=>{
+ const at=Date.parse('2026-09-10T04:00:00Z'),db=join(root,'opencode.db'),body='Generated tool output. '.repeat(1200);
+ openCodeDatabase(db,[{id:'ses_large',parent_id:null,directory:'/generated/large',title:'Generated',time_created:at,time_updated:at}],[
+  {id:'msg-large',session_id:'ses_large',type:'assistant',seq:1,time_created:at,time_updated:at+1000,data:JSON.stringify({time:{created:at,completed:at+1000},finish:'tool-calls',content:[{type:'tool',id:'call-large',name:'shell',state:{status:'completed',input:{command:'generated'},content:[{type:'text',text:body}]},time:{created:at}}]})},
+ ]);
+ const first=await scanCodingAgent(db,'opencode',DEFAULT_SOURCE_OPTIONS,undefined,undefined,{items:1,bytes:1_000_000});
+ expect(first.items).toHaveLength(1);expect(first.complete).toBe(false);
+ let checkpoint=first.checkpoint!;
+ expect(Object.values(checkpoint.opencode!.sessions)[0]?.continuation?.nextItem).toBe(1);
+ let scan=first,texts=[...first.items.filter(item=>item.document?.coding?.role==='tool_result').map(item=>item.text)];
+ for(let turns=0;!scan.complete&&turns<10;turns++){scan=await scanCodingAgent(db,'opencode',DEFAULT_SOURCE_OPTIONS,checkpoint,undefined,{items:200,bytes:4*1024*1024});texts.push(...scan.items.filter(item=>item.document?.coding?.role==='tool_result').map(item=>item.text));checkpoint=scan.checkpoint!;}
+ expect(scan.complete).toBe(true);expect(texts.join('')).toBe(body);
 });
 it('imports only the main Kimi Code sessions, keeping final answers and attribution across restarts',async()=>{
  const session=join(root,'wd_generated','session_first'),main=join(session,'agents','main'),subagent=join(session,'agents','agent-0'),cliSubagent=join(session,'subagents','agent-1');
