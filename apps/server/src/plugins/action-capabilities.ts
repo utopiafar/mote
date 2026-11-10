@@ -53,6 +53,14 @@ export class ActionCapabilities {
   }));
  }
  resolveCentralTarget(target:CentralConnectorActionTarget){return this.centralProvider(target);}
+ /** A message send still requires this exact owner grant on top of the enabled
+  * connector declaration. A grant never makes a send automatic. */
+ messageSendGranted(target:CentralConnectorActionTarget){
+  return target.capabilityId==='message.send'&&target.capabilityVersion===1&&this.grants().some(grant=>
+   grant.state==='active'&&grant.capability.id==='message.send'&&grant.capability.version===1&&this.available(grant)&&
+   'executionLocation' in grant.target&&grant.target.packageId===target.packageId&&grant.target.instanceId===target.instanceId&&
+   grant.target.instanceRevision===target.instanceRevision&&grant.target.capabilityId===target.capabilityId&&grant.target.capabilityVersion===target.capabilityVersion);
+ }
  /** Owner-safe projection of device-published capabilities. `installed` comes
   * from actual enabled plugin providers, `available` from the live declaration,
   * `authorized` from the owner grant, and `waitingDevice` only when an installed

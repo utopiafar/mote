@@ -48,6 +48,16 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     runtime: 'service',
     packageId: 'mote.official.notion',
   },
+  {
+    repository: 'mote/official-slack-connector',
+    tag: 'v0.1.0',
+    localDirectory: 'official-plugins/slack',
+    name: 'Slack 归档',
+    description: '个人 Slack 归档；发送需第二次授权并经行动平台逐条确认',
+    group: 'connectors',
+    runtime: 'service',
+    packageId: 'mote.official.slack',
+  },
 ]);
 
 /** Public catalog projection. A repository-relative artifact location stays

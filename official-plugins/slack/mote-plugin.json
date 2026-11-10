@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "id": "mote.official.slack",
+  "name": "Slack 归档",
+  "version": "0.1.0",
+  "trust": "official",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "mote-official-slack-connector-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "mote.official.slack.ingress",
+      "version": "1",
+      "surface": "ingress",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "source.connector"
+      ]
+    }
+  ],
+  "capabilities": [
+    "source.connector",
+    "message.send"
+  ],
+  "actionCapabilities": [
+    {
+      "id": "message.send",
+      "version": 1,
+      "inputSchema": "message.send.v1",
+      "outputSchema": "message.receipt.v1",
+      "operations": [
+        "message.send"
+      ],
+      "executionLocation": "central-connector",
+      "risk": "message-send",
+      "constraints": {
+        "confirmsEveryMessage": true,
+        "currentEvidence": true
+      }
+    }
+  ],
+  "configuration": [
+    {
+      "id": "clientId",
+      "label": "Slack OAuth Client ID",
+      "type": "text",
+      "required": true,
+      "description": "Slack App 的 Client ID，不是凭据本身。"
+    },
+    {
+      "id": "clientSecret",
+      "label": "Slack OAuth Client Secret 引用",
+      "type": "secret-reference",
+      "required": true,
+      "description": "只填写中央部署环境中的凭据引用，例如 ${MOTE_SLACK_CLIENT_SECRET}；不填写明文密钥。"
+    },
+    {
+      "id": "redirectUri",
+      "label": "Slack 回调地址",
+      "type": "text",
+      "required": true,
+      "description": "必须与 Slack App 的 Redirect URL 完全一致，例如 https://central.example.com/oauth/slack/callback；归档与发送授权共用此回调地址。"
+    }
+  ],
+  "dependencies": [],
+  "access": [
+    "Owner-selected Slack channels and direct messages, read with the owner's Slack user token; this is a personal archive, not a workspace bot",
+    "Archive authorization requests read scopes only. Sending needs a second user-scope authorization and never follows from the archive connection",
+    "Slack client secret stays in the central secret reference; OAuth user tokens stay in host-bound instance state and are removed on disconnect",
+    "Reads are limited to conversations.list/info, conversations.history/replies, users.info and auth.test. chat.postMessage runs only inside a host-dispatched, owner-confirmed message.send action with the send token",
+    "No model calls, no workspace-wide scan, and no other Slack write methods"
+  ],
+  "sourceCatalog": [
+    {
+      "id": "official-slack",
+      "title": "Slack 归档",
+      "body": "个人归档已勾选的频道、私信与群组私信，按消息身份保留版本",
+      "note": "安装不等于授权。归档授权只读；发送需要第二次授权，并在行动平台逐条确认，问一问不能发送。",
+      "icon": "link",
+      "kinds": [
+        "mote.official.slack"
+      ],
+      "target": {
+        "pageId": "sources",
+        "href": "#/connections?setup=official-slack"
+      },
+      "setupChoiceId": "official-slack"
+    }
+  ]
+}
