@@ -76,18 +76,20 @@ export class ManagedCalendar {
  private async dispatchApproved(){
   for(const row of this.store.db.prepare("SELECT id FROM action_proposals WHERE json_extract(json,'$.status')='approved' AND json_extract(json,'$.target.executionLocation')='central-connector' ORDER BY rowid LIMIT 20").all() as {id:string}[]){
    const action=this.actions.get(row.id);if(action.status!=='approved'||!action.target||!isCentralConnectorActionTarget(action.target))continue;
+   if(action.kind==='message.send'&&!this.capabilities.messageSendGranted(action.target))continue;
    await this.dispatch(action);
   }
  }
  private async dispatch(action:ActionProposal){
   const target=action.target,operationId=action.operationId;
   if(!target||!isCentralConnectorActionTarget(target)||!operationId||!this.connectorAction)return;
+  if(action.kind==='message.send'&&!this.capabilities.messageSendGranted(target))return;
   const choice:ActionConnectorChoice|undefined=this.capabilities.centralConnectors().find(value=>this.sameTarget(value.target,target));
   if(!choice)return;
   let claimed:ActionProposal;
   try{claimed=this.actions.connectorClaim(action.id,operationId);}catch{return;}
   try{
-   const receipt=await this.connectorAction({target,request:{capability:choice.capability,operationId,input:{kind:action.kind,event:action.event,target}}});
+   const receipt=await this.connectorAction({target,request:{capability:choice.capability,operationId,input:{kind:action.kind,event:action.event,target,...(action.message?{message:action.message}:{})}}});
    if(receipt.status==='succeeded'&&receipt.externalId){
     this.actions.connectorReceipt(action.id,operationId,{operationId,status:'succeeded',externalId:receipt.externalId});
     if(claimed.managed)this.actions.bindManaged(action.id,{...claimed.managed,state:'succeeded'});

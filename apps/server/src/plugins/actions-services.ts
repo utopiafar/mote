@@ -80,7 +80,7 @@ export function createActionsServices(deps:ActionsServicesDependencies){
       child.addHook('onRequest',async(request,reply)=>{
         if(writeMethod(request.method)?phase!=='active':!readable())return reply.code(503).send({error:'feature_unavailable'});
       });
-      registerActions(child,current.actions,deps.connections,deps.authorization.credential,()=>void current.managed.tick().catch(()=>{}));
+      registerActions(child,current.actions,deps.connections,deps.authorization.credential,()=>void current.managed.tick().catch(()=>{}),request=>{const identity=deps.authorization.connectionIdentity(request);return !identity||deps.connections.isOwner(identity);});
       registerTodoRoutes(child,current.todos);
       registerActionCapabilityRoutes(child,{capabilities:current.capabilities,managed:current.managed,connections:deps.connections,connectionIdentity:deps.authorization.connectionIdentity});
     });
@@ -93,7 +93,7 @@ export function createActionsServices(deps:ActionsServicesDependencies){
       if(phase!=='created')throw unavailable();
       try{
         if(deps.store.db.isTransaction)throw new StoreError('Actions services preparation requires an idle vault transaction',503);
-        actions=new Actions(deps.store,deps.files,deps.query,deps.configured,{executor:deps.executor,semanticArtifacts:deps.semanticArtifacts,configService:deps.configService,connectorTargets:()=>capabilities?.centralConnectors()??[]});
+        actions=new Actions(deps.store,deps.files,deps.query,deps.configured,{executor:deps.executor,semanticArtifacts:deps.semanticArtifacts,configService:deps.configService,connectorTargets:()=>capabilities?.centralConnectors()??[],messageSendAuthorized:target=>capabilities?.messageSendGranted(target)??false});
         todos=new TodoStore(deps.store);
         capabilities=new ActionCapabilities(deps.store,deps.sources,deps.connections,deps.actionProviders);
         managed=new ManagedCalendar(deps.store,actions,capabilities,deps.connections,deps.connectorAction);
