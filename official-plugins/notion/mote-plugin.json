@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "id": "mote.official.notion",
+  "name": "Notion 只读",
+  "version": "0.1.0",
+  "trust": "official",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "mote-official-notion-connector-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "mote.official.notion.ingress",
+      "version": "1",
+      "surface": "ingress",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "source.connector"
+      ]
+    }
+  ],
+  "capabilities": [
+    "source.connector"
+  ],
+  "configuration": [
+    {
+      "id": "clientId",
+      "label": "Notion OAuth Client ID",
+      "type": "text",
+      "required": true,
+      "description": "Notion 集成设置中的 Client ID，不是凭据本身。"
+    },
+    {
+      "id": "clientSecret",
+      "label": "Notion OAuth Client Secret 引用",
+      "type": "secret-reference",
+      "required": true,
+      "description": "只填写中央部署环境中的凭据引用，例如 ${MOTE_NOTION_CLIENT_SECRET}；不填写明文密钥。"
+    },
+    {
+      "id": "redirectUri",
+      "label": "Notion 回调地址",
+      "type": "text",
+      "required": true,
+      "description": "必须与 Notion 集成设置中的 Redirect URI 完全一致，例如 https://central.example.com/oauth/notion/callback。"
+    }
+  ],
+  "dependencies": [],
+  "access": [
+    "Owner-configured read-only Notion pages and databases selected in Sources",
+    "OAuth access token stays in host-bound instance state; the client secret is resolved from the central secret reference and never stored in the package or instance JSON",
+    "No Notion create, update, delete or append calls; no model calls; no workspace-wide scan"
+  ],
+  "sourceCatalog": [
+    {
+      "id": "official-notion",
+      "title": "Notion（只读）",
+      "body": "只读归档已勾选的页面或数据库，按稳定身份保留版本",
+      "note": "安装不等于授权。完成配置与核验后，在来源中连接 Notion 并勾选页面或数据库。",
+      "icon": "file",
+      "kinds": [
+        "mote.official.notion"
+      ],
+      "target": {
+        "pageId": "sources",
+        "href": "#/connections?setup=official-notion"
+      },
+      "setupChoiceId": "official-notion"
+    }
+  ]
+}

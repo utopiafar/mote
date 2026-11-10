@@ -38,6 +38,16 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     runtime: 'service',
     packageId: 'mote.official.fixture-connector',
   },
+  {
+    repository: 'mote/official-notion-connector',
+    tag: 'v0.1.0',
+    localDirectory: 'official-plugins/notion',
+    name: 'Notion 只读',
+    description: '只读归档已选择的页面或数据库（官方连接器）',
+    group: 'connectors',
+    runtime: 'service',
+    packageId: 'mote.official.notion',
+  },
 ]);
 
 /** Public catalog projection. A repository-relative artifact location stays

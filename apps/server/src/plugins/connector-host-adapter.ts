@@ -1,7 +1,7 @@
 import type {HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import type {ConnectorActionExecution,ConnectorActionReceipt,SourceCapabilityDescriptor} from '@mote/shared';
-import type {ConnectorContext} from '../connectors/types.js';
+import type {ConnectorActivation,ConnectorContext} from '../connectors/types.js';
 import {ConnectorRegistry,connectorCleanupFailure,isConnectorCleanupFailure,type ConnectorHttpHost,type ConnectorInstance,type ConnectorManifest} from '../connectors/registry.js';
 import type {DynamicHttpDispatcher} from './dynamic-http-dispatcher.js';
 import type {HostContributionDescriptor} from '../feature-inventory.js';
@@ -39,9 +39,11 @@ export interface ConnectorHostAdapter {
   contributions():HostContributionDescriptor[];
   configureSyncInterval(intervalMs:number):void;
   /** Hot-install a new manifest after start; failure rolls back only it. */
-  install(manifest:ConnectorManifest):Promise<void>;
+  install(manifest:ConnectorManifest,activation?:ConnectorActivation):Promise<void>;
+  /** True once a manifest has been installed, including while it is stopped. */
+  known(id:string):boolean;
   /** Hot-restart a known stopped manifest with a fresh H04 scope. */
-  restart(id:string):Promise<void>;
+  restart(id:string,activation?:ConnectorActivation):Promise<void>;
   /** Hot-stop one installed instance; sibling instances keep running. */
   stop(id:string):Promise<void>;
   /** Dispatch one host-authorized action to an active connector instance. */
@@ -54,7 +56,7 @@ export interface ConnectorHostAdapter {
  * second host/registry and publishes no raw SourceStore/engine/materials API. */
 const descriptorKey=(descriptor:SourceCapabilityDescriptor)=>JSON.stringify([descriptor.lifecycle,descriptor.discovery,descriptor.listening,descriptor.readOriginal,descriptor.synchronization,descriptor.externalWrite]);
 export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):ConnectorHostAdapter {
-  const scopes=new Map<string,ConnectorInstanceScope>(),capabilityUsers=new Map<string,number>(),ownedKinds=new Set<string>(),ownedDescriptors=new Map<string,SourceCapabilityDescriptor>();
+  const scopes=new Map<string,ConnectorInstanceScope>(),capabilityUsers=new Map<string,number>(),ownedKinds=new Set<string>(),ownedDescriptors=new Map<string,SourceCapabilityDescriptor>(),activations=new Map<string,ConnectorActivation>();
   const required=new Set(options.required??[]);
   const installedDescriptor=(kind:string):SourceCapabilityDescriptor=>{
     const value=options.context.sources.capabilities.describe({kind:kind as never,platform:'macos',retention:'snapshot'});
@@ -129,6 +131,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
   const registry=new ConnectorRegistry(options.context,{
     http,scopeFor,statusScope:options.statusScope,manageCapabilities:false,
     ...(options.transport?{transport:options.transport}:{}),
+    activationFor:(manifest:ConnectorManifest)=>activations.get(manifest.id),
     ...(options.stateFor?{stateFor:(_manifest:ConnectorManifest,scope?:HostScope)=>{
       if(!scope)throw Error('Connector state scope is unavailable');
       return options.stateFor!(scope);
@@ -248,16 +251,19 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       components:[{id:'connector:'+connector.id,version:connector.version,surface:'ingress',state:connector.active?'active' as const:'unavailable' as const,...(connector.active?{}:{reason:connector.state})}],
     })),
     configureSyncInterval:(intervalMs:number)=>registry.configureSyncInterval(intervalMs),
-    async install(manifest:ConnectorManifest){
+    async install(manifest:ConnectorManifest,activation?:ConnectorActivation){
       if(!started||closed)throw Error('Connector host adapter is not active');
       if(manifests.has(manifest.id)||scopes.has(manifest.id)||hotById.has(manifest.id))throw Error(`Connector ${manifest.id} is already known`);
+      if(activation)activations.set(manifest.id,activation);else activations.delete(manifest.id);
       registry.addManifest(manifest);manifests.set(manifest.id,manifest);
-      return runHot(manifest);
+      try{return await runHot(manifest);}catch(error){activations.delete(manifest.id);throw error;}
     },
-    async restart(id:string){
+    known:(id:string)=>manifests.has(id),
+    async restart(id:string,activation?:ConnectorActivation){
       if(!started||closed)throw Error('Connector host adapter is not active');
       const manifest=manifests.get(id);if(!manifest)throw Error(`Connector ${id} is not known`);
       if(scopes.has(id)||hotById.has(id)||registry.inventory().some(item=>item.id===id&&item.state==='active'))throw Error(`Connector ${id} is already started`);
+      if(activation)activations.set(id,activation);else activations.delete(id);
       return runHot(manifest);
     },
     async stop(id:string){
@@ -272,6 +278,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
         if(value&&!scopeClosing){scopeClosing=closeScope(value);void scopeClosing.catch(()=>{});}
         if(scopeClosing)try{await scopeClosing;}catch(error){errors.push(error);}
         if(attempt)try{await attempt;}catch(error){if(isConnectorCleanupFailure(error))errors.push(error);}
+        activations.delete(id);
         if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
       })();
       retiring.add(task);void task.catch(()=>{});

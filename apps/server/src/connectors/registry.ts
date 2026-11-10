@@ -4,7 +4,7 @@ import type {StateStore} from '@mote/plugin-api';
 import type {StopReason} from '@mote/plugin-api/contracts';
 import {sourceKindSchema,type ConnectorActionExecution,type ConnectorActionReceipt,type SourceCapabilityDescriptor} from '@mote/shared';
 import {z} from 'zod';
-import type {ConnectorContext} from './types.js';
+import type {ConnectorActivation,ConnectorContext} from './types.js';
 
 type Method='GET'|'POST'|'PUT'|'DELETE';
 export type OwnerRoute={
@@ -42,6 +42,9 @@ export interface ConnectorRegistryOptions {
   readonly scopeFor?:(manifest:ConnectorManifest)=>HostScope;
   /** Trusted host binding: the state namespace comes from the instance scope. */
   readonly stateFor?:(manifest:ConnectorManifest,scope?:HostScope)=>StateStore;
+  /** Installed-package configuration resolved by the trusted host for this
+   * exact manifest. Built-in deployment connectors return undefined. */
+  readonly activationFor?:(manifest:ConnectorManifest)=>ConnectorActivation|undefined;
   readonly statusScope?:HostScope;
   /** Trusted transport mount only (for example the existing MCP Fastify transport). */
   readonly transport?:(instance:ConnectorInstance)=>void|Promise<void>;
@@ -118,8 +121,8 @@ export class ConnectorRegistry {
   addManifest(value:unknown){this.register(value,true);}
   manifest(id:string){return this.manifests.find(manifest=>manifest.id===id);}
   private instanceContext(manifest:ConnectorManifest,scope?:HostScope):ConnectorContext{
-    const state=this.options.stateFor?.(manifest,scope);
-    return state?{...this.context,state}:this.context;
+    const state=this.options.stateFor?.(manifest,scope),activation=this.options.activationFor?.(manifest);
+    return {...this.context,...(activation?{activation}:{}),...(state?{state}:{})};
   }
 
   async start(){

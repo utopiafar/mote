@@ -16,13 +16,16 @@ import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext
 import {centralServices} from './plugins/central-contracts.js';
 import {officialPluginCatalog} from './official-plugin-catalog.js';
 import {assertServicePackageSupported,connectorFromModule,loadServicePackageModule,servicePackageSurfaces} from './plugins/service-plugin-loader.js';
+import {resolvePluginSecretReference} from './plugins/secret-reference.js';
+import type {ConnectorActivation} from './connectors/types.js';
 import type {ConnectorManifest} from './connectors/registry.js';
 
 /** Hot connector host used by service-runtime ingress packages. */
 export type PluginConnectorHost={
-  install(manifest:ConnectorManifest):Promise<void>;
+  install(manifest:ConnectorManifest,activation?:ConnectorActivation):Promise<void>;
+  known?(id:string):boolean;
   stop(id:string):Promise<void>;
-  restart(id:string):Promise<void>;
+  restart(id:string,activation?:ConnectorActivation):Promise<void>;
   inventory():readonly {id:string;active:boolean}[];
   executeAction?(id:string,request:ConnectorActionExecution):Promise<ConnectorActionReceipt>;
 };
@@ -57,6 +60,7 @@ export class PluginCenter {
   retired?:(instanceId:string)=>void;
   runtimeFactory?:(pkg:StoredPackage,instance:PluginInstanceView)=>PluginRuntime;
   configurationAllowed?:(field:PluginManifest['configuration'][number],value:string|number|boolean)=>boolean;
+  resolveSecretReference?:(reference:string)=>string|undefined;
   probe?:(instanceId:string,signal:AbortSignal)=>Promise<{capabilities:PluginCapability[];issues:string[]}>;
   /** Bound after connector assembly starts; Memory-only fixtures may omit it. */
   connectorHost?:PluginConnectorHost;
@@ -195,13 +199,29 @@ export class PluginCenter {
       this.executor.enqueue(input.operationId,'plugin.install',{packageId:id,previewId:input.previewId},{id:'plugin-install:'+input.operationId});
     });return this.view();
   }
+  private secretValue(value:string){return (this.resolveSecretReference??resolvePluginSecretReference)(value);}
   private validateConfiguration(manifest:PluginManifest,configuration:Record<string,string|number|boolean>,complete=false){
     if(Object.keys(configuration).some(key=>!manifest.configuration.some(field=>field.id===key)))throw new StoreError('Unknown plugin configuration field');
     for(const field of manifest.configuration){const value=configuration[field.id];if(value===undefined||value===''){if(complete&&field.required)throw new StoreError('A required plugin configuration value is missing');continue;}
       if(field.type==='number'?typeof value!=='number':field.type==='boolean'?typeof value!=='boolean':typeof value!=='string')throw new StoreError('Invalid plugin configuration value');
       if(field.type==='select'&&!field.options?.some(option=>option.value===value))throw new StoreError('Invalid plugin configuration option');
-      if(['model-profile','secret-reference'].includes(field.type)&&!this.configurationAllowed?.(field,value))throw new StoreError('The referenced model profile or secret is unavailable');
+      if(field.type==='model-profile'&&!this.configurationAllowed?.(field,value))throw new StoreError('The referenced model profile or secret is unavailable');
+      if(field.type==='secret-reference'&&!this.configurationAllowed?.(field,value)&&!(manifest.runtime==='service'&&this.secretValue(String(value))!==undefined))throw new StoreError('The referenced model profile or secret is unavailable');
     }
+  }
+  /** One installed instance's non-secret configuration plus host-resolved
+   * credentials. Only the reference is persisted; the value is handed to the
+   * package at activation and never written back. */
+  private connectorActivation(id:string):ConnectorActivation{
+    const pkg=this.packageForInstance(id),view=this.instance(id).view,secrets:Record<string,string>={};
+    const configuration=Object.fromEntries(Object.entries(view.configuration).filter(([key])=>pkg.manifest.configuration.find(field=>field.id===key)?.type!=='secret-reference'));
+    for(const field of pkg.manifest.configuration)if(field.type==='secret-reference'){
+      const reference=view.configuration[field.id];
+      const secret=typeof reference==='string'?this.secretValue(reference):undefined;
+      if(secret===undefined){if(field.required)throw new StoreError('The referenced secret is unavailable',409);continue;}
+      secrets[field.id]=secret;
+    }
+    return {configuration,secrets};
   }
   configure(id:string|undefined,raw:unknown){const input=instanceSchema.extend({packageId:z.string().min(1).optional()}).parse(raw);if(!id&&!input.packageId)throw new StoreError('Choose an installed plugin package');let resultId=id;
     const applied=this.command(id?'configure:'+id:'create',input,()=>id?this.instance(id).view.revision:this.revision(),()=>{
@@ -282,9 +302,9 @@ export class PluginCenter {
       const instance=this.instance(instanceId);instance.view.observed='blocked';instance.view.issues=['connector_host_unavailable'];instance.view.desired=false;instance.view.revision++;this.saveInstance(instance);this.bump();return;
     }
     try{
-      const connector=await this.loadConnectorManifest(instanceId);
-      const known=this.connectorHost.inventory().some(entry=>entry.id===connector.id);
-      if(known)await this.connectorHost.restart(connector.id);else await this.connectorHost.install(connector);
+      const connector=await this.loadConnectorManifest(instanceId),activation=this.connectorActivation(instanceId);
+      const known=this.connectorHost.known?.(connector.id)??this.connectorHost.inventory().some(entry=>entry.id===connector.id);
+      if(known)await this.connectorHost.restart(connector.id,activation);else await this.connectorHost.install(connector,activation);
       this.activeConnectors.set(instanceId,{connectorId:connector.id,instanceId});
       const instance=this.instance(instanceId);if(instance.view.desired){instance.view.observed='ready';instance.view.issues=[];instance.view.revision++;this.saveInstance(instance);this.bump();}
     }catch(error){
