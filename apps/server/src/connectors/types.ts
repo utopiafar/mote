@@ -46,6 +46,11 @@ export interface ConnectorContext {
    * test may inject a bounded fetch implementation without giving plugins a
    * shell or arbitrary network API. */
   fetch?: typeof fetch;
+  /** Host-owned account bindings. A new source kind attaches to an existing
+   * account here instead of asking for a second OAuth application. */
+  bindings?: {
+    readonly lark?: import('./lark-binding.js').LarkBinding;
+  };
   config: {dataDir: string;token: string;allowedOrigins: string[];connectors?: ConnectorConfig};
   ownerAuthorization?:(header:string|undefined)=>boolean;
   mcpAuthorization?:(header:string|undefined)=>{write:boolean;sourceIds?:string[];authorize:()=>void}|undefined;
