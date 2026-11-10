@@ -19,12 +19,13 @@ import { MediaSnapshot } from './Media';
 import { activityExplanation, Metadata, sourceLabels } from '../../Metadata';
 import { mediaExplanation } from '../../media-presentation';
 import { ReferenceDetail, SourceDocumentDetails } from '../reader';
-import { Empty, ErrorNotice, EvidenceDialog, OriginalImage, Spinner } from '../../shell-components';
+import { Empty, ErrorNotice, EvidenceDialog, OriginalImage } from '../../shell-components';
 import { useResource } from '../../useResource';
 import {useImportReturnRead} from '../../useImportReturnRead';
 import {captureImportSnapshot,importSnapshot} from '../../import-navigation';
 import {readPage} from '../../navigation';
 import { useMaterialPreview, useNearViewport } from '../../HomeMaterialRow';
+import { Loading } from '../../Loading';
 function libraryTypeLabel(value:string){
     const labels:Record<LibraryMaterialType,string>={note:moteText('记录'),document:moteText('文档'),image:moteText('图片'),coding:moteText('Coding 会话'),transcript:moteText('转写'),email:moteText('邮件'),calendar:moteText('日程'),reference:moteText('引用')};
     return labels[value as LibraryMaterialType]??value;
@@ -93,7 +94,7 @@ export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseCh
     const kinds=[...new Map([...materialKindOptions(),...(page.data?.items.filter(item=>item.entryType==='material').map(item=>item.material).filter(item=>!materialKindOptions().some(type=>type.kind===item.kind)).map(item=>({kind:item.kind,label:materialKind(item.kind)}))??[]),...(page.data?.types??[])].map(type=>[type.kind,type])).values()];
     const groups=new Map<string,OwnerBrowseEntry[]>();
     for(const item of page.data?.items??[]){const at=item.contentAt;const day=at&&Number.isFinite(Date.parse(at))?new Date(at).toLocaleDateString(getLocale(),{year:'numeric',month:'long',day:'numeric'}):moteText('资料');groups.set(day,[...(groups.get(day)??[]),item]);}
-    return <>{!returnReadReady&&<p role="status">{moteText('正在读取…')}</p>}<section className="library-materials" aria-busy={!returnReadReady||undefined} data-import-return-ready={Boolean(returnReadReady&&(invalidDate||page.error!==undefined||!page.loading&&page.data!==undefined))} aria-hidden={!returnReadReady||undefined} style={{visibility:returnReadReady?'visible':'hidden'}}>
+    return <>{!returnReadReady&&<Loading/>}<section className="library-materials" aria-busy={!returnReadReady||undefined} data-import-return-ready={Boolean(returnReadReady&&(invalidDate||page.error!==undefined||!page.loading&&page.data!==undefined))} aria-hidden={!returnReadReady||undefined} style={{visibility:returnReadReady?'visible':'hidden'}}>
     <div className="library-list-heading">{viewNavigation??<h2>{moteText('资料')}</h2>}<div className="library-filter-actions"><button className="text-button" aria-expanded={filterOpen||invalidDate} aria-controls="library-catalog-filters" onClick={()=>setFilterOpen(!filterOpen)}>{moteText('筛选')}{activeFilters.length>0&&' · '+activeFilters.length}<ChevronDown size={12}/></button><button className="icon-button" disabled={page.loading} onClick={page.refresh} aria-label={moteText('刷新')}><RefreshCw size={13}/></button></div></div>
     <div className="library-catalog-filters" id="library-catalog-filters" hidden={!filterOpen&&!invalidDate}>
       <label>{moteText('来源')}<select value={current.origin?'@notes':current.sourceId} onChange={event => update(event.target.value==='@notes'?{origin:'notes',sourceId:'',kind:''}:{origin:'',sourceId:event.target.value})}><option value="">{moteText('全部来源')}</option>{page.data?.noteOrigin&&<option value="@notes">{page.data.noteOrigin.label}</option>}{current.sourceId && !page.data?.sources.some(source => source.id === current.sourceId) && <option value={current.sourceId}>{sourceDisplay(current.sourceId)}</option>}{page.data?.sources.map(source => <option key={source.id} value={source.id}>{sourceDisplay(source.id, source.label)}</option>)}</select></label>
@@ -106,7 +107,7 @@ export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseCh
     {invalidDate&&<p role="alert">{moteText('请选择有效日期')}</p>}
     {browseNavigation}
     {page.error !== undefined && <ErrorNotice text={page.error instanceof ApiError && page.error.status === 409 && page.error.code === 'invalid_cursor' ? moteText('资料目录已变化，请返回第一页继续浏览。') : errorMessage(page.error)} retry={() => current.cursor ? update({ cursor: undefined }) : page.refresh()}/>}
-    {page.loading && !page.data && <Spinner />}
+    {page.loading && !page.data && <Loading/>}
     {returnReadReady && page.error === undefined && page.data && <>{[...groups].map(([day,items])=><section className="library-material-day" key={day}><div className="library-day-heading"><h2>{day}</h2><span>{moteText('本页 {0} 份资料',items.length)}</span></div><div className="library-record-list">{items.map(entry=>entry.entryType==='capture'?<OriginalNoteRow key={entry.ref} entry={entry} onOpen={onSelect}/>:<LibraryMaterialRow key={entry.ref} api={api} item={entry.material} type={page.data!.types.find(type=>type.kind===entry.material.kind&&type.schemaVersion===entry.material.schemaVersion)} source={page.data!.sources.find(source=>source.id===entry.material.origin.sourceId)?.label} device={devices.find(device=>device.deviceId===entry.material.origin.deviceId)?.deviceName} selected={selected===entry.ref} onSelect={onSelect} preview={materialPreview}/>)}</div></section>)}{!page.data.items.length && <Empty icon={FileText} title={moteText('当前范围内暂无资料。')}><p>{moteText('保存记录或导入资料后，可以在这里查看。')}</p></Empty>}<div className="library-pagination">{current.cursor && <button className="button subtle" disabled={page.loading} onClick={() => update({ cursor: undefined })}>{moteText('返回第一页')}</button>}{page.data.nextCursor && <button className="button subtle" disabled={page.loading} onClick={() => update({ cursor: page.data!.nextCursor! })}>{moteText('下一页')}</button>}</div></>}
   </section></>;
 }

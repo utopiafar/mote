@@ -28,11 +28,8 @@ struct ConversationView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if model.loading {
-                        ProgressView("正在读取对话…")
-                            .font(MoteFont.secondary)
-                            .foregroundStyle(MoteDesignTokens.muted.color)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 24)
+                        MoteLoading("正在读取对话…")
+                            .padding(.top, 8)
                     }
                     ForEach(model.turns, id: \.id) { turn in
                         questionBubble(turn.question)

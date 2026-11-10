@@ -17,6 +17,7 @@ import {pluginTabFromHash} from '../../route-query';
 import type {Page} from '../../navigation';
 import {PluginConfiguration} from './PluginConfiguration';
 import {MemorySettings} from '../../MemorySettings';
+import { Loading } from '../../Loading';
 
 const pluginsPath='/api/plugins',buildsPath='/api/plugin-builds',bindingPath='/api/memory-spaces/default/binding';
 const deniedBindingApis=new WeakSet<Api>();
@@ -132,8 +133,8 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   {pluginResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(pluginResource.error)}<button className="text-button" onClick={pluginResource.refresh}>{moteText('重试')}</button></p>}
   {buildResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(buildResource.error)}<button className="text-button" onClick={buildResource.refresh}>{moteText('重试')}</button></p>}
   {bindingResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(bindingResource.error)}<button className="text-button" onClick={bindingResource.refresh}>{moteText('重试')}</button></p>}
-  {pluginResource.loading&&!view&&<p role="status">{moteText('正在读取…')}</p>}
-  {tab==='discover'&&!installReady&&bindingResource.loading&&view&&<p role="status">{moteText('正在读取…')}</p>}
+  {pluginResource.loading&&!view&&<Loading/>}
+  {tab==='discover'&&!installReady&&bindingResource.loading&&view&&<Loading/>}
   <BuildStatus builds={builds}/>
   {tab==='installed'&&<>
    {view&&<div className={"provider-workspace plugin-workspace"+(currentPackage?" has-package":"")}><aside hidden={Boolean(currentPackage)} className="panel provider-sidebar"><div className="section-heading"><h2>{moteText('已安装')}</h2><span className="badge muted">{view.packages.length}</span></div>
@@ -174,7 +175,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
    <p className="fine-print"><a className="text-button" href="#/system/diagnostics">{moteText('从 GitHub 添加其他可信插件')}</a>{moteText('已移至「设置 → 运行与诊断」。')}</p>
   </section>}
   {tab==='memory'&&<>
-   {bindingResource.loading&&!binding&&<p role="status">{moteText('正在读取…')}</p>}
+   {bindingResource.loading&&!binding&&<Loading/>}
    {binding&&<><section className="panel plugin-memory-control"><div className="section-heading"><div><h2>{moteText('自动记忆')}</h2><p role="status">{automaticStatus}</p></div><button type="button" role="switch" aria-checked={admission!.desired} aria-label={moteText('自动记忆')} className={'plugin-memory-switch '+(admission!.desired?'is-on':'')} disabled={busy||!(admission!.desired?memoryActions.includes('pause'):memoryActions.includes('resume'))} onClick={()=>memoryCommand(admission!.desired?'pause':'resume')}>{admission!.desired?moteText('已选择启用'):moteText('已选择暂停')}</button></div>
     {authorization.error!==undefined&&<p className="notice error" role="alert">{errorMessage(authorization.error)}<button className="text-button" onClick={authorization.refresh}>{moteText('重新读取')}</button></p>}{waitingAuthorization&&<p className="plugin-waiting-authorization"><a className="text-button" href="#/system/models?category=processing">{moteText('开启自动处理')} →</a></p>}
     {admission!.blockedReason&&<p className="notice">{admission!.blockedReason}</p>}

@@ -10,7 +10,6 @@ public enum MoteMetrics {
     public static let controlHeight = MoteMetrics.touchTarget
     public static let pageMargin: CGFloat = 16
     public static let markSize: CGFloat = 28
-    public static let markRadius: CGFloat = 6
 }
 
 /// A contained list with hairline outline and dividers.

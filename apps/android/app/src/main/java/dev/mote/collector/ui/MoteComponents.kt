@@ -1,15 +1,19 @@
 package dev.mote.collector.ui
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Typeface
+import android.graphics.Path
+import android.graphics.drawable.AnimatedVectorDrawable
 import android.graphics.drawable.GradientDrawable
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -364,18 +368,93 @@ internal object MoteComponents {
         layoutParams = LinearLayout.LayoutParams(-2, context.moteDp(22))
     }
 
-    /** The brand mark is fixed at 28 x 28 with a 6dp corner and never follows radius tokens. */
-    fun mark(context: Context): View = TextView(context).apply {
-        text = "m"; gravity = Gravity.CENTER
-        setTextSize(TypedValue.COMPLEX_UNIT_DIP, 23f); letterSpacing = -0.065f; includeFontPadding = false
-        typeface = Typeface.create(MoteTheme.fontFamily(false), Typeface.BOLD)
-        bind(this, "mark") { view ->
-            view.background = MoteUi.shape(context, NativeColorRole.PRIMARY_BACKGROUND, MARK_RADIUS_DP, false)
-            MoteUi.textColor(view as TextView, NativeColorRole.PRIMARY_INK)
-        }
+    /** The brand mark: one stroke for the m, its last leg resting on a dot. Ink and dot follow the theme. */
+    fun mark(context: Context): View = MarkView(context).apply {
+        bind(this, "mark") { (it as MarkView).colors(NativeColorRole.INK.color(), NativeColorRole.ACCENT.color()) }
         layoutParams = LinearLayout.LayoutParams(context.moteDp(28), context.moteDp(28))
     }
-    private const val MARK_RADIUS_DP = 6
+
+    private class MarkView(context: Context) : View(context) {
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = 2.2f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        }
+        private val dot = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val path = Path().apply {
+            moveTo(5.25f, 16.5f); lineTo(5.25f, 7.5f)
+            for ((start, end) in listOf(5.25f to 16.5f, 11.75f to 12.2f)) {
+                moveTo(start, 10.75f); arcTo(start, 7.5f, start + 6.5f, 14f, 180f, 180f, false); lineTo(start + 6.5f, end)
+            }
+        }
+        fun colors(ink: Int, accent: Int) { stroke.color = ink; dot.color = accent; invalidate() }
+        override fun onDraw(canvas: Canvas) {
+            val unit = minOf(width, height) / 24f
+            canvas.save(); canvas.translate((width - unit * 24f) / 2f, (height - unit * 24f) / 2f); canvas.scale(unit, unit)
+            canvas.drawPath(path, stroke); canvas.drawCircle(18.25f, 15.85f, 1.65f, dot)
+            canvas.restore()
+        }
+    }
+
+    /** Views that stand in for content still being read; fixtures wait for them to leave. */
+    const val LOADING_TAG = "mote-loading"
+
+    /** Content is on its way: quiet rows in the shape of what replaces them. TalkBack still hears the words. */
+    fun skeleton(context: Context, label: String, rows: Int = 3): View = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL; tag = LOADING_TAG
+        contentDescription = label; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        setPadding(0, context.moteDp(12), 0, context.moteDp(12))
+        repeat(rows) { index ->
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                addView(skeletonBar(context, if (index % 2 == 0) .62f else .48f, 14))
+                addView(skeletonBar(context, .34f, 11), LinearLayout.LayoutParams(-1, -2).apply { topMargin = context.moteDp(9) })
+            }, LinearLayout.LayoutParams(-1, -2).apply { if (index > 0) topMargin = context.moteDp(20) })
+        }
+        loadingMotion(this, breathe = true)
+    }
+
+    /** An image still on its way: its own frame, quietly breathing. */
+    fun skeletonTile(context: Context, label: String): View = View(context).apply {
+        tag = LOADING_TAG; contentDescription = label
+        bind(this, "skeleton") { it.background = MoteUi.shape(context, NativeColorRole.FILL, NativeRadiusRole.CONTAINER, false) }
+        loadingMotion(this, breathe = true)
+    }
+
+    private fun skeletonBar(context: Context, fraction: Float, heightDp: Int): View = LinearLayout(context).apply {
+        weightSum = 1f
+        addView(View(context).apply { bind(this, "skeleton") { it.background = MoteUi.shape(context, NativeColorRole.FILL, NativeRadiusRole.PILL, false) } },
+            LinearLayout.LayoutParams(0, context.moteDp(heightDp), fraction))
+    }
+
+    /** A wait that owns the whole screen: the mark writes itself, then the dot settles. */
+    fun loadingMark(context: Context, label: String): View = FrameLayout(context).apply {
+        tag = LOADING_TAG; contentDescription = label; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        val mark = ImageView(context).apply { setImageResource(R.drawable.avd_mote_loading); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+        addView(mark, FrameLayout.LayoutParams(context.moteDp(40), context.moteDp(40), Gravity.CENTER))
+        if (ValueAnimator.areAnimatorsEnabled()) addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) { (mark.drawable as? AnimatedVectorDrawable)?.start() }
+            override fun onViewDetachedFromWindow(view: View) { (mark.drawable as? AnimatedVectorDrawable)?.stop() }
+        })
+        loadingMotion(this, breathe = false)
+    }
+
+    /** Nothing for the first 300 ms, then a slow breath; still when the system turns animation off. */
+    private fun loadingMotion(view: View, breathe: Boolean) {
+        if (!ValueAnimator.areAnimatorsEnabled()) return
+        view.alpha = 0f
+        val motion = AnimatorSet().apply {
+            val appear = ObjectAnimator.ofFloat(view, View.ALPHA, 0f, 1f).apply { startDelay = 300; duration = 200 }
+            if (!breathe) play(appear)
+            else playSequentially(appear, ObjectAnimator.ofFloat(view, View.ALPHA, 1f, .45f, 1f).apply {
+                duration = 1800; repeatCount = ValueAnimator.INFINITE; interpolator = AccelerateDecelerateInterpolator()
+            })
+        }
+        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(attached: View) { motion.start() }
+            override fun onViewDetachedFromWindow(detached: View) { motion.cancel() }
+        })
+    }
 
     /** M3-style switch: bordered track off, accent track and raised thumb on. */
     internal class MoteSwitch(context: Context, initial: Boolean, private val onChange: (Boolean) -> Unit) : View(context) {

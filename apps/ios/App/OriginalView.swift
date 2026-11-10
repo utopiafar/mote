@@ -34,7 +34,10 @@ struct OriginalRootView: View {
                     onDeleted: onDeleted
                 )
             } else if model.isLoading {
-                ProgressView("正在读取原文…")
+                MoteLoading("正在读取原文…")
+                    .padding(.horizontal, 20)
+                    .padding(.top, MoteMetrics.touchTarget + 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 VStack(spacing: 16) {
                     Text(model.errorMessage ?? "原文不可用")
@@ -97,10 +100,19 @@ struct OriginalView: View {
             topBar
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text(metadata)
-                        .font(MoteFont.secondary)
-                        .foregroundStyle(MoteDesignTokens.muted.color)
-                        .padding(.horizontal, 20)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(metadata)
+                            .font(MoteFont.secondary)
+                            .foregroundStyle(MoteDesignTokens.muted.color)
+                        if let headline {
+                            Text(headline)
+                                .font(MoteFont.title)
+                                .foregroundStyle(MoteDesignTokens.ink.color)
+                                .frame(maxWidth: 340, alignment: .leading)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                    }
+                    .padding(.horizontal, 20)
                     Text(bodyText)
                         .font(MoteFont.reading)
                         .foregroundStyle(MoteDesignTokens.ink.color)
@@ -351,6 +363,14 @@ struct OriginalView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
+    }
+
+    /// The title earns its own line only when it says more than the opening words below it.
+    private var headline: String? {
+        let title = presentation.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let opening = presentation.text.split(whereSeparator: \.isNewline).first
+            .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)) } ?? ""
+        return title.isEmpty || title == "记录" || title == opening ? nil : title
     }
 
     private var bodyText: AttributedString {

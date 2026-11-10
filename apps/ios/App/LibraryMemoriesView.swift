@@ -248,11 +248,8 @@ struct LibraryMemoriesView: View {
         } else if model.tab == .memories, let error = model.memoryError {
             errorState(error) { await model.reloadCurrent() }
         } else if isLoading, currentRowsEmpty {
-            ProgressView("正在读取…")
-                .font(MoteFont.secondary)
-                .foregroundStyle(MoteDesignTokens.muted.color)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 40)
+            MoteLoading()
+                .padding(.top, 16)
         } else if currentRowsEmpty {
             emptyState
         } else if model.tab == .library {

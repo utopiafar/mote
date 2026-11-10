@@ -3,6 +3,7 @@ import {ChevronRight} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from './api';
 import {memoryStatus,type Memory} from './plugins/memory/Memories';
+import { Loading } from './Loading';
 
 type ResultPage={ids:string[];total:number;nextCursor:string|null};
 type ResultRow={id:string;memory?:Memory;error?:unknown};
@@ -56,7 +57,7 @@ export function ActivityMemoryResults({api,workId,cursors,onCursors,onOpen,revis
  if(visible?.page?.total===0&&cursors.length===1)return null;
  return <section ref={section} className="activity-results" aria-label={moteText('已保存成果')}>
   <div className="activity-section-head"><h2 tabIndex={-1}>{moteText('已保存成果')}</h2>{visible?.page&&<span>{moteText('{0} 项',visible.page.total)}</span>}</div>
-  {(!visible||visible.loading&&!visible.page)&&<p role="status">{moteText('正在读取…')}</p>}
+  {(!visible||visible.loading&&!visible.page)&&<Loading/>}
   {visible?.error!==undefined&&<p role="alert" className="notice error">{errorMessage(visible.error)} <button ref={retryButton} className="text-button" onClick={()=>setRetry(value=>value+1)}>{moteText('重试')}</button></p>}
   {visible?.page&&visible.rows.map(row=><div key={row.id} role={row.error!==undefined?'status':undefined}><button data-activity-result-id={row.id} data-activity-memory-id={row.memory?row.id:undefined} className="activity-result-row" style={visible.loading?{minHeight:rowHeights.current.get(row.id)}:undefined} aria-disabled={!row.memory||Boolean(opening)} onClick={()=>{if(row.memory&&!opening)void open(row.id);}}><span className="activity-result-symbol" aria-hidden="true">◇</span><span className="result-copy"><strong>{row.memory?row.memory.title:moteText(row.error!==undefined?'暂不可用':'正在读取…')}</strong>{row.memory?<small>{memoryStatus(row.memory,Date.now())}</small>:row.error instanceof Error?<small>{errorMessage(row.error)}</small>:<small aria-hidden="true">&nbsp;</small>}</span>{row.memory&&<ChevronRight size={15}/>}</button>{row.error!==undefined&&<button className="text-button" disabled={Boolean(opening)} onClick={()=>setRetry(value=>value+1)}>{moteText('重试')}</button>}</div>)}
   {visible?.page&&!visible.rows.length&&<p>{moteText('没有符合条件的内容')}</p>}

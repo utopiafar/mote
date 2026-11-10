@@ -9,6 +9,7 @@ import {operationFeed} from '../work/operation-feed';
 import {ListPagination,useCursorPages} from '../../ListPagination';
 import {containDialogFocus} from '../../dialog-focus';
 import {WorkflowProcessing} from '../../WorkflowProcessing';
+import { Loading } from '../../Loading';
 const states:Record<OperationState,string>={waiting:'等待处理',running:'运行中',blocked:'受阻',failed:'失败',cancelled:'已取消',succeeded:'完成',stale:'来源变化待重验',skipped:'已跳过'};
 const kinds:Record<string,string>={'recording-sync':'录音同步','material-organizer':'资料整理','memory-provider-reconcile':'记忆供应商核对',image:'图片处理',file:'文件处理',capture:'截图处理',memory:'记忆整理',workflow:'上下文处理',import:'资料导入',query:'问答',insight:'洞察',embedding:'检索向量计算','material-index':'资料检索索引'};
 const steps:Record<string,string>={'material.organizer':'资料整理','memory.provider-reconcile':'记忆供应商核对','images.ocr':'文字识别','images.understanding':'图片理解','images.derived':'图片衍生成果','material.index':'资料检索索引','files.pipeline':'内容提取','files.summary':'文件摘要','file-step':'格式处理','perception.ocr':'文字识别','perception.semantic':'图片理解','memory.batch':'记忆批次','memory.extract':'提取记忆','memory.review':'独立审核','imports.prepare':'分析原件','imports.commit':'保存记录','query.run':'问答','insight.run':'洞察','lifecycle-window':'后台整理窗口','actions.extract':'日程分析','embedding.capture':'记录向量索引','embedding.file':'文件片段向量索引','embedding.query':'检索向量计算'};
@@ -25,7 +26,7 @@ function Detail({api,id,onClose,onNavigate,opener}:{api:Api;id:string;onClose:()
  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()} onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();onClose();}}}>
   <section ref={panel} className="modal processing-detail" role="dialog" aria-modal="true" aria-label={moteText('任务详情')}>
    <div className="section-heading"><h2 ref={heading} tabIndex={-1}>{moteText('任务详情')}</h2><button className="button" onClick={onClose}>{moteText('关闭详情')}</button></div>
-   {error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)} <button className="button" onClick={refresh}>{moteText('重试')}</button></p>}{loading&&!data&&<p role="status">{moteText('正在读取…')}</p>}
+   {error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)} <button className="button" onClick={refresh}>{moteText('重试')}</button></p>}{loading&&!data&&<Loading/>}
    {retryError&&<p role="alert">{retryError}</p>}{data&&<>
     <p className="operation-id"><code>{id}</code></p><Badge state={data.operation.state} reason={data.operation.waitingReason}/><Progress operation={data.operation}/>
     {data.operation.kind==='material-index'&&data.operation.state==='failed'&&<button className="button" disabled={retryBusy} onClick={()=>void retryIndex()}>{moteText('仅重试检索索引')}</button>}
@@ -51,7 +52,7 @@ function OperationsCentre({api,onNavigate}:{api:Api;onNavigate:(page:Page)=>void
     <label>{moteText('任务类型')}<select aria-label={moteText('任务类型')} value={kind} onChange={e=>{setKind(e.target.value);paging.reset();}}><option value="">{moteText('全部')}</option>{Object.entries(kinds).map(([value,label])=><option key={value} value={value}>{moteText(label)}</option>)}</select></label>
     <button className="text-button" onClick={()=>onNavigate('settings')}>{moteText('模型与服务')}</button>
    </div>
-   {feedError!==undefined&&<p className="notice" role="status">{moteText('进度连接暂时中断，正在自动重连。')}</p>}{error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)}</p>}{loading&&!data&&<p role="status">{moteText('正在读取…')}</p>}
+   {feedError!==undefined&&<p className="notice" role="status">{moteText('进度连接暂时中断，正在自动重连。')}</p>}{error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)}</p>}{loading&&!data&&<Loading/>}
    <div className="operation-list" aria-busy={loading}>{data?.items.map(operation=><article key={operation.id} className="operation-row">
     <div className="operation-title"><h2>{moteText(kinds[operation.kind]||'上下文处理')}</h2><code title={operation.id}>{operation.id}</code></div>
     <Badge state={operation.state} reason={operation.waitingReason}/><div className="operation-progress"><Progress operation={operation}/></div>

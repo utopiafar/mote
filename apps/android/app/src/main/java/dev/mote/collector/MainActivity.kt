@@ -201,8 +201,8 @@ class MainActivity : MoteActivity() {
         savedInstanceState?.getString("pageRuleImportApp")?.let { id -> pageRuleImportTarget = id to savedInstanceState.getString("pageRuleImportVersion", "") }
         val retained = lastNonConfigurationInstance as? RetainedDraft
         val loading = moteDetailPage()
-        val label = TextView(this).apply { text = MoteI18n.text("正在读取本机设置…") }; loading.addView(label); loading.addView(ProgressBar(this))
-        uiTask.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, {
+        val mark = MoteComponents.loadingMark(this, MoteI18n.text("正在读取本机设置…")); loading.addView(mark, LinearLayout.LayoutParams(-1, 0, 1f))
+        uiTask.start(MoteI18n.text("正在读取本机设置…"), {}, {
             Settings(applicationContext).let { it to it.read() }
         }) { result ->
             result.onSuccess { (opened, config) ->
@@ -210,7 +210,10 @@ class MainActivity : MoteActivity() {
                 buildUi(config, savedInstanceState, retained)
                 if (resumed) resumeUi()
             }
-                .onFailure { label.text = if (it.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) it.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") }
+                .onFailure { failure ->
+                    loading.removeView(mark)
+                    loading.addView(TextView(this).apply { text = if (failure.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) failure.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") })
+                }
         }
     }
     private fun buildUi(config: CollectorConfig, savedInstanceState: Bundle?, retained: RetainedDraft?) {

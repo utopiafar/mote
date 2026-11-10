@@ -197,8 +197,10 @@ internal class LibraryCaptureView(
         val previousFiles = files
         val firstPage = pages == 0
         val priorCandidates = projection.candidates(selection.server)
+        // An empty first page waits as a skeleton; render() replaces it on every outcome.
+        val placeholder = if (firstPage && query.isBlank() && rows.childCount == 0) MoteComponents.skeleton(activity, MoteI18n.text("正在读取…")).also(rows::addView) else null
         more.isEnabled = false
-        task.start(MoteI18n.text("正在读取…"), { status.text = it }, {
+        task.start(MoteI18n.text("正在读取…"), { if (placeholder == null) status.text = it }, {
             requestPage(selection, identity, generation, readEpoch, filter, after, until, nextLocal, nextRemote, readLocal, readRemote, priorCandidates)
         }) { result ->
             val current = CentralAccess.resolve(activity)

@@ -11,6 +11,7 @@ import { useResource } from '../../useResource';
 import { Gmail } from './Gmail';
 import { GoogleCalendarSettings } from './GoogleCalendarSettings';
 import { LarkSettings } from './LarkSettings';
+import { Loading } from '../../Loading';
 
 export type SourceCatalogStatus = Record<string, unknown> | null;
 
@@ -212,7 +213,7 @@ function RecordingSourceConnection({ api, sourceId, provider, status, onOpen }: 
   const page = useResource<RecordingStatus>(api, '/api/connectors/' + encodeURIComponent(provider) + '-recordings', 3000);
   if (page.error) return <div><p role="alert">{moteText('状态读取失败。')}</p><details className="source-final-diagnostics"><summary>{moteText('技术详情')}</summary><pre>{errorMessage(page.error)}</pre></details></div>;
   const current = page.data ?? status;
-  if (!current) return <p role="status">{moteText('正在读取…')}</p>;
+  if (!current) return <Loading/>;
   if (current.provider !== provider || current.sourceId !== sourceId) return <p role="status">{moteText('此来源未绑定当前录音账号')}</p>;
   return <div className="source-connection-embedded final-source-connector"><RecordingConnection api={api} provider={provider} onOpen={onOpen}/></div>;
 }

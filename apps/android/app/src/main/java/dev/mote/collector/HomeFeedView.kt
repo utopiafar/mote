@@ -60,7 +60,7 @@ internal class HomeFeedView(
         if (task.busy) return
         val readCentral = access.client != null && !denied && gate.due(SystemClock.elapsedRealtime())
         val stamp = if (readCentral) gate.begin(SystemClock.elapsedRealtime()) else null
-        if (childCount == 0 && readCentral) label(MoteI18n.text("正在读取…"))
+        if (childCount == 0 && readCentral) { visibility = View.VISIBLE; addView(MoteComponents.skeleton(activity, MoteI18n.text("正在读取…"))) }
         task.start("", {}, {
             val localPage = activity.withNativeNotePreviews(activity.queue().recentPage())
             val central = if (readCentral) runCatching {

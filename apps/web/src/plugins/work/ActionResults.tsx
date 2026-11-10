@@ -6,12 +6,13 @@ import {errorMessage} from '../../api';
 import {useResource} from '../../useResource';
 import {useForegroundResources} from '../../useForegroundResources';
 import {operationFeed} from './operation-feed';
+import { Loading } from '../../Loading';
 export function ActionResults({api,evidenceId}:{api:Api;evidenceId:string}){
  const path='/api/actions/by-evidence/'+encodeURIComponent(evidenceId);
  const read=useResource<{items:(Pick<ActionProposal,'id'|'status'|'managed'|'resolution'|'kind'>&{title:string})[];hasMore:boolean}>(api,path,15000);
  useForegroundResources(api,[path]);
  useEffect(()=>operationFeed(api).subscribe(()=>{}),[api]);
- if(read.loading&&!read.data)return <p role="status">{moteText('正在读取行动结果…')}</p>;
+ if(read.loading&&!read.data)return <Loading label={moteText('正在读取行动结果…')}/>;
  if(read.error!==undefined)return <p role="alert">{errorMessage(read.error)} <button className="button subtle" onClick={read.refresh}>{moteText('重新读取')}</button></p>;
  if(read.data&&!Array.isArray(read.data.items))return <p role="alert">{moteText('中央响应格式无效，请刷新后重试。')} <button className="button subtle" onClick={read.refresh}>{moteText('重新读取')}</button></p>;
  const todoUrl='#/actions?tab=todos&todoEvidence='+encodeURIComponent(evidenceId)+'&returnTo='+encodeURIComponent(window.location.hash);

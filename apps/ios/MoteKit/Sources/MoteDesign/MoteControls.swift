@@ -240,21 +240,3 @@ public extension MoteCapsuleField where Trailing == EmptyView {
         self.init(placeholder, text: text, icon: icon) { EmptyView() }
     }
 }
-
-/// The square m mark used by the app bar and connection screens.
-public struct MoteMark: View {
-    public init() {}
-
-    public var body: some View {
-        Text("m")
-            .font(.system(size: 23, weight: .semibold))
-            .tracking(-1.5)
-            .foregroundStyle(MoteDesignTokens.primaryInk.color)
-            .padding(.trailing, 1)
-            .padding(.bottom, 3)
-            .frame(width: MoteMetrics.markSize, height: MoteMetrics.markSize)
-            .background(MoteDesignTokens.primaryBackground.color)
-            .clipShape(RoundedRectangle(cornerRadius: MoteMetrics.markRadius, style: .continuous))
-            .accessibilityHidden(true)
-    }
-}

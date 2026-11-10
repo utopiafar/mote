@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
@@ -186,7 +187,7 @@ class Ua08AcceptanceCaptureInstrumentedTest {
             click(s, "Back to the conversation list") { it.contentDescription?.toString() == "返回上级" }
             ready(s, "Conversation list rows are loaded") { a ->
                 !a.isWorking && shown(a).any { it.contentDescription?.toString()?.startsWith("暖气费是怎么约定的？") == true } &&
-                    shown(a).none { it is TextView && it.text.contains("正在读取对话") }
+                    shown(a).none { it is TextView && it.text.contains("正在读取对话") || it.tag == MoteComponents.LOADING_TAG }
             }
             instrumentation.waitForIdleSync()
             shot(s, "list-$theme")

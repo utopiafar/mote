@@ -7,6 +7,7 @@ import {resources} from '../../resource-cache';
 import {useUnsavedChanges} from '../../unsaved';
 import {ActionDialog} from './ActionDialog';
 import {actionFailure} from '../../action-presentation';
+import { Loading } from '../../Loading';
 export type Todo={id:string;version:number;title:string;description?:string;dueAt:string|null;status:'open'|'completed'|'cancelled';evidenceIds:string[]};
 type Draft={id:string;title:string;due:string;description:string;evidenceIds:string[]};
 type EditDraft={id:string;version:number;title:string;due:string;description:string};
@@ -37,7 +38,7 @@ export function Todos({api,onOpen,newRequest=0,sourceEvidence,onCreateReturn}:{a
  const statusLabel=(status:Todo['status'])=>moteText(status==='open'?'未完成':status==='completed'?'已完成':'已取消');
  return <section className={'todos-final'+(detail?' has-todo-detail':'')} aria-label={moteText('待办')}>
  {!detail&&<><div className="actions-final-toolbar"><span>{moteText('当前页')} · {read.data?.items.length??0} {moteText('项待办')}</span><select aria-label={moteText('待办状态')} value={filter} onChange={event=>{setFilter(event.target.value);setCursor(undefined);setError('');}}>{(['open','completed','cancelled'] as const).map(status=><option value={status} key={status}>{statusLabel(status)}</option>)}</select></div>
- {read.loading&&!read.data&&<p role="status">{moteText('正在读取…')}</p>}{read.error!==undefined&&<p className="notice error" role="alert">{actionFailure(read.error)}<button className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button></p>}
+ {read.loading&&!read.data&&<Loading/>}{read.error!==undefined&&<p className="notice error" role="alert">{actionFailure(read.error)}<button className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button></p>}
  <div className="actions-final-list">{!denied&&read.data?.items.map(item=><article className="todo-final-row" data-todo-id={item.id} key={item.id}><button className="todo-final-complete" disabled={busy} aria-label={moteText(item.status==='open'?'完成 {0}':'重新打开 {0}',item.title)} aria-pressed={item.status==='completed'} onClick={()=>void patch(item,{status:item.status==='open'?'completed':'open'})}>{item.status==='completed'?'✓':''}</button><button className="todo-final-open" onClick={()=>open(item)}><strong>{item.title}</strong><small>{item.dueAt?dateTime(item.dueAt):moteText('无截止时间')}{item.evidenceIds.length?' · '+moteText('{0} 份原文依据',item.evidenceIds.length):''}</small></button><span aria-hidden="true">›</span></article>)}</div>
  {read.data&&!read.data.items.length&&<div className="actions-final-empty"><h2>{filter==='open'?moteText('没有待办'):moteText('这里还没有记录')}</h2>{filter==='open'&&<button className="button" onClick={()=>setCreateOpen(true)}>{moteText('添加待办')}</button>}</div>}
  <div className="actions-final-pagination">{cursor&&<button className="text-button" onClick={()=>setCursor(undefined)}>{moteText('返回最新')}</button>}{read.data?.nextCursor&&<button className="text-button" onClick={()=>setCursor(read.data!.nextCursor!)}>{moteText('更多')}</button>}</div></>}

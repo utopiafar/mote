@@ -8,6 +8,7 @@ import { DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS,
 import { ApiError, errorMessage, type Api } from '../../api';
 import { createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation, type CredentialAction, type ModelSettingsDraft } from './model-settings-form';
 import { codexReasoningChoices, type CatalogModel } from '../../model-reasoning';
+import { Loading } from '../../Loading';
 const protocolNames: Record<ModelSettingsDraft['protocol'], string> = {
     'codex-app-server': "本机 Codex App Server",
     deepseek: "DeepSeek 原生",
@@ -219,7 +220,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
     return <>
     <section className="panel config-builder model-settings-editor" aria-label={moteText("模型服务设置")} aria-busy={busy}>
       {profileId===undefined&&<div className="section-heading"><div><h2><SlidersHorizontal size={18}/>{moteText("模型服务")}</h2><p>{moteText("设置连接与默认模型，其他模块可复用此连接并选择不同模型。")}</p></div><span className="badge muted">{moteText("保存后生效")}</span></div>}
-      {!active && loading && <p role="status">{moteText("正在读取模型设置…")}</p>}
+      {!active && loading && <Loading label={moteText('正在读取模型设置…')}/>}
       {error && <p className="notice error" role="alert">{error}</p>}
       {conflict && <button className="button subtle" disabled={busy} onClick={reread}><RotateCcw size={15}/>{moteText("重新读取并还原草稿")}</button>}
       {!active && !loading && <button className="button subtle" onClick={() => setReload(n => n + 1)}>{moteText("重新读取模型设置")}</button>}

@@ -1,0 +1,88 @@
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt">
+    <!-- The mark writes itself in 1.8 s: three strokes, then the dot settles. The static drawable is the finished mark. -->
+    <aapt:attr name="android:drawable">
+        <vector android:width="40dp" android:height="40dp" android:viewportWidth="24" android:viewportHeight="24">
+            <path android:name="s1" android:strokeColor="@color/mote_muted" android:strokeWidth="1.9" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M5.25,16.5V7.5" />
+            <path android:name="s2" android:strokeColor="@color/mote_muted" android:strokeWidth="1.9" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M5.25,10.75a3.25,3.25 0,0 1,6.5 0V16.5" />
+            <path android:name="s3" android:strokeColor="@color/mote_muted" android:strokeWidth="1.9" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M11.75,10.75a3.25,3.25 0,0 1,6.5 0V12.2" />
+            <group android:name="dot">
+                <path android:name="dotFill" android:fillColor="@color/mote_accent" android:pathData="M16.6,15.85a1.65,1.65 0,1 0,3.3 0a1.65,1.65 0,1 0,-3.3 0z" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="s1">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1800" android:repeatCount="infinite">
+                <propertyValuesHolder android:propertyName="trimPathEnd" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0" />
+                    <keyframe android:fraction="0.16" android:value="1" android:interpolator="@android:interpolator/fast_out_slow_in" />
+                    <keyframe android:fraction="1" android:value="1" />
+                </propertyValuesHolder>
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="1" />
+                    <keyframe android:fraction="0.86" android:value="1" />
+                    <keyframe android:fraction="1" android:value="0" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="s2">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1800" android:repeatCount="infinite">
+                <propertyValuesHolder android:propertyName="trimPathEnd" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0" />
+                    <keyframe android:fraction="0.16" android:value="0" />
+                    <keyframe android:fraction="0.42" android:value="1" android:interpolator="@android:interpolator/fast_out_slow_in" />
+                    <keyframe android:fraction="1" android:value="1" />
+                </propertyValuesHolder>
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="1" />
+                    <keyframe android:fraction="0.86" android:value="1" />
+                    <keyframe android:fraction="1" android:value="0" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="s3">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1800" android:repeatCount="infinite">
+                <propertyValuesHolder android:propertyName="trimPathEnd" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0" />
+                    <keyframe android:fraction="0.42" android:value="0" />
+                    <keyframe android:fraction="0.58" android:value="1" android:interpolator="@android:interpolator/fast_out_slow_in" />
+                    <keyframe android:fraction="1" android:value="1" />
+                </propertyValuesHolder>
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="1" />
+                    <keyframe android:fraction="0.86" android:value="1" />
+                    <keyframe android:fraction="1" android:value="0" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="dotFill">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1800" android:repeatCount="infinite">
+                <propertyValuesHolder android:propertyName="fillAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0" />
+                    <keyframe android:fraction="0.58" android:value="0" />
+                    <keyframe android:fraction="0.68" android:value="1" />
+                    <keyframe android:fraction="0.86" android:value="1" />
+                    <keyframe android:fraction="1" android:value="0" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="dot">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1800" android:repeatCount="infinite">
+                <propertyValuesHolder android:propertyName="translateY" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="-3" />
+                    <keyframe android:fraction="0.58" android:value="-3" />
+                    <keyframe android:fraction="0.68" android:value="0" android:interpolator="@android:interpolator/decelerate_quad" />
+                    <keyframe android:fraction="1" android:value="0" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+</animated-vector>

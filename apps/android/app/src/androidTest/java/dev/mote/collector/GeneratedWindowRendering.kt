@@ -12,6 +12,7 @@ import android.view.WindowManager
 import android.widget.TextView
 import android.widget.CompoundButton
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.mote.collector.ui.MoteComponents
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,7 +30,8 @@ internal object GeneratedWindowRendering {
             "正在读取运行状态…", "正在读取已保存连接…", "正在读取存储位置…", "正在读取日志…",
             "正在读取本机同步状态…", "正在读取本机统计…", "正在生成压缩预览…", "正在读取日程建议…", "正在读取已安装应用…").map { MoteI18n.text(it) }.toSet() +
             listOf("本机记录", "中央归档").map { MoteI18n.text("正在读取{0}…", MoteI18n.text(it)) }
-        return views(root).filterIsInstance<TextView>().none { it.isShown && it.text.toString() in pending }
+        // Loading is drawn as skeletons that carry their words for TalkBack; both forms are still pending.
+        return views(root).none { it.isShown && (it.tag == MoteComponents.LOADING_TAG || it is TextView && it.text.toString() in pending) }
     }
 
     private fun rectangle(rect: Rect) = JSONObject().put("left", rect.left).put("top", rect.top)

@@ -94,11 +94,8 @@ struct DiscoveryHistoryView: View {
                 Task { await model.load() }
             }
         } else if model.loading && model.items.isEmpty {
-            ProgressView("正在读取…")
-                .font(MoteFont.secondary)
-                .foregroundStyle(MoteDesignTokens.muted.color)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 40)
+            MoteLoading()
+                .padding(.top, 16)
         } else if model.items.isEmpty {
             VStack(spacing: 6) {
                 Text("第一份洞察会保存在这里，之后可以随时回看。")
@@ -291,10 +288,9 @@ struct InsightDetailView: View {
             }
             .scrollIndicators(.hidden)
         } else if model.loading {
-            ProgressView("正在读取…")
-                .font(MoteFont.secondary)
-                .foregroundStyle(MoteDesignTokens.muted.color)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            MoteLoading()
+                .padding(MoteMetrics.pageMargin)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if model.unavailable {
             VStack(spacing: 14) {
                 Text("这份洞察当前不可用，请从历史选择其他洞察。")

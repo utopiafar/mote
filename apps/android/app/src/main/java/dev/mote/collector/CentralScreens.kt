@@ -520,7 +520,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                     text = MoteI18n.text("重试"); setOnClickListener { if (!ui.isWorking) loadConversations() }
                 }, MoteUi.ButtonRole.TEXT), LinearLayout.LayoutParams(-2, -2))
             }
-            !conversationListReadable && conversationItems.isEmpty() -> ui.text(MoteI18n.text("正在读取对话…"), NativeFontRole.SUPPORT, box)
+            !conversationListReadable && conversationItems.isEmpty() -> box.addView(MoteComponents.skeleton(ui, MoteI18n.text("正在读取对话…")))
         }
         box.visibility = if (box.childCount == 0) android.view.View.GONE else android.view.View.VISIBLE
     }

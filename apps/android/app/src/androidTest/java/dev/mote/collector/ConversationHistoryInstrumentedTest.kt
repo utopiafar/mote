@@ -13,6 +13,7 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -158,7 +159,7 @@ class ConversationHistoryInstrumentedTest {
             open(fixture, empty = true).use { scenario ->
                 until("Empty page finished its read") { fixture.listReads.get() >= 1 }
                 ready(scenario, "Empty page finished its read") { !it.isWorking }
-                until("Loading copy is gone") { labels(scenario).none { it == "正在读取对话…" } }
+                until("Loading copy is gone") { labels(scenario).none { it == "正在读取对话…" } && viewsOf(scenario).none { it.isShown && it.tag == MoteComponents.LOADING_TAG } }
                 val text = labels(scenario)
                 assertFalse("empty history has no explanatory copy", text.any { it.contains("还没有对话") })
                 assertFalse("empty history has no week caption", text.contains("本周") || text.contains("更早"))

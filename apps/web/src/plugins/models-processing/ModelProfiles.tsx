@@ -7,6 +7,7 @@ import {DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUES
 import {type Api, ApiError, errorMessage} from '../../api';
 import {ModelSettingsEditor} from './ModelSettingsEditor';
 import {createModelDraft, modelSettingsRequest} from './model-settings-form';
+import { Loading } from '../../Loading';
 
 function ProfileDialog({title, busy, onClose, children}: {title:string;busy:boolean;onClose:()=>void;children:ReactNode}) {
  const ref=useRef<HTMLDialogElement>(null);
@@ -58,7 +59,7 @@ export function ModelProfiles({api,revision,onApplied,onDetailChange}: {
  }
  return <div ref={root} className="model-connections" aria-busy={busy||resource.loading}>
   {Boolean(error||resource.error)&&<p className="notice error" role="alert">{error||errorMessage(resource.error)}</p>}
-  {!view&&resource.loading&&<p role="status">{moteText('正在读取模型设置…')}</p>}
+  {!view&&resource.loading&&<Loading label={moteText('正在读取模型设置…')}/>}
   <section hidden={selected!==null} aria-label={moteText('语言模型')}>
    <div className="section-heading model-connections-heading"><h2>{moteText('语言模型')}</h2><button className="button" disabled={busy||!view||atCapacity} onClick={()=>{if(!view)return;const id=crypto.randomUUID();setNewProfile({api,value:{id,name:moteText('新连接'),settings:{provider:'custom',protocol:'openai-completions',baseUrl:'',model:'',reasoningEffort:'auto',maxTokens:DEFAULT_MODEL_MAX_TOKENS,modelRequestTimeoutMs:DEFAULT_MODEL_REQUEST_TIMEOUT_MS,agentTimeoutMs:DEFAULT_AGENT_TIMEOUT_MS,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}}});choose(id);}}><Plus size={15}/>{moteText('语言模型连接')}</button></div>
    <div className="model-profile-list">{profiles.map(value=><button key={value.id} type="button" className="model-profile-row" data-model-profile={value.id} disabled={busy} onClick={()=>choose(value.id)}><span className="model-profile-symbol">{value.readOnly?<LockKeyhole size={18}/>:<Server size={18}/>}</span><span><strong>{profileName(value)}</strong><small>{value.settings.model||moteText('尚未选择模型')}{uses(value.id).length?' · '+moteText('用于：')+uses(value.id).join('、'):''}</small></span><span className="model-row-state">{pendingProfile?.id===value.id?moteText('草稿'):value.readOnly?moteText('部署文件 · 只读'):value.settings.model?moteText('已配置'):moteText('待配置')}</span><ChevronRight size={15}/></button>)}</div>

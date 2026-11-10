@@ -23,10 +23,9 @@ struct MemoryDetailRootView: View {
             if let content = model.content {
                 MemoryDetailView(model: model, content: content, onBack: onBack, onOpenCapture: onOpenCapture)
             } else if model.loading {
-                ProgressView("正在读取…")
-                    .font(MoteFont.secondary)
-                    .foregroundStyle(MoteDesignTokens.muted.color)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                MoteLoading()
+                    .padding(MoteMetrics.pageMargin)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(MoteDesignTokens.background.color)
             } else {
                 VStack(spacing: 14) {

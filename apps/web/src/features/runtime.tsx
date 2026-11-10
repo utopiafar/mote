@@ -4,7 +4,7 @@ import React,{ useSyncExternalStore } from 'react';
 import { AnswerMarkdown } from '../plugins/ask/AnswerMarkdown';
 import { useResource } from '../useResource';
 import {webFeatures} from './registry';
-import {ErrorNotice,Spinner} from '../shell-components';
+import {ErrorNotice} from '../shell-components';
 import {errorMessage} from '../api';
 import {PluginCenterRescue} from '../plugins/plugin-center/rescue';
 import type { PageProps,ViewProps } from './types';
@@ -17,7 +17,7 @@ function ViewContent({entry,props}:{entry:import('./types').ViewEntry;props:View
   const remote=entry.requires?.filter(dep=>typeof dep==='string'||dep.host==='server')??[];
   const capabilities=useResource<FeatureInventory>(props.api,remote.length?'/api/features':null,5000);
   if(remote.length&&capabilities.error!==undefined)return <ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
-  if(remote.length&&!capabilities.data)return <Spinner/>;
+  if(remote.length&&!capabilities.data)return <Loading/>;
   if(remote.length&&(!Array.isArray(capabilities.data?.capabilities)||!featureRequirementsAvailable(remote,capabilities.data)))return <>{props.fallback}</>;
   return entry.render(props);
 }
@@ -28,7 +28,7 @@ export function FeaturePage({page,props}:{page:string;props:PageProps}){
   const capabilities=useResource<FeatureInventory>(props.api,remote.length?'/api/features':null,5000);
   const unavailable=page==='extensions'?<PluginCenterRescue onPage={props.onPage}/>:<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>;
   if(remote.length&&capabilities.error)return page==='extensions'?unavailable:<ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
-  if(remote.length&&!capabilities.data)return <Spinner/>;
+  if(remote.length&&!capabilities.data)return <Loading/>;
   if(remote.length&&(!capabilities.data||capabilities.data.schemaVersion!==1||!featureRequirementsAvailable(remote,capabilities.data)))return unavailable;
   return <ViewBoundary key={page} fallback={unavailable}>{entry?<PageContent entry={entry} props={props}/>:unavailable}</ViewBoundary>;
 }
@@ -49,7 +49,7 @@ export function CollectionContent({entry,props}:{entry:import('./types').Collect
   const remote=entry.requires?.filter(dep=>typeof dep==='string'||dep.host==='server')??[];
   const capabilities=useResource<FeatureInventory>(props.api,remote.length?'/api/features':null,5000);
   if(remote.length&&capabilities.error!==undefined)return <ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
-  if(remote.length&&!capabilities.data)return <Spinner/>;
+  if(remote.length&&!capabilities.data)return <Loading/>;
   if(remote.length&&!featureRequirementsAvailable(remote,capabilities.data))return <p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>;
   return entry.render(props);
 }
@@ -79,6 +79,7 @@ import type { PluginInstanceView } from '@mote/shared';
 import type { UiContributionDescriptor } from '@mote/shared/plugin-ui';
 import { parseDeclarativeView, DeclarativeViewSession, DeclarativeView } from '../plugin-host/declarative-view';
 import { createElement, useMemo } from 'react';
+import { Loading } from '../Loading';
 
 /** Command actions whose semantics are precise DOMAIN commands (revision
  * carried). 'configure' opens a dialog and is not an API command here. */

@@ -7,6 +7,7 @@ import { moteText } from '@mote/shared/i18n';
 import { useEffect, useState } from 'react';
 import { matchesFileType, type ProcessorParameter, type ProcessingProfile } from '@mote/shared';
 import { type Api, errorMessage, ApiError } from './api';
+import { Loading } from './Loading';
 const types = [['audio/*', "录音"], ['image/*', "图片"], ['text/*', "文本"], ['application/pdf', 'PDF'], ['*/*', "其他 / 全部类型"]];
 const uid = (prefix: string) => prefix + '.' + crypto.randomUUID();
 export function FileProcessingSettings({ api }: {
@@ -49,7 +50,7 @@ export function FileProcessingSettings({ api }: {
     return <section className="panel file-processing-settings" aria-label={moteText("中央文件处理设置")}><p>{moteText("按文件类型选择处理方案。服务保存地址和密钥；方案保存独立参数；同一目录可对录音和图片采用不同方案。处理均由中央调度。")}</p>
  <h3>{moteText('中心本机处理')}</h3><MediaPreparation api={api} role="dialogue" title={moteText('录音转写与说话人')}/>
  <details><summary>{moteText('可选 WeSpeaker 中文声纹模型')}</summary><p>{moteText('仅选用此插件的录音使用此模型；下载不会更改默认方案。')}</p><MediaPreparation api={api} role="speaker-wespeaker" title={moteText('可选 WeSpeaker 中文声纹模型')}/></details>
- {resource.loading && !saved && <p role="status">{moteText("正在读取…")}</p>}{readError && <p role="alert" className="error-banner">{errorMessage(readError)}</p>}
+ {resource.loading && !saved && <Loading/>}{readError && <p role="alert" className="error-banner">{errorMessage(readError)}</p>}
  {saved && <><form onSubmit={e => { e.preventDefault(); void action(async () => { setSaved(await api.request('/api/file-processing', { method: 'PUT', body: JSON.stringify({ revision: saved.revision, settings, policy }) })); invalidateConfiguration(api); setDirty(false); setPreview(null); setMessage(moteText("设置已保存。新文件和未完成任务使用新配置；已完成文件保留原结果。")); }); }}>
  <fieldset disabled={busy}><legend>{moteText("处理开关与单文件限制")}</legend><label><input type="checkbox" checked={settings.enabled} onChange={e => edit(s => { s.settings.enabled = e.target.checked; })}/>{moteText("启用中央文件处理")}</label><div className="policy-grid"><label>{moteText("单个音频最长（分钟）")}<input aria-label={moteText("单个音频最长（分钟）")} type="number" min="1" max="1440" value={settings.maxAudioMinutes} onChange={e => edit(s => { s.settings.maxAudioMinutes = Number(e.target.value); })}/></label><label>{moteText("单次文件处理超时（秒）")}<input aria-label={moteText("单次文件处理超时（秒）")} type="number" min="1" max="3600" value={settings.timeoutMs / 1000} onChange={e => edit(s => { s.settings.timeoutMs = Number(e.target.value) * 1000; })}/></label></div></fieldset>
  <fieldset disabled={busy}><legend>{moteText("1. 类型策略")}</legend><p>{moteText("具体 MIME 类型优先于类型通配符；未配置的格式按“其他”处理。PDF 处理插件可由管理员接入 Cordis，接入后可在此选择。")}</p>

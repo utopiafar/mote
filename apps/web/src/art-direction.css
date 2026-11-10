@@ -46,7 +46,6 @@ input[type=file]::file-selector-button:hover { background:var(--mote-tint); }
 .sidebar nav button:hover,.settings-nav:hover { background:var(--mote-tint); color:var(--mote-accent); }
 .sidebar nav button.active,.settings-nav.active { background:var(--mote-tint); color:var(--mote-accent); }
 .brand,.brand>span:last-child { font-family:var(--mote-font); font-size:var(--mote-font-title); }
-.mote-symbol { font-family:var(--mote-font); background:var(--mote-accent); border-radius:var(--mote-radius-control); }
 .breadcrumb,.workspace-context,.workspace-tool-links { font-size:var(--mote-font-support); }
 .connection-pill { border:var(--mote-border-width) solid var(--mote-hair); border-radius:var(--mote-radius-indicator); background:var(--mote-surface); color:var(--mote-muted); font-size:var(--mote-font-meta); }
 .connection-pill-dot { background:var(--mote-accent); box-shadow:none; }

@@ -365,6 +365,7 @@ test('registered source originals navigate through verified Material mapping and
  assert.deepEqual(opened,[ref]);
  mapped=false;await act(async()=>resources(api).invalidate(key=>key===`/api/capture-browser/${ids[0]}`));
  assert.equal(d.querySelector('.evidence-text a[href*="memorySource="]'),null);
+ await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());
  assert.match(d.querySelector<HTMLAnchorElement>('.evidence-source-actions a[href="#/library?view=materials"]')!.textContent!,/查看正式资料/);
 });
 
@@ -633,7 +634,7 @@ test('source drawer decodes only declared organizer text once and separates acti
  await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());
  const body=()=>d.querySelector('.evidence-text>pre')!;
  assert.equal(body().textContent,text);assert.equal(body().querySelector('script'),null);
- const action=d.querySelector('.evidence-source-actions')!;assert.ok(action.querySelector('button'));assert.ok(body().compareDocumentPosition(action)&d.defaultView!.Node.DOCUMENT_POSITION_FOLLOWING);assert.equal(body().previousElementSibling?.tagName,'H3');assert.equal(body().previousElementSibling?.textContent,'原始文本');
+ const action=d.querySelector('.evidence-source-actions')!;assert.ok(action.querySelector('button'));assert.equal(Boolean(d.querySelector('.reader-menu')?.contains(action)),true,'actions live in the ⋯ menu, apart from the body');assert.equal(body().previousElementSibling?.tagName,'H3');assert.equal(body().previousElementSibling?.textContent,'原始文本');
  declaration=undefined;await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/capture-browser/')));assert.equal(body().textContent,envelope,'ordinary JSON prose is never unwrapped heuristically');
  declaration='source-record-json-v1';raw='{"text":"not a valid organizer envelope"}';await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/capture-browser/')));assert.equal(body().textContent,raw,'invalid declarations retain the supplied evidence');
 });

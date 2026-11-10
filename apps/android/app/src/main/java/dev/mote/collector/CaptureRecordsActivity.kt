@@ -70,6 +70,9 @@ class CaptureRecordsActivity : MoteActivity() {
     private var restoreReaderScroll: Int? = null
     private var citationExcerpt: String? = null
     private var citationScrolled = false
+    private lateinit var readerActions: LinearLayout
+    private lateinit var readerDock: LinearLayout
+    private var readerSheet: android.app.Dialog? = null
     @Volatile private var generation = 0
     @Volatile private var loadGeneration = 0
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,7 +87,16 @@ class CaptureRecordsActivity : MoteActivity() {
         recordSource = (savedInstanceState?.getString("recordSource") ?: intent.getStringExtra("recordSource"))?.takeIf { it in recordSources } ?: "screen"
         sessionGrouping = savedInstanceState?.getBoolean("sessionGrouping", true) ?: true
         grid = savedInstanceState?.getBoolean("grid", true) ?: true
-        body = moteDetailPage(title = MoteI18n.text("采集记录")) { navigateBack() }
+        readerActions = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
+        readerDock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        body = if (intent.getBooleanExtra("directReader",false)) moteDetailPageContent(title = MoteI18n.text("采集记录"), headerAction = readerActions, onBack = { navigateBack() }) { page ->
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(ScrollView(this@CaptureRecordsActivity).apply { isFillViewport = true; addView(page) }, LinearLayout.LayoutParams(-1, 0, 1f))
+                addView(readerDock, LinearLayout.LayoutParams(-1, -2))
+            }
+        }.also { (readerActions.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.marginEnd = moteDp(6) }
+        else moteDetailPage(title = MoteI18n.text("采集记录")) { navigateBack() }
         recordHeading = window.decorView.findViewWithTag("detail-title")
         val compactFilters = resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale > 1.2f
         val filters = LinearLayout(this).apply { orientation = if (compactFilters) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
@@ -213,7 +225,7 @@ class CaptureRecordsActivity : MoteActivity() {
         val request = ++loadGeneration; val remote = central; val source = recordSource; val selected = album; val sessions = sessionGrouping
         if (!backgroundRefresh) { generation++; renderedPage = null }
         backToAlbums.visibility = if (selected != null) View.VISIBLE else View.GONE
-        if (!backgroundRefresh) { progress.visibility = View.VISIBLE; progress.isIndeterminate = true }
+        if (!backgroundRefresh) { progress.visibility = View.GONE; progress.isIndeterminate = true }
         val zone = ZoneId.systemDefault(); val after = date.atStartOfDay(zone).toInstant().toString(); val before = date.plusDays(1).atStartOfDay(zone).toInstant().toString()
         val cursor = cursors.last(); val pageNumber = cursors.size
         dateButton.text = date.toString(); nextDay.isEnabled = date < LocalDate.now()
@@ -223,13 +235,8 @@ class CaptureRecordsActivity : MoteActivity() {
         }
         if (!backgroundRefresh && selected != null) repeat(3) {
             val placeholders = row(list)
-            repeat(2) { text(placeholders, MoteI18n.text("加载预览…"), MoteTheme.fontSupport.toFloat()).apply {
-                layoutParams = LinearLayout.LayoutParams(0, moteDp(188), 1f).apply { marginEnd = moteDp(6) }
-                gravity = Gravity.CENTER; MoteUi.backgroundColor(this, NativeColorRole.SURFACE_RAISED)
-            } }
-        } else if (!backgroundRefresh) repeat(6) { text(list, MoteI18n.text("正在读取 App 与时间…"), MoteTheme.fontBody.toFloat()).apply {
-            minHeight = moteDp(88); gravity = Gravity.CENTER_VERTICAL; MoteUi.backgroundColor(this, NativeColorRole.SURFACE_RAISED)
-        } }
+            repeat(2) { placeholders.addView(MoteComponents.skeletonTile(this, MoteI18n.text("加载预览…")), LinearLayout.LayoutParams(0, moteDp(188), 1f).apply { marginEnd = moteDp(6) }) }
+        } else if (!backgroundRefresh) list.addView(MoteComponents.skeleton(this, MoteI18n.text("正在读取 App 与时间…"), rows = 6))
         executor.queue.clear() // Switching dates/pages keeps only the newest pending query.
         executor.execute {
             try {
@@ -289,7 +296,7 @@ class CaptureRecordsActivity : MoteActivity() {
                         else -> MoteI18n.text("当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。")
                     }, 14f)
                     progress.isIndeterminate = false; progress.max = maxOf(1, thumbnailCount); progress.progress = 0
-                    if (thumbnailCount == 0) progress.visibility = View.GONE
+                    if (thumbnailCount == 0) progress.visibility = View.GONE else if (!backgroundRefresh) progress.visibility = View.VISIBLE
                     var gridRow: LinearLayout? = null
                     for ((index, item) in records.withIndex()) {
                         val useGrid = grid && source == "screen"
@@ -306,7 +313,7 @@ class CaptureRecordsActivity : MoteActivity() {
                         val placeholder = (image.parent as FrameLayout).getChildAt(1) as TextView
                         var failedForImage = false
                         fun requestImage(countProgress: Boolean) {
-                            placeholder.text = MoteI18n.text("正在加载…"); placeholder.setOnClickListener(null); placeholder.isClickable = false
+                            placeholder.text = ""; placeholder.contentDescription = MoteI18n.text("正在加载…"); placeholder.setOnClickListener(null); placeholder.isClickable = false
                             fun display(bitmap: Bitmap?) {
                                 if (isDestroyed || stamp != generation) { bitmap?.recycle(); return }
                                 if (bitmap != null) {
@@ -314,7 +321,7 @@ class CaptureRecordsActivity : MoteActivity() {
                                     if (failedForImage) { failed--; failedForImage = false }
                                 } else {
                                     if (!failedForImage) { failed++; failedForImage = true }
-                                    placeholder.text = MoteI18n.text("加载失败\n点此重试")
+                                    placeholder.text = MoteI18n.text("加载失败\n点此重试"); placeholder.contentDescription = null
                                     placeholder.setOnClickListener { requestImage(false) }
                                 }
                                 if (countProgress) loaded++
@@ -416,7 +423,7 @@ class CaptureRecordsActivity : MoteActivity() {
         val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE; contentDescription = MoteI18n.text("采集图片缩略图") }
         preview.addView(image, FrameLayout.LayoutParams(-1, -1))
         preview.addView(TextView(this).apply {
-            text = if (CapturePreview.hasImage(item)) MoteI18n.text("正在加载…") else MoteI18n.text("无图片")
+            if (CapturePreview.hasImage(item)) contentDescription = MoteI18n.text("正在加载…") else text = MoteI18n.text("无图片")
             gravity = Gravity.CENTER; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED)
         }, FrameLayout.LayoutParams(-1, -1))
         row.addView(preview, LinearLayout.LayoutParams(if (grid) -1 else moteDp(88), moteDp(if (grid) 160 else 88)))
@@ -436,15 +443,27 @@ class CaptureRecordsActivity : MoteActivity() {
         val readerStamp=++readerSequence
         openReader = ReaderRequest(id, remote, version)
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(18), moteDp(10), moteDp(18), moteDp(16)) }
-        val message = text(content, MoteI18n.text("正在读取详情…"), MoteTheme.fontBody.toFloat())
-        val loading = ProgressBar(this); content.addView(loading)
+        // A wait keeps the shape of what replaces it; TalkBack still hears the words.
+        fun pending(label: String, image: Boolean = false) {
+            content.removeAllViews()
+            if (image) content.addView(MoteComponents.skeletonTile(this, label).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO },
+                LinearLayout.LayoutParams(-1, moteDp(220)).apply { topMargin = moteDp(4); bottomMargin = moteDp(14) })
+            content.addView(MoteComponents.skeleton(this, label), LinearLayout.LayoutParams(-1, -2))
+        }
+        fun notice(value: String) { content.removeAllViews(); text(content, value, MoteTheme.fontBody.toFloat()) }
+        pending(MoteI18n.text("正在读取详情…"))
         val direct = intent.getBooleanExtra("directReader",false)
         val scrollPosition=restoreReaderScroll ?: (body.parent as? ScrollView)?.scrollY ?: 0
         restoreReaderScroll=null
         val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("采集记录")).setView(ScrollView(this).apply { addView(content) }).setPositiveButton(MoteI18n.text("关闭详情"), null).create()
         var detailBitmap: Bitmap? = null
         readerDialog = dialog
-        fun clearReader() { content.removeAllViews(); detailBitmap?.recycle(); detailBitmap = null }
+        fun clearReader() {
+            content.removeAllViews(); detailBitmap?.recycle(); detailBitmap = null
+            readerSheet?.dismiss(); readerSheet = null
+            readerActions.removeAllViews(); readerActions.visibility = View.GONE
+            readerDock.removeAllViews(); readerDock.visibility = View.GONE
+        }
         if (direct) directReaderCleanup = ::clearReader
         dialog.setOnDismissListener {
             clearReader()
@@ -456,7 +475,7 @@ class CaptureRecordsActivity : MoteActivity() {
         fun reading() = readerStamp == readerSequence && if (direct) !isFinishing && openReader?.id == id else dialog.isShowing
         fun closeReader() { if (direct) finish() else dialog.dismiss() }
         if (direct) {
-            body.removeAllViews(); body.setPadding(moteDp(20),moteDp(24),moteDp(20),moteDp(28))
+            body.removeAllViews(); body.setPadding(moteDp(20),moteDp(6),moteDp(20),moteDp(28))
             recordHeading.text=MoteI18n.text("原文")
             (content.parent as? android.view.ViewGroup)?.removeView(content)
             content.setPadding(0,0,0,0); body.addView(content)
@@ -484,7 +503,7 @@ class CaptureRecordsActivity : MoteActivity() {
                 } else null
                 val record = exact?.first ?: if (remote) requireNotNull(readerClient).detail(id)
                     else queue().capture(id) ?: error(MoteI18n.text("本机记录已同步并清理，请切换到中央归档查看"))
-                runOnUiThread { if (reading() && CapturePreview.hasImage(record)) message.text = MoteI18n.text("记录已读取，正在加载图片…") }
+                runOnUiThread { if (reading() && CapturePreview.hasImage(record)) pending(MoteI18n.text("记录已读取，正在加载图片…"), image = true) }
                 if (remote && intent.getStringExtra("recordDeviceId").orEmpty().isNotBlank())
                     check(record.getString("deviceId") == intent.getStringExtra("recordDeviceId"))
                 if (remote && intent.getStringExtra("recordVersion").orEmpty().isNotBlank())
@@ -513,22 +532,70 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (selection != null) {
                         val current=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
                         if (current == null || current.server != selection.server || current.generation != selection.generation) {
-                            bitmap?.recycle(); loading.visibility=View.GONE; message.text=MoteI18n.text("登录会话已变更，请重新打开中央页面。")
+                            bitmap?.recycle(); notice(MoteI18n.text("登录会话已变更，请重新打开中央页面。"))
                             return@runOnUiThread
                         }
                     }
                     content.removeAllViews(); detailBitmap = bitmap
                     if (direct) body.post { (body.parent as? ScrollView)?.scrollTo(0,scrollPosition) }
-                    fun centralActions() {
-                        if (!intent.getBooleanExtra("centralReaderActions",false)) return
-                        fun selected(): CentralClient {
-                            val access=CentralAccess.resolve(this@CaptureRecordsActivity)
-                            check(access.server == intent.getStringExtra("recordOrigin") && access.generation == selection?.generation) { MoteI18n.text("访问凭据已失效，请重新连接。") }
-                            return requireNotNull(access.client)
+                    val source = record.optString("source")
+                    val isNote = source == "note"
+                    val centralReader = intent.getBooleanExtra("centralReaderActions",false)
+                    if (isNote && !direct) dialog.setTitle(MoteI18n.text("原文"))
+                    val capturedAt = record.getString("capturedAt").let { runCatching { DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.MEDIUM).withLocale(MoteI18n.locale()).withZone(ZoneId.systemDefault()).format(Instant.parse(it)) }.getOrDefault(it) }
+                    val origin = record.optString("appName").ifBlank { record.optString("appId").ifBlank { if (isNote) MoteI18n.text("记录") else if (source == "media") MoteI18n.text("媒体会话状态") else if (source == "device_event") MoteI18n.text("设备状态") else MoteI18n.text("桌面 / 系统画面") } }
+                    val place = if (remote) MoteI18n.text("中央归档") else MoteI18n.text("本机记录")
+                    val headline = record.optString("windowTitle").trim().takeIf { it.isNotEmpty() && it != "null" }?.take(80)
+                    // What 复制 and 分享 carry: the readable body of this original, never its technical metadata.
+                    var readable = ""
+                    fun quiet(value: String) = text(content, value, MoteTheme.fontMeta.toFloat()).apply { MoteUi.textColor(this, NativeColorRole.MUTED) }
+                    fun label(value: String) = text(content, value, MoteTheme.fontMeta.toFloat()).apply {
+                        MoteUi.type(this, NativeFontRole.META, medium = true); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, moteDp(14), 0, moteDp(2))
+                    }
+                    fun alert(value: String) = text(content, value, MoteTheme.fontSupport.toFloat()).apply {
+                        MoteUi.textColor(this, NativeColorRole.DANGER)
+                        post { requestRectangleOnScreen(android.graphics.Rect(0, 0, width, height), false) }
+                    }
+                    fun selected(): CentralClient {
+                        val access=CentralAccess.resolve(this@CaptureRecordsActivity)
+                        check(access.server == intent.getStringExtra("recordOrigin") && access.generation == selection?.generation) { MoteI18n.text("访问凭据已失效，请重新连接。") }
+                        return requireNotNull(access.client)
+                    }
+                    // Top bar ⋯ and share, the ask docked below, and the sheet that holds 详情 / 资料说明 / 复制 / 删除.
+                    fun chrome(describe: Boolean) {
+                        val descriptions = if (describe) NativeRecordDescription.read(record,remote) else emptyList()
+                        val ask: (() -> Unit)? = when {
+                            centralReader -> { { runCatching { selected(); startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId",id).putExtra("evidenceOrigin",intent.getStringExtra("recordOrigin")).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) }.onFailure { alert(it.message ?: MoteI18n.text("操作失败，请重试")) } } }
+                            isNote -> { { startActivity(Intent(this@CaptureRecordsActivity, CentralActivity::class.java).putExtra("page", "ask").putExtra("evidenceId", id).putExtra("evidenceOrigin", if (remote) selection?.server else record.optString("dataOrigin").takeIf(String::isNotBlank)).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) } }
+                            else -> null
                         }
-                        content.addView(MoteUi.button(Button(this).apply { text=MoteI18n.text("围绕这份资料提问"); setOnClickListener { runCatching { selected(); startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId",id).putExtra("evidenceOrigin",intent.getStringExtra("recordOrigin")).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) }.onFailure { text(content,it.message ?: MoteI18n.text("操作失败，请重试"),MoteTheme.fontSupport.toFloat()) } } }))
-                        val more=SecondaryUi.disclosure(content,MoteI18n.text("更多"),"capture-reader-more")
-                        more.addView(MoteUi.button(Button(this).apply { text=MoteI18n.text("详情"); setOnClickListener {
+                        val deletionKind = if (centralReader) CentralDeletion.kind(record) else null
+                        var deleting = false
+                        fun currentDeletion(): Boolean {
+                            if (isDestroyed || directReaderPaused || stamp != generation || !reading()) return false
+                            val access=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
+                            return access != null && selection != null && access.server == selection.server && access.generation == selection.generation
+                        }
+                        fun confirmDeletion(kind: String) {
+                            if (!deleting) MoteDialogBuilder(this@CaptureRecordsActivity).setTitle(MoteI18n.text(if(kind == "file") "删除中央文件" else "删除中央记录"))
+                                .setMessage(MoteI18n.text(if(kind == "file") "删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。" else "删除中央保存的这条记录。不会删除本机副本或来源原件，也不会改变来源同步策略。删除后无法恢复。"))
+                                .setNegativeButton(MoteI18n.text("取消"),null).setPositiveButton(MoteI18n.text("确认")) { _,_ ->
+                                    if (currentDeletion()) {
+                                        deleting=true
+                                        detailExecutor.execute {
+                                            val result=runCatching { CentralDeletion.evidence(selected(),id,kind) }
+                                            runOnUiThread {
+                                                if (currentDeletion()) {
+                                                    deleting=false
+                                                    result.onSuccess { closeReader() }.onFailure { error -> alert(error.message ?: MoteI18n.text("未能确认删除完成。请刷新查看当前状态。")) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }.show()
+                        }
+                        fun showDetail() {
+                            if (!centralReader) { NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record)); return }
                             detailExecutor.execute {
                                 val conversations=runCatching { NativeOriginalDetail.conversations(selected()) }.getOrDefault(emptyList())
                                 runOnUiThread {
@@ -538,65 +605,61 @@ class CaptureRecordsActivity : MoteActivity() {
                                     NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record, conversations))
                                 }
                             }
-                        } }))
-                        val deletionKind=CentralDeletion.kind(record)
-                        if (deletionKind == null) text(more,MoteI18n.text("此引用不能直接删除原始记录。"),MoteTheme.fontSupport.toFloat())
-                        else {
-                            val remove=MoteUi.button(Button(this).apply { text=MoteI18n.text(if(deletionKind == "file") "删除文件" else "删除记录") })
-                            var deleting=false
-                            fun currentDeletion(): Boolean {
-                                if (isDestroyed || directReaderPaused || stamp != generation || !reading()) return false
-                                val access=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
-                                return access != null && selection != null && access.server == selection.server && access.generation == selection.generation
+                        }
+                        val inlineDescriptions = !direct
+                        fun sheet() {
+                            val actions = buildList {
+                                // A central record carries its receipt times; a local one has nothing to show yet.
+                                if (remote) add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail() })
+                                if (!inlineDescriptions && descriptions.isNotEmpty()) add(OriginalAction(MoteGlyph.COMPOSE, MoteI18n.text("资料说明"), chevron = true) { NativeOriginalDetail.description(this@CaptureRecordsActivity, descriptions) })
+                                if (readable.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { copyOriginal(readable) })
                             }
-                            remove.setOnClickListener {
-                                if (!deleting) MoteDialogBuilder(this@CaptureRecordsActivity).setTitle(MoteI18n.text(if(deletionKind == "file") "删除中央文件" else "删除中央记录"))
-                                    .setMessage(MoteI18n.text(if(deletionKind == "file") "删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。" else "删除中央保存的这条记录。不会删除本机副本或来源原件，也不会改变来源同步策略。删除后无法恢复。"))
-                                    .setNegativeButton(MoteI18n.text("取消"),null).setPositiveButton(MoteI18n.text("确认")) { _,_ ->
-                                        if (currentDeletion()) {
-                                            deleting=true;remove.isEnabled=false
-                                            detailExecutor.execute {
-                                                val result=runCatching { CentralDeletion.evidence(selected(),id,deletionKind) }
-                                                runOnUiThread {
-                                                    if (currentDeletion()) {
-                                                        deleting=false;remove.isEnabled=true
-                                                        result.onSuccess { closeReader() }.onFailure { error -> text(content,error.message ?: MoteI18n.text("未能确认删除完成。请刷新查看当前状态。"),MoteTheme.fontSupport.toFloat()) }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }.show()
+                            val remove = deletionKind?.let { kind -> OriginalAction(MoteGlyph.TRASH, MoteI18n.text(if (kind == "file") "删除文件" else "删除记录"), enabled = !deleting) { confirmDeletion(kind) } }
+                            val note = if (centralReader && deletionKind == null) MoteI18n.text("此引用不能直接删除原始记录。") else null
+                            readerSheet?.dismiss()
+                            readerSheet = NativeOriginalDetail.more(this@CaptureRecordsActivity, actions, remove, note).also { opened ->
+                                opened.setOnDismissListener { if (readerSheet === opened) readerSheet = null }
                             }
-                            more.addView(remove)
+                        }
+                        if (inlineDescriptions && descriptions.isNotEmpty()) {
+                            label(MoteI18n.text("资料说明"))
+                            descriptions.forEach { description -> text(content, description, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true) }
+                        }
+                        if (direct) {
+                            if (readable.isNotBlank()) readerActions.addView(NativeOriginalDetail.barButton(this@CaptureRecordsActivity, MoteGlyph.SHARE, "分享", "capture-reader-share") { shareOriginal(readable) })
+                            if (remote || descriptions.isNotEmpty() || readable.isNotBlank() || centralReader)
+                                readerActions.addView(NativeOriginalDetail.barButton(this@CaptureRecordsActivity, MoteGlyph.MORE, "更多", "capture-reader-more") { sheet() })
+                            readerActions.visibility = if (readerActions.childCount > 0) View.VISIBLE else View.GONE
+                            ask?.let { action -> readerDock.addView(NativeOriginalDetail.askBar(this@CaptureRecordsActivity) { action() }, LinearLayout.LayoutParams(-1, -2)); readerDock.visibility = View.VISIBLE }
+                        } else {
+                            ask?.let { action -> content.addView(MoteUi.button(Button(this).apply { text = MoteI18n.text("围绕这份资料提问"); setOnClickListener { action() } })) }
+                            if (centralReader) content.addView(MoteUi.action(Button(this).apply { text = MoteI18n.text("更多"); tag = "capture-reader-more"; setOnClickListener { sheet() } }, MoteUi.ButtonRole.TEXT))
                         }
                     }
 
-                    val isNote = record.optString("source") == "note"
-                    if (isNote && !direct) dialog.setTitle(MoteI18n.text("原文"))
-                    val capturedAt = record.getString("capturedAt").let { runCatching { DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.MEDIUM).withLocale(MoteI18n.locale()).withZone(ZoneId.systemDefault()).format(Instant.parse(it)) }.getOrDefault(it) }
-                    val origin = record.optString("appName").ifBlank { record.optString("appId").ifBlank { if (isNote) MoteI18n.text("记录") else if (record.optString("source") == "media") MoteI18n.text("媒体会话状态") else if (record.optString("source") == "device_event") MoteI18n.text("设备状态") else MoteI18n.text("桌面 / 系统画面") } }
-                    text(content, "$capturedAt · ${if (remote) MoteI18n.text("中央归档") else MoteI18n.text("本机记录")}" + if (isNote) " · $origin" else "", MoteTheme.fontMeta.toFloat()).apply { MoteUi.textColor(this, NativeColorRole.MUTED) }
-                    if (!isNote) text(content, origin, MoteTheme.fontBody.toFloat())
-                    if (record.optString("source") in SystemEventRules.sources) {
-                        text(content, SystemEventRules.label(record), MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
-                        text(content, MoteI18n.text("原始系统事件 · 不代表已阅读通知或实际执行某项任务。熄屏不等于锁定。"), MoteTheme.fontMeta.toFloat())
+                    // Meta line, then a title for everything but a note, whose own words lead.
+                    if (isNote) quiet("$capturedAt · $place · $origin")
+                    else {
+                        quiet(listOfNotNull(headline?.let { origin }, capturedAt, place).joinToString(" · "))
+                        text(content, headline ?: origin, MoteTheme.fontBody.toFloat()).apply { MoteUi.type(this, NativeFontRole.TITLE_MOBILE); setPadding(0, moteDp(2), 0, moteDp(12)) }
+                    }
+                    if (source in SystemEventRules.sources) {
+                        readable = SystemEventRules.label(record)
+                        text(content, readable, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
+                        quiet(MoteI18n.text("原始系统事件 · 不代表已阅读通知或实际执行某项任务。熄屏不等于锁定。"))
                         text(content, record.getJSONObject("metadata").toString(2), MoteTheme.fontMeta.toFloat()).setTextIsSelectable(true)
-                        centralActions(); return@runOnUiThread
+                        chrome(describe = false); return@runOnUiThread
                     }
                     record.optJSONObject("stateSeries")?.optJSONArray("samples")?.let { samples ->
                         text(content, MoteI18n.text("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。", samples.length(), time(samples.getJSONObject(samples.length() - 1).getString("at"))), MoteTheme.fontSupport.toFloat())
                     }
-                    fun ownerDescription() {
-                        val descriptions=NativeRecordDescription.read(record,remote)
-                        if(descriptions.isNotEmpty())text(content,MoteI18n.text("资料说明"),MoteTheme.fontSupport.toFloat())
-                        descriptions.forEach{description->text(content,description,MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)}
-                    }
                     val media = record.optJSONObject("metadata")?.optJSONObject("media")
-                    if (record.optString("source") == "media") {
-                        text(content, CapturePreview.mediaLabel(record), MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
+                    if (source == "media") {
+                        readable = CapturePreview.mediaLabel(record)
+                        text(content, readable, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
                         text(content, MoteI18n.text("此记录的已观察播放时长：{0} 秒（不含观测缺口）", record.optLong("durationMs") / 1000.0), MoteTheme.fontSupport.toFloat())
-                        media?.optString("observedAt")?.takeIf(String::isNotBlank)?.let { text(content, MoteI18n.text("媒体观察时间：{0}", it), MoteTheme.fontMeta.toFloat()) }
-                        ownerDescription(); centralActions(); return@runOnUiThread
+                        media?.optString("observedAt")?.takeIf(String::isNotBlank)?.let { quiet(MoteI18n.text("媒体观察时间：{0}", it)) }
+                        chrome(describe = true); return@runOnUiThread
                     }
                     if (CapturePreview.showMediaContext(record)) text(content, CapturePreview.mediaLabel(record), MoteTheme.fontSupport.toFloat())
                     if (isNote) {
@@ -607,38 +670,60 @@ class CaptureRecordsActivity : MoteActivity() {
                             val presentation = expectedOrigin?.let { NativeConversationQuote.scoped(localNote,it) }
                             text(quote,NativeConversationQuote.display(noteOrigin,presentation),MoteTheme.fontBody.toFloat()).setTextIsSelectable(true); content.addView(quote)
                         }
-                        if (!intent.getBooleanExtra("centralReaderActions",false)) content.addView(MoteUi.button(Button(this).apply { text = MoteI18n.text("围绕这份资料提问"); setOnClickListener { startActivity(Intent(this@CaptureRecordsActivity, CentralActivity::class.java).putExtra("page", "ask").putExtra("evidenceId", id).putExtra("evidenceOrigin", if (remote) selection?.server else record.optString("dataOrigin").takeIf(String::isNotBlank)).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) } }))
-                        if (remote) record.optJSONObject("metadata")?.optJSONArray("attachments")?.let { files ->
-                            for (index in 0 until files.length()) {
-                                val attachmentId=files.getString(index)
-                                content.addView(MoteUi.button(Button(this).apply {
-                                    text=MoteI18n.text("附件")+" "+(index+1)
-                                    setOnClickListener { startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java)
-                                        .putExtra("page","files").putExtra("fileId",attachmentId).putExtra("fileOrigin",intent.getStringExtra("recordOrigin"))) }
-                                }))
-                            }
-                        }
-                        if (!remote) localNote?.getJSONArray("attachments")?.let { files ->
-                            for (index in 0 until files.length()) { val attachment = files.getJSONObject(index); text(content, attachment.getString("name"), MoteTheme.fontBody.toFloat()).apply { isFocusable = true; setOnClickListener { RecordOriginalPreview.open(this@CaptureRecordsActivity, attachment) } } }
-                        }
                     }
-                    if (record.optString("source") in setOf("note", "activity", "ui_page", "message")) {
+                    if (source in setOf("note", "activity", "ui_page", "message")) {
                         record.optJSONObject("metadata")?.optJSONObject("uiPage")?.let { text(content, "${it.optString("adapterId")} @ ${it.optString("adapterVersion")} · ${it.optString("status")}", MoteTheme.fontSupport.toFloat()) }
-                        text(content, record.optString("ocrText").ifBlank { if (isNote || record.optString("source") == "message") "" else MoteI18n.text("应用活动 · {0} 毫秒", record.optLong("durationMs")) }, if (isNote) MoteTheme.fontSection.toFloat() else MoteTheme.fontBody.toFloat()).apply { setTextIsSelectable(true); if (isNote) setLineSpacing(0f, 1.4f) }
+                        readable = record.optString("ocrText").ifBlank { if (isNote || source == "message") "" else MoteI18n.text("应用活动 · {0} 毫秒", record.optLong("durationMs")) }
+                        text(content, readable, if (isNote) MoteTheme.fontSection.toFloat() else MoteTheme.fontBody.toFloat()).apply { setTextIsSelectable(true); if (isNote) setLineSpacing(0f, 1.4f) }
                         record.optString("syncError").takeIf(String::isNotBlank)?.let { text(content, MoteI18n.text("同步需要处理：{0}", it), MoteTheme.fontBody.toFloat()) }
-                        ownerDescription(); centralActions()
+                        if (isNote) {
+                            val files = mutableListOf<View>()
+                            if (remote) record.optJSONObject("metadata")?.optJSONArray("attachments")?.let { attachments ->
+                                for (index in 0 until attachments.length()) {
+                                    val attachmentId=attachments.getString(index)
+                                    files += NativeOriginalDetail.actionRow(this, MoteGlyph.FILE, MoteI18n.text("附件")+" "+(index+1), chevron = true, danger = false) {
+                                        startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java)
+                                            .putExtra("page","files").putExtra("fileId",attachmentId).putExtra("fileOrigin",intent.getStringExtra("recordOrigin")))
+                                    }
+                                }
+                            }
+                            if (!remote) localNote?.getJSONArray("attachments")?.let { attachments ->
+                                for (index in 0 until attachments.length()) { val attachment = attachments.getJSONObject(index); files += NativeOriginalDetail.actionRow(this, MoteGlyph.FILE, attachment.getString("name"), chevron = true, danger = false) { RecordOriginalPreview.open(this@CaptureRecordsActivity, attachment) } }
+                            }
+                            if (files.isNotEmpty()) content.addView(MoteComponents.group(this).apply {
+                                files.forEachIndexed { index, row -> if (index > 0) addView(MoteComponents.divider(this@CaptureRecordsActivity)); addView(row, LinearLayout.LayoutParams(-1, -2)) }
+                            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(12) })
+                        }
+                        chrome(describe = true)
                         return@runOnUiThread
                     }
-                    text(content, CapturePreview.ocrLabel(record, remote), MoteTheme.fontBody.toFloat())
-                    if (bitmap != null) content.addView(ImageView(this).apply { setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = MoteI18n.text("采集图片") }, LinearLayout.LayoutParams(moteDp(240), moteDp(180)))
-                    else text(content, MoteI18n.text("图片暂不可用。"), MoteTheme.fontBody.toFloat())
-                    ownerDescription(); centralActions()
-                    text(content, MoteI18n.text("识别文字"), MoteTheme.fontSection.toFloat())
+                    // A screen: the image leads, its recognized words follow.
+                    if (bitmap != null) content.addView(ImageView(this).apply {
+                        setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; adjustViewBounds = true; maxHeight = moteDp(360)
+                        contentDescription = MoteI18n.text("采集图片"); val edge = moteDp(1); setPadding(edge, edge, edge, edge)
+                        NativePresentationStyles.bind(this, "reader-hero") { it.background = MoteUi.shape(this@CaptureRecordsActivity, NativeColorRole.SURFACE_SUNKEN, NativeRadiusRole.CONTAINER, true, NativeColorRole.HAIR) }
+                        outlineProvider = android.view.ViewOutlineProvider.BACKGROUND; clipToOutline = true
+                    }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(2); bottomMargin = moteDp(4) })
+                    else quiet(MoteI18n.text("图片暂不可用。"))
+                    label(MoteI18n.text("识别文字"))
+                    if (!(remote && record.optJSONObject("ocr")?.optString("status") == "completed")) quiet(CapturePreview.ocrLabel(record, remote))
                     if (record.optBoolean("centralPreview")) text(content, MoteI18n.text("中央识别预览；完整内容请切换中央记录查看。"), MoteTheme.fontSupport.toFloat())
-                    text(content, record.optString("ocrText").ifBlank { if (record.optJSONObject("ocr")?.optString("status") == "completed") MoteI18n.text("此图片未识别到文字。") else MoteI18n.text("暂无识别文字。") }, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
+                    readable = record.optString("ocrText")
+                    text(content, readable.ifBlank { if (record.optJSONObject("ocr")?.optString("status") == "completed") MoteI18n.text("此图片未识别到文字。") else MoteI18n.text("暂无识别文字。") }, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
+                    chrome(describe = true)
                 }
-            } catch (error: Exception) { runOnUiThread { if (!isDestroyed && reading()) { loading.visibility = View.GONE; message.text = errorMessage(error, remote) } } }
+            } catch (error: Exception) { runOnUiThread { if (!isDestroyed && reading()) notice(errorMessage(error, remote)) } }
         }
+    }
+    /** The copy stays out of clipboard previews, like the reader stays out of screenshots. */
+    private fun copyOriginal(value: String) {
+        val clip = android.content.ClipData.newPlainText(MoteI18n.text("原文"), value)
+        clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(clip)
+        if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(this, MoteI18n.text("已复制"), Toast.LENGTH_SHORT).show()
+    }
+    private fun shareOriginal(value: String) {
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, value), null))
     }
     private fun errorMessage(error: Exception, remote: Boolean): String = if (error is IllegalStateException || error is IllegalArgumentException) error.message ?: MoteI18n.text("记录读取失败，请刷新重试") else if (remote) MoteI18n.text("中央记录暂不可读取，请检查网络后重试") else MoteI18n.text("本机记录暂不可读取，请刷新重试；文件已保留")
     private fun time(at: String): String = runCatching { DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.parse(at)) }.getOrDefault(at)

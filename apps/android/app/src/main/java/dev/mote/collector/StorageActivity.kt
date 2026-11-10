@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import dev.mote.collector.plugins.StorageBackupPlugin
 import dev.mote.collector.plugins.StorageStatus
+import dev.mote.collector.ui.MoteComponents
 
 /** Routes storage-location reads and migration to the storage plugin; this
  * Activity only renders the returned status and confirms the user intent. */
@@ -39,8 +40,7 @@ class StorageActivity : MoteActivity() {
     }
     private fun refresh() {
         if (working) return
-        working = true; content.removeAllViews(); text(content, MoteI18n.text("正在读取存储位置…"))
-        content.addView(android.widget.ProgressBar(this))
+        working = true; content.removeAllViews(); content.addView(MoteComponents.skeleton(this, MoteI18n.text("正在读取存储位置…")))
         owner.loadStorage { result ->
             working = false; if (isDestroyed) return@loadStorage
             content.removeAllViews()

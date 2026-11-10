@@ -681,7 +681,10 @@ internal class CentralContent(
             if (view is EditText || view is Spinner || view is CompoundButton) { if (view.isEnabled) { inputs.add(view); view.isEnabled = false } }
             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) lock(view.getChildAt(i))
         }; lock(body)
-        task.start(label, { if (foreground == foregroundRevision && resumed) notice(it) }, { progress ->
+        // A page still waiting for its first content shows quiet rows instead of a sentence;
+        // work on a filled page keeps its progress notice.
+        val placeholder = if (body.childCount == 0) MoteComponents.skeleton(this, label).also(body::addView) else null
+        task.start(label, { if (placeholder == null && foreground == foregroundRevision && resumed) notice(it) }, { progress ->
             val before = CentralAccess.resolve(this)
             check(allowSessionChange || generation < 0 || before.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
             check(allowSessionChange || !authenticated || before.client != null && before.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
@@ -692,6 +695,7 @@ internal class CentralContent(
             check(value !is CentralAccess.Selection || value.generation == after.generation && (value.client == null) == (after.client == null)) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
             WorkValue(value, after.generation)
         }) { result ->
+            placeholder?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
             inputs.forEach { it.isEnabled = true }
             if (version == revision && foreground == foregroundRevision && resumed && !isDestroyed && !isFinishing) {
                 result.onSuccess { completed ->

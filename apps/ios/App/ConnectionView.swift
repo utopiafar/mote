@@ -51,15 +51,13 @@ struct ConnectionView: View {
             .padding(.leading, 6)
             .frame(height: 44)
             VStack(alignment: .leading, spacing: 18) {
-                Text("m")
-                    .font(.system(size: 42, weight: .semibold))
-                    .tracking(-3)
-                    .foregroundStyle(MoteDesignTokens.primaryInk.color)
-                    .padding(.trailing, 2)
-                    .padding(.bottom, 6)
+                MoteMark(size: 40)
                     .frame(width: 52, height: 52)
-                    .background(MoteDesignTokens.primaryBackground.color, in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityHidden(true)
+                    .background(MoteDesignTokens.surface.color, in: RoundedRectangle(cornerRadius: MoteDesignTokens.Dimens.radiusContainer, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: MoteDesignTokens.Dimens.radiusContainer, style: .continuous)
+                            .strokeBorder(MoteDesignTokens.hair.color, lineWidth: MoteDesignTokens.Dimens.borderWidth)
+                    }
                 Text("连接你的 Mote")
                     .font(.system(size: 26, weight: .semibold))
                     .tracking(-0.65)

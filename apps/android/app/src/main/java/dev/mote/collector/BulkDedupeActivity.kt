@@ -12,6 +12,7 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import dev.mote.collector.ui.MoteComponents
 
 class BulkDedupeActivity : MoteActivity() {
     private lateinit var body: LinearLayout
@@ -214,7 +215,7 @@ class BulkDedupeActivity : MoteActivity() {
     }
     private fun preview(pair: JSONObject) {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        label(content, MoteI18n.text("正在后台读取图片…"))
+        content.addView(MoteComponents.skeletonTile(this, MoteI18n.text("正在后台读取图片…")), LinearLayout.LayoutParams(-1, moteDp(240)))
         val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("双指缩放 · 拖动查看 · 双击复位")).setView(ScrollView(this).apply { addView(content) }).setPositiveButton(MoteI18n.text("关闭"), null).create()
         val bitmaps = mutableListOf<android.graphics.Bitmap>()
         dialog.setOnDismissListener { content.removeAllViews(); bitmaps.forEach { it.recycle() }; bitmaps.clear() }

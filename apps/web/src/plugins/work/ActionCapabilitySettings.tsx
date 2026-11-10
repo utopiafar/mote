@@ -6,6 +6,7 @@ import {moteText} from '@mote/shared/i18n';
 import {createApi,errorMessage} from '../../api';
 import {useResource} from '../../useResource';
 import {useUnsavedChanges} from '../../unsaved';
+import { Loading } from '../../Loading';
 type Inventory={providers:ActionPluginProvider[];grants:(ActionGrant&{available:boolean})[];declarations:ActionDeviceCapability[];deviceCapabilities:DeviceCapabilityProjection[];drafts:ActionCapabilityDraft[];sources:(ActionCapabilityDraft['inputs']['sources'][number]&{name:string})[]};
 // Validate the fields rendered/selected here. A malformed response is an error,
 // never an empty inventory or permission to submit a partial grant.
@@ -57,7 +58,7 @@ function ScopedSettings({api}:{api:ReturnType<typeof createApi>}){
  const outdated=data?.declarations.some(d=>!currentCapability(d))||data?.drafts.some(d=>d.state==='draft'&&!currentCapability(d))||saved&&!currentSaved;
  return <details className="panel action-settings"><summary>{moteText('日程执行范围授权')}</summary>
  <p>{moteText('授权后，范围内明确的日程会自动创建、更新、取消或标记完成。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大设备和日历范围。')}</p>
- {read.loading&&!data&&<p role="status">{moteText('正在读取…')}</p>}{(!!error||read.error!==undefined||malformed)&&<p role="alert">{error||(read.error!==undefined?errorMessage(read.error):moteText('中央响应格式无效，请刷新后重试。'))}</p>}
+ {read.loading&&!data&&<Loading/>}{(!!error||read.error!==undefined||malformed)&&<p role="alert">{error||(read.error!==undefined?errorMessage(read.error):moteText('中央响应格式无效，请刷新后重试。'))}</p>}
  <button className="button" disabled={busy} onClick={()=>read.refresh()}>{moteText('刷新')}</button>
  {data&&<><p>{moteText('先在设备连接日历，并在插件中心安装、检查和启用声明日历能力的插件。安装和升级不会自动授予执行权限。')}</p>
  {data.deviceCapabilities.length>0&&<details className="action-capability-projection"><summary>{moteText('已注册能力')}</summary>{data.deviceCapabilities.map(capability=><article key={capability.id+'@'+capability.version}><h4>{capability.id}@{capability.version}</h4><dl><div><dt>{moteText('已安装')}</dt><dd>{moteText(capability.installed?'已安装':'未安装')}</dd></div><div><dt>{moteText('已允许')}</dt><dd>{moteText(capability.grant==='unavailable'||capability.grant==='required'?'未允许':'已允许')}</dd></div><div><dt>{moteText('已连接')}</dt><dd>{moteText(capability.available?'已连接':'不可用')}</dd></div><div><dt>{moteText('已授权')}</dt><dd>{moteText(capability.authorized?'已授权':'尚未授权')}</dd></div></dl>{capability.waitingDevice&&<p role="status">{moteText('等待设备连接')}</p>}{capability.devices.map(device=><p key={device.deviceId}>{device.deviceId} · {moteText(device.available?'已连接':'不可用')}{device.waitingDevice?' · '+moteText('等待设备连接'):''}</p>)}</article>)}</details>}

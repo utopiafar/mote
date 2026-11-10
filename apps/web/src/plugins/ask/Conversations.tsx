@@ -20,6 +20,7 @@ import {FeaturePanels} from '../../features/runtime';
 import {readOwnerQuestion} from '../../owner-question-route';
 import {readOriginTurn} from './conversation-origin';
 import {type AskController,useAskController} from './controller';
+import { Loading } from '../../Loading';
 
 const StableModelSelector=React.memo(ModelSelector);
 
@@ -379,14 +380,14 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       <div className="conversation-list">{items.map(item => <button key={item.id} className={`conversation-item ${!selectedOwnerQuestion&&conversation?.id === item.id ? 'active' : ''} ${item.status === 'failed' ? 'failed' : ''}`} aria-current={!selectedOwnerQuestion&&conversation?.id === item.id ? 'true' : undefined} disabled={busy} onClick={() => void open(item.id)}>
         <strong>{item.title}</strong><span>{item.status === 'failed' ? <><AlertCircle size={12}/>{moteText("未完成")}{' · '}</> : null}{dateTime(item.updatedAt)} · {item.turnCount}{' '}{moteText("轮")}</span>
       </button>)}</div>
-      {loading && (!history.data||loadingPage) && <p className="loading" role="status"><LoaderCircle size={15} className="spin"/>{moteText("正在读取历史…")}</p>}
+      {loading && (!history.data||loadingPage) && <Loading label={moteText('正在读取历史…')}/>}
       {cursor && <button className="text-button" disabled={loading} onClick={() => void loadHistory(cursor)}>{moteText("加载更早的对话")}</button>}
     </aside>
     {selectedOwnerQuestion?<FeaturePanels api={api} onOpen={onOpen} unavailable={<section className="conversation-content"><p role="status">{moteText('此补充对话暂不可用，请刷新或查看相关资料。')}</p></section>} value={{kind:'mote.ask.question',schemaVersion:1,representation:'workspace',ref:selectedOwnerQuestion,revision:'1',title:'',text:''}}/>:<section className="conversation-content" aria-label={moteText("当前对话")} aria-busy={busy || opening}>
       <ConversationHeading plain title={conversation?.title??moteText('想从留下的内容里找什么？')}/>
       <ConversationDialog open={dialogOwner===api&&moreOpen&&Boolean(conversation)} title={moteText('对话')} onClose={()=>setMoreOpen(false)}>{conversation&&<><div className="conversation-more-list"><button className="text-button" disabled={busy} onClick={()=>{setMoreOpen(false);setError('');setConfirmDelete(true);}}>{moteText('删除这段对话')}</button></div></>}</ConversationDialog>
       <ConversationDialog open={dialogOwner===api&&confirmDelete} busy={busy} title={moteText('删除整段对话？')} onClose={()=>{setConfirmDelete(false);setError('');}} footer={<><button className="button" disabled={busy} onClick={()=>{setConfirmDelete(false);setError('');}}>{moteText('取消')}</button><button className="button primary" disabled={busy} onClick={()=>void remove()}>{moteText('删除对话')}</button></>}>{confirmDelete&&<div className="conversation-delete-confirm"><p>{moteText('会删除这段对话的所有问答。已单独保存的记录保留。')}</p>{error&&<p role="alert">{error}</p>}</div>}</ConversationDialog>
-      {opening && <p className="loading" role="status"><LoaderCircle size={16} className="spin"/>{moteText("正在打开对话…")}</p>}
+      {opening && <Loading label={moteText('正在打开对话…')}/>}
       {targetTurn&&conversation&&!opening&&!conversation.nextCursor&&!conversation.turns.some(turn=>turn.id===targetTurn)&&<p role="status">{moteText('原始轮次暂不可读。')}</p>}
       <div className="conversation-messages">
       {conversation?.nextCursor&&<button className="text-button" disabled={opening} onClick={()=>void loadOlderTurns()}>{moteText("加载更早的对话")}</button>}

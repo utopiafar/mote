@@ -17,6 +17,7 @@ import { AnswerMarkdown } from './plugins/ask/AnswerMarkdown';
 import { AttributionEditor, AttributionSummary, type AttributionContext } from './AttributionContext';
 import { memoryMaterialRoute } from './memory-source-route';
 import { artifactDisplay, materialKind, materialState, sourceDisplay } from './material-presentation';
+import { Loading } from './Loading';
 export type Material = {
     id: string;
     ref: string;
@@ -188,7 +189,7 @@ export function MaterialDetail({ api, material, onOpen, onOpenSavedOrigin, onSav
     finally {
         setIndexBusy(false);
     } };
-    return <SourceMaterialToolsContext.Provider value={{target:sourceTools}}><article className={'panel panel-pad material-detail'+(ownerNote?' note-material-reader':'')}>{!agent&&!historical&&current.error===undefined&&current.data?.ref===material.ref&&read.error===undefined&&read.data?.material.ref===material.ref&&<a className="button material-reader-ask" href={originalReferenceRoute('material',selected.ref)} onClick={event=>{if(!confirmNavigation()){event.preventDefault();return;}rememberOriginalReturn(api,'material',selected.ref);}}>{moteText('问问 AI')} ↗</a>}<h2>{selected.title}</h2><p>{materialKind(selected.kind, catalog?.label)}{!ownerNote&&<> · {sourceDisplay(selected.origin.sourceId)}</>}{(selected.origin.lastAt??selected.origin.firstAt)&&<> · {dateTime((selected.origin.lastAt??selected.origin.firstAt)!)}</>}</p>
+    return <SourceMaterialToolsContext.Provider value={{target:sourceTools}}><article className={'panel panel-pad material-detail'+(ownerNote?' note-material-reader':'')}>{!agent&&!historical&&current.error===undefined&&current.data?.ref===material.ref&&read.error===undefined&&read.data?.material.ref===material.ref&&<a className="button material-reader-ask" href={originalReferenceRoute('material',selected.ref)} onClick={event=>{if(!confirmNavigation()){event.preventDefault();return;}rememberOriginalReturn(api,'material',selected.ref);}}>{moteText('围绕这份资料提问')} ↗</a>}<h2>{selected.title}</h2><p>{materialKind(selected.kind, catalog?.label)}{!ownerNote&&<> · {sourceDisplay(selected.origin.sourceId)}</>}{(selected.origin.lastAt??selected.origin.firstAt)&&<> · {dateTime((selected.origin.lastAt??selected.origin.firstAt)!)}</>}</p>
     {['pending', 'running'].includes(selected.indexing?.state ?? '') && <p role="status">{moteText('资料已发布，检索索引正在处理中。')}</p>}
     {selected.indexing?.state === 'failed' && <p role="status">{moteText('检索索引未完成，正文可正常查看。')}{!agent && !historical && current.error === undefined && current.data?.ref === material.ref && <button className="button" disabled={indexBusy} onClick={() => void retryIndex()}>{moteText('仅重试检索索引')}</button>}</p>}
     {indexError && <p role="alert">{indexError}</p>}
@@ -216,7 +217,7 @@ export function Materials({ api, onOpen, kind, sourceId, agent = false, scope = 
         items: Material[];
         nextCursor: string | null;
     }>(api, (agent ? '/api/agent-view/materials' : '/api/materials') + '?' + query);
-    return <section className="materials-browser"><div className="page-heading"><h1>{moteText('正式资料')}</h1><p>{moteText('查看资料库中的正文、版本、来源和处理产物。')}</p></div><button className="button" onClick={() => { setSelected(undefined); page.refresh(); }}>{moteText('刷新')}</button>{page.error !== undefined && <p role="alert">{errorMessage(page.error)}</p>}{page.loading && !page.data && <p role="status">{moteText('正在读取…')}</p>}
+    return <section className="materials-browser"><div className="page-heading"><h1>{moteText('正式资料')}</h1><p>{moteText('查看资料库中的正文、版本、来源和处理产物。')}</p></div><button className="button" onClick={() => { setSelected(undefined); page.refresh(); }}>{moteText('刷新')}</button>{page.error !== undefined && <p role="alert">{errorMessage(page.error)}</p>}{page.loading && !page.data && <Loading/>}
     {page.data && <><div className="feature-cards">{page.data.items.map(m => <button className="panel source-item" key={m.ref} onClick={() => setSelected(m)}><strong>{m.title}</strong><p>{materialKind(m.kind)} · {materialState(m.coverage.state)} · {m.textLength}{' '}{moteText("字符")}</p></button>)}</div>{!page.data.items.length && <p>{moteText('当前范围内暂无已发布资料。')}</p>}<div className="processing-actions">{cursor && <button className="button" onClick={() => { setCursor(undefined); setSelected(undefined); }}>{moteText('返回第一页')}</button>}{page.data.nextCursor && <button className="button" onClick={() => { setCursor(page.data!.nextCursor!); setSelected(undefined); }}>{moteText('下一页')}</button>}</div></>}
     {selected && page.error === undefined && <MaterialDetail key={selected.ref} api={api} material={selected} onOpen={onOpen} agent={agent} scope={scope}/>}
   </section>;

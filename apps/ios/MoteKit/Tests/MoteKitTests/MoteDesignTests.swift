@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import MoteDesign
 
@@ -27,7 +28,26 @@ final class MoteDesignTests: XCTestCase {
         XCTAssertEqual(MoteMetrics.rowMinHeight, 44)
         XCTAssertEqual(MoteMetrics.controlHeight, 44)
         XCTAssertEqual(MoteMetrics.markSize, 28)
-        XCTAssertEqual(MoteMetrics.markRadius, 6)
+    }
+
+    func testMarkArchesOverItsLegsAndRestsOnTheDot() {
+        let box = CGRect(x: 0, y: 0, width: 24, height: 24)
+        let ink = MoteMarkStroke().path(in: box)
+            .strokedPath(StrokeStyle(lineWidth: MoteMarkGeometry.stroke, lineCap: .round, lineJoin: .round))
+        // Both arches pass over the top of their legs; a bowl underneath would be a different letter.
+        XCTAssertTrue(ink.contains(CGPoint(x: 8.5, y: 7.5)))
+        XCTAssertTrue(ink.contains(CGPoint(x: 15, y: 7.5)))
+        XCTAssertFalse(ink.contains(CGPoint(x: 8.5, y: 14)))
+        XCTAssertFalse(ink.contains(CGPoint(x: 15, y: 14)))
+        // The last leg stops short; the dot below it carries the accent.
+        XCTAssertTrue(ink.contains(CGPoint(x: 18.25, y: 12.2)))
+        XCTAssertFalse(ink.contains(MoteMarkGeometry.dotCenter))
+        XCTAssertTrue(MoteMarkDot().path(in: box).contains(MoteMarkGeometry.dotCenter))
+        // Any frame keeps the same proportions, centered.
+        let wide = MoteMarkStroke().path(in: CGRect(x: 0, y: 0, width: 96, height: 48)).boundingRect
+        XCTAssertEqual(wide.minX, 24 + 5.25 * 2, accuracy: 0.01)
+        XCTAssertEqual(wide.minY, 7.5 * 2, accuracy: 0.01)
+        XCTAssertEqual(wide.maxX, 24 + 18.25 * 2, accuracy: 0.01)
     }
 
     func testTextAndControlContrast() {

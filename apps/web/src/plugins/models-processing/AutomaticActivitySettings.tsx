@@ -5,6 +5,7 @@ import {ApiError, type Api, errorMessage} from '../../api';
 import {invalidateConfiguration} from '../../configuration-cache';
 import {useResource} from '../../useResource';
 import {useUnsavedChanges} from '../../unsaved';
+import { Loading } from '../../Loading';
 
 type Settings = {enabled: boolean; modelProfileId: string | null};
 type View = {revision: number; settings: Settings; configured: boolean; counts: Record<string, number>};
@@ -46,7 +47,7 @@ export function AutomaticActivitySettings({api}: {api: Api}) {
   return <section className="panel runtime-settings automatic-activity-settings"><h2>{moteText('自动整理活动')}</h2>
     <p>{moteText('使用所选模型整理后续接纳的采集内容，生成可查看的活动资料。自动记忆可单独开启或暂停。')}</p>
     <p className="fine-print">{moteText('原文可能发送给所选模型服务。关闭后停止待处理任务，已保存的活动资料继续保留。')}</p>
-    {read.loading && !draft && <p role="status">{moteText('正在读取…')}</p>}
+    {read.loading && !draft && <Loading/>}
     {(error || read.error !== undefined || models.error !== undefined) && <p role="alert">{error || errorMessage(read.error ?? models.error)}</p>}
     {draft && <form onSubmit={event => {event.preventDefault(); void save();}}><fieldset disabled={busy}>
       <label className="preference-toggle"><span>{moteText('自动整理新采集的活动')}</span><input type="checkbox" checked={draft.enabled} onChange={event => change({enabled: event.target.checked})}/></label>
