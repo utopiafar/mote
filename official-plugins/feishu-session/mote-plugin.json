@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "id": "mote.official.feishu-session",
+  "name": "飞书会话",
+  "version": "0.1.0",
+  "trust": "official",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "mote-official-feishu-session-connector-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "mote.official.feishu-session.ingress",
+      "version": "1",
+      "surface": "ingress",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "source.connector"
+      ]
+    }
+  ],
+  "capabilities": [
+    "source.connector",
+    "message.send"
+  ],
+  "actionCapabilities": [
+    {
+      "id": "message.send",
+      "version": 1,
+      "inputSchema": "message.send.v1",
+      "outputSchema": "message.receipt.v1",
+      "operations": [
+        "message.send"
+      ],
+      "executionLocation": "central-connector",
+      "risk": "message-send",
+      "constraints": {
+        "confirmsEveryMessage": true,
+        "currentEvidence": true
+      }
+    }
+  ],
+  "configuration": [],
+  "dependencies": [],
+  "access": [
+    "Reuses the existing Feishu (Lark) account binding; this package asks for no second app ID, app secret or redirect URI",
+    "Archive authorization asks only for read-only IM scopes and reads chats/messages for the explicitly selected conversations on that existing account",
+    "Sending needs a second user-scope authorization and runs only through a host-dispatched, owner-confirmed message.send action; the archive authorization never grants sending",
+    "The package never spawns lark-cli, never reads the CLI credential profile, and never calls document, calendar or Minutes commands",
+    "No model calls, no workspace-wide scan, and no IM write method other than the single send action path"
+  ],
+  "sourceCatalog": [
+    {
+      "id": "official-feishu-session",
+      "title": "飞书会话",
+      "body": "在已有飞书账号上归档已勾选的群聊与私信，按消息身份保留版本",
+      "note": "安装不等于授权。复用已有飞书账号，另开消息范围，不再连一次文档/日历；归档与发送分开授权，发送走行动平台且逐条确认，问一问不能发送。",
+      "icon": "link",
+      "kinds": [
+        "mote.official.feishu-session"
+      ],
+      "target": {
+        "pageId": "sources",
+        "href": "#/connections?setup=official-feishu-session"
+      },
+      "setupChoiceId": "official-feishu-session",
+      "attachToBinding": "lark"
+    }
+  ]
+}

@@ -31,6 +31,8 @@ export interface ConnectorHostAdapterOptions {
   readonly statusScope:HostScope;
   /** Trusted transport slot only; ordinary plugins get no raw context here. */
   readonly transport?:(instance:ConnectorInstance)=>void|Promise<void>;
+  /** Host-owned account bindings a new source kind may attach to. */
+  readonly bindings?:Readonly<Record<string,unknown>>;
 }
 export interface ConnectorHostAdapter {
   start():Promise<void>;
@@ -42,6 +44,8 @@ export interface ConnectorHostAdapter {
   install(manifest:ConnectorManifest,activation?:ConnectorActivation):Promise<void>;
   /** True once a manifest has been installed, including while it is stopped. */
   known(id:string):boolean;
+  /** True when the host supplies a trusted binding for this account key. */
+  supportsBinding(key:string):boolean;
   /** Hot-restart a known stopped manifest with a fresh H04 scope. */
   restart(id:string,activation?:ConnectorActivation):Promise<void>;
   /** Hot-stop one installed instance; sibling instances keep running. */
@@ -259,6 +263,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       try{return await runHot(manifest);}catch(error){activations.delete(manifest.id);throw error;}
     },
     known:(id:string)=>manifests.has(id),
+    supportsBinding:(key:string)=>Boolean(options.bindings&&Object.hasOwn(options.bindings,key)),
     async restart(id:string,activation?:ConnectorActivation){
       if(!started||closed)throw Error('Connector host adapter is not active');
       const manifest=manifests.get(id);if(!manifest)throw Error(`Connector ${id} is not known`);

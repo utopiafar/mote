@@ -24,6 +24,7 @@ import type {ConnectorManifest} from './connectors/registry.js';
 export type PluginConnectorHost={
   install(manifest:ConnectorManifest,activation?:ConnectorActivation):Promise<void>;
   known?(id:string):boolean;
+  supportsBinding?(key:string):boolean;
   stop(id:string):Promise<void>;
   restart(id:string,activation?:ConnectorActivation):Promise<void>;
   inventory():readonly {id:string;active:boolean}[];
@@ -276,6 +277,10 @@ export class PluginCenter {
     if(surfaces.ingress){
       try{connectorFromModule(module);capabilities.push(...pkg.manifest.capabilities.filter(id=>id==='source.connector'||id.startsWith('source.')).map(id=>({id,state:'verified' as const,reason:'Connector export verified; OAuth and first sync remain in Sources'})));}
       catch(error){issues.push(error instanceof Error?error.message:'connector_export_invalid');}
+      // A package that extends an existing account must prove this host owns
+      // the binding. A disconnected account is not a check failure; login and
+      // scope authorization stay in Sources.
+      for(const entry of pkg.manifest.sourceCatalog??[])if(entry.attachToBinding&&!this.connectorHost?.supportsBinding?.(entry.attachToBinding))issues.push('account_binding_unavailable:'+entry.attachToBinding);
     }
     if(surfaces.processing){
       const plugin=module.backendPlugin??module.default;

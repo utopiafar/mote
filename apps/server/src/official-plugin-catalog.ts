@@ -58,6 +58,16 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     runtime: 'service',
     packageId: 'mote.official.slack',
   },
+  {
+    repository: 'mote/official-feishu-session-connector',
+    tag: 'v0.1.0',
+    localDirectory: 'official-plugins/feishu-session',
+    name: '飞书会话',
+    description: '在已有飞书账号上归档已勾选会话；发送需第二次授权并经行动平台逐条确认',
+    group: 'connectors',
+    runtime: 'service',
+    packageId: 'mote.official.feishu-session',
+  },
 ]);
 
 /** Public catalog projection. A repository-relative artifact location stays

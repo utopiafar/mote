@@ -20,10 +20,14 @@ export type LarkCommand =
   | {kind:'minutes-search';start:string;end:string;pageToken?:string}
   | {kind:'minutes-metadata';id:string}
   | {kind:'minutes-transcript';id:string}
-  | {kind:'minutes-media';id:string;output:string};
+  | {kind:'minutes-media';id:string;output:string}
+  | {kind:'im-chats';pageToken?:string;pageSize?:number}
+  | {kind:'im-messages';chatId:string;startTime?:string;endTime?:string;pageToken?:string;pageSize?:number}
+  | {kind:'im-send';chatId:string;text:string;uuid?:string};
 export type LarkRunner=(command:LarkCommand,options?:{signal?:AbortSignal;onOutput?:(chunk:string)=>void})=>Promise<string>;
 
 /** Only fixed operations are executable. Neither the browser nor an agent supplies argv. */
+const imId=(value:string)=>/^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(value)?value:(()=>{throw new ConnectorError('lark_command_invalid');})();
 export function larkArguments(command:LarkCommand):string[]{
   switch(command.kind){
     case 'version':return ['--version'];
@@ -45,6 +49,11 @@ export function larkArguments(command:LarkCommand):string[]{
     // The same read endpoint preserves typed errors and the original text.
     case 'minutes-transcript':return ['api','GET',`/open-apis/minutes/v1/minutes/${encodeURIComponent(command.id)}/artifacts`,'--as','user','--format','json'];
     case 'minutes-media':return ['minutes','+download','--minute-tokens',command.id,'--output',command.output,'--as','user','--format','json'];
+    // IM reads and one send path stay on raw API commands with fixed query and
+    // body shapes. No caller supplies a path, method or arbitrary argument.
+    case 'im-chats':return ['api','GET','/open-apis/im/v1/chats','--params',JSON.stringify({user_id_type:'open_id',sort_type:'ByActiveTimeDesc',page_size:command.pageSize??100,types:'group,p2p',...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
+    case 'im-messages':return ['api','GET','/open-apis/im/v1/messages','--params',JSON.stringify({container_id_type:'chat',container_id:imId(command.chatId),...(command.startTime?{start_time:command.startTime}:{}),...(command.endTime?{end_time:command.endTime}:{}),sort_type:'ByCreateTimeAsc',page_size:command.pageSize??50,...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
+    case 'im-send':return ['api','POST','/open-apis/im/v1/messages','--params',JSON.stringify({receive_id_type:'chat_id'}),'--data',JSON.stringify({receive_id:imId(command.chatId),msg_type:'text',content:JSON.stringify({text:command.text}),...(command.uuid?{uuid:command.uuid}:{})}),'--as','user','--format','json'];
     case 'install':throw new ConnectorError('lark_command_invalid');
   }
 }
