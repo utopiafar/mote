@@ -68,6 +68,16 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     runtime: 'service',
     packageId: 'mote.official.feishu-session',
   },
+  {
+    repository: 'mote/official-markdown-export',
+    tag: 'v0.1.0',
+    localDirectory: 'official-plugins/markdown-export',
+    name: 'Markdown / Obsidian 导出',
+    description: '按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）',
+    group: 'outbound-processing',
+    runtime: 'service',
+    packageId: 'mote.official.markdown-export',
+  },
 ]);
 
 /** Public catalog projection. A repository-relative artifact location stays
