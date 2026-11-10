@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "mote.official.fixture-connector",
+  "name": "官方连接器夹具",
+  "version": "0.1.0",
+  "trust": "official",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "mote-official-fixture-connector-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "mote.official.fixture-connector.ingress",
+      "version": "1",
+      "surface": "ingress",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "source.connector"
+      ]
+    }
+  ],
+  "capabilities": [
+    "source.connector"
+  ],
+  "configuration": [],
+  "dependencies": [],
+  "access": [
+    "Owner-configured fixture source intake only",
+    "No remote network, credentials or model calls"
+  ],
+  "sourceCatalog": [
+    {
+      "id": "official-fixture-connector",
+      "title": "官方连接器夹具",
+      "body": "验收用最小官方连接器；安装后出现在添加来源",
+      "note": "安装不等于授权。完成配置与核验后，在来源中连接。",
+      "icon": "link",
+      "kinds": [
+        "mote.official.fixture-connector"
+      ],
+      "target": {
+        "pageId": "sources",
+        "href": "#/connections?setup=official-fixture-connector"
+      },
+      "setupChoiceId": "official-fixture-connector"
+    }
+  ]
+}

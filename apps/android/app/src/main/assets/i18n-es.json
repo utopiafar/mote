@@ -10186,5 +10186,21 @@
   "保存在当前浏览器的站点存储中；清除站点数据会删除日志。": "Se guardan en los datos del sitio de este navegador. Al borrar esos datos también se borran los registros.",
   "数值诊断和运行日志分别设置。": "Los diagnósticos numéricos y los registros se configuran por separado.",
   "启用本机数值诊断": "Activar diagnósticos numéricos locales",
-  "日志已导出。": "Registros exportados."
+  "日志已导出。": "Registros exportados.",
+  "官方目录": "Catálogo oficial",
+  "连接器": "Conectores",
+  "Memory 方案": "Planes de Memory",
+  "出站与处理": "Salida y procesamiento",
+  "浏览官方目录": "Explorar catálogo oficial",
+  "只展示主线签发的固定制品。安装不等于授权，也不等于切换 Memory 方案或开始扫描历史。": "Solo se muestran artefactos fijos firmados por la línea principal. Instalar no autoriza, no cambia el plan Memory ni escanea el historial.",
+  "当前没有可安装的官方制品。": "No hay artefactos oficiales disponibles para instalar.",
+  "预览并安装": "Vista previa e instalar",
+  "已移至「设置 → 运行与诊断」。": " Movido a Ajustes → Ejecución y diagnóstico.",
+  "官方目录在「自动记忆与插件」。": "El catálogo oficial está en Memoria automática y plugins.",
+  "已安装，待配置": "Instalado, pendiente de configuración",
+  "已配置，待核验": "Configurado, pendiente de verificación",
+  "可连接": "Listo para conectar",
+  "已启用，待授权": "Habilitado, pendiente de autorización",
+  "可挂到已有账号绑定": "Puede adjuntarse a un enlace de cuenta existente",
+  "官方目录在上方；此入口等同网页「设置 → 运行与诊断」。": "El catálogo oficial está arriba; esta entrada equivale a Ajustes → Ejecución y diagnóstico en la web."
 }

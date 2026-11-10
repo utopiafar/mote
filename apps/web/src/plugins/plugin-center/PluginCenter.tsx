@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Check,ChevronRight,Package,RefreshCw,Settings2,ShieldCheck,X} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
-import type {MemoryBindingView,MemoryPlanView,PluginBuildView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
+import type {MemoryBindingView,MemoryPlanView,PluginBuildView,PluginCatalogEntry,PluginCatalogGroup,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
 import {ApiError,errorMessage,type Api} from '../../api';
 import {FeatureInventory} from '../../FeatureInventory';
 import {PluginInstanceSurface} from '../../features/runtime';
@@ -71,9 +71,14 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
  const view=pluginResource.data,builds=buildResource.data??[],binding=bindingResource.data;
  const [bindingDenied,setBindingDenied]=useState<Api|undefined>(()=>deniedBindingApis.has(api)?api:undefined);
  const [tab,setTab]=useHashChoice('tab',pluginTabFromHash),[selected,setSelected]=useState<string>(),[dialog,setDialog]=useState<Dialog>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[retry,setRetry]=useState<Intent>();
- const [repository,setRepository]=useState(''),[tag,setTag]=useState(''),[scope,setScope]=useState('default'),[fee,setFee]=useState(false),[showInventory,setShowInventory]=useState(false),[rhythmOpened,setRhythmOpened]=useState(false);
+ const [scope,setScope]=useState('default'),[fee,setFee]=useState(false),[showInventory,setShowInventory]=useState(false),[rhythmOpened,setRhythmOpened]=useState(false);
+ const catalogGroups:readonly {id:PluginCatalogGroup;label:string}[]=[
+  {id:'connectors',label:moteText('连接器')},
+  {id:'memory',label:moteText('Memory 方案')},
+  {id:'outbound-processing',label:moteText('出站与处理')},
+ ];
  const opener=useRef<HTMLElement|null>(null),identity=useRef(api),controller=useRef<AbortController|undefined>(undefined),busyRef=useRef(false);identity.current=api;
- useEffect(()=>{setSelected(undefined);setDialog(undefined);setBusy(false);busyRef.current=false;setError('');setNotice('');setRetry(undefined);setRepository('');setTag('');setBindingDenied(deniedBindingApis.has(api)?api:undefined);return()=>controller.current?.abort();},[api]);
+ useEffect(()=>{setSelected(undefined);setDialog(undefined);setBusy(false);busyRef.current=false;setError('');setNotice('');setRetry(undefined);setBindingDenied(deniedBindingApis.has(api)?api:undefined);return()=>controller.current?.abort();},[api]);
  useEffect(()=>{
   const denied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
   if(bindingResource.error instanceof ApiError&&[401,403,404,410].includes(bindingResource.error.status)){deniedBindingApis.add(api);setBindingDenied(api);}
@@ -81,7 +86,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   // authorized read, including one made by another page before a transient error.
   else if(bindingResource.data!==undefined){deniedBindingApis.delete(api);setBindingDenied(current=>current===api?undefined:current);}
   if(!denied)return;
-  controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');setRepository('');setTag('');
+  controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');
  },[api,pluginResource.error,bindingResource.error,bindingResource.data,bindingResource.loading]);
  const currentPackage=view?.packages.find(item=>item.id===selected);
  const privateDenied=bindingResource.data===undefined&&(deniedBindingApis.has(api)||bindingDenied===api)||[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
@@ -107,9 +112,9 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   const commandBody={...body,expectedRevision};
   void execute({path,method,body:{...commandBody,operationId:operationId(path,method,commandBody)},after});
  }
- async function resolve(){
-  if(!installReady||!repository.trim()||busyRef.current)return;const owner=api,signal=new AbortController();controller.current?.abort();controller.current=signal;busyRef.current=true;setBusy(true);setError('');setNotice('');setRetry(undefined);opener.current=document.activeElement as HTMLElement;
-  try{const preview=await owner.request<PluginReleasePreview>('/api/plugins/resolve',{method:'POST',body:JSON.stringify({repository:repository.trim(),...(tag.trim()?{tag:tag.trim()}:{})}),signal:signal.signal});if(identity.current===owner&&!signal.signal.aborted)setDialog({kind:'install',preview});}
+ async function resolveCatalog(entry:PluginCatalogEntry,event?:HTMLElement){
+  if(!installReady||busyRef.current)return;const owner=api,signal=new AbortController();controller.current?.abort();controller.current=signal;busyRef.current=true;setBusy(true);setError('');setNotice('');setRetry(undefined);opener.current=event??document.activeElement as HTMLElement;
+  try{const preview=await owner.request<PluginReleasePreview>('/api/plugins/resolve',{method:'POST',body:JSON.stringify({repository:entry.repository,...(entry.tag?{tag:entry.tag}:{})}),signal:signal.signal});if(identity.current===owner&&!signal.signal.aborted)setDialog({kind:'install',preview});}
   catch(cause){if(identity.current===owner&&!signal.signal.aborted)setError(errorMessage(cause));}
   finally{if(identity.current===owner&&!signal.signal.aborted){busyRef.current=false;setBusy(false);}}
  }
@@ -121,7 +126,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
  return <div className="plugin-center">
   {!(tab==='installed'&&currentPackage)&&<button className="back-link plugin-owner-back" onClick={()=>onPage('about')}>← {moteText('设置')}</button>}{tab==='installed'&&currentPackage&&<button className="back-link" disabled={busy} onClick={()=>setSelected(undefined)}>← {moteText('已安装插件')}</button>}<div className="page-heading split-heading"><div><h1>{tab==='installed'&&currentPackage?currentPackage.name:moteText('自动记忆与插件')}</h1></div></div>
   <nav hidden={tab==='installed'&&Boolean(currentPackage)} className="segmented-nav plugin-tabs" aria-label={moteText('插件页面')}>
-   {(['memory','installed','discover'] as const).map(value=><button key={value} className={tab===value?'active':''} aria-pressed={tab===value} onClick={()=>{if(confirmNavigation())setTab(value);}}>{value==='installed'?moteText('已安装插件'):value==='discover'?moteText('添加插件'):moteText('自动记忆')}</button>)}
+   {(['memory','installed','discover'] as const).map(value=><button key={value} className={tab===value?'active':''} aria-pressed={tab===value} onClick={()=>{if(confirmNavigation())setTab(value);}}>{value==='installed'?moteText('已安装插件'):value==='discover'?moteText('官方目录'):moteText('自动记忆')}</button>)}
   </nav>
   {error&&<div className="notice error" role="alert">{error}{retry&&<button className="text-button" disabled={busy} onClick={()=>void execute(retry)}>{moteText('重试同一请求')}</button>}</div>}
   {pluginResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(pluginResource.error)}<button className="text-button" onClick={pluginResource.refresh}>{moteText('重试')}</button></p>}
@@ -133,7 +138,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   {tab==='installed'&&<>
    {view&&<div className={"provider-workspace plugin-workspace"+(currentPackage?" has-package":"")}><aside hidden={Boolean(currentPackage)} className="panel provider-sidebar"><div className="section-heading"><h2>{moteText('已安装')}</h2><span className="badge muted">{view.packages.length}</span></div>
 
-    {!view.packages.length&&<p className="plugin-empty">{moteText('还没有安装外部插件。')}<button className="text-button" onClick={()=>setTab('discover')}>{moteText('从 GitHub 添加')}</button></p>}
+    {!view.packages.length&&<p className="plugin-empty">{moteText('还没有安装外部插件。')}<button className="text-button" onClick={()=>setTab('discover')}>{moteText('浏览官方目录')}</button></p>}
     <div className="provider-list">{view.packages.map(item=><button key={item.id} className="provider-card" aria-pressed={currentPackage?.id===item.id} disabled={busy} onClick={()=>{if(confirmNavigation())setSelected(item.id);}}><span className="provider-card-icon"><Package size={18}/></span><span><strong>{item.name}</strong><small>{item.version} · {packageStateLabel(item.state)}</small><small>{packageObservedLabel(item.observed)}</small></span></button>)}</div>
    </aside><div hidden={!currentPackage} className="provider-detail">{currentPackage&&<section className="panel plugin-package-detail"><div className="section-heading"><div><p>{currentPackage.version} · {currentPackage.runtime==='worker'?moteText('中央 Worker'):moteText('独立服务')}</p></div><span className="badge muted">{packageStateLabel(currentPackage.state)}</span></div>
     <dl className="plugin-facts"><div><dt>{moteText('来源')}</dt><dd>{currentPackage.source.repository}</dd></div><div><dt>{moteText('固定版本')}</dt><dd>{currentPackage.source.tag} · {currentPackage.source.commit}</dd></div><div><dt>{moteText('完整性摘要')}</dt><dd>{currentPackage.source.digest}</dd></div></dl>
@@ -150,11 +155,24 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
     {!view.instances.some(instance=>instance.packageId===currentPackage.id)&&<p className="plugin-empty">{moteText('此安装包尚无配置实例；没有运行，也没有绑定到记忆方案。')}</p>}
    </section>}</div></div>}
   </>}
-  {tab==='discover'&&<details className="plugin-advanced plugin-discovery"><summary>{moteText('从 GitHub 添加其他可信插件')}</summary><p>{moteText('读取兼容发布包，预览版本、能力与访问范围后安装。GitHub 数据连接器仍在资料来源中管理。')}</p>
+  {tab==='discover'&&<section className="plugin-official-catalog" aria-label={moteText('官方目录')}>
+   <p>{moteText('只展示主线签发的固定制品。安装不等于授权，也不等于切换 Memory 方案或开始扫描历史。')}</p>
    {view&&!view.installation.supported&&<p className="notice">{view.installation.reason??moteText('当前节点不支持在线安装。')}</p>}
-   <form className="plugin-fields" onSubmit={event=>{event.preventDefault();void resolve();}}><label className="preference-field">{moteText('GitHub 仓库')}<input value={repository} onChange={event=>setRepository(event.target.value)} placeholder="https://github.com/owner/repository" required disabled={busy||!installReady}/></label><label className="preference-field">{moteText('发布标签（可选）')}<input value={tag} onChange={event=>setTag(event.target.value)} disabled={busy||!installReady}/></label><div className="plugin-footer"><button className="button primary" disabled={busy||!installReady||!repository.trim()||!view?.installation.supported}>{busy?moteText('正在解析…'):moteText('预览发布包')}</button></div></form>
-   {Boolean(view?.catalog.length)&&<div className="plugin-catalog">{view?.catalog.map(item=><article key={item.repository}><h3>{item.name}</h3><p>{item.description}</p><small>{item.repository}</small><button className="text-button" disabled={busy||!installReady} onClick={()=>{setRepository(item.repository);setTag('');}}>{moteText('选择仓库')}</button></article>)}</div>}
-  </details>}
+   {installReady&&!view?.catalog.length&&<p className="plugin-empty">{moteText('当前没有可安装的官方制品。')}</p>}
+   {catalogGroups.map(group=>{
+    const items=(view?.catalog??[]).filter(entry=>entry.group===group.id);
+    if(!items.length)return null;
+    return <section key={group.id} className="plugin-catalog-group" aria-label={group.label}>
+     <h2>{group.label}</h2>
+     <div className="plugin-catalog">{items.map(item=><article key={item.repository+'@'+(item.tag??'')}>
+      <h3>{item.name}</h3><p>{item.description}</p>
+      <small>{item.repository}{item.tag?' · '+item.tag:''} · {item.runtime==='worker'?moteText('中央 Worker'):moteText('独立服务')}</small>
+      <button className="button subtle" disabled={busy||!installReady||!view?.installation.supported} onClick={event=>void resolveCatalog(item,event.currentTarget)}>{busy?moteText('正在解析…'):moteText('预览并安装')}</button>
+     </article>)}</div>
+    </section>;
+   })}
+   <p className="fine-print"><a className="text-button" href="#/system/diagnostics">{moteText('从 GitHub 添加其他可信插件')}</a>{moteText('已移至「设置 → 运行与诊断」。')}</p>
+  </section>}
   {tab==='memory'&&<>
    {bindingResource.loading&&!binding&&<p role="status">{moteText('正在读取…')}</p>}
    {binding&&<><section className="panel plugin-memory-control"><div className="section-heading"><div><h2>{moteText('自动记忆')}</h2><p role="status">{automaticStatus}</p></div><button type="button" role="switch" aria-checked={admission!.desired} aria-label={moteText('自动记忆')} className={'plugin-memory-switch '+(admission!.desired?'is-on':'')} disabled={busy||!(admission!.desired?memoryActions.includes('pause'):memoryActions.includes('resume'))} onClick={()=>memoryCommand(admission!.desired?'pause':'resume')}>{admission!.desired?moteText('已选择启用'):moteText('已选择暂停')}</button></div>

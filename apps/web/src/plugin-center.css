@@ -30,6 +30,11 @@
 .plugin-catalog article {border:1px solid var(--mote-hair);border-radius:var(--mote-radius,10px);padding:18px;min-width:0;}
 .plugin-catalog small {display:block;color:var(--mote-muted);}
 .plugin-catalog .text-button {margin-top:14px;}
+.plugin-official-catalog .plugin-catalog-group{margin-top:28px}
+.plugin-official-catalog .plugin-catalog-group>h2{font-size:13px;font-weight:500;color:var(--mote-muted);margin:0 0 4px}
+.plugin-official-catalog .plugin-catalog{margin-top:12px}
+.plugin-official-catalog .plugin-catalog article .button{margin-top:14px}
+.trusted-github-plugin-install{margin-top:28px}
 .plugin-memory-switch {flex-shrink:0;padding:10px 14px;min-height:44px;border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container);color:var(--mote-muted);background:var(--mote-surface);font-size:var(--mote-font-action);}
 .plugin-memory-switch.is-on {color:var(--mote-accent);background:var(--mote-tint);border-color:var(--mote-accent);}
 .plugin-admission-state {padding:18px 20px;border:1px solid var(--mote-hair);background:var(--mote-sidebar);border-radius:var(--mote-radius-container);margin:20px 0;}

@@ -505,6 +505,7 @@ internal class CentralAdmin(
         read("/api/diagnostics")
         ui.button(MoteI18n.text("查看日志")) { read("/api/diagnostics/log-pages?page=1&pageSize=100") }
         ui.button(MoteI18n.text("导出支持包")) { ui.saveCentral("/api/support-bundle", "mote-central-support.json", "application/json") }
+        ui.button(MoteI18n.text("从 GitHub 添加其他可信插件")) { plugins.showTrustedGithubInstall() }
         softwareUpdate()
     }
     private fun softwareUpdate() {

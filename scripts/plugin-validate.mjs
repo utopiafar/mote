@@ -8,9 +8,13 @@ import {planComposition} from '@mote/plugin-host';
 
 const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-/** The generic release resolver has no service runtime yet; keep this server-specific compatibility check outside the composition planner. */
+/** Central provides a service runtime for ingress/processing packages. Other
+ * service ABIs still need a host that publishes them. */
 export function releaseCompatibilityFailures(manifest) {
-  return manifest.runtime === 'service' ? [{code: 'unsupported_runtime', message: 'The generic release resolver does not provide a service runtime', remediation: 'Publish the package with "runtime": "worker", or install it on a host that provides a service runtime'}] : [];
+  if (manifest.runtime !== 'service') return [];
+  const surfaces = new Set((manifest.contributions ?? []).map(contribution => contribution.surface));
+  if (surfaces.has('ingress') || surfaces.has('processing')) return [];
+  return [{code: 'unsupported_runtime', message: 'This host does not provide a service runtime for the declared contributions', remediation: 'Declare an ingress or processing contribution, publish as "runtime": "worker", or install on a host that provides the required service runtime'}];
 }
 
 export async function validatePackage({manifestPath, zipPath, host = 'central', hostDependencies = [], releaseContract}) {

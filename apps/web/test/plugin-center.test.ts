@@ -24,7 +24,7 @@ const builtin:MemoryPlanView={id:'builtin',name:'Built-in fixture plan',mode:'mo
 const candidate:MemoryPlanView={id:'generated-plan',name:'Generated candidate plan',mode:'modules',instanceId:instanceFixture.id,modules:[],capabilities:[{id:'memory.repository',state:'verified'},{id:'memory.retrieval',state:'verified'}],available:true,allowedActions:['prepare']};
 const preview:PluginReleasePreview={id:'private-preview',name:packageFixture.name,version:packageFixture.version,source,runtime:'worker',restartRequired:false,capabilities:[{id:'memory.repository',state:'unknown'}],dependencies:[],access:['Generated authorized scope only'],issues:[],installable:true};
 function fixtures(){
- const plugins:PluginCenterView={revision:1,installation:{supported:true,runtime:'worker',restartRequired:false},packages:[],instances:[],catalog:[{repository:source.repository,name:'Generated repository fixture',description:'Test fixture only'}]};
+ const plugins:PluginCenterView={revision:1,installation:{supported:true,runtime:'worker',restartRequired:false},packages:[],instances:[],catalog:[{repository:source.repository,tag:source.tag,name:'Generated repository fixture',description:'Test fixture only',group:'memory',runtime:'worker'}],sourceContributions:[]};
  const binding:MemoryBindingView={revision:1,generation:4,mode:'modules',modules:[],activePlan:structuredClone(builtin),plans:[structuredClone(builtin),structuredClone(candidate),{...structuredClone(candidate),id:'unverified-engine',name:'Generated unverified engine',mode:'engine',available:false,reason:'Generated isolation contract is not proven',capabilities:[{id:'memory.engine',state:'unknown'}],allowedActions:[]}],admission:{desired:true,state:'enabled',generation:4,queued:2,running:1,checkpointed:0,resultUnknown:0},allowedActions:['pause','stop','prepare']};
  return {plugins,binding};
 }
@@ -51,7 +51,7 @@ test('installation requires an explicit pinned preview, config, verified capabil
  }} as unknown as Api;
  const {element}=await mount(t,api);
  assert.equal(calls.length,0,'mounting does not mutate');
- await click(element,'添加插件');await click(element,'选择仓库');await click(element,'预览发布包');
+ await click(element,'官方目录');await click(element,'预览并安装');
  const dialog=element.querySelector('[role=dialog]')!;assert.ok(dialog.textContent?.includes(source.digest));assert.ok(dialog.textContent?.includes('不是沙箱隔离'));
  await click(dialog,'安装此版本');assert.ok(element.querySelector('[role=dialog]'),'failed request retains its preview');await click(dialog,'重试同一请求');
  const installs=calls.filter(call=>call.path==='/api/plugins/install');assert.equal(installs.length,2);assert.deepEqual(installs[0].body,installs[1].body);assert.equal(installs[0].body.previewId,preview.id);assert.equal('repository' in installs[0].body,false,'install cannot override the pinned source');
@@ -110,14 +110,14 @@ test('switching authenticated sessions discards stale preview results and aborts
  const first=fixtures(),second=fixtures();let resolvePreview:(value:PluginReleasePreview)=>void=()=>{};let requestSignal:AbortSignal|undefined;
  const oldApi={request:async(path:string,init?:RequestInit)=>{if(!init?.method)return readFixture(path,first.plugins,first.binding);requestSignal=init.signal as AbortSignal;return new Promise<PluginReleasePreview>(resolve=>{resolvePreview=resolve;});}} as unknown as Api;
  const newApi={request:async(path:string)=>readFixture(path,second.plugins,second.binding)} as unknown as Api;
- const {element,root}=await mount(t,oldApi);await click(element,'添加插件');await click(element,'选择仓库');await act(async()=>button(element,'预览发布包').click());
- await act(async()=>{root.render(React.createElement(PluginCenter,{api:newApi,onPage:()=>{}}));await tick();});assert.equal(requestSignal?.aborted,true);await act(async()=>{resolvePreview(preview);await tick();});assert.equal(element.querySelector('[role=dialog]'),null);assert.equal(element.querySelector<HTMLInputElement>('input[placeholder]')?.value,'');
+ const {element,root}=await mount(t,oldApi);await click(element,'官方目录');await act(async()=>button(element,'预览并安装').click());
+ await act(async()=>{root.render(React.createElement(PluginCenter,{api:newApi,onPage:()=>{}}));await tick();});assert.equal(requestSignal?.aborted,true);await act(async()=>{resolvePreview(preview);await tick();});assert.equal(element.querySelector('[role=dialog]'),null);
 });
 
 test('unavailable installation remains explicit and configuration validation rejects invalid values without inferring capabilities',async t=>{
  const {plugins,binding}=fixtures();plugins.installation={supported:false,reason:'Generated runtime does not implement installation',runtime:'worker',restartRequired:true};let mutation=false;
  const api={request:async(path:string,init?:RequestInit)=>{if(init?.method)mutation=true;return readFixture(path,plugins,binding);}} as unknown as Api;
- const {element}=await mount(t,api);await click(element,'添加插件');await click(element,'选择仓库');assert.equal(button(element,'预览发布包').disabled,true);assert.ok(element.textContent?.includes(plugins.installation.reason!));assert.equal(mutation,false);
+ const {element}=await mount(t,api);await click(element,'官方目录');assert.equal(button(element,'预览并安装').disabled,true);assert.ok(element.textContent?.includes(plugins.installation.reason!));assert.equal(mutation,false);
  assert.equal(configurationValid([{id:'count',label:'Generated count',type:'number',required:true}],{count:NaN}),false);
  assert.equal(configurationValid([{id:'option',label:'Generated option',type:'select',options:[{value:'allowed',label:'Allowed'}]}],{option:'unknown'}),false);
  assert.equal(memoryAdmissionLabel({...binding.admission,desired:false,state:'draining',queued:0,running:1,checkpointed:2}), '停用中：仍有 3 个已授权任务');
@@ -161,26 +161,24 @@ test('plugin deep links and same-page browser history retain the selected tab',a
  const {element}=await mount(t,api,'#/system/plugins?tab=memory');
  assert.equal(button(element,'自动记忆').getAttribute('aria-pressed'),'true');
  await act(async()=>{dom.window.location.hash='#/system/plugins?tab=discover';dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'));await tick();});
- assert.equal(button(element,'添加插件').getAttribute('aria-pressed'),'true');
+ assert.equal(button(element,'官方目录').getAttribute('aria-pressed'),'true');
  await act(async()=>{dom.window.location.hash='#/system/plugins';dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'));await tick();});
  assert.equal(button(element,'自动记忆').getAttribute('aria-pressed'),'true');
 });
 
-test('discover keeps repository installation after fixed quick-add recipes are removed',async t=>{
+test('official catalog is the discover surface and has no free-form GitHub install form',async t=>{
  const {plugins,binding}=fixtures(),api={request:async(path:string)=>readFixture(path,plugins,binding)} as unknown as Api;
  const {element}=await mount(t,api,'#/system/plugins?tab=discover');
  assert.equal(element.querySelector('.plugin-quick-add'),null,'discover has no fixed recipe quick-add area');
+ assert.equal(element.querySelector('.plugin-discovery'),null,'GitHub form is not on the official catalog surface');
  assert.doesNotMatch(element.textContent!,/常用插件快捷添加/);
- await act(async()=>{element.querySelector<HTMLElement>('.plugin-discovery summary')!.click();await tick();});
- const fields=element.querySelectorAll<HTMLInputElement>('.plugin-discovery input');
- assert.equal(fields.length,2);
- assert.equal(fields[0].placeholder,'https://github.com/owner/repository');
- assert.equal(button(element,'预览发布包').disabled,true,'an empty repository cannot be submitted');
- await input(element,'GitHub 仓库',source.repository);
- assert.equal(button(element,'预览发布包').disabled,false);
+ assert.match(element.textContent!,/Memory 方案/);
+ assert.match(element.textContent!,/Generated repository fixture/);
+ assert.equal(button(element,'预览并安装').disabled,false);
+ assert.ok(element.querySelector('a[href="#/system/diagnostics"]'),'points owners to Runtime and diagnostics for GitHub install');
 });
 
-test('repository installation sends the same resolve path and body as before quick-add removal',async t=>{
+test('official catalog preview resolves the fixed repository and tag',async t=>{
  const {plugins,binding}=fixtures(),calls:{path:string;body:Record<string,unknown>}[]=[];
  const api={request:async(path:string,init?:RequestInit)=>{
   if(!init?.method)return readFixture(path,plugins,binding);
@@ -189,16 +187,14 @@ test('repository installation sends the same resolve path and body as before qui
   throw new Error('Unexpected mutation '+path);
  }} as unknown as Api;
  const {element}=await mount(t,api,'#/system/plugins?tab=discover');
- await act(async()=>{element.querySelector<HTMLElement>('.plugin-discovery summary')!.click();await tick();});
- await input(element,'GitHub 仓库','  '+source.repository+'  ');
- await input(element,'发布标签（可选）','generated-test-release');
- await click(element,'预览发布包');
- assert.deepEqual(calls,[{path:'/api/plugins/resolve',body:{repository:source.repository,tag:'generated-test-release'}}],'the generic entry keeps the exact resolve path and trimmed body');
+ await click(element,'预览并安装');
+ assert.deepEqual(calls,[{path:'/api/plugins/resolve',body:{repository:source.repository,tag:source.tag}}],'official catalog resolves the fixed artifact identity');
  assert.equal(Boolean(element.querySelector('[role=dialog]')),true);
  await click(element.querySelector('[role=dialog]')!,'取消');
- await input(element,'发布标签（可选）','');
- await click(element,'预览发布包');
- assert.deepEqual(calls[1],{path:'/api/plugins/resolve',body:{repository:source.repository}},'an omitted tag stays omitted, so the guard observes real input');
+ plugins.catalog=[{repository:source.repository,name:'Generated untagged fixture',description:'Test fixture only',group:'connectors',runtime:'service'}];
+ await act(async()=>{resources(api).invalidate(key=>key==='/api/plugins');await tick();});
+ await click(element,'预览并安装');
+ assert.deepEqual(calls[1],{path:'/api/plugins/resolve',body:{repository:source.repository}},'an omitted catalog tag stays omitted');
 });
 
 test('automatic Memory desire follows the one owner switch and failed reads stay unavailable instead of showing on',async t=>{
@@ -276,7 +272,7 @@ test('plugin foreground hint follows a held read once without aborting it or dup
 test('plugin foreground keeps four 3s resource reads while an installation preview command is busy',async t=>{
  const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');let finish!:(value:unknown)=>void;
  f.write(path=>path==='/api/plugins/resolve'?new Promise(resolve=>finish=resolve):undefined);
- await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());await ui.click('选择仓库');await ui.click('预览发布包');assert.equal(typeof finish,'function');const before=pluginReadPaths.map(path=>f.count(path));
+ await ui.click('预览并安装');assert.equal(typeof finish,'function');const before=pluginReadPaths.map(path=>f.count(path));
  await ui.tick(3000);for(const[index,path]of pluginReadPaths.entries())assert.equal(f.count(path),before[index]+1,'busy installation must not stop its resource reads');
  await act(async()=>finish(structuredClone(preview)));await ui.tick();assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);
 });
@@ -309,47 +305,46 @@ for(const deniedPath of ['/api/plugins',bindingPath])test('plugin foreground den
  f.read(undefined);await ui.visibility(true);await ui.visibility(false);await ui.tick();await ui.click('配置');const field=[...ui.element.querySelectorAll('label')].find(label=>label.textContent?.startsWith('Generated service reference'))!.querySelector('input')!;assert.equal(field.value,'');
 });
 
-test('plugin foreground revoked owner clears repository/tag drafts and cannot reopen a late preview',async t=>{
+test('plugin foreground revoked owner cannot reopen a late official-catalog preview',async t=>{
  const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');let finish!:(value:unknown)=>void;
- await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());await input(ui.element,'GitHub 仓库','https://github.com/generated-private/repository');await input(ui.element,'发布标签（可选）','generated-private-tag');f.write(path=>path==='/api/plugins/resolve'?new Promise(resolve=>finish=resolve):undefined);await ui.click('预览发布包');assert.equal(typeof finish,'function');
+ f.write(path=>path==='/api/plugins/resolve'?new Promise(resolve=>finish=resolve):undefined);await ui.click('预览并安装');assert.equal(typeof finish,'function');
  await ui.visibility(true);f.read(path=>{if(path==='/api/plugins')throw new ApiError('Generated owner denied',403);});await ui.visibility(false);await ui.tick();await act(async()=>finish(structuredClone(preview)));await ui.tick();
- const fields=ui.element.querySelectorAll('.plugin-discovery input');assert.equal((fields[0] as HTMLInputElement).value,'');assert.equal((fields[1] as HTMLInputElement).value,'');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),false);assert.equal(button(ui.element,'预览发布包').disabled,true);
+ assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),false);assert.equal([...ui.element.querySelectorAll('button')].some(element=>element.textContent==='预览并安装'),false,'revoked owner drops the official catalog actions');assert.match(ui.element.textContent!,/Generated owner denied/);
 });
 
-for(const status of [403,404])test('plugin advanced install stays blocked through binding '+status+' and its pending recovery read',async t=>{
- const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());
- await input(ui.element,'GitHub 仓库','https://github.com/generated-private/old-draft');await input(ui.element,'发布标签（可选）','generated-old-tag');
+for(const status of [403,404])test('official catalog install stays blocked through binding '+status+' and its pending recovery read',async t=>{
+ const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');
  await ui.visibility(true);f.read(path=>{if(path===bindingPath)throw new ApiError('Generated binding owner denied',status);});await ui.visibility(false);await ui.tick();
- const fields=ui.element.querySelectorAll<HTMLInputElement>('.plugin-discovery input');assert.equal(fields[0].value,'');assert.equal(fields[1].value,'');assert.equal(fields[0].disabled,true);assert.equal(fields[1].disabled,true);assert.equal(button(ui.element,'预览发布包').disabled,true);assert.match(ui.element.textContent!,/Generated binding owner denied/,'Add Plugin explains why its required owner read is blocked');
- await ui.tick(3000);assert.equal(f.count(bindingPath),3,'the second denied timer read remains blocked');assert.equal(fields[0].disabled,true);assert.equal(fields[1].disabled,true);assert.match(ui.element.textContent!,/Generated binding owner denied/);assert.equal(f.writes.length,0);
- let finish!:(value:unknown)=>void;f.read((path)=>path===bindingPath?new Promise(resolve=>finish=resolve):undefined);await ui.tick(3000);assert.equal(typeof finish,'function');assert.equal(fields[0].disabled,true,'clearing the old cache error during a pending recheck is not recovery');assert.equal(button(ui.element,'预览发布包').disabled,true);assert.equal(f.writes.length,0);
- f.read(undefined);await act(async()=>finish(structuredClone(f.binding)));await ui.tick();assert.equal(fields[0].disabled,false);assert.equal(fields[1].disabled,false);assert.equal(fields[0].value,'');assert.doesNotMatch(ui.element.textContent!,/Generated binding owner denied/);
- f.write(path=>path==='/api/plugins/resolve'?structuredClone(preview):undefined);await input(ui.element,'GitHub 仓库',source.repository);await input(ui.element,'发布标签（可选）',source.tag);await ui.click('预览发布包');assert.equal(f.writes.length,1);assert.equal(f.writes[0].path,'/api/plugins/resolve');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);
+ assert.equal(button(ui.element,'预览并安装').disabled,true);assert.match(ui.element.textContent!,/Generated binding owner denied/,'official catalog explains why its required owner read is blocked');
+ await ui.tick(3000);assert.equal(f.count(bindingPath),3,'the second denied timer read remains blocked');assert.equal(button(ui.element,'预览并安装').disabled,true);assert.match(ui.element.textContent!,/Generated binding owner denied/);assert.equal(f.writes.length,0);
+ let finish!:(value:unknown)=>void;f.read((path)=>path===bindingPath?new Promise(resolve=>finish=resolve):undefined);await ui.tick(3000);assert.equal(typeof finish,'function');assert.equal(button(ui.element,'预览并安装').disabled,true,'clearing the old cache error during a pending recheck is not recovery');assert.equal(f.writes.length,0);
+ f.read(undefined);await act(async()=>finish(structuredClone(f.binding)));await ui.tick();assert.equal(button(ui.element,'预览并安装').disabled,false);assert.doesNotMatch(ui.element.textContent!,/Generated binding owner denied/);
+ f.write(path=>path==='/api/plugins/resolve'?structuredClone(preview):undefined);await ui.click('预览并安装');assert.equal(f.writes.length,1);assert.equal(f.writes[0].path,'/api/plugins/resolve');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);
 });
 
-for(const failure of ['503','offline'])test('plugin independent control plane can install through an initial binding '+failure+' without erasing input',async t=>{
+for(const failure of ['503','offline'])test('plugin independent control plane can install through an initial binding '+failure,async t=>{
  const f=generatedPluginApi();f.read(path=>{if(path===bindingPath)throw failure==='503'?new ApiError('Generated binding provider missing',503):new TypeError('Generated binding transport unavailable');});
  f.write(path=>{if(path==='/api/plugins/resolve')return structuredClone(preview);if(path==='/api/plugins/install'){f.plugins.packages=[structuredClone(packageFixture)];f.plugins.revision++;return structuredClone(f.plugins);}});
- const ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());const fields=ui.element.querySelectorAll<HTMLInputElement>('.plugin-discovery input');assert.equal(fields[0].disabled,false,'a Memory provider failure is not denial of the plugin control plane');
- await input(ui.element,'GitHub 仓库',source.repository);await input(ui.element,'发布标签（可选）',source.tag);await ui.tick(3000);assert.equal(fields[0].value,source.repository);assert.equal(fields[1].value,source.tag);assert.equal(button(ui.element,'预览发布包').disabled,false);assert.equal(f.writes.length,0);
- await ui.click('预览发布包');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);await ui.click('安装此版本');assert.equal(f.writes.filter(write=>write.path==='/api/plugins/install').length,1);assert.equal(f.plugins.packages.length,1);assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),false);assert.equal(f.plugins.packages[0].desired,false,'install does not enable or bind Memory');
+ const ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');assert.equal(button(ui.element,'预览并安装').disabled,false,'a Memory provider failure is not denial of the plugin control plane');
+ await ui.tick(3000);assert.equal(button(ui.element,'预览并安装').disabled,false);assert.equal(f.writes.length,0);
+ await ui.click('预览并安装');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);await ui.click('安装此版本');assert.equal(f.writes.filter(write=>write.path==='/api/plugins/install').length,1);assert.equal(f.plugins.packages.length,1);assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),false);assert.equal(f.plugins.packages[0].desired,false,'install does not enable or bind Memory');
 });
 
 test('plugin binding authorization denial stays fenced through a later 503 but does not leak to a new Api',async t=>{
- const first=generatedPluginApi(),ui=await pluginClock(t,first.api,'#/system/plugins?tab=discover');await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());
- await ui.visibility(true);first.read(path=>{if(path===bindingPath)throw new ApiError('Generated old owner denied',403);});await ui.visibility(false);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true);
- first.read(path=>{if(path===bindingPath)throw new ApiError('Generated provider503 after denial',503);});await ui.tick(3000);assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true,'a transport/provider failure is not authorization recovery');
- const other=generatedPluginApi();other.read(path=>{if(path===bindingPath)throw new ApiError('Generated new owner provider503',503);});await ui.render(other.api);await ui.tick();const field=ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!;assert.equal(field.disabled,false);assert.equal(field.value,'');assert.doesNotMatch(ui.element.textContent!,/Generated old owner denied/);
+ const first=generatedPluginApi(),ui=await pluginClock(t,first.api,'#/system/plugins?tab=discover');
+ await ui.visibility(true);first.read(path=>{if(path===bindingPath)throw new ApiError('Generated old owner denied',403);});await ui.visibility(false);await ui.tick();assert.equal(button(ui.element,'预览并安装').disabled,true);
+ first.read(path=>{if(path===bindingPath)throw new ApiError('Generated provider503 after denial',503);});await ui.tick(3000);assert.equal(button(ui.element,'预览并安装').disabled,true,'a transport/provider failure is not authorization recovery');
+ const other=generatedPluginApi();other.read(path=>{if(path===bindingPath)throw new ApiError('Generated new owner provider503',503);});await ui.render(other.api);await ui.tick();assert.equal(button(ui.element,'预览并安装').disabled,false);assert.doesNotMatch(ui.element.textContent!,/Generated old owner denied/);
 });
 
 test('plugin binding403 evidence survives same-Api 503 leave/reopen and clears only after authorized recovery',async t=>{
  const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');
- await ui.visibility(true);f.read(path=>{if(path===bindingPath)throw new ApiError('Generated binding403',403);});await ui.visibility(false);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true);
- f.read(path=>{if(path===bindingPath)throw new ApiError('Generated binding503',503);});await ui.tick(3000);assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true);
- await ui.leave();await ui.render(f.api);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true,'unmount must not erase denial while the same Api cache only has a later503');assert.equal(button(ui.element,'预览发布包').disabled,true);
- f.read(undefined);await ui.visibility(true);await ui.visibility(false);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,false,'authorized binding read releases the fence');
- f.read(path=>{if(path===bindingPath)throw new ApiError('Generated later binding503',503);});await ui.leave();await ui.render(f.api);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,false,'an earlier successful recovery survives navigation too');
- await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());await input(ui.element,'GitHub 仓库',source.repository);f.write(path=>path==='/api/plugins/resolve'?structuredClone(preview):undefined);await ui.click('预览发布包');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);
+ await ui.visibility(true);f.read(path=>{if(path===bindingPath)throw new ApiError('Generated binding403',403);});await ui.visibility(false);await ui.tick();assert.equal(button(ui.element,'预览并安装').disabled,true);
+ f.read(path=>{if(path===bindingPath)throw new ApiError('Generated binding503',503);});await ui.tick(3000);assert.equal(button(ui.element,'预览并安装').disabled,true);
+ await ui.leave();await ui.render(f.api);await ui.tick();assert.equal(button(ui.element,'预览并安装').disabled,true,'unmount must not erase denial while the same Api cache only has a later503');
+ f.read(undefined);await ui.visibility(true);await ui.visibility(false);await ui.tick();assert.equal(button(ui.element,'预览并安装').disabled,false,'authorized binding read releases the fence');
+ f.read(path=>{if(path===bindingPath)throw new ApiError('Generated later binding503',503);});await ui.leave();await ui.render(f.api);await ui.tick();assert.equal(button(ui.element,'预览并安装').disabled,false,'an earlier successful recovery survives navigation too');
+ f.write(path=>path==='/api/plugins/resolve'?structuredClone(preview):undefined);await ui.click('预览并安装');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);
 });
 
 test('plugin revisit recognizes an authorized shared binding read made by another consumer before a later503',async t=>{
@@ -358,5 +353,5 @@ test('plugin revisit recognizes an authorized shared binding read made by anothe
  // Another page uses the same public Resource subscription and its ordinary poll.
  f.read(undefined);const shared=resources(f.api).get<MemoryBindingView>(bindingPath),stop=shared.poll(3000),off=shared.subscribe(()=>{});t.after(()=>{stop();off();});await ui.tick();assert.notEqual(shared.getSnapshot().data,undefined);
  f.read(path=>{if(path===bindingPath)throw new ApiError('Generated provider unavailable after authorized read',503);});await ui.tick(3000);assert.equal((shared.getSnapshot().error as ApiError).status,503);assert.notEqual(shared.getSnapshot().data,undefined,'transient503 retains the intervening authorized snapshot');stop();off();
- await ui.render(f.api);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,false,'an observed authorized cache snapshot supersedes the old denial across visits');
+ await ui.render(f.api);await ui.tick();assert.equal(button(ui.element,'预览并安装').disabled,false,'an observed authorized cache snapshot supersedes the old denial across visits');
 });
