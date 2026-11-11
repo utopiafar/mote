@@ -8,6 +8,7 @@ import type {LarkStatus,LarkSelection,LarkCalendar,LarkJob,SourceConnection} fro
 import {type Api} from '../../api';
 import {moteText} from '@mote/shared/i18n';
 import {SourceContextEditor} from './SourceContextEditor';
+import {BundledConnector} from './BundledConnector';
 
 const errors:Record<string,string>={
  lark_cli_deployment_required:'缺失或版本不符时，请管理员运行当前部署的 connectors-prepare，再重新检测。',
@@ -53,7 +54,8 @@ export function LarkJobStatus({job}:{job:LarkJob}){
   {job.authorizationUrl&&<div className="lark-authorization"><p>{moteText('在你的手机或当前浏览器完成授权，页面会自动更新。')}</p><a className="button" href={job.authorizationUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{moteText('打开飞书授权页面')}<ExternalLink size={15}/></a><button className="button subtle" onClick={async()=>{try{await navigator.clipboard.writeText(job.authorizationUrl!);setCopyState(moteText('授权链接已复制。'));}catch{setCopyState(moteText('复制失败，请使用二维码或授权链接。'));}}}>{moteText('复制授权链接')}</button><p className="fine-print">{copyState||moteText('如果无法打开，可复制链接到浏览器，或扫码。')}</p>{qr&&<img src={qr} alt={moteText('飞书授权二维码')} width={220} height={220}/>} {qrError&&<p>{moteText('二维码生成失败，请使用上方授权链接。')}</p>}{job.expiresAt&&<p className="fine-print">{moteText('链接有效至')} {new Date(job.expiresAt).toLocaleTimeString()}</p>}</div>}
  </div>;
 }
-export function LarkSettings({api,onSources}:{api:Api;onSources:()=>void}){
+export function LarkSettings(props:{api:Api;onSources:()=>void}){return <BundledConnector api={props.api} id="lark"><LarkSettingsContent {...props}/></BundledConnector>;}
+function LarkSettingsContent({api,onSources}:{api:Api;onSources:()=>void}){
  useSourceConnectorStyle();const preparation=useRef<HTMLDetailsElement>(null);const [draftDirty,setDraftDirty]=useConnectorDraft(api,'lark.dirty',false);
  const [status,setStatus]=useState<LarkStatus>(),[selection,setSelection]=useConnectorDraft<LarkSelection>(api,'lark.selection',emptySelection),[documents,setDocuments]=useConnectorDraft(api,'lark.documents',''),[folders,setFolders]=useConnectorDraft(api,'lark.folders',''),[wikiRoots,setWikiRoots]=useConnectorDraft(api,'lark.wikiRoots',''),[excludedDocuments,setExcludedDocuments]=useConnectorDraft(api,'lark.excludedDocuments',''),[calendars,setCalendars]=useState<LarkCalendar[]>([]),[calendarLoaded,setCalendarLoaded]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[appId,setAppId]=useState(''),[secret,setSecret]=useState(''),[brand,setBrand]=useState<'feishu'|'lark'>('feishu'),[disconnecting,setDisconnecting]=useState(false);

@@ -3,7 +3,7 @@ import type {PluginCatalogEntry} from '@mote/shared';
 /** A catalog entry may also name a fixed directory in this repository. Only
  * this server-side declaration can select a local artifact; resolve/install
  * requests still carry just {repository, tag}. */
-export type OfficialPluginCatalogEntry=PluginCatalogEntry&{readonly localDirectory?:string};
+export type OfficialPluginCatalogEntry=PluginCatalogEntry&{readonly localDirectory?:string;readonly hidden?:boolean};
 
 /** Fixed artifacts for the official plugin catalog.
  * Free-form GitHub install stays under Settings → 运行与诊断.
@@ -18,6 +18,7 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     group: 'memory',
     runtime: 'worker',
     packageId: 'mote.mem0',
+    hidden: true,
   },
   {
     repository: 'vectorize-io/hindsight',
@@ -27,6 +28,7 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     group: 'memory',
     runtime: 'worker',
     packageId: 'mote.hindsight',
+    hidden: true,
   },
   {
     repository: 'mote/official-fixture-connector',
@@ -37,6 +39,7 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     group: 'connectors',
     runtime: 'service',
     packageId: 'mote.official.fixture-connector',
+    hidden: true,
   },
   {
     repository: 'mote/official-notion-connector',
@@ -83,7 +86,7 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
 /** Public catalog projection. A repository-relative artifact location stays
  * server-side; clients only receive the pinned synthetic identity. */
 export function officialPluginCatalog(): PluginCatalogEntry[] {
-  return OFFICIAL_PLUGIN_CATALOG.map(({localDirectory:_localDirectory,...entry})=>({...entry}));
+  return OFFICIAL_PLUGIN_CATALOG.filter(entry=>!entry.hidden).map(({localDirectory:_localDirectory,hidden:_hidden,...entry})=>({...entry}));
 }
 
 /** Exact identity match for an in-repository official artifact. A wrong tag is

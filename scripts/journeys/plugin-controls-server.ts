@@ -1,0 +1,12 @@
+import {buildApp} from '../../apps/server/src/app.js';
+import {connectorsConfigSchema} from '../../apps/server/src/config.js';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+const directory=mkdtempSync(join(tmpdir(),'mote-plugin-browser-server-'));
+const token='generated-plugin-controls-'+randomUUID();
+const node=await buildApp({dataDir:directory,token,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:connectorsConfigSchema.parse({directory:join(directory,'connectors'),mcpEnabled:false})},{backgroundWorker:false,webRoot:new URL('../../apps/web/dist',import.meta.url).pathname,agent:{configured:false,async query(){throw Error('No model calls in this generated UI check');},async close(){}}});
+const url=await node.app.listen({host:'127.0.0.1',port:0});
+console.log(JSON.stringify({generatedOnly:true,url,token}));
+process.once('SIGTERM',async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});process.exit(0);});

@@ -7,7 +7,10 @@ import {useUnsavedChanges} from '../../unsaved';
 import {connectorFailure,useSourceConnectorStyle,useConnectorDraft} from '../../source-connectors-ui';
 import {SourceDisconnectReview} from './SourceDisconnectReview';
 import { Loading, LoadingText } from '../../Loading';
-export function GoogleCalendarSettings({api,status,refresh}:{api:Api;status?:{configured:boolean;connected:boolean;writeConnected?:boolean;state:string;account?:string};refresh:()=>Promise<void>}){
+import {BundledConnector} from './BundledConnector';
+type Props={api:Api;status?:{configured:boolean;connected:boolean;writeConnected?:boolean;state:string;account?:string};refresh:()=>Promise<void>};
+export function GoogleCalendarSettings(props:Props){return <BundledConnector api={props.api} id="google-calendar"><GoogleCalendarContent {...props}/></BundledConnector>;}
+function GoogleCalendarContent({api,status,refresh}:Props){
  useSourceConnectorStyle();
  const page=useResource<{calendars:{id:string;summary:string;selected:boolean}[]}>(api,status?.connected?'/api/connectors/google/calendars':null);
  const [chosen,setChosen]=useConnectorDraft<string[]>(api,'google.calendars',[]),[dirty,setDirty]=useConnectorDraft(api,'google.dirty',false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[url,setUrl]=useState(''),[writeUrl,setWriteUrl]=useState(''),[notice,setNotice]=useState(''),[disconnecting,setDisconnecting]=useState(false);

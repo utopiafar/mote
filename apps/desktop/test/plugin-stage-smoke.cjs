@@ -95,9 +95,9 @@ app.on('quit',()=>{
 });
 
 const breadcrumbs={
-  overview:[],records:[],sources:[],ask:[],work:[],settings:[],
-  screen:['settings'],sync:['settings'],privacy:['settings'],permissions:['settings'],connection:['settings'],
-  uploads:['work'],
+  overview:[],records:[],sources:[],ask:[],work:['settings','connection'],settings:[],
+  screen:['sources'],meeting:['sources'],'capture-sync':['settings'],sync:['settings','capture-sync'],privacy:['settings','capture-sync'],permissions:['settings'],connection:['settings'],
+  uploads:['settings','connection','work'],
   'mac-options':['settings'],preferences:['settings','mac-options'],
   capture:['settings','mac-options'],chrome:['settings','mac-options'],developer:['settings','mac-options'],about:['settings','mac-options'],
   compression:['settings','mac-options','capture'],
@@ -112,6 +112,8 @@ const pageChecks={
   work:'[data-page=work] #work-local-state',
   settings:'#settings-fields',
   screen:'[data-page=screen] #start',
+  meeting:'[data-page=meeting] [data-page-title]',
+  'capture-sync':'[data-page=capture-sync] [data-page-title]',
   sync:'[data-page=sync] #sync-mode',
   privacy:'[data-page=privacy] .page-header',
   permissions:'[data-page=permissions] #permission-screen',

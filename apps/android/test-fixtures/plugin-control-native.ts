@@ -96,7 +96,8 @@ try {
   assert.ok(instanceView, 'real control response contains the configured instance');
   assert.equal(instanceView.configuration.endpoint, 'generated-reference');
   assert.equal(instanceView.observed, 'configured');
-  assert.deepEqual(inventory.catalog, []);
+  assert.equal(inventory.catalog.length, 4);
+  assert.ok(inventory.catalog.every((entry: {group: string}) => entry.group !== 'memory'));
   const builds = await request('/api/plugin-builds');
   const build = builds.find((value: {id: string}) => value.id === instance.id);
   assert.ok(build, 'the real build response contains the configured worker instance');

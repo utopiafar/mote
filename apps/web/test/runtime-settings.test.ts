@@ -15,5 +15,5 @@ test('execution settings remain writable when the read response contains provide
 
 test('diagnostic settings keep explicit false values without forwarding read-only data',()=>{
  const response={enabled:true,debug:false,traceEnabled:false,level:'info',coverage:{events:3}};
- assert.deepEqual(diagnosticsSettingsSchema.parse(runtimeSettingsDraft(response)),{enabled:true,debug:false,traceEnabled:false,level:'info'});
+ assert.deepEqual(diagnosticsSettingsSchema.parse(runtimeSettingsDraft(response)),{enabled:true,debug:false,traceEnabled:false,level:'info',traceExpiresAt:0});
 });

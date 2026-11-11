@@ -1,8 +1,46 @@
-# 插件中心与 Memory 方案
+# 插件中心与可选功能开关
 
 全局 UI 的主题／布局扩展通过独立的[可信平台展示包合同](adr-ui-presentation-packs.md)实现。默认 Linear 主题和四目的地外壳使用同一边界；它不经过本页 Memory worker 安装器，不新增远程 UI 代码执行或主题偏好跨端同步。
 
-插件中心位于「设置 → 插件」，包含已安装、发现和记忆方案。它管理当前 Central 的包、配置实例、运行能力、自动准入和正文绑定；GitHub 资料连接器仍在来源中管理。Web 与 Android 使用同一声明式状态合同；Android 使用原生页面。架构选择见 [ADR](adr-plugin-center-memory-replacement.md)。
+插件中心位于「设置 → 插件中心」，默认打开官方目录，另有「已安装」管理运行状态。第一期目录只展示已随仓库交付的官方 Notion、Slack、飞书会话和 Markdown / Obsidian 导出包。测试包和尚未完成当前发行验收的外部 Memory 配方不在公开目录推荐；高级可信 GitHub 安装入口仍在运行诊断中。
+
+随中央分发的 Gmail、Google Calendar、Lark / Feishu、飞书妙记和钉钉录音也是可选插件，在已安装页独立开启或关闭。关闭会停止该插件的路由、定时任务和新增读取，保留账号凭据、读取位置和已归档资料；中央重启先读取持久选择，再决定是否构造连接器。恢复沿用原有授权范围和读取位置。资料来源页负责账号授权、内容范围与同步，插件中心负责功能是否运行。Web 与 Android 消费同一公共控制接口，Mac 从现有中央入口打开同一页面。
+
+归档、存储、鉴权和查询所需的核心组件不提供关闭按钮。MCP、Webhook 与 Developer API 是「AI 接入」中的宿主能力，不显示为可安装的目录包。自动记忆的暂停、当前方案和处理节奏统一放在「模型与服务 → 自动记忆」；Android 对应「模型与服务 → 记忆设置 → 自动记忆」。Memory 的替换与迁移机制沿用现有 [ADR](adr-plugin-center-memory-replacement.md)。MVP 只维护当前合同，不添加旧页面、旧字段或双写兼容路径。
+
+```mermaid
+flowchart TD
+  UI[Web / Mac 中央页面 / Android 原生插件中心] --> API[所有者公共控制 API]
+  API --> CONTROL[现有 plugin_build_instances 持久选择]
+  CONTROL --> HOST[既有 PluginHost / Cordis 生命周期]
+  HOST --> OPTIONAL[Gmail / Calendar / Lark / 录音 / 已安装服务包]
+  OPTIONAL --> ARCHIVE[授权范围内的统一归档]
+  SOURCE[资料来源：账号与内容范围] --> OPTIONAL
+  CORE[核心：鉴权 / 存储 / 归档 / 查询] --> ARCHIVE
+  MODEL[模型与服务：自动记忆和当前方案] --> MEMORY[既有 Memory 控制与处理]
+  ARCHIVE --> MEMORY
+```
+
+```mermaid
+sequenceDiagram
+  actor Owner as 所有者
+  participant Client as Web / Mac / Android
+  participant API as 公共控制 API
+  participant Store as 持久选择
+  participant Host as 连接器宿主
+  Owner->>Client: 关闭 Gmail
+  Client->>API: operationId + expectedRevision + desired=null
+  API->>Store: 记录关闭与 draining
+  API->>Host: 停止实例并撤销在途作用域
+  Host-->>API: 路由与定时器已释放
+  API->>Store: observed=stopped
+  API-->>Client: 实际停止状态
+  Note over Store,Host: 中央重启：先读关闭选择，不构造 Gmail
+  Owner->>Client: 重新开启
+  Client->>API: 使用当前 revision 选择固定 build
+  API->>Host: 使用保留的账号、范围与读取位置启动
+  Host-->>Client: 后续读取回执与真实运行状态
+```
 
 ## 安装、配置、启用和绑定
 

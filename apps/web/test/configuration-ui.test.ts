@@ -233,7 +233,7 @@ test('old calendar capabilities and scope drafts are not offered as current auth
  let capability={id:'calendar.create',version:1};
  const api={request:async(_path:string,init?:RequestInit)=>{if(init?.method)writes++;return {...emptyCapabilities(),declarations:[{...declaration,capability}],drafts:[{...draft,capability}]};}} as Api;
  await act(async()=>root.render(React.createElement(ActionCapabilitySettings,{api})));
- assert.match(d.body.textContent!,/请在设备重新连接日历，再保存和确认新的范围/);
+ assert.match(d.body.textContent!,/行动能力或范围已变化，请刷新后重新保存并确认新的范围/);
  assert.equal(d.querySelectorAll('select option').length,1);assert.doesNotMatch(d.body.textContent!,/继续草稿 ·/);
  assert.equal(button(d,'保存范围草稿').disabled,true);
  capability={id:'calendar.manage',version:1};await act(async()=>button(d,'刷新').click());

@@ -37,7 +37,7 @@ test('real owner credentials remain separate, generation is one-time, and cancel
   const r=await node.app.inject({method:(init?.method??'GET') as 'GET',url:path,headers,...(init?.body?{payload:JSON.parse(String(init.body))}:{})});
   if(r.statusCode>=400)throw new ApiError(r.json().error??'Generated API failure',r.statusCode);return r.json();
  }} as Api;
- await render(api);assert.match(d.body.textContent!,/2 个有效授权/);assert.doesNotMatch(d.querySelector('.access-list')!.textContent!,/Generated old Agent/);assert.equal(d.querySelector('form'),null);
+ await render(api);assert.match(d.body.textContent!,/2 个有效授权/);assert.doesNotMatch(d.querySelector('.access-list')!.textContent!,/Generated old Agent/);assert.equal(d.querySelector('.access-workspace > form'),null);
  await act(async()=>button(d,'全部').click());assert.match(d.querySelector('.access-list')!.textContent!,/Generated old Agent/);
  await act(async()=>button(d,'新建连接').click());assert.equal(d.querySelector<HTMLSelectElement>('[aria-label="MCP 访问权限"]')!.value,'read');
  await act(async()=>{const form=d.querySelector('form')!;form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));});await until(()=>Boolean(d.querySelector('[aria-label="MCP JSON"]')));
@@ -56,18 +56,18 @@ test('real owner credentials remain separate, generation is one-time, and cancel
 test('late generation cannot reveal credentials after leaving its form or changing the authenticated owner',async t=>{
  const {d,render,tick}=await ui(t);let finish!:(value:unknown)=>void;
  const pending=new Promise(resolve=>finish=resolve),inventory={items:[],mcp:{enabled:true,writeEnabled:false,writeSourceIds:[]}};
- const api={request:async(path:string,init?:RequestInit)=>init?.method==='POST'?pending:path==='/api/configuration'?{groups:[]}:inventory} as Api;
+ const api={request:async(path:string,init?:RequestInit)=>init?.method==='POST'?pending:path==='/api/developer'?{credentials:[],endpoints:[],deliveries:[]}:path==='/api/configuration'?{groups:[]}:inventory} as Api;
  await render(api);await act(async()=>button(d,'新建连接').click());await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
  await act(async()=>{location.hash='#/connections/access';window.dispatchEvent(new window.HashChangeEvent('hashchange'));});
  await act(async()=>finish({credential:{id:randomUUID(),label:'Generated late',scope:'mcp-read'},config:{mcpServers:{mote:{headers:{Authorization:'Bearer GENERATED_LATE_SECRET'}}}}}));await tick();assert.equal(d.querySelector('[aria-label="MCP JSON"]'),null);assert.ok(!d.body.textContent!.includes('GENERATED_LATE_SECRET'));
- const next={request:async(path:string)=>path==='/api/configuration'?{groups:[]}:inventory} as Api;await render(next);assert.equal(d.querySelector('[aria-label="MCP JSON"]'),null);
+ const next={request:async(path:string)=>path==='/api/developer'?{credentials:[],endpoints:[],deliveries:[]}:path==='/api/configuration'?{groups:[]}:inventory} as Api;await render(next);assert.equal(d.querySelector('[aria-label="MCP JSON"]'),null);
 });
 
 test('credential expiry removes it from effective access without inventing connection health',async t=>{
  const now=Date.parse('2026-10-29T06:00:00Z');t.mock.timers.enable({apis:['Date','setInterval'],now});
  const {d,render}=await ui(t),id=randomUUID();
  const inventory={items:[{id,label:'Generated expiring Agent',scope:'mcp-read',createdAt:new Date(now-60000).toISOString(),expiresAt:new Date(now+1000).toISOString(),serverUrl:'https://generated.invalid',tokenHint:'generated…hint'}],mcp:{enabled:true,writeEnabled:false,writeSourceIds:[]}};
- const api={request:async(path:string)=>path==='/api/configuration'?{groups:[]}:inventory} as Api;
+ const api={request:async(path:string)=>path==='/api/developer'?{credentials:[],endpoints:[],deliveries:[]}:path==='/api/configuration'?{groups:[]}:inventory} as Api;
  await render(api);assert.match(d.body.textContent!,/1 个有效授权/);assert.match(d.querySelector('.access-list')!.textContent!,/Generated expiring Agent/);
  await act(async()=>t.mock.timers.tick(1500));assert.match(d.body.textContent!,/0 个有效授权/);assert.doesNotMatch(d.querySelector('.access-list')!.textContent!,/Generated expiring Agent/);
  await act(async()=>button(d,'全部').click());assert.match(d.querySelector('.access-list')!.textContent!,/Generated expiring Agent.*已到期/s);assert.doesNotMatch(d.querySelector('.access-list')!.textContent!,/授权有效|最近使用|已连接/);
@@ -76,8 +76,8 @@ test('credential expiry removes it from effective access without inventing conne
 test('late replacement revocation cannot erase a different owner invitation or issue another old-node invitation',async t=>{
  const {root,d,tick}=await ui(t);let finish!:(value:unknown)=>void,oldWrites=0;const pending=new Promise(resolve=>finish=resolve),inventory={items:[],mcp:{enabled:true,writeEnabled:false,writeSourceIds:[]}};
  const invitation=(code:string)=>({scope:'owner',invitation:{format:'mote.connection',version:1,serverUrl:'https://generated.invalid',code:code.repeat(43),expiresAt:new Date(Date.now()+600000).toISOString()},uri:'mote://generated-'+code});
- const old={request:async(path:string,init?:RequestInit)=>{if(path.endsWith('/invitations/revoke'))return pending;if(init?.method==='POST'){oldWrites++;return invitation('a');}return path==='/api/configuration'?{groups:[]}:inventory;}} as Api;
- const next={request:async(path:string,init?:RequestInit)=>init?.method==='POST'?invitation('b'):path==='/api/configuration'?{groups:[]}:inventory} as Api;
+ const old={request:async(path:string,init?:RequestInit)=>{if(path.endsWith('/invitations/revoke'))return pending;if(init?.method==='POST'){oldWrites++;return invitation('a');}return path==='/api/developer'?{credentials:[],endpoints:[],deliveries:[]}:path==='/api/configuration'?{groups:[]}:inventory;}} as Api;
+ const next={request:async(path:string,init?:RequestInit)=>init?.method==='POST'?invitation('b'):path==='/api/developer'?{credentials:[],endpoints:[],deliveries:[]}:path==='/api/configuration'?{groups:[]}:inventory} as Api;
  const render=(api:Api)=>act(async()=>root.render(React.createElement(Connections,{api,serverUrl:'https://generated.invalid',devices:[],mode:'device'})));await render(old);await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));await act(async()=>button(d,'修改连接设置').click());await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));assert.equal(oldWrites,1);
  await render(next);await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));assert.equal(JSON.parse(d.querySelector<HTMLTextAreaElement>('[aria-label="连接邀请 JSON"]')!.value).code,'b'.repeat(43));await act(async()=>finish({}));await tick();assert.equal(oldWrites,1);assert.equal(JSON.parse(d.querySelector<HTMLTextAreaElement>('[aria-label="连接邀请 JSON"]')!.value).code,'b'.repeat(43),'late old-node replacement cannot clear the current owner invitation');
 });

@@ -1,15 +1,15 @@
 import {libraryMaterialTypes,type LibraryMaterialType} from '@mote/shared';
 import type {CollectionEntry,PageEntry} from './features/types';
 
-export const settingsCategories=['providers','model','processing','audio','documents','file-processing','images','storage','embedding','connectors'] as const;
+export const settingsCategories=['providers','model','processing','memory','audio','documents','file-processing','images','storage','embedding','connectors'] as const;
 export type SettingsCategory=typeof settingsCategories[number];
 export function settingsCategoryFromHash(hash:string):SettingsCategory|null {
  const value=new URLSearchParams(hash.split('?')[1]??'').get('category');
  return settingsCategories.includes(value as SettingsCategory)?value as SettingsCategory:null;
 }
-export function pluginTabFromHash(hash:string):'installed'|'discover'|'memory' {
+export function pluginTabFromHash(hash:string):'installed'|'discover' {
  const value=new URLSearchParams(hash.split('?')[1]??'').get('tab');
- return value==='discover'||value==='installed'?value:'memory';
+ return value==='installed'?'installed':'discover';
 }
 /** A return link is local navigation to an installed destination, never an arbitrary URL. */
 export function validatedReturnTarget(candidate:string|null|undefined,pages:readonly PageEntry[],collections:readonly CollectionEntry[]):string|undefined {

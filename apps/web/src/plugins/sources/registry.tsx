@@ -12,6 +12,7 @@ import { Gmail } from './Gmail';
 import { GoogleCalendarSettings } from './GoogleCalendarSettings';
 import { LarkSettings } from './LarkSettings';
 import { Loading } from '../../Loading';
+import {BundledConnector} from './BundledConnector';
 
 export type SourceCatalogStatus = Record<string, unknown> | null;
 
@@ -122,9 +123,9 @@ const gmailPlugin: SourcePlugin = {
   },
   setup: {
     id: 'gmail',
-    render: ({ api, refresh, requested }) => <Gmail api={api} refresh={refresh} initiallyOpen={requested}/>,
+    render: ({ api, refresh, requested }) => requested?<BundledConnector api={api} id="gmail"><Gmail api={api} refresh={refresh} initiallyOpen/></BundledConnector>:null,
   },
-  settings: ({ api, refresh }) => <Gmail api={api} refresh={refresh} initiallyOpen/>,
+  settings: ({ api, refresh }) => <BundledConnector api={api} id="gmail"><Gmail api={api} refresh={refresh} initiallyOpen/></BundledConnector>,
 };
 
 const googleCalendarPlugin: SourcePlugin = {

@@ -25,7 +25,7 @@ export function PluginConfiguration({api,item,instance,busy,onSave,guided=false}
   return <input type={field.type==='number'?'number':'text'} value={typeof value==='boolean'?'':value??''} required={field.required} disabled={busy} autoComplete="off" onChange={event=>update(field.type==='number'&&event.target.value!==''?Number(event.target.value):event.target.value)}/>;
  }
  return <form onSubmit={event=>{event.preventDefault();if(name.trim()&&scope.trim()&&configurationValid(fields,values))onSave({name:name.trim(),scope:scope.trim(),configuration:values});}}>
-  <p>{moteText(guided?'填写连接配置。保存不会运行核验、启用插件或更换记忆方案。':'配置实例与资料范围，再单独启用。启用不会自动替换当前记忆方案。')}</p>
+  <p>{item.runtime==='worker'?moteText(guided?'填写连接配置。保存不会运行核验、启用插件或更换记忆方案。':'配置实例与资料范围，再单独启用。启用不会自动替换当前记忆方案。'):moteText('保存配置后核验并启用；来源授权和内容范围在数据来源中管理。')}</p>
   <div className="plugin-fields">{!guided&&<><label className="preference-field">{moteText('实例名称')}<input value={name} required maxLength={100} disabled={busy} onChange={event=>setName(event.target.value)}/></label><label className="preference-field">{moteText('资料范围')}<input value={scope} required disabled={busy} onChange={event=>setScope(event.target.value)}/><small>{moteText('由中央核验授权范围；填写范围不会授予新的数据权限。')}</small></label></>}
    {fields.map(field=><label className="preference-field" key={field.id}>{field.label}{fieldControl(field)}{field.description&&<small>{field.description}</small>}{field.type==='secret-reference'&&<small>{moteText('仅填写服务器保存的凭据引用，不填写凭据本身。')}{instance?.secretStatus[field.id]?' '+moteText('服务器已配置凭据。'):''}</small>}</label>)}
   </div>

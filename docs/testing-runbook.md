@@ -52,6 +52,14 @@ The switch applies only to the test process: it shows fixture windows and allows
 
 ## Android emulator
 
+插件开关的三端验收使用真实 Central、实际 Mac renderer/preload/IPC、Web 构建和 Android 原生插件页面。先构建 Web、Mac、Android debug 与 debugAndroidTest APK，将两份 APK 安装在本次任务创建的空白模拟器；指定串号后运行：
+
+```sh
+MOTE_TEST_ANDROID_SERIAL=emulator-5582 electron scripts/journeys/plugin-controls-clients.cjs
+```
+
+`ANDROID_HOME` 选择 adb，`PATH` 或 `MOTE_NODE_EXECUTABLE` 提供匹配 SQLite ABI 的 Node 24+。脚本只接受 `emulator-*` 串号。Android instrumentation 在修改前要求无账号、无采集和无待传数据；它验证手机关闭 Gmail 后 Web/Mac 自动更新、Web 开启后手机自动更新、Google Calendar 独立停止与恢复，以及 Activity 重建后的状态。Mac 必须通过真实设置行和短期登录票据进入插件中心。脚本启动独立的私有生成 Central 与 Mac profile，只拦截外部浏览器启动并加载到隐藏浏览器窗口；不接触个人 Central、原生采集权限或真实第三方账号。截图与回执位于忽略目录 `.mote/plugin-controls-clients`，并区分为 fixture 与 emulator 证据。
+
 Android instrumentation and ADB UI checks prefer the dedicated, windowless `mote_fixture_api35` emulator. Start it in another terminal (adjust the SDK path to your machine):
 
 ```sh

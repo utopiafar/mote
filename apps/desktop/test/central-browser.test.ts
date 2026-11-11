@@ -82,12 +82,12 @@ it('hands off an expiring login code while preserving the requested evidence and
  const url=new URL(chrome.mock.calls[0][0]),params=new URLSearchParams(url.hash.split('?')[1]);
  expect(params.get('loginTicket')).toBe(ticket);expect(params.get('evidence')).toBe('capture:11111111-2222-4333-8444-555555555555');expect(url.search).toBe('');expect(params.has('token')).toBe(false);
 });
-it.each(['overview', 'about', 'guide', 'activity'])('preserves the %s destination through both login handoffs', async page => {
+it.each(['overview', 'about', 'guide', 'activity', 'plugins'])('preserves the %s destination through both login handoffs', async page => {
   for (const handoff of ['ticket', 'request']) {
     const chrome = vi.fn(), fallback = vi.fn();
     await openCentralBrowser('https://central.example', page, 'darwin', chrome, fallback, undefined, handoff === 'ticket' ? 'generated-ticket' : undefined, handoff === 'request' ? 'generated-request' : undefined);
     const url = new URL(chrome.mock.calls[0][0]);
-    expect(url.hash.split('?')[0]).toBe('#/' + page);
+    expect(url.hash.split('?')[0]).toBe(page === 'plugins' ? '#/system/plugins' : '#/' + page);
     expect(new URLSearchParams(url.hash.split('?')[1]).get(handoff === 'ticket' ? 'loginTicket' : 'loginRequest')).toBe('generated-' + handoff);
     expect(url.search).toBe('');
     expect(fallback).not.toHaveBeenCalled();

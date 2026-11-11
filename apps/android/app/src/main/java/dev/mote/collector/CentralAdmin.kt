@@ -290,6 +290,7 @@ internal class CentralAdmin(
     }
     fun memorySettings() {
         body.removeAllViews(); screens.setBack { screens.refresh() }
+        ui.button(MoteI18n.text("自动记忆")) { plugins.showMemory { memorySettings() } }
         ui.button(MoteI18n.text("记忆自动处理")) { configuration(MoteI18n.text("记忆自动处理"), "/api/memory-settings") { it.getJSONObject("settings") } }
         ui.button(MoteI18n.text("记忆提取配方")) {
             recipeSettings(false)
