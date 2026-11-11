@@ -29,10 +29,10 @@ test('ordinary Docker profile commands need only the locked YAML runtime without
   await copyFile(join(repository, 'package.json'), join(directory, 'package.json'));
   await mkdir(join(directory,'apps/server'),{recursive:true}); await copyFile(join(repository,'apps/server/package.json'),join(directory,'apps/server/package.json'));
   await mkdir(join(directory, 'apps/server/src'), { recursive: true });
-  await copyFile(join(repository, 'apps/server/src/log-retention-config.mjs'), join(directory, 'apps/server/src/log-retention-config.mjs'));
+  for(const name of ['log-retention-config.mjs','diagnostic-log-store.mjs'])await copyFile(join(repository,'apps/server/src',name),join(directory,'apps/server/src',name));
   await mkdir(join(directory, 'packages/shared/src'), { recursive: true });
   await copyFile(join(repository, 'packages/shared/package.json'), join(directory, 'packages/shared/package.json'));
-  await copyFile(join(repository, 'packages/shared/src/config-file.ts'), join(directory, 'packages/shared/src/config-file.ts'));
+  for(const name of ['config-file.ts','failure-diagnostics.ts'])await copyFile(join(repository,'packages/shared/src',name),join(directory,'packages/shared/src',name));
   // Docker CLI reads the same YAML implementation as the server. Copy its only
   // external runtime dependency; no workspace builds or native server deps exist.
   await cp(join(repository, 'node_modules/yaml'), join(directory, 'node_modules/yaml'), { recursive: true, dereference: true });

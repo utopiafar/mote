@@ -1,39 +1,76 @@
-// Shared by the server, profile CLI and native supervisor; never reads ambient configuration.
+// One current diagnostics policy, shared by Central and its native supervisor.
 export const MiB = 1024 * 1024;
 export const MAX_LOG_FILE_BYTES = 100 * MiB;
 export const MAX_TRACE_EVENT_BYTES = 8 * MiB;
-export function defaultLogMaxBytes(profile) { return (profile === 'dev' ? 100 : 2) * MiB; }
+export const LOG_CHANNELS = Object.freeze(['error', 'warn', 'info', 'debug', 'trace']);
+export const DEFAULT_LOG_RETENTION = Object.freeze({
+  error: {
+    days: 30,
+    maxBytes: 128 * MiB
+  },
+  warn: {
+    days: 14,
+    maxBytes: 64 * MiB
+  },
+  info: {
+    days: 7,
+    maxBytes: 256 * MiB
+  },
+  debug: {
+    days: 2,
+    maxBytes: 128 * MiB
+  },
+  trace: {
+    days: 1,
+    maxBytes: 1024 * MiB
+  }
+});
+export function defaultLogMaxBytes() {
+  return 16 * MiB;
+}
 export class LogRetentionError extends Error {
-  constructor(field, message) { super(message); this.field = field; this.name = 'LogRetentionError'; }
+  constructor(field, message) {
+    super(message);
+    this.field = field;
+    this.name = 'LogRetentionError';
+  }
 }
 export function logRetentionFromDocument(document) {
-  const profile = document.server?.profile ?? 'default';
-  const diagnostics = document.diagnostics ?? {};
-  const number = (field, fallback, min, max, integer = false) => {
-    const value = diagnostics[field] === undefined ? fallback : diagnostics[field];
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value)))
-      throw new LogRetentionError(`diagnostics.${field}`, `diagnostics.${field} must be ${integer ? 'an integer ' : ''}between ${min} and ${max}`);
-    return value;
+  const d = document.diagnostics ?? {};
+  const number = (field, value, fallback, min, max, integer = false) => {
+    const n = value === undefined ? fallback : value;
+    if (typeof n !== 'number' || !Number.isFinite(n) || n < min || n > max || integer && !Number.isInteger(n)) throw new LogRetentionError('diagnostics.' + field, 'Invalid diagnostics.' + field);
+    return n;
   };
+  const retention = {};
+  for (const channel of LOG_CHANNELS) {
+    const value = d.retention?.[channel] ?? {},
+      defaults = DEFAULT_LOG_RETENTION[channel];
+    retention[channel] = {
+      days: number('retention.' + channel + '.days', value.days, defaults.days, 1 / 24, 3650),
+      maxBytes: Math.floor(number('retention.' + channel + '.maxBytes', value.maxBytes, defaults.maxBytes, 1024, 8 * 1024 * MiB))
+    };
+  }
   return {
-    maxBytes: Math.floor(number('maxBytes', defaultLogMaxBytes(profile), Math.floor(0.1 * MiB), (profile === 'dev' ? 100 : 8) * MiB)),
-    maxFiles: number('maxFiles', 3, 1, 10, true),
-    maxEntries: number('maxEntries', 2000, 100, 5000, true),
-    source: diagnostics.maxBytes === undefined ? 'profile-default' : 'explicit',
+    maxBytes: Math.floor(number('maxBytes', d.maxBytes, defaultLogMaxBytes(), Math.floor(.1 * MiB), MAX_LOG_FILE_BYTES)),
+    maxEntries: number('maxEntries', d.maxEntries, 2000, 100, 5000, true),
+    maxTotalBytes: Math.floor(number('maxTotalBytes', d.maxTotalBytes, 2048 * MiB, 1024, 16 * 1024 * MiB)),
+    retention,
+    source: d.maxBytes === undefined ? 'profile-default' : 'explicit'
   };
 }
 export function logRetentionFromEnv(env, profile) {
-  const number = (field, fallback, min, max, integer = false) => {
-    const value = Number(env[field] ?? fallback);
-    if (!Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value)))
-      throw new LogRetentionError(field, `${field} must be ${integer ? 'an integer ' : ''}between ${min} and ${max}`);
-    return value;
-  };
-  const inherited = env.MOTE_LOG_MAX_MB === undefined || env.MOTE_LOG_MAX_MB === 'auto';
-  return {
-    maxBytes: inherited ? defaultLogMaxBytes(profile) : Math.floor(number('MOTE_LOG_MAX_MB', 2, 0.1, profile === 'dev' ? 100 : 8) * MiB),
-    maxFiles: number('MOTE_LOG_MAX_FILES', 3, 1, 10, true),
-    maxEntries: number('MOTE_LOG_MAX_ENTRIES', 2000, 100, 5000, true),
-    source: inherited ? 'profile-default' : 'explicit',
-  };
+  return logRetentionFromDocument({
+    server: {
+      profile
+    },
+    diagnostics: {
+      ...(env.MOTE_LOG_MAX_MB === undefined || env.MOTE_LOG_MAX_MB === 'auto' ? {} : {
+        maxBytes: Number(env.MOTE_LOG_MAX_MB) * MiB
+      }),
+      ...(env.MOTE_LOG_MAX_ENTRIES === undefined ? {} : {
+        maxEntries: Number(env.MOTE_LOG_MAX_ENTRIES)
+      })
+    }
+  });
 }

@@ -1,13 +1,14 @@
 import type {ObservationName,ObservationPhase} from './execution-observability.js';
-import {ProviderFailure} from '@mote/shared';
+import {ProviderFailure,errorDiagnostics,sanitizeFailureDiagnostics,type FailureDiagnostics} from '@mote/shared';
 import {AgentYieldError} from '@mote/agent';
 import {validationFeedback,validationLocation} from './memory-validation.js';
 import { moteText } from './i18n.js';
-import { MAX_LOG_FILE_BYTES,MAX_TRACE_EVENT_BYTES } from './log-retention-config.mjs';
+import { MAX_LOG_FILE_BYTES,MAX_TRACE_EVENT_BYTES,type LogRetention,defaultLogMaxBytes } from './log-retention-config.mjs';
+import {DiagnosticLogStore,type CleanupPlan} from './diagnostic-log-store.mjs';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { mkdir, open, readdir, rename, stat, unlink,type FileHandle } from 'node:fs/promises';
+import { mkdir, open, stat, unlink,type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {PreparedConfigChange} from './config-service.js';
 
@@ -29,9 +30,9 @@ export interface AgentTraceInput {
 }
 const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['recording_metadata','recording_discover','recording_transcript','recording_media','recording_decode','recording_publish','capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
-const events = new Set(['task.loop_timing','task.lease_timing','task.lease_renewal','task.lease_recovered','memory.reader_timing','server.started','server.stopping','config.shutdown_drain_failed','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.runtime_attempt_terminal','agent.runtime_run_terminal','agent.runtime_event_rejected','agent.fragment_timing','agent.harness_timing','agent.tool_rejected','agent.memory_validation_failed','agent.waiting','agent.yielded','agent.heartbeat','file.waiting','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
+const events = new Set(['task.loop_timing','task.lease_timing','task.lease_renewal','task.lease_recovered','memory.reader_timing','server.started','server.stopping','server.listening','server.stopped','server.stop_failed','server.start_failed','process.exited','process.spawn_failed','process.output_suppressed','process.output_dropped','config.shutdown_drain_failed','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.runtime_attempt_terminal','agent.runtime_run_terminal','agent.runtime_event_rejected','agent.fragment_timing','agent.harness_timing','agent.tool_rejected','agent.memory_validation_failed','agent.waiting','agent.yielded','agent.heartbeat','file.waiting','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
 const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
-const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','source_context_changed','deleted','too_large','rate_limited','processor_response_unknown','processor_still_running','step_failed','step_pending','provider_timeout','provider_unavailable','provider_network','interrupted','input_changed','grant_revoked','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','summary_disabled','cancelled']);
+const categories = new Set(['configuration','port_in_use','data_directory_in_use','permission','startup','shutdown','validation','unauthorized','forbidden','not_found','conflict','source_context_changed','deleted','too_large','rate_limited','processor_response_unknown','processor_still_running','step_failed','step_pending','provider_timeout','provider_unavailable','provider_network','interrupted','input_changed','grant_revoked','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','queueWaitMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part','batchIndex','candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches','maxCandidates','idleMs','elapsedMs','remainingCalls','remainingCharacters','repeatCount','clockForwardMs','clockBackwardMs','leaseRemainingMs','leaseOverdueMs','succeeded','skipped','dropped','intervalMs','delayMs'] as const;
 const responseReasons:Record<string,string>={
   provider_quota:"模型服务额度不足，恢复账户额度后再继续。",
@@ -80,7 +81,7 @@ const eventStage=(event:string):DiagnosticStage=>{
 const validStage=(value:unknown):value is DiagnosticStage=>typeof value==='string'&&value!=='all'&&diagnosticStageFilters.includes(value as DiagnosticStageFilter);
 const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
-type QueuedLine = {line:string;day:string};
+type QueuedLine = {line:string;at:string;eventKey?:string;channel:'debug'|'info'|'warn'|'error'|'trace'};
 type LogLineRange={position:number;length:number;terminated:boolean;chunk?:Buffer;offset?:number};
 
 /** Scan byte offsets so readers do not split or retain an entire diagnostic file. */
@@ -109,9 +110,9 @@ async function readLogLine(file:FileHandle,range:LogLineRange):Promise<string> {
   // The scanner's chunk is valid until its next iteration; ordinary short lines need no extra I/O.
   return range.chunk?range.chunk.toString('utf8',range.offset!,range.offset!+range.length):readLogText(file,range.position,range.length);
 }
-export type EventFields = Metrics & { lane?:'background'|'interactive';unit?:'agent_fragment'|'harness_session';status?:'completed'|'failed'|'yielded';taskId?:string;taskKey?:string;attemptId?:string;name?:ObservationName;phase?:ObservationPhase;state?:'completed'|'failed'|'cas_missed'|'recovered'|'summary';requestId?:string;jobId?:string;batchId?:string;runId?:string;evidenceId?:string;validationCode?:string;toolErrorCode?:string;validationPhase?:'extract'|'review';fieldPath?:string;problem?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string;reason?:string };
+export type EventFields = Metrics & { lane?:'background'|'interactive';unit?:'agent_fragment'|'harness_session';status?:'completed'|'failed'|'yielded';taskId?:string;taskKey?:string;attemptId?:string;name?:ObservationName;phase?:ObservationPhase;state?:'completed'|'failed'|'cas_missed'|'recovered'|'summary';requestId?:string;jobId?:string;batchId?:string;runId?:string;evidenceId?:string;validationCode?:string;toolErrorCode?:string;validationPhase?:'extract'|'review';fieldPath?:string;problem?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string;reason?:string;diagnostic?:FailureDiagnostics };
 export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'>;stage?:DiagnosticStage;truncated?:boolean;trace?:Record<string,unknown> }
-export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxFiles?:number;maxEntries?:number;now?:()=>Date;traceEnabled?:boolean }
+export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxTotalBytes?:number;retention?:LogRetention;maxEntries?:number;traceExpiresAt?:number;now?:()=>Date;traceEnabled?:boolean }
 
 export function serializeDiagnosticEvent(entry:DiagnosticEvent,maxBytes=maxEventBytes):string {
   const original=JSON.stringify(entry)+'\n';
@@ -128,10 +129,10 @@ export function serializeDiagnosticEvent(entry:DiagnosticEvent,maxBytes=maxEvent
 }
 
 /** Normal diagnostic events never carry error text, stacks, headers, provider bodies or arbitrary codes. */
-export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
-  try{return describeError(error);}catch{return {status:500,category:'internal',message:moteText("请求未完成，请使用请求编号查看诊断记录。")};}
+export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string;diagnostic?:FailureDiagnostics} {
+  try{return {...describeError(error),diagnostic:errorDiagnostics(error)};}catch{return {status:500,category:'internal',message:moteText("请求未完成，请使用请求编号查看诊断记录。")};}
 }
-function describeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
+function describeError(error:unknown):{status:number;category:string;message:string;reason?:string;diagnostic?:FailureDiagnostics} {
   const e=error&&typeof error==='object'?error as {name?:unknown;code?:unknown;statusCode?:unknown;reason?:unknown}:{};
   if(e.name==='ZodError')return {status:400,category:'validation',message:moteText("输入格式无效，请检查必填项和取值范围。")};
   if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:moteText("Agent 未配置。在中央配置模型后重试。")};
@@ -152,6 +153,7 @@ function describeError(error:unknown):{status:number;category:string;message:str
 function fields(raw:unknown):EventFields {
   if(!raw||typeof raw!=='object')return {};
   const value=raw as Record<string,unknown>,out:EventFields={};
+  if(value.diagnostic)out.diagnostic=sanitizeFailureDiagnostics(value.diagnostic);
   if(value.lane==='background'||value.lane==='interactive')out.lane=value.lane;
   if(value.unit==='agent_fragment'||value.unit==='harness_session')out.unit=value.unit;
   if(value.status==='completed'||value.status==='failed'||value.status==='yielded')out.status=value.status;
@@ -212,15 +214,16 @@ export class ServerDiagnostics {
   private enabled:boolean;
   private level:LogLevel;
   private readonly maxBytes:number;
-  private readonly maxFiles:number;
+  private disk:DiagnosticLogStore;
+  private maintenance?:ReturnType<typeof setInterval>;
+  private traceExpiresAt:number;
   private readonly maxEntries:number;
   private readonly now:()=>Date;
   private traceEnabled:boolean;
   private entries:DiagnosticEvent[]=[];
+  private entryFiles=new Map<string,string>();
   private queue:QueuedLine[]=[];
   private seq=0;
-  private currentBytes=0;
-  private currentDay?:string;
   private pending?:Promise<void>;
   private initialization?:Promise<void>;
   private closingPromise?:Promise<void>;
@@ -236,17 +239,17 @@ export class ServerDiagnostics {
   private retain(entry:DiagnosticEvent) {
     this.entries.push(entry);
     if(entry.event==='agent.trace')this.traceEvents++;
-    if(this.entries.length>this.maxEntries){const removed=this.entries.shift();if(removed?.event==='agent.trace')this.traceEvents--;}
+    if(this.entries.length>this.maxEntries){const rank=(e:DiagnosticEvent)=>e.event==='agent.trace'?0:levels.indexOf(e.level)+1;let index=0;for(let i=1;i<this.entries.length;i++)if(rank(this.entries[i])<rank(this.entries[index]))index=i;const [removed]=this.entries.splice(index,1);if(removed){this.entryFiles.delete(removed.instanceId+':'+removed.seq);if(removed.event==='agent.trace')this.traceEvents--;}}
   }
   constructor(private readonly options:ServerDiagnosticsOptions) {
     this.enabled=options.enabled??true;this.level=options.level==='silent'?'silent':options.debug?'debug':levels.includes(options.level as LogLevel)?options.level!:'info';
-    this.maxBytes=bounded(options.maxBytes,2*1024*1024,1024,MAX_LOG_FILE_BYTES);
-    this.maxFiles=bounded(options.maxFiles,3,1,10);
+    this.maxBytes=bounded(options.maxBytes,defaultLogMaxBytes(),1024,MAX_LOG_FILE_BYTES);
+    this.disk=new DiagnosticLogStore(options.directory,{maxBytes:this.maxBytes,maxTotalBytes:options.maxTotalBytes,retention:options.retention,now:options.now});
     this.maxEntries=bounded(options.maxEntries,2000,1,5000);
     this.now=options.now??(()=>new Date());
     this.traceEnabled=Boolean(options.traceEnabled)&&this.enabled&&this.level!=='silent';
+    this.traceExpiresAt=options.traceExpiresAt??(this.traceEnabled?this.now().getTime()+86400000:0);
   }
-  private path(index:number) {return join(this.options.directory,`central.${index}.ndjson`);}
   private async acquireLock() {
     const path=join(this.options.directory,'central.lock');
     for(let attempt=0;attempt<2;attempt++) {
@@ -270,41 +273,26 @@ export class ServerDiagnostics {
     try {
       await mkdir(this.options.directory,{recursive:true,mode:0o700});
       await this.acquireLock();this.writable=true;
-      for(const entry of await readdir(this.options.directory,{withFileTypes:true})) {
-        const match=/^central\.([0-9]+)\.ndjson$/.exec(entry.name);
-        if(entry.isFile()&&match&&Number(match[1])>=this.maxFiles)await unlink(join(this.options.directory,entry.name));
+      await this.disk.init();
+      for(const info of [...this.disk.files].reverse()){
+        await this.disk.read(info.name,async(file,size)=>{for await(const range of logLineRanges(file,size)){
+          if(!range.terminated){this.readFailures++;continue;}
+          if(!range.length)continue;
+          try{const event=cleanEvent(JSON.parse(await readLogLine(file,range)));if(event){this.entryFiles.set(event.instanceId+':'+event.seq,info.name.split('.')[4]);this.retain(event);this.seq=Math.max(this.seq,event.seq);}}catch{this.readFailures++;}
+        }},()=>undefined);
       }
-      let currentDay:string|undefined;
-      for(let index=this.maxFiles-1;index>=0;index--) {
-        try {
-          const file=await open(this.path(index),constants.O_RDWR|constants.O_NOFOLLOW);
-          try {
-            await file.chmod(0o600);
-            const size=(await file.stat()).size;
-            if(size>this.maxBytes){this.readFailures++;await file.truncate(0);continue;}
-            for await(const range of logLineRanges(file,size)) {
-              if(!range.terminated){await file.truncate(range.position);this.readFailures++;break;}
-              if(!range.length)continue;
-              const line=await readLogLine(file,range);
-              let parsed:unknown;try{parsed=JSON.parse(line);}catch{this.readFailures++;continue;}
-              try {const event=cleanEvent(parsed);if(event){this.retain(event);this.seq=Math.max(this.seq,event.seq);if(index===0)currentDay=logDay(event.at);}}catch{this.readFailures++;}
-            }
-          }
-          finally {await file.close();}
-        }catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')this.readFailures++;}
-      }
-      try{this.currentBytes=(await stat(this.path(0))).size;}catch{}
-      this.currentDay=currentDay;
+      this.entries.sort((a,b)=>a.at.localeCompare(b.at)||a.seq-b.seq);
+      this.maintenance=setInterval(()=>void this.disk.refresh().then(()=>this.refreshRetainedMemory()).catch(()=>{this.writeFailures++;}),60000);this.maintenance.unref();
     }catch{this.writeFailures++;this.nextAttempt=Date.now()+30000;}
   }
   private configurationQueue:Promise<unknown>=Promise.resolve();
-  configure(value:{enabled:boolean;debug:boolean;traceEnabled:boolean;level:LogLevel}){if(this.closed)return Promise.reject(new Error('Diagnostics are closed'));const task=this.configurationQueue.then(async()=>{
+  configure(value:{enabled:boolean;debug:boolean;traceEnabled:boolean;level:LogLevel;traceExpiresAt?:number}){if(this.closed)return Promise.reject(new Error('Diagnostics are closed'));const task=this.configurationQueue.then(async()=>{
     const candidate=await this.prepareConfiguration(value);
     try{await candidate.apply();candidate.publish?.();candidate.complete?.();return this.snapshot();}
     catch(error){await candidate.rollback?.();await candidate.dispose?.();throw error;}
   });this.configurationQueue=task.catch(()=>{});return task;}
   /** Prepare file ownership without enabling detailed traces before the transaction publishes. */
-  async prepareConfiguration(value:{enabled:boolean;debug:boolean;traceEnabled:boolean;level:LogLevel}):Promise<PreparedConfigChange>{
+  async prepareConfiguration(value:{enabled:boolean;debug:boolean;traceEnabled:boolean;level:LogLevel;traceExpiresAt?:number}):Promise<PreparedConfigChange>{
     if(this.closed)throw new Error('Diagnostics are closed');
     await this.init();await this.flush();
     if(this.closed)throw new Error('Diagnostics are closed');
@@ -315,49 +303,55 @@ export class ServerDiagnostics {
     await writer?.init();
     if(this.closed){await writer?.close();throw new Error('Diagnostics are closed');}
     let published=false,rolledBack=false;
-    let previous:{enabled:boolean;level:LogLevel;traceEnabled:boolean;lock?:FileHandle;writable:boolean;entries:DiagnosticEvent[];seq:number;traceEvents:number;currentBytes:number;currentDay?:string}|undefined;
+    let previous:{enabled:boolean;level:LogLevel;traceEnabled:boolean;lock?:FileHandle;writable:boolean;entries:DiagnosticEvent[];seq:number;traceEvents:number;disk:DiagnosticLogStore;traceExpiresAt:number;entryFiles:Map<string,string>}|undefined;
     return {
       apply:()=>{},
       publish:()=>{
-        previous={enabled:this.enabled,level:this.level,traceEnabled:this.traceEnabled,lock:this.lock,writable:this.writable,entries:this.entries,seq:this.seq,traceEvents:this.traceEvents,currentBytes:this.currentBytes,currentDay:this.currentDay};
+        previous={enabled:this.enabled,level:this.level,traceEnabled:this.traceEnabled,traceExpiresAt:this.traceExpiresAt,lock:this.lock,writable:this.writable,entries:this.entries,seq:this.seq,traceEvents:this.traceEvents,disk:this.disk,entryFiles:this.entryFiles};
         published=true;
         if(writer){
           const entries=new Map([...writer.entries,...this.entries].map(entry=>[`${entry.instanceId}:${entry.seq}`,entry]));
           this.entries=[...entries.values()].sort((a,b)=>a.at.localeCompare(b.at)||a.seq-b.seq).slice(-this.maxEntries);
           this.traceEvents=this.entries.filter(entry=>entry.event==='agent.trace').length;
-          this.seq=Math.max(this.seq,writer.seq);this.currentBytes=writer.currentBytes;this.currentDay=writer.currentDay;
+          this.seq=Math.max(this.seq,writer.seq);this.disk=writer.disk;this.entryFiles=writer.entryFiles;
           this.lock=writer.lock;writer.lock=undefined;this.writable=writer.writable;writer.writable=false;
           this.writeFailures+=writer.writeFailures;this.readFailures+=writer.readFailures;this.nextAttempt=Math.max(this.nextAttempt,writer.nextAttempt);
         }
-        this.enabled=value.enabled;this.level=level;this.traceEnabled=value.traceEnabled&&value.enabled&&level!=='silent';
+        this.enabled=value.enabled;this.level=level;this.traceEnabled=value.traceEnabled&&value.enabled&&level!=='silent';this.traceExpiresAt=value.traceExpiresAt??(this.traceEnabled?this.now().getTime()+86400000:0);
       },
       rollback:()=>{
         if(!published||!previous)return;
         rolledBack=true;
-        if(writer){writer.lock=this.lock;this.lock=previous.lock;this.writable=previous.writable;this.entries=previous.entries;this.seq=previous.seq;this.traceEvents=previous.traceEvents;this.currentBytes=previous.currentBytes;this.currentDay=previous.currentDay;}
-        this.enabled=previous.enabled;this.level=previous.level;this.traceEnabled=previous.traceEnabled;
+        if(writer){writer.lock=this.lock;this.lock=previous.lock;this.writable=previous.writable;this.entries=previous.entries;this.seq=previous.seq;this.traceEvents=previous.traceEvents;this.disk=previous.disk;this.entryFiles=previous.entryFiles;}
+        this.enabled=previous.enabled;this.level=previous.level;this.traceEnabled=previous.traceEnabled;this.traceExpiresAt=previous.traceExpiresAt;
       },
       dispose:async()=>{if(writer&&(!published||rolledBack))await writer.close();},
-      complete:()=>{if(writer){writer.closed=true;writer.writable=false;}},
+      complete:()=>{if(writer){writer.closed=true;writer.writable=false;if(writer.maintenance)clearInterval(writer.maintenance);if(!this.maintenance){this.maintenance=setInterval(()=>void this.disk.refresh().then(()=>this.refreshRetainedMemory()).catch(()=>{this.writeFailures++;}),60000);this.maintenance.unref();}}},
     };
   }
   run<T>(requestId:string,task:()=>T):T {return this.context.run(uuid.test(requestId)?requestId:randomUUID(),task);}
   requestId():string|undefined {return this.context.getStore();}
   /** Admission is read-only; an observer never enables diagnostics or trace payloads. */
   accepts(level:DiagnosticEvent['level']){return !this.closed&&this.enabled&&this.level!=='silent'&&['debug','info','warn','error'].includes(level)&&levels.indexOf(level)>=levels.indexOf(this.level);}
+  private enqueue(item:QueuedLine){
+    const limit=Math.min(this.maxEntries,1024);
+    if(!this.writable||Date.now()<this.nextAttempt){this.dropped++;return;}
+    if(this.queue.length>=limit){const rank=(channel:QueuedLine['channel'])=>channel==='trace'?-1:levels.indexOf(channel);const index=this.queue.findIndex(queued=>rank(queued.channel)<rank(item.channel));if(index<0){this.dropped++;return;}this.queue.splice(index,1);this.dropped++;}
+    this.queue.push(item);this.startWrite();
+  }
   record(event:string,value:EventFields={},level:DiagnosticEvent['level']='info') {
     if(event==='agent.trace'||this.closed||!this.enabled||this.level==='silent'||!events.has(event)||!['debug','info','warn','error'].includes(level)||levels.indexOf(level)<levels.indexOf(this.level))return;
     const at=this.now().toISOString();
     const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event,level,stage:eventStage(event),...fields({requestId:this.context.getStore(),...value})};
     const line=serializeDiagnosticEvent(entry,Math.min(maxEventBytes,this.maxBytes));
     this.retain(entry);
-    if(!this.writable||this.queue.length>=Math.min(this.maxEntries,1024)||Date.now()<this.nextAttempt){this.dropped++;return;}
-    this.queue.push({line,day:logDay(at)});this.startWrite();
+    this.enqueue({line,at,eventKey:entry.instanceId+':'+entry.seq,channel:entry.level});
   }
   /** Opt-in detailed Agent events share the ordinary central log for one-place troubleshooting. */
   agentTrace(event:AgentTraceInput,context:AgentTraceContext={}) {
-    if(this.closed||!this.traceEnabled||!event||typeof event.type!=='string'||!event.type.trim())return;
-    const payload=compactTraceValue(event.payload);
+    if(this.closed||!this.traceEnabled||this.now().getTime()>=this.traceExpiresAt||!event||typeof event.type!=='string'||!event.type.trim())return;
+    const repeated=(value:unknown,depth=0):unknown=>{if(typeof value==='string'&&value.length>4096)return {characters:value.length,sha256:createHash('sha256').update(value).digest('hex')};if(depth>=8)return undefined;if(Array.isArray(value))return value.slice(0,500).map(v=>repeated(v,depth+1));if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).slice(0,250).map(([k,v])=>[k,repeated(v,depth+1)]));return value;};
+    const payload=compactTraceValue(['model.started','query.started'].includes(event.type)?repeated(event.payload):event.payload);
     const traceId=typeof context.traceId==='string'&&uuid.test(context.traceId)?context.traceId:randomUUID();
     const trace:Record<string,unknown>={
       type:event.type.slice(0,120),traceId,...(context.operationId&&/^[a-z]+:[a-zA-Z0-9:-]{1,200}$/.test(context.operationId)?{operationId:context.operationId}:{}),
@@ -388,67 +382,38 @@ export class ServerDiagnostics {
     if(Buffer.byteLength(line)>traceLimit){entry.trace={type:trace.type,traceId,runId:trace.runId,truncated:true,payload:'trace payload exceeded the diagnostic event limit'};line=JSON.stringify(entry)+'\n';}
     if(Buffer.byteLength(line)>traceLimit){this.dropped++;return;}
     this.retain(entry);
-    if(!this.writable||this.queue.length>=Math.min(this.maxEntries,1024)||Date.now()<this.nextAttempt){this.dropped++;return;}
-    this.queue.push({line,day:logDay(at)});this.startWrite();
+    this.enqueue({line,at,eventKey:entry.instanceId+':'+entry.seq,channel:'trace'});
   }
   async measure<T>(stage:Stage,operation:Operation,task:()=>Promise<T>|T,metrics?:(result:T)=>Metrics):Promise<T> {
     const start=performance.now();this.record(`${stage}.started`,{operation},'debug');
     try {const result=await task();let extra:Metrics={};try{extra=metrics?.(result)??{};}catch{}this.record(`${stage}.completed`,{operation,durationMs:performance.now()-start,...extra});return result;}
-    catch(error){if(stage==='agent'&&error instanceof AgentYieldError){this.record('agent.yielded',{operation,durationMs:performance.now()-start},'debug');throw error;}const failure=safeError(error);this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:failure.category,reason:failure.reason},failure.status>=500?'error':'warn');throw error;}
+    catch(error){if(stage==='agent'&&error instanceof AgentYieldError){this.record('agent.yielded',{operation,durationMs:performance.now()-start},'debug');throw error;}const failure=safeError(error);this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:failure.category,reason:failure.reason,diagnostic:failure.diagnostic},failure.status>=500?'error':'warn');throw error;}
   }
   private startWrite() {
     if(this.pending)return;
     this.pending=this.drain().finally(()=>{this.pending=undefined;if(this.queue.length&&!this.closed)this.startWrite();});
   }
-  private async rotate() {
-    for(let i=this.maxFiles-1;i>=0;i--){try{if(i===this.maxFiles-1)await unlink(this.path(i));else await rename(this.path(i),this.path(i+1));}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}}
-    this.currentBytes=0;
+  private async drain(){
+    try{while(this.queue.length){const lines=this.queue.splice(0,64);this.writingCount=lines.length;const files=await this.disk.append(lines);for(let i=0;i<lines.length;i++)if(files[i]&&lines[i].eventKey)this.entryFiles.set(lines[i].eventKey!,files[i]!);this.refreshRetainedMemory();this.writingCount=0;}}
+    catch{this.writeFailures++;this.dropped+=this.queue.length+this.writingCount;this.writingCount=0;this.queue=[];this.nextAttempt=Date.now()+30000;}
   }
-  private async drain() {
-    try {
-      await mkdir(this.options.directory,{recursive:true,mode:0o700});
-      while(this.queue.length) {
-        const first=this.queue[0];
-        if(!this.currentDay||this.currentBytes===0)this.currentDay=first.day;
-        if(this.currentBytes>0&&first.day!==this.currentDay){await this.rotate();this.currentDay=first.day;}
-        if(this.currentBytes+Buffer.byteLength(first.line)>this.maxBytes){await this.rotate();this.currentDay=first.day;}
-        const lines:QueuedLine[]=[];let bytes=0;
-        while(this.queue.length&&lines.length<64){
-          const next=this.queue[0],size=Buffer.byteLength(next.line);
-          if(next.day!==this.currentDay||this.currentBytes+bytes+size>this.maxBytes)break;
-          lines.push(this.queue.shift()!);bytes+=size;
-        }
-        if(!lines.length){this.dropped++;this.queue.shift();continue;}
-        this.writingCount=lines.length;
-        const file=await open(this.path(0),constants.O_CREAT|constants.O_APPEND|constants.O_WRONLY|constants.O_NOFOLLOW,0o600);
-        try{await file.chmod(0o600);await file.writeFile(lines.map(item=>item.line).join(''));}finally{await file.close();}
-        this.currentBytes+=bytes;this.writingCount=0;
-      }
-    }catch{this.writeFailures++;this.dropped+=this.queue.length+this.writingCount;this.writingCount=0;this.queue=[];this.nextAttempt=Date.now()+30000;}
-  }
-  snapshot() {return {enabled:!this.closed&&this.enabled&&this.level!=='silent',level:this.level,instanceId:this.instanceId,retainedEvents:this.entries.length,lastSeq:this.seq,pendingWrites:this.queue.length+this.writingCount,droppedEvents:this.dropped,writeFailures:this.writeFailures,readFailures:this.readFailures,agentTrace:{enabled:!this.closed&&this.traceEnabled,retainedEvents:this.traceEvents},limits:{maxFileBytes:this.maxBytes,maxFiles:this.maxFiles,maxEvents:this.maxEntries},runtime:{uptimeMs:Math.round(process.uptime()*1000),rssBytes:process.memoryUsage().rss,cpuUserMicros:process.cpuUsage().user,cpuSystemMicros:process.cpuUsage().system}};}
-  events(afterSeq=0,limit=500) {const items=this.entries.filter(e=>e.seq>afterSeq).slice(0,Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));return {items,nextSeq:items.at(-1)?.seq??afterSeq,oldestSeq:this.entries[0]?.seq??null};}
-  recent(limit=500) {return this.entries.slice(-Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));}
+  private refreshRetainedMemory(){const retained=this.disk.snapshot(),ids=new Set(retained.files.map(f=>f.name.split('.')[4])),now=this.now().getTime();this.entries=this.entries.filter(event=>{const key=event.instanceId+':'+event.seq,file=this.entryFiles.get(key),channel=event.event==='agent.trace'?'trace':event.level,days=retained.channels.find(c=>c.channel===channel)!.days;const keep=Date.parse(event.at)>now-days*86400000&&(!file||ids.has(file));if(!keep)this.entryFiles.delete(key);return keep;});this.traceEvents=this.entries.filter(event=>event.event==='agent.trace').length;const keys=new Set(this.entries.map(e=>e.instanceId+':'+e.seq));for(const key of this.entryFiles.keys())if(!keys.has(key))this.entryFiles.delete(key);}
+  async retention(){await this.flush();try{await stat(this.options.directory);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return this.disk.snapshot();throw e;}await this.disk.refresh();this.refreshRetainedMemory();return this.disk.snapshot();}
+  async cleanupPreview(kind:'trace'|'all'){await this.flush();return this.disk.preview(kind);}
+  async cleanup(plan:CleanupPlan){await this.flush();const before=this.seq,result=await this.disk.clear(plan);this.refreshRetainedMemory();this.entries=this.entries.filter(e=>this.entryFiles.has(e.instanceId+':'+e.seq)||e.seq>before||plan.kind==='trace'&&e.event!=='agent.trace');this.traceEvents=this.entries.filter(e=>e.event==='agent.trace').length;return result;}
+  snapshot() {this.refreshRetainedMemory();return {enabled:!this.closed&&this.enabled&&this.level!=='silent',level:this.level,instanceId:this.instanceId,retainedEvents:this.entries.length,lastSeq:this.seq,pendingWrites:this.queue.length+this.writingCount,droppedEvents:this.dropped+this.disk.snapshot().droppedEvents,writeFailures:this.writeFailures,readFailures:this.readFailures,agentTrace:{enabled:!this.closed&&this.traceEnabled&&this.now().getTime()<this.traceExpiresAt,expiresAt:this.traceExpiresAt,retainedEvents:this.traceEvents},retention:this.disk.snapshot(),limits:{maxFileBytes:this.maxBytes,maxEvents:this.maxEntries},runtime:{uptimeMs:Math.round(process.uptime()*1000),rssBytes:process.memoryUsage().rss,cpuUserMicros:process.cpuUsage().user,cpuSystemMicros:process.cpuUsage().system}};}
+  events(afterSeq=0,limit=500) {this.refreshRetainedMemory();const items=this.entries.filter(e=>e.seq>afterSeq).slice(0,Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));return {items,nextSeq:items.at(-1)?.seq??afterSeq,oldestSeq:this.entries[0]?.seq??null};}
+  recent(limit=500) {this.refreshRetainedMemory();return this.entries.slice(-Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));}
   /** Return the current file verbatim, including incomplete/malformed text for troubleshooting. */
-  async readRaw(index=0):Promise<string> {
-    if(!Number.isInteger(index)||index<0||index>=this.maxFiles)throw Object.assign(new Error('Invalid log file'),{statusCode:400});
+  async readRaw(index:number|string=0):Promise<string> {
     return this.readLog(index,()=>'',(file,size)=>readLogText(file,0,size));
   }
-  private async readLog<T>(index:number,missing:()=>T,read:(file:FileHandle,size:number)=>Promise<T>):Promise<T> {
+  private async readLog<T>(index:number|string,missing:()=>T,read:(file:FileHandle,size:number)=>Promise<T>):Promise<T> {
     await this.flush();
-    try {
-      const file=await open(this.path(index),constants.O_RDONLY|constants.O_NOFOLLOW);
-      try {
-        const size=(await file.stat()).size;if(size>this.maxBytes)throw new Error('Log exceeds read limit');
-        return await read(file,size);
-      } finally {await file.close();}
-    } catch(error) {
-      if((error as NodeJS.ErrnoException).code==='ENOENT')return missing();
-      this.readFailures++;throw error;
-    }
+    try{try{await stat(this.options.directory);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return missing();throw e;}return await this.disk.read(index,read,missing);}catch(error){this.readFailures++;throw error;}
   }
-  async readPage(index=0,page=1,pageSize=100,stage:DiagnosticStageFilter='all') {
-    if(!Number.isInteger(index)||index<0||index>=this.maxFiles)throw Object.assign(new Error('Invalid log file'),{statusCode:400});
+
+  async readPage(index:number|string=0,page=1,pageSize=100,stage:DiagnosticStageFilter='all') {
     if(!Number.isInteger(page)||page<1)throw Object.assign(new Error('Invalid log page'),{statusCode:400});
     if(!Number.isInteger(pageSize)||pageSize<1||pageSize>500)throw Object.assign(new Error('Invalid log page size'),{statusCode:400});
     if(!diagnosticStageFilters.includes(stage))throw Object.assign(new Error('Invalid log stage'),{statusCode:400});
@@ -471,7 +436,8 @@ export class ServerDiagnostics {
   async exportRange(after:string,before:string) {
     await this.flush();
     const records:DiagnosticEvent[]=[];const seen=new Set<string>(),retained:{oldestAt:string|null}={oldestAt:null};let invalidLines=0;
-    for(let index=this.maxFiles-1;index>=0;index--)await this.readLog(index,()=>undefined,async(file,size)=>{
+    await this.retention();
+    for(const file of [...this.disk.files].reverse())await this.readLog(file.name,()=>undefined,async(file,size)=>{
       for await(const range of logLineRanges(file,size)) {
         if(!range.length)continue;const line=await readLogLine(file,range);if(!line.trim())continue;
         let record:DiagnosticEvent|undefined;try {record=cleanEvent(JSON.parse(line));}catch {}
@@ -487,7 +453,8 @@ export class ServerDiagnostics {
   async flush() {while(this.pending)await this.pending;}
   close():Promise<void> {if(this.closingPromise)return this.closingPromise;this.closed=true;this.closingPromise=this.finishClose();return this.closingPromise;}
   private async finishClose() {
-    await this.initialization;await this.configurationQueue;await this.flush();
+    await this.initialization;if(this.maintenance)clearInterval(this.maintenance);
+    await this.configurationQueue;await this.flush();await this.disk.settled();
     const lock=this.lock;this.lock=undefined;this.writable=false;
     if(lock){try{const identity=await lock.stat(),path=join(this.options.directory,'central.lock'),current=await stat(path);if(identity.ino===current.ino&&identity.dev===current.dev)await unlink(path);}catch{this.writeFailures++;}finally{await lock.close();}}
   }

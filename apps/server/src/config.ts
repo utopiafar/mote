@@ -16,7 +16,7 @@ import { actionsRuntimeSettingsSchema } from './actions-configuration.js';
 import { workflowConfigurationSchema } from './workflow-configuration.js';
 import { activityConfigurationSchema } from './activity-configuration.js';
 import type { ConfigDomainRegistration, ConfigService } from './config-service.js';
-import { defaultLogMaxBytes, logRetentionFromDocument, LogRetentionError, MAX_LOG_FILE_BYTES, MiB } from './log-retention-config.mjs';
+import { defaultLogMaxBytes, logRetentionFromDocument, LogRetentionError, MAX_LOG_FILE_BYTES, DEFAULT_LOG_RETENTION, type LogRetention, MiB } from './log-retention-config.mjs';
 
 export const repositoryRoot = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
 export type ConfigDocument = Record<string, unknown> & { version: 1; revision: number };
@@ -69,7 +69,9 @@ export const storageConfigSchema = z.object({
 export const executionConfigSchema = executionSettingsSchema.extend({ insightIntervalHours: z.number().min(0).max(168).default(0) }).strict();
 export const diagnosticsConfigSchema = diagnosticsSettingsSchema.extend({
   directory: line().default(''), maxBytes: z.number().min(Math.floor(0.1 * MiB)).max(MAX_LOG_FILE_BYTES).default(defaultLogMaxBytes()),
-  maxFiles: z.number().int().min(1).max(10).default(3), maxEntries: z.number().int().min(100).max(5000).default(2000),
+  maxTotalBytes:z.number().int().min(1024).max(16*1024*MiB).default(2048*MiB),
+  retention:z.object(Object.fromEntries(Object.entries(DEFAULT_LOG_RETENTION).map(([key,value])=>[key,z.object({days:z.number().min(1/24).max(3650).default(value.days),maxBytes:z.number().int().min(1024).max(8*1024*MiB).default(value.maxBytes)}).strict().default(value)])) as unknown as Record<keyof LogRetention,z.ZodType<{days:number;maxBytes:number}>>).strict().default(DEFAULT_LOG_RETENTION),
+  maxEntries: z.number().int().min(100).max(5000).default(2000),
 }).strict();
 export const connectorsConfigSchema = z.object({
   directory: line().default(''),
@@ -117,12 +119,12 @@ interface LoadedConfig {
   interactiveConcurrency: number; agentConcurrency: number; llmConcurrency: number; memoryConcurrency: number;
   maxStorageBytes: number; maxExportBytes: number; retentionDays: number; insightIntervalHours: number; allowedOrigins: string[];
   connectors: z.infer<typeof connectorsConfigSchema>;
-  diagnosticsEnabled: boolean; diagnosticsDebug: boolean; agentTraceEnabled: boolean; logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
-  logDirectory: string; logMaxBytes: number; logMaxFiles: number; logMaxEntries: number;
+  diagnosticsEnabled: boolean; diagnosticsDebug: boolean; agentTraceEnabled:boolean;agentTraceExpiresAt:number; logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
+  logDirectory: string; logMaxBytes:number;logMaxTotalBytes:number;logRetention:LogRetention;logMaxEntries:number;
   importPythonPacks: ImportPythonPackConfig[];
   updateRepository: string; updateChannel: 'stable' | 'preview'; media: MediaConfiguration; configuration: ConfigurationContext;
 }
-type OptionalFields = 'interactiveConcurrency' | 'agentConcurrency' | 'llmConcurrency' | 'memoryConcurrency' | 'codexBin' | 'codexHome' | 'contentEncryptionEnabled' | 'importPythonPacks' | 'modelProvider' | 'modelProtocol' | 'modelHeaders' | 'modelExtraBody' | 'updateRepository' | 'updateChannel' | 'connectors' | 'configuration' | 'modelReasoningEffort' | 'modelMaxTokens' | 'modelRequestTimeoutMs' | 'agentTimeoutMs' | 'profile' | 'tokenFromEnvironment' | 'diagnosticsEnabled' | 'diagnosticsDebug' | 'agentTraceEnabled' | 'logLevel' | 'logDirectory' | 'logMaxBytes' | 'logMaxFiles' | 'logMaxEntries' | 'media';
+type OptionalFields = 'interactiveConcurrency' | 'agentConcurrency' | 'llmConcurrency' | 'memoryConcurrency' | 'codexBin' | 'codexHome' | 'contentEncryptionEnabled' | 'importPythonPacks' | 'modelProvider' | 'modelProtocol' | 'modelHeaders' | 'modelExtraBody' | 'updateRepository' | 'updateChannel' | 'connectors' | 'configuration' | 'modelReasoningEffort' | 'modelMaxTokens' | 'modelRequestTimeoutMs' | 'agentTimeoutMs' | 'profile' | 'tokenFromEnvironment' | 'diagnosticsEnabled' | 'diagnosticsDebug' | 'agentTraceEnabled' | 'agentTraceExpiresAt' | 'logLevel' | 'logDirectory' | 'logMaxBytes' | 'logMaxTotalBytes' | 'logRetention' | 'logMaxEntries' | 'media';
 /** Existing buildApp fixtures can still supply a Config without writing configuration files. */
 export type Config = Omit<LoadedConfig, OptionalFields> & Partial<Pick<LoadedConfig, OptionalFields>> & { configService?: ConfigService };
 
@@ -157,7 +159,7 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
     metadata(defaultValue, '');
     return { id, schema, defaultValue, restartRequired, fields,
       resolve: (value, document) => resolveDomainSecrets(id, id === 'processing' ? processingWithDefaults(value, config?.media)
-        : id === 'diagnostics' && value && typeof value === 'object' ? { debug: ((document?.server as { profile?: string } | undefined)?.profile ?? config?.profile) === 'dev', traceEnabled: config?.agentTraceEnabled ?? config?.profile === 'dev', maxBytes: defaultLogMaxBytes((document?.server as { profile?: string } | undefined)?.profile ?? config?.profile), ...value } : value),
+        : id === 'diagnostics' && value && typeof value === 'object' ? { debug:false, traceEnabled: config?.agentTraceEnabled ?? false, maxBytes: defaultLogMaxBytes((document?.server as { profile?: string } | undefined)?.profile ?? config?.profile), ...value } : value),
     };
   };
   return [
@@ -167,8 +169,8 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
       { path: 'interactiveConcurrency', effect: 'next-admission' }, { path: 'agentConcurrency', effect: 'next-admission' }, { path: 'llmConcurrency', effect: 'next-admission' }, { path: 'memoryConcurrency', effect: 'next-admission' }, { path: 'insightIntervalHours', effect: 'restart' },
     ]),
     definition('diagnostics', diagnosticsConfigSchema, false, [
-      { path: 'enabled', effect: 'immediate' }, { path: 'debug', effect: 'immediate' }, { path: 'traceEnabled', effect: 'immediate' }, { path: 'level', effect: 'immediate' },
-      { path: 'directory', effect: 'restart' }, { path: 'maxBytes', effect: 'restart' }, { path: 'maxFiles', effect: 'restart' }, { path: 'maxEntries', effect: 'restart' },
+      { path: 'enabled', effect: 'immediate' }, { path: 'debug', effect: 'immediate' }, { path: 'traceEnabled', effect: 'immediate' }, {path:'traceExpiresAt',effect:'immediate'}, { path: 'level', effect: 'immediate' },
+      { path: 'directory', effect: 'restart' }, { path: 'maxBytes', effect: 'restart' }, {path:'maxTotalBytes',effect:'restart'},{path:'retention',effect:'restart'}, { path: 'maxEntries', effect: 'restart' },
     ]),
     definition('models', modelDomainSchema, false, [
       { path: 'deployment', effect: 'next-request' }, { path: 'profiles', effect: 'next-request' }, { path: 'defaults', effect: 'next-request' }, { path: 'defaultModels', effect: 'next-request' },
@@ -213,7 +215,7 @@ function normalizedDocument(saved: Record<string, unknown>, resolved: Record<str
   const domains = configDocumentDomains();
   if (Object.keys(saved).some(key => !['version', 'revision'].includes(key) && !domains.some(domain => domain.id === key))) throw new ConfigError('configuration');
   const diagnostics = resolved.diagnostics;
-  if (!diagnostics || typeof diagnostics === 'object' && !Array.isArray(diagnostics)) resolved = { ...resolved, diagnostics: { debug: (resolved.server as { profile?: string } | undefined)?.profile === 'dev', traceEnabled: (resolved.server as { profile?: string } | undefined)?.profile === 'dev', maxBytes: defaultLogMaxBytes((resolved.server as { profile?: string } | undefined)?.profile), ...(diagnostics as object | undefined) } };
+  if (!diagnostics || typeof diagnostics === 'object' && !Array.isArray(diagnostics)) resolved = { ...resolved, diagnostics: { debug:false, traceEnabled: false, maxBytes: defaultLogMaxBytes((resolved.server as { profile?: string } | undefined)?.profile), ...(diagnostics as object | undefined) } };
   for (const domain of domains) {
     try { result[domain.id] = domain.schema.parse(domain.id === 'processing' ? processingWithDefaults(resolved.processing, mediaConfigSchema.parse(resolved.media ?? {})) : resolved[domain.id] ?? {}); }
     catch (error) { throw new ConfigError([domain.id, ...(error instanceof z.ZodError ? error.issues[0]?.path ?? [] : [])].join('.'), 'Configuration validation failed; values are suppressed'); }
@@ -293,8 +295,8 @@ export function configFromDocument(document: ConfigDocument, file: string, priva
     codexBin: models.codex.executable, codexHome: models.codex.home ? resolve(baseDir, models.codex.home) : undefined,
     embeddingModel: models.embedding.model, embeddingBaseUrl: models.embedding.baseUrl, embeddingApiKey: models.embedding.apiKey,
     connectors: { ...connectors, directory: connectors.directory ? resolve(baseDir, connectors.directory) : join(dataDir, 'connectors') },
-    diagnosticsEnabled: diagnostics.enabled, diagnosticsDebug: diagnostics.debug, agentTraceEnabled: diagnostics.traceEnabled,
-    logLevel: diagnostics.level, logDirectory: diagnostics.directory ? resolve(baseDir, diagnostics.directory) : join(dataDir, 'logs'), logMaxBytes: diagnostics.maxBytes, logMaxFiles: diagnostics.maxFiles, logMaxEntries: diagnostics.maxEntries,
+    diagnosticsEnabled: diagnostics.enabled, diagnosticsDebug: diagnostics.debug, agentTraceEnabled:diagnostics.traceEnabled,agentTraceExpiresAt:diagnostics.traceExpiresAt,
+    logLevel: diagnostics.level, logDirectory: diagnostics.directory ? resolve(baseDir, diagnostics.directory) : join(dataDir, 'logs'), logMaxBytes: diagnostics.maxBytes, logMaxTotalBytes:diagnostics.maxTotalBytes,logRetention:diagnostics.retention, logMaxEntries: diagnostics.maxEntries,
     importPythonPacks: plugins.importPythonPacks,
     updateRepository: updates.repository, updateChannel: updates.channel,
     media: { ...media, modelDirectory: media.modelDirectory ? resolve(baseDir, media.modelDirectory) : join(dataDir, 'media-models') },
@@ -311,8 +313,8 @@ export function documentFromConfig(config: Config): ConfigDocument {
     storage: storageConfigSchema.parse({ dataDir: config.dataDir, maxStorageBytes: config.maxStorageBytes, maxExportBytes: config.maxExportBytes, retentionDays: config.retentionDays, dataKey: config.dataKey ?? '', contentEncryptionEnabled: config.contentEncryptionEnabled ?? false,
       kind: config.configuration?.storageKind ?? 'unknown', source: config.configuration?.storageSource ?? '', mount: config.configuration?.storageMount ?? '' }),
     execution: executionConfigSchema.parse({ interactiveConcurrency: config.interactiveConcurrency, agentConcurrency: config.agentConcurrency, llmConcurrency: config.llmConcurrency, memoryConcurrency: config.memoryConcurrency, insightIntervalHours: config.insightIntervalHours }),
-    diagnostics: diagnosticsConfigSchema.parse({ enabled: config.diagnosticsEnabled, debug: config.diagnosticsDebug ?? config.profile === 'dev', traceEnabled: config.agentTraceEnabled ?? config.profile === 'dev', level: config.logLevel,
-      directory: config.logDirectory ?? '', maxBytes: config.logMaxBytes ?? defaultLogMaxBytes(config.profile), maxFiles: config.logMaxFiles, maxEntries: config.logMaxEntries }),
+    diagnostics: diagnosticsConfigSchema.parse({ enabled: config.diagnosticsEnabled, debug:config.diagnosticsDebug??false, traceEnabled:config.agentTraceEnabled??false,traceExpiresAt:config.agentTraceExpiresAt??(config.agentTraceEnabled?Date.now()+86400000:0), level: config.logLevel,
+      directory: config.logDirectory ?? '', maxBytes: config.logMaxBytes ?? defaultLogMaxBytes(config.profile), maxTotalBytes:config.logMaxTotalBytes,retention:config.logRetention, maxEntries: config.logMaxEntries }),
     models: modelDomainSchema.parse({ ...models, deployment: { ...defaults, provider: config.modelProvider ?? defaults.provider, protocol: config.modelProtocol ?? defaults.protocol, baseUrl: config.modelBaseUrl || (config.modelProtocol === 'codex-app-server' ? '' : modelProvider(config.modelProvider ?? defaults.provider)?.baseUrl) || '', model: config.model, apiKey: config.apiKey,
       reasoningEffort: config.modelReasoningEffort ?? defaults.reasoningEffort, maxTokens: config.modelMaxTokens ?? defaults.maxTokens, modelRequestTimeoutMs: config.modelRequestTimeoutMs === undefined ? config.modelProtocol === 'codex-app-server' ? null : defaults.modelRequestTimeoutMs : config.modelRequestTimeoutMs,
       agentTimeoutMs: config.agentTimeoutMs === undefined ? config.modelProtocol === 'codex-app-server' ? null : defaults.agentTimeoutMs : config.agentTimeoutMs, allowUnauthenticatedLocal: config.allowUnauthenticatedLocal,

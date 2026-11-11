@@ -63,7 +63,7 @@ export async function initialize(paths, options = {}) {
       allowedOrigins: (paths.profile === 'test' ? ['http://localhost:5174', 'http://127.0.0.1:5174'] : ['http://localhost:5173', 'http://127.0.0.1:5173']),
       tls: { enabled: false, domain: '', httpPort: 80, httpsPort: 443 } },
     storage: { dataDir: docker ? '/data' : options['data-dir'] ? dataDir : './data', kind: docker ? 'docker-volume' : 'local-directory', source: docker ? volume : dataDir, mount: docker ? '/data' : '' },
-    execution: {}, diagnostics: { directory: docker ? '/data/logs' : './logs', debug: paths.profile === 'dev', traceEnabled: paths.profile === 'dev' },
+    execution: {}, diagnostics: { directory: docker ? '/data/logs' : './logs', debug:false, traceEnabled:false },
     models: {},
     connectors: {}, plugins: {}, updates: {},
     media: { modelDirectory: docker ? '/models' : './models', python: docker ? '/opt/mote-media-venv/bin/python' : './media-venv/bin/python', asrPort, ocrPort,
@@ -81,7 +81,7 @@ function connectionValues(document, baseDir) {
   return { MOTE_TOKEN: server.token ?? '', MOTE_PROFILE: server.profile ?? 'default', MOTE_PORT: String(server.port ?? 47832), MOTE_HOST: server.host ?? '127.0.0.1', MOTE_PUBLIC_URL: server.publicUrl ?? '',
     MOTE_DATA_DIR: storage.dataDir ?? './data', MOTE_DATA_KEY: storage.dataKey ?? '', MOTE_CONTENT_ENCRYPTION: storage.contentEncryptionEnabled ? '1' : '0',
     MOTE_MODEL: model.model ?? '', MOTE_MODEL_API_KEY: model.apiKey ?? '', MOTE_MODEL_BASE_URL: model.baseUrl ?? '', MOTE_EMBEDDING_MODEL: embedding.model ?? '', MOTE_EMBEDDING_API_KEY: embedding.apiKey ?? '', MOTE_EMBEDDING_BASE_URL: embedding.baseUrl ?? '',
-    MOTE_LOG_DIR: diagnostics.directory ?? './logs', MOTE_LOG_MAX_MB: String(limits.maxBytes / MiB), MOTE_LOG_MAX_FILES: String(limits.maxFiles), MOTE_LOG_MAX_ENTRIES: String(limits.maxEntries), MOTE_AGENT_TRACE_ENABLED: diagnostics.traceEnabled ? '1' : '0',
+    MOTE_LOG_DIR: diagnostics.directory ?? './logs', MOTE_LOG_MAX_MB: String(limits.maxBytes / MiB), MOTE_LOG_MAX_ENTRIES: String(limits.maxEntries), MOTE_AGENT_TRACE_ENABLED: diagnostics.traceEnabled ? '1' : '0',
     MOTE_MAX_STORAGE_MB: String((storage.maxStorageBytes ?? 10240 * 1024 * 1024) / 1024 / 1024), MOTE_MAX_EXPORT_MB: String((storage.maxExportBytes ?? 64 * 1024 * 1024) / 1024 / 1024), MOTE_RETENTION_DAYS: String(storage.retentionDays ?? 0),
     MOTE_UPDATE_REPOSITORY: document.updates?.repository ?? 'utopiafar/mote', MOTE_UPDATE_CHANNEL: document.updates?.channel ?? 'stable',
     MOTE_TLS_DOMAIN: tls.domain ?? '', MOTE_TLS_HTTP_PORT: String(tls.httpPort ?? 80), MOTE_TLS_HTTPS_PORT: String(tls.httpsPort ?? 443),
@@ -158,14 +158,13 @@ export function effectiveConfiguration(p) {
 }
 export function effectiveLogRetention(p) {
   const limits = logRetentionFromDocument(p.document);
-  return { logMaxMiB: limits.maxBytes / MiB, logMaxFiles: limits.maxFiles, logMaxEntries: limits.maxEntries, logMaxMiBSource: limits.source };
+  return { logMaxMiB: limits.maxBytes / MiB, logMaxTotalMiB:limits.maxTotalBytes/MiB,retention:limits.retention, logMaxEntries: limits.maxEntries, logMaxMiBSource: limits.source };
 }
 export async function assertLogRetentionCompatible(p, { execute: run = execute } = {}) {
   const limits = logRetentionFromDocument(p.document);
-  // Every selected target must understand the canonical YAML. Older YAML-aware
-  // targets may still work with an explicit compatible file capacity.
-  const markers = ['config-service.js', ...(limits.maxBytes > 8 * MiB ? ['log-retention-config.mjs'] : [])];
-  const message = 'The selected release/image could not be verified to support YAML configuration or this log capacity. Use an updated release/image; YAML-aware releases without expanded log capacity require explicit diagnostics.maxBytes of 8 MiB or less; no fallback was applied';
+  // The selected target must implement the current YAML and tiered log store.
+  const markers=['config-service.js','log-retention-config.mjs','diagnostic-log-store.mjs'];
+  const message = 'The selected release/image could not be verified to support YAML configuration or this log capacity. Use a release/image with tiered diagnostic retention; no fallback was applied';
   try {
     if (p.meta.runtime === 'native') {
       for (const marker of markers) if (!(await lstat(join(resolve(p.meta.release), 'apps/server/dist', marker))).isFile()) throw Error('Capability marker missing');
@@ -183,7 +182,7 @@ export async function setDevLogRetentionDefaults(p) {
   const changed = Object.hasOwn(p.savedDocument.diagnostics ?? {}, 'maxBytes');
   if (changed) await updateProfileConfiguration(p, next => { delete next.diagnostics.maxBytes; });
   const after = effectiveLogRetention(p);
-  const summary = limits => ({ maxFileMiB: limits.logMaxMiB, maxFiles: limits.logMaxFiles });
+  const summary = limits => ({ maxFileMiB: limits.logMaxMiB, maxTotalMiB:limits.logMaxTotalMiB });
   return { profile: p.profile, changed, before: summary(before), after: summary(after), restartRequired: true };
 }
 const proxyEnvironmentNames = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'];
@@ -300,7 +299,7 @@ export async function startNative(p, foreground = false, options = {}) {
   try { await atomicJson(p.processFile, record); } catch (error) { child.kill('SIGTERM'); throw error; }
   const deadline = Date.now() + 20000;
   while (!(await health(p))) {
-    if (failure || child.exitCode !== null || child.signalCode !== null) throw Error(`Central exited during startup; inspect ${join(resolve(p.directory, p.env.MOTE_LOG_DIR || 'logs'), 'central.log')}`);
+    if (failure || child.exitCode !== null || child.signalCode !== null) throw Error(`Central exited during startup; inspect logs in ${resolve(p.directory,p.env.MOTE_LOG_DIR||'logs')}`);
     if (Date.now() > deadline) { child.kill('SIGTERM'); throw Error('Central did not become healthy within 20 seconds; process was asked to stop'); }
     await sleep(100);
   }

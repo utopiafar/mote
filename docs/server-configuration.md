@@ -91,8 +91,8 @@ perception:
 | `storage.retentionDays` | 0，最高 36500 | 0 关闭按时间删除；正数按既有保留规则清理 |
 | `storage.contentEncryptionEnabled/dataKey` | false / 空 | 原件内容加密与私有密钥；SQLite 原文不因该项加密 |
 | `execution.interactiveConcurrency/agentConcurrency/llmConcurrency/memoryConcurrency` | 2 / 8 / 4 / 3 | 分离通道和处理池的执行名额 |
-| `diagnostics.enabled/debug/traceEnabled/level` | true / false / false / info | 固定结构化诊断和显式详细 Agent trace；CLI dev 可设置 trace 为 true |
-| `diagnostics.directory/maxBytes/maxFiles/maxEntries` | 数据目录 logs / DEV 100 MiB，其它 2 MiB / 3 / 2000 | 日志目录、文件轮转和内存保留上限 |
+| `diagnostics.enabled/debug/traceEnabled/traceExpiresAt/level` | true / false / false / 0 / info | 固定诊断和限时详细记录；诊断偏好开启 trace 时写入最多 24 小时的截止时间 |
+| `diagnostics.directory/maxBytes/maxTotalBytes/maxEntries` | 数据目录 logs / 16 MiB / 2 GiB / 2000 | 目录、分段大小、所有级别与监督进程共用的总预算、内存事件上限 |
 | `connectors.syncIntervalMs` | 900000，60000–86400000 | 自动拉取已授权来源的间隔 |
 | `media.ocrEndpoint/asrEndpoint` | loopback 9010 `/ocr` / 9009 `/transcribe` | 受管理媒体服务；与已保存的自定义处理服务区分 |
 | `media.modelDirectory/python/ocrPort/asrPort/workerToken` | 数据目录 media-models / python3 / 9010 / 9009 / 空 | 媒体目录、进程与私有 Worker 凭据；CLI 新环境配置 profile 独立资源 |
@@ -107,11 +107,11 @@ Memory 运行参数属于 `memory`，选中策略、不可变版本、来源授�
 
 ## 日志与调试
 
-省略 `diagnostics.maxBytes` 使用 profile 默认值：`server.profile: dev` 为 104857600 字节（100 MiB），其它为 2097152 字节（2 MiB）。DEV 显式范围为 0.1–100 MiB，其它为 0.1–8 MiB；`maxFiles` 允许 1–10，`maxEntries` 允许 100–5000。所有显式数字均保持原值。已有 YAML DEV 可用 [默认容量命令](deployment.md#dev-log-retention) 删除容量覆盖，文件数和内存事件数保持原值，容量在下次正常重启后生效。
+所有 profile 默认分段大小 16 MiB，上限 100 MiB；`diagnostics.maxTotalBytes` 默认 2 GiB。`diagnostics.retention.<level>.days/maxBytes` 分别指定各级别的保留目标和容量上限。默认 error 为 30 天/128 MiB，warn 为 14 天/64 MiB，info 为 7 天/256 MiB，debug 为 2 天/128 MiB，trace 为 1 天/1 GiB。容量不足可能使实际保留时间缩短，界面显示实际覆盖范围。`maxFiles` 不属于当前配置。
 
-结构化日志与原生监督日志分别轮转，DEV 默认各最多 300 MiB、合计 600 MiB。UTC 日期或大小轮转会删除最旧文件，不保证固定保留小时数。Docker stdout 保持部署层自己的上限。开启详细 Agent trace 时可能包含 prompt、个人资料、模型输出和工具过程；支持包仍排除 trace 正文。
+文件写满或跨 UTC 日期只分段；过期与超额清理另行执行。调小分段大小不会清空旧文件。总预算包含原生监督日志与日志目录中的已有日志/临时文件；不支持的历史格式保持原样，不自动读取或删除。详细过程默认关闭；从诊断偏好开启后写入 `traceExpiresAt`，到期后停止记录，重启不会延长。直接编辑 YAML 时也需要明确的未来截止时间。
 
-普通事件最多 20 KiB；详细 trace 单条最多 8 MiB，同时不超过日志文件容量。字符串、集合与深度边界保持既有规则，DEV 扩容后允许 2–8 MiB 的 trace。大日志启动、分页和安全范围导出按行遍历；安全导出先排除 trace 正文，原始文件下载仍可能返回整份 100 MiB 文件。完整诊断接口和限制见 [运行诊断](troubleshooting.md)。
+普通事件最多 20 KiB，详细 trace 单条最多 8 MiB，且不能超过所配置的分段/级别预算。正常诊断只保存允许的错误类型、固定代码和数值，不保存异常原文或 stderr。支持包始终排除详细 trace 正文。当前存储与删除规则见[日志保留决策](adr-dev-log-retention.md)，接口见[运行诊断](troubleshooting.md)。
 
 ## 存储、秘密与升级
 

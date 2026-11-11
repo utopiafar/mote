@@ -1,7 +1,7 @@
 import {isDeepStrictEqual} from 'node:util';
 import type {PluginDefinition} from '@mote/plugin-host';
 import type {Cancellation, ScopeIdentity, ServiceBinding} from '@mote/plugin-api/contracts';
-import {ProviderFailure} from '@mote/shared';
+import {ProviderFailure,errorDiagnostics} from '@mote/shared';
 import {AgentNotConfiguredError, AgentProviderError, AgentResponseError, AgentTimeoutError, type AgentOptions} from '../../types.js';
 import {AgentYieldError} from '../../host-controls.js';
 import {ContextToolError} from '../../tool-errors.js';
@@ -135,7 +135,10 @@ export function createCodexRuntimeProvider() {
                 if (error instanceof AgentResponseError || error instanceof ContextToolError && error.recovery === 'stop') {
                   return {terminal: {kind: 'failed', reason: error instanceof AgentResponseError && error.reason === 'tools_unverified' ? 'tools_unverified' : 'tool_failure'}};
                 }
-                return {terminal: {kind: 'failed', reason: 'provider_error', ...(error instanceof ProviderFailure ? {providerFailure: error.details} : {})}};
+                // Preserve safe diagnostic facts on the original transport error.
+                // Classification/recovery remain owned by the same ProviderFailure.
+                if(error instanceof ProviderFailure)throw error;
+                throw new AgentProviderError(undefined,errorDiagnostics(error));
               } finally {
                 active = undefined;
               }

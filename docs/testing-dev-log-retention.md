@@ -1,23 +1,17 @@
-# DEV log retention regression journeys
+# Diagnostic retention regression journeys
 
-All input is generated in temporary directories. No private profile, personal
-capture, live model, real DEV deployment or physical device is used.
+All verification inputs are generated in private temporary directories. Real profile logs are not fixtures. Ordinary focused checks cover the changed logging boundaries; live models, containers, deployed profiles and physical clients are separate evidence.
 
-| Journey/state transition | Durable regression |
+| User failure prevented | Regression |
 | --- | --- |
-| Fresh DEV/test profile → CLI config → native server startup | Profile fixtures assert omitted YAML `diagnostics.maxBytes` resolves to 100 MiB and test remains 2 MiB; authenticated diagnostics reports the writer limit. |
-| Explicit numeric 2/custom YAML capacity → read/config → deliberate migration → repeated migration → restart | CLI fixtures preserve explicit settings until migration, keep file/event counts, unrelated fields and secret references; increment the canonical revision, enforce 0600, and verify idempotence; profile fixtures exercise the actual startup path. |
-| New capacity/default → target release without capability → startup/adoption/upgrade/rollback | Generated legacy-release fixtures reject incompatible selections before configuration writes, shutdown or archive restore; older YAML-aware targets support compatible explicit capacities, while env-only targets reject even small capacities. |
-| Compose globals → startup subcommand → incompatible target | Dispatch fixtures cover value-taking, equals-form and attached short options; startup preflight still rejects before generated configuration is written. |
-| Explicit capacity or omitted YAML setting → server config/supervisor | Config fixtures cover DEV minimum/maximum, explicit 2, YAML authority over ambient environment, other profile ceilings and invalid values before vault creation; supervisor fixtures test >8 MiB retention and the 100 MiB boundary. |
-| Mixed ordinary/trace records → >8 MiB retained file → reopen → raw/page/range reads | Diagnostics fixtures ensure large files and complete records survive, page ordering/filtering and safe trace exclusion remain correct. |
-| Size boundary/UTC midnight → rotation → oldest expiry | Generated diagnostics and sparse supervisor capacity fixtures check file count, per-file bounds, total family bounds and restart/day transitions. |
-| Oversized ordinary/trace input → serialization | Ordinary 20 KiB and trace 8 MiB/file limits remain independently bounded, with explicit truncation markers. |
-| Partial tail, malformed lines, competing writer, stale lock, disabled/silent state, disk failure | Existing diagnostics and supervisor regressions remain part of affected checks. |
+| Yesterday's error disappears during a trace burst | Separate channel quotas, UTC rollover, restart and a low-priority incoming trace that cannot evict an existing error |
+| Capacity reduction silently empties a useful file | Reopen under a smaller budget/segment size, whole-segment expiry and exact survivor byte comparison |
+| Central and its supervisor each exceed an independent quota | Concurrent writers share one cleanup/append lock and total budget; the real supervisor records generated stdout/stderr and exit facts |
+| A failure loses the original cause | Original HTTP status / official Codex discriminator / process exit facts survive their provider boundary; failed review metadata survives restart with trace disabled |
+| Cleanup deletes data added after preview | Owner HTTP preview, collector rejection, changed-selection 409 and explicit confirmation with exactly the reviewed files |
+| Detailed personal content remains in cache after deletion | Memory priority and removal follow segment deletion and expiry; trace recording automatically stops after its persisted deadline |
+| Large/malformed files break reads or become silently truncated | Existing 300 MiB sparse boundary, large traces, dense 10,000-event pages, UTF-8 chunk boundaries, malformed tails and untrusted-field filtering remain covered |
+| SDK output discloses content or blocks shutdown | Real supervisor fixture keeps 60,000 generated stdout lines and 2,300,000 stderr bytes per restart, private-content suppression, bounded queues, split tail, exit/signal and disk-failure checks |
+| A deployment chooses a writer that cannot implement the current policy | CLI/config preflight, capability markers, exact explicit settings, revision/secret preservation and generated upgrade/rollback checks |
 
-Required checks are `npm run check:affected`, `node scripts/test-central-runner.mjs`
-(included in component checks), and `npm run test:profiles`. The scope selector
-may conservatively include other consumers because shared operating scripts and
-root configuration changed; that is validation scope, not a multi-client release.
-Live-model, physical-device, container and deployed DEV verification are separate
-and must be reported only if actually performed.
+Focused entrypoints include `apps/server/test/diagnostics.test.ts`, `diagnostic-log-store.test.ts`, `insight-runs.test.ts`, `config.test.ts`, `configuration.test.ts`, the affected Agent provider/protocol files, Web diagnostics tests, `scripts/release/dev-log-retention.test.mjs`, and `node scripts/test-central-runner.mjs`. Inspect `npm run check:affected -- --dry-run` before selecting further checks. Deployment/process journeys and full platform suites retain their normal repository triggers; do not replace missing evidence with a generated fixture result.

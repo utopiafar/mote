@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
+import {DEFAULT_LOG_RETENTION} from '../../apps/server/src/log-retention-config.mjs';
 import { parseConfigDocument, serializeConfigDocument } from '../../packages/shared/src/config-file.ts';
 import { repository, profilePaths, loadProfile, atomicJson, nativeIdentity, stopNative, assertLogRetentionCompatible, composeOperation, compose, updateProfileConfiguration } from '../profile-lib.mjs';
 import { cli, freePort, request } from '../profile-fixtures.mjs';
@@ -28,14 +29,14 @@ async function releaseFixture(home, kind) {
   await mkdir(join(release, 'apps/server/dist'), { recursive: true });
   await writeFile(join(release, 'package.json'), '{"type":"module"}');
   if (kind !== 'env-legacy') await writeFile(join(release, 'apps/server/dist/config-service.js'), '// Generated YAML capability marker\n');
-  if (kind === 'capable') await writeFile(join(release, 'apps/server/dist/log-retention-config.mjs'), '// Generated capacity capability marker\n');
+  if(kind==='capable')for(const name of ['log-retention-config.mjs','diagnostic-log-store.mjs'])await writeFile(join(release,'apps/server/dist',name),'// Generated capability marker\n');
   const reader = new URL('packages/shared/src/config-file.ts', 'file://' + repository + '/').href;
   // Exercise actual CLI/supervisor ordering with a generated strict YAML target.
   await writeFile(join(release, 'apps/server/dist/index.js'), `import {createServer} from 'node:http';import {writeFileSync} from 'node:fs';import {resolve,dirname} from 'node:path';import {readConfigDocument} from ${JSON.stringify(reader)};
-const document=readConfigDocument(process.env.MOTE_CONFIG_FILE).document,diagnostics=document.diagnostics??{},max=diagnostics.maxBytes??${kind === 'capable' ? "(document.server.profile==='dev'?100:2)*1024*1024" : '2*1024*1024'};
+const document=readConfigDocument(process.env.MOTE_CONFIG_FILE).document,diagnostics=document.diagnostics??{},max=diagnostics.maxBytes??${kind === 'capable' ? '16*1024*1024' : '2*1024*1024'};
 if(!Number.isFinite(max)||max<0.1*1024*1024||max>${kind === 'capable' ? 100 : 8}*1024*1024)throw Error('Generated strict capacity parser rejected configuration');
 writeFileSync(resolve(dirname(process.env.MOTE_CONFIG_FILE),document.storage.dataDir,'generated-entry-ran'),'Generated entry reached');
-const server=createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(req.url==='/api/diagnostics'?{limits:{maxFileBytes:Math.floor(max),maxFiles:diagnostics.maxFiles??3,maxEvents:diagnostics.maxEntries??2000}}:{ok:true}));});
+const server=createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(req.url==='/api/diagnostics'?{limits:{maxFileBytes:Math.floor(max),maxTotalBytes:diagnostics.maxTotalBytes??2147483648,maxEvents:diagnostics.maxEntries??2000}}:{ok:true}));});
 server.listen(document.server.port,'127.0.0.1');process.on('SIGTERM',()=>server.close(()=>process.exit(0)));\n`);
   return release;
 }
@@ -47,10 +48,10 @@ test('fresh YAML profiles resolve DEV defaults without saving an explicit capaci
   for (const profile of ['dev', 'test', 'prod']) {
     const p = await fixture(t, profile), raw = await readFile(p.configFile);
     assert.equal(Object.hasOwn(p.savedDocument.diagnostics, 'maxBytes'), false);
-    assert.deepEqual(await configuration(p), { logMaxMiB: profile === 'dev' ? 100 : 2, logMaxFiles: 3, logMaxEntries: 2000, logMaxMiBSource: 'profile-default' });
+    assert.deepEqual(await configuration(p), { logMaxMiB:16,logMaxTotalMiB:2048,retention:DEFAULT_LOG_RETENTION, logMaxEntries: 2000, logMaxMiBSource: 'profile-default' });
     assert.deepEqual(await readFile(p.configFile), raw);
     if (profile === 'dev') {
-      assert.deepEqual(await adopt(p), { profile, changed: false, before: { maxFileMiB: 100, maxFiles: 3 }, after: { maxFileMiB: 100, maxFiles: 3 }, restartRequired: true });
+      assert.deepEqual(await adopt(p), { profile, changed: false, before: { maxFileMiB:16,maxTotalMiB:2048 }, after: { maxFileMiB:16,maxTotalMiB:2048 }, restartRequired: true });
     } else assert.match((await cli(p.home, profile, 'log-retention', ['--defaults'], { fail: true })).stderr, /only available for the dev profile/);
     assert.deepEqual(await readFile(p.configFile), raw);
   }
@@ -60,17 +61,17 @@ test('explicit numeric YAML limits are preserved until adoption, which changes o
   for (const maxMiB of [2, 7, 75, 100]) {
     const p = await fixture(t);
     await updateProfileConfiguration(p, document => {
-      Object.assign(document.diagnostics, { maxBytes: maxMiB * MiB, maxFiles: 6, maxEntries: 4317 });
+      Object.assign(document.diagnostics, { maxBytes: maxMiB * MiB, maxEntries: 4317 });
       document.models.deployment ??= {}; document.models.deployment.apiKey = 'generated-private-model-key'; document.storage.dataKey = 'a'.repeat(64);
       document.server.publicUrl = 'https://generated-retention.example';
     });
     const raw = await readFile(p.configFile, 'utf8'), metadata = await readFile(p.metaFile);
     await writeFile(join(p.dataDir, 'generated-evidence.txt'), 'Generated archive marker');
-    assert.deepEqual(await configuration(p), { logMaxMiB: maxMiB, logMaxFiles: 6, logMaxEntries: 4317, logMaxMiBSource: 'explicit' });
+    assert.deepEqual(await configuration(p), { logMaxMiB:maxMiB,logMaxTotalMiB:2048,retention:DEFAULT_LOG_RETENTION, logMaxEntries: 4317, logMaxMiBSource: 'explicit' });
     assert.deepEqual(await readFile(p.configFile, 'utf8'), raw);
     await cli(p.home, 'dev', 'log-retention', [], { fail: true }); assert.equal(await readFile(p.configFile, 'utf8'), raw);
     const result = await adopt(p), next = await readFile(p.configFile, 'utf8'), parsed = parseConfigDocument(next).savedDocument;
-    assert.deepEqual(result, { profile: 'dev', changed: true, before: { maxFileMiB: maxMiB, maxFiles: 6 }, after: { maxFileMiB: 100, maxFiles: 6 }, restartRequired: true });
+    assert.deepEqual(result, { profile: 'dev', changed: true, before: { maxFileMiB:maxMiB,maxTotalMiB:2048 }, after: { maxFileMiB:16,maxTotalMiB:2048 }, restartRequired: true });
     assert.equal(Object.hasOwn(parsed.diagnostics, 'maxBytes'), false);
     assert.equal(parsed.revision, parseConfigDocument(raw).savedDocument.revision + 1);
     assert.deepEqual(otherValues(next), otherValues(raw)); assert.deepEqual(await readFile(p.metaFile), metadata);
@@ -95,21 +96,20 @@ test('invalid YAML limits and active lifecycle ownership fail without changing p
   assert.deepEqual(await readFile(p.configFile), raw); assert.equal(await readFile(join(p.directory, 'lifecycle.lock'), 'utf8'), String(process.pid));
 });
 
-test('older YAML targets require explicit compatible capacity; env-only targets always reject before launch', async t => {
+test('older targets reject tiered diagnostics before launch regardless of segment capacity', async t => {
   let p = await fixture(t), release = await releaseFixture(p.home, 'legacy');
   await atomicJson(p.metaFile, { ...p.meta, release }); p = await loadProfile(profilePaths('dev', p.home));
   await writeFile(join(p.dataDir, 'generated-evidence.txt'), 'Generated evidence is untouched');
-  for (const maxBytes of [undefined, 100 * MiB]) {
+  for (const maxBytes of [undefined,100*MiB,2*MiB]) {
     await updateProfileConfiguration(p, document => { if (maxBytes === undefined) delete document.diagnostics.maxBytes; else document.diagnostics.maxBytes = maxBytes; });
     const raw = await readFile(p.configFile), meta = await readFile(p.metaFile);
-    assert.match((await cli(p.home, 'dev', 'start', [], { fail: true })).stderr, /explicit diagnostics.maxBytes of 8 MiB or less/);
+    assert.match((await cli(p.home, 'dev', 'start', [], { fail: true })).stderr, /tiered diagnostic retention/);
     assert.deepEqual(await readFile(p.configFile), raw); assert.deepEqual(await readFile(p.metaFile), meta);
     assert.deepEqual(await readdir(p.dataDir), ['generated-evidence.txt']); assert.ok(!(await readdir(p.directory)).includes('process.json'));
   }
   await updateProfileConfiguration(p, document => { document.diagnostics.maxBytes = 2 * MiB; });
   const raw = await readFile(p.configFile); await cli(p.home, 'dev', 'log-retention', ['--defaults'], { fail: true }); assert.deepEqual(await readFile(p.configFile), raw);
-  await cli(p.home, 'dev', 'start'); assert.equal((await request(p, '/api/diagnostics')).limits.maxFileBytes, 2 * MiB);
-  await cli(p.home, 'dev', 'stop');
+  await cli(p.home,'dev','start',[],{fail:true});
   const envRelease = await releaseFixture(p.home, 'env-legacy'); await atomicJson(p.metaFile, { ...p.meta, release: envRelease });
   assert.match((await cli(p.home, 'dev', 'start', [], { fail: true })).stderr, /YAML configuration/);
   assert.deepEqual(await readFile(p.configFile), raw);
@@ -131,7 +131,7 @@ test('incompatible upgrade and rollback reject before stopping the process, back
     assert.deepEqual(await readFile(p.configFile), raw); assert.deepEqual(await readFile(p.metaFile), meta); assert.deepEqual(await readFile(p.processFile), processRecord);
     assert.deepEqual((await readdir(p.dataDir)).sort(), dataNames); assert.deepEqual(await readdir(join(p.directory, 'backups')), backupNames);
     assert.equal(await readFile(join(p.dataDir, 'generated-evidence.txt'), 'utf8'), 'Generated current evidence'); assert.equal((await nativeIdentity(p)).running, true);
-    assert.equal((await request(p, '/api/diagnostics')).limits.maxFileBytes, 100 * MiB);
+    assert.equal((await request(p,'/api/diagnostics')).limits.maxFileBytes,16*MiB);
   }
 });
 
@@ -143,8 +143,8 @@ test('Docker capability probes are inert, offline and bounded and always verify 
   assert.deepEqual(options, { capture: true, timeoutMs: 15000 });
   assert.ok(!args.slice(0, 9).some(value => ['--volume', '--mount', '-v', '-e', '--env', '--env-file'].includes(value)));
   assert.match(args.at(-1), /config-service.js/); assert.match(args.at(-1), /log-retention-config.mjs/);
-  await assert.rejects(assertLogRetentionCompatible(p, { execute: async () => { throw Error('Generated private Docker output'); } }), error => /updated release\/image/.test(error.message) && !error.message.includes('Generated private Docker output'));
-  for (const maxBytes of [2 * MiB, 8 * MiB]) await assertLogRetentionCompatible({ ...p, document: { ...p.document, diagnostics: { maxBytes } } }, { execute: async (_, args) => { assert.match(args.at(-1), /config-service.js/); assert.doesNotMatch(args.at(-1), /log-retention-config.mjs/); } });
+  await assert.rejects(assertLogRetentionCompatible(p, { execute: async () => { throw Error('Generated private Docker output'); } }), error => /tiered diagnostic retention/.test(error.message) && !error.message.includes('Generated private Docker output'));
+  for (const maxBytes of [2 * MiB, 8 * MiB]) await assertLogRetentionCompatible({ ...p, document: { ...p.document, diagnostics: { maxBytes } } }, { execute: async (_, args) => { assert.match(args.at(-1), /config-service.js/); assert.match(args.at(-1),/diagnostic-log-store.mjs/); } });
 });
 
 test('Compose finds subcommands after global options without changing transport arguments', () => {

@@ -1,3 +1,4 @@
+import {sanitizeFailureDiagnostics} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {AgentYieldError,AgentTimeoutError,type AgentProgress,type QueryInput} from '@mote/agent';
 import {executionEnvelope,ProviderFailure,type QueryResult} from '@mote/shared';
@@ -152,7 +153,7 @@ export class DelegatedQueryRuns {
         const timedOut=failure.category==='timeout'||current.error==='timeout';
         // A timed-out fragment cannot publish a conversation turn after its grant
         // has expired; waiting time never establishes a timeout.
-        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error),finished={...run,...conversation,error:{code:timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':failure.reason??failure.category,message:failure.message}};
+        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error),finished={...run,...conversation,error:{code:timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':failure.reason??failure.category,message:failure.message,reason:failure.reason,diagnostic:sanitizeFailureDiagnostics({...failure.diagnostic!,lastTool:[...run.events].reverse().find(e=>e.stage==='tool'&&e.phase==='completed')?.tool})}};
         this.save(finished);
         if(own)this.store.db.exec('COMMIT');
         Object.assign(run,finished);if(conversation&&error&&typeof error==='object')Object.assign(error,{conversation});

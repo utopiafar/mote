@@ -187,6 +187,7 @@ export * from './source-capabilities.js';
 
 export * from './operations.js';
 export * from './provider-failure.js';
+export * from './failure-diagnostics.js';
 export * from './evidence-ref.js';
 export type {InsightSnapshot} from './insight-snapshot.js';
 export * from './feature-packs.js';

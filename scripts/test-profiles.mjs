@@ -157,7 +157,7 @@ try {
   const release = join(directory, 'release-next'); await mkdir(join(release, 'apps/server/dist'), { recursive: true });
   await writeFile(join(release, 'package.json'), '{"type":"module"}');
   await writeFile(join(release, 'apps/server/dist/index.js'), `import ${JSON.stringify(new URL('apps/server/dist/index.js', 'file://' + repository + '/').href)};\n`);
-  for (const marker of ['log-retention-config.mjs', 'config-service.js']) await cp(join(repository, 'apps/server/dist', marker), join(release, 'apps/server/dist', marker));
+  for (const marker of ['log-retention-config.mjs','diagnostic-log-store.mjs','config-service.js']) await cp(join(repository, 'apps/server/dist', marker), join(release, 'apps/server/dist', marker));
   await cli(home, 'dev', 'start'); await cli(home, 'dev', 'upgrade', ['--release', release]);
   assert.equal((await request(dev, `/api/notes/${saved.id}`)).ocrText, saved.text);
   const afterUpgrade = note(); await request(dev, '/api/notes', { method: 'POST', body: afterUpgrade, status: 201 });
@@ -190,10 +190,10 @@ try {
   // The bounded supervisor must cap large chunks and repeated restarts independently of server logging.
   const noisy = join(directory, 'noisy.mjs'), log = join(directory, 'bounded.log');
   await writeFile(noisy, "process.stdout.write('synthetic-private-body\\n'.repeat(60000)); process.stderr.write('synthetic-private-token'.repeat(100000));");
-  await updateProfileConfiguration(dev, document => { document.diagnostics.maxBytes = Math.floor(0.1 * 1024 * 1024); document.diagnostics.maxFiles = 3; });
+  await updateProfileConfiguration(dev, document => { document.diagnostics.maxBytes = Math.floor(0.1 * 1024 * 1024); document.diagnostics.debug=true;document.diagnostics.retention={debug:{days:2,maxBytes:Math.floor(.3*1024*1024)}}; });
   for (let i = 0; i < 2; i++) assert.equal((await command(process.execPath, [join(repository, 'scripts/central-runner.mjs'), noisy, log, `--mote-instance=${randomUUID()}`], { env: { MOTE_CONFIG_FILE: dev.configFile } })).code, 0);
-  for (const name of (await readdir(directory)).filter(name => name.startsWith('bounded.log'))) { assert.ok((await stat(join(directory, name))).size <= Math.floor(0.1 * 1024 * 1024)); assert.ok(!(await readFile(join(directory, name), 'utf8')).includes('synthetic-private')); }
-  assert.equal((await readdir(directory)).filter(name => name.startsWith('bounded.log')).length, 3);
+  for (const name of (await readdir(directory)).filter(name => /^supervisor\.(?:error|warn|info|debug|trace)\./.test(name))) { assert.ok((await stat(join(directory, name))).size <= Math.floor(0.1 * 1024 * 1024)); assert.ok(!(await readFile(join(directory, name), 'utf8')).includes('synthetic-private')); }
+  assert.ok((await readdir(directory)).some(name=>/^supervisor\.debug\./.test(name)));const debugBytes=(await Promise.all((await readdir(directory)).filter(name=>/^supervisor\.debug\./.test(name)).map(async name=>(await stat(join(directory,name))).size))).reduce((n,v)=>n+v,0);assert.ok(debugBytes<=Math.floor(.3*1024*1024));
   console.info('[profiles] Bounded native stdout/stderr rotation passed; no formal node or live model was used');
 } finally {
   for (const p of profiles.reverse()) { const state = await nativeIdentity(p).catch(() => null); if (state?.running && state.managed) await stopNative(p); }

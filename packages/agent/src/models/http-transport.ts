@@ -1,12 +1,12 @@
 import {AsyncResource} from 'node:async_hooks';
 import {createServer} from 'node:http';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
-import {ProviderFailure,providerHttpFailure} from '@mote/shared';
+import {ProviderFailure,providerHttpFailure,errorDiagnostics,sanitizeFailureDiagnostics,type FailureDiagnostics} from '@mote/shared';
 import {AgentProviderError,type AgentOptions} from '../types.js';
 
 type FetchTransport = typeof fetch;
 type TransportConfiguration = Pick<AgentOptions,'protocol'|'provider'|'reasoningEffort'|'headers'|'extraBody'> & {baseUrl:string};
-type FailureReport = {status:number;retryAfter?:string};
+type FailureReport = {status:number;retryAfter?:string;diagnostic?:FailureDiagnostics};
 
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
@@ -70,7 +70,7 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
     }
     await authorizeRequest?.();
     let response:Response;
-    try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0});throw error;}
+    try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});throw error;}
     if(reportFailure&&!response.ok){
       await response.body?.cancel();
       const retryAfter=response.headers.get('retry-after');
@@ -134,9 +134,10 @@ export async function observeModelTransport(authorize?:()=>void|Promise<void>){
     if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==0)throw Error();
     try{await authorization?.();res.writeHead(200).end();}catch(error){res.writeHead(409).end();reject(error instanceof ProviderFailure?new AgentProviderError(error.details):new AgentProviderError({category:'blocked',code:'context_evidence_restricted'}));}return;
    }
-   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['status','retryAfter'].includes(k))||!Number.isInteger(value.status)||value.status<0||value.status>599||value.status>0&&value.status<300||value.retryAfter!==undefined&&(typeof value.retryAfter!=='string'||value.retryAfter.length>128))throw Error();
+   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['status','retryAfter','diagnostic'].includes(k))||!Number.isInteger(value.status)||value.status<0||value.status>599||value.status>0&&value.status<300||value.retryAfter!==undefined&&(typeof value.retryAfter!=='string'||value.retryAfter.length>128))throw Error();
    res.writeHead(200,{'Content-Type':'application/json'}).end('{"ok":true}');
-   reject(new AgentProviderError(value.status===0?{category:'transient',code:'provider_network'}:providerHttpFailure(value.status,value.retryAfter)));
+   const diagnostic=sanitizeFailureDiagnostics(value.diagnostic);
+   reject(new AgentProviderError(value.status===0?{category:'transient',code:'provider_network'}:providerHttpFailure(value.status,value.retryAfter),{source:value.status?'http':'transport',stage:'model',errorType:diagnostic.errorType,...(value.status?{httpStatus:value.status}:{code:diagnostic.code??'unknown'})}));
   }catch{res.writeHead(400).end();}
  });
  server.requestTimeout=5000;server.headersTimeout=5000;
