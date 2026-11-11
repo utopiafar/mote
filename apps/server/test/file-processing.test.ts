@@ -633,6 +633,80 @@ test('restart marks an issued processing call unknown until explicit retry',asyn
  resumed.retry(f.id,'transcribe',false,true);assert.equal(db.prepare('SELECT COUNT(*) AS n FROM file_processor_waits').get()!.n,0);
 });
 
+async function lostLocalAsr(t:any){
+ let first=true;
+ const f=await fixture(t,{settings:{localWorkerApiKey:'generated-local-worker-token'},transcribe:async(input:any)=>{
+   if(first){first=false;input.request?.onRequest();throw new TypeError('generated lost local ASR response');}
+   return raw;
+ }});
+ await f.processing.tick();
+ assert.equal(f.processing.cancellation(f.id).wait,'unknown');
+ const call=f.processing.mediaCalls.pending()[0];assert.ok(call);assert.equal(call.stage,'transcribe');
+ return {f,call};
+}
+
+test('a restarted local ASR worker fact clears its unknown wait and requeues without confirmUnknown',async t=>{
+ const {f,call}=await lostLocalAsr(t),acceptedAt=Date.now()-2000;
+ assert.equal(f.processing.mediaCalls.observe(call.requestId,{version:1,requestId:call.requestId,incarnation:randomUUID(),stage:'transcribe',state:'running',acceptedAt,startedAt:acceptedAt+100}),true,'the pre-restart running fact is retained');
+ assert.equal(f.processing.mediaCalls.observe(call.requestId,{version:1,requestId:call.requestId,incarnation:randomUUID(),stage:'transcribe',state:'unknown',acceptedAt,outcome:'worker_restarted'}),true,'a new incarnation may report that the old call was lost');
+ const queued=f.processing.prepare();
+ assert.ok(queued.length,'prepare must requeue the retained input');
+ assert.equal(f.processing.cancellation(f.id).wait,null);
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM file_processor_waits').get()!.n,0);
+ assert.notEqual(f.files.detail(f.id).job.execution.waiting?.requiredAction,'acknowledge_unknown_execution');
+ await f.processing.tick();
+ assert.equal(f.files.detail(f.id).job.state,'succeeded');
+ assert.equal(f.counts().asrCalls,2);
+ assert.ok(f.files.detail(f.id).artifacts.some((artifact:any)=>artifact.kind==='transcript'));
+});
+
+test('a local ASR worker that lost its receipt clears the unknown wait without confirmUnknown',async t=>{
+ const {f,call}=await lostLocalAsr(t);
+ assert.equal(f.processing.mediaCalls.observe(call.requestId,{version:1,requestId:call.requestId,state:'unknown',outcome:'receipt_unavailable'}),true,'a missing receipt has no incarnation but still proves the old call is unknown');
+ const queued=f.processing.prepare();
+ assert.ok(queued.length,'prepare must requeue the retained input');
+ assert.equal(f.processing.cancellation(f.id).wait,null);
+ await f.processing.tick();
+ assert.equal(f.files.detail(f.id).job.state,'succeeded');
+ assert.equal(f.counts().asrCalls,2);
+});
+
+test('a succeeded local ASR worker fact restores artifacts and finishes the step without acknowledgement',async t=>{
+ const {f,call}=await lostLocalAsr(t),now=Date.now();
+ f.processing.mediaCalls.observe(call.requestId,{version:1,requestId:call.requestId,incarnation:randomUUID(),stage:'transcribe',state:'succeeded',acceptedAt:now-2000,startedAt:now-1500,finishedAt:now-1000,outcome:'completed'});
+ const queued=f.processing.prepare();
+ assert.ok(queued.length,'prepare must requeue the retained input');
+ assert.equal(f.processing.cancellation(f.id).wait,null);
+ assert.notEqual(f.files.detail(f.id).job.execution.waiting?.requiredAction,'acknowledge_unknown_execution');
+ await f.processing.tick();
+ const detail=f.files.detail(f.id);
+ assert.equal(detail.job.state,'succeeded');
+ assert.ok(detail.artifacts.some((artifact:any)=>artifact.kind==='transcript'),'a known successful worker call publishes the derived artifacts');
+ assert.equal(f.counts().asrCalls,2);
+});
+
+test('an issued-call fact cannot release an unrelated model-authorization block',async t=>{
+ const {f,call}=await lostLocalAsr(t),now=Date.now();
+ await new Promise(resolve=>setImmediate(resolve));
+ f.store.db.prepare("UPDATE file_jobs SET state='blocked',error='background_model_authorization_required' WHERE capture_id=?").run(f.id);
+ f.processing.mediaCalls.observe(call.requestId,{version:1,requestId:call.requestId,incarnation:randomUUID(),stage:'transcribe',state:'succeeded',acceptedAt:now-2000,startedAt:now-1500,finishedAt:now-1000,outcome:'completed'});
+ assert.deepEqual(f.processing.prepare(),[]);
+ assert.equal(f.processing.cancellation(f.id).wait,'unknown');
+ assert.equal(f.store.db.prepare('SELECT error FROM file_jobs WHERE capture_id=?').get(f.id)!.error,'background_model_authorization_required');
+});
+
+test('a processing-not-finished wait is a recoverable interruption, never processor_not_configured',async t=>{
+ const {ExecutionFailure}=await import('../src/execution-engine.js'),f=await fixture(t);
+ f.store.db.prepare("INSERT INTO file_processor_waits VALUES('generated-resource',?,'generated-token','unknown')").run(f.id);
+ await assert.rejects((f.processing as any).waitForProcessor(f.id,async()=>raw),(error:any)=>{
+   assert.ok(error instanceof ExecutionFailure);
+   assert.equal(error.category,'blocked');
+   assert.equal(error.code,'processor_response_unknown');
+   assert.notEqual(error.code,'processor_not_configured');
+   return true;
+ });
+});
+
 
 test('same original on another capture shares the physical processor exclusion',async t=>{
  let release!:()=>void,entered!:()=>void;const started=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
