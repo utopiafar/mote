@@ -73,6 +73,10 @@ export type MaterialRecord=Omit<MaterialDraft,'blocks'|'members'> & {
   blockCount:number;memberCount:number;textLength:number;assetCount:number;
   indexing:MaterialIndexStatus;
 };
+/** Stable host event metadata. It carries identity, revision, source, time and
+ * kind only; block text, member references and captured originals never enter
+ * the event envelope. */
+export type MaterialPublicationEvent={id:string;revision:string;kind:string;sourceId:string;deviceId?:string;occurredAt:string};
 export type MaterialReadSpan={attributionContext:AttributionContext;blockId:string;kind:'text'|'asset';format?:string;
   evidenceId?:string;evidenceOffset?:number;
   pageRange:{start:number;end:number};materialRange:{start:number;end:number};
@@ -131,6 +135,9 @@ export class MaterialStore {
   index?:MaterialIndexRuntime;
   onContextChanged?:(materialId:string,cause?:'attribution'|'derived')=>void;
   onSourceContextChanged?:(sourceId:string)=>void;
+  /** Trusted host event journal hook. It runs inside the publication
+   * transaction and must never perform network I/O. */
+  onPublished?:(event:MaterialPublicationEvent)=>void;
   readonly catalog=new MaterialCatalog(this);
   private readonly importAttribution:ImportAttributionStore;
   private readonly sourceContexts:SourceContextStore;
@@ -684,6 +691,11 @@ export class MaterialStore {
     };
     return JSON.stringify(body(this.contextDraft(current)))===JSON.stringify(body(draft));
   }
+  /** A host event journal failure must not roll back the authoritative material
+   * publication. Callers record their own delivery status separately. */
+  private notifyPublished(event:MaterialPublicationEvent){
+    try{this.onPublished?.(event);}catch{}
+  }
   /** Same draft is idempotent. A changed head requires explicit compare-and-swap. */
   publish(raw:MaterialDraft|MaterialAppendDraft,options:{expectedRevision?:string|null;codingSnapshot?:CodingArchiveSnapshot;processingStateTransition?:boolean}={}):MaterialRecord & {changed:boolean} {
     if('mode' in raw)return this.publishAppend(raw,options);
@@ -795,6 +807,7 @@ export class MaterialStore {
         for(const anchor of this.evidenceIds(id))if(!retained.has(anchor))this.store.invalidateMemoryEvidence(anchor);
         db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?').run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,id);
         this.setSearchable(id,searchable);
+        this.notifyPublished({id,revision,kind:draft.kind,sourceId:draft.origin.sourceId,...(draft.origin.deviceId?{deviceId:draft.origin.deviceId}:{}),occurredAt:now});
         if(ownTransaction)db.exec('COMMIT');
         return {...this.get(formatMaterialRef(id,revision))!,changed:true};
       }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
@@ -888,6 +901,7 @@ export class MaterialStore {
       db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?')
         .run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,draft.id);
       this.setSearchable(draft.id,searchable);
+      this.notifyPublished({id:draft.id,revision,kind:draft.kind,sourceId:draft.origin.sourceId,...(draft.origin.deviceId?{deviceId:draft.origin.deviceId}:{}),occurredAt:now});
       if(ownTransaction)db.exec('COMMIT');return {...this.get(formatMaterialRef(draft.id,revision))!,changed:true};
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }

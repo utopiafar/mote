@@ -8,11 +8,12 @@ import { connectionServerUrl, type ConnectionInvitation, type ServerConfiguratio
 import { ApiError, type Api, type Device, ago, dateTime, errorMessage } from '../../api';
 import {useHashChoice} from '../../useHashChoice';
 import {containDialogFocus} from '../../dialog-focus';
+import {DeveloperAccess} from './DeveloperAccess';
 const readAccess=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('connection');
 type Credential = {
     id: string;
     label: string;
-    scope: 'owner' | 'collector' | 'mcp-read' | 'mcp-write';
+    scope: 'owner' | 'collector' | 'mcp-read' | 'mcp-write' | 'developer';
     createdAt: string;
     revokedAt?: string;
     expiresAt?: string;
@@ -55,7 +56,7 @@ type OAuthRequest = {
     createdAt: string;
     expiresAt: string;
 };
-const scopes = { 'owner': "完整客户端权限", 'collector': "采集器 · 仅同步本设备", 'mcp-read': "MCP · 只读资料", 'mcp-write': "MCP · 指定来源写入" };
+const scopes = { 'owner': "完整客户端权限", 'collector': "采集器 · 仅同步本设备", 'mcp-read': "MCP · 只读资料", 'mcp-write': "MCP · 指定来源写入", 'developer': "开发者 · 只读事件" };
 function downloadFile(name: string, content: Blob) {
     const url = URL.createObjectURL(content), anchor = document.createElement('a');
     anchor.href = url;
@@ -310,6 +311,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
         {!inventory?inventoryResource.loading&&<p role="status">{moteText('正在读取连接…')}</p>:<><ul className="connection-list access-list">{visibleCredentials.filter(item=>showAll||credentialActive(item)).map(item=><li key={item.id}><button className="access-row" onClick={()=>chooseAccessPage(item.id)}><span className="source-row-icon"><Diamond size={18}/></span><span className="source-row-copy"><strong>{item.label}</strong><small>{item.scope==='mcp-read'?moteText('只读资料'):moteText(scopes[item.scope])} · {moteText('创建于 {0}',dateTime(item.createdAt))}</small></span><span className={credentialActive(item)?'access-state':'muted'}>{credentialState(item)}</span><ChevronRight size={16}/></button></li>)}</ul>{!visibleCredentials.some(item=>showAll||credentialActive(item))&&<p className="fine-print">{moteText('还没有 AI 连接。生成 MCP 配置即可添加。')}</p>}</>}
         <details className="connection-help"><summary>{moteText('连接方式')}</summary><p>{moteText('生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。')}</p><p>{oauthServiceUrl?moteText('只接受 OAuth 的客户端请填写服务地址 {0}；客户端会自动发现授权，首次连接需要在此页批准。',oauthServiceUrl):moteText('只接受 OAuth 的客户端需要可访问的中央地址；填写后再复制服务地址。')}</p><p>{moteText('按用途推荐权限和 Agent 专属连接向导尚未开放。当前只读 MCP 可检索已获准的归档资料；写入必须单独授权。')}</p></details>
       </>}
+      {!accessPage&&<DeveloperAccess api={api}/>}
       {revokingCredential&&<div className="source-dialog-overlay" onKeyDown={event=>{if(event.key==='Escape'&&!busy)setRevoking('');}}><div ref={revokeDialog} role="dialog" aria-modal="true" aria-labelledby="access-revoke-title" className="source-dialog"><header><h2 id="access-revoke-title">{moteText('撤销 {0}',revokingCredential.label)}</h2><button className="icon-button" aria-label={moteText('关闭')} disabled={!!busy} onClick={()=>setRevoking('')}><X size={18}/></button></header><p>{moteText('停止此连接的后续访问，已归档资料保留。再次接入需要生成新配置。')}</p><footer><button className="button" disabled={!!busy} onClick={()=>setRevoking('')}>{moteText('取消')}</button><button className="button" disabled={!!busy} onClick={()=>revoke(revokingCredential.id)}>{moteText('确认撤销')}</button></footer></div></div>}
     </section>;
     return <section className="connections device-pair-workspace" aria-labelledby="connections-title">

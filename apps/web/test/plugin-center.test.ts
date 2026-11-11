@@ -178,6 +178,17 @@ test('official catalog is the discover surface and has no free-form GitHub insta
  assert.ok(element.querySelector('a[href="#/system/diagnostics"]'),'points owners to Runtime and diagnostics for GitHub install');
 });
 
+test('official catalog points to the host webhook surface without an install action',async t=>{
+ const {plugins,binding}=fixtures(),api={request:async(path:string)=>readFixture(path,plugins,binding)} as unknown as Api;
+ const {element}=await mount(t,api,'#/system/plugins?tab=discover');
+ const card=element.querySelector('[data-host-surface="outbound-webhook"]');
+ assert.ok(card,'the outbound group exposes the host pointer');
+ assert.equal(card.querySelector('button'),null,'the pointer is not an installable artifact');
+ assert.equal(card.querySelector('a')?.getAttribute('href'),'#/connections/access');
+ assert.match(card.textContent!,/不是安装包/);
+ assert.match(card.textContent!,/AI 接入/);
+});
+
 test('official catalog preview resolves the fixed repository and tag',async t=>{
  const {plugins,binding}=fixtures(),calls:{path:string;body:Record<string,unknown>}[]=[];
  const api={request:async(path:string,init?:RequestInit)=>{
