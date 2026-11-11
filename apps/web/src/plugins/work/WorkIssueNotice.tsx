@@ -5,6 +5,7 @@ import { errorMessage } from '../../api';
 import { failureMessage } from '../../failure-message';
 import { useResource } from '../../useResource';
 import { modelSetupHref } from '../models-processing/ModelStartGuide';
+import { LoadingText } from '../../Loading';
 const hints: Record<string, {
     text: string;
     category?: 'providers' | 'model' | 'images' | 'file-processing';
@@ -40,7 +41,7 @@ export function WorkIssueNotice({ api, work, hideUnknownCode=false }: {
     // Only the formatter's explicit opaque-code fallback is collapsed. Known
     // explanations and recovery links keep their existing protocol mapping.
     const explanation=hideUnknownCode&&code&&failure===moteText('操作未完成。错误码：{0}',code)?moteText("目前还没有明确的处理原因。"):failure;
-    const title = read.loading && !read.data ? moteText("正在读取等待原因…") : code ? (known ? moteText(known.text) : explanation) : read.error ? moteText("具体原因暂时无法读取。") : moteText("目前还没有明确的处理原因。");
+    const title = read.loading && !read.data ? <LoadingText label={moteText("正在读取等待原因…")}/> : code ? (known ? moteText(known.text) : explanation) : read.error ? moteText("具体原因暂时无法读取。") : moteText("目前还没有明确的处理原因。");
     return <section className="discovery-work-issue" aria-label={moteText("工作需要处理的原因")}><h2>{work.state === 'failed' ? moteText("未完成的原因") : moteText("当前需要处理的原因")}</h2><p role="status">{title}</p>{work.technical.operationIds.length > 1 && <p className="fine-print">{moteText("这里仅核对首个关联执行记录；还有 {0} 个关联记录，可在技术详情继续查看。已有补充问题单独显示在下方。",work.technical.operationIds.length-1)}</p>}{code && <p className="fine-print">{moteText("原件归档、正文处理、索引与记忆状态分别核对。")}</p>}
   {modelDependency && <><p>{moteText("先保存或检查已有模型连接，再检查这项任务对应的模块；回到原任务，按它当前提供的操作继续。")}</p><div className="source-toolbar"><a className="button" href={modelSetupHref('providers', currentWork)}>{moteText("检查模型连接")}</a><a className="text-button" href={modelSetupHref('model', currentWork)}>{moteText("检查 / 分配对应模块 →")}</a></div></>}
   {!modelDependency && category && <a className="button" href={'#/system/models?category=' + category + '&returnTo=' + encodeURIComponent(currentWork)}>{moteText("查看{0}",category === 'images' ? moteText("图片处理设置") : category === 'file-processing' ? moteText("文件与语音设置") : moteText("模型连接设置"))}</a>}

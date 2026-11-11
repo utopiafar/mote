@@ -3,12 +3,12 @@ import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from './api';
 import {useResource} from './useResource';
 import {resources} from './resource-cache';
+import { LoadingText } from './Loading';
 
 type Role='ocr'|'dialogue'|'speaker-wespeaker';
 type Preparation={state:string;error?:string;runtimeReady:boolean;model:{state:string;bytes:number;totalBytes:number}};
 const running=(state?:string)=>['queued','dependencies','verifying_dependencies','models','starting'].includes(state??'');
-function stateText(value?:Preparation){
- if(!value)return moteText('正在读取…');
+function stateText(value:Preparation){
  if(value.state==='queued')return moteText('等待另一项安装完成…');
  if(value.state==='dependencies')return moteText('正在准备运行依赖…');
  if(value.state==='verifying_dependencies')return moteText('正在验证运行依赖…');
@@ -39,7 +39,7 @@ export function MediaPreparation({api,role,title}:{api:Api;role:Role;title:strin
  async function action(cancel=false){const origin=api;setBusy(true);setMessage('');try{await origin.request(`/api/media-preparation/${role}${cancel?'/cancel':''}`,{method:'POST',body:'{}'});if(current.current===origin){resources(origin).invalidate(key=>key==='/api/media-preparation'||key==='/api/media-models');}}catch(error){if(current.current===origin)setMessage(errorMessage(error));}finally{if(current.current===origin)setBusy(false);}}
  const installing=running(value?.state),ready=value?.state==='ready'&&value.runtimeReady;
  return <section className="media-preparation" aria-label={title}>
-  <div className="media-preparation-row"><div><strong>{title}</strong><p role="status">{stateText(value)}</p></div>
+  <div className="media-preparation-row"><div><strong>{title}</strong><p role="status">{value?stateText(value):<LoadingText/>}</p></div>
    {ready?<button type="button" className="button" disabled={read.loading} onClick={()=>read.refresh()}>{moteText('检查状态')}</button>:<button type="button" className="button primary" disabled={busy||installing||!value||Boolean(read.error)||value.state==='unsupported'} onClick={()=>void action()}>{installing?moteText('安装中…'):value?.state==='failed'||value?.state==='cancelled'||value?.model.state==='ready'?moteText('重试'):moteText('一键安装')}</button>}
   </div>
   {installing&&<><progress aria-label={moteText('安装进度')} {...(value?.state==='models'&&value.model.totalBytes>0?{value:value.model.bytes,max:value.model.totalBytes}:{})}/><button type="button" className="text-button" disabled={busy} onClick={()=>void action(true)}>{moteText('取消')}</button></>}

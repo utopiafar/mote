@@ -15,6 +15,7 @@ import { useResource } from './useResource';
 import { useHashChoice } from './useHashChoice';
 import { SourceContextFields, useSourceContextDraft } from './plugins/sources/SourceContextEditor';
 import { useUnsavedChanges } from './unsaved';
+import { LoadingText } from './Loading';
 const readProvider=(hash:string)=>new URLSearchParams(hash.slice(hash.indexOf('?')+1)).get('provider')??'';
 const names: Record<string, string> = { feishu: '飞书录音 / 妙记', dingtalk: '钉钉录音 / 闪记' };
 const phases: Record<string, string> = { discover: '发现记录', metadata: '读取信息', transcript: '归档转写', media: '备份音频' };
@@ -130,7 +131,7 @@ export function RecordingConnection({ api, provider, onOpen }: {
         }
     };
     const status = read.data;const preparation=useRef<HTMLDetailsElement>(null);const [disconnecting,setDisconnecting]=useState(false);
-    return <section className="connector-recording-connection"><section className="connector-section"><div className="section-heading"><h2>{moteText('连接')}</h2><span className="badge muted">{recordingBindingText(status)}</span></div>
+    return <section className="connector-recording-connection"><section className="connector-section"><div className="section-heading"><h2>{moteText('连接')}</h2>{status?<span className="badge muted">{recordingBindingText(status)}</span>:<LoadingText/>}</div>
  {Boolean(error || read.error) && <p role="alert" className="notice error">{error || connectorFailure(read.error)}</p>}
  {status && <p className="recording-sync-status">{recordingSyncText(status)}</p>}
  {status?.accountName&&<strong>{status.accountName}</strong>}{!status?.connected&&<button className="button" disabled={busy||!status} onClick={()=>{if(preparation.current)preparation.current.open=true;}}>{moteText('连接账号')}</button>}<details ref={preparation} className="connector-details connector-preparation"><summary>{moteText('接入准备')}</summary><RecordingSetupHelp/>{status?.connected && <p className="muted">{moteText('已保存账号绑定不代表当前登录或读取权限有效。“重新检测”检查中央运行环境；请结合授权结果与同步步骤确认账号权限。')}</p>}

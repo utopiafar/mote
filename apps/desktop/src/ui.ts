@@ -29,6 +29,7 @@ import {builtinUiRules} from '@mote/shared';
 import {createAppCaptureUi,describeCaptureSelection} from './app-capture-ui';
 import {normalizeAppCollectionRules} from './app-collection';
 import { DesktopNavigation, desktopPages, needsCollectionSetup, type DesktopPage } from './navigation';
+import {showSkeleton} from './loading-ui';
 const desktopApi = window.mote;
 const captureContextUi=createCaptureContextUi(desktopApi,document,markSettingsDirty);
 document.getElementById('ui-page-builtins')!.addEventListener('click',()=>{byId<HTMLTextAreaElement>('ui-page-rules').value=JSON.stringify(builtinUiRules,null,2);appCaptureUi.refreshRules();markSettingsDirty();});
@@ -261,7 +262,7 @@ async function openRecord(item: import('./capture-browser').BrowserCapture, loca
   panel.setAttribute('aria-busy', 'true');
   byId('record-detail-title').textContent = item.appName || moteText("截图");
   byId('record-detail-meta').textContent = `${new Date(item.capturedAt).toLocaleString(getLocale())} · ${ocrLabel(item, location)}`;
-  byId('record-detail-text').textContent = moteText("正在读取记录详情…");
+  showSkeleton(byId('record-detail-text'), moteText("正在读取记录详情…"));
   byId<HTMLImageElement>('record-detail-image').removeAttribute('src');
   byId('record-detail-title').focus(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
   const id = item.id; panel.dataset.recordId = id;
@@ -289,7 +290,7 @@ async function loadRecords(): Promise<void> {
   byId('records-back').hidden = !selectedSession;
   byId('records-selection').textContent = selectedSession ? `${selectedSession.appName || moteText("应用未知")} · ${new Date(selectedSession.firstAt).toLocaleTimeString(getLocale())} — ${new Date(selectedSession.capturedAt).toLocaleTimeString(getLocale())}` : '';
   byId('record-detail').hidden = true; byId('records-grid').replaceChildren();
-  byId('records-status').textContent = moteText("正在读取采集记录…");
+  showSkeleton(byId('records-status'), moteText("正在读取采集记录…"));
   byId('records-status').setAttribute('aria-busy', 'true');
   byId<HTMLButtonElement>('records-previous').disabled = true; byId<HTMLButtonElement>('records-next').disabled = true;
   try {
@@ -1305,7 +1306,7 @@ for(const [source,target] of [['compression-before-pane','compression-after-pane
 byId('compression-apply').addEventListener('click',()=>{const quality=readInput('compression-quality'),side=readInput('compression-side');showPage('capture');byId<HTMLInputElement>('jpeg-quality').value=quality;byId<HTMLInputElement>('capture-max-side').value=side;markSettingsDirty();feedback(moteText("压缩参数已带回设置，请点击保存后应用。"),true);});
 
 async function loadStorageStatistics(): Promise<void> {
- const target=byId('storage-statistics');target.textContent=moteText("正在读取…");
+ const target=byId('storage-statistics');showSkeleton(target,undefined,2);
  try {const report=await desktopApi.storageStatistics();target.replaceChildren();
  const total=document.createElement('h2');total.textContent=moteText("存储空间")+': '+(report.bytes/1048576).toFixed(2)+' MiB · '+report.files+' '+moteText("文件");target.append(total);
  if(report.skipped){const warning=document.createElement('p');warning.textContent=moteText("部分文件无法读取，统计可能不完整。");target.append(warning);}

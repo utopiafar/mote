@@ -1,6 +1,7 @@
 import {getLocale, moteText} from '@mote/shared/i18n';
 import type {DesktopApi, Status} from './contracts';
 import type {ContentItem} from './contracts/content';
+import {showLoadingText} from './loading-ui';
 
 export type RecentConversation = {id:string;title:string;turnCount?:number;updatedAt?:string};
 type WorkbenchActions = {question:(text:string)=>boolean;conversation:(id:string)=>void;content?:(item:ContentItem)=>void;contents?:()=>void};
@@ -25,7 +26,7 @@ export function createWorkbenchUi(api:DesktopApi, actions:WorkbenchActions) {
     el('home-first-status').textContent=(status?.config.deviceName||moteText('这台 Mac'))+' · '+(connected?moteText('已连接你的 Mote'):moteText('仅保存在本机'));
     el('home-first-connection-title').textContent=connected?moteText('已连接你的 Mote'):moteText('连接你的 Mote');el('home-first-connection-copy').textContent=connected?moteText('自动采集尚未开启。'):moteText('让记录进入资料库，供其他设备和 AI 使用。');
     el<HTMLButtonElement>('home-first-read').disabled=archiveAuthorizationDenied&&!firstLocalReadable();el('home-first-record').hidden=!firstRecord;if(!firstRecord){el('home-first-record-preview').textContent='';el('home-first-record-state').textContent='';}el('home-onboarding').querySelector<HTMLElement>('.home-task-actions')!.hidden=Boolean(firstRecord||firstSourceId);
-    el('home-first-title').textContent=firstRecord?moteText('先留下，再慢慢想。'):firstSourceId?moteText('已添加来源'):moteText('先留下一点内容。');el('home-first-copy').textContent=firstRecord?(firstCopy||moteText('正在读取内容…')):firstSourceId?(firstSourceMessage||moteText('正在读取内容…')):moteText('记一句想法，或导入一份文件。自动采集可以稍后再设置。');
+    el('home-first-title').textContent=firstRecord?moteText('先留下，再慢慢想。'):firstSourceId?moteText('已添加来源'):moteText('先留下一点内容。');const firstCopyText=firstRecord?firstCopy:firstSourceId?firstSourceMessage:moteText('记一句想法，或导入一份文件。自动采集可以稍后再设置。');if(firstCopyText)el('home-first-copy').textContent=firstCopyText;else showLoadingText(el('home-first-copy'),moteText('正在读取内容…'));
     if(firstRecord)el('home-first-connection-copy').textContent=status?.sync.message??'';
     el('home-first-connect').hidden=connected;el('home-first-help').hidden=connected;el('home-first-connected').hidden=!connected;
   }

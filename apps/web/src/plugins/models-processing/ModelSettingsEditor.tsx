@@ -8,7 +8,7 @@ import { DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS,
 import { ApiError, errorMessage, type Api } from '../../api';
 import { createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation, type CredentialAction, type ModelSettingsDraft } from './model-settings-form';
 import { codexReasoningChoices, type CatalogModel } from '../../model-reasoning';
-import { Loading } from '../../Loading';
+import { Loading, LoadingRing } from '../../Loading';
 const protocolNames: Record<ModelSettingsDraft['protocol'], string> = {
     'codex-app-server': "本机 Codex App Server",
     deepseek: "DeepSeek 原生",
@@ -243,7 +243,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
             <div className="preference-grid">{credentialChoice('apiKeyAction', moteText("API key 操作"), active.snapshot.settings.apiKeyConfigured)}{draft.apiKeyAction === 'replace' && <label className="preference-field">{moteText("新的 API key")}<input aria-label={moteText("新的 API key")} type="password" autoComplete="new-password" spellCheck={false} value={draft.apiKey} onChange={e => change({ apiKey: e.target.value })} placeholder={moteText("输入此服务的 API key")}/><small>{moteText("只保留在当前页面内存，保存后清空输入。")}</small></label>}</div>
           </div>}
           <label className="preference-field model-default-model">{moteText('默认模型')}<input aria-label={moteText('模型名称')} list={'model-catalog-'+(profileId??'default')} autoComplete="off" spellCheck={false} maxLength={512} value={draft.model} onChange={event=>change({model:event.target.value})} placeholder={moteText('选择或填写模型 ID')}/><datalist id={'model-catalog-'+(profileId??'default')}>{catalog.map(model=><option key={model.id} value={model.id}>{model.name}</option>)}</datalist></label>
-          <div className="model-catalog-line"><button type="button" className="text-button" disabled={catalogLoading} onClick={()=>setCatalogReload(value=>value+1)}>{catalogLoading?moteText('正在读取模型列表…'):moteText('读取模型列表')}</button>{catalogError&&<span role="status">{catalogError}</span>}{!catalogLoading&&!catalogError&&!catalog.length&&<span>{moteText('目录暂无可用模型，可手动填写。')}</span>}</div>
+          <div className="model-catalog-line"><button type="button" className="text-button" disabled={catalogLoading} aria-busy={catalogLoading} onClick={()=>setCatalogReload(value=>value+1)}>{catalogLoading&&<LoadingRing label={moteText('正在读取模型列表…')}/>}{moteText('读取模型列表')}</button>{catalogError&&<span role="status">{catalogError}</span>}{!catalogLoading&&!catalogError&&!catalog.length&&<span>{moteText('目录暂无可用模型，可手动填写。')}</span>}</div>
           <details className="model-advanced"><summary>{moteText('高级设置')}</summary>
             <label className="preference-field">{moteText("接口协议")}<select aria-label={moteText("接口协议")} value={draft.protocol} onChange={e => change({ protocol: e.target.value as ModelSettingsDraft['protocol'] })}>{Object.entries(protocolNames).map(([id, name]) => <option key={id} value={id}>{moteText(name)}</option>)}</select><small>{moteText("兼容地址应使用服务支持的协议；自定义参数按此协议传递。")}</small></label>
           {preset?.docsUrl && <a className="model-provider-docs" href={preset.docsUrl} target="_blank" rel="noreferrer">{moteText("查看")}{' '}{preset.name}{' '}{moteText("接入文档")}<ExternalLink size={13}/></a>}

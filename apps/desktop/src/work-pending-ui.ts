@@ -2,6 +2,7 @@ import {renderReadableFailure} from './ui-diagnostic';
 import {moteText,getLocale} from '@mote/shared/i18n';
 import type {DesktopApi,Status} from './contracts';
 import type {ContentItem} from './contracts/content';
+import {showSkeleton,showLoadingLine} from './loading-ui';
 
 /** Reads the same complete local queue index as Content; each row opens the shared reader. */
 export function createWorkPendingUi(api:DesktopApi,open:(item:ContentItem)=>void,receipts:()=>void){
@@ -18,7 +19,7 @@ export function createWorkPendingUi(api:DesktopApi,open:(item:ContentItem)=>void
   wrapper.append(document.getElementById('work-refresh')!);root.append(section,actions,wrapper);
   let version=0,active=false,next:number|undefined,reading=false,scope='',items:ContentItem[]=[];
   function render(){list.replaceChildren();for(const item of items){const row=document.createElement('button');row.type='button';row.className='content-row home-content-row';const icon=document.createElement('span');icon.className='home-content-symbol';icon.setAttribute('aria-hidden','true');icon.textContent=({note:'✎',screen:'▧',ui_page:'▤',activity:'◷',notification:'◌',media:'♫',file:'▤',calendar:'▦',coding:'⌘'} as Partial<Record<ContentItem['source'],string>>)[item.source]??'▤';const copy=document.createElement('span'),title=document.createElement('strong'),meta=document.createElement('small'),status=document.createElement('span');title.textContent=item.title;meta.textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale())].filter(Boolean).join(' · ');copy.className='content-row-copy';copy.append(title,meta);status.className=item.error?'content-state needs-attention':'content-state';status.textContent=item.error?moteText('需要处理'):moteText('本机待发送');const arrow=document.createElement('span');arrow.className='chevron';arrow.setAttribute('aria-hidden','true');arrow.textContent='›';row.append(icon,copy,status,arrow);row.addEventListener('click',()=>open(item));list.append(row);}more.hidden=next===undefined;}
-  async function refresh(append=false){if(!active||reading)return;const revision=++version;reading=true;state.textContent=moteText('正在读取…');more.disabled=true;
+  async function refresh(append=false){if(!active||reading)return;const revision=++version;reading=true;if(items.length)showLoadingLine(state);else showSkeleton(state);more.disabled=true;
     try{const page=await api.localContent(append?next:0);if(revision!==version||!active)return;items=append?[...items,...page.items]:page.items;next=page.nextOffset;render();state.textContent=items.length?'':moteText('没有待发送内容');}
     catch(error){if(revision===version&&active)renderReadableFailure(state,moteText('内容暂不可完整读取，请重试。'),error instanceof Error?error.message:String(error));}
     finally{if(revision===version){reading=false;more.disabled=false;}}

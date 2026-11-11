@@ -6,6 +6,7 @@ import type {CaptureSession} from '@mote/shared';
 import {type Api,type Device,dateTime,errorMessage,queryString} from '../../api';
 import {captureDateRange,localDateInput} from '../../capture-presentation';
 import {useResource} from '../../useResource';
+import { LoadingText } from '../../Loading';
 
 type ImageRef={id:string;capturedAt:string;hasImage:boolean;appName:string};
 export function CaptureSessions({api,devices,onOpen,revision}:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number}){
@@ -30,7 +31,7 @@ export function CaptureSessions({api,devices,onOpen,revision}:{api:Api;devices:D
     </div>
     {selected&&<div className="section-heading"><button className="button" onClick={reset}><ArrowLeft size={15}/>{moteText("返回分组")}</button><div><h2>{selected.appName||moteText("应用未知")}</h2><p>{dateTime(selected.firstAt)} — {dateTime(selected.capturedAt)}</p></div></div>}
     {error&&<div role="alert" className="error-banner">{error}<button className="button" onClick={()=>{reset();setRefresh(n=>n+1);}}>{moteText("重新读取")}</button></div>}
-    <p role="status">{initialLoading?moteText("正在读取…"):moteText("{0}{1} 条记录 · 第 {2} 页", selected?'':moteText(mode==='sessions'?"会话：{0} · ":"相册：{0} · ", groupCount), total, cursors.length)}</p>
+    <p role="status">{initialLoading?<LoadingText/>:moteText("{0}{1} 条记录 · 第 {2} 页", selected?'':moteText(mode==='sessions'?"会话：{0} · ":"相册：{0} · ", groupCount), total, cursors.length)}</p>
     {!initialLoading&&!error&&!items.length&&<div className="panel workspace-empty"><Clock3/><p>{moteText("这一天还没有截图记录。")}</p></div>}
     <div id={tabsId+'panel'} role="tabpanel" aria-labelledby={tabsId+mode} className={selected?'session-image-grid':'session-list'}>{items.map(item=>'count' in item?<button className="session-card" key={item.id} onClick={()=>{setSelected(item);setCursors([undefined]);}}><span className="session-symbol"><Layers3 size={20}/></span><span><strong>{item.appName||moteText("应用未知")}</strong><small>{devices.find(d=>d.deviceId===item.deviceId)?.deviceName||item.deviceId}</small><span>{dateTime(item.firstAt)} — {dateTime(item.capturedAt)}</span></span><span className="session-count"><strong>{item.count}{' '}{moteText("条")}</strong><small>{item.imageCount}{' '}{moteText("张图片")}</small></span><ArrowRight size={16}/></button>:<SessionImage key={item.id} api={api} item={item} onOpen={onOpen}/>)}</div>
     {!selected&&<><p className="measurement-note">{moteText("起止时间表示观察范围，不代表持续使用时长。")}</p><details className="special-measurement"><summary>{moteText('技术详情')}</summary><p>{mode==='sessions'?moteText("同一设备、同一应用的连续截图归为一段；切换应用或相邻采样超过 5 分钟即分段。范围仅限所选日期，本机与中央按各自保留的记录分组。"):moteText("每 15 分钟按设备与应用汇集截图。")}</p></details></>}

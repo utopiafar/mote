@@ -147,14 +147,15 @@ strong {
   align-items: center;
   font-size: var(--mote-font-action);
 }
-/* Loading: skeleton rows for content, a ring inside controls, a line for in-place refresh and the
-   writing mark for whole-surface waits. Nothing appears for the first 300 ms. */
+/* Loading: skeleton rows for content, a short bar for a value inside a sentence, a ring inside controls,
+   a line for in-place refresh and the writing mark for whole-surface waits. Nothing appears for the first 300 ms. */
 .loading-ring { width:16px; height:16px; flex:none; animation:spin .9s linear infinite; }
 .loading-ring circle { fill:none; stroke-width:2.4; }
 .loading-ring circle:first-child { stroke:var(--mote-hair); }
 .loading-ring circle:last-child { stroke:currentColor; stroke-linecap:round; stroke-dasharray:12 48; }
 .loading.skeleton,.loading.loading-line,.loading.loading-mark { animation:loading-in .2s ease-out .3s both; }
 .loading.skeleton { display:grid; gap:20px; width:100%; padding:8px 0; }
+.loading.loading-text { display:inline-block; width:5.5em; max-width:100%; height:.8em; vertical-align:-.05em; border-radius:var(--mote-radius-indicator); background:var(--mote-fill); animation:loading-in .2s ease-out .3s both,skeleton-breathe 1.8s ease-in-out .5s infinite; }
 .skeleton-row { display:grid; gap:9px; }
 .skeleton-row i { display:block; height:11px; border-radius:var(--mote-radius-indicator); background:var(--mote-fill); animation:skeleton-breathe 1.8s ease-in-out infinite; }
 .skeleton-row i:first-child { width:min(62%,420px); height:14px; }

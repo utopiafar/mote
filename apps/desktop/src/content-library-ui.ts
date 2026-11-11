@@ -3,6 +3,7 @@ import {appendDiagnostic,renderReadableFailure} from './ui-diagnostic';
 import type {DesktopApi,Status} from './contracts';
 import type {ContentItem,ContentDetail,CentralContentPage} from './content-library';
 import type {SyncContent} from './sync-content';
+import {showSkeleton} from './loading-ui';
 /** Home and Content share one evidence reader; no markup from evidence becomes UI. */
 export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,homeContentChanged?:(hasContent:boolean|undefined,rows:readonly ContentItem[],archiveAuthorizationDenied:boolean)=>void,reader?:{open():void;close():void}){
   const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
@@ -108,7 +109,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     for(const button of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-content-scope]')))button.setAttribute('aria-pressed',String(button.dataset.contentScope===scope));
     const scopeKey=JSON.stringify([scope,query.trim()]),previous=loadedScope===scopeKey?items:[];
     if(!append){localOffset=0;remoteCursor=undefined;localMore=false;remoteMore=false;items=[];}
-    el('content-status').textContent=moteText('正在读取内容…');
+    showSkeleton(el('content-status'),moteText('正在读取内容…'));
     el('content-status').setAttribute('aria-busy','true');
     if(!append&&!previous.length){
       // No complete result exists for this read yet; an old empty result is not proof.
@@ -151,7 +152,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     if(!selected)return;const version=++detailGeneration,archiveVersion=archiveGeneration,request=++archiveRequest,item=selected;
     el('content-detail-status').setAttribute('aria-busy','true');
     el('content-detail-title').textContent=item.title||sourceName(item.source);el('content-detail-source').textContent=sourceName(item.source);el('content-detail-facts').textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale())].filter(Boolean).join(' · ');
-    el('content-detail-range').hidden=true;el('content-detail-body').textContent='';el('content-detail-description').textContent='';el('content-description-section').hidden=true;el('content-detail-original-state').textContent='';el('content-detail-metadata').textContent='';el<HTMLImageElement>('content-detail-image').removeAttribute('src');el('content-detail-status').textContent=moteText('正在读取内容…');el('content-detail-next').hidden=true;el('content-detail-central').hidden=true;el('content-original').hidden=true;
+    el('content-detail-range').hidden=true;el('content-detail-body').textContent='';el('content-detail-description').textContent='';el('content-description-section').hidden=true;el('content-detail-original-state').textContent='';el('content-detail-metadata').textContent='';el<HTMLImageElement>('content-detail-image').removeAttribute('src');showSkeleton(el('content-detail-status'),moteText('正在读取内容…'));el('content-detail-next').hidden=true;el('content-detail-central').hidden=true;el('content-original').hidden=true;
     if(!dialog.open){el<HTMLDetailsElement>('content-processing').open=false;if(reader){dialog.show();reader.open();}else dialog.showModal();el('content-detail-title').focus();}stages(item.key.startsWith('capture:'),'unknown');
     try{
       const result:ContentDetail|SyncContent=item.key.startsWith('capture:')?await api.centralContentDetail(item.key.slice(8),chunkOffset,image):await api.localContentDetail(item.key,image);

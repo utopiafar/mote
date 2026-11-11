@@ -6,6 +6,7 @@ import {RefreshCw} from 'lucide-react';
 import {type Api, bytes, duration, dateTime, errorMessage} from './api';
 import {BrowserLogSettings} from './BrowserLogSettings';
 import type {ServerConfiguration} from '@mote/shared';
+import { LoadingText } from './Loading';
 
 interface Snapshot {
   enabled:boolean;level:string;instanceId:string;lastSeq:number;retainedEvents:number;
@@ -57,9 +58,9 @@ export function Diagnostics({api,profile,advanced,deployment}:{api:Api;profile?:
     <BrowserLogSettings profile={profile}/>
     {Boolean(transfer.error||statusResource.error||logs.error)&&<><div className="notice error" role="alert">{maintenanceFailure(transfer.error||statusResource.error||logs.error)}</div><details className="owner-disclosure"><summary>{moteText('技术详情')}</summary><pre>{maintenanceTechnicalFailure(transfer.error||statusResource.error||logs.error)}</pre></details></>}
     {transfer.message&&<p className="notice" role="status">{transfer.message}</p>}
-    <div className="owner-row"><div><h2 id="diagnostics-title">{moteText('中央')}</h2><p>{statusResource.error?moteText('暂不可读取'):snapshot?moteText('运行中'):statusResource.loading?moteText('正在读取…'):moteText('暂不可读取')}{checkedAt&&<> · {moteText('最近检查 {0}',dateTime(checkedAt))}</>}</p></div><button className="text-button" onClick={refresh} disabled={busy}>{moteText('刷新')}</button></div>
+    <div className="owner-row"><div><h2 id="diagnostics-title">{moteText('中央')}</h2><p>{statusResource.error?moteText('暂不可读取'):snapshot?moteText('运行中'):statusResource.loading?<LoadingText/>:moteText('暂不可读取')}{checkedAt&&<> · {moteText('最近检查 {0}',dateTime(checkedAt))}</>}</p></div><button className="text-button" onClick={refresh} disabled={busy}>{moteText('刷新')}</button></div>
     {typeof logDirectory==='string'&&logDirectory&&<p className="fine-print" style={{overflowWrap:'anywhere'}}>{moteText('中央')} · {moteText('日志目录')}: <code>{logDirectory}</code><br/>{moteText('结构化中央日志的实际路径；Docker 通常位于 /data/logs。')}</p>}
-    <div className="owner-row"><div><h3>{moteText('接收与索引')}</h3><p>{snapshot?moteText('索引待处理 {0} 项，失败 {1} 项',snapshot.queue.index.pending,snapshot.queue.index.failed):moteText('正在读取…')}</p></div><a className="text-button" href="#/activity">{moteText('查看后台活动')} →</a></div>
+    <div className="owner-row"><div><h3>{moteText('接收与索引')}</h3><p>{snapshot?moteText('索引待处理 {0} 项，失败 {1} 项',snapshot.queue.index.pending,snapshot.queue.index.failed):<LoadingText/>}</p></div><a className="text-button" href="#/activity">{moteText('查看后台活动')} →</a></div>
     <section className="owner-section"><h2>{moteText('问题诊断')}</h2><div className="owner-row"><div><h3>{moteText('导出诊断包')}</h3><p>{moteText('运行状态、数量与脱敏事件')}</p></div><div className="owner-row-actions"><select aria-label={moteText('导出时间范围')} value={hours} onChange={event=>setHours(Number(event.target.value))}><option value={1}>{moteText('最近 1 小时')}</option><option value={24}>{moteText('最近 24 小时')}</option><option value={168}>{moteText('最近 7 天')}</option></select><button className="button" onClick={()=>void download()} disabled={exporting}>{exporting?moteText('正在导出…'):moteText('导出')}</button></div></div>
     <details className="owner-disclosure"><summary>{moteText('查看运行日志')}</summary>
     <p className="fine-print">{moteText("导出所选时段内全部已保留日志；日志轮转前已清理的部分无法恢复，导出包会注明覆盖范围。")}</p><p className="fine-print">{moteText("诊断包包含运行状态、数量、耗时和最近事件，不包含笔记、截图、模型对话或访问令牌。客户端的采集、电量和本地队列诊断从各自 App 导出。")}</p>

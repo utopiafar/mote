@@ -10,6 +10,7 @@ import {PerceptionSettings} from '../../PerceptionSettings';
 import {FileProcessingSettings} from '../../FileProcessingSettings';
 import {useProcessingRelatedPages} from './ProcessingRelatedPages';
 import {processingProfileLabel,type FileSettingsView} from '../../processing-settings-view';
+import { Loading } from '../../Loading';
 
 type ImageView={revision:number;settings:{enabled:boolean;understandingEnabled:boolean;allowExternalProcessing:boolean;allowQueryImages:boolean;providerRevision:string;ocrEndpoint:string;ocrProcessorId:string;profileId?:string};model:{model?:string}|null};
 type Kind='images'|'audio'|'documents';
@@ -76,7 +77,7 @@ export function MaterialProcessing({api,kind,onDetailChange}:{api:Api;kind:Kind;
  return <section className="material-processing" aria-label={moteText(kind==='images'?'图片':kind==='audio'?'录音':'文档与其他文件')} aria-busy={busy}>
   <div data-processing-main hidden={related.active}>
   {(error||failure!==undefined)&&<p ref={saveError} role="alert">{error||errorMessage(failure)}</p>}
-  {!current&&!revoked&&<p role="status">{failure!==undefined?moteText('暂不可用'):moteText('正在读取…')}</p>}
+  {!current&&!revoked&&(failure!==undefined?<p role="status">{moteText('暂不可用')}</p>:<Loading rows={2}/>)}
   {current&&!revoked&&<><form className="processing-form material-processing-form" onSubmit={event=>{event.preventDefault();void save();}}><fieldset disabled={busy||failure!==undefined}>
    {kind==='images'&&<>
     <Check value={current.image.settings.enabled} onChange={value=>edit(draft=>{draft.image.settings.enabled=value;})}>{moteText('自动处理新图片')}</Check>

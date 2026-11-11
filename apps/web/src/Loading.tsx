@@ -18,6 +18,16 @@ export function Loading({label=moteText('正在读取…'),rows=3}:{label?:strin
   </div>;
 }
 
+/** A value still on its way inside a sentence or row: a short bar where its words will be. */
+export function LoadingText({label=moteText('正在读取…')}:{label?:string}) {
+  return <span className="loading loading-text"><span className="visually-hidden">{label}</span></span>;
+}
+
+/** Inside a control: the control keeps its words and gains a ring; assistive technology hears that it is busy. */
+export function LoadingRing({label=moteText('正在读取…')}:{label?:string}) {
+  return <><svg className="loading-ring" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="7.5"/></svg><span className="visually-hidden">{label}</span></>;
+}
+
 /** Visible content is being refreshed in place. */
 export function LoadingLine({label=moteText('正在读取…')}:{label?:string}) {
   return <div className="loading loading-line" role="status"><span className="visually-hidden">{label}</span><i aria-hidden="true"/></div>;
