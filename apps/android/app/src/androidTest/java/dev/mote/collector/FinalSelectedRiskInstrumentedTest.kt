@@ -317,7 +317,7 @@ class FinalSelectedRiskInstrumentedTest {
                     val label="查看引用 ${i+1} · ";until("Exact H04 turn citation row"){main{shown().any{it.contentDescription?.toString()?.startsWith(label)==true}}};main{shown().single{it.contentDescription?.toString()?.startsWith(label)==true}.performClick()}
                     until("Public reader shows full exact typed text"){main{shown().filterIsInstance<TextView>().any{it.tag=="capture-reference-text"&&it.text.toString()==expected[i]}}}
                     assertFalse(has("imageLocation"));assertFalse(has("{\"speaker\""));assertFalse(main{shown().any{it.tag=="capture-reference-canonical"}});picture("h04-citation-${i+1}-readable-default")
-                    clickDisclosure("更多");until("Complete exact canonical remains explicitly readable"){main{shown().filterIsInstance<TextView>().any{it.tag=="capture-reference-canonical"&&it.text.toString()==originals[i].getString("ocrText")}}};picture("h04-citation-${i+1}-canonical-more");click("返回上级")
+                    clickDisclosure("技术详情");until("Complete exact canonical remains explicitly readable"){main{shown().filterIsInstance<TextView>().any{it.tag=="capture-reference-canonical"&&it.text.toString()==originals[i].getString("ocrText")}}};picture("h04-citation-${i+1}-canonical-more");click("返回上级")
                     until("Same actual parent and full later draft returned"){var selected=false;scenario.onActivity{selected=!it.isWorking&&it.selectedAskConversationId==conversation};selected&&main{shown().filterIsInstance<EditText>().any{it.contentDescription=="你的问题"&&it.text.toString()==draft}}};picture("h04-citation-${i+1}-same-parent-return")
                 }
             }

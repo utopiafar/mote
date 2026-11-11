@@ -97,10 +97,9 @@ class MaterialAskInstrumentedTest {
                     .putExtra("recordId",capture).putExtra("recordRemote",true).putExtra("recordOrigin",origin)
                     .putExtra("recordSource","screen").putExtra("directReader",true).putExtra("centralReaderActions",true)).use { s ->
                     readyAny(s,"Actual original reader"){a -> shownViews(a).filterIsInstance<TextView>().any { it.text.toString().contains("暖气费按实际用量分摊") }}
-                    clickAny(s,"Open the actual original More menu"){it is TextView && it.isClickable && !it.isSelected && it.text.toString()=="更多"}
-                    clickAny(s,"详情"){it is TextView && it.isClickable && it.text.toString()=="详情"}
+                    clickAny(s,"Open the actual original More sheet"){it.tag=="capture-reader-more" && it.contentDescription?.toString()=="更多"}
+                    clickWindowText("详情")
                     until("Receipt timeline and references are visible"){main{windows().any{it is TextView&&it.text.toString()=="本机已保存"}&&windows().any{it is TextView&&it.text.toString()=="中央已接收"}&&windows().any{it is TextView&&it.text.toString()=="引用它的对话"}}}
-                    main { windows().filterIsInstance<TextView>().firstOrNull { it.isSelected && it.text.toString()=="更多" }?.performClick() }
                     instrumentation.waitForIdleSync()
                     s.onActivity { a ->
                         assertTrue(windows().filterIsInstance<TextView>().any { it.text.toString()=="2" })
@@ -199,7 +198,7 @@ class MaterialAskInstrumentedTest {
             val hash=read.getJSONArray("spans").getJSONObject(0).getJSONObject("asset").getString("hash")
             s.onActivity { a->assertTrue(shown(a).filterIsInstance<TextView>().any{it.text.toString()=="此版本暂无文字正文。"});assertTrue(shown(a).filterIsInstance<TextView>().any{it.text.toString()=="text/plain"});assertTrue(shown(a).filterIsInstance<TextView>().any{it.text.toString()=="原件已保留"});assertFalse(shown(a).filterIsInstance<TextView>().any{it.text.contains(hash) || it.text.toString().startsWith("[asset ") || it.text.toString().startsWith("sourceId ·")}) }
             screenshot(s,"asset-only-material-reader")
-            click(s,"更多"){it is TextView && it.tag=="disclosure:"+MoteI18n.text("更多")};ready(s,"Actual asset hash is available only in expanded details"){a->shown(a).filterIsInstance<TextView>().any{it.text.contains(hash)}};screenshot(s,"asset-only-expanded-real-metadata");click(s,"更多"){it is TextView && it.tag=="disclosure:"+MoteI18n.text("更多")}
+            click(s,"技术详情"){it is TextView && it.tag=="disclosure:"+MoteI18n.text("技术详情")};ready(s,"Actual asset hash is available only in expanded details"){a->shown(a).filterIsInstance<TextView>().any{it.text.contains(hash)}};screenshot(s,"asset-only-expanded-real-metadata");click(s,"技术详情"){it is TextView && it.tag=="disclosure:"+MoteI18n.text("技术详情")}
             clickText(s,"来源与处理");ready(s,"Pinned member original route"){a->!a.isWorking && shown(a).filterIsInstance<TextView>().any{it.text.toString()=="查看原文"}}
             val monitor=instrumentation.addMonitor(CaptureRecordsActivity::class.java.name,null,false)
             try { clickText(s,"查看原文");val reader=instrumentation.waitForMonitorWithTimeout(monitor,10_000) as? CaptureRecordsActivity;assertNotNull(reader)

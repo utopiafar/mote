@@ -398,6 +398,22 @@ internal class CentralContent(
         }.also(composer::addView)
     }
     internal fun hideAskComposer() { composer.visibility = View.GONE }
+    /** A reader's picture loads beside the page's own work, so a slow image never holds the next page back.
+     * A picture whose page has gone is skipped or dropped, and the idle lane's thread ends by itself. */
+    private val readerImages = java.util.concurrent.ThreadPoolExecutor(0, 1, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue())
+    internal fun readerImage(path: String, done: (android.graphics.Bitmap?) -> Unit) {
+        val api = client ?: return done(null)
+        val version = revision; val generation = accessGeneration
+        readerImages.execute {
+            if (version != revision) return@execute
+            val bitmap = runCatching { CapturePreview.decode(api.image(path), 1600) }.getOrNull()
+            handler.post { if (version == revision && generation == accessGeneration && !isDestroyed) done(bitmap) else bitmap?.recycle() }
+        }
+    }
+    /** A library reader's docked 围绕这份资料提问, in the composer slot that navigation and the next detail clear. */
+    internal fun readerDock(dock: View) {
+        composer.removeAllViews(); composer.addView(dock, LinearLayout.LayoutParams(-1, -2)); composer.visibility = View.VISIBLE
+    }
     internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
     /** A conversation fills the page from the bare back bar; the empty Ask keeps its heading. */
     internal fun askConversationVisible(visible: Boolean) {
@@ -628,7 +644,7 @@ internal class CentralContent(
         status.text = message
         status.visibility = if (message.isBlank()) View.GONE else View.VISIBLE
     }
-    internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun) }
+    internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); composer.removeAllViews(); composer.visibility = View.GONE }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
         val offline = page == "ask" && networkFailure(error)
         // The composer's own notice already says what happened; a raw transport

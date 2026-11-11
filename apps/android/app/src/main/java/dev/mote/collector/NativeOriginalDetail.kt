@@ -262,13 +262,25 @@ internal object NativeOriginalDetail {
         isFocusable = true; announceAsButton(); setOnClickListener { onClick() }
     }
 
+    /** The copy stays out of clipboard previews, like the reader stays out of screenshots. */
+    fun copy(context: Context, value: String) {
+        val clip = android.content.ClipData.newPlainText(MoteI18n.text("原文"), value)
+        clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(clip)
+        if (android.os.Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(context, MoteI18n.text("已复制"), android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    fun share(activity: Activity, value: String) {
+        activity.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, value), null))
+    }
+
     /** The ask entry docked under the reader. */
-    fun askBar(context: Context, onClick: () -> Unit): View = LinearLayout(context).apply {
+    fun askBar(context: Context, key: String = "capture-reader-ask", onClick: () -> Unit): View = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         MoteUi.backgroundColor(this, NativeColorRole.BACKGROUND)
         addView(MoteComponents.divider(context))
         addView(TextView(context).apply {
-            text = MoteI18n.text("围绕这份资料提问"); tag = "capture-reader-ask"
+            text = MoteI18n.text("围绕这份资料提问"); tag = key
             MoteUi.type(this, NativeFontRole.ACTION); MoteUi.textColor(this, NativeColorRole.MUTED)
             gravity = Gravity.CENTER_VERTICAL or Gravity.START; minHeight = context.moteDp(48)
             setPadding(context.moteDp(18), 0, context.moteDp(18), 0)

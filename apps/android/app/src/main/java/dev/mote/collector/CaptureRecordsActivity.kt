@@ -566,7 +566,8 @@ class CaptureRecordsActivity : MoteActivity() {
                         val descriptions = if (describe) NativeRecordDescription.read(record,remote) else emptyList()
                         val ask: (() -> Unit)? = when {
                             centralReader -> { { runCatching { selected(); startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId",id).putExtra("evidenceOrigin",intent.getStringExtra("recordOrigin")).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) }.onFailure { alert(it.message ?: MoteI18n.text("操作失败，请重试")) } } }
-                            isNote -> { { startActivity(Intent(this@CaptureRecordsActivity, CentralActivity::class.java).putExtra("page", "ask").putExtra("evidenceId", id).putExtra("evidenceOrigin", if (remote) selection?.server else record.optString("dataOrigin").takeIf(String::isNotBlank)).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) } }
+                            // A note carries where it was saved; any other record can be asked about once it is on Central.
+                            isNote || remote -> { { startActivity(Intent(this@CaptureRecordsActivity, CentralActivity::class.java).putExtra("page", "ask").putExtra("evidenceId", id).putExtra("evidenceOrigin", if (remote) selection?.server else record.optString("dataOrigin").takeIf(String::isNotBlank)).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) } }
                             else -> null
                         }
                         val deletionKind = if (centralReader) CentralDeletion.kind(record) else null
@@ -597,7 +598,7 @@ class CaptureRecordsActivity : MoteActivity() {
                         fun showDetail() {
                             if (!centralReader) { NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record)); return }
                             detailExecutor.execute {
-                                val conversations=runCatching { NativeOriginalDetail.conversations(selected()) }.getOrDefault(emptyList())
+                                val conversations=runCatching { NativeOriginalDetail.conversations(selected()) }.getOrNull()
                                 runOnUiThread {
                                     if (isDestroyed || !reading()) return@runOnUiThread
                                     val access=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
@@ -612,7 +613,7 @@ class CaptureRecordsActivity : MoteActivity() {
                                 // A central record carries its receipt times; a local one has nothing to show yet.
                                 if (remote) add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail() })
                                 if (!inlineDescriptions && descriptions.isNotEmpty()) add(OriginalAction(MoteGlyph.COMPOSE, MoteI18n.text("资料说明"), chevron = true) { NativeOriginalDetail.description(this@CaptureRecordsActivity, descriptions) })
-                                if (readable.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { copyOriginal(readable) })
+                                if (readable.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { NativeOriginalDetail.copy(this@CaptureRecordsActivity, readable) })
                             }
                             val remove = deletionKind?.let { kind -> OriginalAction(MoteGlyph.TRASH, MoteI18n.text(if (kind == "file") "删除文件" else "删除记录"), enabled = !deleting) { confirmDeletion(kind) } }
                             val note = if (centralReader && deletionKind == null) MoteI18n.text("此引用不能直接删除原始记录。") else null
@@ -626,7 +627,7 @@ class CaptureRecordsActivity : MoteActivity() {
                             descriptions.forEach { description -> text(content, description, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true) }
                         }
                         if (direct) {
-                            if (readable.isNotBlank()) readerActions.addView(NativeOriginalDetail.barButton(this@CaptureRecordsActivity, MoteGlyph.SHARE, "分享", "capture-reader-share") { shareOriginal(readable) })
+                            if (readable.isNotBlank()) readerActions.addView(NativeOriginalDetail.barButton(this@CaptureRecordsActivity, MoteGlyph.SHARE, "分享", "capture-reader-share") { NativeOriginalDetail.share(this@CaptureRecordsActivity, readable) })
                             if (remote || descriptions.isNotEmpty() || readable.isNotBlank() || centralReader)
                                 readerActions.addView(NativeOriginalDetail.barButton(this@CaptureRecordsActivity, MoteGlyph.MORE, "更多", "capture-reader-more") { sheet() })
                             readerActions.visibility = if (readerActions.childCount > 0) View.VISIBLE else View.GONE
@@ -714,16 +715,6 @@ class CaptureRecordsActivity : MoteActivity() {
                 }
             } catch (error: Exception) { runOnUiThread { if (!isDestroyed && reading()) notice(errorMessage(error, remote)) } }
         }
-    }
-    /** The copy stays out of clipboard previews, like the reader stays out of screenshots. */
-    private fun copyOriginal(value: String) {
-        val clip = android.content.ClipData.newPlainText(MoteI18n.text("原文"), value)
-        clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
-        getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(clip)
-        if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(this, MoteI18n.text("已复制"), Toast.LENGTH_SHORT).show()
-    }
-    private fun shareOriginal(value: String) {
-        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, value), null))
     }
     private fun errorMessage(error: Exception, remote: Boolean): String = if (error is IllegalStateException || error is IllegalArgumentException) error.message ?: MoteI18n.text("记录读取失败，请刷新重试") else if (remote) MoteI18n.text("中央记录暂不可读取，请检查网络后重试") else MoteI18n.text("本机记录暂不可读取，请刷新重试；文件已保留")
     private fun time(at: String): String = runCatching { DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.parse(at)) }.getOrDefault(at)
