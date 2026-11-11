@@ -1,6 +1,7 @@
+import {moteText} from '../i18n.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {FILE_PART_BYTES,type LarkStatus,type LarkSelection,type LarkJob,type LarkCalendar,type SourceItem,type SourceItemRecord} from '@mote/shared';
+import {FILE_PART_BYTES,calendarEventSchema,centralCalendarPluginCapabilitySchema,isCentralConnectorActionTarget,moteActionMarker,type ActionPluginProvider,type CalendarDraft,type ConnectorActionExecution,type ConnectorActionReceipt,type LarkStatus,type LarkSelection,type LarkJob,type LarkCalendar,type SourceItem,type SourceItemRecord} from '@mote/shared';
 import {PrivateFile} from './private-file.js';
 import {ConnectorError} from './types.js';
 import type {LarkContext} from './lark-context.js';
@@ -8,7 +9,17 @@ import {createLarkRunner,larkJson,authorizationUrl,type LarkRunner,type LarkComm
 import {LarkDocumentSync,documentSelectionSchema,documentScope,hasDocumentSelection,larkReference} from './lark-documents.js';
 import {calendarBoundary} from './google.js';
 
+const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 export const LARK_SCOPES=['docx:document:readonly','wiki:wiki:readonly','search:docs:read'];
+/** Event writes are a separate consent on the same Lark account. A broader
+ * calendar grant or the three granular event scopes all satisfy it. */
+export const LARK_CALENDAR_WRITE_SCOPES=Object.freeze(['calendar:calendar']);
+export function larkCalendarWriteScopesOk(values:readonly string[]):boolean{
+ const granted=new Set(values);
+ return granted.has('calendar:calendar')||['calendar:calendar.event:create','calendar:calendar.event:update','calendar:calendar.event:delete'].every(scope=>granted.has(scope));
+}
+const centralCalendarCapability=centralCalendarPluginCapabilitySchema.parse({id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'central-connector',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,completionInMoteOnly:true}});
+const builtinIdentity={packageId:'mote.builtin.lark-calendar',releaseDigest:hash('mote.builtin.lark-calendar@1'),instanceId:'lark-calendar',instanceRevision:1,capabilityDigest:hash(JSON.stringify(centralCalendarCapability))};
 function requiredScopeGroups(selection:LarkSelection){
   const groups=[['docx:document:readonly'],['wiki:wiki:readonly']];
   if(selection.documentDiscovery&&(selection.documentDiscovery.created||selection.documentDiscovery.edited||selection.documentDiscovery.opened))groups.push(['search:docs:read']);
@@ -20,12 +31,11 @@ function requiredScopeGroups(selection:LarkSelection){
 }
 function requiredScopes(selection:LarkSelection){return requiredScopeGroups(selection).map(group=>group[0]);}
 function missingScopes(selection:LarkSelection,granted:ReadonlySet<string>){return requiredScopeGroups(selection).filter(group=>!group.some(scope=>granted.has(scope))).map(group=>group[0]);}
-const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const now=()=>new Date().toISOString();
 export const documentReference=(value:string)=>larkReference(value);
 const selectionSchema=z.object({...documentSelectionSchema,calendarIds:z.array(z.string().min(1).max(1000)).max(10),pastDays:z.number().int().min(0).max(180),futureDays:z.number().int().min(1).max(180),timeZone:z.string().max(100).refine(v=>{try{new Intl.DateTimeFormat('en',{timeZone:v});return true;}catch{return false;}}),autoSync:z.boolean()}).strict();
 const defaults=():LarkSelection=>({documents:[],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:true,documentDiscovery:{created:true,edited:true,opened:true,firstSyncDays:30}});
-const savedSchema=z.object({version:z.literal(1),enabled:z.boolean(),selectionAuthorized:z.boolean().optional(),account:z.string().optional(),selection:selectionSchema,lastSyncAt:z.string().datetime().optional()}).strict();
+const savedSchema=z.object({version:z.literal(1),enabled:z.boolean(),selectionAuthorized:z.boolean().optional(),calendarWriteAuthorized:z.boolean().optional(),account:z.string().optional(),selection:selectionSchema,lastSyncAt:z.string().datetime().optional()}).strict();
 type Saved=z.infer<typeof savedSchema>;
 const eventSchema=z.object({event_id:z.string().min(1).max(1000),summary:z.string().max(2000).optional(),description:z.string().max(90000).optional(),status:z.string().optional(),start_time:z.object({timestamp:z.string().optional(),date:z.string().optional(),timezone:z.string().optional()}).optional(),end_time:z.object({timestamp:z.string().optional(),date:z.string().optional(),timezone:z.string().optional()}).optional(),location:z.object({name:z.string().optional()}).optional()});
 function revision(item:Omit<SourceItem,'revision'>,prior?:SourceItemRecord):SourceItem{
@@ -69,7 +79,7 @@ export class LarkConnector{
     if(!this.initialized||this.closed)return;
     this.timer=setInterval(()=>{if(this.saved.enabled&&this.saved.selection.autoSync&&this.selectionAuthorized()&&!this.active&&!this.closed)try{this.startSync(undefined,true);}catch{}},interval);this.timer.unref();
   }
-  status():LarkStatus{return {...this.snapshot,connected:this.snapshot.connected&&this.saved.enabled,selection:structuredClone(this.saved.selection),syncIntervalSeconds:Math.floor((this.syncIntervalMs??900000)/1000),...(this.saved.account&&hasDocumentSelection(this.saved.selection)?{documentSync:this.documents().status()}:{}),...(this.job?{job:{...this.job}}:{}),...(this.saved.lastSyncAt?{lastSyncAt:this.saved.lastSyncAt}:{})};}
+  status():LarkStatus{return {...this.snapshot,connected:this.snapshot.connected&&this.saved.enabled,calendarWriteAuthorized:this.saved.enabled&&this.saved.calendarWriteAuthorized===true,selection:structuredClone(this.saved.selection),syncIntervalSeconds:Math.floor((this.syncIntervalMs??900000)/1000),...(this.saved.account&&hasDocumentSelection(this.saved.selection)?{documentSync:this.documents().status()}:{}),...(this.job?{job:{...this.job}}:{}),...(this.saved.lastSyncAt?{lastSyncAt:this.saved.lastSyncAt}:{})};}
   async refresh(){
     if(this.closed)throw new ConnectorError('connector_closed',503);
     if(this.active||this.reading||this.disconnecting)return this.status();
@@ -82,6 +92,9 @@ export class LarkConnector{
       const data=larkJson(await this.runner({kind:'status'})),user=data.identities?.user;
       this.snapshot.configured=typeof data.appId==='string'&&data.appId.length>0;
       const granted=new Set<string>(typeof user?.scope==='string'?user.scope.split(/\s+/):[]);this.grantedScopes=granted;
+      // A live provider check may withdraw Mote's stored write authorization,
+      // but it never turns an ordinary read login into write authorization.
+      if(this.saved.calendarWriteAuthorized===true&&!larkCalendarWriteScopesOk([...granted])){this.saved={...this.saved,calendarWriteAuthorized:false};await this.file.write(this.saved);}
       this.snapshot.missingScopes=missingScopes(this.saved.selection,granted);
       this.snapshot.connected=user?.available===true&&typeof user?.openId==='string';
       this.snapshot.accountName=typeof user?.userName==='string'?user.userName.slice(0,200):undefined;
@@ -108,21 +121,41 @@ export class LarkConnector{
   login(calendar=false){return this.start('login',async(signal,job)=>{
     const priorEnabled=new Map(this.ctx.sources.listSources().map(source=>[source.id,source.enabled]));
     await this.disable();
-    const raw=larkJson(await this.run({kind:'login',scopes:[...new Set([...requiredScopes(this.saved.selection),...(calendar?['calendar:calendar:readonly']:[])])]},signal));
+    // Preserve write scopes already granted to this same account; a read
+    // reauthorization must not silently drop them, but it never adds them and
+    // never broadens the ordinary document/calendar read request.
+    const preservedWrite=[...this.grantedScopes].filter(scope=>scope==='calendar:calendar'||scope.startsWith('calendar:calendar.event:'));
+    const requested=[...new Set([...preservedWrite,...requiredScopes(this.saved.selection),...(calendar?['calendar:calendar:readonly']:[])])];
+    await this.authorizeDevice(requested,signal,job);
+    await this.probe();if(signal.aborted)throw new ConnectorError('lark_operation_cancelled',409);if(!this.snapshot.connected||!this.account)throw new ConnectorError('lark_login_incomplete',409);
+    if(this.snapshot.missingScopes.length||calendar&&!this.grantedScopes.has('calendar:calendar:readonly'))throw new ConnectorError('lark_permission_required',403);
+    const next={...this.saved,enabled:true,account:this.account};await this.file.write(next);this.saved=next;for(const [id,enabled] of priorEnabled)if(enabled&&(id===this.sourceId('docs')||this.saved.selection.calendarIds.some(calendar=>id===this.sourceId('calendar',calendar))))this.ctx.sources.update(id,{enabled:true});
+  });}
+  /** Separate write consent on the existing account. Read sources, selection
+   * and archived material stay untouched. */
+  startWriteAuthorization(){return this.start('login',async(signal,job)=>{
+    const current=await this.probe();
+    if(!current.connected||!this.saved.enabled||!this.account)throw new ConnectorError('lark_not_connected',401);
+    const requested=[...new Set([...this.grantedScopes,...LARK_CALENDAR_WRITE_SCOPES])];
+    await this.authorizeDevice(requested,signal,job);
+    await this.probe();if(signal.aborted)throw new ConnectorError('lark_operation_cancelled',409);
+    if(!this.snapshot.connected||!this.account)throw new ConnectorError('lark_login_incomplete',409);
+    if(!larkCalendarWriteScopesOk([...this.grantedScopes]))throw new ConnectorError('lark_calendar_write_permission_required',403);
+    const next={...this.saved,calendarWriteAuthorized:true};await this.file.write(next);this.saved=next;
+  });}
+  private async authorizeDevice(scopes:string[],signal:AbortSignal,job:LarkJob){
+    const raw=larkJson(await this.run({kind:'login',scopes},signal));
     const data=z.object({verification_url:z.string().max(8000),device_code:z.string().min(1).max(4000),expires_in:z.number().positive().max(600)}).parse(raw);
     const url=authorizationUrl(data.verification_url);if(!url)throw new ConnectorError('lark_authorization_url_invalid',502);
     job.authorizationUrl=url;job.expiresAt=new Date(Date.now()+data.expires_in*1000).toISOString();job.state='waiting';
     const expires=AbortSignal.timeout(data.expires_in*1000);
     try{await this.run({kind:'complete',deviceCode:data.device_code},AbortSignal.any([signal,expires]));}catch(e){if(expires.aborted&&!signal.aborted)throw new ConnectorError('lark_authorization_expired',409);throw e;}
-    await this.probe();if(signal.aborted)throw new ConnectorError('lark_operation_cancelled',409);if(!this.snapshot.connected||!this.account)throw new ConnectorError('lark_login_incomplete',409);
-    if(this.snapshot.missingScopes.length||calendar&&!this.grantedScopes.has('calendar:calendar:readonly'))throw new ConnectorError('lark_permission_required',403);
-    const next={...this.saved,enabled:true,account:this.account};await this.file.write(next);this.saved=next;for(const [id,enabled] of priorEnabled)if(enabled&&(id===this.sourceId('docs')||this.saved.selection.calendarIds.some(calendar=>id===this.sourceId('calendar',calendar))))this.ctx.sources.update(id,{enabled:true});
-  });}
+  }
   async cancel(){this.controller?.abort();await this.active;return this.status();}
   private sourceId(kind:'docs'|'calendar',id=''){return `lark-${kind}-${hash(`${this.saved.account}:${id}`).slice(0,24)}`;}
   private async pauseSources(){if(!this.saved.account)return;for(const id of [this.sourceId('docs'),...this.saved.selection.calendarIds.map(id=>this.sourceId('calendar',id))]){try{this.ctx.sources.update(id,{enabled:false});}catch{}}}
   private async disable(){await this.pauseSources();this.saved={...this.saved,enabled:false};await this.file.write(this.saved);}
-  async disconnect(){if(this.disconnecting)throw new ConnectorError('lark_busy',409);this.disconnecting=true;try{this.readController?.abort();await this.reading?.catch(()=>{});await this.checking;await this.cancel();await this.disable();return this.status();}finally{this.disconnecting=false;}}
+  async disconnect(){if(this.disconnecting)throw new ConnectorError('lark_busy',409);this.disconnecting=true;try{this.readController?.abort();await this.reading?.catch(()=>{});await this.checking;await this.cancel();await this.disable();const next={...this.saved,calendarWriteAuthorized:false};await this.file.write(next);this.saved=next;return this.status();}finally{this.disconnecting=false;}}
   private async requireConnected(){await this.probe();if(!this.snapshot.connected||!this.saved.enabled||!this.account||this.account!==this.saved.account)throw new ConnectorError('lark_not_connected',409);}
   private async listCalendars(signal?:AbortSignal):Promise<LarkCalendar[]>{
     let token:string|undefined;const all:LarkCalendar[]=[];const seen=new Set<string>();
@@ -210,5 +243,45 @@ export class LarkConnector{
     if(failure)throw new ConnectorError(failure,502);
     const next={...this.saved,lastSyncAt:now()};await this.file.write(next);this.saved=next;
   },Boolean(reference));}
+  calendarActionProviders():ActionPluginProvider[]{
+    if(!this.saved.enabled||this.saved.calendarWriteAuthorized!==true)return [];
+    return this.saved.selection.calendarIds.map(calendarId=>({identity:builtinIdentity,name:moteText("飞书日历 · {0}", calendarId.slice(0,80)),capability:centralCalendarCapability,calendarId}));
+  }
+  disconnectWriteAuthorization(){return this.start('selection',async()=>{
+    const next={...this.saved,calendarWriteAuthorized:false};await this.file.write(next);this.saved=next;
+  });}
+  async executeAction(request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
+    if(this.closed)throw new ConnectorError('connector_closed',503);
+    if(request.capability?.id!=='calendar.manage'||request.capability.version!==1)throw new ConnectorError('lark_calendar_action_unsupported',403);
+    if(typeof request.operationId!=='string'||!request.operationId)throw new ConnectorError('lark_calendar_operation_required',400);
+    const input=request.input;
+    if(!input||!['calendar.create','calendar.update','calendar.cancel'].includes(input.kind))throw new ConnectorError(input?.kind==='calendar.complete'?'lark_calendar_completion_unsupported':'lark_calendar_action_unsupported',403);
+    if(!isCentralConnectorActionTarget(input.target)||!input.target.calendarId)throw new ConnectorError('lark_calendar_target_required',400);
+    const calendarId=input.target.calendarId;
+    if(!this.saved.selection.calendarIds.includes(calendarId))throw new ConnectorError('lark_calendar_target_not_selected',403);
+    await this.requireConnected();
+    if(this.saved.calendarWriteAuthorized!==true||!larkCalendarWriteScopesOk([...this.grantedScopes]))throw new ConnectorError('lark_calendar_write_not_authorized',403);
+    if(input.kind==='calendar.create'){
+      const event=calendarEventSchema.parse(input.event),data=this.eventBody(event,request);
+      const raw=larkJson(await this.runner({kind:'calendar-event-create',calendarId,data}));
+      const id=raw?.data?.event?.event_id??raw?.event?.event_id;
+      if(typeof id!=='string'||!id)throw new ConnectorError('lark_event_receipt_missing',502);
+      return {status:'succeeded',externalId:id.slice(0,1000)};
+    }
+    const externalId=input.externalId;
+    if(!externalId)throw new ConnectorError('lark_event_identity_required',400);
+    if(input.kind==='calendar.update'){
+      const event=calendarEventSchema.parse(input.event),data=this.eventBody(event,request);
+      larkJson(await this.runner({kind:'calendar-event-update',calendarId,eventId:externalId,data}));
+      return {status:'succeeded',externalId};
+    }
+    larkJson(await this.runner({kind:'calendar-event-delete',calendarId,eventId:externalId}));
+    return {status:'succeeded',externalId};
+  }
+  private eventBody(event:CalendarDraft,request:ConnectorActionExecution){
+    const description=[event.description,request.input.actionId?moteActionMarker(request.input.actionId):'',`[Mote-operation:${request.operationId}]`].filter(Boolean).join('\n\n').trim();
+    const boundary=(value:string|null)=>event.allDay?{date:value,timezone:event.timeZone??'UTC'}:{timestamp:String(Math.floor(Date.parse(value!)/1000)),timezone:event.timeZone??'UTC'};
+    return {summary:event.title,...(description?{description}:{}),start_time:boundary(event.start),end_time:boundary(event.end),...(event.location?{location:{name:event.location}}:{})};
+  }
   async close(){this.closed=true;clearInterval(this.timer);this.timer=undefined;this.controller?.abort();this.readController?.abort();await this.reading?.catch(()=>{});await this.active;await this.checking;await this.file.flush();}
 }

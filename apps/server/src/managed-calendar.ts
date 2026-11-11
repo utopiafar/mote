@@ -11,11 +11,11 @@ export class ManagedCalendar {
  private cursor=0;
  constructor(private store:Store,private actions:Actions,private capabilities:ActionCapabilities,private connections:Connections,private connectorAction?:ConnectorDispatch){}
  private sameTarget(a:ActionProposalTarget,b:ActionProposalTarget){
-  if(isCentralConnectorActionTarget(a)||isCentralConnectorActionTarget(b))return isCentralConnectorActionTarget(a)&&isCentralConnectorActionTarget(b)&&a.packageId===b.packageId&&a.instanceId===b.instanceId&&a.instanceRevision===b.instanceRevision&&a.capabilityId===b.capabilityId&&a.capabilityVersion===b.capabilityVersion;
+  if(isCentralConnectorActionTarget(a)||isCentralConnectorActionTarget(b))return isCentralConnectorActionTarget(a)&&isCentralConnectorActionTarget(b)&&a.packageId===b.packageId&&a.instanceId===b.instanceId&&a.instanceRevision===b.instanceRevision&&a.capabilityId===b.capabilityId&&a.capabilityVersion===b.capabilityVersion&&a.calendarId===b.calendarId;
   return a.deviceId===b.deviceId&&a.calendarId===b.calendarId;
  }
  private grantTarget(grant:ActionGrant):ActionProposalTarget{
-  if('executionLocation' in grant.target)return {executionLocation:'central-connector',packageId:grant.plugin.packageId,instanceId:grant.plugin.instanceId,instanceRevision:grant.plugin.instanceRevision,capabilityId:grant.capability.id,capabilityVersion:grant.capability.version};
+  if('executionLocation' in grant.target)return {executionLocation:'central-connector',packageId:grant.plugin.packageId,instanceId:grant.plugin.instanceId,instanceRevision:grant.plugin.instanceRevision,capabilityId:grant.capability.id,capabilityVersion:grant.capability.version,...(grant.target.calendarId?{calendarId:grant.target.calendarId}:{})};
   return {deviceId:grant.target.deviceId,calendarId:grant.target.calendarId};
  }
  /** A grant matches only its declared calendar action kinds and its one exact
@@ -89,7 +89,8 @@ export class ManagedCalendar {
   let claimed:ActionProposal;
   try{claimed=this.actions.connectorClaim(action.id,operationId);}catch{return;}
   try{
-   const receipt=await this.connectorAction({target,request:{capability:choice.capability,operationId,input:{kind:action.kind,event:action.event,target,...(action.message?{message:action.message}:{})}}});
+   const externalId=action.related?.externalId??action.externalId;
+   const receipt=await this.connectorAction({target,request:{capability:choice.capability,operationId,input:{kind:action.kind,event:action.event,target,...(action.message?{message:action.message}:{}),actionId:action.id,...(externalId?{externalId}:{})}}});
    if(receipt.status==='succeeded'&&receipt.externalId){
     this.actions.connectorReceipt(action.id,operationId,{operationId,status:'succeeded',externalId:receipt.externalId});
     if(claimed.managed)this.actions.bindManaged(action.id,{...claimed.managed,state:'succeeded'});

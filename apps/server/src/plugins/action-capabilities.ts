@@ -42,14 +42,14 @@ export class ActionCapabilities {
  declarations():ActionDeviceCapability[]{return this.store.db.prepare('SELECT json FROM action_device_capabilities ORDER BY device_id').all().map(row=>JSON.parse(String(row.json)) as ActionDeviceCapability).map(value=>({...value,connectionActive:this.active(value.connectionId)}));}
  private centralProviders(){return this.providers().filter(provider=>provider.capability.executionLocation==='central-connector');}
  private deviceProviders(){return this.providers().filter(provider=>provider.capability.executionLocation==='device');}
- private centralProvider(target:CentralConnectorActionTarget){return this.centralProviders().find(provider=>provider.identity.packageId===target.packageId&&provider.identity.instanceId===target.instanceId&&provider.identity.instanceRevision===target.instanceRevision&&provider.capability.id===target.capabilityId&&provider.capability.version===target.capabilityVersion);}
+ private centralProvider(target:CentralConnectorActionTarget){return this.centralProviders().find(provider=>provider.identity.packageId===target.packageId&&provider.identity.instanceId===target.instanceId&&provider.identity.instanceRevision===target.instanceRevision&&provider.capability.id===target.capabilityId&&provider.capability.version===target.capabilityVersion&&provider.calendarId===target.calendarId);}
  /** Enabled Central connector write declarations, exposed as selectable
   * execution locations. Selecting or authorizing one never executes by itself. */
  centralConnectors():ActionConnectorChoice[]{
   return this.centralProviders().map(provider=>({
    name:provider.name,
    capability:{id:provider.capability.id,version:provider.capability.version},
-   target:{executionLocation:'central-connector' as const,packageId:provider.identity.packageId,instanceId:provider.identity.instanceId,instanceRevision:provider.identity.instanceRevision,capabilityId:provider.capability.id,capabilityVersion:provider.capability.version},
+   target:{executionLocation:'central-connector' as const,packageId:provider.identity.packageId,instanceId:provider.identity.instanceId,instanceRevision:provider.identity.instanceRevision,capabilityId:provider.capability.id,capabilityVersion:provider.capability.version,...(provider.calendarId?{calendarId:provider.calendarId}:{})},
   }));
  }
  resolveCentralTarget(target:CentralConnectorActionTarget){return this.centralProvider(target);}
@@ -99,7 +99,7 @@ export class ActionCapabilities {
  grant(id:string){return this.read<ActionGrant>('action_capability_grants',id);}
  grants():ActionGrant[]{return this.store.db.prepare('SELECT json FROM action_capability_grants ORDER BY id').all().map(row=>JSON.parse(String(row.json)));}
  private pluginAvailable(identity:ActionPluginIdentity){return this.providers().some(provider=>JSON.stringify(provider.identity)===JSON.stringify(identity));}
- private centralScopeValid(grant:ActionGrant){const provider=this.centralProvider({executionLocation:'central-connector',packageId:grant.plugin.packageId,instanceId:grant.plugin.instanceId,instanceRevision:grant.plugin.instanceRevision,capabilityId:grant.capability.id,capabilityVersion:grant.capability.version});return !!provider&&JSON.stringify(provider.identity)===JSON.stringify(grant.plugin)&&provider.capability.id===grant.capability.id&&provider.capability.version===grant.capability.version;}
+ private centralScopeValid(grant:ActionGrant){const provider=this.centralProvider({executionLocation:'central-connector',packageId:grant.plugin.packageId,instanceId:grant.plugin.instanceId,instanceRevision:grant.plugin.instanceRevision,capabilityId:grant.capability.id,capabilityVersion:grant.capability.version,...(grant.target.calendarId?{calendarId:grant.target.calendarId}:{})});return !!provider&&JSON.stringify(provider.identity)===JSON.stringify(grant.plugin)&&provider.capability.id===grant.capability.id&&provider.capability.version===grant.capability.version;}
  /** Owner authorization remains scoped even while the target device is offline
   * or its OS grant is withdrawn; live availability is a separate check. */
  private scopeValid(grant:ActionGrant){

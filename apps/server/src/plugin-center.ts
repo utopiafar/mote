@@ -44,6 +44,12 @@ export type PluginOutboundHost={
   close():Promise<void>;
 };
 
+/** Built-in connectors (Google Calendar, Lark Calendar) expose write
+ * declarations only after their own write scope is authorized. They reuse the
+ * same Central target, host dispatch and receipts as installed packages; they
+ * are not catalog entries and cannot be installed or uninstalled. */
+export type BuiltinActionProvider={connectorId:string;provider:ActionPluginProvider};
+export type BuiltinActionDispatch=(input:{connectorId:string;target:CentralConnectorActionTarget;request:ConnectorActionExecution})=>Promise<ConnectorActionReceipt>;
 const configurationSchema=z.record(z.union([z.string(),z.number().finite(),z.boolean()]));
 const instanceSchema=z.object({name:z.string().trim().min(1).max(160),scope:z.literal('default'),configuration:configurationSchema,expectedRevision:z.number().int().positive(),operationId:z.string().uuid()}).strict();
 export type StoredPackage=BuildPackageRecord;
@@ -81,6 +87,9 @@ export class PluginCenter {
   /** Bound after the Central outbound runtime is assembled. Only installed,
    * checked and enabled outbound instances reach this seam. */
   outboundHost?:PluginOutboundHost;
+  /** Bound after built-in connectors start. Selecting or authorizing one never
+   * executes; the same host dispatcher revalidates it on every action. */
+  builtinActions?:{providers:()=>readonly BuiltinActionProvider[];execute:BuiltinActionDispatch};
   private readonly activeConnectors=new Map<string,{connectorId:string;instanceId:string}>();
   constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;assertCurrent?:()=>void;hostDependencies?:readonly TrustedHostDependency[]}){
     this.control=new PluginControlStore(store);
@@ -176,9 +185,13 @@ export class PluginCenter {
     if(!record||record.retired)return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};
     return {...view,issues:[...view.issues,...references],allowedActions:pending?[]:[...(!view.desired&&!references.length?['configure' as const,'check' as const]:[]),...(view.desired?['disable' as const]:!view.issues.length&&view.capabilities.every(value=>value.state!=='unknown')&&view.capabilities.some(value=>value.state==='verified')?['enable' as const]:[])]};
   }
-  /** Only installed, checked, enabled instances supply execution declarations. */
+  /** Only installed, checked, enabled instances and built-in cloud connectors
+   * with an explicit write scope supply execution declarations. */
   actionProviders():ActionPluginProvider[]{
     if(this.closed)return [];
+    return [...this.installedActionProviders(),...(this.builtinActions?.providers()??[]).map(value=>value.provider)];
+  }
+  private installedActionProviders():ActionPluginProvider[]{
     return this.view().instances.flatMap(instance=>{
       if(!instance.desired||instance.observed!=='ready'||instance.issues.length)return [];
       const pkg=this.packageForInstance(instance.id);if(pkg.view.state!=='installed')return [];
@@ -193,7 +206,9 @@ export class PluginCenter {
    * adapts its source-specific write and never decides authority or idempotency. */
   async executeConnectorAction(input:{target:CentralConnectorActionTarget;request:ConnectorActionExecution}):Promise<ConnectorActionReceipt>{
     if(this.closed)throw new StoreError('Plugin Center is closed',503);
-    const target=input.target,provider=this.actionProviders().find(value=>value.identity.packageId===target.packageId&&value.identity.instanceId===target.instanceId&&value.identity.instanceRevision===target.instanceRevision&&value.capability.id===target.capabilityId&&value.capability.version===target.capabilityVersion&&value.capability.executionLocation==='central-connector');
+    const target=input.target,builtin=this.builtinActions?.providers().find(value=>value.provider.identity.packageId===target.packageId&&value.provider.identity.instanceId===target.instanceId&&value.provider.identity.instanceRevision===target.instanceRevision&&value.provider.capability.id===target.capabilityId&&value.provider.capability.version===target.capabilityVersion&&value.provider.calendarId===target.calendarId&&value.provider.capability.executionLocation==='central-connector');
+    if(builtin)return this.builtinActions!.execute({connectorId:builtin.connectorId,target,request:input.request});
+    const provider=this.installedActionProviders().find(value=>value.identity.packageId===target.packageId&&value.identity.instanceId===target.instanceId&&value.identity.instanceRevision===target.instanceRevision&&value.capability.id===target.capabilityId&&value.capability.version===target.capabilityVersion&&value.capability.executionLocation==='central-connector');
     if(!provider)throw new StoreError('The Central connector action provider is unavailable',409);
     const owned=this.activeConnectors.get(provider.identity.instanceId);
     if(!owned||!this.connectorHost?.executeAction)throw new StoreError('The Central connector instance is unavailable',503);

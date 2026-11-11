@@ -10313,5 +10313,16 @@ export const spanish: Readonly<Record<string, string>> = {
   "还没有 Webhook。空目标、空范围或未启用的端点都不会投递。": "No webhooks yet. An empty target, empty scope or disabled endpoint never delivers.",
   "还没有开发者凭据。新建后可用于 n8n 或社区脚本拉取事件。": "No developer credentials yet. Create one for n8n or community scripts to pull events.",
   "还没有投递记录。": "No deliveries yet.",
-  "最多尝试 {0} 次": "Up to {0} attempts"
+  "最多尝试 {0} 次": "Up to {0} attempts",
+  "云端日历写出": "Escrituras en calendarios en la nube",
+  "只读连接和启用同步不等于写出授权。写出需在这里单独授权，并在行动平台确认范围。": "Una conexión de solo lectura y activar la sincronización no autorizan escrituras. Autoriza las escrituras aquí por separado y confirma el alcance en Acciones.",
+  "写出仅作用于你选择的日历；完成仍只在 Mote 中记录。": "Las escrituras solo se aplican al calendario seleccionado; la finalización se registra solo en Mote.",
+  "授权云端日历写出": "Autorizar escrituras en calendarios en la nube",
+  "停止云端日历写出": "Detener escrituras en calendarios en la nube",
+  "连接或启用只读日历不是写出授权；写出需在此确认目标日历和资料来源。": "Conectar o activar un calendario de solo lectura no autoriza escrituras; confirma aquí el calendario de destino y el alcance de las fuentes.",
+  "已停止云端日历写出。": "Escrituras en calendarios en la nube detenidas.",
+  "Google 日历写出授权已连接。写出仍需在行动平台确认范围。": "El acceso de escritura a Google Calendar está conectado. Las escrituras aún requieren confirmar el alcance en Acciones.",
+  "写出授权未完成或已过期。请返回 Mote 重试。": "La autorización de escritura no se completó o ha caducado. Vuelve a Mote e inténtalo de nuevo.",
+  "Google 日历 · {0}": "Google Calendar · {0}",
+  "飞书日历 · {0}": "Calendario de Feishu · {0}"
 };

@@ -106,6 +106,21 @@ test('a Central connector target saves a message.send scope and grants only with
  assert.equal(writes[1].path,'/api/action-capability-grants');assert.deepEqual(writes[1].body.acknowledgeMessageSends,true);assert.equal('acknowledgeCalendarWrites' in writes[1].body,false);
 });
 
+test('a built-in cloud connector offers one explicit calendar target and saves that calendar identity',async t=>{
+ const {d,render}=await fixture(t),cloudIdentity={...identity,packageId:'mote.builtin.google-calendar',instanceId:'google-calendar'};
+ const cloudCapability={id:'calendar.manage',version:1,executionLocation:'central-connector' as const};
+ const cloudTarget={executionLocation:'central-connector' as const,packageId:cloudIdentity.packageId,instanceId:cloudIdentity.instanceId,instanceRevision:1,capabilityId:'calendar.manage',capabilityVersion:1,calendarId:'generated-calendar-a'};
+ let current=inventory({providers:[{identity:cloudIdentity,name:'Google Calendar · Generated A',capability:cloudCapability,calendarId:'generated-calendar-a'}],declarations:[],drafts:[],centralConnectors:[{name:'Google Calendar · Generated A',capability:{id:'calendar.manage',version:1},target:cloudTarget}]});
+ const writes:{path:string;body:any}[]=[];
+ const remote=client((path,init)=>{if(!init?.method)return structuredClone(current);const body=JSON.parse(String(init.body));writes.push({path,body});if(path==='/api/action-capability-drafts'){const saved=draft({...body,revision:1});current={...current,drafts:[saved]};return saved;}return {};});
+ await render(remote.api);
+ assert.match(d.body.textContent!,/Google Calendar · Generated A/);
+ await select(d,0,JSON.stringify(cloudTarget));
+ await act(async()=>d.querySelector<HTMLInputElement>('fieldset input[type="checkbox"]')!.click());
+ await act(async()=>button(d,'保存范围草稿').click());
+ assert.equal(writes[0].body.target.executionLocation,'central-connector');assert.equal(writes[0].body.target.calendarId,'generated-calendar-a');
+});
+
 test('commands keep visible polling, recheck exact inventory after503/success/409, and preserve unknown-delivery identities',async t=>{
  const {d,render,visibility,advance}=await fixture(t);let current=inventory({drafts:[]}),saveCalls=0;const pending=deferred(),writes:{path:string;body:any}[]=[];
  const remote=client((path,init)=>{

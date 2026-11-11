@@ -368,6 +368,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
+  // Built-in Google/Lark calendar writes stay deployment connectors: they reuse
+  // the same Central target, host dispatch and receipt path, and never appear in
+  // the installable official catalog.
+  pluginCenter.builtinActions={providers:()=>connectors.actionProviders(),execute:({connectorId,request})=>connectors.executeAction(connectorId,request)};
   // Bounded transport batch with independent durable acknowledgements. Validate the
   // entire envelope and credential scope before writing any member of the batch.
 

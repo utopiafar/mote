@@ -10313,5 +10313,16 @@ export const french: Readonly<Record<string, string>> = {
   "还没有 Webhook。空目标、空范围或未启用的端点都不会投递。": "No webhooks yet. An empty target, empty scope or disabled endpoint never delivers.",
   "还没有开发者凭据。新建后可用于 n8n 或社区脚本拉取事件。": "No developer credentials yet. Create one for n8n or community scripts to pull events.",
   "还没有投递记录。": "No deliveries yet.",
-  "最多尝试 {0} 次": "Up to {0} attempts"
+  "最多尝试 {0} 次": "Up to {0} attempts",
+  "云端日历写出": "Écritures dans les calendriers cloud",
+  "只读连接和启用同步不等于写出授权。写出需在这里单独授权，并在行动平台确认范围。": "Une connexion en lecture seule et l'activation de la synchronisation n'autorisent pas les écritures. Autorisez les écritures séparément ici, puis confirmez la portée dans Actions.",
+  "写出仅作用于你选择的日历；完成仍只在 Mote 中记录。": "Les écritures ne s'appliquent qu'au calendrier sélectionné ; l'achèvement est enregistré uniquement dans Mote.",
+  "授权云端日历写出": "Autoriser les écritures dans les calendriers cloud",
+  "停止云端日历写出": "Arrêter les écritures dans les calendriers cloud",
+  "连接或启用只读日历不是写出授权；写出需在此确认目标日历和资料来源。": "Connecter ou activer un calendrier en lecture seule n'autorise pas les écritures ; confirmez ici le calendrier cible et la portée des sources.",
+  "已停止云端日历写出。": "Écritures dans les calendriers cloud arrêtées.",
+  "Google 日历写出授权已连接。写出仍需在行动平台确认范围。": "L'accès en écriture à Google Agenda est connecté. Les écritures nécessitent toujours une confirmation de portée dans Actions.",
+  "写出授权未完成或已过期。请返回 Mote 重试。": "L'autorisation d'écriture n'a pas été terminée ou a expiré. Revenez dans Mote et réessayez.",
+  "Google 日历 · {0}": "Google Agenda · {0}",
+  "飞书日历 · {0}": "Calendrier Feishu · {0}"
 };

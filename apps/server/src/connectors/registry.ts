@@ -2,7 +2,7 @@ import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import type {StopReason} from '@mote/plugin-api/contracts';
-import {sourceKindSchema,type ConnectorActionExecution,type ConnectorActionReceipt,type SourceCapabilityDescriptor} from '@mote/shared';
+import {sourceKindSchema,type ActionPluginProvider,type ConnectorActionExecution,type ConnectorActionReceipt,type SourceCapabilityDescriptor} from '@mote/shared';
 import {z} from 'zod';
 import type {ConnectorActivation,ConnectorContext} from './types.js';
 
@@ -60,6 +60,9 @@ export interface ConnectorInstance {
   /** Source-specific adapter for one already-confirmed Central action. The host
    * owns validation, authorization, operation identity and receipts. */
   executeAction?(request:ConnectorActionExecution):ConnectorActionReceipt|Promise<ConnectorActionReceipt>;
+  /** Built-in deployment connectors may declare a write scope here. Installed
+   * packages continue to declare action capabilities in their manifest. */
+  actionProviders?():ActionPluginProvider[];
   /** Only trusted deployment modules should mount a custom transport with its own authorization. */
   mountTransport?(app:FastifyInstance):void|Promise<void>;
   close?():void|Promise<void>;
@@ -226,6 +229,11 @@ export class ConnectorRegistry {
     const entry=this.instances.find(item=>item.manifest.id===id);
     if(!entry||typeof entry.instance.executeAction!=='function')throw Error(`Connector ${id} cannot execute actions`);
     return entry.instance.executeAction(request);
+  }
+  /** Live built-in action declarations, attributed to their connector id. */
+  actionProviders():{connectorId:string;provider:ActionPluginProvider}[]{
+    if(this.closed)return [];
+    return this.instances.flatMap(({manifest,instance})=>(instance.actionProviders?.()??[]).map(provider=>({connectorId:manifest.id,provider})));
   }
   async stop(id:string,beforeClose?:()=>void|Promise<void>){
     const index=this.instances.findIndex(item=>item.manifest.id===id);if(index<0){this.clearFailure(id);return;}

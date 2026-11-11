@@ -35,7 +35,10 @@ export const actionPluginCapabilitySchema=z.union([calendarPluginCapabilitySchem
 export type ActionPluginCapability=z.infer<typeof actionPluginCapabilitySchema>;
 export const actionPluginIdentitySchema=z.object({packageId:z.string().min(1).max(300),releaseDigest:z.string().regex(/^[a-f0-9]{64}$/),instanceId:z.string().min(1).max(128),instanceRevision:z.number().int().positive(),capabilityDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 export type ActionPluginIdentity=z.infer<typeof actionPluginIdentitySchema>;
-export type ActionPluginProvider={identity:ActionPluginIdentity;name:string;capability:ActionPluginCapability};
+/** `calendarId` is set only by built-in cloud providers that must address one
+ * explicit calendar; installed package providers retain the connector-wide
+ * shape used by the existing fixture and Slack contracts. */
+export type ActionPluginProvider={identity:ActionPluginIdentity;name:string;capability:ActionPluginCapability;calendarId?:string};
 export const actionGrantCommandSchema=actionCapabilityCommandSchema.extend({id:z.string().uuid(),draftId:z.string().uuid(),draftRevision:z.number().int().positive(),plugin:actionPluginIdentitySchema,acknowledgeCalendarWrites:z.literal(true).optional(),acknowledgeMessageSends:z.literal(true).optional()}).strict().superRefine((value,context)=>{
  if(!value.acknowledgeCalendarWrites&&!value.acknowledgeMessageSends)context.addIssue({code:'custom',message:'Acknowledge the action write scope'});
 });
