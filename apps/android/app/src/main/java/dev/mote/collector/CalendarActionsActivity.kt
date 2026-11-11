@@ -17,6 +17,7 @@ import dev.mote.collector.plugins.ManagedCalendarController
 import dev.mote.collector.plugins.ManagedCalendarPlugin
 import dev.mote.collector.plugins.PluginAvailability
 import dev.mote.collector.plugins.PluginCenterPresentation
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONObject
 
 internal data class NativeTodoDraft(val origin:String,val generation:Long,val text:String)
@@ -121,10 +122,11 @@ class CalendarActionsActivity : MoteActivity() {
         status.text = PluginCenterPresentation.availability(state)
         return false
     }
-    private fun work(label: String, fn: ManagedCalendarController.(Long) -> JSONObject) {
+    private fun work(label: String, read: Boolean = false, fn: ManagedCalendarController.(Long) -> JSONObject) {
         if (!showAvailability()) return
         val expected=withdrawChangedCalendar();val epoch=calendarEpoch;val page=cursor
-        task.start(label, { if(current(expected,epoch))status.text=it else withdrawChangedCalendar() }, {
+        val show = MoteComponents.progress(status, read)
+        task.start(label, { if(current(expected,epoch))show(it) else withdrawChangedCalendar() }, {
             val client=ManagedCalendarPlugin.controller(applicationContext,foreground=true,sessionIdentity=expected)
             client.fn(page) to Settings(applicationContext).deviceId
         }) { result ->
@@ -133,7 +135,7 @@ class CalendarActionsActivity : MoteActivity() {
                 .onFailure { status.text=it.message ?: MoteI18n.text("操作失败，请重试") }
         }
     }
-    private fun refresh() = work(MoteI18n.text("正在读取日程建议…")) { page -> refresh(page) }
+    private fun refresh() = work(MoteI18n.text("正在读取日程建议…"), read = true) { page -> refresh(page) }
     private fun connect() = work(MoteI18n.text("正在连接日历…")) { page -> connectAndList(page) }
     private fun sync() = work(MoteI18n.text("正在同步已确认日程…")) { page -> sync(page) }
     private fun render(data: JSONObject) {

@@ -62,11 +62,11 @@ class BulkDedupeActivity : MoteActivity() {
         resultsTab = action(topActions, MoteI18n.text("查看扫描结果")) { switchArea(false) }
         pendingTab = action(topActions, MoteI18n.text("待决定区")) { switchArea(true) }
         SecondaryUi.text(body, MoteI18n.text("仅处理本机副本。保留图和已同步的中央副本不受影响。"), muted = true)
-        status = SecondaryUi.text(body, MoteI18n.text("正在读取后台任务…"), muted = true)
+        status = SecondaryUi.text(body, MoteI18n.text("正在读取后台任务…"), muted = true).also { MoteComponents.reading(it, it.text.toString()) }
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { visibility = android.view.View.GONE }; body.addView(progress)
         cancel = SecondaryUi.action(SecondaryUi.actions(body), MoteI18n.text("取消后台任务")) {
             cancellationRequested = true
-            cancel.text = MoteI18n.text("正在取消…"); cancel.isEnabled = false
+            MoteComponents.working(cancel, MoteI18n.text("正在取消…")); cancel.isEnabled = false
             WorkManager.getInstance(this@BulkDedupeActivity).cancelUniqueWork(BulkDedupeWorker.NAME)
         }.apply { isEnabled = false; visibility = android.view.View.GONE }
         val results = SecondaryUi.column(body, card = true)
@@ -101,7 +101,7 @@ class BulkDedupeActivity : MoteActivity() {
     private fun switchArea(showPending: Boolean) {
         if (pending == showPending) return
         pending = showPending; page = 0; selected.clear(); rows = emptyList(); renderedRowsKey = ""
-        summary.text = MoteI18n.text("正在读取{0}…", if (pending) MoteI18n.text("待决定区") else MoteI18n.text("扫描结果"))
+        MoteComponents.reading(summary, MoteI18n.text("正在读取{0}…", if (pending) MoteI18n.text("待决定区") else MoteI18n.text("扫描结果")))
         render(); refresh = true
     }
     override fun onResume() {
@@ -161,7 +161,7 @@ class BulkDedupeActivity : MoteActivity() {
                 cancel.isEnabled = active && !cancellationRequested
                 cancel.visibility = if (active) android.view.View.VISIBLE else android.view.View.GONE
                 progress.visibility = if (active) android.view.View.VISIBLE else android.view.View.GONE
-                cancel.text = if (cancellationRequested) MoteI18n.text("正在取消…") else MoteI18n.text("取消后台任务")
+                if (cancellationRequested) MoteComponents.working(cancel, MoteI18n.text("正在取消…")) else cancel.text = MoteI18n.text("取消后台任务")
                 status.text = message
                 progress.isIndeterminate = active && data.getInt("total", 0) == 0
                 progress.max = data.getInt("total", 1).coerceAtLeast(1); progress.progress = data.getInt("done", 0)
@@ -269,7 +269,7 @@ class BulkDedupeActivity : MoteActivity() {
             }.show()
     }
     private fun submit(data: Data, plan: JSONObject? = null) {
-        busy = true; cancellationRequested = false; controls.forEach { it.isEnabled = false }; status.text = MoteI18n.text("正在提交后台任务…")
+        busy = true; cancellationRequested = false; controls.forEach { it.isEnabled = false }; MoteComponents.working(status, MoteI18n.text("正在提交后台任务…"))
         executor.execute {
             try {
                 val manager = WorkManager.getInstance(this)

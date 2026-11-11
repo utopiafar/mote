@@ -131,6 +131,8 @@ internal class CentralContent(
     private lateinit var scroll: ScrollView
     private lateinit var addAction: TextView
     private lateinit var status: TextView
+    /** Work on a filled page runs its line here, over the header divider, so nothing below moves. */
+    private lateinit var busyLine: android.widget.FrameLayout
     private lateinit var title: TextView
     private lateinit var collectionBar: LinearLayout
     private lateinit var composer: LinearLayout
@@ -263,6 +265,8 @@ internal class CentralContent(
         shell.header(header)
         headerDivider = View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER); layoutParams = LinearLayout.LayoutParams(-1,moteDp(1));if(embeddedActions)visibility=View.GONE }
         shell.header(headerDivider)
+        busyLine = android.widget.FrameLayout(this).apply { tag = "central-busy"; layoutParams = LinearLayout.LayoutParams(-1, moteDp(2)).apply { topMargin = -moteDp(2) } }
+        shell.header(busyLine)
         if(embeddedActions){require(initialPage=="actions");header.visibility=View.GONE}
         status = TextView(this).apply {
             tag = "central-status"
@@ -697,10 +701,18 @@ internal class CentralContent(
             if (view is EditText || view is Spinner || view is CompoundButton) { if (view.isEnabled) { inputs.add(view); view.isEnabled = false } }
             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) lock(view.getChildAt(i))
         }; lock(body)
-        // A page still waiting for its first content shows quiet rows instead of a sentence;
-        // work on a filled page keeps its progress notice.
+        // A page still waiting for its first content shows quiet rows instead of a sentence; work on a
+        // filled page runs a thin line, and words appear only for reported progress or slow work.
         val placeholder = if (body.childCount == 0) MoteComponents.skeleton(this, label).also(body::addView) else null
-        task.start(label, { if (placeholder == null && foreground == foregroundRevision && resumed) notice(it) }, { progress ->
+        val line = if (placeholder == null && label.isNotBlank()) MoteComponents.loadingLine(this, label).also {
+            if (foreground == foregroundRevision && resumed) notice("")
+            busyLine.addView(it, android.widget.FrameLayout.LayoutParams(-1, -1))
+        } else null
+        val started = android.os.SystemClock.elapsedRealtime()
+        task.start(label, { message ->
+            val worded = !message.startsWith(label) || android.os.SystemClock.elapsedRealtime() - started >= MoteComponents.SLOW_WORK_MS
+            if (line != null && worded && foreground == foregroundRevision && resumed) notice(message)
+        }, { progress ->
             val before = CentralAccess.resolve(this)
             check(allowSessionChange || generation < 0 || before.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
             check(allowSessionChange || !authenticated || before.client != null && before.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
@@ -712,6 +724,7 @@ internal class CentralContent(
             WorkValue(value, after.generation)
         }) { result ->
             placeholder?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+            line?.let(busyLine::removeView)
             inputs.forEach { it.isEnabled = true }
             if (version == revision && foreground == foregroundRevision && resumed && !isDestroyed && !isFinishing) {
                 result.onSuccess { completed ->

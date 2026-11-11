@@ -31,7 +31,7 @@ internal class BackupOperationView(private val activity: Activity, private val b
         fileCard = SecondaryUi.column(card, card = true).apply { tag = "backup-export-file" }
         updateFile(file)
         content(card)
-        if (loading) card.addView(ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true }, LinearLayout.LayoutParams(-1, activity.moteDp(4)).apply { topMargin = activity.moteDp(16); bottomMargin = activity.moteDp(16) })
+        if (loading) card.addView(MoteComponents.loadingLine(activity, heading), LinearLayout.LayoutParams(-1, activity.moteDp(2)).apply { topMargin = activity.moteDp(16); bottomMargin = activity.moteDp(16) })
         progress = SecondaryUi.text(card, message, muted = true).apply { visibility = if (message.isBlank()) View.GONE else View.VISIBLE; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         if (actions.isNotEmpty()) {
             val row = SecondaryUi.actions(card)

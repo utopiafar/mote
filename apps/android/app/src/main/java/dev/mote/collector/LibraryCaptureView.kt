@@ -200,7 +200,7 @@ internal class LibraryCaptureView(
         // An empty first page waits as a skeleton; render() replaces it on every outcome.
         val placeholder = if (firstPage && query.isBlank() && rows.childCount == 0) MoteComponents.skeleton(activity, MoteI18n.text("正在读取…")).also(rows::addView) else null
         more.isEnabled = false
-        task.start(MoteI18n.text("正在读取…"), { if (placeholder == null) status.text = it }, {
+        task.start(MoteI18n.text("正在读取…"), if (placeholder == null) MoteComponents.progress(status) else { _: String -> }, {
             requestPage(selection, identity, generation, readEpoch, filter, after, until, nextLocal, nextRemote, readLocal, readRemote, priorCandidates)
         }) { result ->
             val current = CentralAccess.resolve(activity)
@@ -256,7 +256,7 @@ internal class LibraryCaptureView(
         val priorRemote = projection.remoteVersions(selection.server)
         val boundary = remoteBoundary; val hadMore = remoteMore
         more.isEnabled = false
-        task.start(MoteI18n.text("正在读取…"), { status.text = it }, {
+        task.start(MoteI18n.text("正在读取…"), MoteComponents.progress(status), {
             requestPage(selection, identity, generation, readEpoch, filter, after, until, null, null, readLocal = true, readRemote = true, priorCandidates, AppendRead(insertions, priorLocal))
         }) { result ->
             val current = CentralAccess.resolve(activity)
@@ -329,7 +329,7 @@ internal class LibraryCaptureView(
                 if (append == null) {
                     files = localFiles
                     applyLocal(local); readState.localSettled(readEpoch, LibraryReadState.Stream.CAPTURES); render()
-                    status.append("\n" + MoteI18n.text("正在读取…"))
+                    MoteComponents.reading(status, MoteI18n.text("正在读取…"), prefix = status.text.toString() + "\n")
                 } else {
                     applyLocal(local, updateCursor = false); readState.localSettled(readEpoch, LibraryReadState.Stream.CAPTURES); render(); restoreAnchor(keep = true)
                 }
@@ -425,7 +425,7 @@ internal class LibraryCaptureView(
             val localMore = localMore || sourceView.localMorePages
             val more = localMore || remoteMore || sourceView.hasMore
             readState.emptyText(location, filtered, localMore, more)?.let { empty ->
-                rows.addView(TextView(activity).apply { text = empty })
+                rows.addView(if (readState.waitingForCentral(location, filtered)) MoteComponents.skeleton(activity, empty) else TextView(activity).apply { text = empty })
             }
         }
         more.visibility = if (localMore || remoteMore || sourceView.hasMore) View.VISIBLE else View.GONE

@@ -13,6 +13,7 @@ import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.AdministrationConnection
 import dev.mote.collector.plugins.NativeAdministrationPlugin
+import dev.mote.collector.ui.MoteComponents
 import java.time.Instant
 import java.util.concurrent.Executors
 
@@ -50,12 +51,12 @@ class ConnectionActivity : MoteActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val refresh = object : Runnable {
         override fun run() {
-            if (applying && ::status.isInitialized) status.text = if (connectingInvite) ConnectionPresentation.connecting else administration.progressLabel()
+            if (applying && ::status.isInitialized) MoteComponents.working(status, if (connectingInvite) ConnectionPresentation.connecting else administration.progressLabel())
             connectionFinished?.let { complete -> connectionFinished = null; complete() }
             if (::input.isInitialized && !working && !task.busy) pendingPicker?.let { receivePickerResult(it) }
             if (refreshRequested && ::currentNode.isInitialized && !working && !task.busy && !refreshTask.busy) {
                 refreshRequested = false
-                refreshTask.start(MoteI18n.text("正在刷新已保存连接…"), { currentNode.text = it }, {
+                refreshTask.start(MoteI18n.text("正在刷新已保存连接…"), MoteComponents.progress(currentNode, read = false), {
                     administration.current(applicationContext)
                 }) { result ->
                     if (applying) return@start
@@ -74,7 +75,7 @@ class ConnectionActivity : MoteActivity() {
         }
         (lastNonConfigurationInstance as? RetainedPicker)?.let { retained -> retainedEditor = retained; selection = retained.selection; pendingPicker = retained.result }
         val loading = moteDetailPage(title = MoteI18n.text("连接你的 Mote")); val label = TextView(this); loading.addView(label)
-        task.start(MoteI18n.text("正在读取已保存连接…"), { label.text = it }, {
+        task.start(MoteI18n.text("正在读取已保存连接…"), MoteComponents.progress(label), {
             administration.initialConnection(applicationContext)
         }) { result ->
             result.onSuccess { initial -> currentConfig = initial.config; deviceId = initial.deviceId; buildUi(initial) }
@@ -117,8 +118,8 @@ class ConnectionActivity : MoteActivity() {
             val chosenName = reviewName.text.toString().trim(); val debugHttp = allowHttp.isChecked
             name.setText(chosenName)
             working = true; applying = true; connectingInvite = true
-            confirmAction.text = ConnectionPresentation.connecting
-            status.text = ConnectionPresentation.connecting
+            MoteComponents.working(confirmAction, ConnectionPresentation.connecting)
+            MoteComponents.working(status, ConnectionPresentation.connecting)
             connection.confirm(currentConfig, chosenName, debugHttp) { result ->
                 if (isDestroyed || isFinishing) return@confirm
                 connectionFinished = {
@@ -134,7 +135,7 @@ class ConnectionActivity : MoteActivity() {
         }
         button(MoteI18n.text("恢复中断的连接确认")) {
             working = true
-            task.start(MoteI18n.text("正在读取待恢复连接…"), { status.text = it }, {
+            task.start(MoteI18n.text("正在读取待恢复连接…"), MoteComponents.progress(status), {
                 administration.pendingServer(applicationContext) ?: throw ConnectionFailure("no_pending")
             }) { result ->
                 working = false
@@ -142,7 +143,7 @@ class ConnectionActivity : MoteActivity() {
                     MoteDialogBuilder(this).setTitle(MoteI18n.text("恢复已兑换连接")).setMessage(MoteI18n.text("{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。", server))
                         .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("恢复")) { _, _ ->
                             val chosenName = name.text.toString().trim(); val debug = allowHttp.isChecked
-                            working = true; applying = true; status.text = MoteI18n.text("正在重新校验设备连接…")
+                            working = true; applying = true; MoteComponents.working(status, MoteI18n.text("正在重新校验设备连接…"))
                             administration.resumeConnection(applicationContext, currentConfig, server, chosenName, debug) { resumed ->
                                 if (isDestroyed || isFinishing) return@resumeConnection
                                 connectionFinished = {
@@ -290,7 +291,7 @@ class ConnectionActivity : MoteActivity() {
     private fun <T> run(progress: String, work: () -> T, completed: (T) -> String) {
         if (working || task.busy) return
         working = true; status.text = progress
-        task.start(progress, { status.text = it }, { work() }) { result ->
+        task.start(progress, MoteComponents.progress(status, read = false), { work() }) { result ->
             working = false; result.onSuccess { status.text = completed(it) }.onFailure(::showFailure)
         }
     }
@@ -347,7 +348,7 @@ class ConnectionActivity : MoteActivity() {
         val debugHttp = allowHttp.isChecked
         parsed = null; preview.text = MoteI18n.text("还没有解析有效邀请。")
         working = true
-        task.start(MoteI18n.text("正在读取所选连接文件…"), { status.text = it }, {
+        task.start(MoteI18n.text("正在读取所选连接文件…"), MoteComponents.progress(status), {
             if (SourceRules.hash(administration.settings(applicationContext).read().toString()) != expected.stamp) throw SettingsChangedFailure()
             val bytes = if (result.first == 1) result.second.toByteArray(Charsets.UTF_8) else contentResolver.openInputStream(Uri.parse(result.second))!!.use { stream ->
                 val buffer = ByteArray(ConnectionInvitation.MAX_BYTES + 1); var total = 0

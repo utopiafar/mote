@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 import java.util.concurrent.Executors
 
 /** Read-only original local log text. Rendering never interprets captured text. */
@@ -62,7 +63,7 @@ class LogViewerActivity : MoteActivity() {
             adapter = ArrayAdapter(this@LogViewerActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("全部"), MoteI18n.text("失败")))
             setSelection(if (failedOnly) 1 else 0)
         }; body.addView(scope)
-        status = SecondaryUi.text(body, MoteI18n.text("正在读取日志…"), muted = true)
+        status = SecondaryUi.text(body, MoteI18n.text("正在读取日志…"), muted = true).also { MoteComponents.reading(it, it.text.toString()) }
         entries = SecondaryUi.column(body)
         more = SecondaryUi.action(SecondaryUi.actions(body), MoteI18n.text("显示更多日志")) { visibleLimit += 40; showLog() }
         refresh = SecondaryUi.action(SecondaryUi.actions(body), MoteI18n.text("刷新日志")) { load() }
@@ -102,7 +103,7 @@ class LogViewerActivity : MoteActivity() {
     }
     private fun load() {
         val stamp = ++revision
-        refresh.isEnabled = false; status.text = MoteI18n.text("正在读取日志…")
+        refresh.isEnabled = false; MoteComponents.reading(status, MoteI18n.text("正在读取日志…"))
         executor.execute {
             val result = runCatching { SupportEvents.runtime(this).readRaw() }
             runOnUiThread {

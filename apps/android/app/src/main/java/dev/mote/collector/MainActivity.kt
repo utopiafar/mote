@@ -408,7 +408,7 @@ class MainActivity : MoteActivity() {
             homeSyncDetailStatus = text("", NativeFontRole.SUPPORT, NativeColorRole.MUTED)
             syncStatus = homeSyncDetailStatus
             homeSyncRate = text("", NativeFontRole.META, NativeColorRole.MUTED)
-            centralConnectionTitle = text(MoteI18n.text("正在检查…"), NativeFontRole.ROW)
+            centralConnectionTitle = text(MoteI18n.text("正在检查…"), NativeFontRole.ROW).also { MoteComponents.reading(it, it.text.toString()) }
             centralConnectionStatus = text("", NativeFontRole.SUPPORT, NativeColorRole.MUTED)
             rowButtons(MoteI18n.text("立即同步"), { retrySync() }, MoteI18n.text("连接设置"), { showPage(Page.CONNECTION) })
 
@@ -423,7 +423,7 @@ class MainActivity : MoteActivity() {
             homeSourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             content.addView(homeSourceList)
             button(MoteI18n.text("来源管理")) { showPage(Page.SOURCES) }
-            todaySummary = text(local.imageLabel(), NativeFontRole.META, NativeColorRole.MUTED)
+            todaySummary = text(local.imageLabel(), NativeFontRole.META, NativeColorRole.MUTED).also { if (local.imagesReading) MoteComponents.reading(it, local.imageLabel()) }
             totalsStatus = text("", NativeFontRole.META, NativeColorRole.MUTED)
             button(MoteI18n.text("活动")) { showPage(Page.ACTIVITY) }
             button(MoteI18n.text("中央工作台")) {
@@ -696,7 +696,7 @@ class MainActivity : MoteActivity() {
         val config = (state as? SettingsSummaryState.Current)?.config
         val server = fallback ?: centralHost(config!!.server)
         val detail = loadedConfig.deviceName
-        settingsConnectionTitle?.text = server
+        settingsConnectionTitle?.let { if (state == SettingsSummaryState.Loading) MoteComponents.reading(it, server) else it.text = server }
         settingsConnectionDetail?.text = detail
         settingsConnectionRow?.contentDescription = listOf(MoteI18n.text("连接与设备"), server, detail.takeIf { fallback == null })
             .filterNotNull().joinToString("，")
@@ -901,7 +901,7 @@ class MainActivity : MoteActivity() {
         help(MoteI18n.text("通知与设备事件说明"), MoteI18n.text("通知与设备事件可独立开启，通过系统通知服务观察，按同步策略上传。通知遵循应用规则：仅活动不读取正文，不记录会完全跳过。系统可能隐藏敏感内容；熄屏不等同于锁定。"))
         mediaCollectionEnabled = sourceCheck("采集媒体播放状态（需通知使用权）", config.mediaCollectionEnabled)
         help(MoteI18n.text("媒体采集说明"), MoteI18n.text("媒体采集可单独开启，在前台、后台和锁屏时观察播放器公开的状态、应用及曲目/章节信息；不录音、不控制播放。普通通知由单独的通知采集开关控制。使用本机页的开始/暂停控制采集。媒体沿用应用隐私规则、电量限制和同步策略；关闭元数据会同时暂停媒体。"))
-        mediaStatus = text(MoteI18n.text("媒体状态正在读取…"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        mediaStatus = text(MoteI18n.text("媒体状态正在读取…"), NativeFontRole.SUPPORT, NativeColorRole.MUTED).also { MoteComponents.reading(it, it.text.toString()) }
         button(MoteI18n.text("授权通知、媒体与设备事件")) { mediaPermission() }
         button(MoteI18n.text("重新授权投屏（已开启的媒体可继续）")) {
             val c = loadedConfig
@@ -1018,7 +1018,7 @@ class MainActivity : MoteActivity() {
         }
         diagnosticExportStatus=text("",NativeFontRole.SUPPORT).apply{tag="diagnostic-export-status";visibility=View.GONE;accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE}
         val pageContent=content;content=SecondaryUi.disclosure(content,MoteI18n.text("更多"),"diagnostic-details")
-        technicalStatus=text(MoteI18n.text("正在读取运行状态…"),NativeFontRole.SUPPORT)
+        technicalStatus=text(MoteI18n.text("正在读取运行状态…"),NativeFontRole.SUPPORT).also { MoteComponents.reading(it, it.text.toString()) }
         diagnosticInterval=sourceField("诊断采样间隔 / 秒（15–3600）",config.diagnosticsIntervalSeconds.toString(),"60",InputType.TYPE_CLASS_NUMBER)
         help(MoteI18n.text("数值诊断说明"),MoteI18n.text("仅在应用/采集运行时采样，最多 1440 条。记录整机电量、本机空间、入队/拦截/失败计数、截图隐私审查耗时和上传字节，不包含截图、文字、笔记、令牌或审查理由。电量变化是整机变化，不能归因于 Mote。"))
         help(MoteI18n.text("支持包包含什么"),MoteI18n.text("事件日志最多 500 条，只记录固定阶段、错误类别与数值。支持包不包含节点地址、设备名、截图、笔记、OCR、令牌、提示词或审查理由；关闭诊断后停止新增，已有记录保留。"))
@@ -1041,7 +1041,7 @@ class MainActivity : MoteActivity() {
         note.background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
         note.setPadding(0, dp(8), 0, dp(12)); note.setLineSpacing(0f, 1.25f)
         note.filters = arrayOf(android.text.InputFilter.LengthFilter(100000))
-        val progress = text(MoteI18n.text("正在读取草稿…"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        val progress = text(MoteI18n.text("正在读取草稿…"), NativeFontRole.SUPPORT, NativeColorRole.MUTED).also { MoteComponents.reading(it, it.text.toString()) }
         var changingDraft = false
         var readable = false
         fun replace(value: NoteDraft) {
@@ -1054,7 +1054,7 @@ class MainActivity : MoteActivity() {
             override fun afterTextChanged(s: Editable?) {
                 if (!changingDraft && readable) {
                     controller.autosave(note.text.toString(), "")
-                    progress.text = MoteI18n.text("正在保存草稿…")
+                    MoteComponents.working(progress, MoteI18n.text("正在保存草稿…"))
                 }
             }
         }
@@ -1071,7 +1071,7 @@ class MainActivity : MoteActivity() {
         }
         notePoll = draftPoll; if (resumed) handler.post(draftPoll)
         editable(false)
-        task.start(MoteI18n.text("正在读取草稿…"), { progress.text = it }, { controller.read() }) { result ->
+        task.start(MoteI18n.text("正在读取草稿…"), MoteComponents.progress(progress), { controller.read() }) { result ->
             result.onSuccess { replace(it); readable = true; editable(true); progress.text = MoteI18n.text("草稿已载入") }
                 .onFailure { progress.text = MoteI18n.text("草稿读取失败，原文件保留。明确点击新建才清除旧草稿。") }
         }
@@ -1079,7 +1079,7 @@ class MainActivity : MoteActivity() {
             if (!task.busy && readable) {
                 val value = note.text.toString() to ""
                 editable(false)
-                task.start(MoteI18n.text("正在保存记录…"), { progress.text = it }, { controller.save(value.first, value.second) }) { result ->
+                task.start(MoteI18n.text("正在保存记录…"), MoteComponents.progress(progress, read = false), { controller.save(value.first, value.second) }) { result ->
                     editable(true); controller.clearPersistence()
                     result.onSuccess { replace(NoteDraft()); controller.clearPersistence(); progress.text = MoteI18n.text("记录已保存；同步按你的设置运行"); refreshStatus() }
                         .onFailure { progress.text = it.message ?: MoteI18n.text("记录保存失败，草稿已保留") }
@@ -1091,7 +1091,7 @@ class MainActivity : MoteActivity() {
                 .setNegativeButton(MoteI18n.text("继续编辑"), null).setPositiveButton(MoteI18n.text("清除并新建")) { _, _ ->
                     if (!task.busy) {
                         editable(false)
-                        task.start(MoteI18n.text("正在清除草稿…"), { progress.text = it }, { controller.clear() }) { result ->
+                        task.start(MoteI18n.text("正在清除草稿…"), MoteComponents.progress(progress, read = false), { controller.clear() }) { result ->
                             result.onSuccess { replace(NoteDraft()); controller.clearPersistence(); readable = true; progress.text = MoteI18n.text("可以开始新记录") }
                                 .onFailure { progress.text = MoteI18n.text("草稿清除失败") }
                             editable(readable)
@@ -1360,11 +1360,12 @@ class MainActivity : MoteActivity() {
     private fun permissionRow(key: String, label: String, action: () -> Unit) {
         val row = settingsRow(label,MoteI18n.text("正在检查系统权限…"),action = action)
         val labels = row.getChildAt(0) as LinearLayout
-        permissionBadges[key] = (labels.getChildAt(1) as TextView).apply { tag = "permission-detail" }
+        permissionBadges[key] = (labels.getChildAt(1) as TextView).apply { tag = "permission-detail"; MoteComponents.reading(this, text.toString()) }
     }
 
     private fun permissionStatus(name: String) {
         permissionBadges[name] = text(MoteI18n.text(name) + " · " + MoteI18n.text("正在检查系统权限…"), NativeFontRole.BODY).apply {
+            MoteComponents.reading(this, MoteI18n.text("正在检查系统权限…"), prefix = MoteI18n.text(name) + " · ")
             setPadding(dp(12), dp(9), dp(12), dp(9))
             layoutParams = (layoutParams as LinearLayout.LayoutParams).apply { bottomMargin = dp(5) }
         }
@@ -1399,7 +1400,7 @@ class MainActivity : MoteActivity() {
 
     private fun retrySync() {
         val app = applicationContext
-        uiTask.start(MoteI18n.text("正在提交同步任务…"), { syncStatus.text = it }, {
+        uiTask.start(MoteI18n.text("正在提交同步任务…"), MoteComponents.progress(syncStatus, read = false), {
             ConnectionGuard.sync {
                 val c = Settings(app).read()
                 if (!c.hasSyncConnection()) false else {
@@ -1472,7 +1473,7 @@ class MainActivity : MoteActivity() {
         // The accepted save must survive rotation while preflight is waiting on storage.
         // This handler only continues the operation; UiTask still owns all progress polling.
         val completion = Handler(Looper.getMainLooper())
-        uiTask.start(MoteI18n.text("正在检查本机待同步资料…"), { saveHint.text = it }, {
+        uiTask.start(MoteI18n.text("正在检查本机待同步资料…"), MoteComponents.progress(saveHint, read = false), {
             val result = runCatching {
                 if (settings.read() != current) throw SettingsChangedFailure()
                 c.hasSyncConnection() && settings.dataOrigin().isBlank() && settings.hasPendingData() && !bindLocal
@@ -1554,7 +1555,7 @@ class MainActivity : MoteActivity() {
         refreshStatus()
     }
     private fun enableCapture(config: CollectorConfig, message: String, after: () -> Unit) {
-        uiTask.start(MoteI18n.text("正在启用采集…"), { status.text = it }, {
+        uiTask.start(MoteI18n.text("正在启用采集…"), MoteComponents.progress(status, read = false), {
             ConnectionGuard.startCapture(applicationContext, config.captureStamp()) {
                 Operations.record(applicationContext, OperationKind.CAPTURE_STARTED); settings.status("capturing", message)
             }
@@ -1590,7 +1591,7 @@ class MainActivity : MoteActivity() {
             if (resultCode != RESULT_OK || data?.data == null || target == null) return
             val uri = data.data!!
             val previousRules = uiPageRules.text.toString()
-            uiTask.start(MoteI18n.text("正在读取字段规则…"), { saveHint.text = it }, {
+            uiTask.start(MoteI18n.text("正在读取字段规则…"), MoteComponents.progress(saveHint), {
                 val imported = contentResolver.openInputStream(uri)?.use { input ->
                     val buffer = ByteArray(1048577); var size = 0
                     while (size < buffer.size) {
@@ -1604,6 +1605,7 @@ class MainActivity : MoteActivity() {
                 } ?: error(MoteI18n.text("字段规则文件不可读取"))
                 AppPageSetup.merge(previousRules, imported, target.first, target.second)
             }) { result ->
+                updateSaveBar()
                 result.onSuccess { merged ->
                     if (uiPageRules.text.toString() != previousRules || appVersion(target.first) != target.second) {
                         toast(MoteI18n.text("应用版本或规则草稿已变化，请重新导入"))
@@ -1627,7 +1629,8 @@ class MainActivity : MoteActivity() {
             fun feedback(message:String){diagnosticExportStatus?.apply { text=message;visibility=View.VISIBLE }}
             if(resultCode!=RESULT_OK || data?.data==null){feedback(MoteI18n.text("导出已取消，记录与设置保留。"));return}
             val uri = data.data!!; val app = applicationContext; val tools = systemTools
-            uiTask.start(MoteI18n.text("正在导出诊断包…"), { feedback(it) }, {
+            val exporting = diagnosticExportStatus?.let { MoteComponents.progress(it, read = false) }
+            uiTask.start(MoteI18n.text("正在导出诊断包…"), { diagnosticExportStatus?.visibility = View.VISIBLE; exporting?.invoke(it) }, {
                 val body = when (requestCode) {
                     104 -> tools.supportBundle(app, logExportHours)
                     107 -> SupportEvents.runtime(app).exportRange(0, System.currentTimeMillis() + 1).getString("text")
@@ -1643,7 +1646,7 @@ class MainActivity : MoteActivity() {
                 startForegroundService(Intent(this, ProjectionService::class.java).putExtra("result", resultCode).putExtra("consent", data).putExtra("configurationStamp", stamp))
                 Operations.record(this, OperationKind.CAPTURE_STARTED)
             }
-            uiTask.start(MoteI18n.text("正在启用投屏采集…"), { status.text = it }, {
+            uiTask.start(MoteI18n.text("正在启用投屏采集…"), MoteComponents.progress(status, read = false), {
                 stamp != null && if (settings.enabled) ConnectionGuard.sync {
                     val c = settings.read()
                     if (stamp == c.captureStamp() && c.screenCollectionEnabled && c.effectiveMode() == "projection" && c.observesSystem() && !ProjectionService.running) {
@@ -1749,8 +1752,8 @@ class MainActivity : MoteActivity() {
             captureProgress.visibility = if (settings.enabled) View.VISIBLE else View.GONE
             status.text = settings.message()
         }
-        if (QueueStorage.recovering) { status.text = MoteI18n.text("正在连接本机存储，文件整理将在后台继续…"); return }
-        if (ConnectionGuard.reconfiguring()) { status.text = RuntimeSettings.progressLabel(); updateSaveBar(); saveHint.text = RuntimeSettings.progressLabel(); return }
+        if (QueueStorage.recovering) { MoteComponents.working(status, MoteI18n.text("正在连接本机存储，文件整理将在后台继续…")); return }
+        if (ConnectionGuard.reconfiguring()) { MoteComponents.working(status, RuntimeSettings.progressLabel()); updateSaveBar(); MoteComponents.working(saveHint, RuntimeSettings.progressLabel()); return }
         if (isDestroyed) return
         if (statusLoading) { statusRefreshPending = true; return }
         statusLoading = true
@@ -1950,7 +1953,7 @@ class MainActivity : MoteActivity() {
                 val nextFirstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
                 if (nextFirstUse != firstUse) {
                     firstUse = nextFirstUse
-                } else if (::todaySummary.isInitialized) todaySummary.text = snapshot.imageLabel()
+                } else if (::todaySummary.isInitialized) { if (snapshot.imagesReading) MoteComponents.reading(todaySummary, snapshot.imageLabel()) else todaySummary.text = snapshot.imageLabel() }
             }
             loadHomeContent()
             if (snapshot.revision.records != libraryRecordsRevision) {
@@ -2189,7 +2192,7 @@ class MainActivity : MoteActivity() {
         saveBar.visibility = if (currentPage!=Page.PROCESSING && current.isNotEmpty() && (dirty || applyingSettings)) View.VISIBLE else View.GONE
         processingSave?.isEnabled=!applyingSettings&&!ConnectionGuard.reconfiguring()
         (saveBar.getChildAt(1) as Button).isEnabled = !applyingSettings && !ConnectionGuard.reconfiguring()
-        saveHint.text = if (applyingSettings) MoteI18n.text("正在保存…") else MoteI18n.text("有未保存的更改")
+        if (applyingSettings) MoteComponents.working(saveHint, MoteI18n.text("正在保存…")) else saveHint.text = MoteI18n.text("有未保存的更改")
     }
 
     private fun pageControlValues() = controlValues(controls.filter { controlPages[it] == currentPage })

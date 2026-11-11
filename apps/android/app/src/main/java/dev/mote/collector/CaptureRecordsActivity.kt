@@ -159,6 +159,7 @@ class CaptureRecordsActivity : MoteActivity() {
         val stateAndRefresh = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         body.addView(stateAndRefresh, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(MoteTheme.spaceInline); bottomMargin = moteDp(MoteTheme.spaceInline) })
         status = text(stateAndRefresh, MoteI18n.text("正在读取…"), MoteTheme.fontBody.toFloat()).apply {
+            MoteComponents.reading(this, MoteI18n.text("正在读取…"))
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
         stateAndRefresh.addView(MoteUi.action(Button(this).apply { text = MoteI18n.text("刷新"); setOnClickListener { reload() } }, MoteUi.ButtonRole.TEXT), LinearLayout.LayoutParams(-2, -2))
@@ -230,7 +231,7 @@ class CaptureRecordsActivity : MoteActivity() {
         val cursor = cursors.last(); val pageNumber = cursors.size
         dateButton.text = date.toString(); nextDay.isEnabled = date < LocalDate.now()
         if (!backgroundRefresh) {
-            previousPage.isEnabled = false; nextPage.isEnabled = false; status.text = MoteI18n.text("正在读取{0}…", if (remote) MoteI18n.text("中央归档") else MoteI18n.text("本机记录"))
+            previousPage.isEnabled = false; nextPage.isEnabled = false; MoteComponents.reading(status, MoteI18n.text("正在读取{0}…", if (remote) MoteI18n.text("中央归档") else MoteI18n.text("本机记录")))
             clearList(); imageExecutor.queue.clear(); thumbnailWriter.queue.clear()
         }
         if (!backgroundRefresh && selected != null) repeat(3) {
@@ -288,7 +289,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     val thumbnailCount = records.count(CapturePreview::hasImage)
                     val pageStatus = if (selected == null) MoteI18n.text("{0} 条 · 第 {1} 页", total, pageNumber)
                         else MoteI18n.text("{0} · {1} 条 · 第 {2} 页", selected.optString("appName").ifBlank { selected.optString("appId").ifBlank { MoteI18n.text("系统画面") } }, total, pageNumber)
-                    status.text = pageStatus + if (thumbnailCount > 0) MoteI18n.text(" · 正在加载缩略图（0/{0}）", thumbnailCount) else ""
+                    status.text = pageStatus + if (thumbnailCount > 0) MoteI18n.text(" · 已处理 {0}/{1}", 0, thumbnailCount) else ""
                     if (records.isEmpty()) text(list, when {
                         source == "note" -> MoteI18n.text("当天没有记录。选择其他日期，或添加一条记录。")
                         source != "screen" -> MoteI18n.text("当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。")

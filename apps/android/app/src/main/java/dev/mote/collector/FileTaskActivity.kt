@@ -10,6 +10,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.SourceProviderPlugin
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
@@ -68,8 +69,8 @@ class FileTaskActivity : MoteActivity() {
             state.getStringArrayList("grants")?.let { grants.addAll(it) }
             restoredValues = JSONObject(state.getString("values", "{}")); showForm(); return
         }
-        body.addView(status); status.text = MoteI18n.text("正在读取来源…")
-        task.start(MoteI18n.text("正在读取来源…"), { status.text = it }, {
+        body.addView(status); MoteComponents.reading(status, MoteI18n.text("正在读取来源…"))
+        task.start(MoteI18n.text("正在读取来源…"), MoteComponents.progress(status), {
             val existing = id?.let { key -> owner.source(key) ?: error(MoteI18n.text("所选文件不可用")) }
             Triple(existing, if (existing == null) owner.readDraft(draftKey) else null,
                 existing?.let { owner.state(it).optString("status") == "context-conflict" } ?: false)
@@ -246,7 +247,7 @@ class FileTaskActivity : MoteActivity() {
         // Remember selected grants before the provider read, including when recreation discards its UI callback.
         grants.add(uri.toString())
         val previousUri = source.uri
-        task.start(MoteI18n.text("正在读取所选文件…"), { status.text = it }, {
+        task.start(MoteI18n.text("正在读取所选文件…"), MoteComponents.progress(status), {
             owner.select(uri.toString(), source.tree, savedSource)
         }) { result ->
             result.onSuccess { selectedSource ->
@@ -280,7 +281,7 @@ class FileTaskActivity : MoteActivity() {
                 intervalMinutes = interval.text.toString().toInt(), maxFileMiB = maximum.text.toString().toInt(), extensions = extensions.text.toString(), excluded = excludes.text.toString())
             if (next.maxFileMiB !in 1..512) { advanced.visibility=View.VISIBLE;maximum.error=MoteI18n.text("单文件上限（MiB，1–512）");maximum.requestFocus();status.text=MoteI18n.text("单文件上限（MiB，1–512）");return }
             next.validate(); confirm.isEnabled = false; pickButton.isEnabled = false
-            task.start(MoteI18n.text("正在保存来源设置…"), { status.text = it }, {
+            task.start(MoteI18n.text("正在保存来源设置…"), MoteComponents.progress(status, read = false), {
                 owner.saveFile(next, savedSource, descriptionText, draftKey)
             }) { result ->
                 confirm.isEnabled = true; pickButton.isEnabled = true
@@ -294,12 +295,12 @@ class FileTaskActivity : MoteActivity() {
         val config = Settings(this).read()
         if (!config.hasSyncConnection() || current.contextDirty || hasContextConflict) return
         // Reading metadata is independent of upload policies; unsupported older nodes preserve old settings.
-        task.start(MoteI18n.text("正在读取资料说明…"), { status.text = it }, {
+        task.start(MoteI18n.text("正在读取资料说明…"), MoteComponents.progress(status), {
             runCatching { owner.remoteContext(current) }.getOrNull()
         }) { result ->
             result.getOrNull()?.takeIf { it.version > 0 }?.let { snapshot ->
                 if (description.text.toString() == current.description) {
-                    task.start(MoteI18n.text("正在保存来源设置…"), { status.text = it }, {
+                    task.start(MoteI18n.text("正在保存来源设置…"), MoteComponents.progress(status, read = false), {
                         owner.confirmContext(current, snapshot)
                     }) { ack -> ack.getOrNull()?.let {
                         source = it; savedSource = it
@@ -315,7 +316,7 @@ class FileTaskActivity : MoteActivity() {
     private fun resolveConflict() {
         if (task.busy) return
         val config = Settings(this).read(); if (!config.hasSyncConnection()) { status.text = MoteI18n.text("等待网络/节点恢复"); return }
-        task.start(MoteI18n.text("正在读取资料说明…"), { status.text = it }, {
+        task.start(MoteI18n.text("正在读取资料说明…"), MoteComponents.progress(status), {
             owner.remoteContext(source)
         }) { result ->
             result.onSuccess { remote ->
@@ -335,7 +336,7 @@ class FileTaskActivity : MoteActivity() {
         if (task.busy) return
         MoteDialogBuilder(this).setTitle(MoteI18n.text("移除连接")).setMessage(MoteI18n.text("移除这个来源和本机待发缓存；手机原文件与中央历史保留。"))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("移除连接")) { _, _ ->
-                task.start(MoteI18n.text("正在移除来源连接…"), { status.text = it }, {
+                task.start(MoteI18n.text("正在移除来源连接…"), MoteComponents.progress(status, read = false), {
                     owner.remove(source.id)
                 }) { result -> result.onSuccess { finish() }.onFailure { status.text = MoteI18n.text("操作失败，请重试") } }
             }.show()

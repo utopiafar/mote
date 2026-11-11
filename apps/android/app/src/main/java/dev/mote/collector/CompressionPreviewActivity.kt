@@ -85,7 +85,7 @@ class CompressionPreviewActivity : MoteActivity() {
             compressedColumn.addView(this, LinearLayout.LayoutParams(-1, moteDp(220))); setOnClickListener { enlarge(1) }
         }
         compressedCaption = SecondaryUi.text(compressedColumn, MoteI18n.text("JPEG 输出"), muted = true)
-        stats = SecondaryUi.text(body, MoteI18n.text("正在生成预览…"), muted = true)
+        stats = SecondaryUi.text(body, MoteI18n.text("正在生成预览…"), muted = true).also { MoteComponents.reading(it, it.text.toString()) }
         SecondaryUi.text(body, MoteI18n.text("点击图片放大，比较文字细节与文件大小。"), muted = true)
         apply = SecondaryUi.action(SecondaryUi.actions(body), MoteI18n.text("将参数带回采集设置")) {
             setResult(RESULT_OK, Intent().putExtra("quality", quality).putExtra("maxSide", maxSide)); finish()
@@ -132,7 +132,7 @@ class CompressionPreviewActivity : MoteActivity() {
         }
         quality = requested; qualityInput.error = null
         val stamp = ++revision; val q = quality; val side = maxSide
-        apply.isEnabled = false; stats.text = MoteI18n.text("正在生成压缩预览…"); dialog?.dismiss()
+        apply.isEnabled = false; MoteComponents.reading(stats, MoteI18n.text("正在生成压缩预览…")); dialog?.dismiss()
         executor.execute {
             if (stamp != revision) return@execute
             var source: Bitmap? = null; var resized: Bitmap? = null; var decoded: Bitmap? = null

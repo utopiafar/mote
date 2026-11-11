@@ -6,14 +6,23 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.AnimatedVectorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.os.SystemClock
+import android.text.Layout
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.LeadingMarginSpan
+import android.text.style.ReplacementSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.LinearInterpolator
+import android.view.animation.PathInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -454,6 +463,138 @@ internal object MoteComponents {
             override fun onViewAttachedToWindow(attached: View) { motion.start() }
             override fun onViewDetachedFromWindow(detached: View) { motion.cancel() }
         })
+    }
+
+    /** Visible content is refreshing: a thin accent line runs under the header; held full and faint when animation is off. */
+    fun loadingLine(context: Context, label: String): View = LinearLayout(context).apply {
+        tag = LOADING_TAG; contentDescription = label; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        val still = !ValueAnimator.areAnimatorsEnabled()
+        weightSum = 1f
+        val runner = View(context).apply {
+            bind(this, "loading-line") { it.background = MoteUi.shape(context, NativeColorRole.ACCENT, NativeRadiusRole.PILL, false) }
+            if (still) alpha = .45f
+        }
+        addView(runner, LinearLayout.LayoutParams(0, -1, if (still) 1f else .36f))
+        if (!still) {
+            val run = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 1400; repeatCount = ValueAnimator.INFINITE; interpolator = PathInterpolator(.45f, .05f, .25f, 1f)
+                addUpdateListener { runner.translationX = runner.width * (-1f + 3.8f * (it.animatedValue as Float)) }
+            }
+            addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(attached: View) { run.start() }
+                override fun onViewDetachedFromWindow(detached: View) { run.cancel() }
+            })
+        }
+        loadingMotion(this, breathe = false)
+    }
+
+    /** Work past this long says what it is doing and for how long. */
+    const val SLOW_WORK_MS = 5_000L
+
+    /** Words still on their way: a quiet bar holds their place. The words stay underneath for TalkBack; whatever is set next replaces the bar. */
+    fun reading(view: TextView, label: String = MoteI18n.text("正在读取…"), prefix: CharSequence = "") {
+        val current = view.text
+        val bar = (current as? Spanned)?.getSpans(0, current.length, PlaceholderSpan::class.java)?.firstOrNull()
+        if (bar != null && current.toString() == prefix.toString() + label) return
+        val span = bar ?: PlaceholderSpan(view)
+        view.text = SpannableStringBuilder(prefix).append(label, span, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (bar == null) span.motion.start()
+    }
+
+    /** Work under way: its words keep their place and a ring turns beside them until other text is set. */
+    fun working(view: TextView, words: String, prefix: CharSequence = "") {
+        val current = view.text
+        val ring = (current as? Spanned)?.getSpans(0, current.length, RingSpan::class.java)?.firstOrNull()
+        if (ring != null && current.toString() == prefix.toString() + words) return
+        val span = ring ?: RingSpan(view)
+        view.text = SpannableStringBuilder(prefix).append(words, span, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (ring == null) span.motion.start()
+    }
+
+    /**
+     * UiTask progress shown in [view]: the bar for a read ([read]) or the words with a ring for other work.
+     * Progress the work reports itself, or work past [SLOW_WORK_MS], shows its words and elapsed time beside the ring.
+     */
+    fun progress(view: TextView, read: Boolean = true, prefix: () -> CharSequence = { "" }): (String) -> Unit {
+        val started = SystemClock.elapsedRealtime()
+        var label: String? = null
+        return { message ->
+            val first = label ?: message.also { label = it }
+            when {
+                !message.startsWith(first) || SystemClock.elapsedRealtime() - started >= SLOW_WORK_MS -> working(view, message, prefix())
+                read -> reading(view, first, prefix())
+                else -> working(view, first, prefix())
+            }
+        }
+    }
+
+    /** Fades in after 300 ms, then breathes (bar) or turns (ring) while its span is in the text; still when the system turns animation off. */
+    private class SpanMotion(private val view: TextView, private val turn: Boolean) : View.OnAttachStateChangeListener {
+        lateinit var span: Any
+        var level = if (ValueAnimator.areAnimatorsEnabled()) 0f else 1f
+            private set
+        var phase = 0f
+            private set
+        private var motion: AnimatorSet? = null
+        private fun shown() = (view.text as? Spanned)?.let { it.getSpanStart(span) >= 0 } == true
+        fun start() { view.addOnAttachStateChangeListener(this); if (view.isAttachedToWindow) onViewAttachedToWindow(view) }
+        override fun onViewAttachedToWindow(attached: View) {
+            if (!shown()) { view.removeOnAttachStateChangeListener(this); return }
+            if (motion != null || !ValueAnimator.areAnimatorsEnabled()) return
+            val appear = ValueAnimator.ofFloat(level, 1f).apply {
+                if (level == 0f) startDelay = 300
+                duration = 200; addUpdateListener { level = it.animatedValue as Float; frame() }
+            }
+            val keep = if (turn) ValueAnimator.ofFloat(0f, 1f).apply {
+                startDelay = appear.startDelay; duration = 900; repeatCount = ValueAnimator.INFINITE; interpolator = LinearInterpolator()
+                addUpdateListener { phase = it.animatedValue as Float; frame() }
+            } else ValueAnimator.ofFloat(1f, .45f, 1f).apply {
+                duration = 1800; repeatCount = ValueAnimator.INFINITE; interpolator = AccelerateDecelerateInterpolator()
+                addUpdateListener { level = it.animatedValue as Float; frame() }
+            }
+            motion = AnimatorSet().apply { if (turn) playTogether(appear, keep) else playSequentially(appear, keep); start() }
+        }
+        override fun onViewDetachedFromWindow(detached: View) { motion?.cancel(); motion = null }
+        private fun frame() {
+            if (shown()) view.invalidate() else { motion?.cancel(); motion = null; view.removeOnAttachStateChangeListener(this) }
+        }
+    }
+
+    /** The bar that stands in for words still being read. */
+    private class PlaceholderSpan(view: TextView) : ReplacementSpan() {
+        val motion = SpanMotion(view, turn = false).also { it.span = this }
+        override fun getSize(paint: Paint, text: CharSequence?, start: Int, end: Int, metrics: Paint.FontMetricsInt?): Int {
+            metrics?.let { paint.getFontMetricsInt(it) }
+            return (paint.textSize * 5.5f).toInt()
+        }
+        override fun draw(canvas: Canvas, text: CharSequence?, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {
+            if (motion.level <= 0f) return
+            val height = paint.textSize * .72f
+            val middle = y + (paint.ascent() + paint.descent()) / 2f
+            val ink = paint.color; val style = paint.style; val fill = NativeColorRole.FILL.color()
+            paint.style = Paint.Style.FILL; paint.color = fill; paint.alpha = (Color.alpha(fill) * motion.level).toInt()
+            canvas.drawRoundRect(x, middle - height / 2f, x + paint.textSize * 5.5f, middle + height / 2f, height / 2f, height / 2f, paint)
+            paint.color = ink; paint.style = style
+        }
+    }
+
+    /** The ring beside words for work under way, drawn in the margin so the words themselves stay unchanged. */
+    private class RingSpan(view: TextView) : LeadingMarginSpan {
+        val motion = SpanMotion(view, turn = true).also { it.span = this }
+        private val margin = (view.textSize * 1.45f).toInt()
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+        override fun getLeadingMargin(first: Boolean) = margin
+        override fun drawLeadingMargin(canvas: Canvas, paint: Paint, x: Int, dir: Int, top: Int, baseline: Int, bottom: Int,
+            text: CharSequence, start: Int, end: Int, first: Boolean, layout: Layout?) {
+            if (!first || motion.level <= 0f || (text as? Spanned)?.getSpanStart(this) != start) return
+            val radius = paint.textSize * .34f
+            stroke.strokeWidth = paint.textSize * .11f
+            stroke.color = paint.color; stroke.alpha = (Color.alpha(paint.color) * motion.level).toInt()
+            val cx = x + dir * (radius + stroke.strokeWidth)
+            val cy = baseline + (paint.ascent() + paint.descent()) / 2f
+            canvas.drawArc(cx - radius, cy - radius, cx + radius, cy + radius, motion.phase * 360f - 90f, 270f, false, stroke)
+        }
     }
 
     /** M3-style switch: bordered track off, accent track and raised thumb on. */
