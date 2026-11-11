@@ -591,7 +591,14 @@ internal object MoteComponents {
             val radius = paint.textSize * .34f
             stroke.strokeWidth = paint.textSize * .11f
             stroke.color = paint.color; stroke.alpha = (Color.alpha(paint.color) * motion.level).toInt()
-            val cx = x + dir * (radius + stroke.strokeWidth)
+            // Beside the words wherever the alignment puts them: centred buttons keep ring and words centred together.
+            val line = layout?.getLineForOffset(start)
+            val edge = when {
+                layout == null || line == null -> x.toFloat()
+                dir > 0 -> layout.getLineLeft(line) - margin
+                else -> layout.getLineRight(line) + margin
+            }
+            val cx = edge + dir * (radius + stroke.strokeWidth)
             val cy = baseline + (paint.ascent() + paint.descent()) / 2f
             canvas.drawArc(cx - radius, cy - radius, cx + radius, cy + radius, motion.phase * 360f - 90f, 270f, false, stroke)
         }
