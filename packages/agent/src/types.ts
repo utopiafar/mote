@@ -1,4 +1,4 @@
-import {ProviderFailure,type ProviderFailureDetails} from '@mote/shared';
+import {ProviderFailure,type ProviderFailureDetails,type FailureDiagnostics} from '@mote/shared';
 import type {SourceDocument,fileEvidenceSchema} from '@mote/shared';
 import type {ContextReader} from './context-contracts.js';
 import type {QueryInput,AgentProgress,AgentTraceEvent} from './query-contracts.js';
@@ -118,8 +118,8 @@ export class AgentInputError extends ProviderFailure {
 }
 
 export class AgentProviderError extends ProviderFailure {
-  constructor(details:ProviderFailureDetails={category:'transient',code:'provider_failed'}) {
-    super(details,'The model request failed. Check the endpoint, API credential, model and protocol settings.');
+  constructor(details:ProviderFailureDetails={category:'transient',code:'provider_failed'},diagnostic:FailureDiagnostics={source:'unknown'}) {
+    super(details,'The model request failed. Check the endpoint, API credential, model and protocol settings.',diagnostic);
     this.name = 'AgentProviderError';
   }
 }
@@ -127,7 +127,7 @@ export class AgentProviderError extends ProviderFailure {
 /** A locally observed deadline or a typed SDK request timeout; not a diagnosis of its cause. */
 export class AgentTimeoutError extends Error {
   readonly statusCode = 504;
-  constructor() {
+  constructor(readonly diagnostic:FailureDiagnostics={source:'runtime',code:'deadline_exceeded',stage:'model'}) {
     super("The agent request timed out. Please retry or narrow the question.");
     this.name = "AgentTimeoutError";
   }

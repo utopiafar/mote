@@ -5,7 +5,7 @@ export interface QueryRun {
   evidenceRevision?:number;conversationId?:string;turnId?:string;events:(AgentProgress&{at:string})[];
   evidenceDependencies?:EvidenceDependencies;
   sourceContextDependencies?:SourceContextDeclaration[];
-  error?:{code:string;message:string};availableAt?:number;
+  error?:{code:string;message:string;reason?:string;diagnostic?:import('@mote/shared').FailureDiagnostics};availableAt?:number;
   execution?:ExecutionEnvelope;
   operationUsage?:import('./usage.js').OperationUsage;
 }

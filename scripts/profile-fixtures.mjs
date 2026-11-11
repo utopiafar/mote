@@ -39,7 +39,7 @@ export async function updateEnvironment(p, values) {
     MOTE_MODEL: ['models.deployment.model', 'string'], MOTE_MODEL_API_KEY: ['models.deployment.apiKey', 'string'], MOTE_MODEL_BASE_URL: ['models.deployment.baseUrl', 'string'],
     MOTE_EMBEDDING_MODEL: ['models.embedding.model', 'string'], MOTE_EMBEDDING_API_KEY: ['models.embedding.apiKey', 'string'],
     MOTE_DIAGNOSTICS_ENABLED: ['diagnostics.enabled', 'boolean'], MOTE_DEBUG: ['diagnostics.debug', 'boolean'], MOTE_AGENT_TRACE_ENABLED: ['diagnostics.traceEnabled', 'boolean'],
-    MOTE_LOG_DIR: ['diagnostics.directory', 'string'], MOTE_LOG_LEVEL: ['diagnostics.level', 'string'], MOTE_LOG_MAX_MB: ['diagnostics.maxBytes', 'MiB'], MOTE_LOG_MAX_FILES: ['diagnostics.maxFiles', 'number'],
+    MOTE_LOG_DIR: ['diagnostics.directory', 'string'], MOTE_LOG_LEVEL: ['diagnostics.level', 'string'], MOTE_LOG_MAX_MB: ['diagnostics.maxBytes', 'MiB'], MOTE_LOG_MAX_TOTAL_MB:['diagnostics.maxTotalBytes','MiB'],
     MOTE_PUBLIC_URL: ['server.publicUrl', 'string'], MOTE_TLS_DOMAIN: ['server.tls.domain', 'string'],
   };
   await updateProfileConfiguration(p, document => {

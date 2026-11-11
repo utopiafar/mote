@@ -1,5 +1,5 @@
 import type {MaterialRead} from './evidence-read-ports.js';
-import {ProviderFailure} from '@mote/shared';
+import {ProviderFailure,sanitizeFailureDiagnostics} from '@mote/shared';
 import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
 import type {AgentProgress} from '@mote/agent';
@@ -15,7 +15,7 @@ type Scope={after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface InsightRun {
   id:string;operationId?:string;status:'running'|'completed'|'failed'|'cancelled';createdAt:string;updatedAt:string;
   scope:Scope;snapshot?:InsightSnapshot;events:(AgentProgress&{at:string})[];resultRunId?:string;
-  error?:{code:string;message:string};availableAt?:number;
+  error?:{code:string;message:string;reason?:string;diagnostic?:import('@mote/shared').FailureDiagnostics};availableAt?:number;
   execution?:ExecutionEnvelope;
 }
 /** Durable progress contains fixed stages and tool counts, never prompts or model reasoning. */
@@ -30,7 +30,7 @@ export class InsightRuns {
       exists:id=>Boolean(store.db.prepare('SELECT 1 FROM insight_runs WHERE id=?').get(id)),
       project:(id,step)=>this.project(id,step),
       commit:(id,result)=>{this.commitGuards.get(id)?.();const run=this.raw(id),output=result as QueryResult;if(!this.store.db.prepare('SELECT 1 FROM insights WHERE id=?').get(output.runId))this.store.saveInsight({...output,...(run.snapshot?{snapshot:run.snapshot}:{})},output.runId);run.resultRunId=output.runId;this.save(run);},
-      failure:(id,error)=>{const run=this.raw(id),safe=safeError(error);run.error={code:error instanceof ProviderFailure?safe.reason??safe.category:safe.category,message:safe.message};run.availableAt=error instanceof ProviderFailure&&error.details.retryAfterMs!==undefined?Date.now()+error.details.retryAfterMs:undefined;this.save(run);},
+      failure:(id,error)=>{const run=this.raw(id),safe=safeError(error);run.error={code:error instanceof ProviderFailure?safe.reason??safe.category:safe.category,message:safe.message,reason:error instanceof ProviderFailure?error.details.code:safe.reason,diagnostic:sanitizeFailureDiagnostics({...safe.diagnostic!,lastTool:[...run.events].reverse().find(e=>e.stage==='tool'&&e.phase==='completed')?.tool,stage:safe.diagnostic?.stage??(run.events.at(-1)?.stage==='validating'?'validation':run.events.at(-1)?.stage==='tool'?'tool':'model')})};run.availableAt=error instanceof ProviderFailure&&error.details.retryAfterMs!==undefined?Date.now()+error.details.retryAfterMs:undefined;this.save(run);},
     },options);
     for(const row of store.db.prepare('SELECT json FROM insight_runs').all() as {json:string}[]){const run=JSON.parse(row.json) as InsightRun;this.execution.restore(run.id,{state:run.status==='completed'?'succeeded':run.status,attempts:run.execution?.attempts,createdAt:run.createdAt,updatedAt:run.updatedAt,error:run.error?.code,availableAt:run.availableAt});}
   }

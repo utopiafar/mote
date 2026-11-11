@@ -14,3 +14,9 @@ test('Codex totals validate disjoint buckets and preserve missing cache fields a
   assert.equal(codexUsage({total}).cacheWriteTokens,undefined);
   for(const invalid of [{...total,totalTokens:151},{...total,cachedInputTokens:101},{...total,reasoningOutputTokens:51},{...total,inputTokens:NaN}])assert.equal(codexUsage({total:invalid}),undefined);
 });
+
+test('failure diagnostics keep official upstream statuses without free-form provider detail',async()=>{
+ const {codexFailureDiagnostics}=await import('../dist/codex-protocol.js');
+ assert.deepEqual(codexFailureDiagnostics({responseStreamDisconnected:{httpStatusCode:503,additionalDetails:'GENERATED_PRIVATE_DETAIL'}}),{source:'codex',stage:'model',code:'responseStreamDisconnected',httpStatus:503});
+ assert.deepEqual(codexFailureDiagnostics('GENERATED_PRIVATE_DETAIL'),{source:'codex',stage:'model',code:'unknown'});
+});

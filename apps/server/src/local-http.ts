@@ -21,7 +21,7 @@ export function requestLocalJson(endpoint:string|URL,input:{method?:'GET'|'POST'
       try{
         input.onResponseHeaders?.(incoming.headers);
         if((incoming.statusCode??0)<200||(incoming.statusCode??0)>=300){
-          const failure=new ProviderFailure({...providerHttpFailure(incoming.statusCode??502,String(incoming.headers['retry-after']??'')),...(incoming.headers['x-mote-execution']==='local'&&incoming.headers['x-mote-execution-started']==='false'?{executionStarted:false as const}:{})});
+          const failure=new ProviderFailure({...providerHttpFailure(incoming.statusCode??502,String(incoming.headers['retry-after']??'')),...(incoming.headers['x-mote-execution']==='local'&&incoming.headers['x-mote-execution-started']==='false'?{executionStarted:false as const}:{})},undefined,{source:'http',httpStatus:incoming.statusCode??502});
           // A local worker can reject before consuming the upload. Stop reading
           // the original and preserve that typed response instead of replacing
           // it with a later request-body EPIPE/drain failure.

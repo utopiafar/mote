@@ -51,7 +51,7 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
   const runtimeSettings=bootstrap.configurationPlatform.runtimeSettings;
   const observability=await bootstrap.installObservabilityPlatform({
     logDirectory:config.logDirectory??join(config.dataDir,'logs'),
-    diagnostics:{...runtimeSettings.diagnostics(),maxBytes:config.logMaxBytes??defaultLogMaxBytes(config.profile),maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries},
+    diagnostics:{...runtimeSettings.diagnostics(),maxBytes:config.logMaxBytes??defaultLogMaxBytes(config.profile),maxTotalBytes:config.logMaxTotalBytes,retention:config.logRetention,maxEntries:config.logMaxEntries},
     update:{currentVersion:dependencies.serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel},
     eventLoopResolutionMs:20,
   });

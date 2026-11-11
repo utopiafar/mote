@@ -26,20 +26,23 @@
 |---|---|---|
 | `diagnostics.enabled` | `true` | `false` 时不读取、积累或写入诊断事件；即时数值状态仍可查看 |
 | `diagnostics.debug` | `false` | `true` 时将非 silent 级别提升为 debug，额外记录阶段开始事件，便于发现尚未完成的阶段 |
-| `diagnostics.traceEnabled` | dev 为 `true`，其它环境为 `false` | 把详细 Agent 请求上下文、prompt、模型输出、工具调用、校验和状态写入普通 central 日志，可能包含个人内容 |
+| `diagnostics.traceEnabled` | `false` | 把详细 Agent 内容写入独立 trace 分段，可能包含个人内容 |
 | `diagnostics.level` | `info` | `debug`、`info`、`warn`、`error`、`silent`；`silent` 优先于 debug 开关 |
 | `diagnostics.directory` | 数据目录下的 `logs` | 每个节点使用独立目录；不会出现在支持包内 |
-| `diagnostics.maxBytes` | DEV `104857600`，其它 `2097152` | 省略使用 profile 默认值；显式字节值 DEV 允许 `0.1`–`100` MiB，其它 `0.1`–`8` MiB；跨 UTC 日期或达到上限时轮转 |
-| `diagnostics.maxFiles` | `3` | 保留文件数，允许 `1`–`10` |
+| `diagnostics.maxBytes` | `16777216` | 每个分段的大小上限；最大 100 MiB。写满或跨 UTC 日期只创建新分段 |
+| `diagnostics.maxTotalBytes` | `2147483648` | 所有日志级别与监督进程共用的总预算 |
+| `diagnostics.retention` | 见下文 | 各级别独立的时间与容量上限 |
+| `diagnostics.traceExpiresAt` | `0` | 详细记录截止时间，Unix 毫秒；从诊断偏好开启时自动设置为 24 小时内 |
 | `diagnostics.maxEntries` | `2000` | 内存事件上限，允许 `100`–`5000` |
 
-debug 开关只增加固定事件，不记录请求正文、模型输入输出、令牌、原图、来源文本、文件路径、设备名称或原始 URL/query。另行开启 `diagnostics.traceEnabled: true` 后，开发诊断会在普通 central 日志中记录这些详细内容；模型与 SDK 异常按类型或 HTTP 状态映射为固定类别，不会返回异常原文或堆栈。
+debug 开关只增加固定事件，不记录请求正文、模型输入输出、令牌、原图、来源文本、文件路径、设备名称或原始 URL/query。另行开启 `diagnostics.traceEnabled: true` 后，开发诊断会在独立 trace 分段记录这些详细内容；模型与 SDK 异常按类型或 HTTP 状态映射为固定类别，不会返回异常原文或堆栈。
 
-文件名仍为 `central.0.ndjson`、`central.1.ndjson` 等，`0` 是当前文件；服务端在 UTC 日期变化时切换文件，达到 `diagnostics.maxBytes` 时也会继续按大小轮转。DEV 默认结构化日志的磁盘上限为 300 MiB，其它环境为 6 MiB，另有一个很小的进程锁文件。原生监督日志 `central.log` 独立轮转，使用同样的容量配置，所以 DEV 两组默认合计最多 600 MiB；Docker stdout 仍使用部署层上限。不保证固定保留时长。显式 `diagnostics.maxBytes: 2097152` 不会被静默覆盖；已有 YAML DEV 可用 [默认值迁移命令](deployment.md#dev-log-retention) 后在下次正常重启生效。日志文件权限为 `600`，新建目录权限为 `700`。只有取得该日志目录写锁的节点才会读取和轮转它；第二个活跃写入者会报告写入失败，不会覆盖另一个节点的日志。崩溃留下的失效锁和未写完的尾行会在重启时处理。旧的 `central.N.ndjson` 文件仍按原编号读取，网页分页、原始日志接口和支持包导出不需要迁移。
+文件名为 `central.<level>.<firstMillis>.<lastMillis>.<id>.ndjson`，监督进程使用 `supervisor` 前缀。error、warn、info、debug、trace 的默认目标分别是 30 天/128 MiB、14 天/64 MiB、7 天/256 MiB、2 天/128 MiB、1 天/1 GiB。过期内容先删除；某类超过预算时只删除该类最旧的分段；总空间不足时按 trace、debug、info、warn、error 顺序清理。低级别的新日志不能挤掉更高级别的已有记录。容量有限时，实际覆盖时间可能小于目标。
 
+目录写入和清理由同一短锁协调，文件权限为 `600`、目录为 `700`。调小配置不会截断已有文件。目录里不支持的历史文件不自动读取或删除，其日志/临时文件字节仍计入总预算。需要保留的历史文件可先导出到私人位置，再明确清理。详细记录关闭或到期只停止新增；已有内容继续遵守保留期限。
 内存写入队列最多保留 1024 条待写事件，另有最多 64 条正在写入；单条结构化日志最多 20 KiB，超出时截断可选字段并标记 `truncated`，不会丢弃整条事件。突发流量或磁盘故障时允许丢弃诊断事件，`droppedEvents` 和 `writeFailures` 会增加，业务隐私检查与入库不因此被绕过。关闭服务会等待当前日志写入结束。禁用诊断不会主动删除已经存在的历史日志文件。
 
-详细 trace 使用独立的 8 MiB 单条硬上限，并且不能超过所配置的文件容量；超大 trace 写入截断摘要。其它 trace 字符串、集合和深度边界见 [服务器配置](server-configuration.md#日志与调试)。启动、分页与范围导出按行遍历日志，安全范围导出不会累积 trace 正文；原始文件下载仍可能返回整份 100 MiB 文件。
+详细 trace 使用 8 MiB 单条硬上限，并且不能超过所配置的文件容量；超大 trace 写入截断摘要。其它 trace 字符串、集合和深度边界见 [服务器配置](server-configuration.md#日志与调试)。启动、分页与范围导出按行遍历日志，安全范围导出不会累积 trace 正文；原始文件下载最多返回一份 100 MiB 分段。
 
 ## 认证 API
 
@@ -51,7 +54,9 @@ debug 开关只增加固定事件，不记录请求正文、模型输入输出�
 | `GET /api/configuration` | 所有者专用：生效配置、私有目录、存储来源、变量名和密钥配置状态；此响应不属于可公开分享的诊断包 |
 | `GET /api/diagnostics` | 数值快照：进程 CPU/RSS/运行时间、索引队列、设备报告的排队总量、存储统计、日志容量及丢弃/失败计数 |
 | `GET /api/diagnostics/events?afterSeq=0&limit=200` | 从指定序号之后向前读取事件，单页最多 500 条 |
-| `GET /api/diagnostics/logs?file=0` | 读取普通 central 日志原文；详细 Agent trace（若开启）也在这里 |
+| `GET /api/diagnostics/logs?file=0` | 按当前文件索引或稳定 UUID 读取一个分段原文；索引与 UUID 来自诊断快照的 retention.files |
+| `POST /api/diagnostics/cleanup-preview` | `{kind:"trace"|"all"}`；返回具体文件、大小和覆盖时间，不执行删除 |
+| `POST /api/diagnostics/cleanup` | 提交完整预览；文件变化时返回 409，重新预览后再确认 |
 | `GET /api/support-bundle` | 下载 `mote-support.json`：快照和最近最多 500 条事件 |
 
 事件分页返回 `{items,nextSeq,oldestSeq}`。下一次请求使用 `nextSeq`；`afterSeq=0` 从最早保留的事件开始。若只想显示最近 200 条，先读取快照，再以 `max(0,lastSeq-200)` 为游标。若游标早于 `oldestSeq`，更早事件已超过保留范围；若换成另一资料库或日志已被清空，应重置游标。
@@ -71,7 +76,7 @@ debug 开关只增加固定事件，不记录请求正文、模型输入输出�
 | `model_not_configured` | 未配置 Agent；检查本 profile 的模型、地址和凭据配置 |
 | `agent_response` | 模型输出未通过回答/证据格式检查；保留请求编号后重试或检查模型能力与配置 |
 
-回答校验错误现在附带固定 `reason`：`output_limit` 表示模型明确报告输出 token 耗尽；`invalid_json` / `invalid_shape` 表示结构不合法；`unretrieved_citation` / `truncated_citation` / `undeclared_citation` 分别表示未检索资料、缩写引用或引用列表不一致。事件与 HTTP 响应只保存这些枚举，不包含原始模型输出、推理或具体引用值。旧事件没有此字段，无法据其还原更细原因。输出超限处理见[回答截断与输出预算](query-output-budget.md)。
+回答校验错误现在附带固定 `reason`：`output_limit` 表示模型明确报告输出 token 耗尽；`invalid_json` / `invalid_shape` 表示结构不合法；`unretrieved_citation` / `truncated_citation` / `undeclared_citation` 分别表示未检索资料、缩写引用或引用列表不一致。事件与 HTTP 响应只保存这些枚举，不包含原始模型输出、推理或具体引用值。新失败记录同时保留允许的 diagnostic 字段，如上游 HTTP 状态、官方错误判别值、进程退出状态及执行阶段。普通日志与任务摘要不包含异常原文；底层没有提供原因时明确记为 unknown。历史事件缺失的细节无法还原。输出超限处理见[回答截断与输出预算](query-output-budget.md)。
 | `embedding_http` / `embedding_invalid` / `embedding_transport` | 索引服务分别出现 HTTP、向量格式或连接问题；修复配置后使用索引重试入口 |
 | `rate_limited` | 上游服务暂时限流；按重试时间等待。中央端不设置 HTTP 请求频控 |
 | `storage_full` | 达到资料库存储上限；清理或调整容量后重试 |

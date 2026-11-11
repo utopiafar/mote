@@ -72,3 +72,12 @@ test('owner HTTP cancellation aborts a review and fences late reports without re
  assert.equal((await app.inject({method:'POST',url:`/api/insight-runs/${id}/cancel`,headers})).json().status,'cancelled');
  const restored=new InsightRuns(store);assert.equal(restored.get(id).status,'cancelled');await restored.close();assert.equal(calls,1);
 });
+
+test('a failed review keeps its original transport facts after restart and without detailed trace',async t=>{
+  const failure=new AgentProviderError({category:'transient',code:'provider_unavailable'},{source:'http',httpStatus:503,stage:'model'});
+  const {app,store,insightRuns}=await fixture(t,{configured:true,query:async()=>{throw failure;},close:async()=>{}});
+  const id=randomUUID();await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{requestId:id}});await insightRuns.close();
+  const saved=(await app.inject({url:'/api/insight-runs/'+id,headers})).json();
+  assert.equal(saved.error.reason,'provider_unavailable');assert.equal(saved.error.diagnostic.httpStatus,503);assert.equal(saved.error.diagnostic.source,'http');assert.equal(saved.result,undefined);
+  const restored=new InsightRuns(store);assert.deepEqual(restored.get(id).error,saved.error);await restored.close();
+});

@@ -94,7 +94,7 @@ const flatSnapshot=(diagnostics:ServerDiagnostics):Readonly<Record<string,FlatVa
     lastSeq:value.lastSeq,pendingWrites:value.pendingWrites,droppedEvents:value.droppedEvents,
     writeFailures:value.writeFailures,readFailures:value.readFailures,
     agentTraceEnabled:value.agentTrace.enabled,agentTraceRetainedEvents:value.agentTrace.retainedEvents,
-    maxFileBytes:value.limits.maxFileBytes,maxFiles:value.limits.maxFiles,maxEvents:value.limits.maxEvents,
+    maxFileBytes:value.limits.maxFileBytes,maxTotalBytes:value.retention.maxTotalBytes,maxEvents:value.limits.maxEvents,
     uptimeMs:value.runtime.uptimeMs,rssBytes:value.runtime.rssBytes,
     cpuUserMicros:value.runtime.cpuUserMicros,cpuSystemMicros:value.runtime.cpuSystemMicros,
   });
@@ -237,14 +237,19 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
       });
       child.get('/api/build-info',async()=>views.system.buildInfo());
       registerUpdateRoutes(child,softwareUpdate!);
-      child.get('/api/diagnostics',async()=>diagnosticSnapshot());
+      child.get('/api/diagnostics',async()=>{await diagnostics!.retention();return diagnosticSnapshot();});
       child.get('/api/diagnostics/logs',async(request,reply)=>{
-        const {file}=z.object({file:z.coerce.number().int().min(0).max(9).default(0)}).strict().parse(request.query);
+        const {file}=z.object({file:z.union([z.string().uuid(),z.coerce.number().int().min(0).max(100000)]).default(0)}).strict().parse(request.query);
         return reply.type('text/plain; charset=utf-8').send(await diagnostics!.readRaw(file));
       });
       child.get('/api/diagnostics/log-pages',async request=>{
-        const args=z.object({file:z.coerce.number().int().min(0).max(9).default(0),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(500).default(100),stage:z.enum(diagnosticStageFilters).default('all')}).strict().parse(request.query);
+        const args=z.object({file:z.union([z.string().uuid(),z.coerce.number().int().min(0).max(100000)]).default(0),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(500).default(100),stage:z.enum(diagnosticStageFilters).default('all')}).strict().parse(request.query);
         return diagnostics!.readPage(args.file,args.page,args.pageSize,args.stage);
+      });
+      child.post('/api/diagnostics/cleanup-preview',async request=>{const {kind}=z.object({kind:z.enum(['trace','all'])}).strict().parse(request.body);return diagnostics!.cleanupPreview(kind);});
+      child.post('/api/diagnostics/cleanup',async request=>{
+        const plan=z.object({kind:z.enum(['trace','all']),bytes:z.number().int().nonnegative(),oldestAt:z.string().datetime().nullable(),newestAt:z.string().datetime().nullable(),files:z.array(z.object({name:z.string().max(200),family:z.string().max(20),channel:z.enum(['error','warn','info','debug','trace']),firstAt:z.string().datetime(),lastAt:z.string().datetime(),bytes:z.number().int().nonnegative(),index:z.number().int().optional(),modifiedAt:z.number().finite().optional()}).strict()).max(100000)}).strict().parse(request.body);
+        return diagnostics!.cleanup(plan);
       });
       child.get('/api/diagnostics/events',async request=>{
         const args=z.object({afterSeq:z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),limit:z.coerce.number().int().min(1).max(500).default(200)}).strict().parse(request.query);

@@ -33,8 +33,8 @@ test('YAML profiles isolate paths and private generated credentials across resta
     const config = JSON.parse(result.stdout);
     assert.equal(config.profile, profile); assert.equal(config.port, 47842 + index * 10);
     assert.equal(config.dataDir, join(directory, 'archive')); assert.equal(config.logDirectory, join(directory, 'events'));
-    assert.equal(config.diagnosticsDebug, true); assert.equal(config.agentTraceEnabled, profile === 'dev');
-    assert.equal(config.logMaxBytes, (profile === 'dev' ? 100 : 2) * 1024 * 1024);
+    assert.equal(config.diagnosticsDebug, true); assert.equal(config.agentTraceEnabled,false);
+    assert.equal(config.logMaxBytes, 16*1024*1024);
     assert.equal(config.model, ''); assert.equal(config.apiKey, '');
     assert.equal(config.token, readFileSync(join(directory, 'archive/access-token'), 'utf8').trim());
     assert.equal(JSON.parse(readConfig({ MOTE_CONFIG_FILE: file }).stdout).token, config.token);
@@ -59,7 +59,7 @@ test('profile diagnostic defaults preserve explicit opt-outs and survive unrelat
   const service = new ConfigService({ path: file, watch: false, initialDocument: config.configuration.document });
   registerBuiltinDomains(service, config); t.after(() => service.close()); await service.initialize();
   await service.update('execution', { agentConcurrency: 9 }, service.revision);
-  assert.equal(service.current<{ debug: boolean }>('diagnostics').debug, true);
+  assert.equal(service.current<{ debug: boolean }>('diagnostics').debug,false);
   assert.equal(Object.hasOwn(readConfigDocument(file).diagnostics as object, 'debug'), false);
   await service.update('diagnostics', { debug: false }, service.revision);
   await service.update('execution', { agentConcurrency: 10 }, service.revision);
@@ -71,16 +71,16 @@ test('YAML retention preserves explicit capacities and enforces profile limits b
   const { file, write, vault } = fixture(t, 'log-retention');
   const mib = 1024 * 1024;
   for (const [profile, maxBytes, expected] of [
-    ['dev', undefined, 100 * mib], ['dev', 2 * mib, 2 * mib],
+    ['dev',undefined,16*mib], ['dev', 2 * mib, 2 * mib],
     ['dev', Math.floor(0.1 * mib), Math.floor(0.1 * mib)], ['dev', 100 * mib, 100 * mib],
-    ['test', undefined, 2 * mib], ['prod', undefined, 2 * mib], ['default', 8 * mib, 8 * mib],
+    ['test',undefined,16*mib], ['prod',undefined,16*mib], ['default', 8 * mib, 8 * mib],
   ] as const) {
-    write({ server: { profile }, diagnostics: { ...(maxBytes === undefined ? {} : { maxBytes }), maxFiles: 4, maxEntries: 3000 } });
+    write({ server: { profile }, diagnostics: { ...(maxBytes === undefined ? {} : { maxBytes }), maxTotalBytes:512*1024*1024,maxEntries: 3000 } });
     const loaded = configFromFile(file, { initializeCredentials: false });
-    assert.equal(loaded.logMaxBytes, expected); assert.equal(loaded.logMaxFiles, 4); assert.equal(loaded.logMaxEntries, 3000);
+    assert.equal(loaded.logMaxBytes, expected); assert.equal(loaded.logMaxTotalBytes,512*1024*1024); assert.equal(loaded.logMaxEntries, 3000);
     assert.equal(existsSync(vault), false);
   }
-  for (const [profile, maxBytes] of [['dev', 100 * mib + 1], ['dev', Math.floor(0.1 * mib) - 1], ['test', 8 * mib + 1], ['prod', 100 * mib], ['dev', 'synthetic-private-limit']] as const) {
+  for (const [profile, maxBytes] of [['dev', 100 * mib + 1], ['dev', Math.floor(0.1 * mib) - 1], ['test',100*mib+1], ['prod',100*mib+1], ['dev', 'synthetic-private-limit']] as const) {
     write({ server: { profile }, diagnostics: { maxBytes } });
     assert.throws(() => configFromFile(file), (error: ConfigError) => error.field === 'diagnostics.maxBytes' && !error.message.includes('synthetic-private-limit'));
     assert.equal(existsSync(vault), false);
@@ -93,7 +93,7 @@ test('retention saves validate profile capacity together and expose restart meta
   const config = configFromFile(file, { initializeCredentials: false });
   const service = new ConfigService({ path: file, watch: false, initialDocument: config.configuration.document });
   registerBuiltinDomains(service, config); t.after(() => service.close()); await service.initialize();
-  assert.equal(service.current<{ maxBytes: number }>('diagnostics').maxBytes, 100 * 1024 * 1024);
+  assert.equal(service.current<{ maxBytes: number }>('diagnostics').maxBytes,16*1024*1024);
   const revision = service.revision;
   await assert.rejects(service.update('diagnostics', { maxBytes: 101 * 1024 * 1024 }, revision));
   assert.equal(service.revision, revision);
@@ -107,7 +107,7 @@ for (const setting of [undefined, 2 * 1024 * 1024, 100 * 1024 * 1024]) {
     const config = configFromFile(file, { initializeCredentials: false });
     const service = new ConfigService({ path: file, watch: false, initialDocument: config.configuration.document });
     registerBuiltinDomains(service, config); t.after(() => service.close()); await service.initialize();
-    const capacity = setting ?? 100 * 1024 * 1024;
+    const capacity=setting??16*1024*1024;
     const assertProvenance = () => {
       for (const document of [service.document(), readConfigDocument(file)]) {
         assert.equal(Object.hasOwn(document.diagnostics as object, 'maxBytes'), setting !== undefined);
@@ -123,15 +123,13 @@ for (const setting of [undefined, 2 * 1024 * 1024, 100 * 1024 * 1024]) {
     assert.equal(service.revision, revision); assert.equal(readFileSync(file, 'utf8'), before);
     if (setting === undefined) {
       await service.update('server', { profile: 'test' }, service.revision);
-      assert.equal(service.saved<{ maxBytes: number }>('diagnostics').maxBytes, 2 * 1024 * 1024);
+      assert.equal(service.saved<{ maxBytes: number }>('diagnostics').maxBytes,16*1024*1024);
       assert.equal(service.current<{ maxBytes: number }>('diagnostics').maxBytes, capacity, 'profile and capacity changes remain pending restart');
-      assert.equal(configFromFile(file, { initializeCredentials: false }).logMaxBytes, 2 * 1024 * 1024);
+      assert.equal(configFromFile(file, { initializeCredentials: false }).logMaxBytes,16*1024*1024);
       assert.equal(Object.hasOwn(service.document().diagnostics as object, 'maxBytes'), false);
     } else if (setting === 100 * 1024 * 1024) {
       const revision = service.revision;
-      await assert.rejects(service.update('server', { profile: 'test' }, revision));
-      assert.equal(service.revision, revision); assertProvenance();
-      assert.equal(service.saved<{ profile: string }>('server').profile, 'dev');
+      await service.update('server',{profile:'test'},revision);assertProvenance();assert.equal(service.saved<{profile:string}>('server').profile,'test');
     }
   });
 }

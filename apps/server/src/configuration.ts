@@ -110,13 +110,13 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'fi
       ]},
       { id: 'diagnostics', title: moteText("诊断与日志"), description: moteText("安全支持包保持路径和正文隔离；此配置视图不作为诊断附件导出。"), fields: [
         field('diagnosticsEnabled', moteText("结构化诊断开关"), config.diagnosticsEnabled ?? true, moteText("记录固定事件、状态与数值指标。silent 日志级别会同时停止记录。"), 'MOTE_DIAGNOSTICS_ENABLED'),
-        field('diagnosticsDebug', moteText("调试模式"), config.diagnosticsDebug ?? config.profile === 'dev', moteText("增加允许的固定调试事件，不开放任意正文日志。"), 'MOTE_DEBUG'),
-        field('agentTraceEnabled', moteText("详细 Agent 执行跟踪"), config.agentTraceEnabled ?? config.profile === 'dev', moteText("显式记录 Agent 的请求上下文、组装后的 prompt、模型输出、工具参数与结果、校验和阶段状态到 central 日志。包含个人内容，只建议开发环境开启；开发环境默认开启。"), 'MOTE_AGENT_TRACE_ENABLED'),
+        field('diagnosticsDebug', moteText("调试模式"), config.diagnosticsDebug??false, moteText("增加允许的固定调试事件，不开放任意正文日志。"), 'MOTE_DEBUG'),
+        field('agentTraceEnabled', moteText("详细 Agent 执行跟踪"), config.agentTraceEnabled??false, moteText("详细过程按需单独保存，可能包含个人内容，开启后最多记录 24 小时。"), 'MOTE_AGENT_TRACE_ENABLED'),
         field('logLevel', moteText("配置的日志级别"), config.logLevel ?? 'info', moteText("支持 debug、info、warn、error、silent。调试模式会将非 silent 级别提升为 debug。"), 'MOTE_LOG_LEVEL'),
-        field('effectiveLogLevel', moteText("实际诊断日志级别"), config.logLevel === 'silent' ? 'silent' : (config.diagnosticsDebug ?? config.profile === 'dev') ? 'debug' : config.logLevel ?? 'info', moteText("silent 优先；其余情况下调试模式使用 debug。诊断总开关关闭时，任何级别均不记录事件。")),
+        field('effectiveLogLevel', moteText("实际诊断日志级别"), config.logLevel === 'silent' ? 'silent' : (config.diagnosticsDebug??false) ? 'debug' : config.logLevel ?? 'info', moteText("silent 优先；其余情况下调试模式使用 debug。诊断总开关关闭时，任何级别均不记录事件。")),
         field('logDirectory', moteText("日志目录"), logDir, moteText("结构化中央日志的实际路径；Docker 通常位于 /data/logs。"), 'MOTE_LOG_DIR', ownerPath),
         field('logMaxBytes', moteText("每份结构化日志上限"), config.logMaxBytes ?? defaultLogMaxBytes(config.profile), moteText("独立于资料容量上限。"), 'MOTE_LOG_MAX_MB', { unit: 'bytes' }),
-        field('logMaxFiles', moteText("日志文件数上限"), config.logMaxFiles ?? 3, moteText("有限轮转的总文件数量；Docker/进程管理器输出另有部署级上限。"), 'MOTE_LOG_MAX_FILES', { unit: 'files' }),
+        field('logMaxTotalBytes',moteText('日志总容量上限'),config.logMaxTotalBytes??2048*1024*1024,moteText('所有日志级别与进程监督日志共用总预算，优先清理详细记录。'),undefined,{unit:'bytes'}),
         field('logMaxEntries', moteText("内存事件条数上限"), config.logMaxEntries ?? 2000, moteText("达到上限后保留较新的固定事件。"), 'MOTE_LOG_MAX_ENTRIES', { unit: 'entries' }),
       ] },
       { id: 'network', title: moteText("连接与访问"), description: moteText("中央是单所有者节点。所有者令牌管理整个资料库；设备页可发放权限受限的独立采集或 MCP 凭据。公开 URL 是部署声明，不证明隧道或 TLS 可用。"), fields: [
@@ -161,7 +161,7 @@ const domainPaths: Record<string, [string, string]> = {
   googleRedirectUri: ['connectors', 'googleRedirectUri'], connectorSyncInterval: ['connectors', 'syncIntervalMs'],
   diagnosticsEnabled: ['diagnostics', 'enabled'], diagnosticsDebug: ['diagnostics', 'debug'], agentTraceEnabled: ['diagnostics', 'traceEnabled'],
   logLevel: ['diagnostics', 'level'], logDirectory: ['diagnostics', 'directory'],
-  logMaxBytes: ['diagnostics', 'maxBytes'], logMaxFiles: ['diagnostics', 'maxFiles'], logMaxEntries: ['diagnostics', 'maxEntries'],
+  logMaxBytes: ['diagnostics', 'maxBytes'], logMaxTotalBytes:['diagnostics','maxTotalBytes'], logMaxEntries: ['diagnostics', 'maxEntries'],
   connectorDirectory: ['connectors', 'directory'], tunnelConfigured: ['server', 'tunnelEnabled'], tunnelProvider: ['server', 'tunnelProvider'],
   tunnelProtocol: ['server', 'tunnelProtocol'],
 };

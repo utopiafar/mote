@@ -20,7 +20,7 @@ function fixture(directory: string): Config {
     model: 'synthetic-model-name', modelBaseUrl: 'https://model.example.invalid/v1', apiKey: 'synthetic-agent-private-key',
     modelReasoningEffort: 'high', modelMaxTokens: 4096, modelRequestTimeoutMs: 300000, agentTimeoutMs: 300000, allowUnauthenticatedLocal: false,
     embeddingModel: 'synthetic-embedding-name', embeddingBaseUrl: 'https://embedding.example.invalid/v1', embeddingApiKey: 'synthetic-embedding-private-key',
-    diagnosticsEnabled: true, diagnosticsDebug: true, logDirectory: join(directory, 'private-logs'), logLevel: 'info', logMaxBytes: 1024 * 1024, logMaxFiles: 2, logMaxEntries: 100,
+    diagnosticsEnabled: true, diagnosticsDebug: true, logDirectory: join(directory, 'private-logs'), logLevel: 'info', logMaxBytes: 1024 * 1024, logMaxTotalBytes:512*1024*1024, logMaxEntries: 100,
     configuration: {
       baseDir: '/app/deploy', hostConfigFile: join(directory, 'mote.env'), runtime: 'docker',
       publicUrl: 'https://mote.example.invalid', storageKind: 'docker-volume', storageSource: 'synthetic-private-volume-name', storageMount: '/data',

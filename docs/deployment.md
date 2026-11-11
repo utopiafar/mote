@@ -47,13 +47,13 @@ node scripts/mote.mjs stop --profile prod --home "$HOME/Library/Application Supp
 
 启动环境保留原有绕过规则并补齐 IPv4/IPv6 loopback，统一大小写代理变量。`launchd` 生成的 plist 会把生成时进程环境中已存在的代理变量原样写入 `EnvironmentVariables`，缺失的变量不会补造；运行仍由 `mote run` 补齐 `NODE_USE_ENV_PROXY=1`。本机语音、图像处理和 worker 健康探测另使用强制直连传输，即使直接启动中央并遗漏 `NO_PROXY`，也不会通过环境代理发送本机处理原件或授权头。
 
-原生 stdout/stderr 先经监督进程白名单化：保留固定启动/停止事件，未知 SDK 输出只记流类型与字节数，再写入有上限的 `central.log`。DEV 默认每份 100 MiB、总共 3 份，其它 profile 默认每份 2 MiB、3 份；包括单次大输出与反复重启。中央结构化诊断独立写入 `diagnostics.directory`，使用同样的容量配置，并默认限制 2000 条记录。两组日志各自轮转，所以 DEV 默认合计最多 600 MiB；容量不保证固定保留时长。省略 `diagnostics.debug` 时 Dev 默认开启调试级别，其它 Profile 默认关闭；显式 `false` 或 `silent` 保留。开关、级别与 trace 经校验热应用，目录与日志容量修改需重启。
+原生 stdout/stderr 先经监督进程白名单化：保留固定启动/停止事件，未知 SDK 输出只记类型与字节数。监督进程和中央诊断都按级别分段，使用同一目录与 2 GiB 总预算；各级别保留目标和容量见[日志保留决策](adr-dev-log-retention.md)。所有 profile 默认关闭 debug 与详细过程记录。详细记录开启后最多持续 24 小时；开关、级别和截止时间经校验热应用，目录与容量修改需要重启。
 
 <a id="dev-log-retention"></a>
 
 ### DEV 日志默认容量
 
-YAML 省略 `diagnostics.maxBytes` 时按 `server.profile` 选择默认值：DEV 为 104857600 字节（100 MiB），其它环境为 2097152 字节（2 MiB）。DEV 允许显式 0.1–100 MiB，其它允许 0.1–8 MiB。所有显式数字保持用户选择，包括转换旧 env 后写入的 2097152；配置读取不会静默迁移。
+YAML 省略 `diagnostics.maxBytes` 时按 `server.profile` 选择默认值：所有 profile 为 16777216 字节（16 MiB）。显式范围为 0.1–100 MiB。所有显式数字保持用户选择，包括转换旧 env 后写入的 2097152；配置读取不会静默迁移。
 
 已有 YAML DEV 可主动采用默认值：
 
@@ -61,9 +61,9 @@ YAML 省略 `diagnostics.maxBytes` 时按 `server.profile` 选择默认值：DEV
 node scripts/mote.mjs log-retention --defaults --profile dev
 ```
 
-命令只删除主 YAML 中的 `diagnostics.maxBytes`，通过同一原子配置写入递增 revision，保留文件数、内存事件数、其它字段、密钥引用及资料。它返回变更前后容量；重复执行不改写文件。运行中的中央会显示该容量需要重启，由所有者在下一次正常重启后生效。旧 `mote.env` profile 按统一配置规则先离线准备 YAML，不由此命令自动转换。
+命令只删除主 YAML 中的 `diagnostics.maxBytes`，通过同一原子配置写入递增 revision，保留各级别预算、总预算、内存事件数、其它字段、密钥引用及资料。它返回变更前后容量；重复执行不改写文件。运行中的中央会显示该容量需要重启，由所有者在下一次正常重启后生效。旧 `mote.env` profile 按统一配置规则先离线准备 YAML，不由此命令自动转换。
 
-启动、采用默认值、升级和回退都先核对目标 build/image 的 YAML 支持；超过 8 MiB 还需扩容能力。只认识 env 的旧发行版会在启动、停服务或恢复资料前拒绝。支持 YAML 但没有扩容能力的版本需要主动设置 `diagnostics.maxBytes` 为 8 MiB 或更小；不会自动降容。较小写入器可能截断超限历史日志，需要保留排错资料时先保存副本。原生预检检查目标构建模块；Docker 预检在无网络、无资料卷的临时容器中检查相同模块。
+启动、采用默认值、升级和回退都先核对目标 build/image 是否支持当前 YAML 和分级日志存储。旧写入器会在停服务或恢复资料前被拒绝，不通过调小分段大小来绕过检查。调小当前版本的日志容量只会按策略删除完整旧分段，不会清空保留文件。原生预检检查目标构建模块；Docker 预检在无网络、无资料卷的临时容器中检查相同模块。
 
 ### 生成与安装 launchd 配置
 

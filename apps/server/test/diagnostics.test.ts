@@ -2,6 +2,8 @@ import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp,open,readFile,readdir,rm,writeFile,stat } from 'node:fs/promises';
+import {readdirSync} from 'node:fs';
+import {DEFAULT_LOG_RETENTION} from '../src/log-retention-config.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -16,6 +18,12 @@ import type { Config } from '../src/config.js';
 const marker='SYNTHETIC_PRIVATE_BODY_TOKEN_URL_QUERY';
 const config=(dataDir:string):Config=>({dataDir,token:'synthetic-observability-token-only',tokenPath:join(dataDir,'synthetic-token-file'),host:'127.0.0.1',port:47832,dataKey:undefined,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'synthetic-provider-credential',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsDebug:true});
 const inactive:QueryAgent={configured:false,query:async()=>{throw new Error('fixture must not run');},close:async()=>{}};
+
+const currentFiles=(directory:string)=>readdirSync(directory).filter(name=>/^central\.(error|warn|info|debug|trace)\./.test(name)).sort((a,b)=>Number(b.split('.')[3])-Number(a.split('.')[3])||b.localeCompare(a));
+const filePath=(directory:string,index=0)=>join(directory,currentFiles(directory)[index]);
+const seedPath=(directory:string,index=0,at=new Date().toISOString())=>join(directory,`central.info.${Date.parse(at)-index}.${Date.parse(at)-index}.${randomUUID()}.ndjson`);
+const allRaw=async(directory:string)=>(await Promise.all(currentFiles(directory).map(name=>readFile(join(directory,name),'utf8')))).join('');
+const fixtureRetention=(maxBytes:number)=>Object.fromEntries(Object.entries(DEFAULT_LOG_RETENTION).map(([key,value])=>[key,{...value,maxBytes}])) as typeof DEFAULT_LOG_RETENTION;
 
 test('mixed ordinary and trace eviction reports the actual ring across toggles and restart',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-trace-count-'));
@@ -36,7 +44,7 @@ test('mixed ordinary and trace eviction reports the actual ring across toggles a
  assert.equal(logger.snapshot().agentTrace.retainedEvents,0);
  logger.agentTrace({type:'generated.after-restart'});logger.record('server.started');check();
  await logger.close();logger=new ServerDiagnostics({directory,traceEnabled:true,maxEntries:2});await logger.init();check();
- assert.equal(logger.snapshot().agentTrace.retainedEvents,1);
+ assert.equal(logger.snapshot().agentTrace.retainedEvents,0,'ordinary events have priority over detailed traces in the memory ring');
 });
 
 test('safe fragment timings preserve measured queue/session units without arbitrary model content',async t=>{
@@ -46,7 +54,7 @@ test('safe fragment timings preserve measured queue/session units without arbitr
  d.record('agent.harness_timing',{lane:marker,unit:marker,status:marker,queueWaitMs:NaN,durationMs:80,body:marker} as never);
  await d.flush();const rows=d.events().items;assert.equal(rows.length,2);assert.equal(rows[0].queueWaitMs,12.346);assert.equal(rows[0].lane,'interactive');assert.equal(rows[0].status,'yielded');assert.equal(rows[0].unit,'agent_fragment');
  assert.equal(rows[1].lane,undefined);assert.equal(rows[1].unit,undefined);assert.equal(rows[1].status,undefined);assert.equal(rows[1].queueWaitMs,undefined);
- const text=await readFile(join(directory,'central.0.ndjson'),'utf8');assert.ok(!text.includes(marker));await d.close();const reopened=new ServerDiagnostics({directory});await reopened.init();assert.equal(reopened.events().items[0].unit,'agent_fragment');await reopened.close();
+ const text=await readFile(filePath(directory),'utf8');assert.ok(!text.includes(marker));await d.close();const reopened=new ServerDiagnostics({directory});await reopened.init();assert.equal(reopened.events().items[0].unit,'agent_fragment');await reopened.close();
 });
 
 test('disabled and silent diagnostics neither read nor create files or events',async t=>{
@@ -62,9 +70,9 @@ test('event whitelist excludes content even when supplied as Error-like fields a
   const requestId=randomUUID();
   d.run(requestId,()=>d.record('source.completed',{operation:'evidence',count:2,durationMs:1.25,...{message:marker,error:marker,body:marker,token:marker,requestId:marker,route:marker,category:marker,reason:marker,bytes:NaN}} as never));
   d.record(marker,{count:3});d.record('request.completed',{operation:marker,requestId:marker} as never);
-  await d.flush();const text=await readFile(join(directory,'central.0.ndjson'),'utf8');assert.ok(!text.includes(marker));assert.ok(!JSON.stringify(d.snapshot()).includes(directory));
+  await d.flush();const text=await readFile(filePath(directory),'utf8');assert.ok(!text.includes(marker));assert.ok(!JSON.stringify(d.snapshot()).includes(directory));
   const rows=d.events().items;assert.equal(rows.length,2);assert.equal(rows[0].count,2);assert.equal(rows[0].durationMs,1.25);assert.equal(rows[0].requestId,undefined);assert.equal(rows[0].category,undefined);assert.equal(rows[0].bytes,undefined);
-  assert.equal((await stat(join(directory,'central.0.ndjson'))).mode&0o777,0o600);
+  assert.equal((await stat(filePath(directory))).mode&0o777,0o600);
 });
 
 test('diagnostic log lines truncate instead of dropping oversized events',async t=>{
@@ -72,15 +80,15 @@ test('diagnostic log lines truncate instead of dropping oversized events',async 
   const base={seq:1,at:'2026-09-20T12:00:00.000Z',instanceId:randomUUID(),event:'server.started',level:'info'};
   const accepted=serializeDiagnosticEvent({...base,padding:'x'.repeat(19*1024)} as never);const truncated=serializeDiagnosticEvent({...base,seq:2,padding:'x'.repeat(25*1024)} as never);
   assert.ok(Buffer.byteLength(accepted)<=20*1024);assert.ok(Buffer.byteLength(truncated)<=20*1024);assert.equal(JSON.parse(accepted).truncated,undefined);assert.equal(JSON.parse(truncated).truncated,true);
-  const legacyOversized=JSON.stringify({...base,seq:3,padding:'x'.repeat(25*1024)})+'\n';await writeFile(join(directory,'central.0.ndjson'),accepted+legacyOversized);
-  const d=new ServerDiagnostics({directory,maxBytes:64*1024,maxFiles:1});await d.init();assert.equal(d.events().items.length,2);assert.deepEqual(d.events().items.map(event=>event.seq),[1,3]);await d.close();
+  const legacyOversized=JSON.stringify({...base,seq:3,padding:'x'.repeat(25*1024)})+'\n';await writeFile(seedPath(directory,0,base.at),accepted+legacyOversized);
+  const d=new ServerDiagnostics({directory,maxBytes:64*1024,now:()=>new Date(base.at)});await d.init();assert.equal(d.events().items.length,2);assert.deepEqual(d.events().items.map(event=>event.seq),[1,3]);await d.close();
 });
 
-test('opt-in Agent trace is written to the ordinary central log and survives reload while safe exports exclude it',async t=>{
+test('opt-in Agent trace is written to its separate stream and survives reload while safe exports exclude it',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-agent-trace-')),traceId=randomUUID(),requestId=randomUUID(),jobId=randomUUID(),batchId=randomUUID();
   const d=new ServerDiagnostics({directory,traceEnabled:true,debug:false});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   d.agentTrace({type:'context.assembled',runId:randomUUID(),stage:'starting',payload:{prompt:marker,context:{source:'synthetic fixture'}}},{traceId,requestId,jobId,batchId,batchIndex:3,attempt:2,phase:'extract',operation:'query',moduleId:'memories',profileId:'codex',provider:'codex',protocol:'codex-app-server',model:'synthetic-model'});
-  await d.flush();const raw=await readFile(join(directory,'central.0.ndjson'),'utf8');assert.ok(raw.includes('agent.trace'));assert.ok(raw.includes(marker));
+  await d.flush();const raw=await readFile(filePath(directory),'utf8');assert.ok(raw.includes('agent.trace'));assert.ok(raw.includes(marker));
   const event=d.events().items.find(row=>row.event==='agent.trace');assert.ok(event);assert.equal(event?.requestId,requestId);assert.equal(event?.jobId,jobId);assert.equal((event?.trace as Record<string,unknown>).traceId,traceId);assert.equal((event?.trace as Record<string,unknown>).payload&&((event?.trace as Record<string,unknown>).payload as Record<string,unknown>).prompt,marker);
   const exported=await d.exportRange(new Date(Date.now()-1000).toISOString(),new Date(Date.now()+1000).toISOString());assert.deepEqual(exported.events,[]);
   await d.close();const reloaded=new ServerDiagnostics({directory,traceEnabled:true});await reloaded.init();assert.equal(reloaded.events().items.filter(row=>row.event==='agent.trace').length,1);assert.equal(reloaded.snapshot().agentTrace.enabled,true);await reloaded.close();
@@ -88,23 +96,23 @@ test('opt-in Agent trace is written to the ordinary central log and survives rel
 
 test('100 MiB retention keeps real generated trace logs above the old 8 MiB ceiling across reads and restart',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-large-')),now=new Date('2026-09-20T12:00:00.000Z');
-  const options={directory,maxBytes:100*1024*1024,maxFiles:3,maxEntries:3,traceEnabled:true,now:()=>now};
+  const options={directory,maxBytes:100*1024*1024,maxEntries:3,traceEnabled:true,now:()=>now};
   const d=new ServerDiagnostics(options);let restarted:ServerDiagnostics|undefined;t.after(async()=>{await restarted?.close();await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   for(let index=0;index<9;index++){d.agentTrace({type:'fixture.model.completed',step:index,payload:'生成的 diagnostic fixture '.repeat(33_000)});await d.flush();}
   d.record('server.started');await d.flush();
-  const size=(await stat(join(directory,'central.0.ndjson'))).size;assert.ok(size>8*1024*1024);assert.ok(size<100*1024*1024);
+  const traceFile=d.snapshot().retention.files.find(f=>f.channel==='trace')!;const traceIndex=d.snapshot().retention.files.findIndex(f=>f.channel==='trace');const size=traceFile.bytes;assert.ok(size>8*1024*1024);assert.ok(size<100*1024*1024);
   assert.equal(d.snapshot().limits.maxFileBytes,100*1024*1024);assert.equal(d.snapshot().retainedEvents,3);assert.equal(d.snapshot().droppedEvents,0);
-  assert.equal(Buffer.byteLength(await d.readRaw()),size);
+  assert.equal(Buffer.byteLength(await d.readRaw(traceIndex)),size);
   // Pagination and safe export must traverse lines directly, without materializing a raw file first.
   t.mock.method(d,'readRaw',async()=>{throw new Error('whole-file reader must not be used');});
-  const latest=await d.readPage(0,1,2);assert.equal(latest.totalLines,10);assert.deepEqual(latest.items.map(line=>JSON.parse(line).seq),[9,10]);
-  const oldest=await d.readPage(0,999,2);assert.equal(oldest.page,5);assert.deepEqual(oldest.items.map(line=>JSON.parse(line).seq),[1,2]);
-  const filtered=await d.readPage(0,1,2,'system');assert.equal(filtered.totalLines,1);assert.equal(JSON.parse(filtered.items[0]).event,'server.started');
+  const latest=await d.readPage(traceIndex,1,2);assert.equal(latest.totalLines,9);assert.deepEqual(latest.items.map(line=>JSON.parse(line).seq),[8,9]);
+  const oldest=await d.readPage(traceIndex,999,2);assert.equal(oldest.page,5);assert.deepEqual(oldest.items.map(line=>JSON.parse(line).seq),[1]);
+  const filtered=await d.readPage(d.snapshot().retention.files.findIndex(f=>f.channel==='info'),1,2,'system');assert.equal(filtered.totalLines,1);assert.equal(JSON.parse(filtered.items[0]).event,'server.started');
   const exported=await d.exportRange('2026-09-20T12:00:00.000Z','2026-09-21T00:00:00.000Z');
   assert.deepEqual(exported.events.map(event=>event.seq),[10]);assert.equal(exported.oldestRetainedAt,now.toISOString());assert.equal(exported.retentionLimited,false);assert.equal(exported.invalidLines,0);
   await d.close();restarted=new ServerDiagnostics(options);await restarted.init();
   assert.deepEqual(restarted.recent().map(event=>event.seq),[8,9,10]);assert.equal(restarted.snapshot().readFailures,0);assert.equal(restarted.snapshot().lastSeq,10);
-  restarted.record('server.started');await restarted.flush();assert.equal(JSON.parse((await restarted.readPage(0,1,1)).items[0]).seq,11);
+  restarted.record('server.started');await restarted.flush();assert.equal(JSON.parse((await restarted.readPage(restarted.snapshot().retention.files.findIndex(f=>f.channel==='info'),1,1)).items[0]).seq,11);
 });
 
 test('large-file retention does not expand ordinary or per-trace payload limits',async t=>{
@@ -123,39 +131,39 @@ test('large-file retention does not expand ordinary or per-trace payload limits'
       assert.ok(Buffer.byteLength(ordinary)<=20*1024);assert.equal(JSON.parse(ordinary).truncated,true);
     }finally{await d.close();}
   }
-  assert.equal(new ServerDiagnostics({directory:join(root,'default')}).snapshot().limits.maxFileBytes,2*1024*1024);
+  assert.equal(new ServerDiagnostics({directory:join(root,'default')}).snapshot().limits.maxFileBytes,16*1024*1024);
   assert.equal(new ServerDiagnostics({directory:join(root,'clamped'),maxBytes:200*1024*1024}).snapshot().limits.maxFileBytes,100*1024*1024);
 });
 
-test('100 MiB boundary rotates three files within a 300 MiB disk ceiling and still rotates at UTC midnight',async t=>{
+test('100 MiB segments respect a 300 MiB stream budget and midnight does not impose a file-count limit',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-large-boundary-')),maxBytes=100*1024*1024,instanceId=randomUUID();let now=new Date('2026-09-20T23:59:59.000Z');
   let d:ServerDiagnostics|undefined;t.after(async()=>{await d?.close();await rm(directory,{recursive:true,force:true});});
   // Sparse generated fixtures reach the exact disk-size boundary without writing 300 MiB of payloads.
   // Newlines every MiB bound the malformed fixture lines; each file also contains a valid event.
   for(let index=0;index<3;index++){
-    const file=await open(join(directory,`central.${index}.ndjson`),'w');
+    const file=await open(seedPath(directory,index,now.toISOString()),'w');
     try{
       await file.writeFile(JSON.stringify({seq:3-index,at:now.toISOString(),instanceId,event:'server.started',level:'info'})+'\n');await file.truncate(maxBytes);
       for(let position=1024*1024-1;position<maxBytes;position+=1024*1024)await file.write('\n',position,'utf8');
     }finally{await file.close();}
   }
-  assert.equal((await Promise.all([0,1,2].map(async index=>(await stat(join(directory,`central.${index}.ndjson`))).size))).reduce((sum,size)=>sum+size,0),300*1024*1024);
-  d=new ServerDiagnostics({directory,maxBytes,maxFiles:3,now:()=>now});await d.init();
-  assert.equal(d.snapshot().lastSeq,3);assert.equal((await stat(join(directory,'central.0.ndjson'))).size,maxBytes);
+  assert.equal((await Promise.all([0,1,2].map(async index=>(await stat(filePath(directory,index))).size))).reduce((sum,size)=>sum+size,0),300*1024*1024);
+  d=new ServerDiagnostics({directory,maxBytes,retention:fixtureRetention(300*1024*1024),now:()=>now});await d.init();
+  assert.equal(d.snapshot().lastSeq,3);assert.equal((await stat(filePath(directory))).size,maxBytes);
   d.record('server.started');await d.flush();assert.equal(JSON.parse((await d.readPage(0,1,1)).items[0]).seq,4);
-  const history=await open(join(directory,'central.1.ndjson'),'r');try{assert.equal((await history.stat()).size,maxBytes);const head=Buffer.alloc(512);const {bytesRead}=await history.read(head,0,512,0);assert.equal(JSON.parse(head.subarray(0,bytesRead).toString().split('\n')[0]).seq,3);}finally{await history.close();}
-  const files=(await readdir(directory)).filter(name=>/^central\.\d+\.ndjson$/.test(name));assert.equal(files.length,3);
+  const history=await open(join(directory,d.snapshot().retention.files.find(file=>file.bytes===maxBytes)!.name),'r');try{assert.equal((await history.stat()).size,maxBytes);const head=Buffer.alloc(512);const {bytesRead}=await history.read(head,0,512,0);assert.equal(JSON.parse(head.subarray(0,bytesRead).toString().split('\n')[0]).seq,3);}finally{await history.close();}
+  const files=(await readdir(directory)).filter(name=>/^central\.(error|warn|info|debug|trace)\./g.test(name));assert.equal(files.length,3);
   const sizes=await Promise.all(files.map(async name=>(await stat(join(directory,name))).size));assert.ok(sizes.every(size=>size<=maxBytes));assert.ok(sizes.reduce((sum,size)=>sum+size,0)<=300*1024*1024);
   now=new Date('2026-09-21T00:00:00.000Z');d.record('server.started');await d.flush();
   assert.equal(JSON.parse((await d.readPage(0,1,1)).items[0]).seq,5);assert.equal(JSON.parse((await d.readPage(1,1,1)).items[0]).seq,4);
-  assert.equal((await stat(join(directory,'central.2.ndjson'))).size,maxBytes);await d.close();
+  assert.equal(d.snapshot().retention.files.filter(file=>file.bytes===maxBytes).length,2);assert.equal(d.snapshot().retention.files.length,4,'midnight does not delete a retained segment just to enforce a count');await d.close();
 });
 
 test('chunked readers preserve dense ordinary log ordering across many chunk boundaries',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-dense-')),instanceId=randomUUID(),at='2026-09-20T12:00:00.000Z';
   const rows=Array.from({length:10_000},(_,index)=>JSON.stringify({seq:index+1,at,instanceId,event:'source.completed',level:'info',operation:'evidence',count:index}));
-  await writeFile(join(directory,'central.0.ndjson'),rows.join('\n')+'\n');assert.ok((await stat(join(directory,'central.0.ndjson'))).size>64*1024);
-  const d=new ServerDiagnostics({directory,maxBytes:100*1024*1024,maxEntries:17});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
+  await writeFile(seedPath(directory,0,at),rows.join('\n')+'\n');assert.ok((await stat(filePath(directory))).size>64*1024);
+  const d=new ServerDiagnostics({directory,maxBytes:100*1024*1024,maxEntries:17,now:()=>new Date(at)});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   assert.equal(d.snapshot().lastSeq,10_000);assert.equal(d.snapshot().readFailures,0);assert.equal(d.snapshot().retainedEvents,17);
   assert.deepEqual((await d.readPage(0,1,3,'source')).items.map(line=>JSON.parse(line).seq),[9998,9999,10_000]);
   const oldest=await d.readPage(0,9999,3);assert.equal(oldest.page,3334);assert.deepEqual(oldest.items.map(line=>JSON.parse(line).seq),[1]);
@@ -167,7 +175,7 @@ test('chunked raw pages retain multibyte text, blank-line rules and incomplete m
   t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   const first='x'.repeat(64*1024-2)+'中文🚲 fixture',at='2026-09-20T12:00:00.000Z';
   const ordinary=JSON.stringify({seq:1,at,instanceId:randomUUID(),event:'server.started',level:'info'}),partial='{"unfinished":"generated fixture';
-  const raw=first+'\n\n'+ordinary+'\n'+partial;await writeFile(join(directory,'central.0.ndjson'),raw);
+  const raw=first+'\n\n'+ordinary+'\n'+partial;await writeFile(seedPath(directory,0,new Date().toISOString()),raw);
   const allocations:number[]=[],allocate=Buffer.allocUnsafe;t.mock.method(Buffer,'allocUnsafe',(size:number)=>{allocations.push(size);return allocate(size);});
   assert.equal(await d.readRaw(),raw);assert.ok(allocations.includes(Buffer.byteLength(raw)));assert.ok(!allocations.includes(100*1024*1024));
   const latest=await d.readPage(0,1,2);assert.deepEqual(latest.items,[ordinary,partial]);assert.equal(latest.totalLines,3);
@@ -176,40 +184,40 @@ test('chunked raw pages retain multibyte text, blank-line rules and incomplete m
 });
 
 test('log rotation, memory, pending queue and forward cursor remain bounded under bursts',async t=>{
-  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-bounds-'));const d=new ServerDiagnostics({directory,maxBytes:1024,maxFiles:3,maxEntries:17});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-bounds-'));const d=new ServerDiagnostics({directory,maxBytes:1024,retention:fixtureRetention(3072),maxEntries:17});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   for(let round=0;round<20;round++) {for(let i=0;i<100;i++)d.record('request.completed',{count:i});assert.ok(d.snapshot().pendingWrites<=81);await d.flush();}
   assert.equal(d.snapshot().retainedEvents,17);assert.ok(d.snapshot().droppedEvents>0);assert.equal(d.snapshot().pendingWrites,0);
-  const files=(await readdir(directory)).filter(name=>/^central\.\d+\.ndjson$/.test(name));assert.ok(files.length<=3);
+  const files=(await readdir(directory)).filter(name=>/^central\.(error|warn|info|debug|trace)\./g.test(name));assert.ok(files.length<=3);assert.ok(d.snapshot().retention.files.reduce((n,f)=>n+f.bytes,0)<=3072);assert.ok(d.snapshot().retention.totalBytes<=d.snapshot().retention.maxTotalBytes);
   for(const file of files)assert.ok((await stat(join(directory,file))).size<=1024);
   const all=d.events(0,500).items;let cursor=0,received:number[]=[];
   for(;;){const page=d.events(cursor,3);if(!page.items.length)break;received.push(...page.items.map(r=>r.seq));cursor=page.nextSeq;}
   assert.deepEqual(received,all.map(r=>r.seq));assert.deepEqual(d.recent(3).map(r=>r.seq),all.slice(-3).map(r=>r.seq));
 });
 
-test('daily boundaries rotate without changing indexed file compatibility',async t=>{
+test('daily boundaries create new segments and preserve previous days',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-daily-'));let now=new Date('2026-09-20T23:59:59.000Z');
-  const options=()=>({directory,debug:true,maxBytes:1024,maxFiles:3,now:()=>now});const d=new ServerDiagnostics(options());t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
+  const options=()=>({directory,debug:true,maxBytes:1024,now:()=>now});const d=new ServerDiagnostics(options());t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   d.record('server.started');await d.flush();await d.close();
   now=new Date('2026-09-21T00:00:00.000Z');const restarted=new ServerDiagnostics(options());await restarted.init();restarted.record('server.started');await restarted.flush();
-  const current=JSON.parse((await readFile(join(directory,'central.0.ndjson'),'utf8')).trim());const history=JSON.parse((await readFile(join(directory,'central.1.ndjson'),'utf8')).trim());
+  const current=JSON.parse((await readFile(filePath(directory),'utf8')).trim());const history=JSON.parse((await readFile(filePath(directory,1),'utf8')).trim());
   assert.equal(current.at.slice(0,10),'2026-09-21');assert.equal(history.at.slice(0,10),'2026-09-20');assert.equal((await restarted.readRaw(0)).trim(),JSON.stringify(current));assert.equal((await restarted.readRaw(1)).trim(),JSON.stringify(history));
   await restarted.close();
 });
 
-test('restart filters foreign fields, discards partial writes, bounds old logs and preserves sequence',async t=>{
+test('restart filters foreign fields, preserves malformed evidence and never truncates files for a smaller segment size',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-restart-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   const event={seq:8,at:new Date().toISOString(),instanceId:randomUUID(),event:'source.completed',level:'info',operation:'evidence',count:1,message:marker,requestId:marker};
-  await writeFile(join(directory,'central.0.ndjson'),JSON.stringify(event)+'\n{"unfinished":"'+marker,{mode:0o644});
-  await writeFile(join(directory,'central.1.ndjson'),'x'.repeat(3000));await writeFile(join(directory,'central.9.ndjson'),'old');await writeFile(join(directory,'unrelated.txt'),marker);
-  const d=new ServerDiagnostics({directory,maxBytes:1024,maxFiles:2,maxEntries:20});await d.init();assert.equal(d.events().items.length,1);assert.ok(!JSON.stringify(d.events()).includes(marker));d.record('server.started');await d.close();
-  const text=await readFile(join(directory,'central.0.ndjson'),'utf8');const lines=text.trim().split('\n').map(row=>JSON.parse(row));assert.equal(lines.at(-1).seq,9);assert.equal((await stat(join(directory,'central.1.ndjson'))).size,0);await assert.rejects(stat(join(directory,'central.9.ndjson')),{code:'ENOENT'});assert.equal(await readFile(join(directory,'unrelated.txt'),'utf8'),marker);
+  const broken=seedPath(directory,0,event.at);await writeFile(broken,JSON.stringify(event)+'\n{"unfinished":"'+marker,{mode:0o644});
+  const oversized=seedPath(directory,1,event.at);await writeFile(oversized,'x'.repeat(3000));await writeFile(join(directory,'central.9.ndjson'),'old');await writeFile(join(directory,'unrelated.txt'),marker);
+  const d=new ServerDiagnostics({directory,maxBytes:1024,maxEntries:20});await d.init();assert.equal(d.events().items.length,1);assert.ok(!JSON.stringify(d.events()).includes(marker));d.record('server.started');await d.close();
+  const text=await readFile(filePath(directory),'utf8');const lines=text.trim().split('\n').map(row=>JSON.parse(row));assert.equal(lines.at(-1).seq,9);assert.equal((await stat(oversized)).size,3000);assert.ok((await readFile(broken,'utf8')).endsWith(marker));assert.equal(await readFile(join(directory,'central.9.ndjson'),'utf8'),'old');assert.equal(await readFile(join(directory,'unrelated.txt'),'utf8'),marker);
 });
 
 test('write failures are nonfatal and fixed, close waits for startup and pending writes and rejects later records',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-close-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   const bad=join(directory,marker);await writeFile(bad,'synthetic occupied file');const failed=new ServerDiagnostics({directory:bad});await failed.init();failed.record('request.completed');await failed.close();assert.ok(failed.snapshot().writeFailures>0);assert.ok(!JSON.stringify(failed.snapshot()).includes(marker));
   const d=new ServerDiagnostics({directory:join(directory,'logs')});const initializing=d.init();await Promise.all([initializing,d.close(),d.close()]);d.record('server.started');assert.equal(d.snapshot().lastSeq,0);
-  const active=new ServerDiagnostics({directory:join(directory,'active')});await active.init();for(let i=0;i<40;i++)active.record('request.completed');const closing=active.close();assert.equal(active.close(),closing);await closing;const before=await readFile(join(directory,'active','central.0.ndjson'),'utf8');active.record('request.completed');await delay(5);assert.equal(await readFile(join(directory,'active','central.0.ndjson'),'utf8'),before);assert.equal(active.snapshot().pendingWrites,0);
+  const active=new ServerDiagnostics({directory:join(directory,'active')});await active.init();for(let i=0;i<40;i++)active.record('request.completed');const closing=active.close();assert.equal(active.close(),closing);await closing;const before=await readFile(filePath(join(directory,'active')),'utf8');active.record('request.completed');await delay(5);assert.equal(await readFile(filePath(join(directory,'active')),'utf8'),before);assert.equal(active.snapshot().pendingWrites,0);
 });
 
 test('real agent error classes map to safe categories without exposing provider messages',()=>{
@@ -228,7 +236,7 @@ test('a second live logger cannot rotate another logger files and an old same-PI
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-owner-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   await writeFile(join(directory,'central.lock'),JSON.stringify({pid:process.pid,startedAt:1,instanceId:randomUUID()}));
   const first=new ServerDiagnostics({directory});await first.init();first.record('server.started');await first.flush();
-  const original=await readFile(join(directory,'central.0.ndjson'),'utf8');const second=new ServerDiagnostics({directory,maxBytes:1024,maxFiles:1});await second.init();second.record('agent.failed',{category:'internal'},'error');await second.close();assert.ok(second.snapshot().writeFailures>0);assert.equal(await readFile(join(directory,'central.0.ndjson'),'utf8'),original);
+  const original=await readFile(filePath(directory),'utf8');const second=new ServerDiagnostics({directory,maxBytes:1024});await second.init();second.record('agent.failed',{category:'internal'},'error');await second.close();assert.ok(second.snapshot().writeFailures>0);assert.equal(await readFile(filePath(directory),'utf8'),original);
   await first.close();await assert.rejects(stat(join(directory,'central.lock')),{code:'ENOENT'});
 });
 
@@ -357,22 +365,22 @@ test('raw log endpoint returns file text verbatim with owner authentication and 
   const unauthorized=await app.inject({method:'GET',url:'/api/diagnostics/logs'});
   assert.equal(unauthorized.statusCode,401);
   await diagnostics.flush();
-  const path=join(dataDir,'logs','central.0.ndjson');
+  const path=seedPath(join(dataDir,'logs')),fileId=path.split('/').at(-1)!.split('.')[4];
   const raw='  {"level":"info"}\nmalformed <script>中文 fixture</script>\n';
   await writeFile(path,raw);
   // Read directly so debug request-start writes do not alter the exact-byte assertion.
   assert.equal(await diagnostics.readRaw(),raw);
-  await writeFile(join(dataDir,'logs','central.1.ndjson'),raw);
+  await writeFile(seedPath(join(dataDir,'logs'),1),raw);
   assert.equal(await diagnostics.readRaw(1),raw);
   const latestPage=await diagnostics.readPage(0,1,1);assert.deepEqual(latestPage,{items:['malformed <script>中文 fixture</script>'],page:1,pageSize:1,totalLines:2,totalPages:2,hasPrevious:true,hasNext:false});
   const olderPage=await diagnostics.readPage(0,2,1);assert.deepEqual(olderPage.items,['  {"level":"info"}']);
-  await assert.rejects(diagnostics.readRaw(9));
-  const result=await app.inject({method:'GET',url:'/api/diagnostics/logs',headers:{authorization:`Bearer ${config(dataDir).token}`}});
+  await assert.rejects(diagnostics.readRaw(-1));
+  const result=await app.inject({method:'GET',url:'/api/diagnostics/logs?file='+fileId,headers:{authorization:`Bearer ${config(dataDir).token}`}});
   assert.equal(result.statusCode,200);assert.match(result.headers['content-type']!,/^text\/plain/);
   assert.equal(result.headers['cache-control'],'no-store');assert.ok(result.body.startsWith(raw));
-  const pageResult=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file=0&page=1&pageSize=1',headers:{authorization:`Bearer ${config(dataDir).token}`}});
+  const pageResult=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file='+fileId+'&page=1&pageSize=1',headers:{authorization:`Bearer ${config(dataDir).token}`}});
   assert.equal(pageResult.statusCode,200);assert.equal(pageResult.headers['cache-control'],'no-store');const pageBody=pageResult.json();assert.equal(pageBody.page,1);assert.equal(pageBody.pageSize,1);assert.equal(pageBody.totalLines,pageBody.totalPages);assert.ok(pageBody.items.length===1);assert.ok(pageBody.totalLines>=latestPage.totalLines);
-  const filtered=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file=0&page=1&pageSize=10&stage=unknown',headers:{authorization:`Bearer ${config(dataDir).token}`}});
+  const filtered=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file='+fileId+'&page=1&pageSize=10&stage=unknown',headers:{authorization:`Bearer ${config(dataDir).token}`}});
   assert.equal(filtered.statusCode,200);assert.equal(filtered.json().totalLines,2);assert.equal((await app.inject({method:'GET',url:'/api/diagnostics/log-pages?stage=invalid',headers:{authorization:`Bearer ${config(dataDir).token}`}})).statusCode,400);
 });
 
@@ -383,7 +391,7 @@ test('stage failures use warning for rejected input and error for failed executi
   await assert.rejects(d.measure('index','embedding',()=>{throw new Error('synthetic');}));
   assert.deepEqual(d.events().items.map(e=>e.level),['debug','warn','debug','error']);
   assert.deepEqual(d.events().items.map(e=>e.stage),['ingest','ingest','index','index']);
-  const ingestPage=await d.readPage(0,1,100,'ingest');assert.equal(ingestPage.totalLines,2);assert.ok(ingestPage.items.every(line=>JSON.parse(line).stage==='ingest'));
+  await d.flush();const pages=await Promise.all(d.snapshot().retention.files.map((_,index)=>d.readPage(index,1,100,'ingest')));const rows=pages.flatMap(page=>page.items);assert.equal(rows.length,2);assert.ok(rows.every(line=>JSON.parse(line).stage==='ingest'));
 });
 
 test('memory validation diagnostics survive reload without trace opt-in and reject arbitrary details',async t=>{
@@ -392,7 +400,7 @@ test('memory validation diagnostics survive reload without trace opt-in and reje
   const batchId=randomUUID(),runId=randomUUID(),evidenceId=randomUUID();
   d.record('agent.memory_validation_failed',{batchId,runId,evidenceId,validationCode:'quote_ambiguous',validationPhase:'extract',candidateIndex:0,spanIndex:1,authorizedMatches:2,...{quote:marker,source:marker,message:marker}},'warn');
   d.record('agent.memory_validation_failed',{batchId:marker,validationCode:marker,validationPhase:marker,declaredOffset:-1} as never,'warn');
-  await d.close();const raw=await readFile(join(directory,'central.0.ndjson'),'utf8');assert.ok(!raw.includes(marker));
+  await d.close();const raw=await readFile(filePath(directory),'utf8');assert.ok(!raw.includes(marker));
   const reloaded=new ServerDiagnostics({directory});await reloaded.init();t.after(()=>reloaded.close());
   const events=reloaded.events().items;assert.equal(events.length,2);assert.equal(events[0].batchId,batchId);assert.equal(events[0].runId,runId);assert.equal(events[0].evidenceId,evidenceId);assert.equal(events[0].validationCode,'quote_ambiguous');assert.equal(events[0].validationPhase,'extract');assert.equal(events[0].authorizedMatches,2);assert.equal(events[0].stage,'agent');
   assert.equal(events[1].validationCode,undefined);assert.equal(events[1].declaredOffset,undefined);
@@ -427,4 +435,23 @@ test('tool rejections retain only approved error codes and budget metrics withou
     d.record('agent.tool_rejected',{toolErrorCode:'PRIVATE_FIXTURE'},'warn');
     const entries=d.recent().filter(e=>e.event==='agent.tool_rejected');assert.equal(entries[0].toolErrorCode,'evidence_range_exceeded');assert.equal(entries[0].remainingCalls,8);assert.ok(!JSON.stringify(entries).includes('PRIVATE_FIXTURE'));
   }finally{await d.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('owner cleanup previews the exact time range, rejects collector writes and preserves later records',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-log-cleanup-api-'));const cfg=config(directory);const {app,diagnostics,connections}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:'Bearer '+cfg.token};
+ await diagnostics.configure({enabled:true,debug:false,traceEnabled:true,level:'info'});diagnostics.agentTrace({type:'fixture.private',payload:{prompt:marker}});await diagnostics.flush();
+ const unauthorized=await app.inject({method:'POST',url:'/api/diagnostics/cleanup-preview',payload:{kind:'all'}});assert.equal(unauthorized.statusCode,401);
+ const {readAgentCredential}=await import('./login-fixture.js');connections.invite({serverUrl:'http://127.0.0.1:1234',label:'Generated collector'});const collector=await readAgentCredential(connections);
+ assert.equal((await app.inject({method:'POST',url:'/api/diagnostics/cleanup-preview',headers:{authorization:'Bearer '+collector.token},payload:{kind:'all'}})).statusCode,403);
+ const preview=await app.inject({method:'POST',url:'/api/diagnostics/cleanup-preview',headers,payload:{kind:'trace'}});assert.equal(preview.statusCode,200,preview.body);const plan=preview.json();assert.equal(plan.files.length,1);assert.ok(plan.bytes>0);assert.ok(plan.oldestAt);assert.ok(!preview.body.includes(marker));
+ diagnostics.agentTrace({type:'fixture.later',payload:{prompt:'Generated later trace'}});await diagnostics.flush();
+ assert.equal((await app.inject({method:'POST',url:'/api/diagnostics/cleanup',headers,payload:plan})).statusCode,409);
+ const current=(await app.inject({method:'POST',url:'/api/diagnostics/cleanup-preview',headers,payload:{kind:'trace'}})).json();assert.equal((await app.inject({method:'POST',url:'/api/diagnostics/cleanup',headers,payload:current})).statusCode,200);
+ const status=(await app.inject({url:'/api/diagnostics',headers})).json();assert.equal(status.retention.channels.find((c:any)=>c.channel==='trace').bytes,0);assert.ok(status.retention.channels.find((c:any)=>c.channel==='info').bytes>0);assert.equal(status.retention.lastCleanup.reason,'manual');
+});
+
+test('detailed tracing stops after 24 hours and repeated low-level noise cannot evict a failure summary',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-trace-expiry-'));let now=new Date('2026-10-01T00:00:00Z');const d=new ServerDiagnostics({directory,maxEntries:3,traceEnabled:true,now:()=>now});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
+ d.record('agent.failed',{category:'unavailable',diagnostic:{source:'http',httpStatus:503,stage:'model'}},'error');for(let i=0;i<10;i++)d.agentTrace({type:'fixture.noise'});assert.ok(d.recent().some(e=>e.level==='error'));await d.flush();
+ now=new Date('2026-10-02T00:00:00Z');const seq=d.snapshot().lastSeq;d.agentTrace({type:'fixture.after-expiry'});assert.equal(d.snapshot().lastSeq,seq);assert.equal(d.snapshot().agentTrace.enabled,false);
 });

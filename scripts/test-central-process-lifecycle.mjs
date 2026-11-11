@@ -1,6 +1,6 @@
 // Generated-only process journey using the built Central entry point and actual supervisor.
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,readFile,stat,open} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,stat,open,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createServer} from 'node:net';
@@ -14,6 +14,7 @@ import {command} from './profile-fixtures.mjs';
 const repository=resolve(import.meta.dirname,'..'),output=await mkdtemp(join(tmpdir(),'mote-central-process-')),token=randomBytes(32).toString('hex');
 const version=JSON.parse(await readFile(join(repository,'apps/server/package.json'),'utf8')).version;
 const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('MOTE_')));
+const supervisorLogs=async()=>(await Promise.all((await readdir(output)).filter(name=>/^supervisor\./.test(name)).map(name=>readFile(join(output,name),'utf8')))).join('');
 const report={status:'running',version,fixtureOnly:true,liveModel:false,physicalDevice:false,checks:[],output};
 let child;
 async function until(read,label){const deadline=Date.now()+30000;while(Date.now()<deadline){if(child?.exitCode!==null&&child?.exitCode!==undefined)throw Error('Central exited before '+label);if(await read())return;await delay(100);}throw Error('Timed out: '+label);}
@@ -24,7 +25,7 @@ async function start(name){
   child=spawn(process.execPath,[join(repository,'scripts/central-runner.mjs'),join(repository,'apps/server/dist/index.js'),log,'--mote-instance='+randomUUID()],{cwd:repository,env:{...env,MOTE_CONFIG_FILE:file},stdio:'ignore'});
   const base='http://127.0.0.1:'+port;
   await until(async()=>{try{return(await fetch(base+'/api/health')).ok;}catch{return false;}},'authenticated-ready server');
-  await until(async()=> (await readFile(log,'utf8').catch(()=>'' )).includes('server.listening'),'supervisor listening event and runtime locator');
+  await until(async()=> (await supervisorLogs()).includes('server.listening'),'supervisor listening event and runtime locator');
   await until(async()=>{const locator=JSON.parse(await readFile(runtimeListenerPath(file),'utf8').catch(()=> 'null'));return locator?.port===port;},'current startup runtime locator');
   const runtime=JSON.parse(await readFile(runtimeListenerPath(file),'utf8')); assert.equal(runtime.port,port);assert.equal((await stat(runtimeListenerPath(file))).mode&0o777,0o600);
   const health=()=>command(process.execPath,[join(repository,'apps/server/dist/healthcheck.js')],{env:{...env,MOTE_CONFIG_FILE:file}});
@@ -37,7 +38,7 @@ async function start(name){
 async function stop(name){
   const running=child;child=undefined;const closed=new Promise(resolve=>running.once('close',(code,signal)=>resolve({code,signal})));running.kill('SIGTERM');
   const timer=delay(30000,undefined,{ref:false}).then(()=>({code:'timeout'}));const exit=await Promise.race([closed,timer]);if(exit.code==='timeout')running.kill('SIGKILL');assert.equal(exit.code,0);
-  assert.ok((await readFile(join(output,name+'.log'),'utf8')).includes('server.stopped'));
+  assert.ok((await supervisorLogs()).includes('server.stopped'));
   assert.equal(await stat(join(output,name,'server.pid')).then(()=>true,()=>false),false,'PID lock must be removed');
   assert.equal(await stat(runtimeListenerPath(join(output,name+'.yaml'))).then(()=>true,()=>false),false,'matching runtime locator must be removed');
   assert.equal((await command(process.execPath,[join(repository,'apps/server/dist/healthcheck.js')],{env:{...env,MOTE_CONFIG_FILE:join(output,name+'.yaml')}})).code,1,'a stopped listener cannot remain healthy');
