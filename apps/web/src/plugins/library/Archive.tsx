@@ -11,6 +11,7 @@ import {LibraryTimeline} from './LibraryTimeline';
 const CaptureSessions = React.lazy(() => import('./CaptureSessions').then(module => ({ default: module.CaptureSessions })));
 import { sourceLabels } from '../../Metadata';
 import { CaptureCard, Empty, ErrorNotice, Spinner } from '../../shell-components';
+import { Loading } from '../../Loading';
 import { confirmNavigation } from '../../unsaved';
 import { DiscoveryLink, DiscoveryProvider, useDiscoveryState } from '../../DiscoveryLink';
 import { pageLabels, sections } from '../../navigation';
@@ -68,7 +69,7 @@ export function Archive({ api, devices, range, rangeSelectionKey, activity, revi
     </nav>;
     const supports=(path:string)=>availability.inventoryError===undefined&&featureRequirementsAvailable(['http:GET:'+path],availability.inventory);
     const props = { api, devices, range, rangeSelectionKey, activity, revision, onOpen: entry?.layout === 'standalone' ? onOpen : select, onChanged, selectedReference: selected, onBrowseChanged: clearSelection,viewNavigation,browseNavigation,materialPreview:{read:supports('/api/materials/:id/read'),image:supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/thumbnail')} };
-    if(browseOwner!==api)return <Spinner/>;
+    if(browseOwner!==api)return <Loading/>;
     const content = <LibraryCollectionBoundary key={entry?.id}>{entry ? <CollectionContent entry={entry} props={props}/> : <p role="status">{moteText('此资料库分类当前不可用。请从资料库分类中选择可用入口。')}</p>}</LibraryCollectionBoundary>;
     return <DiscoveryProvider state={availability}><div className={'archive-page library-archive' + (selected ? ' has-selection' : '')}>
    <div ref={listHeading} tabIndex={-1} className="page-heading library-heading" hidden={Boolean(selected)}><h1>{moteText('资料库')}</h1><DiscoveryLink className="button" target={{pageId:'imports',href:'#/library/import'}}>{moteText('导入资料')}</DiscoveryLink></div>
@@ -269,9 +270,7 @@ function RawRecordTimeline({api,devices,onOpen,revision,onBrowseChanged}:RecordT
             {records.map((capture) => (<CaptureCard key={capture.id} capture={capture} api={api} onOpen={onOpen}/>))}
           </div>
         </section>))}
-      {initialOrPageLoading && (<div className="load-more">
-          <Spinner label={moteText("正在找回这些片刻…")}/>
-        </div>)}
+      {initialOrPageLoading && (visibleItems.length ? <div className="load-more"><Spinner label={moteText("正在找回这些片刻…")}/></div> : <Loading label={moteText("正在找回这些片刻…")}/>)}
       {visibleTotal!==undefined && !initialOrPageLoading && !visibleItems.length && !error && (<div className="panel">
           <Empty icon={Clock3} title={moteText("这段时间还没有记录")}>
             <p>{moteText("试试其他时间或设备，或检查采集端是否已开启。")}</p>

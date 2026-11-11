@@ -116,16 +116,7 @@ struct ShortcutSetupView: View {
                             .foregroundStyle(MoteDesignTokens.ink.color)
                         Spacer(minLength: 0)
                         if step.isMoteAction {
-                            Text("m")
-                                .font(.system(size: 18, weight: .semibold))
-                                .tracking(-1)
-                                .foregroundStyle(MoteDesignTokens.primaryInk.color)
-                                .padding(.trailing, 1)
-                                .padding(.bottom, 2)
-                                .frame(width: 22, height: 22)
-                                .background(MoteDesignTokens.primaryBackground.color)
-                                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                                .accessibilityHidden(true)
+                            MoteMark(size: 22)
                         }
                     }
                     .padding(.horizontal, 14)

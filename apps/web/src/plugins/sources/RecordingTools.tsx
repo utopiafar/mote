@@ -3,6 +3,7 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {transcriptSchema,type Transcript} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from '../../api';
+import { Loading } from '../../Loading';
 const limit=64*1024*1024;
 const rawNames=new Set(['原始转写.json','Original_transcript.json','Transcription_originale.json','Transcripción_original.json','元の転写.json','Исходный_транскрипт.json','Originaltranskript.json']);
 /** Read the current export in memory; never extract paths onto a filesystem. */
@@ -38,5 +39,5 @@ export function RawRecording({api,id,artifacts}:{api:Api;id:string;artifacts:Art
   const bytes=new Uint8Array(size);let at=0;for(const part of parts){bytes.set(part,at);at+=part.length;}const data=rawTranscriptFromTar(bytes,id,pin);const after=await api.request<{artifacts:Artifacts}>('/api/files/'+id,{signal:controller.signal});if(rawId(after.artifacts)!==pin)throw Error(moteText('原始转写版本已变化，请重新打开。'));if(!controller.signal.aborted)setState({owner:api,id,pin,data});
  })().catch(error=>{if(!controller.signal.aborted)setState({owner:api,id,pin,error:errorMessage(error)});});return()=>controller.abort();},[api,id,pin,version]);
  const current=state?.owner===api&&state.id===id&&state.pin===pin?state:undefined;
- return <>{!current&&<p role="status">{moteText('正在读取…')}</p>}{current?.error&&<p role="alert">{current.error}<button className="button" onClick={()=>setVersion(value=>value+1)}>{moteText('重新读取')}</button></p>}{current?.data?.segments.map((segment,index)=><div className="recording-raw-line" key={index}><small>{recordingClock(segment.startMs)} · {segment.speaker??moteText('未标记说话人')}</small><p>{segment.text}</p></div>)}</>;
+ return <>{!current&&<Loading/>}{current?.error&&<p role="alert">{current.error}<button className="button" onClick={()=>setVersion(value=>value+1)}>{moteText('重新读取')}</button></p>}{current?.data?.segments.map((segment,index)=><div className="recording-raw-line" key={index}><small>{recordingClock(segment.startMs)} · {segment.speaker??moteText('未标记说话人')}</small><p>{segment.text}</p></div>)}</>;
 }

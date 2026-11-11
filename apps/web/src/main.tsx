@@ -59,7 +59,8 @@ import { isSettingsContext,primaryDestination,WorkspaceNavigation } from './Work
 import { readResource,resources } from './resource-cache';
 import { intakePlugin } from './plugins/intake';
 import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
-import { ErrorNotice,EvidenceDialog,LoginDialog,Spinner } from './shell-components';
+import { ErrorNotice,EvidenceDialog,LoginDialog } from './shell-components';
+import { Loading,LoadingLine,LoadingMark } from './Loading';
 import "./styles.css";
 import './workspace.css';
 import './library.css';
@@ -429,7 +430,7 @@ function App() {
         </header>}
       footer={null}
     >
-        <React.Suspense key={page} fallback={<p role="status" data-page-loading={page}>{moteText("正在读取…")}</p>}><div data-page={page} data-session={!connection?'signed-out':verified?'ready':error?'verification-failed':'verifying'} aria-busy={Boolean(connection&&loading)} className={`content ${settingsContext?'settings-surface':''}`}>
+        <React.Suspense key={page} fallback={<div data-page-loading={page}><Loading/></div>}><div data-page={page} data-session={!connection?'signed-out':verified?'ready':error?'verification-failed':'verifying'} aria-busy={Boolean(connection&&loading)} className={`content ${settingsContext?'settings-surface':''}`}>
           <div className="workspace-tools">
           {connection&&verified&&<WorkspaceNavigation page={page} onPage={onPage}/> }
           <div className="workspace-range">
@@ -512,13 +513,11 @@ function App() {
               {!verified && <button className="button subtle" onClick={disconnect}>{moteText("退出登录")}</button>}
               {!verified
                 ? !error && (
-                    <div className="initial-loading">
-                      <Spinner label={moteText("正在验证登录权限…")} />
-                    </div>
+                    <LoadingMark label={moteText("正在验证登录权限…")} />
                   )
                 : api && (
                     <>
-                      {!["notes","devices","connections","settings","sources","archive","memories","imports","insights","about"].includes(page) && !status && !error && <Spinner label={moteText("正在读取节点状态…")}/>}
+                      {!["notes","devices","connections","settings","sources","archive","memories","imports","insights","about"].includes(page) && !status && !error && <LoadingLine label={moteText("正在读取节点状态…")}/>}
                       <ImportNavigationContext.Provider value={page==='imports'?importNavigation:null}><FeaturePage page={page} props={{api,viewScope:connection.viewScope,status,devices,activity,insights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision:timelineRevision+(page==='archive'&&archiveTab==='records'?revision:0),refresh,disconnect,sessionLifetime,changeSessionLifetime}}/></ImportNavigationContext.Provider>
                     </>
                   )}

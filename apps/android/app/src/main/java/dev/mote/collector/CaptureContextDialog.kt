@@ -66,7 +66,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
             }
         }
         text("修改说明适用于已有和未来资料；不会自动重新转写或重算历史记忆。", NativeFontRole.META)
-        status = text("正在读取资料说明…")
+        status = text("正在读取资料说明…").also { MoteComponents.reading(it, it.text.toString()) }
         val heading = LinearLayout(activity).apply {
             gravity = android.view.Gravity.CENTER_VERTICAL; setPadding(activity.moteDp(20),activity.moteDp(10),activity.moteDp(8),activity.moteDp(10))
             addView(TextView(activity).apply { text = MoteI18n.text("采集来源说明"); MoteUi.type(this,NativeFontRole.ACTION,medium = true); MoteUi.textColor(this,NativeColorRole.INK) },LinearLayout.LayoutParams(0,-2,1f))
@@ -133,7 +133,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
         if (!ready || task.busy) return
         val drafts = fields.mapValues { it.value.text.toString() }
         fields.values.forEach { it.isEnabled = false }; dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
-        task.start(MoteI18n.text("保存说明"), { status.text = it }, {
+        task.start(MoteI18n.text("保存说明"), MoteComponents.progress(status, read = false), {
             ConnectionGuard.sync {
                 checkSelection()
                 for ((channel, draft) in drafts) {

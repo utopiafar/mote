@@ -39,6 +39,8 @@ data class LocalStateSnapshot(
     val captureLabel: String get() = if (captureState == "capturing") MoteI18n.text("正在采集") else captureMessage
     val totalImages: Int? get() = active?.let { a -> quarantine?.let { a.images + it.images } }
     val pending: Int? get() = active?.let { a -> sourcePending?.let { a.pending + it } }
+    /** The image counts are still being read; [imageLabel] then names that wait. */
+    val imagesReading: Boolean get() = (active == null || quarantine == null) && error == null
     fun imageLabel(): String = if (active == null || quarantine == null) { if (error == null) MoteI18n.text("本机图片数量正在读取") else MoteI18n.text("本机图片数量暂不可读取") } else
         MoteI18n.text("当前图片 {0} 张 · 采集区 {1} 张 · 待决定区 {2} 张", totalImages, active.images, quarantine.images) +
             if (error != null) MoteI18n.text("（上次结果，暂无法更新）") else ""

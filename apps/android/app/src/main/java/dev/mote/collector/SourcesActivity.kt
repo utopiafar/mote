@@ -42,6 +42,10 @@ class SourcesActivity : MoteActivity() {
             operationStatusView.text = value
             operationStatusView.visibility = if (value.isBlank()) View.GONE else View.VISIBLE
         }
+    /** UiTask progress on the overview status line, shown as soon as the work starts. */
+    private fun statusProgress(read: Boolean = true): (String) -> Unit = MoteComponents.progress(operationStatusView, read).let { show ->
+        { message -> operationStatusView.visibility = View.VISIBLE; show(message) }
+    }
     private var rendering = false
     private var editingSource: LocalSource? = null
     private val draftControls = linkedMapOf<String, android.view.View>()
@@ -74,7 +78,7 @@ class SourcesActivity : MoteActivity() {
             }
             if (intent.getBooleanExtra("addCalendar", false)) connectCalendar()
             intent.getStringExtra("sourceId")?.let { id ->
-                task.start(MoteI18n.text("正在读取来源…"), { operationStatus = it }, { owner.source(id) }) { result -> result.getOrNull()?.let { edit(it) } }
+                task.start(MoteI18n.text("正在读取来源…"), statusProgress(), { owner.source(id) }) { result -> result.getOrNull()?.let { edit(it) } }
             }
         }
     }
@@ -278,7 +282,7 @@ class SourcesActivity : MoteActivity() {
 
     private fun requestSyncNow() {
         if (task.busy) return
-        task.start(MoteI18n.text("正在提交同步任务…"), { operationStatus = it }, {
+        task.start(MoteI18n.text("正在提交同步任务…"), statusProgress(read = false), {
             ConnectionGuard.sync {
                 val config = Settings(applicationContext).read(); config.validateConnection()
                 if (localSources().sources().any { it.enabled }) SourceProviderPlugin.owner(applicationContext).schedule(manual = true, syncExplicit = true)
@@ -292,7 +296,7 @@ class SourcesActivity : MoteActivity() {
 
     private fun changeSendPause(paused: Boolean) {
         if (task.busy) { render(); return }
-        task.start(MoteI18n.text("正在保存发送状态…"), { operationStatus = it }, {
+        task.start(MoteI18n.text("正在保存发送状态…"), statusProgress(read = false), {
             SendPauseControl.set(applicationContext, paused)
         }) { result ->
             result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
@@ -333,7 +337,7 @@ class SourcesActivity : MoteActivity() {
                 val intervalMinutes = interval.text.toString().toInt(); val batchSize = batch.text.toString().toInt()
                 SyncPolicy(mode, intervalMinutes, batchSize).validate()
                 val wifiOnly = wifi.isChecked
-                task.start(MoteI18n.text("正在保存发送设置…"), { operationStatus = it }, {
+                task.start(MoteI18n.text("正在保存发送设置…"), statusProgress(read = false), {
                     SendPauseControl.setSendMethod(applicationContext, mode, intervalMinutes, batchSize, wifiOnly)
                 }) { result ->
                     result.onSuccess { dialog.dismiss() }.onFailure { toast(it.message ?: MoteI18n.text("操作失败，请重试")) }
@@ -456,7 +460,7 @@ class SourcesActivity : MoteActivity() {
         if (task.busy) return
         val config = Settings(this).read()
         if (!config.hasSyncConnection()) { operationStatus = MoteI18n.text("等待网络/节点恢复"); return }
-        task.start(MoteI18n.text("正在读取资料说明…"), { operationStatus = it }, {
+        task.start(MoteI18n.text("正在读取资料说明…"), statusProgress(), {
             owner.remoteContext(source)
         }) { result ->
             result.onSuccess { remote ->
@@ -482,13 +486,13 @@ class SourcesActivity : MoteActivity() {
             }.show()
     }
     private fun work(label: String, action: () -> Unit) {
-        task.start(label, { operationStatus = it }, { action() }) { result ->
+        task.start(label, statusProgress(read = false), { action() }) { result ->
             operationStatus = if (result.isSuccess) MoteI18n.text("操作已完成；同步进度会自动刷新") else result.exceptionOrNull()?.message ?: MoteI18n.text("操作失败，请重试")
             render()
         }
     }
     private fun chooseCalendars() {
-        task.start(MoteI18n.text("正在读取本机日历…"), { operationStatus = it }, {
+        task.start(MoteI18n.text("正在读取本机日历…"), statusProgress(), {
             owner.calendars() to owner.sources()
         }) { result ->
             result.onSuccess { (calendars, sources) ->
@@ -577,7 +581,8 @@ class SourcesActivity : MoteActivity() {
                 next.validate()
                 dialog.setCancelable(false)
                 listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL).forEach { dialog.getButton(it).isEnabled = false }
-                task.start(MoteI18n.text("正在保存来源设置…"), { operationStatus = it; dialog.getButton(AlertDialog.BUTTON_POSITIVE).text = it }, {
+                val saving = statusProgress(read = false); val confirm = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                task.start(MoteI18n.text("正在保存来源设置…"), { saving(it); MoteComponents.working(confirm, confirm.text.toString()) }, {
                     owner.saveAgainstOriginal(next, if (newSource) null else source, descriptionText)
                 }) { result ->
                     dialog.setCancelable(true)

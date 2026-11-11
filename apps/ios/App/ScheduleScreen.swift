@@ -57,7 +57,7 @@ struct ScheduleScreen: View {
 
     @ViewBuilder private var calendarContent: some View {
         if model.loading && model.actions.isEmpty {
-            ProgressView("正在读取日程建议…")
+            MoteLoading("正在读取日程建议…")
         } else if model.actions.isEmpty {
             Text("尚未发现日程。上传资料或继续采集后会自动分析。")
                 .font(MoteFont.secondary).foregroundStyle(MoteDesignTokens.muted.color)

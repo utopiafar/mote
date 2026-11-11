@@ -2,6 +2,7 @@ import {getLocale,moteText} from '@mote/shared/i18n';
 import type {DesktopApi,Status} from './contracts';
 import type {SourceStatus} from './contracts/sources';
 import type {PermissionKind} from './permission-types';
+import {showLoadingText} from './loading-ui';
 
 type CaptureSyncActions={
   start():void;
@@ -70,7 +71,7 @@ export function createCaptureSyncUi(api:Pick<DesktopApi,'permissionSettings'|'st
 
   async function refreshStorage(){
     if(disposed)return;
-    const request=++storageRead;const target=el('capture-sync-storage');target.textContent=moteText('正在读取…');
+    const request=++storageRead;const target=el('capture-sync-storage');showLoadingText(target);
     try{const report=await api.storageStatistics();if(!disposed&&request===storageRead)target.textContent=formatBytes(report.bytes);}
     catch{if(!disposed&&request===storageRead)target.textContent=moteText('读取失败');}
   }

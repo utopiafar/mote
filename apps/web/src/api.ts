@@ -31,6 +31,8 @@ export interface Capture {
   evidencePresentation?: import('@mote/shared').SourceTextFormat;
   requiresMaterialForMemory?: boolean;
   memoryMaterialRef?: string;
+  /** The owner's record context on a detail read; the reader shows its statements as 资料说明. */
+  attributionContext?: CaptureRecord['attributionContext'];
   perceptionJobs?: Array<{kind:string;state:string;error?:string|null}>;
   revisionState?: 'current'|'historical';
   fileArchive?: {captureId:string};

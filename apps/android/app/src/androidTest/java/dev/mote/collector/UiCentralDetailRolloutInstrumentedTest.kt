@@ -139,7 +139,7 @@ class UiCentralDetailRolloutInstrumentedTest {
             navigate("sources"); clickCard("Generated detail source", "来源资料"); save("sources", "source-items", "历史版本")
             click("历史版本"); save("sources", "source-history", "历史版本")
             navigate("materials"); save("materials", "materials-populated", "Generated detail material", translated = false)
-            clickCard("Generated detail material", "查看原文"); save("materials", "material-reader", "保存归属声明")
+            clickCard("Generated detail material", "查看原文"); disclosure("内容与我的关系"); save("materials", "material-reader", "保存归属声明")
             click("来源与处理"); save("materials", "material-members", "来源与处理")
             navigate("files"); save("files", "files-populated", "Generated original.txt", translated = false)
             clickCard("Generated original.txt", "查看详情"); save("files", "file-reader", "Generated owner statement", translated = false)

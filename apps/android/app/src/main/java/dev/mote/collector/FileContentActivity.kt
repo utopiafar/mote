@@ -8,6 +8,7 @@ import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.FileDetail
 import dev.mote.collector.plugins.SourceProviderPlugin
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONObject
 
 /** One file detail joins the saved version, exact central receipt, original evidence and processing. */
@@ -81,7 +82,7 @@ class FileContentActivity : MoteActivity() {
         val sourceId = intent.getStringExtra("sourceId") ?: return
         val external = intent.getStringExtra("externalId") ?: return
         val pageOffset = offset; val pinnedReader = derivedReader; val pinnedCapture = derivedCapture; val pinnedOrigin = derivedOrigin
-        if (!automatic) { content.removeAllViews(); text(MoteI18n.text("正在读取内容…")) }
+        if (!automatic) { content.removeAllViews(); content.addView(MoteComponents.skeleton(this, MoteI18n.text("正在读取内容…"))) }
         task.start(MoteI18n.text("正在读取内容…"), {}, {
             owner.loadFile(sourceId, external, pageOffset, pinnedReader, pinnedCapture, pinnedOrigin,
                 intent.getStringExtra("sourceRevision"))

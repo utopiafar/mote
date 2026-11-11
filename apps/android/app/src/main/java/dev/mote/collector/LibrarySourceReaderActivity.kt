@@ -7,6 +7,7 @@ import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.LibraryReader
 import dev.mote.collector.plugins.NativeLibraryPlugin
+import dev.mote.collector.ui.MoteComponents
 
 /** Pinned original/Material reader. The plugin owns every lookup and access
  * check; this Activity only routes the intent, renders one returned page and
@@ -44,7 +45,7 @@ class LibrarySourceReaderActivity : MoteActivity() {
     private fun load() {
         if (task.busy) return
         val stamp = ++generation
-        body.removeAllViews(); text(MoteI18n.text("正在读取…"))
+        body.removeAllViews(); body.addView(MoteComponents.skeleton(this, MoteI18n.text("正在读取…")))
         task.start("", {}, { reader.open(request(), offset, memberOffset) }) { result ->
             if (stamp != generation) { load(); return@start }
             body.removeAllViews()

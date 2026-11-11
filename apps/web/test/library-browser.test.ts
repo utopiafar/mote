@@ -75,7 +75,7 @@ test('explicit library navigation leads directly into rows and source details wi
   assert.ok(reads.includes('/api/capture-browser/'+id));
   await act(async()=>button(d,'更多').click());
   assert.ok(button(d,'删除这条记录'),'the shared reader retains original deletion in More');
-  await act(async()=>d.querySelector<HTMLButtonElement>('[aria-label="关闭资料操作"]')!.click());
+  await act(async()=>button(d,'更多').click());
   assert.ok(d.querySelector('.reader-source-details'),'provenance stays available in the shared reader');
   assert.deepEqual(opened,[],'opening list detail no longer requires a second nested reader');
   await act(async()=>button(d,'返回资料列表').click());

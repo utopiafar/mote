@@ -3,6 +3,7 @@ import {sourceContextSnapshotSchema,type SourceContextSnapshot} from '@mote/shar
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from '../../api';
 import {useUnsavedChanges} from '../../unsaved';
+import { Loading } from '../../Loading';
 
 type DraftState={description:string;baseline?:SourceContextSnapshot;dirty:boolean;loading:boolean;saving:boolean;error:string;conflict:boolean;saved:boolean};
 type Session={api:Api;sourceId?:string;scope:AbortController;read?:AbortController;write?:AbortController;pendingSave?:Promise<SourceContextSnapshot|undefined>;state:DraftState};
@@ -86,7 +87,7 @@ export function SourceContextFields({draft,disabled=false}:{draft:SourceContextD
  return <div className="source-context-fields">
   <label className="field-label">{moteText('资料说明（选填）')}<textarea value={draft.description} maxLength={12000} rows={4} disabled={disabled||draft.busy||!draft.ready} aria-describedby={help} placeholder={moteText('可说明格式、时间、作者，以及哪些内容属于你。')} onChange={event=>draft.setDescription(event.target.value)}/></label>
   <div id={help} className="field-note"><p>{moteText('用于理解这个来源的背景、作者和内容归属。')}</p><p>{moteText('来源声明应用于已有和新资料；单份资料的声明优先。')}</p><p>{moteText('修改说明适用于已有和未来资料；不会自动重新转写或重算历史记忆。')}</p></div>
-  {draft.loading&&<p role="status">{moteText('正在读取资料说明…')}</p>}
+  {draft.loading&&<Loading label={moteText('正在读取资料说明…')}/>}
   {draft.error&&<p className="notice error" role="alert">{draft.error}{draft.conflict&&<> {moteText('资料说明版本已变化；草稿已保留，请重新加载最新版本后再保存。')}</>}</p>}
   {(draft.error||draft.dirty)&&<button className="button subtle" type="button" disabled={disabled||draft.busy} onClick={()=>void draft.reload().catch(()=>{})}>{moteText(draft.dirty?'放弃修改并重新加载':'重新加载')}</button>}
   {draft.saved&&<p role="status">{moteText('资料说明已获中央确认，版本 {0}。',draft.version??0)}</p>}

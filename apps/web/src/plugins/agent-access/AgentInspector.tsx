@@ -7,6 +7,7 @@ import {Materials} from '../../Materials';
 import {StartupPreview,RecordedInput} from './agent-view-input';
 import {guideVisit} from '../../feature-guide-state';
 import {useAgentAccess} from './hooks';
+import { Loading } from '../../Loading';
 
 type Scope={deviceId?:string;after?:string;before?:string};
 type Entry={path?:string;ref?:string;id?:string;title?:string;windowTitle?:string;appName?:string;preview?:string;expand?:string;layer?:string;revision?:string;status?:string;coverage?:string};
@@ -29,7 +30,7 @@ function EntryDetail({api,entry,scope,onSelect}:{api:Api;entry:Entry;scope:Scope
  useEffect(()=>setOffset(0),[id,endpoint,scope.deviceId,scope.after,scope.before]);
  return <section className="panel panel-pad agent-detail" aria-label={moteText('条目内容')}>
   <h2>{entry.title??entry.windowTitle??entry.appName??entry.layer??entry.id}</h2><p className="badge muted">{moteText('可访问 · 本次浏览展开')}</p>
-  {page.loading&&!page.data&&<p role="status">{moteText('正在读取…')}</p>}{page.error!==undefined&&<p role="alert">{errorMessage(page.error)} <button className="text-button" onClick={page.refresh}>{moteText('重试')}</button></p>}
+  {page.loading&&!page.data&&<Loading/>}{page.error!==undefined&&<p role="alert">{errorMessage(page.error)} <button className="text-button" onClick={page.refresh}>{moteText('重试')}</button></p>}
   {page.data&&!page.data.items.length&&<p>{moteText('当前范围内没有可读取的内容。')}</p>}
   {page.data?.items.map((item,i)=><div key={item.id??i}>
    <p className="fine-print">{item.status} {item.revision}</p><div className="agent-body">{item.statement??item.ocrText??item.text}</div>
@@ -53,7 +54,7 @@ function Catalog({api,scope,onOpen}:{api:Api;scope:Scope;onOpen:(ref:string)=>vo
   <div className="agent-content"><div className="agent-breadcrumb"><button className="text-button" onClick={()=>go('/context')}>/context</button>{path!=='/context'&&<><ChevronRight size={14}/><button className="text-button" onClick={()=>go(path)}>{path.split('/').at(-1)}</button></>}{source&&<><ChevronRight size={14}/><span>{source.title}</span></>}</div>
    {path==='/materials'?<Materials api={api} agent scope={scope} onOpen={onOpen}/>:<>
     {path==='/context'&&<p>{moteText('从目录开始，逐层展开 Agent 可以读取的内容。')}</p>}
-    {page.loading&&!page.data&&<p role="status">{moteText('正在读取…')}</p>}{page.error!==undefined&&<p role="alert">{errorMessage(page.error)} <button className="text-button" onClick={page.refresh}>{moteText('重试')}</button></p>}
+    {page.loading&&!page.data&&<Loading/>}{page.error!==undefined&&<p role="alert">{errorMessage(page.error)} <button className="text-button" onClick={page.refresh}>{moteText('重试')}</button></p>}
     <div className="agent-entries">{entries.map((entry,i)=>{const dir=directories.find(d=>d.path===entry.path);return <button className="agent-entry source-item" key={entry.path??entry.ref??entry.id??i} onClick={()=>select(entry)}>{entry.path||entry.expand==='source_items'?<Folder size={19}/>:<FileText size={19}/>}<span><strong>{dir?dir.name:entry.title??entry.windowTitle??entry.appName??entry.layer??entry.id}</strong><small>{dir?dir.label()+' · '+dir.description():entry.preview??entry.status??entry.layer}</small>{!entry.path&&<code>{entry.ref??entry.id}</code>}</span><ChevronRight size={17}/></button>;})}</div>
     {page.data&&!entries.length&&<p>{moteText('当前范围内暂无条目。没有列出不代表不存在。')}</p>}
     <div className="processing-actions">{source&&<button className="button" onClick={()=>{setSource(undefined);setCursor(undefined);setSelected(undefined);}}><ArrowLeft size={14}/>{moteText('返回来源目录')}</button>}{cursor&&<button className="button" onClick={()=>{setCursor(undefined);setSelected(undefined);}}>{moteText('返回第一页')}</button>}{page.data?.nextCursor&&<button className="button" onClick={()=>{setCursor(page.data!.nextCursor!);setSelected(undefined);}}>{moteText('下一页')}</button>}</div>

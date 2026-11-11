@@ -11,6 +11,7 @@ import dev.mote.collector.plugins.BackupOutcome
 import dev.mote.collector.plugins.BackupSnapshot
 import dev.mote.collector.plugins.RestorePreview
 import dev.mote.collector.plugins.StorageBackupPlugin
+import dev.mote.collector.ui.MoteComponents
 
 /** Routes backup, restore and configuration intents to the storage plugin;
  * this Activity only selects documents, renders returned snapshots and asks
@@ -53,7 +54,7 @@ class BackupActivity : MoteActivity() {
         SecondaryUi.text(recordCard, MoteI18n.text("这台手机仍保留的记录"), muted = true)
         val count = LinearLayout(this).apply { gravity = android.view.Gravity.BOTTOM }.also(recordCard::addView)
         inventory = TextView(this).apply {
-            text = MoteI18n.text("正在读取本机同步状态…"); tag = "backup-record-count"
+            MoteComponents.reading(this, MoteI18n.text("正在读取本机同步状态…")); tag = "backup-record-count"
             MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.INK)
             NativePresentationStyles.bind(this, "backup-count") { (it as TextView).apply { textSize = if (inventoryKnown) 35f else NativeFontRole.SUPPORT.size().toFloat(); letterSpacing = if (inventoryKnown) -.04f else 0f; typeface = android.graphics.Typeface.create(MoteTheme.fontFamily(false), android.graphics.Typeface.NORMAL) } }
         }.also { count.addView(it, LinearLayout.LayoutParams(-2,-2)) }
@@ -103,7 +104,7 @@ class BackupActivity : MoteActivity() {
         super.onResume()
         localStateJob = observeLocalState { state ->
             inventoryKnown = state.active != null
-            inventory.text = state.active?.let { java.text.NumberFormat.getIntegerInstance(MoteI18n.locale()).format(it.records) } ?: state.imageLabel()
+            if (state.active == null && state.imagesReading) MoteComponents.reading(inventory, state.imageLabel()) else inventory.text = state.active?.let { java.text.NumberFormat.getIntegerInstance(MoteI18n.locale()).format(it.records) } ?: state.imageLabel()
             inventoryUnit.visibility = if (inventoryKnown) android.view.View.VISIBLE else android.view.View.GONE
             NativePresentationStyles.refresh(inventory)
         }
@@ -130,7 +131,7 @@ class BackupActivity : MoteActivity() {
     private fun create(code: Int, mime: String, name: String) {
         if (!canChooseFile()) return
         if (code in setOf(15, 16)) {
-            task.start(MoteI18n.text("正在读取…"), { status.text = it }, { CentralAccess.requireClient(this).server to CentralSession.get(this).generation }) { result ->
+            task.start(MoteI18n.text("正在读取…"), MoteComponents.progress(status), { CentralAccess.requireClient(this).server to CentralSession.get(this).generation }) { result ->
                 result.onSuccess { (origin, generation) -> exportOrigin = origin; exportGeneration = generation
                     launchPicker(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime).putExtra(Intent.EXTRA_TITLE, name), code)
                 }.onFailure { status.text = it.message }

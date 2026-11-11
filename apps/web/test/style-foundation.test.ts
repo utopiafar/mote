@@ -41,7 +41,7 @@ test('sidebar navigation uses primary ink and the accent tint for selection at t
   assert.match(shell, /\.sidebar nav button[^{]*\{[^}]*color:var\(--mote-ink\)/);
   assert.match(shell, /\.sidebar \[aria-current=page\] \{ background:var\(--mote-tint\); color:var\(--mote-accent\); \}/);
   assert.match(shell, /font:500 15px\/1\.2/);
-  assert.match(shell, /font:600 23px\/1/);
+  assert.match(shell, /\.app-shell\[data-navigation\] \.brand \.mote-mark \{ width:24px; height:24px; \}/);
   assert.match(shell, /\.sidebar-bottom \{ margin-top:auto; padding:0; display:grid; gap:2px; \}/);
   assert.match(read('final-web.css'), /\.sidebar \.brand \{[^}]*line-height:1\.2/);
 });
@@ -61,7 +61,6 @@ test('secondary buttons are borderless fill controls and shapes come from the de
     assert.match(tokens, new RegExp(`${name}: ${value}`), name);
   for (const name of styles) {
     for (const {selector, body} of rules(read(name))) {
-      if (selector.includes('.mote-symbol')) continue;
       for (const declaration of body.match(/border-radius\s*:[^;]+/g) ?? []) {
         const value = declaration.split(':')[1].trim();
         assert.doesNotMatch(value, /^(?!0$|50%$|3px$|\.45em$)[0-9.]+px$/, `${name}: ${selector} -> ${declaration}`);

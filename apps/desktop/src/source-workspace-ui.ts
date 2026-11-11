@@ -3,6 +3,7 @@ import type {DesktopApi,Status} from './contracts';
 import type {SourceStatus} from './contracts/sources';
 import type {ContentItem} from './contracts/content';
 import type {SourceContextState} from './source-context-outbox';
+import {skeleton,showSkeleton} from './loading-ui';
 const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 function node<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string){const value=document.createElement(tag);if(text!==undefined)value.textContent=text;if(className)value.className=className;return value;}
 const retention=(row:SourceStatus)=>row.source.retention==='reference'?moteText('仅文件目录'):row.source.retention==='archive'?moteText('保留原件'):moteText('提取正文，不保留原件');
@@ -40,7 +41,7 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
   if(more&&!view.nextCursor)return;
   if(!status?.config.tokenConfigured){view.root.replaceChildren(node('p',moteText('本机内容可离线阅读；连接中央后显示已归档内容。'),'helper'));return;}
   view.busy=true;if(!more)view.again=false;
-  const loading=!view.items.length?node('p',moteText('正在读取…'),'helper'):undefined;if(loading)view.root.append(loading);
+  const loading=!view.items.length?skeleton(view.root):undefined;if(loading)view.root.append(loading);
   try{
    const items:ContentItem[]=more?[...view.items]:[],target=more?1:Math.max(1,view.pages);let cursor=more?view.nextCursor:undefined,pages=0;
    for(let index=0;index<target;index++){
@@ -100,7 +101,7 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
  function invalidateContext(){contextEpoch++;contextId=undefined;contextState=undefined;lockContext(false);el<HTMLTextAreaElement>('source-context-description').value='';el('source-context-current-text').textContent='';dialog.close();}
  function contextRequest(id:string){return {id,epoch:contextEpoch,scope:contextScope};}
  function contextCurrent(request:ReturnType<typeof contextRequest>){return contextId===request.id&&contextEpoch===request.epoch&&contextScope===request.scope;}
- async function openContext(id:string){invalidateContext();contextId=id;const request=contextRequest(id);el('source-context-message').textContent=moteText('正在读取…');el('source-context-current').hidden=true;dialog.showModal();lockContext(true);try{const value=await api.sourceContext(id);if(contextCurrent(request))displayContext(value);}catch{if(contextCurrent(request))el('source-context-message').textContent=moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。');}finally{if(contextCurrent(request)){lockContext(false);if(contextState)displayContext(contextState,true);}}}
+ async function openContext(id:string){invalidateContext();contextId=id;const request=contextRequest(id);showSkeleton(el('source-context-message'),undefined,2);el('source-context-current').hidden=true;dialog.showModal();lockContext(true);try{const value=await api.sourceContext(id);if(contextCurrent(request))displayContext(value);}catch{if(contextCurrent(request))el('source-context-message').textContent=moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。');}finally{if(contextCurrent(request)){lockContext(false);if(contextState)displayContext(contextState,true);}}}
  el('source-context-cancel').addEventListener('click',invalidateContext);dialog.addEventListener('cancel',invalidateContext);
  el('source-context-refresh').addEventListener('click',()=>void(async()=>{if(!contextId||contextBusy)return;const request=contextRequest(contextId);lockContext(true);try{const state=await api.sourceContext(request.id);if(contextCurrent(request))displayContext(state,true);}catch{if(contextCurrent(request))el('source-context-message').textContent=moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。');}finally{if(contextCurrent(request)){lockContext(false);if(contextState)displayContext(contextState,true);}}})());
  el('source-context-save').addEventListener('click',()=>void(async()=>{if(!contextId||!contextState||contextBusy)return;const request=contextRequest(contextId);lockContext(true);try{const state=await api.saveSourceContext(request.id,{expectedVersion:contextState.snapshot.version,description:el<HTMLTextAreaElement>('source-context-description').value});if(contextCurrent(request)){const row=rows.find(row=>row.source.id===request.id);if(row)row.context=state;renderDetail(true);invalidateContext();}}catch{if(contextCurrent(request))el('source-context-message').textContent=moteText('保存未完成，说明仍保留。请重新核对后重试。');}finally{if(contextCurrent(request))lockContext(false);}})());

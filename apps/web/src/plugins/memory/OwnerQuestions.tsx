@@ -8,6 +8,7 @@ import {resources} from '../../resource-cache';
 import {ConversationHeading} from '../ask/ConversationShell';
 import {ownerQuestionListPath,ownerQuestionRoute,ownerQuestionListOrigin,clearOwnerQuestionListOrigin,readOwnerQuestion} from '../../owner-question-route';
 import {guideVisit} from '../../feature-guide-state';
+import { Loading } from '../../Loading';
 
 type Reply={requestId:string;expectedRevision:number;action:'answer'|'unknown'|'defer';answer?:string;choiceId?:string};
 type QuestionDraft={draft:string;choiceId?:string;reopened:boolean;pending?:{fingerprint:string;body:Reply}};
@@ -68,7 +69,7 @@ export function OwnerQuestionLinks({api,workId,materialId,operationIds,history=f
     {!standalone&&<h3>{history?moteText('需要你补充'):moteText('补充问题记录')}</h3>}
     {history&&<nav className="owner-question-tabs" aria-label={moteText('补充问题记录')}>{([['pending','待回答'],['all','全部记录']] as const).map(([key,label])=><button type="button" key={key} aria-pressed={filter===key} onClick={()=>{setCursor(undefined);setFilter(key);}}>{moteText(label)}</button>)}</nav>}
     {page.error!==undefined&&<p className="notice error" role="alert">{errorMessage(page.error)} <button className="text-button" onClick={page.refresh}>{moteText('重试')}</button></p>}
-    {page.loading&&!page.data&&<p role="status">{moteText('正在读取…')}</p>}
+    {page.loading&&!page.data&&<Loading/>}
     {history&&(!page.loading||page.data!==undefined)&&!page.error&&!items.length&&!page.data?.nextCursor&&<p className="owner-question-empty" role="status">{moteText(filter==='pending'?'没有待回答的问题':'暂无补充问题记录')}</p>}
     <div className={history?'conversation-list':'processing-actions'}>{items.map(question=><a className={history?`conversation-item ${selectedId===question.id?'active':''}`:'button subtle'} key={question.id} href={ownerQuestionRoute(question.id)} onClick={()=>rememberQuestion(api,question.id)} aria-current={selectedId===question.id?'page':undefined}><strong>{question.title||stateLabel(question.state)}</strong><span>{stateLabel(question.state)}{history&&<> · {standalone?<QuestionSource api={api} reference={question.materialRef}/>:dateTime(question.updatedAt)}</>}</span>{history&&<ArrowRight size={13}/>}{!history&&<ArrowRight size={15}/>}</a>)}</div>
     <div className="processing-actions">{cursor&&<button className="text-button" onClick={()=>setCursor(undefined)}>{moteText('返回第一页')}</button>}{page.data?.nextCursor&&<button className="text-button" onClick={()=>setCursor(page.data!.nextCursor!)}>{moteText('继续展开')}</button>}</div>

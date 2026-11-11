@@ -90,6 +90,29 @@ public struct CentralClient: Sendable {
         try await request("GET", "/api/capture-browser/\(id.uuidString.lowercased())")
     }
 
+    /// The full screenshot or photo behind an original, from the route Web and Android read.
+    public func originalImage(id: UUID) async throws -> Data {
+        var request = try makeRequest("GET", "/api/capture-browser/\(id.uuidString.lowercased())/image",
+                                      query: [], authenticated: true)
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        #if os(iOS)
+        try? MoteStorage.runtimeLog().record(.requestStarted)
+        #endif
+        do {
+            let (data, response) = try await session.data(for: request, delegate: RejectRedirects.shared)
+            let image = try Self.image(data: data, response: response)
+            #if os(iOS)
+            try? MoteStorage.runtimeLog().record(.requestCompleted)
+            #endif
+            return image
+        } catch {
+            #if os(iOS)
+            try? MoteStorage.runtimeLog().record(.requestFailed)
+            #endif
+            throw error
+        }
+    }
+
     /// The calendar suggestions and delivery targets the owner review pages read.
     public func calendarActions(cursor: Int = 0) async throws -> CalendarActionPage {
         try await request("GET", "/api/actions", query: [URLQueryItem(name: "cursor", value: String(cursor))])
@@ -287,6 +310,16 @@ public struct CentralClient: Sendable {
         }
         do { return try JSONDecoder().decode(Response.self, from: data) }
         catch { throw CentralError.invalidResponse }
+    }
+
+    /// Image bytes only: an error page or JSON body never reaches the image decoder.
+    static func image(data: Data, response: URLResponse) throws -> Data {
+        guard let http = response as? HTTPURLResponse else { throw CentralError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw CentralError.http(status: http.statusCode, code: Self.failureCode(data))
+        }
+        guard http.mimeType?.lowercased().hasPrefix("image/") == true, !data.isEmpty else { throw CentralError.invalidResponse }
+        return data
     }
 
     private static func failureCode(_ data: Data) -> String? {

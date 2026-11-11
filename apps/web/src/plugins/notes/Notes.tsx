@@ -1,10 +1,12 @@
 import { formatEvidenceRef } from '@mote/shared';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import { useContext, useEffect, useMemo, useRef, useSyncExternalStore, type FormEvent } from 'react';
-import { Check, CloudUpload, FileText, LoaderCircle, RefreshCw, Trash2, WifiOff } from 'lucide-react';
+import { Check, CloudUpload, FileText, RefreshCw, Trash2, WifiOff } from 'lucide-react';
 import { dateTime, type Api } from '../../api';
 import { QuickNoteContext } from '../../quick-note-context';
 import { createNotesController } from './controller';
+import { Spinner } from '../../shell-components';
+import { Loading } from '../../Loading';
 
 export function Notes({ api, namespace, revision, onOpen, onSaved, composerOnly=false, onSubmitted, onClose }: {
     api: Api;
@@ -68,7 +70,7 @@ export function Notes({ api, namespace, revision, onOpen, onSaved, composerOnly=
       {listError && <div className="notice error" role="alert">{listError}{' '}{moteText("· 本机草稿仍可继续保存。")}</div>}
       {!records.length && !foregroundLoading && !listError && <div className="panel empty"><FileText size={26}/><h3>{moteText("给今天留一小段文字")}</h3><p>{moteText("保存后，原文会出现在这里，也可作为问答的证据。")}</p></div>}
       <div className="notes-grid">{records.map(record => <button className="panel note-card" key={record.id} onClick={() => onOpen(formatEvidenceRef('capture', record.id))}><time>{dateTime(record.capturedAt)}</time>{record.metadata?.noteOrigin&&record.metadata.noteOrigin.kind!=='manual'&&<small>{moteText(record.metadata.noteOrigin.kind==='conversation'?"引用原文":"分享内容")}</small>}<p>{record.ocrText||record.metadata?.noteOrigin?.text}</p>{record.metadata?.attachments?.length && <small>{moteText("附件")}: {record.metadata.attachments.length}</small>}<footer>{record.deviceName}<span>{moteText("查看原文 →")}</span></footer></button>)}</div>
-      {foregroundLoading && <div className="load-more"><LoaderCircle size={17} className="spin"/>{moteText("正在读取记录…")}</div>}
+      {foregroundLoading && (records.length ? <div className="load-more"><Spinner label={moteText("正在读取记录…")}/></div> : <Loading label={moteText("正在读取记录…")}/>)}
       {cursor && !foregroundLoading && <div className="load-more"><button className="button subtle" disabled={loading} onClick={() => void controller.load(cursor)}>{moteText("加载更早的记录")}</button></div>}
     </section>}
   </>;

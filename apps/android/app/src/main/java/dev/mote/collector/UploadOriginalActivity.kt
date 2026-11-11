@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONObject
 
 /** Resolves metadata again on every read/export; never keeps historical body copies. */
@@ -23,7 +24,7 @@ class UploadOriginalActivity : MoteActivity() {
     private fun load() {
         val generation = ++readGeneration
         val batchId = intent.getStringExtra("batchId"); val itemKey = intent.getStringExtra("itemKey")
-        body.removeAllViews(); status = TextView(this).apply { text = MoteI18n.text("正在读取原文…") }.also(body::addView)
+        body.removeAllViews(); status = TextView(this).apply { MoteComponents.reading(this, MoteI18n.text("正在读取原文…")) }.also(body::addView)
         // UiTask retains a paused completion. Its invalidated callback will start the fresh read.
         if (task.busy) return
         val access = CentralAccess.resolve(applicationContext)
@@ -31,7 +32,7 @@ class UploadOriginalActivity : MoteActivity() {
         fun current(): Boolean = resumed && generation == readGeneration &&
             intent.getStringExtra("batchId") == batchId && intent.getStringExtra("itemKey") == itemKey &&
             CentralAccess.resolve(applicationContext).let { it.server == access.server && it.generation == access.generation }
-        task.start(MoteI18n.text("正在读取原文…"), { if (resumed && generation == readGeneration) status.text = it }, {
+        task.start(MoteI18n.text("正在读取原文…"), MoteComponents.progress(status).let { show -> { message: String -> if (resumed && generation == readGeneration) show(message) } }, {
             val item = find()
             check(item.key == itemKey && item.identity?.scope == scope && item.identity.origin == access.server)
             item to HistoryOriginal.read(applicationContext, item)

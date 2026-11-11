@@ -97,7 +97,7 @@ internal class AppCaptureEditor(
         if (!availability().active) { renderUnavailable(availability()); return }
         val current = snapshot() ?: return
         val configured = current.collection.apps.keys + current.excluded + runCatching { current.ruleCatalog.keys }.getOrDefault(emptySet())
-        loader.start(MoteI18n.text("正在读取已安装应用…"), { if (!ready) status.text = it }, {
+        loader.start(MoteI18n.text("正在读取已安装应用…"), MoteComponents.progress(status).let { show -> { message: String -> if (!ready) show(message) } }, {
             InstalledApps.load(activity.packageManager, configured).map { (id, name) ->
                 @Suppress("DEPRECATION") val version = runCatching { activity.packageManager.getPackageInfo(id, 0).versionName.orEmpty() }.getOrDefault("")
                 AppCapturePresentation.App(id, name, version)
@@ -154,7 +154,7 @@ internal class AppCaptureEditor(
         runCatching {
             val all = catalog(current)
             shown = AppCapturePresentation.visible(current, all, state.scope, state.query)
-            status.text = if (ready && shown.isEmpty()) MoteI18n.text("没有匹配的应用") else if (ready) "" else MoteI18n.text("正在读取已安装应用…")
+            if (ready) { status.text = if (shown.isEmpty()) MoteI18n.text("没有匹配的应用") else "" } else MoteComponents.reading(status, MoteI18n.text("正在读取已安装应用…"))
             status.visibility = if (status.text.isEmpty()) GONE else VISIBLE
             scopeButtons.forEach { (scope, button) ->
                 val count = AppCapturePresentation.visible(current, all, scope, "").size

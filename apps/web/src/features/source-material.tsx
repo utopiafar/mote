@@ -5,6 +5,7 @@ import {sourceItemKinds} from '@mote/shared';
 import {ApiError,errorMessage,dateTime} from '../api';
 import {useResource} from '../useResource';
 import type {ViewEntry,ViewProps} from './types';
+import { Loading } from '../Loading';
 type Position={block:number;offset:number};
 type Item={blockId:string;type:'text'|'source'|'asset'|'raw';text:string;offset:number;total:number;continued:boolean;speaker?:string;confirmedName?:string;capturedAt?:string;recordedAt?:string;occurredAt?:string;appName?:string;sourceRef?:string;sourceType?:string;startMs?:number;endMs?:number;mimeType?:string};
 type Page={material?:{coverage:{state:string}};items:Item[];next:Position|null};
@@ -21,7 +22,7 @@ export function SourceMaterialView({api,value,fallback,onOpen}:ViewProps){
   return <div className="source-material-view">{tools?tools.target&&createPortal(structureControl,tools.target):structureControl}
     {raw?fallback:<>
       {page.error!==undefined&&<p role={pending?'status':'alert'}>{pending?moteText('来源已更正，正在重新整理资料。完成后可继续查看。'):errorMessage(page.error)} <button className="button" onClick={page.refresh}>{moteText('重试')}</button></p>}
-      {page.loading&&!page.data&&<p role="status">{moteText('正在读取…')}</p>}
+      {page.loading&&!page.data&&<Loading/>}
       {page.error===undefined&&page.data&&<>
         {page.data.material?.coverage.state==='pending'&&<p role="status">{moteText('资料仍在整理，先展示当前可读的内容。')}</p>}
         {page.data.material?.coverage.state==='partial'&&<p role="status">{moteText('资料尚不完整，可在“来源与处理”中查看缺失情况。')}</p>}

@@ -10,6 +10,7 @@ import android.text.TextWatcher
 import android.text.InputType
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
@@ -38,12 +39,13 @@ class CompressionPreviewActivity : MoteActivity() {
         quality = state?.getInt("quality") ?: quality; maxSide = state?.getInt("maxSide") ?: maxSide
         hasParameters = state?.containsKey("quality") == true && state.containsKey("maxSide")
         val body = moteDetailPage(title = MoteI18n.text("图片压缩预览"))
-        val label = TextView(this).apply { text = MoteI18n.text("正在读取本机设置…") }; body.addView(label); body.addView(ProgressBar(this))
-        task.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, {
+        val placeholder = MoteComponents.skeleton(this, MoteI18n.text("正在读取本机设置…")); body.addView(placeholder)
+        task.start(MoteI18n.text("正在读取本机设置…"), {}, {
             Settings(applicationContext).read()
         }) { result ->
-            result.onSuccess { buildUi(it, state) }.onFailure {
-                label.text = if (it.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) it.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。")
+            result.onSuccess { buildUi(it, state) }.onFailure { failure ->
+                body.removeView(placeholder)
+                body.addView(TextView(this).apply { text = if (failure.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) failure.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") })
             }
         }
     }
@@ -83,7 +85,7 @@ class CompressionPreviewActivity : MoteActivity() {
             compressedColumn.addView(this, LinearLayout.LayoutParams(-1, moteDp(220))); setOnClickListener { enlarge(1) }
         }
         compressedCaption = SecondaryUi.text(compressedColumn, MoteI18n.text("JPEG 输出"), muted = true)
-        stats = SecondaryUi.text(body, MoteI18n.text("正在生成预览…"), muted = true)
+        stats = SecondaryUi.text(body, MoteI18n.text("正在生成预览…"), muted = true).also { MoteComponents.reading(it, it.text.toString()) }
         SecondaryUi.text(body, MoteI18n.text("点击图片放大，比较文字细节与文件大小。"), muted = true)
         apply = SecondaryUi.action(SecondaryUi.actions(body), MoteI18n.text("将参数带回采集设置")) {
             setResult(RESULT_OK, Intent().putExtra("quality", quality).putExtra("maxSide", maxSide)); finish()
@@ -130,7 +132,7 @@ class CompressionPreviewActivity : MoteActivity() {
         }
         quality = requested; qualityInput.error = null
         val stamp = ++revision; val q = quality; val side = maxSide
-        apply.isEnabled = false; stats.text = MoteI18n.text("正在生成压缩预览…"); dialog?.dismiss()
+        apply.isEnabled = false; MoteComponents.reading(stats, MoteI18n.text("正在生成压缩预览…")); dialog?.dismiss()
         executor.execute {
             if (stamp != revision) return@execute
             var source: Bitmap? = null; var resized: Bitmap? = null; var decoded: Bitmap? = null

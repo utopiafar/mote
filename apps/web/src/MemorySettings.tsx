@@ -6,6 +6,7 @@ import { useUnsavedChanges } from './unsaved';
 import { moteText } from '@mote/shared/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { type Api, errorMessage, dateTime } from './api';
+import { Loading } from './Loading';
 type Policy = {
     enabled: boolean;
     intervalHours: number;
@@ -98,7 +99,7 @@ export function MemorySettings({ api, onPlans, compact = false }: {
     } }
     if (compact) return <section className="memory-settings memory-settings-compact">
       {Boolean(error || read.error) && <p className="notice error" role="alert">{error || errorMessage(read.error)}</p>}
-      {saved && <p role="status">{moteText("设置已保存。")}</p>}{!draft && !read.error && <p role="status">{moteText('正在读取…')}</p>}
+      {saved && <p role="status">{moteText("设置已保存。")}</p>}{!draft && !read.error && <Loading/>}
       {draft && <form onSubmit={event=>{event.preventDefault();void save();}}>
         {(['consolidation','working'] as const).map(id=><label key={id} className="memory-rhythm-toggle"><span>{id==='consolidation'?moteText('长期记忆自动整理'):moteText('对话工作记忆')}</span><input type="checkbox" aria-label={enabledLabel(id)} disabled={busy} checked={draft[id].enabled} onChange={event=>{setSaved(false);setDraft({...draft,[id]:{...draft[id],enabled:event.target.checked}});}}/></label>)}
         <details className="memory-rhythm-advanced"><summary>{moteText('高级：处理节奏与内容量')}</summary>

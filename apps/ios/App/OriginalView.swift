@@ -28,13 +28,17 @@ struct OriginalRootView: View {
             if let presentation = model.presentation {
                 OriginalView(
                     presentation: presentation,
+                    hero: model.hero,
                     onBack: onDeleted,
                     onAsk: { onAsk($0) },
                     onDelete: { await model.delete() },
                     onDeleted: onDeleted
                 )
             } else if model.isLoading {
-                ProgressView("正在读取原文…")
+                MoteLoading("正在读取原文…")
+                    .padding(.horizontal, 20)
+                    .padding(.top, MoteMetrics.touchTarget + 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 VStack(spacing: 16) {
                     Text(model.errorMessage ?? "原文不可用")
@@ -57,7 +61,7 @@ struct OriginalRootView: View {
 
 struct OriginalView: View {
     let presentation: OriginalPresentation
-    var image: Data? = nil
+    var hero: OriginalHero? = nil
     var initialPanel: OriginalPanel? = nil
     var initialDeletionError: String? = nil
     let onBack: () -> Void
@@ -72,7 +76,7 @@ struct OriginalView: View {
 
     init(
         presentation: OriginalPresentation,
-        image: Data? = nil,
+        hero: OriginalHero? = nil,
         initialPanel: OriginalPanel? = nil,
         initialDeletionError: String? = nil,
         onBack: @escaping () -> Void,
@@ -81,7 +85,7 @@ struct OriginalView: View {
         onDeleted: @escaping () -> Void
     ) {
         self.presentation = presentation
-        self.image = image
+        self.hero = hero
         self.initialPanel = initialPanel
         self.initialDeletionError = initialDeletionError
         self.onBack = onBack
@@ -97,30 +101,43 @@ struct OriginalView: View {
             topBar
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text(metadata)
-                        .font(MoteFont.secondary)
-                        .foregroundStyle(MoteDesignTokens.muted.color)
-                        .padding(.horizontal, 20)
-                    Text(bodyText)
-                        .font(MoteFont.reading)
-                        .foregroundStyle(MoteDesignTokens.ink.color)
-                        .lineSpacing(10)
-                        .frame(maxWidth: 340, alignment: .leading)
-                        .padding(.horizontal, 20)
-                        .textSelection(.enabled)
-                    if let image, let image = UIImage(data: image) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 148, height: 112)
-                            .clipShape(RoundedRectangle(cornerRadius: MoteDesignTokens.Dimens.radiusThumbMobile))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: MoteDesignTokens.Dimens.radiusThumbMobile)
-                                    .strokeBorder(MoteDesignTokens.hair.color, lineWidth: 1)
-                            }
-                            .padding(.horizontal, 20)
-                            .accessibilityLabel("照片")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(metadata)
+                            .font(MoteFont.secondary)
+                            .foregroundStyle(MoteDesignTokens.muted.color)
+                        if let headline {
+                            Text(headline)
+                                .font(MoteFont.title)
+                                .foregroundStyle(MoteDesignTokens.ink.color)
+                                .frame(maxWidth: 340, alignment: .leading)
+                                .accessibilityAddTraits(.isHeader)
+                        }
                     }
+                    .padding(.horizontal, 20)
+                    // A screenshot leads and its recognized words follow; a photo follows the words it came with.
+                    if isScreen {
+                        if let hero { heroView(hero) }
+                        Text("识别文字")
+                            .font(MoteFont.secondary)
+                            .foregroundStyle(MoteDesignTokens.muted.color)
+                            .padding(.horizontal, 20)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    if isScreen && presentation.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("暂无识别文字。")
+                            .font(MoteFont.body)
+                            .foregroundStyle(MoteDesignTokens.muted.color)
+                            .padding(.horizontal, 20)
+                    } else {
+                        Text(bodyText)
+                            .font(MoteFont.reading)
+                            .foregroundStyle(MoteDesignTokens.ink.color)
+                            .lineSpacing(10)
+                            .frame(maxWidth: 340, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .textSelection(.enabled)
+                    }
+                    if !isScreen, let hero { heroView(hero) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 8)
@@ -353,6 +370,46 @@ struct OriginalView: View {
         }
     }
 
+    private var isScreen: Bool { presentation.source == .screen }
+
+    @ViewBuilder
+    private func heroView(_ hero: OriginalHero) -> some View {
+        Group {
+            switch hero {
+            case .loading:
+                MoteLoadingTile("正在读取图片…")
+            case .image(let image):
+                HeroFrame(aspectRatio: image.size.width / max(image.size.height, 1), maxHeight: 360) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                }
+                .background(MoteDesignTokens.surfaceSunken.color)
+                .clipShape(RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous)
+                        .strokeBorder(MoteDesignTokens.hair.color, lineWidth: 1)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(isScreen ? "截图" : "照片")
+                .accessibilityAddTraits(.isImage)
+            case .unavailable:
+                Text("图片暂不可用。")
+                    .font(MoteFont.body)
+                    .foregroundStyle(MoteDesignTokens.muted.color)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    /// The title earns its own line only when it says more than the opening words below it.
+    private var headline: String? {
+        let title = presentation.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let opening = presentation.text.split(whereSeparator: \.isNewline).first
+            .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)) } ?? ""
+        return title.isEmpty || title == "记录" || title == opening ? nil : title
+    }
+
     private var bodyText: AttributedString {
         var text = AttributedString(presentation.text)
         if let phrase = presentation.highlightedPhrase, let range = text.range(of: phrase) {
@@ -384,5 +441,23 @@ struct OriginalView: View {
             return "删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。"
         }
         return "删除中央保存的这条记录。不会删除本机副本或来源原件，也不会改变来源同步策略。删除后无法恢复。"
+    }
+}
+
+/// Full width and as tall as the image's shape asks, up to `maxHeight`; a taller image is centered within that.
+private struct HeroFrame: Layout {
+    let aspectRatio: CGFloat
+    let maxHeight: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let ratio = max(aspectRatio, 0.01)
+        let width = proposal.width ?? maxHeight * ratio
+        return CGSize(width: width, height: min(maxHeight, width / ratio))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for subview in subviews {
+            subview.place(at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center, proposal: ProposedViewSize(bounds.size))
+        }
     }
 }

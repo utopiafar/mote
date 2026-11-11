@@ -3,6 +3,7 @@ import {useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
 import {type Api,errorMessage} from '../../api';
 import {RecordingTools} from '../sources/RecordingTools';
 import {installRecordingStyles,recordingSpeaker} from '../../recording-presentation';
+import { Loading } from '../../Loading';
 
 export async function downloadFileExport(api:Api,id:string){const response=await api.raw('/api/files/'+id+'/export'),url=URL.createObjectURL(await response.blob());try{const a=document.createElement('a');a.href=url;a.download='mote-recording-'+id+'.tar.gz';a.click();}finally{setTimeout(()=>URL.revokeObjectURL(url),60000);}}
 
@@ -20,7 +21,7 @@ function SpeakerSample({api,id,artifactId,speaker,selection}:{api:Api;id:string;
  useEffect(()=>{const audio=player.current;return()=>{audio?.pause();audio?.removeAttribute('src');audio?.load();};},[current?.url]);
  useEffect(()=>{if(current?.error){setAttempt(value=>value+1);return;}const audio=player.current;if(audio&&audio.readyState>=1){audio.currentTime=0;void audio.play().catch(()=>{});}},[selection]);
  if(!speaker)return null;
- return <div className="recording-sample-region"><div className="recording-sample-label">{recordingSpeaker(speaker,true)}</div>{current?.url?<audio ref={player} className="recording-sample-player" aria-label={moteText('说话人试听样例')} controls preload="none" src={current.url} onLoadedMetadata={event=>{if(event.currentTarget.isConnected)void event.currentTarget.play().catch(()=>{});}}/>:current?.error?<p role="alert">{current.error}</p>:<p role="status">{moteText('正在读取…')}</p>}</div>;
+ return <div className="recording-sample-region"><div className="recording-sample-label">{recordingSpeaker(speaker,true)}</div>{current?.url?<audio ref={player} className="recording-sample-player" aria-label={moteText('说话人试听样例')} controls preload="none" src={current.url} onLoadedMetadata={event=>{if(event.currentTarget.isConnected)void event.currentTarget.play().catch(()=>{});}}/>:current?.error?<p role="alert">{current.error}</p>:<Loading/>}</div>;
 }
 
 type Props={api:Api;id:string;artifacts:any[];onChanged:()=>Promise<void>;initialSection?:'review'|'speakers';onClose?:()=>void;initialSpeaker?:string;speakerDraft?:Record<string,string>;onSpeakerDraft?:(value:Record<string,string>)=>void;speakers?:string[]};

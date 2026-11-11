@@ -131,6 +131,8 @@ internal class CentralContent(
     private lateinit var scroll: ScrollView
     private lateinit var addAction: TextView
     private lateinit var status: TextView
+    /** Work on a filled page runs its line here, over the header divider, so nothing below moves. */
+    private lateinit var busyLine: android.widget.FrameLayout
     private lateinit var title: TextView
     private lateinit var collectionBar: LinearLayout
     private lateinit var composer: LinearLayout
@@ -263,6 +265,8 @@ internal class CentralContent(
         shell.header(header)
         headerDivider = View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER); layoutParams = LinearLayout.LayoutParams(-1,moteDp(1));if(embeddedActions)visibility=View.GONE }
         shell.header(headerDivider)
+        busyLine = android.widget.FrameLayout(this).apply { tag = "central-busy"; layoutParams = LinearLayout.LayoutParams(-1, moteDp(2)).apply { topMargin = -moteDp(2) } }
+        shell.header(busyLine)
         if(embeddedActions){require(initialPage=="actions");header.visibility=View.GONE}
         status = TextView(this).apply {
             tag = "central-status"
@@ -398,6 +402,22 @@ internal class CentralContent(
         }.also(composer::addView)
     }
     internal fun hideAskComposer() { composer.visibility = View.GONE }
+    /** A reader's picture loads beside the page's own work, so a slow image never holds the next page back.
+     * A picture whose page has gone is skipped or dropped, and the idle lane's thread ends by itself. */
+    private val readerImages = java.util.concurrent.ThreadPoolExecutor(0, 1, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue())
+    internal fun readerImage(path: String, done: (android.graphics.Bitmap?) -> Unit) {
+        val api = client ?: return done(null)
+        val version = revision; val generation = accessGeneration
+        readerImages.execute {
+            if (version != revision) return@execute
+            val bitmap = runCatching { CapturePreview.decode(api.image(path), 1600) }.getOrNull()
+            handler.post { if (version == revision && generation == accessGeneration && !isDestroyed) done(bitmap) else bitmap?.recycle() }
+        }
+    }
+    /** A library reader's docked 围绕这份资料提问, in the composer slot that navigation and the next detail clear. */
+    internal fun readerDock(dock: View) {
+        composer.removeAllViews(); composer.addView(dock, LinearLayout.LayoutParams(-1, -2)); composer.visibility = View.VISIBLE
+    }
     internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
     /** A conversation fills the page from the bare back bar; the empty Ask keeps its heading. */
     internal fun askConversationVisible(visible: Boolean) {
@@ -628,7 +648,7 @@ internal class CentralContent(
         status.text = message
         status.visibility = if (message.isBlank()) View.GONE else View.VISIBLE
     }
-    internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun) }
+    internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); composer.removeAllViews(); composer.visibility = View.GONE }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
         val offline = page == "ask" && networkFailure(error)
         // The composer's own notice already says what happened; a raw transport
@@ -681,7 +701,18 @@ internal class CentralContent(
             if (view is EditText || view is Spinner || view is CompoundButton) { if (view.isEnabled) { inputs.add(view); view.isEnabled = false } }
             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) lock(view.getChildAt(i))
         }; lock(body)
-        task.start(label, { if (foreground == foregroundRevision && resumed) notice(it) }, { progress ->
+        // A page still waiting for its first content shows quiet rows instead of a sentence; work on a
+        // filled page runs a thin line, and words appear only for reported progress or slow work.
+        val placeholder = if (body.childCount == 0) MoteComponents.skeleton(this, label).also(body::addView) else null
+        val line = if (placeholder == null && label.isNotBlank()) MoteComponents.loadingLine(this, label).also {
+            if (foreground == foregroundRevision && resumed) notice("")
+            busyLine.addView(it, android.widget.FrameLayout.LayoutParams(-1, -1))
+        } else null
+        val started = android.os.SystemClock.elapsedRealtime()
+        task.start(label, { message ->
+            val worded = !message.startsWith(label) || android.os.SystemClock.elapsedRealtime() - started >= MoteComponents.SLOW_WORK_MS
+            if (line != null && worded && foreground == foregroundRevision && resumed) notice(message)
+        }, { progress ->
             val before = CentralAccess.resolve(this)
             check(allowSessionChange || generation < 0 || before.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
             check(allowSessionChange || !authenticated || before.client != null && before.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
@@ -692,6 +723,8 @@ internal class CentralContent(
             check(value !is CentralAccess.Selection || value.generation == after.generation && (value.client == null) == (after.client == null)) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
             WorkValue(value, after.generation)
         }) { result ->
+            placeholder?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+            line?.let(busyLine::removeView)
             inputs.forEach { it.isEnabled = true }
             if (version == revision && foreground == foregroundRevision && resumed && !isDestroyed && !isFinishing) {
                 result.onSuccess { completed ->

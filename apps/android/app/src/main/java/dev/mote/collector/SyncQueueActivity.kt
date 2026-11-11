@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import org.json.JSONArray
 import org.json.JSONObject
@@ -48,7 +49,7 @@ class SyncQueueActivity : MoteActivity() {
         offset = state?.getInt("offset") ?: 0
         val body = moteDetailPage(primary = MotePrimaryTab.SOURCES, title = MoteI18n.text("同步与上传"))
         val sendCard = SecondaryUi.column(body)
-        sendStatus = SecondaryUi.text(sendCard, MoteI18n.text("正在读取本机同步状态…"), heading = true).apply { tag = "sync-send-status"; accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        sendStatus = SecondaryUi.text(sendCard, MoteI18n.text("正在读取本机同步状态…"), heading = true).apply { MoteComponents.reading(this, text.toString()); tag = "sync-send-status"; accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
         sendCount = SecondaryUi.text(sendCard, "", muted = true)
         val sendActions = SecondaryUi.actions(sendCard)
         pauseSend = SecondaryUi.action(sendActions, "") { changeSendState() }.apply { tag = "sync-send-pause" }
@@ -78,7 +79,7 @@ class SyncQueueActivity : MoteActivity() {
         }
         MoteUi.styleTree(body)
         updateTabs()
-        task.start(MoteI18n.text("正在读取来源…"), { summary.text = it }, { localSources().sources() }) { result ->
+        task.start(MoteI18n.text("正在读取来源…"), MoteComponents.progress(summary), { localSources().sources() }) { result ->
             result.onSuccess {
                 sources = it
                 categories.adapter = MoteUi.choiceAdapter(this, listOf(MoteI18n.text("采集与记录")) + it.map { source -> source.name + if (source.enabled) "" else MoteI18n.text("（已暂停）") })
@@ -102,9 +103,14 @@ class SyncQueueActivity : MoteActivity() {
                 inventoryUnavailable = state.error != null, sourceUnavailable = state.sourceError, labelsReady = statusTranslations != null, labelsFailed = statusTranslationFailed) { source, value ->
                 source == value || statusTranslations?.get(source)?.contains(value) == true
             }
-            sendStatus.text = SyncReadiness.text(visible) + if (settings.syncRequestRejected()) "\n" + MoteI18n.text("配置已发生变化，请刷新后重试。") else ""
+            // A part still being read keeps its bar, after the parts that are already known.
+            val parts = (visible as? VisibleSyncStatus.Many)?.items ?: listOf(visible)
+            val known = (parts.filter { it != VisibleSyncStatus.Loading }.map(SyncReadiness::text) +
+                if (settings.syncRequestRejected()) listOf(MoteI18n.text("配置已发生变化，请刷新后重试。")) else emptyList()).filter { it.isNotEmpty() }.joinToString("\n")
+            if (VisibleSyncStatus.Loading in parts) MoteComponents.reading(sendStatus, SyncReadiness.text(VisibleSyncStatus.Loading), if (known.isEmpty()) "" else known + "\n")
+            else sendStatus.text = known
         }
-        sendCount.text = state.active?.let { MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", it.records, state.pending ?: "—") } ?: state.imageLabel()
+        if (state.active == null && state.imagesReading) MoteComponents.reading(sendCount, state.imageLabel()) else sendCount.text = state.active?.let { MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", it.records, state.pending ?: "—") } ?: state.imageLabel()
         sendingPaused = config.syncPaused
         pauseSend.text = MoteI18n.text(if (config.syncPaused) "恢复全部发送" else "暂停全部发送")
         pauseSend.isEnabled = !actionTask.busy
@@ -114,7 +120,7 @@ class SyncQueueActivity : MoteActivity() {
         if (actionTask.busy) return
         val requestedPause = !sendingPaused
         pauseSend.isEnabled = false; sendNow.isEnabled = false
-        actionTask.start(MoteI18n.text("正在保存发送状态…"), { sendStatus.text = it }, {
+        actionTask.start(MoteI18n.text("正在保存发送状态…"), MoteComponents.progress(sendStatus, read = false), {
             SendPauseControl.set(applicationContext, requestedPause)
         }) { outcome ->
             refreshSendState(LocalStatusProducer.get(this).state.value)
@@ -124,7 +130,7 @@ class SyncQueueActivity : MoteActivity() {
     private fun requestSync() {
         if (actionTask.busy) return
         pauseSend.isEnabled = false; sendNow.isEnabled = false
-        actionTask.start(MoteI18n.text("正在提交同步任务…"), { sendStatus.text = it }, {
+        actionTask.start(MoteI18n.text("正在提交同步任务…"), MoteComponents.progress(sendStatus, read = false), {
             ConnectionGuard.sync {
                 val config = Settings(applicationContext).read(); config.validateConnection()
                 if (localSources().sources().any { it.enabled }) dev.mote.collector.plugins.SourceProviderPlugin.owner(applicationContext).schedule(manual = true, syncExplicit = true)
@@ -165,7 +171,7 @@ class SyncQueueActivity : MoteActivity() {
         if (history) { loadHistory(); return }
         val source = sources.getOrNull(categories.selectedItemPosition - 1)
         previous.isEnabled = false; next.isEnabled = false; categories.isEnabled = false
-        task.start(MoteI18n.text("正在读取队列…"), { summary.text = it }, {
+        task.start(MoteI18n.text("正在读取队列…"), MoteComponents.progress(summary), {
             val page = if (source == null) queue().pendingPage(offset, pageSize)
             else if (source.binaryFiles()) fileArchives().pendingPage(source.id, offset, pageSize, source)
             else {

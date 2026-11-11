@@ -2,7 +2,7 @@ import { moteText } from '@mote/shared/i18n';
 import React from 'react';
 import { useResource } from '../../useResource';
 import { queryString, errorMessage, type Activity } from '../../api';
-import { ErrorNotice, Spinner } from '../../shell-components';
+import { ErrorNotice } from '../../shell-components';
 import { ActivitySummary, RecordTimeline } from './Archive';
 import { Files } from '../intake';
 import { LibraryMaterials } from './LibraryBrowse';
@@ -11,6 +11,7 @@ import { webFeatures } from '../../features/registry';
 import { canonicalDestination, workspaceHash } from '../../workspace-route';
 import { MediaActivitySummary } from './Media';
 import type { CollectionEntry, CollectionProps } from '../../features/types';
+import { Loading } from '../../Loading';
 const CaptureSessions = React.lazy(() => import('./CaptureSessions').then(module => ({ default: module.CaptureSessions })));
 const Sources = React.lazy(() => import('../sources/Sources').then(module => ({ default: module.Sources })));
 const Memories = React.lazy(() => import('../memory/Memories').then(module => ({ default: module.Memories })));
@@ -20,7 +21,7 @@ function ActivityCollection({ api, range, revision, rangeSelectionKey }: Collect
     if (activity.error)
         return <ErrorNotice text={errorMessage(activity.error)} retry={activity.refresh}/>;
     if (!activity.data)
-        return <Spinner />;
+        return <Loading/>;
     return <ActivitySummary activity={activity.data}/>;
 }
 export const builtinCollections: CollectionEntry[] = [

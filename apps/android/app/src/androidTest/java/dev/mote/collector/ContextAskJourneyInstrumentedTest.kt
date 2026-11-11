@@ -110,6 +110,7 @@ class ContextAskJourneyInstrumentedTest {
             click("Open the first exact evidence citation") { it is TextView && it.text.toString().startsWith("[1] ") && it.text.contains("查看原文依据") }
             until("Evidence action reads the saved original owner comment") { main { shown().filterIsInstance<TextView>().any { it.text.toString() == "My separate generated comment" } } }
             capture("answer-evidence")
+            click("Open the original's More sheet") { it.tag == "capture-reader-more" }
             clickText("删除记录")
             until("Deletion confirmation names its actual Central scope") { main { shown().filterIsInstance<TextView>().any { it.text.contains("不会删除本机副本或来源原件") } } }
             capture("central-delete-scope")

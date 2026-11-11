@@ -89,10 +89,7 @@ private struct RecordingActivityCard: View {
 
 private struct RecordingMark: View {
     var body: some View {
-        Text("m")
-            .font(.system(size: 16, weight: .semibold))
-            .tracking(-0.8)
-            .foregroundStyle(stopText)
+        MoteMark(size: 18, ink: stopText, dot: MoteColorToken.color(hex: MoteDesignTokens.accent.light))
             .frame(width: 20, height: 20)
             .background(stopBackground, in: RoundedRectangle(cornerRadius: 5))
             .accessibilityHidden(true)

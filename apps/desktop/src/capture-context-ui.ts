@@ -3,6 +3,7 @@ import {appendDiagnostic} from './ui-diagnostic';
 import type {DesktopApi,Status} from './contracts';
 import type {CaptureContextChannel} from './source-manager';
 import type {SourceContextState} from './source-context-outbox';
+import {showLoadingText} from './loading-ui';
 
 /** Four independent device/channel declarations; no cross-channel transaction or capture-byte edits. */
 export function createCaptureContextUi(api:DesktopApi,root:Document=document,onDraftChange:()=>void=()=>{}){
@@ -24,7 +25,7 @@ export function createCaptureContextUi(api:DesktopApi,root:Document=document,onD
   const controls=()=>{button.disabled=saving;cancel.disabled=saving;dismiss.disabled=saving;for(const entry of entries)entry.input.disabled=entry.reading||saving||!entry.state||entry.state.error==='denied';save.disabled=saving||entries.some(e=>e.reading)||!entries.some(e=>e.state?.error!=='denied'&&changed(e));};
   const stateMessage=(entry:typeof entries[number])=>{const next=entry.state!;entry.message.replaceChildren(root.createTextNode(next.conflict||drafts.get(entry.channel)&&drafts.get(entry.channel)!.expectedVersion!==next.snapshot.version?moteText('说明已在其他地方更新，请核对后再保存。'):drafts.has(entry.channel)?moteText('有未保存的修改，离开前会提醒。保存后立即生效。'):next.pending?moteText('已保存在本机，等待同步。'):next.error==='denied'?moteText('没有访问权限'):next.error?moteText('暂时无法读取中央说明，可在本机保存后同步。'):''));};
   const clear=()=>{for(const entry of entries){entry.input.value='';entry.message.replaceChildren();entry.state=undefined;entry.reading=false;}};
-  async function read(){const revision=++generation;more.open=false;clear();for(const entry of entries){entry.reading=true;entry.message.textContent=moteText('正在读取…');}controls();
+  async function read(){const revision=++generation;more.open=false;clear();for(const entry of entries){entry.reading=true;showLoadingText(entry.message);}controls();
     await Promise.all(entries.map(async entry=>{try{const next=await api.captureContext(entry.channel);if(revision!==generation||!dialog.open)return;entry.state=next;entry.input.value=drafts.get(entry.channel)?.description??next.pending?.description??next.snapshot.description;stateMessage(entry);}catch(error){if(revision===generation&&dialog.open){entry.message.textContent=moteText('操作未完成，请检查权限与配置后重试');appendDiagnostic(entry.message,error instanceof Error?error.message:String(error));}}finally{if(revision===generation){entry.reading=false;controls();}}}));
   }
   button.addEventListener('click',()=>{if(saving||dialog.open)return;dialog.showModal();void read();});for(const entry of entries)entry.input.addEventListener('input',controls);

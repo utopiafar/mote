@@ -3,6 +3,7 @@ import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from '../../api';
 import {useResource} from '../../useResource';
 import {useForegroundResources} from '../../useForegroundResources';
+import { LoadingText } from '../../Loading';
 
 const path='/api/model-authorization';
 type Authority={revision:number;state:'off'|'on';excludedSourceIds:string[]};
@@ -32,7 +33,7 @@ export function AutomaticProcessing({api}:{api:Api}){
  }
  const exclude=(sourceId:string,excluded:boolean)=>command('exclude',excluded?[...new Set([...current!.excludedSourceIds,sourceId])]:current!.excludedSourceIds.filter(id=>id!==sourceId));
  return <section className="automatic-processing-control" aria-label={moteText('自动处理新资料')} aria-busy={busy}>
-  <div className="automatic-control-main"><div><h2>{moteText('自动处理新资料')}</h2>{!current&&<p role="status">{moteText(failure!==undefined?'暂不可用':'正在读取…')}</p>}</div><button type="button" role="switch" aria-checked={current?.state==='on'} aria-label={moteText('自动处理新资料')} className={'button '+(current?.state==='on'?'':'primary')} disabled={!ready||busy} onClick={()=>void command(current?.state==='on'?'off':'on')}>{current?.state==='on'?moteText('已开启'):moteText('已关闭')}</button></div>
+  <div className="automatic-control-main"><div><h2>{moteText('自动处理新资料')}</h2>{!current&&<p role="status">{failure!==undefined?moteText('暂不可用'):<LoadingText/>}</p>}</div><button type="button" role="switch" aria-checked={current?.state==='on'} aria-label={moteText('自动处理新资料')} className={'button '+(current?.state==='on'?'':'primary')} disabled={!ready||busy} onClick={()=>void command(current?.state==='on'?'off':'on')}>{current?.state==='on'?moteText('已开启'):moteText('已关闭')}</button></div>
   {(error||failure!==undefined)&&<div><p role="alert">{moteText('操作未完成，请重试')}</p><details><summary>{moteText('技术详情')}</summary><pre>{error||errorMessage(failure)}</pre></details></div>}
   {current&&<fieldset className="automatic-source-options" disabled={busy}><legend>{moteText('来源排除')}</legend>{sourceOptions.map(source=><label key={source.id}><input type="checkbox" checked={current.excludedSourceIds.includes(source.id)} onChange={event=>void exclude(source.id,event.target.checked)}/><span>{source.name}{sourceOptions.some(other=>other.id!==source.id&&other.name===source.name)&&<small>{source.id}</small>}</span></label>)}</fieldset>}
   <details className="automatic-control-more"><summary>{moteText('更多')}</summary><button type="button" className="text-button" disabled={!ready||busy} onClick={()=>void command('stop')}>{moteText('立即停止全部自动任务')}</button></details>

@@ -78,6 +78,8 @@ internal class LibraryReadState {
      * still add rows, and [more] includes Central pages; neither may claim that
      * the whole filter is empty yet.
      */
+    /** The unfiltered all-sources empty state while Central is still being read: rows stand in for its words. */
+    fun waitingForCentral(location: String, filtered: Boolean) = location != "central" && location != "local" && !filtered && !centralUnreadable() && !centralFinished()
     fun emptyText(location: String, filtered: Boolean, localMore: Boolean, more: Boolean): String? {
         if (!localFinished() || localFailed() || localMore) return null
         val unreadable = centralUnreadable()

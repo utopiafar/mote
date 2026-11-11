@@ -5,6 +5,7 @@ import { hasCompleteTokenUsage, usageIdentity, usageLabel, type UsageReceipt, ty
 import type { ModelSettingsView } from '@mote/shared/models';
 import { dateTime, errorMessage, type Api } from '../../api';
 import {MaintenanceFrame} from '../../MaintenanceFrame';
+import { Loading } from '../../Loading';
 const number = (n: number) => n.toLocaleString(getLocale());
 const money = (n: number | null, currency: string) => n === null ? moteText("{0} 未估算", currency) : new Intl.NumberFormat(getLocale(), { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(n);
 export function TurnUsage({ usage }: {
@@ -83,7 +84,7 @@ export function Usage({ api }: {
     const groupLabels:Record<UsageGroupBy,string>={module:moteText('按功能'),model:moteText('按模型'),provider:moteText('按服务连接'),agent:moteText('按 Agent'),skill:moteText('按主流程')};
     return <MaintenanceFrame className="usage-page" title={moteText('用量与费用')}>
     <div className="owner-filter-line"><div className="owner-presets" role="group" aria-label={moteText('时间范围')}>{[1,7,30].map(days=><button key={days} aria-pressed={to===localDate(new Date())&&from===localDate(new Date(Date.now()-(days-1)*86400000))} onClick={()=>preset(days)}>{days===1?moteText('今天'):moteText('近 {0} 天',days)}</button>)}</div><small>{timeZone}</small></div>
-    {loading && <p role="status">{moteText("正在读取用量…")}</p>}{error && <p className="notice error" role="alert">{error}</p>}
+    {loading && <Loading label={moteText('正在读取用量…')}/>}{error && <p className="notice error" role="alert">{error}</p>}
     {error&&<button className="button" onClick={()=>setReload(value=>value+1)}>{moteText('重新读取')}</button>}
     {data && <><div className="owner-metrics"><div><span>{moteText('已知费用估算')}</span><strong>{money(data.total.costs.USD,'USD')}</strong><small>{money(data.total.costs.CNY,'CNY')}</small></div><div><span>{moteText('已上报 token')}</span><strong>{number(data.total.totalTokens)}</strong><small>{moteText('缺失的用量不按零估算')}</small></div><div><span>{moteText('运行次数')}</span><strong>{number(data.total.runs)}</strong><small>{moteText('{0} 次费用未估算',data.total.unpriced)}</small></div></div></>}
     <div className="owner-filter-line"><label>{moteText('查看分布')}<select aria-label={moteText('查看分布')} value={groupBy} onChange={event=>setGroupBy(event.target.value as UsageGroupBy)}>{(Object.keys(groupLabels) as UsageGroupBy[]).map(key=><option key={key} value={key}>{groupLabels[key]}</option>)}</select></label><label>{moteText('状态')}<select value={filters.status??''} onChange={event=>filter('status',event.target.value)}><option value="">{moteText('全部状态')}</option><option value="completed">{moteText('已完成')}</option><option value="failed">{moteText('失败')}</option><option value="running">{moteText('进行中')}</option></select></label></div>

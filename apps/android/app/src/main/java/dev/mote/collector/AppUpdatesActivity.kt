@@ -12,6 +12,7 @@ import android.provider.Settings
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.NativeSystemToolsPlugin
+import dev.mote.collector.ui.MoteComponents
 
 class AppUpdatesActivity : MoteActivity() {
     private lateinit var store: AppUpdateStore
@@ -49,10 +50,10 @@ class AppUpdatesActivity : MoteActivity() {
             return
         }
         val loading = moteDetailPage(title = MoteI18n.text("应用更新")); val label = TextView(this); loading.addView(label)
-        task.start(MoteI18n.text("正在读取更新设置…"), { label.text = it }, {
+        task.start(MoteI18n.text("正在读取更新设置…"), MoteComponents.progress(label), {
             val value = AppUpdateStore(applicationContext); value to value.config()
         }) { result ->
-            result.onSuccess { (value, config) -> store = value; buildUi(config); if (foreground) background(MoteI18n.text("正在读取安装状态…")) { systemTools.reconcileUpdates(applicationContext); AppUpdateWork.reconcile(applicationContext) } }
+            result.onSuccess { (value, config) -> store = value; buildUi(config); if (foreground) background(MoteI18n.text("正在读取安装状态…"), read = true) { systemTools.reconcileUpdates(applicationContext); AppUpdateWork.reconcile(applicationContext) } }
                 .onFailure { label.text = MoteI18n.text("更新设置读取失败，请重试") }
         }
     }
@@ -108,12 +109,12 @@ class AppUpdatesActivity : MoteActivity() {
         MoteUi.button(primary, true)
         render()
     }
-    override fun onResume() { super.onResume(); foreground = true; if (::store.isInitialized && ::status.isInitialized) background(MoteI18n.text("正在读取安装状态…")) { systemTools.reconcileUpdates(applicationContext); AppUpdateWork.reconcile(applicationContext) }; handler.post(refresh) }
+    override fun onResume() { super.onResume(); foreground = true; if (::store.isInitialized && ::status.isInitialized) background(MoteI18n.text("正在读取安装状态…"), read = true) { systemTools.reconcileUpdates(applicationContext); AppUpdateWork.reconcile(applicationContext) }; handler.post(refresh) }
     override fun onPause() { foreground = false; handler.removeCallbacks(refresh); super.onPause() }
-    private fun background(label: String, runner: UiTask = task, action: () -> Unit) {
+    private fun background(label: String, runner: UiTask = task, read: Boolean = false, action: () -> Unit) {
         if (runner.busy) { Toast.makeText(this, MoteI18n.text("操作正在进行"), Toast.LENGTH_SHORT).show(); return }
         primary.isEnabled = false
-        runner.start(label, { status.text = message(store.prefs.getString("state", "idle")!!) + "\n" + it }, { action() }) { result ->
+        runner.start(label, MoteComponents.progress(status, read) { message(store.prefs.getString("state", "idle")!!) + "\n" }, { action() }) { result ->
             result.onFailure { Toast.makeText(this, message((it as? UpdateFailure)?.code ?: "failed"), Toast.LENGTH_LONG).show() }
             render()
         }

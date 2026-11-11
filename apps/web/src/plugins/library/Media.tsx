@@ -1,10 +1,11 @@
 import {formatEvidenceRef} from '@mote/shared';
 import { moteText, getLocale } from '@mote/shared/i18n';
-import {ArrowRight,Headphones,Info,LoaderCircle,LockKeyhole} from 'lucide-react';
+import {ArrowRight,Headphones,Info,LockKeyhole} from 'lucide-react';
 import type {MediaMetadata,MediaSession} from '@mote/shared';
 import {type Api,type Range,type MediaActivity,queryString,dateTime,errorMessage} from '../../api';
 import {mediaStatus,playbackLabels,playbackTypeLabels,visibilityLabels,mediaDuration as duration} from '../../media-presentation';
 import {useResource} from '../../useResource';
+import { Loading } from '../../Loading';
 
 export function MediaSnapshot({media,observedAt,screenLocked,collection,compact=false}: {
   media?:MediaMetadata;observedAt?:string;screenLocked?:boolean;collection?:string;compact?:boolean;
@@ -44,7 +45,7 @@ export function MediaActivitySummary({api,range,onOpen,compact=false,onExpand,re
   const {data:value,error,refresh}=useResource<MediaActivity>(api,path,undefined,revision,continuity);
   return <section className={`panel media-activity-panel ${compact?'compact':''}`} aria-label={moteText("媒体播放统计")}>
     <div className="section-heading"><div><h2><Headphones size={19}/>{moteText("媒体播放")}</h2><p>{moteText("锁屏与切换应用后，也可以留下播放线索。")}</p></div>{onExpand&&<button className="text-button" onClick={onExpand}>{moteText("查看分布")}<ArrowRight size={15}/></button>}</div>
-    {error?<div className="notice error" role="alert"><Info size={16}/><span>{errorMessage(error)}</span><button className="text-button" onClick={refresh}>{moteText("重试")}</button></div>:!value?<span className="loading"><LoaderCircle size={16} className="spin"/>{moteText("正在读取媒体记录…")}</span>:<MediaActivityContent value={value} onOpen={onOpen} compact={compact}/>}
+    {error?<div className="notice error" role="alert"><Info size={16}/><span>{errorMessage(error)}</span><button className="text-button" onClick={refresh}>{moteText("重试")}</button></div>:!value?<Loading label={moteText('正在读取媒体记录…')}/>:<MediaActivityContent value={value} onOpen={onOpen} compact={compact}/>}
   </section>;
 }
 export function MediaActivityContent({value,onOpen,compact=false}:{value:MediaActivity;onOpen:(id:string)=>void;compact?:boolean}) {

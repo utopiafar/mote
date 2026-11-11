@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.work.WorkManager
+import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import java.util.concurrent.Executors
 
@@ -30,7 +31,7 @@ class SyncRecoveryActivity : MoteActivity() {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val body = moteDetailPage(title = MoteI18n.text("同步与恢复"))
         val card = SecondaryUi.column(body, card = true)
-        summary = SecondaryUi.text(card, MoteI18n.text("正在读取本机同步状态…"), heading = true)
+        summary = SecondaryUi.text(card, MoteI18n.text("正在读取本机同步状态…"), heading = true).also { MoteComponents.reading(it, it.text.toString()) }
         result = SecondaryUi.text(body, "", muted = true).apply { tag = "recovery-result"; accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
         SecondaryUi.row(body, MoteI18n.text("检查两端记录状态"), MoteI18n.text("核对手机仍保留的记录"), icon = MoteGlyph.SEARCH) { runAction { SyncRecoveryWorker.start(this, false) } }.tag = "recovery-check"
         SecondaryUi.row(body, MoteI18n.text("补传本机保留的记录"), MoteI18n.text("仍遵守当前网络和来源设置"), icon = MoteGlyph.UP) {
@@ -50,7 +51,7 @@ class SyncRecoveryActivity : MoteActivity() {
         MoteUi.styleTree(body)
     }
     private fun runAction(action: () -> Unit) {
-        task.start(MoteI18n.text("正在提交后台任务…"), { result.text = it }, { action() }) { outcome ->
+        task.start(MoteI18n.text("正在提交后台任务…"), MoteComponents.progress(result, read = false), { action() }) { outcome ->
             outcome.onSuccess { refreshStatus() }.onFailure { result.text = it.message ?: MoteI18n.text("请先配置连接") }
         }
     }

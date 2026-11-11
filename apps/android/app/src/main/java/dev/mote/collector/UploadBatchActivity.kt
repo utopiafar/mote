@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 
 class UploadBatchActivity : MoteActivity() {
     private val task by lazy { UiTask(this) }
@@ -12,7 +13,7 @@ class UploadBatchActivity : MoteActivity() {
         val body = moteDetailPage(primary = MotePrimaryTab.SOURCES, title = MoteI18n.text("上传批次详情"))
         val status = TextView(this).also(body::addView)
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also(body::addView)
-        fun load() { task.start(MoteI18n.text("正在读取…"), { status.text = it }, { UploadHistoryModel.read(applicationContext).singleOrNull { it.id == intent.getStringExtra("batchId") } }) { result ->
+        fun load() { task.start(MoteI18n.text("正在读取…"), MoteComponents.progress(status), { UploadHistoryModel.read(applicationContext).singleOrNull { it.id == intent.getStringExtra("batchId") } }) { result ->
             rows.removeAllViews()
             result.onSuccess { batch ->
                 if (batch == null) { status.text = MoteI18n.text("该批次不在当前节点保留的历史中。"); return@onSuccess }

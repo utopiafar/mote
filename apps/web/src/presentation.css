@@ -5,7 +5,7 @@
 /* Same mark as the Mac client: a filled primary tile and the plain wordmark. */
 .app-shell[data-navigation] .brand { display:flex; align-items:center; gap:10px; padding:4px 10px; font:500 15px/1.2 var(--mote-font-heading); letter-spacing:-.02em; color:var(--mote-ink); }
 .app-shell[data-navigation] .brand>span:last-child { font:inherit; }
-.app-shell[data-navigation] .mote-symbol { display:grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:var(--mote-radius-control); color:var(--mote-primary-ink); background:var(--mote-primary-background); font:600 23px/1 var(--mote-font); letter-spacing:-1.5px; }
+.app-shell[data-navigation] .brand .mote-mark { width:24px; height:24px; }
 .app-shell[data-navigation] .workspace-label { margin:28px 10px 9px; font-size:var(--mote-font-meta); letter-spacing:0; color:var(--mote-sidebar-muted); }
 .app-shell[data-navigation] .sidebar nav { display:flex; flex-direction:column; gap:3px; padding:0; }
 .app-shell[data-navigation] .sidebar nav button,.app-shell[data-navigation] .auxiliary-nav,.app-shell[data-navigation] .utility-nav,.app-shell[data-navigation] .settings-nav { display:flex; align-items:center; gap:10px; width:100%; min-height:var(--mote-nav-height); padding:6px 10px; margin:0; border:0; border-radius:var(--mote-radius-control); background:transparent; color:var(--mote-ink); font:400 var(--mote-font-action)/1.5 var(--mote-font); text-align:left; }

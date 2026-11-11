@@ -95,11 +95,61 @@ final class OriginalPresentationTests: XCTestCase {
         StubURLProtocol.handler = nil
     }
 
-    private func record(id: String? = nil, kind: String = "capture", available: Bool = true, materialRef: String? = nil) throws -> OriginalRecord {
-        try JSONDecoder().decode(OriginalRecord.self, from: recordData(id: id, kind: kind, available: available, materialRef: materialRef))
+    func testImageFlagAndSourceFollowTheStoredRecord() throws {
+        let note = try OriginalPresentation(record: record(), conversations: [])
+        XCTAssertFalse(note.hasImage)
+        XCTAssertEqual(note.source, .note)
+
+        let screen = try OriginalPresentation(record: record(source: "screen", blobHash: "generated-blob"), conversations: [])
+        XCTAssertTrue(screen.hasImage)
+        XCTAssertEqual(screen.source, .screen)
+        XCTAssertFalse(try OriginalPresentation(record: record(source: "screen", blobHash: ""), conversations: []).hasImage)
     }
 
-    private func recordData(id: String? = nil, kind: String = "capture", available: Bool = true, materialRef: String? = nil) throws -> Data {
+    func testOriginalImageReadsTheRecordImageRouteAndAcceptsOnlyImageBytes() async throws {
+        let log = RequestLog()
+        let image = Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+        StubURLProtocol.handler = { request in
+            log.append(request)
+            return (200, image)
+        }
+        StubURLProtocol.headers = ["Content-Type": "image/png"]
+        defer {
+            StubURLProtocol.handler = nil
+            StubURLProtocol.headers = nil
+        }
+        let client = try CentralClient(serverUrl: "http://127.0.0.1:3030", token: "generated", session: Self.session())
+
+        let data = try await client.originalImage(id: UUID(uuidString: id)!)
+        XCTAssertEqual(data, image)
+        let request = try XCTUnwrap(log.values.first)
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(request.url?.path, "/api/capture-browser/\(id)/image")
+        XCTAssertNil(request.url?.query)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "image/*")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer generated")
+
+        for (status, type, body, expected) in [
+            (200, "application/json", Data(#"{"ok":true}"#.utf8), CentralError.invalidResponse),
+            (200, "image/png", Data(), CentralError.invalidResponse),
+            (404, "application/json", Data(#"{"code":"capture_not_found"}"#.utf8), CentralError.http(status: 404, code: "capture_not_found")),
+        ] {
+            StubURLProtocol.handler = { _ in (status, body) }
+            StubURLProtocol.headers = ["Content-Type": type]
+            await XCTAssertThrowsErrorAsync(try await client.originalImage(id: UUID(uuidString: id)!)) {
+                XCTAssertEqual($0 as? CentralError, expected)
+            }
+        }
+    }
+
+    private func record(id: String? = nil, kind: String = "capture", available: Bool = true, materialRef: String? = nil,
+                        source: String = "note", blobHash: String? = nil) throws -> OriginalRecord {
+        try JSONDecoder().decode(OriginalRecord.self, from: recordData(id: id, kind: kind, available: available, materialRef: materialRef,
+                                                                       source: source, blobHash: blobHash))
+    }
+
+    private func recordData(id: String? = nil, kind: String = "capture", available: Bool = true, materialRef: String? = nil,
+                            source: String = "note", blobHash: String? = nil) throws -> Data {
         var object: [String: Any] = [
             "id": id ?? self.id,
             "capturedAt": "2026-11-06T06:20:00Z",
@@ -107,7 +157,7 @@ final class OriginalPresentationTests: XCTestCase {
             "deviceId": "generated-device",
             "deviceName": "生成的 iPhone",
             "platform": "ios",
-            "source": "note",
+            "source": source,
             "appName": "Mote",
             "windowTitle": "生成的记录",
             "durationMs": 0,
@@ -117,6 +167,7 @@ final class OriginalPresentationTests: XCTestCase {
             "deletion": ["available": available, "kind": kind],
         ]
         if let materialRef { object["memoryMaterialRef"] = materialRef }
+        if let blobHash { object["blobHash"] = blobHash }
         return try JSONSerialization.data(withJSONObject: object)
     }
 
@@ -151,6 +202,7 @@ private final class RequestLog: @unchecked Sendable {
 
 private final class StubURLProtocol: URLProtocol {
     nonisolated(unsafe) static var handler: (@Sendable (URLRequest) throws -> (Int, Data))?
+    nonisolated(unsafe) static var headers: [String: String]?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -159,7 +211,7 @@ private final class StubURLProtocol: URLProtocol {
         do {
             guard let handler = Self.handler else { throw CentralError.invalidResponse }
             let (status, data) = try handler(request)
-            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: Self.headers)!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)

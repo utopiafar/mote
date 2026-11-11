@@ -1,3 +1,3 @@
 <resources>
-    <style name="AppTheme" parent="AppThemeDark"><item name="android:windowSplashScreenBackground">@color/mote_background</item><item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_mote</item></style>
+    <style name="AppTheme" parent="AppThemeDark"><item name="android:windowSplashScreenBackground">@color/mote_background</item><item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_mote_splash</item></style>
 </resources>

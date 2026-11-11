@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONObject
 import java.text.DateFormat
 import java.time.Instant
@@ -28,7 +29,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage(title = MoteI18n.text("去重对比诊断"))
-        status = SecondaryUi.text(body, MoteI18n.text("正在读取…"), muted = true)
+        status = SecondaryUi.text(body, MoteI18n.text("正在读取…"), muted = true).also { MoteComponents.reading(it, it.text.toString()) }
         list = SecondaryUi.column(body)
         val actions = SecondaryUi.actions(body)
         refresh = SecondaryUi.action(actions, MoteI18n.text("刷新诊断")) { load() }
@@ -41,7 +42,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
     override fun onResume() { super.onResume(); if (::list.isInitialized) load() }
     private fun load() {
         val stamp = ++revision; clear.isEnabled = false; refresh.isEnabled = false
-        list.removeAllViews(); status.text = MoteI18n.text("正在读取…")
+        list.removeAllViews(); MoteComponents.reading(status)
         executor.execute {
             val result = runCatching { imageDedupeDiagnostics().list() to Settings(applicationContext).read().imageDedupeDiagnosticsEnabled }
             runOnUiThread {
@@ -65,7 +66,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
     }
     private fun mutate(action: () -> Unit) {
         ++revision; currentDialog?.dismiss(); clear.isEnabled = false; refresh.isEnabled = false
-        status.text = MoteI18n.text("正在删除临时图片…")
+        MoteComponents.working(status, MoteI18n.text("正在删除临时图片…"))
         executor.execute {
             val result = runCatching(action)
             runOnUiThread {
@@ -78,7 +79,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
         currentDialog?.dismiss()
         val stamp = revision
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16), moteDp(8), moteDp(16), moteDp(12)) }
-        text(content, MoteI18n.text("正在读取图片对…"), 14f)
+        content.addView(MoteComponents.skeletonTile(this, MoteI18n.text("正在读取图片对…")), LinearLayout.LayoutParams(-1, moteDp(220)))
         val bitmaps = mutableListOf<Bitmap>()
         val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("原图与保留图"))
             .setView(ScrollView(this).apply { addView(content) })

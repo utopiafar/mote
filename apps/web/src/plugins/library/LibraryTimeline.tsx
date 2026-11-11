@@ -5,11 +5,12 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {ApiError,dateTime,errorMessage,type Api,type Device} from '../../api';
 import {captureDateRange,localDateInput} from '../../capture-presentation';
 import {sourceLabels} from '../../Metadata';
-import {AuthImage,Empty,ErrorNotice,Spinner} from '../../shell-components';
+import {AuthImage,Empty,ErrorNotice} from '../../shell-components';
 import {useResource} from '../../useResource';
 import {useImportReturnRead} from '../../useImportReturnRead';
 import {captureImportSnapshot,importSnapshot} from '../../import-navigation';
 import {resources} from '../../resource-cache';
+import { Loading } from '../../Loading';
 
 type Filters={api:Api;after:string;before:string;device:string;source:string;collection:string;ocr:string;appId:string};
 type TimelineSnapshot={filters:Filters;filterOpen:boolean;paging:{api:Api;scope:string;cursors:(string|undefined)[]}};
@@ -65,7 +66,7 @@ export function LibraryTimeline({api,devices,onOpen,revision,onBrowseChanged,vie
  const move=(step:number)=>{const at=new Date(current.after+'T00:00:00');at.setDate(at.getDate()+step);const day=localDateInput(at);update({after:day,before:day});};
  const single=current.after===current.before,active=[current.device,current.source,current.collection,current.ocr,current.appId].filter(Boolean).length;
  const label=single&&validDay(current.after)?new Date(current.after+'T12:00:00').toLocaleDateString(getLocale(),{month:'long',day:'numeric',weekday:'short'}):moteText('日期');
- return <>{!returnReadReady&&<p role="status">{moteText('正在读取…')}</p>}<section className="library-captures library-time-final" aria-busy={!returnReadReady||undefined} data-import-return-ready={Boolean(returnReadReady&&(!valid||page.error!==undefined||!page.loading&&data!==undefined))} aria-hidden={!returnReadReady||undefined} style={{visibility:returnReadReady?'visible':'hidden'}}>
+ return <>{!returnReadReady&&<Loading/>}<section className="library-captures library-time-final" aria-busy={!returnReadReady||undefined} data-import-return-ready={Boolean(returnReadReady&&(!valid||page.error!==undefined||!page.loading&&data!==undefined))} aria-hidden={!returnReadReady||undefined} style={{visibility:returnReadReady?'visible':'hidden'}}>
   <div className="library-list-heading">{viewNavigation}<div className="library-filter-actions"><button className="text-button" aria-expanded={filterOpen||!valid} aria-controls="library-time-filters" onClick={()=>setFilterOpen(value=>!value)}>{moteText('筛选')}{active>0?' · '+active:''}<ChevronDown size={12}/></button><button className="icon-button" aria-label={moteText('刷新记录')} disabled={page.loading||!valid} onClick={refresh}><RefreshCw size={13}/></button></div></div>
   <div className="library-time-filters" id="library-time-filters" hidden={!filterOpen&&valid}>
    <label>{moteText('设备')}<select aria-label={moteText('筛选设备')} value={current.device} onChange={event=>update({device:event.target.value})}><option value="">{moteText('全部设备')}</option>{devices.map(device=><option key={device.deviceId} value={device.deviceId}>{device.deviceName}</option>)}</select></label>
@@ -82,7 +83,7 @@ export function LibraryTimeline({api,devices,onOpen,revision,onBrowseChanged,vie
   {browseNavigation}
   {!valid&&<p role="alert">{moteText('请选择有效日期，最多查看 32 天。')}</p>}
   {failure!==undefined&&<TimelineFailure error={failure} message={failure instanceof ApiError&&failure.status===409?moteText('时间回看内容已变化，请重新读取当前范围。'):undefined} retry={failure instanceof ApiError&&failure.status===409?refresh:page.refresh}/>}
-  {page.loading&&!data&&valid&&<Spinner/>}
+  {page.loading&&!data&&valid&&<Loading/>}
   {valid&&data&&<><p className="library-list-status">{moteText('本页 {0} 项',items.length)}</p><div className="library-time-list">{[...days].map(([day,entries])=><section className="library-time-day" key={day}>{!single&&<h2>{day}</h2>}{entries.map(({item,key})=>item.type==='group'?<TimelineGroup key={reload+':'+key} api={api} scope={scope} group={item} revision={data.revision} refreshVersion={revision} onOpen={onOpen} onReload={refresh}/>:<TimelineRecord key={key} member={item} onOpen={onOpen}/>)}</section>)}</div>{!page.error&&!items.length&&<Empty icon={Clock3} title={moteText('这段时间还没有记录')}><p>{moteText('试试其他时间或设备，或检查采集端是否已开启。')}</p></Empty>}</>}
   <nav className="library-pagination" aria-label={moteText('采集记录分页')}><button className="button subtle" disabled={page.loading||cursors.length===1} onClick={()=>{onBrowseChanged?.();setConflict(undefined);setPaging({api,scope,cursors:cursors.slice(0,-1)});}}>{moteText('上一页')}</button><span>{moteText('第 {0} 页',cursors.length)}</span><button className="button subtle" disabled={page.loading||!data?.nextCursor} onClick={()=>{if(data?.nextCursor){onBrowseChanged?.();setConflict(undefined);setPaging({api,scope,cursors:[...cursors,data.nextCursor]});}}}>{moteText('下一页')}</button></nav>
  </section></>;
@@ -106,10 +107,10 @@ function TimelineGroup({api,scope,group,revision,refreshVersion,onOpen,onReload}
  const title=group.kind==='screen-session'?(group.appName||moteText('应用未知')):sourceName(group.source);
  return <details className="library-time-group" data-group-id={group.id} data-import-return-ready={Boolean(returnReadReady&&(!current.open||page.error!==undefined||mismatched||!page.loading&&data!==undefined))} open={current.open} onToggle={event=>{if(event.currentTarget.open!==current.open)setState({...current,open:event.currentTarget.open});}}>
   <summary><span className="library-time-symbol">{group.kind==='screen-session'?<Monitor size={18}/>:<FileText size={18}/>}</span><span><strong>{title}</strong><small>{group.deviceName} · {interval(group.firstAt,group.lastAt)}</small></span><span className="library-time-count">{counts(group)}{group.kind==='screen-session'&&<small>{moteText('{0} 张图片',group.imageCount)}</small>}{group.sampleCount!==null&&<small>{moteText('{0} 条记录',group.recordCount)}</small>}</span></summary>
-  {current.open&&!returnReadReady&&<p role="status">{moteText('正在读取…')}</p>}
+  {current.open&&!returnReadReady&&<Loading/>}
   {current.open&&<div className="library-time-members" aria-hidden={!returnReadReady||undefined} style={{visibility:returnReadReady?'visible':'hidden'}}>
    {(page.error!==undefined||mismatched)&&<TimelineFailure error={page.error??moteText('这组记录当前不可用，请重新读取当前范围。')} message={mismatched||page.error instanceof ApiError&&page.error.status===409?moteText('这组记录当前不可用，请重新读取当前范围。'):undefined} retry={mismatched||page.error instanceof ApiError&&page.error.status===409?onReload:page.refresh}/>}
-   {page.loading&&!data&&<Spinner/>}
+   {page.loading&&!data&&<Loading/>}
    <div className={group.kind==='screen-session'?'library-time-frames':'library-time-observations'}>{data?.items.map(member=>group.kind==='screen-session'?<button className="library-time-frame" key={member.record.id} data-reference={formatEvidenceRef('capture',member.record.id)} onClick={()=>onOpen(formatEvidenceRef('capture',member.record.id))}>{member.record.hasImage?<AuthImage api={api} capture={member.record}/>:<span className="library-time-no-image">{moteText('无图片 · 查看采样记录')}</span>}<small>{interval(member.firstAt,member.lastAt,true)}</small></button>:<button className="library-time-observation" key={member.record.id} data-reference={formatEvidenceRef('capture',member.record.id)} onClick={()=>onOpen(formatEvidenceRef('capture',member.record.id))}><time>{interval(member.firstAt,member.lastAt)}</time><span><strong>{member.record.windowTitle||member.record.appName||sourceName(member.record.source)}</strong>{member.record.textPreview&&<small>{member.record.textPreview}</small>}{member.sampleCount!==null&&<small>{moteText('{0} 个样本',member.sampleCount)}</small>}</span></button>)}</div>
    {data&&<nav className="library-time-member-pagination" aria-label={moteText('组内记录分页')}><button className="text-button" disabled={page.loading||current.cursors.length===1} onClick={()=>setState({...current,cursors:current.cursors.slice(0,-1)})}>{moteText('上一页')}</button><span>{moteText('第 {0} 页',current.cursors.length)}</span><button className="text-button" disabled={page.loading||!data.nextCursor} onClick={()=>{if(data.nextCursor)setState({...current,cursors:[...current.cursors,data.nextCursor]});}}>{moteText('下一页')}</button></nav>}
   </div>}

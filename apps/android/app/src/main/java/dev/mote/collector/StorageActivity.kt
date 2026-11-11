@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import dev.mote.collector.plugins.StorageBackupPlugin
 import dev.mote.collector.plugins.StorageStatus
+import dev.mote.collector.ui.MoteComponents
 
 /** Routes storage-location reads and migration to the storage plugin; this
  * Activity only renders the returned status and confirms the user intent. */
@@ -17,7 +18,7 @@ class StorageActivity : MoteActivity() {
     private var working = false
     private var migrationLabel: TextView? = null
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val poll = object : Runnable { override fun run() { migrationLabel?.text = RuntimeSettings.progressLabel(); handler.postDelayed(this, 500) } }
+    private val poll = object : Runnable { override fun run() { migrationLabel?.let { MoteComponents.working(it, RuntimeSettings.progressLabel()) }; handler.postDelayed(this, 500) } }
     private var configured = false
     private var localStateJob: kotlinx.coroutines.Job? = null
     private lateinit var inventory: TextView
@@ -25,22 +26,21 @@ class StorageActivity : MoteActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage(title = MoteI18n.text("本机存储位置"))
-        inventory = SecondaryUi.text(body, MoteI18n.text("正在读取本机同步状态…"), muted = true)
+        inventory = SecondaryUi.text(body, MoteI18n.text("正在读取本机同步状态…"), muted = true).also { MoteComponents.reading(it, it.text.toString()) }
         content = SecondaryUi.column(body)
         val details = SecondaryUi.disclosure(body, MoteI18n.text("迁移时会发生什么"), "storage-migration-details")
         text(details, MoteI18n.text("选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。草稿、设置及来源缓存保留在内部空间。"))
         text(details, MoteI18n.text("记录和索引为 JSON，图片保留原始格式。这些是本应用专用目录，不是共享相册；卸载应用会删除本机文件。移除存储卡后不会自动改到空目录。"))
         MoteUi.styleTree(body)
     }
-    override fun onResume() { super.onResume(); localStateJob = observeLocalState { inventory.text = it.active?.let { count -> MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", count.records, count.pending) } ?: it.imageLabel() }; handler.post(poll); refresh() }
+    override fun onResume() { super.onResume(); localStateJob = observeLocalState { if (it.active == null && it.imagesReading) MoteComponents.reading(inventory, it.imageLabel()) else inventory.text = it.active?.let { count -> MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", count.records, count.pending) } ?: it.imageLabel() }; handler.post(poll); refresh() }
     override fun onPause() { localStateJob?.cancel(); localStateJob = null; handler.removeCallbacks(poll); super.onPause() }
     private fun text(parent: LinearLayout, value: String, size: Float = 15f) {
         parent.addView(TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(8), 0, moteDp(8)); MoteUi.textColor(this, NativeColorRole.INK) })
     }
     private fun refresh() {
         if (working) return
-        working = true; content.removeAllViews(); text(content, MoteI18n.text("正在读取存储位置…"))
-        content.addView(android.widget.ProgressBar(this))
+        working = true; content.removeAllViews(); content.addView(MoteComponents.skeleton(this, MoteI18n.text("正在读取存储位置…")))
         owner.loadStorage { result ->
             working = false; if (isDestroyed) return@loadStorage
             content.removeAllViews()
@@ -80,8 +80,7 @@ class StorageActivity : MoteActivity() {
     private fun migrate(choice: QueueStorageChoice) {
         if (working || ConnectionGuard.reconfiguring()) return
         working = true; content.removeAllViews()
-        migrationLabel = SecondaryUi.text(content, MoteI18n.text("正在迁移并验证记录，请保持存储介质连接…")).apply { tag="storage-migration-progress"; accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
-        content.addView(android.widget.ProgressBar(this))
+        migrationLabel = SecondaryUi.text(content, MoteI18n.text("正在迁移并验证记录，请保持存储介质连接…")).apply { MoteComponents.working(this, text.toString()); tag="storage-migration-progress"; accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
         owner.migrate(this, choice) { result ->
             migrationLabel = null; working = false; if (isDestroyed) return@migrate
             result.onSuccess {

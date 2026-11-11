@@ -1,15 +1,28 @@
 package dev.mote.collector.ui
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Typeface
+import android.graphics.Path
+import android.graphics.drawable.AnimatedVectorDrawable
 import android.graphics.drawable.GradientDrawable
-import android.util.TypedValue
+import android.os.SystemClock
+import android.text.Layout
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.LeadingMarginSpan
+import android.text.style.ReplacementSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.LinearInterpolator
+import android.view.animation.PathInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -364,18 +377,232 @@ internal object MoteComponents {
         layoutParams = LinearLayout.LayoutParams(-2, context.moteDp(22))
     }
 
-    /** The brand mark is fixed at 28 x 28 with a 6dp corner and never follows radius tokens. */
-    fun mark(context: Context): View = TextView(context).apply {
-        text = "m"; gravity = Gravity.CENTER
-        setTextSize(TypedValue.COMPLEX_UNIT_DIP, 23f); letterSpacing = -0.065f; includeFontPadding = false
-        typeface = Typeface.create(MoteTheme.fontFamily(false), Typeface.BOLD)
-        bind(this, "mark") { view ->
-            view.background = MoteUi.shape(context, NativeColorRole.PRIMARY_BACKGROUND, MARK_RADIUS_DP, false)
-            MoteUi.textColor(view as TextView, NativeColorRole.PRIMARY_INK)
-        }
+    /** The brand mark: one stroke for the m, its last leg resting on a dot. Ink and dot follow the theme. */
+    fun mark(context: Context): View = MarkView(context).apply {
+        bind(this, "mark") { (it as MarkView).colors(NativeColorRole.INK.color(), NativeColorRole.ACCENT.color()) }
         layoutParams = LinearLayout.LayoutParams(context.moteDp(28), context.moteDp(28))
     }
-    private const val MARK_RADIUS_DP = 6
+
+    private class MarkView(context: Context) : View(context) {
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = 2.2f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        }
+        private val dot = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val path = Path().apply {
+            moveTo(5.25f, 16.5f); lineTo(5.25f, 7.5f)
+            for ((start, end) in listOf(5.25f to 16.5f, 11.75f to 12.2f)) {
+                moveTo(start, 10.75f); arcTo(start, 7.5f, start + 6.5f, 14f, 180f, 180f, false); lineTo(start + 6.5f, end)
+            }
+        }
+        fun colors(ink: Int, accent: Int) { stroke.color = ink; dot.color = accent; invalidate() }
+        override fun onDraw(canvas: Canvas) {
+            val unit = minOf(width, height) / 24f
+            canvas.save(); canvas.translate((width - unit * 24f) / 2f, (height - unit * 24f) / 2f); canvas.scale(unit, unit)
+            canvas.drawPath(path, stroke); canvas.drawCircle(18.25f, 15.85f, 1.65f, dot)
+            canvas.restore()
+        }
+    }
+
+    /** Views that stand in for content still being read; fixtures wait for them to leave. */
+    const val LOADING_TAG = "mote-loading"
+
+    /** Content is on its way: quiet rows in the shape of what replaces them. TalkBack still hears the words. */
+    fun skeleton(context: Context, label: String, rows: Int = 3): View = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL; tag = LOADING_TAG
+        contentDescription = label; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        setPadding(0, context.moteDp(12), 0, context.moteDp(12))
+        repeat(rows) { index ->
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                addView(skeletonBar(context, if (index % 2 == 0) .62f else .48f, 14))
+                addView(skeletonBar(context, .34f, 11), LinearLayout.LayoutParams(-1, -2).apply { topMargin = context.moteDp(9) })
+            }, LinearLayout.LayoutParams(-1, -2).apply { if (index > 0) topMargin = context.moteDp(20) })
+        }
+        loadingMotion(this, breathe = true)
+    }
+
+    /** An image still on its way: its own frame, quietly breathing. */
+    fun skeletonTile(context: Context, label: String): View = View(context).apply {
+        tag = LOADING_TAG; contentDescription = label
+        bind(this, "skeleton") { it.background = MoteUi.shape(context, NativeColorRole.FILL, NativeRadiusRole.CONTAINER, false) }
+        loadingMotion(this, breathe = true)
+    }
+
+    private fun skeletonBar(context: Context, fraction: Float, heightDp: Int): View = LinearLayout(context).apply {
+        weightSum = 1f
+        addView(View(context).apply { bind(this, "skeleton") { it.background = MoteUi.shape(context, NativeColorRole.FILL, NativeRadiusRole.PILL, false) } },
+            LinearLayout.LayoutParams(0, context.moteDp(heightDp), fraction))
+    }
+
+    /** A wait that owns the whole screen: the mark writes itself, then the dot settles. */
+    fun loadingMark(context: Context, label: String): View = FrameLayout(context).apply {
+        tag = LOADING_TAG; contentDescription = label; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        val mark = ImageView(context).apply { setImageResource(R.drawable.avd_mote_loading); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+        addView(mark, FrameLayout.LayoutParams(context.moteDp(40), context.moteDp(40), Gravity.CENTER))
+        if (ValueAnimator.areAnimatorsEnabled()) addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) { (mark.drawable as? AnimatedVectorDrawable)?.start() }
+            override fun onViewDetachedFromWindow(view: View) { (mark.drawable as? AnimatedVectorDrawable)?.stop() }
+        })
+        loadingMotion(this, breathe = false)
+    }
+
+    /** Nothing for the first 300 ms, then a slow breath; still when the system turns animation off. */
+    private fun loadingMotion(view: View, breathe: Boolean) {
+        if (!ValueAnimator.areAnimatorsEnabled()) return
+        view.alpha = 0f
+        val motion = AnimatorSet().apply {
+            val appear = ObjectAnimator.ofFloat(view, View.ALPHA, 0f, 1f).apply { startDelay = 300; duration = 200 }
+            if (!breathe) play(appear)
+            else playSequentially(appear, ObjectAnimator.ofFloat(view, View.ALPHA, 1f, .45f, 1f).apply {
+                duration = 1800; repeatCount = ValueAnimator.INFINITE; interpolator = AccelerateDecelerateInterpolator()
+            })
+        }
+        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(attached: View) { motion.start() }
+            override fun onViewDetachedFromWindow(detached: View) { motion.cancel() }
+        })
+    }
+
+    /** Visible content is refreshing: a thin accent line runs under the header; held full and faint when animation is off. */
+    fun loadingLine(context: Context, label: String): View = LinearLayout(context).apply {
+        tag = LOADING_TAG; contentDescription = label; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        val still = !ValueAnimator.areAnimatorsEnabled()
+        weightSum = 1f
+        val runner = View(context).apply {
+            bind(this, "loading-line") { it.background = MoteUi.shape(context, NativeColorRole.ACCENT, NativeRadiusRole.PILL, false) }
+            if (still) alpha = .45f
+        }
+        addView(runner, LinearLayout.LayoutParams(0, -1, if (still) 1f else .36f))
+        if (!still) {
+            val run = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 1400; repeatCount = ValueAnimator.INFINITE; interpolator = PathInterpolator(.45f, .05f, .25f, 1f)
+                addUpdateListener { runner.translationX = runner.width * (-1f + 3.8f * (it.animatedValue as Float)) }
+            }
+            addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(attached: View) { run.start() }
+                override fun onViewDetachedFromWindow(detached: View) { run.cancel() }
+            })
+        }
+        loadingMotion(this, breathe = false)
+    }
+
+    /** Work past this long says what it is doing and for how long. */
+    const val SLOW_WORK_MS = 5_000L
+
+    /** Words still on their way: a quiet bar holds their place. The words stay underneath for TalkBack; whatever is set next replaces the bar. */
+    fun reading(view: TextView, label: String = MoteI18n.text("正在读取…"), prefix: CharSequence = "") {
+        val current = view.text
+        val bar = (current as? Spanned)?.getSpans(0, current.length, PlaceholderSpan::class.java)?.firstOrNull()
+        if (bar != null && current.toString() == prefix.toString() + label) return
+        val span = bar ?: PlaceholderSpan(view)
+        view.text = SpannableStringBuilder(prefix).append(label, span, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (bar == null) span.motion.start()
+    }
+
+    /** Work under way: its words keep their place and a ring turns beside them until other text is set. */
+    fun working(view: TextView, words: String, prefix: CharSequence = "") {
+        val current = view.text
+        val ring = (current as? Spanned)?.getSpans(0, current.length, RingSpan::class.java)?.firstOrNull()
+        if (ring != null && current.toString() == prefix.toString() + words) return
+        val span = ring ?: RingSpan(view)
+        view.text = SpannableStringBuilder(prefix).append(words, span, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (ring == null) span.motion.start()
+    }
+
+    /**
+     * UiTask progress shown in [view]: the bar for a read ([read]) or the words with a ring for other work.
+     * Progress the work reports itself, or work past [SLOW_WORK_MS], shows its words and elapsed time beside the ring.
+     */
+    fun progress(view: TextView, read: Boolean = true, prefix: () -> CharSequence = { "" }): (String) -> Unit {
+        val started = SystemClock.elapsedRealtime()
+        var label: String? = null
+        return { message ->
+            val first = label ?: message.also { label = it }
+            when {
+                !message.startsWith(first) || SystemClock.elapsedRealtime() - started >= SLOW_WORK_MS -> working(view, message, prefix())
+                read -> reading(view, first, prefix())
+                else -> working(view, first, prefix())
+            }
+        }
+    }
+
+    /** Fades in after 300 ms, then breathes (bar) or turns (ring) while its span is in the text; still when the system turns animation off. */
+    private class SpanMotion(private val view: TextView, private val turn: Boolean) : View.OnAttachStateChangeListener {
+        lateinit var span: Any
+        var level = if (ValueAnimator.areAnimatorsEnabled()) 0f else 1f
+            private set
+        var phase = 0f
+            private set
+        private var motion: AnimatorSet? = null
+        private fun shown() = (view.text as? Spanned)?.let { it.getSpanStart(span) >= 0 } == true
+        fun start() { view.addOnAttachStateChangeListener(this); if (view.isAttachedToWindow) onViewAttachedToWindow(view) }
+        override fun onViewAttachedToWindow(attached: View) {
+            if (!shown()) { view.removeOnAttachStateChangeListener(this); return }
+            if (motion != null || !ValueAnimator.areAnimatorsEnabled()) return
+            val appear = ValueAnimator.ofFloat(level, 1f).apply {
+                if (level == 0f) startDelay = 300
+                duration = 200; addUpdateListener { level = it.animatedValue as Float; frame() }
+            }
+            val keep = if (turn) ValueAnimator.ofFloat(0f, 1f).apply {
+                startDelay = appear.startDelay; duration = 900; repeatCount = ValueAnimator.INFINITE; interpolator = LinearInterpolator()
+                addUpdateListener { phase = it.animatedValue as Float; frame() }
+            } else ValueAnimator.ofFloat(1f, .45f, 1f).apply {
+                duration = 1800; repeatCount = ValueAnimator.INFINITE; interpolator = AccelerateDecelerateInterpolator()
+                addUpdateListener { level = it.animatedValue as Float; frame() }
+            }
+            motion = AnimatorSet().apply { if (turn) playTogether(appear, keep) else playSequentially(appear, keep); start() }
+        }
+        override fun onViewDetachedFromWindow(detached: View) { motion?.cancel(); motion = null }
+        private fun frame() {
+            if (shown()) view.invalidate() else { motion?.cancel(); motion = null; view.removeOnAttachStateChangeListener(this) }
+        }
+    }
+
+    /** The bar that stands in for words still being read. */
+    private class PlaceholderSpan(view: TextView) : ReplacementSpan() {
+        val motion = SpanMotion(view, turn = false).also { it.span = this }
+        override fun getSize(paint: Paint, text: CharSequence?, start: Int, end: Int, metrics: Paint.FontMetricsInt?): Int {
+            metrics?.let { paint.getFontMetricsInt(it) }
+            return (paint.textSize * 5.5f).toInt()
+        }
+        override fun draw(canvas: Canvas, text: CharSequence?, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {
+            if (motion.level <= 0f) return
+            val height = paint.textSize * .72f
+            val middle = y + (paint.ascent() + paint.descent()) / 2f
+            val ink = paint.color; val style = paint.style; val fill = NativeColorRole.FILL.color()
+            paint.style = Paint.Style.FILL; paint.color = fill; paint.alpha = (Color.alpha(fill) * motion.level).toInt()
+            canvas.drawRoundRect(x, middle - height / 2f, x + paint.textSize * 5.5f, middle + height / 2f, height / 2f, height / 2f, paint)
+            paint.color = ink; paint.style = style
+        }
+    }
+
+    /** The ring beside words for work under way, drawn in the margin so the words themselves stay unchanged. */
+    private class RingSpan(view: TextView) : LeadingMarginSpan {
+        val motion = SpanMotion(view, turn = true).also { it.span = this }
+        private val margin = (view.textSize * 1.45f).toInt()
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+        override fun getLeadingMargin(first: Boolean) = margin
+        override fun drawLeadingMargin(canvas: Canvas, paint: Paint, x: Int, dir: Int, top: Int, baseline: Int, bottom: Int,
+            text: CharSequence, start: Int, end: Int, first: Boolean, layout: Layout?) {
+            if (!first || motion.level <= 0f || (text as? Spanned)?.getSpanStart(this) != start) return
+            val radius = paint.textSize * .34f
+            stroke.strokeWidth = paint.textSize * .11f
+            stroke.color = paint.color; stroke.alpha = (Color.alpha(paint.color) * motion.level).toInt()
+            // Beside the words wherever the alignment puts them: centred buttons keep ring and words centred together.
+            val line = layout?.getLineForOffset(start)
+            val edge = when {
+                layout == null || line == null -> x.toFloat()
+                dir > 0 -> layout.getLineLeft(line) - margin
+                else -> layout.getLineRight(line) + margin
+            }
+            val cx = edge + dir * (radius + stroke.strokeWidth)
+            val cy = baseline + (paint.ascent() + paint.descent()) / 2f
+            canvas.drawArc(cx - radius, cy - radius, cx + radius, cy + radius, motion.phase * 360f - 90f, 270f, false, stroke)
+        }
+    }
 
     /** M3-style switch: bordered track off, accent track and raised thumb on. */
     internal class MoteSwitch(context: Context, initial: Boolean, private val onChange: (Boolean) -> Unit) : View(context) {

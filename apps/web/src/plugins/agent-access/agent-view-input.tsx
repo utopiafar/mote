@@ -3,6 +3,7 @@ import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from '../../api';
 import {useResource} from '../../useResource';
 import {recordedContext,recordedReads,recordedResponse,recordedCitationIds,traceLabel,type TraceEvent,type InitialContext} from './agent-view-trace';
+import { Loading } from '../../Loading';
 
 type Scope={deviceId?:string;after?:string;before?:string};
 type Preview={kind:string;context:InitialContext;system:string;tools:string[];toolDefinitions:unknown;modelCalls:number};
@@ -26,7 +27,7 @@ export function StartupPreview({api,scope}:{api:Api;scope:Scope}){
  return <section className="agent-startup"><p className="agent-access-note">{moteText('先提供目录和能力，原文按需读取。')}</p><div className="agent-startup-box"><h2>{moteText('首次上下文预览')}</h2><p>{moteText('个人上下文目录、检索工具和当前可访问范围。')}</p><details className="agent-startup-structure"><summary>{moteText('展开示例结构')}</summary>
   <form className="agent-preview-form" onSubmit={e=>{e.preventDefault();setSubmitted(question);setRefresh(v=>v+1);}}><label>{moteText('想问的问题')}<input maxLength={4000} value={question} onChange={e=>setQuestion(e.target.value)} placeholder={moteText('输入问题，看看启动时会带上哪些记忆线索')}/></label><button className="button" type="submit">{moteText('预览首次上下文')}</button></form>
   <div className="agent-startup-rules"><p>{moteText('默认包含：系统规则、只读工具说明、当前问题、时间与设备范围，以及最多 5 条记忆线索。')}</p><p>{moteText('已有对话会按预算带入历史或工作摘要；此处预览的是没有历史的新对话。')}</p><p>{moteText('完整目录、文件正文和原图需要按需读取，原图还受独立授权控制。')}</p></div>
-  {state.loading&&<p role="status">{moteText('正在读取…')}</p>}{state.error!==undefined&&<p role="alert">{errorMessage(state.error)} <button className="text-button" onClick={()=>setRefresh(v=>v+1)}>{moteText('重试')}</button></p>}
+  {state.loading&&<Loading/>}{state.error!==undefined&&<p role="alert">{errorMessage(state.error)} <button className="text-button" onClick={()=>setRefresh(v=>v+1)}>{moteText('重试')}</button></p>}
   {state.data&&<><ContextContents context={state.data.context}/><details><summary>{moteText('可用的只读工具')} · {state.data.tools.length}</summary><div className="agent-tool-list">{state.data.tools.map(tool=><code key={tool}>{tool}</code>)}</div><pre className="feature-json">{JSON.stringify(state.data.toolDefinitions,null,2)}</pre></details><details><summary>{moteText('系统规则与工具')}</summary><pre className="feature-json">{state.data.system}</pre></details><details><summary>{moteText('查看上下文结构')}</summary><pre className="feature-json">{JSON.stringify(state.data.context,null,2)}</pre></details></>}
  </details></div></section>;
 }
@@ -44,7 +45,7 @@ export function RecordedInput({api,runId,setRunId,onOpen=()=>{}}:{api:Api;runId:
   <div className="agent-run-selection"><label>{moteText('已记录的运行')}<select value={runs.data?.items.some(run=>run.runId===runId)?runId:''} onChange={e=>choose(e.target.value)}><option value="">{moteText('运行编号')}</option>{runs.data?.items.map(run=><option key={run.runId} value={run.runId}>{run.at} · {run.runId}</option>)}</select></label><button className="button" disabled={!runId.trim()||page.loading} onClick={read}>{moteText('读取运行记录')}</button><details className="agent-run-manual"><summary>{moteText('运行编号')}</summary><label>{moteText('运行编号')}<input value={runId} onChange={e=>choose(e.target.value)}/></label></details></div>
   {runs.error!==undefined&&<p role="alert">{errorMessage(runs.error)} <button onClick={runs.refresh}>{moteText('重试')}</button></p>}
   {!current&&<p role="status">{moteText('尚未读取这次运行')}</p>}
-  {current&&page.loading&&<p role="status">{moteText('正在读取记录')}</p>}
+  {current&&page.loading&&<Loading label={moteText('正在读取记录')}/>}
   {current&&page.error!==undefined&&<p role="alert">{errorMessage(page.error)} <button onClick={page.refresh}>{moteText('重试')}</button></p>}
   {current&&page.data&&!page.loading&&!page.error&&<>
    <p className="agent-recording-status">{page.data.recording.enabled?moteText('输入追踪已开启'):moteText('输入追踪未开启')} · {moteText('仅显示已保留的事件，不能据此认定完整读取范围。')}</p>

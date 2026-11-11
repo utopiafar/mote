@@ -32,7 +32,7 @@ class ActivityStatsActivity : MoteActivity() {
     private val directorySizes = mutableMapOf<String, Long>()
     private var directorySizesAt = 0L
     @Volatile private var refreshDirectorySizes = true
-    private lateinit var progress: ProgressBar
+    private lateinit var progress: android.view.View
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage(title = MoteI18n.text("采集与存储详情"))
@@ -50,8 +50,8 @@ class ActivityStatsActivity : MoteActivity() {
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }; body.addView(warning, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(12) })
         summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(summary)
-        renderSummary(MoteI18n.text("正在读取本机统计…"))
-        progress = ProgressBar(this); body.addView(progress)
+        summary.addView(MoteComponents.skeleton(this, MoteI18n.text("正在读取本机统计…")))
+        progress = MoteComponents.loadingLine(this, MoteI18n.text("正在读取本机统计…")); body.addView(progress, android.widget.LinearLayout.LayoutParams(-1, moteDp(2)))
         operationStatus = TextView(this); body.addView(operationStatus)
         button(MoteI18n.text("刷新实际存储与统计")) { refreshDirectorySizes = true; refresh() }
         button(MoteI18n.text("设置图片保存位置")) { startActivity(Intent(this, StorageActivity::class.java)) }
@@ -60,7 +60,7 @@ class ActivityStatsActivity : MoteActivity() {
         button(MoteI18n.text("重置统计起点（保留队列和数据）")) {
             MoteDialogBuilder(this).setTitle(MoteI18n.text("重置本机统计")).setMessage(MoteI18n.text("只清空累计数字和最近事件，并记录新起算时间。不会删除队列、模型、配置或中央资料。"))
                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("重置")) { _, _ ->
-                    task.start(MoteI18n.text("正在重置统计…"), { operationStatus.text = it }, {
+                    task.start(MoteI18n.text("正在重置统计…"), MoteComponents.progress(operationStatus, read = false), {
                         Operations.ledger(applicationContext).reset(); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit()
                         LocalStateChanges.changed(immediate = true)
                     }) { result -> operationStatus.text = if (result.isSuccess) MoteI18n.text("统计起点已重置") else MoteI18n.text("重置失败，请重试"); refresh() }
@@ -187,7 +187,7 @@ class ActivityStatsActivity : MoteActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != 1 || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        task.start(MoteI18n.text("正在导出统计…"), { operationStatus.text = it }, {
+        task.start(MoteI18n.text("正在导出统计…"), MoteComponents.progress(operationStatus, read = false), {
             val output = JSONObject().put("format", "mote.activity-stats").put("version", 1).put("statistics", Operations.ledger(applicationContext).read())
                 .put("incomplete", getSharedPreferences("operation-health", 0).getBoolean("incomplete", false))
             contentResolver.openOutputStream(uri)!!.use { it.write(output.toString(2).toByteArray(Charsets.UTF_8)) }

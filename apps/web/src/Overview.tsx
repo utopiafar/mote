@@ -14,6 +14,7 @@ import {openOwnerQuestionList} from './owner-question-route';
 import {openQuestionDraft} from './open-question-draft';
 import {useWorkspaceStyle} from './workspace-final-style';
 import {useHomeController} from './plugins/home/hooks';
+import { Loading } from './Loading';
 
 export function Overview({api,status,devices,insights,onPage,onOpen}: {
  api:Api;status:Status;devices:Device[];insights:Answer[];
@@ -67,7 +68,7 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
      <p><strong>{moteText('中央已接收')}</strong>{' · '}{sample.deviceName}{' · '}<time dateTime={sample.receivedAt}>{new Date(sample.receivedAt).toLocaleString()}</time></p>
      <p>{moteText(firstData.loading?'尚未验证':complete?'原件已保留':'原件不可用')}{retained?.originalAvailable&&<> · <button className="text-button" onClick={()=>onOpen('capture:'+sample.id)}>{moteText('查看原文')}<ArrowRight size={15}/></button></>}</p>
     </div>}
-    {firstData.loading?<p role="status">{moteText('正在读取采集记录…')}</p>:firstData.error?<FirstDataFailure error={firstData.error}/>:!sample&&<p>{moteText(checked?.state==='waiting'?'准备好接住第一份记录':'最近记录')}{checked?.state!=='waiting'&&<> · {moteText('尚未验证')}</>}</p>}
+    {firstData.loading?<Loading label={moteText('正在读取采集记录…')}/>:firstData.error?<FirstDataFailure error={firstData.error}/>:!sample&&<p>{moteText(checked?.state==='waiting'?'准备好接住第一份记录':'最近记录')}{checked?.state!=='waiting'&&<> · {moteText('尚未验证')}</>}</p>}
     <details className="central-first-actions" open={!complete}><summary>{moteText('更多')}</summary><div className="button-row"><button className="button subtle" onClick={()=>firstData.refresh()} disabled={firstData.loading}>{moteText('刷新')}</button><button className="text-button" onClick={()=>onPage('archive')}>{moteText('打开资料库')}</button></div></details>
    </div>
   </section>;
@@ -95,11 +96,11 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
   {insightRuns.error!==undefined&&<p className="home-read-error" role="alert">{errorMessage(insightRuns.error)}<button className="text-button" onClick={insightRuns.refresh}>{moteText('重新读取')}</button></p>}
   <section className="home-recent"><div className="section-heading"><h2>{moteText('最近资料')}</h2><button className="text-button" onClick={()=>onPage('archive')}>{moteText('查看全部')}<ArrowRight size={13}/></button></div>
    <div className="home-material-list">{recentMaterials.map(entry=>entry.entryType==='capture'?<OriginalNoteRow key={entry.ref} entry={entry} onOpen={onOpen} home/>:<HomeMaterialRow key={entry.ref} api={api} item={entry.material as RecentMaterial} label={knownCatalog?.sources?.find(source=>source.id===entry.material.origin.sourceId)?.label} deviceName={devices.find(device=>device.deviceId===entry.material.origin.deviceId)?.deviceName} onOpen={onOpen} canRead={canReadMaterial} canPreview={canPreviewMaterial}/>)}</div>
-   {catalog.loading&&!catalog.data?<p role="status" className="home-empty">{moteText('正在读取…')}</p>:!catalog.error&&!recentMaterials.length&&<button className="text-button home-empty" onClick={()=>onPage('imports')}>{moteText('导入资料')}<ArrowRight size={13}/></button>}
+   {catalog.loading&&!catalog.data?<Loading/>:!catalog.error&&!recentMaterials.length&&<button className="text-button home-empty" onClick={()=>onPage('imports')}>{moteText('导入资料')}<ArrowRight size={13}/></button>}
   </section>
   {canConversations&&<section className="home-conversations"><div className="section-heading"><h2>{moteText('最近对话')}</h2><button className="text-button" onClick={()=>onPage('ask')}>{moteText('查看全部')}<ArrowRight size={13}/></button></div>
    {recentConversations?.map(item=><DiscoveryLink className="home-conversation-row" key={item.id} target={{pageId:'ask',href:'#/ask?conversation='+encodeURIComponent(item.id)}}><MessageCircle size={18}/><span><strong>{item.title}</strong><small>{moteText('{0} 轮对话',item.turnCount)} · <time dateTime={item.updatedAt}>{dateTime(item.updatedAt)}</time></small></span><ChevronRight size={14}/></DiscoveryLink>)}
-   {conversations.error!==undefined?<p className="home-read-error" role="alert">{errorMessage(conversations.error)}<button className="text-button" onClick={conversations.refresh}>{moteText('重新读取')}</button></p>:conversations.loading&&!conversations.data?<p role="status" className="home-empty">{moteText('正在读取…')}</p>:!recentConversations?.length&&<button className="text-button home-empty" onClick={()=>onPage('ask')}>{moteText('开启一段对话')}<ArrowRight size={13}/></button>}
+   {conversations.error!==undefined?<p className="home-read-error" role="alert">{errorMessage(conversations.error)}<button className="text-button" onClick={conversations.refresh}>{moteText('重新读取')}</button></p>:conversations.loading&&!conversations.data?<Loading/>:!recentConversations?.length&&<button className="text-button home-empty" onClick={()=>onPage('ask')}>{moteText('开启一段对话')}<ArrowRight size={13}/></button>}
   </section>}
   <details className="home-extensions"><summary>{moteText('更多上下文视图')}</summary>{foldReceipt&&firstReceipt}<FeatureHome api={api} state={state} onPage={onPage}/></details>
  </>}

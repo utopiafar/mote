@@ -94,11 +94,8 @@ struct SearchRecordsView: View {
         } else if let error = model.errorMessage {
             errorState(error)
         } else if model.loading && model.rows.isEmpty {
-            ProgressView("正在搜索…")
-                .font(MoteFont.secondary)
-                .foregroundStyle(MoteDesignTokens.muted.color)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 40)
+            MoteLoading("正在搜索…")
+                .padding(.top, 16)
         } else if model.trimmedQuery.isEmpty {
             prompt("输入关键词搜索中央原文。", detail: "可搜索记录、截图、通知与文件。")
         } else if model.showsEmptyResult {

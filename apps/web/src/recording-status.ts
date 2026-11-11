@@ -9,8 +9,7 @@ export function recordingSourceStatus(source:SourceConnection,catalog:Record<str
  return {provider,status:candidate?.category==='recordings'&&candidate.provider===provider?candidate:undefined};
 }
 
-export function recordingBindingText(status?:RecordingStatus){
- if(!status)return moteText('正在读取…');
+export function recordingBindingText(status:RecordingStatus){
  return status.connected?moteText('已保存账号绑定'):moteText('尚未绑定账号');
 }
 

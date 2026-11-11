@@ -2,6 +2,7 @@ import {uiRulesSchema,type UiRule} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import type {CollectionMode,PublicConfig,Status} from './contracts';
 import {captureAppNeedsAttention,captureAppRows,captureRowsInFilter,captureChannelKeys,type CaptureApplication,type CaptureAppFilter,type CaptureAppRow,type CaptureRuleSummary} from './app-capture-model';
+import {skeleton,showLoadingText} from './loading-ui';
 
 interface AppCaptureUiOptions {
   root:HTMLElement;defaultRoot:HTMLElement;rulesEditor:HTMLTextAreaElement;
@@ -74,7 +75,7 @@ export function createAppCaptureUi(options:AppCaptureUiOptions) {
       if(!row.installed)control.append(element('small',loaded?moteText('未在已安装列表中找到'):moteText('安装状态待读取')));
       list.append(control);
     }
-    if(!shown.length)list.append(element('p',loaded?moteText('没有符合此范围的应用'):moteText('正在读取已安装应用…'),'helper'));
+    if(!shown.length)list.append(loaded?element('p',moteText('没有符合此范围的应用'),'helper'):skeleton(list,moteText('正在读取已安装应用…')));
     hint.textContent=loadError||(parsedRules()===undefined?moteText('页面规则格式有误，请在高级规则中修正。'):moteText('{0} 个应用 · 修改后保存生效',shown.length));
   }
   function renderDetail(){
@@ -134,7 +135,7 @@ export function createAppCaptureUi(options:AppCaptureUiOptions) {
     addOverride(appId:string,mode:CollectionMode){commitSelected();overrides[appId]={...mode};selected=appId;filter='all';search.value='';options.changed();render();},
     refreshApplications():Promise<void>{
       if(loading)return loading;
-      hint.textContent=moteText('正在读取已安装应用…');loadError='';
+      showLoadingText(hint,moteText('正在读取已安装应用…'));loadError='';
       loading=options.applications().then(value=>{commitSelected();installed=value;loaded=true;render();},()=>{loadError=moteText('应用列表读取失败，可重试；已有配置仍可编辑。');render();}).finally(()=>{loading=undefined;});
       return loading;
     },

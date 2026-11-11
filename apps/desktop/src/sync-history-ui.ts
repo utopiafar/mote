@@ -3,6 +3,7 @@ import { getLocale, moteText } from '@mote/shared/i18n';
 import type { DesktopApi, Status } from './contracts';
 import type { DesktopPage } from './navigation';
 import type { SyncHistoryPage, SyncHistoryItem, SyncSource, SyncHistoryRun } from './sync-history';
+import {showSkeleton,showLoadingText} from './loading-ui';
 
 const names: Record<SyncSource, () => string> = {
   screen: () => moteText('截图'), ui_page: () => moteText('页面内容采集'), note: () => moteText('记录'), activity: () => moteText('应用活动'), notification: () => moteText('通知'), media: () => moteText('媒体状态'),
@@ -43,7 +44,7 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
   showReadFacts();
   async function refresh() {
     if (!active || refreshing) return;
-    refreshing = true; const generation = ++refreshGeneration,requestedScope=scope();if(!showReadFacts())setText('upload-error',moteText('正在读取…'));
+    refreshing = true; const generation = ++refreshGeneration,requestedScope=scope();if(!showReadFacts())showLoadingText(el('upload-error'));
     try {
       const day = (el('upload-day') as HTMLInputElement).value;
       const [page, week, rows] = await Promise.all([api.syncHistory({ day, days, offset, source, outcome }), api.syncHistory({ day, days: 7 }), api.syncHistoryPending()]);
@@ -56,7 +57,8 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
     const total = pending.reduce((sum, r) => sum + r.pending, 0), review = pending.reduce((sum, r) => sum + r.review, 0), errors = pending.reduce((sum, r) => sum + r.blocked + r.retrying, 0);
     const status = current?.sync;
     setText('upload-status-title', !current?.config.serverUrl || !current.config.tokenConfigured ? moteText('仅保存在本机') : status?.state === 'uploading' ? moteText('正在上传') : status?.state === 'error' || errors ? moteText('部分记录需要处理') : total ? moteText('本机记录等待同步') : moteText('本机积存内容已全部同步'));
-    setText('upload-status-message', status?.state==='error'?moteText('同步未完成，保留队列待重试'):status?.message ?? moteText('正在读取'));
+    const statusMessage=status?.state==='error'?moteText('同步未完成，保留队列待重试'):status?.message;
+    if(statusMessage===undefined)showLoadingText(el('upload-status-message'),moteText('正在读取'));else setText('upload-status-message',statusMessage);
     if(status?.state==='error'&&status.message)appendDiagnostic(el('upload-status-message'),status.message);
     setText('upload-status-extra', moteText('本机待传 {0} 条，含 {1} 条待隐私复核。', total, review));
     setText('upload-received', n(page.received)); setText('upload-bytes', bytes(page.bytes)); setText('upload-pending', n(total)); setText('upload-needs-attention', n(errors + review));
@@ -76,7 +78,7 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
   function resetFilters() { offset = 0; refreshGeneration++; refreshing = false; void refresh(); }
   async function receipt(id: string) {
     const generation = ++runGeneration; runId = id;
-    el('upload-receipt-body').removeAttribute('role');el('upload-receipt-body').textContent = moteText('正在读取'); if (!receiptDialog.open) receiptDialog.showModal();
+    el('upload-receipt-body').removeAttribute('role');showSkeleton(el('upload-receipt-body'),moteText('正在读取')); if (!receiptDialog.open) receiptDialog.showModal();
     try { const page = await api.syncHistoryContents({ runId: id }); if (generation !== runGeneration || !receiptDialog.open) return; const r = page.run;
       el('upload-receipt-body').innerHTML = `<h2>${escape(dateTime(r.startedAt))}</h2><p class="helper">${r.trigger === 'manual' ? moteText('手动上传') : moteText('自动上传')}</p>${badge(r.outcome)}<div class="upload-receipt-metrics"><div><span>${moteText('中央接收')}</span><strong>${n(r.received)}</strong></div><div><span>${moteText('未确认')}</span><strong>${n(r.unconfirmed)}</strong></div><div><span>${moteText('传输量')}</span><strong>${bytes(r.bytes)}</strong></div><div><span>${moteText('耗时')}</span><strong>${r.finishedAt ? moteText('{0} 秒', Math.max(0, (Date.parse(r.finishedAt) - Date.parse(r.startedAt)) / 1000).toFixed(1)) : moteText('正在上传')}</strong></div></div><h3>${moteText('包含的来源')}</h3>${r.sources.map(s => `<button class="upload-source-row" data-upload-content-source="${s}"><span>${escape(label(s))}</span><span>${moteText('查看内容 →')}</span></button>`).join('')}<button class="secondary upload-view-all" id="upload-view-all">${moteText('查看本次全部内容（{0} 条）', n(r.total))}</button><p class="upload-note">${moteText('接收确认与中央识别、索引、整理分别进行。失败重试保留原凭据；内容按当前归档保留策略读取。')}</p>${r.unconfirmed ? `<button class="primary" id="upload-receipt-retry">${moteText('重试上传')}</button>` : ''}`;
     } catch (error) { if (generation === runGeneration) showFailure('upload-receipt-body',error); }
@@ -88,7 +90,7 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
   }
   async function loadContents() {
     const generation = ++contentGeneration;
-    el('upload-content-list').removeAttribute('role');el('upload-content-preview').removeAttribute('role');setText('upload-content-list', moteText('正在读取')); setText('upload-content-preview', moteText('请选择一条记录查看内容。'));
+    el('upload-content-list').removeAttribute('role');el('upload-content-preview').removeAttribute('role');showSkeleton(el('upload-content-list'),moteText('正在读取')); setText('upload-content-preview', moteText('请选择一条记录查看内容。'));
     try {
       const page = await api.syncHistoryContents({ runId, source: contentSource, outcome: contentOutcome, offset: contentOffset });
       if (generation !== contentGeneration || !contentDialog.open) return;
@@ -104,7 +106,7 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
   async function preview() {
     if (!selected) return; const generation = ++contentGeneration, item = selected;
     el('upload-content-list').querySelectorAll<HTMLButtonElement>('button').forEach(button => { const chosen = button.dataset.uploadKey === item.key; button.classList.toggle('selected', chosen); button.setAttribute('aria-pressed', String(chosen)); });
-    el('upload-content-preview').removeAttribute('role');setText('upload-content-preview', moteText('正在读取内容…'));
+    el('upload-content-preview').removeAttribute('role');showSkeleton(el('upload-content-preview'),moteText('正在读取内容…'));
     try { const result = await api.syncHistoryContent(runId, item.key, chunkOffset); if (generation !== contentGeneration || !contentDialog.open) return;
       el('upload-content-preview').innerHTML = `<h2>${escape(item.title || label(item.source))}</h2><p class="helper">${escape(label(item.source))} · ${escape(dateTime(item.observedAt))}</p><div class="actions">${badge(result.location === 'central' ? 'received' : item.outcome)}<span class="upload-badge">${result.location === 'central' ? moteText('中央已归档') : moteText('本机待传副本')}</span></div>${result.image ? `<img class="upload-content-image" src="${escape(result.image)}" alt="${escape(moteText('当前选择的采集截图'))}">` : ''}${result.description?`<section class="upload-content-description"><h3>${moteText('资料说明')}</h3><pre class="upload-content-text">${escape(result.description)}</pre></section>`:''}<h3>${moteText('内容')}</h3>${result.metadataOnly ? `<p class="upload-note">${moteText('此记录仅同步目录信息，未上传正文或原件。')}</p>` : result.text ? `<pre class="upload-content-text">${escape(result.text)}</pre>` : `<p class="upload-note">${result.processing ? moteText('内容已接收，中央仍在处理正文。请稍后刷新。') : moteText('此记录暂无可预览正文；可查看元数据或在中央打开原件。')}</p>`}${result.nextChunkOffset !== undefined ? `<button class="secondary" id="upload-next-chunks" data-offset="${result.nextChunkOffset}">${moteText('下一页正文')}</button>` : ''}<details class="disclosure"><summary>${moteText('元数据')}</summary><pre class="upload-content-text">${escape(result.metadata)}</pre></details><div class="actions"><button class="secondary" id="upload-preview-refresh">${moteText('刷新内容')}</button>${result.captureId ? `<button class="text-button" id="upload-preview-central" data-capture="${result.captureId}">${moteText('在中央打开 →')}</button>` : ''}</div><p class="upload-note">${result.location==='central'?moteText('已上传内容从中央读取；本机副本可能已清理。正文最长预览 100000 个字符，原件及完整内容可在中央查看。'):moteText('当前显示本机副本；中央接收仍待确认。正文最多预览 100000 个字符。')}</p>`;
     } catch (error) { if (generation === contentGeneration) {showFailure('upload-content-preview',error);const retry=document.createElement('button');retry.type='button';retry.className='secondary';retry.id='upload-preview-refresh';retry.textContent=moteText('重试');el('upload-content-preview').append(retry);} }

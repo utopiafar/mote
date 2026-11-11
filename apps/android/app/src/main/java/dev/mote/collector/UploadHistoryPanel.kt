@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.moteDisclosureGlyph
 import java.time.ZoneId
 
@@ -47,7 +48,7 @@ internal class UploadHistoryPanel(private val activity: Activity, private val bo
     }
     fun load() {
         if (task.busy) return
-        task.start(MoteI18n.text("正在读取…"), { status.text = it }, { UploadHistoryModel.read(activity.applicationContext) }) { result ->
+        task.start(MoteI18n.text("正在读取…"), MoteComponents.progress(status), { UploadHistoryModel.read(activity.applicationContext) }) { result ->
             result.onSuccess { batches = it; render() }.onFailure {
                 dates.removeAllViews(); previous.isEnabled = false; next.isEnabled = false
                 status.text = MoteI18n.text("上传历史暂不可读取，请刷新重试。")

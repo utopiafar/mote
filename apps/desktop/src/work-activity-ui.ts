@@ -2,6 +2,7 @@ import type {WorkActivity,WorkActivityPage,WorkState} from '@mote/shared';
 import {getLocale,moteText} from '@mote/shared/i18n';
 import type {DesktopApi,Status} from './contracts';
 import type {DesktopPage} from './navigation';
+import {showSkeleton,showLoadingLine} from './loading-ui';
 
 const stateNames:Record<WorkState,string>={waiting:'等待开始',running:'正在进行',needs_input:'需要处理',completed:'已完成',failed:'未能完成',cancelled:'已停止',stale:'资料变化，需要重新检查',excluded:'按设置跳过'};
 const stageNames={preparing:'准备资料',planning:'组织工作',searching:'查找资料',checking:'交叉核对',organizing:'整理结果',saving:'保存成果',finished:'工作完成'};
@@ -32,7 +33,7 @@ export function createWorkActivityUi(api:DesktopApi,navigate:(page:DesktopPage)=
   async function refresh(){
     if(disposed||!active||reading)return;
     if(!connected()){clear();message.textContent=moteText('连接中央后查看资料整理、问答与记忆工作的进展。');return;}
-    const version=++generation;reading=true;message.textContent=moteText('正在读取…');list.setAttribute('aria-busy','true');el<HTMLButtonElement>('work-refresh').disabled=true;
+    const version=++generation;reading=true;if(list.childElementCount)showLoadingLine(message);else showSkeleton(message);list.setAttribute('aria-busy','true');el<HTMLButtonElement>('work-refresh').disabled=true;
     try{
       const page:WorkActivityPage=await api.workActivity({state,...(cursor!==undefined?{cursor}:{})});
       if(disposed||version!==generation||!active)return;
