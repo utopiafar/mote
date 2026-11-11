@@ -13,6 +13,8 @@ import {mcpManifest} from '../plugins/mcp-source-transport.js';
 import {googleCalendarManifest,type GoogleDependencies} from '../plugins/google-calendar-source.js';
 import {gmailManifest} from '../plugins/gmail-source.js';
 import {larkManifest,type LarkRunner} from '../plugins/lark-source.js';
+import {createLarkRunner} from './lark-cli.js';
+import {createLarkBinding,type LarkBinding} from './lark-binding.js';
 import {ConnectorError,type ConnectorContext} from './types.js';
 import type {FastifyInstance} from 'fastify';
 import {ZodError} from 'zod';
@@ -22,7 +24,7 @@ export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthC
 export {recordingManifest,RecordingConnector} from '../plugins/recording-sources.js';
 export type {RecordingProvider,RecordingAccount,RecordingMetadata} from '../plugins/recording-sources.js';
 
-export type ConnectorTestDependencies={recordings?:RecordingProvider[];google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner};
+export type ConnectorTestDependencies={recordings?:RecordingProvider[];google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner;larkBinding?:LarkBinding;fetch?:typeof fetch};
 
 function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return [
   ...recordingSourceManifests(testing?.recordings),
@@ -56,7 +58,9 @@ function connectorScope(packageId:string,instanceId:string,errorMessage:string):
  * Owner routes and OAuth callbacks reach only the one dynamic dispatcher; each
  * installed connector gets its own host scope and failure rollback. */
 export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[],dispatcherInput?:DynamicHttpDispatcher):Promise<ConnectorHostAdapter>{
-  const ctx={...context,config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
+  const directory=context.config.connectors?.directory??join(context.config.dataDir,'connectors');
+  const larkBinding=testing?.larkBinding??createLarkBinding({runner:testing?.lark??createLarkRunner(directory)});
+  const ctx={...context,bindings:{lark:larkBinding},...(testing?.fetch?{fetch:testing.fetch}:{}),config:{...context.config,connectors:{directory,...context.config.connectors}}};
   const removeMemory=installRecordingSources(context.memoryStrategies);
   if(removeMemory)app.addHook('onClose',async()=>removeMemory());
   const manifests=[...builtins(testing),...additionalManifests];
@@ -69,7 +73,7 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   });
   dispatcher.attach(app);
   const adapter=createConnectorHostAdapter({
-    manifests,context:ctx,dispatcher,statusScope:status.scope,
+    manifests,context:ctx,dispatcher,statusScope:status.scope,bindings:{lark:larkBinding},
     required:additionalManifests.map(manifest=>manifest.id),
     scopeFor:(manifest,instanceId)=>connectorScope(manifest.id,instanceId,`Connector ${instanceId} scope disposal failed`),
     stateFor:scope=>{
@@ -88,7 +92,7 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   catch(error){try{await closeHost();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host startup and disposal failed',{cause:error});}throw error;}
   return Object.freeze({
     start:adapter.start,inventory:adapter.inventory,contributions:adapter.contributions,configureSyncInterval:adapter.configureSyncInterval,
-    install:adapter.install,restart:adapter.restart,stop:adapter.stop,close:closeHost,
+    install:adapter.install,known:adapter.known,restart:adapter.restart,stop:adapter.stop,executeAction:adapter.executeAction,actionProviders:adapter.actionProviders,supportsBinding:adapter.supportsBinding,close:closeHost,
   });
 }
 

@@ -142,9 +142,9 @@ const googleCalendarPlugin: SourcePlugin = {
   },
   setup: {
     id: 'google',
-    render: ({ api, catalog, refresh }) => <GoogleCalendarSettings api={api} status={catalog?.google as { configured: boolean; connected: boolean; state: string; account?: string } | undefined} refresh={refresh}/>,
+    render: ({ api, catalog, refresh }) => <GoogleCalendarSettings api={api} status={catalog?.google as { configured: boolean; connected: boolean; writeConnected?: boolean; state: string; account?: string } | undefined} refresh={refresh}/>,
   },
-  settings: ({ api, catalog, refresh }) => <GoogleCalendarSettings api={api} status={catalog?.google as { configured: boolean; connected: boolean; state: string; account?: string } | undefined} refresh={refresh}/>,
+  settings: ({ api, catalog, refresh }) => <GoogleCalendarSettings api={api} status={catalog?.google as { configured: boolean; connected: boolean; writeConnected?: boolean; state: string; account?: string } | undefined} refresh={refresh}/>,
 };
 
 const larkPlugin: SourcePlugin = {

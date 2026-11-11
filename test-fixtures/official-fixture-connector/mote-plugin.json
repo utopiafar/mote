@@ -23,13 +23,55 @@
     }
   ],
   "capabilities": [
-    "source.connector"
+    "source.connector",
+    "calendar.manage",
+    "message.send"
+  ],
+  "actionCapabilities": [
+    {
+      "id": "calendar.manage",
+      "version": 1,
+      "inputSchema": "calendar.event.v1",
+      "outputSchema": "calendar.receipt.v1",
+      "operations": [
+        "calendar.create",
+        "calendar.update",
+        "calendar.cancel",
+        "calendar.complete"
+      ],
+      "executionLocation": "central-connector",
+      "risk": "calendar-write",
+      "constraints": {
+        "writableCalendar": true,
+        "completeEvent": true,
+        "currentEvidence": true,
+        "unexpiredCreatesAndUpdates": true,
+        "noParticipants": true,
+        "existingMoteEventsOnly": true,
+        "completionInMoteOnly": true
+      }
+    },
+    {
+      "id": "message.send",
+      "version": 1,
+      "inputSchema": "message.send.v1",
+      "outputSchema": "message.receipt.v1",
+      "operations": [
+        "message.send"
+      ],
+      "executionLocation": "central-connector",
+      "risk": "message-send",
+      "constraints": {
+        "confirmsEveryMessage": true,
+        "currentEvidence": true
+      }
+    }
   ],
   "configuration": [],
   "dependencies": [],
   "access": [
     "Owner-configured fixture source intake only",
-    "No remote network, credentials or model calls"
+    "Host-dispatched local fixture receipts; no remote network, credentials or model calls"
   ],
   "sourceCatalog": [
     {

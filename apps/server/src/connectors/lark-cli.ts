@@ -12,6 +12,9 @@ export type LarkCommand =
   | {kind:'complete';deviceCode:string}
   | {kind:'calendars';pageToken?:string}
   | {kind:'events';calendarId:string;start:number;end:number}
+  | {kind:'calendar-event-create';calendarId:string;data:Record<string,unknown>}
+  | {kind:'calendar-event-update';calendarId:string;eventId:string;data:Record<string,unknown>}
+  | {kind:'calendar-event-delete';calendarId:string;eventId:string}
   | {kind:'document';document:string}
   | {kind:'documents-search';action:'created'|'edited'|'opened';start:string;end:string;pageToken?:string}
   | {kind:'folder-list';folder:string;pageToken?:string}
@@ -20,10 +23,14 @@ export type LarkCommand =
   | {kind:'minutes-search';start:string;end:string;pageToken?:string}
   | {kind:'minutes-metadata';id:string}
   | {kind:'minutes-transcript';id:string}
-  | {kind:'minutes-media';id:string;output:string};
+  | {kind:'minutes-media';id:string;output:string}
+  | {kind:'im-chats';pageToken?:string;pageSize?:number}
+  | {kind:'im-messages';chatId:string;startTime?:string;endTime?:string;pageToken?:string;pageSize?:number}
+  | {kind:'im-send';chatId:string;text:string;uuid?:string};
 export type LarkRunner=(command:LarkCommand,options?:{signal?:AbortSignal;onOutput?:(chunk:string)=>void})=>Promise<string>;
 
 /** Only fixed operations are executable. Neither the browser nor an agent supplies argv. */
+const imId=(value:string)=>/^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(value)?value:(()=>{throw new ConnectorError('lark_command_invalid');})();
 export function larkArguments(command:LarkCommand):string[]{
   switch(command.kind){
     case 'version':return ['--version'];
@@ -34,6 +41,11 @@ export function larkArguments(command:LarkCommand):string[]{
     case 'complete':return ['auth','login','--device-code',command.deviceCode,'--json'];
     case 'calendars':return ['calendar','calendars','list','--as','user','--format','json','--params',JSON.stringify({page_size:100,...(command.pageToken?{page_token:command.pageToken}:{})})];
     case 'events':return ['calendar','events','instance_view','--as','user','--format','json','--params',JSON.stringify({calendar_id:command.calendarId,start_time:String(command.start),end_time:String(command.end)})];
+    // Event writes use one fixed path per operation. Callers never supply a
+    // method, API root or arbitrary path; the host action dispatcher owns them.
+    case 'calendar-event-create':return ['api','POST',`/open-apis/calendar/v4/calendars/${encodeURIComponent(command.calendarId)}/events`,'--data',JSON.stringify(command.data),'--as','user','--format','json'];
+    case 'calendar-event-update':return ['api','PATCH',`/open-apis/calendar/v4/calendars/${encodeURIComponent(command.calendarId)}/events/${encodeURIComponent(command.eventId)}`,'--data',JSON.stringify(command.data),'--as','user','--format','json'];
+    case 'calendar-event-delete':return ['api','DELETE',`/open-apis/calendar/v4/calendars/${encodeURIComponent(command.calendarId)}/events/${encodeURIComponent(command.eventId)}`,'--as','user','--format','json'];
     case 'document':return ['docs','+fetch','--api-version','v2','--as','user','--doc',command.document,'--doc-format','markdown','--format','json'];
     case 'documents-search':return ['drive','+search','--query','','--doc-types','docx,wiki','--page-size','20',...(command.action==='created'?['--created-by-me']:[]),`--${command.action}-since`,command.start,`--${command.action}-until`,command.end,...(command.pageToken?['--page-token',command.pageToken]:[]),'--as','user','--format','json'];
     case 'folder-list':return ['drive','files','list','--params',JSON.stringify({folder_token:command.folder,page_size:200,...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
@@ -45,6 +57,11 @@ export function larkArguments(command:LarkCommand):string[]{
     // The same read endpoint preserves typed errors and the original text.
     case 'minutes-transcript':return ['api','GET',`/open-apis/minutes/v1/minutes/${encodeURIComponent(command.id)}/artifacts`,'--as','user','--format','json'];
     case 'minutes-media':return ['minutes','+download','--minute-tokens',command.id,'--output',command.output,'--as','user','--format','json'];
+    // IM reads and one send path stay on raw API commands with fixed query and
+    // body shapes. No caller supplies a path, method or arbitrary argument.
+    case 'im-chats':return ['api','GET','/open-apis/im/v1/chats','--params',JSON.stringify({user_id_type:'open_id',sort_type:'ByActiveTimeDesc',page_size:command.pageSize??100,types:'group,p2p',...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
+    case 'im-messages':return ['api','GET','/open-apis/im/v1/messages','--params',JSON.stringify({container_id_type:'chat',container_id:imId(command.chatId),...(command.startTime?{start_time:command.startTime}:{}),...(command.endTime?{end_time:command.endTime}:{}),sort_type:'ByCreateTimeAsc',page_size:command.pageSize??50,...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
+    case 'im-send':return ['api','POST','/open-apis/im/v1/messages','--params',JSON.stringify({receive_id_type:'chat_id'}),'--data',JSON.stringify({receive_id:imId(command.chatId),msg_type:'text',content:JSON.stringify({text:command.text}),...(command.uuid?{uuid:command.uuid}:{})}),'--as','user','--format','json'];
     case 'install':throw new ConnectorError('lark_command_invalid');
   }
 }

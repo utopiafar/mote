@@ -58,6 +58,9 @@ import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import type {LifecycleExtension,LifecycleSettings } from './memory-lifecycle.js';
 import type {WorkingMemory} from './working-memory.js';
 import {openPluginControlRoot} from './plugin-center.js';
+import {OutboundExportHost} from './plugins/outbound-export-host.js';
+import {DeveloperAccessError,DeveloperAccessHost} from './developer-access.js';
+import {developerAccessFeature} from './features/developer-access.js';
 import {registerPluginControlHttp} from './plugins/plugin-control-http.js';
 import type { ModelAgentFactory } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
@@ -135,12 +138,23 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,{conversations}=await prepareConversations({bootstrap,store,resources,backendContext,modelAuthorizationHost});
   const {pluginCenter,close:closePluginCenter}=openPluginControlRoot({store,executor,directory:join(config.dataDir,'plugins','packages')});
+  // Outbound packages never write through their own code. This host owns the
+  // cursor, sandbox, sensitive-source filter and hand-edit conflict ledger.
+  pluginCenter.outboundHost=new OutboundExportHost({store,materials,repoRoot:repositoryRoot,dataDir:config.dataDir,
+    sourceKind:sourceId=>{try{return sources.getSource(sourceId).kind;}catch{return undefined;}}});
+  pluginCenter.resumeOutboundInstances();
   resources.beforeClose(closePluginCenter);
   // Binding control is prepared by memoryRuntime below, but its disposer keeps
   // its original slot: released after active queries, connectors and the agent.
   resources.defer(()=>memoryBindingControl.close());
   const archivedFiles=bootstrap.vault.archivedFiles;
   const connections=authorizationPlatform.assembly.connections!;
+  // Host surface for AI access, not an installable package. Material publication
+  // writes the stable event journal inside its transaction; delivery is separate.
+  const developerAccess=new DeveloperAccessHost({store,connections});
+  await developerAccess.init();
+  materials.onPublished=event=>developerAccess.recordPublication(event);
+  resources.defer(()=>developerAccess.close());
   const pins=new WeakMap<FastifyRequest,RequestAuthority>();
   let liveRequestPins=0;
   const bindRequestPin=(req:FastifyRequest)=>authorizationPlatform.bindRequest({authorization:req.headers.authorization,method:req.method,route:req.routeOptions.url??'unknown',params:req.params as {id?:string},origin:req.headers.origin});
@@ -340,6 +354,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     diagnostics.record('request.failed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url),category:failure.category,reason:failure.reason,statusCode:failure.status},failure.status>=500?'error':'warn');
     if(error instanceof ProviderFailure){if(error.details.retryAfterMs!==undefined)reply.header('Retry-After',String(Math.ceil(error.details.retryAfterMs/1000)));return reply.code(failure.status).send({error:failure.category,message:failure.message,reason:failure.reason,recovery:error.details.category==='blocked'?'needs_action':error.details.category==='transient'?'auto_retry':'permanent',retryAfterMs:error.details.retryAfterMs,requestId:req.id});}
     if(error instanceof ConnectionError)return reply.code(error.statusCode).send({error:error.code,message:error.publicMessage,requestId:req.id});
+    if(error instanceof DeveloperAccessError)return reply.code(error.statusCode).send({error:error.code,message:error.publicMessage,requestId:req.id});
     if(error instanceof ModelCatalogError)return reply.code(error.statusCode).send({error:'model_catalog_unavailable',message:error.message,requestId:req.id});
     if(error instanceof ModelSettingsError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});
     if(error instanceof ConfigServiceError)return reply.code(error.statusCode).send({error:error.code,message:error.code==='config_conflict'?moteText('配置已发生变化，请刷新后重试。'):moteText('配置未能应用，请检查配置状态后重试。'),requestId:req.id});
@@ -353,6 +368,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
+  // Built-in Google/Lark calendar writes stay deployment connectors: they reuse
+  // the same Central target, host dispatch and receipt path, and never appear in
+  // the installable official catalog.
+  pluginCenter.builtinActions={providers:()=>connectors.actionProviders(),execute:({connectorId,request})=>connectors.executeAction(connectorId,request)};
   // Bounded transport batch with independent durable acknowledgements. Validate the
   // entire envelope and credential scope before writing any member of the batch.
 
@@ -470,7 +489,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     connectionIdentity,credential,assertRequestActive,sourceOwner,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},
     notesCapture:{authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake},
     agentFeatures,archiveReader,
-    archivedFiles,maintenanceWorker,store,modelSettings,connections,modelAuthorizationHost,
+    archivedFiles,maintenanceWorker,store,modelSettings,connections,developerAccess,modelAuthorizationHost,
     jobId,mediaRange,
   });
   const featureRoutes=new FeatureRoutes(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
@@ -486,6 +505,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.files'))routes.push(withAgentTools(filesFeature({withMediaOwnerBatch,withMediaOwnerIntent,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization:authorize=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlayback}})));
   if(selected('mote.actions'))routes.push(domain('mote.actions'));
   if(selected('mote.connections'))routes.push(withAgentTools(connectionsFeature({config,connections,connectionIdentity,serverVersion})));
+  if(selected('mote.connections'))routes.push(developerAccessFeature({host:developerAccess,credential,connectionIdentity}));
   if(selected('mote.system'))routes.push(healthFeature(serverVersion));
   if(selected('mote.storage'))routes.push(domain('mote.storage'));
   if(selected('mote.capture'))routes.push(withAgentTools(captureFeature({store,connections,credential,assertRequestActive,diagnostics,evidenceReader,files,ingress,executor,maintenanceWorker})));
@@ -513,7 +533,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureRoutes,insightServices,materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working,activity,activityServices,conversations,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
+  return {app,bootstrap,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureRoutes,insightServices,materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,insightRuns,lifecycle,working,activity,activityServices,conversations,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();

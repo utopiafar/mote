@@ -1,4 +1,4 @@
-import {calendarPluginCapabilitySchema,type ActionPluginProvider,type PluginSourceContribution} from '@mote/shared';
+import {actionPluginCapabilitySchema,type ActionPluginProvider,type CentralConnectorActionTarget,type ConnectorActionExecution,type ConnectorActionReceipt,type PluginSourceContribution} from '@mote/shared';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
@@ -15,17 +15,41 @@ import type {PluginLifecycle,ServiceBinding,ScopeIdentity} from '@mote/plugin-ap
 import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext} from '@mote/plugin-host';
 import {centralServices} from './plugins/central-contracts.js';
 import {officialPluginCatalog} from './official-plugin-catalog.js';
-import {assertServicePackageSupported,connectorFromModule,loadServicePackageModule,servicePackageSurfaces} from './plugins/service-plugin-loader.js';
+import {assertServicePackageSupported,connectorFromModule,isOutboundExportCapability,loadServicePackageModule,outboundExportFromModule,servicePackageSurfaces,type OutboundExportDescriptor} from './plugins/service-plugin-loader.js';
+import {resolvePluginSecretReference} from './plugins/secret-reference.js';
+import type {ConnectorActivation} from './connectors/types.js';
 import type {ConnectorManifest} from './connectors/registry.js';
+import type {OutboundExportStatus} from './plugins/outbound-export-host.js';
 
 /** Hot connector host used by service-runtime ingress packages. */
 export type PluginConnectorHost={
-  install(manifest:ConnectorManifest):Promise<void>;
+  install(manifest:ConnectorManifest,activation?:ConnectorActivation):Promise<void>;
+  known?(id:string):boolean;
+  supportsBinding?(key:string):boolean;
   stop(id:string):Promise<void>;
-  restart(id:string):Promise<void>;
+  restart(id:string,activation?:ConnectorActivation):Promise<void>;
   inventory():readonly {id:string;active:boolean}[];
+  executeAction?(id:string,request:ConnectorActionExecution):Promise<ConnectorActionReceipt>;
 };
 
+/** Central-owned outbound export host. A package contributes a presentation
+ * descriptor only; this seam owns the cursor, target sandbox, sensitive-source
+ * policy and hand-edit conflict state for every enabled instance. */
+export type PluginOutboundHost={
+  activate(instanceId:string,input:{descriptor:OutboundExportDescriptor;configuration:Record<string,string|number|boolean>}):Promise<void>;
+  deactivate(instanceId:string):Promise<void>;
+  status(instanceId:string,configuration?:Record<string,string|number|boolean>):OutboundExportStatus;
+  inspectTarget(target:string):{ok:true;root:string;exists:boolean}|{ok:false;reason:string};
+  sync(instanceId:string,configuration?:Record<string,string|number|boolean>):Promise<OutboundExportStatus>;
+  close():Promise<void>;
+};
+
+/** Built-in connectors (Google Calendar, Lark Calendar) expose write
+ * declarations only after their own write scope is authorized. They reuse the
+ * same Central target, host dispatch and receipts as installed packages; they
+ * are not catalog entries and cannot be installed or uninstalled. */
+export type BuiltinActionProvider={connectorId:string;provider:ActionPluginProvider};
+export type BuiltinActionDispatch=(input:{connectorId:string;target:CentralConnectorActionTarget;request:ConnectorActionExecution})=>Promise<ConnectorActionReceipt>;
 const configurationSchema=z.record(z.union([z.string(),z.number().finite(),z.boolean()]));
 const instanceSchema=z.object({name:z.string().trim().min(1).max(160),scope:z.literal('default'),configuration:configurationSchema,expectedRevision:z.number().int().positive(),operationId:z.string().uuid()}).strict();
 export type StoredPackage=BuildPackageRecord;
@@ -56,9 +80,16 @@ export class PluginCenter {
   retired?:(instanceId:string)=>void;
   runtimeFactory?:(pkg:StoredPackage,instance:PluginInstanceView)=>PluginRuntime;
   configurationAllowed?:(field:PluginManifest['configuration'][number],value:string|number|boolean)=>boolean;
+  resolveSecretReference?:(reference:string)=>string|undefined;
   probe?:(instanceId:string,signal:AbortSignal)=>Promise<{capabilities:PluginCapability[];issues:string[]}>;
   /** Bound after connector assembly starts; Memory-only fixtures may omit it. */
   connectorHost?:PluginConnectorHost;
+  /** Bound after the Central outbound runtime is assembled. Only installed,
+   * checked and enabled outbound instances reach this seam. */
+  outboundHost?:PluginOutboundHost;
+  /** Bound after built-in connectors start. Selecting or authorizing one never
+   * executes; the same host dispatcher revalidates it on every action. */
+  builtinActions?:{providers:()=>readonly BuiltinActionProvider[];execute:BuiltinActionDispatch};
   private readonly activeConnectors=new Map<string,{connectorId:string;instanceId:string}>();
   constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;assertCurrent?:()=>void;hostDependencies?:readonly TrustedHostDependency[]}){
     this.control=new PluginControlStore(store);
@@ -76,11 +107,11 @@ export class PluginCenter {
       execute:async(step,signal)=>{
         const id=String(step.input.instanceId),pkg=this.packageForInstance(id);
         this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
-        const actions=(pkg.manifest.actionCapabilities??[]).map(value=>{calendarPluginCapabilitySchema.parse(value);return {id:value.id,state:'verified' as const,reason:'Host contract verified; device permission and owner execution grant are still required'};});
+        const actions=(pkg.manifest.actionCapabilities??[]).map(value=>{const capability=actionPluginCapabilitySchema.parse(value);return {id:capability.id,state:'verified' as const,reason:capability.executionLocation==='central-connector'?'Host connector contract verified; owner execution grant is still required':'Host contract verified; device permission and owner execution grant are still required'};});
         const health=pkg.manifest.runtime==='service'
-          ?await this.probeServicePackage(pkg,signal)
+          ?await this.probeServicePackage(pkg,id,signal)
           :pkg.manifest.capabilities.every(value=>value==='calendar.manage')?{capabilities:[],issues:[]}:healthSchema.parse(this.probe?await this.probe(id,signal):await this.runtime(id).call('health',{namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}},signal));
-        signal.throwIfAborted();return {...health,capabilities:[...health.capabilities.filter(value=>value.id!=='calendar.manage'),...actions]};
+        signal.throwIfAborted();const actionIds=new Set<string>(actions.map(value=>value.id));return {...health,capabilities:[...health.capabilities.filter(value=>!actionIds.has(value.id)),...actions]};
       },
       commit:(step,result)=>{const instance=this.instance(String(step.input.instanceId)),health=healthSchema.parse(result),pkg=this.package(instance.view.packageId);
         instance.view.capabilities=pkg.manifest.capabilities.map(id=>health.capabilities.find(capability=>capability.id===id)??{id,state:'unknown',reason:'The runtime did not verify this capability'});
@@ -131,7 +162,7 @@ export class PluginCenter {
   hostCapabilities(){return {
     memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
     connectorService:{runtime:'service',factoryExports:['connector','default'],surfaces:['ingress'],supportedCapabilities:['source.connector']},
-    processingService:{runtime:'service',factoryExports:['backendPlugin','default'],surfaces:['processing'],supportedCapabilities:['processing.pack']},
+    processingService:{runtime:'service',factoryExports:['backendPlugin','outboundExport','default'],surfaces:['processing'],supportedCapabilities:['processing.pack','outbound.export']},
   };}
   private sourceContributions(packages:StoredPackage[],instances:PluginInstanceView[]):PluginSourceContribution[]{
     const result:PluginSourceContribution[]=[];
@@ -154,17 +185,34 @@ export class PluginCenter {
     if(!record||record.retired)return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};
     return {...view,issues:[...view.issues,...references],allowedActions:pending?[]:[...(!view.desired&&!references.length?['configure' as const,'check' as const]:[]),...(view.desired?['disable' as const]:!view.issues.length&&view.capabilities.every(value=>value.state!=='unknown')&&view.capabilities.some(value=>value.state==='verified')?['enable' as const]:[])]};
   }
-  /** Only installed, checked, enabled instances supply execution declarations. */
+  /** Only installed, checked, enabled instances and built-in cloud connectors
+   * with an explicit write scope supply execution declarations. */
   actionProviders():ActionPluginProvider[]{
     if(this.closed)return [];
+    return [...this.installedActionProviders(),...(this.builtinActions?.providers()??[]).map(value=>value.provider)];
+  }
+  private installedActionProviders():ActionPluginProvider[]{
     return this.view().instances.flatMap(instance=>{
       if(!instance.desired||instance.observed!=='ready'||instance.issues.length)return [];
       const pkg=this.packageForInstance(instance.id);if(pkg.view.state!=='installed')return [];
       try{this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);}catch{return [];}
-      return (pkg.manifest.actionCapabilities??[]).filter(capability=>calendarPluginCapabilitySchema.safeParse(capability).success&&instance.capabilities.some(value=>value.id===capability.id&&value.state==='verified')).map(capability=>({
-        identity:{packageId:pkg.view.id,releaseDigest:pkg.view.source.digest,instanceId:instance.id,instanceRevision:instance.revision,capabilityDigest:sha256(JSON.stringify(calendarPluginCapabilitySchema.parse(capability)))},name:instance.name,capability,
+      return (pkg.manifest.actionCapabilities??[]).filter(capability=>actionPluginCapabilitySchema.safeParse(capability).success&&instance.capabilities.some(value=>value.id===capability.id&&value.state==='verified')).map(capability=>({
+        identity:{packageId:pkg.view.id,releaseDigest:pkg.view.source.digest,instanceId:instance.id,instanceRevision:instance.revision,capabilityDigest:sha256(JSON.stringify(actionPluginCapabilitySchema.parse(capability)))},name:instance.name,capability,
       }));
     });
+  }
+  /** Host dispatch for a confirmed Central connector action. The provider,
+   * enabled instance and capability are revalidated here; the connector only
+   * adapts its source-specific write and never decides authority or idempotency. */
+  async executeConnectorAction(input:{target:CentralConnectorActionTarget;request:ConnectorActionExecution}):Promise<ConnectorActionReceipt>{
+    if(this.closed)throw new StoreError('Plugin Center is closed',503);
+    const target=input.target,builtin=this.builtinActions?.providers().find(value=>value.provider.identity.packageId===target.packageId&&value.provider.identity.instanceId===target.instanceId&&value.provider.identity.instanceRevision===target.instanceRevision&&value.provider.capability.id===target.capabilityId&&value.provider.capability.version===target.capabilityVersion&&value.provider.calendarId===target.calendarId&&value.provider.capability.executionLocation==='central-connector');
+    if(builtin)return this.builtinActions!.execute({connectorId:builtin.connectorId,target,request:input.request});
+    const provider=this.installedActionProviders().find(value=>value.identity.packageId===target.packageId&&value.identity.instanceId===target.instanceId&&value.identity.instanceRevision===target.instanceRevision&&value.capability.id===target.capabilityId&&value.capability.version===target.capabilityVersion&&value.capability.executionLocation==='central-connector');
+    if(!provider)throw new StoreError('The Central connector action provider is unavailable',409);
+    const owned=this.activeConnectors.get(provider.identity.instanceId);
+    if(!owned||!this.connectorHost?.executeAction)throw new StoreError('The Central connector instance is unavailable',503);
+    return this.connectorHost.executeAction(owned.connectorId,{capability:{id:provider.capability.id,version:provider.capability.version},operationId:input.request.operationId,input:input.request.input});
   }
   /** Host-issued data namespace, distinct from the default domain and each activation. */
   instanceIdentity(id:string){const pkg=this.packageForInstance(id);if(!pkg.installationId)throw new StoreError('Plugin installation identity is unavailable',409);return Object.freeze({packageId:pkg.manifest.id,installationId:pkg.installationId,instanceId:id});}
@@ -183,13 +231,29 @@ export class PluginCenter {
       this.executor.enqueue(input.operationId,'plugin.install',{packageId:id,previewId:input.previewId},{id:'plugin-install:'+input.operationId});
     });return this.view();
   }
+  private secretValue(value:string){return (this.resolveSecretReference??resolvePluginSecretReference)(value);}
   private validateConfiguration(manifest:PluginManifest,configuration:Record<string,string|number|boolean>,complete=false){
     if(Object.keys(configuration).some(key=>!manifest.configuration.some(field=>field.id===key)))throw new StoreError('Unknown plugin configuration field');
     for(const field of manifest.configuration){const value=configuration[field.id];if(value===undefined||value===''){if(complete&&field.required)throw new StoreError('A required plugin configuration value is missing');continue;}
       if(field.type==='number'?typeof value!=='number':field.type==='boolean'?typeof value!=='boolean':typeof value!=='string')throw new StoreError('Invalid plugin configuration value');
       if(field.type==='select'&&!field.options?.some(option=>option.value===value))throw new StoreError('Invalid plugin configuration option');
-      if(['model-profile','secret-reference'].includes(field.type)&&!this.configurationAllowed?.(field,value))throw new StoreError('The referenced model profile or secret is unavailable');
+      if(field.type==='model-profile'&&!this.configurationAllowed?.(field,value))throw new StoreError('The referenced model profile or secret is unavailable');
+      if(field.type==='secret-reference'&&!this.configurationAllowed?.(field,value)&&!(manifest.runtime==='service'&&this.secretValue(String(value))!==undefined))throw new StoreError('The referenced model profile or secret is unavailable');
     }
+  }
+  /** One installed instance's non-secret configuration plus host-resolved
+   * credentials. Only the reference is persisted; the value is handed to the
+   * package at activation and never written back. */
+  private connectorActivation(id:string):ConnectorActivation{
+    const pkg=this.packageForInstance(id),view=this.instance(id).view,secrets:Record<string,string>={};
+    const configuration=Object.fromEntries(Object.entries(view.configuration).filter(([key])=>pkg.manifest.configuration.find(field=>field.id===key)?.type!=='secret-reference'));
+    for(const field of pkg.manifest.configuration)if(field.type==='secret-reference'){
+      const reference=view.configuration[field.id];
+      const secret=typeof reference==='string'?this.secretValue(reference):undefined;
+      if(secret===undefined){if(field.required)throw new StoreError('The referenced secret is unavailable',409);continue;}
+      secrets[field.id]=secret;
+    }
+    return {configuration,secrets};
   }
   configure(id:string|undefined,raw:unknown){const input=instanceSchema.extend({packageId:z.string().min(1).optional()}).parse(raw);if(!id&&!input.packageId)throw new StoreError('Choose an installed plugin package');let resultId=id;
     const applied=this.command(id?'configure:'+id:'create',input,()=>id?this.instance(id).view.revision:this.revision(),()=>{
@@ -223,6 +287,42 @@ export class PluginCenter {
       }
     });return this.instanceView(id);
   }
+  /** Owner inspection of the Central export cursor and hand-edit conflicts. */
+  outboundStatus(id:string){
+    if(this.closed)throw new StoreError('Plugin Center is closed',503);
+    const instance=this.outboundInstance(id);
+    if(!this.outboundHost)throw new StoreError('Outbound export host is unavailable',503);
+    return this.outboundHost.status(id,instance.view.configuration);
+  }
+  /** Explicit export/retry is an owner command. It never starts an instance and
+   * never advances the revision of its stored configuration. */
+  outboundSync(id:string,raw:unknown){
+    if(this.closed)throw new StoreError('Plugin Center is closed',503);
+    const input=memoryControlCommandSchema.parse(raw),instance=this.outboundInstance(id);
+    if(input.expectedRevision!==instance.view.revision)throw new StoreError('Plugin instance changed; refresh and retry',409);
+    if(!instance.view.desired)throw new StoreError('Enable the outbound instance before exporting',409);
+    if(!instance.view.capabilities.some(value=>isOutboundExportCapability(value.id)&&value.state==='verified'))
+      throw new StoreError('Verify the outbound capability before exporting',409);
+    if(!this.outboundHost)throw new StoreError('Outbound export host is unavailable',503);
+    return this.outboundHost.sync(id,instance.view.configuration);
+  }
+  private outboundInstance(id:string){
+    const instance=this.instance(id),pkg=this.package(instance.view.packageId);
+    if(!pkg.manifest.capabilities.some(isOutboundExportCapability))throw new StoreError('This instance has no outbound export capability',409);
+    return instance;
+  }
+  /** Trusted startup reattaches enabled outbound exports without touching
+   * connector activation, Memory workers or source recipes. */
+  resumeOutboundInstances(){
+    if(this.closed)return;
+    for(const instance of this.view().instances){
+      if(!instance.desired)continue;
+      const pkg=this.package(instance.packageId),surfaces=servicePackageSurfaces(pkg.manifest);
+      if(pkg.manifest.runtime!=='service'||surfaces.ingress||!surfaces.processing||!pkg.manifest.capabilities.some(isOutboundExportCapability))continue;
+      if(!instance.capabilities.some(value=>isOutboundExportCapability(value.id)&&value.state==='verified'))continue;
+      void this.activateServiceInstance(instance.id).catch(()=>{});
+    }
+  }
   uninstall(id:string,raw:unknown){const input=memoryControlCommandSchema.parse(raw);let retired:string[]=[];const applied=this.command('uninstall:'+id,input,()=>this.revision(),()=>{
     const instances=this.view().instances.filter(value=>value.packageId===id),records=this.buildRecords(),packageRecord=this.packageBuild(id);
     if(!packageRecord||packageRecord.retired)throw new StoreError('Plugin package not found',404);
@@ -233,7 +333,7 @@ export class PluginCenter {
     // Immutable code remains cached; uninstall never destroys retained Memory or archived source history.
   });if(applied)for(const retiredId of retired){const runtime=this.runtimes.get(retiredId);this.runtimes.delete(retiredId);void runtime?.close().catch(()=>{});void this.deactivateServiceInstance(retiredId).catch(()=>{});this.retired?.(retiredId);}return this.view();}
   runtime(id:string){this.assertCurrent();const existing=this.runtimes.get(id);if(existing)return existing;const runtime=this.runtimeFor(this.packageForInstance(id),this.instance(id).view);this.runtimes.set(id,runtime);return runtime;}
-  private async probeServicePackage(pkg:StoredPackage,signal:AbortSignal){
+  private async probeServicePackage(pkg:StoredPackage,instanceId:string,signal:AbortSignal){
     assertServicePackageSupported(pkg.manifest);
     const directory=pkg.directory!;this.releases.verifyInstalled(directory,pkg.view.source.digest,pkg.manifest);
     const module=await loadServicePackageModule(directory,pkg.manifest) as Record<string,unknown>;
@@ -244,11 +344,33 @@ export class PluginCenter {
     if(surfaces.ingress){
       try{connectorFromModule(module);capabilities.push(...pkg.manifest.capabilities.filter(id=>id==='source.connector'||id.startsWith('source.')).map(id=>({id,state:'verified' as const,reason:'Connector export verified; OAuth and first sync remain in Sources'})));}
       catch(error){issues.push(error instanceof Error?error.message:'connector_export_invalid');}
+      // A package that extends an existing account must prove this host owns
+      // the binding. A disconnected account is not a check failure; login and
+      // scope authorization stay in Sources.
+      for(const entry of pkg.manifest.sourceCatalog??[])if(entry.attachToBinding&&!this.connectorHost?.supportsBinding?.(entry.attachToBinding))issues.push('account_binding_unavailable:'+entry.attachToBinding);
     }
     if(surfaces.processing){
-      const plugin=module.backendPlugin??module.default;
-      if(!plugin)issues.push('processing_export_missing');
-      else capabilities.push(...pkg.manifest.capabilities.filter(id=>id==='processing.pack'||id.startsWith('processing.')).map(id=>({id,state:'verified' as const,reason:'Processing export verified; target configuration remains in its settings surface'})));
+      const outbound=pkg.manifest.capabilities.filter(isOutboundExportCapability);
+      if(outbound.length){
+        try{
+          outboundExportFromModule(module);
+          if(!this.outboundHost)issues.push('outbound_host_unavailable');
+          const target=this.instance(instanceId).view.configuration.targetFolder;
+          // A missing folder is not a check failure and this check never
+          // creates or writes it. A supplied unsafe path must block enable.
+          if(typeof target==='string'&&target.trim()){
+            const inspected=this.outboundHost?.inspectTarget(target);
+            if(inspected&&!inspected.ok)issues.push('outbound_target_unsafe:'+inspected.reason);
+          }
+          capabilities.push(...outbound.map(id=>({id,state:'verified' as const,reason:'Outbound export contract verified; target and scope remain in the outbound settings surface'})));
+        }catch(error){issues.push(error instanceof Error?error.message:'outbound_export_invalid');}
+      }
+      const processing=pkg.manifest.capabilities.filter(id=>id==='processing.pack'||id.startsWith('processing.'));
+      if(processing.length){
+        const plugin=module.backendPlugin??module.default;
+        if(!plugin)issues.push('processing_export_missing');
+        else capabilities.push(...processing.map(id=>({id,state:'verified' as const,reason:'Processing export verified; target configuration remains in its settings surface'})));
+      }
     }
     if(!capabilities.length&&!issues.length){
       for(const id of pkg.manifest.capabilities)capabilities.push({id,state:'verified',reason:'Service package entry loaded'});
@@ -264,25 +386,39 @@ export class PluginCenter {
     return connectorFromModule(await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>);
   }
   private async activateServiceInstance(instanceId:string){
-    const pkg=this.packageForInstance(instanceId);
-    if(!servicePackageSurfaces(pkg.manifest).ingress)return;
-    if(!this.connectorHost){
-      const instance=this.instance(instanceId);instance.view.observed='blocked';instance.view.issues=['connector_host_unavailable'];instance.view.desired=false;instance.view.revision++;this.saveInstance(instance);this.bump();return;
-    }
+    const pkg=this.packageForInstance(instanceId),surfaces=servicePackageSurfaces(pkg.manifest);
+    if(!surfaces.ingress&&!surfaces.processing)return;
+    let connectorId:string|undefined;
     try{
-      const connector=await this.loadConnectorManifest(instanceId);
-      const known=this.connectorHost.inventory().some(entry=>entry.id===connector.id);
-      if(known)await this.connectorHost.restart(connector.id);else await this.connectorHost.install(connector);
-      this.activeConnectors.set(instanceId,{connectorId:connector.id,instanceId});
+      this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
+      if(surfaces.ingress){
+        if(!this.connectorHost)throw new StoreError('Connector host is unavailable',503);
+        const connector=await this.loadConnectorManifest(instanceId),activation=this.connectorActivation(instanceId);
+        connectorId=connector.id;
+        const known=this.connectorHost.known?.(connector.id)??this.connectorHost.inventory().some(entry=>entry.id===connector.id);
+        if(known)await this.connectorHost.restart(connector.id,activation);else await this.connectorHost.install(connector,activation);
+        this.activeConnectors.set(instanceId,{connectorId:connector.id,instanceId});
+      }
+      if(surfaces.processing&&pkg.manifest.capabilities.some(isOutboundExportCapability)){
+        if(!this.outboundHost)throw new StoreError('Outbound export host is unavailable',503);
+        const module=await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>;
+        const descriptor=outboundExportFromModule(module);
+        await this.outboundHost.activate(instanceId,{descriptor,configuration:{...this.instance(instanceId).view.configuration}});
+      }
       const instance=this.instance(instanceId);if(instance.view.desired){instance.view.observed='ready';instance.view.issues=[];instance.view.revision++;this.saveInstance(instance);this.bump();}
     }catch(error){
-      const instance=this.instance(instanceId);instance.view.observed='blocked';instance.view.desired=false;instance.view.issues=[error instanceof Error?error.message:'connector_activation_failed'];instance.view.revision++;this.saveInstance(instance);this.bump();
+      this.activeConnectors.delete(instanceId);
+      if(connectorId&&this.connectorHost)try{await this.connectorHost.stop(connectorId);}catch{/* The blocked state below remains the visible fact. */}
+      if(this.outboundHost)try{await this.outboundHost.deactivate(instanceId);}catch{/* The blocked state below remains the visible fact. */}
+      const instance=this.instance(instanceId);instance.view.observed='blocked';instance.view.desired=false;instance.view.issues=[error instanceof Error?error.message:'service_activation_failed'];instance.view.revision++;this.saveInstance(instance);this.bump();
     }
   }
   private async deactivateServiceInstance(instanceId:string){
     const owned=this.activeConnectors.get(instanceId);this.activeConnectors.delete(instanceId);
-    if(!owned||!this.connectorHost)return;
-    try{await this.connectorHost.stop(owned.connectorId);}catch{/* Stop failures stay visible on the next inventory/status read. */}
+    const tasks:Promise<unknown>[]=[];
+    if(owned&&this.connectorHost)tasks.push(this.connectorHost.stop(owned.connectorId));
+    if(this.outboundHost)tasks.push(this.outboundHost.deactivate(instanceId));
+    await Promise.allSettled(tasks);
   }
   /** A retained namespace can recreate its exact historical configuration
    * without changing the current build selection. The executable process is
@@ -485,6 +621,7 @@ export class PluginCenter {
     // Removing handlers aborts local calls before resources are released. Never
     // interpret this as rollback of an already submitted provider mutation.
     const tasks=[...this.disposeHandlers.map(dispose=>dispose()),...[...this.runtimes.values()].map(runtime=>runtime.close())];
+    if(this.outboundHost)tasks.push(this.outboundHost.close());
     for(const owned of this.buildHandles.values())tasks.push(owned.handle.close('shutdown'));
     return this.closing=Promise.allSettled([...tasks,...this.applying.values()]).then(results=>{
       this.runtimes.clear();this.buildHandles.clear();const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);

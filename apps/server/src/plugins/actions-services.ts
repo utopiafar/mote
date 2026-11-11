@@ -3,7 +3,7 @@ import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {QueryInput} from '@mote/agent';
-import type {ActionPluginProvider,QueryResult} from '@mote/shared';
+import type {ActionPluginProvider,CentralConnectorActionTarget,ConnectorActionExecution,ConnectorActionReceipt,QueryResult} from '@mote/shared';
 import {Actions,registerActions} from '../actions.js';
 import {ActionCapabilities} from './action-capabilities.js';
 import {registerActionCapabilityRoutes} from './action-capability-routes.js';
@@ -39,6 +39,8 @@ export interface ActionsServicesDependencies {
   readonly connections:Connections;
   readonly executor:ExecutionEngine;
   readonly actionProviders:()=>ActionPluginProvider[];
+  /** Host-owned dispatch to an enabled Central connector instance. */
+  readonly connectorAction?:(input:{target:CentralConnectorActionTarget;request:ConnectorActionExecution})=>Promise<ConnectorActionReceipt>;
   readonly query:(input:QueryInput)=>Promise<QueryResult>;
   readonly configured:()=>boolean;
   readonly semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
@@ -78,7 +80,7 @@ export function createActionsServices(deps:ActionsServicesDependencies){
       child.addHook('onRequest',async(request,reply)=>{
         if(writeMethod(request.method)?phase!=='active':!readable())return reply.code(503).send({error:'feature_unavailable'});
       });
-      registerActions(child,current.actions,deps.connections,deps.authorization.credential);
+      registerActions(child,current.actions,deps.connections,deps.authorization.credential,()=>void current.managed.tick().catch(()=>{}),request=>{const identity=deps.authorization.connectionIdentity(request);return !identity||deps.connections.isOwner(identity);});
       registerTodoRoutes(child,current.todos);
       registerActionCapabilityRoutes(child,{capabilities:current.capabilities,managed:current.managed,connections:deps.connections,connectionIdentity:deps.authorization.connectionIdentity});
     });
@@ -91,10 +93,10 @@ export function createActionsServices(deps:ActionsServicesDependencies){
       if(phase!=='created')throw unavailable();
       try{
         if(deps.store.db.isTransaction)throw new StoreError('Actions services preparation requires an idle vault transaction',503);
-        actions=new Actions(deps.store,deps.files,deps.query,deps.configured,{executor:deps.executor,semanticArtifacts:deps.semanticArtifacts,configService:deps.configService});
+        actions=new Actions(deps.store,deps.files,deps.query,deps.configured,{executor:deps.executor,semanticArtifacts:deps.semanticArtifacts,configService:deps.configService,connectorTargets:()=>capabilities?.centralConnectors()??[],messageSendAuthorized:target=>capabilities?.messageSendGranted(target)??false});
         todos=new TodoStore(deps.store);
         capabilities=new ActionCapabilities(deps.store,deps.sources,deps.connections,deps.actionProviders);
-        managed=new ManagedCalendar(deps.store,actions,capabilities,deps.connections);
+        managed=new ManagedCalendar(deps.store,actions,capabilities,deps.connections,deps.connectorAction);
         phase='prepared';
       }catch(error){
         try{await close();}
@@ -109,7 +111,7 @@ export function createActionsServices(deps:ActionsServicesDependencies){
       timer=setInterval(()=>{
         if(phase!=='active'||inflight)return;
         const current=actions,currentManaged=managed;if(!current||!currentManaged)return;
-        inflight=(async()=>{await current.tick();currentManaged.tick();})();
+        inflight=(async()=>{await current.tick();await currentManaged.tick();})();
         void inflight.catch(()=>{}).finally(()=>{inflight=undefined;});
       },pollIntervalMs);
       timer.unref?.();

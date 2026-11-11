@@ -1,25 +1,29 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {mkdir,readFile,rename,rm,writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
-import {readFileSync,readdirSync,lstatSync} from 'node:fs';
-import {unzipSync} from 'fflate';
+import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {isDeepStrictEqual} from 'node:util';
+import {lstatSync,readFileSync,readdirSync,realpathSync,statSync} from 'node:fs';
+import {unzipSync,zipSync} from 'fflate';
 import {z} from 'zod';
-import {calendarPluginCapabilitySchema} from '@mote/shared';
-import type {CalendarPluginCapability,PluginConfigurationField,PluginReleasePreview} from '@mote/shared';
+import {actionPluginCapabilitySchema} from '@mote/shared';
+import type {ActionPluginCapability,PluginConfigurationField,PluginReleasePreview} from '@mote/shared';
 import {
   packageManifestSchema, PluginContractError,
   type ManifestDependency, type PackageManifest,
 } from '@mote/plugin-api';
 import {StoreError} from './store.js';
+import {isOfficialLocalPluginRepository,officialLocalPluginEntry,type OfficialPluginCatalogEntry} from './official-plugin-catalog.js';
 
 /** The one current package Manifest is owned by @mote/plugin-api. This wrapper
- * adds the existing calendar host declaration only; the archive/source
- * identity remains in the resolver below. */
-export type PluginManifest = Omit<PackageManifest,'actionCapabilities'> & {actionCapabilities?:readonly CalendarPluginCapability[]};
+ * adds host-validated action declarations; the archive/source identity remains
+ * in the resolver below. */
+export type PluginManifest = Omit<PackageManifest,'actionCapabilities'> & {actionCapabilities?:readonly ActionPluginCapability[]};
 const parsePluginManifest=(input:unknown):PluginManifest=>{
-  const base=packageManifestSchema.parse(input),actions=base.actionCapabilities?.map(value=>calendarPluginCapabilitySchema.parse(value));
-  if(actions&&actions.length>1)throw new PluginContractError('invalid_contract','$.actionCapabilities');
-  if(base.capabilities.includes('calendar.manage')!==Boolean(actions?.length))throw new PluginContractError('invalid_contract','$.actionCapabilities');
+  const base=packageManifestSchema.parse(input),actions=base.actionCapabilities?.map(value=>actionPluginCapabilitySchema.parse(value));
+  if(actions&&new Set(actions.map(value=>value.id+'@'+value.version)).size!==actions.length)throw new PluginContractError('invalid_contract','$.actionCapabilities');
+  const calendar=actions?.some(value=>value.id==='calendar.manage')??false;
+  if(base.capabilities.includes('calendar.manage')!==calendar)throw new PluginContractError('invalid_contract','$.actionCapabilities');
   return (actions?{...base,actionCapabilities:actions}:base) as PluginManifest;
 };
 export const pluginManifestSchema={
@@ -34,9 +38,14 @@ const relativePath={
   safeParse:(value:string)=>validPackagePath(value)?{success:true as const}:{success:false as const},
   parse:(value:string)=>{if(!validPackagePath(value))throw new StoreError('Invalid package path',422);return value;},
 };
-export type ResolvedPluginRelease={preview:PluginReleasePreview;manifest:PluginManifest;archiveUrl:string};
+export type ResolvedPluginRelease={preview:PluginReleasePreview;manifest:PluginManifest;archiveUrl:string;localDirectory?:string};
 export type PluginReleaseTransport=(url:string)=>Promise<{bytes:Uint8Array}>;
 const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
+const repositoryRoot=()=>resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
+// Fixed metadata timestamp keeps the in-process local archive reproducible
+// between resolve and install. 1980-01-01 is the ZIP epoch.
+const localArchiveMtime=315532800000;
+const localSourcePrefix='mote-local:';
 const repositorySchema=z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
 // Resource bounds apply before allocating remote archives or inflated entries.
 const archiveBytes=64*1024*1024,expandedBytes=256*1024*1024,entryBytes=64*1024*1024,entryCount=20000;
@@ -55,6 +64,55 @@ const publicTransport:PluginReleaseTransport=async url=>{
 };
 const parseJson=(bytes:Uint8Array)=>JSON.parse(new TextDecoder().decode(bytes)) as unknown;
 
+function assertSupportedManifest(manifest:PluginManifest){
+  if(manifest.runtime==='service'){
+    const surfaces=new Set((manifest.contributions??[]).map(contribution=>contribution.surface));
+    // Central activates connector/processing service packages; other service
+    // ABIs still require a host that publishes them.
+    if(!surfaces.has('ingress')&&!surfaces.has('processing'))throw new StoreError('This release requires a service runtime that this host does not provide',422);
+  }
+}
+
+/** Resolve one catalog-declared repository-relative directory. The caller can
+ * only supply an identity; this is the sole path from an API request to the
+ * filesystem. realpath equality rejects symlinks and traversal. */
+export function officialPluginLocalDirectory(repoRoot:string,relativeDirectory:string){
+  if(!relativeDirectory||isAbsolute(relativeDirectory)||relativeDirectory.includes('\\')||relativeDirectory.split('/').some(part=>!part||part==='.'||part==='..'))throw new StoreError('Official plugin directory is invalid',422);
+  let root:string,directory:string;
+  try{root=realpathSync(repoRoot);directory=realpathSync(join(root,...relativeDirectory.split('/')));}
+  catch{throw new StoreError('Official plugin directory is unavailable',422);}
+  const expected=join(root,...relativeDirectory.split('/')),fromRoot=relative(root,directory);
+  if(directory!==expected||!fromRoot||fromRoot==='..'||fromRoot.startsWith('..'+sep)||isAbsolute(fromRoot))throw new StoreError('Official plugin directory escapes the repository',422);
+  if(!statSync(directory).isDirectory())throw new StoreError('Official plugin directory is unavailable',422);
+  return directory;
+}
+
+function readOfficialLocalManifest(directory:string):PluginManifest{
+  let input:unknown;
+  try{input=JSON.parse(readFileSync(join(directory,'mote-plugin.json'),'utf8'));}
+  catch{throw new StoreError('The official plugin manifest is unavailable',422);}
+  try{return pluginManifestSchema.parse(input);}
+  catch(error){if(error instanceof PluginContractError)throw new StoreError('The plugin manifest is invalid or uses an unsupported contract version',400);throw error;}
+}
+
+/** Pack only the declared executable entries. No npm/git/shell/network call,
+ * and every file is checked against the already-realpath'ed directory. */
+function officialLocalArchive(directory:string,manifest:PluginManifest){
+  const paths=[manifest.entry,...(manifest.contributions??[]).map(contribution=>contribution.entry).filter((entry):entry is string=>Boolean(entry))];
+  const files:Record<string,Uint8Array>={};
+  for(const name of [...new Set(paths)].sort()){
+    const value=relativePath.parse(name),target=join(directory,...value.split('/'));
+    let real:string;
+    try{real=realpathSync(target);}
+    catch{throw new StoreError('The adapter entry is missing from its official directory',422);}
+    if(real!==target||!statSync(real).isFile())throw new StoreError('The adapter entry escapes its official directory',422);
+    files[name]=readFileSync(real);
+  }
+  const bytes=zipSync(files,{level:9,mtime:localArchiveMtime});
+  validatePluginArchive(bytes,manifest);
+  return bytes;
+}
+
 /** Shared pure archive boundary used by release resolution and H09 pack/validate.
  * It only expands/checks the current archive; it never imports package code. */
 export function validatePluginArchive(bytes:Uint8Array,manifest:PluginManifest){
@@ -70,9 +128,29 @@ export function validatePluginArchive(bytes:Uint8Array,manifest:PluginManifest){
 }
 
 export class GitHubPluginReleases {
-  constructor(readonly directory:string,private transport:PluginReleaseTransport=publicTransport){}
+  constructor(readonly directory:string,private transport:PluginReleaseTransport=publicTransport,readonly repoRoot=repositoryRoot()){}
+  private resolveLocal(entry:OfficialPluginCatalogEntry&{localDirectory:string}):ResolvedPluginRelease{
+    const directory=officialPluginLocalDirectory(this.repoRoot,entry.localDirectory),stored=readOfficialLocalManifest(directory);
+    if(entry.packageId&&stored.id!==entry.packageId)throw new StoreError('The official plugin manifest identity does not match its catalog entry',422);
+    assertSupportedManifest(stored);
+    const bytes=officialLocalArchive(directory,stored),digest=hash(bytes),manifest:PluginManifest={...stored,archive:{...stored.archive,sha256:digest}};
+    return {manifest,localDirectory:entry.localDirectory,archiveUrl:localSourcePrefix+entry.localDirectory,preview:{id:randomUUID(),name:manifest.name,version:manifest.version,source:{repository:entry.repository,tag:entry.tag!,commit:digest.slice(0,40),digest},runtime:manifest.runtime,restartRequired:false,capabilities:manifest.capabilities.map(id=>({id,state:'unknown',reason:'Requires an instance capability check'})),dependencies:manifest.dependencies.map(dependencyLabel),access:[...manifest.access],issues:[],installable:true}};
+  }
+  private localReleaseArchive(release:ResolvedPluginRelease){
+    const entry=officialLocalPluginEntry(release.preview.source.repository,release.preview.source.tag);
+    if(!entry||entry.localDirectory!==release.localDirectory)throw new StoreError('The official plugin source is no longer in the catalog',409);
+    const directory=officialPluginLocalDirectory(this.repoRoot,entry.localDirectory),stored=readOfficialLocalManifest(directory);
+    if(entry.packageId&&stored.id!==entry.packageId)throw new StoreError('The official plugin manifest identity does not match its catalog entry',422);
+    const bytes=officialLocalArchive(directory,stored),digest=hash(bytes),manifest:PluginManifest={...stored,archive:{...stored.archive,sha256:digest}};
+    if(digest!==release.preview.source.digest||!isDeepStrictEqual(manifest,release.manifest))throw new StoreError('The release asset changed after review; resolve it again',409);
+    return bytes;
+  }
   async resolve(raw:{repository:string;tag?:string}):Promise<ResolvedPluginRelease>{
-    const repo=repository(raw.repository),tag=raw.tag?.trim();
+    const repo=repository(raw.repository),tag=raw.tag?.trim(),local=officialLocalPluginEntry(repo,tag);
+    // The in-repository official artifact is addressed by its pinned synthetic
+    // identity. A wrong tag is rejected here, never forwarded to GitHub.
+    if(local)return this.resolveLocal(local);
+    if(isOfficialLocalPluginRepository(repo))throw new StoreError('This official plugin source only resolves its pinned catalog release',422);
     const path=`https://api.github.com/repos/${repo}`;
     const release=z.object({tag_name:z.string(),draft:z.boolean(),assets:z.array(z.object({id:z.number().int().positive().optional(),name:z.string(),browser_download_url:z.string().url()}))}).passthrough().parse(parseJson((await this.transport(`${path}/releases/${tag?'tags/'+encodeURIComponent(tag):'latest'}`)).bytes));
     if(release.draft)throw new StoreError('Choose a published, fixed GitHub release');
@@ -83,12 +161,7 @@ export class GitHubPluginReleases {
     let manifest:PluginManifest;
     try{manifest=pluginManifestSchema.parse(parseJson((await this.transport(trustedAsset(manifestAsset.browser_download_url))).bytes));}
     catch(error){if(error instanceof PluginContractError)throw new StoreError('The plugin manifest is invalid or uses an unsupported contract version',400);throw error;}
-    if(manifest.runtime==='service'){
-      const surfaces=new Set((manifest.contributions??[]).map(contribution=>contribution.surface));
-      // Central activates connector/processing service packages; other service
-      // ABIs still require a host that publishes them.
-      if(!surfaces.has('ingress')&&!surfaces.has('processing'))throw new StoreError('This release requires a service runtime that this host does not provide',422);
-    }
+    assertSupportedManifest(manifest);
     const asset=release.assets.find(asset=>asset.name===manifest.archive.asset);if(!asset)throw new StoreError('The adapter archive is absent from the release',422);
     const archiveUrl=trustedAsset(asset.browser_download_url),bytes=(await this.transport(archiveUrl)).bytes,digest=hash(bytes);
     if(digest!==manifest.archive.sha256)throw new StoreError('The adapter archive failed integrity verification',422);
@@ -96,7 +169,8 @@ export class GitHubPluginReleases {
     return {manifest,archiveUrl,preview:{id:randomUUID(),name:manifest.name,version:manifest.version,source:{repository:repo,tag:release.tag_name,commit,digest},runtime:manifest.runtime,restartRequired:false,capabilities:manifest.capabilities.map(id=>({id,state:'unknown',reason:'Requires an instance capability check'})),dependencies:manifest.dependencies.map(dependencyLabel),access:[...manifest.access],issues:[],installable:true}};
   }
   async install(release:ResolvedPluginRelease){
-    const bytes=(await this.transport(release.archiveUrl)).bytes;if(hash(bytes)!==release.preview.source.digest)throw new StoreError('The release asset changed after review; resolve it again',409);
+    const bytes=release.localDirectory?this.localReleaseArchive(release):(await this.transport(release.archiveUrl)).bytes;
+    if(hash(bytes)!==release.preview.source.digest)throw new StoreError('The release asset changed after review; resolve it again',409);
     const entries=validatePluginArchive(bytes,release.manifest),destination=join(this.directory,release.preview.source.digest),temporary=destination+'.'+randomUUID();
     await mkdir(this.directory,{recursive:true,mode:0o700});
     try{

@@ -14,8 +14,9 @@ const identity={packageId:'generated.calendar',releaseDigest:'a'.repeat(64),inst
 const source={sourceId:'generated-source',kind:'capture',deviceId:'generated-device',platform:'macos'};
 const capability={id:'calendar.manage',version:1},target={deviceId:'generated-device',calendarId:'generated-calendar',declarationRevision:1};
 const draft=(patch:any={})=>({id:'61e38cca-8f55-4f2c-b450-c0dc0dc0dc01',revision:1,capability,target,inputs:{sources:[source],existingArchived:false,futureInputs:true},state:'draft',executionEnabled:false,createdAt:'2026-11-01T00:00:00Z',updatedAt:'2026-11-01T00:00:00Z',...patch});
-const inventory=(patch:any={})=>({providers:[{identity,name:'Generated calendar provider'}],declarations:[{capability,deviceId:target.deviceId,connectionActive:true,permission:'granted',revision:1,calendars:[{id:target.calendarId,title:'Generated calendar'}]}],sources:[{...source,name:'Generated source'}],drafts:[draft()],grants:[],deviceCapabilities:[],...patch});
-const empty=()=>({providers:[],declarations:[],sources:[],drafts:[],grants:[],deviceCapabilities:[]});
+const providerCapability={...capability,executionLocation:'device'};
+const inventory=(patch:any={})=>({providers:[{identity,name:'Generated calendar provider',capability:providerCapability}],declarations:[{capability,deviceId:target.deviceId,connectionActive:true,permission:'granted',revision:1,calendars:[{id:target.calendarId,title:'Generated calendar'}]}],sources:[{...source,name:'Generated source'}],drafts:[draft()],grants:[],deviceCapabilities:[],centralConnectors:[],...patch});
+const empty=()=>({providers:[],declarations:[],sources:[],drafts:[],grants:[],deviceCapabilities:[],centralConnectors:[]});
 function client(read:(path:string,init?:RequestInit)=>unknown){const calls:{path:string;init?:RequestInit}[]=[];const api={request:async(path:string,init?:RequestInit)=>{calls.push({path,init});return read(path,init);}} as Api;return {api,calls,gets:()=>calls.filter(call=>!call.init?.method&&call.path==='/api/action-capabilities').length,feed:()=>calls.filter(call=>call.path.startsWith('/api/operations/changes')).length};}
 async function fixture(t:any){
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),w=dom.window,d=w.document;let hidden=false;
@@ -41,7 +42,7 @@ test('inventory keeps its 15s fallback with empty grants, pauses hidden60s, and 
  await advance(15000);assert.equal(remote.gets(),2,'empty grants and idle are not reliable stop signals');await visibility(true);current=inventory();await advance(60000);assert.equal(remote.gets(),2);assert.equal(remote.feed(),0);
  await visibility(false);assert.equal(remote.gets(),3);assert.equal(d.querySelectorAll('select option').length,2,'remote declaration is visible immediately');
  await act(async()=>{w.dispatchEvent(new w.Event('focus'));d.dispatchEvent(new w.Event('visibilitychange'));await turn();});assert.equal(remote.gets(),3);
- current=inventory({providers:[],declarations:[]});await advance(60000);assert.equal(remote.gets(),7);assert.match(d.body.textContent!,/暂无已检查并启用的日历能力插件/);assert.match(d.body.textContent!,/暂无已连接的可写日历/);assert.equal(remote.feed(),0);
+ current=inventory({providers:[],declarations:[]});await advance(60000);assert.equal(remote.gets(),7);assert.match(d.body.textContent!,/暂无已检查并启用的行动能力插件/);assert.match(d.body.textContent!,/暂无已连接的可写日历或中央连接器/);assert.equal(remote.feed(),0);
  t.diagnostic('inventory initial1; visible15s+1; hidden60000ms timer0; foreground+1; visible60000ms+4; component feed GET0 throughout');
 });
 
@@ -68,7 +69,7 @@ test('provider removal and return invalidate consent, and a replacement provider
  const remote=client((_path,init)=>{if(init?.method){writes.push(JSON.parse(String(init.body)));return {};}return structuredClone(current);});
  await render(remote.api);await review(d);current=inventory({providers:[]});await advance(15000);noGrant(d);
  current=inventory();await advance(15000);noGrant(d);assert.equal(ack(d)?.checked??false,false,'returning the same provider cannot restore old consent');
- const replacement={...identity,instanceRevision:2,releaseDigest:'c'.repeat(64)};current=inventory({providers:[{identity:replacement,name:'Generated replacement provider'}]});await visibility(true);await visibility(false);noGrant(d);
+ const replacement={...identity,instanceRevision:2,releaseDigest:'c'.repeat(64)};current=inventory({providers:[{identity:replacement,name:'Generated replacement provider',capability:providerCapability}]});await visibility(true);await visibility(false);noGrant(d);
  await select(d,1,JSON.stringify(replacement));await act(async()=>ack(d)!.click());await act(async()=>button(d,'确认范围授权').click());assert.equal(writes.length,1);assert.deepEqual(writes[0].plugin,replacement);
 });
 
@@ -83,6 +84,41 @@ test('a partial saved draft cannot offer authorization with no original source o
  const {d,render}=await fixture(t),remote=client(()=>inventory({drafts:[draft({inputs:{sources:[],existingArchived:false,futureInputs:false}})]}));
  await render(remote.api);await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent?.startsWith('继续草稿 ·'))!.click());
  noGrant(d);assert.equal(Boolean(findButton(d,'确认范围授权')),false);
+});
+
+test('a Central connector target saves a message.send scope and grants only with the message acknowledgement',async t=>{
+ const {d,render}=await fixture(t),centralIdentity={...identity,instanceId:'generated-central-instance'};
+ const centralCapability={id:'message.send',version:1,executionLocation:'central-connector' as const};
+ const centralTarget={executionLocation:'central-connector' as const,packageId:centralIdentity.packageId,instanceId:centralIdentity.instanceId,instanceRevision:1,capabilityId:'message.send',capabilityVersion:1};
+ let current=inventory({providers:[{identity:centralIdentity,name:'Generated Central connector',capability:centralCapability}],declarations:[],drafts:[],centralConnectors:[{identity:centralIdentity,name:'Generated Central connector',capability:centralCapability,target:centralTarget}]});
+ const writes:{path:string;body:any}[]=[];
+ const remote=client((path,init)=>{if(!init?.method)return structuredClone(current);const body=JSON.parse(String(init.body));writes.push({path,body});if(path==='/api/action-capability-drafts'){const saved=draft({...body,revision:1});current={...current,drafts:[saved]};return saved;}return {};});
+ await render(remote.api);
+ assert.match(d.body.textContent!,/中央连接器/);
+ await select(d,0,JSON.stringify(centralTarget));
+ await act(async()=>d.querySelector<HTMLInputElement>('fieldset input[type="checkbox"]')!.click());
+ await act(async()=>button(d,'保存范围草稿').click());
+ assert.equal(writes[0].body.capability.id,'message.send');assert.equal(writes[0].body.target.executionLocation,'central-connector');
+ await select(d,1,JSON.stringify(centralIdentity));
+ const consent=ack(d);assert.match(consent?.closest('label')?.textContent??'',/发送消息/);
+ await act(async()=>consent!.click());
+ await act(async()=>button(d,'确认范围授权').click());
+ assert.equal(writes[1].path,'/api/action-capability-grants');assert.deepEqual(writes[1].body.acknowledgeMessageSends,true);assert.equal('acknowledgeCalendarWrites' in writes[1].body,false);
+});
+
+test('a built-in cloud connector offers one explicit calendar target and saves that calendar identity',async t=>{
+ const {d,render}=await fixture(t),cloudIdentity={...identity,packageId:'mote.builtin.google-calendar',instanceId:'google-calendar'};
+ const cloudCapability={id:'calendar.manage',version:1,executionLocation:'central-connector' as const};
+ const cloudTarget={executionLocation:'central-connector' as const,packageId:cloudIdentity.packageId,instanceId:cloudIdentity.instanceId,instanceRevision:1,capabilityId:'calendar.manage',capabilityVersion:1,calendarId:'generated-calendar-a'};
+ let current=inventory({providers:[{identity:cloudIdentity,name:'Google Calendar · Generated A',capability:cloudCapability,calendarId:'generated-calendar-a'}],declarations:[],drafts:[],centralConnectors:[{name:'Google Calendar · Generated A',capability:{id:'calendar.manage',version:1},target:cloudTarget}]});
+ const writes:{path:string;body:any}[]=[];
+ const remote=client((path,init)=>{if(!init?.method)return structuredClone(current);const body=JSON.parse(String(init.body));writes.push({path,body});if(path==='/api/action-capability-drafts'){const saved=draft({...body,revision:1});current={...current,drafts:[saved]};return saved;}return {};});
+ await render(remote.api);
+ assert.match(d.body.textContent!,/Google Calendar · Generated A/);
+ await select(d,0,JSON.stringify(cloudTarget));
+ await act(async()=>d.querySelector<HTMLInputElement>('fieldset input[type="checkbox"]')!.click());
+ await act(async()=>button(d,'保存范围草稿').click());
+ assert.equal(writes[0].body.target.executionLocation,'central-connector');assert.equal(writes[0].body.target.calendarId,'generated-calendar-a');
 });
 
 test('commands keep visible polling, recheck exact inventory after503/success/409, and preserve unknown-delivery identities',async t=>{

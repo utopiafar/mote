@@ -2,9 +2,9 @@ import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import type {StopReason} from '@mote/plugin-api/contracts';
-import {sourceKindSchema,type SourceCapabilityDescriptor} from '@mote/shared';
+import {sourceKindSchema,type ActionPluginProvider,type ConnectorActionExecution,type ConnectorActionReceipt,type SourceCapabilityDescriptor} from '@mote/shared';
 import {z} from 'zod';
-import type {ConnectorContext} from './types.js';
+import type {ConnectorActivation,ConnectorContext} from './types.js';
 
 type Method='GET'|'POST'|'PUT'|'DELETE';
 export type OwnerRoute={
@@ -42,6 +42,9 @@ export interface ConnectorRegistryOptions {
   readonly scopeFor?:(manifest:ConnectorManifest)=>HostScope;
   /** Trusted host binding: the state namespace comes from the instance scope. */
   readonly stateFor?:(manifest:ConnectorManifest,scope?:HostScope)=>StateStore;
+  /** Installed-package configuration resolved by the trusted host for this
+   * exact manifest. Built-in deployment connectors return undefined. */
+  readonly activationFor?:(manifest:ConnectorManifest)=>ConnectorActivation|undefined;
   readonly statusScope?:HostScope;
   /** Trusted transport mount only (for example the existing MCP Fastify transport). */
   readonly transport?:(instance:ConnectorInstance)=>void|Promise<void>;
@@ -54,6 +57,12 @@ export interface ConnectorInstance {
   configureSyncInterval?(intervalMs:number):void;
   configure?(host:ConnectorHost):void;
   status?():unknown;
+  /** Source-specific adapter for one already-confirmed Central action. The host
+   * owns validation, authorization, operation identity and receipts. */
+  executeAction?(request:ConnectorActionExecution):ConnectorActionReceipt|Promise<ConnectorActionReceipt>;
+  /** Built-in deployment connectors may declare a write scope here. Installed
+   * packages continue to declare action capabilities in their manifest. */
+  actionProviders?():ActionPluginProvider[];
   /** Only trusted deployment modules should mount a custom transport with its own authorization. */
   mountTransport?(app:FastifyInstance):void|Promise<void>;
   close?():void|Promise<void>;
@@ -115,8 +124,8 @@ export class ConnectorRegistry {
   addManifest(value:unknown){this.register(value,true);}
   manifest(id:string){return this.manifests.find(manifest=>manifest.id===id);}
   private instanceContext(manifest:ConnectorManifest,scope?:HostScope):ConnectorContext{
-    const state=this.options.stateFor?.(manifest,scope);
-    return state?{...this.context,state}:this.context;
+    const state=this.options.stateFor?.(manifest,scope),activation=this.options.activationFor?.(manifest);
+    return {...this.context,...(activation?{activation}:{}),...(state?{state}:{})};
   }
 
   async start(){
@@ -214,6 +223,17 @@ export class ConnectorRegistry {
       if(!entry.disposed){entry.disposed=true;try{await instance.close?.();}catch(cleanup){throw connectorCleanupFailure([error,cleanup]);}}
       throw error;
     }
+  }
+  async executeAction(id:string,request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
+    if(this.closed)throw Error('Connector registry is closed');
+    const entry=this.instances.find(item=>item.manifest.id===id);
+    if(!entry||typeof entry.instance.executeAction!=='function')throw Error(`Connector ${id} cannot execute actions`);
+    return entry.instance.executeAction(request);
+  }
+  /** Live built-in action declarations, attributed to their connector id. */
+  actionProviders():{connectorId:string;provider:ActionPluginProvider}[]{
+    if(this.closed)return [];
+    return this.instances.flatMap(({manifest,instance})=>(instance.actionProviders?.()??[]).map(provider=>({connectorId:manifest.id,provider})));
   }
   async stop(id:string,beforeClose?:()=>void|Promise<void>){
     const index=this.instances.findIndex(item=>item.manifest.id===id);if(index<0){this.clearFailure(id);return;}

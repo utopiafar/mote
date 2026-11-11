@@ -41,6 +41,9 @@ const provider:SourceCapabilityDescriptor={...local,discovery:'provider-list',re
 sourceCapabilities.register('local-files',{...local,listening:'filesystem',readOriginal:'collector-request'});
 sourceCapabilities.register('coding-agent',{...local,listening:'filesystem'});
 sourceCapabilities.register('local-calendar',local);
+// User-started meeting sessions arrive as one archived audio revision each; the
+// device never polls a folder and the central node owns transcription.
+sourceCapabilities.register('local-meeting-recording',{...local,listening:'none',readOriginal:'collector-request'});
 for(const kind of ['gmail','google-calendar','lark-docs','lark-calendar'] as const)sourceCapabilities.register(kind,provider);
 sourceCapabilities.register('mcp',{lifecycle:'one-shot',discovery:'provider-list',listening:'none',readOriginal:'explicit-provider-read',synchronization:'import-only',externalWrite:false});
 sourceCapabilities.register('upload',{lifecycle:'one-shot',discovery:'explicit-selection',listening:'none',readOriginal:'none',synchronization:'import-only',externalWrite:false});

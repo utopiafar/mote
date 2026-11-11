@@ -28,6 +28,7 @@ export interface McpContext {
  write:Omit<McpWriteContext,'sourceIds'>;
  configuration():McpConfiguration;
  allowedOrigins:string[];
+ publicUrl?:string;
  authorizeCredential?:ConnectorContext['mcpAuthorization'];
 }
 /** Composition resolves implementations once. Each MCP server receives only
@@ -48,9 +49,10 @@ export function mcpContext(context:ConnectorContext):McpContext {
    if(routes&&!routes.some(route=>route.audience==='query'&&route.readProjection==='capture'))throw new ConnectorError('source_query_exposure_denied',403);
   },
  };
- return {read,write:{putItem:sources.upsert.bind(sources)},configuration:()=>{
+ const configuration=()=>{
   const options=config.connectors;return {mcpEnabled:options?.mcpEnabled,mcpReadToken:options?.mcpReadToken,mcpWriteEnabled:options?.mcpWriteEnabled,mcpWriteToken:options?.mcpWriteToken,mcpWriteSourceIds:options?.mcpWriteSourceIds};
- },allowedOrigins:config.allowedOrigins,authorizeCredential:context.mcpAuthorization};
+ };
+ return {read,write:{putItem:sources.upsert.bind(sources)},configuration,allowedOrigins:config.allowedOrigins,...(config.publicUrl?{publicUrl:config.publicUrl}:{}),authorizeCredential:context.mcpAuthorization};
 }
 export interface RemoteMcpContext {
  allowLocal():boolean|undefined;

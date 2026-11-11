@@ -162,10 +162,18 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
    {installReady&&!view?.catalog.length&&<p className="plugin-empty">{moteText('当前没有可安装的官方制品。')}</p>}
    {catalogGroups.map(group=>{
     const items=(view?.catalog??[]).filter(entry=>entry.group===group.id);
-    if(!items.length)return null;
+    // Webhook and Developer API are AI-access host surfaces. This is only a
+    // pointer; it has no repository/tag and never enters resolve/install.
+    const hostSurface=group.id==='outbound-processing'?<article className="plugin-catalog-host-surface" data-host-surface="outbound-webhook">
+      <h3>{moteText('出站 Webhook + Developer API')}</h3>
+      <p>{moteText('宿主能力，不是安装包。资料归档后按声明的来源推送，开发者凭据读取同一事件流。')}</p>
+      <small>{moteText('开通、配置与撤销都在「AI 接入」完成，不走插件安装流。')}</small>
+      <a className="button subtle" href="#/connections/access">{moteText('前往 AI 接入配置')}<ChevronRight size={14}/></a>
+     </article>:null;
+    if(!items.length&&!hostSurface)return null;
     return <section key={group.id} className="plugin-catalog-group" aria-label={group.label}>
      <h2>{group.label}</h2>
-     <div className="plugin-catalog">{items.map(item=><article key={item.repository+'@'+(item.tag??'')}>
+     <div className="plugin-catalog">{hostSurface}{items.map(item=><article key={item.repository+'@'+(item.tag??'')}>
       <h3>{item.name}</h3><p>{item.description}</p>
       <small>{item.repository}{item.tag?' · '+item.tag:''} · {item.runtime==='worker'?moteText('中央 Worker'):moteText('独立服务')}</small>
       <button className="button subtle" disabled={busy||!installReady||!view?.installation.supported} onClick={event=>void resolveCatalog(item,event.currentTarget)}>{busy?moteText('正在解析…'):moteText('预览并安装')}</button>

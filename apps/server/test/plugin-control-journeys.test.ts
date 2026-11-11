@@ -271,6 +271,11 @@ test('scope, undeclared credentials, missing model references, revisions and reu
   ]}), f = fixture(t, release), {packageId} = await install(f);
   f.plugins.configurationAllowed = (field, value) => field.id === 'model' ? value === 'generated-existing-profile' : value === 'model:generated-existing-profile';
   const create = () => ({...pluginCommand(f), packageId, name: 'Generated references', scope: 'default', configuration: {model: 'generated-existing-profile', secret: 'model:generated-existing-profile'}});
+  const workerSecretName = 'GENERATED_WORKER_SECRET_' + randomUUID().replaceAll('-', '_').toUpperCase();
+  process.env[workerSecretName] = 'generated-worker-secret-that-must-not-be-resolved';
+  try {
+    assert.throws(() => f.plugins.configure(undefined, {...create(), configuration: {...create().configuration, secret: '${' + workerSecretName + '}'}}), /unavailable/, 'worker Memory packages keep their existing model-reference contract');
+  } finally { delete process.env[workerSecretName]; }
   assert.throws(() => f.plugins.configure(undefined, {...create(), scope: 'another-owner'}));
   assert.throws(() => f.plugins.configure(undefined, {...create(), configuration: {model: 'missing-profile'}}), /unavailable/);
   assert.throws(() => f.plugins.configure(undefined, {...create(), configuration: {model: 'generated-existing-profile', secret: 'plaintext-generated-not-a-secret'}}), /unavailable/);
@@ -498,6 +503,8 @@ test('actual HTTP plugin controls authorize owner sessions, reject MCP credentia
     ...['resolve', 'install', 'generated/uninstall'].map(path => ({method: 'POST' as const, url: '/api/plugins/' + path})),
     {method: 'POST', url: '/api/plugin-instances'}, {method: 'PATCH', url: '/api/plugin-instances/generated'},
     ...['check', 'enable', 'disable'].map(action => ({method: 'POST' as const, url: '/api/plugin-instances/generated/' + action})),
+    {method: 'GET' as const, url: '/api/plugin-instances/generated/outbound-export'},
+    {method: 'POST' as const, url: '/api/plugin-instances/generated/outbound-export/sync'},
     ...['pause', 'resume', 'stop', 'prepare', 'activate', 'retry', 'cancel'].map(action => ({method: 'POST' as const, url: '/api/memory-spaces/default/binding/' + action})),
   ];
   for (const route of routes) {
@@ -512,7 +519,7 @@ test('actual HTTP plugin controls authorize owner sessions, reject MCP credentia
     assert.deepEqual(discovery.json(),{
       memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
       connectorService:{runtime:'service',factoryExports:['connector','default'],surfaces:['ingress'],supportedCapabilities:['source.connector']},
-      processingService:{runtime:'service',factoryExports:['backendPlugin','default'],surfaces:['processing'],supportedCapabilities:['processing.pack']},
+      processingService:{runtime:'service',factoryExports:['backendPlugin','outboundExport','default'],surfaces:['processing'],supportedCapabilities:['processing.pack','outbound.export']},
     });
     assert.ok(!discovery.body.includes(directory),'discovery never exposes private installation paths');
     assert.equal((await node.app.inject({url: '/api/memory-spaces/default/binding', headers: headers(token)})).statusCode, 200);

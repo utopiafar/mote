@@ -203,6 +203,26 @@
     },
     {
       "type": "index",
+      "name": "developer_deliveries_endpoint",
+      "fingerprint": "e17ea5f454b7465c5e10bf4f9a7dbdabbe153956c461266b1ed4376f2fe1f35c"
+    },
+    {
+      "type": "index",
+      "name": "developer_deliveries_pending",
+      "fingerprint": "d4efd17aa7bb94f761b653982b473ec23b4eed4cc71207711048fe6a90b518b9"
+    },
+    {
+      "type": "index",
+      "name": "developer_events_source",
+      "fingerprint": "6227af31c9acb2ff3ddf3cf183287ec8188090f89fd556c8e1f7aa90ea797b4a"
+    },
+    {
+      "type": "index",
+      "name": "developer_events_type",
+      "fingerprint": "fc28225001e77a231ded283077bc0dd57f694c372c2493eaa043bc528fcfffbf"
+    },
+    {
+      "type": "index",
       "name": "execution_dependents",
       "fingerprint": "56a14188515743f763d9418b2fa47c4e17f2436a3fe985eef1652ce70cdfad24"
     },
@@ -953,6 +973,16 @@
     },
     {
       "type": "table",
+      "name": "developer_deliveries",
+      "fingerprint": "c4a4fd28826717a3748a989aaef5f68bc5900dc522498d2a6cb2fc4dcc2b78c2"
+    },
+    {
+      "type": "table",
+      "name": "developer_events",
+      "fingerprint": "c8e511825ba7c6bced8b699025c196cf5155639ad7db54e1cd17d97006ac3895"
+    },
+    {
+      "type": "table",
       "name": "devices",
       "fingerprint": "8625200eefaafa174136c4946226d06d0474999790cf9f526561388d1042bb0f"
     },
@@ -1685,6 +1715,16 @@
       "type": "table",
       "name": "operation_progress",
       "fingerprint": "986ccdadd9a18be991dce00ddaa357f355e209b756032d6fcfd2e0e1655964ab"
+    },
+    {
+      "type": "table",
+      "name": "outbound_export_instances",
+      "fingerprint": "6e34e5dc8261498f8a8ff02dce92b4ca25f50b00a5993a826ce6958dbd079167"
+    },
+    {
+      "type": "table",
+      "name": "outbound_export_items",
+      "fingerprint": "ad1749518bae899070c0a1ab017f3895cc6f6a48ab794ed0c7e1b49327b9cdf2"
     },
     {
       "type": "table",
@@ -2948,6 +2988,36 @@
     },
     {
       "type": "trigger",
+      "name": "ledger_developer_deliveries_delete",
+      "fingerprint": "c5af77268bde3e4c3bb3a09d60693f3b97f4cfbfc13df85307ed04db3eaefd1d"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_developer_deliveries_insert",
+      "fingerprint": "da99f7490efea3f257293610ea80a3041762c3c9cbf0a669dd9c82c5236179ee"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_developer_deliveries_update",
+      "fingerprint": "87172a09559a3c4a3c89cea07b9ed2a1fd1c550aa2f39823cbd4c8ceb4ac8f36"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_developer_events_delete",
+      "fingerprint": "d4e1a272ac3898c5f653a95d1f470daf39b55f22daa475933464059ea2999f8d"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_developer_events_insert",
+      "fingerprint": "f49f49bd3e3100f13f41310973c9d15914e545717857e106fccf0b9f642c4959"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_developer_events_update",
+      "fingerprint": "15347bf15bf1b1b60ff0bcc96f3c0ac8b16d75640f16d96ee327d6cc79646d7d"
+    },
+    {
+      "type": "trigger",
       "name": "ledger_execution_cancellation_aliases_delete",
       "fingerprint": "385b8e72cb2c41be0c59ba974b9bbb2a83f1808fbcf61fd60b92712f23f40732"
     },
@@ -4205,6 +4275,36 @@
       "type": "trigger",
       "name": "ledger_operation_progress_update",
       "fingerprint": "b4e23163b1a8d2dfff47570bf1c520ab62c15b65b35d58daf7da19d1cd7e4ab2"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_outbound_export_instances_delete",
+      "fingerprint": "b37e6f3b91919f7bf28a7a1a7ceb2179f956dafb65b38d7da9405145335bebc3"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_outbound_export_instances_insert",
+      "fingerprint": "d437409b0a55d775a86097fe8cd08c30fb9317bb17e844a8f20b7f103c33c876"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_outbound_export_instances_update",
+      "fingerprint": "aca840b5939cc1cc47c6a1f369c8c0fb9d22f2d9e66003911eea8f7f6600c2cf"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_outbound_export_items_delete",
+      "fingerprint": "addf538e58900fd9a69cb739a4a4131f33dc89a6de7116dcdbe837d0e356aa9b"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_outbound_export_items_insert",
+      "fingerprint": "2268d282b5806075b98e9e5cc96ad1cc35d568dd904ea0eba07955a335155387"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_outbound_export_items_update",
+      "fingerprint": "5e73c66b3d2784f22af11d264d0688e291ed7e15292f40320f680da717c96d96"
     },
     {
       "type": "trigger",

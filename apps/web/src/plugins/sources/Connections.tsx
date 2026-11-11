@@ -8,12 +8,13 @@ import { connectionServerUrl, type ConnectionInvitation, type ServerConfiguratio
 import { ApiError, type Api, type Device, ago, dateTime, errorMessage } from '../../api';
 import {useHashChoice} from '../../useHashChoice';
 import {containDialogFocus} from '../../dialog-focus';
+import {DeveloperAccess} from './DeveloperAccess';
 import { Loading } from '../../Loading';
 const readAccess=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('connection');
 type Credential = {
     id: string;
     label: string;
-    scope: 'owner' | 'collector' | 'mcp-read' | 'mcp-write';
+    scope: 'owner' | 'collector' | 'mcp-read' | 'mcp-write' | 'developer';
     createdAt: string;
     revokedAt?: string;
     expiresAt?: string;
@@ -48,7 +49,15 @@ type McpResponse = {
         }>;
     };
 };
-const scopes = { 'owner': "完整客户端权限", 'collector': "采集器 · 仅同步本设备", 'mcp-read': "MCP · 只读资料", 'mcp-write': "MCP · 指定来源写入" };
+type OAuthRequest = {
+    id: string;
+    clientName: string;
+    redirectUri: string;
+    write: boolean;
+    createdAt: string;
+    expiresAt: string;
+};
+const scopes = { 'owner': "完整客户端权限", 'collector': "采集器 · 仅同步本设备", 'mcp-read': "MCP · 只读资料", 'mcp-write': "MCP · 指定来源写入", 'developer': "开发者 · 只读事件" };
 function downloadFile(name: string, content: Blob) {
     const url = URL.createObjectURL(content), anchor = document.createElement('a');
     anchor.href = url;
@@ -73,6 +82,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
     const [qr, setQr] = useState('');
     const [mcp, setMcp] = useState<McpResponse>();
     const [mcpAccess, setMcpAccess] = useState<'read' | 'write'>('read');
+    const [oauthRequests, setOauthRequests] = useState<OAuthRequest[]>([]);
     const [busy, setBusy] = useState('');
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
@@ -96,6 +106,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
         setShowAll(false);
         setInvite(undefined);
         setMcp(undefined);
+        setOauthRequests([]);
         setQr('');
         setError('');
         setMessage('');
@@ -103,6 +114,17 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
         acting.current = false;
         return () => { mounted.current = false; active.current?.abort(); };
     }, [api, serverUrl, mode]);
+    useEffect(()=>{
+        if(mode!=='chatbot')return;
+        let alive=true;const controller=new AbortController();
+        const read=async()=>{
+            try{const result=await api.request<{items:OAuthRequest[]}>('/api/connections/mcp/oauth/requests',{signal:controller.signal});if(alive)setOauthRequests(Array.isArray(result.items)?result.items.filter(item=>item&&typeof item.id==='string'&&typeof item.clientName==='string'&&typeof item.redirectUri==='string'&&typeof item.write==='boolean'&&typeof item.expiresAt==='string'):[]);}
+            catch{if(alive)setOauthRequests([]);}
+        };
+        void read();
+        const timer=setInterval(()=>{if(!document.hidden)void read();},5000);
+        return ()=>{alive=false;controller.abort();clearInterval(timer);};
+    },[api,mode]);
     useEffect(() => {
         const configured = configuration.data?.groups.flatMap(group => group.fields).find(field => field.key === 'publicUrl')?.value;
         if (typeof configured === 'string' && configured) {
@@ -209,6 +231,15 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
             await refresh(signal);
         });
     }
+    function decideOauth(id: string, decision: 'approve' | 'reject') {
+        void action(`oauth-${decision}`, async (signal) => {
+            await api.request(`/api/connections/mcp/oauth/requests/${encodeURIComponent(id)}/${decision}`, { method: 'POST', signal, body: '{}' });
+            if (mounted.current && !signal.aborted) {
+                setOauthRequests(current => current.filter(item => item.id !== id));
+                setMessage(moteText(decision === 'approve' ? '已批准，请在客户端继续完成连接。' : '已拒绝此连接请求。'));
+            }
+        });
+    }
     function revoke(id: string) {
         void action('revoke', async (signal) => {
             await api.request(`/api/connections/${encodeURIComponent(id)}`, { method: 'DELETE', signal });
@@ -226,6 +257,12 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
     }
     catch {
         return false;
+    } })();
+    const oauthServiceUrl = (() => { try {
+        return connectionServerUrl((mcp?.credential.serverUrl ?? endpoint).trim()).replace(/\/$/, '') + '/mcp';
+    }
+    catch {
+        return '';
     } })();
     const visibleCredentials = inventory?.items.filter(item => mode === 'device' ? ['owner', 'collector'].includes(item.scope) : ['mcp-read', 'mcp-write'].includes(item.scope)) ?? [];
     const activeCount = visibleCredentials.filter(item => !item.revokedAt && (!item.expiresAt || Date.parse(item.expiresAt) > now)).length;
@@ -252,13 +289,15 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
           <label>{moteText('中央地址')}<input aria-label={moteText('邀请节点地址')} type="url" value={endpoint} disabled={!!busy} onChange={event=>setEndpoint(event.target.value)} placeholder="https://mote.example.com" maxLength={2048} required/><small>{moteText('填写 Agent 可以访问的中央地址。')}</small></label>
           {loopback&&<p className="connection-warning">{moteText('当前是本机地址，只能由同一设备上的客户端访问。跨设备使用请填写可访问的 HTTPS 地址。')}</p>}
           <div className="access-permission"><span>{moteText('访问权限')}</span><div><strong>{mcpAccess==='write'?moteText('仅写入指定来源'):moteText('只读归档资料')}</strong><p>{mcpAccess==='write'?moteText('仅可写入：{0}。',inventory?.mcp.writeSourceIds.join('、')||moteText('未配置')):moteText('检索和读取已获准访问的资料，不修改内容。')}</p></div></div>
-          <details className="connection-help"><summary>{moteText('客户端兼容性')}</summary><p>{moteText('生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。')}</p><p>{moteText('只接受 OAuth 的客户端暂不能直接使用此 JSON。')}</p></details>
+          {inventory?.mcp.enabled&&<div className="connection-mcp oauth-access" aria-label={moteText('OAuth MCP 服务地址')}><h3>{moteText('OAuth 客户端')}</h3><p>{moteText('只接受 OAuth 的客户端填写此服务地址，会自动发现授权，不需要 Bearer 头。')}</p><code>{oauthServiceUrl}</code><div className="connection-actions"><button type="button" className="button" disabled={!!busy||!oauthServiceUrl} onClick={()=>void copy(oauthServiceUrl)}><Copy size={15}/>{moteText('复制服务地址')}</button></div></div>}
+          <details className="connection-help"><summary>{moteText('客户端兼容性')}</summary><p>{moteText('生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。')}</p><p>{oauthServiceUrl?moteText('只接受 OAuth 的客户端请填写服务地址 {0}；客户端会自动发现授权，首次连接需要在此页批准。',oauthServiceUrl):moteText('只接受 OAuth 的客户端需要可访问的中央地址；填写后再复制服务地址。')}</p></details>
           {inventory?.mcp.writeEnabled&&<details className="connection-help"><summary>{moteText('指定来源写入')}</summary><label>{moteText('访问权限')}<select aria-label={moteText('MCP 访问权限')} value={mcpAccess} disabled={!!busy||!inventory.mcp.enabled} onChange={event=>setMcpAccess(event.target.value as 'read'|'write')}><option value="read">{moteText('只读归档资料')}</option><option value="write">{moteText('仅写入指定来源')}</option></select></label><p>{moteText('仅可写入：{0}。',inventory.mcp.writeSourceIds.join('、')||moteText('未配置'))}</p></details>}
           {inventory&&!inventory.mcp.enabled&&<p role="status">{moteText('尚未启用 MCP。请在设置 → 模型与服务 → 来源与外部应用中开启 MCP，并配置独立读令牌后重启；写入还需明确启用并设置允许的信源。')}</p>}
           <div className="access-form-actions"><button className="button primary" disabled={!!busy||!label.trim()||!inventory?.mcp.enabled||!!mcp}>{busy==='mcp'?moteText('正在生成…'):moteText('生成 MCP 配置')}</button></div>
         </form>
       </>:accessPage==='generated'&&mcp?<div className="access-detail">
         <div className="page-heading"><span className="eyebrow">{moteText('配置已生成')}</span><h1 id="connections-title">{moteText('{0} 的连接配置',mcp.credential.label)}</h1><p>HTTP MCP · {credentialAccess(mcp.credential)}</p></div>
+        <div className="connection-mcp oauth-access" aria-label={moteText('OAuth MCP 服务地址')}><h3>{moteText('OAuth 客户端')}</h3><p>{moteText('只接受 OAuth 的客户端填写此服务地址，会自动发现授权，不需要 Bearer 头。')}</p><code>{oauthServiceUrl}</code><div className="connection-actions"><button type="button" className="button" disabled={!!busy||!oauthServiceUrl} onClick={()=>void copy(oauthServiceUrl)}><Copy size={15}/>{moteText('复制服务地址')}</button></div></div>
         <div className="connection-mcp" aria-label={moteText('MCP 连接配置')}><p>{moteText('完整凭据仅在这次生成时显示。离开后仍可在连接列表撤销。')}</p><div className="connection-actions"><button className="button primary" onClick={()=>void copy(JSON.stringify(mcp.config,null,2))}><Copy size={15}/>{moteText('复制 MCP JSON')}</button><button className="button" onClick={()=>downloadFile('mote-mcp.json',new Blob([JSON.stringify(mcp.config,null,2)],{type:'application/json'}))}><Download size={15}/>{moteText('下载 JSON')}</button></div><textarea readOnly aria-label="MCP JSON" value={JSON.stringify(mcp.config,null,2)} spellCheck={false}/><div className="access-form-actions"><button className="button" disabled={!!busy} onClick={hideAccessCredential}>{moteText('已保存，隐藏凭据')}</button></div></div>
       </div>:selectedCredential?<div className="access-detail">
         <div className="page-heading split-heading"><div><span className="eyebrow">{moteText('AI 连接')}</span><h1 id="connections-title">{selectedCredential.label}</h1></div><span className={credentialActive(selectedCredential)?'access-state':'muted'}>{credentialState(selectedCredential)}</span></div>
@@ -267,11 +306,13 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
         {!selectedCredential.revokedAt&&<div className="access-danger"><button className="text-button danger" disabled={!!busy} onClick={()=>setRevoking(selectedCredential.id)}>{moteText('撤销连接')}</button></div>}
       </div>:<>
         <div className="page-heading split-heading"><h1 id="connections-title">{moteText('AI 接入')}</h1><button className="button" onClick={()=>{setMcpAccess('read');setError('');setMessage('');chooseAccessPage('new');}}><Plus size={16}/>{moteText('新建连接')}</button></div>
+        {oauthRequests.length>0&&<div className="connection-mcp oauth-access" aria-label={moteText('OAuth 待批准连接')}><h3>{moteText('OAuth 待批准连接')}</h3><p>{moteText('批准后客户端会自动继续；只批准你发起的连接。')}</p><ul className="connection-list">{oauthRequests.map(item=><li key={item.id}><div><strong>{item.clientName}</strong><p>{item.write?moteText('仅写入指定来源'):moteText('只读归档资料')} · {dateTime(item.expiresAt)}</p><small><code>{item.redirectUri}</code></small></div><div className="connection-actions"><button className="button primary" disabled={!!busy} onClick={()=>decideOauth(item.id,'approve')}>{moteText('批准')}</button><button className="button subtle" disabled={!!busy} onClick={()=>decideOauth(item.id,'reject')}>{moteText('拒绝')}</button></div></li>)}</ul></div>}
         <div className="access-list-heading"><h2>{moteText('已授权连接')}</h2>{inventory&&<span>{moteText('{0} 个有效授权',activeCount)}</span>}</div>
         <div className="source-list-toolbar"><div className="source-filter" role="group" aria-label={moteText('授权状态')}><button aria-pressed={!showAll} onClick={()=>setShowAll(false)}>{moteText('有效')}</button><button aria-pressed={showAll} onClick={()=>setShowAll(true)}>{moteText('全部')}</button></div><button className="text-button" disabled={!!busy} onClick={()=>void action('refresh',refresh)}>{moteText('刷新')}</button></div>
         {!inventory?inventoryResource.loading&&<Loading label={moteText('正在读取连接…')}/>:<><ul className="connection-list access-list">{visibleCredentials.filter(item=>showAll||credentialActive(item)).map(item=><li key={item.id}><button className="access-row" onClick={()=>chooseAccessPage(item.id)}><span className="source-row-icon"><Diamond size={18}/></span><span className="source-row-copy"><strong>{item.label}</strong><small>{item.scope==='mcp-read'?moteText('只读资料'):moteText(scopes[item.scope])} · {moteText('创建于 {0}',dateTime(item.createdAt))}</small></span><span className={credentialActive(item)?'access-state':'muted'}>{credentialState(item)}</span><ChevronRight size={16}/></button></li>)}</ul>{!visibleCredentials.some(item=>showAll||credentialActive(item))&&<p className="fine-print">{moteText('还没有 AI 连接。生成 MCP 配置即可添加。')}</p>}</>}
-        <details className="connection-help"><summary>{moteText('连接方式')}</summary><p>{moteText('生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。')}</p><p>{moteText('只接受 OAuth 的客户端暂不能直接使用此 JSON。')}</p><p>{moteText('按用途推荐权限和 Agent 专属连接向导尚未开放。当前只读 MCP 可检索已获准的归档资料；写入必须单独授权。')}</p></details>
+        <details className="connection-help"><summary>{moteText('连接方式')}</summary><p>{moteText('生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。')}</p><p>{oauthServiceUrl?moteText('只接受 OAuth 的客户端请填写服务地址 {0}；客户端会自动发现授权，首次连接需要在此页批准。',oauthServiceUrl):moteText('只接受 OAuth 的客户端需要可访问的中央地址；填写后再复制服务地址。')}</p><p>{moteText('按用途推荐权限和 Agent 专属连接向导尚未开放。当前只读 MCP 可检索已获准的归档资料；写入必须单独授权。')}</p></details>
       </>}
+      {!accessPage&&<DeveloperAccess api={api}/>}
       {revokingCredential&&<div className="source-dialog-overlay" onKeyDown={event=>{if(event.key==='Escape'&&!busy)setRevoking('');}}><div ref={revokeDialog} role="dialog" aria-modal="true" aria-labelledby="access-revoke-title" className="source-dialog"><header><h2 id="access-revoke-title">{moteText('撤销 {0}',revokingCredential.label)}</h2><button className="icon-button" aria-label={moteText('关闭')} disabled={!!busy} onClick={()=>setRevoking('')}><X size={18}/></button></header><p>{moteText('停止此连接的后续访问，已归档资料保留。再次接入需要生成新配置。')}</p><footer><button className="button" disabled={!!busy} onClick={()=>setRevoking('')}>{moteText('取消')}</button><button className="button" disabled={!!busy} onClick={()=>revoke(revokingCredential.id)}>{moteText('确认撤销')}</button></footer></div></div>}
     </section>;
     return <section className="connections device-pair-workspace" aria-labelledby="connections-title">

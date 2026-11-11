@@ -25,6 +25,8 @@ export function larkManifest(runner?:LarkRunner):ConnectorManifest {
         route('POST','/api/connectors/lark/setup',()=>lark.startSetup());
         route('POST','/api/connectors/lark/configure',req=>lark.configure(req.body));
         route('POST','/api/connectors/lark/login',req=>lark.login(z.object({calendar:z.boolean().optional()}).strict().parse(req.body??{}).calendar??false));
+        route('POST','/api/connectors/lark/write/start',()=>lark.startWriteAuthorization());
+        route('POST','/api/connectors/lark/write/disconnect',()=>lark.disconnectWriteAuthorization());
         route('POST','/api/connectors/lark/cancel',()=>lark.cancel());
         route('GET','/api/connectors/lark/calendars',()=>lark.calendars());
         route('PUT','/api/connectors/lark/selection',req=>lark.select(req.body));

@@ -16,6 +16,8 @@ import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.SourceProviderPlugin
 import dev.mote.collector.plugins.SourceSnapshot
+import dev.mote.collector.meeting.MeetingRecordingActivity
+import dev.mote.collector.meeting.meetingRecordings
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
@@ -176,10 +178,13 @@ class SourcesActivity : MoteActivity() {
         val observationSelected = config.notificationCollectionEnabled || config.deviceEventCollectionEnabled
         val mediaSelected = config.mediaCollectionEnabled && config.metadataEnabled
         val notifyPermission = MediaCollection.permissionAllowed(this)
+        val meetingSessions = applicationContext.meetingRecordings().sessions()
+        val meetingLast = meetingSessions.maxByOrNull { it.startedAt }?.startedAt
         val rows = CaptureSyncPresentation.sources(
             screen = CaptureSyncPresentation.KindFacts(present = config.screenCollectionEnabled,
                 needsAction = settings.enabled && config.screenCollectionEnabled && !screenLive,
                 paused = !settings.enabled, lastAt = lastAt("screen", "activity", "ui_page")),
+            meeting = CaptureSyncPresentation.KindFacts(present = true, lastAt = meetingLast),
             observations = CaptureSyncPresentation.KindFacts(present = observationSelected,
                 needsAction = settings.enabled && observationSelected && !notifyPermission,
                 paused = !settings.enabled, lastAt = lastAt("notification", "device_event")),
@@ -245,6 +250,7 @@ class SourcesActivity : MoteActivity() {
 
     private fun glyphFor(kind: CaptureSyncPresentation.SourceKind) = when (kind) {
         CaptureSyncPresentation.SourceKind.SCREEN -> MoteGlyph.SCREEN
+        CaptureSyncPresentation.SourceKind.MEETING -> MoteGlyph.MIC
         CaptureSyncPresentation.SourceKind.OBSERVATIONS -> MoteGlyph.BELL
         CaptureSyncPresentation.SourceKind.MEDIA -> MoteGlyph.PLAY
         CaptureSyncPresentation.SourceKind.FILES -> MoteGlyph.FOLDER
@@ -253,6 +259,7 @@ class SourcesActivity : MoteActivity() {
 
     private fun openSourceRow(row: CaptureSyncPresentation.SourceRow) = when (row.kind) {
         CaptureSyncPresentation.SourceKind.SCREEN -> openMoteLocalPage("CAPTURE")
+        CaptureSyncPresentation.SourceKind.MEETING -> startActivity(Intent(this, MeetingRecordingActivity::class.java))
         CaptureSyncPresentation.SourceKind.OBSERVATIONS, CaptureSyncPresentation.SourceKind.MEDIA -> openMoteLocalPage("OBSERVATIONS")
         CaptureSyncPresentation.SourceKind.FILES -> startActivity(Intent(this, SourcesActivity::class.java).putExtra("kind", "local-files"))
         CaptureSyncPresentation.SourceKind.CALENDAR -> startActivity(Intent(this, SourcesActivity::class.java).putExtra("kind", "local-calendar"))
@@ -260,7 +267,8 @@ class SourcesActivity : MoteActivity() {
 
     private fun handleSourceRow(row: CaptureSyncPresentation.SourceRow) {
         row.attentionSourceId?.let { startActivity(Intent(this, SourcesActivity::class.java).putExtra("detailSourceId", it)); return }
-        if (row.kind == CaptureSyncPresentation.SourceKind.SCREEN) openMoteLocalPage("CAPTURE") else openMoteLocalPage("PERMISSIONS")
+        if (row.kind == CaptureSyncPresentation.SourceKind.MEETING) startActivity(Intent(this, MeetingRecordingActivity::class.java))
+        else if (row.kind == CaptureSyncPresentation.SourceKind.SCREEN) openMoteLocalPage("CAPTURE") else openMoteLocalPage("PERMISSIONS")
     }
 
     private fun sendAction(send: CaptureSyncPresentation.SendView) = when (send.state) {

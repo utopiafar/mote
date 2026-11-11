@@ -69,6 +69,9 @@
         <activity android:configChanges="uiMode" android:name=".SourcesActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.sources" />
         </activity>
+        <activity android:configChanges="uiMode" android:name=".meeting.MeetingRecordingActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.sources" />
+        </activity>
         <activity android:configChanges="uiMode" android:name=".FileTaskActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.sources" />
         </activity>
@@ -127,6 +130,9 @@
         </provider>
         <service android:name=".recording.RecordingService" android:exported="false" android:foregroundServiceType="microphone">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
+        </service>
+        <service android:name=".meeting.MeetingRecordingService" android:exported="false" android:foregroundServiceType="microphone|mediaProjection">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.sources" />
         </service>
         <service android:name=".ProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />

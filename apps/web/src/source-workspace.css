@@ -44,6 +44,10 @@
 .access-danger { margin-top:28px; padding-top:24px; border-top:1px solid var(--mote-hair); }
 .access-danger .danger { color:var(--mote-danger); }
 .access-workspace .connection-mcp { margin:0; padding:0; background:none; border:0; }
+.access-workspace .connection-mcp.oauth-access { margin:18px 0 0; padding:18px 0; border-top:1px solid var(--mote-hair); }
+.access-workspace .connection-mcp.oauth-access h3 { font-size:13px; font-weight:500; margin:0 0 8px; }
+.access-workspace .connection-mcp.oauth-access code { display:block; margin:10px 0; overflow-wrap:anywhere; font-size:12px; }
+.access-workspace .connection-mcp.oauth-access .connection-list { margin:8px 0; }
 .access-workspace .connection-mcp > p { font-size:12px; color:var(--mote-muted); }
 .access-workspace .connection-mcp textarea { margin:16px 0 20px; min-height:320px; padding:18px; width:100%; background:var(--mote-surface); line-height:1.65; font-size:12px; }
 .source-dialog-overlay { position:fixed; inset:0; z-index:80; display:flex; justify-content:center; align-items:center; background:rgb(38 35 31 / 14%); backdrop-filter:blur(4px); padding:20px; }

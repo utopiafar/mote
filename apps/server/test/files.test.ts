@@ -117,6 +117,11 @@ test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated 
  assert.equal((await app.inject({url:'/api/files',headers:{cookie}})).statusCode,401);
  const issue=async(deviceId:string)=>{const {invitation}=connections.invite({label:'Generated file scope',serverUrl:'http://127.0.0.1:57569',deviceId});return connections.redeem({code:invitation.code,deviceId,deviceName:'Generated',platform:'android'});};
  const phone=await issue('phone'),other=await issue('other');const phoneHeaders={authorization:`Bearer ${phone.token}`},otherHeaders={authorization:`Bearer ${other.token}`};
+ const meetingSource={id:'phone-meeting',name:'Generated local meetings',kind:'local-meeting-recording',deviceId:'phone',platform:'android',retention:'archive',enabled:true};
+ assert.equal((await app.inject({method:'POST',url:'/api/sources',headers:phoneHeaders,payload:meetingSource})).statusCode,200);
+ // Meeting control is local owner UI only. A collector token cannot start,
+ // stop or change policy through any Central route.
+ assert.equal((await app.inject({method:'POST',url:'/api/meeting-recordings',headers:phoneHeaders,payload:{action:'start'}})).statusCode,404);
  const headUrl='/api/file-sync/v1/head?'+new URLSearchParams({sourceId:'phone',externalId:m.item.externalId});
  assert.deepEqual((await app.inject({url:headUrl,headers:phoneHeaders})).json(),{revision:'v1',forgotten:false});
  assert.equal((await app.inject({url:headUrl,headers:otherHeaders})).statusCode,200);
