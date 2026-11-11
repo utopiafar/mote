@@ -50,6 +50,8 @@ export interface ConnectorRegistryOptions {
   readonly transport?:(instance:ConnectorInstance)=>void|Promise<void>;
   /** The adapter installs per-instance capabilities itself. */
   readonly manageCapabilities?:boolean;
+  /** Owner-selected state of bundled connectors, separate from account status. */
+  readonly pluginStates?:()=>Record<string,{enabled:boolean}>;
 }
 export interface ConnectorInstance {
   init?():Promise<void>;
@@ -177,7 +179,7 @@ export class ConnectorRegistry {
     }catch(error){try{await this.close();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector initialization and disposal failed',{cause:error});}throw error;}
   }
 
-  private statusView(){return Object.fromEntries(this.instances.flatMap(({manifest,instance})=>manifest.statusKey&&instance.status?[[manifest.statusKey,instance.status()]]:[]));}
+  private statusView(){return {...Object.fromEntries(this.instances.flatMap(({manifest,instance})=>manifest.statusKey&&instance.status?[[manifest.statusKey,instance.status()]]:[])),...(this.options.pluginStates?{pluginStates:this.options.pluginStates()}:{} )};}
   mountStatus(scope:HostScope){
     if(!this.options.http)throw Error('Connector HTTP host is unavailable');
     if(this.statusHandle)throw Error('Connector status is already mounted');

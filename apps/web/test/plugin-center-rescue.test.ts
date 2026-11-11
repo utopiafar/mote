@@ -20,7 +20,7 @@ test('the plugin-center route stays reachable through the host rescue entry with
  t.after(async()=>{await act(async()=>root.unmount());element.remove();});
  const props={api:{} as Api,onPage:(page:string)=>destination.push(page)} as unknown as PageProps;
  await act(async()=>{root.render(React.createElement(FeaturePage,{page:'extensions',props}));await new Promise(resolve=>setTimeout(resolve,15));});
- assert.match(element.textContent!,/自动记忆与插件/);assert.match(element.textContent!,/插件中心暂时不可用/);
+ assert.match(element.textContent!,/插件中心/);assert.match(element.textContent!,/插件中心暂时不可用/);
  const back=[...element.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='返回设置');assert.ok(back);
  await act(async()=>{back.click();});assert.deepEqual(destination,['about']);
 });

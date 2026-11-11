@@ -160,6 +160,7 @@ for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-na
 });
 byId('connection-central-content').addEventListener('click',()=>{byId<HTMLSelectElement>('content-scope').value='received';showPage('records');});
 byId('settings-central-models').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('models')));
+byId('settings-central-plugins').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('plugins')));
 byId('chrome-back').addEventListener('click',()=>showPage(navigation.backTarget));
 byId('workspace-back').addEventListener('click', () => showPage(navigation.backTarget));
 function updateNoteAction(): void {

@@ -18,6 +18,8 @@ import {createLarkBinding,type LarkBinding} from './lark-binding.js';
 import {ConnectorError,type ConnectorContext} from './types.js';
 import type {FastifyInstance} from 'fastify';
 import {ZodError} from 'zod';
+import {PluginControlStore} from '../plugins/plugin-control-store.js';
+import {bundledConnector,prepareBundledConnectors} from '../bundled-connectors.js';
 
 export type {ConnectorConfig,ConnectorContext} from './types.js';
 export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthCallback,ConnectorHttpHost,ConnectorRegistryOptions,ConnectorRouteHandle} from './registry.js';
@@ -64,6 +66,8 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   const removeMemory=installRecordingSources(context.memoryStrategies);
   if(removeMemory)app.addHook('onClose',async()=>removeMemory());
   const manifests=[...builtins(testing),...additionalManifests];
+  const control=new PluginControlStore(context.store);
+  const initiallyDisabled=prepareBundledConnectors(control,manifests.map(manifest=>manifest.id));
   const status=connectorScope('mote.connectors','status','Connector status scope disposal failed');
   app.addHook('onClose',()=>status.close());
   const states=new WeakMap<HostScope,StateStore>();
@@ -73,7 +77,8 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   });
   dispatcher.attach(app);
   const adapter=createConnectorHostAdapter({
-    manifests,context:ctx,dispatcher,statusScope:status.scope,bindings:{lark:larkBinding},
+    manifests,context:ctx,dispatcher,statusScope:status.scope,bindings:{lark:larkBinding},initiallyDisabled,
+    pluginStates:()=>Object.fromEntries(control.builds().flatMap(record=>{const connector=bundledConnector(record.id);return connector?[[connector.id,{enabled:Boolean(record.desired)}]]:[];})),
     required:additionalManifests.map(manifest=>manifest.id),
     scopeFor:(manifest,instanceId)=>connectorScope(manifest.id,instanceId,`Connector ${instanceId} scope disposal failed`),
     stateFor:scope=>{
@@ -90,6 +95,12 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   };
   try{await adapter.start();}
   catch(error){try{await closeHost();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host startup and disposal failed',{cause:error});}throw error;}
+  for(const record of control.builds())if(record.id.startsWith('bundled:')){
+    const live=adapter.inventory().find(value=>record.id==='bundled:'+value.id);
+    record.observed=record.desired?(live?.active?'active':'blocked'):'stopped';
+    record.blockers=record.desired&&!live?.active?[live?.error??'connector_unavailable']:[];
+    control.saveBuild(record);
+  }
   return Object.freeze({
     start:adapter.start,inventory:adapter.inventory,contributions:adapter.contributions,configureSyncInterval:adapter.configureSyncInterval,
     install:adapter.install,known:adapter.known,restart:adapter.restart,stop:adapter.stop,executeAction:adapter.executeAction,actionProviders:adapter.actionProviders,supportsBinding:adapter.supportsBinding,close:closeHost,

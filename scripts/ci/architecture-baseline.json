@@ -14,6 +14,13 @@
     "reason": "Existing trusted plugin loader: the configured module location is resolved by this host adapter; not a statically named application dependency."
   },
   {
+    "rule": "analyzable-module-reference",
+    "from": "apps/server/src/plugins/service-plugin-loader.ts",
+    "to": "[dynamic] pathToFileURL(entry).href",
+    "kind": "runtime",
+    "reason": "Trusted installed service entry: the release manifest validates a relative entry, archive installation verifies its digest and confines extraction, and only that installed directory is loaded. This is the service counterpart of the two configured plugin loaders."
+  },
+  {
     "rule": "comment-card-number",
     "from": "apps/desktop/scripts/final-source-permission-smoke.cjs",
     "to": "M23",

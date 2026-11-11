@@ -20,6 +20,7 @@ import {resolvePluginSecretReference} from './plugins/secret-reference.js';
 import type {ConnectorActivation} from './connectors/types.js';
 import type {ConnectorManifest} from './connectors/registry.js';
 import type {OutboundExportStatus} from './plugins/outbound-export-host.js';
+import {bundledConnector,bundledConnectorSelection} from './bundled-connectors.js';
 
 /** Hot connector host used by service-runtime ingress packages. */
 export type PluginConnectorHost={
@@ -385,7 +386,21 @@ export class PluginCenter {
     this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
     return connectorFromModule(await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>);
   }
-  private async activateServiceInstance(instanceId:string){
+  private queueServiceLifecycle(instanceId:string,work:()=>Promise<void>){
+    const before=this.applying.get(instanceId)??Promise.resolve();
+    const task=before.catch(()=>{}).then(work);
+    this.applying.set(instanceId,task);
+    const clear=()=>{if(this.applying.get(instanceId)===task)this.applying.delete(instanceId);};
+    void task.then(clear,clear);
+    return task;
+  }
+  private activateServiceInstance(instanceId:string){
+    return this.queueServiceLifecycle(instanceId,async()=>{
+      if(!this.accepting||!this.instance(instanceId).view.desired||this.instanceBuild(instanceId)?.retired)return;
+      await this.startServiceInstance(instanceId);
+    });
+  }
+  private async startServiceInstance(instanceId:string){
     const pkg=this.packageForInstance(instanceId),surfaces=servicePackageSurfaces(pkg.manifest);
     if(!surfaces.ingress&&!surfaces.processing)return;
     let connectorId:string|undefined;
@@ -410,10 +425,14 @@ export class PluginCenter {
       this.activeConnectors.delete(instanceId);
       if(connectorId&&this.connectorHost)try{await this.connectorHost.stop(connectorId);}catch{/* The blocked state below remains the visible fact. */}
       if(this.outboundHost)try{await this.outboundHost.deactivate(instanceId);}catch{/* The blocked state below remains the visible fact. */}
-      const instance=this.instance(instanceId);instance.view.observed='blocked';instance.view.desired=false;instance.view.issues=[error instanceof Error?error.message:'service_activation_failed'];instance.view.revision++;this.saveInstance(instance);this.bump();
+      const instance=this.instance(instanceId);
+      if(instance.view.desired){instance.view.observed='blocked';instance.view.desired=false;instance.view.issues=[error instanceof Error?error.message:'service_activation_failed'];instance.view.revision++;this.saveInstance(instance);this.bump();}
     }
   }
-  private async deactivateServiceInstance(instanceId:string){
+  private deactivateServiceInstance(instanceId:string){
+    return this.queueServiceLifecycle(instanceId,()=>this.stopServiceInstance(instanceId));
+  }
+  private async stopServiceInstance(instanceId:string){
     const owned=this.activeConnectors.get(instanceId);this.activeConnectors.delete(instanceId);
     const tasks:Promise<unknown>[]=[];
     if(owned&&this.connectorHost)tasks.push(this.connectorHost.stop(owned.connectorId));
@@ -453,6 +472,15 @@ export class PluginCenter {
   buildView(id:string){return this.unifiedBuildView(this.control.build(id),id);}
   private unifiedBuildView(value:BuildInstance|undefined,id:string):PluginBuildView{
     if(!value)throw new StoreError('Build instance not found',404);
+    const bundled=bundledConnector(id);
+    if(bundled){
+      const live=this.connectorHost?.inventory().some(entry=>entry.id===bundled.id&&entry.active)??false;
+      const selection=bundledConnectorSelection(bundled.id);
+      const observed=value.observed==='active'&&!live?'blocked':value.observed;
+      return {...value,observed,active:live?selection:null,blockers:value.observed==='active'&&!live?['connector_unavailable']:value.blockers,
+        restartRequired:false,name:bundled.name,version:selection.version,runtime:'host',source:null,configuration:{},configurationSchema:[],
+        capabilities:[],allowedActions:['enable','disable'],package:false};
+    }
     const record=value as StoredBuild,worker=record.kind==='package'||record.kind==='instance',pkg=record.package??(worker?this.packageBuild(record.packageId)?.package:undefined),
       instance=record.instance?.view,native=!record.kind||record.kind==='native';
     const owned=this.buildHandles.get(id),live=owned&&!owned.handle.signal.aborted&&Boolean(this.hostOwner)&&this.hostOwner!.host.snapshot().contributions.some(entry=>
@@ -464,7 +492,7 @@ export class PluginCenter {
     return {id:record.id,packageId:record.packageId,installationId:record.installationId,revision:record.revision,desired:record.desired,retired:record.retired,
       observed,blockers:native&&record.observed==='active'&&!live?['activation_unavailable']:record.blockers,operationId:record.operationId,active,
       restartRequired:record.observed==='restart_required',version:record.version??pkg?.manifest.version??this.builds.get(record.packageId+'@'+(record.version??'1.0.0'))?.version??'',
-      name:instance?.name??pkg?.manifest.name??id,runtime:worker?'worker':'host',source:pkg?.view.source??null,
+      name:instance?.name??pkg?.manifest.name??id,runtime:worker?(pkg?.manifest.runtime??'worker'):'host',source:pkg?.view.source??null,
       configuration:instance?.configuration??{},configurationSchema:instance?.configurationSchema??pkg?.manifest.configuration??[],
       capabilities:instance?.capabilities??[],issues:instance?.issues??record.blockers,allowedActions:instance?.allowedActions??[],package:record.kind==='package'};
   }
@@ -472,6 +500,39 @@ export class PluginCenter {
   async selectBuild(id:string,raw:unknown){
     const input=memoryControlCommandSchema.extend({selection:z.object({packageId:z.string().min(1),version:z.string().min(1),configurationRevision:z.number().int().nonnegative()}).strict().nullable()}).strict().parse(raw);
     const prior=this.control.build(id) as StoredBuild|undefined;
+    const bundled=bundledConnector(id);
+    if(bundled){
+      if(!prior||!this.connectorHost)throw new StoreError('Bundled connector is unavailable',503);
+      const selection=bundledConnectorSelection(bundled.id);
+      if(input.selection&&JSON.stringify(input.selection)!==JSON.stringify(selection))throw new StoreError('Choose the bundled connector build',409);
+      const applied=this.command('build:'+id,input,()=>this.control.build(id)!.revision,()=>{
+        const record=this.control.build(id)!;
+        record.desired=input.selection;record.revision++;record.operationId=input.operationId;
+        record.observed=input.selection?'starting':'draining';record.blockers=[];this.control.saveBuild(record);
+      });
+      if(applied){
+        const before=this.applying.get(id)??Promise.resolve();
+        const task=before.catch(()=>{}).then(async()=>{
+          if(this.control.build(id)?.operationId!==input.operationId||!this.accepting)return;
+          try{
+            const active=this.connectorHost!.inventory().some(entry=>entry.id===bundled.id&&entry.active);
+            if(input.selection&&!active)await this.connectorHost!.restart(bundled.id);
+            else if(!input.selection)await this.connectorHost!.stop(bundled.id);
+            const record=this.control.build(id)!;
+            if(record.operationId!==input.operationId||!this.accepting)return;
+            const live=this.connectorHost!.inventory().some(entry=>entry.id===bundled.id&&entry.active);
+            record.observed=input.selection?(live?'active':'blocked'):(live?'blocked':'stopped');
+            record.blockers=Boolean(input.selection)===live?[]:['connector_unavailable'];this.control.saveBuild(record);
+          }catch{
+            const record=this.control.build(id)!;
+            if(record.operationId===input.operationId&&this.accepting){record.observed='blocked';record.blockers=['connector_activation_failed'];this.control.saveBuild(record);}
+          }
+        });
+        this.applying.set(id,task);
+        try{await task;}finally{if(this.applying.get(id)===task)this.applying.delete(id);}
+      }else await this.applying.get(id);
+      return this.buildView(id);
+    }
     if(prior?.kind==='instance'){
       const selection=input.selection,command=input.expectedRevision!==prior.revision&&input.expectedRevision===this.revision()?{...input,expectedRevision:prior.revision}:input;
       if(selection&&(selection.packageId!==prior.packageId||selection.version!==prior.version))throw new StoreError('Choose the installed build version for this instance',409);
@@ -488,6 +549,12 @@ export class PluginCenter {
         const saved=this.instanceBuild(id)!;saved.observed=selection?(ready?'active':'blocked'):references.length?'draining':'stopped';
         saved.desired=selection;this.saveBuild(saved);
       });
+      if(applied&&this.package(prior.packageId).manifest.runtime==='service'){
+        // The shared build endpoint must drive the same live service lifecycle
+        // as instance controls; changing desired alone leaves polling active.
+        if(!selection)await this.deactivateServiceInstance(id);
+        else if(this.instanceView(id).observed!=='blocked')await this.activateServiceInstance(id);
+      }
       if(!applied)await this.applying.get(id);
       return this.buildView(id);
     }
@@ -520,6 +587,7 @@ export class PluginCenter {
     if(this.restored)throw new StoreError('Build startup selection is already consumed',409);
     this.restored=true;
     for(const record of this.control.builds())if(!record.retired){
+      if(bundledConnector(record.id))continue; // The connector assembly restores these before provider initialization.
       if(record.kind==='package')continue;
       if(record.kind==='instance'){
         if(!record.desired){if(record.observed==='restart_required'){record.observed='stopped';record.blockers=[];this.control.saveBuild(record);}continue;}
@@ -599,6 +667,7 @@ export class PluginCenter {
     }
   }
   async retireBuild(id:string,raw:unknown){
+    if(bundledConnector(id))throw new StoreError('Bundled connectors can be disabled but are removed only with Central',409);
     const input=memoryControlCommandSchema.parse(raw),prior=this.control.build(id) as StoredBuild|undefined;
     if(prior?.kind==='package'||prior?.kind==='instance'){
       const packageId=prior.packageId,command=input.expectedRevision!==prior.revision&&input.expectedRevision===this.revision()?{...input,expectedRevision:prior.revision}:input;

@@ -21,6 +21,9 @@ export interface ConnectorHostAdapterOptions {
   /** Deployment modules whose initialization must fail the whole startup; an
    * ordinary built-in failure only marks that instance failed. */
   readonly required?:readonly string[];
+  /** Owner-selected optional connectors that must acquire no startup resources. */
+  readonly initiallyDisabled?:readonly string[];
+  readonly pluginStates?:()=>Record<string,{enabled:boolean}>;
   /** Private trusted assembly context for existing built-in connectors. */
   readonly context:ConnectorContext;
   readonly dispatcher:DynamicHttpDispatcher;
@@ -121,7 +124,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       // (must match and stays externally owned).
       for(const manifest of options.manifests)registerDescriptors(manifest);
       // Every manifest use, including a string reference, keeps the kind alive.
-      for(const manifest of options.manifests)installRefs(manifest);
+      for(const manifest of options.manifests)if(!options.initiallyDisabled?.includes(manifest.id))installRefs(manifest);
     }catch(error){
       for(const kind of ownedKinds)try{options.context.sources.capabilities.unregister(kind);}catch{}
       ownedKinds.clear();ownedDescriptors.clear();capabilityUsers.clear();throw error;
@@ -137,6 +140,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
   };
   const registry=new ConnectorRegistry(options.context,{
     http,scopeFor,statusScope:options.statusScope,manageCapabilities:false,
+    pluginStates:options.pluginStates,
     ...(options.transport?{transport:options.transport}:{}),
     activationFor:(manifest:ConnectorManifest)=>activations.get(manifest.id),
     ...(options.stateFor?{stateFor:(_manifest:ConnectorManifest,scope?:HostScope)=>{
@@ -224,6 +228,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
         try{
           installCapabilities();
           for(const manifest of options.manifests){
+            if(options.initiallyDisabled?.includes(manifest.id))continue;
             const scope=scopes.get(manifest.id);if(!scope)throw Error('Connector scope is unavailable');
             try{await registry.startInstance(manifest,scope.scope);}
             catch(error){

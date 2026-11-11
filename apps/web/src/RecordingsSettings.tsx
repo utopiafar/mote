@@ -16,6 +16,7 @@ import { useHashChoice } from './useHashChoice';
 import { SourceContextFields, useSourceContextDraft } from './plugins/sources/SourceContextEditor';
 import { useUnsavedChanges } from './unsaved';
 import { LoadingText } from './Loading';
+import {BundledConnector} from './plugins/sources/BundledConnector';
 const readProvider=(hash:string)=>new URLSearchParams(hash.slice(hash.indexOf('?')+1)).get('provider')??'';
 const names: Record<string, string> = { feishu: '飞书录音 / 妙记', dingtalk: '钉钉录音 / 闪记' };
 const phases: Record<string, string> = { discover: '发现记录', metadata: '读取信息', transcript: '归档转写', media: '备份音频' };
@@ -44,7 +45,10 @@ const inputTime = (value?: string) => {
     const date = new Date(value), pad = (part: number) => String(part).padStart(2, '0');
     return `${String(date.getFullYear()).padStart(4, '0')}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
-export function RecordingConnection({ api, provider, onOpen }: {
+export function RecordingConnection(props:{api:Api;provider:string;onOpen:(ref:string)=>void}){
+    return <BundledConnector api={props.api} id={props.provider+'-recordings'}><RecordingConnectionContent {...props}/></BundledConnector>;
+}
+function RecordingConnectionContent({ api, provider, onOpen }: {
     api: Api;
     provider: string;
     onOpen: (ref: string) => void;

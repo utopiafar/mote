@@ -31,7 +31,7 @@ function fixtures(){
 function button(host:Element,name:string){const found=[...host.querySelectorAll<HTMLButtonElement>('button')].find(element=>element.textContent===name||element.getAttribute('aria-label')===name);assert.ok(found,`button ${name}`);return found;}
 async function click(host:Element,name:string){await act(async()=>{button(host,name).click();await tick();});}
 async function input(host:Element,label:string,value:string){const field=[...host.querySelectorAll('label')].find(element=>element.textContent?.startsWith(label))?.querySelector('input');assert.ok(field,`field ${label}`);await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(field,value);field.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});}
-async function mount(t:import('node:test').TestContext,api:Api,hash='#/system/plugins'){dom.window.history.replaceState(null,'',hash);const element=document.createElement('div');document.body.appendChild(element);const root=createRoot(element);t.after(async()=>{await act(async()=>root.unmount());element.remove();});await act(async()=>{root.render(React.createElement(PluginCenter,{api,onPage:()=>{}}));await tick();});return {element,root};}
+async function mount(t:import('node:test').TestContext,api:Api,hash='#/system/plugins',mode:'plugins'|'memory'='plugins'){dom.window.history.replaceState(null,'',hash);const element=document.createElement('div');document.body.appendChild(element);const root=createRoot(element);t.after(async()=>{await act(async()=>root.unmount());element.remove();});await act(async()=>{root.render(React.createElement(PluginCenter,{api,onPage:()=>{},mode}));await tick();});return {element,root};}
 async function openInstalled(element:Element){await click(element,'已安装插件');await act(async()=>{element.querySelector<HTMLButtonElement>('.provider-card')!.click();await tick();});}
 function readFixture(path:string,plugins:PluginCenterView,binding:MemoryBindingView){if(path==='/api/model-authorization')return {authorization:{revision:1,state:'on',excludedSourceIds:[]}};if(path==='/api/plugins')return structuredClone(plugins);if(path==='/api/plugin-builds')return [];if(path===bindingPath)return structuredClone(binding);if(path==='/api/features')return {features:[],capabilities:[]};throw new Error('Unexpected fixture read '+path);}
 
@@ -55,7 +55,7 @@ test('installation requires an explicit pinned preview, config, verified capabil
  const dialog=element.querySelector('[role=dialog]')!;assert.ok(dialog.textContent?.includes(source.digest));assert.ok(dialog.textContent?.includes('不是沙箱隔离'));
  await click(dialog,'安装此版本');assert.ok(element.querySelector('[role=dialog]'),'failed request retains its preview');await click(dialog,'重试同一请求');
  const installs=calls.filter(call=>call.path==='/api/plugins/install');assert.equal(installs.length,2);assert.deepEqual(installs[0].body,installs[1].body);assert.equal(installs[0].body.previewId,preview.id);assert.equal('repository' in installs[0].body,false,'install cannot override the pinned source');
- assert.equal(element.querySelector('[role=dialog]'),null);assert.ok(element.textContent?.includes('没有运行，也没有绑定'));
+ assert.equal(element.querySelector('[role=dialog]'),null);assert.ok(element.textContent?.includes('尚未配置，也未运行'));
  await click(element,'新增实例');await click(element.querySelector('[role=dialog]')!,'创建实例');
  assert.ok(element.querySelector('[role=dialog]')?.textContent?.includes('Generated service reference'),'creation obtains real schema before enabling');assert.equal(button(element,'保存配置').disabled,true);
  await input(element,'Generated service reference','generated-service-reference');await click(element,'保存配置');
@@ -73,7 +73,7 @@ test('ordinary pause shows authorized task drainage, immediate stop is separate,
   if(path.endsWith('/resume')){binding.admission.desired=true;binding.admission.state='enabled';binding.admission.generation++;binding.allowedActions=['pause','stop','prepare'];}
   return structuredClone(binding);
  }} as unknown as Api;
- const {element}=await mount(t,api);await click(element,'自动记忆');
+ const {element}=await mount(t,api,'#/system/models?category=memory','memory');
  await act(async()=>{element.querySelector<HTMLButtonElement>('[role=switch]')!.click();await tick();});
  assert.ok(element.textContent?.includes('停用中：仍有 3 个已授权任务'));assert.equal(element.querySelector('[role=switch]')?.getAttribute('aria-checked'),'false');assert.equal(calls[0].path,bindingPath+'/pause');
  assert.equal(calls.some(call=>call.path.endsWith('/stop')),false);
@@ -91,7 +91,7 @@ test('replacement separates scope and fee acknowledgement, preparation, verifica
   if(path.endsWith('/activate')){assert.equal(body.preparationId,'generated-preparation');binding.activePlan=structuredClone(candidate);binding.generation++;binding.preparation!.state='applied';binding.preparation!.allowedActions=[];binding.allowedActions=['pause','stop','prepare'];}
   return structuredClone(binding);
  }} as unknown as Api;
- const {element}=await mount(t,api);await click(element,'自动记忆');
+ const {element}=await mount(t,api,'#/system/models?category=memory','memory');
  const unknown=[...element.querySelectorAll('.plugin-plan')].find(plan=>plan.textContent?.includes('Generated unverified engine'))!;assert.equal(unknown.querySelector<HTMLButtonElement>('button')!.disabled,true);assert.ok(unknown.textContent?.includes('not proven'));
  await click(element,'预览更换');const prepare=element.querySelector('[role=dialog]')!;assert.equal(button(prepare,'开始准备').disabled,true);await act(async()=>prepare.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());await click(prepare,'开始准备');
  assert.equal(calls[0].body.feeAcknowledged,true);assert.equal(calls[0].body.scope,'default');assert.equal(binding.activePlan.id,builtin.id);assert.ok(element.textContent?.includes('准备失败'));assert.ok(element.querySelector('.plugin-preparation [role=alert]')?.textContent?.includes('准备未完成'));assert.doesNotMatch(element.querySelector('.plugin-preparation')!.textContent!,/memory_preparation_requires_attention|当前阶段：copy/);assert.equal(element.textContent?.includes('设为当前方案'),false);
@@ -158,12 +158,13 @@ test('an installed package exposes required fields before the first instance exi
 
 test('plugin deep links and same-page browser history retain the selected tab',async t=>{
  const {plugins,binding}=fixtures(),api={request:async(path:string)=>readFixture(path,plugins,binding)} as unknown as Api;
- const {element}=await mount(t,api,'#/system/plugins?tab=memory');
- assert.equal(button(element,'自动记忆').getAttribute('aria-pressed'),'true');
+ const {element}=await mount(t,api,'#/system/plugins?tab=installed');
+ assert.equal(button(element,'已安装插件').getAttribute('aria-pressed'),'true');
  await act(async()=>{dom.window.location.hash='#/system/plugins?tab=discover';dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'));await tick();});
  assert.equal(button(element,'官方目录').getAttribute('aria-pressed'),'true');
  await act(async()=>{dom.window.location.hash='#/system/plugins';dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'));await tick();});
- assert.equal(button(element,'自动记忆').getAttribute('aria-pressed'),'true');
+ assert.equal(button(element,'官方目录').getAttribute('aria-pressed'),'true');
+ assert.equal(element.querySelector('.plugin-memory-control'),null);
 });
 
 test('official catalog is the discover surface and has no free-form GitHub install form',async t=>{
@@ -178,15 +179,14 @@ test('official catalog is the discover surface and has no free-form GitHub insta
  assert.ok(element.querySelector('a[href="#/system/diagnostics"]'),'points owners to Runtime and diagnostics for GitHub install');
 });
 
-test('official catalog points to the host webhook surface without an install action',async t=>{
+test('official catalog keeps host webhook configuration in AI Access',async t=>{
  const {plugins,binding}=fixtures(),api={request:async(path:string)=>readFixture(path,plugins,binding)} as unknown as Api;
  const {element}=await mount(t,api,'#/system/plugins?tab=discover');
  const card=element.querySelector('[data-host-surface="outbound-webhook"]');
- assert.ok(card,'the outbound group exposes the host pointer');
- assert.equal(card.querySelector('button'),null,'the pointer is not an installable artifact');
- assert.equal(card.querySelector('a')?.getAttribute('href'),'#/connections/access');
- assert.match(card.textContent!,/不是安装包/);
- assert.match(card.textContent!,/AI 接入/);
+ assert.equal(card,null,'host capabilities do not masquerade as catalog packages');
+ assert.equal(element.querySelector('a[href="#/connections/access"]'),null);
+ assert.equal(element.querySelectorAll('.plugin-official-catalog article').length,plugins.catalog.length);
+ assert.equal(button(element,'预览并安装').disabled,false);
 });
 
 test('official catalog preview resolves the fixed repository and tag',async t=>{
@@ -210,7 +210,7 @@ test('official catalog preview resolves the fixed repository and tag',async t=>{
 
 test('automatic Memory desire follows the one owner switch and failed reads stay unavailable instead of showing on',async t=>{
  const {plugins,binding}=fixtures();let state='off',denied=false,writes=0;const api={request:async(path:string,init?:RequestInit)=>{if(init?.method){writes++;throw Error('No authorization mutation belongs to this read-only status');}if(path==='/api/model-authorization'){if(denied)throw new ApiError('Generated automatic processing authorization denied',403);return {authorization:{revision:1,state,excludedSourceIds:[]}};}return readFixture(path,plugins,binding);}} as Api;
- const {element}=await mount(t,api);assert.equal(button(element,'自动记忆').getAttribute('aria-pressed'),'true');assert.match(element.querySelector('.plugin-memory-control [role=status]')!.textContent!,/等待开启自动处理/);assert.equal(element.querySelector('[role=switch]')!.getAttribute('aria-checked'),'true');assert.equal(element.querySelector<HTMLAnchorElement>('.plugin-waiting-authorization a')!.hash,'#/system/models?category=processing');
+ const {element}=await mount(t,api,'#/system/models?category=memory','memory');assert.equal(element.querySelector('.plugin-tabs')?.hasAttribute('hidden'),true);assert.match(element.querySelector('.plugin-memory-control [role=status]')!.textContent!,/等待开启自动处理/);assert.equal(element.querySelector('[role=switch]')!.getAttribute('aria-checked'),'true');assert.equal(element.querySelector<HTMLAnchorElement>('.plugin-waiting-authorization a')!.hash,'#/system/models?category=processing');
  denied=true;await act(async()=>{resources(api).invalidate(path=>path==='/api/model-authorization');await tick();});assert.match(element.querySelector('.plugin-memory-control [role=status]')!.textContent!,/暂不可用/);assert.equal(element.querySelector('.plugin-waiting-authorization'),null);assert.match(element.textContent!,/Generated automatic processing authorization denied/);denied=false;state='on';await act(async()=>{resources(api).invalidate(path=>path==='/api/model-authorization');await tick();});assert.match(element.querySelector('.plugin-memory-control [role=status]')!.textContent!,/自动记忆已启用/);assert.equal(writes,0);
 });
 
@@ -250,9 +250,10 @@ async function pluginClock(t:import('node:test').TestContext,api:Api,hash='#/sys
  const element=document.createElement('div');document.body.appendChild(element);const root=createRoot(element);
  t.after(async()=>{t.mock.timers.reset();await act(async()=>root.unmount());element.remove();if(previous)Object.defineProperty(document,'hidden',previous);else Reflect.deleteProperty(document,'hidden');});
  const flush=async(ms=0)=>act(async()=>{t.mock.timers.tick(ms);await new Promise<void>(resolve=>setImmediate(resolve));});
- const render=(owner:Api)=>act(async()=>root.render(React.createElement(React.Fragment,null,...Array.from({length:copies},(_,key)=>React.createElement(PluginCenter,{key,api:owner,onPage:()=>{}})))));
+ let mode:'plugins'|'memory'=hash.includes('tab=memory')?'memory':'plugins',currentOwner=api;
+ const render=(owner:Api)=>{currentOwner=owner;return act(async()=>root.render(React.createElement(React.Fragment,null,...Array.from({length:copies},(_,key)=>React.createElement(PluginCenter,{key,api:owner,onPage:()=>{},mode})))));};
  await render(api);await flush();
- return{element,render,leave:()=>act(async()=>root.render(null)),tick:flush,visibility:async(value:boolean)=>{hidden=value;await act(async()=>{document.dispatchEvent(new dom.window.Event('visibilitychange'));});},click:async(name:string)=>{await act(async()=>button(element,name).click());await flush();},installed:async()=>{await act(async()=>button(element,'已安装插件').click());await act(async()=>element.querySelector<HTMLButtonElement>('.provider-card')!.click());await flush();}};
+ return{element,render,leave:()=>act(async()=>root.render(null)),tick:flush,visibility:async(value:boolean)=>{hidden=value;await act(async()=>{document.dispatchEvent(new dom.window.Event('visibilitychange'));});},click:async(name:string)=>{await act(async()=>button(element,name).click());await flush();},memory:async()=>{mode='memory';await render(currentOwner);await flush();},installed:async()=>{mode='plugins';await render(currentOwner);await flush();await act(async()=>button(element,'已安装插件').click());await act(async()=>element.querySelector<HTMLButtonElement>('.provider-card')!.click());await flush();}};
 }
 
 test('plugin foreground coalesces four idle shared resources after hidden 60s and preserves all 3s fallbacks',async t=>{
@@ -268,7 +269,7 @@ test('plugin feed uses existing plugin/binding matches while no-event remote sto
  const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=installed');assert.equal(ui.element.querySelectorAll('.provider-card').length,0);
  f.plugins.packages=[structuredClone(packageFixture)];f.emit(['plugin:generated-install']);await ui.tick(1500);
  assert.equal(ui.element.querySelectorAll('.provider-card').length,1);assert.equal(f.count('/api/plugins'),2);assert.equal(f.count(bindingPath),2);assert.equal(f.count('/api/model-authorization'),1,'existing mapping does not cover global authorization');
- await ui.click('自动记忆');f.binding.admission={...f.binding.admission,desired:false,state:'stopping',queued:0,running:0,resultUnknown:1};f.binding.allowedActions=['resume','prepare'];f.binding.activePlan.name='Generated remotely changed binding';
+ await ui.memory();f.binding.admission={...f.binding.admission,desired:false,state:'stopping',queued:0,running:0,resultUnknown:1};f.binding.allowedActions=['resume','prepare'];f.binding.activePlan.name='Generated remotely changed binding';
  await ui.tick(1500);assert.equal(ui.element.querySelector('[role=switch]')!.getAttribute('aria-checked'),'false');assert.match(ui.element.textContent!,/Generated remotely changed binding/);assert.match(ui.element.textContent!,/停止请求不代表远端工作已结束/);assert.equal(f.writes.length,0);
 });
 

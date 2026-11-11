@@ -109,6 +109,7 @@ export class GmailConnector {
     this.saved.tokens={...this.saved.tokens,...oauth.credentials,refresh_token:oauth.credentials.refresh_token??this.saved.tokens.refresh_token};
     const url=new URL(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`);for(const [k,v]of Object.entries(query))url.searchParams.set(k,v);
     const response=await (this.dependencies.fetch??fetch)(url,{method:'GET',headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(20000)])});
+    this.check();
     if(!response.ok)throw new ConnectorError([401,403].includes(response.status)?'gmail_permission_required':response.status===404?'gmail_not_found':response.status===429?'gmail_rate_limited':'gmail_request_failed',response.status);
     const reader=response.body?.getReader();let bytes=0;const chunks:Uint8Array[]=[];
     try{if(reader)while(true){const p=await reader.read();if(p.done)break;bytes+=p.value.length;if(bytes>8*1024*1024){await reader.cancel();throw new ConnectorError('gmail_response_too_large',413);}chunks.push(p.value);}}finally{reader?.releaseLock();}

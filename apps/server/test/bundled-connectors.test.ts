@@ -1,0 +1,102 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {OAuth2Client} from 'google-auth-library';
+import type {PluginBuildView} from '@mote/shared';
+import {buildApp} from '../src/app.js';
+import type {Config} from '../src/config.js';
+import {gmailScope} from '../src/connectors/gmail.js';
+
+test('Gmail can stop and restart independently without losing its credentials, archive or persisted off selection',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-bundled-gmail-')),owner='generated-owner-'+randomUUID();
+  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,googleClientId:'generated-client',googleClientSecret:'generated-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}};
+  const oauth=new OAuth2Client({clientId:'generated-client',redirectUri:config.connectors!.googleRedirectUri});
+  oauth.getToken=(async()=>({tokens:{refresh_token:'generated-refresh',access_token:'generated-access',scope:gmailScope}})) as typeof oauth.getToken;
+  oauth.getAccessToken=(async()=>({token:'generated-access'})) as typeof oauth.getAccessToken;
+  const requests:string[]=[];
+  let holdHistory=false,historyEntered:()=>void=()=>{},historyAborted:()=>void=()=>{},releaseHistory:(response:Response)=>void=()=>{};
+  const fetcher:typeof fetch=async(input,init)=>{
+    const url=new URL(String(input)),path=url.pathname.split('/me/')[1];requests.push(path);
+    assert.equal(url.hostname,'gmail.googleapis.com');
+    if(path==='profile')return Response.json({emailAddress:'generated@example.invalid',historyId:'100'});
+    if(path==='messages')return Response.json({messages:[{id:'generated-mail'}]});
+    if(path==='history'){
+      if(holdHistory){historyEntered();init?.signal?.addEventListener('abort',()=>historyAborted(),{once:true});return new Promise<Response>(resolve=>{releaseHistory=resolve;});}
+      return Response.json({history:[],historyId:'101'});
+    }
+    assert.equal(path,'messages/generated-mail');
+    return Response.json({id:'generated-mail',payload:{mimeType:'text/plain',headers:[{name:'Subject',value:'Generated retained mail'}],body:{data:Buffer.from('Generated original mail body.').toString('base64url')}}});
+  };
+  const start=()=>buildApp(config,{backgroundWorker:false,connectorTesting:{gmail:{oauthFactory:()=>oauth,fetch:fetcher}},agent:{configured:false,async query(){throw Error('No model calls in connector-control regression');},async close(){}}});
+  let node=await start();
+  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  const headers={authorization:'Bearer '+owner},path='/api/plugin-builds/'+encodeURIComponent('bundled:gmail');
+  const read=async()=>{const response=await node.app.inject({url:path,headers});assert.equal(response.statusCode,200);return response.json<PluginBuildView>();};
+  const change=async(enabled:boolean,operationId=randomUUID())=>{
+    const current=await read();
+    const response=await node.app.inject({method:'PATCH',url:path,headers,payload:{operationId,expectedRevision:current.revision,selection:enabled?{packageId:current.packageId,version:current.version,configurationRevision:0}:null}});
+    assert.equal(response.statusCode,200,response.body);return response.json<PluginBuildView>();
+  };
+  assert.equal((await read()).observed,'active');
+  assert.equal((await node.app.inject({method:'PATCH',url:path,payload:{}})).statusCode,401);
+  const authorize=await node.app.inject({method:'POST',url:'/api/connectors/gmail/start',headers,payload:{}});
+  assert.equal(authorize.statusCode,200,authorize.body);
+  const state=new URL(authorize.json().authorizationUrl).searchParams.get('state')!;
+  const callback=await node.app.inject('/oauth/google/callback?'+new URLSearchParams({state,code:'generated-code'}));
+  assert.equal(callback.statusCode,200,callback.body);
+  const sync=await node.app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers,payload:{}});
+  assert.equal(sync.statusCode,200,sync.body);assert.equal(sync.json().imported,1);
+  const source=node.sources.listSources().find(value=>value.kind==='gmail')!;
+  const original=node.sources.getItem(source.id,'generated-mail:0')!;
+  const archive=node.archivedFiles.read(original.document!.fileId!);
+  const siblings=node.pluginCenter.connectorHost!.inventory().filter(value=>value.id!=='gmail'&&value.active).map(value=>value.id);
+  holdHistory=true;
+  const entered=new Promise<void>(resolve=>{historyEntered=resolve;}),aborted=new Promise<void>(resolve=>{historyAborted=resolve;});
+  const inFlight=node.app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers,payload:{}}).then(response=>response);
+  await entered;
+  const disabling=change(false);
+  await aborted;
+  releaseHistory(Response.json({history:[{messages:[{id:'late-mail'}]}],historyId:'101'}));
+  assert.equal((await disabling).observed,'stopped');
+  assert.ok((await inFlight).statusCode>=400,'a late provider response cannot publish after the plugin is stopped');
+  assert.equal(requests.includes('messages/late-mail'),false,'stopping prevents follow-up provider reads');
+  holdHistory=false;
+  const pausedRequests=requests.length;
+  assert.equal((await node.app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers,payload:{}})).statusCode,404);
+  assert.deepEqual(node.sources.getItem(source.id,'generated-mail:0'),original);
+  assert.deepEqual(node.archivedFiles.read(original.document!.fileId!),archive);
+  assert.deepEqual(node.pluginCenter.connectorHost!.inventory().filter(value=>value.active).map(value=>value.id),siblings);
+  await node.app.close();node=await start();
+  assert.equal((await read()).desired,null);assert.equal((await read()).observed,'stopped');
+  assert.equal(requests.length,pausedRequests,'a disabled connector never reads the provider during startup');
+  assert.equal((await node.app.inject({method:'POST',url:'/api/connectors/gmail/start',headers,payload:{}})).statusCode,404);
+  assert.equal((await change(true)).observed,'active');
+  const status=await node.app.inject({url:'/api/connectors/status',headers});
+  assert.equal(status.json().gmail.connected,true,'re-enabling reuses the saved authorization');
+  const resumed=await node.app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers,payload:{}});
+  assert.equal(resumed.statusCode,200,resumed.body);assert.equal(requests.at(-1),'history','sync continues from the saved checkpoint');
+  assert.deepEqual(node.sources.getItem(source.id,'generated-mail:0'),original);
+  for(const connector of ['google-calendar','lark','feishu-recordings','dingtalk-recordings']){
+    const siblingPath='/api/plugin-builds/'+encodeURIComponent('bundled:'+connector);
+    const initial=(await node.app.inject({url:siblingPath,headers})).json<PluginBuildView>();
+    assert.equal(initial.observed,'active',connector);
+    const payload={operationId:randomUUID(),expectedRevision:initial.revision,selection:null};
+    const stopped=await node.app.inject({method:'PATCH',url:siblingPath,headers,payload});
+    assert.equal(stopped.statusCode,200,stopped.body);assert.equal(stopped.json().observed,'stopped');
+    const duplicate=await node.app.inject({method:'PATCH',url:siblingPath,headers,payload});
+    assert.equal(duplicate.statusCode,200);assert.equal(duplicate.json().revision,stopped.json().revision,'replayed commands do not execute a new selection');
+    assert.equal((await node.app.inject({url:'/api/connectors/status',headers})).json().pluginStates[connector].enabled,false);
+    assert.equal((await read()).observed,'active','a sibling selection never stops Gmail');
+    const stale=await node.app.inject({method:'PATCH',url:siblingPath,headers,payload:{...payload,operationId:randomUUID()}});
+    assert.equal(stale.statusCode,409,'an old client must re-read before making a different choice');
+    const restored=await node.app.inject({method:'PATCH',url:siblingPath,headers,payload:{operationId:randomUUID(),expectedRevision:stopped.json().revision,selection:{packageId:initial.packageId,version:initial.version,configurationRevision:0}}});
+    assert.equal(restored.statusCode,200,restored.body);assert.equal(restored.json().observed,'active');
+    assert.equal((await node.app.inject({url:'/api/connectors/status',headers})).json().pluginStates[connector].enabled,true);
+  }
+  const retire=await node.app.inject({method:'POST',url:path+'/retire',headers,payload:{operationId:randomUUID(),expectedRevision:(await read()).revision}});
+  assert.equal(retire.statusCode,409,'bundled code is disabled, not uninstalled');
+  assert.equal((await node.app.inject({url:'/api/plugin-builds/'+encodeURIComponent('bundled:mcp'),headers})).statusCode,404,'required host transports are not optional connector selections');
+});

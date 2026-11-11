@@ -29,19 +29,15 @@ function rejectingGitHub(calls:string[]):PluginReleaseTransport{
   return async url=>{calls.push(url);throw new Error('GitHub transport must not be used for an in-repository official fixture: '+url);};
 }
 
-test('official catalog declares the fixture as an in-repo directory and no longer names the removed external repository',()=>{
+test('the public official catalog excludes fixtures and unverified upstream recipes while retaining private fixture resolution',()=>{
   const catalog=officialPluginCatalog();
-  const fixture=catalog.find(entry=>entry.group==='connectors'&&entry.packageId===official.packageId);
-  assert.ok(fixture);
-  assert.equal(fixture.repository,official.repository);
-  assert.equal(fixture.tag,official.tag);
-  assert.equal('localDirectory' in fixture,false,'the repository-relative directory stays server-side');
-  assert.equal(catalog.some(entry=>entry.repository==='utopiafar/mote-official-fixture-connector'),false);
+  assert.equal(catalog.some(entry=>entry.packageId===official.packageId),false);
+  assert.equal(catalog.some(entry=>entry.name==='Mem0'||entry.name==='Hindsight'),false);
+  assert.deepEqual(catalog.map(entry=>entry.packageId),['mote.official.notion','mote.official.slack','mote.official.feishu-session','mote.official.markdown-export']);
+  assert.equal(catalog.some(entry=>'localDirectory' in entry||'hidden' in entry),false);
   const internal=OFFICIAL_PLUGIN_CATALOG.find(entry=>entry.packageId===official.packageId);
   assert.equal(internal?.localDirectory,official.localDirectory);
-  assert.ok(catalog.some(entry=>entry.group==='memory'&&entry.name==='Mem0'));
-  assert.ok(catalog.some(entry=>entry.group==='memory'&&entry.name==='Hindsight'));
-  assert.equal(catalog.every(entry=>Boolean(entry.repository&&entry.name&&entry.description&&entry.runtime)),true);
+  assert.equal(internal?.hidden,true);
 });
 
 test('production resolver packages the in-repo fixture without GitHub, then install, configure, check and enable reach ConnectorHost',async t=>{
@@ -60,7 +56,7 @@ test('production resolver packages the in-repo fixture without GitHub, then inst
   };
 
   const view=plugins.view();
-  assert.ok(view.catalog.some(entry=>entry.repository===official.repository&&entry.tag===official.tag));
+  assert.equal(view.catalog.some(entry=>entry.repository===official.repository),false,'the fixture resolves privately without appearing in the public directory');
   assert.equal(view.sourceContributions?.length??0,0);
 
   const preview=await plugins.resolve({repository:official.repository,tag:official.tag});
@@ -112,9 +108,31 @@ test('production resolver packages the in-repo fixture without GitHub, then inst
   contributions=plugins.view().sourceContributions??[];
   assert.equal(contributions[0]!.state,'enabled');
 
+  const build=plugins.buildView(instance.id);
+  assert.equal(build.runtime,'service');
+  await plugins.selectBuild(instance.id,{expectedRevision:build.revision,operationId:randomUUID(),selection:null});
+  assert.equal(installedConnectors.includes('official-fixture-connector'),false,'the shared build switch stops the real service connector, not just its desired-state row');
+  const stoppedBuild=plugins.buildView(instance.id);
+  await plugins.selectBuild(instance.id,{expectedRevision:stoppedBuild.revision,operationId:randomUUID(),selection:{packageId:pkg.id,version:pkg.version,configurationRevision:stoppedBuild.revision}});
+  assert.equal(installedConnectors.includes('official-fixture-connector'),true,'the shared build switch reactivates the service connector');
+
   const enabled=plugins.instanceView(instance.id);
   plugins.action(instance.id,'disable',{expectedRevision:enabled.revision,operationId:randomUUID()});
   await waitFor(()=>!installedConnectors.includes('official-fixture-connector'),'connector host stop');
+
+  let enter!:()=>void,release!:()=>void;
+  const entered=new Promise<void>(resolve=>{enter=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
+  const host=plugins.connectorHost!;
+  plugins.connectorHost={...host,
+    async install(manifest,activation){enter();await held;await host.install(manifest,activation);},
+    async restart(id,activation){enter();await held;await host.restart!(id,activation);}};
+  const beforeRestart=plugins.buildView(instance.id);
+  const starting=plugins.selectBuild(instance.id,{expectedRevision:beforeRestart.revision,operationId:randomUUID(),selection:{packageId:pkg.id,version:pkg.version,configurationRevision:beforeRestart.revision}});
+  await entered;
+  const stopping=plugins.selectBuild(instance.id,{expectedRevision:plugins.buildView(instance.id).revision,operationId:randomUUID(),selection:null});
+  release();await Promise.all([starting,stopping]);
+  assert.equal(plugins.buildView(instance.id).desired,null);
+  assert.equal(installedConnectors.includes('official-fixture-connector'),false,'a late service activation cannot outlive a newer off selection');
 });
 
 

@@ -43,6 +43,9 @@ function apiWith(read: (path: string, init?: RequestInit) => unknown): Api {
   return {request: async (path: string, init?: RequestInit) => {
     if (path.startsWith('/api/operations/changes')) return {ids: [], cursor: 0, hasMore: false, reset: false};
     if (path === '/api/model-settings') return modelView();
+    if (path === '/api/developer') return {credentials: [], endpoints: [], deliveries: []};
+    if (path === '/api/plugins') return {sourceContributions: []};
+    if (path === '/api/connections/mcp/oauth/requests') return {items: []};
     return read(path, init);
   }, setAgentTimeout: () => {}} as Api;
 }

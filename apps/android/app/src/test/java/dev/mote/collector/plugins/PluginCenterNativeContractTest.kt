@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
-import java.net.HttpURLConnection
+import java.net.Socket
 import java.net.URL
 
 /** Run by test-fixtures/plugin-control-native.ts against private generated Central data. */
@@ -25,24 +25,34 @@ class PluginCenterNativeContractTest {
         assertTrue(owner.isNotEmpty() && packageId.isNotEmpty() && instanceId.isNotEmpty())
     }
 
-    private fun http(method: String, url: String, credential: String): Pair<Int, JSONObject?> {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = method
-            connection.instanceFollowRedirects = false
-            connection.connectTimeout = 15000
-            connection.readTimeout = 30000
-            connection.setRequestProperty("Authorization", "Bearer $credential")
-            val status = connection.responseCode
-            val text = (if (status in 200..299) connection.inputStream else connection.errorStream)
-                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-            return status to text?.takeIf(String::isNotBlank)?.let(::JSONObject)
-        } finally { connection.disconnect() }
+    private fun http(method: String, url: String, credential: String, body: ByteArray? = null): Pair<Int, JSONObject?> {
+        val target = URL(url)
+        assertEquals("127.0.0.1", target.host)
+        return Socket(target.host, target.port).use { socket ->
+            socket.soTimeout = 30_000
+            val bytes = body ?: byteArrayOf()
+            socket.getOutputStream().apply {
+                write(("$method ${target.file} HTTP/1.1\r\nHost: ${target.authority}\r\n" +
+                    "Authorization: Bearer $credential\r\nContent-Type: application/json\r\n" +
+                    "Content-Length: ${bytes.size}\r\nConnection: close\r\n\r\n").toByteArray())
+                write(bytes); flush()
+            }
+            val response = socket.getInputStream().bufferedReader()
+            val status = response.readLine().split(' ')[1].toInt()
+            var contentLength: Int? = null
+            while (true) {
+                val header = response.readLine() ?: error("Incomplete generated HTTP response")
+                if (header.isEmpty()) break
+                if (header.startsWith("content-length:", ignoreCase = true)) contentLength = header.substringAfter(':').trim().toInt()
+            }
+            assertNotNull("Generated Central sends a fixed JSON response", contentLength)
+            status to response.readText().takeIf(String::isNotBlank)?.let(::JSONObject)
+        }
     }
 
     @Test fun realControlResponseIsConsumedByThePluginCenterClient() {
         val control = PluginControlClient(CentralClient(origin, owner,
-            transport = { method, url, _, credential, _ -> http(method, url, credential) }))
+            transport = { method, url, body, credential, _ -> http(method, url, credential, body) }))
         val inventory = control.inventory()
         assertTrue(inventory.revision > 0)
         assertTrue(inventory.installation.getBoolean("supported"))
@@ -68,7 +78,8 @@ class PluginCenterNativeContractTest {
         assertEquals("configured", instance.observed)
         assertFalse(instance.desired)
         assertEquals("unknown", instance.capabilities.single().state)
-        assertTrue(inventory.catalog.any { it.getString("group") == "memory" })
+        assertFalse(inventory.catalog.any { it.getString("group") == "memory" })
+        assertEquals(4, inventory.catalog.size)
         assertTrue(inventory.catalog.any { it.getString("group") == "connectors" })
         assertTrue(inventory.catalog.all { it.has("repository") && it.has("name") && it.has("description") })
         assertNotNull(inventory.sourceContributions)
@@ -79,5 +90,14 @@ class PluginCenterNativeContractTest {
         assertEquals("stopped", build.observed)
         assertEquals("fixture-1", build.version)
         assertFalse(build.retired)
+
+        val gmail = inventory.builds.single { it.id == "bundled:gmail" }
+        assertEquals(setOf("enable", "disable"), gmail.allowedActions)
+        val disabled = PluginControlProjection.build(control.execute(PluginControlClient.selectBuild(gmail, false)))
+        assertEquals("stopped", disabled.observed)
+        assertEquals(null, disabled.desired)
+        val enabled = PluginControlProjection.build(control.execute(PluginControlClient.selectBuild(disabled, true)))
+        assertEquals("active", enabled.observed)
+        assertEquals("mote.connector.gmail", enabled.desired!!.getString("packageId"))
     }
 }

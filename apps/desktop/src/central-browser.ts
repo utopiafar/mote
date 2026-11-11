@@ -10,7 +10,7 @@ export function validateCentralWorkId(value:unknown):string{
 export async function openCentralBrowser(serverUrl: string, page: string | undefined, platform: string,
   launchChrome: (url: string) => Promise<unknown>, openDefault: (url: string) => Promise<unknown>, evidenceId?: string, loginTicket?: string, loginRequestId?:string,workId?:string,conversationId?:string): Promise<void> {
   const origin = validateServerUrl(serverUrl);
-  let hash = page==='library'?'#/library':page==='models'?'#/system/models':page==='sources'?'#/connections':page==='actions'?'#/actions':page === 'lark' ? '#/connections/lark' : ['ask', 'notes', 'vault'].includes(page ?? '') ? '#' + page : ['overview', 'about', 'guide', 'activity'].includes(page ?? '') ? '#/' + page : '';
+  let hash = page==='library'?'#/library':page==='models'?'#/system/models':page==='plugins'?'#/system/plugins':page==='sources'?'#/connections':page==='actions'?'#/actions':page === 'lark' ? '#/connections/lark' : ['ask', 'notes', 'vault'].includes(page ?? '') ? '#' + page : ['overview', 'about', 'guide', 'activity'].includes(page ?? '') ? '#/' + page : '';
   if(conversationId!==undefined&&(page!=='ask'||workId!==undefined||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(conversationId)))throw Error('Invalid conversation destination');
   if(workId!==undefined){if(page!=='activity'||evidenceId!==undefined)throw Error('Invalid work destination');hash=deepLinkHash({kind:'run',id:validateCentralWorkId(workId)});}
   if (evidenceId !== undefined) {

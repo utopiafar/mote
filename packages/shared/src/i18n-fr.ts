@@ -1,5 +1,18 @@
 /* Authored interface messages only; never translate captured content. */
 export const french: Readonly<Record<string, string>> = {
+  "先在部署配置中启用 MCP、独立令牌；写入还需单独启用及来源允许列表，合并配置后重启。Bearer 客户端需要 URL 和请求头；OAuth 客户端只需服务地址，并在「AI 接入」批准发现请求。": "Activez MCP et son jeton dédié dans la configuration du déploiement. Les écritures nécessitent aussi une activation explicite et une liste de sources autorisées. Redémarrez après avoir appliqué la configuration. Les clients Bearer utilisent une URL et des en-têtes ; les clients OAuth utilisent uniquement l’URL du service, puis leurs demandes de découverte sont approuvées dans Accès IA.",
+  "只接受 OAuth 的客户端使用同一服务地址自动发现授权，需由所有者批准。": "Les clients qui exigent OAuth découvrent l’autorisation depuis la même URL de service, sous réserve de l’accord du propriétaire.",
+  "生成标准 HTTP MCP 连接 JSON，或复制 OAuth 服务地址交给只走标准发现的客户端。": "Générez le JSON de connexion HTTP MCP standard, ou copiez l’URL du service OAuth pour les clients utilisant la découverte standard.",
+  "插件中心": "Centre de plugins",
+  "官方目录、已安装插件与开关": "Catalogue officiel, plugins installés et commandes",
+  "随中央分发": "Inclus avec Central",
+  "停用后停止新增读取，配置与已归档资料保留。": "La désactivation arrête les nouvelles lectures et conserve la configuration et les contenus archivés.",
+  "此安装包尚未配置，也未运行。": "Ce paquet n’est pas encore configuré ni démarré.",
+  "核心组件随中央分发，必要依赖不能在此关闭。": "Les composants essentiels sont fournis avec Central. Les dépendances requises ne peuvent pas être désactivées ici.",
+  "保存配置后核验并启用；来源授权和内容范围在数据来源中管理。": "Enregistrez la configuration, puis vérifiez-la et activez le plugin. Gérez les autorisations et le périmètre dans Sources de données.",
+  "插件已停用。可在插件中心重新开启。": "Ce plugin est désactivé. Réactivez-le dans le Centre de plugins.",
+  "前往插件中心": "Ouvrir le Centre de plugins",
+  "自动记忆的开关、当前方案和处理节奏在同一设置中管理。": "Gérez la mémoire automatique, le plan actuel et la fréquence de traitement au même endroit.",
   "没有连上中央": "Central n'est pas joignable",
   "继续问": "Continuer à demander",
   "第 {0} 行": "Ligne {0}",
