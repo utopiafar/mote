@@ -127,6 +127,7 @@ final class MoteScreensUITests: XCTestCase {
     private func captureReader(_ appearance: String) throws {
         for (name, state) in [
             ("reader", "reader"),
+            ("reader-screen", "screen"),
             ("reader-panel-more", "panel-more"),
             ("reader-panel-detail", "panel-detail")
         ] {

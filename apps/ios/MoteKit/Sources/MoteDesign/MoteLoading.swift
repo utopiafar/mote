@@ -5,9 +5,6 @@ import SwiftUI
 public struct MoteLoading: View {
     private let label: String
     private let rows: Int
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown = false
-    @State private var dimmed = false
 
     public init(_ label: String = "正在读取…", rows: Int = 3) {
         self.label = label
@@ -23,19 +20,9 @@ public struct MoteLoading: View {
                 }
             }
         }
-        .opacity(dimmed ? 0.45 : 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
-        .opacity(shown ? 1 : 0)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .task {
-            guard !reduceMotion else { shown = true; return }
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { shown = true }
-            withAnimation(.easeInOut(duration: 0.9).delay(0.2).repeatForever(autoreverses: true)) { dimmed = true }
-        }
+        .modifier(LoadingReveal(label: label))
     }
 
     private func bar(fraction: CGFloat, cap: CGFloat, height: CGFloat) -> some View {
@@ -43,5 +30,47 @@ public struct MoteLoading: View {
             .fill(MoteDesignTokens.fill.color)
             .containerRelativeFrame(.horizontal, alignment: .leading) { length, _ in min(length * fraction, cap) }
             .frame(height: height)
+    }
+}
+
+/// An image on its way: a quiet tile where it will appear, with the same timing as `MoteLoading`.
+public struct MoteLoadingTile: View {
+    private let label: String
+    private let height: CGFloat
+
+    public init(_ label: String = "正在读取…", height: CGFloat = 220) {
+        self.label = label
+        self.height = height
+    }
+
+    public var body: some View {
+        RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous)
+            .fill(MoteDesignTokens.fill.color)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .modifier(LoadingReveal(label: label))
+    }
+}
+
+/// Holds a loading view back for 300 ms, then lets it breathe. With Reduce Motion it shows at once and holds still.
+private struct LoadingReveal: ViewModifier {
+    let label: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+    @State private var dimmed = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(dimmed ? 0.45 : 1)
+            .opacity(shown ? 1 : 0)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+            .task {
+                guard !reduceMotion else { shown = true; return }
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.2)) { shown = true }
+                withAnimation(.easeInOut(duration: 0.9).delay(0.2).repeatForever(autoreverses: true)) { dimmed = true }
+            }
     }
 }

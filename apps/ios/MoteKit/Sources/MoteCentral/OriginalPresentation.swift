@@ -45,6 +45,9 @@ public struct OriginalPresentation: Equatable, Sendable {
     public let deletionKind: OriginalDeletionKind?
     public let highlightedPhrase: String?
     public let askScope: OriginalAskScope
+    public let source: CaptureSource?
+    /// Central keeps an image for this record; the reader shows it as the hero.
+    public let hasImage: Bool
 
     public init(
         id: String,
@@ -58,7 +61,9 @@ public struct OriginalPresentation: Equatable, Sendable {
         sourceDescription: String,
         referenceCount: Int? = nil,
         deletionKind: OriginalDeletionKind? = nil,
-        highlightedPhrase: String? = nil
+        highlightedPhrase: String? = nil,
+        source: CaptureSource? = nil,
+        hasImage: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -73,6 +78,8 @@ public struct OriginalPresentation: Equatable, Sendable {
         self.deletionKind = deletionKind
         self.highlightedPhrase = highlightedPhrase
         self.askScope = OriginalAskScope(id: id, title: title)
+        self.source = source
+        self.hasImage = hasImage
     }
 
     public init(record: OriginalRecord, conversations: [ConversationSummary]?,
@@ -95,7 +102,9 @@ public struct OriginalPresentation: Equatable, Sendable {
             sourceDescription: "\(Self.sourceLabel(record.source)) · \(record.deviceName)",
             referenceCount: conversations?.filter { Self.references($0.scope, record: record) }.count,
             deletionKind: record.deletion?.available == true ? record.deletion?.kind : nil,
-            highlightedPhrase: highlightedPhrase
+            highlightedPhrase: highlightedPhrase,
+            source: record.source,
+            hasImage: record.blobHash?.isEmpty == false
         )
     }
 

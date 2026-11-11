@@ -513,6 +513,8 @@ public struct OriginalRecord: Codable, Equatable, Sendable {
     public let libraryVersion: String?
     public let deletion: OriginalDeletionCapability?
     public let memoryMaterialRef: String?
+    /// Present when Central keeps a screenshot or photo for this record.
+    public let blobHash: String?
 }
 
 public struct CentralPage<Item: Codable & Sendable>: Codable, Sendable {

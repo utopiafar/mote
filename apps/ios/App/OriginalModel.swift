@@ -1,12 +1,22 @@
 import Foundation
+import ImageIO
 import MoteCentral
 import MoteStorage
 import Observation
+import UIKit
+
+/// The screenshot or photo kept with an original: on its way, shown, or not available.
+enum OriginalHero {
+    case loading
+    case image(UIImage)
+    case unavailable
+}
 
 @MainActor
 @Observable
 final class OriginalModel {
     private(set) var presentation: OriginalPresentation?
+    private(set) var hero: OriginalHero?
     private(set) var isLoading = true
     private(set) var errorMessage: String?
 
@@ -38,9 +48,16 @@ final class OriginalModel {
             let record = try await client.original(id: id)
             let conversations = try? await allConversations(client: client)
             guard generation == loadGeneration else { return }
-            presentation = try OriginalPresentation(record: record, conversations: conversations,
-                                                    highlightedPhrase: highlightedPhrase)
+            let presentation = try OriginalPresentation(record: record, conversations: conversations,
+                                                        highlightedPhrase: highlightedPhrase)
+            self.presentation = presentation
+            hero = presentation.hasImage ? .loading : nil
             isLoading = false
+            guard presentation.hasImage else { return }
+            var image: UIImage?
+            if let data = try? await client.originalImage(id: id) { image = await Self.downsampled(data) }
+            guard generation == loadGeneration else { return }
+            hero = image.map(OriginalHero.image) ?? .unavailable
         } catch {
             guard generation == loadGeneration else { return }
             isLoading = false
@@ -60,6 +77,21 @@ final class OriginalModel {
         } catch {
             return "未能确认删除完成。原文仍保留，刷新后可核对当前状态。"
         }
+    }
+
+    /// Screenshots can be far larger than the screen. Decode at most 2048 px on a side, away from the main actor.
+    private nonisolated static func downsampled(_ data: Data) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) {
+            guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      kCGImageSourceShouldCacheImmediately: true,
+                      kCGImageSourceThumbnailMaxPixelSize: 2048,
+                  ] as CFDictionary)
+            else { return nil }
+            return UIImage(cgImage: image)
+        }.value
     }
 
     private func connectionClient() -> CentralClient? {
