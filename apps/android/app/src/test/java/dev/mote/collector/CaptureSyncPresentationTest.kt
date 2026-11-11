@@ -81,7 +81,8 @@ class CaptureSyncPresentationTest {
         media: CaptureSyncPresentation.KindFacts = CaptureSyncPresentation.KindFacts(false),
         files: List<CaptureSyncPresentation.SourceFacts> = emptyList(),
         calendars: List<CaptureSyncPresentation.SourceFacts> = emptyList(),
-    ) = CaptureSyncPresentation.sources(screen, observations, media, files, calendars, now, zone)
+        meeting: CaptureSyncPresentation.KindFacts = CaptureSyncPresentation.KindFacts(false),
+    ) = CaptureSyncPresentation.sources(screen, observations, media, files, calendars, now, zone, meeting)
 
     @Test fun onlyAddedSourcesAreListed() {
         val rows = sources(
@@ -95,6 +96,16 @@ class CaptureSyncPresentationTest {
         assertEquals("2 个", rows[1].detail)
         assertEquals("今天", rows[2].detail)
         assertTrue(rows.none { it.warn || it.actionLabel != null })
+    }
+
+    @Test fun meetingRecordingIsListedBesideScreenAndNotAsASendFolder() {
+        val rows = sources(
+            screen = CaptureSyncPresentation.KindFacts(present = true, lastAt = "2026-11-05T13:40:00Z"),
+            meeting = CaptureSyncPresentation.KindFacts(present = true, lastAt = "2026-11-05T13:41:00Z"),
+            files = listOf(CaptureSyncPresentation.SourceFacts("folder", enabled = true, status = "synced", lastScan = "")))
+        assertEquals(listOf("屏幕与应用活动", "本机会议录音", "同步文件夹"), rows.map { it.title })
+        assertEquals("21:41", rows[1].detail)
+        assertNull(rows[1].actionLabel)
     }
 
     @Test fun aKindNeedingAttentionShowsStatusAndHandle() {

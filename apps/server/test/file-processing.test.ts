@@ -137,6 +137,19 @@ test('retained recording publishes ASR with a 56ms sentence-boundary discrepancy
  assert.deepEqual(resumed.artifact(original).transcript,raw);
 });
 
+test('a local meeting recording uploads one audio revision into the existing central transcript pipeline',async t=>{
+ const f=await fixture(t);
+ f.sources.register({id:'mac-meeting',name:'Local meetings',kind:'local-meeting-recording',deviceId:'mac-meeting',platform:'macos',retention:'archive'});
+ const bytes=wave,hash=sha256(bytes),manifest={sourceId:'mac-meeting',previousRevision:null,sizeBytes:bytes.length,sha256:hash,relativePath:'meetings/generated.m4a',item:{externalId:'meeting:generated',revision:hash,observedAt:'2026-11-11T09:00:00Z',title:'本机会议录音 · 2026-11-11 09:00',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false,document:{recordedAt:'2026-11-11T09:00:00Z',timeBasis:'recorded',contentRole:'other',originalMetadata:{meeting:{version:1,startedAt:'2026-11-11T09:00:00Z',endedAt:'2026-11-11T09:01:00Z',durationMs:60000,microphone:true,systemAudio:true,noticeAcknowledgedAt:'2026-11-11T08:59:00Z',platform:'macos',warnings:[]}}}}};
+ const begun=f.files.begin(manifest,()=>{});f.files.part(begun.uploadId,0,bytes,()=>{});const ack=await f.files.commit(begun.uploadId,()=>{});
+ assert.equal(f.files.detail(ack.id).item.mimeType,'audio/wav');
+ await f.processing.tick();
+ assert.equal(f.files.detail(ack.id).job.state,'succeeded');
+ assert.equal(f.counts().asrCalls,2,"the fixture's original audio and the meeting revision both use the same central ASR pipeline");
+ assert.match(f.files.chunks(ack.id).map(chunk=>chunk.ocrText).join(' '),/扣迪斯/);
+ assert.equal(f.sources.getSource('mac-meeting').kind,'local-meeting-recording');
+});
+
 test('actual Cordis registration and disposal; local pipeline checkpoints resume without repeating ASR',async t=>{
  const f=await fixture(t,{failFirst:true});await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'failed');assert.equal(f.processing.cancellation(f.id).wait,'unknown');assert.equal(f.files.detail(f.id).artifacts.filter((a:any)=>a.kind==='transcript').length,1);
  // Reconstruct the engine and Cordis runtime, leaving the persisted checkpoint in place.

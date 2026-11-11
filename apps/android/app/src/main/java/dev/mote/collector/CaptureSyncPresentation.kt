@@ -8,7 +8,7 @@ import java.time.format.FormatStyle
 /** Presentation projection for the Android 采集与同步 page: added sources, sending and local storage. */
 internal object CaptureSyncPresentation {
     enum class SourceKind(val titleKey: String) {
-        SCREEN("屏幕与应用活动"), OBSERVATIONS("通知与设备事件"), MEDIA("媒体"), FILES("同步文件夹"), CALENDAR("本机日历")
+        SCREEN("屏幕与应用活动"), MEETING("本机会议录音"), OBSERVATIONS("通知与设备事件"), MEDIA("媒体"), FILES("同步文件夹"), CALENDAR("本机日历")
     }
 
     enum class AddKind(val titleKey: String, val opensCentral: Boolean = false) {
@@ -52,7 +52,7 @@ internal object CaptureSyncPresentation {
     fun sources(
         screen: KindFacts, observations: KindFacts, media: KindFacts,
         files: List<SourceFacts>, calendars: List<SourceFacts>,
-        now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault(),
+        now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault(), meeting: KindFacts = KindFacts(false),
     ): List<SourceRow> = buildList {
         fun kindDetail(facts: KindFacts, now: Instant, zone: ZoneId) = when {
             facts.needsAction -> MoteI18n.text("等待采集权限")
@@ -61,6 +61,8 @@ internal object CaptureSyncPresentation {
         }
         if (screen.present) add(SourceRow(SourceKind.SCREEN, MoteI18n.text(SourceKind.SCREEN.titleKey), kindDetail(screen, now, zone),
             warn = screen.needsAction, actionLabel = if (screen.needsAction) MoteI18n.text("处理") else null, attentionSourceId = null))
+        if (meeting.present) add(SourceRow(SourceKind.MEETING, MoteI18n.text(SourceKind.MEETING.titleKey), kindDetail(meeting, now, zone),
+            warn = meeting.needsAction, actionLabel = if (meeting.needsAction) MoteI18n.text("处理") else null, attentionSourceId = null))
         if (observations.present) add(SourceRow(SourceKind.OBSERVATIONS, MoteI18n.text(SourceKind.OBSERVATIONS.titleKey), kindDetail(observations, now, zone),
             warn = observations.needsAction, actionLabel = if (observations.needsAction) MoteI18n.text("处理") else null, attentionSourceId = null))
         if (media.present) add(SourceRow(SourceKind.MEDIA, MoteI18n.text(SourceKind.MEDIA.titleKey), kindDetail(media, now, zone),

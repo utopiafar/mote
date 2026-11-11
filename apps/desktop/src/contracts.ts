@@ -138,6 +138,11 @@ export interface DesktopApi {
   codingAgents(): Promise<import('./contracts/sources').CodingAgentDiscovery[]>;
   addCodingAgent(provider: import('./contracts/sources').CodingProvider, options: import('./contracts/sources').SourceOptions): Promise<string>;
   sources(): Promise<import('./contracts/sources').SourceStatus[]>;
+  meetingRecordingStatus(): Promise<import('./contracts/sources').MeetingRecordingStatus>;
+  acknowledgeMeetingNotice(): Promise<import('./contracts/sources').MeetingRecordingStatus>;
+  startMeetingRecording(): Promise<import('./contracts/sources').MeetingRecordingStatus>;
+  stopMeetingRecording(): Promise<import('./contracts/sources').MeetingRecordingStatus>;
+  syncMeetingRecordings(): Promise<void>;
   sourceArchivedContent(id:string,cursor?:string):Promise<import('./contracts/content').CentralContentPage>;
   sourcePendingContent(id:string):Promise<import('./contracts/content').LocalContentPage>;
   sourceContext(id:string):Promise<import('./contracts/sources').SourceContextState>;

@@ -83,7 +83,8 @@
       ],
       "hardenedRuntime": true,
       "extendInfo": {
-        "NSScreenCaptureUsageDescription": "Mote records screenshots only while you enable capture, applies your privacy filters locally, then uploads them to your own central node.",
+        "NSScreenCaptureUsageDescription": "Mote records screenshots only while you enable capture, applies your privacy filters locally, then uploads them to your own central node. The microphone and system-audio permission is also used only while you start a meeting recording.",
+        "NSMicrophoneUsageDescription": "Mote records the microphone only while you explicitly start a local meeting recording. The audio stays on this Mac until you end the meeting and is then uploaded to your own central node for transcription.",
         "NSCalendarsUsageDescription": "Read selected calendars for personal context. With your explicit authorization, create, update or cancel events only within the authorized device, existing calendars and source scope; mark completion in Mote and retain Mote source references. Actions outside that scope require explicit confirmation.",
         "NSCalendarsFullAccessUsageDescription": "Read selected calendars for personal context. With your explicit authorization, create, update or cancel events only within the authorized device, existing calendars and source scope; mark completion in Mote and retain Mote source references. Actions outside that scope require explicit confirmation.",
         "CFBundleLocalizations": [

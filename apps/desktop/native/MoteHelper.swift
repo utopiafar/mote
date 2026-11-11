@@ -179,6 +179,8 @@ do {
         try output(browserCaptureContext(FileHandle.standardInput.readDataToEndOfFile()))
     case "ui-page":
         try output(wechatCaptureSnapshot(FileHandle.standardInput.readDataToEndOfFile()))
+    case "meeting-audio":
+        try meetingAudioCapture()
     case "notifications":
         guard AXIsProcessTrusted() else { try output(["available": false, "items": []]); return }
         guard let center = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first else { try output(["available": true, "items": []]); return }

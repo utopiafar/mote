@@ -4,7 +4,7 @@ import { moteText } from '@mote/shared/i18n';
 import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {moteActionMarker,calendarEventSchema,calendarDescription,type ActionProposal} from '@mote/shared/actions';
+import {isCentralConnectorActionTarget,moteActionMarker,calendarEventSchema,calendarDescription,type ActionProposal} from '@mote/shared/actions';
 import {calendarHelper} from './source-calendar';
 import {validateServerUrl} from './config';
 import type {Config} from './contracts';
@@ -32,7 +32,8 @@ export class CalendarActions {
   if(managedOperationId)moteActionMarker(managedOperationId);
   const cachedRaw=managedOperationId?await this.io.read('managed-'+managedOperationId):undefined;
   const cached=cachedRaw?JSON.parse(cachedRaw) as ActionProposal:undefined;
-  if(cached&&(cached.id!==id||cached.operationId!==managedOperationId||!['calendar.create','calendar.update','calendar.cancel'].includes(cached.kind)||cached.target?.deviceId!==this.config.deviceId))throw Error(moteText('此操作属于另一台设备'));
+  const localTarget=(target:ActionProposal['target'])=>target&&!isCentralConnectorActionTarget(target)?target:undefined;
+  if(cached&&(cached.id!==id||cached.operationId!==managedOperationId||!['calendar.create','calendar.update','calendar.cancel'].includes(cached.kind)||localTarget(cached.target)?.deviceId!==this.config.deviceId))throw Error(moteText('此操作属于另一台设备'));
   const retained=managedOperationId?await this.io.read(managedOperationId):undefined;
   // A completed local receipt does not need renewed content access or a new grant.
   if(cached&&retained&&retained!=='attempting'){await this.io.request(`/api/managed-calendar/${id}/receipt`,{deviceId:this.config.deviceId,operationId:managedOperationId,status:'succeeded',externalId:retained});return;}
@@ -40,15 +41,16 @@ export class CalendarActions {
   try{action=await this.io.request(`/api/${route}/${id}/claim`,{deviceId:this.config.deviceId});}
   catch(error){if(!cached||retained!=='attempting')throw error;action={...cached,status:'uncertain',mutationAllowed:false};}
   if(managedOperationId&&(action.operationId!==managedOperationId||!['calendar.create','calendar.update','calendar.cancel'].includes(action.kind)))throw Error(moteText('日程确认信息无效'));
-  if(action.id!==id||!['calendar.create','calendar.update','calendar.cancel'].includes(action.kind)||action.target?.deviceId!==this.config.deviceId||!action.operationId)throw Error(moteText("日程确认信息无效"));
+  if(action.id!==id||!['calendar.create','calendar.update','calendar.cancel'].includes(action.kind)||localTarget(action.target)?.deviceId!==this.config.deviceId||!action.operationId)throw Error(moteText("日程确认信息无效"));
   moteActionMarker(action.operationId);
   if(action.status==='succeeded')return;
   if(!['executing','uncertain'].includes(action.status))throw Error(moteText("日程尚未获准执行"));
-  calendarEventSchema.parse(action.event);if(action.kind!=='calendar.create'&&(!action.related?.externalId||action.related.target?.deviceId!==this.config.deviceId||action.related.target.calendarId!==action.target.calendarId))throw Error(moteText('原日程确认信息无效'));
+  calendarEventSchema.parse(action.event);if(action.kind!=='calendar.create'&&(!action.related?.externalId||localTarget(action.related.target)?.deviceId!==this.config.deviceId||localTarget(action.related.target)?.calendarId!==localTarget(action.target)?.calendarId))throw Error(moteText('原日程确认信息无效'));
+  const target=localTarget(action.target);if(!target)throw Error(moteText('日程确认信息无效'));
   if(managedOperationId)await this.io.write('managed-'+managedOperationId,JSON.stringify(action));
   const previous=await this.io.read(action.operationId);let externalId=previous&&previous!=='attempting'?previous:undefined;
   try{
-   if(!externalId){await this.io.write(action.operationId,'attempting');const result=action.kind==='calendar.create'?await this.io.native('calendar-create',{id:action.id,calendarId:action.target.calendarId,...action.event,description:calendarDescription(action),createAllowed:action.mutationAllowed===true&&!previous}):await this.io.native('calendar-change',{id:action.related!.actionId,operationId:action.operationId,kind:action.kind,externalId:action.related!.externalId,calendarId:action.target.calendarId,...action.event,description:calendarDescription(action),expected:{...action.related!.event,description:calendarDescription({id:action.related!.actionId,event:action.related!.event,operationId:action.related!.operationId})},mutationAllowed:action.mutationAllowed===true&&!previous});if(typeof result.externalId!=='string'||!result.externalId)throw Error(moteText("保存结果待核实，请查看系统日历后重试"));externalId=result.externalId;await this.io.write(action.operationId,externalId!);}
+   if(!externalId){await this.io.write(action.operationId,'attempting');const result=action.kind==='calendar.create'?await this.io.native('calendar-create',{id:action.id,calendarId:target.calendarId,...action.event,description:calendarDescription(action),createAllowed:action.mutationAllowed===true&&!previous}):await this.io.native('calendar-change',{id:action.related!.actionId,operationId:action.operationId,kind:action.kind,externalId:action.related!.externalId,calendarId:target.calendarId,...action.event,description:calendarDescription(action),expected:{...action.related!.event,description:calendarDescription({id:action.related!.actionId,event:action.related!.event,operationId:action.related!.operationId})},mutationAllowed:action.mutationAllowed===true&&!previous});if(typeof result.externalId!=='string'||!result.externalId)throw Error(moteText("保存结果待核实，请查看系统日历后重试"));externalId=result.externalId;await this.io.write(action.operationId,externalId!);}
    await this.io.request(`/api/${route}/${id}/receipt`,{deviceId:this.config.deviceId,operationId:action.operationId,status:'succeeded',externalId});
   }catch{await this.io.request(`/api/${route}/${id}/receipt`,{deviceId:this.config.deviceId,operationId:action.operationId,status:'uncertain'}).catch(()=>{});throw Error(moteText("保存结果待核实。请检查日历权限与网络后再次核实；不会重复插入。"));}
  });}

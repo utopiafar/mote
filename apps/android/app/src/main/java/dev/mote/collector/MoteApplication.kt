@@ -8,6 +8,7 @@ import dev.mote.collector.plugins.NativePluginRegistry
 import dev.mote.collector.plugins.SourceProviderPlugin
 import dev.mote.collector.plugins.SystemEntriesPlugin
 import dev.mote.collector.plugins.registerBuiltinPlugins
+import dev.mote.collector.meeting.MeetingRecordingUploadWorker
 import java.util.concurrent.Executors
 
 class MoteApplication : Application() {
@@ -97,6 +98,7 @@ class MoteApplication : Application() {
                     RetentionWorker.schedule(this@MoteApplication)
                     transport.scheduleUpload(current)
                     sources.schedule()
+                    MeetingRecordingUploadWorker.scheduleIfPending(this@MoteApplication)
                 } catch (error: Exception) {
                     SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)
                     if (QueueStorage.recovering) {
