@@ -144,6 +144,20 @@ test('an expired lease cannot publish a permanent failure before recovery',async
  assert.equal(engine.get(id)!.state,'succeeded');assert.equal(engine.get(id)!.attempts,1);assert.equal(engine.get(id)!.error,undefined);
 });
 
+test('a missed lease renewal interrupts parent and child work instead of cancelling the child',async t=>{
+ t.mock.timers.enable({apis:['setInterval']});
+ const {engine,advance}=await fixture(t);let entered!:()=>void,release!:()=>void,childRuns=0;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+ engine.register({...base,kind:'fixture-parent',pool:'fixture-parent',execute:async(_step,signal)=>engine.runStep({id:'generated-child',operationId:'generated-parent',kind:'fixture-child',pool:'fixture-child',input:{},signal,validate:()=>true,
+     execute:async()=>{if(++childRuns===1)entered();await held;return 'generated child';},commit:()=>{},read:()=>'generated child',project:()=>{}}),commit:()=>{}});
+ const parent=engine.enqueue('generated-parent','fixture-parent',{}),running=engine.drain([parent]);await started;
+ advance(30001);t.mock.timers.tick(10000);
+ assert.notEqual(engine.get('generated-child')!.state,'cancelled','a missed parent renewal must not permanently cancel its child');
+ release();await running;
+ await engine.drain([parent,'generated-child']);
+ assert.equal(engine.get('generated-child')!.state,'succeeded');assert.equal(engine.get(parent)!.state,'succeeded');assert.equal(childRuns,2);
+});
+
 test('handler disposal interrupts local work and preserves queued, blocked and terminal tasks',async t=>{
  const {engine}=await fixture(t);let entered!:()=>void,release!:()=>void,signal!:AbortSignal,commits=0;
  const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);

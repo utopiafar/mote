@@ -320,6 +320,41 @@ export class FileProcessing {
     if(this.imageControl?.owns(call.captureId))return this.imageControl.mediaCallCurrent?.(call)??false;
     return this.exists(call.captureId,call.generation);
   }
+  /** A local media worker restart proves the prior recognizer is gone. Its
+   * retained fact is enough to safely replay the same input, unlike a merely
+   * lost response whose old process may still be running. */
+  private recoverMediaCall(call:MediaExecutionCall){
+    if(call.stage==='ocr'||this.stopping||this.closing||this.activeProcessorCalls.has(call.requestId))return;
+    const current=this.mediaCalls.get(call.requestId),fact=current?.fact;
+    if(!current||!fact)return;
+    const succeeded=fact.state==='succeeded',interrupted=fact.state==='unknown'&&['worker_restarted','receipt_unavailable'].includes(fact.outcome??'');
+    if(!succeeded&&!interrupted)return;
+    const db=this.files.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      const wait=db.prepare('SELECT 1 FROM file_processor_waits WHERE token=?').get(call.requestId),step=this.engine.get(call.stepId),job=db.prepare('SELECT state,error FROM file_jobs WHERE capture_id=?').get(call.captureId) as {state:string;error:string|null}|undefined;
+      // Only an issued-call block may be released here. Configuration, model
+      // authorization and capability waits keep their own explicit owners.
+      const issuedCallError=job?.error===null||['processor_response_unknown','processor_still_running','processor_not_configured','interrupted'].includes(String(job?.error));
+      if(!wait||!step||!job||!issuedCallError||['running','succeeded','cancelled','stale'].includes(step.state)||['succeeded','cancelled'].includes(String(job.state))){if(own)db.exec('COMMIT');return;}
+      db.prepare('DELETE FROM file_processor_waits WHERE token=?').run(call.requestId);
+      this.mediaCalls.settle(call.requestId);this.mediaCalls.cleanup(call.requestId);
+      // An unknown worker fact cannot be erased remotely. Drop the local
+      // ledger row so it is not probed forever; the consumed request ID stays
+      // reserved by the worker and is never reused.
+      if(interrupted)this.mediaCalls.erased(call.requestId);
+      this.engine.retry(call.stepId,false);
+      db.prepare("UPDATE file_jobs SET state='waiting',available_at=0,error=NULL WHERE capture_id=? AND state IN ('blocked','waiting','failed') AND (error IS NULL OR error IN ('processor_response_unknown','processor_still_running','processor_not_configured','interrupted'))").run(call.captureId);
+      if(own)db.exec('COMMIT');
+      this.log(succeeded?'file.recovered':'file.interrupted',call.captureId,{operation:'file_process',category:'interrupted'},'info');
+      return call.captureId;
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+  }
+  private recoverKnownMediaFacts(){
+    if(this.stopping||this.closing)return;
+    for(const call of this.mediaCalls.pending()){
+      const id=this.recoverMediaCall(call);if(id)this.enqueue(id,'pipeline');
+    }
+  }
   private startMediaReconciliation(){
     if(this.stopping||this.closing)return;
     const calls=this.mediaCalls.pending(),pending=new Set(calls.map(call=>call.requestId));
@@ -341,6 +376,10 @@ export class FileProcessing {
       if(await eraseMediaExecutionFact(transport)){this.abort.signal.throwIfAborted();this.mediaCalls.erased(call.requestId);}return;
     }
     const fact=await readMediaExecutionFact(transport);this.abort.signal.throwIfAborted();if(!fact||!this.mediaCalls.observe(call.requestId,fact))return;
+    // Audio execution has no side effect beyond the derived artifact, so a
+    // worker restart or an already-successful fact safely releases the same
+    // input for a fresh request instead of leaving an unknown wait forever.
+    const recovered=this.recoverMediaCall(this.mediaCalls.get(call.requestId)!);if(recovered){this.enqueue(recovered,'pipeline');return;}
     if(!['failed','succeeded'].includes(fact.state))return;
     const db=this.files.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{
@@ -393,7 +432,7 @@ export class FileProcessing {
     this.assertOpen();
     const active=this.execution.getStore();active?.signal.throwIfAborted();
     const phase=active?.step.kind==='files.summary'?'summary':'pipeline',key=this.workerKey(id,phase),db=this.files.store.db;
-    if(this.processorWaits(id).length)throw new StoreError(moteText("当前处理尚未结束，请稍后再试。"),409);
+    if(this.processorWaits(id).length)throw new ExecutionFailure('blocked',this.cancellation(id).wait==='running'?'processor_still_running':'processor_response_unknown');
     const token=randomUUID();this.files.store.reserveMetadata(512);
     db.prepare("INSERT INTO file_processor_waits VALUES(?,?,?,'running')").run(key,id,token);this.activeProcessorCalls.add(token);
     // Manual cancellation only revokes publication. Keep the original deadline for the issued call.
@@ -581,6 +620,7 @@ export class FileProcessing {
   /** Intake discovery only; all claims, retry waits and provider execution live in the engine. */
   prepare(){
     if(this.closing||this.stopping||this.engine.closed)return [];
+    this.recoverKnownMediaFacts();
     this.startMediaReconciliation();
     this.imageControl?.prepare();
     for(const row of this.files.store.db.prepare("SELECT capture_id,json FROM file_artifacts WHERE kind='summary' AND current=1").all()){

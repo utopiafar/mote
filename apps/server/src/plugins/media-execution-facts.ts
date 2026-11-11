@@ -42,7 +42,12 @@ export class MediaExecutionCalls {
  support(id:string,supported:boolean){this.store.db.prepare("UPDATE media_execution_calls SET supported=? WHERE request_id=? AND state='issued'").run(Number(supported),id);}
  observe(id:string,value:MediaExecutionFact){
   const call=this.get(id),fact=mediaExecutionFact.parse(value);
-  if(!call||call.state==='settled'||fact.requestId!==id||fact.stage!==call.stage||!fact.incarnation||!fact.acceptedAt||call.fact?.incarnation&&call.fact.incarnation!==fact.incarnation)return false;
+  // A new worker incarnation cannot report the old call's outcome, but its
+  // explicit `worker_restarted`/`receipt_unavailable` unknown is the proof that
+  // the old recognizer is gone and the input may be replayed.
+  const restarted=fact.state==='unknown'&&['worker_restarted','receipt_unavailable'].includes(fact.outcome??'');
+  const receiptUnavailable=fact.state==='unknown'&&fact.outcome==='receipt_unavailable';
+  if(!call||call.state==='settled'||fact.requestId!==id||!receiptUnavailable&&(fact.stage!==call.stage||!fact.incarnation||!fact.acceptedAt)||call.fact?.incarnation&&call.fact.incarnation!==fact.incarnation&&!restarted)return false;
   if(['succeeded','failed'].includes(fact.state)&&(!fact.finishedAt||fact.state==='succeeded'&&!fact.startedAt||fact.state==='failed'&&!fact.failureCode))return false;
   // A terminal observation is monotonic, even when a subsequent read fails.
   if(call.fact&&['succeeded','failed'].includes(call.fact.state))return JSON.stringify(call.fact)===JSON.stringify(fact);
