@@ -302,7 +302,9 @@ export class ExecutionEngine {
    const started=this.observing()?observationClock():undefined,priorLeaseUntil=knownLeaseUntil;
    let outcome:'renewed'|'cas_missed'|'renew_exception'='renew_exception',renewedAt:number|undefined;
    // The original CAS/abort boundary is unchanged. Observation runs afterward.
-   try{const at=this.now();renewedAt=at;if(!db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(at+30000,row.id,fence,at).changes){outcome='cas_missed';controller.abort();}else{outcome='renewed';knownLeaseUntil=at+30000;}}catch{controller.abort();}
+   // A lost lease is an interruption, never a user cancellation: child abort
+   // listeners must not persist `cancelled` for work that can still resume.
+   try{const at=this.now();renewedAt=at;if(!db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(at+30000,row.id,fence,at).changes){outcome='cas_missed';controller.abort(interrupted);}else{outcome='renewed';knownLeaseUntil=at+30000;}}catch{controller.abort();}
    try{const ended=started?observationClock():undefined;
     if(started)this.observe({type:'renew',taskId:row.id,attempt:step.attempts,outcome,...observationGap(previousRenewal,started,10000),...(ended&&ended.monotonic>=started.monotonic?{durationMs:ended.monotonic-started.monotonic}:{}),...(renewedAt===undefined?{}:{leaseRemainingMs:Math.max(0,priorLeaseUntil-renewedAt),leaseOverdueMs:Math.max(0,renewedAt-priorLeaseUntil)})});
     previousRenewal=started;
