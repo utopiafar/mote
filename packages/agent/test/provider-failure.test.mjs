@@ -1,9 +1,19 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createServer} from 'node:http';import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {createAgent,createImportAgent,AgentProviderError} from '../dist/index.js';import {observeModelTransport} from '../dist/models/http-transport.js';
+import {createAgent,createImportAgent,AgentProviderError} from '../dist/index.js';import {observeModelTransport,boundedModelFetch,modelFailureReporter} from '../dist/models/http-transport.js';
 const reader={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
 test('private transport reporter rejects unauthorized or unstructured reports',async()=>{
  const observer=await observeModelTransport();try{const {url,token}=observer.configuration;assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,403);assert.equal((await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify({status:429,body:'private text'})})).status,400);
  const failure=assert.rejects(observer.failure,error=>error instanceof AgentProviderError&&error.details.code==='rate_limited'&&error.details.retryAfterMs===9000);assert.equal((await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify({status:429,retryAfter:'9'})})).status,200);await failure;}finally{await observer.close();}
+});
+test('transport errno survives the private reporter without retaining the exception text',async()=>{
+ const observer=await observeModelTransport(),previous=process.env.MOTE_MODEL_OBSERVER;
+ process.env.MOTE_MODEL_OBSERVER=JSON.stringify(observer.configuration);
+ try{
+  const original=new TypeError('Generated private provider address and credential',{cause:Object.assign(new Error('Generated private body'),{code:'ECONNRESET'})});
+  const transport=boundedModelFetch(async()=>{throw original;},'http://generated-context.invalid',1024,undefined,modelFailureReporter(fetch));
+  const failure=assert.rejects(observer.failure,error=>{assert.ok(error instanceof AgentProviderError);assert.equal(error.details.code,'provider_network');assert.equal(error.diagnostic.code,'ECONNRESET');assert.equal(error.diagnostic.errorType,'TypeError');assert.equal(error.diagnostic.stage,'model');assert.doesNotMatch(JSON.stringify(error.diagnostic),/private|credential|address/);return true;});
+  await assert.rejects(transport('http://generated-provider.invalid'),error=>error===original);await failure;
+ }finally{if(previous===undefined)delete process.env.MOTE_MODEL_OBSERVER;else process.env.MOTE_MODEL_OBSERVER=previous;await observer.close();}
 });
 test('real Harness preserves HTTP recovery facts and does not retry opaque provider failures', {timeout:90000},async()=>{
  let status=401,calls=0;const provider=createServer(async(req,res)=>{for await(const _ of req){}calls++;res.writeHead(status,{'Content-Type':'application/json','Retry-After':'13'}).end(JSON.stringify({error:{message:'generated-private-provider-text'}}));});await new Promise(r=>provider.listen(0,'127.0.0.1',r));
