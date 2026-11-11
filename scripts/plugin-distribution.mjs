@@ -572,8 +572,11 @@ async function buildCentral(output, contract, protocol) {
     ['apps/web/package.json', 'apps/web/package.json'],
     ['protocol/contract.json', 'protocol/contract.json'],
     ['packages/shared/src/config-file.ts', 'packages/shared/src/config-file.ts'],
+    ['packages/shared/src/failure-diagnostics.ts','packages/shared/src/failure-diagnostics.ts'],
     ['apps/server/src/log-retention-config.mjs', 'apps/server/src/log-retention-config.mjs'],
     ['apps/server/src/log-retention-config.d.mts', 'apps/server/src/log-retention-config.d.mts'],
+    ['apps/server/src/diagnostic-log-store.mjs','apps/server/src/diagnostic-log-store.mjs'],
+    ['apps/server/src/diagnostic-log-store.d.mts','apps/server/src/diagnostic-log-store.d.mts'],
     ['apps/server/src/connectors/cli-runtime.mjs', 'apps/server/src/connectors/cli-runtime.mjs'],
   ]) {
     const destination = join(directory, target);

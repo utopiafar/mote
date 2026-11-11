@@ -99,7 +99,7 @@ test('requesting another source page still shows its initial loading state and g
 
 test('diagnostic polls keep loaded log filters usable while a new filter fences old log replies',async t=>{
  const {root,d}=await fixture(t),statusRefresh=deferred(),oldLogs=deferred(),newLogs=deferred();let refreshing=false;
- const status={enabled:true,level:'info',runtime:{uptimeMs:1000,rssBytes:100},queue:{reportedPending:0,index:{pending:0,failed:0}},services:{activeQueries:0},limits:{maxFiles:2,maxFileBytes:1000},retainedEvents:1,writeFailures:0,readFailures:0,droppedEvents:0};
+ const status={enabled:true,level:'info',runtime:{uptimeMs:1000,rssBytes:100},queue:{reportedPending:0,index:{pending:0,failed:0}},services:{activeQueries:0},limits:{maxFileBytes:1000},retention:{totalBytes:100,maxTotalBytes:1000,channels:[],lastCleanup:null,files:[{index:0,channel:'info',firstAt:'2026-10-01T00:00:00Z',name:'central.info.1790812800000.1790812800000.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.ndjson'},{index:1,channel:'error',firstAt:'2026-10-01T00:00:00Z',name:'central.error.1790812800000.1790812800000.bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.ndjson'}]},retainedEvents:1,writeFailures:0,readFailures:0,droppedEvents:0};
  const page=(value:string)=>({items:[value],page:1,pageSize:100,totalLines:1,totalPages:1,hasPrevious:false,hasNext:false});
  const signals:AbortSignal[]=[];
  const api=apiWith((path,init)=>{if(path==='/api/diagnostics')return refreshing?statusRefresh.promise:status;if(path.endsWith('stage=agent'))return newLogs.promise;assert.match(path,/^\/api\/diagnostics\/log-pages\?/);signals.push(init!.signal as AbortSignal);return refreshing?oldLogs.promise:page('Generated original log');});
@@ -117,4 +117,14 @@ test('diagnostic polls keep loaded log filters usable while a new filter fences 
  await act(async()=>newLogs.resolve(page('Generated current agent log')));
  assert.equal(output.value,'Generated current agent log\n');assert.ok(selects.every(select=>!select.disabled));
  await act(async()=>statusRefresh.resolve(status));assert.equal(output.value,'Generated current agent log\n');
+});
+
+test('log cleanup shows the reviewed range and requires an explicit confirmation before deleting',async t=>{
+ const {root,d}=await fixture(t),writes:string[]=[];
+ const snapshot={enabled:true,level:'info',runtime:{uptimeMs:1000,rssBytes:100},queue:{reportedPending:0,index:{pending:0,failed:0}},services:{activeQueries:0},limits:{maxFileBytes:1000},retainedEvents:1,writeFailures:0,readFailures:0,droppedEvents:0,retention:{totalBytes:100,maxTotalBytes:1000,channels:[],lastCleanup:null,files:[]}};
+ const plan={kind:'trace',files:[{name:'Generated log file'}],bytes:100,oldestAt:'2026-10-01T01:00:00Z',newestAt:'2026-10-01T02:00:00Z'};
+ const api=apiWith((path,init)=>{if(path==='/api/configuration')return {groups:[]};if(path==='/api/diagnostics')return snapshot;if(path.startsWith('/api/diagnostics/log-pages'))return {items:[],page:1,pageSize:100,totalLines:0,totalPages:1};writes.push(path);if(path.endsWith('cleanup-preview'))return plan;assert.equal(path,'/api/diagnostics/cleanup');assert.deepEqual(JSON.parse(String(init?.body)),plan);return {deletedFiles:1,deletedBytes:100};});
+ await act(async()=>root.render(React.createElement(Diagnostics,{api})));await act(async()=>button(d,'清理详细记录').click());assert.deepEqual(writes,['/api/diagnostics/cleanup-preview']);assert.match(d.querySelector('[role=alertdialog]')!.textContent!,/将删除 1 个日志文件/);
+ await act(async()=>button(d,'取消').click());assert.equal(d.querySelector('[role=alertdialog]'),null);assert.equal(writes.length,1);
+ await act(async()=>button(d,'清理详细记录').click());await act(async()=>button(d,'确认清理').click());assert.deepEqual(writes,['/api/diagnostics/cleanup-preview','/api/diagnostics/cleanup-preview','/api/diagnostics/cleanup']);assert.equal(d.querySelector('[role=alertdialog]'),null);
 });

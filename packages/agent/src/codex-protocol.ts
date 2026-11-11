@@ -1,4 +1,4 @@
-import {providerHttpFailure,type ProviderFailureDetails,type TokenUsage} from '@mote/shared';
+import {providerHttpFailure,type ProviderFailureDetails,type TokenUsage,type FailureDiagnostics} from '@mote/shared';
 
 /** App Server v2 discriminants, checked against the installed generate-ts schema.
  * Never classify the provider's free-form message or additionalDetails. */
@@ -31,4 +31,16 @@ export function codexUsage(value:unknown):TokenUsage|undefined {
   if(Number(u.cachedInputTokens??0)+Number(u.cacheWriteInputTokens??0)>u.inputTokens||Number(u.reasoningOutputTokens??0)>u.outputTokens)return;
   return {measurement:'thread_cumulative',complete:true,requests:0,reportedRequests:0,inputTokens:u.inputTokens,outputTokens:u.outputTokens,totalTokens:u.totalTokens,
     ...(count(u.cachedInputTokens)?{cacheReadTokens:u.cachedInputTokens}:{}),...(count(u.cacheWriteInputTokens)?{cacheWriteTokens:u.cacheWriteInputTokens}:{}),...(count(u.reasoningOutputTokens)?{reasoningTokens:u.reasoningOutputTokens}:{})};
+}
+
+/** Preserve only official discriminants/statuses; free-form details stay private. */
+export function codexFailureDiagnostics(value:unknown):FailureDiagnostics {
+ const allowed=['unauthorized','usageLimitExceeded','sessionBudgetExceeded','rateLimitExceeded','serverOverloaded','internalServerError','contextWindowExceeded','badRequest','cyberPolicy','misalignmentPolicyViolation'];
+ if(typeof value==='string')return {source:'codex',stage:'model',code:allowed.includes(value)?value:'unknown'};
+ if(value&&typeof value==='object')for(const code of ['httpConnectionFailed','responseStreamConnectionFailed','responseStreamDisconnected','responseTooManyFailedAttempts']){
+  const v=(value as Record<string,unknown>)[code];if(!v||typeof v!=='object')continue;
+  const status=(v as {httpStatusCode?:unknown}).httpStatusCode;
+  return {source:'codex',stage:'model',code,...(typeof status==='number'&&Number.isInteger(status)&&status>=100&&status<=599?{httpStatus:status}:{})};
+ }
+ return {source:'codex',stage:'model',code:'unknown'};
 }

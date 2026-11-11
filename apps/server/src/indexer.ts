@@ -15,7 +15,7 @@ const EMBEDDING_INPUT_CODE_UNITS=20000;
 
 class EmbeddingError extends ProviderFailure {
   constructor(readonly code:'embedding_http'|'embedding_invalid'|'embedding_transport',readonly httpStatus?:number,retryAfter?:string|null) {
-    super(code==='embedding_http'?providerHttpFailure(httpStatus!,retryAfter):{category:code==='embedding_invalid'?'permanent':'transient',code},code==='embedding_http'?`Embedding provider returned HTTP ${httpStatus}`:code==='embedding_invalid'?'Embedding provider returned an invalid vector':'Embedding transport failed');
+    super(code==='embedding_http'?providerHttpFailure(httpStatus!,retryAfter):{category:code==='embedding_invalid'?'permanent':'transient',code},code==='embedding_http'?`Embedding provider returned HTTP ${httpStatus}`:code==='embedding_invalid'?'Embedding provider returned an invalid vector':'Embedding transport failed',code==='embedding_http'?{source:'http',httpStatus}:{source:code==='embedding_transport'?'transport':'runtime',code:'unknown'});
   }
 }
 

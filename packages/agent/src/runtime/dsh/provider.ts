@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import type {PluginDefinition} from '@mote/plugin-host';
 import type {Cancellation, ScopeIdentity, ServiceBinding} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
-import {ProviderFailure} from '@mote/shared';
+import {ProviderFailure,errorDiagnostics} from '@mote/shared';
 import {AgentProviderError, AgentResponseError, AgentTimeoutError} from '../../types.js';
 import {createDshModelAdapter, type DshModelAdapter} from '../../models/dsh-adapter.js';
 import {observeHarness} from '../../usage.js';
@@ -124,13 +124,14 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
               } catch (error) {
                 if (cancellation || host.signal.aborted) return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? 'cancelled'}};
                 if (error instanceof AgentYieldError) return {terminal: {kind: 'yielded'}};
-                if (error instanceof AgentTimeoutError || error instanceof RequestTimeoutError) throw new AgentTimeoutError();
+                if(error instanceof AgentTimeoutError)throw error;
+                if(error instanceof RequestTimeoutError)throw new AgentTimeoutError({source:'http',code:'request_timeout',errorType:'RequestTimeoutError',stage:'model'});
                 // Host admission and validation failures stay primary and keep
                 // their identity; the run terminal must not replace them with a
                 // generic provider or tool failure.
                 if (error instanceof ProviderFailure || error instanceof AgentResponseError) throw error;
                 if (error instanceof ContextToolError && error.recovery === 'stop') return {terminal: {kind: 'failed', reason: 'tool_failure'}};
-                return {terminal: {kind: 'failed', reason: 'provider_error', ...(error instanceof ProviderFailure ? {providerFailure: error.details} : {})}};
+                throw new AgentProviderError(undefined,errorDiagnostics(error));
               } finally { active = undefined; }
             })();
             return task;
@@ -144,7 +145,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
           await closeResources().catch(() => {});
           if (error instanceof AgentResponseError || error instanceof AgentTimeoutError || error instanceof DshProfileError || error instanceof ProviderFailure) throw error;
           if (error instanceof RequestTimeoutError) throw new AgentTimeoutError();
-          throw new AgentProviderError();
+          throw new AgentProviderError(undefined,errorDiagnostics(error));
         }
       })();
       preparations.add(preparing); void preparing.then(() => preparations.delete(preparing), () => preparations.delete(preparing)); return preparing;

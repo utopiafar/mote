@@ -10,7 +10,9 @@ import type {ServerConfiguration} from '@mote/shared';
 interface Snapshot {
   enabled:boolean;level:string;instanceId:string;lastSeq:number;retainedEvents:number;
   droppedEvents:number;writeFailures:number;readFailures:number;
-  limits:{maxFileBytes:number;maxFiles:number;maxEvents:number};
+  limits:{maxFileBytes:number;maxEvents:number};
+  retention:{totalBytes:number;maxTotalBytes:number;files:{name:string;index:number;channel:string;firstAt:string}[];channels:{channel:string;days:number;maxBytes:number;bytes:number;oldestAt:string|null;newestAt:string|null}[];lastCleanup:{at:string;reason:string;channel:string}|null};
+  agentTrace?:{enabled:boolean;expiresAt:number};
   runtime:{uptimeMs:number;rssBytes:number;cpuUserMicros:number;cpuSystemMicros:number};
   services:{agentConfigured:boolean;embeddingConfigured:boolean;activeQueries:number};
   queue:{index:{pending:number;failed:number;indexed:number;textReady:number};devices:number;reportedPending:number};
@@ -22,8 +24,11 @@ interface LogPage {
 type LogStage='all'|'system'|'request'|'ingest'|'index'|'agent'|'source'|'maintenance'|'file'|'unknown';
 const logStages:readonly [LogStage,string][]= [['all',moteText("全部阶段")],['system',moteText("系统")],['request',moteText("请求")],['ingest',moteText("入库")],['index',moteText("索引")],['agent','Agent'],['source',moteText("资料")],['maintenance',moteText("维护")],['file',moteText("文件")],['unknown',moteText("未知")]];
 export function Diagnostics({api,profile,advanced,deployment}:{api:Api;profile?:string;advanced?:ReactNode;deployment?:ReactNode}) {
+  const activeApi=useRef(api);activeApi.current=api;
+  useEffect(()=>{setCleanup(null);setCleanupError('');setCleaning(false);setLogFile(0);},[api]);
+  const [cleanup,setCleanup]=useState<{kind:'trace'|'all';files:unknown[];bytes:number;oldestAt:string|null;newestAt:string|null}|null>(null),[cleanupError,setCleanupError]=useState(''),[cleaning,setCleaning]=useState(false);
   const [wrap,setWrap]=useState(true);
-  const [logFile,setLogFile]=useState(0);
+  const [logFile,setLogFile]=useState<number|string>(0);
   const [logPage,setLogPage]=useState(1);
   const [pageSize,setPageSize]=useState(100);
   const [logStage,setLogStage]=useState<LogStage>('all');
@@ -42,6 +47,8 @@ export function Diagnostics({api,profile,advanced,deployment}:{api:Api;profile?:
   const refresh=()=>{statusResource.refresh();logs.refresh();};
   useEffect(()=>{if(logs.data)setLogPage(logs.data.page);setCopyStatus('');},[logs.data]);
   useEffect(()=>{setCheckedAt(snapshot?new Date().toISOString():'');},[api,snapshot]);
+  async function previewCleanup(kind:'trace'|'all'){setCleaning(true);setCleanupError('');try{const plan=await api.request<typeof cleanup>('/api/diagnostics/cleanup-preview',{method:'POST',body:JSON.stringify({kind})});if(activeApi.current===api)setCleanup(plan);}catch(e){if(activeApi.current===api)setCleanupError(errorMessage(e));}finally{if(activeApi.current===api)setCleaning(false);}}
+  async function confirmCleanup(){if(!cleanup)return;setCleaning(true);setCleanupError('');try{await api.request('/api/diagnostics/cleanup',{method:'POST',body:JSON.stringify(cleanup)});if(activeApi.current!==api)return;setCleanup(null);setLogPage(1);setLogFile(0);refresh();}catch(e){if(activeApi.current===api)setCleanupError(errorMessage(e));}finally{if(activeApi.current===api)setCleaning(false);}}
   async function download() {
     const before=new Date(),after=new Date(before.getTime()-hours*3600000);
     await transfer.run('support',async current=>{
@@ -66,8 +73,8 @@ export function Diagnostics({api,profile,advanced,deployment}:{api:Api;profile?:
     {snapshot&&<section className="diagnostics-events" aria-labelledby="raw-log-title">
         <div className="section-heading"><div><h3 id="raw-log-title">{moteText("日志中心")}</h3><p>{moteText("原始顺序 · 刷新时更新")}</p></div>
           <div className="diagnostics-actions">
-            <select aria-label={moteText("日志文件")} value={logFile} disabled={logSelectionLoading} onChange={e=>{setLogFile(Number(e.target.value));}}>
-              {Array.from({length:snapshot.limits.maxFiles},(_,index)=><option key={index} value={index}>central.{index}.ndjson{index===0?moteText(" · 当前"):moteText(" · 历史 ")+index}</option>)}
+            <select aria-label={moteText("日志文件")} value={logFile} disabled={logSelectionLoading} onChange={e=>{setLogFile(e.target.value);}}>
+              {snapshot.retention.files.map(file=><option key={file.name} value={file.name.split('.')[4]}>{file.channel.toUpperCase()} · {dateTime(file.firstAt)}</option>)}{!snapshot.retention.files.length&&<option value={0}>{moteText('暂无日志。')}</option>}
             </select>
             <button className="button subtle" disabled={!rawLog} onClick={()=>void copyLogs()}>{moteText("复制当前页")}</button>
             <button className="button subtle" disabled={!rawLog} onClick={()=>{logRef.current?.focus();logRef.current?.select();}}>{moteText("全选")}</button>
@@ -104,7 +111,14 @@ export function Diagnostics({api,profile,advanced,deployment}:{api:Api;profile?:
         <div><strong>{snapshot.queue.index.pending} / {snapshot.queue.index.failed}</strong><span>{moteText("索引待处理 / 失败")}</span></div>
         <div><strong>{snapshot.services.activeQueries}</strong><span>{moteText("进行中的 AI 查询")}</span></div>
       </div>
-      <p className="fine-print">{moteText("日志")}{' '}{snapshot.enabled?snapshot.level:moteText("已关闭")}{' '}{moteText("· 最多")}{' '}{snapshot.limits.maxFiles}{' '}{moteText("个文件，每个")}{' '}{bytes(snapshot.limits.maxFileBytes)}{' '}{moteText("· 内存保留")}{' '}{snapshot.retainedEvents}{' '}{moteText("条事件。端点队列来自最近心跳，可能不是当前值。")}</p>
+      <p className="fine-print">{moteText('日志占用 {0} / {1}',bytes(snapshot.retention.totalBytes),bytes(snapshot.retention.maxTotalBytes))} · {moteText('容量不足时优先清理详细记录，保留时间以实际覆盖范围为准。')}</p>
+      <div style={{overflowX:'auto'}}><table><thead><tr><th>{moteText('级别')}</th><th>{moteText('占用空间')}</th><th>{moteText('保留目标')}</th><th>{moteText('实际覆盖范围')}</th></tr></thead><tbody>{snapshot.retention.channels.map(channel=><tr key={channel.channel}><td>{channel.channel.toUpperCase()}</td><td>{bytes(channel.bytes)} / {bytes(channel.maxBytes)}</td><td>{moteText('{0} 天',channel.days)}</td><td>{channel.oldestAt?dateTime(channel.oldestAt)+' — '+dateTime(channel.newestAt!):moteText('暂无日志。')}</td></tr>)}</tbody></table></div>
+      {snapshot.retention.lastCleanup&&<p className="fine-print">{moteText('最近清理：{0} · {1} · {2}',dateTime(snapshot.retention.lastCleanup.at),snapshot.retention.lastCleanup.channel.toUpperCase(),({expired:moteText('超过保留期限'),channel_capacity:moteText('达到该级别容量上限'),total_capacity:moteText('达到日志总容量上限'),disk_pressure:moteText('磁盘空间不足'),manual:moteText('手动清理')} as Record<string,string>)[snapshot.retention.lastCleanup.reason]??snapshot.retention.lastCleanup.reason)}</p>}
+      {snapshot.agentTrace?.enabled&&<p className="fine-print">{moteText('详细记录将在 {0} 自动关闭。',dateTime(new Date(snapshot.agentTrace.expiresAt).toISOString()))}</p>}
+      <div className="diagnostics-actions"><button className="button subtle" disabled={cleaning} onClick={()=>void previewCleanup('trace')}>{moteText('清理详细记录')}</button><button className="button subtle" disabled={cleaning} onClick={()=>void previewCleanup('all')}>{moteText('清理全部日志')}</button></div>
+      {cleanupError&&<p role="alert">{cleanupError}</p>}
+      {cleanup&&<div className="notice" role="alertdialog" aria-label={moteText('确认清理日志')}><p>{moteText('将删除 {0} 个日志文件，共 {1}。',cleanup.files.length,bytes(cleanup.bytes))}</p>{cleanup.oldestAt&&<p>{dateTime(cleanup.oldestAt)} — {dateTime(cleanup.newestAt!)}</p>}<button className="button" disabled={cleaning} onClick={()=>void confirmCleanup()}>{moteText('确认清理')}</button><button className="button subtle" disabled={cleaning} onClick={()=>setCleanup(null)}>{moteText('取消')}</button></div>}
+
       {(snapshot.writeFailures>0||snapshot.readFailures>0||snapshot.droppedEvents>0)&&<div className="notice" role="status">{moteText("日志读取失败")}{' '}{snapshot.readFailures}{' '}{moteText("次，写入失败")}{' '}{snapshot.writeFailures}{' '}{moteText("次，未写入")}{' '}{snapshot.droppedEvents}{' '}{moteText("条。请检查日志目录权限与磁盘空间。")}</div>}
     </>}
     </details>

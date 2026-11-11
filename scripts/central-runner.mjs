@@ -1,55 +1,29 @@
 // Private bounded stdout/stderr supervisor. The CLI records this process's unique marker.
 import { spawn } from 'node:child_process';
-import { appendFileSync, statSync, renameSync, rmSync, mkdirSync, chmodSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { readConfigDocument } from '../packages/shared/src/config-file.ts';
-import { logRetentionFromDocument } from '../apps/server/src/log-retention-config.mjs';
+import {dirname} from 'node:path';
+import {readConfigDocument} from '../packages/shared/src/config-file.ts';
+import {logRetentionFromDocument} from '../apps/server/src/log-retention-config.mjs';
+import {errorDiagnostics} from '../packages/shared/src/failure-diagnostics.ts';
+import {DiagnosticLogStore} from '../apps/server/src/diagnostic-log-store.mjs';
 
-const [entry, logPath, marker] = process.argv.slice(2);
-if (!entry || !logPath || !/^--mote-instance=[a-f0-9-]{36}$/.test(marker ?? '')) throw Error('Invalid central supervisor invocation');
-const loaded = process.env.MOTE_CONFIG_FILE ? readConfigDocument(process.env.MOTE_CONFIG_FILE) : undefined;
-const { maxBytes, maxFiles } = logRetentionFromDocument(loaded?.document ?? {});
-const maxBufferedBytes = 16 * 1024;
-let buffered = [], bufferedBytes = 0, logFailed = false;
-mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
-const size = path => { try { return statSync(path).size; } catch (error) { if (error.code === 'ENOENT') return 0; throw error; } };
-function rotate() {
-  rmSync(maxFiles === 1 ? logPath : `${logPath}.${maxFiles - 1}`, { force: true });
-  for (let i = maxFiles - 2; i >= 0; i--) {
-    const source = i === 0 ? logPath : `${logPath}.${i}`;
-    try { renameSync(source, `${logPath}.${i + 1}`); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  }
+const [entry,logPath,marker]=process.argv.slice(2);
+if(!entry||!logPath||!/^--mote-instance=[a-f0-9-]{36}$/.test(marker??''))throw Error('Invalid central supervisor invocation');
+const loaded=process.env.MOTE_CONFIG_FILE?readConfigDocument(process.env.MOTE_CONFIG_FILE):undefined;
+const store=new DiagnosticLogStore(dirname(logPath),{...logRetentionFromDocument(loaded?.document??{}),family:'supervisor'});
+await store.init();
+let buffered=[],logFailed=false,pending,writingCount=0,dropped=0;
+const instanceId=marker.slice('--mote-instance='.length);let seq=0;
+function flush(){
+ if(pending||!buffered.length||logFailed)return;
+ pending=(async()=>{while(buffered.length){const lines=buffered.splice(0,64);writingCount=lines.length;await store.append(lines);writingCount=0;}})().catch(()=>{logFailed=true;buffered=[];child?.kill('SIGTERM');process.exitCode=1;}).finally(()=>{pending=undefined;if(buffered.length&&!logFailed)flush();});
 }
-function write(chunk) {
-  if (logFailed) return;
-  try {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    for (let offset = 0; offset < bytes.length;) {
-      if (size(logPath) >= maxBytes) rotate();
-      const piece = bytes.subarray(offset, offset + Math.min(maxBytes - size(logPath), bytes.length - offset));
-      appendFileSync(logPath, piece, { mode: 0o600 }); chmodSync(logPath, 0o600); offset += piece.length;
-    }
-  } catch {
-    // Disk failure must not leave a running server whose supervisor died or an unbounded pipe.
-    logFailed = true; buffered = []; bufferedBytes = 0;
-    child?.kill('SIGTERM'); process.exitCode = 1;
-  }
+function safeWrite(line){
+ if(logFailed)return;
+ const value=JSON.parse(line),at=new Date().toISOString(),channel=value.event.endsWith('failed')||value.event==='process.exited'?'error':value.event==='process.output_suppressed'?'debug':'info';
+ if(channel==='debug'&&!loaded?.document.diagnostics?.debug)return;
+ if(buffered.length>=1024){const index=buffered.findIndex(item=>item.channel==='debug');if(channel==='debug'||index<0){dropped++;return;}buffered.splice(index,1);dropped++;}
+ buffered.push({channel,at,line:JSON.stringify({...value,seq:++seq,at,instanceId,level:channel,stage:'system'})+'\n'});flush();
 }
-function flush() {
-  if (!bufferedBytes) return;
-  const bytes = Buffer.concat(buffered, bufferedBytes);
-  buffered = []; bufferedBytes = 0;
-  write(bytes);
-}
-function safeWrite(line) {
-  if (logFailed) return;
-  const bytes = Buffer.from(line);
-  if (bufferedBytes + bytes.length > maxBufferedBytes) flush();
-  if (logFailed) return;
-  if (bytes.length > maxBufferedBytes) { write(bytes); return; }
-  buffered.push(bytes); bufferedBytes += bytes.length;
-}
-if (size(logPath) >= maxBytes) rotate();
 const child = spawn(process.execPath, [entry, marker], { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
 const events = new Set(['server.listening', 'server.stopped', 'server.stop_failed', 'server.start_failed']);
 const categories = new Set(['data_directory_in_use', 'port_in_use', 'permission', 'startup', 'shutdown', 'configuration']);
@@ -87,7 +61,7 @@ for (const stream of ['stdout', 'stderr']) {
   });
   child[stream].on('end', () => { if (discarded) safeLine('', stream, discarded); else if (pending) safeLine(pending, stream); flush(); });
 }
-child.on('error', () => { safeWrite('{"event":"process.spawn_failed"}\n'); flush(); process.exitCode = 1; });
-child.on('close', (code, signal) => { flush(); process.exitCode = process.exitCode || code || (signal ? 1 : 0); });
+child.on('error', error => { safeWrite(JSON.stringify({event:'process.spawn_failed',diagnostic:errorDiagnostics(error)})); flush(); process.exitCode = 1; });
+child.on('close', async (code,signal)=>{if(code||signal)safeWrite(JSON.stringify({event:'process.exited',exitCode:code,signal,diagnostic:{source:'process',stage:'cleanup',...(code!==null?{exitCode:code}:{}),...(signal?{signal}:{})}}));flush();while(pending)await pending;if(dropped){safeWrite(JSON.stringify({event:'process.output_dropped',count:dropped}));while(pending)await pending;}process.exitCode=process.exitCode||code||(signal?1:0);});
 process.on('SIGTERM', () => {child.kill('SIGTERM');});
 process.on('SIGINT', () => {child.kill('SIGINT');});

@@ -136,7 +136,7 @@ export async function observeModelTransport(authorize?:()=>void|Promise<void>){
    }
    if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['status','retryAfter'].includes(k))||!Number.isInteger(value.status)||value.status<0||value.status>599||value.status>0&&value.status<300||value.retryAfter!==undefined&&(typeof value.retryAfter!=='string'||value.retryAfter.length>128))throw Error();
    res.writeHead(200,{'Content-Type':'application/json'}).end('{"ok":true}');
-   reject(new AgentProviderError(value.status===0?{category:'transient',code:'provider_network'}:providerHttpFailure(value.status,value.retryAfter)));
+   reject(new AgentProviderError(value.status===0?{category:'transient',code:'provider_network'}:providerHttpFailure(value.status,value.retryAfter),{source:'http',stage:'model',...(value.status?{httpStatus:value.status}:{code:'unknown'})}));
   }catch{res.writeHead(400).end();}
  });
  server.requestTimeout=5000;server.headersTimeout=5000;

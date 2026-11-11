@@ -1,8 +1,9 @@
+import type {FailureDiagnostics} from './failure-diagnostics.js';
 /** Transport facts only. Never classify free-form provider messages or evidence. */
 export type ProviderFailureDetails={category:'transient'|'permanent'|'blocked';code:string;retryAfterMs?:number;executionStarted?:false;admissionWaiting?:true};
 export class ProviderFailure extends Error {
  readonly statusCode=502;
- constructor(readonly details:ProviderFailureDetails,message='The configured processing service did not complete the request.'){super(message);this.name='ProviderFailure';}
+ constructor(readonly details:ProviderFailureDetails,message='The configured processing service did not complete the request.',readonly diagnostic?:FailureDiagnostics){super(message);this.name='ProviderFailure';}
 }
 export function retryAfterMilliseconds(value:string|null|undefined,now=Date.now()):number|undefined{
  if(!value||value.length>128)return;

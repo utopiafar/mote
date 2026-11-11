@@ -126,7 +126,7 @@ test('Codex registry contribution sends real input and Host tools through App Se
 test('Codex rejects executable argument injection before any child can receive the login', async t => {
   const injected = join(tmpdir(), 'missing-generated-codex') + ' --config generated-injection';
   const f = await fixture(t, 'success', {executable: injected});
-  await assert.rejects(f.run(), error => error instanceof AgentProviderError && !String(error).includes(secret) && !String(error).includes('generated-injection'));
+  await assert.rejects(f.run(), error => {assert.equal(error.diagnostic?.code,'ENOENT');assert.equal(error.diagnostic?.modelId,modelId);assert.ok(!JSON.stringify(error.diagnostic).includes('generated-injection'));return error instanceof AgentProviderError && !String(error).includes(secret) && !String(error).includes('generated-injection');});
   await assert.rejects(access(f.argvPath), {code: 'ENOENT'});
   await assert.rejects(access(f.rpcPath), {code: 'ENOENT'});
   assert.equal(JSON.parse(await readFile(join(f.root, 'auth.json'), 'utf8')).OPENAI_API_KEY, secret);
@@ -135,7 +135,7 @@ test('Codex rejects executable argument injection before any child can receive t
 
 test('Codex rejects an unexpected sandbox acknowledgement before inference without exposing auth', async t => {
   const f = await fixture(t, 'sandbox-mismatch');
-  await assert.rejects(f.run(), error => error instanceof AgentProviderError && !String(error).includes(secret));
+  await assert.rejects(f.run(), error => {assert.equal(error.diagnostic?.code,'runtime_policy_mismatch');assert.equal(error.diagnostic?.stage,'startup');return error instanceof AgentProviderError && !String(error).includes(secret);});
   const rpc = await readJsonLines(f.rpcPath);
   assert.equal(rpc.some(message => message.method === 'turn/start'), false);
   assert.ok(!JSON.stringify(f.events).includes(secret));
@@ -144,7 +144,7 @@ test('Codex rejects an unexpected sandbox acknowledgement before inference witho
 
 test('Codex rejects an unexpected native tool instead of accepting its output', async t => {
   const f = await fixture(t, 'native-tool');
-  await assert.rejects(f.run(), error => error instanceof AgentProviderError && !String(error).includes(secret));
+  await assert.rejects(f.run(), error => {assert.equal(error.diagnostic?.code,'unexpected_native_tool');assert.equal(error.diagnostic?.modelId,modelId);return error instanceof AgentProviderError && !String(error).includes(secret);});
   assert.equal(f.calls.length, 0);
   assert.equal(f.validations, 0);
   assert.equal(f.events.at(-1).event.terminal.kind, 'failed');

@@ -22,7 +22,7 @@ export interface TranscriptionProvider {
 }
 export {isLoopback} from './local-http.js';
 export async function readProcessorJson(response:Response,limit=32*1024*1024){
-  if(!response.ok){await response.body?.cancel();throw new ProviderFailure(providerHttpFailure(response.status,response.headers.get('retry-after')));}
+  if(!response.ok){await response.body?.cancel();throw new ProviderFailure(providerHttpFailure(response.status,response.headers.get('retry-after')),undefined,{source:'http',httpStatus:response.status});}
   const reader=response.body?.getReader();if(!reader)throw new StoreError('Empty processing response',502);
   const chunks:Uint8Array[]=[];let size=0;
   try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw new StoreError('Processing response exceeds limit',502);chunks.push(value);}}

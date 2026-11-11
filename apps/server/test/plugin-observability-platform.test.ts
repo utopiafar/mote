@@ -145,7 +145,7 @@ test('real SQLite execution writes one admitted receipt and keeps diagnostic, do
   assert.ok(observed,'the real execution observer output is consumed by diagnostics');assert.equal(observed.taskKey,id);assert.equal(observed.attempt,1);assert.notEqual(observed.taskKey,domainJobId,'diagnostic execution identity and domain job id stay distinct');
   const recovered=eventPage.json().items.find((event:{event?:string;taskKey?:string})=>event.event==='task.lease_recovered');
   assert.ok(recovered,'the real engine recovery is consumed by diagnostics');assert.equal(recovered.taskKey,leaseId);assert.equal(recovered.attempt,1);
-  assert.equal((await app.inject('/api/diagnostics/logs?file=99')).statusCode,400,'diagnostic HTTP errors keep their validation mapping');
+  assert.equal((await app.inject('/api/diagnostics/logs?file=100001')).statusCode,400,'diagnostic HTTP errors keep their validation mapping');
   await diagnostics.flush();const persisted=readdirSync(f.logs).filter(name=>name.endsWith('.ndjson')).map(name=>readFileSync(join(f.logs,name),'utf8')).join('');
   assert.ok(persisted.includes('reader_evidence'));assert.ok(!persisted.includes(secret));
   engine.bindObserver(undefined);await app.close();
