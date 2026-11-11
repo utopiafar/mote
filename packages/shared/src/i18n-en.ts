@@ -10313,5 +10313,16 @@ export const english: Readonly<Record<string, string>> = {
   "还没有 Webhook。空目标、空范围或未启用的端点都不会投递。": "No webhooks yet. An empty target, empty scope or disabled endpoint never delivers.",
   "还没有开发者凭据。新建后可用于 n8n 或社区脚本拉取事件。": "No developer credentials yet. Create one for n8n or community scripts to pull events.",
   "还没有投递记录。": "No deliveries yet.",
-  "最多尝试 {0} 次": "Up to {0} attempts"
+  "最多尝试 {0} 次": "Up to {0} attempts",
+  "云端日历写出": "Cloud calendar writes",
+  "只读连接和启用同步不等于写出授权。写出需在这里单独授权，并在行动平台确认范围。": "A read-only connection and enabling sync do not authorize writes. Authorize writes here separately, then confirm the scope in Actions.",
+  "写出仅作用于你选择的日历；完成仍只在 Mote 中记录。": "Writes apply only to the calendar you selected; completion is recorded only in Mote.",
+  "授权云端日历写出": "Authorize cloud calendar writes",
+  "停止云端日历写出": "Stop cloud calendar writes",
+  "连接或启用只读日历不是写出授权；写出需在此确认目标日历和资料来源。": "Connecting or enabling a read-only calendar is not write authorization; confirm the target calendar and input scope here.",
+  "已停止云端日历写出。": "Cloud calendar writes stopped.",
+  "Google 日历写出授权已连接。写出仍需在行动平台确认范围。": "Google Calendar write access is connected. Writes still require a scope confirmation in Actions.",
+  "写出授权未完成或已过期。请返回 Mote 重试。": "Write authorization was not completed or has expired. Return to Mote and try again.",
+  "Google 日历 · {0}": "Google Calendar · {0}",
+  "飞书日历 · {0}": "Feishu Calendar · {0}"
 };

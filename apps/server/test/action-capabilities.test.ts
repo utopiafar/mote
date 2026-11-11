@@ -9,10 +9,10 @@ import type {Config} from '../src/config.js';
 import {Store,StoreError,sha256} from '../src/store.js';
 import {calendarPluginCapabilitySchema} from '@mote/shared';
 
-const owner='generated-action-capability-owner',headers=(token=owner)=>({authorization:'Bearer '+token});
+const owner='generated-action-capability-owner',mcpReadToken='generated-static-read-mcp-token-123456789',headers=(token=owner)=>({authorization:'Bearer '+token});
 const agent:QueryAgent={configured:false,query:async()=>{throw Error('Capability contracts do not call a model');},close:async()=>{}};
 async function fixture(t:TestContext){
- const directory=await mkdtemp(join(tmpdir(),'mote-action-capabilities-')),store=new Store(directory),config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,profile:'test',maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const directory=await mkdtemp(join(tmpdir(),'mote-action-capabilities-')),store=new Store(directory),config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,profile:'test',maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken,mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
  let node=await buildApp(config,{store,agent,backgroundWorker:false});
  const restart=async()=>{await node.app.close();node=await buildApp(config,{store,agent,backgroundWorker:false});return node;};
  t.after(async()=>{await node.app.close();store.close();await rm(directory,{recursive:true,force:true});});
@@ -31,6 +31,17 @@ test('real transport separates paired self declarations from owner draft authori
  assert.equal((await send('/api/device-action-capabilities','POST',{...declaration(),deviceId:'another-phone'},paired.token)).status,403);
  assert.equal((await send('/api/device-action-capabilities','POST',declaration(),paired.token)).status,200);
  for(const path of ['/api/action-capabilities','/api/action-capability-drafts'])assert.equal((await send(path,path.endsWith('drafts')?'PUT':'GET',path.endsWith('drafts')?draft():undefined,paired.token)).status,403);
+ // A collector or a read-only MCP credential can neither approve nor widen a
+ // calendar write grant; the owner check runs before any command parsing.
+ for(const token of [paired.token,mcpReadToken]){
+  // The MCP token is not an HTTP API credential at all, so it is rejected as
+  // unauthenticated; a paired collector reaches the owner check and gets 403.
+  const denied=(status:number)=>assert.ok([401,403].includes(status),`expected 401 or 403, got ${status}`);
+  denied((await send('/api/action-capabilities','GET',undefined,token)).status);
+  denied((await send('/api/action-capability-drafts','PUT',draft(),token)).status);
+  denied((await send('/api/action-capability-grants','PUT',{...draft(),draftId:randomUUID(),draftRevision:1,plugin:{packageId:'generated.calendar',releaseDigest:sha256('generated'),instanceId:'generated',instanceRevision:1,capabilityDigest:sha256('generated')},acknowledgeCalendarWrites:true},token)).status);
+  denied((await send('/api/action-capability-grants/'+randomUUID()+'/revoke','POST',{operationId:randomUUID(),expectedRevision:0},token)).status);
+ }
  const result=await send('/api/action-capability-drafts','PUT',draft(),owner);assert.equal(result.status,200);const saved=await result.json() as any;assert.equal(saved.state,'draft');assert.equal(saved.executionEnabled,false);
  const inventory=await(await send('/api/action-capabilities','GET',undefined,owner)).json() as any;assert.equal(inventory.executionEnabled,false);assert.equal(inventory.drafts.length,1);assert.equal(inventory.capabilities[0].invitesParticipants,false);
  assert.equal((await send('/api/action-capability-drafts/'+saved.id+'/activate','POST',{},owner)).status,404);

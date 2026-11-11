@@ -19,14 +19,17 @@ export type ActionKind='calendar.create'|'calendar.update'|'calendar.cancel'|'ca
 /** The legacy device-calendar target keeps its exact `{deviceId,calendarId}`
  * shape. A central connector target is a separate, explicitly located shape. */
 export const deviceActionProposalTargetSchema=z.object({deviceId:z.string().min(1).max(200),calendarId:z.string().min(1).max(1000)}).strict();
-export const centralConnectorActionTargetSchema=z.object({executionLocation:z.literal('central-connector'),packageId:z.string().min(1).max(300),instanceId:z.string().min(1).max(128),instanceRevision:z.number().int().positive(),capabilityId:z.string().min(1).max(128),capabilityVersion:z.number().int().positive()}).strict();
+/** A built-in cloud calendar provider adds one explicit calendar identity to
+ * the existing Central target. Installed fixture-style connectors keep their
+ * exact historical shape by omitting this field. */
+export const centralConnectorActionTargetSchema=z.object({executionLocation:z.literal('central-connector'),packageId:z.string().min(1).max(300),instanceId:z.string().min(1).max(128),instanceRevision:z.number().int().positive(),capabilityId:z.string().min(1).max(128),capabilityVersion:z.number().int().positive(),calendarId:z.string().min(1).max(1000).optional()}).strict();
 export const actionProposalTargetSchema=z.union([deviceActionProposalTargetSchema,centralConnectorActionTargetSchema]);
 export type DeviceActionProposalTarget=z.infer<typeof deviceActionProposalTargetSchema>;
 export type CentralConnectorActionTarget=z.infer<typeof centralConnectorActionTargetSchema>;
 export type ActionProposalTarget=z.infer<typeof actionProposalTargetSchema>;
 export const isCentralConnectorActionTarget=(value:ActionProposalTarget|undefined):value is CentralConnectorActionTarget=>Boolean(value&&'executionLocation' in value&&value.executionLocation==='central-connector');
 export interface ActionConnectorChoice {name:string;capability:{id:string;version:number};target:CentralConnectorActionTarget}
-export interface ConnectorActionExecution {capability:{id:string;version:number};operationId:string;input:{kind:ActionKind;event:CalendarDraft;target:ActionProposalTarget;message?:MessageSendDraft}}
+export interface ConnectorActionExecution {capability:{id:string;version:number};operationId:string;input:{kind:ActionKind;event:CalendarDraft;target:ActionProposalTarget;message?:MessageSendDraft;actionId?:string;externalId?:string}}
 export interface ConnectorActionReceipt {status:'succeeded'|'uncertain';externalId?:string}
 export interface ActionRelation {operationId?:string;actionId:string;version:number;status:ActionStatus;event:CalendarDraft;target?:ActionProposalTarget;externalId?:string}
 export type ManagedActionState='waiting_device'|'executing'|'cancel_requested'|'cancelled'|'succeeded'|'uncertain';

@@ -12,6 +12,9 @@ export type LarkCommand =
   | {kind:'complete';deviceCode:string}
   | {kind:'calendars';pageToken?:string}
   | {kind:'events';calendarId:string;start:number;end:number}
+  | {kind:'calendar-event-create';calendarId:string;data:Record<string,unknown>}
+  | {kind:'calendar-event-update';calendarId:string;eventId:string;data:Record<string,unknown>}
+  | {kind:'calendar-event-delete';calendarId:string;eventId:string}
   | {kind:'document';document:string}
   | {kind:'documents-search';action:'created'|'edited'|'opened';start:string;end:string;pageToken?:string}
   | {kind:'folder-list';folder:string;pageToken?:string}
@@ -38,6 +41,11 @@ export function larkArguments(command:LarkCommand):string[]{
     case 'complete':return ['auth','login','--device-code',command.deviceCode,'--json'];
     case 'calendars':return ['calendar','calendars','list','--as','user','--format','json','--params',JSON.stringify({page_size:100,...(command.pageToken?{page_token:command.pageToken}:{})})];
     case 'events':return ['calendar','events','instance_view','--as','user','--format','json','--params',JSON.stringify({calendar_id:command.calendarId,start_time:String(command.start),end_time:String(command.end)})];
+    // Event writes use one fixed path per operation. Callers never supply a
+    // method, API root or arbitrary path; the host action dispatcher owns them.
+    case 'calendar-event-create':return ['api','POST',`/open-apis/calendar/v4/calendars/${encodeURIComponent(command.calendarId)}/events`,'--data',JSON.stringify(command.data),'--as','user','--format','json'];
+    case 'calendar-event-update':return ['api','PATCH',`/open-apis/calendar/v4/calendars/${encodeURIComponent(command.calendarId)}/events/${encodeURIComponent(command.eventId)}`,'--data',JSON.stringify(command.data),'--as','user','--format','json'];
+    case 'calendar-event-delete':return ['api','DELETE',`/open-apis/calendar/v4/calendars/${encodeURIComponent(command.calendarId)}/events/${encodeURIComponent(command.eventId)}`,'--as','user','--format','json'];
     case 'document':return ['docs','+fetch','--api-version','v2','--as','user','--doc',command.document,'--doc-format','markdown','--format','json'];
     case 'documents-search':return ['drive','+search','--query','','--doc-types','docx,wiki','--page-size','20',...(command.action==='created'?['--created-by-me']:[]),`--${command.action}-since`,command.start,`--${command.action}-until`,command.end,...(command.pageToken?['--page-token',command.pageToken]:[]),'--as','user','--format','json'];
     case 'folder-list':return ['drive','files','list','--params',JSON.stringify({folder_token:command.folder,page_size:200,...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
