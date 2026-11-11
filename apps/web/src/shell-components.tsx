@@ -7,6 +7,8 @@ import {NoteOrigin,NoteAttachments} from './NoteOrigin';
 import {StructuredObservation} from './StructuredObservation';
 import {ImageProgress} from './ImageProgress';
 import {Loading,MoteMark} from './Loading';
+import {recordDescriptions} from './note-material-render';
+import {ReferencingConversations} from './ReferencingConversations';
 import {formatEvidenceRef} from '@mote/shared';
 import {memorySourceRoute} from './memory-source-route';
 import { decodeSourceText,captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
@@ -368,19 +370,23 @@ export function LoginDialog({ destination, onConnected, onClose }: {
   </div>;
 }
 
+/** The screenshot leads the reader whole. 查看原图 opens it for close reading, at fitted width or its own size. */
 export function OriginalImage({api,capture}:{api:Api;capture:Capture}) {
   const [open,setOpen]=useState(false);
   const [nativeSize,setNativeSize]=useState(false);
   useEffect(()=>{setOpen(false);setNativeSize(false);},[capture.id]);
-  return <div className="original-image">
+  return <div className={`original-image${open?' open':''}`}>
+    {/* One image element in both states, so opening never loads it twice. A click on the image opens it too; the button is the keyboard path. */}
+    <div className={`original-image-viewport${open&&nativeSize?' native-size':''}`} tabIndex={open?0:undefined} role={open?'region':undefined} aria-label={open?moteText('原图，可滚动查看'):undefined} onClick={open?undefined:()=>setOpen(true)}>
+      <AuthImage api={api} capture={capture} full/>
+    </div>
     <div className="original-image-controls">
-      <button className="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?moteText('收起原图'):moteText('查看原图')}</button>
+      <button type="button" className="button" aria-expanded={open} onClick={()=>{setOpen(!open);setNativeSize(false);}}>{open?moteText('收起原图'):moteText('查看原图')}</button>
       {open&&<>
-        <button className="button" aria-pressed={!nativeSize} onClick={()=>setNativeSize(false)}>{moteText('适应宽度')}</button>
-        <button className="button" aria-pressed={nativeSize} onClick={()=>setNativeSize(true)}>{moteText('原始尺寸')}</button>
+        <button type="button" className="button" aria-pressed={!nativeSize} onClick={()=>setNativeSize(false)}>{moteText('适应宽度')}</button>
+        <button type="button" className="button" aria-pressed={nativeSize} onClick={()=>setNativeSize(true)}>{moteText('原始尺寸')}</button>
       </>}
     </div>
-    {open&&<div className={`original-image-viewport${nativeSize?' native-size':''}`} tabIndex={0} role="region" aria-label={moteText('原图，可滚动查看')}><AuthImage api={api} capture={capture} full/></div>}
   </div>;
 }
 
@@ -516,6 +522,8 @@ export function EvidenceDialog({
   const materialRef=capture?.revisionState==='current'&&capture.memoryMaterialRef;
   const currentMaterialRef=materialRef&&/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(materialRef)?materialRef:undefined;
   const sourceFact=capture?[capture.appName||sourceLabel,capture.deviceName].filter(Boolean).join(' · '):'';
+  const descriptions=recordDescriptions(capture?.attributionContext);
+  const referenceMaterialRef=capture?.memoryMaterialRef&&/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(capture.memoryMaterialRef)?capture.memoryMaterialRef:undefined;
   return (
     <div
       className={embedded?"embedded-evidence":"modal-backdrop evidence-reader-backdrop"}
@@ -581,6 +589,8 @@ export function EvidenceDialog({
               <dl className="evidence-facts">
                 <div><dt>{moteText("来源")}</dt><dd>{sourceFact}</dd></div>
                 <div><dt>{moteText("状态")}</dt><dd><EvidenceState/>{capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span>{ocr.tone!=='green'&&<p>{ocr.description}</p>}</div>}</dd></div>
+                {descriptions.length>0&&<div><dt>{moteText("资料说明")}</dt><dd>{descriptions.map(text=><p key={text} className="evidence-description">{text}</p>)}</dd></div>}
+                <div><dt>{moteText("引用它的对话")}</dt><dd><ReferencingConversations api={api} captureId={capture.id} materialRef={referenceMaterialRef}/></dd></div>
               </dl>
               <details className="reader-source-details"><summary>{moteText("技术详情")}</summary>{presentation?.nativeFile&&readableText&&<pre>{readableText}</pre>}<dl>
                 <div>

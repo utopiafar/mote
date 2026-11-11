@@ -190,6 +190,14 @@
 .evidence-reader .reference-detail { padding:0; }
 .evidence-reader .reference-detail .material-detail { padding:0; }
 .evidence-reader .reader-source-details dl { margin-top:14px; }
+/* The screenshot leads the reader whole, fitted on a sunken ground; 查看原图 opens it to scroll at fitted width or its own size. */
+.evidence-reader .original-image { padding:0; }
+.evidence-reader .original-image-viewport { margin:0; background:var(--mote-surface-sunken); border:1px solid var(--mote-hair); border-radius:var(--mote-radius-container); }
+.evidence-reader .original-image:not(.open) .original-image-viewport { max-height:none; overflow:hidden; cursor:zoom-in; }
+.evidence-reader .original-image .capture-image { min-height:220px; background:transparent; }
+.evidence-reader .original-image:not(.open) .capture-image { display:flex; }
+.evidence-reader .original-image:not(.open) .capture-image img { width:auto; max-width:100%; height:auto; max-height:min(520px,60dvh); margin:0 auto; }
+.evidence-reader .original-image-controls { margin-top:10px; }
 .library-detail-heading { display:none; }
 @media(max-width:760px) { .evidence-reader-backdrop { left:0; top:65px; padding:25px 20px 50px; }.evidence-reader .evidence-heading h2 { font-size:23px; }.evidence-reader .evidence-text>pre { font-size:14px; } }
 
@@ -382,6 +390,10 @@
 .evidence-facts dd>p { margin:0; color:inherit; }
 .evidence-facts .evidence-ocr-status { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin:0; padding:0; background:none; border:0; }
 .evidence-facts .evidence-ocr-status p { margin:0; }
+.evidence-facts .evidence-description { white-space:pre-wrap; }
+.evidence-conversations { display:flex; flex-direction:column; gap:6px; margin:0; padding:0; list-style:none; }
+.evidence-conversations a { color:inherit; text-decoration:none; }
+.evidence-conversations a:hover,.evidence-conversations a:focus-visible { color:var(--mote-accent); }
 .evidence-aside .reader-source-details dl>div { display:flex; flex-direction:column; gap:2px; padding:8px 0; }
 .evidence-aside .reader-source-details dd { text-align:left; }
 .evidence-aside .reader-source-details>pre,.evidence-aside .evidence-canonical pre { max-width:100%; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
