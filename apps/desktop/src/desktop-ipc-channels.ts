@@ -39,6 +39,11 @@ export const sourcesChannels = {
   confirm: 'mote:source-confirm',
   files: 'mote:source-files',
   calendarPermissions: 'mote:calendar-permissions',
+  meetingStatus: 'mote:meeting-status',
+  meetingNotice: 'mote:meeting-notice',
+  meetingStart: 'mote:meeting-start',
+  meetingStop: 'mote:meeting-stop',
+  meetingSync: 'mote:meeting-sync',
 } as const;
 
 export const captureChannels = {

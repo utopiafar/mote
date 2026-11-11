@@ -48,4 +48,16 @@ export interface SourceStatus {
 export interface CalendarChoice { id: string; title: string }
 export type CodingProvider='claude'|'codex'|'kimi'|'opencode';
 
+export type MeetingPermissionValue='granted'|'denied'|'not-determined'|'unsupported';
+export interface MeetingRecordingPermissions {microphone:MeetingPermissionValue;systemAudio:MeetingPermissionValue}
+export interface MeetingSessionView {
+  id:string;startedAt:string;endedAt?:string;state:'recording'|'completed'|'uploaded'|'failed';
+  durationMs:number;microphone:boolean;systemAudio:boolean;noticeAcknowledgedAt:string;
+  platform:'macos'|'android';warnings:string[];uploadedAt?:string;captureId?:string;error?:string;
+}
+export interface MeetingRecordingStatus {
+  noticeAcknowledged:boolean;recording:boolean;startedAt?:string;permissions:MeetingRecordingPermissions;
+  pendingUploads:number;lastSession?:MeetingSessionView;sessions:MeetingSessionView[];error?:string;
+}
+
 export interface CodingAgentDiscovery { provider: CodingProvider; name: string; path: string; available: boolean }

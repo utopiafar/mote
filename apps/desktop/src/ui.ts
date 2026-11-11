@@ -149,6 +149,7 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false, refre
   if (page === 'records' && !preserveContentPosition) { void loadRecords(); void refreshContent(); }
   if (page === 'overview' && initialized && !preserveContentPosition) { void libraryUi.refreshHome(); void refreshSources(); void workbenchUi.refresh(); }
   if (page === 'sources') void refreshSources();
+  if (page === 'meeting') void refreshMeeting();
   if (page === 'overview' && initialized) { const epoch=statusReadEpoch; void desktopApi.status().then(status=>{if(epoch===statusReadEpoch&&!busy)render(status);}).catch(() => {if(epoch===statusReadEpoch&&!busy)feedback(moteText("状态读取失败。"));}); }
   return true;
 }
@@ -907,6 +908,89 @@ byId('source-save-edit').addEventListener('click', () => void sourceAction(async
 }));
 void refreshSources().catch(() => { byId('source-feedback').textContent = moteText("来源状态暂不可用，请重新打开应用"); });
 setInterval(() => { void refreshSources().catch(() => {}); }, 3000);
+
+let meetingStatus: import('./contracts/sources').MeetingRecordingStatus | undefined;
+let meetingBusy = false;
+function meetingPermissionText(value: import('./contracts/sources').MeetingRecordingStatus): string {
+  const missing = [
+    value.permissions.microphone === 'granted' ? '' : moteText('麦克风'),
+    value.permissions.systemAudio === 'granted' ? '' : moteText('系统音频'),
+  ].filter(Boolean);
+  return missing.length ? moteText('尚未允许：{0}', missing.join('、')) : moteText('麦克风与系统音频已允许');
+}
+function meetingTime(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(getLocale()); }
+function renderMeeting(value: import('./contracts/sources').MeetingRecordingStatus): void {
+  meetingStatus = value;
+  const session = value.lastSession;
+  byId('meeting-state').textContent = value.recording ? moteText('正在录音') : moteText('未在录音');
+  byId('meeting-dot').dataset.state = value.recording ? 'syncing' : 'paused';
+  byId('meeting-permission').textContent = meetingPermissionText(value);
+  byId('meeting-permission').dataset.state = value.permissions.microphone === 'granted' && value.permissions.systemAudio === 'granted' ? 'granted' : 'missing';
+  const message = value.recording && value.startedAt
+    ? moteText('已于 {0} 开始。仅在你点击结束后生成并上传一场会议的音频。', meetingTime(value.startedAt))
+    : value.error ?? moteText('只有点击开始后才会录音；不会按日历或日程自动开始。');
+  byId('meeting-message').textContent = message;
+  byId('meeting-summary').textContent = value.pendingUploads
+    ? moteText('{0} 场会议录音保存在本机，连接中央后自动上传。', String(value.pendingUploads))
+    : moteText('一场会议对应一份音频；结束后进入中央已有转写。');
+  byId<HTMLButtonElement>('meeting-start').disabled = meetingBusy || value.recording;
+  byId<HTMLButtonElement>('meeting-stop').disabled = meetingBusy || !value.recording;
+  byId('source-meeting-summary').textContent = value.recording ? moteText('正在录音 · 点击结束') : session
+    ? session.state === 'uploaded' ? moteText('最近一场已入库') : session.state === 'completed' ? moteText('最近一场待上传') : moteText('最近一场未完成')
+    : moteText('开始一场会议录音');
+  byId('source-meeting-state').textContent = value.recording ? moteText('录音中') : moteText('已停止');
+  byId('source-meeting-state').dataset.state = value.recording ? 'syncing' : 'paused';
+  byId('meeting-last').textContent = !session ? moteText('尚无会议录音。') : [
+    meetingTime(session.startedAt),
+    session.durationMs ? moteText('{0} 分钟', String(Math.max(1, Math.round(session.durationMs / 60000)))) : '',
+    session.state === 'uploaded' ? moteText('已进入中央转写') : session.state === 'completed' ? moteText('保存在本机，等待上传') : session.state === 'failed' ? moteText('未完成') : moteText('正在录音'),
+    !session.microphone && session.state !== 'recording' ? moteText('仅系统音频') : !session.systemAudio && session.state !== 'recording' ? moteText('仅麦克风') : '',
+    session.error ?? '',
+  ].filter(Boolean).join(' · ');
+}
+async function refreshMeeting(): Promise<void> {
+  if (meetingBusy || document.hidden) return;
+  try { renderMeeting(await desktopApi.meetingRecordingStatus()); }
+  catch (error) { byId('meeting-message').textContent = error instanceof Error ? error.message : moteText('会议录音状态暂不可用。'); }
+}
+async function startMeeting(): Promise<void> {
+  if (meetingBusy) return;
+  meetingBusy = true; if (meetingStatus) renderMeeting(meetingStatus);
+  try { renderMeeting(await desktopApi.startMeetingRecording()); feedback(moteText('会议录音已开始。'), true); }
+  catch (error) { byId('meeting-message').textContent = error instanceof Error ? error.message : moteText('会议录音没有开始。'); }
+  finally { meetingBusy = false; await refreshMeeting(); }
+}
+byId('meeting-start').addEventListener('click', () => {
+  if (meetingStatus?.recording) return;
+  if (!meetingStatus?.noticeAcknowledged) byId<HTMLDialogElement>('meeting-notice-dialog').showModal();
+  else void startMeeting();
+});
+byId('meeting-notice-cancel').addEventListener('click', () => byId<HTMLDialogElement>('meeting-notice-dialog').close());
+byId('meeting-notice-confirm').addEventListener('click', () => void (async () => {
+  if (meetingBusy) return;
+  meetingBusy = true;
+  try {
+    renderMeeting(await desktopApi.acknowledgeMeetingNotice());
+    byId<HTMLDialogElement>('meeting-notice-dialog').close();
+    meetingBusy = false;
+    await startMeeting();
+  } catch (error) {
+    byId('meeting-message').textContent = error instanceof Error ? error.message : moteText('未能保存告知确认。');
+  } finally { meetingBusy = false; await refreshMeeting(); }
+})());
+byId('meeting-stop').addEventListener('click', () => void (async () => {
+  if (meetingBusy || !meetingStatus?.recording) return;
+  meetingBusy = true; renderMeeting(meetingStatus);
+  try { renderMeeting(await desktopApi.stopMeetingRecording()); feedback(moteText('会议录音已结束，正在进入中央转写。'), true); }
+  catch (error) { byId('meeting-message').textContent = error instanceof Error ? error.message : moteText('会议录音没有正常结束。'); }
+  finally { meetingBusy = false; await refreshMeeting(); }
+})());
+byId('meeting-sync').addEventListener('click', () => void (async () => {
+  try { await desktopApi.syncMeetingRecordings(); await refreshMeeting(); feedback(moteText('已尝试上传本机会议录音。'), true); }
+  catch (error) { byId('meeting-message').textContent = error instanceof Error ? error.message : moteText('会议录音上传未完成。'); }
+})());
+byId('meeting-permissions').addEventListener('click', () => void perform(() => desktopApi.openPermissions()));
+setInterval(() => { void refreshMeeting(); }, 2500);
 
 let updateState: import('./updater').UpdateStatus | undefined;
 const updateInstallUi=createUpdateInstallUi(document,{

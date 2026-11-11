@@ -11,6 +11,9 @@ import { CalendarPermissionError } from '../source-calendar';
 import { LocalSourceManager } from '../source-manager';
 import { failureCode, safeErrorName, type EventJournal, type EventStage } from '../support';
 import {desktopJobIds, sourcesChannels} from '../desktop-ipc-channels';
+import { MeetingRecordingManager } from '../meeting-recording';
+import { NativeMeetingAudioBackend, meetingRecordingPermissions, requestMeetingMicrophone } from '../meeting-audio';
+import { join } from 'node:path';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 /** A renderer may read source state/context without being able to mutate it. */
@@ -49,6 +52,7 @@ export interface SourcesPluginOptions {
 
 export interface SourcesPlugin extends BuiltinDesktopPlugin {
   readonly manager: LocalSourceManager;
+  readonly meetings: MeetingRecordingManager;
   initialize(): Promise<void>;
   close(): Promise<void>;
   authorizeCalendar(): Promise<CalendarChoice[]>;
@@ -57,7 +61,8 @@ export interface SourcesPlugin extends BuiltinDesktopPlugin {
 
 const stageFor = (channel: string): EventStage | undefined =>
   channel === sourcesChannels.sync || channel === sourcesChannels.files
-    || channel === sourcesChannels.update || channel === sourcesChannels.calendar ? 'SOURCE' : undefined;
+    || channel === sourcesChannels.update || channel === sourcesChannels.calendar
+    || channel === sourcesChannels.meetingStart || channel === sourcesChannels.meetingStop ? 'SOURCE' : undefined;
 
 const labelFor = (channel: string): string | undefined => {
   if (channel === sourcesChannels.sync) return moteText("正在扫描并同步来源");
@@ -65,6 +70,9 @@ const labelFor = (channel: string): string | undefined => {
   if (channel === sourcesChannels.update) return moteText("正在保存来源设置");
   if (channel === sourcesChannels.calendar) return moteText("正在连接日历");
   if (channel === sourcesChannels.calendarAuthorize) return moteText("正在读取日历授权");
+  if (channel === sourcesChannels.meetingStart) return moteText("正在开始本机会议录音");
+  if (channel === sourcesChannels.meetingStop) return moteText("正在结束本机会议录音");
+  if (channel === sourcesChannels.meetingSync) return moteText("正在上传本机会议录音");
   return undefined;
 };
 
@@ -73,6 +81,13 @@ export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugi
     options.directory, options.settings(), options.helperPath, true,
     options.events as EventJournal | undefined,
   );
+  const meetings = new MeetingRecordingManager({
+    directory: join(options.directory, 'meetings'),
+    connection: () => options.settings(),
+    backend: new NativeMeetingAudioBackend(options.helperPath),
+    permissions: meetingRecordingPermissions,
+    platform: 'macos',
+  });
   const selections = new SourceSelectionController((path: string, input: unknown) => manager.addFiles(path, input));
   const serialize = <T>(operation: () => Promise<T>): Promise<T> =>
     options.serialize ? options.serialize(operation) : operation();
@@ -100,8 +115,9 @@ export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugi
   return {
     id: 'mote.sources',
     manager,
-    initialize: () => manager.initialize(),
-    close: () => manager.close(),
+    meetings,
+    initialize: async () => { await manager.initialize(); await meetings.initialize(); },
+    close: async () => { await Promise.allSettled([manager.close(), meetings.close()]); },
     authorizeCalendar: () => manager.authorizeCalendar(),
     isCalendarPermissionError: (error: unknown) => error instanceof CalendarPermissionError,
     async register({host, pageUrl}: BuiltinPluginContext): Promise<void> {
@@ -167,6 +183,19 @@ export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugi
         })));
         register(sourcesChannels.calendarPermissions, sourcesWriteCapability, () =>
           execute(sourcesChannels.calendarPermissions, () => options.openCalendarPermissions?.()));
+        register(sourcesChannels.meetingStatus, sourcesReadCapability, () =>
+          execute(sourcesChannels.meetingStatus, () => meetings.status()));
+        register(sourcesChannels.meetingNotice, sourcesWriteCapability, () =>
+          execute(sourcesChannels.meetingNotice, () => serialize(() => meetings.acknowledgeNotice())));
+        register(sourcesChannels.meetingStart, sourcesWriteCapability, () =>
+          execute(sourcesChannels.meetingStart, () => serialize(async () => {
+            if (!await requestMeetingMicrophone()) throw new Error(moteText("麦克风权限未授予，会议录音没有开始。"));
+            return meetings.start();
+          })));
+        register(sourcesChannels.meetingStop, sourcesWriteCapability, () =>
+          execute(sourcesChannels.meetingStop, () => serialize(() => meetings.stop())));
+        register(sourcesChannels.meetingSync, sourcesWriteCapability, () =>
+          execute(sourcesChannels.meetingSync, () => meetings.flushUploads()));
 
         plugin.registerJob({id: desktopJobIds.sourcesManager, durable: true, drain: () => manager.close()});
         plugin.defer(() => { void manager.close(); });

@@ -121,7 +121,7 @@ export function sourceContentTime(record:{capturedAt:string;provenance?:{documen
 export const sourceIdSchema=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 /** Built-in source kinds remain stable; deployment plugins use a bounded dotted namespace. */
 export const sourceKindSchema=z.union([
-  z.enum(['local-calendar','local-files','coding-agent','google-calendar','gmail','lark-docs','lark-calendar','mcp','upload','custom']),
+  z.enum(['local-calendar','local-files','local-meeting-recording','coding-agent','google-calendar','gmail','lark-docs','lark-calendar','mcp','upload','custom']),
   z.string().min(3).max(128).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*)+$/),
 ]);
 export const sourceConnectionSchema=z.object({
