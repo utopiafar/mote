@@ -1,3 +1,4 @@
+import {AssistantMatters} from './assistant-matters.js';
 import {createModelEvidenceAuthority} from './model-evidence-authority.js';
 import type {QueryAgent} from './query-agent.js';
 import {insightRequestSchema} from './query-request.js';
@@ -476,8 +477,9 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
+  const assistantMatters=new AssistantMatters(store);
   const featureServices=Object.freeze({
-    configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),
+    configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
     mediaAssets,materials,materialOrganizer,materialMemoryWork,indexer,evidenceReader,contextTrees,

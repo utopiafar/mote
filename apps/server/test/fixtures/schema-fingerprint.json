@@ -88,6 +88,16 @@
     },
     {
       "type": "index",
+      "name": "assistant_matters_page",
+      "fingerprint": "cf76d9eadad85d358aa8fe5554159da710847537058cff415651035b19c430d6"
+    },
+    {
+      "type": "index",
+      "name": "assistant_matters_state",
+      "fingerprint": "472c0c0d74d3970db87c9a41e53815243f847a6dd9ec3a8f251775bb6e1a40e7"
+    },
+    {
+      "type": "index",
       "name": "capture_import_declarations_parent",
       "fingerprint": "3c5a32fe6427826fdf1cb5d89e229120c601546269a01969fab6e6b5b99e2e5c"
     },
@@ -765,6 +775,16 @@
       "type": "table",
       "name": "assets",
       "fingerprint": "e4ef114f86567e069fa3b98e9eb62eaabacaa46b7d32a46c756e0d245fd1c1b9"
+    },
+    {
+      "type": "table",
+      "name": "assistant_matter_revisions",
+      "fingerprint": "2e9b77524ceba56f2784186b818f87e72d6fb3d059e20776088155d9380e29c6"
+    },
+    {
+      "type": "table",
+      "name": "assistant_matters",
+      "fingerprint": "1e59b2cddd0f3f3c2d4279edf069414f9188597aa442ada13c1e404d588feed6"
     },
     {
       "type": "table",
@@ -2640,6 +2660,36 @@
       "type": "trigger",
       "name": "ledger_assets_update",
       "fingerprint": "509575de06f8dedc3e8ab2fa8dbef5be8e51db2d880c03fe2e23a6e0dc1dceea"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_matter_revisions_delete",
+      "fingerprint": "25495d89e916828ee0d63a3746b585827fbc0fa3873752b0f8f2e4a914f3021f"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_matter_revisions_insert",
+      "fingerprint": "2f8dbbe3cfeba797f97333e7d7d7425630573d649a239d3631e350d415e1aa85"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_matter_revisions_update",
+      "fingerprint": "4478984d040178ce8909e6a8dd3a60f7be552ef4530229ced203eb79dce5592d"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_matters_delete",
+      "fingerprint": "4a7e8c44c562191373a5ed01c83dd81a1608e7876f2b1aba6dad9a6dbdd9adbc"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_matters_insert",
+      "fingerprint": "a83e0c76703b4baf927f21df0ec4b244e7d47f14ad3566ef4ff0ae757014f631"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_matters_update",
+      "fingerprint": "74f2dee9dac7856dd318e219bd4f88bd133cead114e04c7eab8bf8a8d8920bfb"
     },
     {
       "type": "trigger",
