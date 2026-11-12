@@ -183,6 +183,11 @@
     },
     {
       "type": "index",
+      "name": "conversation_turns_client_request",
+      "fingerprint": "7668d1f8c4de3ff549a612c625ea7dab190ec44a9d41230e9dd28edd52aba0d2"
+    },
+    {
+      "type": "index",
       "name": "conversations_updated",
       "fingerprint": "7a5a72bf0f307aa6f56be3611f52924a7baf88d37c607c4c5a8f17e26ba3d381"
     },
