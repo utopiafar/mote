@@ -13,7 +13,7 @@ import {modelConfiguration} from '../model-configuration.js';
 import {memoryEvidenceFingerprint} from '../memory.js';
 import {openingMemoryContext} from '../opening-memory.js';
 import {queryWithAttachmentsSchema,insightSchema} from '../query-request.js';
-import type {QueryScope} from '../query-scope.js';
+import {hasTimeOrDeviceScope,scopeContainsHistory,type QueryScope} from '../query-scope.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 
 type QueryPreparationStore=ConstructorParameters<typeof DelegationRuntime>[0];
@@ -63,12 +63,22 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     selectedQueryMaterial(scope,true);
     const allowedHistoryIds=new Set([...(scope.evidenceIds??[]),...attachmentIds]);
     const selectedScope=JSON.stringify([...(scope.evidenceIds??[])].sort());
-    const scopedPrevious=previous&&scope.evidenceIds?{...previous,turns:previous.turns.filter(turn=>
-      JSON.stringify([...(turn.scope.evidenceIds??[])].sort())===selectedScope&&
-      (turn.attachments??[]).every(attachment=>allowedHistoryIds.has(attachment.id))&&
-      turn.result?.evidenceDependencies?.complete===true&&turn.result.evidenceDependencies.ids.every(id=>allowedHistoryIds.has(id))&&
-      turn.historyEvidenceDependencies?.complete===true&&turn.historyEvidenceDependencies.ids.every(id=>allowedHistoryIds.has(id))
-    )}:undefined;
+    const bounded=hasTimeOrDeviceScope(scope);
+    let widerHistory=false;
+    const scopedPrevious=previous&&(scope.evidenceIds!==undefined||bounded)?{...previous,turns:previous.turns.filter(turn=>{
+      if(bounded&&turn.result){
+        // Older turns could already have used an earlier, wider turn. Without
+        // per-turn history lineage it is unsafe to admit a later answer after
+        // such a turn, even if the later turn itself was issued narrowly.
+        if(!scopeContainsHistory(scope,turn.scope)||(turn.attachments?.length??0)>0||turn.historyEvidenceDependencies?.complete!==true)widerHistory=true;
+        if(widerHistory)return false;
+      }
+      return scope.evidenceIds===undefined||
+        JSON.stringify([...(turn.scope.evidenceIds??[])].sort())===selectedScope&&
+        (turn.attachments??[]).every(attachment=>allowedHistoryIds.has(attachment.id))&&
+        turn.result?.evidenceDependencies?.complete===true&&turn.result.evidenceDependencies.ids.every(id=>allowedHistoryIds.has(id))&&
+        turn.historyEvidenceDependencies?.complete===true&&turn.historyEvidenceDependencies.ids.every(id=>allowedHistoryIds.has(id));
+    })}:undefined;
     const historySnapshot=previous?conversations.historyContext(scopedPrevious??previous):undefined;
     const retired=historySnapshot?conversations.retiredSelection(historySnapshot,[...(selectedIds??[]),...(anchorIds??[])]):new Set<string>();
     const historicalSelection=retired.size?{...(selectedIds?{evidenceIds:[...selectedIds]}:{}),...(anchorIds?{anchorEvidenceIds:[...anchorIds]}:{})}:undefined;
@@ -76,7 +86,11 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     if(scope.anchorEvidenceIds)scope.anchorEvidenceIds=scope.anchorEvidenceIds.filter(id=>!retired.has(id));
     const selectedRecords=selectedQueryEvidence({question,...scope,executionLane:'interactive'});
     const profile=modelSettings.select('chat',modelProfileId),model=modelOverride??profile.settings.model,contextTime=work.scope.contextTime!;
-    const previousIds=scope.evidenceIds?[]:previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[],previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
+    if(bounded&&attachmentIds.length){
+      const visible=new Set((await archiveReader.evidence({ids:attachmentIds,after:scope.after,before:scope.before,deviceId:scope.deviceId})).map(record=>record.id));
+      if(attachmentIds.some(id=>!visible.has(id)))throw new StoreError('Query attachment is outside the selected scope',409);
+    }
+    const previousIds=scope.evidenceIds!==undefined||bounded?[]:previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[],previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
     const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
     const stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
     const commit=<T>(write:()=>T):T=>{signal.throwIfAborted();const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');try{if(!fence||!executor.isCurrentGrant(stepId,fence))throw new StoreError('Query preparation grant expired',409);const result=write();if(own)store.db.exec('COMMIT');return result;}catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}};

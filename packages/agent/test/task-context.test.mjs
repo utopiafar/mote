@@ -94,12 +94,17 @@ async function fixture(t,input={question:'fixture'}){const bridge=await startBri
 test('shared context separates long task input and retains incremental semantics and task authority',()=>{
  const input={question:'Compact',skill:'working-memory',taskContext:{turns:[{turnId:'t1',answer:'x'.repeat(30000)}]},incrementalEvidenceIds:['one']};
  const envelope=buildContextEnvelope(input,[],'2026-09-18T00:00:00Z');
- assert.equal(envelope.request,'Compact');assert.equal(envelope.untrustedTaskContext.turns[0].answer.length,30000);assert.equal(envelope.incrementalContext.count,1);assert.deepEqual(taskTools(input),[]);assert.deepEqual(taskTools({question:'Extract',evidenceIds:['one']}),['evidence']);
+ assert.equal(envelope.request,'Compact');assert.equal(envelope.untrustedTaskContext.turns[0].answer.length,30000);assert.equal(Object.hasOwn(envelope.incrementalContext,'count'),false);assert.deepEqual(taskTools(input),[]);assert.deepEqual(taskTools({question:'Extract',evidenceIds:['one']}),['evidence']);
  assert.match(envelope.disclosurePolicy,/No archive retrieval is available/);
  const archive=buildContextEnvelope({question:'Browse generated'},[]);
  assert.match(archive.disclosurePolicy,/material_catalog.*material_read.*evidence before citing/);
  assert.match(archive.disclosurePolicy,/source tags.*untrusted/);
  assert.equal(buildContextEnvelope({...input,taskContext:{turns:[{turnId:'t1',answer:'x'.repeat(80000)}]}},[]).untrustedTaskContext.turns[0].answer.length,80000);
+});
+test('bounded incremental context never discloses the unfiltered snapshot count',()=>{
+ const envelope=buildContextEnvelope({question:'Generated bounded query',deviceId:'allowed-device',incrementalEvidenceIds:['allowed','hidden']},[]);
+ assert.equal(Object.hasOwn(envelope.incrementalContext,'count'),false);
+ assert.equal(envelope.incrementalContext.tool,'changes');
 });
 test('search localizes late match and separate reads retain both citation spans',async t=>{
  const {bridge,call}=await fixture(t);

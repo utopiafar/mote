@@ -169,6 +169,9 @@ export async function createContextToolSession(
   const pinnedTools=contextToolSnapshot(bounds);
   const contributions=new Map(pinnedTools.entries.map(tool=>[tool.name,tool]));
   const specialCapabilities=new Map(pinnedTools.entries.filter(entry=>dispatchTools(bounds).includes(entry.name)&&entry.exposure==='catalog').map(entry=>[entry.name,entry]));
+  // A producer cursor can contain source identities outside a time-bounded
+  // query. Keep those cursors private to this tool session.
+  const sourcePageCursors=new Map<string,{operation:'sources'|'catalog';signature:string;cursor:string}>();
 
   const controlDefinitions=hostControlDefinitions(bounds.hostControlChannel);
   const controls=new Set(controlDefinitions.map(([name])=>name));
@@ -420,6 +423,72 @@ export async function createContextToolSession(
       if(pin.requires.every(permission=>permission==='actionCatalog'||permission==='progress'||ordinaryReads.has(permission as HostReadOperation))){
         const scope=Object.freeze(range(args,bounds));let grantedReadRange:{offset:number;length:number}|undefined;
         const inScope=(record:ContextRecord)=>{const at=sourceContentTime(record);return Number.isFinite(Date.parse(at))&&(!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));};
+        const timeBounded=Boolean(scope.after||scope.before);
+        const sourceVisible=async(sourceId:string)=>{
+          if(!reader.sourceItems)return false;
+          const {cursor:_directoryCursor,...sourceScope}=scope;
+          let cursor:string|undefined;const seen=new Set<string>();
+          do{
+            const page=await wait(reader.sourceItems({...sourceScope,sourceId,limit:12,...(cursor?{cursor}:{})}));
+            if(!page||!Array.isArray(page.items))throw hostError('Invalid source item page');
+            if(page.items.some(record=>inScope(record)&&(record.provenance as {sourceId?:unknown}|undefined)?.sourceId===sourceId))return true;
+            if(!page.nextCursor)return false;
+            if(seen.has(page.nextCursor))throw hostError('Source item cursor did not advance');
+            seen.add(page.nextCursor);cursor=page.nextCursor;
+          }while(cursor);
+          return false;
+        };
+        const sourceDirectory=async(operation:'sources'|'catalog',actual:Record<string,unknown>)=>{
+          const method=reader[operation] as ((args:never)=>Promise<unknown>)|undefined;if(!method)throw hostError('Source directory is unavailable');
+          const {cursor:publicCursor,...parameters}=actual,signature=JSON.stringify(parameters);
+          let cursor:string|undefined;
+          if(publicCursor!==undefined){
+            const saved=typeof publicCursor==='string'?sourcePageCursors.get(publicCursor):undefined;
+            if(!saved||saved.operation!==operation||saved.signature!==signature)throw hostError('Source directory cursor does not match this scope');
+            cursor=saved.cursor;
+          }
+          const seen=new Set<string>(),visibility=new Map<string,boolean>();
+          const pageAt=async(rawCursor:string|undefined):Promise<Record<string,unknown>>=>{
+            const raw=await wait(method.call(reader,{...parameters,...(rawCursor?{cursor:rawCursor}:{})} as never));
+            if(!raw||typeof raw!=='object'||Array.isArray(raw))throw hostError('Invalid source directory page');
+            const page=raw as Record<string,unknown>,key=operation==='sources'?'items':'entries',rows=page[key];
+            if(!Array.isArray(rows))throw hostError('Invalid source directory page');
+            const selected:unknown[]=[];
+            for(const row of rows){
+              const source=row&&typeof row==='object'&&!Array.isArray(row)?row as Record<string,unknown>:undefined;
+              if(operation==='catalog'&&source?.layer!=='source'){selected.push(row);continue;}
+              if(typeof source?.id!=='string')continue;
+              if(!visibility.has(source.id))visibility.set(source.id,await sourceVisible(source.id));
+              if(visibility.get(source.id))selected.push(row);
+            }
+            const ids=new Set(selected.flatMap(row=>row&&typeof row==='object'&&!Array.isArray(row)&&typeof (row as {id?:unknown}).id==='string'?[(row as {id:string}).id]:[]));
+            const pins=Array.isArray(page.sourceContextDependencies)?page.sourceContextDependencies.filter(pin=>pin&&typeof pin==='object'&&ids.has(String((pin as {sourceId?:unknown}).sourceId))):page.sourceContextDependencies;
+            const {totalCount:_total,...rest}=page;
+            return {...rest,[key]:selected,...(pins===undefined?{}:{sourceContextDependencies:pins})};
+          };
+          let page=await pageAt(cursor),key=operation==='sources'?'items':'entries';
+          while(!(page[key] as unknown[]).length&&typeof page.nextCursor==='string'){
+            if(seen.has(page.nextCursor))throw hostError('Source directory cursor did not advance');
+            seen.add(page.nextCursor);page=await pageAt(page.nextCursor);
+          }
+          // Do not expose whether subsequent pages contain only hidden rows.
+          let probe=typeof page.nextCursor==='string'?page.nextCursor:undefined,hasMore=false;
+          while(probe){
+            if(seen.has(probe))throw hostError('Source directory cursor did not advance');
+            seen.add(probe);const next=await pageAt(probe);
+            if((next[key] as unknown[]).length){hasMore=true;break;}
+            probe=typeof next.nextCursor==='string'?next.nextCursor:undefined;
+          }
+          for(const row of page[key] as Record<string,unknown>[]){
+            if(operation==='catalog'&&row.layer!=='source')continue;
+            if(typeof row.id==='string'&&!await sourceVisible(row.id))throw new ContextToolError('evidence_changed','Source visibility changed before disclosure.','stop');
+          }
+          if(hasMore&&typeof page.nextCursor==='string'){
+            const token='source-page-'+randomBytes(24).toString('base64url');
+            sourcePageCursors.set(token,{operation,signature,cursor:page.nextCursor});page.nextCursor=token;
+          }else page.nextCursor=null;
+          return page;
+        };
         const detach=<T>(value:T):T=>{
           const copied=structuredClone(value);
           const preserve=(source:unknown,target:unknown)=>{if(!source||typeof source!=='object'||!target||typeof target!=='object')return;const record=source as ContextRecord;if(typeof record.id==='string'&&typeof record.ocrText==='string')copyEvidencePresentation(record,target as ContextRecord);for(const [key,item]of Object.entries(source))preserve(item,(target as Record<string,unknown>)[key]);};preserve(value,copied);return copied;
@@ -440,6 +509,10 @@ export async function createContextToolSession(
             if(operation==='readFileEvidence'&&(!Number.isSafeInteger(actual.offset??0)||Number(actual.offset??0)<0||Number(actual.offset??0)>10000000||!Number.isSafeInteger(actual.length??8000)||Number(actual.length??8000)<1||Number(actual.length??8000)>16000))throw hostError('Invalid text range');
             if(operation==='fileChunks'&&(!Number.isSafeInteger(actual.offset??0)||Number(actual.offset??0)<0))throw hostError('Invalid chunk offset');
             if(operation==='sourceContext'&&(typeof requested.sourceContextRef!=='string'||!state().discoveredSourceContexts.has(requested.sourceContextRef)))throw hostError('Discover the source context before reading its statement');
+            if(operation==='sourceContext'&&timeBounded){
+              const match=pinnedSourceContextRef.exec(String(requested.sourceContextRef));
+              if(!match||!await sourceVisible(Buffer.from(match[1],'base64url').toString('utf8')))throw hostError('Source context is outside the selected scope');
+            }
             if(operation==='materialRead'&&(typeof requested.ref!=='string'||!state().pinnedMaterials.has(requested.ref)))throw hostError('Use an exact pinned Material ref returned in this run');
             if(operation==='evidence'){
               if(!Array.isArray(requested.ids)||!requested.ids.length||requested.ids.length>30)throw hostError('ids must contain 1–30 original identifiers');
@@ -457,7 +530,8 @@ export async function createContextToolSession(
             }
             const method=reader[operation] as ((...args:unknown[])=>Promise<unknown>)|undefined;
             if(!method)throw hostError('The requested read operation is unavailable');
-            let value=await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual]))),originals:ContextRecord[]|undefined,views:ContextRecord[]|undefined;
+            const scopedDirectory=timeBounded&&(operation==='sources'||operation==='catalog'&&(actual.path==='/context/sources'||(actual.path===undefined||actual.path==='/context')&&Boolean(actual.query)));
+            let value=scopedDirectory?await sourceDirectory(operation as 'sources'|'catalog',actual):await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual]))),originals:ContextRecord[]|undefined,views:ContextRecord[]|undefined;
             if(['search','sourceHistory','fileChunks'].includes(operation)&&Array.isArray(value))value=(value as ContextRecord[]).filter(inScope);
             if(['timeline','sourceItems'].includes(operation)&&value&&typeof value==='object'&&Array.isArray((value as {items?:unknown}).items))value={...value,items:(value as {items:ContextRecord[]}).items.filter(inScope)};
             if(operation==='evidence'){
@@ -593,7 +667,9 @@ export async function createContextToolSession(
         if(grantedReadRange)for(const record of delivered){const selection=record.textRange as {start:number;end:number};state().deliveredRanges.push({id:record.id,offset:selection.start,length:selection.end-selection.start});}
         for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);if(produced.some(read=>read.operation==='evidence'||read.operation==='memories'))state().expanded.add(record.id);}
         for(const proof of proofs){
-          state().disclosedIds.add(proof.record.id);
+          // changes may read ahead solely to find the next visible page. Such
+          // records are neither model disclosures nor citation discoveries.
+          if(tool!=='changes'||visibleIds.has(proof.record.id))state().disclosedIds.add(proof.record.id);
           // An actually shown original locator permits a later fresh read;
           // metadata alone still never enters the delivered-original ledger.
           if(inScope(proof.record)&&visibleIds.has(proof.record.id))state().discovered.add(proof.record.id);

@@ -22,3 +22,29 @@ test('working memory refuses every context retrieval and normal sessions cannot 
  const working=await startBridge(reader,{question:'generated',skill:'working-memory'},5);t.after(()=>working.close());assert.equal((await call(working,'timeline',{})).status,400);assert.equal((await call(working,'memories',{})).status,400);
  const normal=await startBridge(reader,{question:'generated'},5);t.after(()=>normal.close());assert.deepEqual((await call(normal,'changes',{})).body.data,[]);
 });
+test('change pages and counts describe visible records even when hidden records are interleaved',async t=>{
+ const snapshot=[records[64],records[0],records[64],records[1],records[64]].map(record=>record.id);
+ const b=await startBridge(reader,{question:'generated',incrementalEvidenceIds:snapshot,deviceId:'inside'},10);t.after(()=>b.close());
+ const first=await call(b,'changes',{limit:1});assert.equal(first.status,200);assert.deepEqual(first.body.data.map(record=>record.id),[records[0].id]);assert.equal(first.body.pagination.nextCursor,'1');assert.deepEqual(b.evidenceDependencies.ids,[records[0].id],'a lookahead record is not disclosed lineage');
+ const second=await call(b,'changes',{limit:1,cursor:first.body.pagination.nextCursor});assert.equal(second.status,200);assert.deepEqual(second.body.data.map(record=>record.id),[records[1].id]);assert.equal(second.body.pagination.nextCursor,null);assert.equal(second.body.pagination.totalCount,2);
+ assert.doesNotMatch(JSON.stringify({first,second}),/outside/);
+});
+test('changes rejects a record withdrawn while looking ahead for the next page',async t=>{
+ let firstAvailable=true,reads=0;
+ const source={...reader,evidence:async({ids})=>{
+  reads++;
+  const result=records.filter(record=>ids.includes(record.id)&&(record.id!==records[0].id||firstAvailable));
+  if(reads===2)firstAvailable=false;
+  return result;
+ }};
+ const bridge=await startBridge(source,{question:'generated',incrementalEvidenceIds:[records[0].id,records[1].id],deviceId:'inside'},10);t.after(()=>bridge.close());
+ const page=await call(bridge,'changes',{limit:1});assert.notEqual(page.status,200);assert.doesNotMatch(JSON.stringify(page.body),/原始文本/);assert.equal(bridge.records.size,0);
+});
+test('a withdrawn earlier change invalidates the next visible-page cursor',async t=>{
+ let firstAvailable=true;
+ const source={...reader,evidence:async({ids})=>records.filter(record=>ids.includes(record.id)&&(record.id!==records[0].id||firstAvailable))};
+ const bridge=await startBridge(source,{question:'generated',incrementalEvidenceIds:[records[0].id,records[1].id],deviceId:'inside'},10);t.after(()=>bridge.close());
+ const first=await call(bridge,'changes',{limit:1});assert.equal(first.status,200);assert.equal(first.body.pagination.nextCursor,'1');
+ firstAvailable=false;
+ const next=await call(bridge,'changes',{limit:1,cursor:first.body.pagination.nextCursor});assert.notEqual(next.status,200);assert.doesNotMatch(JSON.stringify(next.body),/原始文本/);
+});

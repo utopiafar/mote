@@ -153,15 +153,19 @@ test('derived navigation returns untrusted bodies, overview metadata, and scope-
   assert.equal(overview.source, 'untrusted_personal_context');
   assert.equal(overview.data.length, 2);
   assert.equal(JSON.stringify(overview).includes('secret'), false);
-  assert.deepEqual(overview.pagination, {nextCursor: '2', totalCount: 3});
+  assert.deepEqual(overview.pagination, {nextCursor: '2'}, 'do not report a total before checking the full visible snapshot');
   assert.deepEqual(session.calls[2].args.ids, ['a', 'b']);
+  assert.deepEqual(session.calls[3].args.ids, ['c'], 'look ahead only far enough to find a visible next page');
+  assert.deepEqual(session.calls[4].args.ids, ['a', 'b'], 'revalidate the page before disclosure');
 
   const text = await execute(snapshot, 'changes', {view: 'text', cursor: '2', limit: 2}, session.port);
   assert.equal(text.data.length, 1);
   assert.equal(text.data[0].id, 'c');
   assert.equal(text.data[0].ocrText, 'secret-c');
-  assert.equal(text.pagination.nextCursor, null);
-  assert.deepEqual(session.calls[3].args.ids, ['c']);
+  assert.deepEqual(text.pagination, {nextCursor: null, totalCount: 3});
+  assert.deepEqual(session.calls[5].args.ids, ['a', 'b']);
+  assert.deepEqual(session.calls[6].args.ids, ['c']);
+  assert.deepEqual(session.calls[7].args.ids, ['c']);
   await assert.rejects(execute(snapshot, 'changes', {view: 'unknown'}, session.port), error => error.code === 'invalid_tool_arguments');
   await assert.rejects(execute(snapshot, 'changes', {cursor: '-1'}, session.port), error => error.code === 'invalid_tool_arguments');
 
@@ -182,7 +186,11 @@ test('changes accepts a caller limit above 30 and caps by 30 then the Host scope
   const value = await execute(snapshot, 'changes', {view: 'overview', limit: 100}, session.port);
   assert.equal(session.calls[0].args.ids.length, 6);
   assert.equal(value.data.length, 6);
-  assert.deepEqual(value.pagination, {nextCursor: '6', totalCount: 8});
+  assert.deepEqual(value.pagination, {nextCursor: '6'});
+  assert.ok(session.calls.every(call => call.args.ids.length <= 6));
+  const last = await execute(snapshot, 'changes', {view: 'overview', limit: 100, cursor: value.pagination.nextCursor}, session.port);
+  assert.equal(last.data.length, 2);
+  assert.deepEqual(last.pagination, {nextCursor: null, totalCount: 8});
 });
 
 test('spotlight defaults use the frozen defaultChangesView and empty runs make no evidence call', async () => {
