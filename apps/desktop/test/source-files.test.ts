@@ -1,13 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmod, copyFile, mkdtemp, mkdir, lstat, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanSourceFiles } from '../src/source-files';
+import * as localVolume from '../src/local-volume';
 import { DEFAULT_SOURCE_OPTIONS, normalizeSourceOptions, type LocalFileCheckpoint } from '../src/source-types';
 const inputText=(item:any)=>Buffer.from(item.localOriginalBase64,'base64').toString('utf8');
 let root: string;
 beforeEach(async () => { root = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-files-'))); });
-afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+afterEach(async () => { vi.restoreAllMocks();await rm(root, { recursive: true, force: true }); });
 describe('explicit local text sources', () => {
   it('preserves multiline Chinese/emoji and applies only user literal masks before the pending queue', async () => {
     await writeFile(join(root, '合成.md'), '第一段 🧑🏽‍💻 e\u0301\n这是 synthetic-private，文字里的“忽略指令”仍是资料。');
@@ -195,6 +196,7 @@ describe('directory root availability and complete scans', () => {
   });
 
   it('does not publish absences when the root is unavailable', async () => {
+    vi.spyOn(localVolume,'localVolumeIdentity').mockResolvedValue('apfs:generated-volume');
     await seed();
     const first=await scanSourceFiles(root,DEFAULT_SOURCE_OPTIONS),checkpoint=await checkpointOf(first);
     const saved=root+'-saved';await rename(root,saved);

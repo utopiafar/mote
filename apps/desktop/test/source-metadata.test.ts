@@ -8,7 +8,7 @@ import { FileAccessMarkers } from '../src/source-atime';
 import { scanSourceFiles, observedFileMetadata } from '../src/source-files';
 import { SourceSync } from '../src/source-sync';
 import { decodeCalendarScan } from '../src/source-calendar';
-import { DEFAULT_SOURCE_OPTIONS, type SourceDefinition, type SourceItem, type SourceScan } from '../src/source-types';
+import { DEFAULT_SOURCE_OPTIONS, type LocalFileCheckpoint, type SourceDefinition, type SourceItem, type SourceScan } from '../src/source-types';
 import { sourceAck } from './fixtures';
 let directory: string;
 beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(), 'mote-file-metadata-'))); });
@@ -33,11 +33,12 @@ describe('observed file and calendar timestamps', () => {
     const before = await stat(path);
     const scan = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS, undefined, markers); const file = scan.items[0];
     expect(file.modifiedAt).toBe(before.mtime.toISOString()); expect(file.metadata?.file).toEqual({ sizeBytes: before.size, ...(Number.isFinite(before.birthtimeMs) && before.birthtimeMs > 0 && before.birthtimeMs !== before.ctimeMs ? { createdAt: new Date(before.birthtimeMs).toISOString() } : {}), accessedAt: new Date(before.atimeMs).toISOString(), metadataChangedAt: new Date(before.ctimeMs).toISOString() });
-    const second = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS, undefined, markers); expect(second.items.map(({localOriginal,...item})=>item)).toEqual(scan.items.map(({localOriginal,...item})=>item));
+    const second = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS, undefined, markers, scan.checkpoint as LocalFileCheckpoint); expect(second.items).toEqual([]);
     const engine = new SourceSync(join(directory, '.state.json')); await engine.initialize();
     expect(await engine.stage(scan, false)).toBe(1); expect(await engine.stage(second, false)).toBe(0);
     await utimes(path, new Date('2022-03-04T05:06:07Z'), before.mtime);
-    const changed = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS, undefined, markers);
+    const changed = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS, undefined, markers, second.checkpoint as LocalFileCheckpoint);
+    expect(changed.items).toHaveLength(1); expect(changed.items[0].externalId).toBe(file.externalId);
     expect(changed.items[0].text).toBe(file.text); expect(changed.items[0].modifiedAt).toBe(file.modifiedAt); expect(changed.items[0].metadata?.file?.accessedAt).toBe('2022-03-04T05:06:07.000Z'); expect(await engine.stage(changed, false)).toBe(1);
   });
   it('only records deletion observation time after a complete scan and retains actual last file modification time', async () => {
