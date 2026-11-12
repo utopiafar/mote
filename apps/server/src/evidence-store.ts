@@ -28,6 +28,8 @@ import {privateDirectory,privateSqliteFile} from './private-storage.js';
 import {mediaActivity,type MediaActivityRange} from './media-activity.js';
 import {ArchivedFileStore} from './archived-files.js';
 import {ContentEncryption,replaceContentFile} from './content-encryption.js';
+import {installTaskRecords} from './task-records.js';
+import {invalidateTaskEvidence} from './task-evidence.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
@@ -91,6 +93,7 @@ export class EvidenceStore {
     this.ledger=new StorageLedger(this.db,['blobs','file_blobs','file_objects']);
     this.ledger.registerAll(vaultStorageMeters);
     this.ledger.bytes();
+    installTaskRecords(this);
     if(!priorTable)this.db.exec('COMMIT');
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
     if(!options.maintenance)this.sweep();
@@ -701,6 +704,7 @@ export class EvidenceStore {
       retainConversationRoots(this,evidenceIds);
     }
     if(deleted===true){if(evidenceIds)this.db.prepare('DELETE FROM conversation_retired_roots WHERE id IN (SELECT value FROM json_each(?))').run(JSON.stringify(evidenceIds));else this.db.exec('DELETE FROM conversation_retired_roots');}
+    invalidateTaskEvidence(this,evidenceIds);
     // Resolve formal-original lineage before its anchors are removed. Private
     // delegated products and replay prompts retain the same disclosure boundary.
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='delegation_dependencies'").get()){

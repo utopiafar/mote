@@ -553,6 +553,21 @@
     },
     {
       "type": "index",
+      "name": "task_evidence_original",
+      "fingerprint": "106b5e3f8cc1b33d38e64823efb87b6662bc0c38b9f2503c53a03f2d58448f3e"
+    },
+    {
+      "type": "index",
+      "name": "task_records_operation",
+      "fingerprint": "871b2783ecb975dbf4e71031072965953278a8107d15c93a0894e3a4a95dd445"
+    },
+    {
+      "type": "index",
+      "name": "task_records_recent",
+      "fingerprint": "5da5c24feedfb8b2a9a39361a444c69d7f622d10c824352b6e9e2bf434be70cf"
+    },
+    {
+      "type": "index",
       "name": "todos_page",
       "fingerprint": "82df6648ef0892b1b4b3efaf2b9dc191aa1b043dcdc96f1ca6d7cec97d5c72ac"
     },
@@ -1920,6 +1935,16 @@
       "type": "table",
       "name": "storage_ledger_meters",
       "fingerprint": "8faf3862a636287ed642f5583f48cf7a765b2f0c52b48d3f8cbd522c507e0186"
+    },
+    {
+      "type": "table",
+      "name": "task_evidence",
+      "fingerprint": "718bf70a9d48efd9f16fcb7bf317565fa2a874e3b52b6e69a0a6fe8ea8718e3e"
+    },
+    {
+      "type": "table",
+      "name": "task_records",
+      "fingerprint": "7eec740865ebc136e01c773572981527085eaf39736242dfa0ff46665eaa2c12"
     },
     {
       "type": "table",
@@ -4683,6 +4708,36 @@
     },
     {
       "type": "trigger",
+      "name": "ledger_task_evidence_delete",
+      "fingerprint": "e42daec4a6d4bb8399a76a544b3215a7881004e3de22e3cb1e2a288e79df1dfc"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_task_evidence_insert",
+      "fingerprint": "c0b9378883a2323d67971abbe31e47ac30d32b78ad5a8da2a0bd5cebff66952c"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_task_evidence_update",
+      "fingerprint": "1c06de070bdd425ac145952e35609a02dc147e96878fb8b7bc2e25f2aa221dad"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_task_records_delete",
+      "fingerprint": "5aca3e62ac1437fb8ede6b714d68670bc9a01e1454671ee6f83b6eb5206fef5d"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_task_records_insert",
+      "fingerprint": "0f21d2c0f1524522a7731130f9dcea168aacf5d66aa0c71e3ef6a18744fd8a57"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_task_records_update",
+      "fingerprint": "29fe9e5015073f7b4f3f0e2b43d36af340131c433548d73bbb61f2221726c31c"
+    },
+    {
+      "type": "trigger",
       "name": "ledger_todos_delete",
       "fingerprint": "3b23825a6cad069003e651638810848845fcc72eb49ba2c47aa55368eaf9ba50"
     },
@@ -5060,6 +5115,26 @@
       "type": "trigger",
       "name": "source_catalog_update",
       "fingerprint": "87bc0e9c9dd4fdde88310745e806c33682b614434361d4d853e5b3a5f077443c"
+    },
+    {
+      "type": "trigger",
+      "name": "task_captures_deleted",
+      "fingerprint": "5f813d9ced4f3fc08dd1018c5517da21906f6e208ef0bc249e4b2d416ad0cebc"
+    },
+    {
+      "type": "trigger",
+      "name": "task_context_artifacts_deleted",
+      "fingerprint": "1f2c9df47d48a7c9b1ebe7fbc30dd69ea740c9da0b396e87654a263a4eaf7da3"
+    },
+    {
+      "type": "trigger",
+      "name": "task_file_chunks_deleted",
+      "fingerprint": "b487e6c62f31b895a91f753f8e7633df36d16ccf1569bea1219c9c1963f12aa6"
+    },
+    {
+      "type": "trigger",
+      "name": "task_memories_deleted",
+      "fingerprint": "4522a2e970cf7b91bd053bd163e4e38d1912902481ecfa43b9f873b59f9c8649"
     },
     {
       "type": "view",
