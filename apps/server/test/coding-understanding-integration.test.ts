@@ -12,6 +12,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {MemoryWorkPackage} from '../src/memory-work-contract.js';
 import {StoreError} from '../src/store.js';
+import {AssistantUnderstandingReader} from '../src/assistant-understanding.js';
 import {hostRun} from './fixtures/host-run.js';
 
 // All conversation content and model results below are generated local fixtures.
@@ -101,6 +102,9 @@ test('clean Coding material runs one authorized understanding and reuses its can
  const artifact=node.store.archive.page({kind:'semantic'}).items[0];assert.ok(artifact);const full=node.store.archive.get(artifact.id)!;
  assert.equal(full.processor,'mote.coding-conversation-understanding');assert.equal(full.metadata.materialRef,fixture.material.ref);assert.ok(full.text.includes('device validation remains unknown'));
  assert.deepEqual(full.metadata.evidenceRanges,job.batches[0].evidenceRanges);assert.ok((full.metadata.memoryCandidates as unknown[]).length);
+ const input=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader).read({ref:fixture.material.ref,scope:{kind:'all'}});
+ assert.equal(input.products[0].memoryCandidates[0].admission?.attribution,'user');assert.equal(input.products[0].memoryCandidates[0].evidenceIds[0],fixture.ids[0]);
+ assert.ok(input.products[0].sourceEvidence.some(evidence=>evidence.quote.includes(owner)));
  assert.equal(calls.filter(input=>isUnderstanding(input)).length,1);assert.ok(calls.filter(isUnderstanding).every(input=>input.executionLane==='background'));
  const receipts=usage(node);assert.equal(receipts.length,2,'the real app query wrapper and producer share one usage owner per actual call');
  assert.deepEqual(receipts.map(receipt=>receipt.operation),['coding-conversation-understanding','memory-strategy']);assert.ok(receipts.every(receipt=>receipt.status==='completed'));assert.deepEqual(receipts.map(receipt=>receipt.tokens?.totalTokens),[118,60]);
@@ -141,6 +145,24 @@ test('empty Coding candidates publish work/events and receive independent review
  const fixture=await receive(node),job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,fixture.ids).id));
  assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.equal(calls,2);const artifacts=node.store.archive.page({kind:'semantic'}).items;
  assert.equal(artifacts.length,1);const artifact=node.store.archive.get(artifacts[0].id)!;assert.deepEqual(artifact.metadata.memoryCandidates,[]);assert.ok((artifact.metadata.workRecords as unknown[]).length);assert.ok((artifact.metadata.events as unknown[]).length);
+ const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader),input=adapter.read({ref:fixture.material.ref,scope:{kind:'all'}});
+ assert.equal(input.products.length,1);assert.equal(input.coverage.semantic.status,'ready');assert.deepEqual(input.products[0].memoryCandidates,[]);
+ assert.equal(input.products[0].events[0].actor,'user');assert.equal(input.products[0].workRecords[0].results[0].basis,'assistant_reported');
+ assert.ok(input.products[0].sourceEvidence.some(evidence=>evidence.quote.includes(owner)));assert.ok(!JSON.stringify(input).includes(toolSecret));
+});
+
+test('a later import observation does not move a source-timed Coding material outside its authorized historical range',{timeout:15000},async t=>{
+ const node=await appFixture(t,async(input,reader)=>{const originals=await supplied(input,reader);return response(originals[0].id,owner,isUnderstanding(input)?products(originals[0].id,false):input.taskContext!.untrustedMemoryDraft);});
+ await node.sources.upsertBatch('coding',[{...event('owner','user',owner),observedAt:'2020-01-01T00:00:00Z'},
+  {...event('assistant','assistant',report),observedAt:'2020-01-01T00:00:00Z'}]);
+ await node.sourcePipelines.tick();const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref);
+ const job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,ids).id));assert.equal(job.status,'completed');
+ const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader),historical={kind:'all' as const,after:'2001-01-01T00:00:00Z',before:'2001-01-02T00:00:00Z'};
+ const view=adapter.read({ref:material.ref,scope:historical});assert.equal(view.products.length,1);
+ assert.equal(view.material.origin.firstAt,'2001-01-01T10:00:00.000Z');assert.equal(view.products[0].events[0].sourceTime,null);
+ const original=view.products[0].sourceEvidence.find(item=>item.quote.includes(owner))!;assert.equal(original.capturedAt,'2020-01-01T00:00:00Z');
+ assert.ok(adapter.readOriginal({ref:material.ref,scope:historical,id:original.id,offset:original.offset,length:original.length}).quote.includes(owner));
+ assert.throws(()=>adapter.read({ref:material.ref,scope:{kind:'all',after:'2001-01-02T00:00:00Z'}}),{statusCode:404});
 });
 
 test('revoking the parent Memory grant during understanding prevents semantic and memory commits',{timeout:15000},async t=>{
