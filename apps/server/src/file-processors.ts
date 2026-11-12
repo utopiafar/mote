@@ -60,6 +60,9 @@ export interface ProcessorInput {
 }
 export interface FileProcessor {
   id:string;version:string;name:string;stage:'extract'|'diarize';mediaTypes:string[];localOnly?:boolean;serviceKind?:'asr'|'image'|'file';parameters?:ProcessorParameter[];
+  /** The selected service is optional: extraction without it remains useful
+   * (for example PDF text layers when the local OCR worker is unavailable). */
+  optionalService?:boolean;
   allowSummary?:boolean;
   /** Compose the selected diarizer, exact alignment and optional semantic grouping. */
   dialogue?:boolean;
@@ -89,6 +92,7 @@ export class ProcessorRegistry {
     if(processor.managedModel!==undefined&&!['dialogue','speaker-wespeaker'].includes(processor.managedModel))throw new Error('Unknown managed processing model');
     if(processor.reuseByContent!==undefined&&(typeof processor.reuseByContent!=='boolean'||processor.stage!=='extract'))throw new Error('Invalid content reuse capability');
     if(processor.dialogue!==undefined&&typeof processor.dialogue!=='boolean'||processor.localOnly!==undefined&&typeof processor.localOnly!=='boolean'||processor.allowSummary!==undefined&&typeof processor.allowSummary!=='boolean')throw new Error('Invalid processing capability');
+    if(processor.optionalService!==undefined&&(typeof processor.optionalService!=='boolean'||!processor.serviceKind))throw new Error('Invalid optional processing service');
     if(processor.dependencies){
       const {settings,parameters}=processor.dependencies;
       if(!Array.isArray(settings)||settings.some(key=>!Object.hasOwn(fileProcessingSchema.innerType().shape,key))||new Set(settings).size!==settings.length||
@@ -135,7 +139,7 @@ function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
     audio('audio.http'),
     audio('audio.local-dialogue',true),
     builtin({id:'text.utf8',version:'3',name:"UTF-8 文字提取",stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}),
-    builtin({id:'document.generic',version:'1',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,dependencies:{settings:[]},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}),
+    builtin({id:'document.generic',version:'2',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,serviceKind:'image',optionalService:true,dependencies:{settings:['imageEndpoint','apiKey']},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal,{endpoint:input.settings.imageEndpoint,apiKey:input.settings.apiKey})}),
     builtin({id:'image.http',version:'2',name:"图片文字提取接口",stage:'extract',mediaTypes:['image/'],serviceKind:'image',awaitResponseOnCancel:true,reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
       if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
       const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};

@@ -23,6 +23,7 @@
     "@mote/plugin-api": "0.1.0",
     "@mote/plugin-host": "0.1.0",
     "@mote/shared": "0.1.0",
+    "@napi-rs/canvas": "^0.1.77",
     "better-sqlite3": "12.10.0",
     "chokidar": "4.0.3",
     "exceljs": "^4.4.0",

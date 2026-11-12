@@ -717,7 +717,7 @@ export class FileProcessing {
         if(!processorId||processorId==='archive'){this.log('file.blocked',id,{category:processorId==='archive'?'archive_only':'unsupported_format'},processorId==='archive'?'info':'warn');db.prepare('UPDATE file_jobs SET policy_json=? WHERE capture_id=?').run(applied?JSON.stringify(applied):null,id);throw new ExecutionFailure('blocked',processorId==='archive'?'archive_only':'unsupported_format');}
         const processor=this.runtime.registry.get(processorId);
         effective={...settings,audioProcessor:processorId,...(processor.localOnly&&processor.serviceKind==='asr'&&!applied?{endpoint:settings.localEndpoint,apiKey:settings.localWorkerApiKey??(this.options.mediaAssets&&settings.localEndpoint===this.media.asrEndpoint?this.media.workerToken:undefined)}:{})};
-        if(processor.localOnly&&processor.serviceKind&&!isLoopback(effective.endpoint))throw new StoreError('Local processing requires a loopback service',409);
+        if(processor.localOnly&&processor.serviceKind&&!processor.optionalService&&!isLoopback(effective.endpoint))throw new StoreError('Local processing requires a loopback service',409);
       }catch(error){if(error instanceof ExecutionFailure)throw error;this.log('file.blocked',id,{category:'not_configured'},'warn');throw new ExecutionFailure('blocked','processor_not_configured');}
     return {db,base,revision,job,file,mime,applied,settings,parameters,processorId:processorId!,effective};
   }

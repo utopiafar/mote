@@ -10,7 +10,7 @@ export function createDefaultFilePolicy(_registry:ProcessorRegistry|undefined,en
   const profile=(processorId:string,serviceId?:string):ProcessingProfile=>({id:processorId==='archive'?'archive':`profile.${processorId}`,name:processorId,processorId,parameters:processorId==='audio.local-dialogue'?{speakerCount:null,semanticTurns:false}:{},diarizationProcessor:'audio.diarize',...(serviceId?{serviceId}:{}),summarize:false});
   return {version:1,
     services:[{id:'central-image-ocr',name:'Central OCR',kind:'image',execution:isLoopback(ocrEndpoint)?'local':'remote',endpoint:ocrEndpoint,model:''},{id:'asr-api',name:moteText("录音转写接口"),kind:'asr',execution:'local',endpoint,model:''},{id:'asr-local',name:moteText("本地录音服务"),kind:'asr',execution:'local',endpoint,model:''}],
-    profiles:[{...profile('image.http','central-image-ocr'),id:'central-image',name:'Central images'},profile('audio.local-dialogue','asr-local'),profile('audio.http','asr-api'),profile('text.utf8'),profile('document.generic'),profile('archive')],
+    profiles:[{...profile('image.http','central-image-ocr'),id:'central-image',name:'Central images'},profile('audio.local-dialogue','asr-local'),profile('audio.http','asr-api'),profile('text.utf8'),profile('document.generic','central-image-ocr'),profile('archive')],
     rules:[{type:'audio/*',profileId:'profile.audio.local-dialogue'},{type:'image/*',profileId:'central-image'},{type:'text/*',profileId:'profile.text.utf8'},...DOCUMENT_MIME_TYPES.map(type=>({type,profileId:'profile.document.generic'})),{type:'*/*',profileId:'archive'}]};
 }
 export function publicFilePolicy(policy:FilePolicy){return {...policy,services:policy.services.map(({apiKey,...s})=>({...s,apiKeyConfigured:!!apiKey}))};}
@@ -30,7 +30,7 @@ export function parseFilePolicy(raw:unknown,previous:FilePolicy,registry:Process
     const service=policy.services.find(s=>s.id===profile.serviceId),model=policy.services.find(s=>s.id===profile.modelServiceId);
     if(service&&service.kind!==plugin.serviceKind)throw new StoreError(moteText("服务类型与处理插件不匹配"),400);
     if(model?.kind!=='model'&&profile.modelServiceId)throw new StoreError(moteText("分析步骤需要语言模型服务"),400);
-    if(plugin.localOnly&&service?.execution==='remote')throw new StoreError(moteText("本地处理插件只能绑定本地服务"),400);
+    if(plugin.localOnly&&!plugin.optionalService&&service?.execution==='remote')throw new StoreError(moteText("本地处理插件只能绑定本地服务"),400);
     if(plugin.allowSummary===false&&profile.summarize)throw new StoreError(moteText("此处理插件不支持自动摘要"),400);
     if(plugin.dialogue){
       const diarizer=registry.get(profile.diarizationProcessor);if(diarizer.stage!=='diarize')throw new StoreError(moteText("需要说话人分离插件"),400);
@@ -61,9 +61,9 @@ export function effectiveFileSettings(applied:AppliedFilePolicy,policy:FilePolic
     if(!snapshot||!live||snapshot.endpoint!==live.endpoint||snapshot.kind!==live.kind||snapshot.execution!==live.execution||snapshot.model!==live.model)throw new StoreError(moteText("文件使用的服务已变更；请明确重新处理文件以应用新方案"),409);
     return {...snapshot,apiKey:live.apiKey};};
   const endpoint=service(profile.serviceId),model=service(profile.modelServiceId);
-  if(plugin.serviceKind&&!endpoint)throw new StoreError(moteText("请为方案选择处理服务"),409);
+  if(plugin.serviceKind&&!endpoint&&!plugin.optionalService)throw new StoreError(moteText("请为方案选择处理服务"),409);
   if(endpoint&&endpoint.kind!==plugin.serviceKind)throw new StoreError(moteText("服务类型与处理插件不匹配"),409);
-  if(plugin.localOnly&&endpoint?.execution==='remote')throw new StoreError('Local processing requires local services',409);
+  if(plugin.localOnly&&!plugin.optionalService&&endpoint?.execution==='remote')throw new StoreError('Local processing requires local services',409);
   const settings:FileProcessingSettings={...base,apiKey:undefined,localWorkerApiKey:undefined,imageEndpoint:'',audioProcessor:profile.processorId,
     diarizationProcessor:profile.diarizationProcessor,speakerCount:typeof profile.parameters.speakerCount==='number'?profile.parameters.speakerCount:null,speakerMin:typeof profile.parameters.speakerMin==='number'?profile.parameters.speakerMin:null,speakerMax:typeof profile.parameters.speakerMax==='number'?profile.parameters.speakerMax:null,semanticTurns:profile.parameters.semanticTurns===true,summarize:profile.summarize,
     ...(endpoint?{endpoint:endpoint.endpoint,apiKey:endpoint.apiKey,allowRemote:endpoint.execution==='remote',...(endpoint.kind==='image'?{imageEndpoint:endpoint.endpoint}:{}),...(endpoint.execution==='local'?{localEndpoint:endpoint.endpoint,localWorkerApiKey:endpoint.apiKey}:{})}:{}),
