@@ -36,6 +36,7 @@ export class DirectoryCatalog {
   private rootChecked=false;
   private rootFailed=false;
   private rootIdentityChanged=false;
+  private rootChangedMidScan=false;
   private observedRootIdentity?:string;
   private reconciled=false;
   get inProgress(){return this.state.inProgress;}
@@ -68,7 +69,7 @@ export class DirectoryCatalog {
 
   checkpoint(incremental=false): LocalFileCheckpoint { return incremental?{...structuredClone({...this.state,catalog:undefined}),catalog:{}}:clone(this.state); }
   catalogChanges():{key:string;value?:FileCatalogEntry}[]{return [...this.changes].filter(([key,value])=>value!==this.baseCatalog[key]).map(([key,value])=>({key,value}));}
-  restore(checkpoint: LocalFileCheckpoint): void { this.state = clone(checkpoint); this.listing=undefined; this.rootChecked=false; this.rootFailed=false; this.rootIdentityChanged=false; this.observedRootIdentity=undefined; this.reconciled=false; }
+  restore(checkpoint: LocalFileCheckpoint): void { this.state = clone(checkpoint); this.listing=undefined; this.rootChecked=false; this.rootFailed=false; this.rootIdentityChanged=false; this.rootChangedMidScan=false; this.observedRootIdentity=undefined; this.reconciled=false; }
   get catalog(): Readonly<Record<string, FileCatalogEntry>> { return this.state.catalog; }
 
   observe(candidate: DirectoryCandidate): void {
@@ -88,6 +89,7 @@ export class DirectoryCatalog {
     this.rootChecked=false;
     this.rootFailed=false;
     this.rootIdentityChanged=false;
+    this.rootChangedMidScan=false;
     this.observedRootIdentity=undefined;
     this.reconciled=false;
     const now=new Date().toISOString();
@@ -122,7 +124,7 @@ export class DirectoryCatalog {
     const identity=identityOf(info),previous=this.observedRootIdentity;
     this.observedRootIdentity=identity;
     // A second check during the same scan catches a remount after enumeration.
-    if (previous && previous!==identity) { this.rootIdentityChanged=true; this.state.degradedReason='root_changed'; }
+    if (previous && previous!==identity) { this.rootChangedMidScan=true; this.rootIdentityChanged=true; this.state.degradedReason='root_changed'; }
     if (!this.state.rootIdentity) {
       // Record the first readable identity early so a resumed page can detect
       // that the root changed between shards. It is not deletion permission.
@@ -215,6 +217,10 @@ export class DirectoryCatalog {
     // after a complete scan still sees previously catalogued files; an empty
     // mount shell must never turn every known file into a deletion.
     if (this.rootIdentityChanged) {
+      // Enumeration happened under the previous identity, so the current root
+      // has never been checked for known files. Keep the old identity and let a
+      // fresh scan verify the new root before any absence can be published.
+      if (this.rootChangedMidScan) { this.fault('root_changed'); return removed; }
       const knownSeen=[...this.priorPaths].filter(path=>this.state.catalog[path]?.lastSeenScan===this.state.scanNumber).length;
       if (this.priorPaths.size>0 && knownSeen===0) { this.fault('root_changed'); return removed; }
       if (this.observedRootIdentity) this.state.rootIdentity=this.observedRootIdentity;

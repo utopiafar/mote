@@ -264,6 +264,14 @@ describe('directory root availability and complete scans', () => {
       expect(await catalog.verifyRoot(true)).toBe(true);
       expect(catalog.finishReconciliation()).toEqual([]);
       expect(Object.keys(catalog.catalog)).toHaveLength(files.length);
+      // The remount happened after enumeration. A fresh scan of the empty shell
+      // must verify the new identity rather than publish the old files as gone.
+      const checkpoint=catalog.checkpoint();
+      const resumed=new DirectoryCatalog(root,checkpoint);
+      await resumed.next(100,[]);
+      expect(resumed.finishReconciliation()).toEqual([]);
+      expect(Object.keys(resumed.catalog)).toHaveLength(files.length);
+      expect(resumed.degraded).toBe('root_changed');
     } finally { await rm(root,{recursive:true,force:true});await rename(saved,root); }
   });
 
