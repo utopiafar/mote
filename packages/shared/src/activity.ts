@@ -1,5 +1,8 @@
+import {z} from 'zod';
+
 /** Product work is a read-only projection of host receipts, never inferred from log text. */
-export type WorkState='waiting'|'running'|'needs_input'|'completed'|'failed'|'cancelled'|'stale'|'excluded';
+export const workStateSchema=z.enum(['waiting','running','needs_input','completed','failed','cancelled','stale','excluded']);
+export type WorkState=z.infer<typeof workStateSchema>;
 export type WorkStage='preparing'|'planning'|'searching'|'checking'|'organizing'|'saving'|'finished';
 export type WorkProgress=
  | {mode:'determinate';unit:'records';total:number;completed:number;failed:number;needsInput:number;excluded:number}
