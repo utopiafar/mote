@@ -17,7 +17,7 @@ export const contextFailure=(code:'context_lineage_incomplete'|'context_evidence
 export interface ModelEvidenceAuthorityDependencies {
   resolveLineage:(value:EvidenceDependencies|undefined)=>EvidenceDependencies|undefined;
   assertImageGrants:(materials:Parameters<typeof assertMemoryImageGrants>[1],images:Parameters<typeof assertMemoryImageGrants>[2])=>void;
-  reader:Pick<EvidenceReader,'deletionContextAllowed'|'contextDependenciesAllowed'|'evidence'|'memoryCatalogMetadataAllowed'|'processingEvidenceAllowed'|'memoryCatalogMetadata'|'queryMaterialReference'>;
+  reader:Pick<EvidenceReader,'deletionContextAllowed'|'contextDependenciesAllowed'|'currentMemoryLeadsAllowed'|'evidence'|'memoryCatalogMetadataAllowed'|'processingEvidenceAllowed'|'memoryCatalogMetadata'|'queryMaterialReference'>;
   conversations:Pick<Conversations,'assertHistoryContext'|'retiredSelection'>;
   sourceContexts:SourceContextStore;
   authorization:Pick<BackgroundModelAuthorization,'currentId'|'assertDisclosure'>;
@@ -54,6 +54,7 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     const conversationText=Boolean(input?.conversation?.workingMemory?.text||input?.conversation?.turns.some(turn=>!turn.evidenceDeleted&&turn.answer));
     const taskText=Boolean(input?.taskContext?.previousSummary||input?.taskContext?.turns?.length);
     if((conversationText&&input?.conversation?.evidenceDependencies?.complete!==true)||((taskText||input?.openingMemories?.length)&&input?.contextEvidenceDependencies?.complete!==true)||input?.openingMemories?.length&&!input?.contextEvidenceDependencies?.ids.length)throw contextFailure('context_lineage_incomplete');
+    if(input?.openingMemories?.length&&!evidenceReader.currentMemoryLeadsAllowed(input.openingMemories,input.contextTime))throw contextFailure('context_evidence_restricted');
   };
   // Exact public selections use the normal current-original exposure policy and
   // retain a content pin across preparation, outbound calls and publication.
