@@ -102,7 +102,10 @@ test('failed answers remain visible and concurrent or deleted conversations cann
   fail=true;assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated failing question'}})).statusCode,500);
   const failedList=(await app.inject({url:'/api/conversations',headers})).json();assert.equal(failedList.items.length,1);assert.equal(failedList.items[0].status,'failed');
   const failed=(await app.inject({url:`/api/conversations/${failedList.items[0].id}`,headers})).json();assert.equal(failed.turns[0].status,'failed');assert.equal(failed.turns[0].question,'Generated failing question');assert.equal(failed.turns[0].error.code,'internal');
-  fail=false;const first=(await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated success'}})).json();
+  const settings=(await app.inject({url:'/api/configuration',headers})).json();
+  assert.equal((await app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:settings.revision,value:{multipleConversations:true}}})).statusCode,200);
+  const side=await app.inject({method:'POST',url:'/api/conversations',headers,payload:{}});assert.equal(side.statusCode,201,side.body);
+  fail=false;const first=(await app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:side.json().id,question:'Generated success'}})).json();
   hold=true;
   const pending=app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:first.conversationId,question:'Held followup'}}).then(value=>value);
   await began;
@@ -143,7 +146,7 @@ test('closing interrupts and drains an interactive query without committing a du
   assert.notEqual(response.statusCode,200);assert.equal(calls,1);
   running=await buildApp(config(dir),{agent:agent(async()=>answer())});
   const history=await running.app.inject({url:'/api/conversations',headers});
-  assert.equal(history.statusCode,200);assert.deepEqual(history.json().items,[]);assert.equal(calls,1);
+  assert.equal(history.statusCode,200);assert.equal(history.json().items.length,1);assert.equal(history.json().items[0].id,(await running.app.inject({url:'/api/conversations/main',headers})).json().id);assert.equal(history.json().items[0].turnCount,0);assert.ok(!history.body.includes('Generated interrupted reply must not persist'));assert.equal(calls,1);
 });
 
 test('accepted messages persist before execution and retries stay idempotent across restart',async t=>{

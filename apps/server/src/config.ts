@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { ConfigurationSource, ServerConfiguration } from '@mote/shared';
+import { conversationSettingsSchema } from '@mote/shared';
 import { modelProvider } from '@mote/shared/models';
 import { parseConfigDocument as parseYaml, readConfigDocument as readYaml, isConfigSecretPath, serializeConfigDocument } from '@mote/shared/config-file';
 import { modelDomainSchema, defaultModelDomain, type ModelDomain } from './model-settings.js';
@@ -186,6 +187,7 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
     definition('processing', processingConfigurationSchema, false, [{ path: 'settings.apiKey', sensitive: true }, { path: 'settings.localWorkerApiKey', sensitive: true }, { path: 'policy.services.*.apiKey', sensitive: true }, { path: 'settings', effect: 'next-request' }, { path: 'policy', effect: 'next-request' }]),
     definition('perception', perceptionConfigurationSchema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'concurrency', effect: 'next-admission' }, { path: 'providerRevision', effect: 'next-request' }, { path: 'allowExternalProcessing', effect: 'next-request' }, { path: 'allowQueryImages', effect: 'next-request' }, { path: 'understandingEnabled', effect: 'next-request' }]),
     definition('memory', lifecycleSettingsSchema, false, Object.keys(lifecycleSettingsSchema.parse({})).map(path => ({ path, effect: 'next-admission' as const }))),
+    definition('conversations', conversationSettingsSchema, false, [{path:'multipleConversations',effect:'immediate'},{path:'context',effect:'next-request'}]),
     definition('actions', actionsRuntimeSettingsSchema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'timeZone', effect: 'next-request' }]),
     definition('activity', activityConfigurationSchema, false, [{path:'enabled',effect:'immediate'},{path:'modelProfileId',effect:'next-request'}]),
     definition('workflows', workflowConfigurationSchema, false, Object.keys(workflowConfigurationSchema.parse({})).flatMap(path => [{ path: `${path}.enabled`, effect: 'immediate' as const }, { path: `${path}.concurrency`, effect: 'next-admission' as const }])),
@@ -323,7 +325,7 @@ export function documentFromConfig(config: Config): ConfigDocument {
     connectors: connectorsConfigSchema.parse(config.connectors ?? {}),
     plugins: pluginsConfigSchema.parse({ importPythonPacks: config.importPythonPacks }),
     updates: updatesConfigSchema.parse({ repository: config.updateRepository, channel: config.updateChannel }), media: mediaConfigSchema.parse(config.media ?? {}),
-    processing: defaultProcessingConfiguration(config.media), perception: perceptionConfigurationSchema.parse({}), memory: lifecycleSettingsSchema.parse({}),
+    processing: defaultProcessingConfiguration(config.media), perception: perceptionConfigurationSchema.parse({}), memory: lifecycleSettingsSchema.parse({}), conversations: conversationSettingsSchema.parse({}),
     actions: actionsRuntimeSettingsSchema.parse({}), activity: activityConfigurationSchema.parse({}), workflows: workflowConfigurationSchema.parse({}),
   };
 }

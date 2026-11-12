@@ -39,6 +39,8 @@ export function createConversations(store:Store,authorization:Pick<ModelAuthoriz
     get:(id:string)=>read().get(id),
     page:(id:string,args?:Parameters<Conversations['page']>[1])=>read().page(id,args),
     main:()=>write().main(),
+    create:()=>write().create(),
+    selectMain:(id:string)=>write().selectMain(id),
     message:(id:string)=>read().message(id),
     hasMessage:(id:string)=>read().hasMessage(id),
     messageByClientRequestId:(id:string)=>read().messageByClientRequestId(id),
@@ -83,7 +85,7 @@ export type ConversationsPlatform=ReturnType<typeof createConversations>;
 
 /** Stable pre-H14 route table. A new activation replaces the port without
  * installing another copy of the conversation routes. */
-export function createConversationRoutes(){
+export function createConversationRoutes(multipleConversations:()=>boolean=()=>false){
   let current:ConversationRepository|undefined;
   const mounted=new WeakSet<FastifyInstance>();
   return Object.freeze({
@@ -94,7 +96,7 @@ export function createConversationRoutes(){
       app.register(async child=>registerConversationRoutes(child,()=>{
         if(!current)throw unavailable();
         return current;
-      }));
+      },multipleConversations));
     },
   });
 }
