@@ -96,6 +96,21 @@ export class TaskRecords {
   }
   get(id:string):TaskRecord{return metadata(this.row(id));}
 
+  /** A not-yet-started input may gain a deterministic readiness projection.
+   * Its identity is unchanged; current dependencies and private bytes are
+   * replaced atomically. Running or completed inputs remain immutable. */
+  replaceWaitingInput(id:string,expectedRevision:number,input:unknown,rawDependencies:EvidenceDependencies,assertCurrent:AssertTaskCurrent):TaskRecord{
+    return this.transaction(()=>{
+      const row=this.current(id,expectedRevision);if(row.kind!=='assistant.change'||row.state!=='waiting')throw new StoreError('Task input cannot be refreshed',409);
+      const payload=this.normalize(input),dependencies=validateTaskDependencies(rawDependencies),ids=taskEvidenceIds(this.store,dependencies);
+      checkCurrent(assertCurrent,ids);this.current(id,expectedRevision);
+      const encoded=encodeMemoryPrivate(this.store,payload),hash=sha256(canonicalRecipeJson({operationId:row.operation_id,kind:row.kind,input:payload,evidenceDependencies:dependencies}));
+      this.store.db.prepare('UPDATE task_records SET input_json=?,request_hash=?,revision=revision+1,updated_at=? WHERE id=?').run(encoded,hash,this.now(),id);
+      this.store.db.prepare('DELETE FROM task_evidence WHERE task_id=?').run(id);addTaskEvidence(this.store,id,ids);
+      this.store.reserveMetadata(0);return this.get(id);
+    });
+  }
+
   /** Stable creation ordering: status changes do not move records across pages. */
   page(args:{operationId?:string;state?:OperationState;limit?:number;cursor?:string}={}){
     const selected=z.object({operationId:identity.optional(),state:operationStateSchema.optional(),limit:z.number().int().min(1).max(100).default(30),cursor:z.string().max(1000).optional()}).strict().parse(args);

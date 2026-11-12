@@ -3,7 +3,7 @@ import type {EvidenceDependencies,QueryResult} from '@mote/shared';
 import {BackgroundModelAuthorization,type AutomaticModelPurpose,type ModelConnection} from './background-model-authorization.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
-import {memoryEvidenceFingerprint} from './memory.js';
+import {memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
 import {sha256,StoreError,type Store} from './store.js';
 import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
@@ -32,7 +32,8 @@ export class BatchProcessing {
   constructor(private readonly store:Store,private readonly engine:ExecutionEngine,private readonly control:BackgroundModelAuthorization,
     private readonly query:(input:QueryInput)=>Promise<QueryResult>,private readonly assertCurrent:AssertTaskCurrent,
     private readonly assertDisclosure:(ids:readonly string[])=>void,private readonly assertResultCurrent:(result:QueryResult)=>void,
-    private readonly modelAdmission:()=>ExecutionFailure|undefined,private readonly concurrency:()=>number=()=>1,deferStart=false){
+    private readonly modelAdmission:()=>ExecutionFailure|undefined,private readonly concurrency:()=>number=()=>1,deferStart=false,
+    private readonly evidence:Pick<MemoryStore,'readEvidence'|'isCurrentEvidence'>={readEvidence:ids=>store.evidence(ids),isCurrentEvidence:id=>store.isCurrentEvidence(id)}){
     this.tasks=new TaskRecords(store);if(!deferStart)this.start();
   }
   start(){
@@ -55,14 +56,14 @@ export class BatchProcessing {
     if(!input||typeof input.question!=='string'||!input.question.trim()||input.question.length>8000||!Array.isArray(input.evidenceIds)||
        input.evidenceIds.some(id=>typeof id!=='string'||!id)||new Set(input.evidenceIds).size!==input.evidenceIds.length)
       throw new StoreError('Invalid batch query',400);
-    const ids=[...input.evidenceIds],records=this.store.evidence(ids);
-    if(records.length!==ids.length||ids.some(id=>!this.store.isCurrentEvidence(id)))throw new StoreError('Batch evidence is unavailable',409);
+    const ids=[...input.evidenceIds],records=this.evidence.readEvidence(ids);
+    if(records.length!==ids.length||ids.some(id=>!this.evidence.isCurrentEvidence(id)))throw new StoreError('Batch evidence is unavailable',409);
     this.assertCurrent(ids);
     return {question:input.question,evidenceIds:ids,processingEvidence:Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)]))};
   }
   private pins(input:FrozenQuery){
-    const records=this.store.evidence(input.evidenceIds);
-    if(records.length!==input.evidenceIds.length||records.some(record=>!this.store.isCurrentEvidence(record.id)||input.processingEvidence[record.id]!==memoryEvidenceFingerprint(record)))
+    const records=this.evidence.readEvidence(input.evidenceIds);
+    if(records.length!==input.evidenceIds.length||records.some(record=>!this.evidence.isCurrentEvidence(record.id)||input.processingEvidence[record.id]!==memoryEvidenceFingerprint(record)))
       throw new StoreError('Batch evidence changed',409);
     this.assertCurrent(input.evidenceIds);
   }

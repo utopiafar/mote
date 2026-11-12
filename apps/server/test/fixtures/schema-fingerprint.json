@@ -118,6 +118,16 @@
     },
     {
       "type": "index",
+      "name": "assistant_change_work_capture",
+      "fingerprint": "e85a598f793fe781b51b05c08b995429e22dc5d043ddbe7ffd1ae55a8e91bc1b"
+    },
+    {
+      "type": "index",
+      "name": "assistant_change_work_material",
+      "fingerprint": "dfca868e707fdc82f521699c0ea3c28a512a387ee8b3c21a27e21314b1002a48"
+    },
+    {
+      "type": "index",
       "name": "assistant_matters_page",
       "fingerprint": "cf76d9eadad85d358aa8fe5554159da710847537058cff415651035b19c430d6"
     },
@@ -833,6 +843,11 @@
     },
     {
       "type": "table",
+      "name": "assistant_card_feedback_scopes",
+      "fingerprint": "dd847ab27777d73f06347c9a7a45cf322f44c1927ad8ea96cf58886aad925b4d"
+    },
+    {
+      "type": "table",
       "name": "assistant_card_versions",
       "fingerprint": "5137973e6690f72b5fe8e4deb383bf91e973af6ebe59861687de67703a4b338f"
     },
@@ -840,6 +855,31 @@
       "type": "table",
       "name": "assistant_cards",
       "fingerprint": "dfee4cea2c7d453c88e21cca39f5546295bcd9e552c5c3ef0dfe025668ad1491"
+    },
+    {
+      "type": "table",
+      "name": "assistant_change_deferred",
+      "fingerprint": "4a9141c27722f8cf6f6cbb9f9219d862882bdd6904002ad20a5e146ffdbc0601"
+    },
+    {
+      "type": "table",
+      "name": "assistant_change_feedback_tasks",
+      "fingerprint": "13ae5d173bfd0f6938da7e87523aca22ed70bb6b0a03c5235ad4d1499a78fb3d"
+    },
+    {
+      "type": "table",
+      "name": "assistant_change_log",
+      "fingerprint": "3a0348ad32b169e30cdcd3ceaa7ad554c2b1b17e28177d7925cdc7fbc9f9efa9"
+    },
+    {
+      "type": "table",
+      "name": "assistant_change_state",
+      "fingerprint": "4a25c9118971b16fedf0e685f6fc70fcb72da5d0fdd29e04d1bdd3b29dbb4dd5"
+    },
+    {
+      "type": "table",
+      "name": "assistant_change_work",
+      "fingerprint": "d987e6f4869969ec08fcdb0c6a91c9eb40050e736719627a3bb0a8f5d67030f8"
     },
     {
       "type": "table",
@@ -2318,6 +2358,66 @@
     },
     {
       "type": "trigger",
+      "name": "assistant_change_archive_forget",
+      "fingerprint": "29ed367e602d2be4e82e4209fca1d775f0b41cc695192ae5245384ada859529d"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_archive_supersede",
+      "fingerprint": "27eb9c10ab047fc5e5419aafc05c0706e908c48a64d17cac92f92da372261ab3"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_capture_forget",
+      "fingerprint": "c2196da17e1d1f83710a817fd76b00d5afc3be4b91c896c04ec4452ea92c648e"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_card_review",
+      "fingerprint": "636dd8682fc4fc79a35e72e9ee40df598f1bc57392f03358427772bb00e4006d"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_feedback",
+      "fingerprint": "f8f0553a5c88f6dcb55e0c7810342c2e9e788de5ce2e5ccb355ac6953c98321b"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_feedback_forget",
+      "fingerprint": "317d6162ef7428acfe978a60dc3d99342b854607a544a2956526e7df2885f446"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_material",
+      "fingerprint": "f664d23ae4757f2814cc4af7932e31fa24c97f66434b584447249e0b1ebda267"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_material_forget",
+      "fingerprint": "f3569f179c65da38d5379b785c90f5dc524ac957986db7db221c692c610c7b61"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_memory_review",
+      "fingerprint": "0aabbcd5c5d981d57d9cec947f2baa9575220f003f5836581f4bf50bcb0d46d2"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_original",
+      "fingerprint": "2b1c38eb165fcfd38592b2c2b0d736e2628cde757cee2d7c730efe7d493b09a2"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_source_deleted",
+      "fingerprint": "af6e0eb8e92f6c556f3bb97ca4d465396d6cc92ba874401211ea75b9b5159e5c"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_change_source_forget",
+      "fingerprint": "12abdb1d3056aa3f0016f8cd65bb45f4a95aa2c85b68750af364951eea32f2ab"
+    },
+    {
+      "type": "trigger",
       "name": "batch_count_delete",
       "fingerprint": "7f9c89988f65239ef7d7ac3457498b567afbd99129ec23245a2df77bce1a3992"
     },
@@ -2843,6 +2943,21 @@
     },
     {
       "type": "trigger",
+      "name": "ledger_assistant_card_feedback_scopes_delete",
+      "fingerprint": "bc3b922cfa61bce7c65f7146f22ea4875a85b73ec7c001c4e082d3065df58334"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_card_feedback_scopes_insert",
+      "fingerprint": "27f6c13f6a88006d8e7d683e260b9919d85ab717cf2713e886ccc25402931dad"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_card_feedback_scopes_update",
+      "fingerprint": "0be609013f8cf448a0844d60ea271116981c93d351a19568e92be4856ab745aa"
+    },
+    {
+      "type": "trigger",
       "name": "ledger_assistant_card_feedback_update",
       "fingerprint": "5be9badaa5bd688ca70d798cfc0909898aea6406906da51d934dea62f51bfd6f"
     },
@@ -2875,6 +2990,81 @@
       "type": "trigger",
       "name": "ledger_assistant_cards_update",
       "fingerprint": "8877fad65ebc867eb0bfd6d6afd9caa561151d8b4beb26d01c0b14cd3fd46dd8"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_deferred_delete",
+      "fingerprint": "33a91dbb5301dd5220d5b34006ef2bed64b6848ab19bb50f5a747fa253d9ea55"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_deferred_insert",
+      "fingerprint": "4a95e1917aebe8aae7472000d29e541fd875fe2f2f4b231b2bfde775ebbdab2c"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_deferred_update",
+      "fingerprint": "5a34919ecc7d0c1ec575a1d85778e3fa2282ad51d368ed606bab8ccbc68ba18d"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_feedback_tasks_delete",
+      "fingerprint": "d6a9c581e9686a375820b60d653103ff154ffcff4271690eafa0a9be6621e440"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_feedback_tasks_insert",
+      "fingerprint": "a15d84187b2453c71a71313d18646f45fdccad5ceeccbf2285ed77a7c913ff2c"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_feedback_tasks_update",
+      "fingerprint": "6bb1f3637db07065cbf8a7d678f53247dd07302100f1844625812e99324509d3"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_log_delete",
+      "fingerprint": "7fdaed9abf0db2611b8abac959d49c521380a1cf9ee16a3a8ad14f3a50942a9b"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_log_insert",
+      "fingerprint": "b46a3782760261b6f9a8fd553fc108706f647a93b30630729e25f7e302408f35"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_log_update",
+      "fingerprint": "f1d8fa29c0c9b0fcbec28a1995014758941b5d134b225c4d5c42b512573a4374"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_state_delete",
+      "fingerprint": "64b4788a5a68b2c8438a13c5d075f465d1777d0d61853316a8c773adeb6cf463"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_state_insert",
+      "fingerprint": "f0352372b2286d06ba1ed2d05606f46fda6e35302e2415e057c4f41709e33fb4"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_state_update",
+      "fingerprint": "96d05ee6b3c19cc1ec7a5771edb26c3aca6bfc56cec567158bc7d269f8985159"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_work_delete",
+      "fingerprint": "8aa550ed0121a578c37a69d0e6030e6af7cd702c61e2e2bd26dbf1490fde020a"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_work_insert",
+      "fingerprint": "566dc301f6a012d8760ca1c00d50a15242d8fce2c751d0f03583cfd2152db993"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_change_work_update",
+      "fingerprint": "1c3868026bb3b6e8d8ffb63ff05f2cfabdab0da265c40bf32c487d63c67a2ecc"
     },
     {
       "type": "trigger",

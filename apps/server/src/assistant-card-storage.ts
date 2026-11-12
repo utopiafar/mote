@@ -75,6 +75,8 @@ export function installAssistantCards(store:Store){
  CREATE TABLE IF NOT EXISTS assistant_card_feedback_context(
   feedback_seq INTEGER NOT NULL REFERENCES assistant_card_feedback(seq) ON DELETE CASCADE,source_id TEXT NOT NULL,
   PRIMARY KEY(feedback_seq,source_id));
+ CREATE TABLE IF NOT EXISTS assistant_card_feedback_scopes(
+  feedback_seq INTEGER PRIMARY KEY REFERENCES assistant_card_feedback(seq) ON DELETE CASCADE,private_json TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS assistant_card_feedback_context_source ON assistant_card_feedback_context(source_id,feedback_seq);`);
  for(const table of ['captures','file_chunks','context_artifacts','memories'])db.exec(`CREATE TRIGGER IF NOT EXISTS assistant_cards_${table}_deleted BEFORE DELETE ON ${table} BEGIN ${retirementStatements('evidence_id=old.id').join(';')}; END;`);
  db.exec(`CREATE TRIGGER IF NOT EXISTS assistant_cards_memory_changed AFTER UPDATE OF json ON memories WHEN new.json IS NOT old.json BEGIN
@@ -121,5 +123,6 @@ export function installAssistantCards(store:Store){
   assistant_card_feedback:'length(CAST(card_id AS BLOB))+length(CAST(version AS BLOB))+length(CAST(action AS BLOB))+coalesce(length(CAST(private_json AS BLOB)),0)+128',
   assistant_card_feedback_evidence:'length(CAST(evidence_id AS BLOB))+64',
   assistant_card_feedback_context:'length(CAST(source_id AS BLOB))+64',
+  assistant_card_feedback_scopes:'length(CAST(private_json AS BLOB))+64',
  });
 }

@@ -13,7 +13,7 @@ export type ModelDisclosure={sourceId:string};
  * sources participate by default, and an excluded source can be re-included. */
 export type ModelAuthorityView={revision:number;state:'off'|'on';excludedSourceIds:string[]};
 type State=ModelAuthorityView&{lastOperation?:string;lastCommand?:string};
-export type AutomaticModelPurpose=`memory:${string}`|'memory'|'working'|'insight'|'activity'|'actions'|'image'|'file'|'embedding'|'semantic'|'integration';
+export type AutomaticModelPurpose=`memory:${string}`|'memory'|'working'|'insight'|'activity'|'actions'|'image'|'file'|'embedding'|'semantic'|'integration'|'assistant';
 type AutomaticWork={id:string;kind:'automatic';purpose:AutomaticModelPurpose;roots:string[]};
 type ManualWork={id:string;kind:'manual'|'probe';roots:string[];connections:ModelConnection[]};
 type Work=AutomaticWork|ManualWork;

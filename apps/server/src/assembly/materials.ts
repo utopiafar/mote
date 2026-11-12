@@ -133,5 +133,6 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
     'mote.context':Object.freeze({mount:(app:Parameters<typeof evidenceContext.routes>[0])=>evidenceContext.routes(app)}),
   });
   // materials slice.
-  return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext});
+  return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext,
+    setMaterialConsumerTick:(callback:(()=>void)|undefined)=>organizerService.setAfterTick(callback)});
 }
