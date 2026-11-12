@@ -1,4 +1,5 @@
 import {AssistantMatters} from './assistant-matters.js';
+import {AssistantCards} from './assistant-cards.js';
 import {createModelEvidenceAuthority} from './model-evidence-authority.js';
 import type {QueryAgent} from './query-agent.js';
 import {AssistantDrafts} from './assistant-drafts.js';
@@ -480,7 +481,9 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const assistantMatters=new AssistantMatters(store);
+  const assistantCards=new AssistantCards(store,evidenceReader);
   const featureServices=Object.freeze({
+    assistantCards,
     configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
@@ -526,7 +529,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.memory'))routes.push(domain('mote.memory'));
   if(selected('mote.imports'))routes.push(domain('mote.imports'));
   if(selected('mote.ask'))routes.push(domain('mote.ask'));
-  if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices)));
+  if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices,{store:assistantCards,credential,assertRequestActive})));
   if(selected('mote.agent-view'))routes.push(domain('mote.agent-view'));
   if(selected('mote.features'))routes.push(inventoryFeature(()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()])));
   await installFeatureRoutes(featureRoutes,routes);
