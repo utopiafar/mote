@@ -84,6 +84,23 @@ it('disabling one source stops only its watcher and scans while the other source
   expect(targets()).toEqual([first, second]);
 });
 
+it('shows a degraded file root without claiming the scan completed', async () => {
+  const config = { ...defaultConfig(), serverUrl: '', token: undefined, syncMode: 'manual' as const };
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'fixture.degraded-root', version: 1, watchesPath: true, tracksDeletions: true, allowsArchive: true,
+    validateConfiguration(source) { if (typeof source.path !== 'string') throw new Error('Invalid degraded source'); },
+    async scan() { return {version: 1, scan: {items: [], seen: [], complete: false, skipped: 0, degraded: 'root_unavailable' as const}}; },
+  });
+  const app = new LocalSourceManager(join(directory, 'degraded-state'), config, '/must-not-be-invoked-calendar-helper', true, undefined, adapters);
+  managers.push(app); await app.initialize();
+  const path = join(directory, 'generated-degraded-root'); await mkdir(path);
+  const id = await app.addAdapterSource({kind: 'fixture.degraded-root', name: 'Generated degraded root', path}, DEFAULT_SOURCE_OPTIONS);
+  await app.sync(true);
+  const row = app.status().find(value => value.source.id === id)!;
+  expect(row.scanComplete).toBe(false); expect(row.degraded).toBe('root_unavailable'); expect(row.state).toBe('error');
+  expect(row.message).toContain('来源根不可用或已变化'); expect(row.message).toContain('未判断删除');
+});
+
 it('connects the discovered Kimi Code home and queues its main conversation',async()=>{
   const home=join(directory,'generated-kimi'),root=join(home,'sessions');
   const main=join(root,'wd_fixture','session_fixture','agents','main');await mkdir(main,{recursive:true});

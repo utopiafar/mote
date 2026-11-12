@@ -12,7 +12,7 @@ import { atomicSourceJson, sourceHash, SourceSync, type PendingSourceSummary } f
 import { readLocalContent } from './local-content';
 import { codingRoot, codingProviders, type CodingProvider } from './coding-agents';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices } from './source-calendar';
-import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
+import { normalizeSourceOptions, redactSourceText, type FileScanDegraded, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
 import { builtInSourceAdapters, type SourceAdapterRegistry } from './source-adapters';
 import type { Config } from './contracts';
 import { readResponseText } from './response-body';
@@ -35,6 +35,8 @@ export function sourceDefinition(source: LocalSource): SourceDefinition {
   return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || moteText("本地来源"), kind, deviceId, platform, retention, enabled, initialSync };
 }
 export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ allowRead:options.allowRead,retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
+const rootDegraded=(reason:FileScanDegraded|undefined)=>reason==='root_unavailable'||reason==='root_changed';
+const degradedMessage=(reason:FileScanDegraded|undefined)=>rootDegraded(reason)?moteText("来源根不可用或已变化；已保留本机清单，未判断删除（已降级）"):moteText("已同步可读取项；扫描不完整，未判断删除");
 export class LocalSourceManager {
   private sources: LocalSource[] = [];
   private metadataDirty = new Set<string>();
@@ -270,7 +272,7 @@ export class LocalSourceManager {
       if (!force && !this.dirtySources.has(source.id) && last?.lastSyncAt && Date.now() - Date.parse(last.lastSyncAt) < source.intervalSeconds * 1000) continue;
       // Failed attempts use a bounded retry interval as well; a timer never floods an unavailable node.
       if (!force && !this.dirtySources.has(source.id) && last?.state === 'error' && (last as SourceStatus & { attemptAt?: number }).attemptAt && Date.now() - (last as SourceStatus & { attemptAt: number }).attemptAt < Math.max(30000, source.intervalSeconds * 1000)) continue;
-      const status: SourceStatus & { attemptAt: number } = { source, state: 'syncing', message: moteText("读取所选来源并同步"), pending: 0, items: 0, skipped: 0, ...last, attemptAt: Date.now() }; status.state = 'syncing'; this.states.set(source.id, status);
+      const status: SourceStatus & { attemptAt: number } = { source, state: 'syncing', message: moteText("读取所选来源并同步"), pending: 0, items: 0, skipped: 0, ...last, attemptAt: Date.now() }; status.state = 'syncing'; status.degraded = undefined; this.states.set(source.id, status);
       const started = Date.now(); void this.events?.record('SOURCE', 'STARTED', {sourceId:source.id,sourceKind:source.kind});
       const wakeVersion = this.sourceWakeVersions.get(source.id) ?? 0;
       let unqueuedScan: import('./source-types').SourceScan | undefined;
@@ -287,7 +289,7 @@ export class LocalSourceManager {
         const scan = await this.adapters.scan({ source, signal, checkpoint: adapter.checkpointMode === 'file' ? undefined : engine.checkpoint(), fileCheckpoint: engine.fileCheckpoint(), priorityPaths: [...priorityVersions.keys()], stateDirectory: this.directory, helperPath: this.helperPath, scope });
         unqueuedScan = scan; accessValidated = true;
         if (!scan.queue) scan.queue = source.initialSync === 'all' && !engine.initialized() ? 'history' : 'realtime';
-        signal.throwIfAborted(); status.skipped = scan.skipped; status.scanComplete = scan.complete;
+        signal.throwIfAborted(); status.skipped = scan.skipped; status.scanComplete = scan.complete; status.degraded = scan.degraded;
         if (source.kind === 'coding-agent' && scan.skipped) status.message = moteText("部分会话无法读取或格式不支持；保留游标，下次重试");
         this.readable.add(source.id);
         // Freeze the selected bytes durably before any network work, including a lost ACK.
@@ -299,17 +301,17 @@ export class LocalSourceManager {
           // Discovery only journals absence. Head reconciliation belongs to the
           // paused/scheduled, bounded transport path in flushPending.
           await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync);
-          Object.assign(status, engine.status(), { state: 'idle', message: !this.connection.serverUrl || !connectionToken(this.connection) ? moteText("已保存在本机；尚未配置中央同步") : moteText("已检查本地变化，按同步设置等待上传") });
+          Object.assign(status, engine.status(), { state: scan.degraded?'error':'idle', message: scan.degraded ? degradedMessage(scan.degraded) : !this.connection.serverUrl || !connectionToken(this.connection) ? moteText("已保存在本机；尚未配置中央同步") : moteText("已检查本地变化，按同步设置等待上传") });
         } else {
           const pending = this.pendingStats();
           const policy = decideSync({ ...this.connection, syncMode: this.connection.syncMode ?? 'realtime', syncIntervalMinutes: this.connection.syncIntervalMinutes ?? 15, syncBatchSize: this.connection.syncBatchSize ?? 20 }, pending, Date.now(), force);
-          if (!policy.ready) { await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
+          if (!policy.ready) { await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: scan.degraded?'error':'idle', message: scan.degraded ? degradedMessage(scan.degraded) : policy.message }); }
           else {
             const request = this.request(signal);
             await this.prepareSource(source,request,signal);
             await this.recoverSnapshot(source,engine,request,signal);
             const { state: ready } = await engine.syncScan(scan, adapter.tracksDeletions && source.trackDeletions, sourceDefinition(source), request, signal, () => this.prepareSource(source, request, signal));
-            Object.assign(status, engine.status(), { state: ready === 'paused' ? 'paused' : 'idle', message: ready === 'paused' ? moteText("中央已暂停该来源；待上传版本保留在本机") : scan.complete ? moteText("已同步；后台定时检查变化") : moteText("已同步可读取项；扫描不完整，未判断删除") });
+            Object.assign(status, engine.status(), { state: ready === 'paused' ? 'paused' : scan.degraded?'error':'idle', message: ready === 'paused' ? moteText("中央已暂停该来源；待上传版本保留在本机") : scan.complete ? moteText("已同步；后台定时检查变化") : degradedMessage(scan.degraded) });
           }
         }
         if (source.kind === 'coding-agent' && !scan.complete) status.message = scan.skipped ? moteText("部分会话无法读取或单条事件超过限制；已保留进度，下次重试") : moteText("已保存当前批次；其余会话或未写完的尾行将在后续扫描继续");

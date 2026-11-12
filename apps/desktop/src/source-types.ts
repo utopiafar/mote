@@ -1,5 +1,5 @@
 import type { SourceRetention, SourceDefinition, SourceOptions, LocalSource, SourceStatus, CalendarChoice } from './contracts/sources';
-export type { SourceRetention, SourceDefinition, SourceOptions, LocalSource, SourceStatus, CalendarChoice } from './contracts/sources';
+export type { SourceRetention, SourceDefinition, SourceOptions, LocalSource, SourceStatus, CalendarChoice, FileScanDegraded } from './contracts/sources';
 import { moteText } from '@mote/shared/i18n';
 import {RESET_REQUIRED} from './storage-format-constants';
 
@@ -20,8 +20,12 @@ export interface FileCatalogEntry {
   quickHash: string; contentQuickHash?: string; contentHash?: string; lastSeenScan: number; syncState: 'pending'|'synced'|'error';
 }
 export interface LocalFileCheckpoint {
-  version: 1; root: string; scanNumber: number; scanStartedAt: string; initialized: boolean;
-  inProgress: boolean; scanFaulted?: boolean; pendingDirectories: string[]; activeDirectory?: { path: string; after?: string };
+  version: 1; root: string;
+  /** Device/inode of a directory root accepted by a complete, readable scan. */
+  rootIdentity?: string; scanNumber: number; scanStartedAt: string; lastScanAttemptAt?: string; initialized: boolean;
+  inProgress: boolean; scanFaulted?: boolean; lastScanComplete?: boolean; lastCompleteScanAt?: string;
+  degradedReason?: import('./contracts/sources').FileScanDegraded;
+  pendingDirectories: string[]; activeDirectory?: { path: string; after?: string };
   nextFile?: string; catalog: Record<string, FileCatalogEntry>;
 }
 /** A registered adapter owns its versioned checkpoint shape; SourceSync persists it atomically with the outbox. */
@@ -38,6 +42,8 @@ export interface SourceScan {
   /** Historical backfills never get to starve newly observed source changes. */
   queue?: 'realtime' | 'history';
   scope?: { start: string; end: string };
+  /** This scan is incomplete or unverified; absence must not be published. */
+  degraded?: import('./contracts/sources').FileScanDegraded;
 }
 
 export type SourceRequest = (path: string, body: unknown, method: 'GET' | 'POST' | 'PUT' | 'PATCH', signal?: AbortSignal) => Promise<unknown>;

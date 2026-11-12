@@ -3003,6 +3003,7 @@ export const french: Readonly<Record<string, string>> = {
   "中央已暂停该来源；待上传版本保留在本机": "Source suspendue au niveau central ; révisions en attente conservées localement",
   "已同步；后台定时检查变化": "Synchronisé ; vérification périodique des modifications",
   "已同步可读取项；扫描不完整，未判断删除": "Éléments lisibles synchronisés. L'analyse incomplète n'a pas servi à déduire des suppressions.",
+  "来源根不可用或已变化；已保留本机清单，未判断删除（已降级）": "Racine de source indisponible ou modifiée. Le catalogue local est conservé ; aucune suppression n'est déduite (dégradé).",
   "部分会话无法读取或单条事件超过限制；已保留进度，下次重试": "Certaines sessions sont illisibles ou un événement dépasse les limites. Progression conservée pour une nouvelle tentative.",
   "已保存当前批次；其余会话或未写完的尾行将在后续扫描继续": "Lot actuel enregistré. Les sessions restantes et les dernières lignes inachevées continueront lors des prochaines analyses.",
   "同步已取消，待传版本已保留": "Synchronisation annulée ; révisions en attente conservées",
