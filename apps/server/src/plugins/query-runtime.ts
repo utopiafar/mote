@@ -161,7 +161,11 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     const deadline=agentDeadline(input.signal,null),taskSignal=deadline.signal;
     let disclosedSourcePins=sourceContextDependencies(input);
     const disclosedProcessingIds:string[]=[],processingIds=new Set<string>();
+    const memoryPins=new Map<string,{version?:number;fingerprint:string}>();
+    const assertMemoryPins=()=>{for(const [id,pin] of memoryPins){const row=store.db.prepare('SELECT json FROM memories WHERE id=?').get(id);if(!row)throw contextFailure('context_evidence_restricted');const current=JSON.parse(String(row.json));if(current.fingerprint!==pin.fingerprint||pin.version!==undefined&&current.version!==pin.version)throw contextFailure('context_evidence_restricted');}};
     const observed:QueryInput&{processingDisclosedEvidenceIds?:string[]}={...input,contextSourceContextDependencies:disclosedSourcePins,signal:taskSignal,traceContext,
+      assertContextAuthority:()=>{input.assertContextAuthority?.();assertMemoryPins();},
+      onMemoryBodies:cards=>{assertMemoryPins();for(const card of cards){const prior=memoryPins.get(card.id);if(prior&&(prior.fingerprint!==card.fingerprint||prior.version!==card.version))throw contextFailure('context_evidence_restricted');memoryPins.set(card.id,{version:card.version,fingerprint:card.fingerprint});}assertMemoryPins();input.onMemoryBodies?.(cards);},
       ...(input.responseMode==='memory-extraction'&&input.evidenceIds!==undefined?{processingDisclosedEvidenceIds:disclosedProcessingIds,onEvidence:(records:readonly import('@mote/agent').ContextRecord[])=>{
         for(const record of records)if(!processingIds.has(record.id)){processingIds.add(record.id);disclosedProcessingIds.push(record.id);}
         input.onEvidence?.(records);

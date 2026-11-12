@@ -64,7 +64,7 @@ export class AutomaticTopics {
     return ()=>{if(this.classifiers.get(classifier.id)===registered)this.classifiers.delete(classifier.id);};
   }
   private async read(ids:readonly string[]){
-    const snapshot=this.reader.memoryBindings?.retainSnapshot();
+    const snapshot=this.reader.memoryBindings?.retainSnapshot(ids);
     try{
       const result:Memory[]=[];
       for(const id of ids){
@@ -132,21 +132,27 @@ export class AutomaticTopics {
       this.failed=false;return {state:'completed' as const};
     }catch(error){if(!signal.aborted)this.failed=true;throw error;}finally{this.active.delete(operationId);if(heldSnapshot)this.activeSnapshots.delete(heldSnapshot);}
   }
-  async trees():Promise<ContextTree[]>{
+  async trees(visible?:(memories:readonly Memory[])=>Promise<boolean>):Promise<ContextTree[]>{
     if(this.closed)return [];
     const trees:Array<{tree:ContextTree;memories:Memory[];batch:Batch;classifier:TopicClassifier}>=[];
     for(const row of this.store.db.prepare('SELECT b.json FROM context_topic_batches b JOIN context_topic_heads h ON h.operation_id=b.operation_id ORDER BY h.snapshot_key').all()){
       const batch=JSON.parse(String(row.json)) as Batch;
       const classifier=this.classifiers.get(batch.classifierId);
       if(!classifier||classifier.version!==batch.classifierVersion)continue;
-      const memories=await this.current(batch);if(!memories)continue;
+      const memories=await this.current(batch);if(!memories||visible&&!await visible(memories))continue;
       // Batch namespace keeps independently generated labels and their complete
       // provenance inseparable; never merge two labels by guessed semantics.
       const prefix='auto.'+batch.snapshotKey.slice(0,24);
       for(const tree of batch.result.trees)trees.push({memories,batch,classifier,tree:{id:prefix+'.'+sha256(tree.id).slice(0,16),version:'1',label:tree.label,nodes:tree.nodes.map(node=>({id:node.id,label:node.label,parentId:node.parentId,select:{memoryIds:node.memoryIds}}))}});
     }
     // Earlier asynchronous provider reads do not retain an old permission.
-    return trees.filter(({memories,batch,classifier})=>{if(this.classifiers.get(classifier.id)!==classifier||this.store.db.prepare('SELECT operation_id FROM context_topic_heads WHERE snapshot_key=?').get(batch.snapshotKey)?.operation_id!==batch.operationId)return false;try{this.assertInputs(memories);return true;}catch(error){if(error instanceof StoreError&&[404,409].includes(error.statusCode))return false;throw error;}}).map(({tree})=>tree);
+    const current:ContextTree[]=[];
+    for(const {tree,memories,batch,classifier} of trees){
+      if(visible&&!await visible(memories))continue;
+      if(this.classifiers.get(classifier.id)!==classifier||this.store.db.prepare('SELECT operation_id FROM context_topic_heads WHERE snapshot_key=?').get(batch.snapshotKey)?.operation_id!==batch.operationId)continue;
+      try{this.assertInputs(memories);current.push(tree);}catch(error){if(!(error instanceof StoreError&&[404,409].includes(error.statusCode)))throw error;}
+    }
+    return current;
   }
   state(){return {state:this.closed||!this.classifiers.size?'unavailable':this.active.size?'running':this.failed?'failed':'ready'} as const;}
 }

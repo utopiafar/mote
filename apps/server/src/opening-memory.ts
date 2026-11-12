@@ -7,7 +7,7 @@ type Scope=Pick<QueryInput,'after'|'before'|'deviceId'|'contextTime'>;
 const validityTime=z.string().max(64).datetime({offset:true});
 
 /** Use the same privacy-aware reader as model tools; never place original records in the opening prompt. */
-export async function openingMemoryContext(reader:ContextReader,question:string,scope:Scope):Promise<{leads:Lead[];evidenceDependencies:EvidenceDependencies}> {
+export async function openingMemoryContext(reader:Pick<ContextReader,'memories'>,question:string,scope:Scope):Promise<{leads:Lead[];evidenceDependencies:EvidenceDependencies}> {
   const evidenceDependencies:EvidenceDependencies={version:1,complete:true,ids:[]};
   if(!reader.memories)return {leads:[],evidenceDependencies};
   const bounds={after:scope.after,before:scope.before,deviceId:scope.deviceId,asOf:scope.contextTime,layer:'memory' as const};
@@ -16,7 +16,6 @@ export async function openingMemoryContext(reader:ContextReader,question:string,
     reader.memories({...bounds,status:'published',tier:'consolidated',limit:2}),
     ...(search?[reader.memories({...bounds,status:'published',query:search,limit:3})]:[]),
     reader.memories({...bounds,status:'published',limit:5}),
-    reader.memories({...bounds,status:'proposed',limit:5}),
   ]);
   const candidates=pages.flatMap(page=>page.items);
   const selected:Lead[]=[],seen=new Set<string>();
@@ -29,12 +28,12 @@ export async function openingMemoryContext(reader:ContextReader,question:string,
     const detail=(await reader.memories({...bounds,id,limit:1})).items[0];
     if(!detail||typeof detail!=='object')continue;
     const memory=detail as Record<string,unknown>;
-    if(memory.status!=='published'&&memory.status!=='proposed')continue;
+    if(memory.status!=='published')continue;
     if(memory.admission&&typeof memory.admission==='object'&&(memory.admission as {layer?:unknown}).layer!=='memory')continue;
     if(typeof memory.title!=='string'||typeof memory.statement!=='string'||typeof memory.createdAt!=='string')continue;
     const ids=memory.evidenceIds;
     if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'))evidenceDependencies.complete=false;
-    else evidenceDependencies.ids.push(...ids as string[]);
+    else evidenceDependencies.ids.push(id,...ids as string[]);
     const admission=memory.admission&&typeof memory.admission==='object'&&!Array.isArray(memory.admission)?memory.admission as Record<string,unknown>:undefined;
     const attribution=admission?.attribution;
     const scopedAdmission=typeof admission?.scope==='string'&&admission.scope.trim()&&typeof attribution==='string'&&['user','third_party','observed','inferred'].includes(attribution)?
@@ -51,6 +50,6 @@ export async function openingMemoryContext(reader:ContextReader,question:string,
 }
 
 /** Owner preview: only the public cards, without model execution. */
-export async function openingMemories(reader:ContextReader,question:string,scope:Scope):Promise<Lead[]> {
+export async function openingMemories(reader:Pick<ContextReader,'memories'>,question:string,scope:Scope):Promise<Lead[]> {
   return (await openingMemoryContext(reader,question,scope)).leads;
 }

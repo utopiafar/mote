@@ -8,6 +8,7 @@ import type {MemoryRead,MemoryReadSnapshots} from './evidence-read-ports.js';
 import type {Memory} from './memory-schema.js';
 import {navigationScopeSchema} from './context-navigation.js';
 import {StoreError,sha256} from './store.js';
+import {formatEvidenceRef} from '@mote/shared';
 type TreeMemoryRead=Pick<MemoryRead,'memoryPageAsync'> & Pick<MemoryReadSnapshots,'memoryBindings'>;
 
 const identity=z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/);
@@ -23,6 +24,7 @@ const positionSchema=z.object({signature:z.string(),start:z.string().nullable(),
 export class ContextTreeRegistry {
   private readonly trees=new Map<string,ContextTree>();
   private revision=0;
+  constructor(private readonly scopeIndependentTrees:readonly string[]=[]){ }
   private store?:Store;
   private canPublish=()=>true;
   automatic?:AutomaticTopics;
@@ -56,12 +58,40 @@ export class ContextTreeRegistry {
     this.publishChange('registry');
     return ()=>{if(!removed){removed=true;this.trees.delete(tree.id);this.revision++;this.publishChange('registry');}};
   }
-  async catalog(){return {classification:this.automatic?.state()??{state:'unavailable'},items:[...(await this.automatic?.trees()??[]),...this.trees.values()].map(tree=>({...tree,label:moteText(tree.label),nodes:tree.nodes.map(({select:_,...node})=>({...node,label:moteText(node.label)}))}))};}
+  private async memoriesVisible(reader:TreeMemoryRead,scope:unknown,ids:readonly string[]){
+    const selected=navigationScopeSchema.parse(scope);
+    const snapshot=reader.memoryBindings?.retainSnapshot(ids);
+    try{
+      for(const id of new Set(ids)){
+        const page=await reader.memoryPageAsync({...selected,id:formatEvidenceRef('memory',id),status:'published',limit:1},true,snapshot);
+        if(!page.items.some(item=>item.id===id))return false;
+      }
+      return true;
+    }finally{snapshot?.release();}
+  }
+  private automaticTrees(reader?:TreeMemoryRead,scope:unknown={}){
+    const selected=navigationScopeSchema.parse(scope);
+    // A label may reflect any input in its classification batch, including
+    // inputs the classifier did not attach to a visible node.
+    return this.automatic?.trees(reader?memories=>this.memoriesVisible(reader,selected,memories.map(memory=>memory.id)):undefined);
+  }
+  private registeredTreeVisible(scope:unknown,tree:ContextTree){
+    const selected=navigationScopeSchema.parse(scope);
+    // A node's selection is not a complete lineage for its label. Only the
+    // host's fixed generic labels are safe without a classification receipt.
+    return !Object.keys(selected).length||this.scopeIndependentTrees.includes(tree.id);
+  }
+  async catalog(reader?:TreeMemoryRead,scope:unknown={}){
+    const registered:ContextTree[]=[];
+    for(const tree of this.trees.values())if(this.registeredTreeVisible(scope,tree))registered.push(tree);
+    return {classification:this.automatic?.state()??{state:'unavailable'},items:[...(await this.automaticTrees(reader,scope)??[]),...registered].map(tree=>({...tree,label:moteText(tree.label),nodes:tree.nodes.map(({select:_,...node})=>({...node,label:moteText(node.label)}))}))};
+  }
   async page(reader:TreeMemoryRead,treeId:string,nodeId:string,raw:unknown,ownerArchive=true){
     const automatic=treeId.startsWith('auto.');
-    const tree=automatic?(await this.automatic?.trees())?.find(tree=>tree.id===treeId):this.trees.get(treeId),node=tree?.nodes.find(value=>value.id===nodeId);
-    if(!tree||!node)throw new StoreError('Context tree node not found',404);
     const {cursor,limit,...scope}=querySchema.parse(raw);
+    const navigation=Object.fromEntries(Object.keys(navigationScopeSchema.shape).filter(key=>scope[key as keyof typeof scope]!==undefined).map(key=>[key,scope[key as keyof typeof scope]]));
+    const tree=automatic?(await this.automaticTrees(reader,navigation))?.find(tree=>tree.id===treeId):this.trees.get(treeId),node=tree?.nodes.find(value=>value.id===nodeId);
+    if(!tree||!node||!automatic&&!this.registeredTreeVisible(navigation,tree))throw new StoreError('Context tree node not found',404);
     const snapshot=reader.memoryBindings?.retainSnapshot();
     try{
       const signature=sha256(JSON.stringify({tree,node,revision:this.revision,scope,binding:snapshot?.binding}));
@@ -84,11 +114,12 @@ export class ContextTreeRegistry {
         start=page.nextCursor;offset=0;
       }
       return {items,nextCursor:encode('')};
-    }finally{snapshot?.release();if(automatic&&!(await this.automatic?.trees())?.some(current=>JSON.stringify(current)===JSON.stringify(tree)))throw new StoreError('Automatic topic inputs changed; restart browsing',409);}
+    }finally{snapshot?.release();if(automatic&&!(await this.automaticTrees(reader,navigation))?.some(current=>JSON.stringify(current)===JSON.stringify(tree)))throw new StoreError('Automatic topic inputs changed; restart browsing',409);}
   }
 }
 export function createContextTrees(){
-  const registry=new ContextTreeRegistry();
+  // These fixed host labels are generic navigation, not model/person data.
+  const registry=new ContextTreeRegistry(['topics','knowledge','use']);
   registry.register({id:'topics',version:'1',label:'主题',nodes:[
     {id:'personal',label:'个人',select:{domain:'personal'}},{id:'coding',label:'工作与技术',select:{domain:'coding'}},
     ...(['pitfall','decision','principle','preference'] as const).map((kind,index)=>({id:'coding.'+kind,parentId:'coding',label:['经验','决定','原则','偏好'][index],select:{domain:'coding' as const,codingKind:kind}})),
@@ -98,7 +129,7 @@ export function createContextTrees(){
   return registry;
 }
 export function registerContextTreeRoutes(app:FastifyInstance,reader:TreeMemoryRead,trees:ContextTreeRegistry){
-  app.get('/api/context-trees',async()=>trees.catalog());
+  app.get('/api/context-trees',async req=>trees.catalog(reader,req.query));
   app.get('/api/context-trees/:treeId/nodes/:nodeId',async req=>{const {treeId,nodeId}=z.object({treeId:identity,nodeId:identity}).parse(req.params);return trees.page(reader,treeId,nodeId,req.query);});
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteContextTrees:ContextTreeRegistry;}}

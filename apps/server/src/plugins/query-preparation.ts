@@ -12,6 +12,8 @@ import type {ModelSettingsStore} from '../model-settings.js';
 import {modelConfiguration} from '../model-configuration.js';
 import {memoryEvidenceFingerprint} from '../memory.js';
 import {openingMemoryContext} from '../opening-memory.js';
+import {readCurrentMemoryPage} from '../current-memory.js';
+import type {MemoryRead} from '../evidence-read-ports.js';
 import {parseQueuedQuery,insightSchema} from '../query-request.js';
 import {hasTimeOrDeviceScope,scopeContainsHistory,type QueryScope} from '../query-scope.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
@@ -29,13 +31,14 @@ export interface QueryPreparationDependencies {
   working:Pick<WorkingMemory,'prepare'>;
   lifecycleSettings:()=>LifecycleSettings;
   archiveReader:ContextReader;
+  memoryReader:Pick<MemoryRead,'memoryPageAsync'>;
   configured:()=>boolean;
   authority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
   query:(input:QueryInput)=>Promise<QueryResult>;
 }
 /** Prepare and pin the accepted request under its current coordinator lease. */
 export function createQueryPreparation(dependencies:QueryPreparationDependencies){
-  const {store,files,conversations,delegation,executor,modelSettings,working,lifecycleSettings,archiveReader,configured,authority,query}=dependencies;
+  const {store,files,conversations,delegation,executor,modelSettings,working,lifecycleSettings,archiveReader,memoryReader,configured,authority,query}=dependencies;
   const {assert:assertModelEvidence,contextDependencies,selectedQueryEvidence,selectedQueryMaterial}=authority;
   const queryImages=(ids:string[])=>ids.map(id=>{
     const detail=files.detail(id),version=files.version(id),mimeType=detail.item.mimeType;
@@ -95,14 +98,24 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     const stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
     const commit=<T>(write:()=>T):T=>{signal.throwIfAborted();const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');try{if(!fence||!executor.isCurrentGrant(stepId,fence))throw new StoreError('Query preparation grant expired',409);const result=write();if(own)store.db.exec('COMMIT');return result;}catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}};
     const [opening,conversation]=await Promise.all([
-      scope.evidenceIds?Promise.resolve({leads:[],evidenceDependencies:{version:1 as const,complete:true,ids:scope.evidenceIds}}):openingMemoryContext(archiveReader,question,{...scope,contextTime}),
+      openingMemoryContext({memories:async args=>{
+        const page=await readCurrentMemoryPage(memoryReader,{
+          kind:scope.evidenceIds!==undefined?'selection':'all',...(scope.evidenceIds!==undefined?{evidenceIds:scope.evidenceIds}:{}),
+          ...(scope.after?{after:scope.after}:{}),...(scope.before?{before:scope.before}:{}),...(scope.deviceId?{deviceId:scope.deviceId}:{}),
+        },{id:args.id,query:args.query,tier:args.tier,kind:args.kind,layer:args.layer,asOf:args.asOf,cursor:args.cursor,limit:args.limit,level:args.id?'detail':'overview'});
+        if(!archiveReader.memories)return {...page,items:[]};
+        // Retain the existing per-run disclosure policy as well as the new
+        // exact-selection filter; neither an archive row nor a scope grants it.
+        const visible=await Promise.all(page.items.map(item=>archiveReader.memories!({...args,id:item.id,query:undefined,cursor:undefined,limit:1})));
+        return {...page,items:page.items.filter((item,index)=>visible[index].items.some(value=>Boolean(value&&typeof value==='object'&&(value as {id?:unknown}).id===item.id)))};
+      }},question,{...scope,contextTime}),
       scopedPrevious?Promise.resolve(conversations.context(scopedPrevious,20,Math.max(1000,lifecycleSettings().contextCharacters-question.length))):previous?working.prepare(previous,lifecycleSettings(),question,input=>query({...input,contextTime,traceContext:{...input.traceContext,operationId:work.operationId},executionLane:'interactive',modelProfileId:profile.id,modelOverride:model,signal}),{signal,commit}):undefined,
     ]);
     // Empty product selections must still answer the owner's text, but cannot
     // expose archive tools or seed the agent's nonempty extraction session.
     const emptySelection=scope.evidenceIds?.length===0&&!historicalSelection;
     const preparedScope=emptySelection?{...scope,evidenceIds:undefined}:scope;
-    const prepared:QueryInput={traceContext:{operationId:work.operationId},language:saved.language??'zh-CN',executionLane:'interactive',question,...preparedScope,...(emptySelection?{hostToolSelection:[]}:{}),...(historicalSelection?{historicalSelection}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),...(selectedRecords.length?{processingEvidence:Object.fromEntries(selectedRecords.map(record=>[record.id,memoryEvidenceFingerprint(record)]))}:{}),contextTime,modelProfileId:profile.id,modelOverride:model,directImages,openingMemories:opening.leads,contextEvidenceDependencies:{...opening.evidenceDependencies,ids:[...new Set([...opening.evidenceDependencies.ids,...(scope.anchorEvidenceIds??[])])]},...(conversation?{conversation}:{})};
+    const prepared:QueryInput={traceContext:{operationId:work.operationId},language:saved.language??'zh-CN',executionLane:'interactive',question,...preparedScope,...(emptySelection?{hostToolSelection:[]}:{}),...(historicalSelection?{historicalSelection}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),...(selectedRecords.length?{processingEvidence:Object.fromEntries(selectedRecords.map(record=>[record.id,memoryEvidenceFingerprint(record)]))}:{}),contextTime,modelProfileId:profile.id,modelOverride:model,directImages,openingMemories:opening.leads,contextEvidenceDependencies:{...opening.evidenceDependencies,ids:[...new Set([...opening.evidenceDependencies.ids,...(scope.evidenceIds??[]),...(scope.anchorEvidenceIds??[])])]},...(conversation?{conversation}:{})};
     commit(()=>{
       assertModelEvidence(prepared);
       const freshImages=queryImages(directImages.map(image=>image.id));

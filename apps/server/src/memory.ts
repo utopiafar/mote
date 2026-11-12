@@ -112,11 +112,22 @@ export class MemoryStore {
     if(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence_dependencies'").get())for(const row of this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id))ids.add(String(row.evidence_id));
     return [...ids];
   }
-  page(args:{includeHistory?:boolean;asOf?:string;sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
+  page(args:{includeHistory?:boolean;asOf?:string;sourceId?:string;sourceIds?:readonly string[];evidenceIds?:readonly string[];projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
     const conditions:string[]=[],values:(string|number)[]=[],limit=Math.max(1,Math.min(args.limit??30,100));
     if(!args.includeStale)conditions.push("status!='stale'");
     if(!args.includeHistory){const at=args.asOf??new Date().toISOString();conditions.push("(json_extract(json,'$.supersededBy') IS NULL OR julianday(json_extract(json,'$.supersededAt'))>julianday(?))");values.push(at);conditions.push("(json_extract(json,'$.validFrom') IS NULL OR julianday(json_extract(json,'$.validFrom'))<=julianday(?)) AND (json_extract(json,'$.validUntil') IS NULL OR julianday(json_extract(json,'$.validUntil'))>julianday(?))");values.push(at,at);}
     for(const key of ['tier','kind','status','layer','id'] as const)if(args[key]){conditions.push(`${key}=?`);values.push(args[key]!);}
+    if(args.evidenceIds!==undefined){
+      conditions.push('EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id AND d.evidence_id NOT IN (SELECT value FROM json_each(?)))');
+      values.push(JSON.stringify(args.evidenceIds));
+    }
+    if(args.sourceIds!==undefined){
+      const materialTables=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get());
+      const materialJoin=materialTables?' LEFT JOIN material_evidence e ON e.id=d.evidence_id LEFT JOIN material_heads h ON h.id=e.material_id ':'';
+      const source=materialTables?"coalesce(json_extract(c.json,'$.provenance.sourceId'),json_extract(parent.json,'$.provenance.sourceId'),h.source_id,'')":"coalesce(json_extract(c.json,'$.provenance.sourceId'),json_extract(parent.json,'$.provenance.sourceId'),'')";
+      conditions.push(`EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN captures c ON c.id=d.evidence_id LEFT JOIN file_chunks chunk ON chunk.id=d.evidence_id LEFT JOIN captures parent ON parent.id=chunk.capture_id ${materialJoin} WHERE d.memory_id=memory_catalog.id AND ${source} NOT IN (SELECT value FROM json_each(?)))`);
+      values.push(JSON.stringify(args.sourceIds));
+    }
     if(args.sourceId){
       const materialTables=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get());
       const materialJoin=materialTables?' LEFT JOIN material_evidence e ON e.id=d.evidence_id LEFT JOIN material_heads h ON h.id=e.material_id ':'';
@@ -149,6 +160,22 @@ export class MemoryStore {
   list(args:Parameters<MemoryStore['page']>[0]={}){return this.page(args).items;}
   text(id:string){const m=this.get(id);return `# ${m.title}\n\n${m.statement}\n\n## Uncertainty\n\n${m.uncertainty}\n\n## Provenance\n\nStatus: ${m.status}\nTier: ${m.tier??'episode'}\nKind: ${m.kind??'episodic'}\nModel: ${m.model}\nSkill: ${m.skillVersion??'unknown'}\n\n${(m.evidence??[]).map(e=>`- ${e.id} (${e.occurredAt??e.recordedAt??e.capturedAt})${e.quote?'\n  '+e.quote.replaceAll('\n','\n  '):''}`).join('\n')}\n`;}
   get(id:string):Memory{const row=this.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Memory not found',404);return memorySchema.parse(JSON.parse(row.json));}
+  /** Retire products of this interpretation, not the independent originals.
+   * The existing evidence invalidation also fences frozen task inputs and late
+   * query results. Owner correction itself remains a separate original note. */
+  private invalidateInterpretation(id:string,deleted=false){
+    const rows=this.store.db.prepare(`WITH RECURSIVE affected(id) AS (
+      SELECT ? UNION SELECT m.id FROM memories m JOIN affected a
+        JOIN json_each(m.json,'$.relatedMemoryIds') parent ON parent.value=a.id
+    ) SELECT id FROM affected`).all(id).map(row=>String(row.id));
+    if(rows.length>1)this.store.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed') WHERE id IN (SELECT value FROM json_each(?)) AND id!=?").run(JSON.stringify(rows),id);
+    this.store.invalidateConversationAnswers(rows,deleted);
+    // Insight reports retain their own bodies. Remove affected or untraceable
+    // reports in this transaction; complete unrelated reports remain intact.
+    this.store.db.prepare(`DELETE FROM insights WHERE coalesce(json_extract(json,'$.evidenceDependencies.version'),0)!=1
+      OR coalesce(json_extract(json,'$.evidenceDependencies.complete'),0)!=1
+      OR EXISTS(SELECT 1 FROM json_each(insights.json,'$.evidenceDependencies.ids') d JOIN json_each(?) changed ON changed.value=d.value)`).run(JSON.stringify(rows));
+  }
   private validatedClaims=new Map<string,unknown>();
   /** Produce immutable reviewed bodies without publishing the control records.
    * The savepoint covers catalog, dependency and lifecycle trigger effects too. */
@@ -277,7 +304,7 @@ export class MemoryStore {
       for(const m of claims){
         const parents=m.relatedMemoryIds??[];
         if(options.tier==='consolidated'){
-          for(const id of parents){const parent=this.get(id);if(parent.status==='stale'||parent.domain!==m.domain||!parent.evidenceIds.some(e=>m.evidenceIds.includes(e)))throw new MemoryOutputValidationError('scope','Each parent must contribute original evidence');}
+          for(const id of parents){const parent=this.get(id);if(parent.status==='stale'||parent.supersededBy||parent.domain!==m.domain||!parent.evidenceIds.some(e=>m.evidenceIds.includes(e)))throw new MemoryOutputValidationError('scope','Each current parent must contribute original evidence');}
           if(parents.some(id=>this.get(id).statement===m.statement))throw new MemoryOutputValidationError('schema','Consolidation must add value, not copy an input');
         }
         const fingerprint=sha256(JSON.stringify([...(options.integration?[options.integration]:[]),...(options.strategy?[options.strategy]:[]),options.tier??'episode',m.admission??null,m.coding??null,...(m.relations?.length||m.validFrom||m.validUntil?[m.relations??null,m.validFrom??null,m.validUntil??null]:[]),m.statement,[...m.evidenceIds].sort(),m.evidence.map(e=>[e.id,e.contentHash,e.offset,e.length,...(e.image?[e.image]:[])])]));
@@ -302,7 +329,7 @@ export class MemoryStore {
     if(m.relations?.length&&version===undefined)throw new StoreError('A reviewed memory version is required before applying relationships',409);
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');try{
       for(const relation of m.relations??[]){const target=this.get(relation.memoryId);if(target.status==='stale'||target.supersededBy||target.fingerprint!==relation.fingerprint||target.version!==relation.version||target.evidenceIds.some(id=>!this.isCurrentEvidence(id)))throw new StoreError('Related memory changed; review the relationship again',409);
-        if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??m.reviewReceipt?.contextTime??at;target.version=target.version+1;target.updatedAt=at;this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(target)));this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);}
+        if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??m.reviewReceipt?.contextTime??at;target.version=target.version+1;target.updatedAt=at;this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(target)));this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);this.invalidateInterpretation(target.id);}
       }
       m.status='published';m.version=m.version+1;m.updatedAt=at;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(m),id);if(own)this.store.db.exec('COMMIT');return m;
     }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
@@ -323,6 +350,7 @@ export class MemoryStore {
       if(persist){
         this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(saved))+1024);this.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(memoryId,now,JSON.stringify(saved));this.store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(memoryId,noteId);
         this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(current),id);
+        this.invalidateInterpretation(id);
         committed?.();
       }return [saved!,current];
     };
@@ -337,6 +365,7 @@ export class MemoryStore {
     try{
       const row=db.prepare('SELECT json FROM memories WHERE id=?').get(id);if(!row){if(own)db.exec('COMMIT');return {deleted:0};}
       this.deletions.remember(JSON.parse(String(row.json)) as Memory);
+      this.invalidateInterpretation(id,true);
       // Existing consolidations depend on the deleted interpretation. Retain
       // their history, but do not keep serving that claim through a child card.
       const deleted=this.deletions.revoke(id);

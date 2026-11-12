@@ -92,6 +92,14 @@ test('GET /api/memories/:id pins only the requested memory snapshot',async t=>{
  assert.equal(log.fullMemories(),0);assert.equal(log.byIdMemories(),1);assert.equal(log.fullCatalog(),0);assert.equal(log.byIdCatalog(),1);
 });
 
+test('a selected current-memory page pins only its one requested body',async t=>{
+ const f=await fixture(t,200),target=f.added[137]!,log=statementLog(t,f.store);
+ const page=await f.reader.memoryPageAsync({id:'memory:'+target.memory.id,level:'detail',limit:1},true);
+ assert.deepEqual(page.items,[target.memory]);assert.equal(page.nextCursor,null);
+ assert.equal(log.fullMemories(),0);assert.equal(log.fullCatalog(),0);
+ assert.equal(log.byIdMemories(),1);assert.equal(log.byIdCatalog(),1);
+});
+
 test('missing ids return 404 and an empty selection pins nothing',async t=>{
  const f=await fixture(t,200);
  const empty=f.bindings.retainSnapshot([]);

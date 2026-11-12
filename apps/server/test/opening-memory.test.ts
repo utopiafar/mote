@@ -18,7 +18,7 @@ test('opening leads preserve derived limits without disclosing original evidence
  assert.equal(result.leads.length,1,'duplicate catalog candidates disclose one lead');
  assert.deepEqual(result.leads[0].admission,{scope:'Only the source narrator and this dated plan',attribution:'observed'});
  assert.equal(result.leads[0].validFrom,detail.validFrom);assert.equal(result.leads[0].validUntil,detail.validUntil);
- assert.deepEqual(result.evidenceDependencies,{version:1,complete:true,ids:[originalId]});
+ assert.deepEqual(result.evidenceDependencies,{version:1,complete:true,ids:['generated-card',originalId]});
  const serialized=JSON.stringify(result.leads);
  for(const privateValue of [originalId,'GENERATED ORIGINAL QUOTE','GENERATED OWNER STATEMENT','ownerRelation','ownerStatements','Generated reason'])assert.ok(!serialized.includes(privateValue));
 });
@@ -30,5 +30,5 @@ test('malformed optional metadata and legacy missing fields never manufacture a 
  ]),'Generated question',{});
  assert.equal(result.leads.length,2);
  for(const lead of result.leads){assert.equal(lead.admission,undefined);assert.equal(lead.validFrom,undefined);assert.equal(lead.validUntil,undefined);}
- assert.deepEqual(result.evidenceDependencies.ids,[originalId]);
+ assert.deepEqual(result.evidenceDependencies.ids,['legacy',originalId,'invalid']);
 });
