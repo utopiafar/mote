@@ -3,6 +3,7 @@ import {AssistantCards} from './assistant-cards.js';
 import {assertSourceContextDependencies} from './source-context-lineage.js';
 import {BatchProcessing} from './batch-processing.js';
 import {createModelEvidenceAuthority} from './model-evidence-authority.js';
+import {conversationHistoryReader} from './conversation-history.js';
 import type {QueryAgent} from './query-agent.js';
 import {AssistantDrafts} from './assistant-drafts.js';
 import {insightRequestSchema} from './query-request.js';
@@ -189,13 +190,16 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // Owner inspection and external read-only clients do not send to our model.
   // The same reader enforces model disclosure scope inside an admitted model run.
   const readingForModel=()=>Boolean(modelContext.getStore()||modelAuthorization.currentId);
-  const agentFeatures=await installAgentReadTools(backendContext,evidenceContext.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
+  const evidenceAgentReader=evidenceContext.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
     exposurePolicy:new EvidenceExposurePolicy([],context=>!readingForModel()||modelAuthorization.allowsDisclosure({sourceId:context.sourceId??'device:'+context.deviceId})),
     assertSources:ids=>{if(readingForModel())modelAuthorization.assertDisclosure(ids.map(sourceId=>({sourceId})));},
     assertEvidence:ids=>{if(readingForModel())modelAuthorizationHost.assertEvidence(ids);},
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
     currentContextTime:()=>modelContext.getStore()?.contextTime,
-    currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs}));
+    currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs});
+  let historyBeforeSeq:((workId:string)=>number|undefined)|undefined;
+  const historyRead=conversationHistoryReader({store,conversations,current:()=>modelContext.getStore(),assert:assertModelEvidence,cursorSecret:config.token,historyBeforeSeq:workId=>historyBeforeSeq?.(workId)});
+  const agentFeatures=await installAgentReadTools(backendContext,{...evidenceAgentReader,catalog:async args=>historyRead(args)??evidenceAgentReader.catalog?.(args)});
   const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
   const directImageAllowed=(id:string)=>{
@@ -259,7 +263,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const serverLifecycle=createServerLifecycle();
   const {queryServices:queryRuntimeServices,query}=await prepareQueryRuntime({
     bootstrap,resources,store,lifecycle:serverLifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,
-    executor,agentGate,modelSettings,agent,observabilityAssembly,modelEvidenceAuthority,assertModelEvidence,sourceContexts,assistantDrafts,
+    executor,agentGate,modelSettings,agent,observabilityAssembly,modelEvidenceAuthority,assertModelEvidence,sourceContexts,assistantDrafts,conversations,
   });
   // The existing query provider does not yet expose the configured model
   // window or validate complete requests. Do not send a batch model request
@@ -434,6 +438,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     lifecycleSettings:queryLifecycleSettings,archiveReader,agent,modelEvidenceAuthority,modelSettings,queryRuntime:()=>queryRuntimeServices.runtime,
     semanticContextTime:dependencies?.semanticContextTime,usageLedger,
     modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),assistantDrafts});
+  historyBeforeSeq=workId=>queryRunServices.delegation.journal.payload<import('./plugins/query-preparation.js').SavedQuery>(workId).historyBeforeSeq;
   memoryPhasePipeline.attachDelegation({runtime:delegation,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
     const input=materialMemoryWork.planningInput(candidate);
     if(!input?.ready||input.fingerprint!==candidate.fingerprint||!materialMemoryWork.inputs.available(candidate.sourceId,candidate.inputKey,undefined,candidate.scope)||!sourcePipelines.memoryAllowed(candidate.sourceId))throw new StoreError('Memory sample authorization changed',409);

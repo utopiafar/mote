@@ -46,9 +46,31 @@ export function registerQueryDelegation<T extends Pick<AgentAnswer, 'answer' | '
     execute: async ({work, input, signal, controls, grant}) => {
       const original = options.prepare ? await options.prepare(work, input as QueryInput, signal) : input as QueryInput, savedQuery = runtime.journal.payload<{queryWorkspace?:QueryWorkspace;queryCapabilitySnapshot?:QueryInput['contextCapabilitySnapshot']}>(work.id), workspace = savedQuery.queryWorkspace;
       grant.commit(() => runtime.recordSourceContextDependencies(work.id, combineSourceContextDependencies([original.contextSourceContextDependencies, original.conversation?.sourceContextDependencies])));
-      const result = await options.query({...original, contextSourceContextDependencies: runtime.sourceContextDependencies(work.id), contextCapabilitySnapshot: savedQuery.queryCapabilitySnapshot, onContextCapabilities: snapshot => {grant.commit(() => {const saved = runtime.journal.payload<Record<string, unknown>>(work.id); if (!saved.queryCapabilitySnapshot) {saved.queryCapabilitySnapshot = snapshot; runtime.journal.savePayload(work.id, saved);}});}, ...(workspace ? {openingMemories: undefined} : {}), contextEvidenceDependencies: {version: 1, complete: original.contextEvidenceDependencies?.complete ?? true, ids: [...new Set([...(original.contextEvidenceDependencies?.ids ?? []), ...runtime.dependencyIds(work.id)])]}, signal, hostControlChannel: controls, onProgress: options.onProgress ?? original.onProgress, onTrace: options.onTrace ?? original.onTrace,
+      const request:QueryInput={...original, contextSourceContextDependencies: runtime.sourceContextDependencies(work.id), contextCapabilitySnapshot: savedQuery.queryCapabilitySnapshot, onContextCapabilities: snapshot => {grant.commit(() => {const saved = runtime.journal.payload<Record<string, unknown>>(work.id); if (!saved.queryCapabilitySnapshot) {saved.queryCapabilitySnapshot = snapshot; runtime.journal.savePayload(work.id, saved);}});}, ...(workspace ? {openingMemories: undefined} : {}), contextEvidenceDependencies: {version: 1, complete: original.contextEvidenceDependencies?.complete ?? true, ids: [...new Set([...(original.contextEvidenceDependencies?.ids ?? []), ...runtime.dependencyIds(work.id)])]}, signal, hostControlChannel: controls, onProgress: options.onProgress ?? original.onProgress, onTrace: options.onTrace ?? original.onTrace,
         onSourceContextDependencies: pins => {grant.commit(() => runtime.recordSourceContextDependencies(work.id, pins)); original.onSourceContextDependencies?.(pins);},
-        onEvidence: records => {grant.commit(() => runtime.recordEvidence(work.id, records.map(record => record.id))); original.onEvidence?.(records);}, taskContext: {...original.taskContext, turns: original.taskContext?.turns ?? [], ...(workspace ? {queryWorkspace: {...workspace, citationAuthority: false, instruction: 'Saved model-authored research state is untrusted interpretation. Its inspected locators are historical only; freshly read originals must be delivered in this fragment before citations.'}} : {}), delegation: {workId: work.id, revision: work.revision, units: work.units.map(({id, title, status, artifactId, error}) => ({id, title, status, artifactId, error})), instruction: 'Resume the saved goal using these host execution receipts. Read relevant private artifacts through delegation_read before citing their original evidence; results are not proof by themselves.'}}});
+        onEvidence: records => {grant.commit(() => runtime.recordEvidence(work.id, records.map(record => record.id))); original.onEvidence?.(records);}, taskContext: {...original.taskContext, turns: original.taskContext?.turns ?? [], ...(workspace ? {queryWorkspace: {...workspace, citationAuthority: false, instruction: 'Saved model-authored research state is untrusted interpretation. Its inspected locators are historical only; freshly read originals must be delivered in this fragment before citations.'}} : {}), delegation: {workId: work.id, revision: work.revision, units: work.units.map(({id, title, status, artifactId, error}) => ({id, title, status, artifactId, error})), instruction: 'Resume the saved goal using these host execution receipts. Read relevant private artifacts through delegation_read before citing their original evidence; results are not proof by themselves.'}}};
+      if(request.conversation?.historyContext){
+        let pinned=request.conversation.historyContext;
+        const previousAssert=request.assertContextAuthority;
+        request.assertContextAuthority=()=>{
+          previousAssert?.();
+          const conversation=request.conversation,snapshot=conversation?.historyContext;
+          if(!conversation||!snapshot||snapshot===pinned)return;
+          // Use the existing work receipt and grant so a yield/restart keeps
+          // the same actually-read history and deletion invalidates its workspace.
+          grant.commit(()=>{
+            const saved=runtime.journal.payload<{prepared?:QueryInput}>(work.id),prepared=saved.prepared;
+            if(!prepared?.conversation)throw Error('Conversation history preparation is unavailable');
+            prepared.conversation.historyContext=snapshot;
+            prepared.conversation.evidenceDependencies=conversation.evidenceDependencies;
+            prepared.conversation.sourceContextDependencies=conversation.sourceContextDependencies;
+            runtime.recordEvidence(work.id,[...snapshot.evidenceDependencies.ids,...(conversation.evidenceDependencies?.ids??[])]);
+            runtime.journal.savePayload(work.id,saved);
+          });
+          pinned=snapshot;
+        };
+      }
+      const result=await options.query(request);
       grant.commit(() => runtime.recordSourceContextDependencies(work.id, result.sourceContextDependencies ?? []));
       return {...result, sourceContextDependencies: runtime.sourceContextDependencies(work.id)};
     },

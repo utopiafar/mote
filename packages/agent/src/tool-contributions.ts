@@ -15,7 +15,8 @@ export function readPackFacts(input:QueryInput):DerivedNavigationInputs {
     ...(input.incrementalEvidenceIds?{incrementalEvidenceIds:Object.freeze([...input.incrementalEvidenceIds])}:{})});
 }
 function enabled(input:QueryInput,name:string){
-  return (name!=='read_image'||imageToolAvailable(input))&&(name!=='context_evidence'||input.evidenceIds!==undefined&&Boolean(input.evidenceReadRanges?.length))&&
+  return (!['conversation_history','conversation_search'].includes(name)||input.executionLane==='interactive'&&Boolean(input.conversation?.historyContext))&&
+    (name!=='read_image'||imageToolAvailable(input))&&(name!=='context_evidence'||input.evidenceIds!==undefined&&Boolean(input.evidenceReadRanges?.length))&&
     (name!=='action_catalog'||input.skill==='calendar-extraction'&&Boolean(input.actionCatalog));
 }
 /** Standalone Host assembly still uses the same fixed native descriptors so the

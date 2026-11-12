@@ -15,12 +15,12 @@ import {openingMemoryContext} from '../opening-memory.js';
 import {readCurrentMemoryPage} from '../current-memory.js';
 import type {MemoryRead} from '../evidence-read-ports.js';
 import {parseQueuedQuery,insightSchema} from '../query-request.js';
-import {hasTimeOrDeviceScope,scopeContainsHistory,type QueryScope} from '../query-scope.js';
+import {hasTimeOrDeviceScope,scopedHistoryTurns,type QueryScope} from '../query-scope.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 
 type QueryPreparationStore=ConstructorParameters<typeof DelegationRuntime>[0];
 
-export type SavedQuery={hostRequest:unknown;language?:QueryInput['language'];prepared?:QueryInput;configurationFingerprint?:string};
+export type SavedQuery={hostRequest:unknown;language?:QueryInput['language'];prepared?:QueryInput;configurationFingerprint?:string;historyBeforeSeq?:number};
 export interface QueryPreparationDependencies {
   store:QueryPreparationStore;
   files:Pick<FileStore,'detail'|'version'>;
@@ -57,31 +57,15 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     }
     const {conversationId,question,modelProfileId,modelOverride,evidenceIds:selectedIds,anchorEvidenceIds:anchorIds,anchorMaterialRef,attachmentIds=[],...selected}=parseQueuedQuery(body);
     const previous=conversationId?conversations.get(conversationId):undefined;
+    const historyBeforeSeq=previous?.turns.reduce((before,turn)=>Math.max(before,turn.seq+1),0);
     const scope:QueryScope={};for(const key of ['after','before','deviceId','timeZone'] as const){const value=key==='timeZone'&&selected.timeZone===undefined?previous?.scope.timeZone:selected[key];if(value!==undefined&&value!==null)scope[key]=value;}
     insightSchema.parse(scope);
     if(selectedIds)scope.evidenceIds=selectedIds;
     if(anchorIds)scope.anchorEvidenceIds=anchorIds;
     if(anchorMaterialRef)scope.anchorMaterialRef=anchorMaterialRef;
     selectedQueryMaterial(scope,true);
-    const allowedHistoryIds=new Set([...(scope.evidenceIds??[]),...attachmentIds]);
-    const selectedScope=JSON.stringify([...(scope.evidenceIds??[])].sort());
     const bounded=hasTimeOrDeviceScope(scope);
-    let widerHistory=false;
-    const scopedPrevious=previous&&(scope.evidenceIds!==undefined||bounded)?{...previous,turns:previous.turns.filter(turn=>{
-      if(bounded&&turn.result){
-        // Older turns could already have used an earlier, wider turn. Without
-        // per-turn history lineage it is unsafe to admit a later answer after
-        // such a turn, even if the later turn itself was issued narrowly.
-        if(!scopeContainsHistory(scope,turn.scope)||(turn.attachments?.length??0)>0||turn.historyEvidenceDependencies?.complete!==true)widerHistory=true;
-        if(widerHistory)return false;
-      }
-      const turnIds=turn.scope.evidenceIds??(turn.scope.kind==='selection'&&turn.scope.sourceIds?.length===0?[]:undefined);
-      return scope.evidenceIds===undefined||turnIds!==undefined&&
-        JSON.stringify([...turnIds].sort())===selectedScope&&
-        (turn.attachments??[]).every(attachment=>allowedHistoryIds.has(attachment.id))&&
-        turn.result?.evidenceDependencies?.complete===true&&turn.result.evidenceDependencies.ids.every(id=>allowedHistoryIds.has(id))&&
-        turn.historyEvidenceDependencies?.complete===true&&turn.historyEvidenceDependencies.ids.every(id=>allowedHistoryIds.has(id));
-    })}:undefined;
+    const scopedPrevious=previous&&(scope.evidenceIds!==undefined||bounded)?{...previous,turns:scopedHistoryTurns(previous.turns,scope,attachmentIds)}:undefined;
     const historySnapshot=previous?conversations.historyContext(scopedPrevious??previous):undefined;
     const retired=historySnapshot?conversations.retiredSelection(historySnapshot,[...(selectedIds??[]),...(anchorIds??[])]):new Set<string>();
     const historicalSelection=retired.size?{...(selectedIds?{evidenceIds:[...selectedIds]}:{}),...(anchorIds?{anchorEvidenceIds:[...anchorIds]}:{})}:undefined;
@@ -122,7 +106,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
       if(freshImages.some((image,index)=>image.hash!==directImages[index].hash||image.mimeType!==directImages[index].mimeType||image.sizeBytes!==directImages[index].sizeBytes))throw new StoreError('Query attachment changed during preparation',409);
       for(const image of directImages){const version=files.version(image.id);if(!store.evidence([image.id]).length||!fileAttachmentAvailable(store,image.id)||store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted)throw new StoreError('Query attachment is no longer available',409);}
       delegation.recordEvidence(work.id,[...(contextDependencies(prepared)?.ids??[]),...directImages.map(image=>image.id)]);
-      delegation.journal.savePayload(work.id,{...saved,prepared,configurationFingerprint:modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision).fingerprint});
+      delegation.journal.savePayload(work.id,{...saved,prepared,...(historyBeforeSeq===undefined?{}:{historyBeforeSeq}),configurationFingerprint:modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision).fingerprint});
     });
     return {...prepared,signal,onProgress};
   }
