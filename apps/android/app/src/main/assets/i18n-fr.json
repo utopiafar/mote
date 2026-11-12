@@ -1265,6 +1265,7 @@
   "不可用：": "Indisponible :",
   "处理服务": "Service de traitement",
   "未配置（任务将等待）": "Non configuré (les tâches attendront)",
+  "未配置（扫描页不识别，文字页仍可读取）": "Non configuré (les pages numérisées ne sont pas reconnues ; les pages de texte restent lisibles)",
   "本地": "Local",
   "远程": "Distant",
   "说话人分离插件": "Plugin de séparation des locuteurs",

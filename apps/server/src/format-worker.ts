@@ -1,4 +1,5 @@
 import {decodeOriginal,documentChunks} from './document-decoder.js';
+import {decodePdfWithOcr} from './pdf-ocr.js';
 import {validateImportManifest,ManifestValidationError} from './import-manifest-worker.js';
 import {createHash} from 'node:crypto';
 import {closeSync,constants,fsyncSync,openSync,readSync,statSync,writeSync} from 'node:fs';
@@ -69,6 +70,6 @@ function zip(task:Extract<FormatTask,{kind:'zip'}>){
  try{for(const part of bytes(task.path))unzip.push(Buffer.from(part),false);unzip.push(new Uint8Array(),true);if(finished!==metadata.size)fail('zip_incomplete');return {files:outputs,bytes:total};}finally{for(const fd of openFiles)closeSync(fd);}
 }
 function text(task:Extract<FormatTask,{kind:'text'}>){if(statSync(task.path).size>task.maxBytes)fail('decoded_limit');return {durationMs:0,segments:[...textParts(task.path,task.chunkCharacters)].filter(part=>part.text.length).map(part=>({startMs:0,endMs:0,text:part.text}))};}
-async function document(task:Extract<FormatTask,{kind:'document'}>){const buffer=Buffer.concat(Array.from(bytes(task.path),part=>Buffer.from(part))),decoded=await decodeOriginal(buffer,task.mimeType);if(decoded.status!=='ready')fail('unsupported_format');return {durationMs:0,segments:[...documentChunks(decoded)].map(part=>({startMs:0,endMs:0,...part})),engine:decoded.parser,coverage:decoded.coverage,warnings:decoded.warnings};}
+async function document(task:Extract<FormatTask,{kind:'document'}>){const buffer=Buffer.concat(Array.from(bytes(task.path),part=>Buffer.from(part))),decoded=task.mimeType==='application/pdf'?await decodePdfWithOcr(buffer,task.ocr):await decodeOriginal(buffer,task.mimeType);if(decoded.status!=='ready')fail('unsupported_format');return {durationMs:0,segments:[...documentChunks(decoded)].map(part=>({startMs:0,endMs:0,...part})),engine:decoded.parser,coverage:decoded.coverage,warnings:decoded.warnings};}
 process.once('message',async(task:FormatTask)=>{try{const result=task.kind==='document'?await document(task):task.kind==='manifest'?validateImportManifest(task):task.kind==='zip'?zip(task):task.kind==='plain'?await plain(task):text(task);process.send?.({ok:true,result},()=>process.exit(0));}catch(error){const code=error instanceof Error&&/^[a-z_]+$/.test(error.message)?error.message:'decode_failed';process.send?.({ok:false,code:error instanceof ManifestValidationError?'manifest_invalid':code,...(error instanceof ManifestValidationError?{message:error.message,status:error.status}:{})},()=>process.exit(1));}});
 process.on('disconnect',()=>process.exit(1));

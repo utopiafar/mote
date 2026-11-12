@@ -1266,6 +1266,7 @@ export const english: Readonly<Record<string, string>> = {
   "不可用：": "Unavailable:",
   "处理服务": "Processing service",
   "未配置（任务将等待）": "Not configured (tasks will wait)",
+  "未配置（扫描页不识别，文字页仍可读取）": "Not configured (scanned pages are not recognized; text pages remain readable)",
   "本地": "Local",
   "远程": "Remote",
   "说话人分离插件": "Speaker separation plugin",

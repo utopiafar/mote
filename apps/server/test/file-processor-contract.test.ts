@@ -24,8 +24,10 @@ test('processor registration rejects contradictory or malformed capability decla
  assert.throws(()=>registry.register({...base,allowSummary:'yes' as any}),/capability/);
  assert.throws(()=>registry.register({...base,stage:'diarize',reuseByContent:true}),/reuse capability/);
  assert.throws(()=>registry.register({...base,reuseByContent:'yes' as any}),/reuse capability/);
+ assert.throws(()=>registry.register({...base,optionalService:true}),/optional processing service/);
+ assert.doesNotThrow(()=>registry.register({...base,id:'fixture.optional-service',serviceKind:'image',optionalService:true}));
  assert.doesNotThrow(()=>registry.register({...base,localOnly:true,allowSummary:true,dependencies:{settings:[]}}));
- assert.equal(registry.list()[0].localOnly,true);
+ assert.equal(registry.list().find(processor=>processor.id==='fixture.contract')?.localOnly,true);
 });
 
 test('a duplicate processor contribution fails atomically and never replaces the installed definition',()=>{

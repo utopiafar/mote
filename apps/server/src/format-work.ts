@@ -10,7 +10,7 @@ import {createRequire} from 'node:module';
 import type {ManifestTask} from './import-manifest-worker.js';
 import type {Transcript,ArchivedFile} from '@mote/shared';
 import {StoreError} from './store.js';
-export type FormatTask=ManifestTask|{kind:'document';path:string;mimeType:string}|{kind:'text';path:string;maxBytes:number;chunkCharacters:number}|{kind:'zip';path:string;output:string;maxFiles:number;maxBytes:number}|{kind:'plain';inputs:{file:ArchivedFile;path:string}[];createdAt:string;manifest:string};
+export type FormatTask=ManifestTask|{kind:'document';path:string;mimeType:string;ocr?:{endpoint?:string;apiKey?:string}}|{kind:'text';path:string;maxBytes:number;chunkCharacters:number}|{kind:'zip';path:string;output:string;maxFiles:number;maxBytes:number}|{kind:'plain';inputs:{file:ArchivedFile;path:string}[];createdAt:string;manifest:string};
 type Results={document:Transcript;manifest:ReturnType<typeof import('./import-manifest-worker.js').validateImportManifest>;text:{durationMs:number;segments:{startMs:number;endMs:number;text:string}[]};zip:{files:{name:string;path:string;bytes:number}[];bytes:number};plain:{count:number;warnings:string[];partial:boolean;samples:{title:string;text:string;kind:string;attachmentCount:number}[];hash:string}};
 // A single decoding/manifest subprocess can cover a large configured import.
 const FORMAT_EXECUTION_TIMEOUT_MS=15*60*1000;
@@ -34,12 +34,12 @@ export async function formatWork<K extends FormatTask['kind']>(task:Extract<Form
 }
 
 export async function extractUtf8(body:AsyncIterable<Buffer>,sizeBytes:number,signal:AbortSignal){return extractDocument(body,sizeBytes,'text/plain',signal);}
-export async function extractDocument(body:AsyncIterable<Buffer>,sizeBytes:number,mimeType:string,signal:AbortSignal){
+export async function extractDocument(body:AsyncIterable<Buffer>,sizeBytes:number,mimeType:string,signal:AbortSignal,ocr?:{endpoint?:string;apiKey?:string}){
  if(sizeBytes>64*1024*1024)throw new StoreError('Text exceeds extraction limit',413);
  const directory=await mkdtemp(join(tmpdir(),'mote-text-decode-')),path=join(directory,'original');
  try{
   let count=0;async function* bounded(){for await(const part of body){signal.throwIfAborted();count+=part.length;if(count>sizeBytes)throw new StoreError('Text source size changed',409);yield part;}if(count!==sizeBytes)throw new StoreError('Text source size changed',409);}
   await pipeline(Readable.from(bounded()),createWriteStream(path,{flags:'wx',mode:0o600}),{signal});
-  return await formatWork({kind:'document',path,mimeType},signal);
+  return await formatWork({kind:'document',path,mimeType,...(ocr?{ocr}:{})},signal);
  }finally{await rm(directory,{recursive:true,force:true});}
 }

@@ -1266,6 +1266,7 @@ export const german: Readonly<Record<string, string>> = {
   "不可用：": "Nicht verfügbar:",
   "处理服务": "Verarbeitungsdienst",
   "未配置（任务将等待）": "Nicht konfiguriert (Aufgaben warten)",
+  "未配置（扫描页不识别，文字页仍可读取）": "Nicht konfiguriert (gescannte Seiten werden nicht erkannt; Textseiten bleiben lesbar)",
   "本地": "Lokal",
   "远程": "Remote",
   "说话人分离插件": "Plugin für Sprechertrennung",
