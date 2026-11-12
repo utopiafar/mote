@@ -3003,6 +3003,7 @@ export const english: Readonly<Record<string, string>> = {
   "中央已暂停该来源；待上传版本保留在本机": "Source paused centrally; pending revisions retained locally",
   "已同步；后台定时检查变化": "Synced; checking changes periodically",
   "已同步可读取项；扫描不完整，未判断删除": "Readable items synced. Incomplete scan was not used to infer deletion.",
+  "来源根不可用或已变化；已保留本机清单，未判断删除（已降级）": "Source root unavailable or changed. Existing local catalog retained; deletion not inferred (degraded).",
   "部分会话无法读取或单条事件超过限制；已保留进度，下次重试": "Some sessions unreadable or an event exceeds limits. Progress retained for retry.",
   "已保存当前批次；其余会话或未写完的尾行将在后续扫描继续": "Current batch saved. Remaining sessions and unfinished tail lines continue in later scans.",
   "同步已取消，待传版本已保留": "Sync cancelled; pending revisions preserved",

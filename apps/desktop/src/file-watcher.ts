@@ -6,7 +6,8 @@ export type FileWatchBackend = 'fsevents' | 'inotify' | 'read-directory-changes'
 export type FileWatchEvent = { sourceId: string; root: string; path?: string; backend: FileWatchBackend; kind: 'change' | 'rename' | 'error' };
 export type FileWatchListener = (event: FileWatchEvent) => void;
 export interface WatchTarget { sourceId: string; path: string }
-type ActiveWatcher = { targetPath: string; close: () => void | Promise<void> };
+type ActiveWatcher = { targetPath: string; identity?: string; close: () => void | Promise<void> };
+const rootIdentity = async (path: string): Promise<string | undefined> => { try { const info = await lstat(path); return info.isSymbolicLink() ? undefined : `${info.dev}:${info.ino}`; } catch { return undefined; } };
 type FseventsModule = {
   constants: { ItemRemoved: number; ItemRenamed: number };
   watch: (path: string, listener: (path: string, flags: number) => void) => () => void;
@@ -44,7 +45,14 @@ export class FileWatcher {
     for (const sourceId of [...this.watchers.keys()]) if (!desired.has(sourceId)) this.closeSource(sourceId);
     for (const target of desired.values()) {
       const existing = this.watchers.get(target.sourceId);
-      if (existing?.targetPath === target.path) continue;
+      // A mount can return at the same path with a different device/inode. The
+      // old watcher then reports another root, so reopen and ask for one
+      // recoverable verification; the scanner still decides about absence.
+      if (existing?.targetPath === target.path) {
+        const identity = await rootIdentity(target.path);
+        if (existing.identity === undefined || existing.identity === identity) continue;
+        if (identity !== undefined) this.listener({ sourceId: target.sourceId, root: target.path, backend: this.backend, kind: 'rename' });
+      }
       if (existing) this.closeSource(target.sourceId);
       await this.openSource(target);
     }
@@ -83,14 +91,14 @@ export class FileWatcher {
           const kind = flags & (fsevents.constants.ItemRemoved | fsevents.constants.ItemRenamed) ? 'rename' : 'change';
           this.listener({ sourceId: target.sourceId, root: selected, path, backend: this.backend, kind });
         });
-        this.watchers.set(target.sourceId, { targetPath: target.path, close: stop });
+        this.watchers.set(target.sourceId, { targetPath: target.path, identity: `${info.dev}:${info.ino}`, close: stop });
         return;
       }
       const watcher = nativeWatch(selected, { persistent: false, recursive: info.isDirectory() }, (eventType, filename) => {
           const path = filename || undefined;
           this.listener({ sourceId: target.sourceId, root: selected, ...(path ? { path } : {}), backend: this.backend, kind: eventType === 'rename' ? 'rename' : 'change' });
         });
-      const active: ActiveWatcher = { targetPath: target.path, close: () => watcher.close() };
+      const active: ActiveWatcher = { targetPath: target.path, identity: `${info.dev}:${info.ino}`, close: () => watcher.close() };
       watcher.on('error', () => {
         this.closeSource(target.sourceId);
         this.listener({ sourceId: target.sourceId, root: selected, backend: this.backend, kind: 'error' });

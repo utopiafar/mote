@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FileWatcher, fileWatchBackend, type FileWatchEvent } from '../src/file-watcher';
@@ -45,6 +45,27 @@ describe('native file watcher', () => {
     await watcher.setTargets([firstTarget, secondTarget]);
     expect(open).toHaveBeenCalledTimes(3);
     expect([...(watcher as any).watchers.keys()].sort()).toEqual(['local-first', 'local-second']);
+  });
+
+  it('reopens a watcher when the same path resolves to a different root identity', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'mote-file-watcher-remount-')));
+    roots.push(root);
+    const events: FileWatchEvent[] = [];
+    const watcher = new FileWatcher(event => events.push(event));
+    watchers.push(watcher);
+    const open = vi.spyOn(watcher as any, 'openSource').mockImplementation(async (target: {sourceId: string; path: string}) => {
+      const info = await lstat(target.path);
+      (watcher as any).watchers.set(target.sourceId, {targetPath: target.path, identity: `${info.dev}:${info.ino}`, close: () => undefined});
+    });
+    const target = {sourceId: 'local-generated-remount', path: root};
+    await watcher.setTargets([target]);
+    expect(open).toHaveBeenCalledTimes(1);
+    const saved = root + '-saved'; await rename(root, saved); await mkdir(root);
+    try {
+      await watcher.setTargets([target]);
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(events).toContainEqual(expect.objectContaining({sourceId: target.sourceId, kind: 'rename'}));
+    } finally { await rm(root, {recursive: true, force: true}); await rename(saved, root); }
   });
 
   it.skipIf(!supported)('emits a dirty event for a generated fixture change', async () => {

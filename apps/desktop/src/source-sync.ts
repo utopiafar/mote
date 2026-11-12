@@ -146,7 +146,7 @@ export class SourceSync {
    * must not upload stale bytes, and a revision the node never confirmed must be
    * able to queue again when the same file returns. */
   private withdrawAbsent(scan: SourceScan, trackDeletions: boolean, next: State, knownChanges: Map<string, Known>, withdrawn: SourceItem[], deferred: SourceItem[] = []): void {
-    if (!scan.complete) return;
+    if (!scan.complete || scan.degraded) return;
     const present = new Set(scan.seen);
     const keep = (queued: SourceItem) => {
       if (queued.kind !== 'file' || queued.deleted || present.has(queued.externalId)) return true;
@@ -215,13 +215,14 @@ export class SourceSync {
   private async stageInternal(scan: SourceScan, trackDeletions: boolean, observedAt: string, initialSync: 'all' | 'new_only', defaultQueue: QueueName,oneTime:boolean,withdrawn: SourceItem[],resolveHead?: (item: SourceItem) => Promise<string | null | undefined>): Promise<number> {
     const knownChanges=new Map<string,Known>();
     const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
-    if(oneTime&&scan.complete)next.oneTimeCompletedAt=observedAt;
+    const complete = scan.complete && !scan.degraded;
+    if(oneTime&&complete)next.oneTimeCompletedAt=observedAt;
     let changes = 0;
     if (!scan.checkpoint && initialSync === 'new_only' && !next.initialized && Object.keys(next.known).length === 0) {
-      next.baseline = [...new Set([...(next.baseline ?? []), ...scan.seen])]; next.initialized = scan.complete; await this.commit(next, this.limits.maxBytes); return 0;
+      next.baseline = [...new Set([...(next.baseline ?? []), ...scan.seen])]; next.initialized = complete; await this.commit(next, this.limits.maxBytes); return 0;
     }
     if (initialSync === 'all') next.baseline = [];
-    if (scan.complete) next.initialized = true;
+    if (complete) next.initialized = true;
     const baseline = new Set(next.baseline ?? []);
     const stage = (raw: ScannedItem) => {
       const { syncQueue, ...item } = raw;
@@ -263,7 +264,7 @@ export class SourceSync {
       if (known) knownChanges.set(key, { ...known, contentHash: '', discoveryHash: undefined });
       withdrawn.push(item);
     }
-    if (trackDeletions && scan.complete) {
+    if (trackDeletions && complete) {
       const seen = new Set(scan.seen);
       const identities = new Set([...Object.keys(this.data.known), ...knownChanges.keys()]);
       for (const key of identities) {

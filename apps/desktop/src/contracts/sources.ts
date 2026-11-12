@@ -11,6 +11,8 @@ export interface SourceContextState {
 
 
 export type SourceRetention = 'snapshot' | 'reference' | 'archive';
+/** Why a local file scan withheld absence publication. */
+export type FileScanDegraded = 'root_unavailable' | 'root_changed' | 'permission_denied' | 'scan_incomplete';
 export interface SourceDefinition {
   initialSync?: 'all' | 'new_only';
   id: string; name: string; kind: string; deviceId: string;
@@ -39,6 +41,8 @@ export interface SourceStatus {
   failures?: {externalId:string;title:string;status:number}[];
   facts?: import('@mote/shared/native-status').NativeStatusView;
   scanComplete?: boolean;
+  /** Present while the last scan could not safely publish absence. */
+  degraded?: FileScanDegraded;
   lastAcknowledgedAt?: string;
   /** Process-local outbox membership revision, including policy restaging and quarantine. */
   pendingContentRevision?: number;

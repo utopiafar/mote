@@ -3002,6 +3002,7 @@
   "中央已暂停该来源；待上传版本保留在本机": "Fuente en pausa centralmente; revisiones pendientes conservadas localmente",
   "已同步；后台定时检查变化": "Sincronizado; comprobando cambios periódicamente",
   "已同步可读取项；扫描不完整，未判断删除": "Elementos legibles sincronizados. El escaneo incompleto no se usó para inferir eliminación.",
+  "来源根不可用或已变化；已保留本机清单，未判断删除（已降级）": "La raíz de la fuente no está disponible o cambió. Se conserva el catálogo local; no se infiere eliminación (degradado).",
   "部分会话无法读取或单条事件超过限制；已保留进度，下次重试": "Algunas sesiones ilegibles o un evento supera los límites. Progreso conservado para reintento.",
   "已保存当前批次；其余会话或未写完的尾行将在后续扫描继续": "Lote actual guardado. Las sesiones restantes y las líneas finales sin terminar continúan en escaneos posteriores.",
   "同步已取消，待传版本已保留": "Sincronización cancelada; revisiones pendientes conservadas",

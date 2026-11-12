@@ -1,22 +1,37 @@
 import {sourceWork} from './background';
 import type {OriginalSpool} from './original-spool';
 import {fileDigest,fileMime} from './file-index';
-import { DirectoryCatalog, type DirectoryCandidate } from './directory-catalog';
+import { DirectoryCatalog, degradedFileCheckpoint, type DirectoryCandidate } from './directory-catalog';
 import { moteText } from '@mote/shared/i18n';
 import { constants, type Stats } from 'node:fs';
 import { lstat, open, realpath,rm } from 'node:fs/promises';
 import { basename, extname, isAbsolute, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { FileCatalogEntry, LocalFileCheckpoint, SourceOptions, SourceScan } from './source-types';
+import type { FileCatalogEntry, FileScanDegraded, LocalFileCheckpoint, SourceOptions, SourceScan } from './source-types';
 import { redactSourceText } from './source-types';
 import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
 export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = [], incrementalCheckpoint=false): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
-  const selected = await lstat(selectedPath);
+  const prior=previous&&previous.version===1&&typeof previous.root==='string'&&previous.catalog&&typeof previous.catalog==='object'?previous:undefined;
+  const degraded=(reason:FileScanDegraded,checkpoint:LocalFileCheckpoint):SourceScan=>({items:[],seen:[],complete:false,skipped:0,checkpoint:incrementalCheckpoint?{...checkpoint,catalog:{}}:checkpoint,...(incrementalCheckpoint?{catalogChanges:[]}:{}),degraded:reason});
+  let selected: Stats;
+  try { selected = await lstat(selectedPath); }
+  catch(error) {
+    if(!prior)throw error;
+    const code=(error as NodeJS.ErrnoException)?.code, reason:FileScanDegraded=code==='EACCES'||code==='EPERM'?'permission_denied':'root_unavailable';
+    return degraded(reason,degradedFileCheckpoint(prior,reason));
+  }
   if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error(moteText("所选来源必须是普通文件或目录，不能是符号链接"));
-  const root = await realpath(selectedPath);
+  let root: string;
+  try { root = await realpath(selectedPath); }
+  catch(error) {
+    if(!prior)throw error;
+    const code=(error as NodeJS.ErrnoException)?.code, reason:FileScanDegraded=code==='EACCES'||code==='EPERM'?'permission_denied':'root_unavailable';
+    return degraded(reason,degradedFileCheckpoint(prior,reason));
+  }
+  if(prior&&prior.root!==root)return degraded('root_changed',degradedFileCheckpoint(prior,'root_changed'));
   const catalog = new DirectoryCatalog(root, previous, undefined, incrementalCheckpoint);
   catalog?.begin();
   const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0, ...(catalog ? { checkpoint: catalog.checkpoint(incrementalCheckpoint) } : {}) };
@@ -87,14 +102,19 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
   if (selected.isDirectory() && catalog) {
     let examined = 0;
     const priority = [...new Set(priorityPaths)].map(path => isAbsolute(path) ? path : `${root}/${path}`);
-    for (const path of priority) {
-      if (examined >= 2000) break;
-      catalog.savepoint(); const candidate = await candidateForPath(path); if (!candidate) continue;
-      const outcome = await processFile(candidate, catalog.previous(candidate.relativePath)); examined++;
-      if (outcome === 'stop') { catalog.rollbackSavepoint(); result.complete = false; break; }
-    }
+    // A root that cannot be read, or whose device/inode changed, is checked
+    // before any path is treated as absent. Priority paths wait for that check.
+    if (await catalog.verifyRoot()) {
+      for (const path of priority) {
+        if (examined >= 2000) break;
+        catalog.savepoint(); const candidate = await candidateForPath(path); if (!candidate) continue;
+        const outcome = await processFile(candidate, catalog.previous(candidate.relativePath)); examined++;
+        if (outcome === 'stop') { catalog.rollbackSavepoint(); result.complete = false; break; }
+      }
+    } else { result.complete = false; result.degraded = catalog.degraded; }
     while (examined < 2000 && result.complete) {
       catalog.savepoint(); const batch = await catalog.next(Math.min(options.retention !== 'reference' ? 1 : 256, 2000 - examined, 2000 - result.items.length), options.excludedPaths);
+      if (batch.degraded) result.degraded = batch.degraded;
       if (!batch.candidates.length) { result.complete = batch.complete; result.skipped += batch.skipped; break; }
       examined += batch.candidates.length;
       const itemsBeforeBatch = result.items.length, seenBeforeBatch = result.seen.length;
@@ -111,11 +131,20 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       if (examined >= 2000) { result.complete = false; break; }
     }
     if (result.complete && !catalog.inProgress) {
-      catalog.finishReconciliation();
-      // A complete shard must reconcile against every file in the catalog,
-      // not only the final batch returned by this invocation.
-      result.seen = Object.values(catalog.catalog).filter(entry => options.extensions.includes(extname(entry.relativePath).toLowerCase())).map(entry => 'file:' + sourceHash([entry.fileId, entry.birthtimeMs].join(':')));
+      // A remount can replace the root while enumeration is running.
+      if (!await catalog.verifyRoot(true)) { result.complete=false; result.degraded=catalog.degraded; }
+      else catalog.finishReconciliation();
+      if (result.complete && catalog.lastReconciliationComplete) {
+        // A complete shard must reconcile against every file in the catalog,
+        // not only the final batch returned by this invocation.
+        result.seen = Object.values(catalog.catalog).filter(entry => options.extensions.includes(extname(entry.relativePath).toLowerCase())).map(entry => 'file:' + sourceHash([entry.fileId, entry.birthtimeMs].join(':')));
+      } else {
+        // A verified root generation must complete once before removals resume.
+        result.complete = false;
+        result.degraded = catalog.degraded ?? 'root_changed';
+      }
     }
+    if (!result.complete && catalog.degraded) result.degraded = catalog.degraded;
     result.checkpoint = catalog.checkpoint(incrementalCheckpoint);
     if(incrementalCheckpoint)result.catalogChanges=catalog.catalogChanges();
   } else {

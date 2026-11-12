@@ -111,6 +111,13 @@ describe('source revisions and durable acknowledgments', () => {
     expect(saved.map(i => Boolean(i.deleted))).toEqual([false, true, false]);
     expect(new Set(saved.map(i => i.revision)).size).toBe(3); expect(saved[1].text).toBe('');
   });
+  it('never tombstones a degraded scan even when it claims completeness', async () => {
+    const engine = await create(); const saved: SourceItem[] = [];
+    await engine.stage(scan([item]), true); await engine.flush(source, transport(saved));
+    expect(await engine.stage({ ...scan([]), complete: true, degraded: 'root_changed' }, true)).toBe(0);
+    expect(engine.status().pending).toBe(0);
+    expect(saved.every(entry => !entry.deleted)).toBe(true);
+  });
   it('never tombstones incomplete or skipped scans, or a calendar occurrence outside the current window', async () => {
     const engine = await create(); const saved: SourceItem[] = [];
     const calendar: ScannedItem = { ...item, externalId: 'calendar:old', kind: 'calendar', calendar: { start: '2026-01-01T00:00:00Z', end: '2026-01-01T01:00:00Z', allDay: false, status: 'confirmed' } };
