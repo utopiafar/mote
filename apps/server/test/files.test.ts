@@ -7,7 +7,7 @@ import {mkdtempSync,rmSync,readFileSync,readdirSync,writeFileSync} from 'node:fs
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
+import {FILE_PART_BYTES,fileViewSchema,type FileRevision} from '@mote/shared';
 import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
@@ -106,10 +106,13 @@ test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated 
  assert.equal((await app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${session.uploadId}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes})).statusCode,200);
  const committed=await app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${session.uploadId}/commit`,headers,payload:{}});assert.equal(committed.statusCode,200,committed.body);const ack=committed.json();
  const typedRef=ack.id;
- for(const suffix of ['', '/chunks','/content']){
+ for(const suffix of ['', '/view','/chunks','/content']){
   assert.equal((await app.inject({url:`/api/files/${typedRef}${suffix}`,headers})).statusCode,200);
   assert.equal((await app.inject({url:`/api/files/${typedRef}${suffix}?deviceId=other`,headers})).statusCode,404);
  }
+ const projected=await app.inject({url:`/api/files/${ack.id}/view`,headers});assert.equal(projected.statusCode,200);assert.equal(fileViewSchema.parse(projected.json()).captureId,ack.id);
+ for(const scope of ['sourceId=other','before=2000-01-01T00%3A00%3A00Z'])assert.equal((await app.inject({url:`/api/files/${ack.id}/view?${scope}`,headers})).statusCode,404);
+ assert.equal((await app.inject({url:`/api/files/${ack.id}/view?scope=selection`,headers})).statusCode,400,'an unrecognized selection cannot silently become an unscoped read');
  assert.equal((await app.inject({url:`/api/files/${encodeURIComponent('memory:'+ack.id)}`,headers})).statusCode,400);
  assert.equal((await app.inject(`/api/files/${ack.id}/content`)).statusCode,401);
  const playback=await app.inject({method:'POST',url:`/api/files/${ack.id}/playback`,headers,payload:{}});assert.equal(playback.statusCode,200);const cookie=String(playback.headers['set-cookie']).split(';')[0];
@@ -132,7 +135,7 @@ test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated 
  const grant=await app.inject({method:'POST',url:`/api/files/${ack.id}/playback`,headers:phoneHeaders,payload:{}});assert.equal(grant.statusCode,200);
  await connections.revoke(phone.credentialId);
  assert.equal((await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie:String(grant.headers['set-cookie']).split(';')[0]}})).statusCode,401);
- await app.inject({method:'DELETE',url:`/api/files/${ack.id}`,headers});assert.equal((await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie}})).statusCode,404);
+ await app.inject({method:'DELETE',url:`/api/files/${ack.id}`,headers});assert.equal((await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie}})).statusCode,404);assert.equal((await app.inject({url:`/api/files/${ack.id}/view`,headers})).statusCode,404);
  assert.equal((await app.inject({url:headUrl,headers})).json().forgotten,true);
 });
 

@@ -6,7 +6,7 @@ import {
   assistantTaskInputSchema, assistantTaskRecordSchema, attributionContextSchema,
   codingEvidenceSchema, conversationMessageInputSchema, conversationMessageSchema,
   documentSchema, evidenceDependenciesSchema, fileViewSchema, modelBudgetSchema, queryScopeSchema,
-  sourceEvidenceRevisionSchema, workspaceTemplateSchema,
+  sourceEvidenceRevisionSchema, transcriptSchema, workspaceTemplateSchema,
 } from '../dist/index.js';
 import {acceptUiContribution,parseUiContribution} from '../dist/plugin-ui.js';
 
@@ -34,6 +34,17 @@ test('explicit source scopes survive JSON, including empty selections and empty 
     {kind:'selection',sourceIds:[],anchorEvidenceIds:[captureA]},
     {kind:'all',after:'2026-11-14T00:00:00Z',before:'2026-11-13T00:00:00Z'},
   ])assert.equal(queryScopeSchema.safeParse(invalid).success,false);
+});
+
+test('file extraction counts and document coordinates survive the existing evidence contract',()=>{
+  const transcript={durationMs:0,coverage:'partial',extraction:{status:'partial',completed:2,total:3},segments:[
+    {startMs:0,endMs:0,text:'Generated tail',documentLocation:{pageNumber:3,paragraphNumber:2,endParagraphNumber:3,sheetName:'Generated',rowNumber:7,columnNumber:4,endColumnNumber:6,offset:10,length:14}},
+  ]};
+  assert.deepEqual(roundTrip(transcriptSchema,transcript),transcript);
+  assert.equal(transcriptSchema.safeParse({...transcript,extraction:{status:'ready',completed:2,total:3}}).success,false);
+  assert.equal(transcriptSchema.safeParse({...transcript,segments:[{...transcript.segments[0],documentLocation:{offset:0,length:4,columnNumber:0}}]}).success,false);
+  assert.equal(transcriptSchema.safeParse({...transcript,segments:[{...transcript.segments[0],documentLocation:{offset:0,length:4,columnNumber:4,endColumnNumber:3}}]}).success,false);
+  assert.equal(transcriptSchema.safeParse({...transcript,segments:[{...transcript.segments[0],documentLocation:{offset:0,length:4,paragraphNumber:3,endParagraphNumber:2}}]}).success,false);
 });
 
 test('context window and output limit remain distinct and conservative estimates are labelled',()=>{

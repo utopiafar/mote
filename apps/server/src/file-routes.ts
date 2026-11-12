@@ -51,6 +51,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024},async req=>measure('file_revision',()=>ingress.fileRevision(req.body,check(req))));
   app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
   app.get('/api/files/:id',async req=>({...file(req),processingPolicy:processing.explain(fileId(req)),cancellation:processing.cancellation(fileId(req))}));
+  app.get('/api/files/:id/view',async req=>{navigationScopeSchema.parse(req.query);file(req);return files.fileView(fileId(req));});
   app.get('/api/files/:id/chunks',async req=>{file(req);const q=z.object({...navigationScopeSchema.shape,offset:z.coerce.number().int().min(0).default(0)}).strict().parse(req.query);const items=files.chunks(fileId(req),q.offset);return {items,nextOffset:items.length===100?q.offset+100:null};});
   app.post('/api/files/:id/playback',async(req,reply)=>{
     const id=fileId(req);file(req);

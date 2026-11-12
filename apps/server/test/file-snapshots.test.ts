@@ -15,11 +15,46 @@ import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {CaptureRawReader} from '../src/capture-raw-reader.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
+import {Indexer} from '../src/indexer.js';
+import {browseSourceCatalog} from '../src/source-catalog.js';
+import {fileViewSchema} from '@mote/shared';
 function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-snapshot-fixture-')),store=new Store(dir,{maxStorageBytes:100*1024*1024}),sources=new SourceStore(store),files=new FileStore(store,sources);const cleanup:Array<()=>Promise<void>>=[];sources.register({id:'fixture',name:'Generated',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'snapshot'});t.after(async()=>{for(const close of cleanup.reverse())await close();store.close();rmSync(dir,{recursive:true,force:true});});return {store,sources,files,cleanup};}
 async function upload(files:FileStore,bytes:Buffer,allowRead=false,mimeType='text/plain'){
  const hash=sha256(bytes),m:FileRevision={sourceId:'fixture',previousRevision:null,sizeBytes:bytes.length,sha256:hash,relativePath:'generated.txt',item:{externalId:'generated-file',revision:hash,observedAt:'2026-10-01T00:00:00Z',title:'Generated',kind:'file',layer:'snapshot',text:'',mimeType,deleted:false,document:{fileIndex:{version:1,fileId:'generated-file',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead}}}};
  const s=files.begin(m,()=>{});for(let part=0;part<Math.ceil(bytes.length/FILE_PART_BYTES);part++)files.part(s.uploadId,part,bytes.subarray(part*FILE_PART_BYTES,(part+1)*FILE_PART_BYTES),()=>{});return files.commit(s.uploadId,()=>{});
 }
+test('late snapshot extraction updates the file view and directory and remains searchable without embeddings',async t=>{
+ const {files,store,sources,cleanup}=fixture(t),text='Generated first paragraph.\n\nGenerated final searchable tail.',ack=await upload(files,Buffer.from(text),true);
+ const processing=new FileProcessing(files),indexer=new Indexer(store,{embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},undefined,files);cleanup.push(()=>processing.close(),()=>indexer.close());
+ const before=fileViewSchema.parse(files.fileView(ack.id));assert.equal(before.coverage.extraction.status,'pending');
+ assert.equal(browseSourceCatalog(store.db,'fixture',{parent:''}).items[0].coverage,'catalog');
+ await processing.tick();
+ const after=fileViewSchema.parse(files.fileView(ack.id));assert.equal(after.coverage.extraction.status,'ready');assert.notEqual(after.coverage.semantic.status,'ready');
+ assert.equal(after.coverage.embedding.status,'unsupported');assert.match(after.coverage.embedding.reason??'',/lexical/i);
+ assert.equal(after.hasOriginal,false);assert.equal(after.canOpenOriginal,false);
+ assert.equal(browseSourceCatalog(store.db,'fixture',{parent:''}).items[0].coverage,'full');
+ assert.equal(store.assets.read(String(store.db.prepare('SELECT object_hash FROM file_snapshot_text WHERE capture_id=?').get(ack.id)!.object_hash)).toString(),text);
+ const found=await indexer.search({query:'searchable tail'});assert.ok(found.some(row=>row.ocrText.includes('searchable tail')));assert.equal(found.retrieval.mode,'lexical');assert.equal(found.retrieval.degraded,true);assert.equal(found.retrieval.reason,'embedding_not_configured');
+ const result:any=await new FileEvidence(sources).read(ack.id,text.indexOf('searchable'),15);assert.equal(result.status,'ready');assert.equal(result.record.ocrText,'searchable tail');
+});
+test('embedding coverage counts current extracted chunks and identifies failures independently of extraction',async t=>{
+ const {files,store,cleanup}=fixture(t),ack=await upload(files,Buffer.from('Generated '.repeat(500)+'tail'),true),processing=new FileProcessing(files);
+ const indexer=new Indexer(store,{embeddingModel:'generated-embedding',embeddingBaseUrl:'http://127.0.0.1:1',embeddingApiKey:''},undefined,files);cleanup.push(()=>processing.close(),()=>indexer.close());
+ await processing.tick();const chunks=files.chunks(ack.id);assert.equal(chunks.length,2);
+ assert.deepEqual(files.fileView(ack.id).coverage.embedding,{status:'pending',completed:0,total:2});
+ files.indexed(chunks[0].id,[0.5,0.5],'generated-embedding');assert.equal(files.fileView(ack.id).coverage.embedding.status,'partial');assert.equal(files.fileView(ack.id).coverage.embedding.completed,1);assert.equal(files.fileView(ack.id).coverage.embedding.total,2);
+ files.indexFailed(chunks[1].id);assert.match(files.fileView(ack.id).coverage.embedding.reason??'',/could not be embedded/);
+ files.indexed(chunks[1].id,[0.5,0.5],'generated-embedding');assert.deepEqual(files.fileView(ack.id).coverage.embedding,{status:'ready',completed:2,total:2});
+ assert.equal(files.fileView(ack.id).coverage.extraction.status,'ready');assert.notEqual(files.fileView(ack.id).coverage.semantic.status,'ready');
+});
+test('a processor using the shared partial coverage contract cannot make Material or the directory claim full text',async t=>{
+ const {files,store,cleanup}=fixture(t),ack=await upload(files,Buffer.from('Generated source bytes'),true),processing=new FileProcessing(files);cleanup.push(()=>processing.close());await processing.runtime.ready;
+ processing.runtime.registry.register({id:'generated.partial-text',name:'Generated partial text',version:'1',stage:'extract',mediaTypes:['text/'],allowSummary:false,async process(){return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated available page',documentLocation:{pageNumber:1,offset:0,length:24}}],extraction:{status:'partial',completed:1,total:2,reason:'Generated second page unavailable'}};}});
+ const settings={...processing.view().settings,typeProfiles:{'text/plain':'generated.partial-text'}};processing.update({revision:processing.view().revision,settings,policy:fixtureFilePolicy(settings,processing.runtime.registry)});await processing.tick();
+ assert.deepEqual(files.fileView(ack.id).coverage.extraction,{status:'partial',completed:1,total:2,reason:'Generated second page unavailable'});
+ assert.equal(files.detail(ack.id).item.document.fileIndex.coverage,'lightweight');assert.equal(browseSourceCatalog(store.db,'fixture',{parent:''}).items[0].coverage,'lightweight');
+ const materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);try{while(await organizers.tick(100));const material=materials.get(materialId('fixture','generated-file'))!;assert.equal(material.coverage.state,'partial');assert.match(materials.read(material.ref).text,/Generated available page/);}finally{await organizers.close();}
+});
 test('central snapshot extraction ignores legacy client caps, removes raw bytes, and never grants original access',async t=>{
  const {files,store,cleanup}=fixture(t),bytes=Buffer.from('Generated '+'x'.repeat(10000)),ack=await upload(files,bytes),processing=new FileProcessing(files);cleanup.push(()=>processing.close());
  assert.equal(files.detail(ack.id).hasOriginal,false);assert.throws(()=>[...files.bytes(ack.id)],{statusCode:404});assert.deepEqual(Buffer.concat([...files.processingBytes(ack.id)]),bytes);

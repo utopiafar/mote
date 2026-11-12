@@ -40,6 +40,9 @@ import {createDefaultFilePolicy,publicFilePolicy,parseFilePolicy,selectFilePolic
 type Saved={revision:string;settings:FileProcessingSettings;policy:FilePolicy};
 type Job={capture_id:string;state:string;stage:string;attempts:number;summary_state:string;policy_json:string|null;reuse_allowed:number};
 type Step={fingerprint:string;state:string;artifact_id:string|null;attempts:number};
+const transcriptCoverage=(transcript:Transcript)=>transcript.extraction
+  ?transcript.extraction.status==='ready'?'full':transcript.segments.length?'partial':'none'
+  :transcript.coverage??'full';
 const parseSemanticGrouping=(transcript:Transcript,answer:string)=>applySemanticGroups(transcript,z.object({groups:z.array(z.array(z.number().int().nonnegative()).min(1)).max(200)}).strict().parse(JSON.parse(answer)).groups);
 export type FileAnalysis=(records:ContextRecord[],prompt:string,settings:FileProcessingSettings&{analysisModel?:ProcessingService;modelSnapshot?:ModelSettings;modelIdentity?:ModelAgentIdentity},signal?:AbortSignal,host?:{operationId:string;jobId:string;requestId:string},validateOutput?:QueryInput['validateOutput'])=>Promise<{answer:string;citations:{id:string}[]}>;
 export type SummarizeFiles=(records:ContextRecord[],signal?:AbortSignal)=>Promise<{answer:string;citations:{id:string}[]}>;
@@ -584,9 +587,10 @@ export class FileProcessing {
       }
     }
     if(phase==='summary'){db.prepare('UPDATE file_jobs SET summary_state=?,error=? WHERE capture_id=?').run(state,['running','succeeded','blocked'].includes(state)&&step.error!=='processor_still_running'?null:step.error??null,id);return;}
+    const previous=db.prepare('SELECT state FROM file_jobs WHERE capture_id=?').get(id)?.state;
     db.prepare('UPDATE file_jobs SET state=?,attempts=?,available_at=?,error=? WHERE capture_id=?').run(state,step.attempts,step.availableAt,step.error??null,id);
     if(['failed','cancelled','stale'].includes(state)&&['unsupported_format','processing_limit','cancelled','input_changed'].includes(step.error??''))this.files.releaseSnapshotInput(id);
-    if(state==='succeeded'){const withdrawn=db.prepare('SELECT 1 FROM file_semantic_withdrawals WHERE capture_id=?').get(id);db.prepare("UPDATE file_jobs SET stage='indexed',summary_state=? WHERE capture_id=?").run(withdrawn?'cancelled':'waiting',id);if(!withdrawn)this.enqueue(id,'summary',step.id);}
+    if(state==='succeeded'){const withdrawn=db.prepare('SELECT 1 FROM file_semantic_withdrawals WHERE capture_id=?').get(id);db.prepare("UPDATE file_jobs SET stage='indexed',summary_state=? WHERE capture_id=?").run(withdrawn?'cancelled':'waiting',id);if(previous!=='succeeded')this.invalidate(id);if(!withdrawn)this.enqueue(id,'summary',step.id);}
   }
   private optionalSummary(id:string){
     try{
@@ -663,7 +667,15 @@ export class FileProcessing {
     this.files.store.reserveMetadata(Buffer.byteLength(json)+(transcript?Buffer.byteLength(JSON.stringify(transcript)):0)+4096);
     db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind=?').run(id,kind);
     db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifactId,id,kind,new Date().toISOString(),revision,json);
-    if(transcript)writeFileTranscriptChunks(this.files.store,id,artifactId,transcript,{kind});
+    if(transcript){
+      writeFileTranscriptChunks(this.files.store,id,artifactId,transcript,{kind});
+      // This is a projection over the current head. It never claims semantic
+      // coverage and does not change a superseded file's directory entry.
+      if(['text','image-text','transcript','dialogue','corrected-dialogue'].includes(kind)){
+        const coverage=!transcript.segments.length?'catalog':transcript.extraction?transcript.extraction.status==='ready'?'full':'lightweight':transcript.coverage&&transcript.coverage!=='full'?'lightweight':'full';
+        db.prepare('UPDATE source_catalog SET coverage=? WHERE capture_id=?').run(coverage,id);
+      }
+    }
     return artifactId;
   }
   private async step(id:string,name:string,processor:string,version:string,key:unknown,revision:string,execute:(signal:AbortSignal,request?:MediaRequestIdentity)=>Promise<unknown>,save:(value:any)=>string,reuseByContent=false,issuedCall=true,callPolicy:ExecutionPolicy=EXECUTION_POLICIES.localProcessing){
@@ -761,7 +773,7 @@ export class FileProcessing {
         const read=(name:string)=>{const artifactId=dependencies[name];if(!artifactId)throw new StoreError('File stage input is missing',409);return artifactId;};
         const context:FileRecipeContext={input,dependencies,readArtifact:artifactId=>{this.assertOpen();signal.throwIfAborted();if(!Object.values(dependencies).includes(artifactId))throw new StoreError('Artifact is outside stage inputs',409);return this.artifact(artifactId);},
           transform:(type,execute)=>this.step(id,stage.name,stage.stage.id,stage.stage.version,[file.sha256,dependencies,type,revision],revision,execute,value=>{
-            const decoded=this.runtime.outputs.decode(type,value);return this.saveArtifact(id,decoded.kind,{transcript:decoded.transcript,output:{type,payload:decoded.payload},complete:decoded.transcript.coverage!=='partial',coverage:decoded.transcript.coverage??'full',inputArtifacts:Object.values(dependencies),snapshot:file.item.layer==='snapshot'},revision,decoded.transcript);
+            const decoded=this.runtime.outputs.decode(type,value),coverage=transcriptCoverage(decoded.transcript);return this.saveArtifact(id,decoded.kind,{transcript:decoded.transcript,output:{type,payload:decoded.payload},complete:coverage==='full',coverage,inputArtifacts:Object.values(dependencies),snapshot:file.item.layer==='snapshot'},revision,decoded.transcript);
           }),
           builtin:async operation=>{
             this.assertOpen();signal.throwIfAborted();
@@ -772,12 +784,12 @@ export class FileProcessing {
                 if(mime.startsWith('audio/')&&decoded.transcript.durationMs>budget)throw new StoreError('Audio budget exceeded',413);
                 return processor.output?raw:decoded.transcript;
               },value=>{
-                const decoded=decodeOutput(value),transcript=decoded.transcript;
+                const decoded=decodeOutput(value),transcript=decoded.transcript,coverage=transcriptCoverage(transcript);
                 if(mime.startsWith('audio/')&&transcript.durationMs>budget)throw new StoreError('Audio budget exceeded',413);
                 db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=?').run(id);
                 db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=?").run(id);
                 return this.saveArtifact(id,processor.output?decoded.kind:mime.startsWith('audio/')?'transcript':mime.startsWith('image/')?'image-text':'text',
-                  {transcript,output:{type:defaultFileOutput(processor),...(processor.output?{payload:decoded.payload}:{})},durationMs:transcript.durationMs,segments:transcript.segments.length,complete:transcript.coverage!=='partial',coverage:transcript.coverage??'full',processor:processor.id,processorVersion:processor.version,uncorrected:true,snapshot:file.item.layer==='snapshot'},revision,transcript);
+                  {transcript,output:{type:defaultFileOutput(processor),...(processor.output?{payload:decoded.payload}:{})},durationMs:transcript.durationMs,segments:transcript.segments.length,complete:coverage==='full',coverage,processor:processor.id,processorVersion:processor.version,uncorrected:true,snapshot:file.item.layer==='snapshot'},revision,transcript);
               },!processor.output&&processor.reuseByContent===true&&job.reuse_allowed!==0);
             if(operation==='diarize'){
               const extractId=read('extract'),raw=this.transcript(extractId),diarizer=this.runtime.registry.get(settings.diarizationProcessor);
@@ -817,12 +829,18 @@ export class FileProcessing {
       this.assertOpen();signal.throwIfAborted();
       if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');
       if(file.item.layer==='snapshot'){
-        const transcript=this.transcript(outputArtifact),text=transcript.segments.map(segment=>segment.text).join('\n');
+        const transcript=this.transcript(outputArtifact);
+        // Document chunks already retain their own paragraph/row separators.
+        // PDF offsets are page-relative, so add only the actual page boundaries.
+        let page=1;const text=transcript.segments.every(segment=>segment.documentLocation)?transcript.segments.map(segment=>{
+          const next=segment.documentLocation?.pageNumber,separator=next&&next>page?'\n'.repeat(next-page):'';if(next)page=next;
+          return separator+segment.text;
+        }).join(''):transcript.segments.map(segment=>segment.text).join('\n');
         if(text.length>10000000)throw new StoreError('Snapshot text exceeds limit',413);
         // Central processing limits and the configured stages determine coverage.
         // A client preview cap must never silently discard evidence.
         this.files.saveSnapshotText(id,text);
-        this.files.publishSnapshotIndex(id,text.length,text.length,processor.id,transcript.coverage==='partial',transcript.warnings);
+        this.files.publishSnapshotIndex(id,text.length,text.length,processor.id,transcriptCoverage(transcript)!=='full',transcript.warnings);
         this.files.releaseSnapshotInput(id);
       }
       this.log('file.completed',id,{operation:'file_process',durationMs:performance.now()-started,attempt:job.attempts+1});

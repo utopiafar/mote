@@ -4,6 +4,24 @@ import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {fileProcessingSchema} from '@mote/shared';
 import {HttpTranscriptionProvider,ProcessorRegistry,installFileProcessorContributions,type FileProcessor} from '../src/file-processors.js';
+import {decodeDocument,documentChunks} from '@mote/shared/document-decoder';
+
+test('a failed PDF page preserves later pages and reports actual page coverage',async()=>{
+ const decoded=await decodeDocument(new Uint8Array([1]),'application/pdf',{docx:async()=>{throw Error('unexpected');},pdf:async()=>({getDocument:()=>({promise:Promise.resolve({numPages:3,async getPage(number:number){if(number===2)throw Error('generated page failure');return {getTextContent:async()=>({items:[{str:number===1?'Generated first':'Generated last',hasEOL:false}]}),cleanup(){}};},async destroy(){}})})})});
+ assert.deepEqual(decoded.extraction,{status:'partial',completed:2,total:3,reason:'Pages that could not be extracted: 2. PDF text layers were extracted; embedded image text was not OCRed.'});
+ assert.deepEqual([...documentChunks(decoded)].map(part=>[part.documentLocation.pageNumber,part.text]),[[1,'Generated first'],[3,'Generated last']]);
+});
+test('paragraph and cell ranges retain bounded chunking and exact decoded offsets',async()=>{
+ const text=Array.from({length:8},(_,index)=>`P${index}\n\n`).join(''),decoded=await decodeDocument(new TextEncoder().encode(text),'text/plain',{pdf:async()=>{},docx:async()=>{}}),parts=[...documentChunks(decoded,10)];
+ assert.equal(parts.length,Math.ceil(text.length/10));assert.equal(parts.map(part=>part.text).join(''),text);
+ assert.deepEqual([parts[0].documentLocation.paragraphNumber,parts[0].documentLocation.endParagraphNumber],[1,3]);
+ for(const part of parts)assert.equal(text.slice(part.documentLocation.offset,part.documentLocation.offset+part.documentLocation.length),part.text);
+ const row={rowNumber:1,cells:Array.from({length:6},(_,index)=>({column:index+1,value:`Generated ${index}`}))},sheetText=JSON.stringify({sheet:'Generated',...row})+'\n';
+ const sheet={text:sheetText,parser:'exceljs',status:'ready' as const,coverage:'full' as const,warnings:[],sheets:[{name:'Generated',rows:[row]}]},cells=[...documentChunks(sheet,35)];
+ assert.equal(cells.length,Math.ceil(sheetText.length/35));assert.equal(cells.map(part=>part.text).join(''),sheetText);
+ assert.ok(cells.some(part=>part.documentLocation.endColumnNumber!==undefined));
+ for(const part of cells)assert.equal(sheetText.slice(part.documentLocation.offset,part.documentLocation.offset+part.documentLocation.length),part.text);
+});
 
 test('offline transcription uses explicit transport constraints with an unrelated processor name',async t=>{
  const seen:string[]=[];let confirmsLocal=true;

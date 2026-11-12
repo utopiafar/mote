@@ -6,7 +6,7 @@ import {rmSync} from 'node:fs';
 import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
-import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,transcriptSchema,type SourceItem,type Transcript,type FileRevision,type CaptureRecord,type ArchivedFile,type FileProcessingJobView,type ExecutionEnvelope,fileEvidenceSchema} from '@mote/shared';
+import {fileRevisionSchema,fileViewSchema,sourceItemSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,transcriptSchema,type FileCoverage,type SourceItem,type Transcript,type FileRevision,type CaptureRecord,type ArchivedFile,type FileProcessingJobView,type ExecutionEnvelope,fileEvidenceSchema} from '@mote/shared';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import type {ContextRecord,ContextRange} from '@mote/agent';
 import {Store,StoreError,sha256,type Range} from './store.js';
@@ -26,6 +26,8 @@ export class FileStore {
   /** Processing owns input authority and the transition after bounded resupply. */
   processingReceiptCurrent?:(input:Record<string,unknown>,phase:'pipeline'|'summary')=>boolean;
   snapshotInputResupplied?:(id:string)=>void;
+  /** The retrieval service supplies its currently active model, not a grant. */
+  embeddingConfiguration?:()=>{configured:boolean;model:string};
   readonly objects:string;
   readonly uploads:string;
   private pending=new Map<string,Promise<unknown>>();
@@ -368,6 +370,40 @@ export class FileStore {
     const steps=rawSteps.map(({fingerprint,...step})=>({...step,execution:executionEnvelope({state:step.state,attempts:step.attempts,errorCode:step.error??undefined,definitionVersion:step.version,updatedAt:step.updatedAt})}));
     const manifest=JSON.parse(v.manifest),index=this.store.evidence([id])[0]?.provenance?.document?.fileIndex;if(index&&manifest.item.layer==='snapshot')manifest.item.document={...manifest.item.document,fileIndex:index};
     return {captureId:id,...manifest,hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job,artifacts,steps};
+  }
+  fileView(id:string){
+    const db=this.store.db,version=this.version(id),source=this.sources.getSource(version.source_id),detail=this.detail(id),reference=source.retention==='reference'||detail.item.layer==='reference';
+    const document=detail.item.document?{...detail.item.document}:undefined;
+    if(reference&&document)delete document.fileIndex;
+    const item=sourceItemSchema.parse({...detail.item,...(reference?{layer:'reference',text:''}:{}),...(document?{document}:{})});
+    const artifact=db.prepare(`SELECT a.json FROM file_artifacts a WHERE a.capture_id=? AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue') ORDER BY a.rowid DESC LIMIT 1`).get(id);
+    const payload=artifact?JSON.parse(String(artifact.json)):undefined,transcript=payload?.transcript?transcriptSchema.parse(payload.transcript):undefined,job=detail.job;
+    let extraction:FileCoverage;
+    if(reference)extraction={status:'unsupported',reason:'Reference retention does not collect the file body.'};
+    else if(transcript?.extraction)extraction=transcript.extraction;
+    else if(transcript)extraction={status:transcript.coverage==='partial'?'partial':transcript.coverage==='none'?'unsupported':'ready',...(transcript.warnings?.length?{reason:transcript.warnings.join(' ').slice(0,1000)}:{})};
+    else if(job&&['failed','cancelled','stale'].includes(job.state))extraction={status:job.error==='unsupported_format'?'unsupported':'failed',reason:job.error??'File extraction failed.'};
+    else if(job&&['blocked','skipped'].includes(job.state)&&['unsupported_format','archive_only'].includes(job.error??''))extraction={status:'unsupported',reason:job.error??'File extraction is unavailable.'};
+    else if(job?.state==='succeeded')extraction={status:'failed',reason:'Processing completed without an extracted body.'};
+    else extraction={status:'pending',...(job?.error?{reason:job.error}:{})};
+    let semantic:FileCoverage;
+    if(reference)semantic={status:'unsupported',reason:'Reference retention does not collect the file body.'};
+    else if(extraction.status==='unsupported'||extraction.status==='failed')semantic={status:extraction.status,reason:'Semantic processing requires an extracted body.'};
+    else if(job?.summary_state==='succeeded')semantic={status:'partial',reason:'A summary was generated; complete semantic understanding is not established.'};
+    else if(job&&['failed','cancelled','stale'].includes(job.summary_state))semantic={status:'failed',reason:job.error??'Semantic processing did not complete.'};
+    else if(job&&['blocked','skipped'].includes(job.summary_state))semantic={status:'unsupported',reason:job.error??'File summary processing is unavailable.'};
+    else semantic={status:'pending',reason:'Extraction does not establish semantic understanding.'};
+    const configuration=this.embeddingConfiguration?.(),counts=db.prepare(`SELECT count(*) total,COALESCE(sum(CASE WHEN c.embedding IS NOT NULL AND c.embedding_model=? THEN 1 ELSE 0 END),0) completed,COALESCE(sum(CASE WHEN c.index_error IS NOT NULL THEN 1 ELSE 0 END),0) failed FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks}`).get(configuration?.model??'',id)!;
+    const total=Number(counts.total),completed=Number(counts.completed),failed=Number(counts.failed);let embedding:FileCoverage;
+    if(reference)embedding={status:'unsupported',reason:'Reference retention does not collect the file body.'};
+    else if(!configuration?.configured)embedding={status:'unsupported',...(total?{completed:0,total}:{}),reason:'Embedding is not configured; lexical search remains available for extracted text.'};
+    else if(!total)embedding={status:extraction.status==='pending'?'pending':'unsupported',reason:'No extracted chunks are available for embedding.'};
+    else if(extraction.status!=='ready'&&completed===total)embedding={status:'partial',reason:'Only the available extracted chunks have embeddings; extraction is incomplete.'};
+    else if(completed===total)embedding={status:'ready',completed,total};
+    else if(completed)embedding={status:'partial',completed,total,reason:failed?'Some extracted chunks could not be embedded.':'Some extracted chunks are awaiting embedding.'};
+    else embedding={status:failed===total?'failed':'pending',completed,total,...(failed?{reason:'Embedding failed for some extracted chunks; lexical search remains available.'}:{})};
+    const hasOriginal=!reference&&detail.hasOriginal;
+    return fileViewSchema.parse({captureId:id,sourceId:version.source_id,item,retention:source.retention,hasOriginal,originMissing:detail.originMissing,canOpenOriginal:hasOriginal&&source.enabled,coverage:{extraction,semantic,embedding}});
   }
   saveAsset(artifactId:string,name:string,mime:string,bytes:Buffer){
     if(!/^speaker_samples\/SPEAKER_[0-9]{1,5}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');
