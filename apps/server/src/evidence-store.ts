@@ -31,6 +31,7 @@ import {ContentEncryption,replaceContentFile} from './content-encryption.js';
 import {installTaskRecords} from './task-records.js';
 import {invalidateTaskEvidence} from './task-evidence.js';
 import {installAssistantCards,invalidateAssistantCardEvidence} from './assistant-card-storage.js';
+import {installAssistantCommitments,invalidateAssistantCommitmentEvidence} from './assistant-commitment-storage.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
@@ -96,6 +97,7 @@ export class EvidenceStore {
     this.ledger.bytes();
     installTaskRecords(this);
     installAssistantCards(this);
+    installAssistantCommitments(this);
     if(!priorTable)this.db.exec('COMMIT');
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
     if(!options.maintenance)this.sweep();
@@ -708,6 +710,7 @@ export class EvidenceStore {
     if(deleted===true){if(evidenceIds)this.db.prepare('DELETE FROM conversation_retired_roots WHERE id IN (SELECT value FROM json_each(?))').run(JSON.stringify(evidenceIds));else this.db.exec('DELETE FROM conversation_retired_roots');}
     invalidateTaskEvidence(this,evidenceIds);
     invalidateAssistantCardEvidence(this,evidenceIds,deleted);
+    invalidateAssistantCommitmentEvidence(this,evidenceIds,deleted);
     // Resolve formal-original lineage before its anchors are removed. Private
     // delegated products and replay prompts retain the same disclosure boundary.
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='delegation_dependencies'").get()){
