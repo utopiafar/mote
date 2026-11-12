@@ -2,10 +2,11 @@ import {parseMoteLink,resolveMoteLink,type MoteLink,type MoteLinkFacts,type Mote
 import {webFeatures} from './features/registry';
 
 /** The page entry id a plugin-contributed view registered under, if this
- * build serves that route. Checked live so a deactivated contribution falls
- * back instead of staying bound. */
+ * build serves that route from the same package. Both identity parts are
+ * checked live: a deactivated contribution, or a route id owned by another
+ * package, falls back instead of receiving the link. */
 export function webViewPage(view:MoteViewRoute):string|undefined {
-  return webFeatures.page(view.routeId)?.id;
+  return webFeatures.pageOwner(view.routeId)===view.packageId?webFeatures.page(view.routeId)?.id:undefined;
 }
 
 /** Parse one serialized link; the shared schema rejects every URL shape that

@@ -18,4 +18,5 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     registerPluginCenter(buildId)
     NativeAdministrationPlugin.register(this, buildId)
     NativeSystemToolsPlugin.register(this, buildId)
+    AssistantPlugin.register(this, buildId)
 }

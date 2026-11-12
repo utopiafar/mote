@@ -11,6 +11,11 @@
 .guide-groups { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 28px; align-items:start; }
 .guide-group { margin:18px 0; min-width:0; font-size:12px; color:var(--mote-muted); line-height:1.9; }
 .guide-group>summary { cursor:pointer; padding:10px 0; color:var(--mote-ink); }
+.assistant-guide { margin:18px 0; font-size:12px; color:var(--mote-muted); line-height:1.9; border-bottom:1px solid var(--mote-hair); }
+.assistant-guide>summary { cursor:pointer; padding:10px 0; color:var(--mote-ink); }
+.assistant-guide-note { margin:0 0 12px; font-size:11px; line-height:1.7; }
+.assistant-guide .guide-unit-link>span:first-child { display:flex; flex-direction:column; gap:4px; }
+.assistant-guide-purpose { color:var(--mote-muted); font-size:11px; font-weight:400; line-height:1.6; }
 .guide-unit-list { border-top:1px solid var(--mote-hair); }
 .guide-unit-link { display:flex; align-items:center; justify-content:space-between; gap:20px; width:100%; padding:18px 0; text-align:left; border-bottom:1px solid var(--mote-hair); color:var(--mote-ink); text-decoration:none; font-size:13px; font-weight:500; line-height:1.7; }
 .guide-unit-link>span:first-child { flex:1; min-width:0; overflow-wrap:anywhere; }

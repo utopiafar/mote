@@ -21,6 +21,11 @@ export class WebFeatureHost {
     try{await fiber;return fiber;}catch(error){await fiber.dispose();throw error;}
   }
   pages(){return this.registry.list('page').flatMap(({value})=>value.surface==='page'?[value.entry]:[]);}
+  /** The declaring package of a live page contribution; undefined means no
+   * page with that identity is currently executable in this host. The entry's
+   * package identity stays stable when an external package runs as a scoped
+   * instance. */
+  pageOwner(id:string){const entry=this.registry.list('page').find(({value})=>value.surface==='page'&&value.entry.id===id);return entry?.value.surface==='page'?entry.value.entry.featureId:undefined;}
   homes(){return this.registry.list('home').flatMap(({value})=>value.surface==='home'?[value.entry]:[]).sort((a,b)=>a.order-b.order);}
   collections(){return this.registry.list('collection').flatMap(({value})=>value.surface==='collection'?[value.entry]:[]).sort((a,b)=>a.order-b.order);}
   page(id:string){const value=this.registry.get('page:'+id);return value?.surface==='page'?value.entry:undefined;}

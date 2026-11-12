@@ -42,6 +42,7 @@ internal object NativeDefaultPluginInventory {
         NativeDefaultPackage("dev.mote.plugin-center", listOf(PluginCenterPlugin.CAPABILITY)),
         NativeDefaultPackage("dev.mote.administration", listOf(NativeAdministrationPlugin.CAPABILITY)),
         NativeDefaultPackage("dev.mote.system-tools", listOf(NativeSystemToolsPlugin.CAPABILITY)),
+        NativeDefaultPackage("dev.mote.assistant", listOf(AssistantPlugin.CAPABILITY)),
     )
 
     /** Activity, Service, Receiver and Provider entries exactly as the manifest

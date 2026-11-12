@@ -7,6 +7,7 @@ import {guideVisit,leaveGuide} from './feature-guide-state';
 import {QuickNoteContext} from './quick-note-context';
 import {validatedReturnTarget} from './route-query';
 import {webFeatures} from './features/registry';
+import {AssistantGuide} from './AssistantGuide';
 
 const groups=guideSections.flatMap(section=>section.groups);
 export function matchingGuideGroups(query:string):GuideGroup[]{
@@ -38,6 +39,7 @@ export function FeatureGuide({api,onPage}:{api:Api;onPage:(page:string)=>void}){
  return <DiscoveryProvider state={availability}><div className="feature-guide">
   <div className="guide-heading"><h1>{moteText('全部功能')}</h1><button className="text-button" onClick={back}><span aria-hidden="true">← </span>{moteText('返回')}</button></div>
   <label className="guide-search"><span aria-hidden="true">⌕</span><input aria-label={moteText('查找功能')} placeholder={moteText('想做什么？例如：修改记忆、日历、备份')} value={query} onChange={event=>{setQuery(event.target.value);visit.query=event.target.value;}}/></label>
+  <AssistantGuide/>
   <div className="guide-groups">{matched.map(group=><details key={group.id} className="guide-group" data-guide-group={group.id} open={searching||expanded.has(group.id)} onToggle={event=>{
    if(searching)return;
    const open=event.currentTarget.open;
