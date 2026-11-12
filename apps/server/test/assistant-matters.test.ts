@@ -173,6 +173,9 @@ test('typed commands reject model-injected state and keyword completion',async t
   assert.throws(()=>matters.command({type:'create',requestId:randomUUID(),goal:'Generated goal',scope:{kind:'all'},state:'completed'},authority),invalid);
   assert.throws(()=>matters.command({type:'create',requestId:randomUUID(),goal:'   ',scope:{kind:'all'}},authority),invalid);
   const created=matters.command({type:'create',requestId:randomUUID(),goal:'Generated goal',scope:{kind:'all'},evidenceIds:[a]},authority);
+  assert.throws(()=>matters.command({type:'edit',matterId:created.id,expectedRevision:1,goal:'Generated goal'},authority),
+    error=>error instanceof StoreError&&error.statusCode===400,'an edit that repeats every value is refused');
+  assert.equal(matters.get(created.id).revision,1,'a refused no-op edit writes nothing');
   assert.throws(()=>matters.command({type:'edit',matterId:created.id,expectedRevision:1},authority),invalid);
   assert.throws(()=>matters.command({type:'edit',matterId:created.id,expectedRevision:1,status:'completed'},authority),invalid);
   assert.throws(()=>matters.command({type:'complete',matterId:created.id,expectedRevision:1},authority),invalid);

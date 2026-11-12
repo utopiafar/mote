@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import {queryScopeSchema,type OperationState,type QueryScope} from '@mote/shared';
 import {z} from 'zod';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
@@ -267,6 +268,9 @@ export class AssistantMatters {
         ...(command.evidenceIds!==undefined?{evidenceIds:command.evidenceIds}:{}),
         ...(command.correction!==undefined?{correction:command.correction}:{})});
       if(command.scope!==undefined||command.taskIds!==undefined||command.evidenceIds!==undefined)this.checkLinks(payload,authority);
+      // A typed edit must change an actual value, not merely repeat one. This
+      // keeps no-op saves from consuming a revision and causing false conflicts.
+      if(isDeepStrictEqual(payload,current))throw new StoreError('Matter edit did not change any field');
       const at=this.now(),nextRevision=row.revision+1;
       const changed=this.store.db.prepare('UPDATE assistant_matters SET json=?,revision=?,updated_at=? WHERE id=? AND revision=?')
         .run(this.encode(payload),nextRevision,at,command.matterId,row.revision);
