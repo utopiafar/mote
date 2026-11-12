@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {fileCoverageSchema} from './file-view.js';
 import type {ExecutionEnvelope} from './execution.js';
 import {sourceIdSchema,sourceItemSchema} from './sources.js';
 
@@ -24,7 +25,7 @@ export const fileRevisionSchema=z.object({
   if(!v.item.deleted&&v.item.layer==='original'&&(!v.sha256||v.sizeBytes>FILE_MAX_BYTES))c.addIssue({code:'custom',message:'Original file requires a digest and must fit file limit'});
 });
 export type FileRevision=z.infer<typeof fileRevisionSchema>;
-export const documentLocationSchema=z.object({pageNumber:z.number().int().positive().optional(),sheetName:z.string().max(200).optional(),rowNumber:z.number().int().positive().optional(),offset:z.number().int().nonnegative(),length:z.number().int().nonnegative()}).strict();
+export const documentLocationSchema=z.object({pageNumber:z.number().int().positive().optional(),paragraphNumber:z.number().int().positive().optional(),endParagraphNumber:z.number().int().positive().optional(),sheetName:z.string().max(200).optional(),rowNumber:z.number().int().positive().optional(),columnNumber:z.number().int().positive().optional(),endColumnNumber:z.number().int().positive().optional(),offset:z.number().int().nonnegative(),length:z.number().int().nonnegative()}).strict().refine(value=>(value.endColumnNumber===undefined||value.columnNumber!==undefined&&value.endColumnNumber>=value.columnNumber)&&(value.endParagraphNumber===undefined||value.paragraphNumber!==undefined&&value.endParagraphNumber>=value.paragraphNumber),{message:'Coordinate ranges require ordered starting positions'});
 /** Pixel coordinates in the original image, not in an OCR tile. Geometry is
  * evidence for model interpretation, never an inferred speaker or UI role. */
 export const imageLocationSchema=z.object({
@@ -41,7 +42,7 @@ export const transcriptSegmentSchema=z.object({
 export const transcriptSchema=z.object({
   durationMs:z.number().finite().nonnegative(),
   segments:z.array(transcriptSegmentSchema).max(50000),
-  coverage:z.enum(['full','partial','none']).optional(),engine:z.string().max(200).optional(),uncorrected:z.literal(true).optional(),warnings:z.array(z.string().max(1000)).max(30).optional(),
+  coverage:z.enum(['full','partial','none']).optional(),extraction:fileCoverageSchema.optional(),engine:z.string().max(200).optional(),uncorrected:z.literal(true).optional(),warnings:z.array(z.string().max(1000)).max(30).optional(),
 }).strict().superRefine((v,c)=>{let last=0;for(const s of v.segments){if(s.endMs<s.startMs||s.endMs>v.durationMs+1000||s.startMs<last)c.addIssue({code:'custom',message:'Invalid transcript timeline'});last=s.startMs;
   // Native ASR can place a word outside its sentence while both remain within
   // the recording. Preserve that raw timing; alignment must use the sentence

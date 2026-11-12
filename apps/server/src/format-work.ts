@@ -28,7 +28,7 @@ export async function formatWork<K extends FormatTask['kind']>(task:Extract<Form
   const done=(error?:unknown,result?:Results[K])=>{if(settled)return;settled=true;deadline.removeEventListener('abort',abort);if(error){if(child.exitCode!==null||child.signalCode!==null||!child.pid){reject(error);}else{child.once('exit',()=>reject(error));child.kill('SIGKILL');}}else resolve(result!);};
   const abort=()=>done(deadline.reason);deadline.addEventListener('abort',abort,{once:true});if(deadline.aborted){abort();return;}
   child.once('error',error=>done(error));child.once('exit',()=>{if(!settled)done(new StoreError('Format worker interrupted',503));});
-  child.once('message',(message:any)=>message.ok?done(undefined,message.result):done(new StoreError(message.code==='manifest_invalid'&&typeof message.message==='string'?message.message.slice(0,2000):'Format decoding failed: '+String(message.code),message.status===409?409:message.status===413?413:422)));
+  child.once('message',(message:any)=>message.ok?done(undefined,message.result):done(new StoreError(message.code==='manifest_invalid'&&typeof message.message==='string'?message.message.slice(0,2000):'Format decoding failed: '+String(message.code),message.status===409?409:message.status===413?413:message.code==='decode_failed'?500:422)));
   child.send(temporary?{...task,temporary}:task,error=>{if(error)done(error);});
  });}finally{clearTimeout(timeout);signal?.removeEventListener('abort',abortParent);if(temporary)await rm(temporary,{force:true});if(admitted){active--;queue.shift()?.();}}
 }

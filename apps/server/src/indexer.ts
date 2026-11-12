@@ -23,9 +23,11 @@ export class Indexer {
   private current?:Promise<void>;
   private closing=false;
   private abort=new AbortController();
+  private readonly fileEmbeddingConfiguration=()=>({configured:this.configured,model:this.config.embeddingModel});
   readonly engine:ExecutionEngine;private owned:boolean;private unregister:(()=>Promise<void>)[]=[];private closePromise?:Promise<void>;private requests=new Set<Promise<unknown>>();
   constructor(private store:Store,private config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>,private diagnostics?:ServerDiagnostics,private files?:FileStore,private admission?:(input:{bytes:number;operationId?:string})=>{finish:(usage?:TokenUsage,failed?:boolean)=>void},private options:{executor?:ExecutionEngine;operationId?:()=>string|undefined;authorize?:<T>(evidenceId:string,signal:AbortSignal,task:(signal:AbortSignal)=>Promise<T>)=>Promise<T>;assertModel?:()=>void}={}) {
     this.engine=options.executor??new ExecutionEngine(store);this.owned=!options.executor;
+    if(files)files.embeddingConfiguration=this.fileEmbeddingConfiguration;
     for(const kind of ['capture','file'] as const)this.unregister.push(this.engine.register({kind:'embedding.'+kind,pool:'embedding',concurrency:()=>2,policy:EXECUTION_POLICIES.modelCall,timeoutMs:300000,
       validate:step=>this.valid(step),admit:()=>this.closing?new ExecutionFailure('blocked','indexer_closed'):!this.configured?new ExecutionFailure('blocked','embedding_not_configured'):undefined,
       execute:async(step,signal)=>{const combined=AbortSignal.any([signal,this.abort.signal]),task=(authorizedSignal:AbortSignal)=>withExecutionCancellation(authorizedSignal,async()=>{const text=this.inputText(step);return this.performEmbedding(text,45000,authorizedSignal,step.operationId);});return this.options.authorize?this.options.authorize(String(step.input.evidenceId),combined,task):task(combined);},
@@ -117,7 +119,7 @@ export class Indexer {
     const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('embedding.capture','embedding.file') AND state IN ('waiting','running') ORDER BY rowid LIMIT 200").all().map(row=>String(row.id));await this.engine.drain(ids);for(const id of ids)this.engine.project(id);
     const counts=this.store.indexCounts();this.diagnostics?.record('queue.snapshot',{pending:counts.pending,failed:counts.failed});
   }
-  close() {return this.closePromise??=(async()=>{this.closing=true;this.abort.abort();const results=await Promise.allSettled(this.unregister.splice(0).map(stop=>stop()));if(this.owned)await this.engine.close();await Promise.allSettled([this.current,...this.requests]);const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);if(errors.length)throw new AggregateError(errors,'Indexer disposal failed');})();}
+  close() {return this.closePromise??=(async()=>{this.closing=true;if(this.files?.embeddingConfiguration===this.fileEmbeddingConfiguration)this.files.embeddingConfiguration=undefined;this.abort.abort();const results=await Promise.allSettled(this.unregister.splice(0).map(stop=>stop()));if(this.owned)await this.engine.close();await Promise.allSettled([this.current,...this.requests]);const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);if(errors.length)throw new AggregateError(errors,'Indexer disposal failed');})();}
   async search(args:Range&{query?:string;signal?:AbortSignal}) {
     args.signal?.throwIfAborted();
     // A completed vector scan is not full-text semantic coverage. Preserve this
@@ -125,7 +127,7 @@ export class Indexer {
     const embeddingInput=this.configured?{maxUtf16CodeUnits:EMBEDDING_INPUT_CODE_UNITS,evidencePolicy:'prefix_per_capture_or_file_chunk',queryTruncated:(args.query?.length??0)>EMBEDDING_INPUT_CODE_UNITS,fullTextFallback:'lexical'}:undefined;
     const readLexical=()=>[this.store.search(args),this.files?.search(args)??[]];
     const lexical=readLexical();
-    let channels=lexical,degraded=false;let vectorCoverage:unknown,reason:string|undefined;
+    let channels=lexical,degraded=Boolean(args.query&&!this.configured);let vectorCoverage:unknown,reason:string|undefined=degraded?'embedding_not_configured':undefined;
     if(this.configured&&args.query&&args.source!=='activity'&&args.source!=='media'&&args.collection!=='activity'){
       const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(new Error('vector_timeout')),1200);deadline.unref();
       const signal=AbortSignal.any([controller.signal,this.abort.signal,...(args.signal?[args.signal]:[])]);

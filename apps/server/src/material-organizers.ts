@@ -3,7 +3,7 @@ import {codingProjectContext} from './coding-project.js';
 import {uiPageCaptureSource} from './capture-memory-source.js';
 import {RANGE_SELECTION_DAILY_RECIPE} from './memory-range-selection-policy.js';
 import {createHash} from 'node:crypto';
-import {sourceContentTime,imageLocationSchema,type CaptureRecord,type Transcript} from '@mote/shared';
+import {sourceContentTime,imageLocationSchema,documentLocationSchema,type CaptureRecord,type Transcript} from '@mote/shared';
 import {materialId,MaterialStore,type MaterialDraft,type MaterialEvidenceContext} from './materials.js';
 import {ArchivedFileStore} from './archived-files.js';
 import type {Store} from './store.js';
@@ -27,6 +27,7 @@ export interface MaterialOrganizerFile {
   attachments:{id:string;hash:string;mimeType:string;relativePath?:string}[];
   chunks:{id:string;text:string;startMs:number|null;endMs:number|null;kind:string;speaker?:string;
     imageLocation?:Transcript['segments'][number]['imageLocation'];
+    documentLocation?:Transcript['segments'][number]['documentLocation'];
     speakerAttribution?:ReturnType<typeof readFileSpeakerAttributions>[string];artifact:{complete?:boolean;coverage?:string}}[];
   job?:{state:string;error:string|null};
   attachedFiles?:{fileId:string;record:CaptureRecord;file:MaterialOrganizerFile}[];
@@ -198,10 +199,15 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
     // A transcript artifact contains the complete segment array. Project its
     // coverage once instead of copying that array into every segment, which
     // would make long recordings quadratic in memory and fingerprint size.
+    const coverageOf=(artifact:any)=>{
+      const transcript=artifact.transcript,declared=transcript?.extraction?.status;
+      const coverage=declared?declared==='ready'?'full':transcript.segments?.length?'partial':'none':artifact.coverage??transcript?.coverage;
+      return {complete:coverage==='partial'||coverage==='none'?false:artifact.complete,coverage};
+    };
     const artifactCoverage=new Map<string,{complete?:boolean;coverage?:string}>();
     for(const row of chunkRows)if(!artifactCoverage.has(row.artifact_id)){
       const artifact=JSON.parse((store.db.prepare('SELECT json FROM file_artifacts WHERE id=?').get(row.artifact_id) as {json:string}).json) as {complete?:boolean;coverage?:string};
-      artifactCoverage.set(row.artifact_id,{complete:artifact.complete,coverage:artifact.coverage});
+      artifactCoverage.set(row.artifact_id,coverageOf(artifact));
     }
     const job=store.db.prepare('SELECT state,error FROM file_jobs WHERE capture_id=?').get(captureId) as {state:string;error:string|null}|undefined;
     const attachedFiles=includeAttached?fileAttachmentChildren(store,captureId).flatMap(({record,fileId})=>{
@@ -218,7 +224,7 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
     }
     const extraction=store.db.prepare("SELECT json FROM file_artifacts WHERE capture_id=? AND current=1 AND kind IN ('text','image-text','transcript','dialogue','corrected-dialogue') ORDER BY rowid DESC LIMIT 1").get(captureId);
     const extracted=extraction?JSON.parse(String(extraction.json)):undefined;
-    return {image:imageMaterialProjection(store,captureId),extraction:extracted?{complete:extracted.complete,coverage:extracted.coverage}:undefined,processingRequired:!!original,objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
+    return {image:imageMaterialProjection(store,captureId),extraction:extracted?coverageOf(extracted):undefined,processingRequired:!!original,objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
       attachments:attachmentRows.map(row=>{
         const metadata=JSON.parse(row.json) as {mimeType?:string;relativePath?:string};
         return {id:row.id,hash:row.hash,mimeType:metadata.mimeType??'application/octet-stream',...(metadata.relativePath?{relativePath:metadata.relativePath}:{})};
@@ -229,6 +235,7 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
         return {id:row.id,text:row.text,startMs:row.start_ms,endMs:row.end_ms,kind:row.kind,
           ...(speaker?{speaker}:{}),...(speakerAttribution?{speakerAttribution}:{}),
           ...(metadata.imageLocation?{imageLocation:imageLocationSchema.parse(metadata.imageLocation)}:{}),
+          ...(metadata.documentLocation?{documentLocation:documentLocationSchema.parse(metadata.documentLocation)}:{}),
           artifact:artifactCoverage.get(row.artifact_id)!};
       }),job};
   };
@@ -347,7 +354,7 @@ const sourceItem:MaterialOrganizer={
       // The chunk writer preserves a real media timeline across corrections.
       // A corrected-dialogue container can also contain untimed document text.
       body.text(`chunk:${c.id}`,text,r.id,structured?'speech-text':c.startMs===null?'plain':'transcript',
-        {chunkId:c.id,...(c.imageLocation?{imageLocation:c.imageLocation}:{}),...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],
+        {chunkId:c.id,...(c.imageLocation?{imageLocation:c.imageLocation}:{}),...(c.documentLocation?{documentLocation:c.documentLocation}:{}),...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],
         evidenceContext(r,c.startMs===null?undefined:'transcript'));
     }
     const extractedBlocks=body.blocks.filter(block=>!sourceBlocks.includes(block.id)).map(block=>block.id);
@@ -363,7 +370,7 @@ const sourceItem:MaterialOrganizer={
         body.text(`attachment:${fileId}:${c.id}`,JSON.stringify({attachment:{fileId,captureId:attached.id,parentCaptureId:r.id},
           ...(c.speaker?{speaker:c.speaker}:{}),...(c.speakerAttribution?{speakerAttribution:c.speakerAttribution}:{}),
           ...(c.imageLocation?{imageLocation:c.imageLocation}:{}),text:c.text}),[r.id,attached.id],'json',
-          {fileId,captureId:attached.id,chunkId:c.id,...(c.imageLocation?{imageLocation:c.imageLocation}:{}),...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],evidenceContext(attached,c.startMs===null?'other':'transcript'));
+          {fileId,captureId:attached.id,chunkId:c.id,...(c.imageLocation?{imageLocation:c.imageLocation}:{}),...(c.documentLocation?{documentLocation:c.documentLocation}:{}),...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],evidenceContext(attached,c.startMs===null?'other':'transcript'));
         blockIds.push(...body.blocks.slice(before).map(b=>b.id));
       }
       const waiting=['waiting','running'].includes(processed.job?.state??'waiting'),failed=['blocked','failed'].includes(processed.job?.state??'');
