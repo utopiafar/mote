@@ -67,7 +67,8 @@ test('incomplete history fails closed and queued derived dialogue rechecks sourc
 test('opening-memory originals enter saved answer lineage and fence even when the model emits zero citations',async t=>{
  const f=await fixture(t);
  const original=f.node.memories.readEvidence([f.chunk])[0];
- f.node.memories.extract(fixtureMemoryResult(f.node.memories,{...reply(JSON.stringify({memories:[{title:'Generated memory',statement:`Generated decision [${f.chunk}]`,uncertainty:'Generated fixture',evidenceIds:[f.chunk]}]})),citations:[{id:f.chunk,capturedAt:original.capturedAt,appName:original.appName,excerpt:f.text}]}),'fixture');
+ const memory=f.node.memories.extract(fixtureMemoryResult(f.node.memories,{...reply(JSON.stringify({memories:[{title:'Generated memory',statement:`Generated decision [${f.chunk}]`,uncertainty:'Generated fixture',evidenceIds:[f.chunk]}]})),citations:[{id:f.chunk,capturedAt:original.capturedAt,appName:original.appName,excerpt:f.text}]}),'fixture').items[0]!;
+ f.node.memories.publish(memory.id);
  const first=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated decision'}});assert.equal(first.statusCode,200,first.body);
  assert.ok(f.calls[0].openingMemories?.length);assert.equal(first.json().citations.length,0);assert.equal(first.json().evidenceDependencies.complete,true);assert.ok(first.json().evidenceDependencies.ids.includes(f.parent.id));
  const saved=f.conversations.get(first.json().conversationId);assert.ok(saved.turns[0].result!.evidenceDependencies?.ids.includes(f.chunk));
@@ -87,7 +88,8 @@ test('opening-memory originals enter saved answer lineage and fence even when th
 
 test('background source invalidation erases replay context without recreating a failed question from it',async t=>{
  const f=await fixture(t),original=f.node.memories.readEvidence([f.chunk])[0];
- f.node.memories.extract(fixtureMemoryResult(f.node.memories,{...reply(JSON.stringify({memories:[{title:'Generated memory',statement:`Generated decision [${f.chunk}]`,uncertainty:'Generated fixture',evidenceIds:[f.chunk]}]})),citations:[{id:f.chunk,capturedAt:original.capturedAt,appName:original.appName,excerpt:f.text}]}),'fixture');
+ const memory=f.node.memories.extract(fixtureMemoryResult(f.node.memories,{...reply(JSON.stringify({memories:[{title:'Generated memory',statement:`Generated decision [${f.chunk}]`,uncertainty:'Generated fixture',evidenceIds:[f.chunk]}]})),citations:[{id:f.chunk,capturedAt:original.capturedAt,appName:original.appName,excerpt:f.text}]}),'fixture').items[0]!;
+ f.node.memories.publish(memory.id);
  f.respond=async()=>{f.node.store.delete(f.parent.id);return reply('Generated background answer that must stay erased');};
  const id=randomUUID(),accepted=await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated background removal'}}});assert.equal(accepted.statusCode,202,accepted.body);
  let run=f.node.queryRuns.get(id);for(let attempt=0;attempt<100&&run.status==='running';attempt++){await new Promise(resolve=>setImmediate(resolve));run=f.node.queryRuns.get(id);}
