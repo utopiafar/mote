@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import {Conversations} from '../src/conversations.js';
-import {Store} from '../src/store.js';
+import {Store,StoreError} from '../src/store.js';
 import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
@@ -144,6 +144,66 @@ test('closing interrupts and drains an interactive query without committing a du
   running=await buildApp(config(dir),{agent:agent(async()=>answer())});
   const history=await running.app.inject({url:'/api/conversations',headers});
   assert.equal(history.statusCode,200);assert.deepEqual(history.json().items,[]);assert.equal(calls,1);
+});
+
+test('accepted messages persist before execution and retries stay idempotent across restart',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-conversation-admission-'));
+  let store=new Store(dir),conversations=new Conversations(store);
+  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+  const scope={after:'2026-09-01T00:00:00Z',before:'2026-09-02T00:00:00Z',deviceId:'generated-phone',timeZone:'Asia/Shanghai',evidenceIds:[randomUUID(),randomUUID()]};
+  const first=conversations.receive({question:'Generated accepted question',clientRequestId:'generated-request-1',...scope});
+  assert.equal(first.status,'accepted');assert.equal(first.seq,0);assert.equal(first.version,1);assert.deepEqual(first.scope,scope);
+  const retried=conversations.receive({question:'Generated accepted question',clientRequestId:'generated-request-1',...scope});
+  assert.equal(retried.id,first.id);assert.equal(retried.conversationId,first.conversationId);assert.equal(conversations.pending().length,1);
+  assert.throws(()=>conversations.receive({question:'Generated different question',clientRequestId:'generated-request-1',...scope}),/different message/);
+  const queued=conversations.queue(first.id,{expectedVersion:1});assert.equal(queued.status,'queued');assert.equal(queued.version,2);
+  const runId=randomUUID(),attached=conversations.attachRun(first.id,runId,{expectedVersion:2});assert.equal(attached.runId,runId);assert.equal(attached.version,3);
+  assert.throws(()=>conversations.complete(first.id,answer('Generated stale version'),{expectedVersion:2}),/changed/);
+  store.close();store=new Store(dir);conversations=new Conversations(store);
+  const [pending]=conversations.pending();assert.equal(pending.id,first.id);assert.equal(pending.conversationId,first.conversationId);assert.equal(pending.seq,0);assert.equal(pending.clientRequestId,'generated-request-1');assert.equal(pending.runId,runId);assert.deepEqual(pending.scope,scope);
+  assert.equal(conversations.get(first.conversationId).turns.length,0,'accepted input is not presented as a failed history answer');
+  const completed=conversations.complete(first.id,answer('Generated accepted answer'),{expectedVersion:3});assert.equal(completed.status,'completed');assert.equal(completed.result!.answer,'Generated accepted answer');
+  assert.equal(conversations.pending().length,0);
+  const later=conversations.receive({conversationId:first.conversationId,question:'Generated failed accepted question',clientRequestId:'generated-request-2',...scope});
+  assert.equal(conversations.fail(later.id,{code:'timeout',message:'Generated failure'},{expectedVersion:1}).status,'failed');
+  assert.equal(conversations.pending().length,0);
+  const afterRetry=conversations.receive({question:'Generated accepted question',clientRequestId:'generated-request-1',...scope});
+  assert.equal(afterRetry.id,first.id);assert.equal(afterRetry.status,'completed');assert.equal(afterRetry.result!.answer,'Generated accepted answer');
+  const saved=conversations.get(first.conversationId);assert.equal(saved.turnCount,2);assert.equal(saved.turns.length,2);assert.equal(saved.turns[0].question,'Generated accepted question');assert.equal(saved.turns[0].seq,0);assert.equal(saved.turns[1].error!.code,'timeout');assert.deepEqual(saved.scope,scope);
+  assert.equal(conversations.list().items[0].id,first.conversationId);
+});
+
+test('conversation sequence stays unique across two writers and quota failure rolls back admission',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-conversation-seq-'));
+  const firstStore=new Store(dir),secondStore=new Store(dir),first=new Conversations(firstStore),second=new Conversations(secondStore);
+  t.after(()=>{firstStore.close();secondStore.close();rmSync(dir,{recursive:true,force:true});});
+  const conversationId=first.receive({question:'Generated first message',clientRequestId:'generated-seq-0'}).conversationId;
+  const [left,right]=await Promise.all([
+    Promise.resolve().then(()=>first.receive({conversationId,question:'Generated left',clientRequestId:'generated-seq-left'})),
+    Promise.resolve().then(()=>second.receive({conversationId,question:'Generated right',clientRequestId:'generated-seq-right'})),
+  ]);
+  assert.deepEqual([left.seq,right.seq].sort((a,b)=>a-b),[1,2]);
+  const pending=first.pending({conversationId});assert.deepEqual(pending.map(item=>item.seq),[0,1,2]);assert.equal(new Set(pending.map(item=>item.id)).size,3);
+  const before=String(firstStore.db.prepare('SELECT json FROM conversations WHERE id=?').get(conversationId)!.json);
+  t.mock.method(firstStore,'reserveMetadata',()=>{throw new StoreError('Vault storage limit reached',507);});
+  assert.throws(()=>first.receive({conversationId,question:'Generated quota failure',clientRequestId:'generated-quota'}),/Vault storage limit reached/);
+  assert.equal(String(firstStore.db.prepare('SELECT json FROM conversations WHERE id=?').get(conversationId)!.json),before,'failed admission leaves conversation quota metadata untouched');
+  assert.deepEqual(first.pending({conversationId}).map(item=>item.seq),[0,1,2]);
+  assert.equal(Number(firstStore.db.prepare('SELECT count(*) n FROM conversation_turns WHERE conversation_id=?').get(conversationId)!.n),3);
+  assert.throws(()=>first.receive({question:'Generated quota conversation',clientRequestId:'generated-quota-new'}),/Vault storage limit reached/);
+  assert.equal(firstStore.db.prepare('SELECT count(*) n FROM conversations').get()!.n,1,'a failed first admission does not leave an empty conversation');
+});
+
+test('conversation history appends past the retired 200-turn cap and pages every short record',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-conversation-long-')),store=new Store(dir),conversations=new Conversations(store);
+  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+  let id:string|undefined;
+  for(let index=0;index<205;index++)id=conversations.append(id?conversations.get(id):undefined,{question:`Generated short ${index}`},answer('Generated short answer')).conversationId;
+  const saved=conversations.get(id!);assert.equal(saved.turnCount,205);assert.equal(saved.turns.length,205);
+  const seen:string[]=[];let cursor:string|undefined;
+  do{const page=conversations.page(id!,{limit:50,cursor});seen.push(...page.turns.map(turn=>turn.question));cursor=page.nextCursor??undefined;}while(cursor);
+  assert.equal(seen.length,205);assert.equal(new Set(seen).size,205);assert.equal(seen[0],'Generated short 155');assert.equal(seen.includes('Generated short 0'),true);assert.equal(seen.at(-1),'Generated short 4');
+  const latest=conversations.page(id!,{limit:50});assert.equal(latest.turns.length,50);assert.equal(latest.turns[0].question,'Generated short 155');assert.equal(latest.turns.at(-1)!.question,'Generated short 204');
 });
 
 test('conversation listing paginates deterministically and model context is bounded while full turns remain stored',t=>{

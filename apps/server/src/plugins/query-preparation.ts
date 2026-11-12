@@ -54,7 +54,6 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     }
     const {conversationId,question,modelProfileId,modelOverride,evidenceIds:selectedIds,anchorEvidenceIds:anchorIds,anchorMaterialRef,attachmentIds=[],...selected}=queryWithAttachmentsSchema.parse(body);
     const previous=conversationId?conversations.get(conversationId):undefined;
-    if(previous&&previous.turnCount>=200)throw new StoreError('Conversation has reached its turn limit; start a new conversation',409);
     const scope:QueryScope={};for(const key of ['after','before','deviceId','timeZone'] as const){const value=key==='timeZone'&&selected.timeZone===undefined?previous?.scope.timeZone:selected[key];if(value!==undefined&&value!==null)scope[key]=value;}
     insightSchema.parse(scope);
     if(selectedIds)scope.evidenceIds=selectedIds;
