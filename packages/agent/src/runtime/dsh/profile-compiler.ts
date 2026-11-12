@@ -102,7 +102,7 @@ export async function compileNativeDshProfile(profile: ResolvedRuntimeProfile<Ru
 export function createRuntimePatch(
   pluginPath: string, model: string, baseUrl?: string,
   reasoningEffort?: AgentOptions['reasoningEffort'], maxTokens = DEFAULT_MODEL_MAX_TOKENS,
-  connection: Pick<AgentOptions, 'protocol' | 'provider' | 'requestTimeoutMs'> = {}, systemPrompt = SYSTEM_PROMPT,
+  connection: Pick<AgentOptions, 'protocol' | 'provider' | 'requestTimeoutMs' | 'contextWindow'> = {}, systemPrompt = SYSTEM_PROMPT,
   native: readonly NativeDshAssemblyEntry[] = [],
 ): string {
   validateModelOptions({...connection, model, baseUrl, reasoningEffort, maxTokens});

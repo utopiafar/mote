@@ -37,6 +37,8 @@ export interface AgentOptions {
   agentTimeoutMs?: number | null;
   maxToolCalls?: number;
   maxTokens?: number;
+  /** Total model context window in tokens. Separate from maxTokens (output limit). */
+  contextWindow?: number;
   reasoningEffort?: ModelReasoningEffort;
   serviceTier?: CodexServiceTier;
 }

@@ -24,7 +24,37 @@ const forbiddenBody = new Set([
   'dshsessionlog', 'dshpluginpackages',
 ]);
 const normalizedKey = (key: string) => key.toLowerCase().replace(/[_-]/g, '');
-type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'serviceTier' | 'maxTokens' | 'headers' | 'extraBody' | 'requestTimeoutMs'>;
+type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'serviceTier' | 'maxTokens' | 'contextWindow' | 'headers' | 'extraBody' | 'requestTimeoutMs'>;
+
+/** Minimum explicit, labeled fallback when no owner/provider context capacity
+ * is available. This is not a claim about any model and must not be presented
+ * as exact capacity; 128k is deliberately not assumed. The resolved fallback
+ * grows when an explicit output limit would otherwise leave no input room. */
+export const CONSERVATIVE_CONTEXT_WINDOW = 98_304;
+/** The fallback must still leave room for input above an explicitly requested
+ * output limit; it never turns maxTokens into the context window. */
+const CONSERVATIVE_INPUT_RESERVE = 8_192;
+
+export interface ModelCapabilities {
+  /** Total input-plus-output window, separate from the output limit. */
+  contextWindow: number;
+  /** Output cap for one request, never used as the input window. */
+  maxOutputTokens: number;
+  /** `conservative-fallback` means the owner should supply real capacity. */
+  contextWindowSource: 'configured' | 'conservative-fallback';
+}
+
+/** Resolve capacity separately from maxTokens. Explicit configuration wins;
+ * an unrecognized model gets the named conservative fallback instead of a
+ * silent 128k assumption. */
+export function resolveModelCapabilities(options: Pick<ConnectionOptions, 'contextWindow' | 'maxTokens'>): ModelCapabilities {
+  const maxOutputTokens = options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS;
+  if (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 128_000) throw new AgentConfigurationError('Model output limit must be between 1 and 128000 tokens.');
+  if (options.contextWindow !== undefined && (!Number.isInteger(options.contextWindow) || options.contextWindow < 1)) throw new AgentConfigurationError('Model context window must be a positive integer.');
+  const contextWindow = options.contextWindow ?? Math.max(CONSERVATIVE_CONTEXT_WINDOW, maxOutputTokens + CONSERVATIVE_INPUT_RESERVE);
+  if (maxOutputTokens >= contextWindow) throw new AgentConfigurationError('Model output limit must be smaller than its context window.');
+  return {contextWindow, maxOutputTokens, contextWindowSource: options.contextWindow === undefined ? 'conservative-fallback' : 'configured'};
+}
 
 /** Keep errors value-free: advanced fields can contain credentials. */
 export function validateModelOptions(options: ConnectionOptions): void {
@@ -34,6 +64,8 @@ export function validateModelOptions(options: ConnectionOptions): void {
   if (options.reasoningEffort !== undefined && !MODEL_REASONING_EFFORTS.includes(options.reasoningEffort)) throw new AgentConfigurationError('Unsupported reasoning effort.');
   if (options.protocol !== 'codex-app-server' && options.reasoningEffort !== undefined && ['minimal', 'medium', 'xhigh', 'ultra'].includes(options.reasoningEffort)) throw new AgentConfigurationError('This reasoning effort requires Codex App Server.');
   if (options.maxTokens !== undefined && (!Number.isInteger(options.maxTokens) || options.maxTokens < 1 || options.maxTokens > 128_000)) throw new AgentConfigurationError('Model output limit must be between 1 and 128000 tokens.');
+  if (options.contextWindow !== undefined && (!Number.isInteger(options.contextWindow) || options.contextWindow < 1)) throw new AgentConfigurationError('Model context window must be a positive integer.');
+  if (options.protocol !== 'codex-app-server') resolveModelCapabilities({contextWindow: options.contextWindow, maxTokens: options.maxTokens});
   const requestTimeoutMs = options.requestTimeoutMs;
   if (requestTimeoutMs !== undefined && requestTimeoutMs !== null && (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 5_000 || requestTimeoutMs > 600_000)) throw new AgentConfigurationError('Model request timeout must be between 5000 and 600000 milliseconds.');
   if (options.baseUrl) {
@@ -87,9 +119,10 @@ export function harnessPrivacyEntries(): unknown[] {
 export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
   if(options.protocol==='codex-app-server')throw new AgentConfigurationError('Codex requires the App Server runtime.');
   const {protocol, baseUrl, effort, route} = modelConnection(options);
-  const maxTokens = options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS;
+  const capability = resolveModelCapabilities(options);
+  const maxTokens = capability.maxOutputTokens;
   const requestTimeoutMs = options.requestTimeoutMs;
-  const model = {id: options.model!, name: options.model!, contextWindow: 128_000, maxTokens};
+  const model = {id: options.model!, name: options.model!, contextWindow: capability.contextWindow, maxTokens};
   if (protocol === 'deepseek') return [{id: 'llm-deepseek', config: {
     ...(effort === 'auto' ? {thinking: 'disabled'} : {thinking: effort === 'off' ? 'disabled' : 'enabled', reasoningEffort: effort}),
     maxTokens, streamIdleTimeoutMs: Math.max(30_000, requestTimeoutMs ?? 30_000), baseURL: baseUrl,
