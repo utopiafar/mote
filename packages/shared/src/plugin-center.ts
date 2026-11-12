@@ -1,6 +1,13 @@
+import {z} from 'zod';
+
 /** Owner control-plane views. Captured content and query tools never authorize
  * these commands. Runtime health is separate from installation and intent. */
 export type PluginAction='configure'|'check'|'enable'|'disable'|'uninstall';
+/** The existing instance command surface; configure is a dialog and uninstall
+ * belongs to the package. A command declaration is not an execution grant. */
+export const pluginInstanceActionSchema=z.enum(['check','enable','disable']);
+export type PluginInstanceAction=z.infer<typeof pluginInstanceActionSchema>;
+export const pluginInstanceCommandSchema=z.object({id:pluginInstanceActionSchema,apiVersion:z.literal('1')}).strict();
 export type CapabilityState='verified'|'unsupported'|'unknown';
 export type PluginCapability={id:string;state:CapabilityState;reason?:string};
 export type PluginSource={repository:string;tag:string;commit:string;digest:string};
