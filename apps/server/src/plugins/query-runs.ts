@@ -7,7 +7,7 @@ import {formatEvidenceRef} from '@mote/shared';
 import {DelegationRuntime,type DelegationWork} from '../delegation-runtime.js';
 import {DelegatedQueryRuns} from '../delegated-query-runs.js';
 import type {RunDeadline} from '../run-execution.js';
-import {StoreError} from '../store.js';
+import {StoreError,sha256} from '../store.js';
 import {ExecutionFailure,type ExecutionEngine} from '../execution-engine.js';
 import type {ExecutionObservability} from '../execution-observability.js';
 import type {ExecutionSettings} from '../execution-settings.js';
@@ -26,13 +26,16 @@ import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelConfiguration} from '../model-configuration.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
-import {queryWithAttachmentsSchema} from '../query-request.js';
+import {parseQueuedQuery} from '../query-request.js';
+import {ConversationQueue,conversationQueryInput} from '../conversation-queue.js';
 import type {QueryScope} from '../query-scope.js';
 import {assertSourceContextDependencies} from '../source-context-lineage.js';
 import {safeError} from '../diagnostics.js';
 import type {QueryRuntime} from './query-runtime.js';
 import {moteText} from '../i18n.js';
 import type {UsageLedger} from '../usage.js';
+import type {ModelConnection} from '../background-model-authorization.js';
+import {fileAttachmentAvailable} from '../file-attachments.js';
 
 /** C27 owns the durable delegation journal and the replayable Ask receipts
  * that the admitted query runtime prepares and commits. */
@@ -56,7 +59,7 @@ export interface QueryRunDependencies {
   readonly sourceContexts:SourceContextStore;
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
   readonly files:FileStore;
-  readonly conversations:Pick<ConversationRepository,'get'|'append'|'appendFailure'|'context'|'historyContext'|'retiredSelection'>;
+  readonly conversations:ConversationRepository;
   readonly working:Pick<WorkingMemory,'prepare'>;
   readonly lifecycleSettings:()=>LifecycleSettings;
   readonly archiveReader:ContextReader;
@@ -67,16 +70,18 @@ export interface QueryRunDependencies {
   readonly queryRuntime:()=>QueryRuntime;
   readonly semanticContextTime?:()=>string;
   readonly usageLedger:UsageLedger;
-  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'> & {readonly control:Pick<BackgroundModelAuthorization,'workState'>};
+  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'> & {readonly control:Pick<BackgroundModelAuthorization,'workState'|'manual'|'run'>};
+  readonly availableModelConnections:()=>ModelConnection[];
 }
 
-interface Generation {readonly runtime:DelegationRuntime;readonly runs:DelegatedQueryRuns}
+interface Generation {readonly runtime:DelegationRuntime;readonly runs:DelegatedQueryRuns;readonly queue:ConversationQueue}
 
 export interface QueryRunsPlatform extends Omit<PluginLifecycle,'start'> {
   /** Stable facade; a later activation services the same routes and port. */
   readonly port:QueryRunsPort;
   readonly delegation:DelegationRuntime;
   readonly queryRuns:DelegatedQueryRuns;
+  readonly conversationQueue:ConversationQueue;
   start():void|Promise<void>;
   quiesce(reason?:StopReason):void;
   stop(reason?:StopReason):Promise<void>;
@@ -118,13 +123,26 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
   };
   const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,archiveReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
     query:input=>queryRuntime.queryAgent(input,'query','conversations')});
+  const assertMessage=(id:string,body:unknown)=>{
+    const receipt=store.db.prepare("SELECT request_hash,json_extract(json,'$.turnId') turnId FROM query_runs WHERE id=?").get(id);
+    if(!receipt?.turnId)return;
+    const message=conversations.message(String(receipt.turnId)),request=parseQueuedQuery(body);
+    if(message.runId!==id||message.status!=='running'||message.conversationId!==request.conversationId||message.question.trim()!==request.question||receipt.request_hash!==sha256(JSON.stringify(message))||JSON.stringify(request)!==JSON.stringify(parseQueuedQuery(conversationQueryInput(dependencies,message))))throw new StoreError('Conversation message or scope changed during this answer',409);
+    return message;
+  };
   return {
     contextTime:()=>freezeSemanticContextTime(semanticContextTime),
+    initialReceipt:(id:string)=>{const message=conversations.messageForRun(id);return message?{conversationId:message.conversationId,turnId:message.id}:undefined;},
+    requestIdentity:(id:string,input:unknown)=>{
+      const message=conversations.messageForRun(id);
+      if(message&&JSON.stringify(parseQueuedQuery(input))!==JSON.stringify(parseQueuedQuery(conversationQueryInput(dependencies,message))))throw new StoreError('Query input does not match the accepted message',409);
+      return message;
+    },
     resolveInput:(raw:unknown)=>{
-      const input=queryWithAttachmentsSchema.parse(raw);
+      const input=parseQueuedQuery(raw);
       const previous=input.conversationId?conversations.get(input.conversationId).scope:undefined;
       // Freeze resolved selection in the accepted run, before asynchronous preparation.
-      const selected=input.evidenceIds?{...input,anchorEvidenceIds:null,anchorMaterialRef:null}:
+      const selected=input.evidenceIds?{...input}:
         input.anchorEvidenceIds?{...input,evidenceIds:null,anchorMaterialRef:null}:
         input.anchorMaterialRef?{...input,evidenceIds:null,anchorEvidenceIds:null}:
         {...input,...(input.evidenceIds===undefined&&previous?.evidenceIds?{evidenceIds:[...previous.evidenceIds]}:{}),...(input.anchorEvidenceIds===undefined&&previous?.anchorEvidenceIds?{anchorEvidenceIds:[...previous.anchorEvidenceIds]}:{}),...(input.anchorMaterialRef===undefined&&previous?.anchorMaterialRef?{anchorMaterialRef:previous.anchorMaterialRef}:{})};
@@ -133,23 +151,44 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       }))throw Object.assign(new StoreError(moteText('参考原件暂不可用，请清除参考后继续。'),409),{code:'context_evidence_restricted'});
       return selected;
     },
-    prepare:prepareDelegatedQuery.prepare,
+    prepare:(body:unknown,work:DelegationWork,signal:AbortSignal,onProgress:QueryInput['onProgress'])=>{
+      assertMessage(work.id.slice('query:'.length),body);
+      return prepareDelegatedQuery.prepare(body,work,signal,onProgress);
+    },
     query:(input:QueryInput)=>queryRuntime.queryAgent(input,'query','conversations'),
     operationUsage:(operationId:string,createdAt:string,finishedAt:string)=>usageLedger.operation(operationId,createdAt,finishedAt),
     pinnedConfigurationCurrent,
     assertModelWork,
     commit:(body:unknown,result:QueryResult,work:DelegationWork)=>{
-      const {conversationId,question,attachmentIds=[]}=queryWithAttachmentsSchema.parse(body),saved=runtime.journal.payload<SavedQuery>(work.id),prepared=saved.prepared!;
+      const {conversationId,question,attachmentIds=[],evidenceIds}=parseQueuedQuery(body),saved=runtime.journal.payload<SavedQuery>(work.id),prepared=saved.prepared!;
       assertModelEvidence(prepared);
       assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);
+      for(const image of prepared.directImages??[]){
+        const detail=files.detail(image.id),version=files.version(image.id);
+        if(!detail.hasOriginal||version.object_hash!==image.hash||detail.item.mimeType!==image.mimeType||detail.sizeBytes!==image.sizeBytes||!store.isCurrentEvidence(image.id)||!fileAttachmentAvailable(store,image.id)||!evidenceReader.contextDependenciesAllowed([image.id]))throw new StoreError('Query attachment is no longer available',409);
+      }
       runtime.recordEvidence(work.id,[...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
+      const message=assertMessage(work.id.slice('query:'.length),body);
+      if(message){
+        if(evidenceIds?.length===0&&(result.citations.length||(result.evidenceDependencies?.ids.length??0)>0||result.evidenceDependencies?.complete===false||(result.sourceContextDependencies?.length??0)>0))throw new StoreError('Query result is outside the empty selection',409);
+        const stored=evidenceIds?.length===0?{...result,evidenceDependencies:{version:1 as const,complete:true,ids:[]}}:result;
+        conversations.complete(message.id,stored,{expectedVersion:message.version});
+        return {conversationId:message.conversationId,turnId:message.id};
+      }
+      if(store.db.prepare("SELECT json_extract(json,'$.turnId') turnId FROM query_runs WHERE id=?").get(work.id.slice('query:'.length))?.turnId)throw new StoreError('Conversation message is no longer available',409);
       const previous=conversationId?conversations.get(conversationId):undefined,scope:QueryScope={};for(const key of ['after','before','deviceId','timeZone','evidenceIds','anchorEvidenceIds','anchorMaterialRef'] as const)if(prepared[key]!==undefined)Object.assign(scope,{[key]:prepared[key]});
       if(prepared.historicalSelection)Object.assign(scope,prepared.historicalSelection);
       return conversations.append(previous,{question,...scope,attachments:prepared.directImages?.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result);
     },
-    failure:(body:unknown,error:unknown)=>{
-      const {conversationId,question,evidenceIds,anchorEvidenceIds,anchorMaterialRef,...selected}=queryWithAttachmentsSchema.parse(body),scope:QueryScope={...(evidenceIds?{evidenceIds}:{}),...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(anchorMaterialRef?{anchorMaterialRef}:{})};for(const key of ['after','before','deviceId','timeZone'] as const)if(selected[key]!==undefined&&selected[key]!==null)scope[key]=selected[key]!;
-      const failure=safeError(error);return conversations.appendFailure(conversationId?conversations.get(conversationId):undefined,{question,...scope},{code:failure.category,message:failure.message});
+    failure:(body:unknown,error:unknown,work:DelegationWork)=>{
+      const {conversationId,question,evidenceIds,anchorEvidenceIds,anchorMaterialRef,...selected}=parseQueuedQuery(body),scope:QueryScope={...(evidenceIds?{evidenceIds}:{}),...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(anchorMaterialRef?{anchorMaterialRef}:{})};for(const key of ['after','before','deviceId','timeZone'] as const)if(selected[key]!==undefined&&selected[key]!==null)scope[key]=selected[key]!;
+      const failure=safeError(error),message=assertMessage(work.id.slice('query:'.length),body);
+      if(message){
+        conversations.fail(message.id,{code:failure.category,message:failure.message},{expectedVersion:message.version});
+        return {conversationId:message.conversationId,turnId:message.id};
+      }
+      if(store.db.prepare("SELECT json_extract(json,'$.turnId') turnId FROM query_runs WHERE id=?").get(work.id.slice('query:'.length))?.turnId)throw new StoreError('Conversation message is no longer available',409);
+      return conversations.appendFailure(conversationId?conversations.get(conversationId):undefined,{question,...scope},{code:failure.category,message:failure.message});
     },
   };
 }
@@ -170,7 +209,7 @@ export function createQueryRunsPlatform(dependencies:QueryRunDependencies):Query
   };
   const open=async():Promise<Generation>=>{
     const runtime=new DelegationRuntime(dependencies.store,dependencies.executor,delegationOptions(dependencies));
-    try{return {runtime,runs:new DelegatedQueryRuns(dependencies.store,runtime,createRunCallbacks(dependencies,runtime,dependencies.queryRuntime()))};}
+    try{const runs=new DelegatedQueryRuns(dependencies.store,runtime,createRunCallbacks(dependencies,runtime,dependencies.queryRuntime()));return {runtime,runs,queue:new ConversationQueue(dependencies,runs)};}
     catch(error){
       try{await runtime.close();}catch(cleanup){throw new AggregateError([error,cleanup],'Query runs preparation and disposal failed',{cause:error});}
       throw error;
@@ -191,6 +230,7 @@ export function createQueryRunsPlatform(dependencies:QueryRunDependencies):Query
     phase='quiescing';
     const owned=current;current=undefined;
     const errors:unknown[]=[];
+    owned?.queue.close();
     try{owned?.runtime.quiesce();}catch(error){errors.push(error);}
     if(owned){
       try{
@@ -212,6 +252,7 @@ export function createQueryRunsPlatform(dependencies:QueryRunDependencies):Query
     port,
     get delegation(){if(!current)throw unavailable();return current.runtime;},
     get queryRuns(){if(!current)throw unavailable();return current.runs;},
+    get conversationQueue(){if(!current||!['active','quiescing'].includes(phase))throw unavailable();return current.queue;},
     async prepare(){
       if(phase!=='created')throw unavailable();
       try{current=await open();phase='prepared';}
@@ -219,14 +260,14 @@ export function createQueryRunsPlatform(dependencies:QueryRunDependencies):Query
     },
     start(){
       if(phase==='active')return;
-      if(phase==='prepared'){phase='active';return;}
+      if(phase==='prepared'){phase='active';current!.queue.start();return;}
       if(phase==='stopped'){
         // Reopen over the same durable receipts; routes and the facade stay mounted.
-        return starting ??=open().then(generation=>{current=generation;phase='active';}).finally(()=>{starting=undefined;});
+        return starting ??=open().then(generation=>{current=generation;phase='active';generation.queue.start();}).finally(()=>{starting=undefined;});
       }
       throw unavailable();
     },
-    quiesce(_reason?:StopReason){if(phase==='active'){phase='quiescing';current?.runtime.quiesce();current?.runs.quiesce();}},
+    quiesce(_reason?:StopReason){if(phase==='active'){phase='quiescing';current?.queue.close();current?.runtime.quiesce();current?.runs.quiesce();}},
     stop:(reason?:StopReason)=>{stopping ??= stop(reason);return stopping.then(()=>{stopping=undefined;});},
     dispose:close,
     close,

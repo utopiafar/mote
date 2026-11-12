@@ -18,11 +18,13 @@ type SavedInput=QueryInput&{hostRequest:unknown;executionTimeoutMs?:number;lastF
 const capacityWaiting=(error:unknown)=>error instanceof ExecutionFailure&&error.category==='waiting'||error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited');
 type QueryCallbacks={
   contextTime?:()=>string;
+  initialReceipt?:(id:string)=>Receipt|undefined;
+  requestIdentity?:(id:string,input:unknown)=>unknown|undefined;
   resolveInput?:(input:unknown)=>unknown;
   prepare:(body:unknown,work:DelegationWork,signal:AbortSignal,onProgress:QueryInput['onProgress'])=>Promise<QueryInput>;
   query:(input:QueryInput)=>Promise<QueryResult>;
   commit:(body:unknown,result:QueryResult,work:DelegationWork)=>Receipt;
-  failure?:(body:unknown,error:unknown)=>Receipt;
+  failure?:(body:unknown,error:unknown,work:DelegationWork)=>Receipt;
   operationUsage?:(operationId:string,createdAt:string,finishedAt:string)=>import('./usage.js').OperationUsage;
   /** A recovered request may resume only while its exact pinned model profile is still installed. */
   pinnedConfigurationCurrent?:(prepared:QueryInput,fingerprint:string)=>boolean;
@@ -144,7 +146,7 @@ export class DelegatedQueryRuns {
     try{
       const current=this.runtime.get(work.id),receipt=this.raw(run.id);
       const erasedForeground=current.status==='stale'&&current.error==='evidence_deleted'&&foreground&&!foreground.cancelled&&receipt.status!=='cancelled'&&!this.store.db.prepare('SELECT 1 FROM delegation_payloads WHERE work_id=?').get(work.id);
-      if((['failed','blocked'].includes(current.status)||current.status==='stale'&&current.error==='source_context_changed'||erasedForeground)&&!receipt.turnId){
+      if((['failed','blocked'].includes(current.status)||current.status==='stale'&&current.error==='source_context_changed'||erasedForeground)&&(!receipt.turnId||receipt.status==='running')){
         // Source deletion deliberately erases the replay payload. The live user
         // request can still retain its question, without resurrecting derived
         // context or trusting a late provider callback after the grant expired.
@@ -153,7 +155,7 @@ export class DelegatedQueryRuns {
         const timedOut=failure.category==='timeout'||current.error==='timeout';
         // A timed-out fragment cannot publish a conversation turn after its grant
         // has expired; waiting time never establishes a timeout.
-        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error),finished={...run,...conversation,error:{code:timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':failure.reason??failure.category,message:failure.message,reason:failure.reason,diagnostic:sanitizeFailureDiagnostics({...failure.diagnostic!,lastTool:[...run.events].reverse().find(e=>e.stage==='tool'&&e.phase==='completed')?.tool})}};
+        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error,current),finished={...run,...conversation,error:{code:timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':failure.reason??failure.category,message:failure.message,reason:failure.reason,diagnostic:sanitizeFailureDiagnostics({...failure.diagnostic!,lastTool:[...run.events].reverse().find(e=>e.stage==='tool'&&e.phase==='completed')?.tool})}};
         this.save(finished);
         if(own)this.store.db.exec('COMMIT');
         Object.assign(run,finished);if(conversation&&error&&typeof error==='object')Object.assign(error,{conversation});
@@ -202,24 +204,36 @@ export class DelegatedQueryRuns {
   start(id:string,input:unknown,deadline:RunDeadline={}){
     if(this.stopped)throw new StoreError('Feature is closed',503);
     if(typeof (input as {question?:unknown})?.question!=='string')throw new StoreError('Query requires a question',400);
-    const requestHash=createHash('sha256').update(JSON.stringify(input)).digest('hex'),existing=this.store.db.prepare('SELECT request_hash FROM query_runs WHERE id=?').get(id);
-    if(existing){if(existing.request_hash!==requestHash)throw new StoreError('Run ID belongs to a different request',409);return this.get(id);}
+    const identity=this.callbacks.requestIdentity?.(id,input),requestHash=createHash('sha256').update(JSON.stringify(identity??input)).digest('hex'),existing=this.store.db.prepare('SELECT request_hash FROM query_runs WHERE id=?').get(id);
+    if(existing){
+      if(existing.request_hash!==requestHash)throw new StoreError('Run ID belongs to a different request',409);
+      if(identity){const saved=this.runtime.journal.payload<SavedInput>('query:'+id),resolved=this.callbacks.resolveInput?.(input)??input;if(JSON.stringify(saved.hostRequest)!==JSON.stringify(resolved))throw new StoreError('Run ID belongs to a different request',409);}
+      return this.get(id);
+    }
     input=this.callbacks.resolveInput?.(input)??input;
     const request=input as {anchorEvidenceIds?:string[]|null;evidenceIds?:string[]|null;question:string;conversationId?:string;after?:string;before?:string;deviceId?:string;timeZone?:string;modelProfileId?:string;modelOverride?:string};
     if(request.conversationId&&this.store.db.prepare("SELECT 1 FROM query_runs WHERE json_extract(json,'$.conversationId')=? AND json_extract(json,'$.status')='running'").get(request.conversationId))throw new StoreError('An answer is already running in this conversation',409);
-    const at=new Date().toISOString(),contextTime=this.callbacks.contextTime?.()??at,run:QueryRun={id,operationId:'query:'+id,status:'running',createdAt:at,updatedAt:at,events:[],evidenceRevision:this.store.deletionRevision(),...(request.conversationId?{conversationId:request.conversationId}:{})};
+    const at=new Date().toISOString(),contextTime=this.callbacks.contextTime?.()??at,run:QueryRun={id,operationId:'query:'+id,status:'running',createdAt:at,updatedAt:at,events:[],evidenceRevision:this.store.deletionRevision(),...(request.conversationId?{conversationId:request.conversationId}:{}),...this.callbacks.initialReceipt?.(id)};
     const saved:SavedInput={question:request.question,hostRequest:input,language:requestLocale.getStore()??'zh-CN',...(deadline.timeoutMs!==undefined&&deadline.timeoutMs!==null?{executionTimeoutMs:Math.max(1,deadline.timeoutMs)}:{})};
     const foreground=this.foregroundRequests.get(id);if(foreground)foreground.executionTimeoutMs=saved.executionTimeoutMs;
     if(foreground)foreground.hostRequest=structuredClone(input);
     this.store.db.exec('BEGIN IMMEDIATE');
     try{
       this.store.reserveMetadata(32768);this.store.db.prepare('INSERT INTO query_runs VALUES(?,?,?)').run(id,requestHash,JSON.stringify(run));
-      this.runtime.start({id:'query:'+id,operationId:'query:'+id,profileId:'query',goal:request.question,input:saved,scope:{...(request.anchorEvidenceIds?{anchorEvidenceIds:request.anchorEvidenceIds}:{}),...(request.evidenceIds?{evidenceIds:request.evidenceIds}:{}),...(request.after?{after:request.after}:{}),...(request.before?{before:request.before}:{}),...(request.deviceId?{deviceId:request.deviceId}:{}),...(request.timeZone?{timeZone:request.timeZone}:{}),contextTime},allowedCapabilities:['context.research']});
+      this.runtime.start({id:'query:'+id,operationId:'query:'+id,profileId:'query',goal:request.question,input:saved,scope:{...(request.anchorEvidenceIds?{anchorEvidenceIds:request.anchorEvidenceIds}:{}),...(request.evidenceIds?{evidenceIds:request.evidenceIds}:{}),...(request.after?{after:request.after}:{}),...(request.before?{before:request.before}:{}),...(request.deviceId?{deviceId:request.deviceId}:{}),...(request.timeZone?{timeZone:request.timeZone}:{}),contextTime},allowedCapabilities:request.evidenceIds?.length===0?[]:['context.research']});
       this.store.db.exec('COMMIT');
     }catch(error){if(this.store.db.isTransaction)this.store.db.exec('ROLLBACK');throw error;}
     return this.get(id);
   }
   cancel(id:string){const foreground=this.foregroundRequests.get(id);if(foreground)foreground.cancelled=true;this.get(id);this.runtime.cancel('query:'+id);this.notify(id);return this.get(id);}
+  /** Observe an existing durable run without turning it into a foreground request. */
+  async waitForSettlement(id:string):Promise<QueryRun>{
+    for(;;){
+      if(this.interrupted)throw new StoreError('Central node is shutting down; the saved work will resume',503);
+      const run=this.get(id);if(run.status!=='running')return run;
+      await new Promise<void>(resolve=>{const listeners=this.waiters.get(id)??new Set();listeners.add(resolve);this.waiters.set(id,listeners);});
+    }
+  }
   async perform<T extends Receipt>(id:string,input:unknown,deadline:RunDeadline={}):Promise<T>{
     this.foreground.add(id);
     try{

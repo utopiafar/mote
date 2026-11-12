@@ -12,7 +12,7 @@ import type {ModelSettingsStore} from '../model-settings.js';
 import {modelConfiguration} from '../model-configuration.js';
 import {memoryEvidenceFingerprint} from '../memory.js';
 import {openingMemoryContext} from '../opening-memory.js';
-import {queryWithAttachmentsSchema,insightSchema} from '../query-request.js';
+import {parseQueuedQuery,insightSchema} from '../query-request.js';
 import {hasTimeOrDeviceScope,scopeContainsHistory,type QueryScope} from '../query-scope.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 
@@ -52,7 +52,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
       // a transport fence on the durable run.
       assertModelEvidence(saved.prepared);return {...saved.prepared,signal,onProgress};
     }
-    const {conversationId,question,modelProfileId,modelOverride,evidenceIds:selectedIds,anchorEvidenceIds:anchorIds,anchorMaterialRef,attachmentIds=[],...selected}=queryWithAttachmentsSchema.parse(body);
+    const {conversationId,question,modelProfileId,modelOverride,evidenceIds:selectedIds,anchorEvidenceIds:anchorIds,anchorMaterialRef,attachmentIds=[],...selected}=parseQueuedQuery(body);
     const previous=conversationId?conversations.get(conversationId):undefined;
     const scope:QueryScope={};for(const key of ['after','before','deviceId','timeZone'] as const){const value=key==='timeZone'&&selected.timeZone===undefined?previous?.scope.timeZone:selected[key];if(value!==undefined&&value!==null)scope[key]=value;}
     insightSchema.parse(scope);
@@ -72,8 +72,9 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
         if(!scopeContainsHistory(scope,turn.scope)||(turn.attachments?.length??0)>0||turn.historyEvidenceDependencies?.complete!==true)widerHistory=true;
         if(widerHistory)return false;
       }
-      return scope.evidenceIds===undefined||
-        JSON.stringify([...(turn.scope.evidenceIds??[])].sort())===selectedScope&&
+      const turnIds=turn.scope.evidenceIds??(turn.scope.kind==='selection'&&turn.scope.sourceIds?.length===0?[]:undefined);
+      return scope.evidenceIds===undefined||turnIds!==undefined&&
+        JSON.stringify([...turnIds].sort())===selectedScope&&
         (turn.attachments??[]).every(attachment=>allowedHistoryIds.has(attachment.id))&&
         turn.result?.evidenceDependencies?.complete===true&&turn.result.evidenceDependencies.ids.every(id=>allowedHistoryIds.has(id))&&
         turn.historyEvidenceDependencies?.complete===true&&turn.historyEvidenceDependencies.ids.every(id=>allowedHistoryIds.has(id));
@@ -97,7 +98,11 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
       scope.evidenceIds?Promise.resolve({leads:[],evidenceDependencies:{version:1 as const,complete:true,ids:scope.evidenceIds}}):openingMemoryContext(archiveReader,question,{...scope,contextTime}),
       scopedPrevious?Promise.resolve(conversations.context(scopedPrevious,20,Math.max(1000,lifecycleSettings().contextCharacters-question.length))):previous?working.prepare(previous,lifecycleSettings(),question,input=>query({...input,contextTime,traceContext:{...input.traceContext,operationId:work.operationId},executionLane:'interactive',modelProfileId:profile.id,modelOverride:model,signal}),{signal,commit}):undefined,
     ]);
-    const prepared:QueryInput={traceContext:{operationId:work.operationId},language:saved.language??'zh-CN',executionLane:'interactive',question,...scope,...(historicalSelection?{historicalSelection}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),...(selectedRecords.length?{processingEvidence:Object.fromEntries(selectedRecords.map(record=>[record.id,memoryEvidenceFingerprint(record)]))}:{}),contextTime,modelProfileId:profile.id,modelOverride:model,directImages,openingMemories:opening.leads,contextEvidenceDependencies:{...opening.evidenceDependencies,ids:[...new Set([...opening.evidenceDependencies.ids,...(scope.anchorEvidenceIds??[])])]},...(conversation?{conversation}:{})};
+    // Empty product selections must still answer the owner's text, but cannot
+    // expose archive tools or seed the agent's nonempty extraction session.
+    const emptySelection=scope.evidenceIds?.length===0&&!historicalSelection;
+    const preparedScope=emptySelection?{...scope,evidenceIds:undefined}:scope;
+    const prepared:QueryInput={traceContext:{operationId:work.operationId},language:saved.language??'zh-CN',executionLane:'interactive',question,...preparedScope,...(emptySelection?{hostToolSelection:[]}:{}),...(historicalSelection?{historicalSelection}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),...(selectedRecords.length?{processingEvidence:Object.fromEntries(selectedRecords.map(record=>[record.id,memoryEvidenceFingerprint(record)]))}:{}),contextTime,modelProfileId:profile.id,modelOverride:model,directImages,openingMemories:opening.leads,contextEvidenceDependencies:{...opening.evidenceDependencies,ids:[...new Set([...opening.evidenceDependencies.ids,...(scope.anchorEvidenceIds??[])])]},...(conversation?{conversation}:{})};
     commit(()=>{
       assertModelEvidence(prepared);
       const freshImages=queryImages(directImages.map(image=>image.id));

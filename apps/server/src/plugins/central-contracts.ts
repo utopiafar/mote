@@ -154,7 +154,7 @@ export type MaterialMemoryCandidates = Pick<MaterialMemoryWork, 'observe' | 'wit
 /** Read-only managed-asset state. Installs, imports, cancellation and the
  * managed directory itself stay with the C18A owner, never the port. */
 export type MediaAssetsRead = Pick<MediaAssets, 'ready' | 'status' | 'statuses'>;
-export type ConversationRepository = Pick<Conversations, 'list' | 'get' | 'page' | 'referenceAvailability' | 'append' | 'appendFailure' | 'delete' | 'context' | 'historyContext' | 'assertHistoryContext' | 'retiredSelection'>;
+export type ConversationRepository = Pick<Conversations, 'list' | 'get' | 'page' | 'main' | 'message' | 'hasMessage' | 'messageByClientRequestId' | 'messageForRun' | 'receive' | 'pendingHeads' | 'queue' | 'attachRun' | 'running' | 'cancel' | 'complete' | 'fail' | 'referenceAvailability' | 'append' | 'appendFailure' | 'delete' | 'context' | 'historyContext' | 'assertHistoryContext' | 'retiredSelection'>;
 /** The query activation owns admitted model runs, their preparation receipts
  * and the insight entry. Consumers receive this facade, never the Agent
  * runtime, evidence reader or metering factory. */
