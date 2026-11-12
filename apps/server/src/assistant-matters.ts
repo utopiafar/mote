@@ -238,6 +238,28 @@ export class AssistantMatters {
     return this.transition(command);
   }
 
+  /** Attach a newly accepted task without deleting older links whose evidence
+   * has since expired. Historical stale links remain metadata, not grants. */
+  attachTask(id:string,expectedRevision:number,taskId:string,authority:MatterAuthority):Matter{
+    uuid.parse(taskId);
+    return this.transaction(()=>{
+      const row=this.current(id,expectedRevision);
+      if(row.state==='archived')throw new StoreError('Archived matters cannot be edited',409);
+      const current=this.payload(row);
+      if(current.taskIds.includes(taskId))return this.matter(row);
+      const task=authority.currentTask(taskId);
+      if(!task||task.state==='stale')throw new StoreError('Matter task link is not currently readable',409);
+      const payload=matterPayloadSchema.parse({...current,taskIds:[...current.taskIds,taskId]});
+      const at=this.now(),nextRevision=row.revision+1;
+      const changed=this.store.db.prepare('UPDATE assistant_matters SET json=?,revision=?,updated_at=? WHERE id=? AND revision=?')
+        .run(this.encode(payload),nextRevision,at,id,row.revision);
+      if(!changed.changes)throw new StoreError('Matter changed; reload before continuing',409);
+      this.insertRevision(id,nextRevision,'edit',row.state,payload,at);
+      this.store.reserveMetadata(0);
+      return this.get(id);
+    });
+  }
+
   private create(command:Extract<MatterCommand,{type:'create'}>,authority:MatterAuthority):Matter{
     const payload=matterPayloadSchema.parse({goal:command.goal,scope:command.scope,
       taskIds:command.taskIds,evidenceIds:command.evidenceIds,correction:command.correction});

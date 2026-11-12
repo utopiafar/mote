@@ -1,4 +1,5 @@
 import type {Store} from './store.js';
+import {retireTaskRecordsSql} from './task-evidence.js';
 
 /** A version and its feedback can outlive its current projection. Cleanup also
  * increments the card revision when only historical material was affected, so
@@ -95,6 +96,25 @@ export function installAssistantCards(store:Store){
  END;
  CREATE TRIGGER IF NOT EXISTS assistant_cards_task_deleted BEFORE DELETE ON task_records BEGIN
   UPDATE assistant_cards SET accepted_task_id=NULL,revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE accepted_task_id=old.id;
+ END;`);
+ // A suggestion's content and source declarations are part of the accepted
+ // task's input. Retire that private input if the suggestion is superseded,
+ // withdrawn or explicitly corrected; an old worker cannot publish over it.
+ db.exec(`CREATE TRIGGER IF NOT EXISTS assistant_accepted_task_card_changed AFTER UPDATE OF state,current_version ON assistant_cards
+ WHEN old.accepted_task_id IS NOT NULL AND (new.state='stale' AND old.state!='stale' OR new.current_version!=old.current_version) BEGIN
+  ${retireTaskRecordsSql("SELECT id FROM task_records WHERE id=old.accepted_task_id AND kind='assistant.task'")}
+ END;
+ CREATE TRIGGER IF NOT EXISTS assistant_accepted_task_card_deleted BEFORE DELETE ON assistant_cards
+ WHEN old.accepted_task_id IS NOT NULL BEGIN
+  ${retireTaskRecordsSql("SELECT id FROM task_records WHERE id=old.accepted_task_id AND kind='assistant.task'")}
+ END;
+ CREATE TRIGGER IF NOT EXISTS assistant_accepted_task_card_corrected AFTER INSERT ON assistant_card_feedback
+ WHEN new.action='correct' BEGIN
+  ${retireTaskRecordsSql("SELECT t.id FROM task_records t JOIN assistant_cards c ON c.accepted_task_id=t.id WHERE c.id=new.card_id AND t.kind='assistant.task'")}
+ END;
+ CREATE TRIGGER IF NOT EXISTS assistant_accepted_task_work_stale AFTER UPDATE OF state ON task_records
+ WHEN new.kind='assistant.task' AND new.state='stale' AND old.state!='stale' BEGIN
+  ${retireTaskRecordsSql("SELECT id FROM task_records WHERE operation_id=new.operation_id AND kind IN ('batch','batch.item')")}
  END;`);
  // Metadata and owner declarations are separate from original captures. Track
  // their identities without ever treating them as new evidence or permission.
