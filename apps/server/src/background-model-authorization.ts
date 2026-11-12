@@ -43,6 +43,13 @@ export class BackgroundModelAuthorization {
   private readonly stepContext=new AsyncLocalStorage<string>();
   private readonly active=new Set<Authority>();
   private closed=false;
+  // The batch owner participates in the existing stop transaction.
+  private stopBatches?:()=>void;
+  bindBatchStop(stop:()=>void){
+    if(this.stopBatches)throw Error('Batch stop is already installed');
+    this.stopBatches=stop;
+    return ()=>{if(this.stopBatches===stop)this.stopBatches=undefined;};
+  }
   constructor(private readonly store:Store,private readonly available:()=>ModelConnection[]){
     store.db.exec(`CREATE TABLE IF NOT EXISTS background_model_authorization(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS background_model_receipts(seq INTEGER PRIMARY KEY AUTOINCREMENT,identity TEXT NOT NULL UNIQUE,source_id TEXT NOT NULL,eligible INTEGER NOT NULL);
@@ -70,6 +77,7 @@ export class BackgroundModelAuthorization {
       state.revision++;state.lastOperation=input.operationId;state.lastCommand=encoded;
       const json=JSON.stringify(state);this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-previousBytes));
       this.store.db.prepare('UPDATE background_model_authorization SET json=? WHERE id=1').run(json);
+      if(input.action==='stop')this.stopBatches?.();
       return state;
     });
     // Closing drains admitted work; immediate stop also aborts it. Re-excluding a
@@ -165,6 +173,16 @@ export class BackgroundModelAuthorization {
       return id;
     });
   }
+  /** Admit an automatic batch and its durable execution steps atomically.
+   * Only host-proven original receipts can enter automatic(). */
+  automaticCommand<T>(id:string,identities:readonly string[],purpose:AutomaticModelPurpose,task:()=>T):T{
+    return this.transaction(()=>{
+      this.automatic(id,identities,purpose);const work=this.saved(id)!;this.assert(work);
+      const authority:Authority={work,controller:new AbortController()};this.active.add(authority);
+      try{return this.context.run(authority,()=>{const result=task();if(result&&typeof (result as {then?:unknown}).then==='function')throw Error('Automatic command must be synchronous');this.assert(work);return result;});}
+      finally{this.active.delete(authority);}
+    });
+  }
   /** Called only at an existing owner-confirmed operation boundary. Never
    * expose it as a QueryInput flag or accept a caller-provided authority. */
   manual(id:string,kind:'manual'|'probe',identities:readonly string[]=[],connections=this.available()){
@@ -181,10 +199,13 @@ export class BackgroundModelAuthorization {
     });
   }
   async run<T>(id:string,task:(signal:AbortSignal)=>Promise<T>,signal?:AbortSignal):Promise<T>{
+    return this.runAuthorized(id,task,signal,false);
+  }
+  private async runAuthorized<T>(id:string,task:(signal:AbortSignal)=>Promise<T>,signal:AbortSignal|undefined,admitted:boolean):Promise<T>{
     const work=this.saved(id);if(!work)throw pending();
     // A fresh attempt waits while the switch is off; a dependent fragment of
     // the same in-flight work has already been admitted and drains.
-    if(work.kind==='automatic'&&this.state().state!=='on'&&this.context.getStore()?.work.id!==id)throw pending();
+    if(work.kind==='automatic'&&this.state().state!=='on'&&!admitted&&this.context.getStore()?.work.id!==id)throw pending();
     this.assert(work);
     const stepId=this.stepContext.getStore();if(stepId)this.bindStep(stepId,id);
     const authority:Authority={work,controller:new AbortController()};this.active.add(authority);
@@ -229,7 +250,7 @@ export class BackgroundModelAuthorization {
     const row=this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').get(step.id);
     // A shared executor must never inherit whichever HTTP request happened to
     // wake its timer. Only this exact durable step can restore manual authority.
-    return this.stepContext.run(step.id,()=>row?this.run(String(row.work_id),task,signal):this.context.run(undefined,()=>task(signal)));
+    return this.stepContext.run(step.id,()=>row?this.runAuthorized(String(row.work_id),task,signal,step.kind==='batch.item'||step.kind==='batch.reduce'):this.context.run(undefined,()=>task(signal)));
   }
   /** Automatic disclosure only forbids currently excluded sources. Everything
    * else still passes through the existing source, privacy and read checks. */
