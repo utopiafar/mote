@@ -2,6 +2,8 @@ import {sourceContentTime} from '@mote/shared';
 import {originalEvidenceReceipt} from '../../evidence-receipt.js';
 import {CONTEXT_TOOLS} from '../../context-tools.js';
 import {defineToolDescriptor, type ToolDescriptor, type ToolFields} from '../descriptor.js';
+import {ContextToolError} from '../../tool-errors.js';
+import {createHash} from 'node:crypto';
 import type {HostSessionPort} from '../host-session.js';
 import type {ContextRange, ContextRecord} from '../../context-contracts.js';
 import {invalidPackArgument, scopedRange, type ReadPackInputs} from './materials.js';
@@ -29,6 +31,7 @@ function inScope(record: ContextRecord, scope: Readonly<ContextRange>): boolean 
 export function createDerivedNavigationPack(input: DerivedNavigationInputs = {}): readonly ToolDescriptor[] {
   const timeZone = input.timeZone ?? 'UTC';
   const incremental = Object.freeze([...(input.incrementalEvidenceIds ?? [])]);
+  const changePrefixes=new Map<string,string|null>();
   const defaultView = input.defaultChangesView ?? 'text';
   if (!['overview', 'text'].includes(defaultView)) throw invalidPackArgument('Invalid default changes view');
   const index = spec('context_index'), segment = spec('segments'), change = spec('changes');
@@ -88,12 +91,54 @@ export function createDerivedNavigationPack(input: DerivedNavigationInputs = {})
         if (!incremental.length) return {source: 'untrusted_personal_context', data: [], pagination: {nextCursor: null, totalCount: 0}};
         const scope = scopedRange(port, {});
         const pageLimit = Math.min(requested, scope.limit ?? requested);
-        const selected = incremental.slice(offset, offset + pageLimit);
-        port.assertCurrent();
-        const records = await port.read('evidence', {...scope, ids: [...selected]});
-        port.assertCurrent();
-        if (!Array.isArray(records)) invalidPackArgument('Changes evidence reader returned invalid records');
-        const scoped = (records as ContextRecord[]).filter(record => selected.includes(record.id) && inScope(record, scope));
+        const cursorKey=(index:number)=>JSON.stringify([scope.after,scope.before,scope.deviceId,scope.source,scope.appId,scope.collection,index]);
+        const expected=offset?changePrefixes.get(cursorKey(offset)):undefined;
+        if(offset&&typeof expected!=='string')throw new ContextToolError('evidence_changed','The change cursor is unavailable; restart this listing.','stop');
+        const prefix=createHash('sha256');let prefixVerified=offset===0;
+        const verifyPrefix=()=>{
+          if(!prefixVerified){
+            if(prefix.copy().digest('hex')!==expected)throw new ContextToolError('evidence_changed','The visible changes changed; restart this listing.','stop');
+            prefixVerified=true;
+          }
+        };
+        const scoped:ContextRecord[]=[];
+        let scanned=0,visible=0,hasMore=false;
+        // The cursor counts visible records, not positions in the private Host
+        // snapshot. Scan only as far as the next visible item and recheck each
+        // page against the current reader and scope.
+        while(scanned<incremental.length&&!hasMore){
+          const selected=incremental.slice(scanned,scanned+pageLimit);scanned+=selected.length;
+          port.assertCurrent();
+          const records=await port.read('evidence',{...scope,ids:[...selected]});
+          port.assertCurrent();
+          if(!Array.isArray(records))invalidPackArgument('Changes evidence reader returned invalid records');
+          const byId=new Map((records as ContextRecord[]).filter(record=>selected.includes(record.id)&&inScope(record,scope)).map(record=>[record.id,record]));
+          for(const id of selected){
+            const record=byId.get(id);if(!record)continue;
+            if(visible===offset)verifyPrefix();
+            if(visible>=offset){if(scoped.length===pageLimit){hasMore=true;break;}scoped.push(record);}
+            prefix.update(JSON.stringify([record.id,originalEvidenceReceipt(record,0,600,timeZone).evidenceFingerprint])+'\n');
+            visible++;
+          }
+        }
+        if(!prefixVerified){
+          if(visible!==offset)throw new ContextToolError('evidence_changed','The visible changes changed; restart this listing.','stop');
+          verifyPrefix();
+        }
+        if(scoped.length){
+          // Looking ahead may take multiple reads. Revalidate the page after
+          // that work so a withdrawn or changed first record is never sent.
+          const fresh=await port.read('evidence',{...scope,ids:[...new Set(scoped.map(record=>record.id))]});
+          port.assertCurrent();
+          if(!Array.isArray(fresh))invalidPackArgument('Changes evidence reader returned invalid records');
+          const current=new Map((fresh as ContextRecord[]).filter(record=>inScope(record,scope)).map(record=>[record.id,record]));
+          if(scoped.some(record=>!current.has(record.id)||JSON.stringify(originalEvidenceReceipt(record,0,600,timeZone))!==JSON.stringify(originalEvidenceReceipt(current.get(record.id)!,0,600,timeZone))))
+            throw new ContextToolError('evidence_changed','A change was withdrawn or revised before disclosure.','stop');
+        }
+        if(hasMore){
+          const key=cursorKey(offset+scoped.length),fingerprint=prefix.copy().digest('hex'),previous=changePrefixes.get(key);
+          changePrefixes.set(key,previous===undefined||previous===fingerprint?fingerprint:null);
+        }
         const data = view === 'overview'
           ? scoped.map(record => ({
             id: record.id, capturedAt: record.capturedAt, contentAt: sourceContentTime(record),
@@ -101,8 +146,8 @@ export function createDerivedNavigationPack(input: DerivedNavigationInputs = {})
           }))
           : scoped.map(record => originalEvidenceReceipt(record, 0, 600, timeZone));
         return {source: 'untrusted_personal_context', data, pagination: {
-          nextCursor: offset + pageLimit < incremental.length ? String(offset + pageLimit) : null,
-          totalCount: incremental.length,
+          nextCursor: hasMore ? String(offset + scoped.length) : null,
+          ...(!hasMore ? {totalCount: visible} : {}),
         }};
       },
     }),

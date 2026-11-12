@@ -90,6 +90,7 @@ test('changes metadata preserves exact filtered snapshot lineage through continu
   try{
    const response=await catalogRequest(bridge,'changes',{view:'overview'});assert.equal(response.status,200);const value=await response.json(),ids=selected.length?[original.id]:[];
    assert.deepEqual(value.data.map(row=>row.id),ids);assert.doesNotMatch(JSON.stringify(value),/UNREAD_ORIGINAL_BODY|UNREQUESTED_APP|unselected-device/);
+   assert.equal(value.pagination.totalCount,ids.length,'a snapshot count excludes records outside the current scope');
    assert.deepEqual(bridge.evidenceDependencies,{version:1,complete:true,ids});assert.equal(bridge.records.size,0);
    assert.throws(()=>parseAnswer(JSON.stringify({answer:'Generated unread claim',citationIds:[original.id]}),bridge.records),/not retrieved/);
    const result=parseAnswer(JSON.stringify({answer:'Generated metadata observation.',citationIds:[]}),bridge.records);

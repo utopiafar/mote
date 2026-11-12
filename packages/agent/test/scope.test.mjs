@@ -25,3 +25,14 @@ test('selected device is enforced on every range tool and cannot be broadened',a
   assert.equal(evidence.capturedAt,record.capturedAt);assert.equal(evidence.displayCapturedAt,'2026-06-11T01:35:00+08:00');
  }finally{await bridge.close();}
 });
+
+test('source directory metadata is rejected when its last in-range item disappears before disclosure',async()=>{
+ const record={id:'bcbc6e3a-9b40-5499-945a-70ffb10dc2a7',deviceId:'selected',capturedAt:'2026-10-01T00:00:00Z',appName:'Generated',ocrText:'Generated',provenance:{sourceId:'generated-source'}};
+ let reads=0;
+ const reader={search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),activity:async()=>({}),evidence:async()=>[],devices:async()=>[],
+  sources:async()=>({items:[{id:'generated-source',name:'GENERATED_REVOKED_SOURCE'}],nextCursor:null,disclosureDependencies:{version:1,complete:true,ids:[]},sourceContextDependencies:[]}),
+  sourceItems:async()=>({items:++reads===1?[record]:[],nextCursor:null})};
+ const bridge=await startBridge(reader,{question:'Generated',after:'2026-09-15T00:00:00Z'});
+ try{const response=await catalogRequest(bridge,'sources',{}),body=await response.json();assert.notEqual(response.status,200);assert.equal(body.toolError.code,'evidence_changed');assert.doesNotMatch(JSON.stringify(body),/GENERATED_REVOKED_SOURCE/);}
+ finally{await bridge.close();}
+});

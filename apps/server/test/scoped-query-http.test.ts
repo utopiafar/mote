@@ -8,6 +8,7 @@ import sharp from 'sharp';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {ContextReader,QueryInput} from '@mote/agent';
+import {sha256} from '../src/store.js';
 const headers={authorization:'Bearer generated-scoped-owner-token'};
 async function fixture(t:TestContext,query:QueryAgent['query'],captureReader?:(reader:ContextReader)=>void){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-scoped-query-'));
@@ -151,4 +152,59 @@ test('query preparation rolls back dependency pins when saving its prepared chec
  const saved=f.node.delegation.journal.payload<{prepared?:unknown}>('query:'+id);assert.equal(saved.prepared,undefined);
  f.node.store.db.exec('DROP TRIGGER fixture_prepared_checkpoint_failure');
  const retry=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated valid subsequent preparation',evidenceIds:[selected.id]}});assert.equal(retry.statusCode,200,retry.body);assert.equal(calls,1);
+});
+
+test('narrowing device or time never sends a wider conversation or its summary to the model',async t=>{
+ for(const narrow of [{deviceId:'generated-device-b'},{after:'2026-10-02T00:00:00Z'}])await t.test(JSON.stringify(narrow),async sub=>{
+  const seen:QueryInput[]=[];let originals:string[]=[];
+  const f=await fixture(sub,async input=>{
+   seen.push(input);
+   return {...answer(input),answer:seen.length===1?'GENERATED_PRIVATE_WIDE_ANSWER':'Generated narrow response',
+    evidenceDependencies:{version:1,complete:true,ids:seen.length===1?originals:[]}};
+  });
+  const a=await add(f.node,'generated-device-a'),b=await add(f.node,'generated-device-b');originals=[a.id,b.id];
+  const first=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'GENERATED_PRIVATE_WIDE_QUESTION'}});assert.equal(first.statusCode,200,first.body);
+  const conversationId=first.json().conversationId,conversation=f.node.conversations.get(conversationId);
+  const summary={text:'GENERATED_PRIVATE_WIDE_SUMMARY',coveredTurns:1,generatedAt:'2026-10-03T00:00:00Z',fingerprint:sha256(JSON.stringify(conversation.turns)),evidenceDependencies:{version:1,complete:true,ids:originals}};
+  f.node.store.db.prepare('INSERT INTO working_memories(id,json) VALUES(?,?)').run(conversationId,JSON.stringify(summary));
+  const follow=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated current owner input',conversationId,...narrow}});assert.equal(follow.statusCode,200,follow.body);
+  assert.equal(seen.length,2);
+  assert.doesNotMatch(JSON.stringify(seen[1].conversation),/GENERATED_PRIVATE_WIDE/,'a narrowed request must not send old questions, answers or summaries outside its range');
+  assert.equal(seen[1].question,'Generated current owner input');
+ });
+});
+
+test('a follow-up with the same bounded device and time keeps its compatible history',async t=>{
+ const seen:QueryInput[]=[],f=await fixture(t,async input=>{seen.push(input);return {...answer(input),answer:'Generated bounded response'};});
+ const scope={deviceId:'generated-device-b',after:'2026-09-30T00:00:00Z',before:'2026-10-02T00:00:00Z'};
+ const first=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated bounded question',...scope}});assert.equal(first.statusCode,200,first.body);
+ const follow=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated bounded follow-up',conversationId:first.json().conversationId,...scope}});assert.equal(follow.statusCode,200,follow.body);
+ assert.equal(seen.at(-1)!.conversation?.turns[0]?.answer,'Generated bounded response');
+});
+
+test('a previously narrowed turn cannot launder a wider prior answer into another bounded query',async t=>{
+ const seen:QueryInput[]=[],f=await fixture(t,async input=>{seen.push(input);return {...answer(input),answer:'GENERATED_WIDE_HISTORY_CONTENT'};});
+ const a=await add(f.node,'generated-device-a');
+ const first=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated unrestricted question'}});assert.equal(first.statusCode,200,first.body);
+ const previous=f.node.conversations.get(first.json().conversationId);
+ // An older version could save an apparently narrow turn after reading the
+ // unrestricted turn. Preserve that actual lineage in the existing store.
+ f.node.conversations.append(previous,{question:'Generated narrow question',deviceId:'generated-device-b'},{answer:'GENERATED_WIDE_HISTORY_CONTENT',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[a.id]}});
+ const follow=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated current owner input',conversationId:previous.id,deviceId:'generated-device-b'}});assert.equal(follow.statusCode,200,follow.body);
+ assert.doesNotMatch(JSON.stringify(seen.at(-1)!.conversation),/GENERATED_WIDE_HISTORY_CONTENT/);
+});
+
+test('newly attached images must also be inside the requested device and time scope',async t=>{
+ const seen:QueryInput[]=[],f=await fixture(t,async input=>{seen.push(input);return answer(input);});
+ f.node.sources.register({id:'generated-scoped-attachment',name:'Generated attachment',kind:'upload',deviceId:'generated-device-a',platform:'import',retention:'archive'});
+ const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#225588'}}).png().toBuffer();
+ const upload=f.node.files.begin({sourceId:'generated-scoped-attachment',item:{externalId:'generated-image',revision:'1',observedAt:'2026-10-01T00:00:00Z',title:'Generated image',kind:'file',layer:'original',text:'',mimeType:'image/png'},sha256:createHash('sha256').update(bytes).digest('hex'),sizeBytes:bytes.length},()=>{});
+ f.node.files.part(upload.uploadId,0,bytes,()=>{});const attachment=(await f.node.files.commit(upload.uploadId,()=>{})).captureId;
+ for(const scope of [{deviceId:'generated-device-b'},{after:'2026-10-02T00:00:00Z'}]){
+  const denied=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated image question',attachmentIds:[attachment],...scope}});
+  assert.equal(denied.statusCode,409,denied.body);
+ }
+ assert.equal(seen.length,0,'out-of-scope attachments must be rejected before the model');
+ const allowed=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated image question',attachmentIds:[attachment],deviceId:'generated-device-a',after:'2026-09-30T00:00:00Z',before:'2026-10-02T00:00:00Z'}});
+ assert.equal(allowed.statusCode,200,allowed.body);assert.deepEqual(seen[0].directImages?.map(image=>image.id),[attachment]);
 });
