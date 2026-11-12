@@ -17,7 +17,14 @@ export async function atomicSourceJson(path: string, value: unknown): Promise<vo
 type QueueName = 'realtime' | 'history';
 export type PendingSourceSummary = Readonly<Pick<SourceItem,'title'|'text'|'observedAt'|'externalId'|'revision'>>;
 function isFileCheckpoint(value: SourceCheckpoint | undefined): value is LocalFileCheckpoint {
-  return Boolean(value && value.version === 1 && typeof (value as LocalFileCheckpoint).root === 'string');
+  return Boolean(value && value.version === 1 && typeof (value as LocalFileCheckpoint).root === 'string' && Array.isArray((value as LocalFileCheckpoint).pendingDirectories) && (value as LocalFileCheckpoint).catalog && typeof (value as LocalFileCheckpoint).catalog==='object');
+}
+/** Re-enumerate after a policy/recovery change without discarding logical IDs. */
+function rescanFileCheckpoint(value: SourceCheckpoint | undefined): LocalFileCheckpoint | undefined {
+  if(!isFileCheckpoint(value))return undefined;
+  if(value.identityVersion!==1)throw Error('Unsupported local file identity registry; existing source state was preserved');
+  return {...value,inProgress:false,scanFaulted:false,lastScanComplete:false,pendingDirectories:[],activeDirectory:undefined,nextFile:undefined,
+    catalog:Object.fromEntries(Object.entries(value.catalog).map(([path,entry])=>[path,{...entry,syncState:'pending' as const}]))};
 }
 /** Opaque recovery binds the already acknowledged file metadata, without local transport fields. */
 function snapshotMetadataIdentity(raw:ScannedItem):string{
@@ -93,6 +100,7 @@ export class SourceSync {
   /** Scanner borrows immutable catalog rows and records changes in its own draft. */
   fileCheckpoint(): LocalFileCheckpoint | undefined {
     const checkpoint=this.data.checkpoint;
+    if(isFileCheckpoint(checkpoint)&&checkpoint.identityVersion!==1)throw Error('Unsupported local file identity registry; existing source state was preserved');
     return isFileCheckpoint(checkpoint)?{...structuredClone({...checkpoint,catalog:undefined}),catalog:checkpoint.catalog}:undefined;
   }
   initialized() { return Boolean(this.data.initialized); }
@@ -109,7 +117,7 @@ export class SourceSync {
   async ensurePolicy(policy:string):Promise<void>{return this.mutate(()=>this.ensurePolicyInternal(policy));}
   private async ensurePolicyInternal(policy: string): Promise<void> {
     if (this.data.policy === policy) return;
-    const next = { ...this.data, oneTimeCompletedAt:undefined, checkpoint: undefined, delivered: undefined, predecessors: undefined, quarantined: undefined, snapshotRecoveries:undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '', discoveryHash: undefined }])), pendingRealtime: [], pendingHistory: [] } as State;
+    const next = { ...this.data, oneTimeCompletedAt:undefined, checkpoint: rescanFileCheckpoint(this.data.checkpoint), delivered: undefined, predecessors: undefined, quarantined: undefined, snapshotRecoveries:undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '', discoveryHash: undefined }])), pendingRealtime: [], pendingHistory: [] } as State;
     const retired = [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)];
     await this.commit(next);
     await this.discardUnqueuedOriginals(retired);
@@ -121,7 +129,7 @@ export class SourceSync {
     if(!Number.isSafeInteger(version)||version<1)throw Error('Invalid source adapter version');
     return this.mutate(async()=>{
       if(this.data.adapterVersion===version)return;
-      await this.commit({...this.data,adapterVersion:version,checkpoint:undefined});
+      await this.commit({...this.data,adapterVersion:version,checkpoint:rescanFileCheckpoint(this.data.checkpoint)});
     });
   }
 
@@ -132,7 +140,7 @@ export class SourceSync {
       if(!matches.length)return 0;
       const known={...this.data.known};for(const item of matches){const key=sourceHash(item.externalId);known[key]={...known[key],contentHash:'',discoveryHash:undefined};}
       // Re-enumerate authorized files instead of trusting a remote filesystem path.
-      await this.commit({...this.data,known,checkpoint:undefined,snapshotRecoveries:{...this.data.snapshotRecoveries,...Object.fromEntries(matches.map(item=>[sourceHash(item.externalId),{...item,identityHash:snapshotMetadataIdentity(this.data.known[sourceHash(item.externalId)].item)}]))}});return matches.length;
+      await this.commit({...this.data,known,checkpoint:rescanFileCheckpoint(this.data.checkpoint),snapshotRecoveries:{...this.data.snapshotRecoveries,...Object.fromEntries(matches.map(item=>[sourceHash(item.externalId),{...item,identityHash:snapshotMetadataIdentity(this.data.known[sourceHash(item.externalId)].item)}]))}});return matches.length;
     });
   }
 

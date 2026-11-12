@@ -16,11 +16,16 @@ export interface SourceItem {
   calendar?: { start: string; end: string; allDay: boolean; timeZone?: string; status: 'confirmed' | 'tentative' | 'cancelled' };
 }
 export interface FileCatalogEntry {
+  /** entryId is the source-local Central externalId; fileId is only a filesystem observation. */
+  entryId?: string; identityRoot?: string;
   relativePath: string; fileId: string; birthtimeMs: number; size: number; mtimeMs: number; ctimeMs: number;
-  quickHash: string; contentQuickHash?: string; contentHash?: string; lastSeenScan: number; syncState: 'pending'|'synced'|'error';
+  /** contentHash is a full digest of the bytes sent, never a metadata fingerprint. */
+  quickHash: string; contentQuickHash?: string; contentVersion?: string; contentHash?: string; lastSeenScan: number; syncState: 'pending'|'synced'|'error';
 }
 export interface LocalFileCheckpoint {
   version: 1; root: string;
+  /** This registry format is deliberately not compatible with the old inode-derived IDs. */
+  identityVersion: 1; volumeIdentity?: string; identityScope?: string; identityScopeVolume?: string; identityVerificationPending?: boolean;
   /** Device/inode of a directory root accepted by a complete, readable scan. */
   rootIdentity?: string; scanNumber: number; scanStartedAt: string; lastScanAttemptAt?: string; initialized: boolean;
   inProgress: boolean; scanFaulted?: boolean; lastScanComplete?: boolean; lastCompleteScanAt?: string;
