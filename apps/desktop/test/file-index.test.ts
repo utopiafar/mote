@@ -1,16 +1,18 @@
-import {it,expect} from 'vitest';
+import {it,expect,vi} from 'vitest';
 import {mkdtemp,writeFile,rename,rm,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {scanSourceFiles} from '../src/source-files';
+import * as localVolume from '../src/local-volume';
 import {DEFAULT_SOURCE_OPTIONS} from '../src/source-types';
 it('stable identity survives rename and snapshots retain central read permission',async()=>{
  const root=await realpath(await mkdtemp(join(tmpdir(),'mote-index-')));try{
+ vi.spyOn(localVolume,'localVolumeIdentity').mockResolvedValue('apfs:generated-volume');
  const path=join(root,'one.txt'),text='Generated evidence '.repeat(1000);await writeFile(path,text);const options={...DEFAULT_SOURCE_OPTIONS,allowRead:true};
- const first=(await scanSourceFiles(root,options)).items[0];expect(first.document?.fileIndex).toMatchObject({status:'pending',allowRead:true,maxIndexCharacters:100000});expect(first.text).toBe('');
- await rename(path,join(root,'two.txt'));const second=(await scanSourceFiles(root,options)).items[0];expect(second.externalId).toBe(first.externalId);expect(second.document?.fileIndex?.contentVersion).toBe(first.document?.fileIndex?.contentVersion);
+ const firstScan=await scanSourceFiles(root,options),first=firstScan.items[0];expect(first.document?.fileIndex).toMatchObject({status:'pending',allowRead:true,maxIndexCharacters:100000});expect(first.text).toBe('');
+ await rename(path,join(root,'two.txt'));const second=(await scanSourceFiles(root,options,undefined,undefined,firstScan.checkpoint)).items[0];expect(second.externalId).toBe(first.externalId);expect(second.document?.fileIndex?.contentVersion).toBe(first.document?.fileIndex?.contentVersion);
  const readDisabled=(await scanSourceFiles(root,{...options,allowRead:false})).items[0];expect(readDisabled.document?.fileIndex?.allowRead).toBe(false);expect(readDisabled.localOriginalBase64).toBe(Buffer.from(text).toString('base64'));
- }finally{await rm(root,{recursive:true,force:true});}
+ }finally{vi.restoreAllMocks();await rm(root,{recursive:true,force:true});}
 });
 
 

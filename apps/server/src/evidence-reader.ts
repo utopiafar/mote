@@ -213,6 +213,21 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       if(!this.memoryLineageVisible({dependencyIds,evidenceIds:card.evidenceIds,evidence:card.evidence.map(value=>({id:value.id,contentHash:value.contentHash})),scopeRefs:card.scopeRefs},{},false,{policy,operation:'memory'}))throw new StoreError('Integration Memory or its exact original proof is not readable',409);
     }
   }
+  /** Opening leads are saved with accepted queries. Recheck them before each
+   * model boundary so a correction cannot replay an obsolete interpretation. */
+  currentMemoryLeadsAllowed(leads:NonNullable<import('@mote/agent').QueryInput['openingMemories']>,asOf?:string){
+    return leads.every(lead=>{
+      const page=this.memoryPage({id:formatEvidenceRef('memory',lead.id),status:'published',asOf,limit:1});
+      if(!page.items.length)return false;
+      const memory=this.memories.get(lead.id);
+      const admission=memory.admission?.scope.trim()?{scope:memory.admission.scope.slice(0,600),attribution:memory.admission.attribution}:undefined;
+      return memory.title.slice(0,160)===lead.title&&memory.statement.slice(0,700)===lead.statement&&
+        memory.uncertainty.slice(0,300)===lead.uncertainty&&memory.status===lead.status&&
+        memory.tier===lead.tier&&memory.createdAt===lead.createdAt&&memory.validFrom===lead.validFrom&&memory.validUntil===lead.validUntil&&
+        JSON.stringify(admission)===JSON.stringify(lead.admission)&&
+        (!memory.supersededBy||Date.parse(memory.supersededAt??'')>Date.now());
+    });
+  }
   async memoryAsync(ref:string,scope:Range={},ownerArchive=false,snapshot?:MemoryReadSnapshot,exposure:MemoryExposure={policy:defaultEvidenceExposurePolicy,operation:'expand'}):Promise<Memory|undefined>{
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
     const owned=!snapshot&&this.memoryBindings?this.memoryBindings.retainSnapshot([parsed.id]):undefined,pin=snapshot??owned;
@@ -228,7 +243,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     }catch(error){if(error instanceof MemoryProviderError)throw new StoreError(error.message,error.code==='invalid_record'||error.code==='conflict'?502:503);throw error;}finally{owned?.release();}
   }
   async memoryPageAsync(args:Parameters<MemoryStore['page']>[0]&Range={},ownerArchive=false,snapshot?:MemoryReadSnapshot,exposure:MemoryExposure={policy:defaultEvidenceExposurePolicy,operation:'discover'}):Promise<ReturnType<MemoryStore['page']>>{
-    const owned=!snapshot&&this.memoryBindings?this.memoryBindings.retainSnapshot():undefined,pin=snapshot??owned;
+    const selectedId=args.id===undefined?undefined:evidenceRefId(args.id,'memory');
+    const owned=!snapshot&&this.memoryBindings?this.memoryBindings.retainSnapshot(args.id===undefined?undefined:selectedId?[selectedId]:[]):undefined,pin=snapshot??owned;
     try{
       const metadataPage=(scope:Parameters<MemoryStore['page']>[0]&Range)=>{const page=ownerArchive?this.memoryPage({...scope,level:'overview'},true):this.agentMemoryPage({...scope,level:'overview'},exposure.policy,exposure.operation);return {...page,items:page.items.filter(value=>!pin?.lineage[value.id]||this.memoryLineageVisible(pin.lineage[value.id],scope,ownerArchive,exposure))};};
       const pinnedMetadata=(current:any)=>pin?.metadata[current.id]?{...pin.metadata[current.id],disclosure:current.disclosure}:current;

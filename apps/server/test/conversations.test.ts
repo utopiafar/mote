@@ -56,19 +56,19 @@ test('new answers receive bounded visible memory leads and respect explicit arch
   const validity={validFrom:'2026-09-18T00:00:00Z',validUntil:'2099-09-19T00:00:00Z'};
   const published=await card('published','Generated published project choice applies from 2026-09-18 until 2099-09-19.',validity);
   const proposed=await card('proposed','Generated proposed project choice');
+  assert.equal(proposed.memory.status,'proposed');
   memories.publish(published.memory.id);
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Tell me about this generated project'}})).statusCode,200);
-  assert.deepEqual(seen[0].openingMemories?.map(item=>[item.id,item.status]),[[published.memory.id,'published'],[proposed.memory.id,'proposed']]);
+  assert.deepEqual(seen[0].openingMemories?.map(item=>[item.id,item.status]),[[published.memory.id,'published']],'a proposed draft is not current memory');
   assert.ok(seen[0].openingMemories!.every(item=>!('evidence' in item)));
-  assert.deepEqual(seen[0].openingMemories?.map(item=>item.admission),[{scope:'Generated project',attribution:'user'},{scope:'Generated project',attribution:'user'}]);
+  assert.deepEqual(seen[0].openingMemories?.map(item=>item.admission),[{scope:'Generated project',attribution:'user'}]);
   assert.equal(seen[0].openingMemories![0].validFrom,validity.validFrom);assert.equal(seen[0].openingMemories![0].validUntil,validity.validUntil);
-  assert.equal(seen[0].openingMemories![1].validFrom,undefined);
   assert.ok(seen[0].openingMemories!.every(item=>!('evidenceIds' in item)&&!('attributionContext' in item)&&!('ownerStatements' in item)));
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Only later records',after:'2026-09-19T00:00:00Z'}})).statusCode,200);
   assert.deepEqual(seen[1].openingMemories,[]);
   store.delete(published.original.id);
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Again'}})).statusCode,200);
-  assert.deepEqual(seen[2].openingMemories?.map(item=>item.id),[proposed.memory.id]);
+  assert.deepEqual(seen[2].openingMemories,[],'deleting the published card cannot fall back to the proposed draft');
 });
 
 test('full client login can read, continue and delete saved conversations',async t=>{

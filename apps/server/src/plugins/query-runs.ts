@@ -121,7 +121,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
     const id=work.id.slice('query:'.length),states=['owner-query:'+id,'automatic-conversations:'+work.operationId].map(workId=>modelAuthorizationHost.control.workState(workId));
     if(states.includes('revoked'))throw new ExecutionFailure('stale','ask_revoked');
   };
-  const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,archiveReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
+  const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,archiveReader,memoryReader:evidenceReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
     query:input=>queryRuntime.queryAgent(input,'query','conversations')});
   const assertMessage=(id:string,body:unknown)=>{
     const receipt=store.db.prepare("SELECT request_hash,json_extract(json,'$.turnId') turnId FROM query_runs WHERE id=?").get(id);

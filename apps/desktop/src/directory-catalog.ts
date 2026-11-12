@@ -5,7 +5,7 @@ import { join, relative } from 'node:path';
 import type { FileCatalogEntry, FileScanDegraded, LocalFileCheckpoint } from './source-types';
 
 export interface DirectoryCandidate {
-  path: string; relativePath: string; fileId: string; birthtimeMs: number; size: number; mtimeMs: number; ctimeMs: number; quickHash: string;
+  path: string; relativePath: string; fileId: string; birthtimeMs: number; size: number; mtimeMs: number; ctimeMs: number; quickHash: string; nlink?: number;
 }
 
 const quickHash = (fileId: string, size: number, mtimeMs: number, ctimeMs: number): string => createHash('sha256').update(`${fileId}:${size}:${mtimeMs}:${ctimeMs}`).digest('hex');
@@ -51,7 +51,7 @@ export class DirectoryCatalog {
     const valid=previous && previous.version === 1 && previous.root === root && previous.catalog && typeof previous.catalog === 'object';
     this.priorPaths=new Set(valid&&previous?Object.keys(previous.catalog):[]);
     this.state = valid ? incremental?{...structuredClone({...previous,catalog:undefined}),catalog:previous.catalog}:clone(previous) : {
-      version: 1, root, scanNumber: 0, scanStartedAt: new Date(0).toISOString(), initialized: false,
+      version: 1, identityVersion: 1, root, scanNumber: 0, scanStartedAt: new Date(0).toISOString(), initialized: false,
       inProgress: false, pendingDirectories: [], catalog: {},
     };
     if(incremental){
@@ -72,14 +72,47 @@ export class DirectoryCatalog {
   restore(checkpoint: LocalFileCheckpoint): void { this.state = clone(checkpoint); this.listing=undefined; this.rootChecked=false; this.rootFailed=false; this.rootIdentityChanged=false; this.rootChangedMidScan=false; this.observedRootIdentity=undefined; this.reconciled=false; }
   get catalog(): Readonly<Record<string, FileCatalogEntry>> { return this.state.catalog; }
 
+  /** Bind a location only after the scanner has checked its identity. */
+  bind(relativePath: string, entryId: string, identityRoot: string, previous?: FileCatalogEntry): void {
+    const current=this.state.catalog[relativePath];
+    if(!current) throw Error('File candidate was not observed');
+    if(previous && previous.relativePath!==relativePath && this.state.catalog[previous.relativePath]?.entryId===previous.entryId) {
+      this.remember(previous.relativePath);
+      delete this.state.catalog[previous.relativePath];
+    }
+    this.remember(relativePath);
+    this.state.catalog[relativePath]={
+      relativePath, fileId:current.fileId, birthtimeMs:current.birthtimeMs, size:current.size,
+      mtimeMs:current.mtimeMs, ctimeMs:current.ctimeMs, quickHash:current.quickHash,
+      lastSeenScan:current.lastSeenScan, entryId, identityRoot, syncState:previous?.syncState??'pending',
+      ...(previous?.contentQuickHash?{contentQuickHash:previous.contentQuickHash}:{}),
+      ...(previous?.contentVersion?{contentVersion:previous.contentVersion}:{}),
+      ...(previous?.contentHash?{contentHash:previous.contentHash}:{}),
+    };
+  }
+
+  setVolumeIdentity(value: string | undefined): void { this.state.volumeIdentity=value; }
+  setIdentityScope(value: string, volume: string | undefined): void { this.state.identityScope=value;this.state.identityScopeVolume=volume; }
+  setIdentityVerificationPending(value: boolean): void { this.state.identityVerificationPending=value; }
+
+  /** A failed read must not pair an old logical ID with unverified metadata. */
+  reject(relativePath: string, previous: FileCatalogEntry | undefined): void {
+    this.remember(relativePath);
+    if(previous)this.state.catalog[relativePath]={...previous,syncState:'error'};
+    else delete this.state.catalog[relativePath];
+    this.fault('scan_incomplete');
+  }
+
   observe(candidate: DirectoryCandidate): void {
     this.begin();
     this.remember(candidate.relativePath);
+    const previous=this.state.catalog[candidate.relativePath];
+    const same=previous?.fileId===candidate.fileId && previous.birthtimeMs===candidate.birthtimeMs;
     this.state.catalog[candidate.relativePath] = {
-      ...(this.state.catalog[candidate.relativePath] ?? {}), relativePath: candidate.relativePath, fileId: candidate.fileId,
+      ...(same?previous:{}), relativePath: candidate.relativePath, fileId: candidate.fileId,
       birthtimeMs: candidate.birthtimeMs, size: candidate.size, mtimeMs: candidate.mtimeMs, ctimeMs: candidate.ctimeMs,
       quickHash: candidate.quickHash, lastSeenScan: this.state.scanNumber,
-      syncState: this.state.catalog[candidate.relativePath]?.syncState ?? 'pending',
+      syncState: same?previous.syncState:'pending',
     };
   }
 
@@ -188,9 +221,10 @@ export class DirectoryCatalog {
           if(info.isDirectory()){this.state.pendingDirectories.push(path);continue;}
           if(!info.isFile()){skipped++;continue;}
           const fileId=`${info.dev}:${info.ino}`,fingerprint=quickHash(fileId,info.size,info.mtimeMs,info.ctimeMs);
-          candidates.push({path,relativePath,fileId,birthtimeMs:info.birthtimeMs,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:fingerprint});
+          candidates.push({path,relativePath,fileId,birthtimeMs:info.birthtimeMs,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:fingerprint,nlink:info.nlink});
           this.remember(relativePath);
-          this.state.catalog[relativePath]={...(this.state.catalog[relativePath]??{}),relativePath,fileId,size:info.size,birthtimeMs:info.birthtimeMs,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:fingerprint,lastSeenScan:this.state.scanNumber,syncState:this.state.catalog[relativePath]?.syncState??'pending'};
+          const previous=this.state.catalog[relativePath],same=previous?.fileId===fileId && previous.birthtimeMs===info.birthtimeMs;
+          this.state.catalog[relativePath]={...(same?previous:{}),relativePath,fileId,size:info.size,birthtimeMs:info.birthtimeMs,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:fingerprint,lastSeenScan:this.state.scanNumber,syncState:same?previous.syncState:'pending'};
           this.state.nextFile=relativePath;
         }
       }
@@ -199,17 +233,17 @@ export class DirectoryCatalog {
     return { candidates, complete: complete && !this.state.inProgress && !this.state.scanFaulted, faulted, skipped, ...(this.state.degradedReason ? { degraded: this.state.degradedReason } : {}) };
   }
 
-  markContent(relativePath: string, contentHash: string | undefined, syncState: FileCatalogEntry['syncState'] = 'synced'): void {
+  markContent(relativePath: string, contentVersion: string | undefined, syncState: FileCatalogEntry['syncState'] = 'synced', contentHash?: string): void {
     const entry = this.state.catalog[relativePath];
     if (!entry) return;
     this.remember(relativePath);
     if (syncState === 'error') this.fault('scan_incomplete');
-    this.state.catalog[relativePath] = { ...entry, ...(contentHash ? { contentHash, contentQuickHash: entry.quickHash } : {}), syncState };
+    this.state.catalog[relativePath] = { ...entry, ...(contentVersion ? { contentVersion, contentQuickHash: entry.quickHash, contentHash } : {}), syncState };
   }
 
-  finishSingle(): void { this.state.inProgress = false; this.state.pendingDirectories = []; this.finishReconciliation(); }
+  finishSingle(withholdRemovals=false): void { this.state.inProgress = false; this.state.pendingDirectories = []; this.finishReconciliation(withholdRemovals); }
 
-  finishReconciliation(): string[] {
+  finishReconciliation(withholdRemovals=false): string[] {
     const removed: string[] = [];
     this.reconciled=false;
     if (this.state.inProgress || this.state.scanFaulted) return removed;
@@ -235,6 +269,7 @@ export class DirectoryCatalog {
     this.state.initialized = true;
     this.state.lastScanComplete = true;
     this.state.lastCompleteScanAt = new Date().toISOString();
+    if(withholdRemovals){this.state.degradedReason='root_changed';return removed;}
     this.state.degradedReason = undefined;
     this.reconciled = true;
     for (const [relativePath, entry] of Object.entries(this.state.catalog)) {
