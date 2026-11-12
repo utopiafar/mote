@@ -23,6 +23,13 @@ export {originalEvidenceReceipt} from './bridge.js';
 export {extractionSeedScopeValid} from './extraction-seed-scope.js';
 export {validateInlineCitations} from './citations.js';
 export {validateModelOptions} from './models/provider-registry.js';
+export {CONSERVATIVE_CONTEXT_WINDOW, resolveModelCapabilities, type ModelCapabilities} from './models/provider-registry.js';
+export {
+  TOKEN_COUNTING_STRATEGIES, DEFAULT_TOKEN_COUNTING_STRATEGY, DEFAULT_CONTEXT_BUDGET_CONFIGURATION,
+  estimateTextTokens, estimateSerializedTokens, normalizeContextBudgetConfiguration, calculateContextBudget,
+  type TokenCountingStrategy, type TokenEstimate, type ContextBudgetConfiguration, type ContextBudgetUsage,
+  type ContextBudgetInput, type ContextBudgetResult,
+} from './models/context-budget.js';
 export {SYSTEM_PROMPT, SOURCE_TIME_INSTRUCTIONS, ATTRIBUTION_CONTEXT_INSTRUCTIONS, systemInstructions} from './instructions.js';
 export {createRuntimePatch} from './runtime/dsh/profile-compiler.js';
 export {CodexSession} from './codex-session.js';
