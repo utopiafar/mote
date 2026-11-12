@@ -36,7 +36,7 @@ export interface HostOutputInput {
   readonly identity: RuntimeRunIdentity;
   readonly candidate: RuntimeCandidate;
   /** Pure Host-selected policy only: no tool execution, mutation channel, grants or observer callbacks. */
-  readonly policy: Readonly<Pick<QueryInput, 'responseMode' | 'skill' | 'taskContext' | 'validateOutput'>>;
+  readonly policy: Readonly<Pick<QueryInput, 'responseMode' | 'skill' | 'taskContext' | 'assistantDraft' | 'validateOutput'>>;
   readonly evidence: HostEvidenceSnapshot;
   /** Host assembly metrics plus actual tool delivery counts, never runtime-reported context usage. */
   readonly contextUsage: NonNullable<AgentAnswer['contextUsage']>;

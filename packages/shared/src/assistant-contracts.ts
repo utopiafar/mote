@@ -50,3 +50,31 @@ export const assistantTaskRecordSchema=z.object({
   sourceContextDependencies:z.array(sourceContextDeclarationSchema).optional(),
 }).strict();
 export type AssistantTaskRecord=z.infer<typeof assistantTaskRecordSchema>;
+
+/** A model may propose a goal, never an identity, scope, permission or effect.
+ * The host binds the remaining fields after validating the current answer. */
+export const assistantDraftProposalSchema=z.object({goal:ownerText}).strict();
+export type AssistantDraftProposal=z.infer<typeof assistantDraftProposalSchema>;
+
+/** Commands the host can offer for a validated draft. The model never chooses
+ * these; they are computed from the handlers installed by the product host. */
+export const assistantDraftCapabilitySchema=z.enum(['assistant.task.start','assistant.task.preview']);
+export type AssistantDraftCapability=z.infer<typeof assistantDraftCapabilitySchema>;
+
+/** One host-validated draft attached to a completed answer. `requestId` is
+ * stable for retries; `revision` changes only for an explicit owner edit. */
+export const assistantDraftSchema=z.object({
+  requestId:uuid,revision,goal:ownerText,scope:queryScopeSchema,
+  capabilities:z.array(assistantDraftCapabilitySchema).min(1).refine(values=>new Set(values).size===values.length,{message:'Draft capabilities must be unique'}),
+}).strict();
+export type AssistantDraft=z.infer<typeof assistantDraftSchema>;
+
+/** An owner command for a stored answer draft. The command carries the same
+ * requestId/goal/scope core as the task input, plus the exact stored answer and
+ * the draft version the owner acted on. The host compares both with the stored
+ * draft before dispatching to a domain handler. */
+export const assistantDraftCommandSchema=assistantTaskInputSchema.extend({
+  conversationId:uuid,turnId:uuid,expectedRevision:revision,
+  capability:assistantDraftCapabilitySchema,
+}).strict();
+export type AssistantDraftCommand=z.infer<typeof assistantDraftCommandSchema>;

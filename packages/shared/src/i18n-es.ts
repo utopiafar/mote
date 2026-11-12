@@ -10469,5 +10469,14 @@ export const spanish: Readonly<Record<string, string>> = {
   "跟踪事项、承诺、期限和定期规则。": "Seguir asuntos, compromisos, plazos y reglas periódicas.",
   "记忆与人物": "Memorias y personas",
   "查看、纠正和遗忘助理对你的理解。": "Revisar, corregir y olvidar lo que el asistente entiende sobre ti.",
-  "项目、人物、旅行和阅读的固定视图。": "Vistas fijas para proyectos, personas, viajes y lectura."
+  "项目、人物、旅行和阅读的固定视图。": "Vistas fijas para proyectos, personas, viajes y lectura.",
+  "建议的下一步": "Siguiente paso sugerido",
+  "这份草稿可以修改后再开始。": "Puedes editar este borrador antes de empezar.",
+  "工作目标": "Objetivo del trabajo",
+  "查看将使用的范围": "Ver el alcance que se utilizará",
+  "任务服务尚未接通，暂时不能开始。": "El servicio de tareas aún no está conectado; por ahora no se puede empezar.",
+  "草稿已开始。": "Borrador iniciado.",
+  "草稿范围已确认。": "Alcance del borrador confirmado.",
+  "这份草稿已失效，请回到原回答重新生成。": "Este borrador ya no está vigente. Vuelve a la respuesta original y genera uno nuevo.",
+  "草稿提交失败，请重试。": "No se pudo enviar el borrador. Inténtalo de nuevo."
 };

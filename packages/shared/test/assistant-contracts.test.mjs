@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {
+  assistantDraftCommandSchema, assistantDraftProposalSchema, assistantDraftSchema,
   assistantTaskInputSchema, assistantTaskRecordSchema, attributionContextSchema,
   codingEvidenceSchema, conversationMessageInputSchema, conversationMessageSchema,
   documentSchema, evidenceDependenciesSchema, fileViewSchema, modelBudgetSchema, queryScopeSchema,
@@ -108,4 +109,22 @@ test('unknown attribution and occurrence remain explicit or absent in existing s
     presentation:{labelKey:'generated',i18nNamespace:'generated'},data:{schemaRef:'generated.data',schemaVersion:2}});
   assert.equal(acceptUiContribution([],{packageId:'generated',descriptor},{'generated.data':[1]}).accepted,false);
   assert.equal(acceptUiContribution([],{packageId:'generated',descriptor},{'generated.data':[2]}).accepted,true);
+});
+
+test('draft proposals carry only a goal; the host binds identity, scope and capabilities',()=>{
+  const proposal={goal:'Generated follow-up'};
+  assert.deepEqual(roundTrip(assistantDraftProposalSchema,proposal),proposal);
+  for(const invalid of [{goal:''},{goal:'   '},{goal:'Generated',scope:{kind:'all'}},{goal:'Generated',requestId:randomUUID()},{goal:'Generated',capability:'assistant.task.start'}])
+    assert.equal(assistantDraftProposalSchema.safeParse(invalid).success,false);
+
+  const draft={requestId:randomUUID(),revision:1,goal:'Generated follow-up',scope:{kind:'selection',sourceIds:[sourceB]},capabilities:['assistant.task.preview']};
+  assert.deepEqual(roundTrip(assistantDraftSchema,draft),draft);
+  assert.equal(assistantDraftSchema.safeParse({...draft,capabilities:[]}).success,false);
+  assert.equal(assistantDraftSchema.safeParse({...draft,capabilities:['assistant.task.preview','assistant.task.preview']}).success,false);
+  assert.equal(assistantDraftSchema.safeParse({...draft,capabilities:['assistant.task.send']}).success,false);
+
+  const command={conversationId:randomUUID(),turnId:randomUUID(),requestId:draft.requestId,expectedRevision:1,capability:'assistant.task.preview',goal:draft.goal,scope:draft.scope};
+  assert.deepEqual(roundTrip(assistantDraftCommandSchema,command),command);
+  assert.equal(assistantDraftCommandSchema.safeParse({...command,capability:'assistant.task.send'}).success,false);
+  assert.equal(assistantDraftCommandSchema.safeParse({...command,scope:{kind:'all'}}).success,true,'scope is checked against the stored draft by the host, not by the wire schema');
 });
