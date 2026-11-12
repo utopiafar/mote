@@ -13,7 +13,7 @@ import {Store,StoreError,sha256,type Range} from './store.js';
 import {SourceStore} from './sources.js';
 import {privateDirectory} from './private-storage.js';
 import {readFileSpeakerAttributions} from './file-speaker-attribution.js';
-import {fileAttachmentAvailable} from './file-attachments.js';
+import {fileAttachmentAvailable,fileAttachmentParent} from './file-attachments.js';
 
 type Upload={id:string;source_id:string;manifest:string;fingerprint:string;created_at:string;ack:string|null};
 type Version={capture_id:string;source_id:string;external_id:string;revision:string;manifest:string;object_hash:string|null};
@@ -77,7 +77,11 @@ export class FileStore {
     }
     const results=[];
     for(const input of normalized){
-      try{const ack=input.sha256&&!input.item.deleted?this.beginAdmitted(input,authorize):await this.revisionAdmitted(input,authorize);results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});}
+      try{
+        let ack=input.sha256&&!input.item.deleted?this.beginAdmitted(input,authorize):await this.revisionAdmitted(input,authorize);
+        if('uploadId' in ack&&!ack.ack)ack=await this.reuse(ack.uploadId,authorize)??ack;
+        results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});
+      }
       catch(error){if(!(error instanceof StoreError))throw error;results.push({externalId:input.item.externalId,revision:input.item.revision,state:'rejected',status:error.statusCode});}
     }
     return {results};
@@ -119,6 +123,67 @@ export class FileStore {
     if(!row)throw new StoreError('Upload session expired or missing',404);authorize(row.source_id);this.allowed(JSON.parse(row.manifest));return row;
   }
   upload(id:string,authorize:(sourceId:string)=>void){const row=this.session(id,authorize);return {uploadId:id,partBytes:FILE_PART_BYTES,parts:this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').all(id),ack:row.ack?JSON.parse(row.ack):null};}
+  /** Only a currently authorized file origin can grant reuse. Asset hashes on
+   * their own, including hashes retained by unrelated domains, grant nothing. */
+  private reusable(input:FileRevision,authorize:(sourceId:string)=>void,captureId?:string){
+    const db=this.store.db,source=this.sources.getSource(input.sourceId),hash=input.sha256!;
+    const rows=db.prepare(`WITH candidates AS (
+      SELECT substr(owner,6) AS id FROM asset_references WHERE hash=? AND owner LIKE 'file:%'
+      UNION ALL SELECT substr(owner,16) AS id FROM asset_references WHERE hash=? AND owner LIKE 'snapshot-input:%'
+    ) SELECT v.capture_id,v.source_id FROM candidates r
+      JOIN file_versions v ON v.capture_id=r.id
+      JOIN source_connections s ON s.id=v.source_id
+      JOIN file_heads f ON f.capture_id=v.capture_id AND f.origin_missing=0
+      JOIN source_heads h ON h.capture_id=v.capture_id AND h.deleted=0
+      JOIN captures c ON c.id=v.capture_id
+      WHERE (? IS NULL OR v.capture_id=?) AND json_extract(c.json,'$.privacy.excluded')=0
+        AND json_extract(v.manifest,'$.sha256')=? AND json_extract(v.manifest,'$.sizeBytes')=?
+        AND json_extract(v.manifest,'$.item.layer')=?
+        AND (v.object_hash=? OR EXISTS(SELECT 1 FROM file_snapshot_inputs s WHERE s.capture_id=v.capture_id AND s.object_hash=? AND s.expires>?))`)
+      .iterate(hash,hash,captureId??null,captureId??null,hash,input.sizeBytes,input.item.layer,hash,hash,Date.now());
+    for(const row of rows){
+      const candidate=String(row.capture_id),sourceId=String(row.source_id);
+      // A denied origin must look exactly like an absent one to this request.
+      try{authorize(sourceId);}catch(error){if(error&&typeof error==='object'&&'statusCode' in error&&(error.statusCode===403||error.statusCode===404))continue;throw error;}
+      const origin=this.sources.getSource(sourceId);
+      if(!origin.enabled||origin.retention!==source.retention||!fileAttachmentAvailable(this.store,candidate,true)||fileAttachmentParent(this.store,candidate,true)?.record.privacy.excluded)continue;
+      const asset=db.prepare('SELECT bytes FROM assets WHERE hash=?').get(hash);
+      if(!asset||asset.bytes!==input.sizeBytes||!this.store.assets.retained(hash))continue;
+      return candidate;
+    }
+  }
+  /** Commit through the ordinary session and revision transaction; the hold
+   * keeps bytes alive while source/version/authorization are rechecked. */
+  async reuse(id:string,authorize:(sourceId:string)=>void){
+    this.assertOpen();
+    return this.serialize('upload:'+id,async()=>{
+      const db=this.store.db;db.exec('BEGIN IMMEDIATE');
+      let input:FileRevision,candidate:string|undefined,release:(()=>void)|undefined;
+      try{
+        const row=this.session(id,authorize);if(row.ack){db.exec('COMMIT');return JSON.parse(row.ack);}
+        // Never bypass validation of bytes already submitted to this session.
+        if(db.prepare('SELECT 1 FROM file_parts WHERE upload_id=? LIMIT 1').get(id)){db.exec('COMMIT');return;}
+        input=JSON.parse(row.manifest) as FileRevision;candidate=this.reusable(input,authorize);
+        if(candidate)release=this.store.assets.hold(input.sha256!);
+        db.exec('COMMIT');
+      }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+      if(!candidate||!release)return;
+      const hash=input.sha256!;let published=false;
+      try{
+        const check=()=>{
+          this.closing.signal.throwIfAborted();this.session(id,authorize);
+          if(db.prepare('SELECT 1 FROM file_parts WHERE upload_id=? LIMIT 1').get(id))throw new StoreError('Upload changed; retry commit',409);
+          if(!this.reusable(input,authorize,candidate))throw new StoreError('Reusable file is no longer available',409);
+        };
+        const ack=await this.revisionAdmitted(input,check,captureId=>{
+          const value={id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:hash,sha256:hash,sizeBytes:input.sizeBytes,duplicate:false};
+          this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(value),id);return value;
+        });
+        this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(ack),id);published=true;
+        await rm(join(this.uploads,id),{recursive:true,force:true});return ack;
+      }finally{release();if(!published)this.store.assets.sweep();}
+    });
+  }
   part(id:string,part:number,bytes:Buffer,authorize:(sourceId:string)=>void){
     this.assertAdmitting();
     const row=this.session(id,authorize);if(row.ack)throw new StoreError('Upload already committed',409);

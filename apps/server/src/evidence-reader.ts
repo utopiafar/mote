@@ -366,6 +366,12 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       return record&&this.materials?[[id,this.materials.contextForEvidence(record)]]:[];
     }));
   }
+  /** Host-only full lineage for consumers which must authorize every original,
+   * including members beyond the bounded artifact navigation projection. */
+  artifactDependencies(ref:string,scope:Range={}){
+    const parsed=parseArtifactRef(ref);
+    return parsed?this.artifactMembers(parsed.id,parsed.revision,scope):undefined;
+  }
   artifact(ref:string,scope:Range={}){
     const parsed=parseArtifactRef(ref);if(!parsed)return;
     const originals=this.artifactMembers(parsed.id,parsed.revision,scope);if(!originals)return;
