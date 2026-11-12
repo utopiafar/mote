@@ -36,7 +36,7 @@ open class CentralActivity : MoteActivity() {
         val link = next.getStringExtra("link")?.let(MoteLink::parse) ?: return
         next.removeExtra("link")
         val host = (application as? MoteApplication)?.pluginHost
-        val destination = MoteLink.destination(link, CentralAccess.resolve(this).server) { host?.route(it.routeId) != null }
+        val destination = MoteLinkNavigation.destination(host, link, CentralAccess.resolve(this).server)
         if (destination is MoteLink.Destination.Extras) {
             next.putExtra("page", destination.page)
             destination.conversationId?.let { next.putExtra("conversationId", it) }

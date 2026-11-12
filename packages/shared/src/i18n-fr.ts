@@ -10462,5 +10462,12 @@ export const french: Readonly<Record<string, string>> = {
   "详细过程单独保存，可能包含个人内容；开启后最多记录 24 小时，关闭后立即停止新增记录，已有内容按保留策略清理。": "Les traces détaillées sont conservées séparément et peuvent contenir des données personnelles. L’enregistrement s’arrête au bout de 24 heures ou dès sa désactivation ; les données existantes suivent la politique de conservation.",
   "详细过程按需单独保存，可能包含个人内容，开启后最多记录 24 小时。": "Les traces détaillées sont enregistrées séparément sur demande, peuvent contenir des données personnelles et s’arrêtent sous 24 heures.",
   "日志总容量上限": "Limite totale de stockage des journaux",
-  "所有日志级别与进程监督日志共用总预算，优先清理详细记录。": "Tous les niveaux de journaux et les journaux de supervision partagent ce budget. Les traces détaillées sont supprimées en premier."
+  "所有日志级别与进程监督日志共用总预算，优先清理详细记录。": "Tous les niveaux de journaux et les journaux de supervision partagent ce budget. Les traces détaillées sont supprimées en premier.",
+  "助理功能": "Assistant",
+  "助理接入的页面；未接入前不会执行任何工作。": "Pages connectées à l’assistant ; rien ne s’exécute avant leur connexion.",
+  "事项与规则": "Sujets et règles",
+  "跟踪事项、承诺、期限和定期规则。": "Suivre les sujets, engagements, échéances et règles récurrentes.",
+  "记忆与人物": "Mémoire et personnes",
+  "查看、纠正和遗忘助理对你的理解。": "Consulter, corriger et oublier ce que l’assistant comprend de vous.",
+  "项目、人物、旅行和阅读的固定视图。": "Vues fixes pour les projets, les personnes, les voyages et les lectures."
 };

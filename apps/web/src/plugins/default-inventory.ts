@@ -14,6 +14,7 @@ export interface DefaultWebPluginSource {
  * package so a disabled optional plugin is never imported by the shell. */
 export const defaultWebPluginSources: readonly DefaultWebPluginSource[] = [
   { packageId: 'mote.agent-view', exportName: 'agentAccess', load: () => import('./agent-access') },
+  { packageId: 'mote.assistant', exportName: 'assistant', load: () => import('./assistant') },
   { packageId: 'mote.notes', exportName: 'notes', load: () => import('./notes') },
   { packageId: 'mote.system', exportName: 'system', load: () => import('./system') },
   { packageId: 'mote.home', exportName: 'home', load: () => import('./home') },

@@ -72,9 +72,19 @@ class NativePluginHost(val registry: NativePluginRegistry) {
 
     fun scope(instanceId: String): PluginOwnerSession? = scopes[instanceId]
 
-    /** Registered plugin route factory for a page id, if any scope owns it. */
-    fun route(pageId: String): PluginRouteFactory? = scopes.values.firstNotNullOfOrNull { it.routes[pageId] }
-    fun routeOwner(pageId: String): PluginOwnerSession? = scopes.values.firstOrNull { it.routes.containsKey(pageId) }
+    /** Registered plugin route factory for a page id. A route id owned by more
+     * than one live scope is ambiguous and resolves to nothing; registration
+     * order never wins navigation. */
+    fun route(pageId: String): PluginRouteFactory? = routeOwner(pageId)?.routes?.get(pageId)
+    fun routeOwner(pageId: String): PluginOwnerSession? =
+        scopes.values.filter { !it.revoked && it.routes.containsKey(pageId) }.singleOrNull()
+
+    /** Package-scoped view route used by typed deep links. A route id from
+     * another package, or a stopped scope, is not a known route. */
+    fun route(packageId: String, routeId: String): PluginRouteFactory? =
+        routeOwner(packageId, routeId)?.routes?.get(routeId)
+    fun routeOwner(packageId: String, routeId: String): PluginOwnerSession? =
+        scopes.values.singleOrNull { !it.revoked && it.identity.packageId == packageId && it.routes.containsKey(routeId) }
 
     /** Admission: desired+compatible only; missing providers reject activation
      * with REQUIRES_BUILD — nothing is fake-installed and no class names are

@@ -10462,5 +10462,12 @@ export const english: Readonly<Record<string, string>> = {
   "详细过程单独保存，可能包含个人内容；开启后最多记录 24 小时，关闭后立即停止新增记录，已有内容按保留策略清理。": "Detailed traces are stored separately and may contain personal content. Recording stops within 24 hours or immediately when disabled; existing records follow the retention policy.",
   "详细过程按需单独保存，可能包含个人内容，开启后最多记录 24 小时。": "Detailed traces are stored separately when enabled, may contain personal content, and stop within 24 hours.",
   "日志总容量上限": "Total log storage limit",
-  "所有日志级别与进程监督日志共用总预算，优先清理详细记录。": "All log levels and process supervisor logs share this budget. Detailed traces are removed first."
+  "所有日志级别与进程监督日志共用总预算，优先清理详细记录。": "All log levels and process supervisor logs share this budget. Detailed traces are removed first.",
+  "助理功能": "Assistant",
+  "助理接入的页面；未接入前不会执行任何工作。": "Pages connected to the assistant; nothing runs until they are connected.",
+  "事项与规则": "Matters and rules",
+  "跟踪事项、承诺、期限和定期规则。": "Track matters, commitments, deadlines, and recurring rules.",
+  "记忆与人物": "Memory and people",
+  "查看、纠正和遗忘助理对你的理解。": "Review, correct, and forget what the assistant understands about you.",
+  "项目、人物、旅行和阅读的固定视图。": "Fixed views for projects, people, trips, and reading."
 };

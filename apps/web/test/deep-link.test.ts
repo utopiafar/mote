@@ -66,6 +66,10 @@ test('a deactivated plugin view falls to the reader while a live one keeps its r
     const link=webDeepLink(serializeMoteLink({origin},{kind:'view',view})) as MoteLink;
     assert.deepEqual(resolveWebDeepLink(link,{origin}),{status:'route',route:{kind:'view',view}});
     assert.equal(dest(deepLinkHash(link.route)).page,'generated.editor');
+    const foreignView={...view,packageId:'generated.deeplink.other'};
+    const foreignLink=webDeepLink(serializeMoteLink({origin},{kind:'view',view:foreignView})) as MoteLink;
+    assert.deepEqual(resolveWebDeepLink(foreignLink,{origin}),{status:'reader',ref},'a route id alone never transfers another package page');
+    assert.equal(dest(deepLinkHash(foreignLink.route)).page,'ask');
     await fiber.dispose();
     assert.deepEqual(resolveWebDeepLink(link,{origin}),{status:'reader',ref});
     assert.equal(dest(deepLinkHash(link.route)).page,'ask');

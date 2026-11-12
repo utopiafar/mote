@@ -39,7 +39,7 @@ class NativePluginHostTest {
     @Test fun `builtin providers register in the APK registry with their OS grants`() {
         val registry = NativePluginRegistry().apply { registerBuiltinPlugins("test-build") }
         assertEquals(
-            listOf("mote.capture.projection", "mote.capture.accessibility", "mote.durable-upload", "mote.sources", "mote.storage-backup", "mote.system-entries", "mote.notes", "mote.library", "mote.ask", "mote.home", "mote.work-discovery", "mote.managed-calendar", "mote.plugin-center", "mote.administration", "mote.system-tools"),
+            listOf("mote.capture.projection", "mote.capture.accessibility", "mote.durable-upload", "mote.sources", "mote.storage-backup", "mote.system-entries", "mote.notes", "mote.library", "mote.ask", "mote.home", "mote.work-discovery", "mote.managed-calendar", "mote.plugin-center", "mote.administration", "mote.system-tools", "mote.assistant"),
             registry.list().map { it.capability },
         )
         assertEquals(listOf("projection"), registry.provider("mote.capture.projection", "1")?.osGrants)
@@ -135,6 +135,21 @@ class NativePluginHostTest {
         assertEquals(1, drained)
         assertFalse("admission is fenced before draining", lateJob)
         assertTrue(a.revoked)
+    }
+
+    @Test fun `a route id owned by more than one package is ambiguous instead of first-wins`() {
+        val host = NativePluginHost(NativePluginRegistry())
+        val first = (host.createScope(descriptor("first")) as PluginResult.Ok).value
+        val second = (host.createScope(descriptor("second")) as PluginResult.Ok).value
+        first.registerRoute("shared.page") { _, _ -> stubView("shared.page") }
+        second.registerRoute("shared.page") { _, _ -> stubView("shared.page") }
+        assertNull("user navigation never picks an owner by registration order", host.route("shared.page"))
+        assertNull(host.routeOwner("shared.page"))
+        assertNotNull(host.route("pkg.first", "shared.page"))
+        assertNotNull(host.route("pkg.second", "shared.page"))
+        assertNull("a package cannot claim another package route", host.route("pkg.third", "shared.page"))
+        host.stopScope("first")
+        assertEquals("pkg.second", host.routeOwner("shared.page")?.identity?.packageId)
     }
 
     @Test fun `a registered route mounts its contribution before it is reported handled`() {
