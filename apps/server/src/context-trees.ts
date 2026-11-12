@@ -69,21 +69,40 @@ export class ContextTreeRegistry {
       return true;
     }finally{snapshot?.release();}
   }
+  private async someMemoryVisible(reader:TreeMemoryRead,scope:unknown,ids:readonly string[]){
+    const selected=navigationScopeSchema.parse(scope);
+    const snapshot=reader.memoryBindings?.retainSnapshot(ids);
+    try{
+      for(const id of new Set(ids)){
+        const page=await reader.memoryPageAsync({...selected,id:formatEvidenceRef('memory',id),status:'published',limit:1},true,snapshot);
+        if(page.items.some(item=>item.id===id))return true;
+      }
+      return false;
+    }finally{snapshot?.release();}
+  }
   private automaticTrees(reader?:TreeMemoryRead,scope:unknown={}){
     const selected=navigationScopeSchema.parse(scope);
     // A label may reflect any input in its classification batch, including
     // inputs the classifier did not attach to a visible node.
     return this.automatic?.trees(reader?memories=>this.memoriesVisible(reader,selected,memories.map(memory=>memory.id)):undefined);
   }
-  private registeredTreeVisible(scope:unknown,tree:ContextTree){
+  private async registeredTreeVisible(reader:TreeMemoryRead|undefined,scope:unknown,tree:ContextTree){
     const selected=navigationScopeSchema.parse(scope);
-    // A node's selection is not a complete lineage for its label. Only the
-    // host's fixed generic labels are safe without a classification receipt.
-    return !Object.keys(selected).length||this.scopeIndependentTrees.includes(tree.id);
+    if(!Object.keys(selected).length||this.scopeIndependentTrees.includes(tree.id))return true;
+    if(!reader)return false;
+    // Registered labels are host/plugin navigation, not captured model output.
+    // Their declared memory membership is the only verifiable lineage: keep a
+    // tree when at least one declared member remains readable in this scope,
+    // and let every page still intersect its rows with the requested scope.
+    for(const node of tree.nodes){
+      const ids=node.select.memoryIds;
+      if(ids?.length&&await this.someMemoryVisible(reader,selected,ids))return true;
+    }
+    return false;
   }
   async catalog(reader?:TreeMemoryRead,scope:unknown={}){
     const registered:ContextTree[]=[];
-    for(const tree of this.trees.values())if(this.registeredTreeVisible(scope,tree))registered.push(tree);
+    for(const tree of this.trees.values())if(await this.registeredTreeVisible(reader,scope,tree))registered.push(tree);
     return {classification:this.automatic?.state()??{state:'unavailable'},items:[...(await this.automaticTrees(reader,scope)??[]),...registered].map(tree=>({...tree,label:moteText(tree.label),nodes:tree.nodes.map(({select:_,...node})=>({...node,label:moteText(node.label)}))}))};
   }
   async page(reader:TreeMemoryRead,treeId:string,nodeId:string,raw:unknown,ownerArchive=true){
@@ -91,7 +110,7 @@ export class ContextTreeRegistry {
     const {cursor,limit,...scope}=querySchema.parse(raw);
     const navigation=Object.fromEntries(Object.keys(navigationScopeSchema.shape).filter(key=>scope[key as keyof typeof scope]!==undefined).map(key=>[key,scope[key as keyof typeof scope]]));
     const tree=automatic?(await this.automaticTrees(reader,navigation))?.find(tree=>tree.id===treeId):this.trees.get(treeId),node=tree?.nodes.find(value=>value.id===nodeId);
-    if(!tree||!node||!automatic&&!this.registeredTreeVisible(navigation,tree))throw new StoreError('Context tree node not found',404);
+    if(!tree||!node||!automatic&&!await this.registeredTreeVisible(reader,navigation,tree))throw new StoreError('Context tree node not found',404);
     const snapshot=reader.memoryBindings?.retainSnapshot();
     try{
       const signature=sha256(JSON.stringify({tree,node,revision:this.revision,scope,binding:snapshot?.binding}));
