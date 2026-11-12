@@ -199,3 +199,21 @@ test('queued history reads retain their original lineage and reject changed hist
   assert.equal(revoked.message.status,'failed');
   assert.doesNotMatch(JSON.stringify(node.conversations.get(id)),/GENERATED_LATE_RESULT/);
 });
+
+test('the extended query authority check keeps delivered Memory pins current',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-c3-authority-')),memoryId=randomUUID();
+  let node!:Awaited<ReturnType<typeof buildApp>>,detected=false;
+  node=await buildApp(config(dir),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{
+    node.store.db.prepare('INSERT OR REPLACE INTO memories(id,created_at,json) VALUES(?,?,?)').run(memoryId,new Date().toISOString(),JSON.stringify({version:1,title:'GENERATED_MEMORY',statement:'Generated memory statement',uncertainty:'Generated only',status:'published',domain:'personal',tier:'episode',kind:'episodic',createdAt:new Date().toISOString(),evidenceIds:[],evidence:[],model:'fixture',runId:'fixture',fingerprint:'GENERATED_OLD_MEMORY',admission:{layer:'memory',reason:'Generated',scope:'Generated',attribution:'observed'}}));
+    input.onMemoryBodies?.([{id:memoryId,fingerprint:'GENERATED_OLD_MEMORY',version:1}]);
+    node.store.db.prepare("UPDATE memories SET json=json_set(json,'$.fingerprint','GENERATED_NEW_MEMORY') WHERE id=?").run(memoryId);
+    try{input.assertContextAuthority?.();}catch{detected=true;}
+    node.store.db.prepare("UPDATE memories SET json=json_set(json,'$.fingerprint','GENERATED_OLD_MEMORY') WHERE id=?").run(memoryId);
+    return answer('Generated memory authority answer');
+  }}});
+  t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
+  const id=node.conversations.main().id;
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:id,question:'Generated memory authority',after:'2026-09-01T00:00:00Z'}});
+  assert.equal(response.statusCode,200,response.body);
+  assert.equal(detected,true,'the extended history assertion still validates delivered Memory pins');
+});

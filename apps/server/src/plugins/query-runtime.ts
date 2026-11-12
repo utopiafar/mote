@@ -199,6 +199,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       }};
     observed.assertContextAuthority=()=>{
       input.assertContextAuthority?.();
+      assertMemoryPins();
       if(observed.conversation?.historyContext)conversations.assertHistoryContext(observed.conversation.historyContext);
     };
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
