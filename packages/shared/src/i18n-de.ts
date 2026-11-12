@@ -10469,5 +10469,14 @@ export const german: Readonly<Record<string, string>> = {
   "跟踪事项、承诺、期限和定期规则。": "Vorgänge, Zusagen, Fristen und wiederkehrende Regeln verfolgen.",
   "记忆与人物": "Erinnerungen und Personen",
   "查看、纠正和遗忘助理对你的理解。": "Ansehen, korrigieren und vergessen, was der Assistent über dich versteht.",
-  "项目、人物、旅行和阅读的固定视图。": "Feste Ansichten für Projekte, Personen, Reisen und Lesen."
+  "项目、人物、旅行和阅读的固定视图。": "Feste Ansichten für Projekte, Personen, Reisen und Lesen.",
+  "建议的下一步": "Vorgeschlagener nächster Schritt",
+  "这份草稿可以修改后再开始。": "Dieser Entwurf kann vor dem Start bearbeitet werden.",
+  "工作目标": "Arbeitsziel",
+  "查看将使用的范围": "Verwendeten Umfang anzeigen",
+  "任务服务尚未接通，暂时不能开始。": "Der Aufgabendienst ist noch nicht verbunden; ein Start ist derzeit nicht möglich.",
+  "草稿已开始。": "Entwurf gestartet.",
+  "草稿范围已确认。": "Entwurfsumfang bestätigt.",
+  "这份草稿已失效，请回到原回答重新生成。": "Dieser Entwurf ist nicht mehr aktuell. Kehren Sie zur ursprünglichen Antwort zurück und erzeugen Sie einen neuen.",
+  "草稿提交失败，请重试。": "Der Entwurf konnte nicht übermittelt werden. Versuchen Sie es erneut."
 };

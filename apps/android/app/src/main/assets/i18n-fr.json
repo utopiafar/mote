@@ -10468,5 +10468,14 @@
   "跟踪事项、承诺、期限和定期规则。": "Suivre les sujets, engagements, échéances et règles récurrentes.",
   "记忆与人物": "Mémoire et personnes",
   "查看、纠正和遗忘助理对你的理解。": "Consulter, corriger et oublier ce que l’assistant comprend de vous.",
-  "项目、人物、旅行和阅读的固定视图。": "Vues fixes pour les projets, les personnes, les voyages et les lectures."
+  "项目、人物、旅行和阅读的固定视图。": "Vues fixes pour les projets, les personnes, les voyages et les lectures.",
+  "建议的下一步": "Prochaine étape suggérée",
+  "这份草稿可以修改后再开始。": "Vous pouvez modifier ce brouillon avant de commencer.",
+  "工作目标": "Objectif de travail",
+  "查看将使用的范围": "Voir la portée qui sera utilisée",
+  "任务服务尚未接通，暂时不能开始。": "Le service des tâches n'est pas encore connecté ; le démarrage est impossible pour le moment.",
+  "草稿已开始。": "Brouillon démarré.",
+  "草稿范围已确认。": "Portée du brouillon confirmée.",
+  "这份草稿已失效，请回到原回答重新生成。": "Ce brouillon n'est plus à jour. Revenez à la réponse d'origine et générez-en un nouveau.",
+  "草稿提交失败，请重试。": "Le brouillon n'a pas pu être envoyé. Réessayez."
 }

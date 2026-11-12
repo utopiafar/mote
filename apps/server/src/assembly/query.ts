@@ -8,6 +8,8 @@ import {createConversations,createConversationsFactory,createConversationRoutes,
 import {createQueryRuntimeFactory,createQueryRuntimePlatform,queryRuntimeContribution,queryRuntimeDeclaration,queryRuntimeReplacement,type QueryRuntimeDependencies,type QueryRuntimeServices,type QueryRuntimeStarted} from '../plugins/query-runtime.js';
 import {createQueryRunsFactory,createQueryRunsPlatform,queryRunsContribution,queryRunsDeclaration,queryRunsReplacement,type QueryRunDependencies,type QueryRunsStarted} from '../plugins/query-runs.js';
 import {registerQueryRunRoutes} from '../features/ask/query-runs.js';
+import {registerAssistantCommandRoutes} from '../features/ask/assistant-commands.js';
+import type {AssistantDrafts} from '../assistant-drafts.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {ServerResources} from '../server-resources.js';
@@ -67,6 +69,7 @@ export interface QueryRunsAssemblyDependencies extends QueryRunDependencies {
   readonly backendContext:Context;
   readonly resources:ServerResources;
   readonly availableModelConnections:()=>ModelConnection[];
+  readonly assistantDrafts:Pick<AssistantDrafts,'command'>;
 }
 
 /** Install C27's delegation runtime and replayable Ask receipts, then mount
@@ -85,5 +88,6 @@ export async function prepareQueryRuns(dependencies:QueryRunsAssemblyDependencie
     queryRuns:()=>platform.port,modelAuthorizationHost:dependencies.modelAuthorizationHost,
     availableModelConnections:dependencies.availableModelConnections,modelSettings:dependencies.modelSettings,agent:dependencies.agent,
   })}});
+  contributeDomainRoutes(dependencies.backendContext,{'mote.ask':{mount:(app:FastifyInstance)=>registerAssistantCommandRoutes(app,dependencies.assistantDrafts)}});
   return Object.freeze({delegation:started!.delegation,queryRuns:started!.queryRuns,queryRunServices:platform});
 }

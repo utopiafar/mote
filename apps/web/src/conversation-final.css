@@ -14,3 +14,13 @@
 .final-conversation .chat-image-upload{max-width:100%;white-space:normal;gap:9px}.final-conversation .chat-image-upload>span{min-width:0;overflow-wrap:anywhere}.final-conversation .chat-image-upload small{display:block;color:var(--mote-muted);font-size:10px;line-height:1.7}.final-conversation .chat-image-upload>button{flex-shrink:0;font-size:11px}
 
 .final-conversation .ask-form .chat-attachment-list>.chat-attachment{gap:10px;padding:8px;border:1px solid var(--mote-hair);border-radius:var(--mote-radius-indicator);background:transparent!important;color:var(--mote-ink)!important;font-size:11px;max-width:100%}.final-conversation .chat-attachment>span{min-width:0;white-space:normal;overflow-wrap:anywhere}.final-conversation .chat-attachment strong{font-size:11px;font-weight:500}.final-conversation .chat-attachment small{display:block;color:var(--mote-muted);font-size:10px;margin-top:3px}.final-conversation .chat-attachment .chat-draft-thumbnail{width:45px;height:39px;object-fit:cover;border-radius:var(--mote-radius-thumb);flex-shrink:0}
+.assistant-draft{margin-top:18px;padding:14px 16px;border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container);background:var(--mote-surface)}
+.assistant-draft-heading{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500}
+.assistant-draft>p{margin:8px 0;font-size:11px;color:var(--mote-muted);line-height:1.8}
+.assistant-draft label{display:grid;gap:6px;font-size:11px;color:var(--mote-muted)}
+.assistant-draft textarea{width:100%;min-height:64px;resize:vertical;font-size:12px;line-height:1.8;padding:9px 11px;border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-control);background:var(--mote-background);color:var(--mote-ink)}
+.assistant-draft-actions{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.assistant-draft-actions .button{display:inline-flex;align-items:center;gap:6px;min-height:34px;font-size:11px;padding:0 12px}
+.assistant-draft-note{font-size:10px!important}
+.assistant-draft-status{font-size:11px!important;color:var(--mote-ink)!important}
+.assistant-draft-status.error{color:var(--mote-danger)!important}

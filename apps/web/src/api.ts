@@ -125,6 +125,7 @@ export interface Answer {
   snapshot?:import('@mote/shared').InsightSnapshot;
   modelSelection?: import("@mote/shared/models").ModelSelection;
   usage?:import('@mote/shared').UsageReceipt;
+  draft?:import('@mote/shared').AssistantDraft;
   answer: string;
   runId: string;
   citations: {

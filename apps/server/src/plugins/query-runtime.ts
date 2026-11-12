@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {AgentNotConfiguredError,AgentYieldError,type AgentProgress,type AgentTraceEvent,type QueryInput} from '@mote/agent';
+import {AgentNotConfiguredError,AgentYieldError,prepareTaskContext,type AgentProgress,type AgentTraceEvent,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type InsightSnapshot,type QueryResult} from '@mote/shared';
 import type {DelegationRuntime} from '../delegation-runtime.js';
 import type {AgentRunFinalizer,QueryRunLease} from '../query-agent.js';
@@ -31,6 +31,7 @@ import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 import type {SourceContextStore} from '../source-context.js';
 import type {ObservabilityAssembly} from './observability-platform.js';
+import {assistantDraftScope,type AssistantDrafts} from '../assistant-drafts.js';
 import {centralServices,type QueryDomain} from './central-contracts.js';
 
 /** C27 owns admitted model runs and the insight entry. Routes and preparation
@@ -61,6 +62,7 @@ export interface QueryRuntimeDependencies {
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
   readonly sourceContexts:SourceContextStore;
+  readonly assistantDrafts:Pick<AssistantDrafts,'capabilities'|'issue'>;
 }
 
 export interface QueryRuntime {
@@ -76,7 +78,7 @@ export interface QueryRuntime {
  * accounting, trace/usage observation and the insight entry. Preparation and
  * receipts enter through the same plugin activation. */
 export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryRuntime {
-  const {store,lifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,assertModelEvidence,sourceContexts}=dependencies;
+  const {store,lifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,assertModelEvidence,sourceContexts,assistantDrafts}=dependencies;
   const {contextDependencies,sourceContextDependencies,pinProcessingEvidence}=dependencies.modelEvidenceAuthority;
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   const activeQueries=new Set<Promise<QueryResult>>();
@@ -104,6 +106,18 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     if(lifecycle.isClosing())throw new StoreError('Central node is shutting down',503);
     input=pinProcessingEvidence(input);
     if(input.skill==='personal-insight'&&!input.validateOutput)input={...input,validateOutput:validateInsightOutput};
+    // A draft is a host-issued answer attachment, never a tool or model
+    // capability. Only ordinary interactive conversation answers can carry one.
+    let draftScope:ReturnType<typeof assistantDraftScope>;
+    if(operation==='query'&&moduleId==='conversations'&&assistantDrafts.capabilities().length){
+      const scope=assistantDraftScope(input);
+      if(scope){
+        const prepared=prepareTaskContext({...input,assistantDraft:true});
+        if(prepared.responseMode==='answer'&&Object.hasOwn((prepared.outputSchema.properties??{}) as Record<string,unknown>,'draft')){
+          draftScope=scope;input={...input,assistantDraft:true};
+        }
+      }
+    }
     const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
     input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
     if(input.contextEvidenceDependencies)input={...input,contextEvidenceDependencies:resolveDependencies(store,input.contextEvidenceDependencies)};
@@ -207,7 +221,12 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       if(accounting)throw accounting;
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       const completedUsage=runState.mode==='host'?hostReceipt:undefined;
-      return {...result,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
+      // A goal-only model proposal becomes a host-bound draft only inside this
+      // ordinary conversation answer. The proposal itself is never persisted.
+      const {draftProposal,...answerResult}=result as QueryResult & {draftProposal?:{goal:string}};
+      let draft:import('@mote/shared').AssistantDraft|undefined;
+      if(draftProposal&&input.assistantDraft&&draftScope)try{draft=assistantDrafts.issue({goal:draftProposal.goal,scope:draftScope});}catch{/* A malformed proposal cannot fail a valid answer. */}
+      return {...answerResult,...(draft?{draft}:{}),...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
     }).catch(error=>{
       // The Host run session finalizes only through its observer's run terminal.
       // A latched contradiction replaces the outcome after the Host has settled.

@@ -7,6 +7,7 @@ import {copyEvidencePresentation} from '../evidence-ledger.js';
 
 export function hostOutputPolicy(input: QueryInput): HostOutputInput['policy'] {
   return {responseMode: input.responseMode, skill: input.skill, taskContext: input.taskContext,
+    ...(input.assistantDraft ? {assistantDraft: true} : {}),
     ...(input.validateOutput ? {validateOutput: async (answer: AgentAnswer) => {
       const issue = await input.validateOutput!(answer);
       if (issue) reportTrace(input, {type: 'validation.host_rejected', runId: answer.runId, stage: 'validating', status: 'rejected', payload: {code: issue.code, feedback: issue.feedback}});
@@ -30,7 +31,7 @@ export function snapshotHostEvidence(source: HostEvidenceSnapshot): HostEvidence
 /** The single parse -> coverage restoration -> domain validation pipeline. */
 async function buildHostOutput(input: Omit<HostOutputInput, 'identity'> & {runId: string; includeReadRanges?: boolean}): Promise<AgentAnswer> {
   const evidence = snapshotHostEvidence(input.evidence);
-  const parsed = parseAnswer(input.candidate.text, evidence.records);
+  const parsed = parseAnswer(input.candidate.text, evidence.records, {draft: input.policy.assistantDraft === true});
   const result: AgentAnswer = {
     ...parsed,
     answer: restoreMemoryCoverageKeys(parsed.answer, input.policy.taskContext),

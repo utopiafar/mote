@@ -1,4 +1,4 @@
-import {TASK_DESCRIPTOR_API_VERSION,TASK_OUTPUT_SCHEMA,type TaskDescriptor,type TaskPack,type TaskProfile} from './descriptor.js';
+import {TASK_DESCRIPTOR_API_VERSION,TASK_OUTPUT_SCHEMA,ASSISTANT_DRAFT_OUTPUT_SCHEMA,type TaskDescriptor,type TaskPack,type TaskProfile} from './descriptor.js';
 import {defaultTaskRegistry,type TaskRegistry} from './registry.js';
 import {ARCHIVE_RECENCY_INSTRUCTIONS} from './evidence-rules.js';
 
@@ -41,8 +41,29 @@ export const selectedAnswerTaskDescriptor = {
   select: input => input.evidenceIds !== undefined,
 } as const satisfies TaskDescriptor;
 
+/** The host opts into one optional goal-only draft; these descriptors change
+ * only the output schema, never retrieval scope or tool authority. */
+export const answerDraftTaskDescriptor = {
+  apiVersion: TASK_DESCRIPTOR_API_VERSION,
+  id: 'answer-draft',
+  version: QUERY_TASK_VERSION,
+  profile: ASK_TASK_PROFILE,
+  outputSchema: ASSISTANT_DRAFT_OUTPUT_SCHEMA,
+  priority: 10,
+  select: input => input.assistantDraft === true && input.evidenceIds === undefined,
+} as const satisfies TaskDescriptor;
+export const selectedAnswerDraftTaskDescriptor = {
+  apiVersion: TASK_DESCRIPTOR_API_VERSION,
+  id: 'selected-answer-draft',
+  version: QUERY_TASK_VERSION,
+  profile: SELECTED_ANSWER_TASK_PROFILE,
+  outputSchema: ASSISTANT_DRAFT_OUTPUT_SCHEMA,
+  priority: 30,
+  select: input => input.assistantDraft === true && input.evidenceIds !== undefined,
+} as const satisfies TaskDescriptor;
+
 export function createQueryTaskPack(): TaskPack {
-  return Object.freeze({tasks: Object.freeze([answerTaskDescriptor, selectedAnswerTaskDescriptor])});
+  return Object.freeze({tasks: Object.freeze([answerTaskDescriptor,selectedAnswerTaskDescriptor,answerDraftTaskDescriptor,selectedAnswerDraftTaskDescriptor])});
 }
 
 export function installQueryTaskPack(registry: TaskRegistry = defaultTaskRegistry): () => void | Promise<void> {

@@ -78,6 +78,9 @@ export interface AgentAnswer {
   sourceContextDependencies?:{sourceId:string;version:number;fingerprint:string}[];
   evidenceDependencies?:import('@mote/shared').EvidenceDependencies;
   contextUsage?:{unit:'utf16_characters';system:number;tools:number;question:number;conversation:number;task:number;evidence:number;prompt:number;outputTokenReserve:number;toolResults:number};
+  /** A model-proposed goal only. The host binds identity, scope, revision and
+   * capabilities and decides whether any command is available. */
+  draftProposal?:import('@mote/shared').AssistantDraftProposal;
   answer: string;
   citations: Citation[];
   trace: ToolTrace[];
