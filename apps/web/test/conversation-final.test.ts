@@ -143,3 +143,14 @@ test('late historical reference replies cannot reopen after switch away and back
  const owner2={...owner,request:async(p:string,init?:RequestInit)=>{if(p==='/api/conversations/'+id&&held)return delayed;return owner.request(p,init);}} as Api;
  await render(owner2);await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());held=true;await act(async()=>d.querySelector<HTMLButtonElement>('.inline-citation')!.click());await render(api());await act(async()=>resolveTurn(conversation));assert.deepEqual(opened,[],'a late exact-turn read belongs to its original owner only');
 });
+
+test('a host-validated draft appears in its own answer card with the smallest edit and preview entry',async t=>{
+ const {root,d}=await fixture(t),writes:any[]=[];
+ const draft={requestId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',revision:1,goal:'Generated draft goal',scope:{kind:'all' as const},capabilities:['assistant.task.preview' as const]};
+ const base=api((path,init)=>{writes.push({path,body:JSON.parse(String(init.body))});return{requestId:draft.requestId};});
+ const owner={...base,request:async(p:string,init?:RequestInit)=>p==='/api/conversations/'+id?{...conversation,turns:[{...conversation.turns[0],result:{...answer,draft}}]}:base.request(p,init)} as Api;
+ await view(root,owner);await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());
+ const card=d.querySelector('.assistant-draft')!;assert.ok(card);assert.equal(card.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated draft goal');
+ assert.ok([...card.querySelectorAll('button')].find(item=>item.textContent==='查看将使用的范围'));assert.equal([...card.querySelectorAll('button')].find(item=>item.textContent==='开始')!.disabled,true);
+ await click(d,'查看将使用的范围',card);assert.deepEqual(writes,[{path:'/api/assistant/commands',body:{conversationId:id,turnId:'generated-turn',requestId:draft.requestId,expectedRevision:1,capability:'assistant.task.preview',goal:draft.goal,scope:draft.scope}}]);
+});

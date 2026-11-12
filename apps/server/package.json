@@ -17,6 +17,7 @@
     "@deepseek-ai/cordis": "4.0.4",
     "@fastify/cors": "^11.1.0",
     "@fastify/static": "^10.1.3",
+    "@js-temporal/polyfill": "0.5.1",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@mote/agent": "0.1.0",
     "@mote/plugin-api": "0.1.0",

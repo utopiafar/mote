@@ -10469,5 +10469,14 @@ export const english: Readonly<Record<string, string>> = {
   "跟踪事项、承诺、期限和定期规则。": "Track matters, commitments, deadlines, and recurring rules.",
   "记忆与人物": "Memory and people",
   "查看、纠正和遗忘助理对你的理解。": "Review, correct, and forget what the assistant understands about you.",
-  "项目、人物、旅行和阅读的固定视图。": "Fixed views for projects, people, trips, and reading."
+  "项目、人物、旅行和阅读的固定视图。": "Fixed views for projects, people, trips, and reading.",
+  "建议的下一步": "Suggested next step",
+  "这份草稿可以修改后再开始。": "You can edit this draft before starting.",
+  "工作目标": "Work goal",
+  "查看将使用的范围": "View the scope that will be used",
+  "任务服务尚未接通，暂时不能开始。": "The task service is not connected yet, so this cannot start now.",
+  "草稿已开始。": "Draft started.",
+  "草稿范围已确认。": "Draft scope confirmed.",
+  "这份草稿已失效，请回到原回答重新生成。": "This draft is no longer current. Return to the original answer and generate a new one.",
+  "草稿提交失败，请重试。": "The draft could not be submitted. Try again."
 };

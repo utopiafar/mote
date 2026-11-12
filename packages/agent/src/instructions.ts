@@ -19,15 +19,17 @@ export {ATTRIBUTION_CONTEXT_INSTRUCTIONS,SOURCE_TIME_INSTRUCTIONS};
 // One compact canonical evidence contract. Source-specific protocols are
 // attached to actual returned evidence, never selected from question keywords.
 export const SYSTEM_PROMPT=[EVIDENCE_SECURITY_INSTRUCTIONS,MATERIAL_EVIDENCE_INSTRUCTIONS,ARCHIVE_RETRIEVAL_INSTRUCTIONS,BOUNDED_EVIDENCE_PROMPT.slice(BOUNDED_EVIDENCE_PROMPT.indexOf('The host request')),ATTRIBUTION_CONTEXT_INSTRUCTIONS].join('\n');
+const ASSISTANT_DRAFT_INSTRUCTIONS='The host output schema additionally permits one optional draft object with exactly goal (a nonempty string) and no other fields. Include it only when a concrete follow-up task would help and the owner could edit and start it. A draft is a proposal, not a task, action, permission, request ID, revision, scope or capability. Never claim it has started and never create tasks, messages, calendar events or other effects. Omit it when no concrete work is warranted.';
 export function systemInstructions(input:QueryInput,evidence:ContextRecord[]=[]):string {
  if(input.hostControlChannel){const {hostControlChannel:controls,...ordinary}=input;return systemInstructions(ordinary,evidence)+'\n'+hostControlInstructions(controls);}
  if(input.skill==='working-memory')return WORKING_SYSTEM_PROMPT+'\n'+SOURCE_TIME_INSTRUCTIONS+ATTRIBUTION_CONTEXT_INSTRUCTIONS;
  // Unknown source protocols retain the existing full rules. A restricted host
  // grant still has no obligation to discover newer archive originals.
  const full=taskProfile(input).retrieval==='archive'?SYSTEM_PROMPT:SYSTEM_PROMPT.replace(ARCHIVE_RECENCY_INSTRUCTIONS+'\n','');
+ const withDraft=(instructions:string)=>input.assistantDraft?instructions+'\n'+ASSISTANT_DRAFT_INSTRUCTIONS:instructions;
  // Open archive sessions may retrieve any source later. Unknown source protocols
  // retain every rule rather than assuming the missing metadata means absence.
- if(input.evidenceIds===undefined||!evidence.length)return input.hostContextToolMode==='all-native'?full.replace('use capability_discover then capability_execute with its exact registered name/version and schema','invoke the supplied typed native capability directly'):full;
- if(hasUnknownSourceProtocol(evidence))return full;
- return boundedSourceInstructions(evidence);
+ if(input.evidenceIds===undefined||!evidence.length)return withDraft(input.hostContextToolMode==='all-native'?full.replace('use capability_discover then capability_execute with its exact registered name/version and schema','invoke the supplied typed native capability directly'):full);
+ if(hasUnknownSourceProtocol(evidence))return withDraft(full);
+ return withDraft(boundedSourceInstructions(evidence));
 }
