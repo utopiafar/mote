@@ -84,6 +84,7 @@ export async function prepareQueryRuns(dependencies:QueryRunsAssemblyDependencie
   contributeDomainRoutes(dependencies.backendContext,{'mote.ask':{mount:(app:FastifyInstance)=>registerQueryRunRoutes(app,{
     queryRuns:()=>platform.port,modelAuthorizationHost:dependencies.modelAuthorizationHost,
     availableModelConnections:dependencies.availableModelConnections,modelSettings:dependencies.modelSettings,agent:dependencies.agent,
+    conversations:dependencies.conversations,conversationQueue:()=>platform.conversationQueue,
   })}});
   return Object.freeze({delegation:started!.delegation,queryRuns:started!.queryRuns,queryRunServices:platform});
 }

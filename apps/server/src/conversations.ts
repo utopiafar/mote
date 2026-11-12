@@ -1,14 +1,15 @@
 import {inheritRetiredConversationRoots,unavailableHistoryEvidence} from './conversation-retention.js';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {combineDependencies,resolveDependencies,historyEvidenceDependencies} from './conversation-lineage.js';
 import {SourceContextStore} from './source-context.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies,sourceContextDependenciesCurrent} from './source-context-lineage.js';
+import {fileAttachmentAvailable} from './file-attachments.js';
 
-export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'timeZone'|'evidenceIds'|'anchorEvidenceIds'|'anchorMaterialRef'>;
-export type ConversationStatus = 'accepted'|'queued'|'completed'|'failed';
+export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'timeZone'|'evidenceIds'|'anchorEvidenceIds'|'anchorMaterialRef'> & {kind?:'all'|'selection';sourceIds?:string[]};
+export type ConversationStatus = 'accepted'|'queued'|'running'|'completed'|'failed'|'cancelled';
 type Attachment = {id:string;name:string;mimeType:string};
 type Failure = {code:string;message:string};
 export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[]};
@@ -18,9 +19,9 @@ export type Conversation = ConversationSummary & {turns:ConversationTurn[];revis
 type NewTurn = Omit<ConversationTurn,'seq'>;
 type Row = {id:string;title:string;created_at:string;updated_at:string;json:string};
 
-const scopeKeys=['after','before','deviceId','timeZone','evidenceIds','anchorEvidenceIds','anchorMaterialRef'] as const;
-const terminalStatus="coalesce(json_extract(json,'$.status'),'completed') IN ('completed','failed')";
-const pendingStatus="json_extract(json,'$.status') IN ('accepted','queued')";
+const scopeKeys=['after','before','deviceId','timeZone','evidenceIds','anchorEvidenceIds','anchorMaterialRef','kind','sourceIds'] as const;
+const terminalStatus="coalesce(json_extract(json,'$.status'),'completed') IN ('completed','failed','cancelled')";
+const pendingStatus=(prefix='')=>`json_extract(${prefix}json,'$.status') IN ('accepted','queued','running')`;
 const scopeOf=(input:ConversationScope):ConversationScope=>{
   const scope:ConversationScope={};
   for(const key of scopeKeys){
@@ -64,12 +65,35 @@ export class Conversations {
         where='WHERE (updated_at < ? OR (updated_at = ? AND id < ?))';values.push(value.at,value.at,value.id);
       }catch{throw new StoreError('Invalid conversation cursor');}
     }
-    const rows=this.store.db.prepare(`SELECT id,title,created_at,updated_at,json_extract(json,'$.scope') AS scope,json_extract(json,'$.turnCount') AS turn_count,json_extract(json,'$.status') AS last_turn_status FROM conversations ${where} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values,limit+1) as {id:string;title:string;created_at:string;updated_at:string;scope:string;turn_count:number;last_turn_status:string|null}[];
+    const rows=this.store.db.prepare(`SELECT id,title,created_at,updated_at,json_extract(json,'$.scope') AS scope,(SELECT count(*) FROM conversation_turns t WHERE t.conversation_id=conversations.id) AS turn_count,json_extract(json,'$.status') AS last_turn_status FROM conversations ${where} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values,limit+1) as {id:string;title:string;created_at:string;updated_at:string;scope:string;turn_count:number;last_turn_status:string|null}[];
     const page=rows.slice(0,limit),last=page.at(-1);
-    return {items:page.map(row=>({id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:JSON.parse(row.scope),turnCount:row.turn_count,status:row.last_turn_status==='failed'||row.last_turn_status==='accepted'||row.last_turn_status==='queued'?row.last_turn_status:'completed'}) as ConversationSummary),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({at:last.updated_at,id:last.id})).toString('base64url'):null};
+    return {items:page.map(row=>({id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:JSON.parse(row.scope),turnCount:row.turn_count,status:['failed','accepted','queued','running','cancelled'].includes(row.last_turn_status??'')?row.last_turn_status:'completed'}) as ConversationSummary),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({at:last.updated_at,id:last.id})).toString('base64url'):null};
   }
 
   get(id:string):Conversation {return this.read(id);}
+  /** A stable, owner-local identity; deleting the conversation starts a new one. */
+  main():{id:string} {
+    return this.transaction(()=>{
+      const saved=this.store.db.prepare("SELECT value FROM settings WHERE key='main-conversation-id'").get();
+      const id=saved&&String(saved.value);
+      if(id&&this.store.db.prepare('SELECT 1 FROM conversations WHERE id=?').get(id))return {id};
+      const next=randomUUID(),now=new Date().toISOString();
+      this.store.reserveMetadata(512);
+      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(next,'',now,now,JSON.stringify({scope:{},turnCount:0,status:'completed',bytes:0,revision:0}));
+      this.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(next);
+      return {id:next};
+    });
+  }
+  message(id:string):ConversationMessage {const row=this.messageRow(id);return {conversationId:row.conversation_id,...JSON.parse(row.json) as ConversationTurn};}
+  hasMessage(id:string):boolean{return Boolean(this.store.db.prepare('SELECT 1 FROM conversation_turns WHERE id=?').get(id));}
+  messageByClientRequestId(id:string):ConversationMessage|undefined {
+    const row=this.store.db.prepare("SELECT conversation_id,json FROM conversation_turns WHERE json_extract(json,'$.clientRequestId')=?").get(id) as {conversation_id:string;json:string}|undefined;
+    return row?{conversationId:row.conversation_id,...JSON.parse(row.json) as ConversationTurn}:undefined;
+  }
+  messageForRun(runId:string):ConversationMessage|undefined {
+    const row=this.store.db.prepare("SELECT conversation_id,json FROM conversation_turns WHERE json_extract(json,'$.runId')=?").get(runId) as {conversation_id:string;json:string}|undefined;
+    return row?{conversationId:row.conversation_id,...JSON.parse(row.json) as ConversationTurn}:undefined;
+  }
   referenceAvailability(id:string,evidenceId:string){
     const conversation=this.get(id);
     const retained=conversation.turns.some(turn=>!turn.evidenceDeleted&&Boolean(turn.result)&&[...turn.result!.citations.map(citation=>citation.id),...(turn.scope.evidenceIds??[]),...(turn.scope.anchorEvidenceIds??[])].includes(evidenceId));
@@ -78,26 +102,39 @@ export class Conversations {
   /** UI reads only the requested page. Cursor is the exclusive older turn index. */
   page(id:string,{limit=20,cursor}:{limit?:number;cursor?:string}={}){
     if(cursor!==undefined&&!/^\d{1,9}$/.test(cursor))throw new StoreError('Invalid turn cursor');
-    const value=this.read(id,Math.max(1,Math.min(limit,50)),cursor===undefined?undefined:Number(cursor));
+    const value=this.read(id,Math.max(1,Math.min(limit,50)),cursor===undefined?undefined:Number(cursor),true);
     const oldest=(value as Conversation&{firstIndex?:number}).firstIndex??0;
     return {...value,nextCursor:oldest>0?String(oldest):null};
   }
-  private read(id:string,limit?:number,before?:number):Conversation&{firstIndex:number} {
+  private visibleTurn(value:ConversationTurn):ConversationTurn {
+    let turn=value;
+    if(turn.attachments?.length){
+      const visible=turn.attachments.flatMap(attachment=>{
+        const record=this.store.evidenceMetadata([attachment.id])[0];
+        if(!record||record.privacy.excluded||!this.store.isCurrentEvidence(attachment.id)||!fileAttachmentAvailable(this.store,attachment.id,true)||unavailableHistoryEvidence(this.store,[attachment.id]).length)return [];
+        if(attachment.name&&attachment.mimeType)return [attachment];
+        const file=this.store.db.prepare("SELECT json_extract(manifest,'$.item.title') name,json_extract(manifest,'$.item.mimeType') mimeType FROM file_versions WHERE capture_id=?").get(attachment.id);
+        return [{id:attachment.id,name:String(file?.name||'Attached image'),mimeType:String(file?.mimeType??'')}];
+      });
+      turn={...turn,attachments:visible};
+    }
+    if(!turn.evidenceDeleted&&turn.result){
+      const result=turn.result;
+      if(!sourceContextDependenciesCurrent(this.sourceContexts,result.sourceContextDependencies))turn={...turn,evidenceStale:true};
+      const unavailableEvidenceIds=unavailableHistoryEvidence(this.store,[...result.citations.map(cite=>cite.id),...(turn.scope.evidenceIds??[]),...(turn.scope.anchorEvidenceIds??[])]);
+      if(unavailableEvidenceIds.length)turn={...turn,unavailableEvidenceIds};
+    }
+    return turn;
+  }
+  private read(id:string,limit?:number,before?:number,includePending=false):Conversation&{firstIndex:number} {
     const row=this.store.db.prepare('SELECT * FROM conversations WHERE id=?').get(id) as Row|undefined;
     if(!row)throw new StoreError('Conversation not found',404);
     const value=JSON.parse(row.json);
     const high=before??Number(this.store.db.prepare('SELECT coalesce(max(idx),-1)+1 AS n FROM conversation_turns WHERE conversation_id=?').get(id)?.n??0);
-    const rows=this.store.db.prepare(`SELECT idx,json FROM conversation_turns WHERE conversation_id=? AND idx<? AND ${terminalStatus} ORDER BY idx DESC LIMIT ?`).all(id,high,limit??-1).reverse();
-    const turns=rows.map(r=>{let turn=JSON.parse(String(r.json)) as ConversationTurn;
-      if(!turn.evidenceDeleted&&turn.result){
-        const result=turn.result;
-        if(!sourceContextDependenciesCurrent(this.sourceContexts,turn.result.sourceContextDependencies))turn={...turn,evidenceStale:true};
-        const unavailableEvidenceIds=unavailableHistoryEvidence(this.store,[...result.citations.map(cite=>cite.id),...(turn.scope.evidenceIds??[]),...(turn.scope.anchorEvidenceIds??[])]);
-        if(unavailableEvidenceIds.length)turn={...turn,unavailableEvidenceIds};
-      }
-      return turn;
-    });
-    return {id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:value.scope,turnCount:value.turnCount,status:value.status??'completed',revision:value.revision,turns,firstIndex:Number(rows[0]?.idx??0)};
+    const rows=this.store.db.prepare(`SELECT idx,json FROM conversation_turns WHERE conversation_id=? AND idx<? ${includePending?'':`AND ${terminalStatus}`} ORDER BY idx DESC LIMIT ?`).all(id,high,limit??-1).reverse();
+    const turns=rows.map(r=>this.visibleTurn(JSON.parse(String(r.json)) as ConversationTurn));
+    const turnCount=includePending?Number(this.store.db.prepare('SELECT count(*) n FROM conversation_turns WHERE conversation_id=?').get(id)?.n??0):value.turnCount;
+    return {id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:value.scope,turnCount,status:value.status??'completed',revision:value.revision,turns,firstIndex:Number(rows[0]?.idx??0)};
   }
 
   /** Persist the owner's exact input before any execution is attempted. A lost
@@ -125,7 +162,7 @@ export class Conversations {
       const message:ConversationTurn={id:randomUUID(),seq:this.nextSeq(conversationId),question,scope,status:'accepted',version:1,...(input.clientRequestId?{clientRequestId:input.clientRequestId}:{}),...(attachments?.length?{attachments}:{}),createdAt:now};
       const json=JSON.stringify(message),size=Buffer.byteLength(json);
       this.store.reserveMetadata(size+512);
-      if(conversation)this.store.db.prepare("UPDATE conversations SET json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?) WHERE id=?").run(size,conversationId);
+      if(conversation)this.store.db.prepare("UPDATE conversations SET title=CASE WHEN title='' THEN ? ELSE title END,updated_at=?,json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.status','accepted') WHERE id=?").run(Array.from(question).slice(0,80).join(''),now,size,conversationId);
       else this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(conversationId,Array.from(question).slice(0,80).join(''),now,now,JSON.stringify({scope,turnCount:0,status:'accepted',bytes:size,revision:0}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(conversationId,message.seq,message.id,json);
       return {conversationId,...message};
@@ -135,8 +172,15 @@ export class Conversations {
   /** Accepted and queued messages in server order, including after restart. */
   pending({conversationId,limit=50}:{conversationId?:string;limit?:number}={}):ConversationMessage[] {
     const bounded=Math.max(1,Math.min(Number.isFinite(limit)?Math.trunc(limit):50,100));
-    const rows=this.store.db.prepare(`SELECT conversation_id,json FROM conversation_turns WHERE ${conversationId?'conversation_id=? AND ':''}${pendingStatus} ORDER BY json_extract(json,'$.createdAt'),conversation_id,idx LIMIT ?`).all(...(conversationId?[conversationId,bounded]:[bounded])) as {conversation_id:string;json:string}[];
+    const rows=this.store.db.prepare(`SELECT conversation_id,json FROM conversation_turns WHERE ${conversationId?'conversation_id=? AND ':''}${pendingStatus()} ORDER BY conversation_id,idx LIMIT ?`).all(...(conversationId?[conversationId,bounded]:[bounded])) as {conversation_id:string;json:string}[];
     return rows.map(row=>({conversationId:String(row.conversation_id),...JSON.parse(String(row.json)) as ConversationTurn}));
+  }
+
+  /** The earliest unfinished message in each conversation, independent of wall-clock order. */
+  pendingHeads():ConversationMessage[] {
+    const rows=this.store.db.prepare(`SELECT t.conversation_id,t.json FROM conversation_turns t WHERE ${pendingStatus('t.')}
+      AND NOT EXISTS(SELECT 1 FROM conversation_turns p WHERE p.conversation_id=t.conversation_id AND p.idx<t.idx AND ${pendingStatus('p.')}) ORDER BY t.conversation_id,t.idx`).all() as {conversation_id:string;json:string}[];
+    return rows.map(row=>({conversationId:row.conversation_id,...JSON.parse(row.json) as ConversationTurn}));
   }
 
   queue(id:string,{expectedVersion}:{expectedVersion:number}):ConversationMessage {
@@ -161,6 +205,26 @@ export class Conversations {
     });
   }
 
+  running(id:string,{expectedVersion}:{expectedVersion:number}):ConversationMessage {
+    return this.transaction(()=>{
+      const row=this.messageRow(id),message=JSON.parse(row.json) as ConversationTurn;
+      if(message.status==='running'&&message.version===expectedVersion)return {conversationId:row.conversation_id,...message};
+      if(message.status!=='queued'||!message.runId||message.version!==expectedVersion)throw new StoreError('Conversation message changed; reload and retry',409);
+      return {conversationId:row.conversation_id,...this.rewrite(row.conversation_id,{...message,status:'running',version:message.version+1},row.json)};
+    });
+  }
+
+  cancel(id:string):ConversationMessage {
+    return this.transaction(()=>{
+      const row=this.messageRow(id),message=JSON.parse(row.json) as ConversationTurn;
+      if(message.status==='cancelled')return {conversationId:row.conversation_id,...message};
+      if(!['accepted','queued','running'].includes(message.status))throw new StoreError('Conversation message is already finished',409);
+      const cancelled:ConversationTurn={...message,status:'cancelled',version:message.version+1};
+      delete cancelled.result;delete cancelled.error;
+      return {conversationId:row.conversation_id,...this.rewriteTerminal(row.conversation_id,cancelled,row.json)};
+    });
+  }
+
   complete(id:string,result:QueryResult,{expectedVersion}:{expectedVersion:number}):ConversationMessage {
     assertSourceContextDependencies(this.sourceContexts,result.sourceContextDependencies);
     return this.transaction(()=>{
@@ -169,7 +233,7 @@ export class Conversations {
         if(message.result?.runId===result.runId)return {conversationId:row.conversation_id,...message};
         throw new StoreError('Conversation message already completed',409);
       }
-      if(message.status!=='accepted'&&message.status!=='queued')throw new StoreError('Conversation message is not awaiting a result',409);
+      if(!['accepted','queued','running'].includes(message.status))throw new StoreError('Conversation message is not awaiting a result',409);
       if(message.version!==expectedVersion)throw new StoreError('Conversation message changed; reload and retry',409);
       const evidenceDependencies=resolveDependencies(this.store,result.evidenceDependencies);
       const history=historyEvidenceDependencies(this.store,evidenceDependencies,this.previousTurns(row.conversation_id,id));
@@ -186,7 +250,7 @@ export class Conversations {
         if(message.error?.code===error.code&&message.error.message===error.message)return {conversationId:row.conversation_id,...message};
         throw new StoreError('Conversation message already failed',409);
       }
-      if(message.status!=='accepted'&&message.status!=='queued')throw new StoreError('Conversation message is not awaiting a result',409);
+      if(!['accepted','queued','running'].includes(message.status))throw new StoreError('Conversation message is not awaiting a result',409);
       if(message.version!==expectedVersion)throw new StoreError('Conversation message changed; reload and retry',409);
       const failed:ConversationTurn={...message,status:'failed',version:message.version+1,error};
       delete failed.result;
@@ -211,21 +275,21 @@ export class Conversations {
 
   private messageRow(id:string){const row=this.store.db.prepare('SELECT conversation_id,json FROM conversation_turns WHERE id=?').get(id) as {conversation_id:string;json:string}|undefined;if(!row)throw new StoreError('Conversation message not found',404);return row;}
   private nextSeq(conversationId:string){return Number(this.store.db.prepare('SELECT coalesce(max(idx),-1)+1 AS n FROM conversation_turns WHERE conversation_id=?').get(conversationId)?.n??0);}
-  private previousTurns(conversationId:string,exclude:string){return this.store.db.prepare(`SELECT json FROM conversation_turns WHERE conversation_id=? AND id<>? AND ${terminalStatus} ORDER BY idx`).all(conversationId,exclude).map(row=>JSON.parse(String(row.json)) as ConversationTurn);}
+  private previousTurns(conversationId:string,exclude:string){return this.store.db.prepare(`SELECT json FROM conversation_turns WHERE conversation_id=? AND idx<(SELECT idx FROM conversation_turns WHERE id=?) AND ${terminalStatus} ORDER BY idx`).all(conversationId,exclude).map(row=>JSON.parse(String(row.json)) as ConversationTurn);}
   private rewrite(conversationId:string,message:ConversationTurn,previous:string){
     const json=JSON.stringify(message),growth=Buffer.byteLength(json)-Buffer.byteLength(previous);
     this.store.reserveMetadata(Math.max(0,growth));
-    this.store.db.prepare("UPDATE conversations SET json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?) WHERE id=?").run(growth,conversationId);
     this.store.db.prepare('UPDATE conversation_turns SET json=? WHERE id=?').run(json,message.id);
+    this.store.db.prepare("UPDATE conversations SET json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.status',(SELECT coalesce(json_extract(json,'$.status'),'completed') FROM conversation_turns WHERE conversation_id=? ORDER BY idx DESC LIMIT 1)) WHERE id=?").run(growth,conversationId,conversationId);
     return message;
   }
   private rewriteTerminal(conversationId:string,message:ConversationTurn,previous:string){
     const now=new Date().toISOString(),json=JSON.stringify(message),growth=Buffer.byteLength(json)-Buffer.byteLength(previous);
     this.store.reserveMetadata(Math.max(0,growth)+256);
-    this.store.db.prepare("UPDATE conversations SET updated_at=?,json=json_set(json,'$.scope',json(?),'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.turnCount',coalesce(json_extract(json,'$.turnCount'),0)+1,'$.status',?,'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(now,JSON.stringify(message.scope),growth,message.status,conversationId);
     this.store.db.prepare('UPDATE conversation_turns SET json=? WHERE id=?').run(json,message.id);
+    this.store.db.prepare("UPDATE conversations SET updated_at=?,json=json_set(json,'$.scope',json(?),'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.turnCount',coalesce(json_extract(json,'$.turnCount'),0)+1,'$.status',(SELECT coalesce(json_extract(json,'$.status'),'completed') FROM conversation_turns WHERE conversation_id=? ORDER BY idx DESC LIMIT 1),'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(now,JSON.stringify(message.scope),growth,conversationId,conversationId);
     inheritRetiredConversationRoots(this.store,conversationId,message);
-    this.onTurnReceived?.(message.id,conversationId);
+    if(message.status!=='cancelled')this.onTurnReceived?.(message.id,conversationId);
     return message;
   }
   private transaction<T>(write:()=>T):T{
@@ -265,17 +329,21 @@ export class Conversations {
 
   historyContext(conversation:Conversation,turns:readonly ConversationTurn[]=conversation.turns):NonNullable<QueryInput['historyContext']>{
     const active=turns.filter(turn=>turn.result&&!turn.evidenceDeleted);
-    return {conversationId:conversation.id,revision:conversation.revision??0,turns:active.map(turn=>({id:turn.id,runId:turn.result!.runId})),evidenceDependencies:combineDependencies(active.map(turn=>turn.historyEvidenceDependencies))??{version:1,complete:!active.length,ids:[]}};
+    return {conversationId:conversation.id,revision:this.historyRevision(active),turns:active.map(turn=>({id:turn.id,runId:turn.result!.runId})),evidenceDependencies:combineDependencies(active.map(turn=>turn.historyEvidenceDependencies))??{version:1,complete:!active.length,ids:[]}};
   }
+  private historyRevision(turns:readonly ConversationTurn[]){return Number.parseInt(createHash('sha256').update(JSON.stringify(turns)).digest('hex').slice(0,13),16);}
   assertHistoryContext(snapshot:NonNullable<QueryInput['historyContext']>){
-    const row=this.store.db.prepare("SELECT coalesce(json_extract(json,'$.revision'),0) revision FROM conversations WHERE id=?").get(snapshot.conversationId);
-    if(!row||Number(row.revision)!==snapshot.revision)throw new StoreError('Conversation changed; reload its current history',409);
+    const row=this.store.db.prepare('SELECT 1 FROM conversations WHERE id=?').get(snapshot.conversationId);
+    if(!row)throw new StoreError('Conversation changed; its context is no longer available',409);
     if(!Array.isArray(snapshot.turns)||new Set(snapshot.turns.map(turn=>turn.id)).size!==snapshot.turns.length)throw new StoreError('Invalid conversation history receipt',409);
     const selected=this.store.db.prepare('SELECT id,json FROM conversation_turns WHERE conversation_id=? AND id IN (SELECT value FROM json_each(?))').all(snapshot.conversationId,JSON.stringify(snapshot.turns.map(turn=>turn.id)));
-    const turns=selected.map(value=>JSON.parse(String(value.json)) as ConversationTurn);
-    if(turns.length!==snapshot.turns.length||turns.some(turn=>turn.evidenceDeleted||!turn.result||!snapshot.turns.some(pin=>pin.id===turn.id&&pin.runId===turn.result!.runId)))throw new StoreError('Conversation history lineage changed',409);
-    const expected=combineDependencies(turns.map(turn=>turn.historyEvidenceDependencies))??{version:1,complete:!turns.length,ids:[]};
+    const byId=new Map(selected.map(value=>[String(value.id),this.visibleTurn(JSON.parse(String(value.json)) as ConversationTurn)]));
+    const turns=snapshot.turns.map(pin=>byId.get(pin.id));
+    if(turns.some((turn,index)=>!turn||turn.evidenceDeleted||!turn.result||snapshot.turns[index].runId!==turn.result.runId))throw new StoreError('Conversation history lineage changed',409);
+    const current=turns as ConversationTurn[];
+    const expected=combineDependencies(current.map(turn=>turn.historyEvidenceDependencies))??{version:1,complete:!current.length,ids:[]};
     if(snapshot.evidenceDependencies.version!==1||snapshot.evidenceDependencies.complete!==expected.complete||JSON.stringify([...new Set(snapshot.evidenceDependencies.ids)].sort())!==JSON.stringify([...new Set(expected.ids)].sort()))throw new StoreError('Conversation history lineage changed',409);
+    if(this.historyRevision(current)!==snapshot.revision)throw new StoreError('Conversation changed; its context is no longer current',409);
     return new Set(this.store.db.prepare(`SELECT DISTINCT r.evidence_id FROM conversation_retired_turn_roots r JOIN conversation_turns t ON t.id=r.turn_id
       WHERE r.conversation_id=? AND r.turn_id IN (SELECT value FROM json_each(?)) AND r.result_run_id=json_extract(t.json,'$.result.runId')
        AND EXISTS(SELECT 1 FROM json_each(t.json,'$.historyEvidenceDependencies.ids') d WHERE d.value=r.evidence_id)`).all(snapshot.conversationId,JSON.stringify(snapshot.turns.map(turn=>turn.id))).map(value=>String(value.evidence_id)));
