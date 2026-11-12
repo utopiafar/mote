@@ -77,13 +77,15 @@ export class IngressService {
     const ack=await this.files.commit(uploadId,authorize,signal) as FileAck;
     return fileAcknowledgement(ack);
   }
-  fileBegin(input:unknown,authorize:(sourceId:string)=>void){
+  async fileBegin(input:unknown,authorize:(sourceId:string)=>void){
     const upload=this.files.begin(input,authorize);
-    return {...upload,ack:upload.ack?fileAcknowledgement(upload.ack as FileAck):null};
+    const ack=upload.ack??await this.files.reuse(upload.uploadId,authorize);
+    return {...upload,ack:ack?fileAcknowledgement(ack as FileAck):null};
   }
-  fileRecovery(id:string,authorize:(sourceId:string)=>void){
+  async fileRecovery(id:string,authorize:(sourceId:string)=>void){
     const upload=this.files.beginSnapshotRecovery(id,authorize);
-    return {...upload,ack:upload.ack?fileAcknowledgement(upload.ack):null};
+    const ack=upload.ack??await this.files.reuse(upload.uploadId,authorize);
+    return {...upload,ack:ack?fileAcknowledgement(ack as FileAck):null};
   }
   fileUpload(id:string,authorize:(sourceId:string)=>void){
     const upload=this.files.upload(id,authorize);

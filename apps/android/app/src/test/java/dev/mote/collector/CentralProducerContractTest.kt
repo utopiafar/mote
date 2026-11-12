@@ -65,6 +65,27 @@ class CentralProducerContractTest {
         CentralAttachments.upload(client, file, "Generated original.txt", "text/plain", deviceId, { time }, identityScope = scope, progress = progress)
     private fun begins() = exchanges.filter { it.path == "/api/file-sync/v1/uploads" }
 
+    @Test fun newAuthorizedOriginConsumesImmediateReuseReceiptWithoutSendingBytes() {
+        val bytes = ("Generated Kotlin reuse " + UUID.randomUUID()).toByteArray()
+        val original = file(bytes); val api = client(collector)
+        val first = upload(api, original, UUID.randomUUID().toString())
+        val parts = exchanges.count { it.path.contains("/parts/") }
+        val commits = exchanges.count { it.path.endsWith("/commit") }
+        assertEquals(1, parts); assertEquals(1, commits)
+
+        val second = upload(api, original, UUID.randomUUID().toString())
+        assertNotEquals(first, second)
+        val reuse = begins().last().response!!.getJSONObject("ack")
+        assertFalse(reuse.getBoolean("duplicate"))
+        assertEquals(second, reuse.getString("id"))
+        assertEquals("received", reuse.getJSONObject("receipt").getString("state"))
+        assertEquals(parts, exchanges.count { it.path.contains("/parts/") })
+        assertEquals(commits, exchanges.count { it.path.endsWith("/commit") })
+        val downloaded = java.io.ByteArrayOutputStream()
+        client().download("/api/files/$second/content", downloaded, bytes.size.toLong())
+        assertArrayEquals(bytes, downloaded.toByteArray())
+    }
+
     @Test fun deviceContactProjectionKeepsReportedDeviceRowsReadableByCentralClient() {
         val result = client().get("/api/devices")
         val devices = result.getJSONArray("items")
