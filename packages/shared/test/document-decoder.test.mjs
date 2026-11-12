@@ -11,7 +11,8 @@ test('PDF text layer gaps retain explicit coverage and original page locations',
 test('strict UTF-8 decodes completely and chunks never split a surrogate pair',async()=>{
  const value=await decodeDocument(new TextEncoder().encode('abc🌱de'),'text/plain',{pdf:none,docx:none});const chunks=[...documentChunks(value,4)];
  assert.deepEqual(chunks.map(v=>v.text),['abc','🌱de']);assert.equal(chunks.map(v=>v.text).join(''),value.text);
- const invalid=await decodeDocument(new Uint8Array([255]),'text/plain',{pdf:none,docx:none});assert.equal(invalid.status,'unsupported');
+ // Malformed input is a failed extraction, not a format the decoder declines to support.
+ const invalid=await decodeDocument(new Uint8Array([255]),'text/plain',{pdf:none,docx:none});assert.equal(invalid.status,'failed');assert.equal(invalid.coverage,'none');assert.match(invalid.warnings[0],/Parser failed/);
  const full=await decodeDocument(new TextEncoder().encode('x'.repeat(2_000_001)),'text/plain',{pdf:none,docx:none});assert.equal(full.coverage,'full');assert.equal(full.text.length,2_000_001);
 });
 
@@ -33,7 +34,7 @@ test('XLSX decoding keeps every sheet, row and column and still rejects unsafe O
  assert.equal(value.coverage,'full');assert.equal(value.sheets.length,101);assert.equal(value.sheets[0].rows.length,20_001);assert.equal(value.sheets[0].rows.at(-1).cells[0].value,'Generated row 20000');assert.equal(value.sheets[1].rows[0].cells.length,501);
  const unsafe=Buffer.from(bytes);for(let i=0;i<unsafe.length-4;i++)if(unsafe.readUInt32LE(i)===0x02014b50){unsafe.writeUInt32LE(64*1024*1024+1,i+24);break;}
  const rejected=await decodeDocument(unsafe,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',libraries);
- assert.equal(rejected.status,'unsupported');assert.match(rejected.warnings[0],/decompression limits/);
+ assert.equal(rejected.status,'failed');assert.match(rejected.warnings[0],/decompression limits/);
  const oversized=await decodeDocument(new Uint8Array(64*1024*1024+1),'text/plain',{pdf:none,docx:none});
  assert.equal(oversized.status,'unsupported');assert.match(oversized.warnings[0],/64 MiB/);
 });
