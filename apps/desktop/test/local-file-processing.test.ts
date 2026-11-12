@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {scanSourceFiles} from '../src/source-files';
 import {SourceSync} from '../src/source-sync';
-import {DEFAULT_SOURCE_OPTIONS,type SourceRequest} from '../src/source-types';
+import {DEFAULT_SOURCE_OPTIONS,type LocalFileCheckpoint,type SourceRequest} from '../src/source-types';
 import {fileTransport} from './file-transport';
 let root:string;
 beforeEach(async()=>{root=await realpath(await mkdtemp(join(tmpdir(),'mote-central-file-transport-')));});
@@ -21,8 +21,11 @@ it('uploads snapshot bytes once per immutable revision with no local processing 
  sync=await engine();await sync.flush(source,request);expect(sync.status()).toMatchObject({pending:0});expect(manifests.every(item=>item.text===''&&item.document.fileIndex.parser==='central-pending')).toBe(true);expect(manifests[0]).toEqual(manifests[1]);
  for(const item of discovered.items)await expect(access(item.localOriginal!.directory)).rejects.toThrow();
 });
-it('an adapter rescan retains unacknowledged originals and clears the checkpoint',async()=>{
+it('an adapter rescan retains unacknowledged originals and the file identity registry',async()=>{
  await writeFile(join(root,'generated.wav'),'Generated old input');const sync=await engine(),discovered=await scan(),item=discovered.items[0],spool=item.localOriginal!;
  await sync.stage(discovered,false);
- await sync.ensureAdapterVersion(2);expect(sync.checkpoint()).toBeUndefined();await expect(access(spool.directory)).resolves.toBeUndefined();expect(sync.status().pending).toBe(1);
+ await sync.ensureAdapterVersion(2);const checkpoint=sync.checkpoint() as LocalFileCheckpoint;
+ expect(checkpoint.lastScanComplete).toBe(false);
+ expect(checkpoint.catalog[item.title]).toMatchObject({entryId:item.externalId,syncState:'pending'});
+ await expect(access(spool.directory)).resolves.toBeUndefined();expect(sync.status().pending).toBe(1);
 });
