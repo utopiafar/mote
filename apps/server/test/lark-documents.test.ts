@@ -11,6 +11,8 @@ import {LarkConnector,LARK_SCOPES} from '../src/connectors/lark.js';
 import {larkArguments,type LarkCommand,type LarkRunner} from '../src/connectors/lark-cli.js';
 import {ConnectorError,type ConnectorContext} from '../src/connectors/types.js';
 import {connectorReader} from './fixtures/connector-reader.js';
+import {EvidenceReader} from '../src/evidence-reader.js';
+import {FileObservationReader} from '../src/file-observations.js';
 import type {LarkSelection} from '@mote/shared';
 const json=JSON.stringify;
 const url=(id:string)=>`https://fixture.feishu.cn/docx/${id}`;
@@ -58,6 +60,29 @@ test('scope preview reads metadata only; first confirmation archives generated b
  assert.equal(items.filter(i=>i.kind==='file').length,1);assert.ok(items.filter(i=>i.kind==='event').length===6);
  const opened=items.find(i=>i.document?.activity?.action==='opened')!;assert.equal(opened.document?.activity?.evidenceBasis,'search-predicate');assert.ok(opened.document?.activity?.limitations?.includes('provider-open-may-include-connector-access'));assert.equal(opened.document?.recordedAt,undefined);assert.ok(opened.text.includes('human reading is not established'));assert.equal(items.find(i=>i.kind==='file')?.document?.contentRole,'other');
  f.state.fail.clear();f.c.startSync(url('DocumentMeeting123'));status=await done(f.c);assert.equal(status.job?.state,'completed');assert.equal(status.documentSync?.failed,0);assert.equal(f.sources.listItems({kind:'file'}).items.length,2);
+});
+
+test('file observations retain real provider activity as separate scoped, versioned evidence',async t=>{
+ const f=await fixture(t);f.state.searchPages=[matches('DocumentDiary123')];await f.c.select(selection);f.c.startSync();await done(f.c);
+ const source=f.sources.listSources()[0],first=f.sources.getItem(source.id,'DocumentDiary123')!;
+ const events=f.sources.listItems({sourceId:source.id,kind:'event'}).items.filter(item=>item.document?.activity?.documentId==='DocumentDiary123');
+ const reader=new FileObservationReader(new EvidenceReader(f.store,f.sources,f.files)),activityIds=events.map(event=>event.captureId);
+ const observation=reader.read({captureId:first.captureId,scope:{kind:'all'},activityIds});
+ assert.deepEqual(observation.changes,['discovered']);assert.equal(observation.current.revision,first.revision);assert.equal(observation.activities.length,events.length);
+ const opened=observation.activities.find(item=>item.activity.action==='opened')!,original=events.find(item=>item.captureId===opened.captureId)!;
+ assert.deepEqual(opened.activity,original.document!.activity);assert.equal(opened.revision,original.revision);
+ assert.equal(opened.activity.evidenceBasis,'search-predicate');assert.equal(opened.activity.exactRevision,undefined);assert.ok(opened.activity.limitations?.includes('provider-open-may-include-connector-access'));
+ assert.equal(reader.readBody({captureId:first.captureId,scope:{kind:'all'}}).status,'available');
+ const metadataOnly=await f.sources.upsert(source.id,{externalId:'MetadataOnlyDocument',revision:'one',observedAt:first.observedAt,title:'Generated metadata',kind:'file',layer:'snapshot',text:'Generated short description',document:{contentRole:'other'}});
+ assert.equal(reader.read({captureId:metadataOnly.id,scope:{kind:'all'}}).current.coverage.extraction.status,'pending');
+ assert.equal(reader.readBody({captureId:metadataOnly.id,scope:{kind:'all'}}).status,'unavailable');
+ const metadataReads:string[]=[],readMetadata=f.store.evidenceMetadata.bind(f.store);f.store.evidenceMetadata=ids=>{metadataReads.push(...ids);return readMetadata(ids);};
+ const limited=reader.read({captureId:first.captureId,scope:{kind:'selection',evidenceIds:[first.captureId]},activityIds});f.store.evidenceMetadata=readMetadata;
+ assert.deepEqual(limited.activities,[]);assert.ok(activityIds.every(id=>!metadataReads.includes(id)));
+ f.state.content.set('DocumentDiary123','# Generated diary\nA revised outline.');f.c.startSync();await done(f.c);
+ const second=f.sources.getItem(source.id,'DocumentDiary123')!,changed=reader.read({captureId:second.captureId,previousCaptureId:first.captureId,scope:{kind:'all'},activityIds});
+ assert.notEqual(second.revision,first.revision);assert.equal(changed.previous?.revision,first.revision);assert.ok(changed.changes.includes('content_changed'));
+ assert.equal(changed.comparison.status,'available');assert.equal(changed.activities.find(item=>item.captureId===opened.captureId)?.activity.exactRevision,undefined);
 });
 
 for(const calendarState of ['idle','syncing'] as const)test(`retrying one document preserves source failure with calendar state ${calendarState} until every failed document is recovered`,async t=>{

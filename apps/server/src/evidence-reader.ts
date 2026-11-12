@@ -2,7 +2,7 @@ import {retiredConversationRoot} from './conversation-retention.js';
 import {z} from 'zod';
 import {materialDependencyStatus,type MaterialInputPin} from './material-readiness.js';
 import {scopeRecord} from './evidence-scope-record.js';
-import {CODING_DIALOGUE_SCHEMA_VERSION,attributionContextSchema,sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,sourceItemKinds,sourceTextFormat,decodeSourceText,type AttributionContext,type SourceContextDeclaration,type CaptureRecord} from '@mote/shared';
+import {CODING_DIALOGUE_SCHEMA_VERSION,attributionContextSchema,sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,sourceItemKinds,sourceTextFormat,decodeSourceText,type AttributionContext,type SourceContextDeclaration,type CaptureRecord,type QueryScope} from '@mote/shared';
 import {ContextToolError,type ContextReader} from '@mote/agent';
 import {StoreError,type Store,type Range} from './store.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
@@ -659,6 +659,21 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       if(!derived.has(id))return false;
     }
     return true;
+  }
+  /** A source tombstone can be reported as a versioned observation, but it
+   * must never restore access to any retired document body. */
+  fileTombstoneMetadataAllowed(id:string,scope:QueryScope,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy):boolean {
+    const record=this.store.evidenceMetadata([id])[0],p=record?.provenance;
+    if(!record||record.source!=='file'||record.privacy.excluded||!p?.deleted||!withinEvidenceScope(record,scope)||
+      scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(p.sourceId)||
+      scope.evidenceIds!==undefined&&!scope.evidenceIds.includes(id)||!fileAttachmentAvailable(this.store,id,true))return false;
+    const head=this.store.db.prepare('SELECT capture_id,deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId);
+    if(!head||head.capture_id!==id||!head.deleted)return false;
+    let source:ReturnType<SourceStore['getSource']>;
+    try{source=this.sources.getSource(p.sourceId);}catch{return false;}
+    if(!source.enabled)return false;
+    const context={sourceKind:source.kind,sourceId:p.sourceId,deviceId:record.deviceId,operation:'expand' as const,phase:'complete' as const};
+    return this.exposureAllows({...context,representation:'capture'},policy)&&this.exposureAllows({...context,representation:'material'},policy);
   }
   /** Revalidate a restricted Memory read immediately before model transport.
    * A loaded seed is not a retained permission. All records and Formal output
