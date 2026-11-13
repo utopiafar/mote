@@ -54,8 +54,11 @@ export async function initialize(paths, options = {}) {
   for (const folder of ['data', 'logs', 'backups', 'generated']) await mkdir(join(paths.directory, folder), { mode: 0o700 });
   const version = JSON.parse(await readFile(join(repository, 'apps/server/package.json'), 'utf8')).version;
   const docker = runtime === 'docker';
-  const profilePort = (role, base) => base + parseInt(createHash('sha256').update(`${paths.project}:media:${role}`).digest('hex').slice(0, 8), 16) % 20000;
+  const profilePort = (role, base, span = 20000) => base + parseInt(createHash('sha256').update(`${paths.project}:media:${role}`).digest('hex').slice(0, 8), 16) % span;
   const asrPort = docker ? 9009 : profilePort('asr', 20000), ocrPort = docker ? 9010 : profilePort('ocr', 40000);
+  // Keep the optional VLM listener out of the OCR/ASR ranges and derive it from
+  // this same private profile. Creating a profile never starts the listener.
+  const localImagePort = docker ? 9011 : profilePort('local-image', 10000, 10000);
   const token = randomBytes(32).toString('hex');
   const document = {
     version: 1, revision: 0,
@@ -66,8 +69,8 @@ export async function initialize(paths, options = {}) {
     execution: {}, diagnostics: { directory: docker ? '/data/logs' : './logs', debug:false, traceEnabled:false },
     models: {},
     connectors: {}, plugins: {}, updates: {},
-    media: { modelDirectory: docker ? '/models' : './models', python: docker ? '/opt/mote-media-venv/bin/python' : './media-venv/bin/python', asrPort, ocrPort,
-      asrEndpoint: `http://127.0.0.1:${asrPort}/transcribe`, ocrEndpoint: `http://127.0.0.1:${ocrPort}/ocr`, workerToken: createHash('sha256').update('mote-media-worker:').update(token).digest('hex') },
+    media: { modelDirectory: docker ? '/models' : './models', python: 'python3', asrPort, ocrPort, localImagePort,
+      asrEndpoint: `http://127.0.0.1:${asrPort}/transcribe`, ocrEndpoint: `http://127.0.0.1:${ocrPort}/ocr`, localImageEndpoint: `http://127.0.0.1:${localImagePort}/v1/interpret`, workerToken: createHash('sha256').update('mote-media-worker:').update(token).digest('hex') },
   };
   await writeFile(paths.configFile, '# Private isolated profile. Relative paths resolve beside this file. Do not commit.\n' + serializeConfigDocument(document), { flag: 'wx', mode: 0o600 });
   await atomicJson(paths.metaFile, { version: 1, profile: paths.profile, runtime, release: repository, image: options.image ?? `mote-central:${version}`, volume, modelsVolume: volume + '-models' });
@@ -85,7 +88,7 @@ function connectionValues(document, baseDir) {
     MOTE_MAX_STORAGE_MB: String((storage.maxStorageBytes ?? 10240 * 1024 * 1024) / 1024 / 1024), MOTE_MAX_EXPORT_MB: String((storage.maxExportBytes ?? 64 * 1024 * 1024) / 1024 / 1024), MOTE_RETENTION_DAYS: String(storage.retentionDays ?? 0),
     MOTE_UPDATE_REPOSITORY: document.updates?.repository ?? 'utopiafar/mote', MOTE_UPDATE_CHANNEL: document.updates?.channel ?? 'stable',
     MOTE_TLS_DOMAIN: tls.domain ?? '', MOTE_TLS_HTTP_PORT: String(tls.httpPort ?? 80), MOTE_TLS_HTTPS_PORT: String(tls.httpsPort ?? 443),
-    MOTE_MEDIA_MODEL_DIR: media.modelDirectory ? resolve(baseDir, media.modelDirectory) : '', MOTE_MEDIA_PYTHON: media.python ? resolve(baseDir, media.python) : '',
+    MOTE_MEDIA_MODEL_DIR: media.modelDirectory ? resolve(baseDir, media.modelDirectory) : '', MOTE_MEDIA_PYTHON: media.python ? media.python.includes('/') ? resolve(baseDir, media.python) : media.python : '',
     MOTE_MEDIA_ASR_ENDPOINT: media.asrEndpoint ?? '', MOTE_MEDIA_OCR_ENDPOINT: media.ocrEndpoint ?? '', MOTE_MEDIA_ASR_PORT: String(media.asrPort ?? 9009), MOTE_MEDIA_OCR_PORT: String(media.ocrPort ?? 9010), MOTE_MEDIA_WORKER_TOKEN: media.workerToken ?? '',
   };
 }

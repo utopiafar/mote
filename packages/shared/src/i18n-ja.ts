@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const japanese: Readonly<Record<string, string>> = {
+  "模型已安装": "モデルをインストール済み",
+  "安装模型不会启用本地识图或改变处理设置。": "モデルファイルをインストールしても、ローカル画像処理は有効にならず、処理設定も変更されません。",
+  "保守消重": "慎重な重複除去",
   "下次到期": "次回の予定",
   "事项": "事項",
   "事项已启用": "事項は有効です",

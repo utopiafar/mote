@@ -18,8 +18,8 @@ const help = `Mote central profiles (Node 24+, default: dev; prod requires --pro
   restore --from BACKUP [--profile NAME] [--home PATH]
   launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
   migrate-storage-owner [--profile NAME] [--home PATH] (Docker only, stopped; preserve a backup first)
-  media-runtime [--profile NAME] [--home PATH] [--python PYTHON_BINARY] (Native profile, stopped)
-  media-import --role ocr|dialogue|speaker-wespeaker --from DIRECTORY [--profile NAME] [--home PATH] (verified offline model bundle)
+  media-runtime --role ocr|dialogue|local-image [--profile NAME] [--home PATH] [--python PYTHON_BINARY] (Native profile, stopped)
+  media-import --role ocr|dialogue|speaker-wespeaker|local-image --from DIRECTORY [--profile NAME] [--home PATH] (verified offline model bundle)
   tunnel --enable --token-file PRIVATE_FILE [--public-url HTTPS_ORIGIN] [--protocol auto|http2|quic] [--binary ABSOLUTE_CLOUDFLARED]
   tunnel --disable [--profile NAME] [--home PATH]
   tunnel-run|tunnel-launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
@@ -106,6 +106,7 @@ async function main() {
     print(await withProfileLock(p, async () => setDevLogRetentionDefaults(await loadProfile(paths)))); return;
   }
   if (command === 'media-runtime') {
+    if (!['ocr','dialogue','local-image'].includes(values.role)) throw Error('media-runtime requires --role ocr|dialogue|local-image');
     if (p.meta.runtime !== 'native') throw Error('Docker bundles the media runtime in its image');
     const result=await withProfileLock(p,async()=>{
       if((await nativeIdentity(p)).running)throw Error('Stop this profile before installing the Native media runtime');
@@ -113,13 +114,13 @@ async function main() {
       const controller=new AbortController(),cancel=()=>controller.abort();process.once('SIGINT',cancel);process.once('SIGTERM',cancel);
       try{
         const sourcePython=values.python?.includes('/')?resolve(values.python):values.python;
-        const prepared=await prepareNativeMediaRuntime({repository:resolve(p.meta.release),directory:join(p.modelDirectory,'runtime'),env:isolatedEnvironment(p),sourcePython,signal:controller.signal});
-        return {profile:p.profile,installed:true,changed:prepared.created,python:prepared.python,runtimeReady:true};
+        const prepared=await prepareNativeMediaRuntime({repository:resolve(p.meta.release),directory:join(p.modelDirectory,'runtime'),role:values.role,env:isolatedEnvironment(p),sourcePython,signal:controller.signal});
+        return {profile:p.profile,role:values.role,installed:true,changed:prepared.created,python:prepared.python,runtimeReady:false};
       }finally{process.off('SIGINT',cancel);process.off('SIGTERM',cancel);}
     });print(result);return;
   }
   if (command === 'media-import') {
-    if(!['ocr','dialogue','speaker-wespeaker'].includes(values.role)||!values.from)throw Error('media-import requires --role ocr|dialogue|speaker-wespeaker and --from DIRECTORY');
+    if(!['ocr','dialogue','speaker-wespeaker','local-image'].includes(values.role)||!values.from)throw Error('media-import requires --role ocr|dialogue|speaker-wespeaker|local-image and --from DIRECTORY');
     const source=resolve(values.from),info=await stat(source);if(!info.isDirectory())throw Error('Model source must be a directory');
     await withProfileLock(p,async()=>{
       if(p.meta.runtime==='native'){

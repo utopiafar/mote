@@ -1,11 +1,11 @@
 import {useEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
+import type {MediaRole,MediaModelStatus} from '@mote/shared';
 import {type Api,errorMessage} from './api';
 import {useResource} from './useResource';
 import {resources} from './resource-cache';
 import { LoadingText } from './Loading';
 
-type Role='ocr'|'dialogue'|'speaker-wespeaker';
 type Preparation={state:string;error?:string;runtimeReady:boolean;model:{state:string;bytes:number;totalBytes:number}};
 const running=(state?:string)=>['queued','dependencies','verifying_dependencies','models','starting'].includes(state??'');
 function stateText(value:Preparation){
@@ -31,17 +31,24 @@ function failureText(code?:string){
  return moteText('准备未完成，请检查网络和可用空间后重试。');
 }
 /** Preparation never changes automatic processing consent or model selection. */
-export function MediaPreparation({api,role,title}:{api:Api;role:Role;title:string}){
- const read=useResource<Record<Role,Preparation>>(api,'/api/media-preparation'),value=read.data?.[role];
- const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),current=useRef(api);current.current=api;
- useEffect(()=>{setBusy(false);setMessage('');},[api]);
- useEffect(()=>value?resources(api).get('/api/media-preparation').poll(running(value.state)?2000:10000):undefined,[api,value?.state]);
- async function action(cancel=false){const origin=api;setBusy(true);setMessage('');try{await origin.request(`/api/media-preparation/${role}${cancel?'/cancel':''}`,{method:'POST',body:'{}'});if(current.current===origin){resources(origin).invalidate(key=>key==='/api/media-preparation'||key==='/api/media-models');}}catch(error){if(current.current===origin)setMessage(errorMessage(error));}finally{if(current.current===origin)setBusy(false);}}
- const installing=running(value?.state),ready=value?.state==='ready'&&value.runtimeReady;
+export function MediaPreparation({api,role,title}:{api:Api;role:MediaRole;title:string}){
+ // VLM asset installation is independent of optional-plugin enablement. The
+ // plugin owns starting its worker; installing weights cannot start it here.
+ const assetsOnly=role==='local-image',path=assetsOnly?'/api/media-models':'/api/media-preparation';
+ const read=useResource<Partial<Record<MediaRole,Preparation|MediaModelStatus>>>(api,path),status=read.data?.[role];
+ const asset=assetsOnly?status as MediaModelStatus|undefined:undefined;
+ const value:Preparation|undefined=assetsOnly?(asset?{state:['downloading','verifying','installing'].includes(asset.state)?'models':asset.state==='not_installed'?'idle':asset.state,error:asset.error,runtimeReady:asset.runtimeReady,model:asset}:undefined):status as Preparation|undefined;
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),current=useRef({api,role});
+ if(current.current.api!==api||current.current.role!==role)current.current={api,role};
+ useEffect(()=>{setBusy(false);setMessage('');},[api,role]);
+ useEffect(()=>value?resources(api).get(path).poll(running(value.state)?2000:10000):undefined,[api,path,value?.state]);
+ async function action(cancel=false){const owner=current.current,origin=owner.api,target=owner.role,isCurrent=()=>current.current===owner;setBusy(true);setMessage('');try{await origin.request(assetsOnly?`/api/media-models/${target}/${cancel?'cancel':'install'}`:`/api/media-preparation/${target}${cancel?'/cancel':''}`,{method:'POST',body:'{}'});if(isCurrent()){resources(origin).invalidate(key=>key==='/api/media-preparation'||key==='/api/media-models');}}catch(error){if(isCurrent())setMessage(errorMessage(error));}finally{if(isCurrent())setBusy(false);}}
+ const installing=running(value?.state),ready=assetsOnly?asset?.state==='ready':value?.state==='ready'&&value.runtimeReady;
  return <section className="media-preparation" aria-label={title}>
-  <div className="media-preparation-row"><div><strong>{title}</strong><p role="status">{value?stateText(value):<LoadingText/>}</p></div>
+  <div className="media-preparation-row"><div><strong>{title}</strong><p role="status">{value?assetsOnly&&ready?moteText('模型已安装'):stateText(value):<LoadingText/>}</p></div>
    {ready?<button type="button" className="button" disabled={read.loading} onClick={()=>read.refresh()}>{moteText('检查状态')}</button>:<button type="button" className="button primary" disabled={busy||installing||!value||Boolean(read.error)||value.state==='unsupported'} onClick={()=>void action()}>{installing?moteText('安装中…'):value?.state==='failed'||value?.state==='cancelled'||value?.model.state==='ready'?moteText('重试'):moteText('一键安装')}</button>}
   </div>
+  {assetsOnly&&<p>{moteText('安装模型不会启用本地识图或改变处理设置。')}</p>}
   {installing&&<><progress aria-label={moteText('安装进度')} {...(value?.state==='models'&&value.model.totalBytes>0?{value:value.model.bytes,max:value.model.totalBytes}:{})}/><button type="button" className="text-button" disabled={busy} onClick={()=>void action(true)}>{moteText('取消')}</button></>}
   {(value?.state==='failed'||value?.state==='unsupported')&&<p role="alert">{failureText(value.error)}</p>}
   {(Boolean(message)||Boolean(read.error))&&<p role="alert">{message||errorMessage(read.error)}</p>}

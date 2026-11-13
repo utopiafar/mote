@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "模型已安装": "Model installed",
+  "安装模型不会启用本地识图或改变处理设置。": "Installing model files does not enable local image processing or change processing settings.",
+  "保守消重": "Conservative duplicate cleanup",
   "下次到期": "Next due",
   "事项": "Matters",
   "事项已启用": "Matter active",

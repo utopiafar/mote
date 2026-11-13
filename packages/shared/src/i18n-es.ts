@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "模型已安装": "Modelo instalado",
+  "安装模型不会启用本地识图或改变处理设置。": "Instalar los archivos del modelo no activa el procesamiento local de imágenes ni cambia los ajustes de procesamiento.",
+  "保守消重": "Limpieza conservadora de duplicados",
   "下次到期": "Próximo vencimiento",
   "事项": "Asuntos",
   "事项已启用": "Asunto activo",

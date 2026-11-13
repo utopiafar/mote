@@ -1,54 +1,51 @@
 # Background model authorization integration contract
 
-Status: merged in [#253](https://github.com/utopiafar/mote/pull/253) (`429cbd0d0`). Product scope is [P1-K](ui-user-journeys.md#6-单一实施清单). This document describes that code so the independently owned media consumer can integrate against precise interfaces. Validation guidance is in [testing](testing.md#risk-based-review).
+Current interface checked against the implementation on 2026-11-14. The original integration landed in [#253](https://github.com/utopiafar/mote/pull/253); its older connection/data-kind/epoch control surface is no longer the current API. The dated implementation and validation notes below are historical evidence, not tests rerun for this update. Validation guidance is in [testing](testing.md#risk-based-review).
 
-## Owned interfaces
+## Current owner control plane
 
-`apps/server/src/background-model-authorization.ts` exports:
+`GET /api/model-authorization` returns only `{authorization: control.view()}`. Both this route and `POST /api/model-authorization/commands` require owner access; paired collectors and Agent credentials cannot change the switch.
 
 ```ts
 type ModelConnection = {id: string; fingerprint: string};
-type ModelDataKind = 'text' | 'image' | 'audio' | 'conversation';
-type ModelDataScope = {sourceIds: string[] | null; dataKinds: ModelDataKind[]};
-type ModelDisclosure = {sourceId: string; dataKind: ModelDataKind};
-type AutomaticModelPurpose =
-  'memory' | 'working' | 'insight' | 'activity' | 'actions' |
-  'image' | 'file' | 'embedding' | 'semantic' | 'integration';
+type ModelDisclosure = {sourceId: string};
+type ModelAuthorityView = {
+  revision: number;
+  state: 'off' | 'on';
+  excludedSourceIds: string[];
+};
 ```
 
-`modelConnection(id, settings)` hashes the complete resolved settings, including credential/header identity, without persisting credential plaintext. `agentModelConnection(identity, settings)` uses `${identity.kind}:${identity.id}:${settings.model}` as its connection ID. `ModelAgentIdentity` lives in `model-agent.ts` and has `{kind: 'profile' | 'file-service' | 'probe', id: string}`. The factory requires this host identity in its fourth argument; arbitrary prompt fields, job prefixes, lane names and HTTP booleans are not authority.
+Commands take `{revision, operationId, action}`, where `operationId` is a UUID and `action` is `on`, `off`, `stop` or `exclude`. Only `exclude` accepts and requires `excludedSourceIds`, the complete replacement list. The implementation rejects unknown fields and stale revisions. Replaying the same last operation with a different body conflicts.
 
-`ModelAuthorizationHost` in `model-authorization-host.ts` owns intake identity conversion and entrypoints:
+- `on` opens automatic admission over eligible original receipts. Work received while the switch was off can run after it opens. A receipt marked ineligible stays ineligible; an old reference without an original receipt cannot become a new automatic trigger.
+- `off` stops new automatic admissions and lets already admitted work drain. A fresh attempt of saved automatic work waits while the switch is off.
+- `stop` also turns the switch off, aborts active automatic work and invokes the existing batch-stop control. It does not introduce a public epoch or remove archived originals. Late results still pass the original/job/publication checks.
+- `exclude` withholds the listed sources and aborts their affected automatic calls. Re-including a source can resume its withheld eligible work; a completed purpose is not claimed twice. Unlisted and new sources participate by default.
+- Automatic work uses the model configuration current at the actual call. Changing a connection fingerprint does not require a new background approval. Explicit manual/probe work still captures exact connection IDs and fingerprints, and cannot silently send through another connection.
 
-- `automatic(id, purpose, candidates, task, signal?)` selects unconsumed accepted roots, or restores the same durable work after restart. `task` receives its cancellation signal. A dependent call inherits the current host authority.
-- `manual(id, connections, task, signal?, kind = 'manual', identities = [])` is only for an existing explicit owner action. It must not be called to repair missing background authority.
+This is the existing owner switch and source exclusion contract. It has no `ModelDataKind`, `ModelDataScope`, representation tier, selected-connection approval list, `authorize` command or public epoch field. Do not reconstruct those retired controls from earlier reports.
+
+## Host and consumer boundaries
+
+`modelConnection(id, settings)` hashes resolved settings, including credential/header identity, without persisting credential plaintext. `agentModelConnection(identity, settings)` uses `${identity.kind}:${identity.id}:${settings.model}` as its connection ID. `ModelAgentIdentity` lives in `model-agent.ts` and has `{kind: 'profile' | 'file-service' | 'probe', id: string}`. The factory receives this trusted identity in its fourth argument; prompt fields and HTTP booleans do not issue authority.
+
+`ModelAuthorizationHost` in `model-authorization-host.ts` owns intake conversion and model entrypoints:
+
+- `automatic(id, purpose, candidates, task, signal?)` claims eligible unconsumed original roots for that purpose, or resumes that exact saved work. A dependent fragment inherits its parent's current authority.
+- `manual(id, connections, task, signal?, kind = 'manual', identities = [])` is for an existing explicit owner action. It cannot repair missing background authority. Synchronous owner commands use the existing `manualCommand` transaction.
 - `captureModelIdentity(id)` is `capture:<id>`; `sourceModelIdentity(sourceId, inputKey)` is `source:` plus the JSON pair; `conversationModelIdentity(turnId)` is `conversation-turn:<id>`.
-- `capture`, `source` and `conversation` record original intake in the producer's transaction. `derive` inherits known roots in the publication transaction; it does not grant permission to historical inputs.
+- `capture`, `source` and `conversation` record original intake in the producer's transaction. `derive` inherits known original roots in the publication transaction without issuing a new trigger or retroactively authorizing old references.
 
-Consumers use `control.assertCurrent(connection)` at the real model send and again before publishing results. `control.assertDisclosure(disclosures)` checks the approved source and representation. Historical references are allowed only inside that scope and still pass existing privacy, deletion, version and source visibility checks. Native relays use `control.capture(connection)`, a host closure; do not serialize an authority token into plugin arguments. `ExecutionEngine.bindModelAuthority` captures the task on enqueue, restores only that exact task for execution, and checks the authority at commit. No receipt means no automatic trigger, not deletion of the original.
+Consumers call `control.assertCurrent(connection)` at the actual send and before publication. Automatic disclosure rejects currently excluded sources; manual connection assertions remain separate. Both still obey source visibility, privacy filters, original retention, deletion, version and raw-reading checks. Native relays capture the authority in a host closure rather than serializing it to plugin arguments. `ExecutionEngine.bindModelAuthority` restores the exact durable step's authority and checks it at commit.
 
-## Owner control plane and current semantics
+Model installation, dependency preparation and plugin selection never grant background authority or create content-analysis tasks. Local image intake and local ASR follow the same existing authorization as other processing. Image intake may use its selected local model while Memory extraction, independent review and Ask retain their own selected models, including cloud models. `allowQueryImages` still controls on-demand original-image reading; the remote OCR setting retains its existing OCR meaning. There is no new global image outbound switch, derived-text tier or local-only restriction on later workflows.
 
-`GET /api/model-authorization` returns `{authorization, connections, processing: 'new-intake-only', historicalContext: 'within-approved-scope'}`. `authorization` includes revision, epoch, state, connections, scope and acceptedThrough. Connections currently have IDs and fingerprints only; a UI must show a comprehensible resolved model/provider identity without exposing credentials.
+Owner queries and explicit file retries remain manual operations. Imports keep their saved manual admission; embeddings check their actual connection; source and Material projections inherit lineage. Query agents have read-only context tools, and external effects require Actions product authorization. Third-party scripts that independently access the network remain the known host boundary; these checks are not a script sandbox.
 
-`POST /api/model-authorization/commands` takes `{revision, operationId, action}`. `action: 'authorize'` also requires the exact selected `{id, fingerprint}` pairs and `scope`; pause/stop reject these extra fields. Operation IDs are UUIDs. Revision conflicts and stale connection fingerprints return 409. Both routes require the owner, not a paired device or Agent credential.
+## Historical integration and validation reports
 
-- First approval is prospective. Original receipts denied before approval or during a pause stay denied across duplicate delivery, derived publication and restart.
-- Pause blocks new admissions; already admitted work drains under its captured scope.
-- Stop increments the epoch, aborts active automatic work and fences old work after restart. Explicit owner operations are separate.
-- A changed connection fingerprint never silently inherits background approval. Fixed model choice is enforced by identity. Dynamic routing, cost scheduling and fallback algorithms remain Hold.
-- Current `authorize` snapshots a new scope for future work but does not increment the epoch or narrow already admitted work. The independent review must confirm that UI disclosure matches this behavior; do not silently reinterpret it as immediate revocation. Stop is the current immediate revocation operation.
-- Third-party scripts that independently access the network remain the explicitly accepted known limitation. Host fences do not establish a script sandbox.
-
-## Integrated consumers and UI
-
-The design received coordinator APPROVE bound to the earlier document SHA256 `a9befe431642f0693a00ab448a68087445c67bb863bb739efdff955136f03d8f`. This updated implementation report does not replace final implementation review.
-
-Media commits `5d97ebc2` and `2b640c65` are integrated. `app.ts` alone resolves and registers the actual file-service/default-profile connection, retains `{settings,identity}` atomically, and injects `ModelProcessingAuthority`. Missing identity on a saved snapshot returns 409. Explicit retry and confirmed historical IDs get durable per-item owner intent; background/restart never synthesize it. The historical item ledger matches reservation bytes plus 128 and rolls back under quota failure without consuming the preview.
-
-Owner query snapshots retain a single-turn model override without approving it for background work. Imports use a saved manual admission. Embedding checks the exact embedding connection before sending and after receiving. Native Memory relays capture the actual model identity. Source projections inherit their original capture receipt. Memory integration uses its own `integration` purpose for original roots; explicit selected-card integration saves `owner-integration:<windowId>`. Integration receives no additional raw-reading grants and checks authority again at publication.
-
-The Web settings component shows connection identities, source/representation scope, data/cost consent, and distinct pause/stop commands. Drafts survive transient errors, uncertain retries reuse the exact command UUID, and server changes reset drafts. Scope edits explicitly affect future admissions. English strings are synchronized to Android; this is not a native UI implementation.
+The following records describe earlier candidates, including retired scope/epoch behavior and old test counts. They are retained for history and must not be used as the current API, current authorization semantics or evidence that this update reran those checks.
 
 ## Validation and limits
 

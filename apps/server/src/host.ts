@@ -75,7 +75,8 @@ import { INGRESS_PROTOCOL_VERSION,collectorIngressWrite } from './ingress.js';
 import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import type {LifecycleExtension,LifecycleSettings } from './memory-lifecycle.js';
 import type {WorkingMemory} from './working-memory.js';
-import {openPluginControlRoot} from './plugin-center.js';
+import {createPluginControlPlatform,pluginControlDeclaration} from './plugin-center.js';
+import {GitHubPluginReleases} from './plugin-release.js';
 import {OutboundExportHost} from './plugins/outbound-export-host.js';
 import {DeveloperAccessError,DeveloperAccessHost} from './developer-access.js';
 import {developerAccessFeature} from './features/developer-access.js';
@@ -162,13 +163,18 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const assistantMatters=new AssistantMatters(store);
   const assistantCards=new AssistantCards(store,evidenceReader);
   const assistantCommitments=new AssistantCommitments(store,evidenceReader);
-  const {pluginCenter,close:closePluginCenter}=openPluginControlRoot({store,executor,directory:join(config.dataDir,'plugins','packages')});
+  const pluginControl=createPluginControlPlatform({store,executor,host:bootstrap.host,releases:new GitHubPluginReleases(join(config.dataDir,'plugins','packages'))});
+  const pluginControlHandle=await bootstrap.host.install({
+    identity:{host:bootstrap.snapshot().host,packageId:'mote.plugin-control',installationId:'build:plugin-control@1.0.0',instanceId:'control',activationId:randomUUID()},
+    contributions:[pluginControlDeclaration],factory:pluginControl.factory,
+  });
+  const pluginCenter=pluginControl.assembly;
   // Outbound packages never write through their own code. This host owns the
   // cursor, sandbox, sensitive-source filter and hand-edit conflict ledger.
   pluginCenter.outboundHost=new OutboundExportHost({store,materials,repoRoot:repositoryRoot,dataDir:config.dataDir,
     sourceKind:sourceId=>{try{return sources.getSource(sourceId).kind;}catch{return undefined;}}});
   pluginCenter.resumeOutboundInstances();
-  resources.beforeClose(closePluginCenter);
+  resources.beforeClose(()=>pluginControlHandle.close('shutdown'));
   // Binding control is prepared by memoryRuntime below, but its disposer keeps
   // its original slot: released after active queries, connectors and the agent.
   resources.defer(()=>memoryBindingControl.close());
@@ -340,7 +346,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));
   resources.defer(disposeCaptureMemoryIntake);
   const {perception}=assemblePerception({store,config,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
-  additionalModelConnections=()=>[...processing.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
+  additionalModelConnections=()=>[...processing.modelConnections(),...perception.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return query.withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
   workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,
@@ -576,7 +582,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
-    mediaAssets,materials,materialOrganizer,materialMemoryWork,indexer,evidenceReader,contextTrees,
+    mediaAssets,mediaPreparation,materials,materialOrganizer,materialMemoryWork,indexer,evidenceReader,contextTrees,
     ownerQuestions,agent,isClosing:serverLifecycle.isClosing,featureInventory:bootstrap.featureInventory,
     insight,insightRuns,insightRequestSchema,
     processing,workflows,semanticSelection,
@@ -590,6 +596,9 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   });
   const featureRoutes=new FeatureRoutes(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   resources.defer(()=>featureRoutes.close());
+  // The same hosted control owns trusted builds and installed packages. Restore
+  // only after connector and Memory consumers have attached their live ports.
+  await pluginControl.startBuilds();
   registerPluginControlHttp(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   const domainRoutes=backendContext.get('moteDomainRoutes')??{};
   const selected=(id:string)=>bootstrap.selectsFeature(id);
@@ -613,7 +622,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.processing'))routes.push(domain('mote.processing'));
   if(selected('mote.notes')&&bootstrap.selectsPlugin('notes-source'))routes.push(withAgentTools(notesFeature({assertRequestActive,connections,credential,diagnostics,files,ingress,notesSource:notesSource.assemblyForRoutes(),notesCapture})));
   if(selected('mote.devices'))routes.push(withAgentTools(devicesFeature({diagnostics,store,files,evidenceReader,notesCapture,request:request=>pins.get(request)})));
-  if(selected('mote.media'))routes.push(domain('mote.media',(app,scope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media:config.media}).mount(app,scope);}));
+  if(selected('mote.media'))routes.push(domain('mote.media',(app,scope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media:config.media,runtimeStatus:async role=>{const {runtimeReady,missingDependencies}=await mediaPreparation.status(role);return {runtimeReady,...(missingDependencies?{missingDependencies}:{})};}}).mount(app,scope);}));
   if(selected('mote.owner-questions'))routes.push(domain('mote.owner-questions'));
   if(selected('mote.memory'))routes.push(domain('mote.memory',app=>registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);})));
   if(selected('mote.imports'))routes.push(domain('mote.imports'));

@@ -96,10 +96,13 @@ perception:
 | `connectors.syncIntervalMs` | 900000，60000–86400000 | 自动拉取已授权来源的间隔 |
 | `media.ocrEndpoint/asrEndpoint` | loopback 9010 `/ocr` / 9009 `/transcribe` | 受管理媒体服务；与已保存的自定义处理服务区分 |
 | `media.modelDirectory/python/ocrPort/asrPort/workerToken` | 数据目录 media-models / python3 / 9010 / 9009 / 空 | 媒体目录、进程与私有 Worker 凭据；CLI 新环境配置 profile 独立资源 |
+| `media.localImageEndpoint/localImagePort` | loopback 9011 `/v1/interpret` / 9011 | 本地图片入库理解的启动配置；端点只接受 loopback。Native CLI 新 profile 使用独立端口，保存后需要重启 |
 
 模型协议、推理参数、截止时间与高级对象见 [模型服务配置](model-providers.md)。字段采用原 ModelSettings 名称；API key、headers 和 extraBody 都按敏感数据保护。模型目录和“测试连接”只在用户明确请求时访问 Provider，连接测试可能产生费用。
 
 文件策略使用 `processing.policy.services/profiles/rules`，结构与现有设置页面一致；受安装处理器支持的参数由插件注册信息校验。服务地址变化不能隐式继承旧密钥，页面要求重新填写、清除或按模型领域明确确认复用。图片页修改端点/方案与行为开关使用同一配置事务。
+
+媒体依赖按 `ocr`、`dialogue`、`local-image` 分别准备。停止选定的 Native profile 后，用 `node scripts/mote.mjs media-runtime --profile NAME --role ROLE` 准备该角色的独立环境；该命令不启动推理 Worker，返回的 `runtimeReady` 为 false。权重离线导入仍使用 `media-import --role ocr|dialogue|speaker-wespeaker|local-image --from DIRECTORY`。安装成功、Worker 就绪和可选插件启用是三个独立事实；安装不修改后台模型开关、文件策略、Memory 或 Ask 模型。新图片与语音实现的装配、当前限制和历史记录见 [OCR/ASR 实施说明](ocr-asr-implementation-plan.md)。
 
 普通 DAG 通道参数属于 `workflows`；Action 开关和时区属于 `actions`，审核设备列表是业务授权而不是文件配置。授权变更仍走原领域 API，跨文件和数据库的部分失败会明确报告并要求刷新，文件热更不能授予设备新权限。
 

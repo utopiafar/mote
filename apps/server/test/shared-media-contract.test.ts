@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {MEDIA_MODEL_PATHS,MEDIA_MODEL_COMPONENT_PATHS,mediaAssetStatusSchema,mediaModelsViewSchema} from '@mote/shared';
+import {MEDIA_MODEL_PATHS,MEDIA_MODEL_COMPONENT_PATHS,mediaRoleSchema,mediaAssetStatusSchema,mediaModelsViewSchema} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {MEDIA_CATALOG} from '../src/media-assets.js';
@@ -12,7 +12,7 @@ import {FUNASR_MODEL_IDS} from '../src/funasr-contract.js';
 
 /** Only model bytes are generated. Import verification, publication, installed
  * paths, authenticated HTTP serialization and the shared consumer stay real.
- * This does not register the future FunASR catalog or local-image worker. */
+ * All current catalog roles are consumed; no inference worker is started. */
 test('shared media consumers retain actual HTTP installation failures and recovery without mistaking installed assets for a ready worker',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-shared-media-contract-')),bundle=join(directory,'bundle');
  const prior=MEDIA_CATALOG.dialogue,bytes=Buffer.from('Generated model asset bytes; no weights or personal data.');
@@ -30,13 +30,13 @@ test('shared media consumers retain actual HTTP installation failures and recove
   return mediaModelsViewSchema.parse(JSON.parse(response.body));
  };
  assert.equal((await central.app.inject({url:'/api/media-models'})).statusCode,401);
- const initial=await view();assert.deepEqual(Object.keys(initial).sort(),['dialogue','ocr','speaker-wespeaker']);
+ const initial=await view();assert.deepEqual(Object.keys(initial).sort(),[...mediaRoleSchema.options].sort());
  for(const status of Object.values(initial)){
   assert.equal(status.state,'not_installed');assert.equal(status.runtimeReady,false);assert.equal(status.bytes,0);
-  assert.notEqual(status.role,'local-image','CORE-00 does not register the future image catalog');
-  if(status.role!=='local-image')assert.equal(assets.path(status.role),join(assets.root,MEDIA_MODEL_PATHS[status.role]));
+  assert.equal(assets.path(status.role),join(assets.root,MEDIA_MODEL_PATHS[status.role]));
  }
  assert.deepEqual(Object.keys(MEDIA_MODEL_COMPONENT_PATHS.dialogue).sort(),Object.keys(FUNASR_MODEL_IDS).sort(),'the same four exported model roles have fixed paths in one dialogue bundle');
+ assert.deepEqual(MEDIA_MODEL_COMPONENT_PATHS.dialogue,{asr:'dialogue/asr',vad:'dialogue/vad',speaker:'dialogue/speaker',punctuation:'dialogue/punctuation'});
  await mkdir(bundle);for(const name of names)await writeFile(join(bundle,name),bytes);
  await writeFile(join(bundle,'speaker.onnx'),Buffer.alloc(bytes.length,0));
  await assert.rejects(assets.importBundle('dialogue',bundle),/Invalid model asset: speaker\.onnx/);
