@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname,join} from 'node:path';
+import {join} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {ProviderFailure} from '@mote/shared';
@@ -691,12 +691,15 @@ async function screenshotOcrFixture(t:import('node:test').TestContext,options:{m
  await processing.runtime.ready;
  new ArchivedFileStore(store);
  const assets=options.managed?new MediaAssets(join(directory,'models')):undefined;
+ const previousCatalog=MEDIA_CATALOG.ocr,modelBytes=Buffer.from('Generated OCR model; no weights or private data.');
+ if(assets)MEDIA_CATALOG.ocr={version:'generated-image-ocr',files:[{name:'generated-ocr.bin',size:modelBytes.length,sha256:sha256(modelBytes),official:'https://example.invalid/generated-ocr.bin'}]};
+ const installOcr=async()=>{const bundle=join(directory,'ocr-bundle');mkdirSync(bundle,{recursive:true});writeFileSync(join(bundle,'generated-ocr.bin'),modelBytes);await assets!.importBundle('ocr',bundle);assert.equal(assets!.ready('ocr'),true);};
  const images=new ImageProcessing(store,processing,engine,{mediaAssets:assets,probeOcr:options.probeOcr??(async()=>true)});
  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#aabbcc'}}).png().toBuffer();
  const screen=async(changes:Record<string,unknown>={})=>{const id=randomUUID();await store.ingest({id,deviceId:'generated-screen',deviceName:'Generated screen',platform:'android',source:'screen',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64'),...changes});return id;};
  const job=(id:string)=>store.db.prepare("SELECT state,error,attempts FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(id) as {state:string;error:string|null;attempts:number};
- t.after(async()=>{await images.close();await processing.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
- return {directory,store,files,processing,engine,images,assets,bytes,screen,job};
+ t.after(async()=>{await images.close();await processing.close();await engine.close();store.close();if(assets)MEDIA_CATALOG.ocr=previousCatalog;rmSync(directory,{recursive:true,force:true});});
+ return {directory,store,files,processing,engine,images,assets,bytes,screen,job,installOcr};
 }
 
 test('managed media uses the injected startup snapshot and keeps worker credentials out of views',async t=>{
@@ -732,8 +735,7 @@ test('managed screenshot OCR waits for its model, processes new captures and req
  const historical=await f.screen();f.store.db.prepare("UPDATE image_inputs SET auto_eligible=0 WHERE capture_id=?").run(historical);
  const newer=await f.screen();await f.images.tick();assert.equal(calls,0);
  assert.equal(f.job(newer).error,'model_missing');
- const root=join(f.directory,'models/ocr');for(const name of ['det/inference.onnx','det/inference.yml','rec/inference.onnx','rec/inference.yml']){const path=join(root,name);mkdirSync(dirname(path),{recursive:true});writeFileSync(path,'synthetic fixture');}
- writeFileSync(join(root,'complete.json'),JSON.stringify({version:MEDIA_CATALOG.ocr.version}));await f.images.tick();
+ await f.installOcr();await f.images.tick();
  assert.equal(f.job(newer).state,'succeeded');assert.equal(calls,1);assert.equal(f.job(historical).state,'waiting');
  const preview=f.images.previewHistoricalOcr();assert.equal(preview.count,1);f.images.processHistoricalOcr({token:preview.token});await f.images.tick();
  assert.equal(f.job(historical).state,'succeeded');
@@ -837,8 +839,7 @@ test('identical screenshot bytes reuse the current OCR product without another p
 test('worker readiness does not consume OCR attempts and resumes queued screenshots',async t=>{
  let ready=false;const f=await screenshotOcrFixture(t,{managed:true,probeOcr:async()=>ready});let calls=0;
  f.images.configure({...f.images.settings(),understandingEnabled:false});
- const root=join(f.directory,'models/ocr');for(const name of ['det/inference.onnx','det/inference.yml','rec/inference.onnx','rec/inference.yml']){const path=join(root,name);mkdirSync(dirname(path),{recursive:true});writeFileSync(path,'synthetic fixture');}
- writeFileSync(join(root,'complete.json'),JSON.stringify({version:MEDIA_CATALOG.ocr.version}));
+ await f.installOcr();
  f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated resumed OCR'}]};};
  const id=await f.screen();await f.images.tick();
  assert.equal(calls,0);assert.equal(f.job(id).error,'ocr_worker_unavailable');assert.equal(f.job(id).attempts,0);

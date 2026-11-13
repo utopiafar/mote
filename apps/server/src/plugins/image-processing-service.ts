@@ -18,6 +18,7 @@ import type {ServerDiagnostics} from '../diagnostics.js';
 import type {UsageLedger} from '../usage.js';
 import {ImageProcessing} from '../image-processing.js';
 import {imageUnderstanding} from '../image-understanding.js';
+import {localImageUnderstanding,type LocalImageUnderstandingBinding} from '../local-image-understanding.js';
 import {modelConfiguration} from '../model-configuration.js';
 import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';
@@ -63,6 +64,7 @@ export interface ImageProcessingServiceDependencies {
   /** Late-bound because the agent registry is assembled after processing. */
   readonly configuredFor?:(id:string)=>boolean;
   readonly probeOcr?:()=>Promise<boolean>;
+  readonly localImage?:LocalImageUnderstandingBinding;
   /** Image background model runs use their own trace context instead of the
    * interactive query runtime, so retain their events in the same log. */
   readonly diagnostics?:Pick<ServerDiagnostics,'agentTrace'|'requestId'>;
@@ -81,6 +83,8 @@ export interface ImageProcessingService extends PluginLifecycle {
   /** One image-owned pass; the processing poll invokes the attached control. */
   tick():Promise<void>;
   bindAgent(configuredFor:(id:string)=>boolean):void;
+  /** CORE-03 binds the one optional plugin selection after control assembly. */
+  bindLocalImages(binding:LocalImageUnderstandingBinding):void;
 }
 
 const unavailable=()=>new StoreError('Image processing is unavailable',503);
@@ -100,7 +104,7 @@ export function createImageProcessingService(dependencies:ImageProcessingService
     if(!images||phase!=='active')throw unavailable();
     return images;
   };
-  const understanding=imageUnderstanding({
+  const configuredUnderstanding=imageUnderstanding({
     factory:dependencies.factory,
     metered:async(settings,attribution,task)=>{
       const meter=dependencies.admittedUsage(settings.provider,settings.model,'image-understanding',{agentId:'image-understanding',moduleId:'images',skillId:null,...attribution});
@@ -119,6 +123,9 @@ export function createImageProcessingService(dependencies:ImageProcessingService
         provider:context.selection.settings.provider,protocol:context.selection.settings.protocol,model:context.selection.settings.model});
     },
   });
+  const localUnderstanding=(binding:LocalImageUnderstandingBinding)=>localImageUnderstanding({...binding,configured:configuredUnderstanding,media:{...dependencies.media,...binding.media},timeoutMs:()=>dependencies.processing.currentSettings().timeoutMs});
+  let activeUnderstanding=dependencies.localImage?localUnderstanding(dependencies.localImage):configuredUnderstanding;
+  const understanding:import('../image-processing.js').ImageUnderstanding={selection:service=>activeUnderstanding.selection(service),run:input=>activeUnderstanding.run(input)};
   const track=(task:Promise<void>)=>{
     inflight.add(task);
     void task.finally(()=>{inflight.delete(task);}).catch(()=>{});
@@ -203,6 +210,7 @@ export function createImageProcessingService(dependencies:ImageProcessingService
     close,
     tick(){return control.tick();},
     bindAgent:(configured:(id:string)=>boolean)=>{configuredFor=configured;},
+    bindLocalImages:(binding:LocalImageUnderstandingBinding)=>{activeUnderstanding=localUnderstanding(binding);images?.configurationChanged();},
     get perceptionForAssembly(){return readable();},
   });
 }

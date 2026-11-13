@@ -4,7 +4,7 @@ import type {ModelAgentFactory,ModelAgentIdentity} from './model-agent.js';
 import type {ProcessingService,TokenUsage} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
 import {ImageInterpretationError,ImagePixelsNotInspectedError,imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
-import type {ImageUnderstanding} from './image-processing.js';
+import type {ImageUnderstanding,ImageUnderstandingSelection} from './image-processing.js';
 import {StoreError} from './store.js';
 import {retainErrorIdentity} from './execution-failures.js';
 
@@ -28,14 +28,16 @@ const outputFailure=(error:AgentResponseError)=>['invalid_json','invalid_shape',
  * feedback too, but mark the rejection as requiring another read_image call so
  * the Host repair prompt permits tool use. */
 const pixelsNotInspected=(id:string,issue?:{code:string;feedback:string})=>({code:issue?.code??'image_pixels_not_inspected',feedback:`Call read_image with id ${id} before answering; the host rejects an interpretation produced without receiving its pixels.${issue?` ${issue.feedback}`:''}`,requiresToolUse:true});
-type ImageUnderstandingSelection={fingerprint:string;configured:boolean;receipt:Record<string,unknown>;settings:ModelSettings;identity?:ModelAgentIdentity};
+type ConfiguredImageSelection=ImageUnderstandingSelection&{settings:ModelSettings;identity?:ModelAgentIdentity};
 
 /** Scope the model to read-only evidence for one accepted original. The host
  * verifies an actual pixel read; a model's unsupported vision claim is not a
  * successful visual product. The same harness/model configuration is reused. */
-export function imageUnderstanding(options:{selection:(service?:ProcessingService)=>ImageUnderstandingSelection;factory:ModelAgentFactory;metered:<T>(settings:ModelSettings,attribution:{operationId:string;jobId:string},task:(onUsage:(usage:TokenUsage)=>void)=>Promise<T>)=>Promise<T>;onTrace?:(event:AgentTraceEvent,context:{operationId:string;jobId:string;selection:ImageUnderstandingSelection})=>void}):ImageUnderstanding {
+export function imageUnderstanding(options:{selection:(service?:ProcessingService)=>ConfiguredImageSelection;factory:ModelAgentFactory;metered:<T>(settings:ModelSettings,attribution:{operationId:string;jobId:string},task:(onUsage:(usage:TokenUsage)=>void)=>Promise<T>)=>Promise<T>;onTrace?:(event:AgentTraceEvent,context:{operationId:string;jobId:string;selection:ConfiguredImageSelection})=>void}):ImageUnderstanding {
  return {selection:service=>options.selection(service),async run(input):Promise<ImageInterpretation>{
-  const selected=options.selection(input.service),record={id:input.record.id,capturedAt:input.record.capturedAt,appName:input.record.appName,ocrText:input.ocr?.segments.map(s=>s.text).join('\n')??'',sourceType:input.record.source,...(input.record.attributionContext?{attributionContext:input.record.attributionContext}:{}),
+  const selected=options.selection(input.service);input.signal.throwIfAborted();input.assertContextAuthority?.();
+  if(input.selectionFingerprint&&input.selectionFingerprint!==selected.fingerprint)throw new StoreError('Image model configuration changed',409);
+  const record={id:input.record.id,capturedAt:input.record.capturedAt,appName:input.record.appName,ocrText:input.ocr?.segments.map(s=>s.text).join('\n')??'',sourceType:input.record.source,...(input.record.attributionContext?{attributionContext:input.record.attributionContext}:{}),
    metadata:{sourceId:input.record.provenance?.sourceId,revision:input.record.provenance?.revision,appName:input.record.appName,title:input.record.windowTitle,document:{contentRole:input.record.provenance?.document?.contentRole??'other',timeBasis:input.record.provenance?.document?.timeBasis??'unknown',recordedAt:input.record.provenance?.document?.recordedAt,attachmentOf:input.record.provenance?.document?.attachmentOf}}};
   let readPixels=false;
   const reader:ContextReader={search:async()=>[record],timeline:async()=>({items:[record],nextCursor:null}),evidence:async args=>args.ids.includes(record.id)?[record]:[],activity:async()=>({}),devices:async()=>[],readImage:async args=>{if(args.id!==record.id||args.attachmentId)throw new StoreError('Image is outside processing scope',404);const image=await input.readImage(args);if(image.data)readPixels=true;return image;}};
@@ -55,6 +57,7 @@ export function imageUnderstanding(options:{selection:(service?:ProcessingServic
    // authority changed while the request was in flight.
    input.assertContextAuthority?.();
    if(!readPixels)throw retainErrorIdentity(new ImagePixelsNotInspectedError());
+   input.onReceipt?.(selected.receipt);
    return parseInterpretation(response.answer);
   }catch(error){
    retainErrorIdentity(error);
