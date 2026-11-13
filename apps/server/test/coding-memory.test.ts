@@ -38,6 +38,20 @@ test('profiles isolate personal material and different coding sessions, zero res
  const calls:MemoryPipelineQuery[]=[];const pipeline=fixtureMemoryPipeline({store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async input=>{calls.push(input);return empty;}}});
  const job=pipeline.create({evidenceIds:ids,originKey:'coding-fixture'});assert.equal(job.totalBatches,3);assert.equal((await pipeline.run(job.id)).status,'completed');assert.deepEqual(calls.map(c=>c.skill),['coding-memory','coding-memory','memory-extraction']);assert.equal(pipeline.create({evidenceIds:ids}).totalBatches,0);assert.equal(pipeline.create({evidenceIds:ids,originKey:'coding-fixture'}).id,job.id);await pipeline.close();
 });
+test('unresolved Coding projects keep separate sessions while their owner expressions can produce personal memories',async t=>{
+ const {store,sources,memories}=fixture(t),ids:string[]=[],calls:MemoryPipelineQuery[]=[];
+ for(const [session,text] of [['unknown-a','Generated owner: I prefer early trains for family visits.'],['unknown-b','Generated owner: I prefer written itineraries for family visits.']]){
+  const source=item(session,session);ids.push((await sources.upsert('coding',{...source,text,document:{...source.document,coding:{...source.document!.coding!,projectKey:'unresolved-project',projectName:'Harbor',projectIdentity:'unknown'}}})).id);
+ }
+ const pipeline=fixtureMemoryPipeline({store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async input=>{
+  calls.push(input);assert.equal(input.evidenceIds.length,1);const record=memories.readEvidence(input.evidenceIds)[0];
+  return {...empty,citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],answer:JSON.stringify({memories:[{domain:'personal',title:'Generated family travel preference',statement:`${record.ocrText} [${record.id}]`,uncertainty:'Owner expression in one unresolved session',admission:{layer:'memory',reason:'Explicit owner preference',scope:'Family travel as expressed',attribution:'user'},evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]})};
+ }}});
+ const created=pipeline.create({evidenceIds:ids}),job=await pipeline.run(created.id);assert.equal(job.status,'completed');assert.equal(calls.length,2);assert.equal(job.memoryIds.length,2);
+ const saved=job.memoryIds.map(id=>memories.get(id));assert.ok(saved.every(memory=>memory.domain==='personal'&&memory.coding===undefined));
+ assert.deepEqual(saved.flatMap(memory=>memory.scopeRefs!.map(ref=>ref.sessionId)).sort(),['unknown-a','unknown-b']);assert.ok(saved.every(memory=>memory.scopeRefs!.length===1&&memory.scopeRefs![0].projectIdentity==='unknown'));
+ await pipeline.close();
+});
 test('coding candidates require exact original quotes, typed applicability and host-owned scope references',async t=>{
  const {sources,memories}=fixture(t),ack=await sources.upsert('coding',item('a')),text=item('a').text;
  const claim={title:'Transaction boundary',statement:`Rollback was verified [${ack.id}]`,uncertainty:'Only the recorded test was checked',evidenceIds:[ack.id],evidence:[{id:ack.id,offset:0,quote:text}],coding:{kind:'pitfall',scope:'project',applicability:'When writes must commit together',validation:'tested'}};

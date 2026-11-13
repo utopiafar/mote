@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {ContextReader,QueryInput} from '@mote/agent';
-import type {QueryResult,SourceItem,TokenUsage,UsageReceipt} from '@mote/shared';
+import type {CodingEvidence,QueryResult,SourceItem,TokenUsage,UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {MemoryWorkPackage} from '../src/memory-work-contract.js';
@@ -26,7 +26,7 @@ const usage=(node:Node)=>node.store.db.prepare('SELECT json FROM model_usage ORD
 const token='generated-coding-understanding-owner-token';
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-stub',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
-function event(id:string,role:string,text:string):SourceItem{return {externalId:id,revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text,
+function event(id:string,role:CodingEvidence['role'],text:string):SourceItem{return {externalId:id,revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text,
  document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
@@ -151,6 +151,50 @@ test('empty Coding candidates publish work/events and receive independent review
  assert.ok(input.products[0].sourceEvidence.some(evidence=>evidence.quote.includes(owner)));assert.ok(!JSON.stringify(input).includes(toolSecret));
 });
 
+test('a failed Coding tail resumes without repeating completed pages and supplies unresolved work and personal plans to the assistant',{timeout:15000},async t=>{
+ const tail='Generated owner: Before the next release, verify the physical device. I plan to visit family; the travel date is undecided.';
+ const attempts=new Map<string,number>();let failTail=true;
+ const node=await appFixture(t,async(input,reader)=>{
+  const originals=await supplied(input,reader);
+  if(!isUnderstanding(input)){assert.equal(input.traceContext?.phase,'review');return response(originals[0].id,'',input.taskContext!.untrustedMemoryDraft);}
+  assert.ok(input.evidenceRanges!.reduce((sum,range)=>sum+range.length,0)<=12000);
+  const key=JSON.stringify(input.evidenceRanges);attempts.set(key,(attempts.get(key)??0)+1);
+  const support=(quote:string)=>{
+   for(const range of input.evidenceRanges!){const text=originals.find(record=>record.id===range.id)!.ocrText,offset=text.indexOf(quote,range.offset);if(offset>=range.offset&&offset+quote.length<=range.offset+range.length)return {id:range.id,quote,offset};}
+  };
+  const tailProof=support(tail);
+  if(tailProof){
+   if(failTail)throw Error('Generated tail provider failure');
+   const claim={statement:'Owner requests physical-device verification before release',actor:'user',status:'request',basis:'direct_expression',sourceTime:null,uncertainty:'Still unverified',evidence:[tailProof]};
+   return response(tailProof.id,tail,{summary:'Generated release constraint and an undecided family visit',evidence:[tailProof],
+    workRecords:[{title:'Generated pending release work',requirements:[],constraints:[claim],decisions:[],results:[],validation:[],openItems:[claim],artifactRefs:[]}],
+    events:[{...claim,statement:'Owner plans a family visit with an undecided date',status:'plan',uncertainty:'A plan, not a completed trip'}],memoryCandidates:[],actionCues:[]});
+  }
+  const proof=support(owner);
+  if(proof&&support(report))return response(proof.id,owner,products(proof.id,false));
+  const range=input.evidenceRanges![0],quote=originals.find(record=>record.id===range.id)!.ocrText.slice(range.offset,range.offset+Math.min(range.length,100));
+  return response(range.id,quote,{summary:'Generated bounded progress context',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]});
+ });
+ await node.sources.upsertBatch('coding',[event('owner','user',owner),event('assistant','assistant',report),event('progress','user',('Generated progress note.\n').repeat(490)),event('tail','user',tail)]);
+ await node.sourcePipelines.tick();const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref);
+ const created=manualJob(node,ids),failed=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
+ assert.equal(failed.status,'failed');assert.ok(failed.completedBatches>0);assert.equal(failed.memoryIds.length,0);
+ const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader),partial=adapter.read({ref:material.ref,scope:{kind:'all'}}),completedRefs=partial.products.map(product=>product.ref);
+ assert.ok(completedRefs.length);assert.equal(partial.coverage.semantic.status,'partial');
+ const before=new Map(attempts);failTail=false;
+ const retry=await node.app.inject({method:'POST',url:`/api/memory-jobs/${created.id}/retry`,headers:{authorization:'Bearer '+token}});assert.equal(retry.statusCode,202,retry.body);
+ const completed=await node.memoryPipeline.run(created.id);assert.equal(completed.status,'completed');assert.equal(completed.memoryIds.length,0);
+ assert.equal([...attempts.values()].reduce((sum,count)=>sum+count,0),[...before.values()].reduce((sum,count)=>sum+count,0)+1,'retry only interprets the failed tail');
+ const view=adapter.read({ref:material.ref,scope:{kind:'selection',sourceIds:['coding']}});assert.equal(view.coverage.semantic.status,'ready');assert.ok(completedRefs.every(ref=>view.products.some(product=>product.ref===ref)));
+ assert.ok(view.products.every(product=>product.memoryCandidates.length===0));
+ const reportRead=view.products.flatMap(product=>product.workRecords.flatMap(work=>work.results));assert.ok(reportRead.some(claim=>claim.actor==='assistant'&&claim.basis==='assistant_reported'&&claim.status==='reported_outcome'));
+ const tailRead=view.products.find(product=>product.events.some(event=>event.status==='plan'))!;assert.ok(tailRead);
+ assert.equal(tailRead.events[0].actor,'user');assert.equal(tailRead.events[0].occurredAt,undefined);assert.equal(tailRead.workRecords[0].constraints[0].status,'request');assert.ok(tailRead.workRecords[0].openItems.length);
+ const original=tailRead.sourceEvidence.find(evidence=>evidence.quote===tail)!;assert.ok(original);
+ assert.equal(adapter.readOriginal({ref:material.ref,scope:{kind:'all'},id:original.id,offset:original.offset,length:original.length}).quote,tail);
+ assert.throws(()=>adapter.read({ref:material.ref,scope:{kind:'selection',sourceIds:[]}}),{statusCode:404});
+});
+
 test('a later import observation does not move a source-timed Coding material outside its authorized historical range',{timeout:15000},async t=>{
  const node=await appFixture(t,async(input,reader)=>{const originals=await supplied(input,reader);return response(originals[0].id,owner,isUnderstanding(input)?products(originals[0].id,false):input.taskContext!.untrustedMemoryDraft);});
  await node.sources.upsertBatch('coding',[{...event('owner','user',owner),observedAt:'2020-01-01T00:00:00Z'},
@@ -219,23 +263,40 @@ test('long Coding conversations cover every original character through bounded i
  assert.equal(node.store.archive.page({kind:'semantic'}).items.length,job.totalBatches);
 });
 
-test('600k process text, unknown replies and host summaries never reach any model input or searchable dialogue',{timeout:15000},async t=>{
- let calls=0;const node=await appFixture(t,async(input,reader)=>{
+test('600k process text stays excluded while a long final reply remains readable through bounded batches',{timeout:15000},async t=>{
+ const tail='Generated final correction: physical-device checks are still pending.',final='Generated long final report: '+('y'.repeat(14000))+'\n'+tail;
+ const covered:{id:string;offset:number;length:number}[]=[];let calls=0;
+ const secrets=[toolSecret,'PRIVATE_PROCESS','PRIVATE_REASONING','PRIVATE_HOST_SUMMARY','PRIVATE_HOST_ENVELOPE','PRIVATE_UNKNOWN'];
+ const node=await appFixture(t,async(input,reader)=>{
   calls++;assert.ok(!input.taskContext?.previousSummary);
-  const records=await supplied(input,reader);assert.ok(records.every(r=>!r.ocrText.includes('PRIVATE_PROCESS')));
+  const records=await supplied(input,reader);assert.ok(records.every(r=>secrets.every(secret=>!r.ocrText.includes(secret))));
   assert.ok(input.evidenceRanges!.reduce((n,r)=>n+r.length,0)<=12000);
-  return response(records[0].id,owner,isUnderstanding(input)?products(records[0].id,false):input.taskContext!.untrustedMemoryDraft);
+  if(!isUnderstanding(input))return response(records[0].id,'',input.taskContext!.untrustedMemoryDraft);
+  covered.push(...input.evidenceRanges!);
+  const range=input.evidenceRanges![0],text=records.find(record=>record.id===range.id)!.ocrText.slice(range.offset,range.offset+range.length);
+  const quote=text.includes(tail)?tail:text.slice(0,180),evidence=[{id:range.id,quote,offset:range.offset+text.indexOf(quote)}];
+  return response(range.id,quote,{summary:'Generated bounded final report; validation remains unverified',evidence,workRecords:[],
+   events:text.includes(tail)?[{statement:'Assistant reports physical-device checks remain pending',actor:'assistant',status:'unknown',basis:'assistant_reported',sourceTime:null,uncertainty:'Assistant report only',evidence}]:[],memoryCandidates:[],actionCues:[]});
  });
  const process=Array.from({length:60},(_,i)=>{const item=event('process-'+i,'assistant','PRIVATE_PROCESS '+('x'.repeat(9980)));return {...item,document:{...item.document,coding:{...item.document!.coding!,channel:'commentary'}}};});
  const host=event('host','user','PRIVATE_HOST_SUMMARY');host.document!.coding!.attribution='host';
+ const embedded=event('embedded','user','<environment_context>PRIVATE_HOST_ENVELOPE</environment_context>\nGenerated owner: Keep the travel date undecided.');
  const unknown=event('unknown','assistant','PRIVATE_UNKNOWN');delete unknown.document!.coding!.channel;
- await node.sources.upsertBatch('coding',[event('owner','user',owner),...process,host,unknown,event('assistant','assistant',report),event('oversized','assistant','PRIVATE_OVERSIZED '+('y'.repeat(14000)))]);await node.sourcePipelines.tick();
- const material=node.materials.list({kind:'mote.coding-session'}).items[0];assert.ok(material.textLength<2000);
- for(const secret of ['PRIVATE_PROCESS','PRIVATE_HOST_SUMMARY','PRIVATE_UNKNOWN','PRIVATE_OVERSIZED']){
+ const reasoning=event('reasoning','assistant','PRIVATE_REASONING');reasoning.document!.coding!.channel='analysis';
+ await node.sources.upsertBatch('coding',[event('owner','user',owner),...process,host,embedded,unknown,reasoning,event('tool','tool_result',toolSecret),event('assistant','assistant',report),event('long-final','assistant',final)]);await node.sourcePipelines.tick();
+ const material=node.materials.list({kind:'mote.coding-session'}).items[0];assert.ok(material.textLength>final.length&&material.textLength<16000);
+ for(const secret of secrets){
   assert.equal(node.materials.list({query:secret}).items.length,0);
  }
  const job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,node.materials.evidenceIds(material.ref)).id));
- assert.equal(job.status,'completed');assert.equal(calls,2);
+ assert.equal(job.status,'completed');assert.ok(job.totalBatches>1);assert.equal(calls,job.totalBatches*2);
+ for(const record of node.materials.evidence(node.materials.evidenceIds(material.ref))){
+  let offset=0;for(const range of covered.filter(range=>range.id===record.id).sort((a,b)=>a.offset-b.offset)){assert.equal(range.offset,offset);offset+=range.length;}
+  assert.equal(offset,record.ocrText.length,'long final replies retain every character, including the tail');
+ }
+ const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader),view=adapter.read({ref:material.ref,scope:{kind:'all'}});
+ assert.equal(view.coverage.semantic.status,'ready');assert.ok(view.products.some(product=>product.events.some(event=>event.evidence.some(evidence=>evidence.quote===tail))));
+ assert.ok(secrets.every(secret=>!JSON.stringify(view).includes(secret)));
  assert.equal(node.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='coding_conversation_contexts'").get(),undefined);
 });
 
