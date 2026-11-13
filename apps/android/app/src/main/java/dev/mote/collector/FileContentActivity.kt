@@ -127,7 +127,7 @@ class FileContentActivity : MoteActivity() {
         val local = detail.localPreview
         val original = if (local != null) local.first.drop(offset).take(4000) else detail.capture?.optString("ocrText")?.takeIf { it.isNotBlank() } ?: item.optString("text")
         if (original.isNotBlank()) text(original, 16f)
-        else text(MoteI18n.text("本机保留文件信息与待发原始字节；正文由中央整理后显示。"), MoteTheme.fontSupport.toFloat())
+        else text(MoteI18n.text(if (row.optJSONObject("pending")?.optJSONObject("manifest")?.has("sha256") == true) "本机保留文件信息与待发原始字节；正文由中央整理后显示。" else "此版本没有保存正文。"), MoteTheme.fontSupport.toFloat())
         if (detail.source.description.isNotBlank()) {
             text(MoteI18n.text("资料说明"), MoteTheme.fontSupport.toFloat())
             text(detail.source.description, MoteTheme.fontBody.toFloat())

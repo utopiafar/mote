@@ -46,7 +46,7 @@ internal object LocalContentPresentation {
         return listOf(progress.summary(), issue, if (progress.received < progress.total || !source.enabled || config.syncPaused) waiting else "").filter { it.isNotBlank() }.joinToString("\n")
     }
     fun currentReceipt(row: JSONObject): String? = row.optString("captureId").takeIf {
-        !row.has("pending") && row.optJSONObject("candidate")?.let { candidate -> row.optString("signature") == SourceRules.fileSignature(candidate) } == true
+        !row.has("pending") && !row.optBoolean("recheck") && row.optJSONObject("candidate")?.let { candidate -> row.optString("signature") == SourceRules.fileSignature(candidate) } == true
     }?.takeIf { it.isNotBlank() }
     fun sourceStatus(source: LocalSource, state: JSONObject): String = when {
         !source.enabled -> MoteI18n.text("此来源已暂停")

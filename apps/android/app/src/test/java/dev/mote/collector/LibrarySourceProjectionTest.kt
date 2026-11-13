@@ -1,6 +1,7 @@
 package dev.mote.collector
 
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -39,5 +40,35 @@ class LibrarySourceProjectionTest {
         assertTrue(projection.containsCapture("central", capture)); assertFalse(projection.containsCapture("other", capture))
         assertFalse(projection.containsCapture("central", JSONObject(capture.toString()).put("deviceId", "other")))
         assertFalse(projection.containsCapture("central", JSONObject(capture.toString()).put("libraryVersion", "other")))
+    }
+    @Test fun fileMetadataAndPendingExtractionNeverClaimThatCentralBodyIsReadable() {
+        val projection = LibrarySourceProjection(); val id = "35b8fadb-8f0a-4769-8545-cdad61c4041d"
+        val row = original().put("captureId", id).put("fileArchive", JSONObject().put("captureId", id))
+        projection.central("central", row); assertFalse(projection.visible("").single().centralReadable)
+        fun view(status: String) = JSONObject().put("captureId", id).put("sourceId", "source").put("retention", "snapshot")
+            .put("item", JSONObject().put("kind", "file").put("externalId", "external").put("revision", "v1"))
+            .put("hasOriginal", false).put("originMissing", false).put("canOpenOriginal", false)
+            .put("coverage", JSONObject().put("extraction", JSONObject().put("status", status)).put("semantic", JSONObject().put("status", "pending")).put("embedding", JSONObject().put("status", "pending")))
+        row.put("_fileView", view("pending")); projection.central("central", row)
+        assertFalse(projection.visible("").single().centralReadable)
+        row.put("_fileView", view("ready")); projection.central("central", row)
+        assertTrue(projection.visible("").single().centralReadable)
+        row.getJSONObject("_fileView").getJSONObject("item").put("revision", "other-version")
+        projection.central("central", row); assertFalse(projection.visible("").single().centralReadable)
+        row.put("_fileView", view("ready").put("retention", "reference")); projection.central("central", row)
+        assertFalse(projection.visible("").single().centralReadable)
+        val malformed = view("ready"); malformed.getJSONObject("coverage").getJSONObject("extraction").put("completed", "1").put("total", 1)
+        row.put("_fileView", malformed); projection.central("central", row); assertFalse(projection.visible("").single().centralReadable)
+    }
+    @Test fun aRevokedFileStopsTheWholeRemotePageBeforePublishingItsMetadata() {
+        val projection = LibrarySourceProjection()
+        val first = original().put("captureId", "first").put("fileArchive", JSONObject())
+        val second = original(external = "other").put("captureId", "second").put("fileArchive", JSONObject())
+        val page = JSONObject().put("items", JSONArray(listOf(first, second))).put("matches", JSONArray())
+        assertThrows(CentralFailure::class.java) {
+            CentralFileView.enrichOriginals(page) { id -> if (id == "second") throw CentralFailure(403) else JSONObject() }
+            repeat(page.getJSONArray("items").length()) { projection.central("central", page.getJSONArray("items").getJSONObject(it)) }
+        }
+        assertTrue(projection.visible("").isEmpty())
     }
 }

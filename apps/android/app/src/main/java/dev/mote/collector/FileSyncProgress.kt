@@ -22,7 +22,7 @@ internal data class FileSyncEntry(
         fun from(row: JSONObject, immediate: Boolean = false): FileSyncEntry {
             val item = row.getJSONObject("candidate")
             val saved = row.has("pending")
-            val received = !saved && row.optString("revision").isNotBlank() && row.optString("signature") == SourceRules.fileSignature(item)
+            val received = !saved && !row.optBoolean("recheck") && row.optString("revision").isNotBlank() && row.optString("signature") == SourceRules.fileSignature(item)
             return FileSyncEntry(SourceRules.hash(item.getString("externalId")), item.optString("observedAt"), received, row.optBoolean("baseline"), saved,
                 if (immediate || item.optString("layer") == "reference" || item.optBoolean("deleted")) 0 else row.optLong("stableSince", System.currentTimeMillis()) + 60_000,
                 row.has("syncFailure") || row.has("nextPrepareAt"), row.optJSONObject("syncFailure")?.optBoolean("blocked") == true)
