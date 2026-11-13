@@ -33,7 +33,7 @@ export const assistantEntrypoints:readonly AssistantEntrypoint[]=Object.freeze([
     href:'#/assistant/workbench',
     title:'工作台',
     purpose:'项目、人物、旅行和阅读的固定视图。',
-    requires:[{id:'assistant.workbench',version:'1',host:'server'}],
+    requires:[{id:'http:GET:/api/assistant/workbench',version:'1',host:'server'}],
   },
 ]);
 

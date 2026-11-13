@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseDeclarativeView, DeclarativeViewSession, DeclarativeView, serializeFormInput } from '../src/plugin-host/declarative-view';
 import type { UiContributionDescriptor } from '@mote/shared/plugin-ui';
+import {decodeWorkspaceView,workspacePath} from '../src/plugins/assistant-workbench';
 
 const descriptor = (commands = ['save']): UiContributionDescriptor => ({
   id: 'v1', kind: 'declarative-view', apiVersion: '1', platforms: ['web'],
@@ -17,6 +18,20 @@ test('strict parsing rejects unknown components, executables, oversized arrays a
   const evil = { components: [{ type: 'action', command: 'save' }] };
   Object.defineProperty(evil.components[0], 'labelKey', { get: () => { throw new Error('must not execute'); } });
   assert.throws(() => parseDeclarativeView(evil, descriptor()), /Invalid object fields/, 'accessor payloads are rejected, never executed');
+});
+
+test('workbench decoding rejects new layouts and forged command references, and preserves an empty scope',()=>{
+  const request={template:'reading' as const,scope:{kind:'selection' as const,sourceIds:[]}};
+  const value={request,descriptor:descriptor(['refresh']),spec:{components:[{type:'status',state:'empty',textKey:'empty'}]},data:{files:[]},commands:[{id:'refresh',apiVersion:'1'}]};
+  assert.deepEqual(decodeWorkspaceView(JSON.parse(JSON.stringify(value))).request.scope,request.scope);
+  assert.deepEqual(JSON.parse(new URLSearchParams(workspacePath(request).split('?')[1]).get('request')!).scope,request.scope);
+  assert.throws(()=>decodeWorkspaceView({...value,request:{...request,template:'script'}}));
+  assert.throws(()=>decodeWorkspaceView({...value,request:{...request,queryRef:'anything'}}));
+  assert.throws(()=>decodeWorkspaceView({...value,spec:{components:[{type:'script',source:'generated()'}]}}),/unknown component|Invalid object fields/);
+  assert.throws(()=>decodeWorkspaceView({...value,spec:{components:[{type:'action',command:'send-message',labelKey:'send'}]}}),/undeclared/);
+  assert.throws(()=>decodeWorkspaceView({...value,commands:[{id:'refresh',apiVersion:'2'}]}));
+  assert.throws(()=>decodeWorkspaceView({...value,commands:[]}),/command directory/);
+  assert.throws(()=>decodeWorkspaceView({...value,commands:[{id:'refresh',apiVersion:'1',url:'https://generated.example/script'}]}));
 });
 
 test('a valid spec parses with the declared state and action surfaces', () => {
