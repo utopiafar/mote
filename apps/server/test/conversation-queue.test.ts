@@ -167,12 +167,90 @@ test('empty and selected scopes reach the real query bridge without disclosing a
     const saved=await f.node.app.inject({method:'PUT',url:`/api/sources/${sourceId}/items`,headers,payload:{externalId:'generated-item',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'snapshot',text:`Generated ${sourceId} body`}});assert.equal(saved.statusCode,200,saved.body);ids.push(saved.json().id);
   }
   other=ids[1];const id=await main(f.node);
-  const unsupported=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId:id,clientRequestId:randomUUID(),question:'Source only',scope:{kind:'selection',sourceIds:['generated-visible']}}});assert.equal(unsupported.statusCode,400);assert.equal(seen.length,0);
+  const sourceOnly=await post(f.node,id,'Source only',headers,{kind:'selection',sourceIds:['generated-visible']});assert.equal((await settled(f.node,id,sourceOnly.message.id)).status,'completed');assert.equal(seen[0].evidenceIds,undefined,'a source grant is not an expanded original selection');
+  seen.length=0;
   const selected=await post(f.node,id,'Selected source',headers,{kind:'selection',sourceIds:['generated-visible'],evidenceIds:ids});assert.equal((await settled(f.node,id,selected.message.id)).status,'completed');assert.deepEqual(seen[0].evidenceIds,[ids[0]]);
   const empty=await post(f.node,id,'Empty selection',headers,{kind:'selection',sourceIds:[]});assert.equal((await settled(f.node,id,empty.message.id)).status,'completed');assert.deepEqual(seen[1].hostToolSelection,[]);assert.equal(seen[1].evidenceIds,undefined);assert.deepEqual(seen[1].openingMemories,[]);assert.equal(seen[1].conversation?.turns.length,0);
   const next=await post(f.node,id,'Continue empty selection',headers,{kind:'selection',sourceIds:[]});assert.equal((await settled(f.node,id,next.message.id)).status,'completed');assert.deepEqual(seen[2].conversation?.turns.map(turn=>turn.question),['Empty selection']);
   const anchored=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId:id,clientRequestId:randomUUID(),question:'Selected anchor',scope:{kind:'selection',evidenceIds:[ids[0]]},anchorEvidenceIds:[ids[0]]}});assert.equal(anchored.statusCode,202,anchored.body);assert.equal((await settled(f.node,id,anchored.json().id)).status,'completed');assert.deepEqual(seen[3].anchorEvidenceIds,[ids[0]]);
   const outside=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId:id,clientRequestId:randomUUID(),question:'Outside anchor',scope:{kind:'selection',evidenceIds:[ids[0]]},anchorEvidenceIds:[ids[1]]}});assert.equal(outside.statusCode,202,outside.body);assert.equal((await settled(f.node,id,outside.json().id)).status,'failed');assert.equal(seen.length,4);
+  const sourceAnchor=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId:id,clientRequestId:randomUUID(),question:'Source-only anchor',scope:{kind:'selection',sourceIds:['generated-visible']},anchorEvidenceIds:[ids[0]]}});assert.equal(sourceAnchor.statusCode,202,sourceAnchor.body);assert.equal((await settled(f.node,id,sourceAnchor.json().id)).status,'completed');assert.deepEqual(seen[4].anchorEvidenceIds,[ids[0]]);assert.equal(seen[4].evidenceIds,undefined);
+  const outsideSource=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId:id,clientRequestId:randomUUID(),question:'Outside source anchor',scope:{kind:'selection',sourceIds:['generated-visible']},anchorEvidenceIds:[ids[1]]}});assert.equal(outsideSource.statusCode,202,outsideSource.body);assert.equal((await settled(f.node,id,outsideSource.json().id)).status,'failed');assert.equal(seen.length,5);
+});
+
+test('a source with 31 originals reaches the production provider without seeding a bulk prompt',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-source-provider-')),requests:string[]=[];
+  const provider=createServer(async(req,res)=>{
+    let body='';for await(const part of req)body+=part;requests.push(body);
+    res.writeHead(200,{'Content-Type':'text/event-stream'});
+    res.end('data: '+JSON.stringify({id:'generated-source-provider',choices:[{index:0,delta:{role:'assistant',content:JSON.stringify({answer:'Generated source answer',citationIds:[]})},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}})+'\n\ndata: [DONE]\n\n');
+  });
+  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
+  const node=await buildApp({...config(dir),modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512},{backgroundWorker:false});
+  t.after(async()=>{await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(dir,{recursive:true,force:true});});
+  node.sources.register({id:'generated-bulk-source',name:'Generated bulk source',kind:'custom',deviceId:'generated-device',platform:'import'});
+  // 31 is the smallest source that would fail a mistaken conversion to the
+  // existing strict 30-original selection, before any provider request.
+  for(let i=0;i<31;i++)await node.sources.upsert('generated-bulk-source',{externalId:'file-'+i,revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'snapshot',title:'GENERATED_BULK_TITLE_'+i,text:'GENERATED_BULK_BODY_'+i,document:{path:'generated-bulk-path/'+i+'.txt',contentRole:'other',timeBasis:'unknown'}});
+  const id=await main(node),turn=await post(node,id,'Generated source-only request',headers,{kind:'selection',sourceIds:['generated-bulk-source']});
+  assert.equal((await settled(node,id,turn.message.id)).status,'completed');assert.equal(requests.length,1);
+  assert.match(requests[0],/Generated source-only request/);assert.doesNotMatch(requests[0],/GENERATED_BULK_TITLE|GENERATED_BULK_BODY|generated-bulk-path/);
+  const payload=node.delegation.journal.payload<{prepared:QueryInput}>('query:'+turn.message.id);
+  assert.equal(payload.prepared.evidenceIds,undefined);assert.equal(payload.prepared.processingEvidence,undefined);assert.equal(payload.prepared.hostToolSelection,undefined,'ordinary on-demand retrieval remains available');
+});
+
+test('source-only history excludes the wider main summary and exposes only compatible turns through history tools',async t=>{
+  let f!:Awaited<ReturnType<typeof fixture>>,failure:unknown;
+  f=await fixture(t,async input=>{
+    const bridge=await startBridge(f.node.featureServices.archiveReader,input);
+    try{
+      assert.doesNotMatch(JSON.stringify(input.conversation),/GENERATED_HIDDEN|GENERATED_WIDE/);
+      assert.equal(input.conversation?.workingMemory,undefined);
+      assert.deepEqual(input.conversation?.turns.map(turn=>turn.question),['Generated visible history']);
+      const call=async(tool:string,args:unknown)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});const body=await response.json() as any;assert.equal(response.status,200,JSON.stringify(body));return body;};
+      const history=await call('conversation_history',{}),search=await call('conversation_search',{query:'GENERATED_HIDDEN'});
+      assert.deepEqual(history.data.items.map((item:any)=>item.question),['Generated visible history']);assert.deepEqual(search.data.items,[]);
+      assert.doesNotMatch(JSON.stringify({history,search}),/GENERATED_HIDDEN|GENERATED_WIDE/);
+      return {...result('Generated scoped follow-up'),trace:bridge.trace,evidenceDependencies:bridge.evidenceDependencies,sourceContextDependencies:bridge.sourceContextDependencies};
+    }catch(error){failure=error;throw error;}finally{await bridge.close();}
+  });
+  const id=await main(f.node),ids:string[]=[];
+  for(const sourceId of ['generated-visible','generated-hidden']){
+    f.node.sources.register({id:sourceId,name:sourceId,kind:'custom',deviceId:'generated-device',platform:'import'});
+    ids.push((await f.node.sources.upsert(sourceId,{externalId:'item',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated history original'})).id);
+  }
+  f.node.conversations.append(f.node.conversations.get(id),{question:'Generated visible history',kind:'selection',sourceIds:['generated-visible']},result('Generated visible answer',[ids[0]]));
+  f.node.conversations.append(f.node.conversations.get(id),{question:'GENERATED_WIDE_QUESTION',kind:'all'},result('GENERATED_WIDE_ANSWER',ids));
+  f.node.conversations.append(f.node.conversations.get(id),{question:'GENERATED_HIDDEN_QUESTION',kind:'selection',sourceIds:['generated-hidden']},result('GENERATED_HIDDEN_ANSWER',[ids[1]]));
+  f.node.conversations.append(f.node.conversations.get(id),{question:'GENERATED_HIDDEN_TAINTED_HISTORY',kind:'selection',sourceIds:['generated-visible']},result('GENERATED_HIDDEN_TAINTED_ANSWER',[ids[0]]));
+  const conversation=f.node.conversations.get(id),summary={text:'GENERATED_WIDE_SUMMARY',coveredThroughSeq:3,contextVersion:0,generatedAt:'2026-10-03T00:00:00Z',fingerprint:createHash('sha256').update(JSON.stringify([3,0,conversation.turns])).digest('hex'),evidenceDependencies:{version:1,complete:true,ids}};
+  f.node.store.db.prepare('INSERT INTO working_memories(id,json) VALUES(?,?)').run(id,JSON.stringify(summary));
+  const turn=await post(f.node,id,'Generated source follow-up',headers,{kind:'selection',sourceIds:['generated-visible']});
+  const finished=await settled(f.node,id,turn.message.id);if(failure)throw failure;assert.equal(finished.status,'completed',JSON.stringify(f.node.conversations.message(turn.message.id)));
+});
+
+test('empty, unknown and disabled source grants never fall back to all, and outside anchors still fail',async t=>{
+  let f!:Awaited<ReturnType<typeof fixture>>,failure:unknown;const seen:QueryInput[]=[];
+  f=await fixture(t,async input=>{
+    seen.push(input);
+    try{
+      const reader=f.node.featureServices.archiveReader;
+      const search=await reader.search({query:'GENERATED_RESTRICTED'}),sources=await reader.sources!({}),items=await reader.sourceItems!({}),memories=await reader.memories!({});
+      assert.equal(search.length,0);assert.deepEqual((sources as any).items,[]);assert.deepEqual(items.items,[]);assert.deepEqual(memories.items,[]);assert.deepEqual(input.openingMemories,[]);
+      return result('Generated owner text answer');
+    }catch(error){failure=error;throw error;}
+  });
+  f.node.sources.register({id:'generated-disabled',name:'GENERATED_RESTRICTED_TITLE',kind:'custom',deviceId:'generated-device',platform:'import'});
+  const original=(await f.node.sources.upsert('generated-disabled',{externalId:'item',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'GENERATED_RESTRICTED_BODY'})).id;
+  const disabled=await f.node.app.inject({method:'PATCH',url:'/api/sources/generated-disabled',headers,payload:{enabled:false}});assert.equal(disabled.statusCode,200,disabled.body);
+  const id=await main(f.node);
+  for(const sourceIds of [[],['generated-missing'],['generated-disabled']]){
+    const turn=await post(f.node,id,'Generated restricted request',headers,{kind:'selection',sourceIds});
+    const finished=await settled(f.node,id,turn.message.id);if(failure)throw failure;assert.equal(finished.status,'completed',JSON.stringify(finished));
+  }
+  for(const input of seen)assert.deepEqual(input.hostToolSelection,[],'empty or unavailable source grants expose no archive tools');
+  const outside=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId:id,clientRequestId:randomUUID(),question:'Generated outside source anchor',scope:{kind:'selection',sourceIds:['generated-missing']},anchorEvidenceIds:[original]}});
+  assert.equal(outside.statusCode,202,outside.body);assert.equal((await settled(f.node,id,outside.json().id)).status,'failed');assert.equal(seen.length,3,'an outside anchor cannot reach the model');
 });
 
 test('history receipts survive later completed turns but reject changes to a turn actually read',async t=>{

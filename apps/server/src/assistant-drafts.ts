@@ -16,7 +16,7 @@ import {StoreError} from './store.js';
  * represented by the shared task scope, so the host offers no draft for them. */
 export type AssistantDraftScopeInput = {
   after?:string;before?:string;deviceId?:string;timeZone?:string;
-  evidenceIds?:string[];anchorEvidenceIds?:string[];anchorMaterialRef?:string;
+  sourceIds?:string[];evidenceIds?:string[];anchorEvidenceIds?:string[];anchorMaterialRef?:string;
 };
 export function assistantDraftScope(input:AssistantDraftScopeInput):QueryScope|undefined {
   if(input.anchorMaterialRef||input.anchorEvidenceIds?.length)return undefined;
@@ -24,8 +24,8 @@ export function assistantDraftScope(input:AssistantDraftScopeInput):QueryScope|u
     ...(input.after?{after:input.after}:{}),...(input.before?{before:input.before}:{}),
     ...(input.deviceId?{deviceId:input.deviceId}:{}),...(input.timeZone?{timeZone:input.timeZone}:{}),
   };
-  const parsed=queryScopeSchema.safeParse(input.evidenceIds!==undefined
-    ?{kind:'selection',evidenceIds:[...input.evidenceIds],...filters}
+  const parsed=queryScopeSchema.safeParse(input.evidenceIds!==undefined||input.sourceIds!==undefined
+    ?{kind:'selection',...(input.evidenceIds!==undefined?{evidenceIds:[...input.evidenceIds]}:{}),...(input.sourceIds!==undefined?{sourceIds:[...input.sourceIds]}:{}),...filters}
     :{kind:'all',...filters});
   return parsed.success?parsed.data:undefined;
 }

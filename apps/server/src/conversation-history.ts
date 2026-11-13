@@ -3,7 +3,7 @@ import type {ContextRange,QueryInput} from '@mote/agent';
 import type {Conversations,ConversationTurn} from './conversations.js';
 import {combineDependencies} from './conversation-lineage.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
-import {scopedHistoryTurns} from './query-scope.js';
+import {scopedHistoryTurns,type QueryScope} from './query-scope.js';
 import {StoreError,type Store} from './store.js';
 
 const prefix='/_conversation/';
@@ -49,7 +49,8 @@ export function conversationHistoryReader(deps:{store:Store;conversations:Pick<C
     // Both queued and synchronous runs freeze an exclusive sequence boundary;
     // equal timestamps and later messages cannot expand an already admitted run.
     const older=saved.turns.filter(turn=>turn.seq<Number(high));
-    const scope={after:input.after,before:input.before,deviceId:input.deviceId,evidenceIds:input.historicalSelection?.evidenceIds??input.evidenceIds};
+    const scope={after:input.after,before:input.before,deviceId:input.deviceId,sourceIds:(input as QueryScope).sourceIds,evidenceIds:input.historicalSelection?.evidenceIds??input.evidenceIds};
+    const sourceScope=scope.sourceIds===undefined?{}:{sourceIds:scope.sourceIds};
     const eligible=scopedHistoryTurns(older,scope,input.directImages?.map(image=>image.id)).filter(turn=>Boolean(turn.result));
     const binding=digest([initial.conversationId,mode,args.query??null,scope,anchor??null,offset]);
     let before=Number.MAX_SAFE_INTEGER;
@@ -64,7 +65,7 @@ export function conversationHistoryReader(deps:{store:Store;conversations:Pick<C
       const evidenceDependencies=turn.result?.evidenceDependencies;
       if(!evidenceDependencies?.complete||!snapshot.evidenceDependencies.complete)return false;
       try{
-        assert({question:'',conversation:{turns:[{question:turn.question,answer:turn.result!.answer,scope:turn.scope,createdAt:turn.createdAt}],omittedTurns:0,historyContext:snapshot,evidenceDependencies,
+        assert({question:'',...sourceScope,conversation:{turns:[{question:turn.question,answer:turn.result!.answer,scope:turn.scope,createdAt:turn.createdAt}],omittedTurns:0,historyContext:snapshot,evidenceDependencies,
           ...(!turn.evidenceStale&&turn.result?.sourceContextDependencies?{sourceContextDependencies:turn.result.sourceContextDependencies}:{})}});
         return true;
       }catch{return false;}
@@ -81,7 +82,7 @@ export function conversationHistoryReader(deps:{store:Store;conversations:Pick<C
         // A filename can reach a later model only when the saved answer's
         // existing lineage already includes that attachment.
         if(!turn.result?.evidenceDependencies?.ids.includes(attachment.id))return false;
-        try{assert({question:'',contextEvidenceDependencies:{version:1,complete:true,ids:[attachment.id]}});return true;}catch{return false;}
+        try{assert({question:'',...sourceScope,contextEvidenceDependencies:{version:1,complete:true,ids:[attachment.id]}});return true;}catch{return false;}
       });
       if(visible.length)attachments.set(turn.id,visible);
     }
@@ -111,7 +112,7 @@ export function conversationHistoryReader(deps:{store:Store;conversations:Pick<C
       const answer=mode==='turn'?{text:turn.result!.answer.slice(offset,end),truncated:offset>0||end<turn.result!.answer.length}:excerpt(turn.result!.answer,mode==='search'?1000:8000);
       const references=turn.result!.citations.filter(cite=>{
         if(!conversations.referenceAvailability(saved.id,cite.id).available)return false;
-        try{assert({question:'',contextEvidenceDependencies:{version:1,complete:true,ids:[cite.id]}});return true;}catch{return false;}
+        try{assert({question:'',...sourceScope,contextEvidenceDependencies:{version:1,complete:true,ids:[cite.id]}});return true;}catch{return false;}
       }).map(cite=>cite.id);
       return {id:turn.id,createdAt:turn.createdAt,question:question.text,answer:answer.text,
         ...(question.truncated?{questionTruncated:true}:{}),...(answer.truncated?{answerTruncated:true}:{}),

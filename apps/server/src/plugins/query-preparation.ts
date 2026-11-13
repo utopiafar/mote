@@ -36,7 +36,7 @@ export interface QueryPreparationDependencies {
   archiveReader:ContextReader;
   memoryReader:Pick<MemoryRead,'memoryPageAsync'>;
   configured:()=>boolean;
-  authority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
+  authority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQuerySources'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
   query:(input:QueryInput)=>Promise<QueryResult>;
 }
 /** Prepare and pin the accepted request under its current coordinator lease. */
@@ -58,17 +58,26 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
       // a transport fence on the durable run.
       assertModelEvidence(saved.prepared);return {...saved.prepared,signal,onProgress};
     }
-    const {conversationId,question,modelProfileId,modelOverride,evidenceIds:selectedIds,anchorEvidenceIds:anchorIds,anchorMaterialRef,attachmentIds=[],...selected}=parseQueuedQuery(body);
+    const {conversationId,question,modelProfileId,modelOverride,sourceIds:requestedSources,evidenceIds:selectedIds,anchorEvidenceIds:anchorIds,anchorMaterialRef,attachmentIds=[],...selected}=parseQueuedQuery(body);
+    const sourceIds=requestedSources===undefined?undefined:authority.selectedQuerySources(requestedSources);
     const previous=conversationId?conversations.get(conversationId):undefined;
     const historyBeforeSeq=previous?.turns.reduce((before,turn)=>Math.max(before,turn.seq+1),0);
     const scope:QueryScope={};for(const key of ['after','before','deviceId','timeZone'] as const){const value=key==='timeZone'&&selected.timeZone===undefined?previous?.scope.timeZone:selected[key];if(value!==undefined&&value!==null)scope[key]=value;}
     insightSchema.parse(scope);
+    if(sourceIds!==undefined)scope.sourceIds=sourceIds;
     if(selectedIds)scope.evidenceIds=selectedIds;
     if(anchorIds)scope.anchorEvidenceIds=anchorIds;
     if(anchorMaterialRef)scope.anchorMaterialRef=anchorMaterialRef;
     selectedQueryMaterial(scope,true);
     const bounded=hasTimeOrDeviceScope(scope);
-    const scopedPrevious=previous&&(scope.evidenceIds!==undefined||bounded)?{...previous,turns:scopedHistoryTurns(previous.turns,scope,attachmentIds)}:undefined;
+    const restricted=scope.evidenceIds!==undefined||sourceIds!==undefined||bounded;
+    const scopedPrevious=previous&&restricted?{...previous,turns:scopedHistoryTurns(previous.turns,scope,attachmentIds).filter(turn=>{
+      if(sourceIds===undefined)return true;
+      // A saved turn's retained roots can be wider than its declared scope
+      // (for example through earlier derived dialogue). Omit that turn rather
+      // than disclosing it or failing an otherwise valid source-only question.
+      try{assertModelEvidence({question:'',...{sourceIds},conversation:conversations.context({...previous,turns:[turn]})});return true;}catch{return false;}
+    })}:undefined;
     const historySnapshot=previous?conversations.historyContext(scopedPrevious??previous):undefined;
     const retired=historySnapshot?conversations.retiredSelection(historySnapshot,[...(selectedIds??[]),...(anchorIds??[])]):new Set<string>();
     const historicalSelection=retired.size?{...(selectedIds?{evidenceIds:[...selectedIds]}:{}),...(anchorIds?{anchorEvidenceIds:[...anchorIds]}:{})}:undefined;
@@ -76,17 +85,17 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     if(scope.anchorEvidenceIds)scope.anchorEvidenceIds=scope.anchorEvidenceIds.filter(id=>!retired.has(id));
     const selectedRecords=selectedQueryEvidence({question,...scope,executionLane:'interactive'});
     const profile=modelSettings.select('chat',modelProfileId),model=modelOverride??profile.settings.model,contextTime=work.scope.contextTime!;
-    if(bounded&&attachmentIds.length){
-      const visible=new Set((await archiveReader.evidence({ids:attachmentIds,after:scope.after,before:scope.before,deviceId:scope.deviceId})).map(record=>record.id));
+    if((bounded||sourceIds!==undefined)&&attachmentIds.length){
+      const visible=new Set(selectedQueryEvidence({question,...scope,evidenceIds:attachmentIds,executionLane:'interactive'}).map(record=>record.id));
       if(attachmentIds.some(id=>!visible.has(id)))throw new StoreError('Query attachment is outside the selected scope',409);
     }
-    const previousIds=scope.evidenceIds!==undefined||bounded?[]:previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[],previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
+    const previousIds=restricted?[]:previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[],previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
     const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
     const stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
     const commit=<T>(write:()=>T):T=>{signal.throwIfAborted();const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');try{if(!fence||!executor.isCurrentGrant(stepId,fence))throw new StoreError('Query preparation grant expired',409);const result=write();if(own)store.db.exec('COMMIT');return result;}catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}};
     const opening=await openingMemoryContext({memories:async args=>{
         const page=await readCurrentMemoryPage(memoryReader,{
-          kind:scope.evidenceIds!==undefined?'selection':'all',...(scope.evidenceIds!==undefined?{evidenceIds:scope.evidenceIds}:{}),
+          kind:scope.evidenceIds!==undefined||sourceIds!==undefined?'selection':'all',...(sourceIds!==undefined?{sourceIds}:{}),...(scope.evidenceIds!==undefined?{evidenceIds:scope.evidenceIds}:{}),
           ...(scope.after?{after:scope.after}:{}),...(scope.before?{before:scope.before}:{}),...(scope.deviceId?{deviceId:scope.deviceId}:{}),
         },{id:args.id,query:args.query,tier:args.tier,kind:args.kind,layer:args.layer,asOf:args.asOf,cursor:args.cursor,limit:args.limit,level:args.id?'detail':'overview'});
         if(!archiveReader.memories)return {...page,items:[]};
@@ -99,7 +108,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     const modelBudget=queryModelBudget(profile.settings.maxTokens,preferences);
     // Estimate fixed and current portions before preparing the history tail.
     // The transport subsequently checks the actual serialized provider body.
-    const emptySelection=scope.evidenceIds?.length===0&&!historicalSelection;
+    const emptySelection=(scope.evidenceIds?.length===0||sourceIds?.length===0)&&!historicalSelection;
     const preparedScope=emptySelection?{...scope,evidenceIds:undefined}:scope;
     const preliminary:QueryInput={question,...preparedScope,...(emptySelection?{hostToolSelection:[]}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),contextTime,language:saved.language??'zh-CN',executionLane:'interactive',directImages,openingMemories:opening.leads};
     const seeds=scope.evidenceIds!==undefined?selectedRecords.map(record=>originalEvidenceReceipt(record,0,12000,scope.timeZone)):[];

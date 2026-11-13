@@ -60,6 +60,8 @@ import type {RequestAuthority} from './plugins/central-contracts.js';
 import { resolveDependencies } from './conversation-lineage.js';
 import { safeError } from './diagnostics.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
+import {sourceScopedReader} from './query-source-scope.js';
+import type {QueryScope as ReaderQueryScope} from './query-scope.js';
 import {withinEvidenceScope} from './evidence-reader.js';
 import { ExecutionFailure } from './execution-engine.js';
 import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
@@ -206,8 +208,15 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // Owner inspection and external read-only clients do not send to our model.
   // The same reader enforces model disclosure scope inside an admitted model run.
   const readingForModel=()=>Boolean(modelContext.getStore()||modelAuthorization.currentId);
+  const querySources=()=>{
+    const ids=(modelContext.getStore() as ReaderQueryScope|undefined)?.sourceIds;
+    return ids===undefined?undefined:modelEvidenceAuthority.selectedQuerySources(ids);
+  };
   const evidenceAgentReader=evidenceContext.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
-    exposurePolicy:new EvidenceExposurePolicy([],context=>!readingForModel()||modelAuthorization.allowsDisclosure({sourceId:context.sourceId??'device:'+context.deviceId})),
+    exposurePolicy:new EvidenceExposurePolicy([],context=>{
+      const selected=querySources();
+      return (selected===undefined||selected.includes(context.sourceId??''))&&(!readingForModel()||modelAuthorization.allowsDisclosure({sourceId:context.sourceId??'device:'+context.deviceId}));
+    }),
     assertSources:ids=>{if(readingForModel())modelAuthorization.assertDisclosure(ids.map(sourceId=>({sourceId})));},
     assertEvidence:ids=>{if(readingForModel())modelAuthorizationHost.assertEvidence(ids);},
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
@@ -215,7 +224,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs});
   let historyBeforeSeq:((workId:string)=>number|undefined)|undefined;
   const historyRead=conversationHistoryReader({store,conversations,current:()=>modelContext.getStore(),assert:assertModelEvidence,cursorSecret:config.token,historyBeforeSeq:workId=>historyBeforeSeq?.(workId)});
-  const agentFeatures=await installAgentReadTools(backendContext,{...evidenceAgentReader,catalog:async args=>historyRead(args)??evidenceAgentReader.catalog?.(args)});
+  const agentFeatures=await installAgentReadTools(backendContext,sourceScopedReader({...evidenceAgentReader,catalog:async args=>historyRead(args)??evidenceAgentReader.catalog?.(args)},querySources));
   const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
   const directImageAllowed=(id:string)=>{

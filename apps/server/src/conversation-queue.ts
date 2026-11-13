@@ -17,18 +17,18 @@ export function conversationQueryInput(dependencies:QueryRunDependencies,message
   const {store,evidenceReader}=dependencies,{kind,sourceIds,anchorEvidenceIds,anchorMaterialRef,evidenceIds,...range}=message.scope;
   let ids=evidenceIds&&[...new Set(evidenceIds)];
   if(kind==='selection'&&sourceIds!==undefined){
-    const sources=new Set(sourceIds),policy=new EvidenceExposurePolicy([],context=>sources.has(context.sourceId??''));
+    const sources=new Set(dependencies.modelEvidenceAuthority.selectedQuerySources(sourceIds)),policy=new EvidenceExposurePolicy([],context=>sources.has(context.sourceId??''));
     if(ids)ids=ids.filter(id=>{
       const record=scopeRecord(store,id),lineage=resolveDependencies(store,{version:1,complete:true,ids:[id]});
       return Boolean((!record||withinEvidenceScope(record,range))&&lineage&&evidenceReader.contextDependenciesAllowed(lineage.ids,policy));
     });
     else if(!sourceIds.length)ids=[];
-    else throw new StoreError('Source-only selection is not yet available for conversation queries',400);
   }
   if(ids&&ids.length>30)throw new StoreError('Selected evidence exceeds the current 30-original query limit',413);
   if(anchorEvidenceIds&&ids!==undefined&&anchorEvidenceIds.some(id=>!ids!.includes(id)))throw new StoreError('Reference is outside the selected scope',409);
   if(message.attachments?.some(item=>ids!==undefined&&!ids.includes(item.id)))throw new StoreError('Attachment is outside the selected scope',409);
   return {conversationId:message.conversationId,question:message.question,...range,
+    ...(kind==='selection'&&sourceIds!==undefined?{sourceIds:[...new Set(sourceIds)]}:{}),
     ...(message.modelProfileId?{modelProfileId:message.modelProfileId}:{}),...(message.modelOverride?{modelOverride:message.modelOverride}:{}),
     evidenceIds:ids??null,anchorEvidenceIds:anchorEvidenceIds??null,anchorMaterialRef:anchorMaterialRef??null,
     ...(message.attachments?.length?{attachmentIds:message.attachments.map(item=>item.id)}:{})};
@@ -73,9 +73,6 @@ export class ConversationQueue {
     }
     if(this.closed)throw new StoreError('Conversation query admission is unavailable',503);
     const scope={...input.scope,...(input.anchorEvidenceIds?{anchorEvidenceIds:input.anchorEvidenceIds}:{}),...(input.anchorMaterialRef?{anchorMaterialRef:input.anchorMaterialRef}:{})};
-    // The existing query runtime has exact-original and time/device bounds but
-    // no source-list reader grant. Never turn a source into a bulk prompt.
-    if(input.scope.kind==='selection'&&input.scope.sourceIds?.length&&input.scope.evidenceIds===undefined)throw new StoreError('Source-only selection is not yet available for conversation queries',400);
     if(input.anchorMaterialRef&&(input.scope.kind==='selection'||input.scope.evidenceIds!==undefined))throw new StoreError('A material reference cannot yet be combined with a restricted selection',400);
     const attachments=(input.attachmentIds??[]).map(id=>{
       const record=scopeRecord(store,id);

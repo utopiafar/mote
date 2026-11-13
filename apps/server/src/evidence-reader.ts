@@ -42,6 +42,7 @@ type ScreenOriginalGrant={kind:'material'|'segment';ref:string;scope:Range};
 export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
   const p=record.provenance,coding=p?.document?.coding,at=sourceContentTime(record);
   if(scope.deviceId&&record.deviceId!==scope.deviceId||scope.source&&record.source!==scope.source||scope.sourceId&&p?.sourceId!==scope.sourceId)return false;
+  if(scope.sourceIds!==undefined&&!scope.sourceIds.includes(p?.sourceId??''))return false;
   const correction=record.source==='note'?record.metadata?.memoryCorrection:undefined;
   for(const key of ['projectKey','repositoryKey','provider','sessionId'] as const)if(scope[key]&&(correction?.scopeRefs.length?correction.scopeRefs.some(ref=>ref[key]!==scope[key]):coding?.[key]!==scope[key]))return false;
   if(scope.after&&Date.parse(record.stateSeries?.samples?.at(-1)?.at??at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))return false;
@@ -428,6 +429,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   private scopedMaterial(ref:string,scope:Range):{material:MaterialRecord;members:MaterialMember[]}|undefined {
     const material=this.materials?.get(ref);if(!material)return;
     if(scope.sourceId&&material.origin.sourceId!==scope.sourceId)return;
+    if(scope.sourceIds!==undefined&&!scope.sourceIds.includes(material.origin.sourceId))return;
     // Material source IDs are logical identities. Screen/state/authored records
     // need not carry the same ID in capture provenance.
     const archiveMember=this.materials!.members(material.ref,{limit:1}).items[0];
@@ -436,7 +438,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       for(const key of ['provider','projectKey','repositoryKey','sessionId'] as const)if(scope[key]&&material.origin[key]!==scope[key])return;
       return {material,members:[archiveMember]};
     }
-    const memberScope={...scope,sourceId:undefined};
+    const memberScope={...scope,sourceId:undefined,sourceIds:undefined};
     const members:MaterialMember[]=[];
     for(let offset=0;offset<material.memberCount;offset+=200){
       const page=this.materials!.members(material.ref,{offset,limit:200});
@@ -460,7 +462,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   }
   materialCatalog(args:Range&{sourceId?:string;kind?:string;query?:string}={}){
     if(!this.materials)return {items:[],nextCursor:null};
-    const page=this.materials.list({query:args.query,sourceId:args.sourceId,kind:args.kind,deviceId:args.deviceId,after:args.after,before:args.before,limit:args.limit,cursor:args.cursor});
+    const page=this.materials.list({query:args.query,sourceIds:args.sourceIds,sourceId:args.sourceId,kind:args.kind,deviceId:args.deviceId,after:args.after,before:args.before,limit:args.limit,cursor:args.cursor});
     return {...page,items:page.items.filter(item=>Boolean(this.scopedMaterial(item.ref,args)))};
   }
   /** Record all metadata/body contributors without loading their text or
@@ -1282,8 +1284,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       mediaActivity:async args=>diagnostics.measure('source','activity',()=>{const ids=new Set<string>(),result=store.mediaActivity(args,id=>ids.add(id));options.assertEvidence?.([...ids]);return {...result,disclosureDependencies:{version:1 as const,complete:true,ids:[...ids]}};},result=>({count:result.observations})),
       sourceHistory:async args=>this.sourceHistory({...args,id:formatEvidenceRef('capture',z.string().uuid().parse(args.id))}).filter(record=>this.captureExposure(record,operation('expand'),policy)),
       sources:async args=>{const page=browseSourceContexts(store,sources,args);options.assertSources?.(page.items.map(item=>item.id));return page;},
-      sourceContext:async args=>{
+      sourceContext:async (args:Parameters<NonNullable<ContextReader['sourceContext']>>[0]&Range)=>{
         const pin=parseSourceContextRef(args.sourceContextRef);if(!pin)throw new StoreError('Invalid source context reference');
+        if(args.sourceIds!==undefined&&!args.sourceIds.includes(pin.sourceId))throw new StoreError('Source context is outside the selected scope',404);
         options.assertSources?.([pin.sourceId]);
         const source=sources.getSource(pin.sourceId);if(args.deviceId&&source.deviceId!==args.deviceId)throw new StoreError('Source context is outside the selected scope',404);
         const contexts=this.sourceContexts,current=contexts.identity(pin.sourceId);
@@ -1291,8 +1294,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         return {attributionContext:{version:1,ownerRelation:'unknown',basis:'default',sourceContextDeclarations:[pin],sourceContextStatements:contexts.open([pin])}};
       },
       // listItems applies calendar overlap / authored-time semantics; do not replace planned time with capture time.
-      sourceItems:async args=>{const page=sources.listItems(args),scope={deviceId:args.deviceId,sourceId:args.sourceId};
-        const visible=this.evidenceById(page.items.map(i=>i.captureId),{deviceId:args.deviceId}).flatMap(record=>{
+      sourceItems:async (args:Parameters<NonNullable<ContextReader['sourceItems']>>[0]&Range)=>{const page=sources.listItems(args),scope={...args};
+        const visible=this.evidenceById(page.items.map(i=>i.captureId),{deviceId:args.deviceId,sourceIds:args.sourceIds}).flatMap(record=>{
           const file=this.files?.fileForRead(record.id),material=file&&!fileAttachmentParent(this.store,file)?undefined:this.sourceItemMaterial(record,scope);
           const view=material?this.materialCard(material,record):record;
           return view&&this.captureExposure(view,operation('discover'),policy)?[view]:[];
@@ -1339,6 +1342,12 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         return this.materials?this.materials.withReadMetadata(read):read();
       },rows=>({count:rows.length})),
       activity:async args=>diagnostics.measure('source','activity',()=>{const ids=new Set<string>(),result=store.activity(args,id=>ids.add(id));options.assertEvidence?.([...ids]);return {...result,disclosureDependencies:{version:1 as const,complete:true,ids:[...ids]}};},result=>({count:result.captures})),
-      devices:async()=>diagnostics.measure('source','devices',()=>{const items=store.devices();options.assertSources?.(items.map(item=>'device:'+item.deviceId));return {items,observedAt:new Date().toISOString(),disclosureDependencies:{version:1 as const,complete:true,ids:[]}};},page=>({count:page.items.length}))};
+      devices:async(args:Range={})=>diagnostics.measure('source','devices',()=>{
+        // A device's latest name/health can come from any of its sources. A
+        // source-list grant conveys no authority over that global directory.
+        const items=args.sourceIds===undefined?store.devices():[];
+        options.assertSources?.(items.map(item=>'device:'+item.deviceId));
+        return {items,observedAt:new Date().toISOString(),disclosureDependencies:{version:1 as const,complete:true,ids:[]}};
+      },page=>({count:page.items.length}))};
   }
 }

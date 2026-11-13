@@ -21,7 +21,7 @@ type Version={capture_id:string;source_id:string;external_id:string;revision:str
 type Chunk={id:string;capture_id:string;artifact_id:string;start_ms:number|null;end_ms:number|null;text:string;metadata?:string};
 const activeChunks="a.current=1 AND NOT EXISTS (SELECT 1 FROM file_artifacts preferred WHERE preferred.capture_id=a.capture_id AND preferred.current=1 AND ((preferred.kind='corrected-dialogue' AND a.kind!='corrected-dialogue') OR (preferred.kind='dialogue' AND a.kind IN ('transcript','text','image-text'))))";
 const timestamp=()=>new Date().toISOString();
-const fileListSignature=(args:Range&{query?:string;mimePrefix?:string})=>sha256(JSON.stringify(['sourceId','deviceId','after','before','appId','source','collection','projectKey','repositoryKey','provider','sessionId','query','mimePrefix'].map(key=>args[key as keyof typeof args]??null)));
+const fileListSignature=(args:Range&{query?:string;mimePrefix?:string})=>sha256(JSON.stringify(['sourceId','sourceIds','deviceId','after','before','appId','source','collection','projectKey','repositoryKey','provider','sessionId','query','mimePrefix'].map(key=>args[key as keyof typeof args]??null)));
 
 
 /** Bounded parts using the configured content write policy. No caller supplies a filesystem path. */
@@ -428,6 +428,7 @@ export class FileStore {
 
   list(args:Range&{query?:string;mimePrefix?:string}={}){
     const clauses=['h.capture_id=v.capture_id','c.id=v.capture_id',readableFileSql('v.capture_id'),availableFileAttachmentSql(this.store.db,'v.capture_id')],values:(string|number)[]=[];
+    if(args.sourceIds!==undefined){clauses.push('v.source_id IN (SELECT value FROM json_each(?))');values.push(JSON.stringify(args.sourceIds));}
     for(const [key,column] of [['sourceId','v.source_id'],['deviceId','c.device_id'],['after','c.context_at'],['before','c.context_at'],['appId',"json_extract(c.json,'$.appId')"],['source',"json_extract(c.json,'$.source')"],['projectKey',"json_extract(c.json,'$.provenance.document.coding.projectKey')"],['repositoryKey',"json_extract(c.json,'$.provenance.document.coding.repositoryKey')"],['provider',"json_extract(c.json,'$.provenance.document.coding.provider')"],['sessionId',"json_extract(c.json,'$.provenance.document.coding.sessionId')"]] as const){if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(key==='after'||key==='before'?new Date(args[key]!).toISOString():args[key]!);}}
     if(args.collection==='activity')clauses.push("json_extract(c.json,'$.privacy.collection')='activity'");
     if(args.collection==='content')clauses.push("COALESCE(json_extract(c.json,'$.privacy.collection'),'content')='content'");
@@ -499,10 +500,11 @@ export class FileStore {
     const position=page.nextCursor?JSON.parse(Buffer.from(page.nextCursor,'base64url').toString()) as {at:string;id:string}:undefined;
     return {items:this.store.evidence(page.items.map(item=>item.captureId)),nextCursor:position?Buffer.from(JSON.stringify({t:position.at,id:position.id})).toString('base64url'):null};
   }
-  searchPage(args:ContextRange&{query?:string;sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string}){
+  searchPage(args:Range&{query?:string}){
     const empty={items:[] as (CaptureRecord & ContextRecord)[],nextCursor:null as string|null};
     if(args.source&&args.source!=='file'||args.collection==='activity'||!args.query?.trim())return empty;
     const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id',readableFileSql('c.capture_id'),availableFileAttachmentSql(this.store.db,'c.capture_id')],values:(string|number)[]=[];
+    if(args.sourceIds!==undefined){clauses.push("json_extract(r.json,'$.provenance.sourceId') IN (SELECT value FROM json_each(?))");values.push(JSON.stringify(args.sourceIds));}
     for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.context_at'],['before','r.context_at'],['sourceId',"json_extract(r.json,'$.provenance.sourceId')"],['projectKey',"json_extract(r.json,'$.provenance.document.coding.projectKey')"],['repositoryKey',"json_extract(r.json,'$.provenance.document.coding.repositoryKey')"],['provider',"json_extract(r.json,'$.provenance.document.coding.provider')"],['sessionId',"json_extract(r.json,'$.provenance.document.coding.sessionId')"]] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(key==='after'||key==='before'?new Date(args[key]!).toISOString():args[key]!);}
     if(args.cursor){let p:{t:string;id:string};try{p=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid file search cursor');}clauses.push('(r.context_at<? OR (r.context_at=? AND c.id<?))');values.push(p.t,p.t,p.id);}
     const lexical=textSearch(args.query!,{id:'c.id',text:'c.text',words:'file_chunks_fts',trigrams:'file_chunks_trigram'}),limit=Math.max(1,Math.min(args.limit??30,200));
@@ -519,6 +521,7 @@ export class FileStore {
   vectorQuery(model:string,args:Range){
     if(args.source&&args.source!=='file'||args.collection==='activity')return;
     const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id',readableFileSql('c.capture_id'),availableFileAttachmentSql(this.store.db,'c.capture_id'),'c.embedding_model=?','c.embedding IS NOT NULL'],values:(string|number)[]=[model];
+    if(args.sourceIds!==undefined){clauses.push("json_extract(r.json,'$.provenance.sourceId') IN (SELECT value FROM json_each(?))");values.push(JSON.stringify(args.sourceIds));}
     for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.context_end'],['before','r.context_at'],['sourceId',"json_extract(r.json,'$.provenance.sourceId')"],['projectKey',"json_extract(r.json,'$.provenance.document.coding.projectKey')"],['repositoryKey',"json_extract(r.json,'$.provenance.document.coding.repositoryKey')"],['provider',"json_extract(r.json,'$.provenance.document.coding.provider')"],['sessionId',"json_extract(r.json,'$.provenance.document.coding.sessionId')"]] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(key==='after'||key==='before'?new Date(args[key]!).toISOString():args[key]!);}
     return {sql:`SELECT c.id,c.embedding FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')}`,values};
   }
