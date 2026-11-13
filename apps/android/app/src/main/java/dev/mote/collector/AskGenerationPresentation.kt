@@ -21,17 +21,18 @@ internal object AskGenerationPresentation {
         offline: Boolean,
         allowed: Boolean = true,
     ): State {
-        val running = state.optString("runStatus") == "running"
+        val status = state.optString("runStatus")
+        val active = status in NativeAskRunState.active
         val pending = state.has("pending")
-        val busy = running || pending
-        // An adopted run has no local request. Keep the check action reachable
+        val busy = active || pending
+        // An adopted message has no local request. Keep the check action reachable
         // instead of inventing a request body or a terminal state.
-        val adopted = running && !state.has("activeRequest")
+        val adopted = active && !state.has("activeRequest") && NativeAskRunState.messageId(state).isNotBlank()
         return State(
             busy = busy,
             offline = offline,
             canSend = allowed && !busy && !offline && text.isNotBlank() && !imagesPending,
-            stop = !offline && running && !pending,
+            stop = !offline && active && !pending && NativeAskRunState.messageId(state).isNotBlank(),
             retry = !offline && pending,
             check = !offline && (pending || adopted),
         )
