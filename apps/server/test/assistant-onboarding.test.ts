@@ -56,7 +56,7 @@ async function fixture(t:TestContext){
    result.citations=[{id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}];
    return fixtureMemoryResult(reader.memories,result,input.evidenceRanges,input);
   }
-  const marker='\nUntrusted context: ',context=JSON.parse(input.question.slice(input.question.indexOf(marker)+marker.length)) as Context;contexts.push(context);
+  const context=input.taskContext as unknown as Context;assert.ok(context?.materials);contexts.push(context);
   const original=context.originals[0];assert.ok(original,'A14 receives an actual original');
   return empty(input,JSON.stringify({reason:'Generated historical review with original time preserved.',cards:[{action:'new',cardId:null,relatedCardIds:[],title:context.materials[0].title,
    body:'Generated useful follow-up based on the selected original.',reason:'Generated explicit fixture interpretation.',evidence:[original],matterId:null}],commitments:[]}));
@@ -135,6 +135,25 @@ test('two selected historical sources give a useful partial result, then resume 
  const lifeOnly=await f.read(run.id,{kind:'selection',sourceIds:['life']});assert.equal(lifeOnly.items.length,1);assert.equal(lifeOnly.items[0].result,undefined,'a mixed-source analysis is withheld in a narrow read');
  assert.equal('position' in lifeOnly.items[0],false,'the original item index must not reveal hidden selection counts');
  assert.equal((await f.read(run.id,{kind:'selection',sourceIds:[]})).coverage.sync.total,0);
+});
+
+test('three old originals complete one bounded historical intake without replay or a notification storm',async t=>{
+ const f=await fixture(t),selected=await Promise.all([
+  f.add('historical-work','Generated old work review: the release owner remains undecided.'),
+  f.add('historical-life','Generated old life plan: the family visit date remains undecided.'),
+  f.add('historical-reading','Generated old reading note: revisit the reference after the review.'),
+ ]);
+ await f.onboarding.tick();assert.equal(f.calls.length,0,'first discovery of old originals is not automatic model authority');
+ const requestId=randomUUID(),refs=selected.map(value=>value.material.ref),run=await f.post(refs,all,requestId);
+ await f.until(async()=>{const progress=await f.read(run.id);return progress.completed===3;});
+ const progress=await f.read(run.id);assert.equal(progress.state,'completed');assert.equal(progress.pending,0);assert.equal(progress.failed,0);
+ assert.equal(progress.coverage.sync.total,3);assert.equal(progress.coverage.semantic.completed,3);
+ assert.equal(f.calls.filter(call=>call.kind==='assistant').length,3);
+ const calls=f.calls.length;assert.equal((await f.post(refs,all,requestId)).id,run.id);
+ await f.onboarding.tick();await f.onboarding.tick();assert.equal(f.calls.length,calls,'polling and the repeated owner request reuse completed coverage');
+ assert.equal(f.cards.page({scope:all}).items.length,3,'quiet historical intake still preserves useful cards');
+ assert.deepEqual(new AssistantNotifications(f.cards,()=>notificationSettingsSchema.parse({})).snapshot(all).items,[]);
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM background_model_receipts WHERE eligible=1').get()!.n,0);
 });
 
 test('owner cancellation during either model phase prevents late Memory and assistant publication',async t=>{

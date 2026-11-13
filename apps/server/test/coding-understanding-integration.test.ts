@@ -28,9 +28,9 @@ const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
 function event(id:string,role:CodingEvidence['role'],text:string):SourceItem{return {externalId:id,revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text,
  document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
-async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false){
+async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false,options:Pick<Config,'modelMaxTokens'>={}){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
- const node=await buildApp(config(directory),{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
+ const node=await buildApp({...config(directory),...options},{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
   lease?.onFinalizer?.('host');
   let usage:TokenUsage|undefined;
   const observed={...input,onUsage:(sample:TokenUsage)=>{usage=sample;input.onUsage?.(sample);}};
@@ -153,8 +153,28 @@ test('empty Coding candidates publish work/events and receive independent review
 
 test('a failed Coding tail resumes without repeating completed pages and supplies unresolved work and personal plans to the assistant',{timeout:15000},async t=>{
  const tail='Generated owner: Before the next release, verify the physical device. I plan to visit family; the travel date is undecided.';
- const attempts=new Map<string,number>();let failTail=true;
+ const attempts=new Map<string,number>();let failTail=true,followupCalls=0,followupFailure:unknown;
  const node=await appFixture(t,async(input,reader)=>{
+  if(input.taskContext?.materials){
+   try{
+   followupCalls++;
+   const context=input.taskContext as any;
+   assert.ok((input.question+'\nUntrusted context: '+JSON.stringify(context)).length>8000,'the recovered products overflow the old all-in-question input and must travel as bounded task context');
+   assert.deepEqual(context.memories,[],'no long-term Memory candidate is needed for follow-up');
+   const products=context.materials.flatMap((material:any)=>material.products);
+   assert.ok(products.some((product:any)=>product.workRecords.some((work:any)=>work.openItems.some((claim:any)=>claim.status==='request'&&claim.actor==='user'))),'the actual A14 consumer receives the recovered tail');
+   assert.ok(products.some((product:any)=>product.workRecords.some((work:any)=>work.results.some((claim:any)=>claim.status==='reported_outcome'&&claim.basis==='assistant_reported'))));
+   assert.ok(products.some((product:any)=>product.events.some((claim:any)=>claim.status==='plan'&&claim.occurredAt===undefined)));
+   assert.doesNotMatch(JSON.stringify(context),new RegExp(toolSecret));
+   const proof=context.originals.find((original:any)=>original.quote===tail);assert.ok(proof);
+   // This model double consumes the supplied context. Match the real Agent's
+   // complete disclosure receipt so the production batch can validate it.
+   assert.equal(input.contextEvidenceDependencies?.complete,true);
+   assert.ok(input.contextEvidenceDependencies.ids.includes(proof.id));
+   return {...response(proof.id,tail,{reason:'Device verification and the family travel date remain unknown.',cards:[{action:'confirm',cardId:null,relatedCardIds:[],title:'Generated release and family follow-up',body:'The agent reported tests passing. Device verification and the family travel date are still unconfirmed.',reason:'The owner left both items open in the recovered tail.',evidence:[proof],matterId:null}],
+    commitments:[{commitmentId:null,kind:'commitment',occurredAt:null,summary:'Verify the physical device before release; no confirmed deadline.',changes:{title:'Generated device verification',status:'pending_confirmation'},evidence:[proof]}]}),evidenceDependencies:input.contextEvidenceDependencies};
+   }catch(error){followupFailure=error;throw error;}
+  }
   const originals=await supplied(input,reader);
   if(!isUnderstanding(input)){assert.equal(input.traceContext?.phase,'review');return response(originals[0].id,'',input.taskContext!.untrustedMemoryDraft);}
   assert.ok(input.evidenceRanges!.reduce((sum,range)=>sum+range.length,0)<=12000);
@@ -174,7 +194,7 @@ test('a failed Coding tail resumes without repeating completed pages and supplie
   if(proof&&support(report))return response(proof.id,owner,products(proof.id,false));
   const range=input.evidenceRanges![0],quote=originals.find(record=>record.id===range.id)!.ocrText.slice(range.offset,range.offset+Math.min(range.length,100));
   return response(range.id,quote,{summary:'Generated bounded progress context',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]});
- });
+ },false,{modelMaxTokens:512});
  await node.sources.upsertBatch('coding',[event('owner','user',owner),event('assistant','assistant',report),event('progress','user',('Generated progress note.\n').repeat(490)),event('tail','user',tail)]);
  await node.sourcePipelines.tick();const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref);
  const created=manualJob(node,ids),failed=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
@@ -193,6 +213,22 @@ test('a failed Coding tail resumes without repeating completed pages and supplie
  const original=tailRead.sourceEvidence.find(evidence=>evidence.quote===tail)!;assert.ok(original);
  assert.equal(adapter.readOriginal({ref:material.ref,scope:{kind:'all'},id:original.id,offset:original.offset,length:original.length}).quote,tail);
  assert.throws(()=>adapter.read({ref:material.ref,scope:{kind:'selection',sourceIds:[]}}),{statusCode:404});
+ // Feed the producer's persisted products to the production A14/K4 consumer,
+ // rather than constructing another matching semantic-product fixture.
+ const headers={authorization:'Bearer '+token},configuration=(await node.app.inject({url:'/api/configuration',headers})).json();
+ const configured=await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:configuration.revision,value:{context:{contextWindow:32000,contextWindowSource:'configured'}}}});assert.equal(configured.statusCode,200,configured.body);
+ const followup=node.featureServices.assistantFollowup;
+ (followup as unknown as {now:()=>string}).now=()=>contextTime;
+ const task=await followup.start({operationId:'generated-coding-followup',requestId:randomUUID(),scope:{kind:'selection',sourceIds:['coding']},materialRefs:[material.ref],mode:{kind:'change'}},{identities:[],connections:node.featureServices.availableModelConnections()});
+ const batchId=followup.progress(task.id).batch!.task.id,end=Date.now()+10000;
+ while(Date.now()<end){const progress=node.batchProcessing.progress(batchId);if(['succeeded','failed','stale','cancelled','blocked'].includes(progress.task.state)||progress.items.some(item=>['failed','stale','cancelled','blocked'].includes(item.state)))break;await node.executor.tick();await new Promise(resolve=>setTimeout(resolve,10));}
+ if(followupFailure)throw followupFailure;
+ assert.equal(followupCalls,1,'the production query must consume the supplied task context');
+ assert.equal(node.batchProcessing.progress(batchId).task.state,'succeeded',JSON.stringify(node.batchProcessing.progress(batchId)));
+ const result=await followup.finish(task.id);assert.equal(followupCalls,1);assert.equal(result.cardIds.length,1);assert.equal(result.commitmentIds.length,1);
+ const saved=node.featureServices.assistantCards.get(result.cardIds[0],{kind:'all'});assert.equal(saved.kind,'question');assert.match(saved.body,/unconfirmed/);assert.ok(saved.evidence.some(item=>item.id===original.id&&item.quote===tail));
+ const commitment=node.featureServices.assistantCommitments.get(result.commitmentIds[0],{kind:'all'});assert.equal(commitment.status,'pending_confirmation');assert.equal(commitment.deadline,null);
+ assert.equal(node.memories.list().length,0);
 });
 
 test('a later import observation does not move a source-timed Coding material outside its authorized historical range',{timeout:15000},async t=>{

@@ -39,10 +39,9 @@ async function fixture(t:TestContext){
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput):Promise<QueryResult>=>{
   // Component-only provider double. The HTTP journeys exercise the actual
   // complete-request gate; this estimate only bounds this generated input.
-  const tokens=estimateSerializedTokens({question:input.question,evidenceIds:input.evidenceIds,contextTime:input.contextTime}).tokens;
+  const tokens=estimateSerializedTokens({question:input.question,taskContext:input.taskContext,evidenceIds:input.evidenceIds,contextTime:input.contextTime}).tokens;
   assert.ok(tokens+4000<=32000,'generated request must fit the declared small fixture window');
-  const marker='\nUntrusted context: ',offset=input.question.indexOf(marker);assert.notEqual(offset,-1);
-  const context=JSON.parse(input.question.slice(offset+marker.length)) as Context;seen.push(context);
+  const context=input.taskContext as unknown as Context;assert.ok(context?.materials);seen.push(context);
   const program=programs.shift();assert.ok(program,'A generated model response must be explicitly supplied');
   try{return {answer:JSON.stringify(await program(context)),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};}
   catch(error){providerFailure=error;throw error;}
@@ -182,12 +181,45 @@ test('briefing reads corrected current Memory and keeps cancellation distinct fr
  assert.ok(saved.evidenceDependencies.ids.includes(current.id));
 });
 
+test('a life correction without a new file retires the old reminder and reaches the next real follow-up',async t=>{
+ const f=await fixture(t),order=await f.add('Generated family travel order: departure is Monday.','generated-life'),calendar=await f.add('Generated calendar: a work meeting is on Monday.','generated-work');
+ (f.service as unknown as {now:()=>string}).now=()=>at;
+ const raw:QueryResult={answer:JSON.stringify({memories:[{title:'Generated family departure',statement:`The family departure is Monday. [${order.id}]`,uncertainty:'A plan, not proof of travel',evidenceIds:[order.id]}]}),citations:[{id:order.id,capturedAt:at,appName:'Generated',excerpt:order.text}],trace:[],runId:randomUUID()};
+ const draft=f.node.memories.extract(fixtureMemoryResult(f.node.memories,raw),'generated').items[0]!,memory=f.node.memories.publish(draft.id,draft.version);
+ const first=await f.run([order.material.ref,calendar.material.ref],context=>{
+  assert.ok(context.memories.some(value=>value.id===memory.id));
+  return answer([card(evidence(context,order.text),{title:'Generated Monday conflict',body:'The planned family departure conflicts with the work meeting.',reminderReason:'The two plans conflict.',evidence:[evidence(context,order.text),evidence(context,calendar.text)]})]);
+ });
+ f.programs.push(context=>answer([card(evidence(context,order.text),{action:'update',cardId:first.cardIds[0],relatedCardIds:first.cardIds,body:'GENERATED OUTDATED MONDAY REMINDER'})]));
+ const late=await f.start([order.material.ref,calendar.material.ref]);await f.wait(late);
+ t.mock.timers.enable({apis:['Date'],now:new Date(at)});
+ let corrected:Awaited<ReturnType<typeof f.node.app.inject>>;
+ try{corrected=await f.node.app.inject({method:'POST',url:`/api/memories/${memory.id}/correct`,headers,payload:{version:memory.version,title:'Generated corrected departure',statement:'The family departure is now Tuesday; the trip has not yet happened.'}});}finally{t.mock.timers.reset();}
+ assert.equal(corrected.statusCode,200,corrected.body);const current=corrected.json();
+ await assert.rejects(f.service.finish(late.id),{statusCode:409});
+ await f.node.materialOrganizer.tick(100);
+ const correction=f.node.materials.list({kind:'mote.note',limit:100}).items.find(value=>value.origin.externalId===current.correction.noteId);assert.ok(correction,'the real correction API creates the new owner evidence');
+ const next=await f.run([order.material.ref,calendar.material.ref,correction.ref],context=>{
+  assert.ok(context.memories.some(value=>value.id===current.id&&value.statement.includes('Tuesday')));assert.ok(!context.memories.some(value=>value.id===memory.id));
+  assert.doesNotMatch(JSON.stringify(context.cards),/GENERATED OUTDATED MONDAY REMINDER/);
+  assert.ok(context.cards.some(value=>value.id===first.cardIds[0]));
+  return answer([card(evidence(context,'The family departure is now Tuesday; the trip has not yet happened.'),{action:'resolve',cardId:first.cardIds[0],relatedCardIds:first.cardIds,title:'Generated corrected travel plan',body:'The departure is planned for Tuesday. The Monday conflict is withdrawn; travel is unverified.'})]);
+ });
+ assert.deepEqual(next.cardIds,first.cardIds);
+ const page=f.node.featureServices.assistantCards.page({scope:all});assert.deepEqual(page.items.map(value=>value.id),next.cardIds);assert.match(page.items[0].body,/planned for Tuesday/);
+ const notices=await f.node.app.inject({url:'/api/assistant-notifications?'+new URLSearchParams({scope:JSON.stringify(all)}),headers});assert.equal(notices.statusCode,200,notices.body);assert.deepEqual(notices.json().items,[],'the corrected old conflict cannot keep notifying');
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM file_versions').get()!.n,0,'only the owner correction was added, with no new file');
+});
+
 test('scope filters mixed cards before model disclosure and deletion prevents a late publication',async t=>{
  const f=await fixture(t),privateNote=await f.add('GENERATED_PRIVATE_WORK', 'private-device'),selected=await f.add('Generated selected public note.', 'selected-device');
+ const mixed:QueryResult={answer:JSON.stringify({memories:[{title:'GENERATED_PRIVATE_MIXED_MEMORY',statement:`GENERATED_PRIVATE_WORK and selected context [${privateNote.id}] [${selected.id}]`,uncertainty:'Generated mixed sources',evidenceIds:[privateNote.id,selected.id]}]}),citations:[privateNote,selected].map(note=>({id:note.id,capturedAt:at,appName:'Generated',excerpt:note.text})),trace:[],runId:randomUUID()};
+ const draft=f.node.memories.extract(fixtureMemoryResult(f.node.memories,mixed),'generated').items[0]!;f.node.memories.publish(draft.id,draft.version);
  await f.run([privateNote.material.ref,selected.material.ref],context=>answer([card(evidence(context,selected.text),{body:'GENERATED_PRIVATE_WORK is mixed into this card.'})]));
  const scope:QueryScope={kind:'selection',evidenceIds:[selected.id]};
- const scoped=await f.run([selected.material.ref],context=>{assert.doesNotMatch(JSON.stringify(context),/GENERATED_PRIVATE_WORK/);assert.equal(context.cards.length,0);return answer();},undefined,scope);
+ const scoped=await f.run([selected.material.ref],context=>{assert.doesNotMatch(JSON.stringify(context),/GENERATED_PRIVATE_WORK|GENERATED_PRIVATE_MIXED_MEMORY/);assert.equal(context.cards.length,0);assert.equal(context.memories.length,0);return answer();},undefined,scope);
  assert.deepEqual(scoped.cardIds,[]);
+ const workbench=await f.node.app.inject({url:'/api/assistant/workbench?'+new URLSearchParams({request:JSON.stringify({template:'project',scope})}),headers});assert.equal(workbench.statusCode,200,workbench.body);assert.doesNotMatch(workbench.body,/GENERATED_PRIVATE_WORK|GENERATED_PRIVATE_MIXED_MEMORY/);
  f.programs.push(context=>answer([card(evidence(context,selected.text))]));const pending=await f.start([selected.material.ref]);await f.wait(pending);
  const removed=await f.node.app.inject({method:'DELETE',url:`/api/notes/${selected.id}`,headers});assert.equal(removed.statusCode,200,removed.body);
  await assert.rejects(f.service.finish(pending.id),{statusCode:409});assert.equal(f.tasks.get(pending.id).state,'stale');

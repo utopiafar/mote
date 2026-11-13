@@ -41,12 +41,11 @@ async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclu
   const serialized=JSON.parse(wire);assert.ok(estimateSerializedTokens(serialized).tokens+512<=32000,'the complete controlled-provider request fits its declared 32k fixture window');
   const messages=serialized.messages as {content?:unknown}[];
   const texts=messages.flatMap(message=>typeof message.content==='string'?[message.content]:Array.isArray(message.content)?message.content.flatMap(part=>part.type==='text'?[part.text]:[]):[]);
-  const inputs=texts.map(value=>{try{const envelope=JSON.parse(value);return typeof envelope.request==='string'?envelope.request:value;}catch{return value;}});
-  const input=inputs.find(value=>value.includes('\nUntrusted context: '));
-  if(!input)throw Error('Controlled provider did not receive an A14 context');
-  const context=JSON.parse(input.slice(input.indexOf('\nUntrusted context: ')+'\nUntrusted context: '.length)) as {
+  const envelopes=texts.map(value=>{try{return JSON.parse(value);}catch{return undefined;}});
+  const context=envelopes.find(value=>value?.untrustedTaskContext?.materials)?.untrustedTaskContext as {
    originals:{id:string;offset:number;quote:string}[];cards:{id:string;revision:number}[];memories:unknown[];
   };
+  assert.ok(context,'Controlled provider must receive the serialized A14 task context');
   assert.deepEqual(context.memories,[],'the automatic path does not depend on a long-term Memory candidate');
   const proof=(needle:string)=>{const item=context.originals.find(value=>value.quote.includes(needle));assert.ok(item,`Generated original missing: ${needle}`);return {id:item.id,offset:item.offset+item.quote.indexOf(needle),quote:needle};};
   const all=JSON.stringify(context),cards=all.includes(complete)?[{action:'resolve',cardId:context.cards[0].id,relatedCardIds:[context.cards[0].id],title:'Generated owner assigned',body:'Alex is the named owner.',reason:'The updated draft names an owner.',evidence:[proof(complete)],matterId:null}]:
