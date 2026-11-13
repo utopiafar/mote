@@ -88,7 +88,7 @@ export function unavailableHistoryEvidence(store:EvidenceStore,ids:readonly stri
   if(retiredConversationRoot(store,id))return true;
   const chunk=db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(id),captureId=chunk?String(chunk.capture_id):id;
   const capture=store.evidenceMetadata([captureId])[0];
-  if(capture){const p=capture.provenance;return Boolean(p?.deleted||p?.sourceId&&p.externalId&&db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted);}
+  if(capture){const p=capture.provenance;return Boolean(capture.privacy.excluded||p?.deleted||p?.sourceId&&p.externalId&&db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted);}
   const anchor=materials?db.prepare('SELECT h.retired FROM material_evidence e JOIN material_heads h ON h.id=e.material_id WHERE e.id=?').get(id):undefined;
   return !anchor||Boolean(anchor.retired);
  });

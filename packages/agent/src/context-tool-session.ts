@@ -496,9 +496,12 @@ export async function createContextToolSession(
         const produced:{operation:HostReadOperation;value:unknown;originals?:ContextRecord[];views?:ContextRecord[]}[]=[];
         const port:HostSessionPort={tool:pin,scope,signal,assertCurrent:assertLive,
           async read(operation,...parameters){
-            assertLive();if(restricted&&operation!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
-            if(!ordinaryReads.has(operation))throw hostError('This read operation is unavailable through this tool');
+            assertLive();
             const requested=(parameters[0]??{}) as Record<string,unknown>;
+            const historyRead=bounds.executionLane==='interactive'&&Boolean(bounds.conversation?.historyContext)&&operation==='catalog'&&['conversation_history','conversation_search'].includes(tool)&&
+              typeof requested.path==='string'&&/^\/_conversation\/(?:history|search|turn\/[0-9a-f-]{36}\/(?:0|[1-9][0-9]{0,7}))$/i.test(requested.path);
+            if(restricted&&operation!=='evidence'&&!historyRead)throw hostError('This extraction session uses only the supplied evidence ranges');
+            if(!ordinaryReads.has(operation))throw hostError('This read operation is unavailable through this tool');
             const normalized=range(requested,{...bounds,after:scope.after,before:scope.before,deviceId:scope.deviceId});
             const actual:Record<string,unknown>={...requested,...normalized,limit:Math.min(normalized.limit??scope.limit??8,scope.limit??normalized.limit??8),
               ...(scope.source?{source:scope.source}:{}),...(scope.appId?{appId:scope.appId}:{}),...(scope.collection?{collection:scope.collection}:{})};

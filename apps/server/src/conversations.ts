@@ -79,7 +79,7 @@ export class Conversations {
       if(id&&this.store.db.prepare('SELECT 1 FROM conversations WHERE id=?').get(id))return {id};
       const next=randomUUID(),now=new Date().toISOString();
       this.store.reserveMetadata(512);
-      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(next,'',now,now,JSON.stringify({scope:{},turnCount:0,status:'completed',bytes:0,revision:0}));
+      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(next,'',now,now,JSON.stringify({scope:{},turnCount:0,status:'completed',bytes:0,revision:0,nextSeq:0}));
       this.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(next);
       return {id:next};
     });
@@ -99,12 +99,21 @@ export class Conversations {
     const retained=conversation.turns.some(turn=>!turn.evidenceDeleted&&Boolean(turn.result)&&[...turn.result!.citations.map(citation=>citation.id),...(turn.scope.evidenceIds??[]),...(turn.scope.anchorEvidenceIds??[])].includes(evidenceId));
     return {id:evidenceId,available:retained&&!unavailableHistoryEvidence(this.store,[evidenceId]).length};
   }
-  /** UI reads only the requested page. Cursor is the exclusive older turn index. */
-  page(id:string,{limit=20,cursor}:{limit?:number;cursor?:string}={}){
-    if(cursor!==undefined&&!/^\d{1,9}$/.test(cursor))throw new StoreError('Invalid turn cursor');
-    const value=this.read(id,Math.max(1,Math.min(limit,50)),cursor===undefined?undefined:Number(cursor),true);
-    const oldest=(value as Conversation&{firstIndex?:number}).firstIndex??0;
-    return {...value,nextCursor:oldest>0?String(oldest):null};
+  /** The exclusive sequence cursor remains valid if other turns are inserted or deleted. */
+  page(id:string,{limit=20,cursor,anchor}:{limit?:number;cursor?:string;anchor?:string}={}){
+    if(cursor!==undefined&&(!/^(0|[1-9]\d*)$/.test(cursor)||!Number.isSafeInteger(Number(cursor))))throw new StoreError('Invalid turn cursor');
+    if(cursor!==undefined&&anchor!==undefined)throw new StoreError('Choose a cursor or an anchor');
+    let before=cursor===undefined?undefined:Number(cursor);
+    if(anchor!==undefined){
+      const row=this.store.db.prepare('SELECT idx FROM conversation_turns WHERE conversation_id=? AND id=?').get(id,anchor);
+      if(!row)throw new StoreError('Conversation message not found',404);
+      before=Number(row.idx)+1;
+    }
+    const size=Math.max(1,Math.min(Math.trunc(limit),50));
+    const value=this.read(id,size+1,before,true),hasMore=value.turns.length>size;
+    if(hasMore)value.turns.shift();
+    const oldest=value.turns[0]?.seq;
+    return {...value,firstIndex:oldest??0,nextCursor:hasMore&&oldest!==undefined?String(oldest):null};
   }
   private visibleTurn(value:ConversationTurn):ConversationTurn {
     let turn=value;
@@ -162,8 +171,8 @@ export class Conversations {
       const message:ConversationTurn={id:randomUUID(),seq:this.nextSeq(conversationId),question,scope,status:'accepted',version:1,...(input.clientRequestId?{clientRequestId:input.clientRequestId}:{}),...(attachments?.length?{attachments}:{}),createdAt:now};
       const json=JSON.stringify(message),size=Buffer.byteLength(json);
       this.store.reserveMetadata(size+512);
-      if(conversation)this.store.db.prepare("UPDATE conversations SET title=CASE WHEN title='' THEN ? ELSE title END,updated_at=?,json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.status','accepted') WHERE id=?").run(Array.from(question).slice(0,80).join(''),now,size,conversationId);
-      else this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(conversationId,Array.from(question).slice(0,80).join(''),now,now,JSON.stringify({scope,turnCount:0,status:'accepted',bytes:size,revision:0}));
+      if(conversation)this.store.db.prepare("UPDATE conversations SET title=CASE WHEN title='' THEN ? ELSE title END,updated_at=?,json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.status','accepted','$.nextSeq',?) WHERE id=?").run(Array.from(question).slice(0,80).join(''),now,size,message.seq+1,conversationId);
+      else this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(conversationId,Array.from(question).slice(0,80).join(''),now,now,JSON.stringify({scope,turnCount:0,status:'accepted',bytes:size,revision:0,nextSeq:message.seq+1}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(conversationId,message.seq,message.id,json);
       return {conversationId,...message};
     });
@@ -274,7 +283,7 @@ export class Conversations {
   }
 
   private messageRow(id:string){const row=this.store.db.prepare('SELECT conversation_id,json FROM conversation_turns WHERE id=?').get(id) as {conversation_id:string;json:string}|undefined;if(!row)throw new StoreError('Conversation message not found',404);return row;}
-  private nextSeq(conversationId:string){return Number(this.store.db.prepare('SELECT coalesce(max(idx),-1)+1 AS n FROM conversation_turns WHERE conversation_id=?').get(conversationId)?.n??0);}
+  private nextSeq(conversationId:string){return Number(this.store.db.prepare("SELECT max(coalesce((SELECT json_extract(json,'$.nextSeq') FROM conversations WHERE id=?),0),coalesce(max(idx),-1)+1) AS n FROM conversation_turns WHERE conversation_id=?").get(conversationId,conversationId)?.n??0);}
   private previousTurns(conversationId:string,exclude:string){return this.store.db.prepare(`SELECT json FROM conversation_turns WHERE conversation_id=? AND idx<(SELECT idx FROM conversation_turns WHERE id=?) AND ${terminalStatus} ORDER BY idx`).all(conversationId,exclude).map(row=>JSON.parse(String(row.json)) as ConversationTurn);}
   private rewrite(conversationId:string,message:ConversationTurn,previous:string){
     const json=JSON.stringify(message),growth=Buffer.byteLength(json)-Buffer.byteLength(previous);
@@ -308,7 +317,7 @@ export class Conversations {
       if(previous&&(!meta||meta.turnCount!==previous.turnCount||meta.revision!==previous.revision||existing!.updated_at!==previous.updatedAt))throw new StoreError('Conversation changed during this answer; reload and retry',409);
       const count=meta?.turnCount??0,seq=this.nextSeq(id),stored={...turn,seq} as ConversationTurn,json=JSON.stringify(stored),size=Buffer.byteLength(json);
       this.store.reserveMetadata(size+512);
-      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:stored.scope,turnCount:count+1,status:stored.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1}));
+      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:stored.scope,turnCount:count+1,status:stored.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1,nextSeq:seq+1}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(id,seq,stored.id,json);
       inheritRetiredConversationRoots(this.store,id,stored);
       this.onTurnReceived?.(stored.id,id);

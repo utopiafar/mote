@@ -40,7 +40,7 @@ export function taskTools(input:QueryInput):string[]{
     return [...new Set(input.hostToolSelection.filter(name=>available.has(name)))];
   }
   if(profile.retrieval==='none')return controls;
-  if(input.evidenceIds!==undefined)return [...(input.skill==='calendar-extraction'&&input.actionCatalog?['evidence','action_catalog']:['evidence']),...(input.evidenceReadRanges?.length?['context_evidence']:[]),...(input.processingImages?.length&&imageToolAvailable(input)?['read_image']:[]),...controls];
+  if(input.evidenceIds!==undefined)return [...(input.skill==='calendar-extraction'&&input.actionCatalog?['evidence','action_catalog']:['evidence']),...(input.executionLane==='interactive'&&input.conversation?.historyContext?['conversation_history','conversation_search']:[]),...(input.evidenceReadRanges?.length?['context_evidence']:[]),...(input.processingImages?.length&&imageToolAvailable(input)?['read_image']:[]),...controls];
   return contextToolDefinitions(input).map(([name])=>name).filter(name=>name!=='action_catalog');
 }
 /** Internal dispatch keeps every authorized capability; runtime declarations

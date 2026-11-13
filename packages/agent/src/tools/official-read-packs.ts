@@ -8,6 +8,7 @@ import {createFileReadPack} from './packs/files.js';
 import {createMeasurementReadPack} from './packs/measurements.js';
 import {createOwnerMetadataPack} from './packs/owner-metadata.js';
 import {createImageReadPack} from './packs/images.js';
+import {createConversationHistoryPack} from './packs/conversation-history.js';
 import type {ToolDescriptor} from './descriptor.js';
 import {registerDefaultReadPacks,type ToolSnapshot,type ResolvedTool} from './registry.js';
 import {ContextToolError} from '../tool-errors.js';
@@ -34,7 +35,7 @@ export function createOfficialReadPacks(input:DerivedNavigationInputs={}):readon
     ...createOriginalReadPack(facts),...createAttributionPack(facts),
     ...createMaterialReadPack(facts),...createMemoryReadPack(facts),...createDerivedNavigationPack(facts),
     ...createSourceReadPack(facts),...createFileReadPack(facts),
-    ...createMeasurementReadPack(facts),...createOwnerMetadataPack(facts),...createImageReadPack(),
+    ...createMeasurementReadPack(facts),...createOwnerMetadataPack(facts),...createImageReadPack(),...createConversationHistoryPack(),
   ]);
 }
 

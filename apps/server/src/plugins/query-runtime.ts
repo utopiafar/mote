@@ -30,6 +30,7 @@ import {sourceModelIdentity} from '../model-authorization-host.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 import type {SourceContextStore} from '../source-context.js';
+import type {Conversations} from '../conversations.js';
 import type {ObservabilityAssembly} from './observability-platform.js';
 import {assistantDraftScope,type AssistantDrafts} from '../assistant-drafts.js';
 import {centralServices,type QueryDomain} from './central-contracts.js';
@@ -62,6 +63,7 @@ export interface QueryRuntimeDependencies {
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
   readonly sourceContexts:SourceContextStore;
+  readonly conversations:Pick<Conversations,'assertHistoryContext'>;
   readonly assistantDrafts:Pick<AssistantDrafts,'capabilities'|'issue'>;
 }
 
@@ -78,7 +80,7 @@ export interface QueryRuntime {
  * accounting, trace/usage observation and the insight entry. Preparation and
  * receipts enter through the same plugin activation. */
 export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryRuntime {
-  const {store,lifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,assertModelEvidence,sourceContexts,assistantDrafts}=dependencies;
+  const {store,lifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,assertModelEvidence,sourceContexts,assistantDrafts,conversations}=dependencies;
   const {contextDependencies,sourceContextDependencies,pinProcessingEvidence}=dependencies.modelEvidenceAuthority;
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   const activeQueries=new Set<Promise<QueryResult>>();
@@ -195,13 +197,19 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
         if(envelope.event.type==='run.terminal')runState.hostTerminal=true;
         if(hostMeter)(hostObserver??=createHostRunUsageObserver({runId,meter:hostMeter,diagnostics}))(envelope);
       }};
+    observed.assertContextAuthority=()=>{
+      input.assertContextAuthority?.();
+      assertMemoryPins();
+      if(observed.conversation?.historyContext)conversations.assertHistoryContext(observed.conversation.historyContext);
+    };
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed,runLease).then(result=>{
       taskSignal?.throwIfAborted();
       assertModelEvidence(observed);
       if(observed.executionLane==='interactive'&&observed.evidenceIds&&result.citations.some(citation=>![...observed.evidenceIds!,...(observed.directImages?.map(image=>image.id)??[])].includes(citation.id)))throw contextFailure('context_evidence_restricted');
       const selectedDependencies=observed.executionLane==='interactive'&&observed.evidenceIds?{version:1 as const,complete:true,ids:[...observed.evidenceIds,...(observed.directImages?.map(image=>image.id)??[])]}:undefined;
-      const evidenceDependencies=resolveDependencies(store,combineDependencies([contextDependencies(input),result.evidenceDependencies??selectedDependencies]));
+      const evidenceDependencies=resolveDependencies(store,combineDependencies([contextDependencies(input),result.evidenceDependencies??selectedDependencies,
+        ...(input.directImages?.length?[{version:1 as const,complete:true,ids:input.directImages.map(image=>image.id)}]:[])]));
       // Metadata/declaration reads also pin their original Material lineage.
       // They need correction fences even when no original quote was expanded.
       if(evidenceDependencies){
