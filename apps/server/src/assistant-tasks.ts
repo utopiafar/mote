@@ -19,6 +19,8 @@ import type {ModelConnection} from './background-model-authorization.js';
 import {addTaskEvidence,retireTaskRecordsSql,taskEvidenceIds} from './task-evidence.js';
 import type {MaterialStore} from './materials.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
+import type {RoutineInput,RoutineRef} from './assistant-routines.js';
+import type {BackgroundModelAuthorization} from './background-model-authorization.js';
 
 /** Product projection over existing task records and batch steps. The link
  * contains no private prose; the immutable scope and read set live in the task record. */
@@ -28,7 +30,8 @@ export class AssistantTasks implements BatchProductProjection {
  constructor(private readonly store:Store,private readonly cards:AssistantCards,matters:AssistantMatters,
   private readonly reader:EvidenceReader,private readonly materials:MaterialStore,private readonly conversations:Pick<ConversationRepository,'get'>,
   private readonly contexts:SourceContextStore,private readonly batch:()=>BatchProcessing,
-  private readonly connections:()=>ModelConnection[]){
+  private readonly connections:()=>ModelConnection[],
+  private readonly routines?:{input(ref:RoutineRef):RoutineInput;current(ref:RoutineRef):boolean;allows(ids:readonly string[]):boolean;control:BackgroundModelAuthorization}){
   this.tasks=new TaskRecords(store);
   this.acceptance=new AssistantTaskAcceptance(store,cards,matters,{
    validate:(request,ids)=>{if(!isDeepStrictEqual(this.discover(request.scope).ids,ids))throw new StoreError('Task execution is outside the owner scope',409);},
@@ -74,7 +77,7 @@ export class AssistantTasks implements BatchProductProjection {
  /** Enumerate the current authorized read catalog, not a semantic ranking.
   * The model still chooses which of these candidates to read. A bounded request
   * fails explicitly instead of presenting a truncated scope as complete. */
- private discover(scope:QueryScope):{ids:string[];snapshot:string[]}{
+ private discover(scope:QueryScope,automatic=false):{ids:string[];snapshot:string[]}{
   if(scope.evidenceIds?.length===0||scope.kind==='selection'&&scope.sourceIds?.length===0)return {ids:[],snapshot:[]};
   const sources=scope.kind==='selection'&&scope.sourceIds!==undefined?new Set(scope.sourceIds):undefined;
   const restriction=sources?new EvidenceExposurePolicy([],value=>sources.has(value.sourceId??'')):undefined;
@@ -84,9 +87,10 @@ export class AssistantTasks implements BatchProductProjection {
    if(record.privacy.excluded||!withinEvidenceScope(record,scope)||
      !this.selected(record.id,scope)||!this.reader.memories.isCurrentEvidence(record.id)||
      !this.reader.contextDependenciesAllowed([record.id])||restriction&&!this.reader.contextDependenciesAllowed([record.id],restriction))return;
+   const ancestors=resolveDependencies(this.store,{version:1,complete:true,ids:[record.id]})!.ids;
+   if(automatic&&(!this.routines||!this.routines.allows([record.id,...ancestors])))return;
    seen.add(record.id);
    if(block&&['source-metadata','record-metadata'].includes(String(block.block_id))||!record.ocrText?.trim()||record.provenance?.layer==='reference')return;
-   const ancestors=resolveDependencies(this.store,{version:1,complete:true,ids:[record.id]})!.ids;
    if(this.store.evidenceMetadata(ancestors).some(original=>original.provenance?.layer==='reference'))return;
    found.add(record.id);
    if(found.size>1000)throw new StoreError('Choose a smaller scope for this assistant task',413);
@@ -131,14 +135,15 @@ export class AssistantTasks implements BatchProductProjection {
   const scopeRow=this.store.db.prepare('SELECT snapshot_json FROM assistant_task_scopes WHERE task_id=?').get(task.id);
   if(!scopeRow)return false;
   try{
-   const frozen=this.tasks.input<FrozenDraftTask&{card?:{cardId:string};cardVersion?:string}>(task.id,task.revision,this.assertCurrent);
-   if(frozen.card){const card=this.cards.get(frozen.card.cardId,frozen.request.scope);if(card.state==='stale'||card.version!==frozen.cardVersion||card.acceptedTaskId!==task.id)return false;}
+   const frozen=this.tasks.input<FrozenDraftTask&{card?:{cardId:string};cardVersion?:string;routine?:RoutineRef}>(task.id,task.revision,this.assertCurrent);
+   if(frozen.routine){if(!this.routines?.current(frozen.routine))return false;}
+   else if(frozen.card){const card=this.cards.get(frozen.card.cardId,frozen.request.scope);if(card.state==='stale'||card.version!==frozen.cardVersion||card.acceptedTaskId!==task.id)return false;}
    else{
     const turn=this.conversations.get(frozen.conversationId).turns.find(item=>item.id===frozen.turnId);
     if(!turn||turn.status!=='completed'||!turn.result?.draft||turn.evidenceDeleted||turn.evidenceUnavailable||turn.evidenceStale)return false;
     assertSourceContextDependencies(this.contexts,turn.result.sourceContextDependencies??[]);
    }
-   if(typeof scopeRow.snapshot_json!=='string'||!isDeepStrictEqual(this.discover(frozen.request.scope).snapshot,decodeMemoryPrivate<string[]>(this.store,scopeRow.snapshot_json)))return false;
+   if(typeof scopeRow.snapshot_json!=='string'||!isDeepStrictEqual(this.discover(frozen.request.scope,Boolean(frozen.routine)).snapshot,decodeMemoryPrivate<string[]>(this.store,scopeRow.snapshot_json)))return false;
    const result=this.tasks.result<QueryResult>(task.id,task.revision,this.assertCurrent);
    if(result)assertSourceContextDependencies(this.contexts,result.sourceContextDependencies??[]);
    return true;
@@ -196,6 +201,24 @@ export class AssistantTasks implements BatchProductProjection {
     {kind:'manual',identities:[],connections:this.connections()});
   },{noUsableEvidence:ids.length===0});
  }
+ /** Only the routine service can produce a persisted, due occurrence. Its
+  * owner intent and scope are re-read inside the same admission transaction. */
+ startRoutine(ref:RoutineRef){
+  if(!this.store.db.isTransaction||!this.routines)throw new StoreError('Routine admission is unavailable',409);
+  const input=this.routines.input(ref),request={requestId:input.requestId,goal:input.goal,scope:input.scope};
+  const discovered=this.discover(request.scope,true),ids=discovered.ids;
+  const task=this.tasks.create({operationId:'assistant.task:'+request.requestId,kind:'assistant.task',requestId:request.requestId,
+   input:{request,routine:ref,coverage:input.coverage,evidenceIds:ids},evidenceDependencies:{version:1,complete:true,ids}},this.assertCurrent);
+  this.saveScope(task,request.scope,discovered.snapshot);
+  if(!ids.length){
+   this.routines.control.automaticCommand('assistant-routine-empty:'+task.id,[input.receipt],'assistant',()=>{});
+   return this.tasks.setState(task.id,task.revision,'blocked');
+  }
+  const question=`${request.goal}\n\nScheduled review occasions from ${input.coverage.from} through ${input.coverage.through} are combined into this review. State limitations of the available evidence separately.`;
+  this.batch().submit({operationId:task.operationId,requestId:request.requestId,items:[{question,evidenceIds:ids}]},
+   {kind:'automatic',purpose:'assistant',roots:[input.receipt]});
+  return task;
+ }
  valid(step:ExecutionStep){const task=this.taskForOperation(step.operationId);return !task||this.current(task);}
  project(step:ExecutionStep){
   const task=this.taskForOperation(step.operationId);if(!task||task.state==='stale'||task.state==='cancelled'||task.state==='succeeded')return;
@@ -212,7 +235,7 @@ export class AssistantTasks implements BatchProductProjection {
   if(task.state!=='stale'&&task.state!=='cancelled'&&!this.current(task)){this.retire(task);task=this.tasks.get(task.id);}
   const version=expectedRevision===undefined?{}:{expectedRevision};
   if(task.state==='stale'||task.state==='cancelled')return {task:{id:task.id,revision:task.revision,state:task.state},...version};
-  const input=this.tasks.input<{request:AssistantTaskInput}>(task.id,task.revision,this.assertCurrent).request;
+  const frozen=this.tasks.input<{request:AssistantTaskInput;coverage?:{from:string;through:string}}>(task.id,task.revision,this.assertCurrent),input=frozen.request;
   const result=this.tasks.result<QueryResult>(task.id,task.revision,this.assertCurrent);
   const step=this.store.db.prepare("SELECT error FROM execution_steps WHERE operation_id=? AND kind='batch.item' ORDER BY rowid LIMIT 1").get(task.operationId);
   const error=step?.error?String(step.error):task.state==='blocked'&&!step?'no_usable_evidence':undefined;
@@ -221,7 +244,7 @@ export class AssistantTasks implements BatchProductProjection {
   const record=assistantTaskRecordSchema.parse({id:task.id,...input,revision:task.revision,state,
    evidenceDependencies:historyEvidenceDependencies(this.store,dependencies)!,
    ...(result?.sourceContextDependencies?.length?{sourceContextDependencies:result.sourceContextDependencies}:{})});
-  return {task:record,...version,...(result?{result}:{}),...(error?{error}:{})};
+  return {task:record,...version,...(frozen.coverage?{coverage:frozen.coverage}:{}),...(result?{result}:{}),...(error?{error}:{})};
  }
  byTurn(conversationId:string,turnId:string,scope:QueryScope){
   const hash=this.scopeHash(scope);

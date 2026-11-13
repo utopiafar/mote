@@ -10,6 +10,7 @@ import {conversationHistoryReader} from './conversation-history.js';
 import type {QueryAgent} from './query-agent.js';
 import {AssistantDrafts} from './assistant-drafts.js';
 import {AssistantTasks} from './assistant-tasks.js';
+import {AssistantRoutines} from './assistant-routines.js';
 import {insightRequestSchema} from './query-request.js';
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
@@ -43,6 +44,7 @@ import { ProviderFailure,type CaptureRecord,type QueryResult } from '@mote/share
 import { negotiateLocale } from '@mote/shared/i18n';
 import Fastify,{ type FastifyInstance,type FastifyReply,type FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import { existsSync,readFileSync } from 'node:fs';
 import { join,relative,sep } from 'node:path';
 import { z } from 'zod';
@@ -55,6 +57,7 @@ import type {RequestAuthority} from './plugins/central-contracts.js';
 import { resolveDependencies } from './conversation-lineage.js';
 import { safeError } from './diagnostics.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
+import {withinEvidenceScope} from './evidence-reader.js';
 import { ExecutionFailure } from './execution-engine.js';
 import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
 import {FeatureRoutes,installFeatureRoutes,type FeatureRoute} from './features/index.js';
@@ -284,14 +287,31 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     ()=>new ExecutionFailure('blocked','model_context_budget_unavailable'),()=>1,true,evidenceReader.memories,{
       valid:step=>assistantTasks?.valid(step)??true,project:step=>assistantTasks?.project(step),commit:(step,result)=>assistantTasks?.commit(step,result),
     });
-  assistantTasks=new AssistantTasks(store,assistantCards,assistantMatters,evidenceReader,materials,conversations,sourceContexts,()=>batchProcessing,()=>availableModelConnections());
+  let assistantRoutines:AssistantRoutines;
+  const automaticEvidenceAllowed=(ids:readonly string[])=>{
+    const excluded=new Set(modelAuthorization.view().excludedSourceIds);
+    return !modelAuthorizationHost.disclosure(ids).some(value=>excluded.has(value.sourceId));
+  };
+  assistantTasks=new AssistantTasks(store,assistantCards,assistantMatters,evidenceReader,materials,conversations,sourceContexts,()=>batchProcessing,()=>availableModelConnections(),{
+    input:ref=>assistantRoutines.input(ref),current:ref=>assistantRoutines.current(ref),allows:automaticEvidenceAllowed,control:modelAuthorization,
+  });
+  assistantRoutines=new AssistantRoutines(store,modelAuthorization,ref=>assistantTasks!.startRoutine(ref),(ref,scope)=>{
+    if(scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(ref.sourceId))return;
+    const item=sources.getItem(ref.sourceId,ref.externalId);if(!item||item.deleted||!item.calendar)return;
+    if(scope.evidenceIds!==undefined&&!scope.evidenceIds.includes(item.captureId))return;
+    const record=store.evidence([item.captureId])[0];
+    if(!record||!withinEvidenceScope(record,scope)||!evidenceReader.contextDependenciesAllowed([record.id],new EvidenceExposurePolicy())||!automaticEvidenceAllowed([record.id]))return;
+    return {revision:item.revision,calendar:item.calendar};
+  },(id,scope)=>{try{const matter=assistantMatters.get(id);return matter.state==='active'&&isDeepStrictEqual(matter.scope,scope);}catch{return false;}});
   assistantDrafts.setVersionValidator(context=>assistantTasks!.validateDraftVersion(context));
   assistantDrafts.register('assistant.task.start',context=>assistantTasks!.start(context));
   resources.defer(()=>batchProcessing.close());
   const assistantChanges=new AssistantChangeFeed(store,materials,modelAuthorization,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant input is no longer permitted',409);
   });
-  setMaterialConsumerTick(()=>assistantChanges.tick());
+  // Reuse the existing Central poll; the routine does not depend on a material
+  // change, and a change-feed failure cannot suppress a due occurrence.
+  setMaterialConsumerTick(()=>{try{assistantChanges.tick();}finally{assistantRoutines.tick();}});
   resources.beforeClose(()=>setMaterialConsumerTick(undefined));
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
@@ -347,7 +367,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:moteText("请求格式无效。"),requestId});}});
   startupApp=app;
   app.addHook('onReady',async()=>{batchProcessing.start();});
-  app.addHook('onReady',async()=>{assistantChanges.tick();});
+  app.addHook('onReady',async()=>{try{assistantChanges.tick();}finally{assistantRoutines.tick();}});
   app.addHook('onReady',async()=>{void sourcePipelines.tick().catch(()=>{});void materialOrganizer.tick(200).catch(()=>{});});
   const sourceIntegrationFactory=createC10IntegrationFactory(()=>{
     const platform=createC10Integration({store,runtime:sourcePipelines,memoryWork:materialMemoryWork,sources});
@@ -459,7 +479,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     lifecycleSettings:queryLifecycleSettings,archiveReader,agent,modelEvidenceAuthority,modelSettings,queryRuntime:()=>queryRuntimeServices.runtime,
     semanticContextTime:dependencies?.semanticContextTime,usageLedger,
     modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),assistantDrafts,assistantTasks,
-    assistantOwner:req=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);}});
+    assistantRoutines,assistantOwner:req=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);}});
   historyBeforeSeq=workId=>queryRunServices.delegation.journal.payload<import('./plugins/query-preparation.js').SavedQuery>(workId).historyBeforeSeq;
   memoryPhasePipeline.attachDelegation({runtime:delegation,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
     const input=materialMemoryWork.planningInput(candidate);
@@ -580,7 +600,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,batchProcessing,assistantTasks,assistantChanges,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureRoutes,insightServices,materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,insightRuns,lifecycle,working,activity,activityServices,conversations,assistantDrafts,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
+  return {app,bootstrap,batchProcessing,assistantTasks,assistantChanges,assistantRoutines,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureRoutes,insightServices,materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,insightRuns,lifecycle,working,activity,activityServices,conversations,assistantDrafts,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();

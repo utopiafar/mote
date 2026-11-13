@@ -11,6 +11,7 @@ import {registerQueryRunRoutes} from '../features/ask/query-runs.js';
 import {registerAssistantCommandRoutes} from '../features/ask/assistant-commands.js';
 import type {AssistantDrafts} from '../assistant-drafts.js';
 import type {AssistantTasks} from '../assistant-tasks.js';
+import type {AssistantRoutines} from '../assistant-routines.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {ServerResources} from '../server-resources.js';
@@ -73,6 +74,7 @@ export interface QueryRunsAssemblyDependencies extends QueryRunDependencies {
   readonly availableModelConnections:()=>ModelConnection[];
   readonly assistantDrafts:Pick<AssistantDrafts,'command'>;
   readonly assistantTasks:Pick<AssistantTasks,'byTurn'|'get'>;
+  readonly assistantRoutines:Pick<AssistantRoutines,'create'|'update'|'get'>;
   readonly assistantOwner:(request:FastifyRequest)=>void;
 }
 
@@ -93,6 +95,6 @@ export async function prepareQueryRuns(dependencies:QueryRunsAssemblyDependencie
     availableModelConnections:dependencies.availableModelConnections,modelSettings:dependencies.modelSettings,agent:dependencies.agent,
     conversations:dependencies.conversations,conversationQueue:()=>platform.conversationQueue,
   })}});
-  contributeDomainRoutes(dependencies.backendContext,{'mote.ask':{mount:(app:FastifyInstance)=>registerAssistantCommandRoutes(app,dependencies.assistantDrafts,dependencies.assistantTasks,dependencies.assistantOwner)}});
+  contributeDomainRoutes(dependencies.backendContext,{'mote.ask':{mount:(app:FastifyInstance)=>registerAssistantCommandRoutes(app,dependencies.assistantDrafts,dependencies.assistantTasks,dependencies.assistantOwner,dependencies.assistantRoutines)}});
   return Object.freeze({delegation:started!.delegation,queryRuns:started!.queryRuns,queryRunServices:platform});
 }
