@@ -467,6 +467,11 @@ class MappingAndRuntime(unittest.TestCase):
                             self.assertTrue(model.kwargs['disable_update'])
                             self.assertEqual(model.kwargs['device'], 'mps')
                             self.assertEqual(model.kwargs['ncpu'], 2)
+                            if role == 'vad':
+                                # A top-level model_conf would make AutoModel skip
+                                # local config loading and leave model as a path.
+                                self.assertNotIn('model_conf', model.kwargs)
+                                self.assertEqual(model.kwargs['max_single_segment_time'], engine.SETTINGS['maxSegmentMs'])
                             raise RuntimeError('generated error')
                     self.assertIsNone(runtime.active)
         self.assertTrue(all(ref() is None for ref in tensors))

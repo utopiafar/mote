@@ -208,7 +208,10 @@ class SdkRuntime:
             options['llm_conf'] = {'llm_dtype': SETTINGS['llmDtype']}
             options['max_length'] = SETTINGS['maxNewTokens']
         if role == 'vad':
-            options['model_conf'] = {'max_single_segment_time': SETTINGS['maxSegmentMs']}
+            # AutoModel treats a top-level model_conf as "config already loaded";
+            # supplying it here would skip config.yaml and leave `model` as a path.
+            # This model kwarg overrides the installed config during normal loading.
+            options['max_single_segment_time'] = SETTINGS['maxSegmentMs']
         llm = original_generate = None
         try:
             start = time.monotonic()
