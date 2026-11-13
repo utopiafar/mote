@@ -1,5 +1,12 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "图片理解可能将原图发送给所选模型服务。": "Image understanding may send the original image to the selected model service.",
+  "将检查以下全部启用的本机来源，并按当前发送设置上传待发内容，包括其他采集记录。": "All enabled local sources below will be checked. Pending content, including other captured records, will be uploaded according to the current send settings.",
+  "以下操作使用已保存设置。仅归档、参考和已取消的文件不会进入内容处理；每次最多重新处理 100 份当前版本，预览有效期 10 分钟。": "Uses saved settings. Archive-only, reference, and cancelled files are not processed. Each batch includes up to 100 current versions; previews expire in 10 minutes.",
+  "份仅归档、已取消或正在处理的文件。": "archive-only, cancelled, or currently processing files.",
+  "重新处理将生成新的派生结果，已有校正会标为过期。": "Reprocessing creates new derived results and marks existing corrections stale.",
+  "已释放的快照原件需由来源设备重新上传后才能处理。": "The released snapshot original must be uploaded again by its source device before processing.",
+  "本机当前清单 {0} 项；重新扫描结果可能不同，符合新规则的文件可能再次发送到中央。": "The local inventory currently has {0} items. A new scan may differ, and files matching the new rules may be sent to Central again.",
   "先在部署配置中启用 MCP、独立令牌；写入还需单独启用及来源允许列表，合并配置后重启。Bearer 客户端需要 URL 和请求头；OAuth 客户端只需服务地址，并在「AI 接入」批准发现请求。": "Enable MCP and its separate token in deployment settings. Writes also require explicit enablement and a source allowlist. Restart after applying the configuration. Bearer clients need a URL and headers; OAuth clients need only the service URL, with discovery requests approved in AI access.",
   "只接受 OAuth 的客户端使用同一服务地址自动发现授权，需由所有者批准。": "Clients that require OAuth discover authorization from the same service URL, subject to owner approval.",
   "生成标准 HTTP MCP 连接 JSON，或复制 OAuth 服务地址交给只走标准发现的客户端。": "Generate standard HTTP MCP connection JSON, or copy the OAuth service URL for clients that use standard discovery.",

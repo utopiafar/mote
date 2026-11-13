@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createSourceWorkspaceUi} from '../src/source-workspace-ui';
 import {createCaptureSyncUi} from '../src/capture-sync-ui';
+import {createSourceSyncPreview,renderSourceMaintenancePreview} from '../src/source-maintenance-preview';
 import {SourceSync,sourceHash} from '../src/source-sync';
 import type {DesktopApi,Status} from '../src/contracts';
 import type {SourceStatus} from '../src/contracts/sources';
@@ -34,6 +35,26 @@ function timedUi(){
  ui=createSourceWorkspaceUi(api,{openDetail:()=>true,edit:()=>{},toggle,content:()=>{},read:()=>{}});ui.status(status(1));ui.update([structuredClone(source)]);ui.open(id);
 }
 afterEach(()=>{ui.clear();dom.window.close();vi.restoreAllMocks();vi.unstubAllGlobals();vi.useRealTimers();});
+
+it('previews the affected local inventory before saving rules that trigger a rescan',()=>{
+ const element=el('source-maintenance-preview');
+ renderSourceMaintenancePreview(element,source,{...source.source,name:'Renamed source'});expect(element.hidden).toBe(true);
+ renderSourceMaintenancePreview(element,source,{...source.source,retention:'archive'});
+ expect(element.hidden).toBe(false);expect(element.textContent).toContain('1 项');expect(element.textContent).toContain('可能再次发送到中央');
+ renderSourceMaintenancePreview(element,source,{...source.source,excludedPaths:['private']});expect(element.hidden).toBe(false);
+ renderSourceMaintenancePreview(element,undefined,undefined);expect(element.hidden).toBe(true);expect(element.textContent).toBe('');
+});
+
+it('manual source scan previews all affected sources, cancels without starting, and rechecks a changed scope',()=>{
+ let rows=[structuredClone(source)];const start=vi.fn();
+ const preview=createSourceSyncPreview({panel:el('source-sync-preview'),destination:el('source-sync-preview-destination'),items:el('source-sync-preview-items'),confirm:el<HTMLButtonElement>('source-sync-confirm'),cancel:el<HTMLButtonElement>('source-sync-cancel')},()=>rows,()=>status(1),start);
+ preview.open();expect(el('source-sync-preview').hidden).toBe(false);expect(el('source-sync-preview-items').textContent).toContain('Generated folder');expect(el('source-sync-preview-destination').textContent).toContain('127.0.0.1:8001');
+ el<HTMLButtonElement>('source-sync-cancel').click();expect(el('source-sync-preview').hidden).toBe(true);expect(start).not.toHaveBeenCalled();
+ preview.open();rows=[...rows,{...structuredClone(source),source:{...source.source,id:'generated-second',name:'Generated second folder'}}];
+ el<HTMLButtonElement>('source-sync-confirm').click();expect(start).not.toHaveBeenCalled();expect(el('source-sync-preview-items').textContent).toContain('Generated second folder');
+ el<HTMLButtonElement>('source-sync-confirm').click();el<HTMLButtonElement>('source-sync-confirm').click();expect(start).toHaveBeenCalledTimes(1);expect(el('source-sync-preview').hidden).toBe(true);
+ preview.open();rows=[];preview.revalidate();expect(el('source-sync-preview').hidden).toBe(true);expect(el('source-sync-preview-items').textContent).toBe('');expect(el('source-sync-preview-destination').textContent).toBe('');
+});
 
 it.each([undefined,'2026-10-30T23:59:59.000Z'])('does not present upload time %s as the time of a completed local scan',lastSyncAt=>{
  ui.update([{...structuredClone(source),scanComplete:true,lastSyncAt}]);

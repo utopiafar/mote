@@ -14,6 +14,7 @@ import {MaterialProcessing} from '../src/plugins/models-processing/MaterialProce
 import {FileProcessingSettings} from '../src/FileProcessingSettings';
 import {automaticProcessingPlan,type ProcessingAuthority} from '../src/plugins/models-processing/automatic-processing-plan';
 import {buildApp} from '../../server/src/app.js';
+import {sha256} from '../../server/src/store.js';
 import type {FileSettingsView} from '../src/processing-settings-view';
 import type {ModelSettingsView} from '@mote/shared/models';
 import {resources} from '../src/resource-cache';
@@ -62,6 +63,28 @@ test('file processing settings never offer a legacy-configuration migration hint
  const api={request:async(path:string,init?:RequestInit)=>path==='/api/file-processing'?{...view,policyConfigured:false}:f.api.request(path,init)} as Api;
  await act(async()=>f.root.render(React.createElement(FileProcessingSettings,{api})));await until(()=>!!f.d.querySelector('form'),'file processing settings');
  assert.match(f.d.body.textContent!,/已保存类型方案/);assert.doesNotMatch(f.d.body.textContent!,/旧配置/);
+});
+
+test('file maintenance settings show released snapshot input and cancel the real preview without starting processing',async t=>{
+ const f=await fixture(t),bytes=Buffer.from('Generated preview file');
+ f.node.sources.register({id:'generated-files',name:'Generated files',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'snapshot'});
+ const hash=sha256(bytes),input=f.node.files.begin({sourceId:'generated-files',item:{externalId:'generated',revision:'1',observedAt:new Date().toISOString(),title:'Generated preview file',kind:'file',layer:'snapshot',text:'',mimeType:'text/plain',deleted:false,document:{fileIndex:{version:1,fileId:'generated',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead:false}}},sizeBytes:bytes.length,sha256:hash},()=>{});
+ f.node.files.part(input.uploadId,0,bytes,()=>{});const file=(await f.node.files.commit(input.uploadId,()=>{})).id;
+ await f.node.processing.tick();assert.equal(f.node.files.detail(file).job!.state,'succeeded');
+ const pixels=await sharp({create:{width:4,height:4,channels:3,background:'#aabbcc'}}).png().toBuffer(),imageHash=sha256(pixels);
+ const image=f.node.files.begin({sourceId:'generated-files',item:{externalId:'generated-image',revision:'1',observedAt:new Date().toISOString(),title:'Generated preview image',kind:'file',layer:'snapshot',text:'',mimeType:'image/png',deleted:false,document:{fileIndex:{version:1,fileId:'generated-image',contentVersion:imageHash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead:false}}},sizeBytes:pixels.length,sha256:imageHash},()=>{});
+ f.node.files.part(image.uploadId,0,pixels,()=>{});const imageId=(await f.node.files.commit(image.uploadId,()=>{})).id;assert.equal(f.node.processing.imageControl?.owns(imageId),true);
+ f.writes.length=0;await act(async()=>f.root.render(React.createElement(FileProcessingSettings,{api:f.api})));await until(()=>!!f.d.querySelector('form'),'file processing settings');
+ await click(f.d,'预览已有文件重处理');await until(()=>!!f.d.querySelector('.policy-preview'),'maintenance preview');
+ assert.match(f.d.querySelector('.policy-preview')!.textContent!,/需由来源设备重新上传/);
+ assert.match(f.d.querySelector('.policy-preview')!.textContent!,/图片理解可能将原图发送给所选模型服务/);
+ const posted=f.writes.find(value=>value.path==='/api/file-processing/preview')!;assert.deepEqual(posted.body.scope,{kind:'all'});
+ const cancel=[...f.d.querySelectorAll<HTMLButtonElement>('.policy-preview button')].find(value=>value.textContent==='取消')!;
+ await act(async()=>cancel.click());await until(()=>!f.d.querySelector('.policy-preview'),'preview cancellation');
+ const deleted=f.writes.find(value=>value.path.startsWith('/api/file-processing/preview/'))!;assert.ok(deleted);
+ assert.ok(!f.writes.some(value=>value.path==='/api/file-processing/reprocess'));
+ await assert.rejects(f.call('/api/file-processing/reprocess',{method:'POST',body:JSON.stringify({token:deleted.path.split('/').at(-1)})}),{status:409});
+ f.node.processing.cancel(imageId);await f.node.processing.tick();assert.equal(f.node.files.detail(file).job!.state,'succeeded');assert.equal(f.node.store.db.prepare("SELECT COUNT(*) n FROM task_records WHERE kind='file-reprocess'").get()!.n,0);
 });
 
 test('a concurrent settings change rejects the original image draft without overwriting another owner window',async t=>{

@@ -11,6 +11,7 @@ import {FileAttachments} from '../file-attachments.js';
 import {ArchivedFileStore} from '../archived-files.js';
 import {FileRawReader,type FileRawAccess} from '../file-raw-reader.js';
 import type {CaptureRead} from '../evidence-read-ports.js';
+import type {EvidenceReader} from '../evidence-reader.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {FileProcessing} from '../file-processing.js';
 import type {IngressService} from '../ingress.js';
@@ -91,7 +92,7 @@ export interface FilesSourceRouteContext {
   readonly ingress:IngressService;
   readonly authorize:(request:FastifyRequest,sourceId:string)=>void;
   readonly device:(request:FastifyRequest)=>string|undefined;
-  readonly evidence:Pick<CaptureRead,'evidence'>;
+  readonly evidence:Pick<CaptureRead,'evidence'>&Pick<EvidenceReader,'contextDependenciesAllowed'>;
   readonly diagnostics?:ServerDiagnostics;
   readonly withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>;
   readonly withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;
@@ -101,7 +102,7 @@ export interface FilesSourceRouteContext {
  * plugin never imports the HTTP module that consumes its playback port. */
 export type FilesRouteRegistrar=(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,
   authorize:(request:FastifyRequest,sourceId:string)=>void,device:(request:FastifyRequest)=>string|undefined,
-  reader:Pick<CaptureRead,'evidence'>,diagnostics:ServerDiagnostics|undefined,
+  reader:Pick<CaptureRead,'evidence'>&Pick<EvidenceReader,'contextDependenciesAllowed'>,diagnostics:ServerDiagnostics|undefined,
   withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>,
   withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>,
   playback:FilePlaybackGrants)=>(request:FastifyRequest)=>boolean;

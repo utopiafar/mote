@@ -56,6 +56,15 @@ export const DEFAULT_SOURCE_OPTIONS: SourceOptions = {
   centralProcessingConsent: true, initialSync: 'all', retention: 'snapshot', intervalSeconds: 300, trackDeletions: false,
   extensions: ['.md', '.txt', '.json', '.csv', '.ics', '.pdf', '.docx', '.wav', '.mp3', '.m4a'], excludedPaths: [], redactLiterals: [],
 };
+/** Fields whose changes make the existing source sync re-enumerate its scope. */
+export function sourcePolicySignature(options:SourceOptions):string {
+  return JSON.stringify({allowRead:options.allowRead,retention:options.retention,trackDeletions:options.trackDeletions,extensions:options.extensions,excludedPaths:options.excludedPaths,redactLiterals:options.redactLiterals});
+}
+/** Exact local source and destination scope shown for a manual sync. */
+export function sourceSyncScope(rows:readonly SourceStatus[],config:import('./contracts').PublicConfig):string {
+  const sources=rows.filter(row=>row.source.enabled).map(({source:{importCompletedAt:_,...source}})=>source);
+  return JSON.stringify([sources,config.serverUrl,config.deviceId,config.authSourceBinding,config.tokenConfigured,config.authSignedOut,config.authExpiresAt]);
+}
 export function normalizeSourceOptions(input: unknown): SourceOptions {
   if (!input || typeof input !== 'object') throw new Error(moteText("来源配置无效"));
   if(Object.hasOwn(input,'indexMode'))throw new Error(RESET_REQUIRED);

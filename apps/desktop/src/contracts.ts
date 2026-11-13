@@ -163,7 +163,7 @@ export interface DesktopApi {
   authorizeCalendar(): Promise<import('./contracts/sources').CalendarChoice[]>;
   addCalendarSource(id: string, options: import('./contracts/sources').SourceOptions): Promise<string>;
   updateSource(id: string, options: import('./contracts/sources').SourceOptions & { enabled: boolean }): Promise<void>;
-  syncSources(): Promise<void>;
+  syncSources(scope:string): Promise<void>;
   openCalendarPermissions(): Promise<void>;
   setSyncPaused(paused:boolean): Promise<Status>;
   status(): Promise<Status>;

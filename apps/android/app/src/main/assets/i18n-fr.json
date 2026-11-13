@@ -1,4 +1,11 @@
 {
+  "图片理解可能将原图发送给所选模型服务。": "La compréhension de l’image peut envoyer l’original au service de modèle sélectionné.",
+  "将检查以下全部启用的本机来源，并按当前发送设置上传待发内容，包括其他采集记录。": "Toutes les sources locales activées ci-dessous seront vérifiées. Le contenu en attente, y compris les autres données collectées, sera envoyé selon les réglages actuels.",
+  "以下操作使用已保存设置。仅归档、参考和已取消的文件不会进入内容处理；每次最多重新处理 100 份当前版本，预览有效期 10 分钟。": "Utilise les réglages enregistrés. Les fichiers uniquement archivés, de référence ou annulés ne sont pas traités. Chaque lot comprend au plus 100 versions actuelles ; les aperçus expirent après 10 minutes.",
+  "份仅归档、已取消或正在处理的文件。": "fichiers uniquement archivés, annulés ou en cours de traitement.",
+  "重新处理将生成新的派生结果，已有校正会标为过期。": "Le retraitement crée de nouveaux résultats dérivés et marque les corrections existantes comme obsolètes.",
+  "已释放的快照原件需由来源设备重新上传后才能处理。": "L’appareil source doit envoyer à nouveau l’original de l’instantané libéré avant le traitement.",
+  "本机当前清单 {0} 项；重新扫描结果可能不同，符合新规则的文件可能再次发送到中央。": "L’inventaire local contient actuellement {0} éléments. Une nouvelle analyse peut différer et les fichiers correspondant aux nouvelles règles peuvent être renvoyés à Central.",
   "先在部署配置中启用 MCP、独立令牌；写入还需单独启用及来源允许列表，合并配置后重启。Bearer 客户端需要 URL 和请求头；OAuth 客户端只需服务地址，并在「AI 接入」批准发现请求。": "Activez MCP et son jeton dédié dans la configuration du déploiement. Les écritures nécessitent aussi une activation explicite et une liste de sources autorisées. Redémarrez après avoir appliqué la configuration. Les clients Bearer utilisent une URL et des en-têtes ; les clients OAuth utilisent uniquement l’URL du service, puis leurs demandes de découverte sont approuvées dans Accès IA.",
   "只接受 OAuth 的客户端使用同一服务地址自动发现授权，需由所有者批准。": "Les clients qui exigent OAuth découvrent l’autorisation depuis la même URL de service, sous réserve de l’accord du propriétaire.",
   "生成标准 HTTP MCP 连接 JSON，或复制 OAuth 服务地址交给只走标准发现的客户端。": "Générez le JSON de connexion HTTP MCP standard, ou copiez l’URL du service OAuth pour les clients utilisant la découverte standard.",

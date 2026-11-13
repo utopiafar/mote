@@ -1,4 +1,6 @@
 import type {CaptureRead} from './evidence-read-ports.js';
+import type {EvidenceReader} from './evidence-reader.js';
+import type {QueryScope} from '@mote/shared';
 import {navigationScopeSchema} from './context-navigation.js';
 import type {ServerDiagnostics,Operation} from './diagnostics.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
@@ -15,7 +17,7 @@ import {FileAttachments} from './file-attachments.js';
 import {PlaybackGrants,type FilePlaybackGrants} from './plugins/files-source.js';
 import type {IngressService} from './ingress.js';
 
-export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'>,diagnostics:ServerDiagnostics|undefined,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>,withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>,playback?:FilePlaybackGrants){
+export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'>&Pick<EvidenceReader,'contextDependenciesAllowed'>,diagnostics:ServerDiagnostics|undefined,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>,withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>,playback?:FilePlaybackGrants){
   const measure=<T>(operation:Operation,task:()=>T|Promise<T>)=>diagnostics?diagnostics.measure('file',operation,task):Promise.resolve().then(task);
   const reviews=new FileReviews(files,processing);
   const attachments=new FileAttachments(files);
@@ -96,8 +98,15 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.post('/api/file-processing/test-local',async req=>{const q=z.object({serviceId:z.string().max(100).optional()}).strict().parse(req.body??{}),settings=processing.localService(q.serviceId);if(!isLoopback(settings.endpoint))throw new StoreError('Local worker must use loopback');const endpoint=new URL(settings.endpoint);endpoint.pathname='/health';return z.object({version:z.number(),execution:z.literal('local'),asr:z.boolean(),diarization:z.boolean(),wespeaker:z.boolean().optional()}).parse(await requestLocalJson(endpoint,{headers:settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{},signal:AbortSignal.timeout(10000),limit:4096}));});
   app.get('/api/file-processing',async()=>processing.view());
   app.post('/api/file-processing/match',async req=>processing.match(req.body));
-  app.post('/api/file-processing/preview',async req=>processing.preview(req.body));
-  app.post('/api/file-processing/reprocess',async req=>{const targets=processing.reprocessTargets(req.body);return targets.length?withOwnerBatch(targets,()=>processing.reprocess(req.body)):processing.reprocess(req.body);});
+  const maintenanceAccess=(req:FastifyRequest)=>(ids:readonly string[],scope:QueryScope)=>{
+    const records=reader.evidence(ids.map(id=>formatEvidenceRef('capture',id)),scope);
+    for(const record of records)if(record.provenance?.sourceId)authorize(req,record.provenance.sourceId);
+    const visible=new Set(records.map(record=>record.id));
+    if(ids.some(id=>!visible.has(id))||!reader.contextDependenciesAllowed(ids))throw new StoreError('Selected file is unavailable or outside the permitted scope',409);
+  };
+  app.post('/api/file-processing/preview',async req=>processing.preview(req.body,maintenanceAccess(req),check(req)));
+  app.delete('/api/file-processing/preview/:id',async req=>processing.cancelPreview(id(req)));
+  app.post('/api/file-processing/reprocess',async req=>{const access=maintenanceAccess(req),targets=processing.reprocessTargets(req.body,access);return targets.length?withOwnerBatch(targets,()=>processing.reprocess(req.body,access)):processing.reprocess(req.body,access);});
   app.put('/api/file-processing',{bodyLimit:262144},async req=>processing.save(req.body));
   return (req:FastifyRequest)=>{
     if(req.routeOptions.url!=='/api/files/:id/content'||!['GET','HEAD'].includes(req.method))return false;

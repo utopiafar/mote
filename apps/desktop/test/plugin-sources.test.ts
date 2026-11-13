@@ -4,8 +4,8 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../../server/src/app.js';
-import {defaultConfig} from '../src/config';
-import {DEFAULT_SOURCE_OPTIONS, type SourceStatus} from '../src/source-types';
+import {defaultConfig,publicConfig} from '../src/config';
+import {DEFAULT_SOURCE_OPTIONS,sourceSyncScope, type SourceStatus} from '../src/source-types';
 import {sourceConnectionBinding} from '../src/login-session';
 import {sourceHash} from '../src/source-sync';
 import {sourceState} from '../src/source-state-store';
@@ -93,8 +93,12 @@ it('keeps source checkpoints and revision cursors continuous against real Centra
     ])) as {sourceIds: string[]};
     const sourceId = confirmation.sourceIds[0]!;
     expect((await okValue(fake.invoke(sourcesChannels.list, view(7))) as SourceStatus[])[0]!.source.id).toBe(sourceId);
+    const scope=()=>sourceSyncScope(plugin.manager.status(),publicConfig(config));
+    const scan=vi.spyOn(plugin.manager,'sync');
+    await expect(fake.invoke(sourcesChannels.sync,view(7),[scope()+'changed'])!).rejects.toThrow('设置已改变');
+    expect(scan).not.toHaveBeenCalled();scan.mockRestore();
 
-    await okValue(fake.invoke(sourcesChannels.sync, view(7)));
+    await okValue(fake.invoke(sourcesChannels.sync, view(7),[scope()]));
     await plugin.manager.flushPending(new AbortController().signal);
     const binding = sourceConnectionBinding(config);
     const statePath = join(clientDirectory, 'local-sources', 'nodes', binding, sourceId + '.json');
@@ -115,7 +119,7 @@ it('keeps source checkpoints and revision cursors continuous against real Centra
     expect(firstItems.items[0]!.revision).toBe(firstDelivered);
 
     await writeFile(file, 'Generated second source body with a different length');
-    await okValue(fake.invoke(sourcesChannels.sync, view(7)));
+    await okValue(fake.invoke(sourcesChannels.sync, view(7),[scope()]));
     await plugin.manager.flushPending(new AbortController().signal);
     const secondState = sourceState(statePath) as any;
     expect(secondState.checkpoint).toMatchObject({
@@ -137,7 +141,7 @@ it('keeps source checkpoints and revision cursors continuous against real Centra
     // with the same bytes becomes a separate source item.
     const renamed=join(sourceRoot,'renamed.md'),copy=join(sourceRoot,'copy.md');
     await rename(file,renamed);await copyFile(renamed,copy);
-    await okValue(fake.invoke(sourcesChannels.sync, view(7)));
+    await okValue(fake.invoke(sourcesChannels.sync, view(7),[scope()]));
     await plugin.manager.flushPending(new AbortController().signal);
     const thirdState=sourceState(statePath) as any;
     expect(thirdState.checkpoint.volumeIdentity).toMatch(/^apfs:/);

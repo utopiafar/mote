@@ -1,4 +1,4 @@
-import {fileDiarizationOptionsSchema,type FileDiarizationOptions} from '@mote/shared';
+import {fileDiarizationOptionsSchema,queryScopeSchema,type FileDiarizationOptions,type QueryScope} from '@mote/shared';
 import {installEvidenceDependencies,invalidateRetiredFileEvidence} from './evidence-dependencies.js';
 import {fileSummaryInputFingerprint,invalidateFileSummary} from './file-summary-lineage.js';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
@@ -23,6 +23,8 @@ import {FileProcessorRuntime,isLoopback,mediaModelConnection,type FileProcessor,
 import {MediaExecutionCalls,readMediaExecutionFact,eraseMediaExecutionFact,type MediaExecutionCall,type MediaStage} from './plugins/media-execution-facts.js';
 import {MEDIA_CATALOG,ASR_MODEL_VERSION,SEGMENTATION_MODEL_SHA256,type MediaAssets} from './media-assets.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
+import {withinEvidenceScope} from './evidence-reader.js';
+import {TaskRecords} from './task-records.js';
 import {alignDialogue,applySemanticGroups,TURN_GROUP_PROMPT} from './file-dialogue.js';
 import {defaultFileRecipe,defaultFileOutput,type FileRecipeContext} from './file-recipes.js';
 export {HttpTranscriptionProvider,type TranscriptionProvider} from './file-processors.js';
@@ -40,6 +42,8 @@ import {createDefaultFilePolicy,publicFilePolicy,parseFilePolicy,selectFilePolic
 type Saved={revision:string;settings:FileProcessingSettings;policy:FilePolicy};
 type Job={capture_id:string;state:string;stage:string;attempts:number;summary_state:string;policy_json:string|null;reuse_allowed:number};
 type Step={fingerprint:string;state:string;artifact_id:string|null;attempts:number};
+type MaintenanceAccess=(ids:readonly string[],scope:QueryScope)=>void;
+type MaintenancePreview={revision:string;expires:number;scope:QueryScope;items:{id:string;fingerprint:string;requiresOriginal:boolean}[]};
 const transcriptCoverage=(transcript:Transcript)=>transcript.extraction
   ?transcript.extraction.status==='ready'?'full':transcript.segments.length?'partial':'none'
   :transcript.coverage??'full';
@@ -47,7 +51,7 @@ const parseSemanticGrouping=(transcript:Transcript,answer:string)=>applySemantic
 export type FileAnalysis=(records:ContextRecord[],prompt:string,settings:FileProcessingSettings&{analysisModel?:ProcessingService;modelSnapshot?:ModelSettings;modelIdentity?:ModelAgentIdentity},signal?:AbortSignal,host?:{operationId:string;jobId:string;requestId:string},validateOutput?:QueryInput['validateOutput'])=>Promise<{answer:string;citations:{id:string}[]}>;
 export type SummarizeFiles=(records:ContextRecord[],signal?:AbortSignal)=>Promise<{answer:string;citations:{id:string}[]}>;
 export class FileProcessing {
-  imageControl?:{owns(id:string):boolean;prepare():string[];tick():Promise<void>;retry(id:string,recompute?:boolean,confirmUnknown?:boolean):{queued:boolean};cancel(id:string):{state:string};cancellation(id:string):{canCancel:boolean;wait:'running'|'unknown'|null};configurationChanged?():void;mediaCallCurrent?:(call:MediaExecutionCall)=>boolean};
+  imageControl?:{owns(id:string):boolean;settings():import('./image-processing.js').ImageSettings;prepare():string[];tick():Promise<void>;retry(id:string,recompute?:boolean,confirmUnknown?:boolean):{queued:boolean};cancel(id:string):{state:string};cancellation(id:string):{canCancel:boolean;wait:'running'|'unknown'|null};configurationChanged?():void;mediaCallCurrent?:(call:MediaExecutionCall)=>boolean};
   private saved:Saved;private readonly media:MediaRuntimeSettings;readonly engine:ExecutionEngine;private owned:boolean;private execution=new AsyncLocalStorage<{step:ExecutionStep;signal:AbortSignal}>();private abort=new AbortController();private stopping=false;
   private activeProcessorCalls=new Set<string>();private manualCancellation=false;
   private readonly processorAdmission:ProcessorAdmission;
@@ -537,44 +541,122 @@ export class FileProcessing {
       executionFingerprint:job?.config_revision??null,current};
   }
   match(raw:unknown){const q=z.object({sourceId:z.string().min(1).max(128),mimeType:z.string().regex(/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/)}).strict().parse(raw);return selectFilePolicy(this.policy(),q.sourceId,q.mimeType,this.saved.revision);}
-  private previews=new Map<string,{revision:string;expires:number;items:{id:string;fingerprint:string}[]}>();
-  preview(raw:unknown){
-    const q=z.object({revision:z.string(),sourceId:z.string().max(128).optional(),type:fileTypePattern.default('*/*'),profileId:z.string().max(100).optional()}).strict().parse(raw);
+  private previews=new Map<string,MaintenancePreview>();
+  /** A scope selects data; current source and evidence authority is checked separately. */
+  private assertMaintenanceCurrent(ids:readonly string[],scope:QueryScope,access?:MaintenanceAccess){
+    for(const id of ids){
+      const v=this.files.version(id),source=this.files.sources.getSource(v.source_id),manifest=JSON.parse(v.manifest),record=this.files.store.evidenceMetadata([id])[0];
+      const head=this.files.store.db.prepare('SELECT origin_missing FROM file_heads WHERE capture_id=?').get(id);
+      if(!head||!record||record.privacy.excluded||!this.files.store.isCurrentEvidence(id)||!fileAttachmentAvailable(this.files.store,id,true)||
+        !source.enabled||source.retention==='reference'||manifest.item.layer==='reference'||
+        manifest.item.layer==='snapshot'&&(source.retention!=='snapshot'||Boolean(head.origin_missing))||
+        scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(v.source_id)||
+        scope.evidenceIds!==undefined&&!scope.evidenceIds.includes(id)||!withinEvidenceScope(record,scope))
+        throw new StoreError('Selected file is unavailable or outside the permitted scope',409);
+      const temporary=manifest.item.layer==='snapshot'?this.files.store.db.prepare('SELECT object_hash FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now()):undefined;
+      const hash=v.object_hash??(temporary?String(temporary.object_hash):undefined);
+      if(hash){
+        try{if(hash!==manifest.sha256||this.files.store.assets.get(hash).bytes!==manifest.sizeBytes||!this.files.store.assets.retained(hash))throw Error();}
+        catch{throw new StoreError('Selected file original is unavailable',409);}
+      }else if(manifest.item.layer!=='snapshot')throw new StoreError('Selected file original is unavailable',409);
+    }
+    access?.(ids,scope);
+  }
+  private requiresOriginal(id:string){
+    return this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now());
+  }
+  private assertMaintenanceDependencies(ids:readonly string[],access?:MaintenanceAccess){
+    const records=this.files.store.evidenceMetadata(ids),byId=new Map(records.map(record=>[record.id,record]));
+    if(ids.some(id=>!byId.has(id)||byId.get(id)!.privacy.excluded||!this.files.store.isCurrentEvidence(id)))throw new StoreError('Maintenance evidence is unavailable',409);
+    access?.(ids,{kind:'all'});
+  }
+  preview(raw:unknown,access?:MaintenanceAccess,authorizeSource?:(id:string)=>void){
+    const q=z.object({revision:z.string(),scope:queryScopeSchema,type:fileTypePattern.default('*/*'),profileId:z.string().max(100).optional()}).strict().parse(raw);
     if(q.revision!==this.view().revision)throw new StoreError(moteText("设置已改变，请刷新后重新预览"),409);
+    if((q.scope.kind==='selection'&&q.scope.sourceIds&&q.scope.sourceIds.length>1000)||(q.scope.evidenceIds&&q.scope.evidenceIds.length>1000))throw new StoreError('Selection is too large',413);
+    const empty=q.scope.kind==='selection'&&q.scope.sourceIds?.length===0||q.scope.evidenceIds?.length===0;
+    if(!empty){
+      if(q.scope.kind==='selection')for(const id of q.scope.sourceIds??[]){const source=this.files.sources.getSource(id);authorizeSource?.(id);if(!source.enabled||source.retention==='reference')throw new StoreError('Selected source is unavailable for file processing',409);}
+      if(q.scope.evidenceIds?.length)this.assertMaintenanceCurrent(q.scope.evidenceIds,q.scope,access);
+    }
     const now=Date.now();for(const [key,p] of this.previews)if(p.expires<now)this.previews.delete(key);
     if(this.previews.size>=20)this.previews.delete(this.previews.keys().next().value!);
     const mime=q.type==='*/*'?'%':q.type.replace('*','%');
-    const rows=this.files.store.db.prepare("SELECT v.capture_id FROM file_heads h JOIN file_versions v ON v.capture_id=h.capture_id JOIN file_jobs j ON j.capture_id=v.capture_id WHERE v.object_hash IS NOT NULL AND (?='' OR v.source_id=?) AND json_extract(v.manifest,'$.item.mimeType') LIKE ? ORDER BY v.rowid LIMIT 1001").all(q.sourceId??'',q.sourceId??'',mime);
-    const items:{id:string;title:string;profileName:string;rule:AppliedFilePolicy['rule'];fingerprint:string}[]=[];let skipped=0;
-    for(const row of rows.slice(0,1000)){const id=String(row.capture_id);if(this.imageControl?.owns(id))continue;const file=this.files.detail(id,false),selected=this.explain(id).current;
+    const sourceIds=q.scope.kind==='selection'?q.scope.sourceIds:undefined,evidenceIds=q.scope.evidenceIds;
+    const select=this.files.store.db.prepare("SELECT v.rowid AS rowid,v.capture_id FROM file_heads h JOIN file_versions v ON v.capture_id=h.capture_id JOIN file_jobs j ON j.capture_id=v.capture_id JOIN captures c ON c.id=v.capture_id WHERE v.rowid>? AND json_extract(v.manifest,'$.item.mimeType') LIKE ? AND (? IS NULL OR v.source_id IN (SELECT value FROM json_each(?))) AND (? IS NULL OR v.capture_id IN (SELECT value FROM json_each(?))) AND (? IS NULL OR c.device_id=?) AND (? IS NULL OR c.context_at>=?) AND (? IS NULL OR c.context_at<?) ORDER BY v.rowid LIMIT 256");
+    const items:{id:string;title:string;profileName:string;rule:AppliedFilePolicy['rule'];services:{name:string;execution:string}[];summarize:boolean;understandingEnabled:boolean;requiresOriginal:boolean;fingerprint:string}[]=[];let skipped=0;
+    let cursor=0,bounded=false;
+    for(;;){
+     const rows=select.all(cursor,mime,sourceIds===undefined?null:JSON.stringify(sourceIds),JSON.stringify(sourceIds??[]),evidenceIds===undefined?null:JSON.stringify(evidenceIds),JSON.stringify(evidenceIds??[]),q.scope.deviceId??null,q.scope.deviceId??null,q.scope.after??null,q.scope.after?new Date(q.scope.after).toISOString():null,q.scope.before??null,q.scope.before?new Date(q.scope.before).toISOString():null);
+     if(!rows.length)break;
+     for(const row of rows){cursor=Number(row.rowid);const id=String(row.capture_id);
+      try{this.assertMaintenanceCurrent([id],q.scope,access);}catch(error){if(q.scope.kind==='selection'||q.scope.evidenceIds!==undefined)throw error;continue;}
+      const file=this.files.detail(id,false),selected=this.explain(id).current;
       if(q.profileId&&selected.profile.id!==q.profileId)continue;
-      if(selected.profile.processorId==='archive'||file.job?.state==='running'||file.job?.summary_state==='running'){skipped++;continue;}
-      if(items.length===100)break;
-      items.push({id,title:file.item.title,profileName:selected.profile.name,rule:selected.rule,fingerprint:this.jobFingerprint(id)});
+      if(selected.profile.processorId==='archive'||file.job?.state==='running'||file.job?.summary_state==='running'||file.job?.state==='cancelled'||file.job?.summary_state==='cancelled'||file.job?.state==='skipped'){skipped++;continue;}
+      if(items.length===100){bounded=true;break;}
+      items.push({id,title:file.item.title,profileName:selected.profile.name,rule:selected.rule,services:selected.services.map(({name,execution})=>({name,execution})),summarize:selected.profile.summarize,understandingEnabled:Boolean(this.imageControl?.owns(id)&&this.imageControl.settings().understandingEnabled),requiresOriginal:Boolean(this.requiresOriginal(id)),fingerprint:this.jobFingerprint(id)});
+     }
+     if(bounded||rows.length<256)break;
     }
-    const token=randomUUID();this.previews.set(token,{revision:this.saved.revision,expires:now+600000,items:items.map(({id,fingerprint})=>({id,fingerprint}))});
-    return {token,revision:this.view().revision,count:items.length,skipped,bounded:rows.length>1000||items.length===100,items:items.map(({fingerprint,...item})=>item)};
+    const token=randomUUID();this.previews.set(token,{revision:this.saved.revision,expires:now+600000,scope:q.scope,items:items.map(({id,fingerprint,requiresOriginal})=>({id,fingerprint,requiresOriginal}))});
+    return {token,revision:this.view().revision,count:items.length,skipped,bounded,items:items.map(({fingerprint,...item})=>item)};
   }
-  private jobFingerprint(id:string){return sha256(JSON.stringify(this.files.store.db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(id)));}
-  private reprocessPreview(raw:unknown){
+  private jobFingerprint(id:string){return sha256(JSON.stringify([this.files.store.db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(id),this.options.analysisRevision?.(),this.imageControl?.owns(id)?this.imageControl.settings():null]));}
+  private reprocessPreview(raw:unknown,access?:MaintenanceAccess){
     const q=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(q.token);
     if(!preview||preview.expires<Date.now()||preview.revision!==this.saved.revision)throw new StoreError(moteText("预览已过期或设置已改变，请重新预览"),409);
-    for(const item of preview.items)if(this.jobFingerprint(item.id)!==item.fingerprint)throw new StoreError(moteText("文件状态已改变，请重新预览"),409);
+    this.assertMaintenanceCurrent(preview.items.map(item=>item.id),preview.scope,access);
+    for(const item of preview.items)if(this.jobFingerprint(item.id)!==item.fingerprint||Boolean(this.requiresOriginal(item.id))!==item.requiresOriginal)throw new StoreError(moteText("文件状态已改变，请重新预览"),409);
     return {token:q.token,preview};
   }
+  private completedReprocess(raw:unknown,access?:MaintenanceAccess){
+    const {token}=z.object({token:z.string().uuid()}).strict().parse(raw),row=this.files.store.db.prepare("SELECT id,operation_id,revision,state FROM task_records WHERE request_id=? AND kind='file-reprocess'").get('file-reprocess:'+token);
+    if(!row)return;
+    if(row.state==='stale'){
+      // Publishing new extraction results invalidates the task's private input and
+      // result along with other dependent products. The non-content receipt is
+      // still a deduplication fact, provided every original remains readable.
+      const ids=this.files.store.db.prepare('SELECT evidence_id FROM task_evidence WHERE task_id=?').all(row.id).map(value=>String(value.evidence_id));
+      this.assertMaintenanceDependencies(ids,access);
+      for(const id of ids)if(this.files.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(id))this.assertMaintenanceCurrent([id],{kind:'all'},access);
+      const count=/^file-reprocess:[0-9a-f-]{36}:(\d{1,3})$/.exec(String(row.operation_id));
+      if(!count||Number(count[1])>100)throw new StoreError('Maintenance command is no longer available',409);
+      return {queued:Number(count[1])};
+    }
+    if(row.state!=='succeeded')throw new StoreError('Maintenance command is no longer available',409);
+    const tasks=new TaskRecords(this.files.store),id=String(row.id),revision=Number(row.revision);
+    const current=(ids:readonly string[])=>this.assertMaintenanceDependencies(ids,access);
+    const input=tasks.input<{scope:QueryScope;ids:string[]}>(id,revision,current);
+    this.assertMaintenanceCurrent(input.ids,input.scope,access);
+    return tasks.result<{queued:number}>(id,revision,current)!;
+  }
+  cancelPreview(token:string){
+    z.string().uuid().parse(token);
+    if(this.files.store.db.prepare("SELECT 1 FROM task_records WHERE request_id=?").get('file-reprocess:'+token))throw new StoreError('Maintenance command has already started',409);
+    if(!this.previews.delete(token))throw new StoreError('Maintenance preview is unavailable',409);
+    return {cancelled:true};
+  }
   /** The preview freezes the targets; the caller still has to supply owner authority. */
-  reprocessTargets(raw:unknown):readonly string[]{return this.reprocessPreview(raw).preview.items.map(item=>item.id);}
-  reprocess(raw:unknown){
-    const {token,preview}=this.reprocessPreview(raw),db=this.files.store.db,own=!db.isTransaction;
+  reprocessTargets(raw:unknown,access?:MaintenanceAccess):readonly string[]{return this.completedReprocess(raw,access)?[]:this.reprocessPreview(raw,access).preview.items.map(item=>item.id);}
+  reprocess(raw:unknown,access?:MaintenanceAccess){
+    const completed=this.completedReprocess(raw,access);if(completed)return completed;
+    const {token,preview}=this.reprocessPreview(raw,access),db=this.files.store.db,own=!db.isTransaction;
     if(own)db.exec('BEGIN IMMEDIATE');
     try{
+      const ids=preview.items.map(item=>item.id),tasks=new TaskRecords(this.files.store),dependencies={version:1 as const,complete:true as const,ids};
+      const current=(evidence:readonly string[])=>{this.assertMaintenanceDependencies(evidence,access);this.assertMaintenanceCurrent(ids,preview.scope,access);};
+      const task=tasks.create({operationId:'file-reprocess:'+token+':'+ids.length,kind:'file-reprocess',requestId:'file-reprocess:'+token,input:{scope:preview.scope,ids,revision:preview.revision},evidenceDependencies:dependencies},current);
       for(const item of preview.items){
         if(this.options.modelAuthority&&!this.options.modelAuthority.ownerIntent?.(item.id))throw new StoreError('Explicit model processing intent is required',409);
-        this.retry(item.id,'transcribe',true);
+        const queued=this.retry(item.id,'transcribe',!this.imageControl?.owns(item.id));
+        if(!queued.queued)throw new StoreError('Selected file cannot be processed',409);
+        if(item.requiresOriginal)db.prepare("UPDATE file_jobs SET state='blocked',error='snapshot_input_expired' WHERE capture_id=?").run(item.id);
       }
+      tasks.saveResult(task.id,task.revision,{queued:ids.length},dependencies,current);
       if(own)db.exec('COMMIT');
     }catch(e){if(own&&db.isTransaction)db.exec('ROLLBACK');throw e;}
-    this.previews.delete(token);return {queued:preview.items.length};
+    return {queued:preview.items.length};
   }
   private project(step:ExecutionStep,phase:'pipeline'|'summary'){
     const id=String(step.input.captureId);if(!this.validStep(step,phase)){this.programRuns.delete(step.id);return;}
@@ -749,7 +831,7 @@ export class FileProcessing {
           const category='summary_disabled';this.log('file.blocked',id,{operation:'summary',category});return new ExecutionFailure('blocked',category);
         }
       }else{
-        if(this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now())&&!this.files.store.db.prepare("SELECT 1 FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id WHERE s.capture_id=? AND s.step='extract' AND s.state='succeeded' AND a.config_revision=? AND json_extract(a.json,'$.snapshot')=1").get(id,this.configuration(id,'pipeline').fingerprint))return new ExecutionFailure('blocked','snapshot_input_expired');
+        if(this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now())&&(db.prepare('SELECT error FROM file_jobs WHERE capture_id=?').get(id)?.error==='snapshot_input_expired'||!this.files.store.db.prepare("SELECT 1 FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id WHERE s.capture_id=? AND s.step='extract' AND s.state='succeeded' AND a.config_revision=? AND json_extract(a.json,'$.snapshot')=1").get(id,this.configuration(id,'pipeline').fingerprint)))return new ExecutionFailure('blocked','snapshot_input_expired');
         const processor=this.runtime.registry.get(processorId);
         try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns});this.runtime.outputs.get(defaultFileOutput(processor));}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
         if(processor.stage!=='extract'||!processor.mediaTypes.some(t=>t.endsWith('/')?mime.startsWith(t):t===mime||t.endsWith('/*')&&mime.startsWith(t.slice(0,-1))))return new ExecutionFailure('blocked','unsupported_format');
