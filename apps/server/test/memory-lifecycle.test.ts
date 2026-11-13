@@ -128,11 +128,13 @@ test('pressure compacts unsummarized dialogue immediately using separate task co
   const store=fixture(t),conversations=new Conversations(store),working=new WorkingMemory(store,conversations),lifecycle=new MemoryLifecycle(store,()=>true);t.after(()=>lifecycle.close());
   let id:string|undefined;
   for(let i=0;i<10;i++)id=conversations.append(id?conversations.get(id):undefined,{question:i===0?'Explicitly reject cloud upload':'Continue '+i},{...empty(),answer:'Generated lengthy reply. '.repeat(200)}).conversationId;
-  let calls=0;
+  let calls=0;const summarized:{question:unknown;answer:unknown}[]=[];
   const context=await working.prepare(conversations.get(id!),lifecycle.settings(),'Continue',async input=>{
-    calls++;assert.ok(input.question.length<20000);assert.ok(JSON.stringify(input.taskContext).length>20000);assert.equal(input.taskContext?.turns[0].question,'Explicitly reject cloud upload');return {...empty(),answer:'User explicitly rejected cloud upload (first turn); this remains a constraint.'};
+    calls++;assert.ok(input.question.length<20000);summarized.push(...input.taskContext!.turns.map(turn=>({question:turn.question,answer:turn.answer})));return {...empty(),answer:'User explicitly rejected cloud upload (first turn); this remains a constraint.'};
   });
-  assert.equal(calls,1);assert.equal(context.omittedTurns,0);assert.match(context.workingMemory!.text,/rejected cloud/);assert.ok(context.turns.length>0);
+  assert.ok(calls>1);assert.ok(JSON.stringify(summarized).length>20000);assert.equal(context.omittedTurns,0);assert.match(context.workingMemory!.text,/rejected cloud/);assert.ok(context.turns.length>0);
+  assert.deepEqual([...summarized.map(turn=>turn.question),...context.turns.map(turn=>turn.question)],Array.from({length:10},(_,i)=>i===0?'Explicitly reject cloud upload':'Continue '+i));
+  assert.ok(summarized.every(turn=>turn.answer==='Generated lengthy reply. '.repeat(200)));
 });
 
 test('failed compaction cannot silently discard dialogue and oversized latest turn is summarized',async t=>{
@@ -151,7 +153,7 @@ test('a single huge turn is summarized in bounded spans and partial failure neve
  assert.equal(working.get(conversations.get(conversationId)),undefined);
  const pieces:string[]=[];
  await working.prepare(conversations.get(conversationId),lifecycle.settings(),'continue',async input=>{assert.ok(JSON.stringify(input.taskContext).length<80000);for(const span of input.taskContext!.turns)if(span.field==='answer')pieces.push(String(span.text));return {...empty(),answer:'complete generated summary'};});
- assert.equal(pieces.join(''),text);assert.equal(working.get(conversations.get(conversationId))?.coveredTurns,1);
+ assert.equal(pieces.join(''),text);assert.equal(working.get(conversations.get(conversationId))?.coveredThroughSeq,0);
 });
 
 test('a slow insight does not block subsequent extraction windows or overlap itself',async t=>{
@@ -199,9 +201,9 @@ test('cross-turn summaries persist and consume only newly uncovered turns, with 
  let calls=0;
  const summarize=async(input:any)=>{calls++;if(calls===2){assert.equal(input.taskContext.previousSummary,'Generated persistent summary');assert.equal(input.taskContext.turns.length,1);assert.equal(input.taskContext.turns[0].question,'Generated question 12');}return {...empty(),answer:'Generated persistent summary'};};
  await working.compact(id!,settings,summarize);assert.equal(calls,1);
- const reopened=new WorkingMemory(store,new Conversations(store));assert.equal(reopened.get(conversations.get(id!))?.coveredTurns,12);
+ const reopened=new WorkingMemory(store,new Conversations(store));assert.equal(reopened.get(conversations.get(id!))?.coveredThroughSeq,11);
  await reopened.compact(id!,settings,summarize);assert.equal(calls,1,'No repeated summarization of a covered prefix');
- append(20);await reopened.compact(id!,settings,summarize);assert.equal(calls,2);assert.equal(reopened.get(conversations.get(id!))?.coveredTurns,13);
+ append(20);await reopened.compact(id!,settings,summarize);assert.equal(calls,2);assert.equal(reopened.get(conversations.get(id!))?.coveredThroughSeq,12);
  store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.question','Generated edited constraint') WHERE conversation_id=? AND idx=0").run(id!);
  assert.equal(reopened.get(conversations.get(id!)),undefined,'An edited source turn retires the persisted summary');
 });

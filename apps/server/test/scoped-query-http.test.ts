@@ -165,7 +165,7 @@ test('narrowing device or time never sends a wider conversation or its summary t
   const a=await add(f.node,'generated-device-a'),b=await add(f.node,'generated-device-b');originals=[a.id,b.id];
   const first=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'GENERATED_PRIVATE_WIDE_QUESTION'}});assert.equal(first.statusCode,200,first.body);
   const conversationId=first.json().conversationId,conversation=f.node.conversations.get(conversationId);
-  const summary={text:'GENERATED_PRIVATE_WIDE_SUMMARY',coveredTurns:1,generatedAt:'2026-10-03T00:00:00Z',fingerprint:sha256(JSON.stringify(conversation.turns)),evidenceDependencies:{version:1,complete:true,ids:originals}};
+  const summary={text:'GENERATED_PRIVATE_WIDE_SUMMARY',coveredThroughSeq:0,contextVersion:0,generatedAt:'2026-10-03T00:00:00Z',fingerprint:sha256(JSON.stringify([0,0,conversation.turns])),evidenceDependencies:{version:1,complete:true,ids:originals}};
   f.node.store.db.prepare('INSERT INTO working_memories(id,json) VALUES(?,?)').run(conversationId,JSON.stringify(summary));
   const follow=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated current owner input',conversationId,...narrow}});assert.equal(follow.statusCode,200,follow.body);
   assert.equal(seen.length,2);
