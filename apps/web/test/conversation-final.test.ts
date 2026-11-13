@@ -198,6 +198,21 @@ test('a paged conversation states that only the latest page is loaded and merges
  assert.match(d.querySelector('.conversation-messages')!.textContent!,/Generated oldest answer/);
 });
 
+test('a source-only empty selection stays a selection instead of widening to all sources',async t=>{
+ const {root,d}=await fixture(t),posts:any[]=[];
+ const sourceOnly={...summary,title:'Generated source-only conversation',turnCount:0,scope:{kind:'selection',sourceIds:[]}};
+ const base=api(),owner={...base,request:async(p:string,init?:RequestInit)=>{
+  if(p==='/api/conversations/'+id)return{...sourceOnly,revision:1,nextCursor:null,turns:[]};
+  if(p==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));posts.push(input);return receipt(input);}
+  return base.request(p,init);
+ }} as Api;
+ await view(root,owner);await act(async()=>{});
+ await field(d,'textarea[aria-label="向 Mote 提问"]','Generated source-only question');
+ await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(posts.length,1);assert.equal(posts[0].conversationId,id);assert.equal(posts[0].scope.kind,'selection');
+ assert.deepEqual(posts[0].scope.sourceIds,[]);assert.equal(Object.hasOwn(posts[0].scope,'evidenceIds'),false,'an empty source selection never becomes all sources');
+});
+
 test('server accepted, queued, running, failed and cancelled states are shown without optimistic rewriting',async t=>{
  const {root,d}=await fixture(t);
  const states:ConversationMessageState[]=['accepted','queued','running','failed','cancelled'];

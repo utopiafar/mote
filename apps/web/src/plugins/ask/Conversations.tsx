@@ -80,10 +80,13 @@ function DraftComposer({draft,children}:{draft:ReturnType<typeof createQuestionD
  return children(question);
 }
 /** Product admission carries the scope explicitly. A cleared scope is all
- * sources; a stored evidence selection stays a selection (including empty). */
+ * sources; a stored selection stays a selection, including an empty evidence
+ * intersection or a source-only restriction. */
 function admissionScope(scope:ConversationSummary['scope']|undefined,cleared:boolean,timeZone:string):ConversationMessageScope{
  const range={timeZone,...(scope?.after?{after:scope.after}:{}),...(scope?.before?{before:scope.before}:{}),...(scope?.deviceId?{deviceId:scope.deviceId}:{})};
- if(!cleared&&scope?.evidenceIds!==undefined)return {kind:'selection',evidenceIds:[...scope.evidenceIds],...(scope.sourceIds!==undefined?{sourceIds:[...scope.sourceIds]}:{}),...range};
+ // A selection can be source-only or an empty intersection. Missing evidenceIds
+ // never turns it into "all"; the next turn keeps the stored restriction.
+ if(!cleared&&(scope?.kind==='selection'||scope?.evidenceIds!==undefined||scope?.sourceIds!==undefined))return {kind:'selection',...(scope?.evidenceIds!==undefined?{evidenceIds:[...scope.evidenceIds]}:{}),...(scope?.sourceIds!==undefined?{sourceIds:[...scope.sourceIds]}:{}),...range};
  return {kind:'all',...range};
 }
 export function Conversations({api, configured, devices, renderAnswer,onOpen=()=>{},controller:provided}: {
