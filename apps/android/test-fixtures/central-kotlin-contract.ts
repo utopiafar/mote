@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {randomBytes,randomUUID} from 'node:crypto';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -46,6 +46,16 @@ try {
   const history=central.conversations.append(undefined,{question:'Generated saved question',evidenceIds:[historyEvidence]},
     {answer:'Generated saved answer',citations:[{id:historyEvidence,appName:'Generated source',capturedAt:'2026-10-01T00:00:00Z',excerpt:'Generated saved excerpt'}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[historyEvidence]}});
   const origin = await central.app.listen({host: '127.0.0.1', port: 0});
+  // The real workbench route must feed the production Kotlin decoder for all
+  // four fixed templates. Empty scopes are valid producer output; the JVM
+  // suite separately exercises command/action states.
+  const workbenchFile=join(directory,'workbench.json'),workbench:unknown[]=[];
+  for(const template of ['project','person','travel','reading'] as const){
+    const response=await central.app.inject({url:'/api/assistant/workbench?request='+encodeURIComponent(JSON.stringify({template,scope:{kind:'all'}})),
+      headers:{authorization:'Bearer '+token}});
+    assert.equal(response.statusCode,200,response.body);workbench.push(response.json());
+  }
+  await writeFile(workbenchFile,JSON.stringify(workbench),{mode:0o600});
   // Card store -> real HTTP -> both notification consumers. The only mocked boundary
   // is OS presentation; the card, revision, settings and scope are real.
   const notificationEvidence=randomUUID(),notificationId=randomUUID(),plainId=randomUUID();
@@ -99,7 +109,8 @@ try {
     env: {...process.env, MOTE_KOTLIN_CONTRACT_ORIGIN: origin, MOTE_KOTLIN_CONTRACT_TOKEN: token,
       MOTE_KOTLIN_CONTRACT_COLLECTOR: granted.json().token,MOTE_KOTLIN_CONTRACT_CONVERSATION:history.conversationId,MOTE_KOTLIN_CONTRACT_HISTORY_EVIDENCE:historyEvidence,
       MOTE_KOTLIN_CONTRACT_NOTIFICATION:notificationId,MOTE_KOTLIN_CONTRACT_NOTIFICATION_EVIDENCE:notificationEvidence,MOTE_KOTLIN_CONTRACT_PLAIN_CARD:plainId,
-      MOTE_KOTLIN_CONTRACT_ASSISTANT: assistantFixture}});
+      MOTE_KOTLIN_CONTRACT_ASSISTANT: assistantFixture,
+      MOTE_KOTLIN_CONTRACT_WORKBENCH:workbenchFile}});
   await new Promise<void>((done, reject) => {
     let failure: Error | undefined;
     let force: ReturnType<typeof setTimeout> | undefined;
@@ -123,8 +134,9 @@ try {
   });
   const report = await readFile(resolve(root, 'apps/android/app/build/test-results/testDebugUnitTest/TEST-dev.mote.collector.CentralProducerContractTest.xml'), 'utf8');
   const suite = report.match(/<testsuite\b[^>]*>/)?.[0] ?? '';
-  assert.ok(Number(suite.match(/\btests="(\d+)"/)?.[1]) >= 6, 'The real Kotlin contract cases must execute');
+  assert.ok(Number(suite.match(/\btests="(\d+)"/)?.[1]) >= 7, 'The real Kotlin contract cases must execute');
   assert.match(report, /<testcase name="realAssistantProjectionsSupportBothWorkAndLifeFeedbackTasksAndWithdrawal"/, 'The actual assistant consumer contract must execute');
+  assert.match(report, /<testcase name="everyRealWorkbenchTemplateOutputDecodesThroughTheProductionKotlinDecoder"/, 'The actual workbench consumer contract must execute');
   for (const attribute of ['skipped', 'failures', 'errors']) assert.match(suite, new RegExp(`\\b${attribute}="0"`), `Kotlin contract ${attribute}`);
   assert.deepEqual(await desktopReader.snapshot(origin),{items:[]},'The Android read/withdrawal is reflected on Desktop');
   await assert.rejects(desktopReader.card(origin,notificationId),'A stale notification click cannot disclose the withdrawn result');

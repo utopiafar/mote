@@ -41,6 +41,37 @@ class MoteLinkNavigationTest {
         assertEquals(MoteLink.Destination.Extras("ask", evidenceId = ref), MoteLinkNavigation.destination(host, foreignLink, origin))
     }
 
+    @Test fun `refused deep links keep an explicit result instead of retargeting`() {
+        val conversation = MoteLink.serialize(MoteLink.Scope(origin), MoteLink.Route.Conversation("6a1f2b3c-4d5e-46f7-8a9b-0c1d2e3f4a5b"))
+        assertEquals(
+            MoteLinkNavigation.Outcome.Open(MoteLink.Destination.Extras("ask", conversationId = "6a1f2b3c-4d5e-46f7-8a9b-0c1d2e3f4a5b")),
+            MoteLinkNavigation.open(null, conversation, origin),
+        )
+        assertEquals(MoteLinkNavigation.Outcome.Refused(MoteLinkNavigation.Refusal.INVALID), MoteLinkNavigation.open(null, "not-a-link", origin))
+        assertEquals(MoteLinkNavigation.Outcome.Refused(MoteLinkNavigation.Refusal.FOREIGN_SCOPE),
+            MoteLinkNavigation.open(null, conversation, "https://other.example"))
+        assertEquals(MoteLinkNavigation.Outcome.Refused(MoteLinkNavigation.Refusal.ACCESS_DENIED),
+            MoteLinkNavigation.open(null, conversation, origin, granted = false))
+        assertEquals(MoteLinkNavigation.Outcome.Refused(MoteLinkNavigation.Refusal.MISSING),
+            MoteLinkNavigation.open(null, conversation, origin, exists = false))
+    }
+
+    @Test fun `a stopped workbench route still falls back to the pinned reader`() {
+        val host = NativePluginHost(NativePluginRegistry())
+        val packageId = "dev.mote.assistant"
+        val view = route(packageId, "assistant.workbench")
+        val link = MoteLink.serialize(MoteLink.Scope(origin), view)
+        assertEquals(MoteLinkNavigation.Outcome.Open(MoteLink.Destination.Extras("ask", evidenceId = ref)),
+            MoteLinkNavigation.open(host, link, origin))
+        val owner = scope(host, packageId)
+        owner.registerRoute("assistant.workbench") { _, _ -> object : PluginViewContribution {
+            override val routeId = "assistant.workbench"
+            override fun dispose() = Unit
+        } }
+        assertEquals(MoteLinkNavigation.Outcome.Open(MoteLink.Destination.Extras("assistant.workbench")),
+            MoteLinkNavigation.open(host, link, origin))
+    }
+
     @Test fun `stopping a package preserves the reference and re-enabling does not replay the page`() {
         val host = NativePluginHost(NativePluginRegistry())
         var mounts = 0
