@@ -1,6 +1,6 @@
 import {DESKTOP_STORAGE_VERSION} from './storage-format';
 import '@mote/shared/i18n-all';
-import {spoolOriginal,originalPart} from './original-spool';
+import {spoolOriginal,spoolBytes,originalPart} from './original-spool';
 import {sourceState} from './source-state-store';
 import { moteText, configureLocale, type Locale } from '@mote/shared/i18n';
 import {scanCodingAgent} from './coding-agents';
@@ -19,6 +19,7 @@ type WorkerSignal = Pick<AbortSignal,'aborted'|'throwIfAborted'> & {beginCommit:
 async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void,signal?:WorkerSignal): Promise<unknown> {
   switch (request.kind) {
     case 'spool-original': return spoolOriginal(request.path,request.directory,request.expected);
+    case 'spool-bytes': return spoolBytes(request.bytes,request.directory);
     case 'original-part': return originalPart(request.spool,request.part);
     case 'source-state': return sourceState(request.path,request.patches,request.maximum);
     case 'coding-scan': return scanCodingAgent(request.root,request.provider,request.options,request.checkpoint,signal);

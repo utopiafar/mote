@@ -7,6 +7,7 @@ import type { Rectangle } from './contracts';
 
 export type BackgroundRequest =
   | {kind:'spool-original';path:string;directory:string;expected:import('./original-spool').OriginalIdentity}
+  | {kind:'spool-bytes';bytes:Uint8Array;directory:string}
   | {kind:'original-part';spool:import('./original-spool').OriginalSpool;part:number}
   | {kind:'source-state';path:string;patches?:import('./source-state-store').StatePatch[];maximum?:number}
   | {kind:'coding-scan';root:string;provider:import('./coding-agents').CodingProvider;options:import('./source-types').SourceOptions;checkpoint?:import('./coding-agents').CodingCheckpoint}

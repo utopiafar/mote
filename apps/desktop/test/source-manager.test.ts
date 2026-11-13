@@ -413,7 +413,11 @@ it.each(['file','default'] as const)('E preserves %s checkpoint mode through nor
     expect(recoveryCheckpoint.pendingDirectories).toEqual([]);
     expect(Object.keys(recoveryCheckpoint.catalog)).toEqual(Object.keys(priorCatalog));
     expect(Object.values(recoveryCheckpoint.catalog).map(entry=>entry.entryId)).toEqual(Object.values(priorCatalog).map(entry=>entry.entryId));
+    const before=Object.values(priorCatalog)[0];
+    const recovery=Object.values(recoveryCheckpoint.catalog)[0];
+    expect(recovery.entryId).toBe(before.entryId);expect(recovery.entryId).toBe(server.items[0].externalId);
     expect(server.items).toHaveLength(2);expect(app.pendingStats().pendingRecords).toBe(0);
+    expect(server.items[1].externalId).toBe(server.items[0].externalId);
     if(mode==='file')expect(contexts.every(context=>context.checkpoint===undefined)).toBe(true);
     else expect(contexts[0].checkpoint).toBeDefined();
   }finally{full.mockRestore();}

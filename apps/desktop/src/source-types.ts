@@ -26,6 +26,8 @@ export interface LocalFileCheckpoint {
   version: 1; root: string;
   /** This registry format is deliberately not compatible with the old inode-derived IDs. */
   identityVersion: 1; volumeIdentity?: string; identityScope?: string; identityScopeVolume?: string; identityVerificationPending?: boolean;
+  /** A previously unavailable root needs a full content reconciliation, including across pages. */
+  contentVerificationPending?: boolean;
   /** Device/inode of a directory root accepted by a complete, readable scan. */
   rootIdentity?: string; scanNumber: number; scanStartedAt: string; lastScanAttemptAt?: string; initialized: boolean;
   inProgress: boolean; scanFaulted?: boolean; lastScanComplete?: boolean; lastCompleteScanAt?: string;
@@ -43,6 +45,8 @@ export interface SourceScan {
   checkpoint?: SourceCheckpoint;
   /** Changed directory rows; checkpoint.catalog is omitted from incremental scans. */
   catalogChanges?: {key:string;value?:FileCatalogEntry}[];
+  /** Exact watcher paths checked in this scan; directory signals remain until reconciliation completes. */
+  checkedPriorityPaths?: string[];
   items: ScannedItem[]; seen: string[]; complete: boolean; skipped: number;
   /** Historical backfills never get to starve newly observed source changes. */
   queue?: 'realtime' | 'history';
