@@ -283,7 +283,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   });
   // The existing query provider does not yet expose the configured model
   // window or validate complete requests. Do not send a batch model request
-  // using its hard-coded 128k assumption; connect the configured budget check first.
+  // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
   let assistantTasks:AssistantTasks|undefined;
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);

@@ -8,6 +8,7 @@ import {StoreError} from '../../store.js';
  * classify people, merge names, publish interpretations or start work. */
 export function registerMemoryAssociationRoutes(app:FastifyInstance,commitments:Pick<AssistantCommitments,'page'>,owner:(request:FastifyRequest)=>void){
   const page=z.object({scope:z.string().max(16000),personMemoryId:z.string().uuid().optional(),limit:z.coerce.number().int().min(1).max(100).default(30),cursor:z.string().max(1000).optional()}).strict();
+  if(app.hasRoute({method:'GET',url:'/api/assistant/commitments'}))return;
   app.get('/api/assistant/commitments',async(request,reply)=>{
     owner(request);
     const {scope:raw,...query}=page.parse(request.query);

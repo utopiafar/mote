@@ -37,7 +37,7 @@ function visiblePage<T>(args:PageOptions,read:(args:PageOptions)=>{items:T[];nex
  }
 }
 const scopeValue=(value:string)=>{let parsed:unknown;try{parsed=JSON.parse(value);}catch{throw new StoreError('Invalid assistant detail scope');}return queryScopeSchema.parse(parsed);};
-const querySchema=z.object({scope:z.string().max(16000),limit:z.coerce.number().int().min(1).max(100).optional(),cursor:z.string().max(1000).optional(),matterId:z.string().uuid().optional()}).strict();
+const querySchema=z.object({scope:z.string().max(16000),limit:z.coerce.number().int().min(1).max(100).optional(),cursor:z.string().max(1000).optional(),matterId:z.string().uuid().optional(),personMemoryId:z.string().uuid().optional()}).strict();
 const idOf=(request:FastifyRequest)=>z.object({id:z.string().uuid()}).parse(request.params).id;
 
 /** Only the owner HTTP surface can mutate a matter. All derived links resolve
@@ -69,8 +69,10 @@ export function registerAssistantMatterRoutes(app:FastifyInstance,deps:{store:St
   const scope=command.type==='create'?command.scope:command.type==='edit'&&command.scope?command.scope:matters.get(command.matterId).scope;
   return matters.command(command,authority(scope));
  });
- app.get('/api/assistant/commitments',async request=>{
-  owner(request);const {scope:raw,...args}=querySchema.parse(request.query);return commitments.page({...args,scope:scopeValue(raw)});
+ app.get('/api/assistant/commitments',async(request,reply)=>{
+  owner(request);const {scope:raw,...args}=querySchema.parse(request.query);
+  reply.header('Cache-Control','no-store');
+  return commitments.page({...args,scope:scopeValue(raw)});
  });
  app.get('/api/assistant/commitments/:id',async request=>{
   owner(request);const {scope}=querySchema.pick({scope:true}).parse(request.query);return commitments.get(idOf(request),scopeValue(scope));
