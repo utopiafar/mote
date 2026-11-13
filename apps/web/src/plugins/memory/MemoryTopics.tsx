@@ -1,13 +1,14 @@
 import {moteText} from '@mote/shared/i18n';
-import {type Api,errorMessage} from '../../api';
+import {type Api,type Range,errorMessage} from '../../api';
 import {useEffect,useState} from 'react';
 import {resources} from '../../resource-cache';
 import {useResource} from '../../useResource';
 import { Loading } from '../../Loading';
 export interface ContextTree {id:string;version:string;label:string;nodes:{id:string;label:string;parentId?:string}[]}
-export function MemoryTopics({api,treeId,nodeId,onChange}:{api:Api;treeId:string;nodeId:string;onChange:(treeId:string,nodeId:string)=>void}){
+export function MemoryTopics({api,treeId,nodeId,scope={},onChange}:{api:Api;treeId:string;nodeId:string;scope?:Range;onChange:(treeId:string,nodeId:string)=>void}){
  const [pollMs,setPollMs]=useState<number|undefined>(undefined);
- const trees=useResource<{items:ContextTree[];classification?:{state:'unavailable'|'ready'|'running'|'failed'}}>(api,'/api/context-trees',pollMs);
+ const query=new URLSearchParams({...scope}).toString(),path='/api/context-trees'+(query?'?'+query:'');
+ const trees=useResource<{items:ContextTree[];classification?:{state:'unavailable'|'ready'|'running'|'failed'}}>(api,path,pollMs);
  // A catalog can only stop periodic reads when it provably has no external
  // dependency: 'unavailable' means no classifier is registered, so no
  // provider-backed batch exists and classifier lifecycle transitions already
@@ -18,10 +19,10 @@ export function MemoryTopics({api,treeId,nodeId,onChange}:{api:Api;treeId:string
  useEffect(()=>{const state=trees.data?.classification?.state;setPollMs(trees.error!==undefined?10000:state==='running'?5000:state==='unavailable'?undefined:10000);},[trees.data,trees.error]);
  useEffect(()=>{
   if(typeof document==='undefined')return;
-  const revalidate=()=>{if(!document.hidden)resources(api).get('/api/context-trees').refresh();};
+  const revalidate=()=>{if(!document.hidden)resources(api).get(path).refresh();};
   document.addEventListener('visibilitychange',revalidate);
   return()=>document.removeEventListener('visibilitychange',revalidate);
- },[api]);
+ },[api,path]);
  const tree=trees.data?.items.find(item=>item.id===treeId);
  const missing=trees.data!==undefined&&(!tree||(nodeId&&!tree.nodes.some(node=>node.id===nodeId)));
  const automatic=trees.data?.items.some(item=>item.id.startsWith('auto.'));

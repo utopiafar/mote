@@ -10585,5 +10585,21 @@ export const english: Readonly<Record<string, string>> = {
   "设为主对话": "Set as main conversation",
   "设置尚未读取完成，请稍后重试。": "Settings are not loaded yet. Try again shortly.",
   "这条回答已取消，晚到的结果不会写回。": "This answer was cancelled; a late result will not be written back.",
-  "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask opens the main conversation by default. Multiple conversations are off by default; turning them off does not delete existing conversations."
+  "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask opens the main conversation by default. Multiple conversations are off by default; turning them off does not delete existing conversations.",
+  "人物": "People",
+  "记忆浏览": "Browse memories",
+  "本页 {0} 条承诺": "{0} commitments on this page",
+  "本页关联 {0} 个事项": "{0} related matters on this page",
+  "按已关联的记忆身份浏览；同名人物分别保留。": "Browse linked Memory identities. People with the same name stay separate.",
+  "本页暂无已关联的人物。可继续浏览记忆或主题。": "No linked people on this page. You can still browse memories or topics.",
+  "相关承诺与互动": "Related commitments and interactions",
+  "当前范围内暂无关联的承诺或互动。": "No related commitments or interactions in the current scope.",
+  "当前范围内暂无原始依据。": "No original evidence in the current scope.",
+  "期限未明确": "Deadline unspecified",
+  "已到期，履行情况以证据为准。": "Due date passed. Fulfillment requires evidence.",
+  "互动与进展": "Interactions and progress",
+  "发生时间未知": "Event time unknown",
+  "推断": "Inference",
+  "仅汇总本页记忆与本页承诺的显式关联。": "Only explicit links between memories and commitments on these pages are included.",
+  "本页暂无关联的承诺或互动。": "No related commitments or interactions on this page."
 };

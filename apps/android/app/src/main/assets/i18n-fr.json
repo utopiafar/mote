@@ -10584,5 +10584,21 @@
   "设为主对话": "Définir comme conversation principale",
   "设置尚未读取完成，请稍后重试。": "Les paramètres ne sont pas encore chargés. Réessayez dans un instant.",
   "这条回答已取消，晚到的结果不会写回。": "Cette réponse a été annulée ; un résultat tardif ne sera pas réécrit.",
-  "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask ouvre la conversation principale par défaut. Les conversations multiples sont désactivées par défaut ; les désactiver ne supprime pas les conversations existantes."
+  "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask ouvre la conversation principale par défaut. Les conversations multiples sont désactivées par défaut ; les désactiver ne supprime pas les conversations existantes.",
+  "人物": "Personnes",
+  "记忆浏览": "Parcourir les souvenirs",
+  "本页 {0} 条承诺": "{0} engagements sur cette page",
+  "本页关联 {0} 个事项": "{0} sujets de suivi associés sur cette page",
+  "按已关联的记忆身份浏览；同名人物分别保留。": "Parcourez les identités liées aux souvenirs. Les homonymes restent distincts.",
+  "本页暂无已关联的人物。可继续浏览记忆或主题。": "Aucune personne liée sur cette page. Vous pouvez parcourir les souvenirs ou les thèmes.",
+  "相关承诺与互动": "Engagements et échanges associés",
+  "当前范围内暂无关联的承诺或互动。": "Aucun engagement ni échange associé dans le périmètre actuel.",
+  "当前范围内暂无原始依据。": "Aucune preuve originale dans le périmètre actuel.",
+  "期限未明确": "Échéance non précisée",
+  "已到期，履行情况以证据为准。": "Échéance dépassée. La réalisation doit être étayée.",
+  "互动与进展": "Échanges et progression",
+  "发生时间未知": "Date de survenue inconnue",
+  "推断": "Déduction",
+  "仅汇总本页记忆与本页承诺的显式关联。": "Seuls les liens explicites entre les souvenirs et les engagements de ces pages sont inclus.",
+  "本页暂无关联的承诺或互动。": "Aucun engagement ni échange associé sur cette page."
 }

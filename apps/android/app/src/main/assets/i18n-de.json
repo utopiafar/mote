@@ -10584,5 +10584,21 @@
   "设为主对话": "Als Hauptunterhaltung festlegen",
   "设置尚未读取完成，请稍后重试。": "Die Einstellungen sind noch nicht geladen. Versuche es gleich erneut.",
   "这条回答已取消，晚到的结果不会写回。": "Diese Antwort wurde abgebrochen; ein verspätetes Ergebnis wird nicht zurückgeschrieben.",
-  "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask öffnet standardmäßig die Hauptunterhaltung. Mehrere Unterhaltungen sind standardmäßig aus; Ausschalten löscht keine bestehenden Unterhaltungen."
+  "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask öffnet standardmäßig die Hauptunterhaltung. Mehrere Unterhaltungen sind standardmäßig aus; Ausschalten löscht keine bestehenden Unterhaltungen.",
+  "人物": "Personen",
+  "记忆浏览": "Erinnerungen durchsuchen",
+  "本页 {0} 条承诺": "{0} Zusagen auf dieser Seite",
+  "本页关联 {0} 个事项": "{0} zugehörige Anliegen auf dieser Seite",
+  "按已关联的记忆身份浏览；同名人物分别保留。": "Nach verknüpften Erinnerungsidentitäten durchsuchen. Namensgleiche Personen bleiben getrennt.",
+  "本页暂无已关联的人物。可继续浏览记忆或主题。": "Keine verknüpften Personen auf dieser Seite. Erinnerungen und Themen können weiterhin durchsucht werden.",
+  "相关承诺与互动": "Zugehörige Zusagen und Interaktionen",
+  "当前范围内暂无关联的承诺或互动。": "Keine zugehörigen Zusagen oder Interaktionen im aktuellen Bereich.",
+  "当前范围内暂无原始依据。": "Keine Originalbelege im aktuellen Bereich.",
+  "期限未明确": "Frist nicht festgelegt",
+  "已到期，履行情况以证据为准。": "Frist abgelaufen. Die Erfüllung muss belegt sein.",
+  "互动与进展": "Interaktionen und Fortschritt",
+  "发生时间未知": "Ereigniszeit unbekannt",
+  "推断": "Schlussfolgerung",
+  "仅汇总本页记忆与本页承诺的显式关联。": "Enthält nur ausdrückliche Verknüpfungen zwischen Erinnerungen und Zusagen auf diesen Seiten.",
+  "本页暂无关联的承诺或互动。": "Keine zugehörigen Zusagen oder Interaktionen auf dieser Seite."
 }
