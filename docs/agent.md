@@ -38,6 +38,12 @@ models:
 
 Codex App Server 可能在工具完成事件中回显图片。适配器允许最多 13 MiB 的单条 RPC 消息，整个会话的接收总量仍限 32 MiB（含 stderr），超限保留明确诊断并终止。因此 4 次图片请求是次数上限，不保证 4 张最大尺寸图片都能装入一次会话。详细 Agent 日志只保存图片标识、格式与编码长度，模型仍收到原始图片数据。宿主时间预算先于模型结束时，普通问答保留明确的超时类别；测试用量必须在取消清理完成后结算。
 
+Codex 查询和导入使用 Mote 固定的 `openai/codex rust-v0.162.1` 原生依赖，补丁与构建入口位于 `packages/agent/native/`（上游 Apache-2.0）。使用已有 Rust 1.95.0 工具链执行 `npm run native:prepare -w @mote/agent`，该命令校验固定源码归档和补丁、复用 Cargo 缓存并生成私有二进制，不安装工具链、不替换系统 CLI。可通过 `MOTE_CODEX_NATIVE_BUILD_ROOT` 和 `MOTE_CODEX_SOURCE_ARCHIVE` 指定已有隔离缓存与源码归档。构建默认离线；首次缺少 Cargo crates 缓存时可显式追加 `-- --online`。启动链先核对原生闸口版本，再链接 CLI 自身的登录文件；缺少产物或指定了无闸口的系统 CLI 会返回 `processing_limit`，诊断码为 `native_budget_unavailable`。
+
+原生客户端在每次完整请求构造后校验，并在最终 HTTP/WS 发送前重验；WS 同时校验完整有效上下文及实际增量，缩减会清除旧续调基线。一个查询进程内的工具后续调、输出修正、认证重试、内部压缩与回退共用一次安全缩减机会。缩减保留工具调用与结果配对，在被省略的正文位置写入 `budgetCoverage`；不重放整个 turn 或 workspace 工具，再次超限或不可安全缩减时返回结构化 `processing_limit`。
+
+原生预算采用 `conservative-unicode-v1` 估算完整序列化正文，不是准确 tokenizer。当前只核对了 `gpt-5.4` / `gpt-5.4-2026-03-05` 的[公开模型最大输出 128,000 token](https://developers.openai.com/api/docs/models/gpt-5.4)，完整预留这份额度（包含推理），因此小于该额度的总窗口不能发送。未配置窗口时原生使用明确的保守值 272,000，并与原生模型目录中的原始窗口取较小值；owner 偏好不能扩大实际模型能力。未知模型缺少输出依据时明确失败。Host `maxTokens` 仍用于宿主输出与早期输入安排，不会被当成原生已经执行的 cap，也不与完整预留重复扣除。[SIWC 公共 Responses 路径不接受 `max_output_tokens`](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)，因此该实现不依赖额外的输出上限字段；内置 Codex backend 是否接受该字段仍未验证。
+
 ## 输出校验修正
 
 Codex 与 HTTP Harness 对最终输出最多允许 3 次修正，即首次输出加最多 3 次修正；JSON、引用、宿主校验共用这一上限。每次反馈最新具体错误并保留同一 thread/session、已读取证据和原始总期限，校验通过立即结束。网络、鉴权、来源变化等非输出错误不进入此循环。Memory 的独立审核仍使用新会话，外层恢复与重试策略保持不变。专用导入 Agent 的最终预览格式修正也沿用此上限，不重跑解析或重写暂存文件。

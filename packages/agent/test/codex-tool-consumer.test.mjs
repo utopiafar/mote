@@ -109,6 +109,8 @@ test('a revoked pinned pack survives the model-pending boundary as stale_tool_pi
   });
   await writeFile(auth, '{}', {mode: 0o600});
   await writeFile(bin, `#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {writeFileSync,existsSync} from 'node:fs';
 const release=${JSON.stringify(release)},started=${JSON.stringify(started)};

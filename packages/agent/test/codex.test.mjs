@@ -26,6 +26,8 @@ async function setup(t){
 async function fake(t,mode='answer'){
   const root=await setup(t),bin=join(root,'fake-codex');
   await writeFile(bin,`#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {writeFileSync,appendFileSync,readFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(join(root,'runtime-home'))},process.env.CODEX_HOME);

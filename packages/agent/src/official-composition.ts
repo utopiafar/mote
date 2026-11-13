@@ -84,7 +84,7 @@ function dshAdapter(options: AgentOptions): DshModelAdapter {
 }
 
 function codexAdapter(options: AgentOptions): CodexModelAdapter {
-  return {model: options.model, reasoningEffort: options.reasoningEffort, serviceTier: options.serviceTier,
+  return {model: options.model, contextWindow: options.contextWindow, reasoningEffort: options.reasoningEffort, serviceTier: options.serviceTier,
     ...(options.authorizeModelRequest ? {authorizeModelRequest: options.authorizeModelRequest} : {})};
 }
 
@@ -320,9 +320,9 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       // This is a conservative pre-delivery allowance. The HTTP adapter checks
       // its complete, actual serialized body again for every provider turn.
       const initialEstimate=estimateSerializedTokens({system,tools:definitions,prompt}).tokens;
-      // App Server owns its native provider wire. Check the complete Host
-      // input before starting it and bound each Host tool delivery below; its
-      // internal model requests are not observable by this adapter.
+      // Early Host allowance only. The required Mote native dependency checks
+      // each complete provider request again, including internal continuations,
+      // using its documented model output ceiling rather than Host maxTokens.
       if(selectedRuntime.id===CODEX_RUNTIME_ID&&initialEstimate+outputReserve>window)throw new AgentProviderError({category:'permanent',code:'processing_limit'});
       let toolRemaining=Math.max(0,window-outputReserve-initialEstimate-2048);
       const controlled=new Set((input.hostControlChannel?.definitions??[]).map(tool=>tool.name));
@@ -396,7 +396,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       };
       // The saved conversation preference is per run, not a mutable change to
       // the shared model service or its configured output limit.
-      const modelValue = input.modelBudget && selectedRuntime.id === DSH_RUNTIME_ID
+      const modelValue = input.modelBudget
         ? {...modelPort.value, contextWindow: input.modelBudget.contextWindow}
         : modelPort.value;
       const dependencies = {runId, scope, input, runtime, model: {...modelPort, value: modelValue, selection: selection.modelSelection}, output,

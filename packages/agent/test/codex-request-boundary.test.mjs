@@ -33,6 +33,8 @@ test('Codex context rejection after tool delivery fails without replaying the tu
   for (const mode of ['terminal', 'notification', 'text-only']) await t.test(mode, async t => {
     const root = await profile(t), executable = join(root, 'generated-codex'), transcript = join(root, 'rpc.jsonl');
     await writeFile(executable, `#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync} from 'node:fs';
 const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
@@ -79,7 +81,8 @@ readline.createInterface({input: process.stdin}).on('line', line => {
 // This is a protocol-boundary check, not proof of per-request budget enforcement.
 // The installed CLI's actual serialized requests are visible to the loopback
 // provider fixture; the production adapter receives turn/item notifications.
-test('installed Codex keeps an unclassified upstream rejection terminal after its internal tool continuation', {skip: !process.env.MOTE_TEST_CODEX_BIN, timeout: 30000}, async t => {
+test('native Codex bounds a structured HTTP context rejection and keeps unclassified errors terminal', {skip: !process.env.MOTE_TEST_CODEX_BIN, timeout: 30000}, async t => {
+  for (const code of ['context_length_exceeded', 'generated_unclassified_error']) await t.test(code, async t => {
   const root = await profile(t), transcript = join(root, 'rpc.jsonl'), notifications = join(root, 'events.jsonl');
   const requests = [];
   const server = createServer(async (request, response) => {
@@ -90,7 +93,7 @@ test('installed Codex keeps an unclassified upstream rejection terminal after it
     requests.push(JSON.parse(raw.toString()));
     if (requests.length > 1) {
       response.writeHead(400, {'content-type': 'application/json'});
-      response.end(JSON.stringify({error: {type: 'invalid_request_error', code: 'context_length_exceeded', message: privateDetail}}));
+      response.end(JSON.stringify({error: {type: 'invalid_request_error', code, message: privateDetail}}));
       return;
     }
     const item = {id: 'generated-call', type: 'function_call', call_id: 'generated-call', name: 'timeline', arguments: '{}', status: 'completed'};
@@ -114,7 +117,7 @@ import {appendFileSync} from 'node:fs';
 const child = spawn(${JSON.stringify(process.env.MOTE_TEST_CODEX_BIN)}, [...process.argv.slice(2), '-c', 'model_provider="generated_boundary"', '-c', ${JSON.stringify('model_providers.generated_boundary=' + toml)}], {env: {...process.env, NO_PROXY: '*'}});
 process.stdin.on('data', chunk => {appendFileSync(${JSON.stringify(transcript)}, chunk); child.stdin.write(chunk);});
 process.stdin.on('end', () => child.stdin.end());
-child.stdout.on('data', chunk => {appendFileSync(${JSON.stringify(notifications)}, chunk); process.stdout.write(chunk);});
+child.stdout.on('data', chunk => {if (process.argv[2] !== '--mote-context-budget-version') appendFileSync(${JSON.stringify(notifications)}, chunk); process.stdout.write(chunk);});
 child.stderr.resume();
 child.on('exit', code => process.exit(code ?? 1));
 process.on('SIGTERM', () => child.kill('SIGTERM'));
@@ -122,16 +125,15 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
   let reads = 0, authorizations = 0;
   const events = [];
   const agent = createAgent({reader: contextReader(() => reads++), protocol: 'codex-app-server', model: 'gpt-5.4',
-    codex: {executable, home: root}, agentTimeoutMs: 20000, contextWindow: 32000, maxTokens: 512,
+    codex: {executable, home: root}, agentTimeoutMs: 20000, contextWindow: 160000, maxTokens: 512,
     authorizeModelRequest: () => {authorizations++;}});
   t.after(() => agent.close());
   await assert.rejects(agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline'], onTrace: event => events.push(event)}), error => {
     assert.ok(error instanceof AgentProviderError);
-    // This CLI reports the provider's HTTP error as `other`. Its message is
-    // untrusted free text at the Host boundary, even though the fixture knows
-    // it came from a structured HTTP context_length_exceeded response.
-    assert.equal(error.details.code, 'provider_failed');
-    assert.equal(error.diagnostic.code, 'unknown');
+    // Only the native provider's structured context code can authorize recovery.
+    // An unclassified error remains terminal and its message stays untrusted.
+    assert.equal(error.details.code, code === 'context_length_exceeded' ? 'processing_limit' : 'provider_failed');
+    assert.equal(error.diagnostic.code, code === 'context_length_exceeded' ? 'contextWindowExceeded' : 'unknown');
     assert.ok(!JSON.stringify({message: error.message, diagnostic: error.diagnostic, events}).includes(privateDetail));
     return true;
   });
@@ -139,16 +141,19 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
   assert.equal(reads, 1);
   assert.equal(authorizations, 1, 'Host authorization covers the whole App Server turn');
   assert.equal(rpc.filter(message => message.method === 'turn/start').length, 1);
-  assert.equal(requests.length, 2, 'the CLI sent the tool continuation without another Host turn');
+  assert.equal(requests.length, code === 'context_length_exceeded' ? 3 : 2, 'only a structured context failure permits one native model-step retry');
+  if (code === 'context_length_exceeded') assert.ok(requests[2].input.some(item => item.type === 'function_call_output' && JSON.parse(item.output).budgetCoverage?.truncated));
+  assert.ok(!rpc.some(message => message.method === 'thread/compact/start'));
   const result = requests[1].input.find(item => item.type === 'function_call_output' && item.call_id === 'generated-call');
   assert.ok(result, 'the real serialized follow-up contains the delivered tool result');
   assert.ok(JSON.stringify(result).includes(record.id));
-  assert.ok(observed.some(message => message.method === 'error' && message.params.error.codexErrorInfo === 'other' && message.params.willRetry === false));
+  assert.ok(observed.some(message => message.method === 'error' && message.params.error.codexErrorInfo === (code === 'context_length_exceeded' ? 'contextWindowExceeded' : 'other') && message.params.willRetry === false));
   assert.ok(observed.some(message => message.method === 'turn/completed' && message.params.turn.status === 'failed'));
   const instructions = events.find(event => event.type === 'instructions.assembled').payload;
   const context = events.find(event => event.type === 'context.assembled').payload;
   t.diagnostic(JSON.stringify({upstreamRequests: requests.length, hostTurnStarts: rpc.filter(message => message.method === 'turn/start').length,
     hostAuthorizations: authorizations, hostInputEstimate: estimateSerializedTokens({system: instructions.system, tools: instructions.tools, prompt: context.prompt}),
     serializedRequestEstimates: requests.map(body => estimateSerializedTokens(body)),
-    note: 'Fixture wire observations; no per-request pre-send budget callback exists in the adapter.'}));
+    note: 'Real native model-step recovery and terminal unknown errors, with no Host turn or tool replay.'}));
+  });
 });
