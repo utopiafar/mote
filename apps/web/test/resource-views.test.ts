@@ -1,3 +1,4 @@
+import {fileViewSchema} from '@mote/shared';
 import {captureDateRange,localDateInput} from '../src/capture-presentation';
 import {modelView} from './fixtures/model-settings';
 import test from 'node:test';
@@ -21,7 +22,8 @@ import {requestMemoryIntegration} from '../../server/src/memory-integration.js';
 const ids=['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
 function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.scrollTo=()=>{};dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
-function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/actions/by-evidence/'))return {items:[],hasMore:false};if(path==='/api/context-trees')return {items:[{id:'topics',version:'1',label:'主题',nodes:[{id:'personal',label:'个人'}]}]};if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return modelView();if(path==='/api/memory-settings'){const custom=await read(path,init);return custom&&typeof custom==='object'&&'settings' in custom?custom:{settings:{consolidation:{enabled:false,maxItems:3}},extensions:[]};}if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
+function generatedFileView(captureId:string,canOpenOriginal:boolean){return fileViewSchema.parse({captureId,sourceId:'generated',item:{externalId:'generated-file',revision:'generated-v1',observedAt:'2026-09-27T00:00:00Z',title:'Generated file',text:'',kind:'file',layer:'original'},retention:'archive',hasOriginal:canOpenOriginal,originMissing:false,canOpenOriginal,coverage:{extraction:{status:'pending'},semantic:{status:'pending'},embedding:{status:'unsupported'}}});}
+function apiWith(read:(path:string,init?:RequestInit)=>unknown,fileOriginalAccess=false):Api{return {request:async(path:string,init?:RequestInit)=>{const view=/^\/api\/files\/([^/]+)\/view$/.exec(path);if(view)return generatedFileView(view[1],fileOriginalAccess);if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:[]};if(path.startsWith('/api/actions/by-evidence/'))return {items:[],hasMore:false};if(path==='/api/context-trees')return {items:[{id:'topics',version:'1',label:'主题',nodes:[{id:'personal',label:'个人'}]}]};if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return modelView();if(path==='/api/memory-settings'){const custom=await read(path,init);return custom&&typeof custom==='object'&&'settings' in custom?custom:{settings:{consolidation:{enabled:false,maxItems:3}},extensions:[]};}if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const memory=(id:string)=>({id,title:'Generated '+id[0],statement:'Current evidence '+id[0],status:'published',createdAt:'2020-01-01T00:00:00Z',evidenceIds:[]});
 test('Memory history uses summary counts and uncertainty links the same verified citations as its statement',async t=>{
  const {root,document:d}=await fixture(t),opened:string[]=[];
@@ -603,7 +605,7 @@ test('explicit memory source rejects invalid or revoked records and fences a lat
 
 test('generated archived JPEG renders after authorized load and supports native-size reading',async t=>{
  const {root,document:d}=await fixture(t);let loads=0;
- const api=apiWith(path=>{if(path.endsWith('/playback')){loads++;return {url:'/api/files/'+ids[0]+'/content'};}return {captureId:ids[0],item:{title:'Generated diagram.jpg',mimeType:'image/jpeg'},sizeBytes:100,hasOriginal:true,job:null,artifacts:[]};});
+ const api=apiWith(path=>{if(path.endsWith('/playback')){loads++;return {url:'/api/files/'+ids[0]+'/content'};}return {captureId:ids[0],item:{title:'Generated diagram.jpg',mimeType:'image/jpeg'},sizeBytes:100,hasOriginal:true,job:null,artifacts:[]};},true);
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>/加载原件|查看原图/.test(b.textContent!))!.click());
  const img=d.querySelector('img');assert.ok(img,'authorized image original must be visible');assert.equal(img.getAttribute('src'),'/api/files/'+ids[0]+'/content');assert.equal(img.getAttribute('alt'),'Generated diagram.jpg');
@@ -614,14 +616,14 @@ test('generated archived JPEG renders after authorized load and supports native-
 for(const outcome of ['resolve','reject'] as const)test('archived image ignores late '+outcome+' after API session changes',async t=>{
  const {root,document:d}=await fixture(t),pending=deferred();let oldSignal:AbortSignal|undefined;
  const file={captureId:ids[0],item:{title:'Generated image.jpg',mimeType:'image/jpeg'},sizeBytes:100,hasOriginal:true,job:null,artifacts:[]};
- const oldApi=apiWith((path,init)=>{if(path.endsWith('/playback')){oldSignal=init?.signal as AbortSignal;return pending.promise;}return file;});
- const newApi=apiWith(path=>path.endsWith('/playback')?{url:'/generated-current.jpg'}:file);
+ const oldApi=apiWith((path,init)=>{if(path.endsWith('/playback')){oldSignal=init?.signal as AbortSignal;return pending.promise;}return file;},true);
+ const newApi=apiWith(path=>path.endsWith('/playback')?{url:'/api/files/'+ids[0]+'/content'}:file,true);
  const render=(api:Api)=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}}));
  await act(async()=>render(oldApi));await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());
  await act(async()=>render(newApi));assert.equal(oldSignal?.aborted,true);
  await act(async()=>{if(outcome==='resolve')pending.resolve({url:'/generated-stale.jpg'});else pending.reject(new Error('generated stale failure'));});
  assert.equal(d.querySelector('img'),null);assert.doesNotMatch(d.body.textContent!,/generated stale failure/);
- await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());assert.equal(d.querySelector('img')!.getAttribute('src'),'/generated-current.jpg');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());assert.equal(d.querySelector('img')!.getAttribute('src'),'/api/files/'+ids[0]+'/content');
 });
 
 test('source drawer decodes only declared organizer text once and separates actions from the body heading',async t=>{
@@ -683,7 +685,7 @@ for(const outcome of ['resolve','reject'] as const)test('file cancellation ignor
 
 test('file processor wait polling enables retry after raw completion without an operation event',async t=>{
  const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});let waiting=true,reads=0;
- const api=apiWith(()=>{reads++;return {captureId:ids[0],item:{title:'Generated cancelled file'},sizeBytes:1,hasOriginal:false,job:{state:'cancelled',summary_state:'cancelled'},cancellation:{canCancel:false,wait:waiting?'running':null},artifacts:[]};});
+ const api=apiWith(path=>{if(path==='/api/files/'+ids[0])reads++;return {captureId:ids[0],item:{title:'Generated cancelled file'},sizeBytes:1,hasOriginal:false,job:{state:'cancelled',summary_state:'cancelled'},cancellation:{canCancel:false,wait:waiting?'running':null},artifacts:[]};});
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  const retry=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='重新转写 / 提取')!;assert.equal(retry().disabled,true);
  waiting=false;await act(async()=>t.mock.timers.tick(2000));assert.equal(retry().disabled,false);const before=reads;

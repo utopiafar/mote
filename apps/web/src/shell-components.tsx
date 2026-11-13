@@ -571,7 +571,7 @@ export function EvidenceDialog({
         {capture && (
           <div className="evidence-body">
             <div className="evidence-main">
-              {presentation?.nativeFile && <FileDetail api={api} id={presentation.nativeFile.captureId} startMs={presentation.nativeFile.startMs} onOpen={onOpen}/>}
+              {presentation?.nativeFile && <FileDetail api={api} id={presentation.nativeFile.captureId} startMs={presentation.nativeFile.startMs} historical={capture.revisionState==='historical'} onOpen={onOpen}/>}
               <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
                 {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
                 <div className="evidence-text">
@@ -643,7 +643,7 @@ export function EvidenceDialog({
           <p>{capture.deletion?.kind==='file'?moteText('删除中央文件归档及其派生内容和依赖记忆，并清除已有洞察；来源设备上的原文件保留。'):presentation?.deleteDescription}{moteText("此操作无法撤销。")}</p>
           <button ref={cancelDelete} className="button subtle" onClick={() => setConfirm(false)} disabled={busy}>{moteText("取消")}</button>
           <button className="button danger" onClick={() => void remove()} disabled={busy}>{busy ? <Spinner label={moteText("确认删除")} /> : moteText("确认删除")}</button>
-        </footer>:capture.revisionState!=='historical'&&<footer className="evidence-dock">
+        </footer>:capture.revisionState!=='historical'&&!presentation?.nativeFile&&<footer className="evidence-dock">
           <a className="evidence-ask capture-reader-ask" href={originalReferenceRoute('capture',capture.id)} onClick={event=>{if(!confirmNavigation()){event.preventDefault();return;}rememberOriginalReturn(api,'capture',capture.id);}}>{moteText('围绕这份资料提问')}</a>
         </footer>)}
       </section>
