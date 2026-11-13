@@ -36,6 +36,18 @@ test('regions reject invalid geometry, missing hashes, stale versions and corrup
  await assert.rejects(imageOutput(large,'image/png',{id:base.id,view:'metadata'},()=>true),/not a supported image|dimensions unsupported/);
 });
 
+test('a metadata hash pins full-image and metadata reads as well as crops after original replacement',async()=>{
+ const original=await raster(),id='generated-replacement',metadata=await imageOutput(original,'image/png',{id,view:'metadata'},()=>true);
+ const expectedImageSha256=metadata.imageView!.original.sha256,region={x:0,y:0,width:3,height:4};
+ const replacement=await sharp({create:{width:11,height:17,channels:3,background:'#ef3581'}}).png().toBuffer();
+ for(const request of [{id,expectedImageSha256},{id,expectedImageSha256,view:'metadata' as const},{id,expectedImageSha256,region}])await assert.rejects(imageOutput(replacement,'image/png',request,()=>true),error('image_version_changed'));
+ const current=await imageOutput(replacement,'image/png',{id,view:'metadata'},()=>true);
+ assert.notEqual(current.imageView!.viewId,metadata.imageView!.viewId);assert.equal(current.data,undefined);
+ const crop=await imageOutput(replacement,'image/png',{id,expectedImageSha256:current.imageView!.original.sha256,region},()=>true);
+ assert.deepEqual(await sharp(Buffer.from(crop.data!,'base64')).raw().toBuffer(),await sharp(replacement).extract({left:0,top:0,width:3,height:4}).raw().toBuffer());
+ assert.equal(crop.imageView!.original.sha256,hash(replacement));assert.equal(crop.imageView!.coordinateSpace,'encoded-raster-pixels-v1');
+});
+
 test('region coordinates follow encoded raster with EXIF orientation rather than rotated previews',async()=>{
  const bytes=await sharp(await raster()).withMetadata({orientation:6}).jpeg({quality:100}).toBuffer(),region={x:1,y:2,width:7,height:9};
  const result=await imageOutput(bytes,'image/jpeg',{id:'generated-exif',region,expectedImageSha256:hash(bytes)},()=>true),output=Buffer.from(result.data!,'base64');

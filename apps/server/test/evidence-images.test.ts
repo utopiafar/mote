@@ -142,6 +142,11 @@ test('image regions pin original versions while metadata, history and attachment
  f.setEnabled(false);await assert.rejects(f.agent.readImage!({id:one.id,view:'metadata'}),(error:any)=>error.code==='image_disclosure_disabled'&&error.recovery==='stop');f.setEnabled(true);
  const next=await sharp({create:{width:2,height:2,channels:3,background:'#556677'}}).png().toBuffer(),two=await f.upload('regions','2',next);
  assert.equal((await f.agent.readImage!(read)).data,cropped.data,'a retained explicit history version keeps its own pixels');
+ f.sources.update('generated-images',{enabled:false});
+ await assert.rejects(f.agent.readImage!(read),{statusCode:404},'retained history cannot bypass a disabled source');
+ f.sources.update('generated-images',{enabled:true});
+ assert.equal((await f.agent.readImage!(read)).data,cropped.data);
+ assert.deepEqual(await f.agent.evidence({ids:[one.id]}),[],'allowing an exact historical image read does not grant current text expansion');
  await assert.rejects(f.agent.readImage!({...read,id:two.id}),(error:any)=>error.code==='image_version_changed');
  const image=f.archived.put({name:'generated.png',mimeType:'image/png',bytes:f.bytes});
  const parent=await f.sources.upsert('generated-images',{externalId:'region-parent',revision:'1',observedAt:'2026-09-27T01:00:00Z',kind:'message',layer:'original',text:'Generated caption',document:{attachments:[{id:image.id}]}});f.archived.attach(parent.id,[image.id]);
@@ -158,6 +163,31 @@ test('original identity is rechecked after image processing even if authority st
   return true;
  }));
  f.store.db.prepare('UPDATE file_versions SET object_hash=? WHERE capture_id=?').run(original,one.id);assert.ok(calls>=4);
+});
+
+test('deleted originals and expired or released snapshot inputs never borrow identical retained pixels',async t=>{
+ const f=await fixture(t),retained=await f.upload('independent-retained-original'),hash=sha256(f.bytes);
+ f.sources.register({id:'generated-snapshots',name:'Generated snapshot images',kind:'local-files',deviceId:'generated-snapshot-device',platform:'import',retention:'snapshot'});
+ for(const mode of ['expired','released','deleted'] as const){
+  let id:string;
+  if(mode==='deleted'){
+   id=(await f.upload('deleted-original')).id;
+   assert.equal((await f.agent.readImage!({id,view:'metadata'})).imageView!.original.sha256,hash);
+   f.store.delete(id);
+  }else{
+   const input={sourceId:'generated-snapshots',item:{externalId:mode,revision:'1',kind:'file',layer:'snapshot',text:'',mimeType:'image/png',observedAt:'2026-10-01T00:00:00Z',document:{fileIndex:{version:1,fileId:mode,status:'pending',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead:true}}},sha256:hash,sizeBytes:f.bytes.length};
+   const upload=f.files.begin(input,()=>{});f.files.part(upload.uploadId,0,f.bytes,()=>{});id=(await f.files.commit(upload.uploadId,()=>{})).id;
+   assert.deepEqual(Buffer.concat([...f.files.processingBytes(id)]),f.bytes,'a private temporary processing input exists before expiry/release');
+   if(mode==='expired')f.store.db.prepare('UPDATE file_snapshot_inputs SET expires=0 WHERE capture_id=?').run(id);
+   else f.files.releaseSnapshotInput(id);
+   assert.throws(()=>Buffer.concat([...f.files.processingBytes(id)]),{statusCode:410});
+   assert.equal(f.files.detail(id).hasOriginal,false);
+  }
+  for(const selection of [{id},{id,view:'metadata' as const},{id,expectedImageSha256:hash,region:{x:0,y:0,width:1,height:1}}]){
+   await assert.rejects(f.agent.readImage!(selection),{statusCode:404},mode+' is unavailable, even while another source retains the exact bytes');
+  }
+  assert.equal((await f.agent.readImage!({id:retained.id})).data,f.bytes.toString('base64'),'independent current ownership stays readable');
+ }
 });
 
 
