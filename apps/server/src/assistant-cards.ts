@@ -176,6 +176,9 @@ export class AssistantCards {
     this.store.db.prepare(`INSERT INTO assistant_card_feedback_context(feedback_seq,source_id)
      SELECT ?,source_id FROM assistant_card_context WHERE card_id=? AND version IN
      (SELECT version FROM assistant_card_versions WHERE card_id=? AND private_json IS NOT NULL) GROUP BY source_id`).run(saved.lastInsertRowid,id,id);
+    // The owner's selected scope is part of this input, not a permission to
+    // read the wider card history when a later consumer resumes it.
+    this.store.db.prepare('INSERT INTO assistant_card_feedback_scopes VALUES(?,?)').run(saved.lastInsertRowid,encodeMemoryPrivate(this.store,{scope,cardRevision:row.revision+1}));
     this.store.db.prepare('UPDATE assistant_cards SET revision=revision+1,updated_at=? WHERE id=?').run(at,id);
    }
    this.store.reserveMetadata(0);return this.view(this.row(id),scope);

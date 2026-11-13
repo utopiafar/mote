@@ -50,6 +50,7 @@ export function createMaterialOrganizerService(dependencies:MaterialOrganizerSer
   if(materials.store!==store)throw unavailable();
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let runtime:MaterialOrganizerRuntime|undefined,stopTimer:(()=>void)|undefined,closing:Promise<void>|undefined;
+  let afterTick:(()=>void)|undefined;
   const ready=()=>{
     if(!runtime||!['prepared','active','quiescing'].includes(phase))throw unavailable();
     return runtime;
@@ -59,6 +60,7 @@ export function createMaterialOrganizerService(dependencies:MaterialOrganizerSer
     return ready();
   };
   const stopPoll=()=>{stopTimer?.();stopTimer=undefined;};
+  const tick=async(limit:number)=>{try{return await active().tick(limit);}finally{afterTick?.();}};
   const close=()=>{
     if(closing)return closing;
     stopPoll();phase='stopped';
@@ -84,9 +86,10 @@ export function createMaterialOrganizerService(dependencies:MaterialOrganizerSer
     },
     start(interval:OrganizerInterval=localInterval){
       if(phase!=='prepared')throw unavailable();
-      phase='active';stopTimer=interval(5000,()=>runtime!.tick(200));
+      phase='active';stopTimer=interval(5000,()=>tick(200));
     },
-    tick(limit=100){return active().tick(limit);},
+    tick(limit=100){return tick(limit);},
+    setAfterTick(callback:(()=>void)|undefined){afterTick=callback;},
     status(){return ready().status();},
     quiesce(_reason?:StopReason){stopPoll();if(phase==='active')phase='quiescing';runtime?.quiesce();},
     stop:async(_reason?:StopReason)=>{await close();},
