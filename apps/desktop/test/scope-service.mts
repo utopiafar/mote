@@ -12,6 +12,10 @@ const config:Config={dataDir,token,tokenPath:'generated-only',host:'127.0.0.1',p
 const seen:{question:string;evidenceIds?:string[]|null;anchorEvidenceIds?:string[]|null}[]=[];
 const answer=()=>({answer:'Generated scope response',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]}});
 const node=await buildApp(config,{webRoot:resolve('apps/web/dist'),backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput)=>{seen.push({question:input.question,evidenceIds:input.evidenceIds,anchorEvidenceIds:input.anchorEvidenceIds});return answer();},close:async()=>{}}});
+const headers={authorization:`Bearer ${token}`};
+// This generated scenario exercises the multi-conversation composer action.
+const configuration=(await node.app.inject({url:'/api/configuration',headers})).json();
+assert.equal((await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:configuration.revision,value:{multipleConversations:true}}})).statusCode,200);
 let failure=0;
 node.app.addHook('onRequest',async(request,reply)=>{
  if(request.url.startsWith('/fixture/')){
@@ -21,7 +25,6 @@ node.app.addHook('onRequest',async(request,reply)=>{
  }
  if(failure&&request.url.startsWith('/api/conversations')){const code=failure;failure=0;return reply.code(code).send({error:'Generated unavailable scope'});}
 });
-const headers={authorization:'Bearer '+token};
 const evidenceIds:string[]=[];
 for(let i=0;i<2;i++){
  const id=randomUUID();evidenceIds.push(id);

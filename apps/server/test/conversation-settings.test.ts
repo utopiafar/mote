@@ -76,30 +76,56 @@ test('conversation settings preserve the chosen main and existing side conversat
   assert.equal((await get(`/api/conversations/${side}`)).json().turns[0].question,'Generated side question');
 });
 
-test('default Ask uses the main conversation and retries stay attached after main selection changes',async t=>{
+test('default Ask selects the main conversation while unnamed legacy and run queries stay independent',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-default-'));
-  const agent={configured:true,close:async()=>{},query:async()=>({answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[]}})};
+  const seen:any[]=[];
+  const agent={configured:true,close:async()=>{},query:async(input:any)=>{seen.push(input);return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:input.evidenceIds??[]}};}};
   const node=await buildApp(config(dir),{backgroundWorker:false,agent});
   t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
   const get=(url:string)=>node.app.inject({url,headers});
   const post=(url:string,payload:unknown)=>node.app.inject({method:'POST',url,headers,payload});
   const put=(url:string,payload:unknown)=>node.app.inject({method:'PUT',url,headers,payload});
-  const original=(await get('/api/conversations/main')).json().id;
-  const synchronous=await post('/api/query',{question:'Generated first main question'});
-  assert.equal(synchronous.statusCode,200,synchronous.body);assert.equal(synchronous.json().conversationId,original);
-  const detail=await get(`/api/conversations/${original}`);assert.equal(detail.json().title,'Generated first main question');
-  const request={id:randomUUID(),input:{question:'Generated default follow-up'}};
-  let run=await post('/api/query-runs',request);assert.equal(run.statusCode,202,run.body);assert.equal(run.json().conversationId,original);
-  const deadline=Date.now()+10000;
-  do{run=await get(`/api/query-runs/${request.id}`);if(run.json().status!=='running')break;await new Promise(resolve=>setTimeout(resolve,10));}while(Date.now()<deadline);
-  assert.equal(run.json().status,'completed',run.body);
-  let settings=(await get('/api/configuration')).json();
+  const settle=async(id:string)=>{for(let attempt=0;attempt<200;attempt++){const run=(await get(`/api/query-runs/${id}`)).json();if(run.status!=='running')return run;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated query did not settle');};
+  const main=(await get('/api/conversations/main')).json().id;
+  const selected=randomUUID();
+  await node.store.ingest({id:selected,deviceId:'generated-conversation-device',deviceName:'Generated device',platform:'import',source:'note',capturedAt:'2026-11-01T00:00:00Z',durationMs:0,ocrText:'Generated selected original'});
+  // The desktop client explicitly opens the server's main conversation and
+  // sends its identity; the server does not guess from an absent id.
+  const first={id:randomUUID(),input:{question:'Generated first main question',conversationId:main,evidenceIds:[selected]}};
+  let response=await post('/api/query-runs',first);assert.equal(response.statusCode,202,response.body);assert.equal(response.json().conversationId,main);
+  assert.equal((await settle(first.id)).status,'completed');
+  const detail=await get(`/api/conversations/${main}`);assert.equal(detail.json().title,'Generated first main question');assert.deepEqual(detail.json().scope.evidenceIds,[selected]);
+
+  const settings=(await get('/api/configuration')).json();
   assert.equal((await put('/api/configuration/conversations',{revision:settings.revision,value:{multipleConversations:true}})).statusCode,200);
   const side=(await post('/api/conversations',{})).json().id;
   assert.equal((await put('/api/conversations/main',{id:side})).statusCode,200);
-  const retry=await post('/api/query-runs',request);assert.equal(retry.statusCode,202,retry.body);assert.equal(retry.json().conversationId,original);
-  const conflict=await post('/api/query-runs',{...request,input:{question:'Changed retry'}});assert.equal(conflict.statusCode,409);
-  const next=await post('/api/query-runs',{id:randomUUID(),input:{question:'Generated new main question'}});
-  assert.equal(next.statusCode,202,next.body);assert.equal(next.json().conversationId,side);
-  assert.equal((await get(`/api/conversations/${original}`)).json().turns.length,2);
+
+  // A retry keeps targeting the conversation captured by its first receipt,
+  // even after the owner selected a different main conversation.
+  response=await post('/api/query-runs',first);assert.equal(response.statusCode,202,response.body);assert.equal(response.json().conversationId,main);
+  assert.equal((await post('/api/query-runs',{...first,input:{question:'Changed retry'}})).statusCode,409);
+  const next={id:randomUUID(),input:{question:'Generated new main question',conversationId:side}};
+  response=await post('/api/query-runs',next);assert.equal(response.statusCode,202,response.body);assert.equal(response.json().conversationId,side);
+  assert.equal((await settle(next.id)).status,'completed');
+
+  // No conversationId is not a synonym for "main". It neither shares the
+  // main conversation nor inherits its private selection.
+  const unnamed={id:randomUUID(),input:{question:'Generated unnamed query'}};
+  response=await post('/api/query-runs',unnamed);assert.equal(response.statusCode,202,response.body);
+  const unnamedRun=await settle(unnamed.id);assert.equal(unnamedRun.status,'completed');
+  assert.notEqual(unnamedRun.conversationId,main);assert.notEqual(unnamedRun.conversationId,side);
+  assert.equal(seen.at(-1).evidenceIds,undefined);
+  const unnamedDetail=await get(`/api/conversations/${unnamedRun.conversationId}`);assert.equal(unnamedDetail.json().scope.evidenceIds,undefined);
+
+  // The legacy synchronous entrypoint keeps its original independent contract.
+  const legacy=await post('/api/query',{question:'Generated legacy ordinary query'});assert.equal(legacy.statusCode,200,legacy.body);
+  assert.notEqual(legacy.json().conversationId,main);assert.notEqual(legacy.json().conversationId,side);assert.equal(seen.at(-1).evidenceIds,undefined);
+
+  // An explicitly selected conversation does inherit its current selection,
+  // and an explicit null clears it without affecting other conversations.
+  const follow=await post('/api/query',{conversationId:main,question:'Generated explicit main follow-up'});assert.equal(follow.statusCode,200,follow.body);assert.deepEqual(seen.at(-1).evidenceIds,[selected]);
+  const cleared=await post('/api/query',{conversationId:main,question:'Generated explicit clear',evidenceIds:null});assert.equal(cleared.statusCode,200,cleared.body);assert.equal(seen.at(-1).evidenceIds,undefined);
+  assert.equal((await get(`/api/conversations/${main}`)).json().scope.evidenceIds,undefined);
+  assert.equal((await get(`/api/conversations/${main}`)).json().turns.length,3);
 });

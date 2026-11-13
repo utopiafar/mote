@@ -1332,7 +1332,7 @@ byId('review-refresh').addEventListener('click', async()=>{
 let askRun: import('./ask').AskRun | undefined;
 let askConversation: import('./ask').AskConversation | undefined;
 let askScopeUnavailable = false;
-let askView:'history'|'conversation'='conversation';
+let askView:'history'|'conversation'='history';
 let askMultipleConversations=false;
 let askSubmittedQuestion='',askStopPending=false,askRunLookupPending=false,askPendingMessage='';
 let askBusy = false, askGeneration = 0, askCursor: string | undefined;
@@ -1361,7 +1361,7 @@ function snapshotAskDraft():AskWindowDraft|undefined {
 }
 function restoreScopedAskDraft(saved:AskWindowDraft|undefined):void {
   byId<HTMLTextAreaElement>('ask-question').value=saved?.question??'';
-  askView=saved?.view??'conversation';askPendingInput=saved?.pending;askSubmittedQuestion=saved?.submittedQuestion??'';askPendingMessage=saved?.pendingMessage??'';
+  askView=saved?.view??'history';askPendingInput=saved?.pending;askSubmittedQuestion=saved?.submittedQuestion??'';askPendingMessage=saved?.pendingMessage??'';
   askRestoringConversationId=saved?.conversationId;askRestoringReading=saved?.reading;askReadingOnLeave=saved?.reading;askRestoreAttempt=-1;askScopeUnavailable=Boolean(askRestoringConversationId);
   askRun=saved?.running?{id:saved.running.id,status:'running',events:[],...(saved.running.conversationId?{conversationId:saved.running.conversationId}:{})}:undefined;
   askStopPending=Boolean(saved?.running?.stopPending);askRunLookupPending=Boolean(saved?.running);
@@ -1409,7 +1409,7 @@ function failedAskQuestion():string|undefined{const last=askConversation?.turns.
 function askControls(): void {
   const running = askRun?.status === 'running';
   workbenchUi.setBusy(askBusy||Boolean(running)||Boolean(askPendingInput));
-  byId<HTMLButtonElement>('ask-send').disabled = askBusy || running || Boolean(askPendingInput) || Boolean(askRestoringConversationId) || !askConversation || !currentStatus?.config.tokenConfigured || Boolean(currentStatus.config.authSignedOut) || !readInput('ask-question').trim();
+  byId<HTMLButtonElement>('ask-send').disabled = askBusy || running || Boolean(askPendingInput) || Boolean(askRestoringConversationId) || !currentStatus?.config.tokenConfigured || Boolean(currentStatus.config.authSignedOut) || !readInput('ask-question').trim();
   byId('ask-draft-state').textContent=readInput('ask-question').trim()?moteText('未发送 · 此窗口中的草稿'):'';
   byId('ask-resume-current').hidden=askView!=='history'||!askPendingInput&&!running;
   byId('ask-refresh').hidden=askView==='history'&&!byId('ask-error').textContent;
@@ -1510,6 +1510,10 @@ async function askAction(action: () => Promise<void>): Promise<void> {
   try { await action(); } catch (error) { if(generation===askGeneration){if(askPendingInput)askPendingMessage='';askFailure(error);} }
   finally { askBusy = false; askControls();maybeRestoreAskConversation(); }
 }
+async function refreshAskSettings():Promise<void>{
+  try{const value=await askCall<import('@mote/shared').ConversationSettings>('settings');askMultipleConversations=value?.multipleConversations===true;}
+  catch{askMultipleConversations=false;}
+}
 async function refreshAsk(): Promise<void> {
   if(askPendingInput){askView='conversation';renderAsk();await askAction(checkPendingAsk);return;}
   const connected = askConnectionState();
@@ -1524,17 +1528,14 @@ async function refreshAsk(): Promise<void> {
     setText('ask-login-status', moteText('正在连接中央…'));
     try { await askHistory(); } catch (error) { if(generation===askGeneration)setText('ask-login-status', moteText('请求失败，请重试')); throw error; }
     if(generation!==askGeneration)return;
-    const settings=await askCall<import('@mote/shared').ConversationSettings>('settings');
-    if(generation!==askGeneration)return;
-    askMultipleConversations=settings.multipleConversations;
-    const id=await resolveAskConversation(askConversation?.id,()=>askCall('main'));
+    await refreshAskSettings();
     if(generation!==askGeneration)return;
     setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));
     const page = await askCall<{items: import('./ask').AskRun[]}>('runs');
     if(generation!==askGeneration)return;
-    if(!askRun)askRun=page.items.find(item=>item.status==='running'&&item.conversationId===id);
-    if (askRun?.status==='running'&&askRun.conversationId) {askView='conversation';await loadAskConversation(askRun.conversationId);}
-    else await loadAskConversation(id);
+    if(!askRun)askRun=page.items.find(item=>item.status==='running');
+    if (askRun?.status==='running'&&askRun.conversationId){askView='conversation';await loadAskConversation(askRun.conversationId);}
+    else if(askConversation)await loadAskConversation(askConversation.id);
     if(generation!==askGeneration)return;
     renderAsk(); if (askRun?.status === 'running') scheduleAskPoll();
   });
@@ -1543,12 +1544,9 @@ async function loadAskAfterLogin():Promise<void>{
   if(askRestoringConversationId||askPendingInput||askRun)return;
   const generation=askGeneration;
   await askHistory();
-  const settings=await askCall<import('@mote/shared').ConversationSettings>('settings');
+  await refreshAskSettings();
   if(generation!==askGeneration)return;
-  askMultipleConversations=settings.multipleConversations;
-  const id=await resolveAskConversation(askConversation?.id,()=>askCall('main'));
-  if(generation!==askGeneration)return;
-  askView='conversation';await loadAskConversation(id);
+  askView='history';renderAsk();
 }
 async function refreshAskStatus():Promise<void>{const previous=currentStatus;const next=await desktopApi.status();if(currentStatus===previous)render(next);}
 function askConnectionState(): boolean {
@@ -1577,11 +1575,16 @@ function scheduleAskPoll(): void {
   }, 1000);
 }
 byId('ask-form').addEventListener('submit', event => {
-  event.preventDefault(); if (askBusy || askPendingInput || askRun?.status === 'running' || askRestoringConversationId || !askConversation || !currentStatus?.config.tokenConfigured || currentStatus.config.authSignedOut) return;
+  event.preventDefault(); if (askBusy || askPendingInput || askRun?.status === 'running' || askRestoringConversationId || !currentStatus?.config.tokenConfigured || currentStatus.config.authSignedOut) return;
   const question = readInput('ask-question').trim(); if (!question) return;
   void askAction(async () => {
     const generation=askGeneration;
-    const input = askPendingInput?.question === question && askPendingInput.conversationId === askConversation?.id ? askPendingInput : {id: crypto.randomUUID(), question, ...(askConversation ? {conversationId: askConversation.id} : {})};
+    // An ordinary Ask with no explicit conversation uses the server's current
+    // main. The selection is read once and sent explicitly; the legacy
+    // no-conversation query contract remains untouched.
+    const conversationId=askConversation?.id??await resolveAskConversation(undefined,()=>askCall('main'));
+    if(generation!==askGeneration)return;
+    const input = askPendingInput?.question === question && askPendingInput.conversationId === conversationId ? askPendingInput : {id: crypto.randomUUID(), question, conversationId};
     askPendingInput = input;askPendingMessage=moteText('正在提交问题…');askSubmittedQuestion=question;askRun=undefined;askStopPending=false;askRunLookupPending=false;renderAsk();
     let admitted:import('./ask').AskRun;try { admitted = await askCall('start', input); }
     catch (error) { if(generation!==askGeneration)throw error;admitted = await askCall('start', input); } // Same admission ID after an ambiguous network response.

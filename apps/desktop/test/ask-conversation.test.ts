@@ -34,6 +34,19 @@ it('reads the server-selected main conversation and validates the returned ident
  expect(await resolveAskConversation(id,()=>client.request(config,'main') as Promise<{id:string}>)).toBe(id);
  await expect(client.request(config,'main')).rejects.toThrow('Invalid conversation ID');
 });
+it('sends the selected main conversation on an ordinary Ask instead of omitting it',async()=>{
+ const selected='22222222-2222-4222-8222-222222222222';
+ const client=new AskClient(),config={...defaultConfig(),credentialScope:'owner' as const,token:'generated-owner-token'.repeat(3)};
+ const fetcher=vi.fn()
+   .mockResolvedValueOnce(Response.json({id:selected}))
+   .mockResolvedValueOnce(Response.json({id,status:'running',events:[]}));
+ vi.stubGlobal('fetch',fetcher);
+ const conversationId=await resolveAskConversation(undefined,()=>client.request(config,'main') as Promise<{id:string}>);
+ await client.request(config,'start',{id,conversationId,question:'Generated ordinary Ask'});
+ const body=JSON.parse((fetcher.mock.calls[1] as unknown as [string,RequestInit])[1].body as string);
+ expect(body.input.conversationId).toBe(selected);
+ expect(String(fetcher.mock.calls[1][0])).toBe(config.serverUrl+'/api/query-runs');
+});
 it('uses the bounded current conversation endpoint and validates its turn cursor before sending',async()=>{
  const client=new AskClient(),config={...defaultConfig(),credentialScope:'owner' as const,token:'generated-owner-token'.repeat(3)};
  const fetcher=vi.fn(async()=>Response.json(page(['1'],null)));vi.stubGlobal('fetch',fetcher);

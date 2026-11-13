@@ -38,6 +38,8 @@ app.on('browser-window-created',(_event,created)=>{
     if(holdHistory){holdHistory=false;return new Promise(resolve=>{releaseHistory=()=>resolve(page);});}return page;
    }
    if(command==='runs'){runsReads.push(current.config.serverUrl);return {items:[]};}
+   if(command==='settings')return {multipleConversations:false};
+   if(command==='main')return {id:conversation};
    if(command==='conversation'){
     conversationReads.push({server:current.config.serverUrl,cursor:input.cursor});
     if(rejectConversation)throw Error('Generated temporary conversation failure');
