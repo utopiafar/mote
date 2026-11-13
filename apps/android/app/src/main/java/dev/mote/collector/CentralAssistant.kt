@@ -188,11 +188,11 @@ internal class CentralAssistant(val client: CentralClient, val scope: AssistantS
     fun task(id: String) = AssistantTask.read(client.get("/api/assistant/tasks/$id?scope=" + scope.query())).also { require(it.id == id) }
     private fun routineProjection(id: String, value: JSONObject) = AssistantRoutine.read(value).also {
         require(it.id == id)
-        // The current rule route is owner-only configuration, without a scope
-        // query. A restricted page must not disclose a wider saved rule.
+        // Rule reads carry the page scope, and a restricted page must not
+        // disclose a saved rule with a wider scope than the page.
         if (!scope.unfilteredAll && !scope.same(it.scope)) throw CentralFailure(404)
     }
-    fun routine(id: String) = routineProjection(id, client.get("/api/assistant/routines/$id"))
+    fun routine(id: String) = routineProjection(id, client.get("/api/assistant/routines/$id?scope=" + scope.query()))
     fun updateRoutine(id: String, command: JSONObject) = routineProjection(id, client.post("/api/assistant/routines/$id", command))
     fun questions(workId: String) = client.get("/api/owner-questions?workId=" + java.net.URLEncoder.encode(workId, "UTF-8") + "&limit=30")
 }
