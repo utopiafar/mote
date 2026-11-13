@@ -3,12 +3,13 @@ import {queryScopeSchema} from '@mote/shared';
 import {z} from 'zod';
 import type {AssistantDrafts} from '../../assistant-drafts.js';
 import type {AssistantTasks} from '../../assistant-tasks.js';
+import type {AssistantRoutines} from '../../assistant-routines.js';
 import {StoreError} from '../../store.js';
 
 /** Owner command envelope for a validated answer draft. Capability selection
  * and domain effects stay in the registered handler, never in model text. */
 export function registerAssistantCommandRoutes(app:FastifyInstance,commands:Pick<AssistantDrafts,'command'>,
-  tasks:Pick<AssistantTasks,'byTurn'|'get'>,owner:(request:FastifyRequest)=>void){
+  tasks:Pick<AssistantTasks,'byTurn'|'get'>,owner:(request:FastifyRequest)=>void,routines:Pick<AssistantRoutines,'create'|'update'|'get'>){
   app.post('/api/assistant/commands',{bodyLimit:65536},async request=>{owner(request);return commands.command(request.body);});
   app.get('/api/conversations/:id/messages/:messageId/assistant-tasks',async request=>{
     owner(request);
@@ -22,5 +23,14 @@ export function registerAssistantCommandRoutes(app:FastifyInstance,commands:Pick
     const query=z.object({scope:z.string().max(16000)}).strict().parse(request.query);
     let value:unknown;try{value=JSON.parse(query.scope);}catch{throw new StoreError('Invalid assistant task scope');}
     return tasks.get(id,queryScopeSchema.parse(value));
+  });
+  // These owner commands configure rules; the occurrence admission itself is
+  // intentionally not an HTTP or query-tool capability.
+  app.post('/api/assistant/routines',{bodyLimit:65536},async request=>{owner(request);return routines.create(request.body);});
+  app.get('/api/assistant/routines/:id',async request=>{owner(request);return routines.get(z.object({id:z.string().uuid()}).parse(request.params).id);});
+  app.post('/api/assistant/routines/:id',{bodyLimit:65536},async request=>{
+    owner(request);const {id}=z.object({id:z.string().uuid()}).parse(request.params);
+    const body=z.record(z.unknown()).parse(request.body);if('ruleId' in body)throw new StoreError('Routine ID belongs in the path');
+    return routines.update({...body,ruleId:id});
   });
 }

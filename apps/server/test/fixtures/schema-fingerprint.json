@@ -808,6 +808,21 @@
     },
     {
       "type": "table",
+      "name": "assistant_routine_occurrences",
+      "fingerprint": "048aeaae5c4bcf5e6fea1acd9b7d47e5d71502eba04fd66ad53892727bd17adc"
+    },
+    {
+      "type": "table",
+      "name": "assistant_routines",
+      "fingerprint": "aaee6e29201dedaa35126332bd01adc8e21ccf2cd1544f7f61bd3cfac23dd79a"
+    },
+    {
+      "type": "index",
+      "name": "assistant_routines_due",
+      "fingerprint": "eeb9b4d1b94f6ec683eefabc280bea370b7d41e4551d3af880fc051da979d28a"
+    },
+    {
+      "type": "table",
       "name": "background_model_authorization",
       "fingerprint": "4f336c2870da93b3fb0bff114c3473e7b8fb4e8668a7f9bfd589d99d6a2d7bdd"
     },
@@ -2295,6 +2310,36 @@
       "type": "trigger",
       "name": "ledger_assistant_matters_update",
       "fingerprint": "74f2dee9dac7856dd318e219bd4f88bd133cead114e04c7eab8bf8a8d8920bfb"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_routine_occurrences_delete",
+      "fingerprint": "38f52b9ae6013b54d6334141db10c5b5f3d4eb5e68ed8dbcbcefbe5fd37926e9"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_routine_occurrences_insert",
+      "fingerprint": "53caaff031701dc538b9d53ae1bd875c3e15826b4555a2973492ffdc8a2c096a"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_routine_occurrences_update",
+      "fingerprint": "119fdd922a3cb3545b10e7b392286fd8a0a803e709e4502f9be434a421785b57"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_routines_delete",
+      "fingerprint": "bae1add68c3fac5fe8d4d6d269b11438a07fff270f1dbcd2982abef67a56fd8b"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_routines_insert",
+      "fingerprint": "9f7ce91e22a827ced5b00edff1c2ffbb52674534c4555d3ffeaf6974d19322eb"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_routines_update",
+      "fingerprint": "6924725e203d9e5414a638c44074588dbf282f5bf48bac05e4fd641d883c9ba3"
     },
     {
       "type": "trigger",

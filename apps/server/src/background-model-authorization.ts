@@ -95,6 +95,18 @@ export class BackgroundModelAuthorization {
     this.store.reserveMetadata(Buffer.byteLength(identity+disclosure.sourceId)+128);
     this.store.db.prepare('INSERT INTO background_model_receipts(identity,source_id,eligible) VALUES(?,?,?)').run(identity,disclosure.sourceId,Number(eligible));
   }
+  /** A routine is an original trigger only while its persisted, owner-created
+   * occurrence is the current due value. It grants no source disclosure. */
+  receiveRoutineOccurrence(ruleId:string,revision:number,scheduledAt:string){
+    if(!this.store.db.isTransaction)throw Error('Routine receipt requires the occurrence transaction');
+    const row=this.store.db.prepare(`SELECT 1 FROM assistant_routines r JOIN assistant_routine_occurrences o
+      ON o.rule_id=r.id AND o.revision=r.revision AND o.scheduled_at=r.next_due
+      WHERE r.id=? AND r.revision=? AND r.enabled=1 AND r.next_due=? AND o.task_id IS NULL`).get(ruleId,revision,scheduledAt);
+    if(!row||!Number.isFinite(Date.parse(scheduledAt))||Date.parse(scheduledAt)>Date.now()||this.state().state!=='on')throw pending();
+    const identity=routineModelIdentity(ruleId,revision,scheduledAt);
+    this.receive(identity,{sourceId:'mote.routines'});
+    return identity;
+  }
   /** A deterministic projection only inherits existing roots. It cannot mint
    * an original receipt, and repeated publication cannot change its lineage. */
   derive(identity:string,originals:readonly string[]){
@@ -118,7 +130,10 @@ export class BackgroundModelAuthorization {
    * into the receipt, so re-including a source backfills what it withheld. */
   private eligible(identity:string,state=this.state()){
     const receipt=this.store.db.prepare('SELECT source_id,eligible FROM background_model_receipts WHERE identity=?').get(identity) as {source_id:string;eligible:number}|undefined;
-    return Boolean(receipt&&receipt.eligible===1&&!state.excludedSourceIds.includes(receipt.source_id));
+    if(!receipt||receipt.eligible!==1)return false;
+    if(identity.startsWith('routine:')&&receipt.source_id==='mote.routines')return Boolean(this.store.db.prepare(`SELECT 1 FROM assistant_routine_occurrences o
+      JOIN assistant_routines r ON r.id=o.rule_id AND r.revision=o.revision AND r.enabled=1 WHERE o.receipt=?`).get(identity));
+    return !state.excludedSourceIds.includes(receipt.source_id);
   }
   /** A negative hint only: it cannot admit work or replace the disclosure check
    * at the model boundary. False means this original can run automatically now. */
@@ -269,3 +284,4 @@ export class BackgroundModelAuthorization {
 /** Includes credential/header identity as a hash, never as persisted cleartext. */
 export const modelConnection=(id:string,settings:unknown):ModelConnection=>({id,fingerprint:sha256(JSON.stringify(settings))});
 export const manualModelOperation=()=>`manual-model:${randomUUID()}`;
+export const routineModelIdentity=(ruleId:string,revision:number,scheduledAt:string)=>'routine:'+JSON.stringify([ruleId,revision,scheduledAt]);
