@@ -15,6 +15,11 @@ import type {Config} from '../../server/src/config';
 import {AssistantDraftActions} from '../src/plugins/ask/AssistantDraftActions';
 import {AnswerView} from '../src/shell-components';
 import type {Api} from '../src/api';
+import {assistantQuestionFixture} from '../../server/test/fixtures/assistant-owner-question';
+import {AssistantTaskResults} from '../src/plugins/ask/AssistantTaskResults';
+import {OwnerQuestionConversation} from '../src/plugins/memory/OwnerQuestions';
+import {featuresReady} from '../src/features/bootstrap';
+import {ownerQuestionRoute} from '../src/owner-question-route';
 
 configureLocale(()=> 'zh-CN');
 const token='generated-task-web-contract',headers={authorization:'Bearer '+token};
@@ -55,4 +60,28 @@ test('the actual server task response is rendered by the conversation result com
  assert.match(dom.window.document.body.textContent!,/Generated follow-up task/);assert.match(dom.window.document.body.textContent!,/Generated persisted task result/);
  assert.match(dom.window.document.body.textContent!,/Generated original content/);assert.match(dom.window.document.body.textContent!,/已完成/);
  await act(async()=>dom.window.document.querySelector<HTMLButtonElement>('.citation')!.click());assert.deepEqual(opened,['capture:'+evidenceId]);
+});
+
+test('the actual assistant question projection reaches the existing inbox and reply UI',async t=>{
+ const f=await assistantQuestionFixture(t),taskId=await f.start(),question=await f.question();await featuresReady;
+ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/#/ask'}),prior=new Map<string,PropertyDescriptor|undefined>();
+ for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){
+  prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});
+ }
+ const root=createRoot(dom.window.document.getElementById('root')!);
+ t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const [key,value] of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}});
+ const api={request:async(path:string,options?:RequestInit)=>{
+  const response=await f.api(options?.method==='POST'?'POST':'GET',path,options?.body?JSON.parse(String(options.body)):undefined);
+  assert.equal(response.statusCode,200,response.body);return response.json();
+ }} as Api;
+ await act(async()=>root.render(React.createElement(AssistantTaskResults,{api,conversationId:f.command.conversationId,turnId:f.command.turnId,scope:f.command.scope,
+  refresh:0,onFound:()=>{},onOpen:()=>{},renderAnswer:()=>null})));
+ const link=dom.window.document.querySelector<HTMLAnchorElement>('.owner-question-links a');assert.ok(link);assert.equal(link.getAttribute('href'),ownerQuestionRoute(question.id));
+ await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api,id:question.id,onOpen:()=>{}})));
+ const d=dom.window.document;assert.match(d.body.textContent!,/资料范围和行动授权保持不变/);
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='Generated first option')!.click());
+ await act(async()=>{d.querySelector<HTMLButtonElement>('button[aria-label="回答并继续"]')!.click();
+  await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(taskId)?.state==='succeeded');});
+ assert.match(d.body.textContent!,/回答已记录/);assert.doesNotMatch(d.body.textContent!,/成果审核完成后才会保存/);
+ assert.equal((await f.read(taskId)).result.answer,'Generated continued task result');
 });

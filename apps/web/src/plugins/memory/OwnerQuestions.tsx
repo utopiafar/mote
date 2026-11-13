@@ -71,7 +71,7 @@ export function OwnerQuestionLinks({api,workId,materialId,operationIds,history=f
     {page.error!==undefined&&<p className="notice error" role="alert">{errorMessage(page.error)} <button className="text-button" onClick={page.refresh}>{moteText('重试')}</button></p>}
     {page.loading&&!page.data&&<Loading/>}
     {history&&(!page.loading||page.data!==undefined)&&!page.error&&!items.length&&!page.data?.nextCursor&&<p className="owner-question-empty" role="status">{moteText(filter==='pending'?'没有待回答的问题':'暂无补充问题记录')}</p>}
-    <div className={history?'conversation-list':'processing-actions'}>{items.map(question=><a className={history?`conversation-item ${selectedId===question.id?'active':''}`:'button subtle'} key={question.id} href={ownerQuestionRoute(question.id)} onClick={()=>rememberQuestion(api,question.id)} aria-current={selectedId===question.id?'page':undefined}><strong>{question.title||stateLabel(question.state)}</strong><span>{stateLabel(question.state)}{history&&<> · {standalone?<QuestionSource api={api} reference={question.materialRef}/>:dateTime(question.updatedAt)}</>}</span>{history&&<ArrowRight size={13}/>}{!history&&<ArrowRight size={15}/>}</a>)}</div>
+    <div className={history?'conversation-list':'processing-actions'}>{items.map(question=><a className={history?`conversation-item ${selectedId===question.id?'active':''}`:'button subtle'} key={question.id} href={ownerQuestionRoute(question.id)} onClick={()=>rememberQuestion(api,question.id)} aria-current={selectedId===question.id?'page':undefined}><strong>{question.title||stateLabel(question.state)}</strong><span>{stateLabel(question.state)}{history&&<> · {standalone&&question.materialRef?<QuestionSource api={api} reference={question.materialRef}/>:dateTime(question.updatedAt)}</>}</span>{history&&<ArrowRight size={13}/>}{!history&&<ArrowRight size={15}/>}</a>)}</div>
     <div className="processing-actions">{cursor&&<button className="text-button" onClick={()=>setCursor(undefined)}>{moteText('返回第一页')}</button>}{page.data?.nextCursor&&<button className="text-button" onClick={()=>setCursor(page.data!.nextCursor!)}>{moteText('继续展开')}</button>}</div>
   </section>;
 }
@@ -94,6 +94,7 @@ export function OwnerQuestionConversation({api,id,onOpen,standalone=false}:{api:
   const controller=useRef<AbortController|null>(null),pending=useRef<{fingerprint:string;body:Reply}|undefined>(draftFor(api,id).pending),identity=useRef({api,id});identity.current={api,id};
   const copied=accepted?.api===api&&accepted.id===id?accepted.value:undefined;
   const question=detail.error===undefined?(copied&&(!detail.data||copied.revision>=detail.data.revision)?copied:detail.data):undefined;
+  const assistantTask=question?.provider.id==='mote.assistant-task-question';
   useEffect(()=>{setAccepted(undefined);setDraftState({api,id,...draftFor(api,id)});setBusy(false);setError('');setWorkBusy(false);setWorkError('');pending.current=draftFor(api,id).pending;return()=>{controller.current?.abort();controller.current=null;workController.current?.abort();workController.current=null;};},[api,id]);
   useEffect(()=>{if(detail.error instanceof ApiError&&[401,403,404,410].includes(detail.error.status)){controller.current?.abort();controller.current=null;setBusy(false);setError('');setAccepted(undefined);edit({draft:'',choiceId:undefined,reopened:false,pending:undefined});pending.current=undefined;}},[detail.error]);
   const latestQuestion=useRef(question);latestQuestion.current=question;
@@ -131,11 +132,11 @@ export function OwnerQuestionConversation({api,id,onOpen,standalone=false}:{api:
   }
   const evidence=question?.evidence??[];
   return <section className="conversation-content owner-question-conversation owner-question-final" aria-label={moteText('补充资料对话')} aria-busy={busy||detail.loading}>
-    <ConversationHeading plain={standalone} title={question?.title||moteText('需要你补充')} description={moteText('补充后，仅继续处理这份资料')}/>
+    <ConversationHeading plain={standalone} title={question?.title||moteText('需要你补充')} description={moteText(assistantTask?'补充后，继续当前任务，资料范围和行动授权保持不变。':'补充后，仅继续处理这份资料')}/>
     {detail.loading&&!question&&<p role="status">{moteText('正在打开对话…')}</p>}
     {Boolean(error||detail.error)&&<p className="notice error" role="alert">{error||errorMessage(detail.error)} <button className="text-button" disabled={busy} onClick={detail.refresh}>{moteText('刷新')}</button></p>}
     {question&&<>
-      <div className="owner-question-status">{stateLabel(question.state)}{standalone&&<> · <QuestionSource api={api} reference={question.materialRef}/></>}</div>
+      <div className="owner-question-status">{stateLabel(question.state)}{standalone&&question.materialRef&&<> · <QuestionSource api={api} reference={question.materialRef}/></>}</div>
       {question.reason&&!standalone&&<p className="owner-question-reason">{question.reason}</p>}
       {(evidence.length>0||question.materialRef)&&<details className="owner-question-evidence"><summary>{moteText(question.state==='obsolete'?'当时引用的片段':'相关原文')}</summary>{standalone&&question.reason&&<p className="owner-question-reason">{question.reason}</p>}{evidence.map(item=><div key={item.id}><blockquote className="owner-question-quote">{item.quote}</blockquote>{item.ref&&<button className="text-button" type="button" onClick={()=>onOpen(item.ref!)}>{moteText('查看原始记录')}<ArrowRight size={14}/></button>}</div>)}{question.materialRef&&<button className="text-button" type="button" onClick={()=>onOpen(question.materialRef!)}>{moteText('打开来源资料')}<ArrowRight size={14}/></button>}</details>}
       <div className="owner-question-dialogue" aria-live="polite">
@@ -143,10 +144,10 @@ export function OwnerQuestionConversation({api,id,onOpen,standalone=false}:{api:
       </div>
       {busy&&<div className="owner-question-notice" role="status"><LoaderCircle className="spin" size={17}/>{moteText('正在提交，等待回执')}</div>}
       {question.outcome&&<p className="owner-question-notice" role="status">{question.outcome}</p>}
-      {question.state==='answered'&&<div className="owner-question-notice" role="status"><strong>{moteText('回答已记录')}</strong><p>{moteText('回答已记录，后续处理状态请查看活动；成果审核完成后才会保存。')}</p></div>}
+      {question.state==='answered'&&<div className="owner-question-notice" role="status"><strong>{moteText('回答已记录')}</strong>{!assistantTask&&<p>{moteText('回答已记录，后续处理状态请查看活动；成果审核完成后才会保存。')}</p>}</div>}
       {question.state==='deferred'&&<p className="owner-question-notice" role="status">{moteText('已放到稍后处理，其他工作继续；回来后仍可回答。')}</p>}
       {question.state==='closed'&&<p className="owner-question-notice" role="status">{moteText('已保留资料和不确定性，本次不再追问。')}</p>}
-      {question.state==='obsolete'&&<div className="owner-question-notice" role="status"><strong>{moteText('这个问题已失效')}</strong><p>{moteText('来源或处理版本已变化，这个问题不再接受回答。')}</p></div>}
+      {question.state==='obsolete'&&<div className="owner-question-notice" role="status"><strong>{moteText('这个问题已失效')}</strong><p>{moteText(assistantTask?'任务已取消或版本、资料范围已变化，这个问题不再接受回答。':'来源或处理版本已变化，这个问题不再接受回答。')}</p></div>}
       {question.state==='closed'&&!reopened&&<div className="owner-question-actions"><button className="button subtle" type="button" onClick={()=>setReopened(true)}>{moteText('我有新信息了')}</button></div>}
       {showComposer&&<form className="owner-question-form" onSubmit={event=>{event.preventDefault();void reply('answer');}}>
         <div className="owner-question-choices">{question.choices.map(choice=><button type="button" className="button subtle" key={choice.id} disabled={!canReply} aria-pressed={choiceId===choice.id} onClick={()=>{setChoiceId(choice.id);setDraft(choice.answer);}}>{choice.label}</button>)}</div>

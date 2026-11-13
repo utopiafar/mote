@@ -11,7 +11,7 @@ import {resolveDependencies} from './conversation-lineage.js';
 
 // This is a server-local adapter for the existing read-only query, not another
 // task DTO. The owner supplies the exact originals after applying its scope.
-export type BatchQuery=Pick<QueryInput,'question'> & {evidenceIds:string[]};
+export type BatchQuery=Pick<QueryInput,'question'|'taskContext'|'contextSourceContextDependencies'> & {evidenceIds:string[]};
 export type BatchRequest={operationId:string;requestId:string;items:BatchQuery[];reduce?:string};
 type FrozenQuery=BatchQuery & {processingEvidence:Record<string,string>};
 type Plan={items:string[];contextTime:string;reduce?:string};
@@ -68,7 +68,11 @@ export class BatchProcessing {
     const ids=[...input.evidenceIds],records=this.evidence.readEvidence(ids);
     if(records.length!==ids.length||ids.some(id=>!this.evidence.isCurrentEvidence(id)))throw new StoreError('Batch evidence is unavailable',409);
     this.assertCurrent(ids);
-    return {question:input.question,evidenceIds:ids,processingEvidence:Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)]))};
+    let context:string;try{context=JSON.stringify(input.taskContext??null);}catch{throw new StoreError('Invalid batch context',400);}
+    if(Buffer.byteLength(context)>48000)throw new StoreError('Batch context exceeds the bounded model input',413);
+    const sourceContexts=combineSourceContextDependencies([input.contextSourceContextDependencies]);
+    return {question:input.question,evidenceIds:ids,processingEvidence:Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)])),
+      ...(input.taskContext?{taskContext:JSON.parse(context)}:{}),...(sourceContexts.length?{contextSourceContextDependencies:sourceContexts}:{})};
   }
   private pins(input:FrozenQuery){
     const records=this.evidence.readEvidence(input.evidenceIds);
@@ -107,6 +111,7 @@ export class BatchProcessing {
     let inputs:QueryResult[]=[];
     if(input.itemId){
       const item=this.tasks.get(input.itemId);frozen=this.tasks.input<FrozenQuery>(item.id,item.revision,this.assertCurrent);
+      taskContext=frozen.taskContext;sourceContexts=frozen.contextSourceContextDependencies;
     }else{
       if(plan.reduce===undefined)throw new ExecutionFailure('stale','batch_reduce_missing');
       const values=plan.items.map(id=>{const item=this.tasks.get(id);if(item.state!=='succeeded')throw new ExecutionFailure('blocked','batch_item_incomplete');

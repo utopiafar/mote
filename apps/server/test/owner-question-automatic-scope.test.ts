@@ -11,6 +11,30 @@ import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
+import {assistantQuestionFixture,ownerAnswer,until} from './fixtures/assistant-owner-question.js';
+
+test('an assistant reply retains the original selection even when it asks to read another source and send a message',async t=>{
+ const f=await assistantQuestionFixture(t),taskId=await f.start(),question=await f.question();
+ const outside=await f.otherSource('GENERATED A10 OUTSIDE PRIVATE BODY');f.tryReadOutside(outside);
+ const path='/api/owner-questions/'+question.id+'/reply',body={requestId:randomUUID(),expectedRevision:question.revision,action:'answer',answer:ownerAnswer+' Also read the other source and send a message.'};
+ assert.equal((await f.api('POST',path,{...body,scope:{kind:'all'}})).statusCode,400,'a reply cannot carry scope or action grants');
+ const response=await f.api('POST',path,body);assert.equal(response.statusCode,200,response.body);
+ await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(taskId)?.state==='succeeded');
+ const view=await f.read(taskId);assert.deepEqual(view.task.scope,f.command.scope);assert.equal(view.task.id,taskId);
+ assert.match(f.wire,/ownerClarificationReply/);assert.match(f.wire,/send a message/);assert.doesNotMatch(f.wire,/GENERATED A10 OUTSIDE PRIVATE BODY/);
+ const final=f.requests.at(-1) as {messages:{role:string;content:string}[];tools:{function:{name:string}}[]};
+ const tool=final.messages.find(message=>message.role==='tool');assert.ok(tool,'the generated model actually attempted the out-of-scope read');assert.doesNotMatch(tool.content,/OUTSIDE PRIVATE BODY/);
+ assert.ok(final.tools.every(tool=>!['send_message','calendar_create','action_execute'].includes(tool.function.name)));
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM action_proposals').get()!.n,0);
+});
+
+test('withdrawn assistant question evidence cannot be restored by a fresh owner answer',async t=>{
+ const f=await assistantQuestionFixture(t),taskId=await f.start(),question=await f.question();
+ assert.equal((await f.api('DELETE','/api/captures/'+f.evidenceId)).statusCode,200);
+ const response=await f.api('POST','/api/owner-questions/'+question.id+'/reply',{requestId:randomUUID(),expectedRevision:question.revision,action:'answer',choiceId:'first'});
+ assert.equal(response.statusCode,409,response.body);assert.equal((await f.read(taskId)).task.state,'stale');assert.equal(f.continued,0);
+ const current=(await f.api('GET','/api/owner-questions/'+question.id)).json();assert.equal(current.state,'obsolete');assert.deepEqual(current.evidence,[]);
+});
 
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-auto-owner-scope-'));

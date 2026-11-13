@@ -1,10 +1,11 @@
 import {isDeepStrictEqual} from 'node:util';
+import type {QueryInput} from '@mote/agent';
 import {assistantTaskRecordSchema,formatEvidenceRef,type AssistantTaskInput,type CaptureRecord,type QueryResult,type QueryScope,type WorkState} from '@mote/shared';
 import {AssistantTaskAcceptance,type FrozenDraftTask} from './assistant-task-acceptance.js';
 import type {AssistantDraftCommandContext} from './assistant-drafts.js';
 import type {AssistantCards} from './assistant-cards.js';
 import type {AssistantMatters,MatterAuthority} from './assistant-matters.js';
-import type {BatchProcessing,BatchProductProjection} from './batch-processing.js';
+import type {BatchProcessing,BatchProductProjection,BatchQuery} from './batch-processing.js';
 import {historyEvidenceDependencies,resolveDependencies} from './conversation-lineage.js';
 import type {ConversationRepository} from './plugins/central-contracts.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
@@ -21,16 +22,19 @@ import type {MaterialStore} from './materials.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import type {RoutineInput,RoutineRef} from './assistant-routines.js';
 import type {BackgroundModelAuthorization} from './background-model-authorization.js';
+import type {OwnerQuestionsPort} from './plugins/central-contracts.js';
+import {AssistantTaskQuestions} from './assistant-task-questions.js';
 
 /** Product projection over existing task records and batch steps. The link
  * contains no private prose; the immutable scope and read set live in the task record. */
 export class AssistantTasks implements BatchProductProjection {
  private readonly tasks:TaskRecords;
  private readonly acceptance:AssistantTaskAcceptance;
+ private readonly questions:AssistantTaskQuestions;
  constructor(private readonly store:Store,private readonly cards:AssistantCards,matters:AssistantMatters,
   private readonly reader:EvidenceReader,private readonly materials:MaterialStore,private readonly conversations:Pick<ConversationRepository,'get'>,
   private readonly contexts:SourceContextStore,private readonly batch:()=>BatchProcessing,
-  private readonly connections:()=>ModelConnection[],
+  private readonly connections:()=>ModelConnection[],questions:OwnerQuestionsPort,
   private readonly routines?:{input(ref:RoutineRef):RoutineInput;current(ref:RoutineRef):boolean;allows(ids:readonly string[]):boolean;control:BackgroundModelAuthorization}){
   this.tasks=new TaskRecords(store);
   this.acceptance=new AssistantTaskAcceptance(store,cards,matters,{
@@ -55,6 +59,24 @@ export class AssistantTasks implements BatchProductProjection {
    assistant_task_turns:'length(CAST(task_id AS BLOB))+length(CAST(conversation_id AS BLOB))+length(CAST(turn_id AS BLOB))+length(CAST(scope_hash AS BLOB))+96',
    assistant_task_scopes:'length(CAST(task_id AS BLOB))+length(CAST(scope_hash AS BLOB))+coalesce(length(CAST(snapshot_json AS BLOB)),0)+96',
   });
+  this.questions=new AssistantTaskQuestions(store,questions,contexts,id=>this.questionWork(id),(work,questionId,requestId,input)=>{
+   this.tasks.setState(work.task.id,work.task.revision,'waiting');
+   this.batch().submit({operationId:work.task.operationId,requestId:'owner-reply:'+questionId+':'+requestId,
+    items:[{question:work.goal,evidenceIds:work.evidence.map(record=>record.id),...input}]},
+    {kind:'manual',identities:[],connections:this.connections()});
+  });
+ }
+ close(){this.questions.close();}
+ private questionWork(id:string){
+  const task=this.tasks.get(id);
+  if(task.kind!=='assistant.task'||!this.current(task))throw new StoreError('Assistant task input is no longer current',409);
+  const input=this.draft(task),ids=this.discover(input.request.scope).ids;
+  return {task,goal:input.request.goal,evidence:this.reader.evidence(ids.map(id=>formatEvidenceRef('capture',id)),input.request.scope),
+   dependencies:this.tasks.evidenceDependencies(task.id,task.revision,this.assertCurrent).ids};
+ }
+ prepare(input:QueryInput){
+  const task=input.traceContext?.operationId?this.taskForOperation(input.traceContext.operationId):undefined;
+  return task?this.questions.prepare(input,this.questionWork(task.id)):input;
  }
  private scopeHash(scope:QueryScope){return sha256(canonicalRecipeJson(scope));}
  private saveScope(task:TaskRecord,scope:QueryScope,snapshot:string[]){
@@ -229,6 +251,9 @@ export class AssistantTasks implements BatchProductProjection {
  commit(step:ExecutionStep,result:QueryResult){
   const task=this.taskForOperation(step.operationId);if(!task)return;
   if(!this.current(task))throw new StoreError('Assistant task input is no longer current',409);
+  const itemId=step.input.itemId;
+  const input=typeof itemId==='string'?this.tasks.input<BatchQuery>(itemId,this.tasks.get(itemId).revision,this.assertCurrent):undefined;
+  if(this.questions.commit(this.questionWork(task.id),result,input?.taskContext))return;
   this.tasks.saveResult(task.id,task.revision,result,result.evidenceDependencies!,this.assertCurrent);
  }
  private view(task:TaskRecord,expectedRevision?:number){
@@ -244,7 +269,7 @@ export class AssistantTasks implements BatchProductProjection {
   const record=assistantTaskRecordSchema.parse({id:task.id,...input,revision:task.revision,state,
    evidenceDependencies:historyEvidenceDependencies(this.store,dependencies)!,
    ...(result?.sourceContextDependencies?.length?{sourceContextDependencies:result.sourceContextDependencies}:{})});
-  return {task:record,...version,...(frozen.coverage?{coverage:frozen.coverage}:{}),...(result?{result}:{}),...(error?{error}:{})};
+  return {task:record,workId:task.operationId,...version,...(frozen.coverage?{coverage:frozen.coverage}:{}),...(result?{result}:{}),...(error?{error}:{})};
  }
  byTurn(conversationId:string,turnId:string,scope:QueryScope){
   const hash=this.scopeHash(scope);

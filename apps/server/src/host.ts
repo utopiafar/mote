@@ -281,7 +281,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // window or validate complete requests. Do not send a batch model request
   // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
   let assistantTasks:AssistantTasks|undefined;
-  const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(input,'query','conversations'),ids=>{
+  const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?.prepare(input)??input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
     ()=>new ExecutionFailure('blocked','model_context_budget_unavailable'),()=>1,true,evidenceReader.memories,{
@@ -292,9 +292,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     const excluded=new Set(modelAuthorization.view().excludedSourceIds);
     return !modelAuthorizationHost.disclosure(ids).some(value=>excluded.has(value.sourceId));
   };
-  assistantTasks=new AssistantTasks(store,assistantCards,assistantMatters,evidenceReader,materials,conversations,sourceContexts,()=>batchProcessing,()=>availableModelConnections(),{
+  assistantTasks=new AssistantTasks(store,assistantCards,assistantMatters,evidenceReader,materials,conversations,sourceContexts,()=>batchProcessing,()=>availableModelConnections(),ownerQuestionServices.port,{
     input:ref=>assistantRoutines.input(ref),current:ref=>assistantRoutines.current(ref),allows:automaticEvidenceAllowed,control:modelAuthorization,
   });
+  resources.defer(()=>assistantTasks!.close());
   assistantRoutines=new AssistantRoutines(store,modelAuthorization,ref=>assistantTasks!.startRoutine(ref),(ref,scope)=>{
     if(scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(ref.sourceId))return;
     const item=sources.getItem(ref.sourceId,ref.externalId);if(!item||item.deleted||!item.calendar)return;

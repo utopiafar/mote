@@ -8,6 +8,8 @@ import type {AssistantDraft} from '@mote/shared';
 import type {Api} from '../src/api';
 import {AssistantDraftActions} from '../src/plugins/ask/AssistantDraftActions';
 import {AnswerView} from '../src/shell-components';
+import {featuresReady} from '../src/features/bootstrap';
+import {ownerQuestionRoute} from '../src/owner-question-route';
 
 configureLocale(()=> 'zh-CN');
 const conversationId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',turnId='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',taskId='dddddddd-dddd-4ddd-8ddd-dddddddddddd',evidenceId='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
@@ -47,6 +49,24 @@ test('starting with no readable material shows the durable gap rather than an in
  await render(root,api,opened);
  await act(async()=>d.querySelector<HTMLButtonElement>('.assistant-draft-actions .primary')!.click());
  assert.match(d.body.textContent!,/当前范围没有可用正文，任务尚未执行/);assert.doesNotMatch(d.body.textContent!,/Generated grounded result/);
+});
+
+test('a task needing owner input opens the existing question inbox with its exact work identity',async t=>{
+ await featuresReady;
+ const {root,d}=await fixture(t),opened:string[]=[],workId='assistant.task:'+draft.requestId;
+ const api={request:async(path:string)=>{
+  if(path==='/api/features')return {schemaVersion:1,capabilities:[{id:'http:GET:/api/owner-questions',version:'1',surface:'data',featureId:'mote.owner-questions',state:'active'}]};
+  if(path.startsWith('/api/owner-questions?')){
+   assert.equal(new URLSearchParams(path.split('?')[1]).get('workId'),workId);
+   return {items:[{id:'11111111-1111-4111-8111-111111111111',title:'Generated missing choice',state:'open'}],nextCursor:null};
+  }
+  return {items:[{...task('needs_input'),workId}]};
+ }} as Api;
+ await render(root,api,opened);
+ const link=d.querySelector<HTMLAnchorElement>('.owner-question-links a');assert.ok(link);
+ assert.match(link.textContent!,/Generated missing choice/);assert.equal(link.getAttribute('href'),ownerQuestionRoute('11111111-1111-4111-8111-111111111111'));
+ assert.equal(d.querySelectorAll('.owner-question-form').length,0,'task results reuse the question entry instead of creating another reply form');
+ assert.doesNotMatch(d.body.textContent!,/Generated grounded result/);
 });
 
 test('a delayed citation check from a previous connection cannot open or restore its result',async t=>{

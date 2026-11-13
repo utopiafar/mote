@@ -1,5 +1,7 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "补充后，继续当前任务，资料范围和行动授权保持不变。": "Tu respuesta continúa la tarea actual con el mismo alcance de fuentes y los mismos permisos de acción.",
+  "任务已取消或版本、资料范围已变化，这个问题不再接受回答。": "La tarea se canceló o cambió su versión o alcance de fuentes. Esta pregunta ya no acepta respuestas.",
   "图片理解可能将原图发送给所选模型服务。": "La comprensión de imágenes puede enviar la imagen original al servicio de modelo seleccionado.",
   "将检查以下全部启用的本机来源，并按当前发送设置上传待发内容，包括其他采集记录。": "Se revisarán todas las fuentes locales activadas de abajo y se subirá el contenido pendiente, incluidos otros registros capturados, según la configuración de envío actual.",
   "以下操作使用已保存设置。仅归档、参考和已取消的文件不会进入内容处理；每次最多重新处理 100 份当前版本，预览有效期 10 分钟。": "Usa la configuración guardada. No se procesan archivos solo archivados, de referencia ni cancelados. Cada lote incluye hasta 100 versiones actuales; las vistas previas caducan en 10 minutos.",

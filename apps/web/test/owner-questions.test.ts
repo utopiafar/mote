@@ -70,6 +70,17 @@ test('unknown closes and defer remains answerable, without attaching a draft to 
  await act(async()=>button(d,'我有新信息了').click());assert.ok(d.querySelector('textarea'));assert.equal(writes.length,2);
  await act(async()=>button(d,'我是讲述者').click());await act(async()=>send(d).click());assert.equal(writes[2].expectedRevision,3);assert.equal(writes[2].action,'answer');assert.equal(d.querySelector('textarea'),null);
 });
+
+test('assistant task questions explain the unchanged scope and retire the composer on cancellation',async t=>{
+ const {root,d}=await fixture(t),clock=questionClock(t,d);
+ let current={...generated,provider:{id:'mote.assistant-task-question',version:'1'},workId:'assistant.task:generated',operationId:'assistant.task:generated'};
+ const api={request:async()=>current} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api,id:generated.id,onOpen:()=>{}})));
+ assert.match(d.body.textContent!,/继续当前任务，资料范围和行动授权保持不变/);assert.equal(send(d).disabled,true,'no default answer is selected');
+ current={...current,state:'obsolete',revision:2,prompt:'',evidence:[],messages:[]};
+ await clock.tick(3000);
+ assert.match(d.body.textContent!,/任务已取消或版本、资料范围已变化/);assert.equal(d.querySelector('textarea'),null);assert.equal(d.querySelector('form'),null);
+});
 test('an ambiguous transport failure reuses the same admission UUID; stale revisions refresh instead',async t=>{
  const {root,d}=await fixture(t),writes:any[]=[];let current=structuredClone(generated),failure:unknown=new Error('Generated transport failure');
  const api={request:async(_path:string,init?:RequestInit)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw failure;}return current;}} as Api;
