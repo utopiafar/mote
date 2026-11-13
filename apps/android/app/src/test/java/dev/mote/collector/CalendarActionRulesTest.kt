@@ -31,4 +31,17 @@ class CalendarActionRulesTest {
         assertFalse(CalendarActionRules.description(original, event()).contains("Mote-operation"))
         assertThrows(Exception::class.java) { CalendarActionRules.description(original, event(), "invalid") }
     }
+    @Test fun messageConfirmationCarriesTheExactMessageAndNoCalendarEvent() {
+        val action = JSONObject().put("id", "11111111-1111-4111-8111-111111111111").put("kind", "message.send").put("version", 4)
+            .put("message", JSONObject().put("conversationId", "generated-chat").put("conversationName", "Generated chat").put("text", "Generated message"))
+            .put("target", JSONObject().put("executionLocation", "central-connector").put("packageId", "generated.connector")
+                .put("instanceId", "generated-instance").put("instanceRevision", 2).put("capabilityId", "message.send").put("capabilityVersion", 1))
+            .put("event", JSONObject().put("title", "消息").put("start", JSONObject.NULL))
+        val body = CalendarActionRequests.confirmMessage(action)
+        assertEquals(4, body.getInt("version"))
+        assertEquals("Generated message", body.getJSONObject("message").getString("text"))
+        assertFalse("A message confirmation must not send a calendar event", body.has("event"))
+        assertEquals("central-connector", body.getJSONObject("target").getString("executionLocation"))
+        assertThrows(Exception::class.java) { CalendarActionRequests.confirmMessage(JSONObject().put("version", 1)) }
+    }
 }

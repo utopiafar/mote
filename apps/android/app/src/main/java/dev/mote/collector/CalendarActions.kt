@@ -18,6 +18,18 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.UUID
 
+/** One payload builder shared by the native action confirmation and its JVM
+ * contract: a message is confirmed without a calendar event or a new grant. */
+internal object CalendarActionRequests {
+    fun confirmMessage(action: JSONObject): JSONObject {
+        val message = action.optJSONObject("message") ?: error(MoteI18n.text("中央响应格式无效，请刷新后重试。"))
+        val target = action.optJSONObject("target")
+        return JSONObject().put("version", action.getInt("version")).put("message", message).also { body ->
+            target?.let { body.put("target", it) }
+        }
+    }
+}
+
 /** One delivery decision per received action. A revoked calendar permission
  * blocks every new write; only an already retained external event id may be
  * reconciled so a lost acknowledgement never hides a completed native write. */
@@ -120,6 +132,12 @@ internal class CalendarActions(
         if (action.getString("kind") in listOf("calendar.create", "calendar.update")) CalendarActionRules.times(event)
         val target = action.optJSONObject("related")?.optJSONObject("target") ?: if (calendarId != null) JSONObject().put("deviceId", settings.deviceId).put("calendarId", calendarId) else null
         request("/api/actions/${action.getString("id")}/confirm", JSONObject().put("version", action.getInt("version")).put("event", event).put("target", target))
+    } ?: error(MoteI18n.text("连接正在切换"))
+    /** One immutable recipient and full message per explicit owner
+     * confirmation. The existing confirm endpoint accepts no event for a
+     * message proposal, and an uncertain send has no automatic retry. */
+    fun confirmMessage(action: JSONObject): JSONObject = ConnectionGuard.sync {
+        request("/api/actions/${action.getString("id")}/confirm", CalendarActionRequests.confirmMessage(action))
     } ?: error(MoteI18n.text("连接正在切换"))
     fun dismiss(action: JSONObject) = ConnectionGuard.sync { request("/api/actions/${action.getString("id")}/dismiss", JSONObject().put("version", action.getInt("version"))) }
     fun execute(id: String, managedOperationId: String? = null) = synchronized(executionLock) { ConnectionGuard.sync {

@@ -24,7 +24,7 @@ class PrimaryNavigationTest {
     @Test fun groupedNavigationKeepsEveryExistingCentralCapabilityReachable() {
         val registered = setOf("overview", "activity", "archive", "ask", "notes", "materials", "coding", "timeline", "files", "memories", "insights",
             "actions", "agentView", "sources", "devices", "connections", "lark", "statistics", "processing", "plugins", "settings",
-            "usage", "vault", "developer", "about", "imports", "help")
+            "usage", "vault", "developer", "about", "imports", "help", "assistant.workbench")
         val grouped = MoteNavigation.groups.flatMap { it.pages }
         assertEquals("Ask has its own destination; legacy Coding status is reached contextually", registered - setOf("ask", "coding"), grouped.toSet())
         assertEquals("A capability has one canonical utility menu location", grouped.size, grouped.toSet().size)
@@ -52,6 +52,7 @@ class PrimaryNavigationTest {
             assertEquals(MoteNavigation.centralTab(page), MoteNavigation.centralTab(MoteNavigation.centralParent(page)!!))
         }
         assertEquals("overview", MoteNavigation.centralParent("actions"))
+        assertEquals("overview", MoteNavigation.centralParent("assistant.workbench"))
         assertEquals("about", MoteNavigation.centralParent("settings"))
         assertEquals("about", MoteNavigation.centralParent("plugins"))
         assertEquals("about", MoteNavigation.centralParent("extensions"))

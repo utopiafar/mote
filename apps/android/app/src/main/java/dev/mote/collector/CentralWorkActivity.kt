@@ -6,8 +6,11 @@ import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import dev.mote.collector.plugins.OwnerQuestion
+import dev.mote.collector.plugins.OwnerQuestionModel
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 
 /** Product work comes from host receipts. Technical operations remain a separate secondary page. */
 internal class CentralWorkActivity(private val screens: CentralScreens) {
@@ -25,13 +28,15 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
     private var branchCursor = 0
     private val branchPrevious = mutableListOf<Int>()
     private val memoryResults by lazy { CentralWorkMemoryResults(screens, { id->screens.isWorkActivityPage && selected==id && section=="results" }, { id->detail(id) }) }
+    private val questionAttempts = mutableMapOf<String, String>()
+    private var questionGeneration = 0
     private fun enc(value: String) = CentralScreens.encode(value)
     private fun text(value: String, size: NativeFontRole = NativeFontRole.BODY, parent: LinearLayout = body) = ui.text(value, size, parent)
     private fun button(label: String, primary: Boolean = false, parent: LinearLayout = body, action: () -> Unit) = ui.button(label, primary, parent, action)
     fun show() { selected?.let { id ->
         if(section=="results"&&memoryResults.hasSelection(id))memoryResults.showSelected(id) else detail(id)
     } ?: list() }
-    fun clearPrivateState() { detailBody = null; rendered = ""; selected = null; section = "overview"; state = "active"; cursor = 0; previous.clear(); branchCursor = 0; branchPrevious.clear();detailLive=false;detailSignature="";memoryResults.clear() }
+    fun clearPrivateState() { detailBody = null; rendered = ""; selected = null; section = "overview"; state = "active"; cursor = 0; previous.clear(); branchCursor = 0; branchPrevious.clear();detailLive=false;detailSignature="";memoryResults.clear();questionAttempts.clear();questionGeneration++ }
     fun saveState(out: Bundle) { out.putString("state", state); out.putString("selected", selected); out.putString("section", section); out.putInt("cursor", cursor); out.putInt("branchCursor", branchCursor); out.putIntegerArrayList("previous", ArrayList(previous)); out.putIntegerArrayList("branchPrevious", ArrayList(branchPrevious));out.putBundle("memoryResults",Bundle().also(memoryResults::save)) }
     fun restoreState(value: Bundle, allowMemoryResult: Boolean) {
         state = value.getString("state").takeIf { it in setOf("active", "attention", "completed") } ?: "active"
@@ -187,6 +192,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
             text(event.optString("at"), NativeFontRole.META)
             text(event.optString("summary").ifBlank { MoteI18n.text(CentralWorkPresentation.event(event.optString("type"))) })
         }
+        questions(work)
         related(work)
     }
     private fun branches(work: JSONObject) {
@@ -272,6 +278,117 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
             contentDescription = MoteI18n.text("资料处理进度")
         }, LinearLayout.LayoutParams(-1, ui.moteDp(4)))
         if (!compact && value.optString("mode") == "semantic" && value.has("returnedItems")) text(MoteI18n.text("检索已返回 {0} 项资料", value.optInt("returnedItems")), NativeFontRole.META, target)
+    }
+
+    /** Owner questions are the existing A10 inbox filtered by this work ID.
+     * Answering resumes the same work and returns to its detail instead of
+     * creating a second task or a second notification surface. */
+    private fun questions(work: JSONObject) {
+        val workId = work.optString("id").takeIf(String::isNotBlank) ?: return
+        val section = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; tag = "work-questions" }
+        body.addView(section)
+        loadQuestions(workId, section)
+    }
+
+    private fun loadQuestions(workId: String, section: LinearLayout) {
+        val api = screens.client
+        val stamp = ++questionGeneration
+        ui.work("", { api.get("/api/owner-questions?workId=" + enc(workId) + "&state=open,deferred&limit=20") }) { raw ->
+            if (stamp != questionGeneration || section.parent == null) return@work
+            try {
+                val (items, _) = OwnerQuestionModel.page(raw)
+                renderQuestions(workId, section, items)
+            } catch (error: Exception) {
+                section.removeAllViews()
+                text(MoteI18n.text("中央响应格式无效，请刷新后重试。"), parent = section)
+            }
+        }
+    }
+
+    private fun renderQuestions(workId: String, section: LinearLayout, questions: List<OwnerQuestion>) {
+        section.removeAllViews()
+        if (questions.isEmpty()) return
+        text(MoteI18n.text("需要你补充"), NativeFontRole.SECTION, section)
+        text(MoteI18n.text("补充后，继续当前任务，资料范围和行动授权保持不变。"), NativeFontRole.META, section)
+        for (question in questions) {
+            val card = ui.card(section)
+            text(question.title.ifBlank { MoteI18n.text("需要你补充") }, NativeFontRole.ROW, card)
+            text(MoteI18n.text(OwnerQuestionModel.stateLabel(question.state)), NativeFontRole.META, card)
+            val prompt = question.messages.lastOrNull { it.role == "assistant" }?.text ?: question.prompt
+            if (prompt.isNotBlank()) text(prompt, parent = card)
+            question.reason?.takeIf(String::isNotBlank)?.let { text(it, NativeFontRole.META, card) }
+            if (question.evidence.isNotEmpty()) {
+                ui.disclosure(MoteI18n.text("相关原文"), card) { target ->
+                    question.evidence.forEach { proof ->
+                        text(proof.quote, parent = target)
+                        proof.ref?.takeIf(String::isNotBlank)?.let { ref -> button(MoteI18n.text("查看原始记录"), parent = target) { screens.openWorkEvidence(ref) } }
+                    }
+                }
+            }
+            if (!OwnerQuestionModel.canReply(question.state)) {
+                text(MoteI18n.text(if (question.state == "obsolete") "这个问题已失效" else OwnerQuestionModel.stateLabel(question.state)), parent = card)
+                continue
+            }
+            var choiceId: String? = null
+            if (question.choices.isNotEmpty()) {
+                question.choices.forEach { choice ->
+                    button(choice.label, parent = card) {
+                        card.findViewWithTag<android.widget.EditText>("question-answer:" + question.id)?.setText(choice.answer)
+                        choiceId = choice.id
+                    }
+                }
+            }
+            val answer = ui.field(MoteI18n.text("补充你知道的信息"), parent = card).apply { tag = "question-answer:" + question.id }
+            answer.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { choiceId = null }
+                override fun afterTextChanged(s: android.text.Editable?) = Unit
+            })
+            button(MoteI18n.text("回答并继续"), true, card) {
+                val text = answer.text.toString()
+                if (choiceId == null && text.isBlank()) {
+                    answer.error = MoteI18n.text("补充你知道的信息")
+                    return@button
+                }
+                reply(workId, question, "answer", text, choiceId)
+            }
+            button(MoteI18n.text("稍后再说"), parent = card) { reply(workId, question, "defer") }
+            button(MoteI18n.text("我也不知道"), parent = card) { reply(workId, question, "unknown") }
+        }
+    }
+
+    private fun reply(workId: String, question: OwnerQuestion, action: String, answer: String? = null, choiceId: String? = null) {
+        val requestId = questionAttempts.getOrPut(question.id) { UUID.randomUUID().toString() }
+        val body = try {
+            OwnerQuestionModel.reply(requestId, question, action, answer, choiceId)
+        } catch (error: IllegalArgumentException) {
+            ui.notice(MoteI18n.text("这个问题已更新，请查看最新内容后再回答。"))
+            return
+        }
+        val api = screens.client
+        ui.work(MoteI18n.text("正在提交…"), {
+            try { api.post("/api/owner-questions/" + enc(question.id) + "/reply", body) }
+            catch (error: CentralFailure) {
+                if (error.status in setOf(404, 409, 410)) null else throw error
+            }
+        }) { raw ->
+            if (raw == null) {
+                questionAttempts.remove(question.id)
+                ui.notice(MoteI18n.text("这个问题已更新，请查看最新内容后再回答。"))
+                detail(workId)
+                return@work
+            }
+            try {
+                val updated = OwnerQuestionModel.parse(raw)
+                questionAttempts.remove(question.id)
+                if (updated.state == "obsolete") ui.notice(MoteI18n.text("这个问题已失效"))
+                else ui.notice(MoteI18n.text("回答已记录"))
+                detail(workId)
+            } catch (error: Exception) {
+                ui.requestFailure(error)
+                detail(workId)
+            }
+        }
     }
 }
 

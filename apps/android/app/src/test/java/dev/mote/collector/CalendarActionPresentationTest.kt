@@ -26,4 +26,13 @@ class CalendarActionPresentationTest {
         assertEquals("已写入日历",CalendarActionPresentation.stateKey("calendar.create","succeeded",managedState="waiting_device"))
         assertNull(CalendarActionPresentation.stateKey("calendar.create","unrecognized"))
     }
+    @Test fun aMessageProposalOnlyClaimsSuccessFromARealReceipt() {
+        assertEquals("待确认",CalendarActionPresentation.stateKey("message.send","proposed"))
+        assertEquals("等待客户端写入",CalendarActionPresentation.stateKey("message.send","approved"))
+        assertEquals("等待保存回执",CalendarActionPresentation.stateKey("message.send","executing"))
+        assertEquals("保存结果待核实",CalendarActionPresentation.stateKey("message.send","uncertain"))
+        assertEquals("已完成",CalendarActionPresentation.stateKey("message.send","succeeded"))
+        assertEquals("原文已更新或删除",CalendarActionPresentation.stateKey("message.send","stale"))
+        assertNull(CalendarActionPresentation.stateKey("message.send","unrecognized"))
+    }
 }

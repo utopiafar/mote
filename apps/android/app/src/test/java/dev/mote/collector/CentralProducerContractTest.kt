@@ -1,5 +1,6 @@
 package dev.mote.collector
 
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -7,6 +8,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import dev.mote.collector.plugins.WorkspaceDecode
+import dev.mote.collector.plugins.WorkspaceTemplate
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -92,6 +96,7 @@ class CentralProducerContractTest {
     }
 
 
+
     @Test fun realAssistantProjectionsSupportBothWorkAndLifeFeedbackTasksAndWithdrawal() {
         val fixture = JSONObject(java.io.File(requireNotNull(System.getenv("MOTE_KOTLIN_CONTRACT_ASSISTANT"))).readText()).getJSONArray("items")
         assertEquals(2, fixture.length())
@@ -138,6 +143,24 @@ class CentralProducerContractTest {
             client().delete("/api/captures/" + generated.getString("evidenceId"))
             model.refresh(); assertNull(model.error); assertTrue(model.cards.isEmpty()); assertTrue(model.tasks.isEmpty())
             assertEquals(404, assertThrows(CentralFailure::class.java) { api.card(card.id) }.status)
+        }
+    }
+    @Test fun everyRealWorkbenchTemplateOutputDecodesThroughTheProductionKotlinDecoder() {
+        val path = System.getenv("MOTE_KOTLIN_CONTRACT_WORKBENCH").orEmpty()
+        assertTrue("The contract runner must provide real workbench responses", path.isNotEmpty())
+        val views = JSONArray(File(path).readText()).let { array ->
+            assertEquals(4, array.length())
+            (0 until array.length()).map { WorkspaceDecode.read(array.getJSONObject(it)) }
+        }
+        assertEquals(
+            listOf(WorkspaceTemplate.PROJECT, WorkspaceTemplate.PERSON, WorkspaceTemplate.TRAVEL, WorkspaceTemplate.READING),
+            views.map { it.request.template },
+        )
+        views.forEach { view ->
+            assertEquals("declarative-view", view.descriptor.kind)
+            assertTrue(view.descriptor.platforms.contains("android"))
+            assertEquals(listOf("refresh"), view.commands.map { it.id })
+            assertTrue(view.spec.components.isNotEmpty())
         }
     }
 
@@ -195,8 +218,7 @@ class CentralProducerContractTest {
         assertEquals(403, denied.status)
     }
 
-    @Test fun realPartialAndLostFinalAcksResumeExactRevisionWithoutResendingConfirmedParts() {
-        val bytes = ByteArray(4 * 1024 * 1024 + 157) { (it % 251).toByte() }
+    @Test fun realPartialAndLostFinalAcksResumeExactRevisionWithoutResendingConfirmedParts() {        val bytes = ByteArray(4 * 1024 * 1024 + 157) { (it % 251).toByte() }
         val original = file(bytes); val scope = UUID.randomUUID().toString()
         var losePart = true; var loseCommit = true
         val api = CentralClient(origin, collector, transport = { method, url, body, credential, mime ->

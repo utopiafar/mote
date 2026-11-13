@@ -336,6 +336,7 @@ internal class CentralContent(
         }
         if (client == null) { screens?.clearPrivateState(); login() }
         else if (changed || authenticated || sessionChanged || body.childCount == 0 || (page == "ask" && activity.intent.hasExtra("conversationId"))) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll() else if (page == "conversations") screens?.refreshConversationList()
+        linkNotice?.let { message -> linkNotice = null; notice(message) }
     }
     private fun deliverPendingResult() {
         accessReady = true
@@ -647,6 +648,15 @@ internal class CentralContent(
     internal fun notice(message: String) {
         status.text = message
         status.visibility = if (message.isBlank()) View.GONE else View.VISIBLE
+    }
+    /** A refused deep link is stated once on the page it did not open. The
+     * notice is consumed so activity recreation does not repeat it. */
+    private var linkNotice: String? = null
+    internal fun takeLinkNotice() {
+        val key = activity.intent.getStringExtra("linkNotice") ?: return
+        activity.intent.removeExtra("linkNotice")
+        linkNotice = MoteI18n.text(key)
+        notice(linkNotice!!)
     }
     internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); composer.removeAllViews(); composer.visibility = View.GONE }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
