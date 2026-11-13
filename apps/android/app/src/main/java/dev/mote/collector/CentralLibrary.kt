@@ -25,8 +25,18 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     private var query = ""
     private var rawSource = ""
     private var memoryDeletionNotice: Pair<CentralClient, String>? = null
+    private val onboardingState by lazy { screens.stateFile("assistant-onboarding") }
+    private var onboardingSession: AssistantOnboardingPresentation.Session? = null
+    private var onboardingProgress: AssistantOnboardingPresentation.Progress? = null
+    private val onboardingMaterials = linkedMapOf<String, AssistantOnboardingPresentation.Material>()
+    private val onboardingSelected = linkedSetOf<String>()
+    private var onboardingCursor: String? = null
+    private var onboardingBusy = false
+    private var onboardingVisible = false
 
     fun show(page: String) {
+        onboardingVisible = false
+        body.removeCallbacks(onboardingRefresh)
         when (page) {
             "archive" -> archive()
             "timeline" -> sessions()
@@ -392,9 +402,16 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     fun openFile(id: String) { java.util.UUID.fromString(id); file(id) }
     private fun file(id: String, offset: Int = 0) {
         val api = client
-        ui.work(MoteI18n.text("正在读取文件…"), { api.get("/api/files/" + enc(id)) to api.get("/api/files/" + enc(id) + "/chunks?offset=$offset") }) { (row, chunks) ->
+        // A revoked source must not leave a previously loaded body on screen.
+        body.removeAllViews()
+        ui.work(MoteI18n.text("正在读取文件…"), {
+            val row = api.get("/api/files/" + enc(id))
+            val rawView = api.get("/api/files/" + enc(id) + "/view")
+            Triple(row, rawView, api.get("/api/files/" + enc(id) + "/chunks?offset=$offset"))
+        }) { (row, rawView, chunks) ->
             body.removeAllViews(); screens.setBack { screens.refresh() }
             val item = row.getJSONObject("item")
+            val fileView = CentralFileView.forDetail(row, rawView)
             ui.text(item.optString("title"), NativeFontRole.TITLE_MOBILE); ui.text(item.optString("mimeType")); ui.text(item.optString("text"))
             val job = row.optJSONObject("job")
             val cancellation = row.optJSONObject("cancellation")
@@ -405,13 +422,15 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 ui.text(MoteI18n.text("摘要") + " · " + processingState(job.optString("summary_state"), job.optString("error")), parent = processing)
                 if (!job.isNull("error") && job.optString("error").isNotBlank()) ui.text(job.getString("error"), parent = processing)
             }
-            if (row.optBoolean("originMissing")) ui.text(MoteI18n.text(" · 来源已不可见，中央归档仍可使用").trim(), parent = processing)
+            if (fileView != null) FileViewPresentation.summary(fileView).lines.forEach { line -> ui.text(line, NativeFontRole.META, processing) }
+            else if (row.optBoolean("originMissing")) ui.text(MoteI18n.text(" · 来源已不可见，中央归档仍可使用").trim(), parent = processing)
+            if (fileView == null) ui.text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META, processing)
             when (cancellation?.optString("wait")) {
                 "running" -> ui.text(MoteI18n.text("外部结果尚未确认，停止请求不代表远端工作已结束。"), parent = processing)
                 "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。请确认后继续。"), parent = processing)
             }
             if (job != null) ui.disclosure(MoteI18n.text("处理详情")) { target -> ui.text(job.toString(2), parent = target) }
-            if (row.optBoolean("hasOriginal")) {
+            if (fileView != null && fileView.hasOriginal && fileView.canOpenOriginal) {
                 if (item.optString("mimeType").startsWith("image/")) ui.button(MoteI18n.text("查看原图")) { image("/api/files/" + enc(id) + "/content", body) }
                 if (item.optString("mimeType").startsWith("audio/")) ui.button(MoteI18n.text("播放录音")) { screens.playAudio("/api/files/" + enc(id) + "/content", body) }
                 ui.button(MoteI18n.text("保存原件")) { ui.saveCentral("/api/files/" + enc(id) + "/content", item.optString("title", "mote-file"), item.optString("mimeType", "application/octet-stream")) }
@@ -465,9 +484,188 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         }
         return MoteI18n.text(key)
     }
+    private val onboardingRefresh = Runnable { if (onboardingVisible && body.isAttachedToWindow) refreshOnboarding(silent = true) }
+    private fun persistOnboarding() {
+        runCatching {
+            val session = onboardingSession
+            onboardingState.write(if (session == null) JSONObject() else AssistantOnboardingPresentation.save(session))
+        }
+    }
+    private fun onboarding() {
+        onboardingVisible = true
+        if (onboardingSession == null) {
+            onboardingSession = runCatching { AssistantOnboardingPresentation.restore(onboardingState.read()) }.getOrNull()
+            onboardingSession?.refs?.forEach(onboardingSelected::add)
+        }
+        body.removeAllViews(); screens.setBack { screens.refresh() }
+        body.setPadding(ui.moteDp(16), 0, ui.moteDp(16), ui.moteDp(24))
+        renderOnboarding()
+        if (onboardingSession?.id != null) refreshOnboarding() else loadOnboardingMaterials()
+    }
+    private fun renderOnboarding() {
+        onboardingVisible = true
+        body.removeAllViews()
+        ui.text(MoteI18n.text("初次认识"), NativeFontRole.TITLE_MOBILE)
+        ui.text(MoteI18n.text("只处理你勾选的已同步资料；不会重新上传本机文件，也不会自动扩大来源范围。"), NativeFontRole.SUPPORT)
+        ui.text(MoteI18n.text("初次认识会使用你已连接的模型处理所选资料。"), NativeFontRole.META)
+        val progress = onboardingProgress
+        if (progress != null) {
+            ui.text(MoteI18n.text("状态") + " · " + AssistantOnboardingPresentation.progressStateLabel(progress.state), NativeFontRole.SECTION)
+            ui.text(MoteI18n.text("同步") + " · " + AssistantOnboardingPresentation.coverageLabel(progress.sync))
+            ui.text(MoteI18n.text("提取") + " · " + AssistantOnboardingPresentation.coverageLabel(progress.extraction))
+            ui.text(MoteI18n.text("理解") + " · " + AssistantOnboardingPresentation.coverageLabel(progress.semantic))
+            ui.text(MoteI18n.text("已完成 {0} 份，待补 {1} 份，失败 {2} 份", progress.completed, progress.pending, progress.failed), NativeFontRole.META)
+            if (progress.items.isNotEmpty()) {
+                val group = MoteComponents.group(ui); body.addView(group)
+                progress.items.forEachIndexed { index, item ->
+                    if (index > 0) group.addView(MoteComponents.divider(ui))
+                    group.addView(MoteComponents.row(ui, null, item.title,
+                        subtitle = AssistantOnboardingPresentation.stateLabel(item.state) + (item.reason?.let { " · " + it } ?: "")))
+                }
+            }
+            if (!progress.terminal) ui.button(MoteI18n.text("取消这次认识")) { cancelOnboarding() }
+            else ui.button(MoteI18n.text("重新选择资料")) { resetOnboarding() }
+            ui.button(MoteI18n.text("刷新进度")) { refreshOnboarding() }
+            if (!progress.terminal) scheduleOnboardingRefresh() else body.removeCallbacks(onboardingRefresh)
+            return
+        }
+        if (onboardingSession?.id != null) {
+            ui.text(MoteI18n.text("这次认识的进度暂不可读取；原任务仍保留。"), NativeFontRole.META)
+            ui.button(MoteI18n.text("刷新进度")) { refreshOnboarding() }
+            if (onboardingSession?.revision != null) ui.button(MoteI18n.text("取消这次认识")) { cancelOnboarding() }
+            return
+        }
+        val materials = onboardingMaterials.values.toList()
+        if (materials.isEmpty()) ui.text(MoteI18n.text("中央尚未返回可认识的资料。"), NativeFontRole.META)
+        else {
+            val group = MoteComponents.group(ui); body.addView(group)
+            materials.forEachIndexed { index, material ->
+                if (index > 0) group.addView(MoteComponents.divider(ui))
+                val check = CheckBox(ui).apply {
+                    text = material.title; isChecked = material.ref in onboardingSelected; minHeight = ui.moteDp(48)
+                    setOnCheckedChangeListener { _, checked -> if (checked) onboardingSelected.add(material.ref) else onboardingSelected.remove(material.ref) }
+                }
+                group.addView(check)
+                val state = when (material.state) {
+                    "complete" -> MoteI18n.text("已完成"); "partial" -> MoteI18n.text("部分可用"); "failed" -> MoteI18n.text("失败")
+                    else -> MoteI18n.text("待处理")
+                }
+                ui.text(MoteI18n.text("提取") + " · " + state, NativeFontRole.META, group)
+            }
+        }
+        if (onboardingCursor != null) ui.button(MoteI18n.text("加载更多")) { loadOnboardingMaterials(onboardingCursor) }
+        ui.text(MoteI18n.text("已选择 {0} 份资料", onboardingSelected.size), NativeFontRole.META)
+        ui.button(MoteI18n.text("开始认识"), true) { startOnboarding() }
+        ui.button(MoteI18n.text("刷新")) { loadOnboardingMaterials() }
+    }
+    private fun scheduleOnboardingRefresh() {
+        body.removeCallbacks(onboardingRefresh)
+        if (onboardingProgress?.terminal != true && onboardingSession?.id != null) body.postDelayed(onboardingRefresh, 4000)
+    }
+    private fun loadOnboardingMaterials(cursor: String? = null) {
+        if (onboardingBusy) return
+        onboardingBusy = true
+        val api = client
+        val path = "/api/materials?limit=30" + (cursor?.let { "&cursor=" + enc(it) } ?: "")
+        ui.work(MoteI18n.text("正在读取…"), { runCatching { api.get(path) } }) { result ->
+            onboardingBusy = false
+            result.onSuccess { page ->
+                AssistantOnboardingPresentation.materials(page).forEach { onboardingMaterials[it.ref] = it }
+                onboardingCursor = page.optString("nextCursor").takeIf { it.isNotBlank() && it != "null" }
+                if (onboardingSession == null) renderOnboarding()
+            }.onFailure { error -> ui.notice(error.message ?: MoteI18n.text("操作失败")) }
+        }
+    }
+    private fun startOnboarding() {
+        if (onboardingBusy) return
+        val selected = onboardingSelected.toList()
+        if (selected.isEmpty()) { ui.notice(MoteI18n.text("尚未选择资料")); return }
+        val session = onboardingSession
+        val retry = session?.takeIf { it.canRetryStart && it.refs.toSet() == selected.toSet() }
+        val scope = retry?.let { runCatching { AssistantOnboardingPresentation.scopeOf(it) }.getOrNull() }
+            ?: runCatching {
+                val chosen = selected.map { ref -> onboardingMaterials[ref] ?: error(MoteI18n.text("资料已变化，请重新选择当前版本。")) }
+                AssistantOnboardingPresentation.scope(chosen)
+            }.getOrElse { ui.notice(it.message ?: MoteI18n.text("操作失败")); return }
+        val requestId = retry?.requestId ?: AssistantOnboardingPresentation.newRequestId()
+        val refs = retry?.refs ?: selected
+        val request = runCatching { AssistantOnboardingPresentation.request(requestId, refs, scope) }
+            .getOrElse { ui.notice(it.message ?: MoteI18n.text("操作失败")); return }
+        onboardingSession = AssistantOnboardingPresentation.Session(requestId, refs, scope.toString())
+        persistOnboarding(); onboardingBusy = true
+        val api = client
+        ui.work(MoteI18n.text("正在开始认识…"), { runCatching { AssistantOnboardingPresentation.progress(api.post("/api/assistant/onboarding", request)) } }) { result ->
+            onboardingBusy = false
+            result.onSuccess { progress ->
+                val accepted = onboardingSession?.accepted(progress) ?: return@onSuccess
+                onboardingSession = accepted; onboardingProgress = progress; persistOnboarding(); renderOnboarding()
+            }.onFailure { error ->
+                // Keep the request id across transport loss so a retry cannot
+                // create a second command; only rejected input starts over.
+                if (error is CentralFailure && error.status in setOf(400, 409, 422)) { onboardingSession = null; persistOnboarding() }
+                ui.notice(error.message ?: MoteI18n.text("操作失败"))
+                renderOnboarding()
+            }
+        }
+    }
+    private fun refreshOnboarding(silent: Boolean = false) {
+        if (onboardingBusy) return
+        val session = onboardingSession ?: return
+        val id = session.id ?: return
+        val scope = runCatching { AssistantOnboardingPresentation.scopeOf(session) }.getOrElse { ui.notice(it.message ?: MoteI18n.text("操作失败")); return }
+        onboardingBusy = true
+        val api = client
+        ui.work(if (silent) "" else MoteI18n.text("正在读取…"), {
+            runCatching { AssistantOnboardingPresentation.progress(api.get("/api/assistant/onboarding/" + enc(id) + "?scope=" + enc(scope.toString()))) }
+        }) { result ->
+            onboardingBusy = false
+            result.onSuccess { progress ->
+                val accepted = session.accepted(progress) ?: return@onSuccess
+                onboardingSession = accepted; onboardingProgress = progress; persistOnboarding(); renderOnboarding()
+            }.onFailure { error ->
+                if (error is CentralFailure && error.status in setOf(404, 410)) {
+                    onboardingSession = session.copy(id = null, revision = null, state = null); onboardingProgress = null; persistOnboarding()
+                    ui.notice(MoteI18n.text("这次认识已结束，请重新选择资料。"))
+                } else if (error is CentralFailure && error.status == 409) {
+                    onboardingProgress = null
+                    ui.notice(MoteI18n.text("资料已变化，请重新选择当前版本。"))
+                } else ui.notice(error.message ?: MoteI18n.text("操作失败"))
+                renderOnboarding()
+            }
+        }
+    }
+    private fun cancelOnboarding() {
+        if (onboardingBusy) return
+        val session = onboardingSession ?: return
+        val id = onboardingProgress?.id ?: session.id ?: return
+        val revision = onboardingProgress?.revision ?: session.revision ?: run {
+            ui.notice(MoteI18n.text("这次认识的进度暂不可读取；原任务仍保留。")); return
+        }
+        val scope = runCatching { AssistantOnboardingPresentation.scopeOf(session) }.getOrElse { ui.notice(it.message ?: MoteI18n.text("操作失败")); return }
+        onboardingBusy = true
+        val api = client
+        ui.work(MoteI18n.text("正在取消这次认识…"), {
+            runCatching { api.post("/api/assistant/onboarding/" + enc(id) + "/cancel", AssistantOnboardingPresentation.cancelRequest(id, revision, scope)) }
+        }) { result ->
+            onboardingBusy = false
+            result.onSuccess {
+                onboardingSession = null; onboardingProgress = null; onboardingSelected.clear(); onboardingMaterials.clear(); onboardingCursor = null
+                persistOnboarding(); renderOnboarding(); loadOnboardingMaterials()
+            }.onFailure { error -> ui.notice(error.message ?: MoteI18n.text("操作失败")) }
+        }
+    }
+    private fun resetOnboarding() {
+        body.removeCallbacks(onboardingRefresh)
+        onboardingSession = null; onboardingProgress = null; onboardingSelected.clear(); persistOnboarding()
+        renderOnboarding()
+        if (onboardingMaterials.isEmpty()) loadOnboardingMaterials()
+    }
     private fun sources() {
+        onboardingVisible = false; body.removeCallbacks(onboardingRefresh)
         ui.button(MoteI18n.text("本机来源")) { ui.startActivity(android.content.Intent(ui, SourcesActivity::class.java)) }
         ui.button(MoteI18n.text("连接更多来源")) { CentralAdmin(screens).connectors() }
+        ui.button(MoteI18n.text("初次认识已同步资料")) { onboarding() }.tag = "assistant-onboarding"
+        ui.text(MoteI18n.text("只处理你勾选的已同步资料；不会重新上传本机文件，也不会自动扩大来源范围。"), NativeFontRole.META)
         paged("/api/sources", ui.card()) { row, card ->
             ui.text(row.optString("name"), NativeFontRole.SECTION, card); ui.text(row.optString("kind") + " · " + row.optString("deviceId"), parent = card)
             ui.button(MoteI18n.text("编辑来源"), parent = card) {

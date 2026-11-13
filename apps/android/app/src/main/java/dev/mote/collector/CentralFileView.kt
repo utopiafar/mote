@@ -46,6 +46,12 @@ internal data class CentralFileView(val captureId: String, val sourceId: String,
                 view.externalId == row.getString("externalId") && view.revision == row.getString("revision"))
             view
         }.getOrNull()
+        fun forDetail(detail: JSONObject, raw: JSONObject): CentralFileView? = runCatching {
+            val view = read(raw)
+            require(view.captureId == detail.getString("captureId") &&
+                view.revision == detail.getJSONObject("item").optString("revision"))
+            view
+        }.getOrNull()
         /** Recheck each file before publishing the page. A failed access check
          * fails the page instead of disclosing metadata fetched before revocation. */
         fun enrichOriginals(page: JSONObject, fetch: (String) -> JSONObject) {

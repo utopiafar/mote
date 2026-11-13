@@ -185,10 +185,14 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
             }
             card.addView(TextView(activity).apply { text = item.optString("title"); MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK) })
             val otherVersion = projection.visible("").any { other -> row.local != null && other.central != null && other.key.origin == row.key.origin && other.key.type == row.key.type && other.key.source == row.key.source && other.key.external == row.key.external && other.key.device == row.key.device && other.key.revision != row.key.revision }
-            val label = if (row.key.type == "material") MoteI18n.text("整理资料") else if (row.local?.optBoolean("localReadable") == true) MoteI18n.text(if (row.centralReadable) "本机与中央可读" else if (otherVersion) "本机可读 · 中央另有版本" else "本机可读 · 中央状态未知") else MoteI18n.text(if (row.centralReadable) "中央可读" else "仅目录信息")
+            val label = if (row.key.type == "material") MoteI18n.text("整理资料") else if (row.localReadable) MoteI18n.text(if (row.centralReadable) "本机与中央可读" else if (otherVersion) "本机可读 · 中央另有版本" else "本机可读 · 中央状态未知") else MoteI18n.text(if (row.centralReadable) "中央可读" else "仅目录信息")
             val at = runCatching { java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(activity.resources.configuration.locales[0]).withZone(ZoneId.systemDefault()).format(Instant.parse(item.getString("sortAt"))) }.getOrDefault(item.optString("sortAt"))
             card.addView(TextView(activity).apply { text = at + " · " + item.optString("sourceName").ifBlank { MoteI18n.text("文件") }; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
-            card.contentDescription = item.optString("title") + "，" + at + "，" + label
+            val fileDetail = FileViewPresentation.listDetail(row)
+            if (fileDetail != null) card.addView(TextView(activity).apply {
+                text = label + " · " + fileDetail; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED); maxLines = 3
+            })
+            card.contentDescription = item.optString("title") + "，" + at + "，" + label + (fileDetail?.let { "，" + it } ?: "")
             card.setOnClickListener {
                 if (row.local?.optBoolean("localFile") == true) activity.startActivity(Intent(activity, FileContentActivity::class.java).putExtra("sourceId", row.key.source).putExtra("externalId", row.key.external).putExtra("sourceRevision", row.key.revision))
                 else LibrarySourceReaderActivity.open(activity, row.key.origin, row.key.type, row.key.source, row.key.external, row.key.device, row.key.revision, row.central?.optString("captureId").orEmpty(), row.local != null)

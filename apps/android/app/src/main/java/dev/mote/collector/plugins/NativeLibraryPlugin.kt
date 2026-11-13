@@ -6,6 +6,7 @@ import android.net.Uri
 import dev.mote.collector.CentralAccess
 import dev.mote.collector.CentralCaptureReader
 import dev.mote.collector.CentralClient
+import dev.mote.collector.CentralFileView
 import dev.mote.collector.CentralLibrary
 import dev.mote.collector.CentralMemoryTopics
 import dev.mote.collector.CentralScreens
@@ -190,6 +191,7 @@ internal class LibraryReader(
         val range: JSONObject? = null,
         val members: JSONObject? = null,
         val file: JSONObject? = null,
+        val fileView: CentralFileView? = null,
         val history: JSONArray? = null,
     )
 
@@ -234,6 +236,17 @@ internal class LibraryReader(
     }
 
     fun selection(): Access = access()
+
+    /** Current capabilities for one exact original. A failure is reported to
+     * the caller so a revoked source is not mistaken for a transient outage. */
+    fun view(request: Request): CentralFileView? {
+        if (request.local || request.capture.isBlank()) return null
+        val selected = access()
+        val client = selected.client ?: return null
+        if (selected.server != request.origin) return null
+        val view = CentralFileView.read(client.get("/api/files/" + enc(request.capture) + "/view"))
+        return view.takeIf { same(selected) && it.captureId == request.capture }
+    }
 
     fun member(reference: String): MemberResult {
         if (!reference.startsWith("capture:")) return MemberReference(reference)
@@ -293,10 +306,15 @@ internal class LibraryReader(
         val file = if (record.has("fileArchive")) client.get("/api/files/" + enc(request.capture)).also {
             check(it.getString("captureId") == request.capture)
         } else null
+        val fileView = file?.let {
+            CentralFileView.read(client.get("/api/files/" + enc(request.capture) + "/view")).also { view ->
+                check(view.captureId == request.capture && view.revision == it.getJSONObject("item").optString("revision")) { invalidPinnedVersion() }
+            }
+        }
         val history = client.get("/api/sources/" + enc(request.source) + "/history?externalId=" + enc(request.external)).getJSONArray("items")
         val content = record.optString("ocrText")
         val next = if (content.length > offset + 4000) offset + 4000 else null
-        return LibraryPage(record, content.drop(offset).take(4000), next, file = file, history = history)
+        return LibraryPage(record, content.drop(offset).take(4000), next, file = file, fileView = fileView, history = history)
     }
 
     private fun nextOffset(range: JSONObject?) = if (range == null || range.isNull("nextOffset")) null else range.getInt("nextOffset")
