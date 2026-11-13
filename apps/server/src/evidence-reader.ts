@@ -823,7 +823,10 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false,metadataOnly=false){
     if(!fileAttachmentAvailable(this.store,record.id,metadataOnly))return false;
     const fileId=this.files?.fileForRead(record.id);
-    if(fileId&&!this.files!.readableFile(record.id))return false;
+    // An exact image id can name a retained immutable historical original.
+    // This does not admit historical files into discovery or redirect to the
+    // latest version; the existing source/retention authority still decides.
+    if(fileId&&!this.files!.readableFile(record.id)&&!(representation==='image'&&fileId===record.id&&this.files!.readableHistoricalFile(fileId)))return false;
     const provenance=record.provenance,materialRef=provenance?.uri?.startsWith('material:')?provenance.uri.split('#')[0]:undefined;
     const material=materialRef?this.materials?.get(materialRef):undefined;
     if(materialRef){
@@ -839,7 +842,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     if(provenance?.sourceId&&provenance.externalId){
       const head=this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?')
         .get(provenance.sourceId,provenance.externalId) as {deleted:number}|undefined;
-      if(head?.deleted&&!fileId)return false;
+      if(head?.deleted&&(!fileId||representation==='image'))return false;
     }
     const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':provenance?.document?.coding?'coding-agent':this.sourceKind(provenance?.sourceId,record.source);
     const phase:EvidencePhase=record.ocr?.status==='pending'?'pending':record.ocr?.status==='failed'?'partial':'complete';
@@ -940,6 +943,14 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       if(!material||material.origin.sourceId!==p.sourceId||material.origin.externalId!==p.externalId)return;
       return this.materialHead(material,scope)?.id===head.captureId?material:undefined;
     }catch{return;}
+  }
+  /** Image products are formal navigation, including when OCR is empty. Keep
+   * ordinary native files on their existing file/chunk path; an image card
+   * still needs evidence expansion and a separate authorized pixel read. */
+  private queryItemMaterial(record:CaptureRecord,scope:Range):MaterialRecord|undefined {
+    const file=this.files?.fileForRead(record.id);
+    if(file&&!fileAttachmentParent(this.store,file)&&!this.files!.detail(file,false).item.mimeType.startsWith('image/'))return;
+    return this.sourceItemMaterial(record,scope);
   }
   /** Owner navigation uses current stored anchor or source-head relationships.
    * Neither an upstream URI nor captured prose can name another Material. */
@@ -1087,7 +1098,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       seen.add(material.ref);materialViews.push(card);
     };
     for(const record of results){
-      const file=this.files?.fileForRead(record.id),material=file&&!fileAttachmentParent(this.store,file)?undefined:this.sourceItemMaterial(record,args);
+      const material=this.queryItemMaterial(record,args);
       if(material){
         suppressed++;
         addMaterial(material);
@@ -1117,7 +1128,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const page=this.store.list({...args,cursor,limit:200,includeTotal:false});
       for(let index=0;index<page.items.length;index++){
         const record=page.items[index];
-        const file=this.files?.fileForRead(record.id),material=file&&!fileAttachmentParent(this.store,file)?undefined:this.sourceItemMaterial(record,args);
+        const material=this.queryItemMaterial(record,args);
         // Visit a composed source once at its parent position, including across
         // page boundaries. Attachment processing receipts are not new activity.
         if(material&&fileAttachmentParent(this.store,record.id))continue;
@@ -1296,7 +1307,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       // listItems applies calendar overlap / authored-time semantics; do not replace planned time with capture time.
       sourceItems:async (args:Parameters<NonNullable<ContextReader['sourceItems']>>[0]&Range)=>{const page=sources.listItems(args),scope={...args};
         const visible=this.evidenceById(page.items.map(i=>i.captureId),{deviceId:args.deviceId,sourceIds:args.sourceIds}).flatMap(record=>{
-          const file=this.files?.fileForRead(record.id),material=file&&!fileAttachmentParent(this.store,file)?undefined:this.sourceItemMaterial(record,scope);
+          const material=this.queryItemMaterial(record,scope);
           const view=material?this.materialCard(material,record):record;
           return view&&this.captureExposure(view,operation('discover'),policy)?[view]:[];
         });
