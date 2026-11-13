@@ -98,3 +98,24 @@ test('visual coverage follows cited original groups across rewritten and reorder
  const halves=[{...image({x:0,y:0,width:50,height:100}),viewId:'1'.repeat(64)},{...image({x:50,y:0,width:50,height:100}),viewId:'2'.repeat(64)}];
  await assert.rejects(()=>reviewMemory({question:'Generated visual review'},wholeDraft,async()=>result({memories:halves.map((view,index)=>candidate('Rewritten half '+index,id,view))},halves.map(imageView=>({id,imageView})))),/retained visual proof/);
 });
+
+test('an assessed zero-Memory image draft still receives an independent range review',async()=>{
+ const id=randomUUID(),view=image(),draft=result({memories:[],coverage:[{key:'generated-target',state:'no_candidates',candidateIndexes:[]}]},[{id,imageView:view}]);
+ let reviews=0;
+ const reviewed=await reviewMemory({question:'Assess the generated wordless image',taskContext:{memoryWork:{workContract:'range-evaluation@1'}}},draft,async input=>{
+  reviews++;assert.equal(input.traceContext?.phase,'review');
+  const proposal=input.taskContext!.untrustedMemoryDraft as {imageViews:{imageView:ImageView}[]};
+  assert.equal(proposal.imageViews[0].imageView.original.sha256,view.original.sha256,'the draft carries navigation only');
+  return result({memories:[],coverage:[{key:'generated-target',state:'no_candidates',candidateIndexes:[]}]},[{id,imageView:view}]);
+ });
+ assert.equal(reviews,1);assert.notEqual(reviewed.runId,draft.runId);assert.deepEqual(JSON.parse(reviewed.answer).memories,[]);
+});
+
+test('discarded visual proof imposes no pixel requirement on a separately quoted OCR conclusion',async()=>{
+ const id=randomUUID(),ocrId=randomUUID(),view=image(),draft=result({memories:[{statement:'An unsupported visual proposal.',evidence:[{id,image:{originalSha256:view.original.sha256,viewId:view.viewId}}]}]},[{id,imageView:view}]);
+ const reviewed=await reviewMemory({question:'Review this generated article',taskContext:{memoryWork:{workContract:'range-evaluation@1'}}},draft,async()=>result({memories:[{statement:'The article author resigned.',evidence:[{id:ocrId,quote:'The article author resigned.'}]}]}));
+ assert.deepEqual(memoryImageReadReceipts(reviewed),[]);
+ assert.deepEqual(JSON.parse(reviewed.answer).memories[0].evidence,[{id:ocrId,quote:'The article author resigned.'}]);
+ // Exact OCR provenance and target coverage remain the full pipeline's job;
+ // this rule only removes the discarded visual group's coverage requirement.
+});
