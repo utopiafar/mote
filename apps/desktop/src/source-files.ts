@@ -152,7 +152,9 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       const contentHash = spooled?.sha256??(original ? fileDigest(original) : undefined),contentVersion=contentHash??candidate.quickHash;
       // The digest is always of the exact bytes destined for Central, including
       // literal masking. Never compare a raw original to a transformed digest.
-      if (baseline || matched && unchanged && contentHash && contentHash===matched.contentHash) {
+      // A targeted recovery re-read must emit its item even when the digest
+      // matches; Central explicitly asked to resupply that acknowledged version.
+      if (!reRead && (baseline || matched && unchanged && contentHash && contentHash===matched.contentHash)) {
         bind();catalog.markContent(candidate.relativePath, contentVersion, 'synced',contentHash);
         if(spooled){await rm(spooled.directory,{force:true,recursive:true});spooled=undefined;}
         return 'ok';
