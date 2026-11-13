@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {FileDetail} from '../src/plugins/intake/Files.js';
+import {fileViewSchema} from '@mote/shared';
 import type {Api} from '../src/api.js';
 
 test('generated transcript groups retain child correction/seek controls and scope range submission to one raw artifact',async t=>{
@@ -14,9 +15,10 @@ test('generated transcript groups retain child correction/seek controls and scop
  const chunks=[0,1,2].map(i=>({id:'generated-child-'+i,ocrText:'[SPEAKER_0] Generated '+i,fileEvidence:{artifactId:dialogue,chunkId:'generated-child-'+i,speaker:'SPEAKER_0',startMs:i*500,endMs:(i+1)*500,uncertain:i===1}}));
  const file={captureId:id,sourceId:'generated',sizeBytes:16,hasOriginal:true,originMissing:false,item:{title:'Generated recording',layer:'original',mimeType:'audio/wav',observedAt:'2026-10-01T00:00:00Z'},job:{state:'succeeded',summary_state:'skipped'},cancellation:{canCancel:false,wait:null},processingPolicy:{capabilities:{dialogue:true,summary:false},current:{profile:{name:'Generated profile',processorId:'audio.local-dialogue',parameters:{},summarize:false},rule:{type:'audio/*'}}},artifacts:[{id:raw,kind:'transcript'},{id:dialogue,kind:'dialogue'}]};
  const api={request:async(path:string,init?:RequestInit)=>{
-  if(init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});return path.endsWith('/playback')?{url:'/generated.wav'}:{queued:true};}
+  if(init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});return path.endsWith('/playback')?{url:'/api/files/'+id+'/content'}:{queued:true};}
   if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
   if(path==='/api/files/'+id)return file;
+  if(path==='/api/files/'+id+'/view')return fileViewSchema.parse({captureId:id,sourceId:'generated',item:{...file.item,externalId:'generated.wav',revision:'1',kind:'file',text:''},retention:'archive',hasOriginal:true,originMissing:false,canOpenOriginal:true,coverage:{extraction:{status:'ready'},semantic:{status:'pending'},embedding:{status:'pending'}}});
   if(path.includes('/chunks'))return path.endsWith('offset=0')?{items:chunks.slice(0,2),nextOffset:2}:{items:chunks.slice(2),nextOffset:null};
   return {items:[]};
  },setAgentTimeout:()=>{}} as Api;
@@ -27,9 +29,9 @@ test('generated transcript groups retain child correction/seek controls and scop
  await act(async()=>button('继续展开').click());assert.match(d.body.textContent!,/展开 3 个原始片段/);assert.equal(d.querySelector('.file-text')!.textContent,'Generated 0Generated 1Generated 2');assert.equal(d.querySelectorAll('.file-text').length,4,'one presentation and all three canonical children');
  await act(async()=>button('回听录音').click());const seeks=d.querySelectorAll<HTMLButtonElement>('.recording-segment .recording-time');await act(async()=>seeks[1].click());assert.equal(d.querySelector('audio')!.currentTime,.5);
  const corrections=Array.from(d.querySelectorAll<HTMLButtonElement>('button')).filter(b=>b.textContent==='纠正文字');await act(async()=>corrections[1].click());await act(async()=>button('保存校正').click());assert.equal(writes.find(w=>w.path.endsWith('/corrections'))!.body.chunkId,'generated-child-1');assert.equal(writes.find(w=>w.path.endsWith('/corrections'))!.body.artifactId,dialogue);assert.equal(writes.find(w=>w.path.endsWith('/corrections'))!.body.originalText,'Generated 1');
- await act(async()=>button('处理详情').click());const selects=d.querySelectorAll<HTMLSelectElement>('select');await act(async()=>{selects[1].value='range';selects[1].dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
+ await act(async()=>button('处理详情').click());assert.doesNotMatch(d.body.textContent!,/WeSpeaker|3D-Speaker/);assert.match(d.body.textContent!,/CAM\+\+/);const selects=d.querySelectorAll<HTMLSelectElement>('select');await act(async()=>{selects[0].value='range';selects[0].dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
  const inputs=d.querySelectorAll<HTMLInputElement>('input[type=number]');await act(async()=>{for(const [input,value] of [[inputs[0],'1'],[inputs[1],'3']] as const){Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));}});
  await act(async()=>button('应用并重新分人').closest('form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));
- assert.deepEqual(writes.find(w=>w.path.endsWith('/retry'))!.body,{stage:'diarize',diarization:{artifactId:raw,options:{processor:'audio.diarize-wespeaker',speakerCount:null,range:{min:1,max:3}}}});
+ assert.deepEqual(writes.find(w=>w.path.endsWith('/retry'))!.body,{stage:'diarize',diarization:{artifactId:raw,options:{processor:'audio.diarize',speakerCount:null,range:{min:1,max:3}}}});
  assert.ok(writes.every(w=>w.path.startsWith('/api/files/'+id+'/')));
 });
