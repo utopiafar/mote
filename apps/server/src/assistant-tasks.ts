@@ -70,7 +70,11 @@ export class AssistantTasks implements BatchProductProjection {
  private questionWork(id:string){
   const task=this.tasks.get(id);
   if(task.kind!=='assistant.task'||!this.current(task))throw new StoreError('Assistant task input is no longer current',409);
-  const input=this.draft(task),ids=this.discover(input.request.scope).ids;
+  // A routine task was discovered with automatic admission, so its continuation
+  // must keep the same source-exclusion and evidence-eligibility checks. Treating
+  // the owner reply as an unrestricted manual read would add excluded sources.
+  const input=this.draft(task) as FrozenDraftTask&{routine?:RoutineRef};
+  const ids=this.discover(input.request.scope,Boolean(input.routine)).ids;
   return {task,goal:input.request.goal,evidence:this.reader.evidence(ids.map(id=>formatEvidenceRef('capture',id)),input.request.scope),
    dependencies:this.tasks.evidenceDependencies(task.id,task.revision,this.assertCurrent).ids};
  }

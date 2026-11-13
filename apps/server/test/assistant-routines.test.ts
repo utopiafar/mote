@@ -78,6 +78,28 @@ test('a due rule creates one real A2 task without a new source change and combin
  assert.equal(f.node.assistantRoutines.admit(due).taskId,first.taskId);
 });
 
+test('an answered routine keeps automatic source exclusions in its resumed read set',async t=>{
+ const calls:QueryInput[]=[];
+ const f=await fixture(t,async input=>{calls.push(input);
+  if(calls.length===1)return {...answer(input),answer:JSON.stringify({state:'needs_owner_input',question:{prompt:'Generated routine choice',reason:'Generated reason',choices:[{id:'first',label:'Generated first choice',answer:'Generated first choice'}],evidence:[]}})};
+  return answer(input);
+ });
+ const allowed=await f.note('generated-allowed'),hidden=await f.note('generated-excluded');
+ f.command('on');f.command('exclude',['device:generated-excluded']);
+ const rule=await f.create();f.setClock('2026-11-04T10:00:00Z');
+ const task=f.node.assistantRoutines.admit({ruleId:rule.id,revision:rule.revision,scheduledAt:rule.nextDue});
+ await until(()=>Boolean(f.node.store.db.prepare("SELECT 1 FROM owner_questions WHERE json_extract(json,'$.state')='open'").get()));
+ const operation=String(f.node.store.db.prepare('SELECT operation_id FROM task_records WHERE id=?').get(task.taskId)!.operation_id);
+ const response=await f.node.app.inject({url:'/api/owner-questions?operationId='+encodeURIComponent(operation),headers});assert.equal(response.statusCode,200,response.body);
+ const question=response.json().items[0];assert.ok(question);
+ const reply=await f.node.app.inject({method:'POST',url:'/api/owner-questions/'+question.id+'/reply',headers,payload:{requestId:randomUUID(),expectedRevision:question.revision,action:'answer',choiceId:'first'}});
+ assert.equal(reply.statusCode,200,reply.body);
+ await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(task.taskId)?.state==='succeeded');
+ assert.equal(calls.length,2);
+ assert.ok(calls[0].evidenceIds?.includes(allowed));assert.ok(!calls[0].evidenceIds?.includes(hidden));
+ assert.ok(calls[1].evidenceIds?.includes(allowed));assert.ok(!calls[1].evidenceIds?.includes(hidden),'the owner answer must not add an automatically excluded source');
+});
+
 test('missed daily occurrences preserve the first DST overlap and resume at the next local time',async t=>{
  const f=await fixture(t);await f.note('generated-dst');f.command('on');f.setClock('2026-11-01T00:00:00Z');
  const rule=await f.create({kind:'all'},{timeZone:'America/New_York',trigger:{kind:'daily',localTime:'01:30'}});
