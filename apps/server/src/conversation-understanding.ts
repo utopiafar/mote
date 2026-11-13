@@ -83,13 +83,21 @@ function parseConversationProducts(answer:string,scope:ConversationEvidenceScope
  if(Buffer.byteLength(answer)>64000)throw new StoreError('Semantic output exceeds the 64 KB response budget',502);
  conversationProductsSchema.extend({memoryCandidates:workContract?z.array(claimSchema):conversationProductsSchema.shape.memoryCandidates}).parse(JSON.parse(answer));
  const output=parseSemanticProducts(answer,scope.records,citationIds,scope.ranges,workContract);
- const claims=[...output.events,...output.workRecords!.flatMap(record=>[...record.requirements,...record.constraints,...record.decisions,...record.results,...record.validation,...record.openItems,...record.artifactRefs])];
- for(const claim of claims){
-  if(claim.sourceTime&&!claim.evidence.some(evidence=>evidence.quote.includes(claim.sourceTime!)||scope.records.find(record=>record.id===evidence.id)?.provenance?.document?.recordedAt===claim.sourceTime))throw new StoreError('A source time must appear in its exact original support or source metadata',502);
- }
- for(const ref of output.workRecords!.flatMap(record=>record.artifactRefs))if(!ref.evidence.some(evidence=>evidence.quote.includes(ref.ref)))throw new StoreError('An artifact reference must appear in its exact original support',502);
+ validateConversationClaims(output,scope.records);
  if(conversationProductText(output).length>12000)throw new StoreError('Readable conversation products exceed 12000 characters; shorten the summary and claims while preserving their evidence',502);
  return output;
+}
+
+/** Check declared attribution, never infer meaning from captured words. Both
+ * publication and assistant disclosure enforce the same Coding contract. */
+export function validateConversationClaims(output:Pick<ReturnType<typeof parseSemanticProducts>,'events'|'workRecords'>,records:CaptureRecord[]){
+ const claims=[...output.events,...(output.workRecords??[]).flatMap(record=>[...record.requirements,...record.constraints,...record.decisions,...record.results,...record.validation,...record.openItems,...record.artifactRefs])];
+ for(const claim of claims){
+  if(!claim.actor||!claim.status||!claim.basis||claim.sourceTime===undefined)throw new StoreError('Coding claims require attribution, status, basis and sourceTime',502);
+  if((claim.actor==='assistant'||claim.basis==='assistant_reported')&&(claim.status==='confirmed_outcome'||claim.basis==='user_confirmed'))throw new StoreError('Assistant reports cannot be independent confirmation or owner confirmation; preserve assistant_reported attribution and reported_outcome or the applicable non-confirmed status',502);
+  if(claim.sourceTime&&!claim.evidence.some(evidence=>evidence.quote.includes(claim.sourceTime!)||records.find(record=>record.id===evidence.id)?.provenance?.document?.recordedAt===claim.sourceTime))throw new StoreError('A source time must appear in its exact original support or source metadata',502);
+  if('ref' in claim&&(typeof claim.ref!=='string'||!claim.evidence.some(evidence=>evidence.quote.includes(claim.ref as string))))throw new StoreError('An artifact reference must appear in its exact original support',502);
+ }
 }
 
 /** Derived prose is searchable navigation. UUIDs still point to original messages. */
@@ -109,7 +117,7 @@ function conversationProductText(output:ReturnType<typeof parseSemanticProducts>
 
 /** One model interpretation feeds work/event consumers and independently reviewed Memory. */
 export function conversationUnderstandingProcessor(options:ConversationUnderstandingOptions):ContextProcessor{
- return {id:'mote.coding-conversation-understanding',version:'4',lane:'semantic',async process(input){
+ return {id:'mote.coding-conversation-understanding',version:'5',lane:'semantic',async process(input){
   input.signal.throwIfAborted();
   const selected=options.selection(input.config);
   if(!selected.configured)throw new StoreError('Model not configured',409);
@@ -173,4 +181,5 @@ export const CONVERSATION_UNDERSTANDING_PROMPT=`Interpret every supplied part of
 Return a JSON object inside answer with exactly: summary (max 6000 characters), evidence (1–20 summary supports), workRecords (0–8), events (0–12), memoryCandidates (0–8 matching the supplied memory admission contract), actionCues (always []). Keep summary and all work/event statements concise enough to render together in at most 12000 characters, including attribution, uncertainty and original UUIDs. All support entries are {id:originalUUID,quote:exact original substring,offset?:absolute UTF-16 offset}; quotes max 2000 characters, inside supplied ranges. Include all quoted UUIDs in outer citationIds. Use separate exact quotes for disjoint passages. Never cite a derived record as original.
 Each workRecord is {title,requirements:[],constraints:[],decisions:[],results:[],validation:[],openItems:[],artifactRefs:[]}. Organize useful work by meaning, preserve the main user request and subsequent sub-tasks. Each entry is {statement,actor:"user"|"assistant"|"third_party"|"unknown",status:"request"|"decision"|"plan"|"reported_outcome"|"confirmed_outcome"|"unknown",basis:"direct_expression"|"assistant_reported"|"user_confirmed"|"inferred"|"unknown",sourceTime:ISO|null,uncertainty,evidence:[supports]}. artifactRefs entries additionally require ref: an exact path, commit/PR identifier or URL present in a supporting quote; these are navigation only, never proof of existence or permission to act. All arrays may be empty; do not manufacture records to fill them.
 Each event has those same statement, actor, status, basis, sourceTime, uncertainty and evidence fields, plus occurredAt?:ISO only when occurrence is explicitly established. Keep ordinary owner experiences, expressed feelings and scoped decisions when supported; personal events are optional. sourceTime is the exact source-recorded timestamp from a supporting message header (quote it) or supplied recordedAt metadata, never import time or generatedAt. If unavailable use null. sourceTime describes when the statement was made; occurredAt describes when the event happened, and may differ. Do not calculate work duration from message gaps.
-Preserve speakers, project scope, requests versus plans versus reported results, missing verification and corrections. Later explicit corrections supersede earlier reported states within this supplied range; retain supporting evidence and note the correction. Assistant claims of tests passing, deployment or merging are assistant_reported reported_outcome, never independent verification. A user confirmation may be user_confirmed confirmed_outcome, but does not prove physical-device or live-model checks beyond their exact report. Host-injected context and third-party quoted content are not the owner's authored personal expressions. A coding task need not produce a coding memory; a short owner event need not become durable memory. Empty memoryCandidates is valid. Keep the entire output under 64000 UTF-8 bytes.`;
+Preserve speakers, project scope, requests versus plans versus reported results, missing verification and corrections. Later explicit corrections supersede earlier reported states within this supplied range; retain supporting evidence and note the correction. Assistant claims of tests passing, deployment or merging are assistant_reported reported_outcome, never independent verification. An assistant actor or assistant_reported basis cannot have confirmed_outcome or user_confirmed; a separate explicit owner confirmation is its own user claim. A user confirmation may be user_confirmed confirmed_outcome, but does not prove physical-device or live-model checks beyond their exact report. Host-injected context and third-party quoted content are not the owner's authored personal expressions.
+The same workRecords and events serve technical recovery and the personal assistant. Preserve useful project progress, unresolved questions and owner life context even when memoryCandidates is empty. Do not force personal context into a coding lesson or invent durable memory, suggestions, matters or notifications. Unknown or session-only project identity remains scoped to this conversation; a discussed project name is not a workspace identity and cannot merge separate sessions. When a page begins inside a message and its speaker or time is not established in the supplied range or metadata, use unknown or null rather than borrowing attribution from another page. Never retrieve excluded process text, hidden reasoning, host context or tool bodies to fill gaps. Keep the entire output under 64000 UTF-8 bytes.`;

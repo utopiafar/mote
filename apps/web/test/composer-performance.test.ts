@@ -15,11 +15,17 @@ const summary=(id='A')=>({id,title:'Generated '+id,createdAt:when,updatedAt:when
 const answer=(id:string):Answer=>({answer:`## Generated ${id}\n\n**Verified** [${citation}]\n\n| Item | State |\n| --- | --- |\n| Generated | Ready |`,runId:id,citations:[{id:citation,appName:'Generated source',capturedAt:when,excerpt:'Generated evidence'}],trace:[]});
 const turn=(id:string)=>({id,question:'Generated question '+id,status:'completed',createdAt:when,result:answer(id)});
 const deferred=()=>{let resolve!:(value:any)=>void;const promise=new Promise<any>(done=>resolve=done);return {promise,resolve};};
+const settingsView={revision:1,domains:[{id:'conversations',effective:{multipleConversations:true,context:{historyRatio:0.5,lowWatermarkRatio:0.5,contextWindow:null,contextWindowSource:'conservative'}},saved:{},fields:[],status:'applied'}]};
+function receipt(input:any,status='accepted'):any{return{id:crypto.randomUUID(),conversationId:input.conversationId,clientRequestId:input.clientRequestId,seq:0,question:input.question,scope:input.scope,revision:1,status,createdAt:when,...(input.modelProfileId?{modelProfileId:input.modelProfileId}:{}),...(input.modelOverride?{modelOverride:input.modelOverride}:{})};}
 function apiWith(read:(path:string,init?:RequestInit)=>unknown,owner?:string):Api {
  return {
   request:async(path:string,init?:RequestInit)=>{
    if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
    if(path==='/api/model-settings')return modelView();
+   if(path==='/api/conversations/main')return {id:'A'};
+   if(path==='/api/configuration')return settingsView;
+   if(path==='/api/conversations'&&init?.method==='POST')return {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'};
+   if(path.startsWith('/api/conversations/')&&path!=='/api/conversations/messages'&&!path.includes('?')&&!path.includes('/messages/')&&!path.includes('/references/')){const value=read(path,init);if(value&&typeof value==='object'&&!Array.isArray((value as {turns?:unknown}).turns))return{...summary(decodeURIComponent(path.slice('/api/conversations/'.length))),title:'',turnCount:0,revision:1,nextCursor:null,turns:[]};return value;}
    return read(path,init);
   }} as Api;
 }
@@ -61,12 +67,11 @@ for(const count of [1,20,100])test(`typing 10 updates with ${count} loaded answe
 });
 
 test('model selection and override input keep draft edit ordering, live settings updates and the current API owner',async t=>{
- const f=await fixture(t),posts:any[]=[],poll=deferred();let settings=modelView();
+ const f=await fixture(t),posts:any[]=[],accepted=deferred();let settings=modelView();
  settings={...settings,profiles:[...settings.profiles,{...settings.profiles[0]!,id:'generated-second-provider',name:'Generated second provider',readOnly:false}]};
  const transport=apiWith((path,init)=>{
   if(path.endsWith('/models'))return{items:[{id:'generated-catalog-model',name:'Generated catalog model'}]};
-  if(path==='/api/query-runs'&&init?.method==='POST'){const body=JSON.parse(String(init.body));posts.push(body);return{id:body.id,status:'running',createdAt:when,updatedAt:when,events:[]};}
-  if(path.startsWith('/api/query-runs/'))return poll.promise;
+  if(path==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));posts.push(input);return accepted.promise;}
   return{items:[]};
  });
  const api={...transport,request:async(path:string,init?:RequestInit)=>path==='/api/model-settings'?settings:transport.request(path,init)} as Api;
@@ -85,114 +90,115 @@ test('model selection and override input keep draft edit ordering, live settings
  await act(async()=>resources(api).get('/api/model-settings').invalidate());
  assert.match(selector.textContent!,/Generated refreshed provider/,'memo still consumes real shared resource updates');assert.equal(version(),expected,'settings refresh does not edit the draft');
  await act(async()=>f.input().focus());await f.press('Enter');
- assert.equal(posts.length,1);assert.equal(posts[0].input.question,'Generated selected-model question');assert.equal(posts[0].input.modelProfileId,'generated-second-provider');assert.equal(posts[0].input.modelOverride,'generated-final-override');
- assert.equal((queryRecovery.get(api) as import('../src/plugins/ask/query-recovery.js').OwnedQuery).draftVersion,expected,'admission freezes the version after the model edits');
- assert.equal(f.d.querySelector<HTMLInputElement>('[aria-label="临时模型 ID"]')!.disabled,true);
+ assert.equal(posts.length,1);assert.equal(posts[0].question,'Generated selected-model question');assert.equal(posts[0].modelProfileId,'generated-second-provider');assert.equal(posts[0].modelOverride,'generated-final-override');
+ assert.equal(f.input().disabled,true);
+ await act(async()=>accepted.resolve(receipt(posts[0])));
+ assert.equal(f.input().value,'');assert.equal(f.input().disabled,false);
  const nextTransport=apiWith(()=>({items:[]})),next={...nextTransport,request:async(path:string,init?:RequestInit)=>path==='/api/model-settings'?settings:nextTransport.request(path,init)} as Api;
  await f.render(next);const oldVersion=version(),nextVersion=version(next);await inputModel('generated-next-owner-model');
  assert.equal(version(next),nextVersion+1,'the stable callback belongs to the new API');assert.equal(version(),oldVersion,'the prior owner receives no new draft edit');
 });
 
-test('composer keeps current controlled input, IME, Shift+Enter, submit, pending draft and terminal timing',async t=>{
- const f=await fixture(t),poll=deferred(),admission=deferred(),posts:any[]=[];let run:any;
- const api=apiWith((path,init)=>{
-  if(path==='/api/query-runs'&&init?.method==='POST'){posts.push(JSON.parse(String(init.body)));return admission.promise;}
-  if(path.startsWith('/api/query-runs/'))return poll.promise;
-  if(path==='/api/conversations/A')return {...summary(),turns:[turn('new')],revision:1,nextCursor:null};
-  return {items:[]};
- },'A');
+test('composer keeps current controlled input, IME, Shift+Enter, submit and a later draft while admission is pending',async t=>{
+ const f=await fixture(t),admission=deferred(),posts:any[]=[];let current:any;
+ const api=apiWith((path,init)=>{if(path==='/api/conversations/messages'&&init?.method==='POST'){posts.push(JSON.parse(String(init.body)));return admission.promise;}if(path==='/api/conversations/A')return{...summary(),turns:current?[{...turn('new'),id:current.id,status:current.status,result:undefined}]:[],revision:1,nextCursor:null};return {items:[]};});
  await f.render(api);await f.type('  Generated 草稿  ');
  assert.equal(f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,false);
  assert.equal((await f.press('Enter',{isComposing:true})).defaultPrevented,false);assert.equal(posts.length,0);
  assert.equal((await f.press('Enter',{shiftKey:true})).defaultPrevented,false);assert.equal(posts.length,0);
- assert.equal((await f.press('Enter')).defaultPrevented,true);assert.equal(posts.length,1);assert.equal(posts[0].input.question,'Generated 草稿');assert.equal(f.input().value,'  Generated 草稿  ');assert.equal(f.input().disabled,true);
- run={id:posts[0].id,status:'running',createdAt:when,updatedAt:when,events:[]};await act(async()=>admission.resolve(run));assert.equal(f.input().value,'  Generated 草稿  ');
- await act(async()=>poll.resolve({...run,status:'completed',conversationId:'A'}));assert.equal(f.input().value,'');assert.equal(f.input().disabled,false);
+ assert.equal((await f.press('Enter')).defaultPrevented,true);assert.equal(posts.length,1);assert.equal(posts[0].question,'Generated 草稿');assert.equal(f.input().value,'  Generated 草稿  ');assert.equal(f.input().disabled,true);
+ await f.type('  Generated later draft  ');
+ current=receipt(posts[0]);
+ await act(async()=>admission.resolve(current));
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});
+ assert.equal(f.input().value,'  Generated later draft  ');assert.equal(f.input().disabled,false);
+ assert.equal(f.d.querySelector('.conversation-pending')?.textContent?.includes('已接收'),true);
 });
 
 test('the folded per-request model field cannot submit the drafted question and keeps Enter for its suggestions',async t=>{
  const f=await fixture(t),posts:any[]=[];
- const api=apiWith((path,init)=>{if(path==='/api/query-runs'&&init?.method==='POST'){posts.push(JSON.parse(String(init.body)));throw Error('Generated admission stop');}return {items:[]};});
+ const api=apiWith((path,init)=>{if(path==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));posts.push(input);return receipt(input);}return {items:[]};});
  await f.render(api);await f.type('Generated 草稿');
  const options=f.d.querySelector<HTMLDetailsElement>('.chat-model-options')!,field=f.d.querySelector<HTMLInputElement>('input[aria-label="临时模型 ID"]')!;
  await act(async()=>{options.open=true;});
  const enter=new f.dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});await act(async()=>field.dispatchEvent(enter));
  const afterField={posts:posts.length,draft:f.input().value};
  const sent=await f.press('Enter');
- // Interactions finish before asserting so a regression fails fast instead of unmounting mid-request.
- // The field sits visually inside the composer but has no form owner, so a browser has nothing to submit implicitly.
- // Compare a boolean: an assertion diff that inspects a jsdom form element takes minutes.
  assert.ok(options.closest('form'));assert.equal(field.form===null,true,'model ID field must have no form owner');assert.ok(field.list,'suggestions stay attached');
- // Enter keeps its default action, which a highlighted datalist suggestion needs.
  assert.equal(enter.defaultPrevented,false);assert.deepEqual(afterField,{posts:0,draft:'Generated 草稿'});
- // Sending from the question box itself is unchanged (a failed admission may retry, so check the first request).
- assert.equal(sent.defaultPrevented,true);assert.ok(posts.length>=1);assert.equal(posts[0].input.question,'Generated 草稿');
+ assert.equal(sent.defaultPrevented,true);assert.ok(posts.length>=1);assert.equal(posts[0].question,'Generated 草稿');
 });
-test('failed admission, failed run and cancellation preserve the existing draft and retry behavior',async t=>{
- const f=await fixture(t),poll=deferred(),posts:any[]=[];let mode='admission-failure',run:any;
+
+test('failed admission and cancellation preserve the existing draft and retry behavior',async t=>{
+ const f=await fixture(t),admission=deferred(),posts:any[]=[];let mode='failure',current:any;
  const api=apiWith((path,init)=>{
-  if(path==='/api/query-runs'&&init?.method==='POST'){posts.push(JSON.parse(String(init.body)));if(mode==='admission-failure')throw Error('Generated admission failure');run={id:posts.at(-1).id,status:'running',createdAt:when,updatedAt:when,events:[]};return run;}
-  if(path.endsWith('/cancel'))return {...run,status:'cancelled'};
-  if(path.startsWith('/api/query-runs/'))return poll.promise;
-  if(path==='/api/conversations/A')return {...summary(),turns:[turn('new')],revision:1,nextCursor:null};
+  if(path==='/api/conversations/messages'&&init?.method==='POST'){posts.push(JSON.parse(String(init.body)));if(mode==='failure')throw new TypeError('Generated admission failure');current=receipt(posts.at(-1));return mode==='success'&&posts.length===3?admission.promise:current;}
+  if(path.endsWith('/cancel')){current={...current,status:'cancelled'};return current;}
+  if(path.includes('/messages/'))return current;
+  if(path==='/api/conversations/A')return{...summary(),turns:current?[{...turn('new'),id:current.id,status:current.status,result:undefined}]:[],revision:1,nextCursor:null};
   return {items:[]};
  },'A');
  await f.render(api);await f.type('  Generated retry draft  ');await act(async()=>f.d.querySelector('form.ask-form')!.dispatchEvent(new f.dom.window.Event('submit',{bubbles:true,cancelable:true})));
- assert.equal(posts.length,2);assert.equal(posts[0].id,posts[1].id);assert.equal(f.input().value,'  Generated retry draft  ');assert.equal(f.input().disabled,false);assert.equal(f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,true);
- mode='run-failure';await f.click('重试同一请求');assert.equal(posts.length,3);assert.deepEqual(posts[2],posts[0]);await act(async()=>poll.resolve({...run,status:'failed',conversationId:'A'}));assert.equal(f.input().value,'Generated retry draft');assert.equal(f.input().disabled,false);
- // A separate deferred run lets the actual cancel command race its in-flight poll.
- const cancelPoll=deferred();let cancelRun:any;const cancelApi=apiWith((path,init)=>{
-  if(path==='/api/query-runs'&&init?.method==='POST'){cancelRun={id:JSON.parse(String(init.body)).id,status:'running',createdAt:when,updatedAt:when,events:[]};return cancelRun;}
-  if(path.endsWith('/cancel'))return {...cancelRun,status:'cancelled'};
-  if(path.startsWith('/api/query-runs/'))return cancelPoll.promise;
+ assert.equal(posts.length,2);assert.equal(posts[0].clientRequestId,posts[1].clientRequestId);assert.equal(f.input().value,'  Generated retry draft  ');assert.equal(f.input().disabled,false);assert.equal(f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,true);
+ mode='success';await f.click('重试同一请求');assert.equal(posts.length,3);assert.deepEqual(posts[2],posts[0]);current=receipt(posts[0]);await act(async()=>admission.resolve(current));await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});
+ assert.equal(f.input().value,'');assert.equal(f.input().disabled,false);assert.ok(f.d.querySelector('.conversation-pending'));
+ const cancelAdmission=deferred(),cancelPosts:any[]=[];let cancelCurrent:any;
+ const cancelApi=apiWith((path,init)=>{
+  if(path==='/api/conversations/messages'&&init?.method==='POST'){cancelPosts.push(JSON.parse(String(init.body)));return cancelAdmission.promise;}
+  if(path.endsWith('/cancel')){cancelCurrent={...cancelCurrent,status:'cancelled'};return cancelCurrent;}
+  if(path.includes('/messages/'))return cancelCurrent;
+  if(path==='/api/conversations/A')return{...summary(),turns:cancelCurrent?[{...turn('new'),id:cancelCurrent.id,status:cancelCurrent.status,result:undefined}]:[],revision:1,nextCursor:null};
   return {items:[]};
- },'A-cancel');
- await f.render(cancelApi);await f.type('Generated cancellation draft');await f.press('Enter');await f.click('停止生成');assert.equal(f.input().value,'Generated cancellation draft');
- await act(async()=>cancelPoll.resolve({...cancelRun,status:'cancelled'}));assert.equal(f.input().value,'Generated cancellation draft');assert.equal(f.input().disabled,false);
+ },'A');
+ await f.render(cancelApi);await f.type('Generated cancellation draft');await f.press('Enter');cancelCurrent=receipt(cancelPosts[0]);await act(async()=>cancelAdmission.resolve(cancelCurrent));await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});
+ assert.ok(f.d.querySelector('.conversation-pending'));await f.type('Generated later cancellation draft');await f.click('停止这条回答');
+ assert.equal(f.input().value,'Generated later cancellation draft');assert.equal(f.input().disabled,false);assert.match(f.d.querySelector('.conversation-turn[data-state=cancelled]')!.textContent!,/已停止/);
 });
 
-test('failed historical turn retry submits its original question and restores it on failure',async t=>{
- const f=await fixture(t),poll=deferred(),posts:any[]=[];let run:any;
+test('failed historical turn retry submits its original question and preserves a different current draft',async t=>{
+ const f=await fixture(t),posts:any[]=[];
  const api=apiWith((path,init)=>{
   if(path==='/api/conversations?limit=30')return {items:[summary()]};
   if(path==='/api/conversations/A')return {...summary(),turns:[{...turn('failed'),question:'Generated original retry',status:'failed',result:undefined,error:{code:'generated',message:'Generated failure'}}],revision:1,nextCursor:null};
-  if(path==='/api/query-runs'&&init?.method==='POST'){posts.push(JSON.parse(String(init.body)));run={id:posts[0].id,status:'running',createdAt:when,updatedAt:when,events:[]};return run;}
-  if(path.startsWith('/api/query-runs/'))return poll.promise;
+  if(path==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));posts.push(input);return receipt(input);}
   return {items:[]};
  },'A');
- await f.render(api);await act(async()=>f.d.querySelector<HTMLButtonElement>('.conversation-item')!.click());await f.type('Generated different draft');await f.click('再次提问');
- assert.equal(posts[0].input.question,'Generated original retry');assert.equal(f.input().value,'Generated different draft');assert.equal(f.input().disabled,true);
- await act(async()=>poll.resolve({...run,status:'failed',conversationId:'A'}));assert.equal(f.input().value,'Generated original retry');assert.equal(f.input().disabled,false);
+ await f.render(api);await act(async()=>{});await f.type('Generated different draft');await f.click('再次提问');
+ assert.equal(posts[0].question,'Generated original retry');assert.equal(f.input().value,'Generated different draft');assert.equal(f.input().disabled,false);
 });
 
 test('draft survives background/locale refresh and supplemental routing, while new/select/delete/API/connection reset it',async t=>{
  const f=await fixture(t);let revision=1;
  const read=(path:string)=>path==='/api/conversations?limit=30'?{items:[summary()]}:path==='/api/conversations/A'?{...summary(),revision,turns:[{...turn('new'),evidenceDeleted:revision>1}],nextCursor:'old'}:path.includes('?cursor=')?{...summary(),revision,turns:[turn('old')],nextCursor:null}:{items:[]};
- const api=apiWith(read,'A');await f.render(api);await act(async()=>f.d.querySelector<HTMLButtonElement>('.conversation-item')!.click());
+ const api=apiWith(read,'A');await f.render(api);await act(async()=>{});
  await f.click('加载更早的对话');assert.equal(f.d.querySelectorAll('.conversation-turn').length,2);
  await f.type('Generated preserved draft');const input=f.input(),cite=f.d.querySelector<HTMLButtonElement>('.inline-citation')!;cite.focus();await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/A'));
  assert.equal(f.input(),input);assert.equal(input.value,'Generated preserved draft');assert.equal(cite.isConnected,true);assert.equal(f.d.activeElement,cite);
  f.locale('en');await f.render(api);assert.equal(f.input().value,'Generated preserved draft');assert.match(f.d.querySelector('.inline-citation')!.textContent!,/Source/);f.locale('zh-CN');await f.render(api);
- // The existing owner-question route temporarily unmounts the ordinary composer.
  await act(async()=>{f.dom.window.history.replaceState(null,'','#/ask?question=generated-question');f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange'));});
  assert.equal(f.input(),null);await act(async()=>{f.dom.window.history.replaceState(null,'','#/ask');f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange'));});assert.equal(f.input().value,'Generated preserved draft');
  revision=2;await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/A'));assert.equal(f.d.querySelectorAll('.conversation-turn').length,1);assert.equal(f.d.querySelectorAll('.inline-citation').length,0);assert.match(f.d.body.textContent!,/相关证据已删除/);assert.equal(f.input().value,'Generated preserved draft');
- await f.click('新对话');assert.equal(f.input().value,'Generated preserved draft');await f.click('舍弃并切换');assert.equal(f.input().value,'');await f.type('Generated new draft');await act(async()=>f.d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.equal(f.input().value,'Generated new draft');await f.click('舍弃并切换');assert.equal(f.input().value,'');
+ await f.click('新对话');assert.equal(f.input().value,'Generated preserved draft');await f.click('舍弃并切换');await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});assert.equal(f.input().value,'');await f.type('Generated new draft');await act(async()=>f.d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.equal(f.input().value,'Generated new draft');await f.click('舍弃并切换');await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});assert.equal(f.input().value,'');
  await f.type('Generated deleted draft');await act(async()=>f.d.querySelector<HTMLButtonElement>('[aria-label="对话更多"]')!.click());await f.click('删除这段对话');await f.click('删除对话');assert.equal(f.input().value,'');
  await f.type('Generated old API draft');await f.render(apiWith(read,'A'));assert.equal(f.input().value,'');await f.type('Generated old connection draft');await f.render(apiWith(read,'B'));assert.equal(f.input().value,'');assert.doesNotMatch(f.d.body.textContent!,/Generated old connection draft/);
 });
 
 for(const phase of ['admission','poll'])test(`late old-connection ${phase} cannot overwrite the new connection draft`,async t=>{
- const f=await fixture(t),late=deferred();let signal:AbortSignal|undefined,run:any;
+ const f=await fixture(t),late=deferred();let signal:AbortSignal|undefined,current:any;
  const old=apiWith((path,init)=>{
-  if(path==='/api/query-runs'&&init?.method==='POST'){
-   run={id:JSON.parse(String(init.body)).id,status:'running',createdAt:when,updatedAt:when,events:[]};
-   if(phase==='admission'){signal=init.signal as AbortSignal;return late.promise;}return run;
+  if(path==='/api/conversations/messages'&&init?.method==='POST'){
+   const input=JSON.parse(String(init.body));
+   if(phase==='admission'){signal=init.signal as AbortSignal;return late.promise;}
+   current=receipt(input);return current;
   }
-  if(path.startsWith('/api/query-runs/')){signal=init?.signal as AbortSignal;return late.promise;}
+  if(path.includes('/messages/')){signal=init?.signal as AbortSignal;return late.promise;}
+  if(path==='/api/conversations/A')return{...summary(),turns:current?[{...turn('new'),id:current.id,status:current.status,result:undefined}]:[],revision:1,nextCursor:null};
   return {items:[]};
  },'old-connection');
- await f.render(old);await f.type('Generated old draft');await f.press('Enter');assert.ok(signal);
- const current=apiWith(()=>({items:[]}),'new-connection');await f.render(current);assert.equal(signal!.aborted,true);assert.equal(f.input().value,'');await f.type('Generated current connection draft');
- await act(async()=>late.resolve({...run,status:'failed',conversationId:'old-conversation'}));assert.equal(f.input().value,'Generated current connection draft');assert.equal(f.input().disabled,false);assert.doesNotMatch(f.d.body.textContent!,/Generated old draft/);
+ await f.render(old);await f.type('Generated old draft');await f.press('Enter');
+ if(phase==='poll')await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1300));});
+ assert.ok(signal);
+ const currentApi=apiWith(()=>({items:[]}),'new-connection');await f.render(currentApi);assert.equal(signal!.aborted,true);assert.equal(f.input().value,'');await f.type('Generated current connection draft');
+ await act(async()=>late.resolve(phase==='admission'?receipt({conversationId:'A',clientRequestId:'old',question:'Generated old draft',scope:{kind:'all'}}):{...current,status:'completed',conversationId:'A'}));
+ assert.equal(f.input().value,'Generated current connection draft');assert.doesNotMatch(f.d.body.textContent!,/Generated old draft/);
 });
