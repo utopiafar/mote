@@ -262,6 +262,18 @@ test('the saved per-query model budget reaches the native gate instead of the sh
   assert.equal(stats.reads, 0);
 });
 
+test('conservative conversation budget uses the labeled native window instead of the HTTP fallback', {timeout: 30000}, async t => {
+  const f = await fixture(t, {window: 272_000});
+  const answer = await f.agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline'],
+    modelBudget: {contextWindow: 98_304, maxTokens: 65_536, historyRatio: 0.5, lowWatermarkRatio: 0.5,
+      tokenCounting: 'estimated', contextWindowSource: 'conservative'}});
+  assert.deepEqual(answer.citations.map(c => c.id), [record.id]);
+  const stats = await f.stats();
+  assert.equal(stats.generations, 2);
+  assert.equal(stats.reads, 1);
+  assert.equal(stats.turns, 1);
+});
+
 test('native import recovery preserves a real workspace tool result without executing its command again', {timeout: 30000}, async t => {
   const f = await fixture(t, {workspace: true, window: 160000, mode: 'http-fallback', reject: 1});
   try {

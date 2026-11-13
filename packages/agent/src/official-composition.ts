@@ -21,6 +21,7 @@ import {ContextToolError} from './tool-errors.js';
 import {codexImageMetadata, type ImagePayload} from './tools/image-result.js';
 import {startBridge} from './bridge.js';
 import {displayTime} from './time.js';
+import {CODEX_CONSERVATIVE_CONTEXT_WINDOW} from './runtime/codex/launch.js';
 import {harnessPrivacyEntries, resolveModelCapabilities, validateModelOptions} from './models/provider-registry.js';
 import {estimateSerializedTokens} from './models/context-budget.js';
 import {bundledSkills, SKILL_VERSION} from './skills.js';
@@ -315,7 +316,13 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       trace({type: 'instructions.assembled', stage: 'starting', payload: {system, tools: definitions}});
       trace({type: 'context.assembled', stage: 'starting', payload: {prompt, metrics, seedEvidence: bridge.seedEvidence}});
       const traceTool = (event: Parameters<typeof reportTrace>[1]) => { if (selectedRuntime.emitHostToolTrace) trace(event); };
-      const capacity=input.modelBudget??resolveModelCapabilities(options);
+      // A conservative HTTP fallback is not a smaller native model window. The
+      // native client owns the documented 272k fallback and still intersects it
+      // with the catalog's real window; an owner-configured value stays pinned.
+      const codexConservative=selectedRuntime.id===CODEX_RUNTIME_ID&&input.modelBudget?.contextWindowSource==='conservative';
+      const capacity=codexConservative
+        ?{...input.modelBudget!,contextWindow:CODEX_CONSERVATIVE_CONTEXT_WINDOW}
+        :input.modelBudget??resolveModelCapabilities(options);
       const window=capacity.contextWindow,outputReserve='maxOutputTokens' in capacity?capacity.maxOutputTokens:capacity.maxTokens;
       // This is a conservative pre-delivery allowance. The HTTP adapter checks
       // its complete, actual serialized body again for every provider turn.
@@ -397,7 +404,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       // The saved conversation preference is per run, not a mutable change to
       // the shared model service or its configured output limit.
       const modelValue = input.modelBudget
-        ? {...modelPort.value, contextWindow: input.modelBudget.contextWindow}
+        ? {...modelPort.value, contextWindow: codexConservative ? CODEX_CONSERVATIVE_CONTEXT_WINDOW : input.modelBudget.contextWindow}
         : modelPort.value;
       const dependencies = {runId, scope, input, runtime, model: {...modelPort, value: modelValue, selection: selection.modelSelection}, output,
         tools: {definitions, bindings: [], assertCurrent:assertToolPins}, commitFence: {assertCurrent:assertToolPins},
