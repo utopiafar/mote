@@ -55,9 +55,11 @@ async function fixture(t:TestContext){
  await node.batchProcessing.close();
  const reader=node.featureServices.evidenceReader;
  const assertCurrent=(ids:readonly string[])=>{if(!reader.contextDependenciesAllowed(ids))throw new StoreError('Generated evidence changed',409);};
+ let service:AssistantFollowup;
  const batch=new BatchProcessing(node.store,node.executor,node.modelAuthorization,input=>node.query.queryAgent(input,'query','conversations'),assertCurrent,
-  ids=>node.modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(new SourceContextStore(node.store),result.sourceContextDependencies??[]),()=>undefined,()=>2,false,reader.memories);
- const service=new AssistantFollowup(node.store,node.materials,reader,node.featureServices.assistantCards,node.featureServices.assistantCommitments,node.featureServices.assistantMatters,batch,assertCurrent);
+  ids=>node.modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(new SourceContextStore(node.store),result.sourceContextDependencies??[]),()=>undefined,()=>2,false,reader.memories,
+  {assertDependencies:(id,ids)=>service?.assertBatchDependencies(id,ids)??false,valid:()=>true,project:()=>{},commit:()=>{}});
+ service=new AssistantFollowup(node.store,node.materials,reader,node.featureServices.assistantCards,node.featureServices.assistantCommitments,node.featureServices.assistantMatters,batch,assertCurrent);
  const tasks=new TaskRecords(node.store);
  await node.app.ready();
  const runtime=new ProcessingRuntime(node.store,[],{},Date.now,undefined,node.materials);
@@ -81,10 +83,10 @@ async function fixture(t:TestContext){
  const profile=node.modelSettings.select('chat'),admission={identities:[],connections:[agentModelConnection({kind:'profile',id:profile.id},profile.settings)]};
  const start=async(refs:string[],mode:{kind:'change'}|{kind:'briefing';after:string;before:string}={kind:'change'},scope:QueryScope=all)=>service.start({operationId:'generated:'+randomUUID(),requestId:randomUUID(),scope,materialRefs:refs,mode},admission);
  const wait=async(task:{id:string;revision:number})=>{
-  const saved=tasks.input<{batchId:string}>(task.id,task.revision,assertCurrent);
-  await until(()=>['succeeded','failed','stale','cancelled'].includes(batch.progress(saved.batchId).task.state)||batch.progress(saved.batchId).items.some(item=>['failed','stale','blocked'].includes(item.state)));
+  const batchId=service.progress(task.id).batch!.task.id;
+  await until(()=>['succeeded','failed','stale','cancelled'].includes(batch.progress(batchId).task.state)||batch.progress(batchId).items.some(item=>['failed','stale','blocked'].includes(item.state)));
   if(providerFailure)throw providerFailure;
-  const progress=batch.progress(saved.batchId);assert.equal(progress.task.state,'succeeded',JSON.stringify(progress));
+  const progress=batch.progress(batchId);assert.equal(progress.task.state,'succeeded',JSON.stringify(progress));
  };
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,add,produce,start,wait,run,admission};
@@ -324,7 +326,7 @@ test('a new file version lets A14 resolve the existing suggestion instead of los
   const part=await f.node.app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${id}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes});assert.equal(part.statusCode,200,part.body);
   const done=await f.node.app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${id}/commit`,headers,payload:{}});assert.equal(done.statusCode,200,done.body);
   await f.node.processing.tick();await f.node.materialOrganizer.tick(100);
-  const material=f.node.materials.get(materialId('generated-followup-files','draft.txt'));assert.ok(material);return material;
+  const material=f.node.materials.get(materialId('generated-followup-files','draft.txt'));assert.ok(material);return {...material,captureId:done.json().id as string};
  };
  const missing='Generated draft: the owner is missing.',complete='Generated draft: Alex is the owner.';
  const before=await upload('1',null,missing);
@@ -333,7 +335,31 @@ test('a new file version lets A14 resolve the existing suggestion instead of los
  const after=await upload('2','1',complete);
  const second=await f.run([requirement.material.ref,after.ref],context=>{
   const prior=context.cards.find(value=>value.id===cardId);assert.ok(prior,'the interpreter can identify the earlier suggestion');
-  return answer([card(evidence(context,complete),{action:'resolve',cardId,relatedCardIds:[cardId]})]);
+  return answer([card(evidence(context,complete),{action:'resolve',cardId,relatedCardIds:[cardId]})],
+   [{commitmentId:null,kind:'commitment',occurredAt:null,summary:'Generated next owner review.',changes:{title:'Review the assigned plan'},evidence:[evidence(context,complete)]}]);
  });
  assert.deepEqual(second.cardIds,[cardId]);assert.equal(f.node.featureServices.assistantCards.get(cardId,all).state,'resolved');
+ const commitment=f.node.featureServices.assistantCommitments.get(second.commitmentIds[0],all);
+ assert.equal(commitment.title,'Review the assigned plan');assert.ok(commitment.evidenceDependencies.ids.includes(before.captureId));
+ assert.ok(!JSON.stringify(commitment).includes('historicalEvidenceIds'),'private dependency roles do not extend the public contract');
+ assert.deepEqual(f.node.featureServices.assistantCommitments.page({scope:{kind:'selection',evidenceIds:[after.captureId]}}).items,[]);
+ const correctionId=randomUUID(),corrected=f.node.featureServices.assistantCommitments.correct({commitmentId:commitment.id,eventId:correctionId,
+  targetEventId:commitment.timeline[0].eventId,occurredAt:null,summary:'Generated owner cancels the next review.',changes:{status:'cancelled'},
+  evidence:[{id:requirement.id,offset:0,quote:requirement.text}],evidenceDependencies:commitment.evidenceDependencies},commitment.revision,all,f.assertCurrent);
+ assert.equal(corrected.status,'cancelled','owner corrections retain their precedence with historical file context');
+ const cards=f.node.featureServices.assistantCards,resolved=cards.get(cardId,all);
+ assert.ok(resolved.evidenceDependencies.ids.includes(before.captureId),'the revised interpretation retains the historical disclosure lineage');
+ assert.deepEqual(cards.page({scope:{kind:'selection',evidenceIds:[after.captureId]}}).items,[],'a narrow current-file scope cannot expose mixed requirement or historical card context');
+ cards.feedback(cardId,{expectedRevision:resolved.revision,action:'never_remind'},all);
+ const later=await upload('3','2','Generated draft: Alex remains the owner.');
+ const suppressed=await f.run([requirement.material.ref,later.ref],context=>{
+  assert.ok(context.cards.find(value=>value.id===cardId)!.feedback.some(value=>value.action==='never_remind'));
+  return answer([card(evidence(context,'Alex remains the owner.'),{relatedCardIds:[cardId],title:'A renamed version of the same issue'})]);
+ });
+ assert.deepEqual(suppressed.cardIds,[],'another file version and title cannot revive a suppressed suggestion');
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM assistant_cards').get()!.n,1);
+ f.node.store.delete(before.captureId);
+ assert.throws(()=>cards.get(cardId,all),{statusCode:404},'deleting a historical dependency clears the revised derived body too');
+ for(const eventId of [commitment.timeline[0].eventId,correctionId])assert.equal(f.node.store.db.prepare('SELECT private_json FROM assistant_commitment_events WHERE event_id=?').get(eventId)!.private_json,null);
+ assert.equal(f.node.sources.getItem('generated-followup-files','draft.txt')?.captureId,later.captureId,'the independently retained current file survives');
 });

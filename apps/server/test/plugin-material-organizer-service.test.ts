@@ -87,6 +87,22 @@ test('a real source-item recipe output publishes through the leased repository a
   assert.equal(memory.observes,2);
 });
 
+test('service and assembly organizer polls wake a consumer after the real committed Material, and quiesce fences the callback',async t=>{
+ const f=profile(t),materials=new MaterialStore(f.store),engine=new ExecutionEngine(f.store),sources=new SourceStore(f.store);
+ const platform=createMaterialOrganizerService({store:f.store,materials,executor:engine});
+ f.cleanup.push(()=>engine.close(),()=>platform.close());
+ const read:string[]=[];platform.setAfterTick(()=>{
+  const material=materials.get(materialId(sourceId,externalId));if(material)read.push(materials.read(material.ref).text);
+ });
+ platform.prepare();platform.start(noPoll);
+ sources.register({id:sourceId,name:'Generated source',kind:'custom',deviceId:'generated-device',platform:'import',retention:'archive'});
+ await sources.upsert(sourceId,item('1','Generated first consumer input'));await platform.tick(20);
+ assert.equal(read.length,1);assert.match(read[0],/Generated first consumer input/);
+ await sources.upsert(sourceId,item('2','Generated revised consumer input'));await platform.organizerForAssembly.tick(20);
+ assert.equal(read.length,2);assert.match(read[1],/Generated revised consumer input/);
+ platform.quiesce();await platform.organizerForAssembly.tick(20);assert.equal(read.length,2);
+});
+
 test('deactivation fences in-flight backlog, recipe epochs rebuild only valid work, and a checkpoint replay is idempotent',async t=>{
   const f=profile(t),materials=new MaterialStore(f.store),engine=new ExecutionEngine(f.store),work=new MaterialMemoryWork(f.store,materials);
   const memory=countedMemory(work),sources=new SourceStore(f.store,undefined,work.inputs);

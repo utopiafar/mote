@@ -60,10 +60,11 @@ export function createMaterialOrganizerService(dependencies:MaterialOrganizerSer
     return ready();
   };
   const stopPoll=()=>{stopTimer?.();stopTimer=undefined;};
-  const tick=async(limit:number)=>{try{return await active().tick(limit);}finally{afterTick?.();}};
+  const tick=(limit:number)=>active().tick(limit);
   const close=()=>{
     if(closing)return closing;
     stopPoll();phase='stopped';
+    runtime?.setAfterTick(undefined);
     closing=(async()=>{
       const errors:unknown[]=[];
       try{await runtime?.stop();}catch(error){errors.push(error);}
@@ -78,6 +79,7 @@ export function createMaterialOrganizerService(dependencies:MaterialOrganizerSer
       phase='preparing';
       try{
         runtime=new MaterialOrganizerRuntime(store,materials,[...(dependencies.organizers??[])],executor,dependencies.memoryCandidates);
+        runtime.setAfterTick(afterTick);
         phase='prepared';
       }catch(error){
         try{void close().catch(()=>{});}catch(cleanup){throw new AggregateError([error,cleanup],'Material organizer preparation and cleanup failed',{cause:error});}
@@ -89,7 +91,7 @@ export function createMaterialOrganizerService(dependencies:MaterialOrganizerSer
       phase='active';stopTimer=interval(5000,()=>tick(200));
     },
     tick(limit=100){return tick(limit);},
-    setAfterTick(callback:(()=>void)|undefined){afterTick=callback;},
+    setAfterTick(callback:(()=>void)|undefined){afterTick=callback;runtime?.setAfterTick(callback);},
     status(){return ready().status();},
     quiesce(_reason?:StopReason){stopPoll();if(phase==='active')phase='quiescing';runtime?.quiesce();},
     stop:async(_reason?:StopReason)=>{await close();},

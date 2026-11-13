@@ -259,22 +259,44 @@ export class AssistantChangeFeed {
  }
  /** Submit the actual consumer's request through batch processing. Receipt claim, batch task,
   * execution steps and this work pointer commit or roll back together. */
- submit(taskId:string,request:BatchRequest,batch:BatchProcessing){
+ submit(taskId:string,request:BatchRequest,batch:BatchProcessing,context:{evidenceIds:readonly string[];taskIds:readonly string[]}={evidenceIds:[],taskIds:[]}){
   return this.transaction(()=>{
    const row=this.store.db.prepare('SELECT * FROM assistant_change_work WHERE task_id=?').get(taskId) as WorkRow|undefined;
    if(!row)throw new StoreError('Assistant change is not ready',409);
    if(row.started_batch){
-    const prior=batch.submit(request,{kind:'automatic',purpose:'assistant',roots:[row.root]});
+    const roots=this.store.db.prepare('SELECT root FROM assistant_change_work WHERE started_batch=? ORDER BY root').all(row.started_batch).map(value=>String(value.root));
+    const prior=batch.submit(request,{kind:'automatic',purpose:'assistant',roots});
     if(prior.id!==row.started_batch)throw new StoreError('Assistant change was already submitted',409);
     return prior;
    }
-   if(!this.ready().some(candidate=>candidate.task.id===taskId))throw new StoreError('Assistant change is not ready',409);
-   const task=this.tasks.get(taskId),input=this.tasks.input<AssistantChangeInput>(taskId,task.revision,this.assertCurrent),allowed=new Set(input.evidenceIds);
+   const ready=this.ready(),selected=[...new Set([taskId,...context.taskIds])].map(id=>ready.find(candidate=>candidate.task.id===id));
+   if(selected.some(candidate=>!candidate))throw new StoreError('Assistant change is not ready',409);
+   this.assertCurrent(context.evidenceIds);
+   const allowed=new Set([...selected.flatMap(candidate=>candidate!.input.evidenceIds),...context.evidenceIds]);
    if(request.items.some(item=>!item.evidenceIds.length||item.evidenceIds.some(id=>!allowed.has(id))))throw new StoreError('Assistant batch exceeds its frozen input',409);
-   const result=batch.submit(request,{kind:'automatic',purpose:'assistant',roots:[row.root]});
-   this.tasks.setState(task.id,task.revision,'running');
-   this.store.db.prepare('UPDATE assistant_change_work SET started_batch=? WHERE task_id=?').run(result.id,taskId);
+   const result=batch.submit(request,{kind:'automatic',purpose:'assistant',roots:selected.map(candidate=>candidate!.input.root)});
+   for(const candidate of selected){const {task}=candidate!;
+    this.tasks.setState(task.id,task.revision,'running');
+    this.store.db.prepare('UPDATE assistant_change_work SET started_batch=? WHERE task_id=?').run(result.id,task.id);
+   }
    return result;
+  });
+ }
+ complete(batchId:string,result:{cardIds:string[];commitmentIds:string[]}){
+  this.transaction(()=>{
+   for(const row of this.store.db.prepare('SELECT task_id FROM assistant_change_work WHERE started_batch=?').all(batchId)){
+    const task=this.tasks.get(String(row.task_id));if(task.state!=='running')continue;
+    const input=this.tasks.input<AssistantChangeInput>(task.id,task.revision,this.assertCurrent);
+    this.tasks.saveResult(task.id,task.revision,result,{version:1,complete:true,ids:input.evidenceIds},this.assertCurrent);
+    this.store.db.prepare('UPDATE assistant_change_work SET needs_review=0 WHERE task_id=?').run(task.id);
+   }
+  });
+ }
+ settle(batchId:string,state:'blocked'|'cancelled'|'stale'){
+  this.transaction(()=>{
+   for(const row of this.store.db.prepare('SELECT task_id FROM assistant_change_work WHERE started_batch=?').all(batchId)){
+    const task=this.tasks.get(String(row.task_id));if(task.state==='running')this.tasks.setState(task.id,task.revision,state);
+   }
   });
  }
 }

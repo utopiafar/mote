@@ -103,6 +103,29 @@ test('enqueue and receipt claim roll back together, then survive restart without
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,1);
 });
 
+test('coalesced ready originals claim one batch atomically and replay both work pointers without another receipt',async t=>{
+ const f=await fixture(t);await f.createSource();f.command('on');
+ const first=await f.upsert('group-one','1'),second=await f.upsert('group-two','1');f.feed.tick();f.advance(11);
+ const ready=f.feed.ready();assert.equal(ready.length,2);
+ const request={operationId:'generated-group',requestId:'generated-group',items:[{question:'Review the two generated originals together',evidenceIds:[first,second]}]};
+ const context={evidenceIds:[],taskIds:[ready[1].task.id]};
+ f.node.store.db.exec(`CREATE TEMP TRIGGER generated_group_failure BEFORE UPDATE OF started_batch ON assistant_change_work
+  WHEN old.capture_id='${second}' BEGIN SELECT RAISE(ABORT,'generated group failure'); END`);
+ assert.throws(()=>f.feed.submit(ready[0].task.id,request,f.node.batchProcessing,context),/generated group failure/);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,0);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='batch'").get()!.n,0);
+ assert.equal(f.feed.ready().length,2);
+ f.node.store.db.exec('DROP TRIGGER generated_group_failure');
+ const batch=f.feed.submit(ready[0].task.id,request,f.node.batchProcessing,context);
+ assert.equal(f.feed.submit(ready[0].task.id,request,f.node.batchProcessing,context).id,batch.id);
+ assert.equal(f.feed.submit(ready[1].task.id,request,f.node.batchProcessing,{evidenceIds:[],taskIds:[ready[0].task.id]}).id,batch.id);
+ assert.deepEqual(f.node.store.db.prepare('SELECT started_batch FROM assistant_change_work ORDER BY capture_id').all().map(row=>row.started_batch),[batch.id,batch.id]);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,2);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='batch'").get()!.n,1);
+ await f.restart();f.feed.tick();assert.equal(f.feed.ready().length,0);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='batch'").get()!.n,1);
+});
+
 test('a real uploaded file waits for extraction and resumes the original receipt after a lost wakeup',async t=>{
  const f=await fixture(t);f.command('on');
  f.node.sources.register({id:'generated-files',name:'Generated files',kind:'local-files',deviceId:'generated-device',platform:'import',retention:'archive'});

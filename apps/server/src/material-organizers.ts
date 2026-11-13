@@ -690,6 +690,7 @@ export class MaterialOrganizerRuntime {
   readonly sourceItemRecipes:SourceItemRecipeCatalog;
   private readonly failures=new Map<string,unknown>();
   private running=false;
+  private afterTick?:()=>void;
   private closed=false;
   private accepting=true;
   private unregister:()=>Promise<void>;
@@ -1058,6 +1059,7 @@ export class MaterialOrganizerRuntime {
     const ids=(this.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state IN ('waiting','running') ORDER BY rowid").all(ORGANIZER_STEP) as {id:string}[]).map(row=>row.id);
     if(ids.length)await this.executor.drain(ids);
   }
+  setAfterTick(callback:(()=>void)|undefined){this.afterTick=callback;}
   async tick(limit=100){
     if(this.closed||this.running||!this.accepting)return 0;this.running=true;
     try{
@@ -1069,7 +1071,7 @@ export class MaterialOrganizerRuntime {
       for(const id of stepIds){const failure=this.failures.get(id);if(failure)throw failure;}
       await this.materials.index?.tick();
       return count;
-    }finally{this.running=false;}
+    }finally{this.running=false;if(this.accepting&&!this.closed)this.afterTick?.();}
   }
   async stop(){
     this.quiesce();

@@ -285,11 +285,16 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // window or validate complete requests. Do not send a batch model request
   // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
   let assistantTasks:AssistantTasks|undefined;
+  let assistantFollowup:AssistantFollowup|undefined;
+  let tickAssistantFollowup=()=>{};
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
     ()=>new ExecutionFailure('blocked','model_context_budget_unavailable'),()=>1,true,evidenceReader.memories,{
-      valid:step=>assistantTasks?.valid(step)??true,project:step=>assistantTasks?.project(step),commit:(step,result)=>assistantTasks?.commit(step,result),
+      assertDependencies:(id,ids)=>assistantFollowup?.assertBatchDependencies(id,ids)??false,
+      valid:step=>assistantTasks?.valid(step)??true,project:step=>assistantTasks?.project(step),commit:(step,result)=>{
+        assistantTasks?.commit(step,result);executor.localEffect(()=>queueMicrotask(()=>tickAssistantFollowup()));
+      },
     });
   let assistantRoutines:AssistantRoutines;
   const automaticEvidenceAllowed=(ids:readonly string[])=>{
@@ -319,7 +324,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   let assistantOnboarding:AssistantOnboarding|undefined;
   // Reuse the existing Central poll; the routine does not depend on a material
   // change, and a change-feed failure cannot suppress a due occurrence.
-  setMaterialConsumerTick(()=>{try{assistantChanges.tick();}finally{try{assistantRoutines.tick();}finally{void assistantOnboarding?.tick().catch(()=>{});}}});
+  setMaterialConsumerTick(()=>{try{assistantChanges.tick();tickAssistantFollowup();}finally{try{assistantRoutines.tick();}finally{void assistantOnboarding?.tick().catch(()=>{});}}});
   resources.beforeClose(()=>setMaterialConsumerTick(undefined));
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
@@ -548,9 +553,13 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const assistantNotifications=new AssistantNotifications(assistantCards,()=>configService.current<NotificationSettings>('notifications'));
   const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
-  const assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
+  assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
-  });
+  },undefined,modelAuthorization,automaticEvidenceAllowed);
+  const followup=assistantFollowup;
+  tickAssistantFollowup=()=>{void followup.tick(assistantChanges).catch(()=>{});};
+  resources.beforeClose(async()=>{tickAssistantFollowup=()=>{};await followup.close();});
+  app.addHook('onReady',async()=>{tickAssistantFollowup();});
   assistantOnboarding=new AssistantOnboarding(store,materials,evidenceReader,modelAuthorization,memoryPipeline,assistantFollowup,availableModelConnections,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Onboarding evidence is no longer permitted',409);
   },ref=>materialMemoryWork.sourceRequirements(ref),sourcePipelines.archive);

@@ -653,7 +653,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const allowMaterial=(current:MaterialRecord)=>{if(!materialAllowed.has(current.ref))materialAllowed.set(current.ref,this.materialExposure(current,'expand',policy,undefined,false,undefined,true)&&policy.allows({sourceKind:this.materialKind(current),sourceId:current.origin.sourceId,representation:'material',operation:'expand',phase:current.coverage.state}));return materialAllowed.get(current.ref)!;};
     const allowRecord=(record:CaptureRecord,attachmentId=record.id)=>{
       if(!attachment(attachmentId))return false;
-      if(this.files?.fileForRead(record.id)&&!this.files.readableFile(record.id))return false;
+      if(this.files?.fileForRead(attachmentId)&&!this.files.readableFile(attachmentId)){
+        if(!historical||!this.fileHistoricalObservationAllowed(attachmentId,{kind:'all'},policy))return false;
+      }
       const p=record.provenance;if(p?.sourceId&&p.externalId&&tombstone(p.sourceId,p.externalId))return Boolean(this.files?.readableFile(record.id)&&this.captureExposure(record,'expand',policy,'capture',true,true));
       const current=p?.sourceId&&p.externalId?material(materialId(p.sourceId,p.externalId)):undefined;
       return current?allowMaterial(current):this.captureExposure(record,'expand',policy,'capture',true,true);
