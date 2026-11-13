@@ -30,3 +30,62 @@
 
 .source-catalog-final .source-recorder-choices .discovery-source-card{display:block;padding:20px 17px}.source-catalog-final .source-recorder-choices .discovery-source-card h3{font-size:14px;font-weight:500}.source-catalog-final .source-recorder-choices .discovery-source-card small{display:block;margin-top:10px;font-size:11px;color:var(--mote-muted)}.source-catalog-final>section>.source-catalog-more{font-size:12px;color:var(--mote-muted);margin-top:27px}.source-catalog-final>section>.source-catalog-more section{margin-top:20px}.source-catalog-final>section>.source-catalog-more h3{font-size:13px;font-weight:500}.source-catalog-final>section>.source-catalog-more p{font-size:11px;line-height:1.9;margin-top:12px}
 @media(max-width:560px){.source-catalog-final .source-recorder-choices .discovery-source-card{padding:17px 15px}.source-catalog-final .source-recorder-choices{grid-template-columns:1fr}}
+
+/* U4: connection value comes before the onboarding selection. Coverage stays
+   three separate dimensions; connection success is never shown as full
+   understanding. */
+.source-onboarding{margin:0 0 26px;padding:22px 0 24px;border-block:1px solid var(--mote-hair)}
+.source-onboarding-intro{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:28px;align-items:start}
+.source-onboarding-intro h2{font-size:20px;font-weight:550;margin:3px 0 9px}
+.source-onboarding-intro p{margin:0;font-size:13px;line-height:1.85;color:var(--mote-muted);max-width:620px}
+.source-onboarding-value{margin:0;padding:0;list-style:none;display:grid;gap:9px}
+.source-onboarding-value li{position:relative;padding-left:18px;font-size:12px;line-height:1.75}
+.source-onboarding-value li::before{content:'';position:absolute;left:0;top:.62em;width:5px;height:5px;border-radius:50%;background:var(--mote-accent)}
+.source-onboarding-boundary{margin:18px 0 0;padding:13px 16px;border-left:2px solid var(--mote-accent);background:light-dark(#f4f1eb,#2b2b27)}
+.source-onboarding-boundary strong{display:block;font-size:13px;font-weight:550;line-height:1.7}
+.source-onboarding-boundary p{margin:5px 0 0;font-size:12px;line-height:1.8;color:var(--mote-muted)}
+.source-onboarding-progress{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:20px 0}
+.source-onboarding-stage{min-width:0;padding:14px 15px;border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container);background:var(--mote-surface)}
+.source-onboarding-stage strong{display:block;font-size:12px;font-weight:500;color:var(--mote-muted)}
+.source-onboarding-stage span{display:block;margin-top:8px;font-size:15px;font-weight:550}
+.source-onboarding-stage small{display:block;margin-top:7px;font-size:11px;line-height:1.7;color:var(--mote-muted)}
+.source-onboarding-stage[data-state=failed]{border-color:color-mix(in srgb,var(--mote-warning) 45%,var(--mote-hair))}
+.source-onboarding-stage[data-state=partial]{border-color:color-mix(in srgb,var(--mote-accent) 35%,var(--mote-hair))}
+.source-onboarding-model{display:grid;gap:4px;margin:0 0 20px;font-size:12px;line-height:1.75}
+.source-onboarding-model strong{font-weight:550}
+.source-onboarding-model p{margin:0;color:var(--mote-muted)}
+.source-onboarding-unavailable{margin:20px 0 0;font-size:13px;line-height:1.8}
+.source-onboarding-choice{display:grid;gap:13px;margin-top:20px}
+.source-onboarding-filter{display:flex;flex-wrap:wrap;align-items:end;gap:13px}
+.source-onboarding-filter label{display:grid;gap:6px;font-size:12px;color:var(--mote-muted)}
+.source-onboarding-filter select{min-width:220px}
+.source-onboarding-choice .fine-print{margin:0}
+.source-onboarding-arrival{margin:0;font-size:12px;line-height:1.75;color:var(--mote-accent)}
+.source-onboarding-empty{margin:0;padding:16px 0;font-size:13px;line-height:1.8;color:var(--mote-muted)}
+.source-onboarding-materials{list-style:none;margin:0;padding:0;max-height:330px;overflow:auto;border-block:1px solid var(--mote-hair)}
+.source-onboarding-material{border-bottom:1px solid var(--mote-hair)}
+.source-onboarding-material:last-child{border-bottom:0}
+.source-onboarding-material label{display:flex;align-items:flex-start;gap:11px;padding:12px 4px;cursor:pointer}
+.source-onboarding-material input{margin-top:3px}
+.source-onboarding-material span{min-width:0;display:grid;gap:4px}
+.source-onboarding-material strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500}
+.source-onboarding-material small{font-size:11px;line-height:1.7;color:var(--mote-muted)}
+.source-onboarding-retention{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 16px;margin:0;font-size:12px;line-height:1.8}
+.source-onboarding-retention dt{color:var(--mote-muted)}
+.source-onboarding-retention dd{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 18px;margin:0}
+.source-onboarding-retention a{font-size:11px}
+.source-onboarding-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.source-onboarding-complete{margin:14px 0 0;font-size:13px;line-height:1.8;font-weight:500}
+.source-onboarding-items{list-style:none;margin:18px 0 0;padding:0;border-top:1px solid var(--mote-hair)}
+.source-onboarding-items li{padding:12px 0;border-bottom:1px solid var(--mote-hair)}
+.source-onboarding-items li>div{display:flex;align-items:baseline;justify-content:space-between;gap:14px}
+.source-onboarding-items strong{font-size:13px;font-weight:500}
+.source-onboarding-items span{font-size:11px;color:var(--mote-muted)}
+.source-onboarding-items small{display:block;margin-top:5px;font-size:11px;line-height:1.7;color:var(--mote-muted)}
+.source-onboarding-items p{margin:6px 0 0;font-size:12px;line-height:1.75}
+.source-onboarding-items li[data-item-state=failed] p{color:var(--mote-warning)}
+.source-onboarding-error{display:grid;justify-items:start;gap:8px;margin-top:16px}
+.source-onboarding-error p{margin:0;font-size:12px;line-height:1.8}
+.source-onboarding-error details{font-size:11px;color:var(--mote-muted)}
+.source-onboarding-error pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:760px){.source-onboarding-intro{grid-template-columns:1fr;gap:16px}.source-onboarding-progress{grid-template-columns:1fr}.source-onboarding-retention{grid-template-columns:1fr}.source-onboarding-retention dd{justify-content:flex-start}}
