@@ -57,6 +57,9 @@
         <activity android:configChanges="uiMode" android:name=".CentralActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="mote.plugin.owner" android:value="host.shell" />
         </activity>
+        <activity android:configChanges="uiMode" android:name=".AssistantInboxActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
+        </activity>
         <activity android:configChanges="uiMode" android:name=".CalendarActionsActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.managed-calendar" />
         </activity>

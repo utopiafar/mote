@@ -65,6 +65,32 @@ class CentralProducerContractTest {
         CentralAttachments.upload(client, file, "Generated original.txt", "text/plain", deviceId, { time }, identityScope = scope, progress = progress)
     private fun begins() = exchanges.filter { it.path == "/api/file-sync/v1/uploads" }
 
+    @Test fun persistentCardsFeedTheNativeNotificationReaderWithoutLosingSuppressedCards() {
+        val id = System.getenv("MOTE_KOTLIN_CONTRACT_NOTIFICATION").orEmpty()
+        val evidence = System.getenv("MOTE_KOTLIN_CONTRACT_NOTIFICATION_EVIDENCE").orEmpty()
+        val plain = System.getenv("MOTE_KOTLIN_CONTRACT_PLAIN_CARD").orEmpty()
+        val api = client(); val reader = AssistantNotificationReader(api)
+        val snapshot = reader.snapshot(); val event = AssistantNotice.snapshot(snapshot).single()
+        assertEquals(id, event.id); assertEquals(2L, event.revision)
+        assertEquals("Generated current notification result v2", reader.card(id).body)
+        assertTrue(reader.page().items.any { it.id == plain && it.readAt == null })
+        var cursor: AssistantNoticeCursor? = null; var posts = 0; var visible = false
+        fun presenter() = AssistantNoticePresenter({ cursor }, { cursor = it }, { posts++; visible = true }, { visible = false })
+        val denied = presenter(); denied.update(origin, snapshot, false)
+        assertEquals(0, posts); assertNull(cursor); assertNull(reader.card(id).readAt)
+        denied.update(origin, snapshot, true); denied.update(origin, reader.snapshot(), true)
+        assertEquals(1, posts); denied.clear()
+        val reconnected = presenter(); reconnected.update(origin, reader.snapshot(), true)
+        assertEquals(1, posts); assertFalse(visible)
+        assertNotNull(reader.card(id, true).readAt)
+        assertTrue(AssistantNotice.snapshot(reader.snapshot()).isEmpty())
+        assertTrue("Showing or reading one result never removes another useful card", reader.page().items.any { it.id == plain })
+        api.delete("/api/captures/$evidence")
+        reconnected.update(origin, reader.snapshot(), true); assertFalse(visible)
+        val missing = assertThrows(CentralFailure::class.java) { reader.card(id) }
+        assertEquals(404, missing.status)
+    }
+
     @Test fun safReferenceManifestProducesTheSharedFileViewConsumedByKotlin() {
         val api = client(collector); val source = LocalSource(id = "generated-saf-" + UUID.randomUUID(), name = "Generated SAF", kind = "local-files",
             retention = "reference", uri = "content://generated/tree/root", tree = true, extensions = "txt")
