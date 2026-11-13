@@ -9,14 +9,17 @@ import {StoreError} from './store.js';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import {invalidateRetiredFileEvidence} from './evidence-dependencies.js';
 import {invalidateFileSummary} from './file-summary-lineage.js';
+import {readDialogueCleanup} from './file-dialogue.js';
 
 export function latestFileTranscript(files:FileStore,id:string){
   files.version(id);
-  const row=files.store.db.prepare("SELECT id,kind,json FROM file_artifacts WHERE capture_id=? AND current=1 AND kind IN ('corrected-dialogue','dialogue','transcript','text','image-text') ORDER BY CASE kind WHEN 'corrected-dialogue' THEN 0 WHEN 'dialogue' THEN 1 ELSE 2 END,created_at DESC LIMIT 1").get(id) as {id:string;kind:string;json:string}|undefined;
+  const row=files.store.db.prepare("SELECT id,kind,json FROM file_artifacts WHERE capture_id=? AND current=1 AND kind IN ('corrected-dialogue','dialogue','transcript','text','image-text') ORDER BY CASE kind WHEN 'corrected-dialogue' THEN 0 WHEN 'dialogue' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1").get(id) as {id:string;kind:string;json:string}|undefined;
   if(!row)throw new StoreError('File transcript is not ready',409);
   const data=JSON.parse(row.json);
   if(!data.transcript)throw new StoreError('File artifact requires a structured transcript before review',409);
-  return {artifactId:row.id,kind:row.kind,transcript:transcriptSchema.parse(data.transcript)};
+  const cleanup=readDialogueCleanup(data);
+  return {artifactId:row.id,kind:row.kind,transcript:transcriptSchema.parse(data.transcript),
+    processingVersion:cleanup?.cleanup.processingVersion??(typeof data.inputProcessingVersion==='string'?data.inputProcessingVersion:undefined)};
 }
 const proposalInput=z.object({kind:z.enum(['calendar','terms']),after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),offset:z.number().int().min(0).max(50000).default(0)}).strict();
 const correction=z.object({chunkId:z.string().uuid(),start:z.number().int().nonnegative().optional(),end:z.number().int().positive().optional(),original:z.string().min(1).max(2000),replacement:z.string().min(1).max(2000),reason:z.string().max(2000)}).strict();
@@ -90,7 +93,7 @@ export class FileReviews {
         transcript.segments[index].text=text;
         if(text!==chunk.text)delete transcript.segments[index].words;
       }
-      delete transcript.uncorrected;transcript=transcriptSchema.parse(transcript);kind='corrected-dialogue';payload={transcript,confirmed:true,inputArtifact:current.artifactId,reviewId,accepted:input.selected,replacements:input.replacements};
+      delete transcript.uncorrected;transcript=transcriptSchema.parse(transcript);kind='corrected-dialogue';payload={transcript,confirmed:true,inputArtifact:current.artifactId,inputProcessingVersion:current.processingVersion,reviewId,accepted:input.selected,replacements:input.replacements};
     }
     return this.publish(id,current,kind,payload,transcript,reviewId);
   }
@@ -104,7 +107,7 @@ export class FileReviews {
     if(input.originalText===input.correctedText)return {status:'unchanged',artifactId:current.artifactId};
     const transcript=structuredClone(current.transcript);
     transcript.segments[index].text=input.correctedText;delete transcript.segments[index].words;delete transcript.uncorrected;
-    return this.publish(id,current,'corrected-dialogue',{transcript:transcriptSchema.parse(transcript),confirmed:true,inputArtifact:current.artifactId,correction:{kind:'manual',chunkId:input.chunkId,originalText:input.originalText,correctedText:input.correctedText}},transcript);
+    return this.publish(id,current,'corrected-dialogue',{transcript:transcriptSchema.parse(transcript),confirmed:true,inputArtifact:current.artifactId,inputProcessingVersion:current.processingVersion,correction:{kind:'manual',chunkId:input.chunkId,originalText:input.originalText,correctedText:input.correctedText}},transcript);
   }
   private publish(id:string,current:ReturnType<typeof latestFileTranscript>,kind:string,payload:unknown,transcript?:Transcript,reviewId?:string){
     const db=this.files.store.db;

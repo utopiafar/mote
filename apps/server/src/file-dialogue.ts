@@ -1,5 +1,30 @@
 import { moteText } from './i18n.js';
 import {type Transcript,type Diarization,transcriptSchema} from '@mote/shared';
+import {isDeepStrictEqual} from 'node:util';
+import {parseFunasrResponse,parseFunasrArchive,projectFunasrDialogue} from './funasr-contract.js';
+import type {FileOutputType} from './file-recipes.js';
+import {cleanupTranscript,parseTranscriptCleanup,type TranscriptCleanupSettings} from './transcript-cleanup.js';
+
+/** ASR-03 registers this through the existing output registry and publishes it
+ * as dialogue. The native recognition checkpoint remains in the extract output;
+ * this payload retains the untouched speaker projection and its full mapping. */
+export const cleanedDialogueOutput:FileOutputType={id:'mote.cleaned-dialogue',version:'1',kind:'dialogue',
+  parse:parseTranscriptCleanup,project:value=>parseTranscriptCleanup(value).transcript};
+export function prepareFunasrDialogue(value:unknown,settings:Partial<TranscriptCleanupSettings>={}){
+  const response=parseFunasrResponse(value);
+  if(response.status!=='succeeded'||response.operation!=='diarize')throw Error('Expected complete FunASR dialogue');
+  const checkpoint=parseFunasrArchive(response.checkpoint);
+  return cleanupTranscript(projectFunasrDialogue(checkpoint,response.diarization),settings,checkpoint.sentences.map(s=>s.precision));
+}
+/** The one current artifact envelope, shared by review and export consumers.
+ * A plain transcript from another current output type needs no cleanup reader. */
+export function readDialogueCleanup(artifact:{transcript?:unknown;output?:{type?:{id?:string;version?:string};payload?:unknown}}){
+  if(artifact.output?.type?.id!==cleanedDialogueOutput.id)return undefined;
+  if(artifact.output.type.version!==cleanedDialogueOutput.version)throw Error('Dialogue cleanup output is unavailable');
+  const result=parseTranscriptCleanup(artifact.output.payload);
+  if(!isDeepStrictEqual(transcriptSchema.parse(artifact.transcript),result.transcript))throw Error('Dialogue projection does not match its cleanup payload');
+  return result;
+}
 
 /** Acoustic/time alignment only. It never identifies people or corrects recognized text. */
 export function alignDialogue(raw:Transcript,diarization:Diarization):Transcript {
