@@ -455,12 +455,15 @@ export class FileStore {
   publishSnapshotIndex(id:string,total:number,length:number,parser:string,partial=false,warnings:string[]=[]){const capture=this.store.evidence([id])[0];if(!capture?.provenance?.document?.fileIndex)return;const index={...capture.provenance.document.fileIndex,status:'ready',parser,totalCharacters:total,length,coverage:total>length||partial?'lightweight':total?'full':'none',...(warnings.length?{warnings}:{} )};this.store.db.prepare('INSERT INTO file_snapshot_index VALUES(?,?) ON CONFLICT(capture_id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(index));this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(id,new Date().toISOString());}
   saveSnapshotText(id:string,text:string){const index=JSON.parse(this.version(id).manifest).item.document?.fileIndex;if(!index?.allowRead)return;const asset=this.store.assets.put(Buffer.from(text));try{this.store.db.prepare('INSERT OR REPLACE INTO file_snapshot_text VALUES(?,?)').run(id,asset.hash);}finally{asset.release();}}
   stream(id:string,start=0,end?:number){return Readable.from(this.bytes(id,start,end));}
-  chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
+  chunks(id:string,offset=0,limit=100){this.version(id);const rows=this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[];
+    return this.chunkRecords(rows);}
   speakerAttributions(captureId:string,artifactId:string){
     return readFileSpeakerAttributions(this.store,captureId,artifactId);
   }
-  private chunkRecord(c:Chunk):CaptureRecord & ContextRecord{
-    const record=this.store.evidence([c.capture_id])[0],v=this.version(c.capture_id),metadata=JSON.parse(c.metadata??'{}'),attribution=metadata.speaker?this.speakerAttributions(c.capture_id,c.artifact_id)[metadata.speaker]:undefined;
+  private chunkRecords(rows:Chunk[]){const attributions=new Map<string,ReturnType<typeof readFileSpeakerAttributions>>();
+    return rows.map(c=>{let names=attributions.get(c.artifact_id);if(!names){names=this.speakerAttributions(c.capture_id,c.artifact_id);attributions.set(c.artifact_id,names);}return this.chunkRecord(c,names);});}
+  private chunkRecord(c:Chunk,attributions=this.speakerAttributions(c.capture_id,c.artifact_id)):CaptureRecord & ContextRecord{
+    const record=this.store.evidence([c.capture_id])[0],v=this.version(c.capture_id),metadata=JSON.parse(c.metadata??'{}'),attribution=metadata.speaker?attributions[metadata.speaker]:undefined;
     return {...record,id:c.id,capturedAt:record.capturedAt,deviceId:record.deviceId,appName:record.appName,windowTitle:record.windowTitle,sourceType:'file',ocrText:(metadata.speaker?`[${metadata.speaker}] `:'')+c.text,durationMs:0,provenance:{...record.provenance!,layer:'derived'},fileEvidence:fileEvidenceSchema.parse({captureId:c.capture_id,revision:v.revision,artifactId:c.artifact_id,chunkId:c.id,...metadata,...(attribution?{speakerAttribution:attribution}:{}),...(c.start_ms===null?{}:{startMs:c.start_ms,endMs:c.end_ms})})};
   }
   /** Only the preferred transcript/text of the retained current file revision is independent evidence. */
@@ -486,7 +489,7 @@ export class FileStore {
         AND (json_extract(s.json,'$.retention')!='reference' OR json_extract(v.manifest,'$.item.layer')='reference')
         AND (sh.deleted=0 OR h.origin_missing=1 AND sh.deleted=1 AND EXISTS(SELECT 1 FROM file_versions missing WHERE missing.capture_id=sh.capture_id AND missing.source_id=v.source_id AND missing.external_id=v.external_id))`).get(id));
   }
-  evidence(ids:string[]){return ids.flatMap(id=>{const c=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1').get(id) as Chunk|undefined;return c?[this.chunkRecord(c)]:[];});}
+  evidence(ids:string[]){const rows=ids.flatMap(id=>{const c=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1').get(id) as Chunk|undefined;return c?[c]:[];});return this.chunkRecords(rows);}
   search(args:ContextRange&{query?:string}){return this.searchPage(args).items;}
   /** Directory metadata is a separate lexical channel from extracted chunks. */
   searchMetadata(args:Range&{query?:string}){
@@ -513,7 +516,7 @@ export class FileStore {
       const row=value as unknown as Chunk & {context_at:string};if(!fileAttachmentAvailable(this.store,row.capture_id))continue;rows.push(row);if(rows.length>limit)break;
     }
     const selected=rows.slice(0,limit),last=selected.at(-1);
-    return {items:selected.map(c=>this.chunkRecord(c)),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({t:last.context_at,id:last.id})).toString('base64url'):null};
+    return {items:this.chunkRecords(selected),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({t:last.context_at,id:last.id})).toString('base64url'):null};
   }
   pendingIndex(model:string){return this.store.db.prepare(`SELECT c.id,c.text FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_jobs j ON j.capture_id=c.capture_id WHERE ${activeChunks} AND c.index_error IS NULL AND (c.embedding IS NULL OR c.embedding_model!=?) ORDER BY c.rowid LIMIT 8`).all(model) as {id:string;text:string}[];}
   indexed(id:string,vector:number[],model:string){const json=JSON.stringify(vector);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('UPDATE file_chunks SET embedding=?,embedding_model=?,index_error=NULL WHERE id=? AND artifact_id IN (SELECT id FROM file_artifacts WHERE current=1)').run(json,model,id);}
