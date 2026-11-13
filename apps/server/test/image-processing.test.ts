@@ -87,6 +87,8 @@ test('file image OCR shares a managed worker cooldown and preserves every origin
 
 test('screenshots, imports, synchronization and accepted attachments share OCR and retain independent visual context',async t=>{
  const f=await fixture(t),screen=await f.screen(),imported=await f.upload(),synced=await f.upload('generated-sync');
+ // Reuse requires the same declared privacy transform as well as equal bytes.
+ f.store.db.prepare("UPDATE captures SET json=json_set(json,'$.privacy.mode','none') WHERE id=?").run(screen);
  const attachment=f.archived.put({name:'generated.png',mimeType:'application/octet-stream',bytes:f.bytes});
  const parent=await f.sources.upsert('generated-parent',{externalId:'caption',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',title:'Generated caption',text:'An article I retained',document:{contentRole:'authored',timeBasis:'unknown',attachments:[{id:attachment.id,mimeType:'image/png'}]}});f.archived.attach(parent.id,[attachment.id]);
  await f.images.tick();assert.deepEqual(f.calls(),{ocr:1,visual:4});
@@ -826,7 +828,10 @@ test('identical screenshot bytes reuse the current OCR product without another p
  assert.equal(f.store.evidence([first])[0].ocrText,'Generated reused OCR');
  assert.equal(f.store.evidence([second])[0].ocrText,'Generated reused OCR');
  const product=JSON.parse(String(f.store.db.prepare("SELECT json FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(second)!.json));
- assert.equal(product.reuse.captureId,first,'the reused product is bound to the independent source observation');
+ assert.equal(product.input.captureId,second,'the reused product is bound to the independent source observation');
+ assert.equal(product.reuse.kind,'same-original-extraction');
+ assert.equal(product.reuse.captureId,undefined,'the computation receipt cannot disclose another source observation');
+ assert.equal(product.reuse.productId,undefined);
 });
 
 test('worker readiness does not consume OCR attempts and resumes queued screenshots',async t=>{
