@@ -6,7 +6,7 @@ import { moteText } from './i18n.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
-import {calendarExpired,sourceContentTime,actionEvidenceText,actionZone,calendarDraftSchema,calendarEventSchema,calendarChoiceSchema,calendarDescription,actionProposalTargetSchema,centralConnectorActionTargetSchema,isCentralConnectorActionTarget,messageSendDraftSchema,type ActionConnectorChoice,type ActionProposal,type ActionProposalTarget,type ActionSettings,type ActionTarget,type CaptureRecord,type CentralConnectorActionTarget,type QueryResult} from '@mote/shared';
+import {calendarExpired,sourceContentTime,actionEvidenceText,actionZone,calendarDraftSchema,calendarEventSchema,calendarChoiceSchema,calendarDescription,actionProposalTargetSchema,centralConnectorActionTargetSchema,isCentralConnectorActionTarget,messageSendDraftSchema,type AssistantActionDraft,type ActionConnectorChoice,type ActionProposal,type ActionProposalTarget,type ActionSettings,type ActionTarget,type CaptureRecord,type CentralConnectorActionTarget,type QueryResult} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import {semanticProductsSchema} from './semantic-extraction.js';
 import {Store,StoreError,sha256} from './store.js';
@@ -33,7 +33,7 @@ export class Actions {
   readonly engine:ExecutionEngine;private owned:boolean;private unregister:()=>Promise<void>;private closing?:Promise<void>;
   private runtimeSettings:ActionsRuntimeSettings;
   private settingsTail:Promise<void>=Promise.resolve();
-  constructor(readonly store:Store,private files:FileStore,private query:(input:QueryInput)=>Promise<QueryResult>,private configured:()=>boolean,private options:{executor?:ExecutionEngine;semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;configService?:ConfigService;connectorTargets?:()=>ActionConnectorChoice[];messageSendAuthorized?:(target:CentralConnectorActionTarget)=>boolean}={}){
+  constructor(readonly store:Store,private files:FileStore,private query:(input:QueryInput)=>Promise<QueryResult>,private configured:()=>boolean,private options:{executor?:ExecutionEngine;semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;configService?:ConfigService;connectorTargets?:()=>ActionConnectorChoice[];messageSendAuthorized?:(target:CentralConnectorActionTarget)=>boolean;proposalCurrent?:(id:string)=>boolean;readEvidence?:(ids:string[])=>CaptureRecord[];currentEvidence?:(id:string)=>boolean}={}){
     this.runtimeSettings=actionsRuntimeSettingsSchema.parse(options.configService?.current('actions')??{});
     store.db.exec(`CREATE TABLE IF NOT EXISTS action_meta(key TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS action_proposals(id TEXT PRIMARY KEY,json TEXT NOT NULL);
@@ -132,15 +132,20 @@ export class Actions {
     this.settingsTail=work.then(()=>{},()=>{});return work;
   }
   configurationView(){return {...(this.options.configService?{revision:this.options.configService.revision}:{}),authorizationRevision:this.authorizationRevision()};}
-  read(ids:string[]){return [...this.store.evidence(ids),...this.files.evidence(ids)];}
-  current(id:string){return this.files.isCurrentEvidence(id)||this.store.isCurrentEvidence(id);}
+  read(ids:string[]){return this.options.readEvidence?.(ids)??[...this.store.evidence(ids),...this.files.evidence(ids)];}
+  current(id:string){return this.options.currentEvidence?.(id)??(this.files.isCurrentEvidence(id)||this.store.isCurrentEvidence(id));}
   private save(a:ActionProposal){a.updatedAt=new Date().toISOString();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(a)));this.store.db.prepare('INSERT INTO action_proposals VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(a.id,JSON.stringify(a));return a;}
   private original(a:ActionProposal){if(!a.related)return;const row=this.store.db.prepare('SELECT json FROM action_proposals WHERE id=?').get(a.related.actionId) as {json:string}|undefined;return row?JSON.parse(row.json) as ActionProposal:undefined;}
   private relationValid(a:ActionProposal){if(!a.related)return true;const original=this.original(a);return !!original&&original.kind==='calendar.create'&&!original.resolution&&original.version===a.related.version&&original.status===a.related.status;}
   /** Owner-created message proposals have no captured evidence; every calendar
    * proposal keeps the original proof requirement. */
-  private valid(a:ActionProposal){return this.relationValid(a)&&(a.kind==='message.send'?Boolean(a.message&&a.message.text.trim()):a.evidence.length>0&&a.evidence.every(e=>{const r=this.read([e.id])[0];return r&&this.current(e.id)&&fingerprint(r)===e.fingerprint;}));}
+  private valid(a:ActionProposal){return this.options.proposalCurrent?.(a.id)!==false&&this.relationValid(a)&&(a.kind==='message.send'?Boolean(a.message&&a.message.text.trim()):a.evidence.length>0&&a.evidence.every(e=>{const r=this.read([e.id])[0];return r&&this.current(e.id)&&fingerprint(r)===e.fingerprint;}));}
   private validate(a:ActionProposal){
+    if(this.options.proposalCurrent?.(a.id)===false){
+      // The origin check can retire its task and scrub this durable proposal.
+      const current=this.store.db.prepare('SELECT json FROM action_proposals WHERE id=?').get(a.id);
+      if(current)a=JSON.parse(String(current.json));
+    }
     const missing=a.evidence.filter(e=>!this.read([e.id]).length);
     if(missing.length){a.evidence=a.evidence.filter(e=>!missing.includes(e));if(['proposed','approved','dismissed','stale'].includes(a.status)){a.event={title:moteText("来源已删除的日程建议"),start:null,end:null,timeZone:null,allDay:false,location:'',description:''};if(a.related)a.related.event={...a.event};a.uncertainty='';a.status='stale';a.version++;}this.save(a);}
     if(['proposed','approved'].includes(a.status)&&!this.valid(a)){a.status='stale';a.version++;this.save(a);}return a;
@@ -178,6 +183,23 @@ export class Actions {
   connectorTargets(){return this.options.connectorTargets?.()??[];}
   private connectorChoice(target:ActionProposalTarget){return this.connectorTargets().find(choice=>JSON.stringify(choice.target)===JSON.stringify(target));}
   messageProposalRevision(){return this.meta('message-proposals',{revision:0}).revision;}
+  /** Called only by the owner product adapter after task/version/grant checks.
+   * This creates the existing proposal; confirmation and sending stay unchanged. */
+  proposeAssistant(draft:Exclude<AssistantActionDraft,{kind:'todo.create'}>,target:ActionProposalTarget){
+    if(draft.kind==='message.send'&&(!isCentralConnectorActionTarget(target)||!this.options.messageSendAuthorized?.(target)))
+      throw new StoreError('The message send grant or connector is unavailable',403);
+    const evidence=draft.evidence.map(proof=>{
+      const record=this.read([proof.id])[0];
+      if(!record||!this.current(proof.id)||!actionEvidenceText(record).includes(proof.quote))throw new StoreError('Assistant action evidence changed',409);
+      return {...proof,fingerprint:fingerprint(record),source:record.windowTitle||record.appName,capturedAt:record.capturedAt};
+    });
+    const at=new Date().toISOString(),message=draft.kind==='message.send'?draft.message:undefined;
+    const proposal=this.save({id:randomUUID(),kind:draft.kind,event:draft.kind==='calendar.create'?draft.event:
+      {title:('消息 · '+(message!.conversationName??message!.conversationId)).slice(0,200),start:null,end:null,timeZone:null,allDay:false,location:'',description:message!.text.slice(0,2000)},
+      ...(message?{message}:{}),target,evidence,uncertainty:draft.kind==='calendar.create'?draft.uncertainty:'',status:'proposed',version:1,createdAt:at,updatedAt:at});
+    if(message)this.setMeta('message-proposals',{revision:this.messageProposalRevision()+1});
+    return proposal;
+  }
   /** Owner-only draft creation. The grant and enabled connector are checked here
     * and again at confirmation and dispatch; creating a draft never sends. */
   proposeMessage(raw:unknown){

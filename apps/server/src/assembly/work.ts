@@ -90,6 +90,8 @@ export function assembleInsightRuns(dependencies:InsightRunsAssemblyDependencies
 
 export interface ActionsAssemblyDependencies {
   readonly store:Store;
+  readonly assistantTasks:import('../assistant-tasks.js').AssistantTasks;
+  readonly evidenceReader:EvidenceReader;
   readonly resources:ServerResources;
   readonly backendContext:Context;
   readonly files:FileStore;
@@ -112,6 +114,7 @@ export interface ActionsAssemblyDependencies {
 export async function assembleActions(dependencies:ActionsAssemblyDependencies){
   const {store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent}=dependencies;
   const services=createActionsServices({store,files,sources,connections,executor,configService,semanticArtifacts,
+    assistantTasks:dependencies.assistantTasks,readEvidence:ids=>dependencies.evidenceReader.memories.readEvidence(ids),currentEvidence:id=>dependencies.evidenceReader.memories.isCurrentEvidence(id),
     actionProviders:()=>pluginCenter.actionProviders(),
     connectorAction:input=>pluginCenter.executeConnectorAction(input),
     query:input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),

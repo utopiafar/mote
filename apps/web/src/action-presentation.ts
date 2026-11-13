@@ -2,9 +2,10 @@ import {commonFailureMessage,httpStatusMessage} from '@mote/shared';
 import {ApiError,errorMessage} from './api';
 import type {ActionProposal,CalendarDraft} from '@mote/shared';
 import {moteText,getLocale} from '@mote/shared/i18n';
-export function calendarNeedsTime(item:ActionProposal){return item.status==='proposed'&&!item.resolution&&(!item.event.start||!item.event.end||!item.event.timeZone);}
+export function calendarNeedsTime(item:ActionProposal){return item.kind!=='message.send'&&item.status==='proposed'&&!item.resolution&&(!item.event.start||!item.event.end||!item.event.timeZone);}
 export function calendarNeedsAttention(item:ActionProposal){return calendarNeedsTime(item)||item.status==='uncertain'||item.status==='stale'||item.managed?.state==='cancel_requested'||item.status==='proposed';}
 export function calendarStateLabel(item:ActionProposal){
+ if(item.kind==='message.send')return ({proposed:moteText('待确认'),dismissed:moteText('已忽略'),approved:moteText('排队中'),executing:moteText('正在发送'),succeeded:moteText('已完成'),uncertain:moteText('结果需要核实'),stale:moteText('原文已变化')} as const)[item.status];
  if(item.resolution)return item.resolution==='completed'?moteText('已完成'):moteText('已取消');
  if(item.managed?.state==='cancel_requested')return moteText('已请求取消，写入结果仍待核实');
  if(item.managed?.state==='cancelled')return moteText('已取消等待执行');

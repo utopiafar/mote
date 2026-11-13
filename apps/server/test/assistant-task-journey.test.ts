@@ -32,7 +32,7 @@ async function fixture(t:TestContext,productionGuard=false){
    taskCalls++;delta={role:'assistant',tool_calls:[{index:0,id:'generated-file-read',type:'function',function:{name:'evidence',arguments:JSON.stringify({ids:[evidenceId]})}}]};finish='tool_calls';
   }else{
    wire=body;if(hold){entered();await held;}
-   delta={role:'assistant',content:JSON.stringify({answer:'Generated grounded answer',citationIds:[evidenceId]})};
+   delta={role:'assistant',content:JSON.stringify({answer:JSON.stringify({answer:'Generated grounded answer',actions:[]}),citationIds:[evidenceId]})};
   }
   if(res.destroyed)return;res.writeHead(200,{'Content-Type':'text/event-stream'});
   const send=(value:unknown)=>res.write('data: '+JSON.stringify(value)+'\n\n');

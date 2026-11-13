@@ -26,6 +26,14 @@ export class ManagedCalendar {
   if(proposalTargets.some(value=>!this.sameTarget(value,target)))return false;
   return records.length>0&&records.every(record=>this.capabilities.inputs.allows(grant,record));
  }
+ /** Assistant proposals require a current grant for their exact destination
+  * and all task dependencies. This never authorizes an individual message. */
+ proposalGranted(kind:ActionProposal['kind'],target:ActionProposalTarget,records:ReturnType<Actions['read']>){
+  const capability=kind==='message.send'?'message.send':'calendar.manage';
+  return records.length>0&&this.capabilities.grants().some(grant=>grant.capability.id===capability&&
+   this.capabilities.available(grant)&&this.sameTarget(this.grantTarget(grant),target)&&
+   records.every(record=>this.actions.current(record.id)&&this.capabilities.inputs.allows(grant,record)));
+ }
  async tick(){
   const grants=this.capabilities.grants().filter(grant=>this.capabilities.available(grant));
   if(grants.length){

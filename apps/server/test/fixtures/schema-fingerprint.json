@@ -5780,6 +5780,41 @@
       "type": "table",
       "name": "working_memories",
       "fingerprint": "2d43adfd44bf893d94c86d5bb00b61fdf01d9431d251b2e517df52d52230f69b"
+    },
+    {
+      "type": "index",
+      "name": "assistant_action_links_matter",
+      "fingerprint": "3e760dfeac1014f26f2a0130e3dac56d24703e510c12aacb61f23b30069c7fba"
+    },
+    {
+      "type": "table",
+      "name": "assistant_action_links",
+      "fingerprint": "c4408af9375d3816d6e34d7b15fdf28f056e023adc66a0d42a5a8d5b62d1e7d3"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_action_task_deleted",
+      "fingerprint": "8094b4b6c72a0f1e5ccae559b74bbcae425eb97c92a7eb187883e5f2e6749356"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_action_task_retired",
+      "fingerprint": "c97db1f667e31e0e89944dd46a7feec279409412e8727b85ba41af5a17e4d6af"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_action_links_delete",
+      "fingerprint": "3e4e51a8e3d39d4cdf5ee4d29af8112b4544deba42bcda5b09b662c38c66073a"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_action_links_insert",
+      "fingerprint": "dc6d74d0f53fceac96b6faa3a4c4c4fb35ffb186dee2bdaccfd363ec94ad34d5"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_action_links_update",
+      "fingerprint": "6ca96a5782f0067e6816194678103ad2a0348dca99a1e8e08758be9a71536830"
     }
   ]
 }
