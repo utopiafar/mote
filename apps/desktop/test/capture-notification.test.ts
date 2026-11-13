@@ -138,8 +138,8 @@ describe('online assistant notifications', () => {
     expect(f.displayed).toHaveLength(1);
     expect(f.cursor).toEqual({ origin: noticeOrigin, id: notice.id, eligibleAt: notice.eligibleAt, shownAt: notice.eligibleAt });
     // Snooze is a new server occurrence over the same card, not a content update.
-    f.time('2026-11-13T10:30:00.000Z');
-    restored.update(noticeOrigin, snapshot({ ...notice, eligibleAt: '2026-11-13T10:30:00.000Z' }), true);
+    f.time('2026-11-13T11:00:00.000Z');
+    restored.update(noticeOrigin, snapshot({ ...notice, eligibleAt: '2026-11-13T11:00:00.000Z', expiresAt: '2026-11-13T12:00:00.000Z' }), true);
     expect(f.displayed).toHaveLength(2);
     f.displayed[1].shown(); restored.update(noticeOrigin, snapshot(), true);
     expect(f.displayed).toHaveLength(2); // A preference change cannot replay an older slot.
