@@ -43,6 +43,7 @@ import { pathToFileURL } from 'node:url';
 import { readFile, realpath, stat, writeFile, mkdir } from 'node:fs/promises';
 import { currentPlatform, type Collector } from './collector';
 import { CaptureNeedsActionNotifier, captureStatusRowFor, type CaptureNotification } from './capture-notification';
+import { DesktopAssistantNotifications } from './assistant-notification-native';
 import { signedOutConfig } from './config';
 import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
@@ -90,6 +91,7 @@ function refreshApplicationMenu() {
         { label: moteText("首页"), accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
         { label: moteText("记录"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
         { label: moteText("来源"), accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
+        { label: moteText('通知'), click: () => { void assistantNotifications?.openInbox(); } },
       ] },
       { label: moteText("显示"), submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }, ...(developmentProfile ? [{role:'toggleDevTools' as const}] : [])] },
       { role: 'windowMenu', label: moteText("窗口") },
@@ -107,6 +109,7 @@ let localSources: SourcesPlugin['manager'] | undefined;
 let quitting = false;
 let notesSettledForQuit = false;
 let settings: Config;
+let assistantNotifications: DesktopAssistantNotifications | undefined;
 let recoveryRequired: string | undefined;
 let prepareForUpdateInstall: (() => Promise<void>) | undefined;
 let diagnosticsRecorder: DiagnosticsRecorder | undefined;
@@ -245,7 +248,7 @@ else {
   app.on('second-instance', showWindow);
   let pluginHost: DesktopPluginHost | undefined;
   app.on('before-quit', event => {
-    quitting = true; void events.record('APP', 'STOPPED'); capturePlugin?.shutdown();
+    quitting = true; void events.record('APP', 'STOPPED'); capturePlugin?.shutdown(); assistantNotifications?.close();
     if (notesSettledForQuit) return;
     event.preventDefault();
     void Promise.allSettled([controlChain, localSources?.close(), systemTools.close(), chromePlugin?.close(), collector?.settleCapture(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
@@ -566,8 +569,12 @@ else {
         wait:()=>new Promise(resolve=>setTimeout(resolve,1500)),
       });
     };
+    assistantNotifications = new DesktopAssistantNotifications({directory:dataDirectory,settings:()=>settings,
+      generation:()=>collector.status().authorizationGeneration??0,owner:()=>window,
+      openEvidence:id=>showCentral('ask',id)});
     let authCheck:Promise<unknown>|undefined;let nextAuthCheck=0;
     const authTimer=setInterval(()=>{
+      assistantNotifications?.tick();
       if(connectionToken(settings)&&Date.now()>=nextAuthCheck&&!authCheck){const selected=settings;nextAuthCheck=Date.now()+15000;authCheck=testConnection(selected).catch(error=>{if(settings===selected&&error instanceof ConnectionError&&error.code==='AUTH')return endLogin();}).finally(()=>{authCheck=undefined;});}
       if(settings.token&&!settings.authSignedOut&&settings.authExpiresAt&&settings.authExpiresAt<=Date.now())void endLogin().catch(()=>{});
     },1000);authTimer.unref();app.once('before-quit',()=>clearInterval(authTimer));

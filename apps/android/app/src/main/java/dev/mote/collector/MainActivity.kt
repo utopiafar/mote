@@ -352,6 +352,7 @@ class MainActivity : MoteActivity() {
         val navigationGroup = menuGroup(0)
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("资料与记忆"), MoteGlyph.LIBRARY) { showPage(Page.LIBRARY) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("发现历史"), MoteGlyph.PULSE) { openCentral("insights") })
+        addGroupRow(navigationGroup, menuOption(MoteI18n.text("通知"), MoteGlyph.PULSE) { startActivity(Intent(this, AssistantInboxActivity::class.java)) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("日程与待办"), MoteGlyph.CALENDAR) {
             startActivity(Intent(this, CalendarActionsActivity::class.java))
         })

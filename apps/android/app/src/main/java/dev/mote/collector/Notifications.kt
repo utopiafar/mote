@@ -64,6 +64,7 @@ internal class Notifications(
     private var screenStatus: String? = null
     private var mediaStatus: String? = null
     private var eventStatus: String? = null
+    private val assistant = OnlineAssistantNotifications(app) { availability().active }
 
     private fun availability() = if (closed) SystemEntriesPlugin.Availability(false, MoteI18n.text("系统入口插件已停用；快捷入口和通知动作不可用。")) else gate()
 
@@ -77,6 +78,7 @@ internal class Notifications(
         if (!availability().active) return
         manager.createNotificationChannel(NotificationChannel(CHANNEL, MoteI18n.text("采集状态"), NotificationManager.IMPORTANCE_LOW))
         manager.createNotificationChannel(NotificationChannel(ATTENTION_CHANNEL, MoteI18n.text("需要处理"), NotificationManager.IMPORTANCE_DEFAULT))
+        assistant.start()
     }
 
     /** The foreground service needs a notification immediately, before it has
@@ -316,6 +318,7 @@ internal class Notifications(
     @Synchronized fun close() {
         if (closed) return
         closed = true
+        assistant.close()
         manager.cancel(ID); manager.cancel(MEDIA_ID); manager.cancel(ATTENTION_ID)
         diagnosticsWorker.shutdownNow()
     }

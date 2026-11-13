@@ -61,6 +61,7 @@ internal object NativeDefaultPluginInventory {
         NativeComponentOwner("receiver", component("PauseScreenReceiver"), "dev.mote.capture", CapturePlugin.PROJECTION_CAPABILITY),
 
         NativeComponentOwner("activity", component("QuickEntryActivity"), "dev.mote.system-entries", SystemEntriesPlugin.CAPABILITY),
+        NativeComponentOwner("activity", component("AssistantInboxActivity"), "dev.mote.system-entries", SystemEntriesPlugin.CAPABILITY),
         NativeComponentOwner("service", component("ScreenCaptureTileService"), "dev.mote.system-entries", SystemEntriesPlugin.CAPABILITY),
         NativeComponentOwner("service", component("SendPauseTileService"), "dev.mote.system-entries", SystemEntriesPlugin.CAPABILITY),
         NativeComponentOwner("receiver", component("QuickEntryWidget"), "dev.mote.system-entries", SystemEntriesPlugin.CAPABILITY),
