@@ -31,13 +31,14 @@ test('default loader preserves the complete product, owner checks and original n
   assert.deepEqual({agent:node.executionPlatform.assembly.agentGate.snapshot().limit,llm:node.executionPlatform.assembly.llmGate.snapshot().limit,interactive:node.executionPlatform.assembly.interactiveGate.snapshot().limit,interactiveModel:node.executionPlatform.assembly.interactiveModelGate.snapshot().limit},
     {agent:execution.agentConcurrency,llm:execution.llmConcurrency,interactive:execution.interactiveConcurrency,interactiveModel:execution.interactiveConcurrency});
   assert.deepEqual(node.featureRoutes.registry.inventory().features.map(feature=>feature.id),[
-    'mote.activity','mote.files','mote.actions','mote.connections','mote.system','mote.storage','mote.capture','mote.context','mote.materials',
+    'mote.activity','mote.files','mote.actions','mote.connections','mote.developer-access','mote.system','mote.storage','mote.capture','mote.context','mote.materials',
     'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
     'mote.imports','mote.ask','mote.insights','mote.agent-view','mote.features',
   ]);
-  // 3 foundations + observability + source integration + 10 domain activations
+  // 3 foundations + observability + source integration + 11 domain activations
   // (including the readiness and image-processing owners).
-  assert.equal(node.bootstrap.snapshot().contributions.length,15);
+  assert.equal(node.bootstrap.snapshot().contributions.length,16);
+  assert.equal(node.bootstrap.snapshot().contributions.filter(value=>value.identity.contributionId==='mote.plugin-control').length,1,'the live control uses the same host exactly once');
   assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'},{id:'source-integration',version:'1.0.0'}]);
   assert.equal(node.configurationPlatform,node.bootstrap.configurationPlatform);
   assert.equal(node.configurationPlatform.configService,node.configService);

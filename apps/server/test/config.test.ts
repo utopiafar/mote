@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { serializeConfigDocument } from '@mote/shared/config-file';
-import { configFromFile, configFromDocument, documentFromConfig, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, ConfigError } from '../src/config.js';
+import { configFromFile, configFromDocument, documentFromConfig, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, mediaConfigSchema, ConfigError } from '../src/config.js';
 import { ConfigService } from '../src/config-service.js';
 
 const moduleUrl = new URL('../src/config.ts', import.meta.url).href;
@@ -22,6 +22,24 @@ function fixture(t: { after(fn: () => void): void }, name = 'config') {
   const write = (patch: Record<string, unknown> = {}) => writeFileSync(file, serializeConfigDocument({ version: 1, revision: 0, storage: { dataDir: './vault' }, ...patch }));
   write(); return { root, file, write, vault: join(root, 'vault') };
 }
+
+test('local image startup settings round-trip through the same YAML schema and remain restart-only without changing processing policy', async t => {
+  const {file,write}=fixture(t,'local-image-config');
+  write({media:{localImageEndpoint:'http://127.0.0.1:19103/v1/interpret',localImagePort:19103}});
+  const loaded=configFromFile(file,{initializeCredentials:false}),document=documentFromConfig(loaded);
+  assert.equal(loaded.media.localImageEndpoint,'http://127.0.0.1:19103/v1/interpret');assert.equal(loaded.media.localImagePort,19103);
+  assert.deepEqual((document.media as Record<string,unknown>).localImageEndpoint,loaded.media.localImageEndpoint);
+  assert.equal(mediaConfigSchema.parse({}).localImagePort,9011);
+  const media=configDocumentDomains(loaded).find(domain=>domain.id==='media')!;
+  for(const path of ['localImageEndpoint','localImagePort'])assert.equal(media.fields!.find(field=>field.path===path)?.effect,'restart');
+  const service=new ConfigService({path:file,watch:false,initialDocument:loaded.configuration.document});registerBuiltinDomains(service,loaded);await service.initialize();t.after(()=>service.close());
+  const processing=structuredClone(service.current('processing')),perception=structuredClone(service.current('perception')),models=structuredClone(service.current('models'));
+  await service.update('media',{...service.current<Record<string,unknown>>('media'),localImagePort:19104,localImageEndpoint:'http://127.0.0.1:19104/v1/interpret'},service.revision);
+  const saved=configFromFile(file,{initializeCredentials:false});assert.equal(saved.media.localImagePort,19104);assert.equal(saved.media.localImageEndpoint,'http://127.0.0.1:19104/v1/interpret');
+  assert.deepEqual(service.current('processing'),processing);assert.deepEqual(service.current('perception'),perception);assert.deepEqual(service.current('models'),models);
+  for(const localImageEndpoint of ['', 'not-a-url','https://example.invalid/v1/interpret','http://user:secret@127.0.0.1:9011/v1/interpret','http://127.0.0.1:9011/v1/interpret?token=secret'])assert.equal(mediaConfigSchema.safeParse({localImageEndpoint}).success,false);
+  for(const localImagePort of [0,65536,1.5])assert.equal(mediaConfigSchema.safeParse({localImagePort}).success,false);
+});
 
 test('YAML profiles isolate paths and private generated credentials across restarts', t => {
   const { root } = fixture(t);

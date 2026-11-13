@@ -9,7 +9,7 @@ import { modelProvider } from '@mote/shared/models';
 import { parseConfigDocument as parseYaml, readConfigDocument as readYaml, isConfigSecretPath, serializeConfigDocument } from '@mote/shared/config-file';
 import { modelDomainSchema, defaultModelDomain, type ModelDomain } from './model-settings.js';
 import { executionSettingsSchema, diagnosticsSettingsSchema } from './execution-settings.js';
-import { DEFAULT_MEDIA_OCR_ENDPOINT, DEFAULT_MEDIA_ASR_ENDPOINT, type MediaConfiguration } from './media-configuration.js';
+import { DEFAULT_MEDIA_OCR_ENDPOINT, DEFAULT_MEDIA_ASR_ENDPOINT, DEFAULT_MEDIA_LOCAL_IMAGE_ENDPOINT, type MediaConfiguration } from './media-configuration.js';
 import { processingConfigurationSchema, defaultProcessingConfiguration } from './processing-configuration.js';
 import { perceptionConfigurationSchema } from './perception-configuration.js';
 import { lifecycleSettingsSchema } from './memory-configuration.js';
@@ -99,6 +99,10 @@ export const updatesConfigSchema = z.object({ repository: z.string().regex(/^[A-
 export const mediaConfigSchema = z.object({
   modelDirectory: line().default(''), ocrEndpoint: endpoint().default(DEFAULT_MEDIA_OCR_ENDPOINT), asrEndpoint: endpoint().default(DEFAULT_MEDIA_ASR_ENDPOINT),
   workerToken: line(8192).default(''), python: line(4096, 1).default('python3'), ocrPort: port.default(9010), asrPort: port.default(9009),
+  localImageEndpoint: endpoint().refine(value => {
+    try { return Boolean(value) && loopback(new URL(value).hostname); } catch { return false; }
+  }, 'Local image processing requires loopback').default(DEFAULT_MEDIA_LOCAL_IMAGE_ENDPOINT),
+  localImagePort: port.default(9011),
 }).strict();
 
 export interface ConfigurationContext {
