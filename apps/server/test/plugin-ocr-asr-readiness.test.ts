@@ -81,6 +81,20 @@ test('media routes return 503 while stopped and recover without another registra
  await lease.release();await handle.close('disabled');assert.equal((await app.inject({url:'/api/media-preparation'})).statusCode,503);
 });
 
+test('a stop while a replacement prepare waits for the previous close keeps the activation stopped',async t=>{
+ const f=await fixture(t,'native');let entered!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+ const service=createOcrAsrReadiness({...f,prepare:async options=>{entered();await held;options.signal.throwIfAborted();return{python:process.execPath};}});t.after(()=>service.close());
+ await service.prepare();service.start();await service.port.start('ocr');await started;
+ const stopped=service.stop('disabled');
+ const replacement=service.prepare();
+ const second=service.stop('disabled');
+ await new Promise(resolve=>setImmediate(resolve));
+ release();await stopped;await second;
+ await assert.rejects(replacement,{statusCode:503});
+ assert.equal(service.port.phase,'stopped');assert.equal(f.listeners.size,0);
+});
+
 test('concurrent stop, close and replacement prepare all wait for the old preparation before activating another owner',async t=>{
  const f=await fixture(t,'native');let entered!:()=>void,release!:()=>void;
  const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);

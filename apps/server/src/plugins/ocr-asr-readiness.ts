@@ -45,7 +45,7 @@ const unavailable=()=>new StoreError('OCR/ASR readiness is unavailable',503);
  * and the managed worker subprocesses. A stopped activation is fully closed;
  * re-enabling prepares a fresh runtime without adding another HTTP route. */
 export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):OcrAsrReadiness {
-  let phase:OcrAsrReadinessPhase='created',current:MediaPreparation|undefined,unsubscribe:(()=>void)|undefined,closing:Promise<void>|undefined,disposed=false,preparing=false;
+  let phase:OcrAsrReadinessPhase='created',current:MediaPreparation|undefined,unsubscribe:(()=>void)|undefined,closing:Promise<void>|undefined,disposed=false,preparing=false,generation=0;
   const readable=()=>{
     if(!current||!['prepared','active','quiescing'].includes(phase))throw unavailable();
     return current;
@@ -55,6 +55,7 @@ export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):
     return readable();
   };
   const retire=(final:boolean)=>{
+    generation++;
     if(final){disposed=true;phase='disposed';}else if(phase!=='disposed')phase='stopped';
     const owned=current,remove=unsubscribe;current=undefined;unsubscribe=undefined;remove?.();
     if(!owned)return closing??Promise.resolve();
@@ -76,12 +77,14 @@ export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):
     port,
     async prepare(){
       if(disposed||preparing||!['created','stopped'].includes(phase))throw unavailable();
+      const attempt=generation;
       preparing=true;
       // Stop/dispose can still be reaping an old process group. Never activate
-      // a replacement on the same ports before that work has actually finished.
+      // a replacement on the same ports before that work has actually finished,
+      // and do not resurrect an activation that was stopped while it waited.
       try{
         await closing;
-        if(disposed||!['created','stopped'].includes(phase))throw unavailable();
+        if(disposed||attempt!==generation||!['created','stopped'].includes(phase))throw unavailable();
         current=new MediaPreparation({runtime:dependencies.runtime,media:dependencies.media,assets:dependencies.assets,
           ...(dependencies.repository?{repository:dependencies.repository}:{}),...(dependencies.prepare?{prepare:dependencies.prepare}:{}),
           ...(dependencies.fetch?{fetch:dependencies.fetch}:{}),...(dependencies.startupTimeoutMs!==undefined?{startupTimeoutMs:dependencies.startupTimeoutMs}:{})});
