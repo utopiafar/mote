@@ -21,14 +21,16 @@ import {ContextToolError} from './tool-errors.js';
 import {codexImageMetadata, type ImagePayload} from './tools/image-result.js';
 import {startBridge} from './bridge.js';
 import {displayTime} from './time.js';
-import {harnessPrivacyEntries, validateModelOptions} from './models/provider-registry.js';
+import {CODEX_CONSERVATIVE_CONTEXT_WINDOW} from './runtime/codex/launch.js';
+import {harnessPrivacyEntries, resolveModelCapabilities, validateModelOptions} from './models/provider-registry.js';
+import {estimateSerializedTokens} from './models/context-budget.js';
 import {bundledSkills, SKILL_VERSION} from './skills.js';
 import {AgentYieldError} from './host-controls.js';
 import {createImportAgent as createRegisteredImportAgent, dshImportCapabilityDescriptor, defaultImportCapabilities} from './import-agent.js';
 import {codexImportCapabilityDescriptor} from './codex-import.js';
 import {defaultTaskRegistry} from './tasks/registry.js';
 import {createRegisteredReadPacks} from './tools/registry.js';
-import {AgentInputError, AgentNotConfiguredError, AgentResponseError, reportProgress, reportTrace, type AgentOptions, type AgentAnswer, type QueryInput, type QueryRunLease} from './types.js';
+import {AgentInputError, AgentNotConfiguredError, AgentProviderError, AgentResponseError, reportProgress, reportTrace, type AgentOptions, type AgentAnswer, type QueryInput, type QueryRunLease} from './types.js';
 import type {ImportAgentLaunch, ImportCapability} from './runtime/import-capability.js';
 
 export const OFFICIAL_AGENT_COMPOSITION_VERSION = '1.0.0' as const;
@@ -83,7 +85,7 @@ function dshAdapter(options: AgentOptions): DshModelAdapter {
 }
 
 function codexAdapter(options: AgentOptions): CodexModelAdapter {
-  return {model: options.model, reasoningEffort: options.reasoningEffort, serviceTier: options.serviceTier,
+  return {model: options.model, contextWindow: options.contextWindow, reasoningEffort: options.reasoningEffort, serviceTier: options.serviceTier,
     ...(options.authorizeModelRequest ? {authorizeModelRequest: options.authorizeModelRequest} : {})};
 }
 
@@ -314,27 +316,74 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       trace({type: 'instructions.assembled', stage: 'starting', payload: {system, tools: definitions}});
       trace({type: 'context.assembled', stage: 'starting', payload: {prompt, metrics, seedEvidence: bridge.seedEvidence}});
       const traceTool = (event: Parameters<typeof reportTrace>[1]) => { if (selectedRuntime.emitHostToolTrace) trace(event); };
+      // A conservative HTTP fallback is not a smaller native model window. The
+      // native client owns the documented 272k fallback and still intersects it
+      // with the catalog's real window; an owner-configured value stays pinned.
+      const codexConservative=selectedRuntime.id===CODEX_RUNTIME_ID&&input.modelBudget?.contextWindowSource==='conservative';
+      const capacity=codexConservative
+        ?{...input.modelBudget!,contextWindow:CODEX_CONSERVATIVE_CONTEXT_WINDOW}
+        :input.modelBudget??resolveModelCapabilities(options);
+      const window=capacity.contextWindow,outputReserve='maxOutputTokens' in capacity?capacity.maxOutputTokens:capacity.maxTokens;
+      // This is a conservative pre-delivery allowance. The HTTP adapter checks
+      // its complete, actual serialized body again for every provider turn.
+      const initialEstimate=estimateSerializedTokens({system,tools:definitions,prompt}).tokens;
+      // Early Host allowance only. The required Mote native dependency checks
+      // each complete provider request again, including internal continuations,
+      // using its documented model output ceiling rather than Host maxTokens.
+      if(selectedRuntime.id===CODEX_RUNTIME_ID&&initialEstimate+outputReserve>window)throw new AgentProviderError({category:'permanent',code:'processing_limit'});
+      let toolRemaining=Math.max(0,window-outputReserve-initialEstimate-2048);
+      const controlled=new Set((input.hostControlChannel?.definitions??[]).map(tool=>tool.name));
+      const paged=new Set(['evidence','context_evidence','material_read','attribution_context']);
+      const omitted=()=>({text:JSON.stringify({budgetCoverage:{truncated:true,delivered:false,reason:'The tool result did not fit the remaining model context. No result content was delivered. Request a smaller page or use already delivered evidence.'}})});
+
       const readHostTool = async (call: RuntimeToolCall, toolSignal: AbortSignal) => {
         traceTool({type: 'tool.started', stage: 'tool', phase: 'started', tool: call.name, payload: {arguments: call.arguments}});
         try {
           if (!call.arguments || typeof call.arguments !== 'object' || Array.isArray(call.arguments)) throw new ContextToolError('invalid_tool_arguments', 'Expected object arguments.', 'correct_arguments');
+          toolRemaining=Math.max(0,toolRemaining-estimateSerializedTokens({name:call.name,arguments:call.arguments}).tokens-128);
           if (call.name === skillTool.name) {
             const args = call.arguments as Record<string, unknown>, skill = skills.find(skill => skill.name === args.name);
             if (Object.keys(args).some(key => key !== 'name') || !skill) throw new ContextToolError('invalid_tool_arguments', 'Use an exact Host-granted skill name.', 'correct_arguments');
             const result = {name: skill.name, content: skill.content};
             traceTool({type: 'tool.completed', stage: 'tool', phase: 'completed', tool: call.name, status: 'succeeded', payload: {result}});
-            return {payload: {text: skill.content}, confirm() {}, discard() {}};
+            const payload={text:skill.content},tokens=estimateSerializedTokens(payload).tokens;
+            if(tokens>toolRemaining)return {payload:omitted(),confirm(){},discard(){}};
+            return {payload, confirm(){toolRemaining-=tokens;}, discard() {}};
           }
-          const staged = await bridge!.prepareDelivery(call.name, call.arguments as Record<string, unknown>, toolSignal);
+          const original=call.arguments as Record<string, unknown>;
+          let args=original,truncated=false;
+          let staged = await bridge!.prepareDelivery(call.name, args, toolSignal);
           try {
-            const payload = contextToolPayload(staged.value);
+            let payload = contextToolPayload(staged.value);
+            // First measure the actual staged result. Only if it cannot fit do
+            // we discard its private receipt and reread a smaller real page.
+            // The replay is the same logical tool call and never grants the
+            // discarded page's ranges or consumes an extra tool-call allowance.
+            for(let attempt=0;attempt<3&&paged.has(call.name)&&estimateSerializedTokens(payload).tokens>toolRemaining;attempt++){
+              const prior=typeof args.length==='number'?args.length:(call.name==='attribution_context'?8000:call.name==='evidence'?2000:4000);
+              const measured=estimateSerializedTokens(payload).tokens;
+              const length=Math.max(1,Math.min(prior-1,Math.floor(prior*Math.max(0,toolRemaining-256)/Math.max(1,measured)*0.75)));
+              if(prior<=1)break;
+              staged.discard();args={...original,length};truncated=true;
+              staged=await bridge!.prepareDelivery(call.name,args,toolSignal,{replay:true});
+              payload=contextToolPayload(staged.value);
+            }
+            if(truncated){
+              const value=JSON.parse(payload.text) as Record<string,unknown>;
+              payload={...payload,text:JSON.stringify({...value,budgetCoverage:{truncated:true,requestedLength:original.length??null,deliveredLength:args.length,instruction:'The host shortened this page for the model context budget. Follow the returned continuation to inspect more; the unread tail is not evidence.'}})};
+            }
+            const payloadTokens=estimateSerializedTokens(payload).tokens;
+            if(!controlled.has(call.name)&&payloadTokens>toolRemaining){
+              staged.discard();
+              return {payload:omitted(),confirm(){},discard(){}};
+            }
             // The model receives the image, but diagnostics only need its identity
             // and size. Copying base64 into traces duplicates private originals and
             // can overwhelm the log viewer even when the read itself is bounded.
             const image = call.name === 'read_image' && (staged.value as ImagePayload | undefined)?.image;
             const result = image ? {...codexImageMetadata(staged.value as ImagePayload), image: {mimeType: image.mimeType, encodedCharacters: image.data.length}} : staged.value;
             traceTool({type: 'tool.completed', stage: 'tool', phase: 'completed', tool: call.name, status: 'succeeded', payload: {result}});
-            return {payload, confirm: staged.confirm, discard: staged.discard};
+            return {payload, confirm(){staged.confirm();toolRemaining=Math.max(0,toolRemaining-payloadTokens);}, discard: staged.discard};
           } catch (error) {
             try { staged.discard(); }
             catch { trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: 1, resource: 'tool_delivery'}}); }
@@ -352,7 +401,12 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
         else if (event.type === 'progress') reportProgress(input, event.progress);
         else if (event.type === 'tools.ready') trace({type: 'bridge.ready', stage: 'starting', status: 'succeeded', payload: {tools: event.tools.length}});
       };
-      const dependencies = {runId, scope, input, runtime, model: {...modelPort, selection: selection.modelSelection}, output,
+      // The saved conversation preference is per run, not a mutable change to
+      // the shared model service or its configured output limit.
+      const modelValue = input.modelBudget
+        ? {...modelPort.value, contextWindow: codexConservative ? CODEX_CONSERVATIVE_CONTEXT_WINDOW : input.modelBudget.contextWindow}
+        : modelPort.value;
+      const dependencies = {runId, scope, input, runtime, model: {...modelPort, value: modelValue, selection: selection.modelSelection}, output,
         tools: {definitions, bindings: [], assertCurrent:assertToolPins}, commitFence: {assertCurrent:assertToolPins},
         budget: {activeTimeoutMs: options.agentTimeoutMs === undefined ? DEFAULT_AGENT_EXECUTION_TIMEOUT_MS : options.agentTimeoutMs},
         activeBudget: new ActiveExecutionBudget(options.agentTimeoutMs === undefined ? DEFAULT_AGENT_EXECUTION_TIMEOUT_MS : options.agentTimeoutMs),

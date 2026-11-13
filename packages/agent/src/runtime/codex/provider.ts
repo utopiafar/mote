@@ -12,7 +12,7 @@ import {runtimeService, type HostRunPort, type ModelLease, type ResolvedRuntimeP
 import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile.js';
 
 export const CODEX_RUNTIME_ID = 'mote.runtime.codex';
-export type CodexModelAdapter = Pick<AgentOptions, 'model' | 'reasoningEffort' | 'serviceTier' | 'authorizeModelRequest'>;
+export type CodexModelAdapter = Pick<AgentOptions, 'model' | 'contextWindow' | 'reasoningEffort' | 'serviceTier' | 'authorizeModelRequest'>;
 
 export class CodexProfileError extends Error {
   constructor(readonly code: 'codex_profile_invalid') {
@@ -97,7 +97,7 @@ export function createCodexRuntimeProvider() {
             throw error;
           }
         };
-        const session = new CodexSession({model: model.value.model, reasoningEffort: model.value.reasoningEffort, serviceTier: model.value.serviceTier, agentTimeoutMs: null, codex: profile.configuration.launch, authorizeModelRequest: model.value.authorizeModelRequest},
+        const session = new CodexSession({model: model.value.model, contextWindow: model.value.contextWindow, reasoningEffort: model.value.reasoningEffort, serviceTier: model.value.serviceTier, agentTimeoutMs: null, codex: profile.configuration.launch, authorizeModelRequest: model.value.authorizeModelRequest},
           deliver, event => host.observe?.(event), usage => { if (active) host.emit({type: 'usage', usage}, active); });
         const closeResources = () => closed ??= (async () => {
           released = true;

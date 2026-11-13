@@ -66,7 +66,7 @@ export class CodexSession {
   private turnError?:unknown;
   private usageInterrupted=false;
   private imageSettlements=new Map<string,'true-pending'|'true'|'true-rejected'|'true-unknown'|'false'>();
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown,callId:string,deliver:CodexToolDelivery)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void,private confirmImageDeliveryPort?:(token:string,delivered:boolean)=>unknown|Promise<unknown>,private assertImageDeliveryCurrent?:()=>void){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
+  constructor(private options:Pick<AgentOptions,'model'|'contextWindow'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown,callId:string,deliver:CodexToolDelivery)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void,private confirmImageDeliveryPort?:(token:string,delivered:boolean)=>unknown|Promise<unknown>,private assertImageDeliveryCurrent?:()=>void){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
 
   private providerError(details?:ProviderFailureDetails,diagnostic:FailureDiagnostics={source:'unknown'}){return new AgentProviderError(details,{...diagnostic,modelId:this.options.model});}
 
@@ -103,7 +103,7 @@ export class CodexSession {
     this.allowNative=Boolean(workspace);
     if(this.ending)throw this.providerError();
     try{
-      const launched=await launchCodexAppServer({executable:this.options.codex?.executable,home:this.options.codex?.home,workspace,serviceTier:this.options.serviceTier});
+      const launched=await launchCodexAppServer({executable:this.options.codex?.executable,home:this.options.codex?.home,workspace,serviceTier:this.options.serviceTier,contextWindow:this.options.contextWindow,model:this.options.model});
       this.root=launched.root;this.child=launched.child;
       const cwd=launched.cwd;
       if(this.ending)throw this.providerError();

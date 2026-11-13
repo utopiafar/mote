@@ -27,6 +27,8 @@ async function fixture(t) {
   const auth = join(root, 'auth.json'), executable = join(root, 'generated-codex'), rpcPath = join(root, 'rpc.ndjson');
   await writeFile(auth, JSON.stringify({OPENAI_API_KEY: 'generated-contract-key'}), {mode: 0o600});
   await writeFile(executable, `#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync} from 'node:fs';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
@@ -105,6 +107,8 @@ test('the same Host output rules reject an unretrieved Codex citation and repair
   const auth = join(root, 'auth.json'), executable = join(root, 'generated-codex'), rpcPath = join(root, 'rpc.ndjson');
   await writeFile(auth, '{}', {mode: 0o600});
   await writeFile(executable, `#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync} from 'node:fs';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
@@ -145,6 +149,8 @@ test('an unretrieved Codex citation remains rejected after the bounded Host repa
   const auth = join(root, 'auth.json'), executable = join(root, 'generated-codex'), rpcPath = join(root, 'rpc.ndjson');
   await writeFile(auth, '{}', {mode: 0o600});
   await writeFile(executable, `#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync} from 'node:fs';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');

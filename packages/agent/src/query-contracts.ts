@@ -54,6 +54,8 @@ export interface QueryExecutionContext {
   assertContextAuthority?:()=>void;
   /** Host-owned temporal snapshot for a durable task; retries use the same clock. */
   contextTime?:string;
+  /** Frozen owner context settings for this run; never part of model text. */
+  modelBudget?:import('@mote/shared').ModelBudget;
   executionLane?:'interactive'|'background';
   /** Host-selected saved connection; never interpreted as prompt content. */
   modelProfileId?: string;

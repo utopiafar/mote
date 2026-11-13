@@ -24,6 +24,7 @@
     }
   },
   "scripts": {
+    "native:prepare": "node native/prepare.mjs",
     "build": "tsc -p tsconfig.json && cp src/plugin.mjs dist/plugin.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",

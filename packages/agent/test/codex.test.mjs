@@ -26,6 +26,8 @@ async function setup(t){
 async function fake(t,mode='answer'){
   const root=await setup(t),bin=join(root,'fake-codex');
   await writeFile(bin,`#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {writeFileSync,appendFileSync,readFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(join(root,'runtime-home'))},process.env.CODEX_HOME);
@@ -174,7 +176,7 @@ test('Codex native attribution tool transports a bounded current context page wi
 
 test('Codex tool completion carries one requested material page and preserves its original requested range',async t=>{
   const root=await fake(t,'material-page'),fixture=generatedMaterialPages();
-  const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
+  const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000,contextWindow:120000});t.after(()=>agent.close());
   const answer=await agent.query({question:'Read a generated material page'}),rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
   const result=rpc.find(message=>message.id===1000).result;assert.equal(result.success,true);assert.equal(result.contentItems.length,1);
   const page=JSON.parse(result.contentItems[0].text);assert.equal(result.contentItems[0].type,'inputText');assert.ok(result.contentItems[0].text.length>16000);
@@ -186,7 +188,7 @@ test('Codex receives large complete material responses without a replacement bri
  const root=await fake(t,'material-page'),fixture=generatedMaterialPages(),source={...fixture.originals[0],provenance:{externalId:'x'.repeat(1500000)}},raw=fixture.reader.materialRead;
  fixture.reader.evidence=async({ids})=>fixture.originals.filter(r=>ids.includes(r.id)).map(r=>r.id===source.id?source:r);
  fixture.reader.materialRead=async args=>({...await raw(args),sourceSpans:[{record:source,offset:0,length:6000}]});
- const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
+ const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000,contextWindow:2000000});t.after(()=>agent.close());
  await agent.query({question:'Read a generated material page'});
  const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse),response=rpc.find(message=>message.id===1000).result;
  assert.equal(response.success,true);assert.ok(response.contentItems[0].text.length>1500000);assert.equal(JSON.parse(response.contentItems[0].text).data.sourceEvidence[0].provenance.externalId,source.provenance.externalId);
@@ -508,4 +510,10 @@ test('Codex import preview corrections keep the staging thread and are bounded a
    const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(rpc.filter(m=>m.method==='thread/start').length,1);assert.equal(rpc.filter(m=>m.method==='turn/start').length,4);
   }finally{await agent.close();}
  }
+});
+
+test('Codex rejects an irreducible oversized Host request before starting the App Server',async t=>{
+ const root=await fake(t),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000,maxTokens:512,contextWindow:20000});t.after(()=>agent.close());
+ await assert.rejects(agent.query({question:'Generated oversized input '+('x'.repeat(30000))}),error=>error instanceof AgentProviderError&&error.details.code==='processing_limit'&&/context limit/i.test(error.message));
+ await assert.rejects(access(join(root,'rpc.ndjson')),'no App Server turn was started');
 });

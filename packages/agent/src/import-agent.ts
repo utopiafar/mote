@@ -2,7 +2,6 @@ import {observeModelTransport} from './models/http-transport.js';
 import {ActiveExecutionBudget,DEFAULT_AGENT_EXECUTION_TIMEOUT_MS} from './active-budget.js';
 import {ProviderFailure,type TokenUsage} from '@mote/shared';
 import {observeHarness} from './usage.js';
-import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {codexImportCapabilityDescriptor} from './codex-import.js';
 import {DeepSeekHarness,RequestTimeoutError,type HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
@@ -11,7 +10,7 @@ import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {IMPORT_CAPABILITY_API_VERSION,ImportCapabilityRegistry,defineImportCapabilityDescriptor,importRepairPrompt,importRequestPayload,parseImportPreview,type ImportAgentInput,type ImportAgentLaunch,type ImportAgentObserver,type ImportAgentResult,type ImportCapability} from './runtime/import-capability.js';
 import {importSkillDescriptor} from './tasks/import.js';
-import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './models/provider-registry.js';
+import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,resolveModelCapabilities,validateModelOptions} from './models/provider-registry.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 
 export type {ImportAgentInput,ImportAgentLaunch,ImportAgentObserver,ImportAgentResult,ImportCapability} from './runtime/import-capability.js';
@@ -19,7 +18,7 @@ export type {ImportAgentInput,ImportAgentLaunch,ImportAgentObserver,ImportAgentR
 /** HTTP transports execute the same writable Import capability as Codex. */
 function createDshImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?:ImportAgentLaunch):ImportCapability {
   options={...options,headers:options.headers&&{...options.headers},extraBody:options.extraBody&&structuredClone(options.extraBody)};
-  const connection=modelConnection(options),active=new Set<DeepSeekHarness>(),pending=new Set<Promise<ImportAgentResult>>();
+  const connection=modelConnection(options),capacity=resolveModelCapabilities(options),active=new Set<DeepSeekHarness>(),pending=new Set<Promise<ImportAgentResult>>();
   let closed=false;
   async function execute(input:ImportAgentInput,observer?:ImportAgentObserver,onUsage?:(usage:TokenUsage)=>void):Promise<ImportAgentResult>{
     const local=options.allowUnauthenticatedLocal&&options.baseUrl&&['localhost','127.0.0.1','[::1]'].includes(new URL(options.baseUrl).hostname);
@@ -34,11 +33,11 @@ function createDshImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?
       transportObserver=await observeModelTransport(options.authorizeModelRequest);
       const transportPath=new URL('./models/http-transport.js',import.meta.url).href;
       const plugin=join(root,'import-plugin.mjs');
-      await writeFile(plugin,`import {boundedModelFetch,modelFailureReporter} from ${JSON.stringify(transportPath)};
+      await writeFile(plugin,`import {boundedModelFetch,modelFailureReporter,modelRequestAuthorization} from ${JSON.stringify(transportPath)};
 import {apply as applySkillTool} from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tool-skill'))};
 export const name='mote-import'; export const inject=['tools','skills','agents'];
 export function apply(ctx){
- const transport=JSON.parse(process.env.MOTE_MODEL_TRANSPORT),raw=globalThis.fetch.bind(globalThis); globalThis.fetch=boundedModelFetch(raw,'mote-no-context-bridge',32*1024*1024,transport,modelFailureReporter(raw));
+ const transport=JSON.parse(process.env.MOTE_MODEL_TRANSPORT),raw=globalThis.fetch.bind(globalThis); globalThis.fetch=boundedModelFetch(raw,'mote-no-context-bridge',32*1024*1024,transport,modelFailureReporter(raw),modelRequestAuthorization(raw));
  for(const skill of JSON.parse(process.env.MOTE_SKILLS))ctx.skills.register({name:skill.name,description:skill.description,content:skill.content,source:'bundled',metadata:{version:skill.version}});
  applySkillTool(ctx);ctx.provide('moteImportReady',true);
 }`,{mode:0o600});
@@ -54,10 +53,10 @@ export function apply(ctx){
       const launch=await prepareLaunch?.({workspace:input.workspace,runtimeRoot:root});
       if(closed)throw new AgentProviderError();
       const requestTimeoutMs = options.requestTimeoutMs ?? 120000;
-      harness=new DeepSeekHarness({...launch?{dshBin:launch.dshBin}:{},profile:'sdk-minimal',patches:[patch],dshHome:join(root,'home'),cwd:input.workspace,processCwd:input.workspace,provider:connection.route,model:options.model,maxTokens:options.maxTokens??DEFAULT_MODEL_MAX_TOKENS,initializeTimeoutMs:30000,requestTimeoutMs:Math.max(requestTimeoutMs??120000,300000),
+      harness=new DeepSeekHarness({...launch?{dshBin:launch.dshBin}:{},profile:'sdk-minimal',patches:[patch],dshHome:join(root,'home'),cwd:input.workspace,processCwd:input.workspace,provider:connection.route,model:options.model,maxTokens:capacity.maxOutputTokens,initializeTimeoutMs:30000,requestTimeoutMs:Math.max(requestTimeoutMs??120000,300000),
         env:{PATH:process.env.PATH,TMPDIR:tmpdir(),HOME:join(root,'home'),DEEPSEEK_API_KEY:options.apiKey||'mote-local-no-auth',DEEPSEEK_BASE_URL:connection.baseUrl,MOTE_MODEL_API_KEY:options.apiKey||'mote-local-no-auth',
           MOTE_MODEL_OBSERVER:JSON.stringify(transportObserver.configuration),
-          MOTE_MODEL_TRANSPORT:JSON.stringify({baseUrl:connection.baseUrl,protocol:connection.protocol,reasoningEffort:connection.effort,provider:options.provider,headers:options.headers,extraBody:options.extraBody}),
+          MOTE_MODEL_TRANSPORT:JSON.stringify({baseUrl:connection.baseUrl,protocol:connection.protocol,reasoningEffort:connection.effort,provider:options.provider,headers:options.headers,extraBody:options.extraBody,contextWindow:capacity.contextWindow,maxTokens:capacity.maxOutputTokens}),
           MOTE_SKILLS:JSON.stringify([importSkillDescriptor])}});
       active.add(harness);
       const observeUsage=observeHarness({question:'',onUsage},runId,connection.protocol!=='deepseek');

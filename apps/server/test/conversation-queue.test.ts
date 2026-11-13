@@ -266,3 +266,24 @@ test('one-turn model selection is persisted and part of idempotent admission',as
   const conflict=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{...payload,modelOverride:'generated-other-model'}});
   assert.equal(conflict.statusCode,409,conflict.body);
 });
+
+test('query preparation applies the saved model budget to C4 before the next conversation request',async t=>{
+ const seen:QueryInput[]=[];
+ const f=await fixture(t,async input=>{
+  seen.push(input);
+  if(input.skill==='working-memory')return result('Generated compact summary of earlier dialogue');
+  return result('Generated answer '+input.question+' '+('x'.repeat(2500)));
+ });
+ const id=await main(f.node);
+ for(let i=0;i<4;i++){const turn=await post(f.node,id,'Generated history '+i);assert.equal((await settled(f.node,id,turn.message.id)).status,'completed');}
+ const configResponse=await f.node.app.inject({url:'/api/configuration',headers}),configView=configResponse.json();
+ const configured=await f.node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:configView.revision,value:{context:{historyRatio:0.01,lowWatermarkRatio:0.5,contextWindow:120000,contextWindowSource:'configured'}}}});
+ assert.equal(configured.statusCode,200,configured.body);
+ const next=await post(f.node,id,'Generated follow-up after budget change');const finished=await settled(f.node,id,next.message.id);
+ assert.equal(finished.status,'completed',JSON.stringify(finished));
+ const compactions=seen.filter(input=>input.skill==='working-memory');assert.ok(compactions.length>0,'the existing C4 summarizer was used');
+ const final=seen.find(input=>input.question==='Generated follow-up after budget change')!;
+ assert.equal(final.modelBudget?.contextWindow,120000);assert.equal(final.modelBudget?.historyRatio,0.01);assert.match(final.conversation?.workingMemory?.text??'',/compact summary/);
+ assert.ok(final.conversation!.turns.length>0,'the latest dialogue tail remains present');
+ assert.equal(f.node.conversations.get(id).turns.length,5,'compaction does not remove the original history');
+});

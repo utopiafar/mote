@@ -10,6 +10,7 @@ import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {ProviderFailure,errorDiagnostics} from '@mote/shared';
 import {AgentProviderError, AgentResponseError, AgentTimeoutError} from '../../types.js';
 import {createDshModelAdapter, type DshModelAdapter} from '../../models/dsh-adapter.js';
+import {resolveModelCapabilities} from '../../models/provider-registry.js';
 import {observeHarness} from '../../usage.js';
 import {runtimeService, type RuntimeProvider, type RuntimeHandle, type RuntimeRunRequest, type RuntimeOutcome, type RuntimeAttempt} from '../contracts.js';
 import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile.js';
@@ -89,7 +90,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
             provider: connection.route, model: adapter.model!, maxTokens: adapter.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS, initializeTimeoutMs: 30_000, requestTimeoutMs: adapter.requestTimeoutMs ?? 120_000,
             env: {PATH: process.env.PATH, TMPDIR: tmpdir(), HOME: join(root, 'home'), DEEPSEEK_API_KEY: adapter.apiKey || 'mote-local-no-auth', DEEPSEEK_BASE_URL: connection.baseUrl, MOTE_MODEL_API_KEY: adapter.apiKey || 'mote-local-no-auth',
               MOTE_HOST_RUN: JSON.stringify(channel.configuration), MOTE_MODEL_OBSERVER: JSON.stringify(observer.configuration),
-              MOTE_MODEL_TRANSPORT: JSON.stringify({baseUrl: connection.baseUrl, protocol: connection.protocol, reasoningEffort: connection.effort, provider: adapter.provider, headers: adapter.headers, extraBody: adapter.extraBody}),
+              MOTE_MODEL_TRANSPORT: JSON.stringify({baseUrl: connection.baseUrl, protocol: connection.protocol, reasoningEffort: connection.effort, provider: adapter.provider, headers: adapter.headers, extraBody: adapter.extraBody, contextWindow: resolveModelCapabilities(adapter).contextWindow, maxTokens: resolveModelCapabilities(adapter).maxOutputTokens}),
               ...Object.fromEntries((['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy', 'NODE_USE_ENV_PROXY', 'SystemRoot'] as const).filter(key => process.env[key]).map(key => [key, process.env[key]!])),
             },
           });

@@ -32,6 +32,8 @@ async function fixture(t, mode) {
   });
   await writeFile(auth, '{}', {mode: 0o600});
   await writeFile(bin, `#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {writeFileSync,existsSync} from 'node:fs';
 const root=${JSON.stringify(root)},started=${JSON.stringify(started)},release=${JSON.stringify(release)},mode=${JSON.stringify(mode)};

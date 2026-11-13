@@ -2,3 +2,5 @@
 *.sh text eol=lf
 apps/android/gradlew text eol=lf
 *.bat text eol=crlf
+# Unified diffs require a space on otherwise empty context lines.
+packages/agent/native/codex.patch whitespace=-blank-at-eol

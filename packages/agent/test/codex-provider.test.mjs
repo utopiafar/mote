@@ -27,6 +27,8 @@ async function fixture(t, mode = 'success', launch = {}) {
   const rpcPath = join(root, 'rpc.ndjson'), argvPath = join(root, 'argv.json'), homePath = join(root, 'runtime-home'), configPath = join(root, 'runtime-config');
   await writeFile(auth, JSON.stringify({OPENAI_API_KEY: secret}), {mode: 0o600});
   await writeFile(executable, `#!${process.execPath}
+// Protocol fixture only; native budget behavior is exercised with the real dependency.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync,readFileSync,writeFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(argvPath)},JSON.stringify(process.argv.slice(2)));
@@ -126,7 +128,7 @@ test('Codex registry contribution sends real input and Host tools through App Se
 test('Codex rejects executable argument injection before any child can receive the login', async t => {
   const injected = join(tmpdir(), 'missing-generated-codex') + ' --config generated-injection';
   const f = await fixture(t, 'success', {executable: injected});
-  await assert.rejects(f.run(), error => {assert.equal(error.diagnostic?.code,'ENOENT');assert.equal(error.diagnostic?.modelId,modelId);assert.ok(!JSON.stringify(error.diagnostic).includes('generated-injection'));return error instanceof AgentProviderError && !String(error).includes(secret) && !String(error).includes('generated-injection');});
+  await assert.rejects(f.run(), error => {assert.equal(error.details?.code,'processing_limit');assert.equal(error.diagnostic?.code,'native_budget_unavailable');assert.equal(error.diagnostic?.stage,'startup');assert.equal(error.diagnostic?.modelId,modelId);assert.ok(!JSON.stringify(error.diagnostic).includes('generated-injection'));return error instanceof AgentProviderError && !String(error).includes(secret) && !String(error).includes('generated-injection');});
   await assert.rejects(access(f.argvPath), {code: 'ENOENT'});
   await assert.rejects(access(f.rpcPath), {code: 'ENOENT'});
   assert.equal(JSON.parse(await readFile(join(f.root, 'auth.json'), 'utf8')).OPENAI_API_KEY, secret);

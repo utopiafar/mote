@@ -2,7 +2,7 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {ContextReader,QueryInput} from '@mote/agent';
-import type {QueryResult} from '@mote/shared';
+import type {ConversationSettings,QueryResult} from '@mote/shared';
 import {formatEvidenceRef} from '@mote/shared';
 import {DelegationRuntime,type DelegationWork} from '../delegation-runtime.js';
 import {DelegatedQueryRuns} from '../delegated-query-runs.js';
@@ -62,6 +62,7 @@ export interface QueryRunDependencies {
   readonly conversations:ConversationRepository;
   readonly working:Pick<WorkingMemory,'prepare'>;
   readonly lifecycleSettings:()=>LifecycleSettings;
+  readonly conversationSettings:()=>ConversationSettings;
   readonly archiveReader:ContextReader;
   readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
@@ -121,7 +122,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
     const id=work.id.slice('query:'.length),states=['owner-query:'+id,'automatic-conversations:'+work.operationId].map(workId=>modelAuthorizationHost.control.workState(workId));
     if(states.includes('revoked'))throw new ExecutionFailure('stale','ask_revoked');
   };
-  const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,archiveReader,memoryReader:evidenceReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
+  const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,conversationSettings:dependencies.conversationSettings,archiveReader,memoryReader:evidenceReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
     query:input=>queryRuntime.queryAgent(input,'query','conversations')});
   const assertMessage=(id:string,body:unknown)=>{
     const receipt=store.db.prepare("SELECT request_hash,json_extract(json,'$.turnId') turnId FROM query_runs WHERE id=?").get(id);

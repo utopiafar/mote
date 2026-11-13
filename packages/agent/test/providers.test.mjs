@@ -118,7 +118,7 @@ for (const protocol of ['deepseek','openai-completions','openai-responses','anth
       assert.equal(pages.length,1);assert.ok(JSON.stringify(pages[0]).length>16000);
       assert.equal(pages[0].data.pagination.limitedBy,undefined);assert.equal(pages[0].data.textRange.nextOffset,null);
       assert.deepEqual(result.trace.at(-1).materialPage,{requestedLength:10000,returnedLength:10000});
-    },{reader:fixture.reader},actions,JSON.stringify({answer:'Generated mechanical result.',citationIds:[]}));
+    },{reader:fixture.reader,maxTokens:8192},actions,JSON.stringify({answer:'Generated mechanical result.',citationIds:[]}));
   });
   test(`real Harness ${protocol} appends distinct images and successful duplicate metadata`, {timeout:60000}, async()=>{
     const images=await Promise.all(['#abcabc','#bcabca'].map(background=>sharp({create:{width:8,height:8,channels:3,background}}).png().toBuffer().then(bytes=>bytes.toString('base64'))));
@@ -273,4 +273,53 @@ test('provider errors are value-free and credentials are never forwarded through
   await new Promise(resolve=>source.listen(0,'127.0.0.1',resolve));
   const agent=createAgent({reader,protocol:'openai-completions',baseUrl:`http://127.0.0.1:${source.address().port}/v1`,model:'fixture',apiKey:'generated-provider-secret',agentTimeoutMs:20000});
   try {await assert.rejects(agent.query({question:'Generated redirect fixture'}),error=>error instanceof AgentProviderError&&!String(error).includes('generated-provider-secret'));assert.equal(leaked,0);} finally {await agent.close();for (const server of [source,target]) {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}}
+});
+
+for(const protocol of ['openai-completions','anthropic-messages']){
+ test(`real ${protocol} adapter keeps stable instructions and history before changing request fields`,{timeout:60000},async()=>{
+  const history={turns:[{question:'Generated earlier question',answer:'Generated earlier answer',scope:{},createdAt:'2026-01-01T00:00:00Z'}],omittedTurns:1,evidenceDependencies:{version:1,complete:true,ids:[]}};
+  await withProvider(protocol,async(agent,requests)=>{
+   await agent.query({question:'Generated current request one',contextTime:'2026-11-12T08:00:00Z',conversation:history});
+   await agent.query({question:'Generated current request two',contextTime:'2026-11-13T09:00:00Z',conversation:{...history,omittedTurns:2}});
+   assert.equal(requests.length,2);
+   const [first,second]=requests.map(request=>request.body);
+   assert.deepEqual(first.tools,second.tools);
+   const getSystem=body=>protocol==='anthropic-messages'?body.system:body.messages.find(message=>message.role==='system').content;
+   assert.deepEqual(getSystem(first),getSystem(second));
+   const prompt=body=>body.messages.find(message=>message.role==='user').content;
+   const text=body=>typeof prompt(body)==='string'?prompt(body):prompt(body).map(part=>part.text??'').join('');
+   const a=text(first),b=text(second),end='"omittedTurns"';
+   assert.ok(a.includes(end)&&b.includes(end));assert.equal(a.slice(0,a.indexOf(end)),b.slice(0,b.indexOf(end)));
+   assert.ok(a.indexOf('Generated earlier question')<a.indexOf('Generated current request one'));
+   assert.match(a,/2026-11-12T08:00:00Z/);assert.match(b,/2026-11-13T09:00:00Z/);
+  },{maxTokens:512},[],JSON.stringify({answer:'Generated answer',citationIds:[]}));
+ });
+}
+
+test('a large original tool page is shortened before the Host confirms its delivered evidence', {timeout:60000},async()=>{
+ const original={...record,ocrText:'Generated beginning. '+('synthetic original '.repeat(800)).slice(0,11980)};
+ const actions=[{name:'search_context',args:{query:'Generated'}},{name:'evidence',args:{ids:[original.id],length:12000}}];
+ await withProvider('openai-completions',async(agent,requests)=>{
+  const receipts=[];const answer=await agent.query({question:'Read the generated original',onEvidence:records=>receipts.push(...records)});
+  assert.equal(requests.length,3);assert.equal(answer.citations[0].id,original.id);
+  const outputs=requests[2].body.messages.filter(message=>message.role==='tool').map(message=>JSON.parse(message.content));
+  const page=outputs.find(value=>value.budgetCoverage?.truncated);
+  assert.ok(page,'the shortened tool page states its incomplete coverage');
+  const delivered=page.data[0];assert.ok(delivered.ocrText.length>0&&delivered.ocrText.length<original.ocrText.length);
+  assert.equal(delivered.textRange.nextOffset,delivered.ocrText.length);assert.equal(delivered.textRange.total,original.ocrText.length);
+  assert.equal(answer.trace.at(-1).arguments.length,delivered.ocrText.length,'Host receipt uses the page actually delivered');
+  assert.ok(receipts.length);assert.ok(receipts.every(item=>item.ocrText.length<original.ocrText.length),'discarded full-page reads never acquire a disclosure receipt');
+  const {estimateSerializedTokens}=await import('../dist/index.js');
+  for(const {body} of requests)assert.ok(estimateSerializedTokens(body).tokens+512<=24000);
+ },{reader:{...reader,search:async()=>[original],evidence:async()=>[original]},contextWindow:24000,maxTokens:512,maxToolCalls:2},actions);
+});
+
+test('the frozen per-query model window reaches the real HTTP adapter', {timeout:60000},async()=>{
+ await withProvider('openai-completions',async(agent,requests)=>{
+  const question='Generated long owner request '+('x'.repeat(7000));
+  const modelBudget={contextWindow:20000,maxTokens:512,historyRatio:0.5,lowWatermarkRatio:0.5,tokenCounting:'estimated',contextWindowSource:'configured'};
+  await assert.rejects(agent.query({question,modelBudget}),error=>error instanceof AgentProviderError&&error.details.code==='processing_limit');
+  assert.equal(requests.length,0,'the smaller saved window is enforced before provider I/O');
+  const answer=await agent.query({question});assert.equal(answer.answer,'Generated answer');assert.equal(requests.length,1,'the same input fits the separately configured larger model window');
+ },{contextWindow:60000,maxTokens:512},[],JSON.stringify({answer:'Generated answer',citationIds:[]}));
 });
