@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {createHash} from 'node:crypto';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,mkdir,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {PluginHost} from '@mote/plugin-host';
@@ -89,4 +89,22 @@ test('media-assets-service factory publishes only the read-only state port and r
   assert.equal(mediaAssetsServiceReplacement,'hot');
   await host.close();
   assert.throws(()=>port.ready('speaker-wespeaker'));
+});
+
+test('asset service disable/uninstall preserves independent OCR, ASR and image installations for the next activation',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-media-assets-retain-')),bundle=join(directory,'bundle'),root=join(directory,'models'),prior={...MEDIA_CATALOG};
+ const data=Buffer.from('Generated retained asset'),sha256=createHash('sha256').update(data).digest('hex');
+ for(const role of ['ocr','dialogue','local-image'] as const)MEDIA_CATALOG[role]={version:'generated-retain-'+role,files:[{name:'component/model.bin',size:data.length,sha256,official:'https://fixture.invalid/model'}]};
+ await mkdir(join(bundle,'component'),{recursive:true});await writeFile(join(bundle,'component/model.bin'),data);
+ const first=createMediaAssetsService({root});let next:ReturnType<typeof createMediaAssetsService>|undefined;
+ t.after(async()=>{await first.close();await next?.close();Object.assign(MEDIA_CATALOG,prior);await rm(directory,{recursive:true,force:true});});
+ first.prepare();first.start();
+ for(const role of ['ocr','dialogue','local-image'] as const)await first.assetsForAssembly.importBundle(role,bundle);
+ assert.equal(first.assetsRead.statuses()['local-image'].state,'ready');
+ await first.assetsForAssembly.cancel('local-image');first.quiesce('disabled');await first.stop('uninstalled');
+ assert.throws(()=>first.assetsRead.status('dialogue'),{statusCode:503});
+ next=createMediaAssetsService({root});next.prepare();next.start();
+ for(const role of ['ocr','dialogue','local-image'] as const){
+  assert.equal(next.assetsRead.ready(role),true);assert.deepEqual(await readFile(join(root,role,'component/model.bin')),data);
+ }
 });
