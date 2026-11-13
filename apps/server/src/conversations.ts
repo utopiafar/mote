@@ -131,6 +131,19 @@ export class Conversations {
   }
   private visibleTurn(value:ConversationTurn):ConversationTurn {
     let turn=value;
+    // A submitted reference is dialogue input even when no retrieval tool was
+    // called. Derive missing pins at read time as well as at publication, so
+    // existing user messages cannot become untracked summary inputs.
+    if(turn.result&&!turn.evidenceDeleted){
+      const explicit=[...(turn.scope.evidenceIds??[]),...(turn.scope.anchorEvidenceIds??[]),...(turn.attachments?.map(attachment=>attachment.id)??[])];
+      if(turn.scope.anchorMaterialRef||explicit.some(id=>!turn.result!.evidenceDependencies?.ids.includes(id))){
+        const evidenceDependencies=this.messageDependencies(turn.result.evidenceDependencies,turn.scope,turn.attachments);
+        if(evidenceDependencies){
+          const history=historyEvidenceDependencies(this.store,evidenceDependencies,[turn]);
+          turn={...turn,result:{...turn.result,evidenceDependencies},...(history?{historyEvidenceDependencies:history}:{})};
+        }
+      }
+    }
     if(turn.attachments?.length){
       const visible=turn.attachments.flatMap(attachment=>{
         const record=this.store.evidenceMetadata([attachment.id])[0];
@@ -248,6 +261,27 @@ export class Conversations {
     });
   }
 
+  /** The submitted reference identities are part of the user's original
+   * message, even when the model did not cite or reopen those originals. */
+  private messageDependencies(value:QueryResult['evidenceDependencies'],scope:ConversationScope,attachments?:Attachment[]){
+    const ids=[...(value?.ids??[]),...(scope.evidenceIds??[]),...(scope.anchorEvidenceIds??[]),...(attachments?.map(attachment=>attachment.id)??[])];
+    let complete=value?.complete??false;
+    if(scope.anchorMaterialRef){
+      const match=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/.exec(scope.anchorMaterialRef);
+      const installed=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_evidence'").get();
+      if(!match||!installed)complete=false;
+      else{
+        const anchors=this.store.db.prepare(`SELECT anchor_id id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL
+          UNION SELECT b.anchor_id id FROM material_block_versions b JOIN material_revisions r ON r.material_id=b.material_id AND r.revision=?
+          WHERE b.material_id=? AND b.from_sequence<=r.sequence AND (b.until_sequence IS NULL OR b.until_sequence>r.sequence) AND b.anchor_id IS NOT NULL`).all(match[1],match[2],match[2],match[1]);
+        if(!anchors.length)complete=false;
+        ids.push(...anchors.map(row=>String(row.id)));
+      }
+    }
+    if(!value&&!ids.length&&!scope.anchorMaterialRef)return;
+    return resolveDependencies(this.store,{version:1,complete,ids:[...new Set(ids)]});
+  }
+
   complete(id:string,result:QueryResult,{expectedVersion}:{expectedVersion:number}):ConversationMessage {
     assertSourceContextDependencies(this.sourceContexts,result.sourceContextDependencies);
     return this.transaction(()=>{
@@ -258,7 +292,7 @@ export class Conversations {
       }
       if(!['accepted','queued','running'].includes(message.status))throw new StoreError('Conversation message is not awaiting a result',409);
       if(message.version!==expectedVersion)throw new StoreError('Conversation message changed; reload and retry',409);
-      const evidenceDependencies=resolveDependencies(this.store,result.evidenceDependencies);
+      const evidenceDependencies=this.messageDependencies(result.evidenceDependencies,message.scope,message.attachments);
       const history=historyEvidenceDependencies(this.store,evidenceDependencies,this.previousTurns(row.conversation_id,id));
       const completed:ConversationTurn={...message,status:'completed',version:message.version+1,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},...(history?{historyEvidenceDependencies:history}:{})};
       delete completed.error;
@@ -284,7 +318,7 @@ export class Conversations {
   append(previous:Conversation|undefined,input:ConversationScope&{question:string;attachments?:Attachment[]},result:QueryResult) {
     assertSourceContextDependencies(this.sourceContexts,result.sourceContextDependencies);
     const {question,attachments,...scope}=input,now=new Date().toISOString();
-    const evidenceDependencies=resolveDependencies(this.store,result.evidenceDependencies);
+    const evidenceDependencies=this.messageDependencies(result.evidenceDependencies,scope,attachments);
     const history=historyEvidenceDependencies(this.store,evidenceDependencies,previous?.turns);
     const turn:NewTurn={id:randomUUID(),question,scope,version:1,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},status:'completed',createdAt:now,...(history?{historyEvidenceDependencies:history}:{}),...(attachments?.length?{attachments}:{})};
     return this.write(previous,turn);
@@ -327,11 +361,11 @@ export class Conversations {
     const id=previous?.id??randomUUID(),title=previous?.title||Array.from(question).slice(0,80).join('');
     return this.transaction(()=>{
       const existing=this.store.db.prepare('SELECT json,updated_at FROM conversations WHERE id=?').get(id) as {json:string;updated_at:string}|undefined;
-      const meta=existing?JSON.parse(String(existing.json)) as {turnCount?:number;bytes?:number;revision?:number}:undefined;
+      const meta=existing?JSON.parse(String(existing.json)) as {turnCount?:number;bytes?:number;revision?:number;workingContextStartSeq?:number;workingContextVersion?:number}:undefined;
       if(previous&&(!meta||meta.turnCount!==previous.turnCount||meta.revision!==previous.revision||existing!.updated_at!==previous.updatedAt))throw new StoreError('Conversation changed during this answer; reload and retry',409);
       const count=meta?.turnCount??0,seq=this.nextSeq(id),stored={...turn,seq} as ConversationTurn,json=JSON.stringify(stored),size=Buffer.byteLength(json);
       this.store.reserveMetadata(size+512);
-      this.store.db.prepare("INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=CASE WHEN conversations.title='' THEN excluded.title ELSE conversations.title END,updated_at=excluded.updated_at,json=excluded.json").run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:stored.scope,turnCount:count+1,status:stored.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1,nextSeq:seq+1}));
+      this.store.db.prepare("INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=CASE WHEN conversations.title='' THEN excluded.title ELSE conversations.title END,updated_at=excluded.updated_at,json=excluded.json").run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:stored.scope,turnCount:count+1,status:stored.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1,nextSeq:seq+1,...(meta?.workingContextStartSeq!==undefined?{workingContextStartSeq:meta.workingContextStartSeq}:{}),...(meta?.workingContextVersion!==undefined?{workingContextVersion:meta.workingContextVersion}:{})}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(id,seq,stored.id,json);
       inheritRetiredConversationRoots(this.store,id,stored);
       this.onTurnReceived?.(stored.id,id);
