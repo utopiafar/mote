@@ -37,7 +37,7 @@ internal object LibraryLocalSources {
                         .put("revision", pending?.getString("revision") ?: if (receipt != null) row.getString("revision") else "candidate:" + SourceRules.fileSignature(item))
                         .put("provisional", pending == null && receipt == null).put("captureId", receipt ?: "").put("deviceId", Settings(context).deviceId).put("title", item.optString("title"))
                         .put("sortAt", row.getJSONObject("candidate").getString("observedAt")).put("libraryKey", row.getString("libraryKey"))
-                        .put("kind", "file").put("localFile", true).put("localReadable", pending != null).put("layer", item.optString("layer"))
+                        .put("kind", "file").put("localFile", true).put("localReadable", false).put("layer", item.optString("layer"))
                         .put("localItem", item).put("sourceDescription", source.description)
                 }
             } else {

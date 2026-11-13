@@ -7,6 +7,10 @@ internal class LibrarySourceProjection {
     data class Key(val origin: String, val type: String, val source: String, val external: String, val device: String, val revision: String, val provisional: Boolean = false)
     data class Row(val key: Key, val local: JSONObject? = null, val central: JSONObject? = null) {
         val item get() = local ?: requireNotNull(central)
+        val centralReadable get() = central?.let { value ->
+            if (value.has("fileArchive")) CentralFileView.forOriginal(value)?.bodyAvailable == true
+            else value.optString("layer") != "reference"
+        } == true
     }
     private val rows = linkedMapOf<Key, Row>()
     fun key(origin: String, value: JSONObject): Key = if (value.optString("type") == "material") Key(origin, "material", value.getString("id"), "", "", value.getString("revision"))

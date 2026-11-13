@@ -38,7 +38,8 @@ class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(cont
                         is SourceEmission.Indexed -> store.scan(source, emission.scan, minOf(64L, settings.read().maxQueueMiB.toLong()) * 1024 * 1024, lease)
                     }
                     SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.OK, sourceId = source.id)
-                } catch (_: SecurityException) { store.status(source.id, "permission", lease = lease); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.PERMISSION, sourceId = source.id) }
+                } catch (_: SecurityException) { store.status(source.id, "permission", lease = lease); SourceWork.cancel(applicationContext, source.id); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.PERMISSION, sourceId = source.id) }
+                catch (_: SafScanIncomplete) { store.status(source.id, "partial", lease = lease); SourceWork.continueScan(applicationContext, source.id, inputData.getBoolean("syncExplicit", false), 30) }
                 catch (_: android.os.OperationCanceledException) { return Result.retry() }
                 catch (e: Exception) { store.status(source.id, "provider", lease = lease); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.STORAGE); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.STORAGE, errorName = EventJournal.errorName(e), sourceId = source.id) }
             }
@@ -81,7 +82,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 if (source.kind == "local-files" && source.retention == "snapshot" && !source.centralProcessingConsent) { store.status(source.id, "consent"); blocked = true; continue }
                 if (!SourceWork.runnable(applicationContext, source)) { store.status(source.id, "permission"); SourceWork.cancel(applicationContext, source.id); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
                 try {
-                    fun stillSelected(): Boolean = !isStopped && !ConnectionGuard.reconfiguring() && store.sources().any { it == source && it.enabled } && settings.read().let { SourceRules.target(it.server, it.token) == target }
+                    fun stillSelected(): Boolean = !isStopped && !ConnectionGuard.reconfiguring() && store.sources().any { it == source && it.enabled } && SourceWork.runnable(applicationContext, source) && settings.read().let { SourceRules.target(it.server, it.token) == target }
                     if (!stillSelected()) return Result.retry()
                     store.selectTarget(source.id, target)
                     if (!store.state(source.id).optBoolean("registered")) {
@@ -121,8 +122,9 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                             if (finished || !applicationContext.fileArchives().transportReady(source.id)) break
                         }
                         if (!finished) { more = true; if (applicationContext.fileArchives().transportReady(source.id)) readyMore = true }
-                        store.status(source.id, if (finished) "synced" else "scanned")
-                        if (finished) settings.syncStatus("uploading", if (source.retention == "archive") MoteI18n.text("文件原件已归档；手机原文件保留") else MoteI18n.text("文件已接收；中央处理与可搜索状态请在资料库查看"), uploaded = true)
+                        val scanComplete = applicationContext.fileArchives().state(source.id).optBoolean("scanComplete")
+                        store.status(source.id, if (!scanComplete) "partial" else if (finished) "synced" else "scanned")
+                        if (finished && scanComplete) settings.syncStatus("uploading", if (source.retention == "archive") MoteI18n.text("文件原件已归档；手机原文件保留") else MoteI18n.text("文件已接收；中央处理与可搜索状态请在资料库查看"), uploaded = true)
                         continue
                     }
                     while (submitted < 20 && !slice.exhausted) {
@@ -156,6 +158,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     }
                     if (store.next(source.id, target) == null) store.status(source.id, "synced")
                     else if (submitted >= 20 || slice.exhausted) { more = true; readyMore = true }
+                } catch (_: SecurityException) { store.status(source.id, "permission"); SourceWork.cancel(applicationContext, source.id); blocked = true
                 } catch (error: SyncConditionsUnavailable) {
                     throw error
                 } catch (error: FileIngressRejection) {
@@ -168,7 +171,11 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     store.status(source.id, if (paused) "paused" else "ack")
                     if (!paused) blocked = true
                 } catch (e: UploadHistoryUnavailable) { UploadHistoryRecovery.report(applicationContext); failed = true
-                } catch (e: Exception) { store.status(source.id, "offline"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.NETWORK); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.NETWORK, errorName = EventJournal.errorName(e), sourceId = source.id); failed = true }
+                } catch (e: Exception) {
+                    if (source.binaryFiles() && !SourceWork.runnable(applicationContext, source)) {
+                        store.status(source.id, "permission"); SourceWork.cancel(applicationContext, source.id); blocked = true
+                    } else { store.status(source.id, "offline"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.NETWORK); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.NETWORK, errorName = EventJournal.errorName(e), sourceId = source.id); failed = true }
+                }
                 finally { dispatch.record(slice.bytes, slice.requests) }
             }
             if (blocked) {
@@ -210,7 +217,11 @@ object SourceWork {
             return
         }
         val manager = WorkManager.getInstance(context)
-        val runnable = context.localSources().sources().filter { runnable(context, it) }
+        val sources = context.localSources().sources()
+        val runnable = sources.filter { runnable(context, it) }
+        sources.filter { it.enabled && it.binaryFiles() && it !in runnable }.forEach { source ->
+            context.localSources().status(source.id, "permission"); SafChanges.stop(context, source.id)
+        }
         if (runnable.isEmpty()) { cancelAll(context); return }
         // One unique chain per source: revoking a SAF grant cancels exactly that
         // source instead of silencing its siblings.
@@ -225,28 +236,29 @@ object SourceWork {
         manager.enqueueUniquePeriodicWork(SourceWorkNames.PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, periodic)
         if (!syncExplicit) upload(context)
     }
-    internal fun continueScan(context: Context, id: String, explicit: Boolean) {
-        val request = OneTimeWorkRequestBuilder<SourceScanWorker>().setInitialDelay(1, TimeUnit.SECONDS)
+    internal fun continueScan(context: Context, id: String, explicit: Boolean, delaySeconds: Long = 1) {
+        val request = OneTimeWorkRequestBuilder<SourceScanWorker>().setInitialDelay(delaySeconds, TimeUnit.SECONDS)
             .setInputData(workDataOf("manual" to true, "syncExplicit" to explicit, "sourceId" to id)).build()
         WorkManager.getInstance(context).enqueueUniqueWork(SourceWorkNames.scan(id), ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
     /** A revoked SAF grant stops this source and its scheduled chain. Global
      * scan/upload work is cancelled only when no source remains runnable. */
     internal fun cancel(context: Context, sourceId: String) {
+        SafChanges.stop(context, sourceId)
         WorkManager.getInstance(context).cancelUniqueWork(SourceWorkNames.scan(sourceId))
         if (context.localSources().sources().none { it.enabled && runnable(context, it) }) cancelAll(context)
     }
     internal fun cancelAll(context: Context) {
         val manager = WorkManager.getInstance(context)
         listOf(SourceWorkNames.SCAN, SourceWorkNames.PERIODIC, SourceWorkNames.UPLOAD).forEach { manager.cancelUniqueWork(it) }
-        context.localSources().sources().forEach { manager.cancelUniqueWork(SourceWorkNames.scan(it.id)) }
+        context.localSources().sources().forEach { SafChanges.stop(context, it.id); manager.cancelUniqueWork(SourceWorkNames.scan(it.id)) }
     }
     /** One-time imports that already captured their immutable bytes do not need
      * the provider grant again; every other source must still be readable. */
     internal fun runnable(context: Context, source: LocalSource): Boolean {
         if (!source.enabled) return false
-        if (source.binaryFiles() && !source.syncContinuously && context.fileArchives().configure(source).optBoolean("importCaptured")) return true
-        return SourceAccess.available(context, source)
+        val captured = source.binaryFiles() && !source.syncContinuously && context.fileArchives().configure(source).optBoolean("importCaptured")
+        return SafUploadGate.runnable(source.enabled, captured) { SourceAccess.available(context, source) }
     }
     fun upload(context: Context, explicit: Boolean = false) = SyncSchedule.scheduleAfterSourceScan(context, Settings(context).read(), explicit)
     internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean, continuation: Boolean = false, delaySeconds: Long = 0) {

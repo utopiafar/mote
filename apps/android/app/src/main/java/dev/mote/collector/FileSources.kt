@@ -3,13 +3,10 @@ package dev.mote.collector
 import android.content.Context
 import android.net.Uri
 import android.os.CancellationSignal
-import android.provider.DocumentsContract
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.time.Instant
 
 fun Context.fileArchives(): FileArchiveQueue {
 
@@ -21,16 +18,8 @@ fun LocalSource.binaryFiles() = SourceAdapters.default.forKind(kind).queueKind =
 /** Persistent traversal checkpoints; every directory is eventually reached within bounded slices. */
 class FileSources(private val context: Context, private val cancel: CancellationSignal = CancellationSignal()) {
     private val resolver = context.contentResolver
-    private val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-    fun metadata(uri: Uri, source: LocalSource): JSONObject? = resolver.query(uri, projection, null, null, null, cancel)?.use { c ->
-        if (!c.moveToFirst()) return@use null
-        val name = c.getString(1) ?: "file"; val mime = c.getString(2) ?: "application/octet-stream"
-        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) return@use null
-        val item = JSONObject().put("externalId", uri.toString()).put("uri", uri.toString()).put("title", name.take(2000)).put("kind", "file").put("layer", if (source.retention == "archive") "original" else if (source.retention == "snapshot") "snapshot" else "reference").put("text", "").put("mimeType", mime.take(200)).put("observedAt", Instant.now().toString())
-        if (!c.isNull(3) && c.getLong(3) >= 0) item.put("metadata", JSONObject().put("version", 1).put("file", JSONObject().put("sizeBytes", c.getLong(3))))
-        if (!c.isNull(4) && c.getLong(4) > 0) item.put("modifiedAt", Instant.ofEpochMilli(c.getLong(4)).toString())
-        item
-    }
+    fun metadata(uri: Uri, source: LocalSource): JSONObject? = AndroidSafProvider.readDocument(resolver, uri, cancel)?.takeUnless { it.directory }
+        ?.let { it.item(source, context.fileArchives().externalId(source, it.uri)) }
     fun scan(source: LocalSource): Boolean = measured(EventStage.FILE_SCAN) {
         if (!source.syncContinuously && context.fileArchives().configure(source).optBoolean("importCaptured")) true else scanSlice(source)
     }
@@ -41,59 +30,21 @@ class FileSources(private val context: Context, private val cancel: Cancellation
         catch (error: Exception) { SupportEvents.failure(context, stage, error, android.os.SystemClock.elapsedRealtime() - started); throw error }
     }
     private fun scanSlice(source: LocalSource): Boolean {
-        val queue = context.fileArchives(); val lease = context.localSources().lease(source) ?: throw SourceLeaseRevoked(); val state = queue.configure(source, lease); val generation = state.getString("generation"); val root = Uri.parse(source.uri)
-        if (!source.tree) {
-            val item = metadata(root, source) ?: throw IllegalStateException(MoteI18n.text("所选文件不可用"))
-            cancel.throwIfCanceled()
-            val selected = SourceRules.include(item.getString("title"), source)
-            if (selected) queue.observe(source, item, generation, lease = lease)
-            queue.finish(source, generation, lease) { false }
-            if (!source.syncContinuously && queue.pendingCount(source.id) == 0) queue.captured(source, lease)
-            return true
-        }
-        val stack = state.optJSONArray("stack") ?: JSONArray().put(JSONObject().put("id", DocumentsContract.getTreeDocumentId(root)).put("offset", 0).put("path", ""))
-        var examined = 0
-        while (stack.length() > 0 && examined < 200) {
-            cancel.throwIfCanceled()
-            val current = stack.getJSONObject(stack.length() - 1); val children = DocumentsContract.buildChildDocumentsUriUsingTree(root, current.getString("id"))
-            var finished = true; val nested = mutableListOf<JSONObject>()
-            resolver.query(children, projection, null, null, null, cancel)?.use { c ->
-                var index = 0
-                while (c.moveToNext()) {
-                    if (index++ < current.getInt("offset")) continue
-                    if (examined++ >= 200) { finished = false; break }
-                    cancel.throwIfCanceled(); current.put("offset", index)
-                    val name = c.getString(1) ?: "file"; val path = (current.getString("path").takeIf { it.isNotEmpty() }?.plus("/") ?: "") + name
-                    if (SourceRules.patterns(source.excluded).any { it.matches(path) }) continue
-                    val documentId = c.getString(0)
-                    if (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        check(path.count { it == '/' } < 32) { MoteI18n.text("目录层级超过上限") }
-                        nested.add(JSONObject().put("id", documentId).put("offset", 0).put("path", path))
-                    } else if (SourceRules.include(path, source)) {
-                        val uri = DocumentsContract.buildDocumentUriUsingTree(root, documentId)
-                        val item = metadata(uri, source) ?: throw IllegalStateException(MoteI18n.text("文件枚举期间不可用"))
-                        cancel.throwIfCanceled()
-                        queue.observe(source, item.put("_relativePath", path), generation, lease = lease)
-                    }
-                }
-            } ?: throw IllegalStateException(MoteI18n.text("目录不可用，保留已有档案"))
-            if (finished) stack.remove(stack.length() - 1)
-            nested.forEach { stack.put(it) }; check(stack.length() <= 10000) { MoteI18n.text("待扫描目录超过上限") }
-            cancel.throwIfCanceled()
-            state.put("stack", stack).put("scanComplete", false); queue.checkpoint(source, state, generation, lease)
-        }
-        if (stack.length() == 0) {
-            cancel.throwIfCanceled()
-            queue.finish(source, generation, lease) { external ->
-                // A permissions/provider failure is unknown, never a removal.
-                runCatching { resolver.query(Uri.parse(external), arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null, cancel)?.use { !it.moveToFirst() } ?: false }.getOrDefault(false).also { cancel.throwIfCanceled() }
-            }; return true
-        }
-        return false
+        val queue = context.fileArchives(); val lease = context.localSources().lease(source) ?: throw SourceLeaseRevoked()
+        val provider = AndroidSafProvider(context, source, lease, cancel)
+        return SafFileScanner(queue, provider, lease).scan(source)
     }
-    fun prepare(source: LocalSource, onSelected: ((JSONObject) -> Unit)? = null, anchor: ((String) -> String?)? = null) = measured(EventStage.FILE_PREPARE) { context.fileArchives().prepare(source, captureImmediately = !source.syncContinuously && !source.tree, anchor = anchor, onSelected = onSelected, lease = context.localSources().lease(source), cancelled = { cancel.isCanceled },
-        open = { resolver.openInputStream(Uri.parse(it.getString("uri"))) ?: throw IllegalStateException(MoteI18n.text("文件无法打开")) },
-        unchanged = { old -> metadata(Uri.parse(old.getString("uri")), source)?.let { context.fileArchives().signature(it) == context.fileArchives().signature(JSONObject(old.toString()).apply { remove("_relativePath") }) } ?: false }) }
+    fun prepare(source: LocalSource, onSelected: ((JSONObject) -> Unit)? = null, anchor: ((String) -> String?)? = null) = measured(EventStage.FILE_PREPARE) {
+        val version = SafChanges.version(context, source)
+        fun available(): Boolean {
+            if (!SourceAccess.available(context, source)) throw SecurityException("Persisted document access was revoked")
+            return SafChanges.version(context, source) == version
+        }
+        context.fileArchives().prepare(source, captureImmediately = !source.syncContinuously && !source.tree, anchor = anchor, onSelected = onSelected, lease = context.localSources().lease(source),
+            cancelled = { cancel.isCanceled || SafChanges.version(context, source) != version },
+            open = { check(available()); resolver.openInputStream(Uri.parse(it.getString("uri"))) ?: throw IllegalStateException(MoteI18n.text("文件无法打开")) },
+            unchanged = { old -> available() && (metadata(Uri.parse(old.getString("uri")), source)?.let { context.fileArchives().signature(it) == context.fileArchives().signature(JSONObject(old.toString()).apply { remove("_relativePath") }) } ?: false) })
+    }
 }
 
 /** A current v2 file revision was rejected. Retrying the same immutable
