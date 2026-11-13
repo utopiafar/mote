@@ -10606,7 +10606,6 @@ export const english: Readonly<Record<string, string>> = {
   "设置尚未读取完成，请稍后重试。": "Settings are not loaded yet. Try again shortly.",
   "这条回答已取消，晚到的结果不会写回。": "This answer was cancelled; a late result will not be written back.",
   "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask opens the main conversation by default. Multiple conversations are off by default; turning them off does not delete existing conversations.",
-  "人物": "People",
   "记忆浏览": "Browse memories",
   "本页 {0} 条承诺": "{0} commitments on this page",
   "本页关联 {0} 个事项": "{0} related matters on this page",
