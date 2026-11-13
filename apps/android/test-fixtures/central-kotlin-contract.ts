@@ -9,6 +9,7 @@ import {buildApp} from '../../server/src/app.js';
 import type {Config} from '../../server/src/config.js';
 import {defaultConfig as desktopConfig} from '../../desktop/src/config.js';
 import {AssistantNoticePresenter,AssistantNotificationReader,type AssistantNoticeCursor} from '../../desktop/src/assistant-notification.js';
+import {assistantProducer} from './assistant-producer.js';
 
 // Real Central routes feed the production Kotlin upload use case. Only the
 // unavailable Android transport runtime is replaced by JDK HTTP in the JVM test.
@@ -62,6 +63,7 @@ try {
   desktopPresenter.update(origin,await desktopReader.snapshot(origin),true);assert.equal(shows,1);assert.equal(cancels,1,'A new version retires the old OS summary');
   assert.equal((await desktopReader.card(origin,notificationId)).body,'Generated current notification result v2');
   assert.ok((await desktopReader.page(origin)).items.some(card=>card.id===plainId),'No reminder is required to keep a card in the inbox');
+  const assistantFixture = await assistantProducer(central, directory, token);
   const invitation = await central.app.inject({method: 'POST', url: '/api/connections/collector-invitations',
     headers: {authorization: 'Bearer ' + token}, payload: {serverUrl: origin, label: 'Generated Kotlin contract', deviceId: 'generated-kotlin-phone'}});
   assert.equal(invitation.statusCode, 200, 'Generated collector invitation failed');
@@ -96,7 +98,8 @@ try {
   child = spawn(resolve(root, 'apps/android/gradlew'), args, {cwd: root, stdio: 'inherit', detached: process.platform !== 'win32',
     env: {...process.env, MOTE_KOTLIN_CONTRACT_ORIGIN: origin, MOTE_KOTLIN_CONTRACT_TOKEN: token,
       MOTE_KOTLIN_CONTRACT_COLLECTOR: granted.json().token,MOTE_KOTLIN_CONTRACT_CONVERSATION:history.conversationId,MOTE_KOTLIN_CONTRACT_HISTORY_EVIDENCE:historyEvidence,
-      MOTE_KOTLIN_CONTRACT_NOTIFICATION:notificationId,MOTE_KOTLIN_CONTRACT_NOTIFICATION_EVIDENCE:notificationEvidence,MOTE_KOTLIN_CONTRACT_PLAIN_CARD:plainId}});
+      MOTE_KOTLIN_CONTRACT_NOTIFICATION:notificationId,MOTE_KOTLIN_CONTRACT_NOTIFICATION_EVIDENCE:notificationEvidence,MOTE_KOTLIN_CONTRACT_PLAIN_CARD:plainId,
+      MOTE_KOTLIN_CONTRACT_ASSISTANT: assistantFixture}});
   await new Promise<void>((done, reject) => {
     let failure: Error | undefined;
     let force: ReturnType<typeof setTimeout> | undefined;
@@ -121,10 +124,12 @@ try {
   const report = await readFile(resolve(root, 'apps/android/app/build/test-results/testDebugUnitTest/TEST-dev.mote.collector.CentralProducerContractTest.xml'), 'utf8');
   const suite = report.match(/<testsuite\b[^>]*>/)?.[0] ?? '';
   assert.ok(Number(suite.match(/\btests="(\d+)"/)?.[1]) >= 6, 'The real Kotlin contract cases must execute');
+  assert.match(report, /<testcase name="realAssistantProjectionsSupportBothWorkAndLifeFeedbackTasksAndWithdrawal"/, 'The actual assistant consumer contract must execute');
   for (const attribute of ['skipped', 'failures', 'errors']) assert.match(suite, new RegExp(`\\b${attribute}="0"`), `Kotlin contract ${attribute}`);
   assert.deepEqual(await desktopReader.snapshot(origin),{items:[]},'The Android read/withdrawal is reflected on Desktop');
   await assert.rejects(desktopReader.card(origin,notificationId),'A stale notification click cannot disclose the withdrawn result');
   console.log('Real Fastify → Kotlin upload contract passed (generated SQLite/HTTP; no device or model).');
+  console.log('Real Central → Kotlin contracts passed (generated SQLite/HTTP and assistant domain projections; no device or model).');
 } catch (error) {
   failure = error;
 } finally {

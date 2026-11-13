@@ -91,6 +91,57 @@ class CentralProducerContractTest {
         assertEquals(404, missing.status)
     }
 
+
+    @Test fun realAssistantProjectionsSupportBothWorkAndLifeFeedbackTasksAndWithdrawal() {
+        val fixture = JSONObject(java.io.File(requireNotNull(System.getenv("MOTE_KOTLIN_CONTRACT_ASSISTANT"))).readText()).getJSONArray("items")
+        assertEquals(2, fixture.length())
+        for (index in 0 until fixture.length()) {
+            val generated = fixture.getJSONObject(index)
+            val scope = AssistantScope(generated.getJSONObject("scope"))
+            val api = CentralAssistant(client(), scope)
+            val disk = CentralStateFile(folder.newFolder(), "generated-assistant", object : ByteCipher {
+                override fun seal(bytes: ByteArray) = bytes
+                override fun open(bytes: ByteArray) = bytes
+            })
+            val model = AssistantFeedViewModel(api, disk::read, disk::write)
+            model.refresh(); assertNull(model.error)
+            val card = model.cards.single()
+            assertEquals(generated.getString("cardId"), card.id)
+            assertEquals("two", card.version); assertTrue(card.body.contains(generated.getString("kind")))
+            assertEquals(generated.getString("evidenceId"), card.evidence.single().id)
+            assertEquals(generated.getString("taskId"), card.acceptedTaskId)
+            assertEquals(card.acceptedTaskId, model.tasks[card.id]!!.id)
+            // Pending/blocked work is whatever Central reports; accepting a
+            // suggestion did not manufacture a completed result on the phone.
+            assertEquals(api.task(card.acceptedTaskId!!).state, model.tasks[card.id]!!.state)
+            model.feedback(card.id, card.revision, "later"); assertNull(model.error)
+            val later = model.cards.single(); assertEquals("later", later.feedback.last())
+            model.feedback(card.id, later.revision, "ignore"); assertNull(model.error)
+            assertEquals("ignore", model.cards.single().feedback.last())
+            assertEquals(card.evidence, model.cards.single().evidence)
+            assertEquals(2, model.history(card.id).getJSONArray("items").length())
+
+            val matter = AssistantMatterDetail.read(generated.getJSONObject("matter"))
+            assertEquals(card.matterId, matter.id); assertEquals(card.acceptedTaskId, matter.tasks.single().first)
+            assertEquals(listOf(generated.getString("evidenceId")), matter.evidence.map { it.first })
+            val commitment = AssistantCommitment.read(generated.getJSONObject("commitment"))
+            assertEquals("confirmed", commitment.status); assertEquals("unknown", commitment.dueState)
+            assertEquals(card.evidence.single().id, commitment.timeline.single().evidence.single().id)
+            assertNull(commitment.timeline.single().occurredAt); assertEquals("proposal", commitment.timeline.single().origin)
+            val rule = AssistantRoutine.read(generated.getJSONObject("routine"))
+            assertEquals(rule.nextDue, api.routine(rule.id).nextDue)
+            val paused = api.updateRoutine(rule.id, JSONObject().put("expectedRevision", rule.revision).put("enabled", false))
+            assertFalse(paused.enabled); assertNull(paused.nextDue)
+            assertEquals(409, assertThrows(CentralFailure::class.java) {
+                api.updateRoutine(rule.id, JSONObject().put("expectedRevision", rule.revision).put("enabled", true))
+            }.status)
+            client().delete("/api/captures/" + generated.getString("evidenceId"))
+            model.refresh(); assertNull(model.error); assertTrue(model.cards.isEmpty()); assertTrue(model.tasks.isEmpty())
+            assertEquals(404, assertThrows(CentralFailure::class.java) { api.card(card.id) }.status)
+        }
+    }
+
+
     @Test fun safReferenceManifestProducesTheSharedFileViewConsumedByKotlin() {
         val api = client(collector); val source = LocalSource(id = "generated-saf-" + UUID.randomUUID(), name = "Generated SAF", kind = "local-files",
             retention = "reference", uri = "content://generated/tree/root", tree = true, extensions = "txt")
