@@ -2,6 +2,7 @@ import {AssistantMatters} from './assistant-matters.js';
 import {AssistantWorkbench} from './assistant-workbench.js';
 import {AssistantCards} from './assistant-cards.js';
 import {AssistantFollowup} from './assistant-followup.js';
+import {AssistantOnboarding} from './assistant-onboarding.js';
 import {AssistantCommitments} from './assistant-commitments.js';
 import {assertSourceContextDependencies} from './source-context-lineage.js';
 import {BatchProcessing} from './batch-processing.js';
@@ -312,9 +313,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const assistantChanges=new AssistantChangeFeed(store,materials,modelAuthorization,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant input is no longer permitted',409);
   });
+  let assistantOnboarding:AssistantOnboarding|undefined;
   // Reuse the existing Central poll; the routine does not depend on a material
   // change, and a change-feed failure cannot suppress a due occurrence.
-  setMaterialConsumerTick(()=>{try{assistantChanges.tick();}finally{assistantRoutines.tick();}});
+  setMaterialConsumerTick(()=>{try{assistantChanges.tick();}finally{try{assistantRoutines.tick();}finally{void assistantOnboarding?.tick().catch(()=>{});}}});
   resources.beforeClose(()=>setMaterialConsumerTick(undefined));
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
@@ -546,8 +548,13 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
   });
+  assistantOnboarding=new AssistantOnboarding(store,materials,evidenceReader,modelAuthorization,memoryPipeline,assistantFollowup,availableModelConnections,ids=>{
+    if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Onboarding evidence is no longer permitted',409);
+  },ref=>materialMemoryWork.sourceRequirements(ref),sourcePipelines.archive);
+  resources.beforeClose(()=>assistantOnboarding!.close());
+  app.addHook('onReady',async()=>{void assistantOnboarding!.tick().catch(()=>{});});
   const featureServices=Object.freeze({
-    assistantCards,assistantNotifications,assistantCommitments,assistantFollowup,assistantWorkbench,
+    assistantCards,assistantNotifications,assistantCommitments,assistantFollowup,assistantWorkbench,assistantOnboarding,
     configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
@@ -593,7 +600,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.memory'))routes.push(domain('mote.memory',app=>registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);})));
   if(selected('mote.imports'))routes.push(domain('mote.imports'));
   if(selected('mote.ask'))routes.push(domain('mote.ask'));
-  if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices,{store:assistantCards,notifications:assistantNotifications,workbench:assistantWorkbench,credential,assertRequestActive})));
+  if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices,{store:assistantCards,notifications:assistantNotifications,workbench:assistantWorkbench,onboarding:assistantOnboarding,credential,assertRequestActive})));
   if(selected('mote.agent-view'))routes.push(domain('mote.agent-view'));
   if(selected('mote.features'))routes.push(inventoryFeature(()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()])));
   await installFeatureRoutes(featureRoutes,routes);

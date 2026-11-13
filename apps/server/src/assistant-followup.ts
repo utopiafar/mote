@@ -13,7 +13,7 @@ import type {ModelConnection} from './background-model-authorization.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
 import {sha256,StoreError,type Store} from './store.js';
-import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
+import {TaskRecords,type AssertTaskCurrent,type TaskRecord} from './task-records.js';
 import {addTaskEvidence,taskEvidenceIds} from './task-evidence.js';
 
 const uuid=z.string().uuid();
@@ -78,12 +78,16 @@ export class AssistantFollowup {
   if(task.kind!=='assistant.followup'||canonicalRecipeJson(saved.input)!==canonicalRecipeJson(input)||canonicalRecipeJson(saved.admission)!==canonicalRecipeJson(admission))throw new StoreError('Assistant request ID was reused with different input',409);
   return task;
  }
- async start(raw:Input,admission:{identities:readonly string[];connections:ModelConnection[]}){
+ /** A product checkpoint joins the same transaction as admission, so recovery
+  * cannot lose the link to an already queued analysis. */
+ async start(raw:Input,admission:{identities:readonly string[];connections:ModelConnection[]},assertActive:()=>void=()=>{},accepted:(task:TaskRecord)=>void=()=>{}){
+  assertActive();
   const input=inputSchema.parse(raw),scope=input.scope;
   if(empty(scope))throw new StoreError('Assistant analysis has an empty evidence scope',409);
   if(new Set(input.materialRefs).size!==input.materialRefs.length)throw new StoreError('Material references must be distinct');
   const selectedAdmission={identities:[...admission.identities].sort(),connections:[...admission.connections].sort((a,b)=>a.id.localeCompare(b.id)||a.fingerprint.localeCompare(b.fingerprint))};
-  const prior=this.prior(input,selectedAdmission);if(prior)return prior;
+  const accept=(task:TaskRecord)=>this.transaction(()=>{assertActive();accepted(task);return task;});
+  const prior=this.prior(input,selectedAdmission);if(prior)return accept(prior);
   const asOf=this.now(),views=input.materialRefs.map(ref=>this.understanding.read({ref,scope,limit:10}));
   const materialProducts=views.map(view=>({ref:view.material.ref,products:view.products.map(product=>product.ref),nextCursor:view.nextCursor,coverage:view.coverage}));
   const memoryPage=await readCurrentMemoryPage(this.reader,scope,{level:'detail',limit:10,asOf});
@@ -134,10 +138,11 @@ export class AssistantFollowup {
    commitments:commitments.map(item=>({id:item.id,revision:item.revision,title:item.title,status:item.status,deadline:item.deadline,dueState:item.dueState,timeline:item.timeline}))};
   const question=PROMPT+'\nUntrusted context: '+JSON.stringify(context);
   if(question.length>8000)throw new StoreError('Assistant context exceeds the bounded model input; narrow the scope',413);
-  const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return completedEarlier;
+  const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
   this.assertSnapshot({input,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,pins,originals,admission:selectedAdmission});
   return this.transaction(()=>{
-   const existing=this.prior(input,selectedAdmission);if(existing)return existing;
+   assertActive();
+   const existing=this.prior(input,selectedAdmission);if(existing)return accept(existing);
    const operationId='assistant-followup:'+sha256(canonicalRecipeJson([input.operationId,input.requestId]));
    const batch=this.batch.submit({operationId,requestId:input.requestId,items:[{question,evidenceIds}]},
     {kind:'manual',identities:selectedAdmission.identities,connections:selectedAdmission.connections});
@@ -153,7 +158,8 @@ export class AssistantFollowup {
    const snapshot:Snapshot={input,batchId:batch.id,cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
     materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,pins,originals,admission:selectedAdmission};
    this.assertSnapshot(snapshot);
-   return this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},this.assertCurrent);
+   const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},this.assertCurrent);
+   accepted(task);return task;
   });
  }
  private assertSnapshot(snapshot:Snapshot){
@@ -184,7 +190,8 @@ export class AssistantFollowup {
  }
  /** Finish only from the batch's persisted actual result. A revision conflict is
   * recoverable by starting a fresh analysis; no stale output is merged. */
- async finish(taskId:string){
+ async finish(taskId:string,assertActive:()=>void=()=>{}){
+  assertActive();
   const task=this.tasks.get(taskId);if(task.kind!=='assistant.followup')throw new StoreError('Assistant analysis not found',404);
   if(task.state==='succeeded')return this.tasks.result<{reason:string;cardIds:string[];commitmentIds:string[]}>(task.id,task.revision,this.assertCurrent)!;
   const snapshot=this.tasks.input<Snapshot>(task.id,task.revision,this.assertCurrent),result=this.batch.result(snapshot.batchId);
@@ -194,6 +201,7 @@ export class AssistantFollowup {
   const memory=await readCurrentMemoryPage(this.reader,snapshot.input.scope,{level:'detail',limit:10,asOf:this.now()});
   if(JSON.stringify(memory.items.map(item=>[item.id,item.version,item.fingerprint]))!==JSON.stringify(snapshot.memoryRevisions.map(item=>[item.id,item.version,item.fingerprint])))throw new StoreError('Memory changed; analyze again',409);
   return this.transaction(()=>{
+   assertActive();
    this.assertSnapshot(snapshot);const cardIds:string[]=[],commitmentIds:string[]=[],scope=snapshot.input.scope;
    const publicDependencies=deps(snapshot.dependencies.filter(id=>Boolean(parseEvidenceId(id))));
    const internalDependencies=snapshot.dependencies.filter(id=>!parseEvidenceId(id));
@@ -223,5 +231,23 @@ export class AssistantFollowup {
    }
    const saved={reason:output.reason,cardIds,commitmentIds};this.tasks.saveResult(task.id,task.revision,saved,deps(snapshot.dependencies),this.assertCurrent);return saved;
   });
+ }
+ progress(taskId:string){
+  const task=this.tasks.get(taskId);if(task.kind!=='assistant.followup')throw new StoreError('Assistant analysis not found',404);
+  if(task.state==='cancelled'||task.state==='stale')return {task};
+  const snapshot=this.tasks.input<Snapshot>(task.id,task.revision,this.assertCurrent);
+  return {task,batch:this.batch.progress(snapshot.batchId)};
+ }
+ result(taskId:string,scope:QueryScope){
+  const task=this.tasks.get(taskId);if(task.kind!=='assistant.followup'||task.state!=='succeeded')return;
+  const snapshot=this.tasks.input<Snapshot>(task.id,task.revision,this.assertCurrent);
+  if(!scopeContains(queryScopeSchema.parse(scope),snapshot.input.scope))return;
+  return this.tasks.result<{reason:string;cardIds:string[];commitmentIds:string[]}>(task.id,task.revision,this.assertCurrent);
+ }
+ cancel(taskId:string){
+  const {task,batch}=this.progress(taskId);
+  if(['succeeded','cancelled','stale'].includes(task.state))return task;
+  if(batch)this.batch.cancel(batch.task.id);
+  return this.tasks.setState(task.id,task.revision,'cancelled');
  }
 }

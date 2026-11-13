@@ -10606,7 +10606,6 @@ export const german: Readonly<Record<string, string>> = {
   "设置尚未读取完成，请稍后重试。": "Die Einstellungen sind noch nicht geladen. Versuche es gleich erneut.",
   "这条回答已取消，晚到的结果不会写回。": "Diese Antwort wurde abgebrochen; ein verspätetes Ergebnis wird nicht zurückgeschrieben.",
   "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask öffnet standardmäßig die Hauptunterhaltung. Mehrere Unterhaltungen sind standardmäßig aus; Ausschalten löscht keine bestehenden Unterhaltungen.",
-  "人物": "Personen",
   "记忆浏览": "Erinnerungen durchsuchen",
   "本页 {0} 条承诺": "{0} Zusagen auf dieser Seite",
   "本页关联 {0} 个事项": "{0} zugehörige Anliegen auf dieser Seite",

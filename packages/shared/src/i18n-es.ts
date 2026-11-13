@@ -10606,7 +10606,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "设置尚未读取完成，请稍后重试。": "Los ajustes aún no se han cargado. Inténtalo de nuevo en un momento.",
   "这条回答已取消，晚到的结果不会写回。": "Esta respuesta se canceló; un resultado tardío no se escribirá.",
   "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask abre la conversación principal de forma predeterminada. Las conversaciones múltiples están desactivadas por defecto; desactivarlas no elimina las existentes.",
-  "人物": "Personas",
   "记忆浏览": "Explorar recuerdos",
   "本页 {0} 条承诺": "{0} compromisos en esta página",
   "本页关联 {0} 个事项": "{0} asuntos relacionados en esta página",
