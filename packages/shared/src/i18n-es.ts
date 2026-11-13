@@ -10585,5 +10585,21 @@ export const spanish: Readonly<Record<string, string>> = {
   "设为主对话": "Establecer como conversación principal",
   "设置尚未读取完成，请稍后重试。": "Los ajustes aún no se han cargado. Inténtalo de nuevo en un momento.",
   "这条回答已取消，晚到的结果不会写回。": "Esta respuesta se canceló; un resultado tardío no se escribirá.",
-  "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask abre la conversación principal de forma predeterminada. Las conversaciones múltiples están desactivadas por defecto; desactivarlas no elimina las existentes."
+  "默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。": "Ask abre la conversación principal de forma predeterminada. Las conversaciones múltiples están desactivadas por defecto; desactivarlas no elimina las existentes.",
+  "人物": "Personas",
+  "记忆浏览": "Explorar recuerdos",
+  "本页 {0} 条承诺": "{0} compromisos en esta página",
+  "本页关联 {0} 个事项": "{0} asuntos relacionados en esta página",
+  "按已关联的记忆身份浏览；同名人物分别保留。": "Explora las identidades vinculadas a recuerdos. Las personas con el mismo nombre se mantienen separadas.",
+  "本页暂无已关联的人物。可继续浏览记忆或主题。": "No hay personas vinculadas en esta página. Puedes seguir explorando recuerdos o temas.",
+  "相关承诺与互动": "Compromisos e interacciones relacionados",
+  "当前范围内暂无关联的承诺或互动。": "No hay compromisos ni interacciones relacionados en el ámbito actual.",
+  "当前范围内暂无原始依据。": "No hay pruebas originales en el ámbito actual.",
+  "期限未明确": "Plazo sin especificar",
+  "已到期，履行情况以证据为准。": "El plazo ha vencido. El cumplimiento requiere pruebas.",
+  "互动与进展": "Interacciones y progreso",
+  "发生时间未知": "Hora del evento desconocida",
+  "推断": "Inferencia",
+  "仅汇总本页记忆与本页承诺的显式关联。": "Solo se incluyen vínculos explícitos entre los recuerdos y compromisos de estas páginas.",
+  "本页暂无关联的承诺或互动。": "No hay compromisos ni interacciones relacionados en esta página."
 };

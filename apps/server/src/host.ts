@@ -94,6 +94,7 @@ import {connectionsFeature} from './features/connections.js';
 import {mediaModelsFeature,mediaPreparationFeature} from './features/media.js';
 import {inventoryFeature} from './features/features.js';
 import {insightFeature} from './features/insights.js';
+import {registerMemoryAssociationRoutes} from './features/memory/associations.js';
 import {AssistantNotifications} from './assistant-notifications.js';
 import type {NotificationSettings} from './notification-configuration.js';
 import {parseCaptureBundle} from './plugins/capture-intake.js';
@@ -279,7 +280,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   });
   // The existing query provider does not yet expose the configured model
   // window or validate complete requests. Do not send a batch model request
-  // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
+  // using its hard-coded 128k assumption; connect the configured budget first.
   let assistantTasks:AssistantTasks|undefined;
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
@@ -587,7 +588,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.devices'))routes.push(withAgentTools(devicesFeature({diagnostics,store,files,evidenceReader,notesCapture,request:request=>pins.get(request)})));
   if(selected('mote.media'))routes.push(domain('mote.media',(app,scope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media:config.media}).mount(app,scope);}));
   if(selected('mote.owner-questions'))routes.push(domain('mote.owner-questions'));
-  if(selected('mote.memory'))routes.push(domain('mote.memory'));
+  if(selected('mote.memory'))routes.push(domain('mote.memory',app=>registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);})));
   if(selected('mote.imports'))routes.push(domain('mote.imports'));
   if(selected('mote.ask'))routes.push(domain('mote.ask'));
   if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices,{store:assistantCards,notifications:assistantNotifications,credential,assertRequestActive})));

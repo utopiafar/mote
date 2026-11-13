@@ -26,7 +26,7 @@ export const assistantEntrypoints:readonly AssistantEntrypoint[]=Object.freeze([
     href:'#/assistant/memory',
     title:'记忆与人物',
     purpose:'查看、纠正和遗忘助理对你的理解。',
-    requires:[{id:'assistant.memory',version:'1',host:'server'}],
+    requires:['http:GET:/api/memories','http:GET:/api/context-trees','http:GET:/api/assistant/commitments'],
   },
   {
     pageId:'assistantWorkbench',

@@ -13,7 +13,10 @@ export class Resource<T>{
  private schedule(){clearTimeout(this.timer);if(!this.pollers.size)return;this.timer=setTimeout(()=>{if(this.observed&&!this.snapshot.loading&&(typeof document==='undefined'||!document.hidden))this.refresh();this.schedule();},Math.max(250,Math.min(...this.pollers.keys())));}
  // Change notifications are hints, not ownership changes. Let a slow read finish
  // and coalesce all in-flight hints into one follow-up instead of starving it.
- invalidate(){this.dirty=true;if(!this.observed)return;if(this.controller){this.followup=true;return;}this.refresh();}
+ invalidate(retire=false){
+  if(retire){this.controller?.abort();this.controller=undefined;this.generation++;this.followup=false;this.publish({loading:this.observed});}
+  this.dirty=true;if(!this.observed)return;if(this.controller){this.followup=true;return;}this.refresh();
+ }
  refresh=()=>{this.controller?.abort();const controller=new AbortController(),generation=++this.generation;this.controller=controller;this.dirty=false;this.followup=false;this.publish({...this.snapshot,error:undefined,loading:true});
   void this.api.request<T>(this.key,{signal:controller.signal}).then(data=>{if(this.generation===generation&&!controller.signal.aborted)this.publish({data,loading:false});}).catch(error=>{if(this.generation===generation&&!controller.signal.aborted){this.dirty=true;this.publish({...(error instanceof ApiError&&[401,403,404,410].includes(error.status)?{}:this.snapshot),error,loading:false});}}).finally(()=>{if(this.controller===controller){this.controller=undefined;if(this.followup&&this.observed)this.refresh();}});
  };
@@ -23,7 +26,7 @@ export class ResourceCache {
  private entries=new Map<string,Resource<unknown>>();
  constructor(private api:Api){}
  get<T>(key:string):Resource<T>{let entry=this.entries.get(key);if(!entry){for(const [old,value] of this.entries){if(this.entries.size<100)break;if(!value.observed)this.entries.delete(old);}entry=new Resource(key,this.api);this.entries.set(key,entry);}return entry as Resource<T>;}
- invalidate(matches:(key:string)=>boolean){for(const [key,entry] of this.entries)if(matches(key))entry.invalidate();}
+ invalidate(matches:(key:string)=>boolean,retire=false){for(const [key,entry] of this.entries)if(matches(key))entry.invalidate(retire);}
  /** Drop this owner's cached entries. Used when an authenticated owner
   * changes; a later reader must not resolve an old owner's page from cache. */
  clear(){this.entries.clear();}

@@ -24,14 +24,20 @@ const page=(id:string,overrides:Partial<PageEntry>={}):PageEntry=>({id,featureId
 const capability=(id:string,version='1',state:FeatureCapability['state']='active'):FeatureCapability=>({id,version,state,featureId:'mote.assistant',surface:'page'});
 const inventory=(capabilities:FeatureCapability[]=[]):FeatureInventory=>({schemaVersion:1,revision:1,features:[],capabilities});
 
-test('an existing real page keeps its normal route while planned assistant pages are not claimed',async()=>{
+test('the Memory assistant entry uses its real page and unrelated planned pages stay unavailable',async()=>{
   await featuresReady;
   assert.equal(readPage('#/activity'),'activity');
   assert.equal(readPage('#/activity?work=generated-run'),'activity');
   assert.ok(webFeatures.page('activity'));
   assert.equal(readWorkspaceRoute('#/activity',readPage,webFeatures.collections().map(entry=>entry.id),webViewPage).page,'activity');
   assert.ok(webFeatures.registry.inventory().features.some(feature=>feature.id==='mote.assistant'),'the assistant package slot is installed');
-  for(const entry of assistantEntrypoints)assert.equal(webFeatures.page(entry.pageId),undefined,'the scaffold does not claim an unimplemented page');
+  assert.equal(readPage('#/assistant/memory'),'assistantMemory');
+  const memory=assistantEntrypoints.find(entry=>entry.pageId==='assistantMemory')!;
+  assert.ok(webFeatures.page(memory.pageId));
+  const live=inventory(memory.requires!.map(requirement=>capability(typeof requirement==='string'?requirement:requirement.id)));
+  assert.equal(resolveAssistantEntrypoint(memory,{pages:webFeatures.pages(),collections:[],inventory:live}).state,'available');
+  assert.equal(resolveAssistantEntrypoint(memory,{pages:webFeatures.pages(),collections:[],inventory:inventory([])}).state,'unavailable');
+  for(const entry of assistantEntrypoints.filter(entry=>entry.pageId!=='assistantMemory'))assert.equal(webFeatures.page(entry.pageId),undefined,'unimplemented pages remain unavailable');
 });
 
 test('a planned assistant destination stays non-executable until its page and capability are live',async()=>{
