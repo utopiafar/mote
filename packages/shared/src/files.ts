@@ -99,6 +99,46 @@ export const fileProcessingSchema=z.object({
 });
 export type FileProcessingSettings=z.infer<typeof fileProcessingSchema>;
 
+/** CORE-00 shared media seam, v1. This versions the exported contract, not a new
+ * persisted envelope. Domain inference stays in the image / FunASR contracts;
+ * Transcript, Diarization and original-file readers keep their current format.
+ * Installation is not worker readiness, plugin enablement or model authority. */
+export const MEDIA_MODEL_CONTRACT_VERSION=1;
+export const mediaRoleSchema=z.enum(['ocr','dialogue','speaker-wespeaker','local-image']);
+export type MediaRole=z.infer<typeof mediaRoleSchema>;
+/** Relative to the configured private modelDirectory. Never expose an owner's
+ * absolute paths in public status. Four FunASR components share one installation
+ * role; CAM++ does not use the optional speaker-wespeaker role or its files. */
+export const MEDIA_MODEL_PATHS={ocr:'ocr',dialogue:'dialogue','speaker-wespeaker':'speaker-wespeaker','local-image':'local-image'} as const satisfies Record<MediaRole,string>;
+export const MEDIA_MODEL_COMPONENT_PATHS={
+  'local-image':{image:'local-image'},
+  dialogue:{asr:'dialogue/asr',vad:'dialogue/vad',speaker:'dialogue/speaker',punctuation:'dialogue/punctuation'},
+} as const;
+/** Preserve existing asset states. Missing files are not_installed; a failed
+ * verification/import is failed + error, never ready. Runtime/platform health
+ * belongs to preparation and must not be inferred from an installation receipt.
+ * Model id/revision/manifest identity stays in the domain request/receipt and
+ * native artifact payload, rather than a second public provenance format. */
+export const mediaAssetStateSchema=z.enum(['not_installed','downloading','verifying','installing','ready','failed','cancelled']);
+export const mediaAssetStatusSchema=z.object({
+  role:mediaRoleSchema,state:mediaAssetStateSchema,version:z.string().min(1).max(200),
+  bytes:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  totalBytes:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  source:z.string().max(2000),error:z.string().max(1000).optional(),
+}).strict();
+export type MediaAssetStatus=z.infer<typeof mediaAssetStatusSchema>;
+export const mediaModelStatusSchema=mediaAssetStatusSchema.extend({
+  runtimeReady:z.boolean(),
+  // Dependency names are supplied by the actual worker, including the new
+  // FunASR stack; do not freeze the old faster_whisper / sherpa_onnx enum here.
+  missingDependencies:z.array(z.string().min(1).max(100)).max(32).optional(),
+}).strict();
+export type MediaModelStatus=z.infer<typeof mediaModelStatusSchema>;
+export const mediaModelsViewSchema=z.record(mediaRoleSchema,mediaModelStatusSchema).superRefine((value,ctx)=>{
+  for(const [role,status] of Object.entries(value))if(status.role!==role)ctx.addIssue({code:'custom',path:[role,'role'],message:'Media status role must match its key'});
+});
+export type MediaModelsView=z.infer<typeof mediaModelsViewSchema>;
+
 /** Independent canonical receipts for archived-file processing and summary work. */
 export type FileProcessingJobView={
  state:string;stage?:string;attempts?:number;error?:string|null;summary_state:string;availableAt?:number;inputVersion?:string|null;
