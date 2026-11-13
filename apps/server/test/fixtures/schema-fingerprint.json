@@ -5815,6 +5815,36 @@
       "type": "trigger",
       "name": "ledger_assistant_action_links_update",
       "fingerprint": "6ca96a5782f0067e6816194678103ad2a0348dca99a1e8e08758be9a71536830"
+    },
+    {
+      "type": "index",
+      "name": "assistant_onboarding_material",
+      "fingerprint": "0c00fad640dc6148b75a5c1717d5dd8823092738a246bfeb1bac180984f880f7"
+    },
+    {
+      "type": "table",
+      "name": "assistant_onboarding_items",
+      "fingerprint": "30d00caf6479e9f71080702215484108227e5234ab708d8d1e2a58aaa49b2263"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_onboarding_forget",
+      "fingerprint": "ef5539e5c9b7be3f52e181fb96a71b5b00d9a71b6c247d70c27c6c9779ba4043"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_onboarding_items_delete",
+      "fingerprint": "cb7f3d8b1603cba4cbc94c2893374a0e8f107ad3199708e4cbe2d4f78dcac1b1"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_onboarding_items_insert",
+      "fingerprint": "2e003d7f035de1f4f269a07110569c7c8a46f1ab26682d773b3a431affb1f05d"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_onboarding_items_update",
+      "fingerprint": "2e7740431b0b3e94219e52a3cc0210564654a761326b557acd91edf4361b851f"
     }
   ]
 }
