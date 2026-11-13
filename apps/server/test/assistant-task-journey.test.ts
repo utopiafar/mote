@@ -18,7 +18,7 @@ const token='generated-task-journey-owner',headers={authorization:'Bearer '+toke
 const text='GENERATED BLUE ORCHID FILE EVIDENCE';
 async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.now()<end){if(check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Timed out waiting for generated task');}
 
-async function fixture(t:TestContext,productionGuard=false){
+async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-task-journey-'));
  let evidenceId='',wire='',taskCalls=0,hold=false,release!:()=>void,entered!:()=>void;
  const held=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
@@ -46,9 +46,6 @@ async function fixture(t:TestContext,productionGuard=false){
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
  const build=async()=>{
   const node=await buildApp(config,{backgroundWorker:false});
-  // This fixture supplies a deliberately small controlled provider. Production's
-  // complete-request budget guard remains installed and is tested separately.
-  if(!productionGuard)(node.batchProcessing as unknown as {modelAdmission:()=>undefined}).modelAdmission=()=>undefined;
   await node.app.ready();return node;
  };
  let node=await build();
@@ -148,10 +145,13 @@ test('a failed draft enqueue rolls back its task and turn link before the same c
  assert.equal((await f.start(turn)).taskId,retried.taskId);
 });
 
-test('the assembled product preserves its production model-budget admission guard',async t=>{
- const f=await fixture(t,true);await f.note('Generated available evidence');const turn=await f.draft(),started=await f.start(turn);
- await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(started.taskId)?.state==='blocked');
- const [view]=await f.read(turn);assert.equal(view.error,'model_context_budget_unavailable');assert.equal(view.result,undefined);assert.equal(f.taskCalls,0);
+test('the assembled product rejects an over-budget task before provider disclosure',async t=>{
+ const f=await fixture(t);await f.note('Generated available evidence');const turn=await f.draft();
+ const settings=await f.node.app.inject({url:'/api/configuration',headers});
+ const configured=await f.node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:settings.json().revision,value:{context:{contextWindow:1024,contextWindowSource:'configured'}}}});
+ assert.equal(configured.statusCode,200,configured.body);const started=await f.start(turn);
+ await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(started.taskId)?.state==='failed');
+ const [view]=await f.read(turn);assert.equal(view.error,'processing_limit');assert.equal(view.result,undefined);assert.equal(f.taskCalls,0);
 });
 
 test('a selected file excludes unrelated sources and only its withdrawal retires the result',async t=>{

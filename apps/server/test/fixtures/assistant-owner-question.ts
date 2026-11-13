@@ -54,9 +54,6 @@ export async function assistantQuestionFixture(t:TestContext){
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
  const build=async()=>{
   const node=await buildApp(config,{backgroundWorker:false});
-  // Same controlled-provider boundary as assistant-task-journey. The production
-  // budget guard stays installed; this fixture has no external model window.
-  (node.batchProcessing as unknown as {modelAdmission:()=>undefined}).modelAdmission=()=>undefined;
   await node.app.ready();return node;
  };
  let node=await build();

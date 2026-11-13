@@ -1,4 +1,4 @@
-import {AgentNotConfiguredError,assembleHostContext,calculateContextBudget,estimateSerializedTokens,originalEvidenceReceipt,resolveModelCapabilities,type ContextReader,type QueryInput} from '@mote/agent';
+import {AgentNotConfiguredError,assembleHostContext,calculateContextBudget,estimateSerializedTokens,originalEvidenceReceipt,type ContextReader,type QueryInput} from '@mote/agent';
 import type {ConversationSettings} from '@mote/shared';
 import type {QueryResult} from '@mote/shared';
 import {StoreError} from '../store.js';
@@ -11,6 +11,7 @@ import type {WorkingMemory} from '../working-memory.js';
 import type {LifecycleSettings} from '../memory-lifecycle.js';
 import type {ModelSettingsStore} from '../model-settings.js';
 import {modelConfiguration} from '../model-configuration.js';
+import {queryModelBudget} from '../query-model-budget.js';
 import {memoryEvidenceFingerprint} from '../memory.js';
 import {openingMemoryContext} from '../opening-memory.js';
 import {readCurrentMemoryPage} from '../current-memory.js';
@@ -95,8 +96,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
         return {...page,items:page.items.filter((item,index)=>visible[index].items.some(value=>Boolean(value&&typeof value==='object'&&(value as {id?:unknown}).id===item.id)))};
       }},question,{...scope,contextTime});
     const preferences=conversationSettings().context;
-    const capabilities=resolveModelCapabilities({maxTokens:profile.settings.maxTokens,...(preferences.contextWindow===null?{}:{contextWindow:preferences.contextWindow})});
-    const modelBudget={contextWindow:capabilities.contextWindow,maxTokens:capabilities.maxOutputTokens,historyRatio:preferences.historyRatio,lowWatermarkRatio:preferences.lowWatermarkRatio,tokenCounting:'estimated' as const,contextWindowSource:capabilities.contextWindowSource==='configured'?'configured' as const:'conservative' as const};
+    const modelBudget=queryModelBudget(profile.settings.maxTokens,preferences);
     // Estimate fixed and current portions before preparing the history tail.
     // The transport subsequently checks the actual serialized provider body.
     const emptySelection=scope.evidenceIds?.length===0&&!historicalSelection;

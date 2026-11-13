@@ -16,10 +16,13 @@ export type BatchRequest={operationId:string;requestId:string;items:BatchQuery[]
 type FrozenQuery=BatchQuery & {processingEvidence:Record<string,string>};
 type Plan={items:string[];contextTime:string;reduce?:string};
 type StepInput={batchId:string;itemId?:string;index?:number;revision:number};
-type Admission={kind:'automatic';purpose:AutomaticModelPurpose;roots:readonly string[]}|{kind:'manual';identities:readonly string[];connections:ModelConnection[]};
+export type BatchAdmission={kind:'automatic';purpose:AutomaticModelPurpose;roots:readonly string[]}|{kind:'manual';identities:readonly string[];connections:ModelConnection[]};
 /** A product owner may project its own record in the existing step lifecycle.
  * These callbacks neither admit work nor create another execution mechanism. */
 export type BatchProductProjection={
+  /** A product may retain authorized historical context as invalidation lineage.
+   * The query's read grants still have to be current in frozen() and pins(). */
+  assertDependencies?(taskId:string,ids:readonly string[]):boolean;
   valid(step:ExecutionStep):boolean;
   project(step:ExecutionStep):void;
   commit(step:ExecutionStep,result:QueryResult):void;
@@ -61,6 +64,9 @@ export class BatchProcessing {
     try{const result=write();db.exec('RELEASE batch_write');return result;}
     catch(error){db.exec('ROLLBACK TO batch_write; RELEASE batch_write');throw error;}
   }
+  private current(taskId:string):AssertTaskCurrent{return ids=>{
+    if(!this.product?.assertDependencies?.(taskId,ids))this.assertCurrent(ids);
+  };}
   private frozen(input:BatchQuery):FrozenQuery{
     if(!input||typeof input.question!=='string'||!input.question.trim()||input.question.length>8000||!Array.isArray(input.evidenceIds)||
        input.evidenceIds.some(id=>typeof id!=='string'||!id)||new Set(input.evidenceIds).size!==input.evidenceIds.length)
@@ -91,9 +97,9 @@ export class BatchProcessing {
     if(this.closed)return false;
     try{
       const parent=this.parent(step),input=step.input as StepInput;
-      this.tasks.evidenceDependencies(parent.id,parent.revision,this.assertCurrent);
+      this.tasks.evidenceDependencies(parent.id,parent.revision,this.current(parent.id));
       if(input.itemId){const item=this.tasks.get(input.itemId);if(item.state!=='waiting'&&item.state!=='running')return false;
-        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,this.assertCurrent));}
+        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,this.current(item.id)));}
       return this.product?.valid(step)??true;
     }catch{return false;}
   }
@@ -106,17 +112,17 @@ export class BatchProcessing {
     this.product?.project(step);
   }
   private async execute(step:ExecutionStep,signal:AbortSignal,assertGrant:()=>void):Promise<QueryResult>{
-    const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.assertCurrent);
+    const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.current(parent.id));
     let frozen:FrozenQuery,taskContext:QueryInput['taskContext'],sourceContexts:QueryInput['contextSourceContextDependencies'];
     let inputs:QueryResult[]=[];
     if(input.itemId){
-      const item=this.tasks.get(input.itemId);frozen=this.tasks.input<FrozenQuery>(item.id,item.revision,this.assertCurrent);
+      const item=this.tasks.get(input.itemId);frozen=this.tasks.input<FrozenQuery>(item.id,item.revision,this.current(item.id));
       taskContext=frozen.taskContext;sourceContexts=frozen.contextSourceContextDependencies;
     }else{
       if(plan.reduce===undefined)throw new ExecutionFailure('stale','batch_reduce_missing');
       const values=plan.items.map(id=>{const item=this.tasks.get(id);if(item.state!=='succeeded')throw new ExecutionFailure('blocked','batch_item_incomplete');
-        const frozen=this.tasks.input<FrozenQuery>(id,item.revision,this.assertCurrent);this.pins(frozen);
-        const result=this.tasks.result<QueryResult>(id,item.revision,this.assertCurrent);if(!result)throw new ExecutionFailure('blocked','batch_item_incomplete');this.assertResultCurrent(result);
+        const frozen=this.tasks.input<FrozenQuery>(id,item.revision,this.current(id));this.pins(frozen);
+        const result=this.tasks.result<QueryResult>(id,item.revision,this.current(id));if(!result)throw new ExecutionFailure('blocked','batch_item_incomplete');this.assertResultCurrent(result);
         return {frozen,result};});
       frozen={question:plan.reduce,evidenceIds:[...new Set(values.flatMap(value=>value.frozen.evidenceIds))],processingEvidence:Object.assign({},...values.map(value=>value.frozen.processingEvidence))};
       inputs=values.map(value=>value.result);sourceContexts=combineSourceContextDependencies(inputs.map(result=>result.sourceContextDependencies));
@@ -124,7 +130,9 @@ export class BatchProcessing {
       if(Buffer.byteLength(summaries)>48000)throw new ExecutionFailure('blocked','batch_reduce_input_too_large');
       taskContext={turns:[],untrustedInterpretations:summaries};
     }
-    const assert=()=>{signal.throwIfAborted();assertGrant();this.parent(step);this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);for(const result of inputs)this.assertResultCurrent(result);};
+    const assert=()=>{signal.throwIfAborted();assertGrant();const current=this.parent(step);
+      this.tasks.evidenceDependencies(current.id,current.revision,this.current(current.id));
+      this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);for(const result of inputs)this.assertResultCurrent(result);};
     assert();
     const result=await this.query({...frozen,executionLane:'background',...(frozen.evidenceIds.length?{}:{hostRetrieval:'none' as const}),
       contextTime:plan.contextTime,contextEvidenceDependencies:deps(frozen.evidenceIds),...(sourceContexts?.length?{contextSourceContextDependencies:sourceContexts}:{}),assertContextAuthority:assert,signal,...(taskContext?{taskContext}:{}),
@@ -137,22 +145,22 @@ export class BatchProcessing {
     return result;
   }
   private commit(step:ExecutionStep,result:QueryResult){
-    const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.assertCurrent);
+    const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.current(parent.id));
     this.assertResultCurrent(result);const dependencies=deps(result.evidenceDependencies!.ids);
     if(input.itemId){
-      const item=this.tasks.get(input.itemId),frozen=this.tasks.input<FrozenQuery>(item.id,item.revision,this.assertCurrent);this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);
-      this.tasks.saveResult(item.id,item.revision,result,dependencies,this.assertCurrent);
-      if(plan.reduce===undefined)this.tasks.saveResult(parent.id,parent.revision,result,dependencies,this.assertCurrent);
+      const item=this.tasks.get(input.itemId),frozen=this.tasks.input<FrozenQuery>(item.id,item.revision,this.current(item.id));this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);
+      this.tasks.saveResult(item.id,item.revision,result,dependencies,this.current(item.id));
+      if(plan.reduce===undefined)this.tasks.saveResult(parent.id,parent.revision,result,dependencies,this.current(parent.id));
     }else{
-      for(const id of plan.items){const item=this.tasks.get(id),frozen=this.tasks.input<FrozenQuery>(id,item.revision,this.assertCurrent);this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);
-        const itemResult=this.tasks.result<QueryResult>(id,item.revision,this.assertCurrent);if(!itemResult)throw new ExecutionFailure('stale','batch_item_incomplete');this.assertResultCurrent(itemResult);}
-      this.tasks.saveResult(parent.id,parent.revision,result,dependencies,this.assertCurrent);
+      for(const id of plan.items){const item=this.tasks.get(id),frozen=this.tasks.input<FrozenQuery>(id,item.revision,this.current(id));this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);
+        const itemResult=this.tasks.result<QueryResult>(id,item.revision,this.current(id));if(!itemResult)throw new ExecutionFailure('stale','batch_item_incomplete');this.assertResultCurrent(itemResult);}
+      this.tasks.saveResult(parent.id,parent.revision,result,dependencies,this.current(parent.id));
     }
     if(!input.itemId||plan.reduce===undefined)this.product?.commit(step,result);
   }
   /** The whole admission, K3 records and step authority either commit together
    * or roll back. Replaying a request never mints another automatic trigger. */
-  submit(request:BatchRequest,admission:Admission){
+  submit(request:BatchRequest,admission:BatchAdmission){
     if(this.closed||!this.started)throw new StoreError('Batch processing is unavailable',503);
     if(!request.items.length||request.items.length>1000||admission.kind==='automatic'&&request.items.some(item=>!item.evidenceIds.length)||request.items.length>1&&request.reduce===undefined||
       request.reduce!==undefined&&(typeof request.reduce!=='string'||!request.reduce.trim()||request.reduce.length>8000))throw new StoreError('Invalid batch',400);
@@ -181,7 +189,7 @@ export class BatchProcessing {
     return {task:parent,completed:items.filter(step=>step.state==='succeeded').length,total:items.length,items,reduce:steps.find(step=>step.kind==='batch.reduce')};
   }
   private steps(id:string){return this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('batch.item','batch.reduce') AND json_extract(input,'$.batchId')=? ORDER BY rowid").all(id).map(row=>this.engine.get(String(row.id))!);}
-  result(id:string){const task=this.batch(id),result=this.tasks.result<QueryResult>(id,task.revision,this.assertCurrent);if(result)this.assertResultCurrent(result);return result;}
+  result(id:string){const task=this.batch(id),result=this.tasks.result<QueryResult>(id,task.revision,this.current(id));if(result)this.assertResultCurrent(result);return result;}
   cancel(id:string){
     // A caller-owned transaction cannot safely abort local work before it
     // commits. The stop command uses the private transactional path below.

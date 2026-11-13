@@ -10,11 +10,9 @@ import type {AssistantTaskInput,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {AssistantTaskAcceptance} from '../src/assistant-task-acceptance.js';
-import {BatchProcessing} from '../src/batch-processing.js';
 import type {MatterAuthority} from '../src/assistant-matters.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {SourceContextStore} from '../src/source-context.js';
-import {assertSourceContextDependencies} from '../src/source-context-lineage.js';
 import {StoreError} from '../src/store.js';
 import {TaskRecords} from '../src/task-records.js';
 
@@ -34,7 +32,7 @@ async function fixture(t:TestContext){
   model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,
   embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
  let calls=0;
- const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async()=>{calls++;throw Error('Unexpected model call');},close:async()=>{}}});
+ const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{calls++;throw Error('Unexpected model call');},close:async()=>{}}});
  let node=await build();await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const current=(ids:readonly string[])=>{if(ids.some(id=>!node.store.isCurrentEvidence(id)))throw new StoreError('Generated evidence unavailable',409);};
@@ -73,7 +71,7 @@ test('accepting a suggestion atomically links its frozen task and matter, includ
  assert.deepEqual(f.node.featureServices.assistantMatters.get(matter.id).taskIds,[task.id]);
  const batch=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='batch' AND operation_id=?").get(task.operationId)!;
  await until(()=>f.node.batchProcessing.progress(String(batch.id)).items[0]?.state==='blocked');
- assert.equal(f.node.batchProcessing.progress(String(batch.id)).items[0].error,'model_context_budget_unavailable');
+ assert.equal(f.node.batchProcessing.progress(String(batch.id)).items[0].error,'model_not_configured');
  assert.equal(f.calls,0);
  await f.restart();
  const repeated=f.accept().acceptSuggestion(request,ref,f.authority(),f.current,()=>{throw Error('A retry must not enqueue');});
@@ -178,14 +176,10 @@ test('loopback-provider batch results survive restart and a late answer cannot p
   retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',
   modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512,apiKey:'generated-only',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
- let node=await buildApp(config,{backgroundWorker:false});await node.app.ready();await node.batchProcessing.close();
- // The fixture-only adapter permits the controlled small request. Production
- // retains its complete-request budget guard; this is not evidence that it is ready.
+ let node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
  const current=(ids:readonly string[])=>{if(ids.some(id=>!node.store.isCurrentEvidence(id)))throw new StoreError('Generated evidence unavailable',409);};
- const attach=()=>new BatchProcessing(node.store,node.executor,node.modelAuthorization,input=>node.query.queryAgent(input,'query','conversations'),current,
-  ids=>node.modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(new SourceContextStore(node.store),result.sourceContextDependencies),()=>undefined);
- let batch=attach();
- t.after(async()=>{release();await batch.close();await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
+ let batch=node.batchProcessing;
+ t.after(async()=>{release();await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
  evidenceId=randomUUID();const response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id:evidenceId,deviceId:'generated-device',deviceName:'Generated',platform:'android',capturedAt:'2026-10-01T00:00:00Z',text:'GENERATED ACCEPTANCE ORIGINAL'}});
  assert.equal(response.statusCode,201,response.body);
  const scope={kind:'selection' as const,evidenceIds:[evidenceId]};
@@ -208,7 +202,7 @@ test('loopback-provider batch results survive restart and a late answer cannot p
  assert.equal(wireEvidence,true,'the actual read-only evidence tool delivered the generated original to the provider');
  assert.equal(batch.result(first.batchId)?.answer,'Generated supported answer');
  assert.deepEqual(batch.result(first.batchId)?.citations.map(citation=>citation.id),[evidenceId]);
- await batch.close();await node.app.close();node=await buildApp(config,{backgroundWorker:false});await node.app.ready();await node.batchProcessing.close();batch=attach();
+ await node.app.close();node=await buildApp(config,{backgroundWorker:false});await node.app.ready();batch=node.batchProcessing;
  assert.equal(batch.result(first.batchId)?.answer,'Generated supported answer','the K4 result is still readable after a restart');
  const {task,cardId,batchId}=start();
  await Promise.race([started,new Promise<never>((_,reject)=>{const timer=setTimeout(()=>reject(Error('Timed out waiting for loopback provider')),10000);timer.unref();})]);

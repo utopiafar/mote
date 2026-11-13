@@ -11,35 +11,23 @@ import type {Config} from '../src/config.js';
 import {ExecutionFailure} from '../src/execution-engine.js';
 import {TaskRecords} from '../src/task-records.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
-import {BatchProcessing} from '../src/batch-processing.js';
 import {hostRun} from './fixtures/host-run.js';
 import type {QueryRunLease} from '../src/query-agent.js';
 import {SourceContextStore} from '../src/source-context.js';
-import {assertSourceContextDependencies} from '../src/source-context-lineage.js';
 
 const headers={authorization:'Bearer generated-batch-owner-token'};
 const answer=(input:QueryInput):QueryResult=>({answer:`Generated answer: ${input.question}`,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}});
 const gate=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};};
 const reached=(signal:Promise<void>)=>Promise.race([signal,new Promise<never>((_,reject)=>{const timeout=setTimeout(()=>reject(Error('Timed out waiting for generated model')),10000);timeout.unref();})]);
 async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.now()<end){if(check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Timed out waiting for generated batch state');}
-async function fixture(t:TestContext,model:(input:QueryInput,lease?:QueryRunLease)=>Promise<QueryResult>,productionGuard=false){
+async function fixture(t:TestContext,model:(input:QueryInput,lease?:QueryRunLease)=>Promise<QueryResult>,configured=true){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-batch-'));
   const config:Config={dataDir,dataKey:'43'.repeat(32),contentEncryptionEnabled:true,token:'generated-batch-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
-  const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured:true,query:model,close:async()=>{}}});
+  const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured,query:model,close:async()=>{}}});
   let node=await build();
-  // A generated provider has no external model window. Exercise the actual
-  // query adapter and executor under that controlled boundary; the assembled
-  // production guard is checked separately below.
-  const attach=async()=>{
-    if(productionGuard)return node.batchProcessing;
-    await node.batchProcessing.close();
-    return new BatchProcessing(node.store,node.executor,node.modelAuthorization,input=>node.query.queryAgent(input,'query','conversations'),ids=>{
-      if(ids.some(id=>!node.store.isCurrentEvidence(id)))throw Error('Generated evidence is unavailable');
-    },ids=>node.modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(new SourceContextStore(node.store),result.sourceContextDependencies),()=>undefined);
-  };
-  let batch=await attach();await node.app.ready();
-  t.after(async()=>{await batch.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
-  return {get node(){return node;},get batch(){return batch;},async restart(){await batch.close();await node.app.close();node=await build();batch=await attach();await node.app.ready();},async note(label:string,deviceId='generated-device'){
+  let batch=node.batchProcessing;await node.app.ready();
+  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+  return {get node(){return node;},get batch(){return batch;},async restart(){await node.app.close();node=await build();batch=node.batchProcessing;await node.app.ready();},async note(label:string,deviceId='generated-device'){
     const id=randomUUID(),r=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId,deviceName:'Generated',platform:'android',capturedAt:'2026-10-01T00:00:00Z',text:`Generated original ${label}`}});
     assert.equal(r.statusCode,201,r.body);return id;
   },command(action:'on'|'off'|'stop'|'exclude',excludedSourceIds:string[]=[]){const control=node.modelAuthorization;return control.command({action,operationId:randomUUID(),revision:control.view().revision,...(action==='exclude'?{excludedSourceIds}:{})});}};
@@ -182,11 +170,11 @@ test('a waiting background batch leaves the interactive query lane available',as
 });
 
 
-test('assembled batches wait for a verified complete-request budget before any model call',async t=>{
-  let calls=0;const f=await fixture(t,async input=>{calls++;return answer(input);},true);
+test('assembled batches wait for a configured model without starting a provider attempt',async t=>{
+  let calls=0;const f=await fixture(t,async input=>{calls++;return answer(input);},false);
   const id=await f.note('budget'),batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated guarded query',evidenceIds:[id]}]},manual(f.node));
   await until(()=>f.batch.progress(batch.id).items[0].state==='blocked');
-  assert.equal(f.batch.progress(batch.id).items[0].error,'model_context_budget_unavailable');assert.equal(f.batch.progress(batch.id).items[0].attempts,0);
+  assert.equal(f.batch.progress(batch.id).items[0].error,'model_not_configured');assert.equal(f.batch.progress(batch.id).items[0].attempts,0);
   assert.equal(calls,0);assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(batch.id)!.result_json,null);
 });
 

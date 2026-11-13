@@ -8,16 +8,14 @@ import {estimateSerializedTokens,type QueryInput} from '@mote/agent';
 import type {QueryResult,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {AssistantFollowup} from '../src/assistant-followup.js';
-import {BatchProcessing} from '../src/batch-processing.js';
 import {TaskRecords} from '../src/task-records.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {semanticProcessor} from '../src/semantic-extraction.js';
 import {UsageLedger} from '../src/usage.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
-import {assertSourceContextDependencies} from '../src/source-context-lineage.js';
-import {SourceContextStore} from '../src/source-context.js';
-import {StoreError} from '../src/store.js';
+import {StoreError,sha256} from '../src/store.js';
+import {materialId} from '../src/materials.js';
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 const all:QueryScope={kind:'all'};
@@ -39,9 +37,8 @@ async function fixture(t:TestContext){
  const config:Config={dataDir,dataKey:'43'.repeat(32),contentEncryptionEnabled:true,token:'generated-followup-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const programs:Program[]=[],seen:Context[]=[];let providerFailure:unknown;
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput):Promise<QueryResult>=>{
-  // This controlled provider has a declared 32k test window. Include its
-  // serialized request and a conservative fixed output/system reserve; the
-  // real provider remains behind the production budget admission guard.
+  // Component-only provider double. The HTTP journeys exercise the actual
+  // complete-request gate; this estimate only bounds this generated input.
   const tokens=estimateSerializedTokens({question:input.question,evidenceIds:input.evidenceIds,contextTime:input.contextTime}).tokens;
   assert.ok(tokens+4000<=32000,'generated request must fit the declared small fixture window');
   const marker='\nUntrusted context: ',offset=input.question.indexOf(marker);assert.notEqual(offset,-1);
@@ -50,16 +47,13 @@ async function fixture(t:TestContext){
   try{return {answer:JSON.stringify(await program(context)),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};}
   catch(error){providerFailure=error;throw error;}
  },close:async()=>{}}});
- await node.batchProcessing.close();
  const reader=node.featureServices.evidenceReader;
  const assertCurrent=(ids:readonly string[])=>{if(!reader.contextDependenciesAllowed(ids))throw new StoreError('Generated evidence changed',409);};
- const batch=new BatchProcessing(node.store,node.executor,node.modelAuthorization,input=>node.query.queryAgent(input,'query','conversations'),assertCurrent,
-  ids=>node.modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(new SourceContextStore(node.store),result.sourceContextDependencies??[]),()=>undefined,()=>2,false,reader.memories);
- const service=new AssistantFollowup(node.store,node.materials,reader,node.featureServices.assistantCards,node.featureServices.assistantCommitments,node.featureServices.assistantMatters,batch,assertCurrent);
+ const batch=node.batchProcessing,service=node.featureServices.assistantFollowup;
  const tasks=new TaskRecords(node.store);
  await node.app.ready();
  const runtime=new ProcessingRuntime(node.store,[],{},Date.now,undefined,node.materials);
- t.after(async()=>{await runtime.close();await batch.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+ t.after(async()=>{await runtime.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const add=async(text:string,deviceId='generated-device')=>{
   const id=randomUUID(),response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId,deviceName:'Generated',platform:'import',capturedAt:at,text}});
   assert.equal(response.statusCode,201,response.body);await node.materialOrganizer.tick(100);
@@ -79,10 +73,10 @@ async function fixture(t:TestContext){
  const profile=node.modelSettings.select('chat'),admission={identities:[],connections:[agentModelConnection({kind:'profile',id:profile.id},profile.settings)]};
  const start=async(refs:string[],mode:{kind:'change'}|{kind:'briefing';after:string;before:string}={kind:'change'},scope:QueryScope=all)=>service.start({operationId:'generated:'+randomUUID(),requestId:randomUUID(),scope,materialRefs:refs,mode},admission);
  const wait=async(task:{id:string;revision:number})=>{
-  const saved=tasks.input<{batchId:string}>(task.id,task.revision,assertCurrent);
-  await until(()=>['succeeded','failed','stale','cancelled'].includes(batch.progress(saved.batchId).task.state)||batch.progress(saved.batchId).items.some(item=>['failed','stale','blocked'].includes(item.state)));
+  const batchId=service.progress(task.id).batch!.task.id;
+  await until(()=>['succeeded','failed','stale','cancelled'].includes(batch.progress(batchId).task.state)||batch.progress(batchId).items.some(item=>['failed','stale','blocked'].includes(item.state)));
   if(providerFailure)throw providerFailure;
-  const progress=batch.progress(saved.batchId);assert.equal(progress.task.state,'succeeded',JSON.stringify(progress));
+  const progress=batch.progress(batchId);assert.equal(progress.task.state,'succeeded',JSON.stringify(progress));
  };
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,add,produce,start,wait,run,admission};
@@ -294,18 +288,74 @@ test('a newly completed understanding product forces a fresh analysis before pub
  assert.deepEqual(retry.cardIds,[]);
 });
 
-test('the assembled production batch keeps the existing model-budget admission block',async t=>{
+test('the assembled batch passes the configured product budget to its query consumer',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-followup-budget-'));let calls=0;
- const config:Config={dataDir,token:'generated-followup-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
- const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async()=>{calls++;throw Error('Unexpected provider call');},close:async()=>{}}});
+ const config:Config={dataDir,token:'generated-followup-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelMaxTokens:512,modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput)=>{
+  calls++;assert.deepEqual(input.modelBudget,{contextWindow:32000,maxTokens:512,historyRatio:0.5,lowWatermarkRatio:0.5,tokenCounting:'estimated',contextWindowSource:'configured'});
+  return {answer:JSON.stringify(answer()),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:input.contextEvidenceDependencies};
+ },close:async()=>{}}});
  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+ const view=await node.app.inject({method:'GET',url:'/api/configuration',headers});
+ const configured=await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:view.json().revision,value:{context:{contextWindow:32000,contextWindowSource:'configured'}}}});
+ assert.equal(configured.statusCode,200,configured.body);
  const id=randomUUID(),created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-device',deviceName:'Generated',platform:'import',capturedAt:at,text:'Generated budget-block note.'}});
  assert.equal(created.statusCode,201,created.body);await node.materialOrganizer.tick(100);
  const material=node.materials.list({kind:'mote.note',limit:100}).items.find(item=>item.origin.externalId===id)!;assert.ok(material);
  const profile=node.modelSettings.select('chat'),task=await node.featureServices.assistantFollowup.start({operationId:'generated-production-budget',requestId:randomUUID(),scope:all,materialRefs:[material.ref],mode:{kind:'change'}},
   {identities:[],connections:[agentModelConnection({kind:'profile',id:profile.id},profile.settings)]});
  const tasks=new TaskRecords(node.store),snapshot=tasks.input<{batchId:string}>(task.id,task.revision,()=>{});
- await until(()=>node.batchProcessing.progress(snapshot.batchId).items.some(item=>item.state==='blocked'));
- assert.equal(node.batchProcessing.progress(snapshot.batchId).items[0].error,'model_context_budget_unavailable');assert.equal(calls,0);
- await assert.rejects(node.featureServices.assistantFollowup.finish(task.id),{statusCode:409});
+ await until(()=>node.batchProcessing.progress(snapshot.batchId).items.some(item=>['succeeded','failed','blocked'].includes(item.state)));
+ assert.equal(node.batchProcessing.progress(snapshot.batchId).items[0].state,'succeeded');assert.equal(calls,1);
+ assert.deepEqual((await node.featureServices.assistantFollowup.finish(task.id)).cardIds,[]);
+});
+
+
+test('a new file version lets A14 resolve the existing suggestion instead of losing its identity',async t=>{
+ const f=await fixture(t),requirement=await f.add('Generated requirement: name an owner.');
+ const source=await f.node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'generated-followup-files',name:'Generated files',kind:'local-files',deviceId:'generated-followup',platform:'macos',retention:'archive'}});assert.equal(source.statusCode,200,source.body);
+ const settings={...f.node.processing.view().settings,enabled:true,summarize:false};
+ await f.node.processing.save({revision:f.node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.node.processing.runtime.registry)});
+ const upload=async(revision:string,previousRevision:string|null,text:string)=>{
+  const bytes=Buffer.from(text),payload={sourceId:'generated-followup-files',relativePath:'draft.txt',previousRevision,item:{externalId:'draft.txt',revision,observedAt:new Date().toISOString(),title:'Generated draft',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)};
+  const begin=await f.node.app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload});assert.equal(begin.statusCode,200,begin.body);const id=begin.json().uploadId;
+  const part=await f.node.app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${id}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes});assert.equal(part.statusCode,200,part.body);
+  const done=await f.node.app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${id}/commit`,headers,payload:{}});assert.equal(done.statusCode,200,done.body);
+  await f.node.processing.tick();await f.node.materialOrganizer.tick(100);
+  const material=f.node.materials.get(materialId('generated-followup-files','draft.txt'));assert.ok(material);return {...material,captureId:done.json().id as string};
+ };
+ const missing='Generated draft: the owner is missing.',complete='Generated draft: Alex is the owner.';
+ const before=await upload('1',null,missing);
+ const first=await f.run([requirement.material.ref,before.ref],context=>answer([card(evidence(context,requirement.text),{evidence:[evidence(context,requirement.text),evidence(context,missing)]})]));
+ const cardId=first.cardIds[0];assert.equal(f.node.featureServices.assistantCards.get(cardId,all).state,'open');
+ const after=await upload('2','1',complete);
+ const second=await f.run([requirement.material.ref,after.ref],context=>{
+  const prior=context.cards.find(value=>value.id===cardId);assert.ok(prior,'the interpreter can identify the earlier suggestion');
+  return answer([card(evidence(context,complete),{action:'resolve',cardId,relatedCardIds:[cardId]})],
+   [{commitmentId:null,kind:'commitment',occurredAt:null,summary:'Generated next owner review.',changes:{title:'Review the assigned plan'},evidence:[evidence(context,complete)]}]);
+ });
+ assert.deepEqual(second.cardIds,[cardId]);assert.equal(f.node.featureServices.assistantCards.get(cardId,all).state,'resolved');
+ const commitment=f.node.featureServices.assistantCommitments.get(second.commitmentIds[0],all);
+ assert.equal(commitment.title,'Review the assigned plan');assert.ok(commitment.evidenceDependencies.ids.includes(before.captureId));
+ assert.ok(!JSON.stringify(commitment).includes('historicalEvidenceIds'),'private dependency roles do not extend the public contract');
+ assert.deepEqual(f.node.featureServices.assistantCommitments.page({scope:{kind:'selection',evidenceIds:[after.captureId]}}).items,[]);
+ const correctionId=randomUUID(),corrected=f.node.featureServices.assistantCommitments.correct({commitmentId:commitment.id,eventId:correctionId,
+  targetEventId:commitment.timeline[0].eventId,occurredAt:null,summary:'Generated owner cancels the next review.',changes:{status:'cancelled'},
+  evidence:[{id:requirement.id,offset:0,quote:requirement.text}],evidenceDependencies:commitment.evidenceDependencies},commitment.revision,all,f.assertCurrent);
+ assert.equal(corrected.status,'cancelled','owner corrections retain their precedence with historical file context');
+ const cards=f.node.featureServices.assistantCards,resolved=cards.get(cardId,all);
+ assert.ok(resolved.evidenceDependencies.ids.includes(before.captureId),'the revised interpretation retains the historical disclosure lineage');
+ assert.deepEqual(cards.page({scope:{kind:'selection',evidenceIds:[after.captureId]}}).items,[],'a narrow current-file scope cannot expose mixed requirement or historical card context');
+ cards.feedback(cardId,{expectedRevision:resolved.revision,action:'never_remind'},all);
+ const later=await upload('3','2','Generated draft: Alex remains the owner.');
+ const suppressed=await f.run([requirement.material.ref,later.ref],context=>{
+  assert.ok(context.cards.find(value=>value.id===cardId)!.feedback.some(value=>value.action==='never_remind'));
+  return answer([card(evidence(context,'Alex remains the owner.'),{relatedCardIds:[cardId],title:'A renamed version of the same issue'})]);
+ });
+ assert.deepEqual(suppressed.cardIds,[],'another file version and title cannot revive a suppressed suggestion');
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM assistant_cards').get()!.n,1);
+ f.node.store.delete(before.captureId);
+ assert.throws(()=>cards.get(cardId,all),{statusCode:404},'deleting a historical dependency clears the revised derived body too');
+ for(const eventId of [commitment.timeline[0].eventId,correctionId])assert.equal(f.node.store.db.prepare('SELECT private_json FROM assistant_commitment_events WHERE event_id=?').get(eventId)!.private_json,null);
+ assert.equal(f.node.sources.getItem('generated-followup-files','draft.txt')?.captureId,later.captureId,'the independently retained current file survives');
 });

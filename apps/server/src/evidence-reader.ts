@@ -653,7 +653,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const allowMaterial=(current:MaterialRecord)=>{if(!materialAllowed.has(current.ref))materialAllowed.set(current.ref,this.materialExposure(current,'expand',policy,undefined,false,undefined,true)&&policy.allows({sourceKind:this.materialKind(current),sourceId:current.origin.sourceId,representation:'material',operation:'expand',phase:current.coverage.state}));return materialAllowed.get(current.ref)!;};
     const allowRecord=(record:CaptureRecord,attachmentId=record.id)=>{
       if(!attachment(attachmentId))return false;
-      if(this.files?.fileForRead(record.id)&&!this.files.readableFile(record.id))return false;
+      if(this.files?.fileForRead(attachmentId)&&!this.files.readableFile(attachmentId)){
+        if(!historical||!this.fileHistoricalObservationAllowed(attachmentId,{kind:'all'},policy))return false;
+      }
       const p=record.provenance;if(p?.sourceId&&p.externalId&&tombstone(p.sourceId,p.externalId))return Boolean(this.files?.readableFile(record.id)&&this.captureExposure(record,'expand',policy,'capture',true,true));
       const current=p?.sourceId&&p.externalId?material(materialId(p.sourceId,p.externalId)):undefined;
       return current?allowMaterial(current):this.captureExposure(record,'expand',policy,'capture',true,true);
@@ -675,6 +677,37 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       if(!derived.has(id))return false;
     }
     return true;
+  }
+  /** Reference mode retains directory metadata even when a previously uploaded
+   * original is no longer eligible for model-body retrieval. */
+  fileReferenceObservationAllowed(id:string,scope:QueryScope,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy):boolean {
+    const record=this.store.evidenceMetadata([id])[0],p=record?.provenance;
+    if(!record||record.source!=='file'||record.privacy.excluded||!p||p.deleted||!withinEvidenceScope(record,scope)||
+      scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(p.sourceId)||
+      scope.evidenceIds!==undefined&&!scope.evidenceIds.includes(id)||!fileAttachmentAvailable(this.store,id,true))return false;
+    const head=this.store.db.prepare('SELECT capture_id,deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId);
+    if(!head||head.capture_id!==id||head.deleted)return false;
+    let source:ReturnType<SourceStore['getSource']>;
+    try{source=this.sources.getSource(p.sourceId);}catch{return false;}
+    if(!source.enabled||source.retention!=='reference'&&p.layer!=='reference')return false;
+    const context={sourceKind:source.kind,sourceId:p.sourceId,deviceId:record.deviceId,operation:'expand' as const,phase:'complete' as const};
+    return this.exposureAllows({...context,representation:'capture'},policy)&&this.exposureAllows({...context,representation:'material'},policy);
+  }
+  /** A file observation may inspect a retained predecessor under the current
+   * source's policy. This does not make that revision a current retrieval hit. */
+  fileHistoricalObservationAllowed(id:string,scope:QueryScope,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy):boolean {
+    const record=this.store.evidenceMetadata([id])[0],p=record?.provenance;
+    if(!record||record.source!=='file'||record.privacy.excluded||!p||p.deleted||!withinEvidenceScope(record,scope)||
+      scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(p.sourceId)||
+      scope.evidenceIds!==undefined&&!scope.evidenceIds.includes(id)||!fileAttachmentAvailable(this.store,id,true)||
+      !this.files?.readableHistoricalFile(id))return false;
+    const head=this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId);
+    if(!head||head.deleted)return false;
+    let source:ReturnType<SourceStore['getSource']>;
+    try{source=this.sources.getSource(p.sourceId);}catch{return false;}
+    if(!source.enabled)return false;
+    const context={sourceKind:source.kind,sourceId:p.sourceId,deviceId:record.deviceId,operation:'expand' as const,phase:'complete' as const};
+    return this.exposureAllows({...context,representation:'capture'},policy)&&this.exposureAllows({...context,representation:'material'},policy);
   }
   /** A source tombstone can be reported as a versioned observation, but it
    * must never restore access to any retired document body. */

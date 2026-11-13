@@ -35,7 +35,7 @@ export const commitmentProposalSchema=z.object({...common,kind:z.enum(['commitme
 export const commitmentCorrectionSchema=z.object({...common,targetEventId:uuid}).strict().refine(value=>Object.keys(value.changes).length>0,{message:'A correction needs a changed field'});
 export type CommitmentProposal=z.infer<typeof commitmentProposalSchema>;
 export type CommitmentCorrection=z.infer<typeof commitmentCorrectionSchema>;
-type Body=(CommitmentProposal&{origin:'proposal'})|(CommitmentCorrection&{origin:'owner'});
+type Body=((CommitmentProposal&{origin:'proposal'})|(CommitmentCorrection&{origin:'owner'}))&{historicalEvidenceIds?:string[]};
 type Row={seq:number;id:string;cursor_key:string;revision:number;created_at:string;updated_at:string};
 type EventRow={seq:number;event_id:string;commitment_id:string;target_event_id:string|null;request_hash:string;stale:number;private_json:string|null;created_at:string};
 
@@ -59,10 +59,12 @@ export class AssistantCommitments {
  private body(row:EventRow):Body{
   if(!row.private_json)throw new StoreError('Commitment event is unavailable',409);
   const raw=decodeMemoryPrivate<Body>(this.store,row.private_json);
-  if(raw.origin==='owner'){const {origin,...input}=raw;return {...commitmentCorrectionSchema.parse(input),origin};}
-  if(raw.origin==='proposal'){const {origin,...input}=raw;return {...commitmentProposalSchema.parse(input),origin};}
+  const {historicalEvidenceIds,...value}=raw,history=historicalEvidenceIds?{historicalEvidenceIds}:{};
+  if(value.origin==='owner'){const {origin,...input}=value;return {...commitmentCorrectionSchema.parse(input),origin,...history};}
+  if(value.origin==='proposal'){const {origin,...input}=value;return {...commitmentProposalSchema.parse(input),origin,...history};}
   throw new StoreError('Commitment event is unavailable',409);
  }
+ private publicBody(row:EventRow){const {historicalEvidenceIds:_,...body}=this.body(row);return body;}
  private selectionAllows(id:string,selected:Set<string>,seen=new Set<string>()):boolean{
   if(selected.has(id))return true;
   if(seen.has(id))return false;seen.add(id);
@@ -73,13 +75,15 @@ export class AssistantCommitments {
   parents.push(...db.prepare('SELECT parent_id FROM file_evidence_links WHERE capture_id=?').all(id).map(row=>String(row.parent_id)));
   return parents.length>0&&parents.every(parent=>this.selectionAllows(parent,selected,new Set(seen)));
  }
- private valid(ids:readonly string[],scope:QueryScope):boolean{
+ private valid(ids:readonly string[],scope:QueryScope,historicalIds:readonly string[]=[]):boolean{
   if(scope.kind==='selection'&&scope.sourceIds?.length===0||scope.evidenceIds?.length===0)return false;
-  if(!ids.length||!this.reader.contextDependenciesAllowed(ids))return false;
+  const historical=new Set(historicalIds);
+  if(!ids.length||historicalIds.some(id=>!ids.includes(id))||!this.reader.contextDependenciesAllowed(ids.filter(id=>!historical.has(id)))||
+   historicalIds.length>0&&!this.reader.contextDependenciesAllowed(historicalIds,undefined,true))return false;
   const records=this.reader.memories.readEvidence([...ids]);if(!records.length)return false;
   const selected=scope.evidenceIds===undefined?undefined:new Set(scope.evidenceIds);
   for(const record of records){
-   if(!this.reader.memories.isCurrentEvidence(record.id)||record.privacy?.excluded||!withinEvidenceScope(record,scope))return false;
+   if(!historical.has(record.id)&&!this.reader.memories.isCurrentEvidence(record.id)||record.privacy?.excluded||!withinEvidenceScope(record,scope))return false;
    if(scope.kind==='selection'&&scope.sourceIds!==undefined&&(!record.provenance?.sourceId||!scope.sourceIds.includes(record.provenance.sourceId)))return false;
    if(selected&&!this.selectionAllows(record.id,selected))return false;
   }
@@ -90,7 +94,7 @@ export class AssistantCommitments {
   }
   return true;
  }
- private assertValid(ids:readonly string[],scope:QueryScope){if(!this.valid(ids,scope))throw new StoreError('Commitment evidence or scope changed',409);}
+ private assertValid(ids:readonly string[],scope:QueryScope,historicalIds:readonly string[]=[]){if(!this.valid(ids,scope,historicalIds))throw new StoreError('Commitment evidence or scope changed',409);}
  private referenceIds(value:z.infer<typeof changes>,scope:QueryScope):string[]{
   const ids:string[]=[];
   if(value.personMemoryId){
@@ -108,13 +112,13 @@ export class AssistantCommitments {
   }
   return ids;
  }
- private referencesCurrent(value:z.infer<typeof changes>,ids:readonly string[],scope:QueryScope){
+ private referencesCurrent(value:z.infer<typeof changes>,ids:readonly string[],scope:QueryScope,historicalIds:readonly string[]=[]){
   try{
    const required=taskEvidenceIds(this.store,{version:1,complete:true,ids:this.referenceIds(value,scope)});
    if(required.some(id=>!ids.includes(id)))return false;
    if(value.matterId){
     const matter=new AssistantMatters(this.store).get(value.matterId);
-    if(!this.valid(ids,matter.scope))return false;
+    if(!this.valid(ids,matter.scope,historicalIds))return false;
    }
    return true;
   }catch{return false;}
@@ -122,7 +126,7 @@ export class AssistantCommitments {
  private visible(row:EventRow,scope:QueryScope){
   if(row.stale||!row.private_json)return false;
   const body=this.body(row),ids=this.ids(row.event_id),pins=body.sourceContextDependencies??[];
-  return this.valid(ids,scope)&&this.referencesCurrent(body.changes,ids,scope)&&
+  return this.valid(ids,scope,body.historicalEvidenceIds)&&this.referencesCurrent(body.changes,ids,scope,body.historicalEvidenceIds)&&
    sourceContextDependenciesCurrent(this.reader.sources.contexts,pins)&&this.contextInScope(pins,ids,scope);
  }
  private contextInScope(pins:NonNullable<Body['sourceContextDependencies']>,ids:readonly string[],scope:QueryScope){
@@ -164,7 +168,7 @@ export class AssistantCommitments {
   if(!rows.length||rows.some(item=>!this.visible(item,scope)))throw new StoreError('Commitment not found',404);
   // The public dependency contract contains UUIDs; non-UUID artifact nodes
   // remain in the internal retirement index together with their UUID roots.
-  const timeline=rows.map(item=>({...this.body(item),evidenceDependencies:{version:1 as const,complete:true,ids:this.ids(item.event_id).filter(id=>Boolean(parseEvidenceId(id)))},createdAt:item.created_at}));
+  const timeline=rows.map(item=>({...this.publicBody(item),evidenceDependencies:{version:1 as const,complete:true,ids:this.ids(item.event_id).filter(id=>Boolean(parseEvidenceId(id)))},createdAt:item.created_at}));
   const current:{title?:string;status:z.infer<typeof status>;deadline:z.infer<typeof changes>['deadline'];matterId:string|null;personMemoryId:string|null;todoId:string|null}=
    {status:'pending_confirmation',deadline:null,matterId:null,personMemoryId:null,todoId:null};
   // Corrections are timeline assertions too. Apply every event at its own
@@ -179,12 +183,13 @@ export class AssistantCommitments {
    sourceContextDependencies:combineSourceContextDependencies(timeline.map(item=>item.sourceContextDependencies)),
    createdAt:row.created_at,updatedAt:row.updated_at};
  }
- private write(raw:unknown,origin:'proposal'|'owner',expectedRevision:number|undefined,rawScope:QueryScope,assertCurrent:AssertTaskCurrent,internalDependencies:readonly string[]=[]){
+ private write(raw:unknown,origin:'proposal'|'owner',expectedRevision:number|undefined,rawScope:QueryScope,assertCurrent:AssertTaskCurrent,internalDependencies:readonly string[]=[],historicalDependencies:readonly string[]=[]){
   const input=origin==='proposal'?commitmentProposalSchema.parse(raw):commitmentCorrectionSchema.parse(raw);
   const scope=queryScopeSchema.parse(rawScope),publicDependencies=validateTaskDependencies(input.evidenceDependencies),pins=input.sourceContextDependencies??[];
   const extra=[...new Set(internalDependencies)].sort(),dependencies=validateTaskDependencies({...publicDependencies,ids:[...publicDependencies.ids,...extra]});
   if(input.evidence.some(item=>!dependencies.ids.includes(item.id)))throw new StoreError('Commitment proof is outside its disclosure dependencies',409);
-  const hash=sha256(canonicalRecipeJson({origin,...input,evidenceDependencies:publicDependencies,...(extra.length?{internalDependencies:extra}:{})}));
+  const historical=[...new Set(historicalDependencies)].sort();
+  const hash=sha256(canonicalRecipeJson({origin,...input,evidenceDependencies:publicDependencies,...(extra.length?{internalDependencies:extra}:{}),...(historical.length?{historicalEvidenceIds:historical}:{})}));
   return this.transaction(()=>{
    const prior=this.event(input.eventId);
    if(prior){if(prior.commitment_id!==input.commitmentId||prior.request_hash!==hash||!this.visible(prior,scope))throw new StoreError('Commitment event was reused or retired',409);return this.view(this.row(input.commitmentId),scope);}
@@ -200,31 +205,32 @@ export class AssistantCommitments {
     target=this.event((input as CommitmentCorrection).targetEventId);
     if(!target||target.commitment_id!==input.commitmentId||target.target_event_id||!this.visible(target,scope))throw new StoreError('Correction target is unavailable',409);
     const original=this.body(target);
+    historical.push(...(original.historicalEvidenceIds??[]).filter(id=>!historical.includes(id)));
     if(original.origin!=='proposal'||original.kind==='reminder'&&Object.keys(input.changes).length)throw new StoreError('A reminder cannot change commitment facts',409);
    }
    const ids=taskEvidenceIds(this.store,{version:1,complete:true,ids:[...dependencies.ids,...this.referenceIds(input.changes,scope),...(target?this.ids(target.event_id):[])]});
-   this.assertValid(ids,scope);
-   if(!this.referencesCurrent(input.changes,ids,scope))throw new StoreError('Commitment reference is unavailable',409);
+   this.assertValid(ids,scope,historical);
+   if(!this.referencesCurrent(input.changes,ids,scope,historical))throw new StoreError('Commitment reference is unavailable',409);
    assertSourceContextDependencies(this.reader.sources.contexts,pins);
    if(!this.contextInScope(pins,ids,scope))throw new StoreError('Commitment context is outside the selected scope',409);
    this.assertProof(input);
    if(typeof assertCurrent!=='function')throw new StoreError('Commitment publication requires current-state validation',409);
-   const checked:unknown=assertCurrent(ids);if(checked!==undefined){void Promise.resolve(checked).catch(()=>{});throw new StoreError('Commitment current-state validation must complete synchronously',409);}
-   this.assertValid(ids,scope);assertSourceContextDependencies(this.reader.sources.contexts,pins);this.assertProof(input);
-   if(!this.contextInScope(pins,ids,scope)||!this.referencesCurrent(input.changes,ids,scope))throw new StoreError('Commitment reference or context changed',409);
+   const checked:unknown=assertCurrent(ids.filter(id=>!historical.includes(id)));if(checked!==undefined){void Promise.resolve(checked).catch(()=>{});throw new StoreError('Commitment current-state validation must complete synchronously',409);}
+   this.assertValid(ids,scope,historical);assertSourceContextDependencies(this.reader.sources.contexts,pins);this.assertProof(input);
+   if(!this.contextInScope(pins,ids,scope)||!this.referencesCurrent(input.changes,ids,scope,historical))throw new StoreError('Commitment reference or context changed',409);
    if(existing&&this.row(input.commitmentId).revision!==expectedRevision)throw new StoreError('Commitment changed; reload before continuing',409);
    if(existing&&origin==='proposal')this.assertCorrectionsRead(input.commitmentId,input.changes,taskEvidenceIds(this.store,dependencies),pins);
    const at=this.now();
    if(existing)this.store.db.prepare('UPDATE assistant_commitments SET revision=revision+1,updated_at=? WHERE id=?').run(at,input.commitmentId);
    else this.store.db.prepare('INSERT INTO assistant_commitments(id,cursor_key,revision,created_at,updated_at) VALUES(?,?,1,?,?)').run(input.commitmentId,randomBytes(32).toString('hex'),at,at);
    this.store.db.prepare('INSERT INTO assistant_commitment_events(event_id,commitment_id,target_event_id,request_hash,private_json,created_at) VALUES(?,?,?,?,?,?)')
-    .run(input.eventId,input.commitmentId,target?.event_id??null,hash,encodeMemoryPrivate(this.store,{...input,origin}),at);
+    .run(input.eventId,input.commitmentId,target?.event_id??null,hash,encodeMemoryPrivate(this.store,{...input,origin,...(historical.length?{historicalEvidenceIds:historical}:{})}),at);
    const insert=this.store.db.prepare('INSERT INTO assistant_commitment_evidence(event_id,evidence_id) VALUES(?,?)');for(const id of ids)insert.run(input.eventId,id);
    const insertContext=this.store.db.prepare('INSERT INTO assistant_commitment_context(event_id,source_id) VALUES(?,?)');for(const id of new Set(pins.map(pin=>pin.sourceId)))insertContext.run(input.eventId,id);
    this.store.reserveMetadata(0);return this.view(this.row(input.commitmentId),scope);
   });
  }
- publish(input:CommitmentProposal,expectedRevision:number|undefined,scope:QueryScope,assertCurrent:AssertTaskCurrent,internalDependencies:readonly string[]=[]){return this.write(input,'proposal',expectedRevision,scope,assertCurrent,internalDependencies);}
+ publish(input:CommitmentProposal,expectedRevision:number|undefined,scope:QueryScope,assertCurrent:AssertTaskCurrent,internalDependencies:readonly string[]=[],historicalDependencies:readonly string[]=[]){return this.write(input,'proposal',expectedRevision,scope,assertCurrent,internalDependencies,historicalDependencies);}
  correct(input:CommitmentCorrection,expectedRevision:number,scope:QueryScope,assertCurrent:AssertTaskCurrent){return this.write(input,'owner',expectedRevision,scope,assertCurrent);}
  get(id:string,scope:QueryScope){return this.transaction(()=>this.view(this.row(id),queryScopeSchema.parse(scope)));}
  private sign(row:Row,value:unknown){return createHmac('sha256',Buffer.from(row.cursor_key,'hex')).update(canonicalRecipeJson(value)).digest('hex');}

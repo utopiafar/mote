@@ -47,7 +47,7 @@ export async function prepareConversations(dependencies:ConversationInputDepende
   return Object.freeze({conversations:lease.value});
 }
 
-export interface QueryRuntimeAssemblyDependencies extends QueryRuntimeDependencies {
+export interface QueryRuntimeAssemblyDependencies extends Omit<QueryRuntimeDependencies,'conversationSettings'> {
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly resources:ServerResources;
 }
@@ -55,7 +55,7 @@ export interface QueryRuntimeAssemblyDependencies extends QueryRuntimeDependenci
 /** Install the admitted query runtime and lend its lifecycle-gated facade to
  * the remaining assembly and the Ask routes. */
 export async function prepareQueryRuntime(dependencies:QueryRuntimeAssemblyDependencies){
-  const platform=createQueryRuntimePlatform(dependencies);
+  const platform=createQueryRuntimePlatform({...dependencies,conversationSettings:()=>dependencies.bootstrap.configService.current<ConversationSettings>('conversations')});
   let started:QueryRuntimeStarted|undefined;
   const handle=await dependencies.bootstrap.host.install({
     identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.query-runtime',installationId:'build:query-runtime@1.0.0',instanceId:'query',activationId:randomUUID()},
