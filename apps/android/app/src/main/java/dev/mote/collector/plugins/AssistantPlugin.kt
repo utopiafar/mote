@@ -6,18 +6,22 @@ import android.view.View
 import dev.mote.collector.CentralScreens
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.mountWorkbench
+import dev.mote.collector.mountAssistant
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 
 /** Build-native position for the assistant domain. The package owns the
- * workbench page route; opening it mounts the existing Central screen into the
+ * feed, matters and workbench routes; opening one mounts its Central screen into the
  * host slot. Registering the provider never starts work or performs a command. */
 internal object AssistantPlugin {
     const val CAPABILITY = "mote.assistant"
     const val API_VERSION = "1"
     const val INSTANCE_ID = "dev.mote.assistant"
     const val WORKBENCH_ROUTE = "assistant.workbench"
+    const val FEED_ROUTE = "assistant.feed"
+    const val MATTERS_ROUTE = "assistant.matters"
+    val PAGE_ROUTES = setOf(FEED_ROUTE, MATTERS_ROUTE, WORKBENCH_ROUTE)
     private const val PACKAGE_ID = "dev.mote.assistant"
     private const val INSTALLATION_ID = "build-native"
 
@@ -80,7 +84,7 @@ internal object AssistantPlugin {
     }
 }
 
-/** Durable owner: the plugin scope owns the workbench route. A stopped scope
+/** Durable owner: the plugin scope owns the assistant routes. A stopped scope
  * withdraws the page and every declared command route. */
 internal class AssistantOwner internal constructor(
     private val scope: PluginOwnerSession?,
@@ -91,11 +95,12 @@ internal class AssistantOwner internal constructor(
     init {
         if (scope != null) {
             scope.registerService(PluginServiceRegistration("assistant.workbench", "${AssistantPlugin.CAPABILITY}.workbench"))
-            scope.registerRoute(AssistantPlugin.WORKBENCH_ROUTE) { _, container ->
-                val view = container as? View ?: error("workbench route needs a view container")
-                val activity = view.context as? Activity ?: error("workbench route needs an Activity")
-                val screen = AssistantPlugin.screen(activity) ?: error("workbench screen is not bound")
-                screen.mountWorkbench(container as android.view.ViewGroup)
+            for (page in AssistantPlugin.PAGE_ROUTES) scope.registerRoute(page) { _, container ->
+                val view = container as? View ?: error("assistant route needs a view container")
+                val activity = view.context as? Activity ?: error("assistant route needs an Activity")
+                val screen = AssistantPlugin.screen(activity) ?: error("assistant screen is not bound")
+                if (page == AssistantPlugin.WORKBENCH_ROUTE) screen.mountWorkbench(container as android.view.ViewGroup)
+                else screen.mountAssistant(page, container as android.view.ViewGroup)
             }
             scope.defer { close() }
         }

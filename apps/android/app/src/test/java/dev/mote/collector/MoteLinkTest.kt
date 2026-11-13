@@ -64,7 +64,7 @@ class MoteLinkTest {
         val conversation = MoteLink.parse(MoteLink.serialize(scope, MoteLink.Route.Conversation(id)))!!
         assertEquals(MoteLink.Destination.Extras("ask", conversationId = id), MoteLink.destination(conversation, origin))
         val work = MoteLink.parse(MoteLink.serialize(scope, MoteLink.Route.Run("generated-run")))!!
-        assertEquals(MoteLink.Destination.Extras("activity"), MoteLink.destination(work, origin))
+        assertEquals(MoteLink.Destination.Extras("activity", workId = "generated-run"), MoteLink.destination(work, origin))
         val evidence = MoteLink.parse(MoteLink.serialize(scope, MoteLink.Route.Reference(ref, id)))!!
         assertEquals(MoteLink.Destination.Extras("ask", conversationId = id, evidenceId = ref), MoteLink.destination(evidence, origin))
         val view = MoteLink.parse(MoteLink.serialize(scope, MoteLink.Route.View("mote.notes", "notes.editor", ref)))!!

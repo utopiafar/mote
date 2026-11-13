@@ -170,17 +170,47 @@ internal class AssistantRoutine private constructor(val id: String, val revision
     }
 }
 
-/** The navigation host supplies these bindings when their owner HTTP transports land.
- * Arguments are the existing acceptSuggestion(request, card), matter command,
- * and detail/commitment projections. No guessed URLs or new wire envelope. */
+/** Owner commands and projections shared by the page models and their HTTP host. */
 internal interface AssistantDomainBindings {
     fun start(request: JSONObject, card: JSONObject): String
     fun matter(id: String, scope: AssistantScope): AssistantMatterDetail
     fun commitments(matterId: String, scope: AssistantScope): List<AssistantCommitment>
+    fun routines(matterId: String, scope: AssistantScope): List<AssistantRoutine>
     fun matterCommand(command: JSONObject)
 }
 
+/** The production host uses the existing owner HTTP surface. Acceptance returns
+ * an ID; task state is always read separately from Central. */
+internal class AssistantHttpBindings(private val client: CentralClient) : AssistantDomainBindings {
+    override fun start(request: JSONObject, card: JSONObject): String {
+        val command = JSONObject(request.toString()).put("cardId", card.getString("cardId"))
+            .put("expectedRevision", card.getLong("expectedRevision"))
+        val receipt = client.post("/api/assistant/tasks", command)
+        require(receipt.getString("requestId") == request.getString("requestId"))
+        return AssistantJson.id(receipt, "taskId")
+    }
+    override fun matter(id: String, scope: AssistantScope) = AssistantMatterDetail.read(
+        client.get("/api/assistant/matters/$id?scope=" + scope.query()),
+    ).also { require(it.id == id) }
+    override fun commitments(matterId: String, scope: AssistantScope) = allPages(
+        "/api/assistant/commitments?scope=" + scope.query() + "&matterId=$matterId", AssistantCommitment::read,
+    )
+    override fun routines(matterId: String, scope: AssistantScope) = allPages(
+        "/api/assistant/routines?scope=" + scope.query() + "&matterId=$matterId", AssistantRoutine::read,
+    )
+    private fun <T> allPages(path: String, read: (JSONObject) -> T): List<T> = buildList {
+        var cursor: String? = null
+        do {
+            val page = client.get(path + "&limit=100" + (cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""))
+            addAll(AssistantJson.rows(page, "items", read))
+            cursor = AssistantJson.cursor(page)
+        } while (cursor != null)
+    }
+    override fun matterCommand(command: JSONObject) { client.post("/api/assistant/matter-commands", command) }
+}
+
 internal class CentralAssistant(val client: CentralClient, val scope: AssistantScope, val domain: AssistantDomainBindings? = null) {
+    fun matters(cursor: String? = null) = client.get("/api/assistant/matters?scope=" + scope.query() + "&limit=30" + (cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""))
     fun page(cursor: String? = null) = client.get("/api/assistant-cards?scope=" + scope.query() + "&limit=30" + (cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""))
     fun card(id: String) = AssistantCard.read(client.get("/api/assistant-cards/$id?scope=" + scope.query()))
     fun history(id: String, cursor: String? = null) = client.get("/api/assistant-cards/$id/history?scope=" + scope.query() + "&limit=30" + (cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""))

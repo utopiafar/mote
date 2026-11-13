@@ -46,7 +46,7 @@ internal object MoteLinkNavigation {
         return when (val resolution = MoteLink.resolve(link, origin, granted, exists) { knownRoute(host, it) }) {
             is MoteLink.Resolution.Keep -> when (val route = resolution.route) {
                 is MoteLink.Route.Conversation -> Outcome.Open(MoteLink.Destination.Extras("ask", conversationId = route.id))
-                is MoteLink.Route.Run -> Outcome.Open(MoteLink.Destination.Extras("activity"))
+                is MoteLink.Route.Run -> Outcome.Open(MoteLink.Destination.Extras("activity", workId = route.id))
                 is MoteLink.Route.Reference -> Outcome.Open(MoteLink.Destination.Extras("ask", conversationId = route.conversation, evidenceId = route.ref))
                 is MoteLink.Route.View -> Outcome.Open(MoteLink.Destination.Extras(route.routeId))
             }

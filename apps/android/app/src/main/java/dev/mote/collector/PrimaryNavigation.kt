@@ -23,13 +23,13 @@ object MoteNavigation {
     fun libraryRoute(page: String) = page in libraryPages || page == SEARCH
     val groups = listOf(
         MoteNavigationGroup("资料库", libraryBrowsePages),
-        MoteNavigationGroup("首页", listOf("overview", "actions", "assistant.workbench", "activity")),
+        MoteNavigationGroup("首页", listOf("overview", "actions", "assistant.feed", "assistant.matters", "assistant.workbench", "activity")),
         MoteNavigationGroup("来源", listOf("sources", "devices", "connections", "lark")),
         MoteNavigationGroup("管理与维护", listOf("statistics", "processing", "plugins", "settings", "usage", "vault", "developer", "about", "help"))
     )
     fun centralAllowsAdd(@Suppress("UNUSED_PARAMETER") page: String): Boolean = false
     fun centralTab(page: String): MotePrimaryTab = when (page) {
-        "overview", "actions", "assistant.workbench" -> MotePrimaryTab.HOME
+        "overview", "actions", "assistant.feed", "assistant.matters", "assistant.workbench" -> MotePrimaryTab.HOME
         "ask", "conversations" -> MotePrimaryTab.ASK
         "sources", "devices", "connections", "lark" -> MotePrimaryTab.SOURCES
         "activity", "processing" -> MotePrimaryTab.ACTIVITY
@@ -50,7 +50,7 @@ object MoteNavigation {
         page == "processing" -> "activity"
         page in libraryPages -> "archive".takeUnless { page == it }
         page == "actions" -> "overview"
-        page == "assistant.workbench" -> "overview"
+        page in setOf("assistant.feed", "assistant.matters", "assistant.workbench") -> "overview"
         page == "extensions" -> "about"
         page in groups.drop(2).flatMap { it.pages } -> "about".takeUnless { page == it }
         else -> null

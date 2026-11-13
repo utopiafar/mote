@@ -76,6 +76,7 @@ internal class AssistantFeedView(
         for (card in model.cards) {
             val group = MoteComponents.group(activity).also { addView(it, LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(12) }) }
             label(card.title, group, NativeFontRole.SECTION)
+            label(MoteI18n.text(when (card.kind) { "briefing" -> "简报"; "suggestion" -> "建议的下一步"; "question" -> "需要补充"; "artifact" -> "成果"; else -> "动态" }), group, NativeFontRole.META)
             label(card.updatedAt + " · " + MoteI18n.text(if (card.readAt == null) "未读" else "已读"), group, NativeFontRole.META)
             label(card.body, group)
             if (card.stale || card.state == "stale") label(MoteI18n.text("这是历史版本，当前资料已更新。"), group)
@@ -86,30 +87,31 @@ internal class AssistantFeedView(
             proof(card.evidence, group)
             card.matterId?.let { id -> button("事项与规则", group) { launch(AssistantOpen.Matter(id, model.api.scope)) } }
             val task = model.tasks[card.id]
+            model.taskErrors[card.id]?.let { label(it, group) }
             if (task != null) {
                 label(AssistantPresentation.task(task), group)
                 task.answer?.let { label(it, group) }
-                button("任务状态", group) { launch(AssistantOpen.Task(task.id, task.workId, model.api.scope)) }
+                button("任务状态", group) { launch(AssistantOpen.Task(task.id, task.workId, model.scope(card.id))) }
                 if (task.state == "needs_input" && task.workId != null) button("需要补充", group) {
                     var questions = emptyList<AssistantQuestionLink>()
                     work({ questions = model.questions(task) }) {
                         draw()
                         for (question in questions) {
                             val key = when (question.state) { "open", "deferred" -> "需要补充"; "obsolete" -> "已失效"; else -> "已关闭" }
-                            button(key) { launch(AssistantOpen.Question(question.id, question.workId, model.api.scope)) }
+                            button(key) { launch(AssistantOpen.Question(question.id, question.workId, model.scope(card.id))) }
                             label(question.title)
                         }
                     }
                 }
-            } else card.acceptedTaskId?.let { id -> button("任务状态", group) { launch(AssistantOpen.Task(id, null, model.api.scope)) } }
+            } else card.acceptedTaskId?.let { id -> button("任务状态", group) { launch(AssistantOpen.Task(id, null, model.scope(card.id))) } }
             if (card.startable && task == null) {
-                label(model.api.scope.description(), group)
+                label(model.scope(card.id).description(), group)
                 val goal = editor(card.title, group)
-                button("开始", group, model.canStart && (model.pendingCardId == null || model.pendingCardId == card.id)) {
+                button("开始", group, model.canStart(card.id) && (model.pendingCardId == null || model.pendingCardId == card.id)) {
                     val text = goal.text.toString()
-                    work({ model.start(card.id, card.revision, text) }) { draw() }
+                    work({ if (model.start(card.id, card.revision, text) != null) model.refresh() }) { draw() }
                 }
-                if (!model.canStart) label(MoteI18n.text("任务服务尚未接通，暂时不能开始。"), group)
+                if (!model.canStart(card.id)) label(MoteI18n.text(if (!model.canStart) "任务服务尚未接通，暂时不能开始。" else "部分关联内容当前不可读取。"), group)
             }
             if (!card.stale && card.state != "stale") {
                 if (card.readAt == null) button("标为已读", group) { feedback(card, "read") }
@@ -153,8 +155,8 @@ internal class AssistantMatterView(
         label(MoteI18n.text(when (detail.state) { "paused" -> "已暂停"; "archived" -> "已归档"; else -> "进行中" }))
         label(detail.scope.description())
         if (detail.partial) label(MoteI18n.text("部分关联内容当前不可读取。"))
-        for ((id, title) in detail.evidence) addView(MoteComponents.row(activity, title = title, onClick = { launch(AssistantOpen.Evidence(CentralEvidenceReference.capture(id), model.api.scope)) }))
-        for ((id, state) in detail.tasks) addView(MoteComponents.row(activity, title = MoteI18n.text("任务状态"), subtitle = AssistantPresentation.operation(state), onClick = { launch(AssistantOpen.Task(id, null, model.api.scope)) }))
+        for ((id, title) in detail.evidence) addView(MoteComponents.row(activity, title = title, onClick = { launch(AssistantOpen.Evidence(CentralEvidenceReference.capture(id), detail.scope)) }))
+        for ((id, state) in detail.tasks) addView(MoteComponents.row(activity, title = MoteI18n.text("任务状态"), subtitle = AssistantPresentation.operation(state), onClick = { launch(AssistantOpen.Task(id, null, detail.scope)) }))
         if (model.canEdit) {
             val goal = editor(draft ?: detail.goal, this)
             button("保存修改") {
@@ -198,6 +200,39 @@ internal class AssistantMatterView(
                     if (edited.getString("kind") == "before-event") edited.put("leadMinutes", text.toInt()) else edited.put("localTime", text)
                     model.updateRoutine(rule.id, rule.revision, rule.enabled, timeZone = timeZone, trigger = edited)
                 }, ::draw)
+            }
+        }
+    }
+}
+
+/** Task detail is a current read of the same receipt shown on a card. Questions
+ * hand off to the existing work page; this view never replies or resumes work. */
+internal class AssistantTaskView(
+    activity: MoteActivity,
+    private val api: CentralAssistant,
+    private val id: String,
+    current: () -> Boolean,
+    open: (AssistantOpen) -> Unit,
+) : AssistantPanel(activity, current, open, api.scope) {
+    override fun refresh() {
+        enter()
+        var task: AssistantTask? = null
+        var questions = emptyList<AssistantQuestionLink>()
+        work({
+            task = api.task(id)
+            val value = requireNotNull(task)
+            if (value.state == "needs_input" && value.workId != null)
+                questions = AssistantJson.rows(api.questions(value.workId), "items", AssistantQuestionLink::read)
+                    .also { rows -> require(rows.all { it.workId == value.workId }) }
+        }) {
+            val value = requireNotNull(task)
+            label(value.goal ?: MoteI18n.text("任务状态"), role = NativeFontRole.SECTION)
+            label(AssistantPresentation.task(value))
+            value.answer?.let { label(it) }
+            button("刷新") { refresh() }
+            for (question in questions) {
+                label(question.title)
+                button("需要补充") { launch(AssistantOpen.Question(question.id, question.workId, api.scope)) }
             }
         }
     }

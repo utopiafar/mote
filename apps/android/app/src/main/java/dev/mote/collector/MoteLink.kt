@@ -34,7 +34,7 @@ object MoteLink {
 
     /** Resolution projected onto the existing guarded intent extras. */
     sealed interface Destination {
-        data class Extras(val page: String, val conversationId: String? = null, val evidenceId: String? = null) : Destination
+        data class Extras(val page: String, val conversationId: String? = null, val evidenceId: String? = null, val workId: String? = null) : Destination
         object None : Destination
     }
 
@@ -219,7 +219,7 @@ object MoteLink {
     fun destination(link: Link, origin: String, granted: Boolean = true, exists: Boolean = true, knownRoute: ((Route.View) -> Boolean)? = null): Destination = when (val r = resolve(link, origin, granted, exists, knownRoute)) {
         is Resolution.Keep -> when (val route = r.route) {
             is Route.Conversation -> Destination.Extras("ask", conversationId = route.id)
-            is Route.Run -> Destination.Extras("activity")
+            is Route.Run -> Destination.Extras("activity", workId = route.id)
             is Route.Reference -> Destination.Extras("ask", conversationId = route.conversation, evidenceId = route.ref)
             is Route.View -> Destination.Extras(route.routeId)
         }

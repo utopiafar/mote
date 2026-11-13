@@ -21,6 +21,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.DailyHomeOwner
+import dev.mote.collector.plugins.AssistantPlugin
 import dev.mote.collector.plugins.DailyHomePlugin
 import dev.mote.collector.plugins.DailyHomeSections
 import dev.mote.collector.plugins.NativeAdministrationPlugin
@@ -353,6 +354,8 @@ class MainActivity : MoteActivity() {
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("资料与记忆"), MoteGlyph.LIBRARY) { showPage(Page.LIBRARY) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("发现历史"), MoteGlyph.PULSE) { openCentral("insights") })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("通知"), MoteGlyph.PULSE) { startActivity(Intent(this, AssistantInboxActivity::class.java)) })
+        addGroupRow(navigationGroup, menuOption(MoteI18n.text("动态与建议"), MoteGlyph.PULSE) { openCentral(AssistantPlugin.FEED_ROUTE) })
+        addGroupRow(navigationGroup, menuOption(MoteI18n.text("事项与规则"), MoteGlyph.LIBRARY) { openCentral(AssistantPlugin.MATTERS_ROUTE) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("日程与待办"), MoteGlyph.CALENDAR) {
             startActivity(Intent(this, CalendarActionsActivity::class.java))
         })

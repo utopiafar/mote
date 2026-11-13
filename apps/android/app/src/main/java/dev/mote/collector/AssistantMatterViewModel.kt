@@ -17,8 +17,8 @@ internal class AssistantMatterViewModel(val api: CentralAssistant, val matterId:
         val domain = requireNotNull(api.domain) { MoteI18n.text("当前端尚未接入此操作。") }
         val current = domain.matter(matterId, api.scope)
         require(current.id == matterId)
-        val timeline = domain.commitments(matterId, api.scope)
-        val rules = routineIds.map(api::routine)
+        val timeline = domain.commitments(matterId, current.scope)
+        val rules = if (routineIds.isEmpty()) domain.routines(matterId, current.scope) else routineIds.map(api::routine)
         detail = current; commitments = timeline; routines = rules
     }
     @Synchronized fun refresh() { error = null; try { read() } catch (failure: Exception) { clearContent(); error = failure.message ?: MoteI18n.text("操作失败") } }
@@ -39,12 +39,15 @@ internal class AssistantMatterViewModel(val api: CentralAssistant, val matterId:
     /** Owner-supplied schedule edits keep the current server schema. Android
      * displays nextDue returned by Central; it never computes an occurrence. */
     @Synchronized fun updateRoutine(id: String, expectedRevision: Long, enabled: Boolean, goal: String? = null, timeZone: String? = null, trigger: JSONObject? = null) {
-        require(id in routineIds)
+        val rule = routines.single { it.id == id }
         val command = JSONObject().put("expectedRevision", expectedRevision).put("enabled", enabled)
         goal?.let { require(it.isNotBlank()); command.put("goal", it.trim()) }
         timeZone?.let { command.put("timeZone", it) }; trigger?.let { command.put("trigger", JSONObject(it.toString())) }
         error = null
-        try { api.updateRoutine(id, command); read() } catch (failure: Exception) { recover(failure) }
+        try {
+            CentralAssistant(api.client, rule.scope, api.domain).updateRoutine(id, command)
+            read()
+        } catch (failure: Exception) { recover(failure) }
     }
     private fun recover(failure: Exception) {
         clearContent()
