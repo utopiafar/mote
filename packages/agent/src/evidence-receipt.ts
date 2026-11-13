@@ -3,6 +3,7 @@ import {
   attributionContextSchema,
   documentSchema,
   fileEvidenceSchema,
+  fileViewSchema,
   recordMetadataSchema,
   sourceContentTime,
   sourceMetadataSchema,
@@ -26,10 +27,12 @@ export function projectEvidence(record: ContextRecord, offset = 0, length = 600,
   const metadata = recordMetadataSchema.safeParse(record.metadata);
   const sourceMetadata = sourceMetadataSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.metadata);
   const document = documentSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.document);
+  const fileView = fileViewSchema.safeParse(record.fileView);
   const attribution = attributionContextSchema.safeParse(record.attributionContext);
   const contentAt = sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
   const projected:ContextRecord = {
     ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
+    ...(fileView.success?{fileView:fileView.data}:{}),
     ...(stateSeriesSchema.safeParse(record.stateSeries).success?{stateSeries:stateSeriesSchema.parse(record.stateSeries)}:{}),
     evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence,...(attribution.success&&(attribution.data.basis!=='default'||attribution.data.correction||attribution.data.sourceDeclaration||attribution.data.materialDeclarations||attribution.data.declarations||attribution.data.ownerStatements||attribution.data.importDeclarations||attribution.data.importStatements||attribution.data.sourceContextDeclarations?.length||attribution.data.sourceContextStatements?.length||attribution.data.recordContextDeclarations?.length||attribution.data.recordContextStatements?.length)?[attribution.data]:[])])).digest('hex'),
     ...(attribution.success?{attributionContext:attribution.data}:{}),
@@ -65,7 +68,7 @@ export function projectEvidence(record: ContextRecord, offset = 0, length = 600,
       calendar:(record.provenance as Record<string,unknown>).calendar,
       modifiedAt:(record.provenance as Record<string,unknown>).modifiedAt,
       ...(sourceMetadata.success ? {metadata:sourceMetadata.data} : {}),
-      originalAvailable:(record.provenance as Record<string,unknown>).layer!=='reference',
+      ...(typeof (record.provenance as Record<string,unknown>).originalAvailable==='boolean'?{originalAvailable:(record.provenance as Record<string,unknown>).originalAvailable}:(record.provenance as Record<string,unknown>).layer==='reference'?{originalAvailable:false}:record.sourceType==='file'||record.source==='file'?{}:{originalAvailable:true}),
     }}:{}),
     ocrText: text.slice(start, end),
     textRange: { start, end, total: text.length, nextOffset: end < text.length ? end : null },

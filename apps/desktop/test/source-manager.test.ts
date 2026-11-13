@@ -15,14 +15,14 @@ let servers: Server[] = [];
 beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-manager-'))); });
 afterEach(async () => { for (const manager of managers) await manager.close(); for (const server of servers) await new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }); managers = []; servers = []; await rm(directory, { recursive: true, force: true }); });
 type AckGate = { allowed: boolean; sent: number; dropped: number };
-async function endpoint(dropFirstAck = false, ackGate?: AckGate) {
+async function endpoint(dropFirstAck = false, ackGate?: AckGate,openFixture=false) {
   const items: SourceItem[] = []; const registered: unknown[] = []; let id = ''; let dropNext = dropFirstAck;
-  let acknowledgements = 0;
+  let acknowledgements = 0,sourceEnabled=true;
   const sessions=new Map<string,any>();let recoveries:unknown[]=[];let recoveryUploads=0;
   const server = createServer(async (req, res) => {
     expect(req.headers['x-mote-ingress-version']).toBe('2');
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
-    if(req.method==='GET'){res.setHeader('Content-Type','application/json');if(req.url?.startsWith('/api/file-sync/v1/recovery')){res.end(JSON.stringify({items:recoveries}));recoveries=[];}else res.end(JSON.stringify({revision:null}));return;}
+    if(req.method==='GET'){res.setHeader('Content-Type','application/json');if(req.url?.startsWith('/api/file-sync/v1/recovery')){res.end(JSON.stringify({items:recoveries}));recoveries=[];}else if(openFixture&&req.url==='/api/sources')res.end(JSON.stringify({items:registered.map(value=>({...value as object,enabled:sourceEnabled}))}));else if(openFixture&&req.url?.startsWith('/api/file-sync/v1/head')){const externalId=new URL(req.url,'http://127.0.0.1').searchParams.get('externalId');res.end(JSON.stringify({revision:items.findLast(item=>item.externalId===externalId)?.revision??null,forgotten:false}));}else res.end(JSON.stringify({revision:null}));return;}
     res.setHeader('Content-Type','application/json');
     if(req.url?.includes('/uploads/')&&req.url.includes('/parts/')){const bytes=Buffer.concat(chunks),part=Number(req.url.split('/').at(-1));res.end(JSON.stringify({part,hash:(await import('../src/source-sync')).sourceHash(bytes),bytes:bytes.length}));return;}
     const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
@@ -37,7 +37,7 @@ async function endpoint(dropFirstAck = false, ackGate?: AckGate) {
     else { items.push(body); replyAck(sourceAck(id,body,body.kind==='file'?'file-revision':'source-item',items.length>1)); }
   });
   servers.push(server); await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, acknowledgements:()=>acknowledgements, loseNextAck: () => { dropNext = true; },recoverLast:()=>{const m=[...sessions.values()].at(-1);expect(m).toBeDefined();recoveries=[{captureId:'b67c1b84-f2cd-4e59-bf67-215545a882dc',externalId:m.item.externalId,revision:m.item.revision,sha256:m.sha256,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt}];},recoveryUploads:()=>recoveryUploads };
+  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, acknowledgements:()=>acknowledgements, loseNextAck: () => { dropNext = true; },revokeSource:()=>{sourceEnabled=false;},restoreSource:()=>{sourceEnabled=true;},recoverLast:()=>{const m=[...sessions.values()].at(-1);expect(m).toBeDefined();recoveries=[{captureId:'b67c1b84-f2cd-4e59-bf67-215545a882dc',externalId:m.item.externalId,revision:m.item.revision,sha256:m.sha256,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt}];},recoveryUploads:()=>recoveryUploads };
 }
 async function manager(url: string, token = 'synthetic-source-token', adapters?:SourceAdapterRegistry, controlledWatcher = false) {
   const value = new LocalSourceManager(join(directory, 'private-state'), { serverUrl: url, token, deviceId: 'synthetic-device' }, '/must-not-be-invoked-calendar-helper',false,undefined,adapters);
@@ -46,6 +46,18 @@ async function manager(url: string, token = 'synthetic-source-token', adapters?:
   if (controlledWatcher) vi.spyOn((value as any).watcher, 'setTargets').mockResolvedValue(undefined);
   managers.push(value); await value.initialize(); return value;
 }
+it('opens a device file only through its acknowledged identity and current Central authorization',async()=>{
+  const server=await endpoint(false,undefined,true),root=join(directory,'generated-open-root');await mkdir(root);await writeFile(join(root,'item.txt'),'Generated local original');
+  const app=await manager(server.url,'synthetic-source-token',undefined,true),sourceId=await app.addFiles(root,DEFAULT_SOURCE_OPTIONS);await app.sync(true);
+  const item=server.items.find(value=>value.kind==='file');expect(item).toBeDefined();
+  const locator={sourceId,externalId:item!.externalId,revision:item!.revision},bytes:Buffer[]=[];
+  for await(const part of app.openFileOriginal(locator))bytes.push(part);
+  expect(Buffer.concat(bytes).toString()).toBe('Generated local original');
+  await expect(app.openFileOriginal({...locator,revision:'unacknowledged'}).next()).rejects.toThrow();
+  server.revokeSource();await expect(app.openFileOriginal(locator).next()).rejects.toThrow('authorization changed');
+  server.restoreSource();const source=app.status().find(row=>row.source.id===sourceId)!.source;
+  await app.update(sourceId,{...source,excludedPaths:['item.txt']});await expect(app.openFileOriginal(locator).next()).rejects.toThrow();
+});
 it('disabling one source stops only its watcher and scans while the other source continues', async () => {
   const config = { ...defaultConfig(), serverUrl: '', token: undefined, syncMode: 'manual' as const };
   const scans: string[] = [];

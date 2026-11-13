@@ -10,7 +10,8 @@ export class FileEvidence {
  private current(captureId:string){const capture=this.sources.store.evidence([captureId])[0];const p=capture?.provenance;
   if(!p||p.deleted||!p.document?.fileIndex)throw new StoreError('File index not found',404);
   const source=this.sources.getSource(p.sourceId),head=this.sources.getItem(p.sourceId,p.externalId);
-  if(!source.enabled||source.retention==='reference'||head?.revision!==p.revision||!p.document.fileIndex.allowRead)throw new StoreError('File version or permission changed',409);
+  const retained=this.sources.store.db.prepare('SELECT 1 FROM file_heads h JOIN source_heads s ON s.source_id=h.source_id AND s.external_id=h.external_id JOIN file_versions missing ON missing.capture_id=s.capture_id AND missing.source_id=h.source_id AND missing.external_id=h.external_id WHERE h.capture_id=? AND h.origin_missing=1 AND s.deleted=1').get(captureId);
+  if(!source.enabled||source.retention==='reference'||head?.revision!==p.revision&&!retained||!p.document.fileIndex.allowRead)throw new StoreError('File version or permission changed',409);
   return {capture,p,index:p.document.fileIndex};
  }
  async read(id:string,offset:number,length:number){

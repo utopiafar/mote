@@ -81,7 +81,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     this.memories=openMemoryRecords(store,ids=>{
       const records=[...store.evidence(ids),...(materials?.evidence(ids)??[]),...(files?.evidence(ids)??[])],contexts=materials?.contextsForEvidence(records);
       return records.map((record,index)=>({...record,...(contexts?{attributionContext:contexts[index]}:{})}));
-    },id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
+    },id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||files?.readableFile(id)===id||store.isCurrentEvidence(id)));
   }
   imageReference(ref:string,scope:Range={}){
     const id=evidenceRefId(ref,'capture');if(!id)return;
@@ -111,7 +111,11 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const head=batchViews?batchViews.heads.get(material.ref):this.materialHead(material,scope);
       return [head?this.materialCard(material,head,undefined,selected)??selected:selected];
     });
-    return [...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])].map(record=>({...record,...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{})})).filter(record=>withinEvidenceScope(record,scope));
+    return [...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])].map(record=>({...record,...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{})})).filter(record=>{
+      if(!withinEvidenceScope(record,scope))return false;if(includeHistorical)return true;
+      const file=this.files?.fileForRead(record.id);if(file)return Boolean(this.files!.readableFile(record.id));
+      const p=record.provenance;return !(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted);
+    });
   }
   /** An unchanged block can reuse an anchor created by an earlier revision. Bind
    * it to the active block in the current head before exposing it to a model. */
@@ -190,7 +194,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const record=scopeRecord(this.store,id)??this.evidenceById([id],scope)[0];
       if(!record||record.privacy.excluded||!withinEvidenceScope(record,scope)||!this.memories.isCurrentEvidence(id)||!fileAttachmentAvailable(this.store,id,true))return false;
       const p=record.provenance;
-      if(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted)return false;
+      if(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted&&!this.files?.readableFile(id))return false;
       if(direct.has(id)||!materialAncestors.has(id)){
         if(!this.captureExposure(record,exposure.operation,exposure.policy))return false;
       }else if(record.source==='screen'||record.source==='ui_page'){
@@ -299,22 +303,32 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         }
       }
     }
-    return {...record,...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{}),ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
+    const fileId=this.files?.readableFile(record.id),view=fileId?this.files!.fileView(fileId):undefined;
+    // FileView is navigation and coverage, not a second unbounded body delivery.
+    // Keep its existing schema while withholding item.text from a search receipt.
+    const item=view?.item.text?{...view.item,text:'',...(view.item.document?{document:{...view.item.document,fileIndex:undefined}}:{})}:view?.item;
+    const fileView=view&&item?{...view,item}:undefined;
+    return {...record,...(fileView?{fileView,provenance:{...record.provenance!,originalAvailable:fileView.canOpenOriginal}}:{}),...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{}),ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
   });}
   records(args:Range&{query?:string},search=false){
     const base=search&&args.query?this.store.searchPage({...args,includeTotal:false}):this.store.list({...args,includeTotal:false});
     const chunks=search&&args.query?this.files?.searchPage(args):undefined;
-    const items=[...base.items,...(chunks?.items??[])].sort((a,b)=>sourceContentTime(b).localeCompare(sourceContentTime(a))||b.id.localeCompare(a.id));
-    return {items,more:Boolean(base.nextCursor||chunks?.nextCursor),scanned:items.length};
+    const metadata=search&&args.query?this.files?.searchMetadataPage(args):undefined;
+    const items=[...new Map([...base.items,...(chunks?.items??[]),...(metadata?.items??[])].filter(record=>!this.files?.fileForRead(record.id)||this.files.readableFile(record.id)).map(record=>[record.id,record])).values()].sort((a,b)=>sourceContentTime(b).localeCompare(sourceContentTime(a))||b.id.localeCompare(a.id));
+    return {items:this.context(items),more:Boolean(base.nextCursor||chunks?.nextCursor||metadata?.nextCursor),scanned:items.length};
   }
-  search(args:Range&{query?:string}){
-    if(this.indexer)return this.indexer.search(args);
-    return Promise.resolve(Object.assign(this.records(args,true).items.slice(0,args.limit??50),{retrieval:{mode:'lexical',degraded:false}}));
+  async search(args:Range&{query?:string}){
+    const result=this.indexer?await this.indexer.search(args):Object.assign(this.records(args,true).items.slice(0,args.limit??50),{retrieval:{mode:'lexical',degraded:Boolean(args.query),...(args.query?{reason:'embedding_not_configured'}:{})}});
+    const visible=result.filter(record=>!this.files?.fileForRead(record.id)||this.files.readableFile(record.id));
+    return Object.assign(this.context(visible),{retrieval:result.retrieval});
   }
   timeline(args:Range){return this.store.list(args);}
   catalog(args:Range&{path?:string;query?:string}={}){return contextIndex(this.store,{page:args=>this.memoryPage(args)},this.sources,args,args=>this.segments(args));}
   catalogAsync(args:Range&{path?:string;query?:string}={},snapshot?:MemoryReadSnapshot){return contextIndexAsync(this.store,{page:scope=>this.memoryPageAsync(scope,false,snapshot)},this.sources,args,scope=>this.segments(scope));}
-  fileCatalog(sourceId:string,args:Parameters<typeof browseSourceCatalog>[2]){this.sources.getSource(sourceId);return browseSourceCatalog(this.store.db,sourceId,args);}
+  fileCatalog(sourceId:string,args:Parameters<typeof browseSourceCatalog>[2]){
+    this.sources.getSource(sourceId);
+    return browseSourceCatalog(this.store.db,sourceId,args,id=>Boolean(fileAttachmentAvailable(this.store,id)&&this.evidenceById([id],args).length));
+  }
   private artifactMembers(id:string,revision:string,scope:Range={}){
     const pending=[{id,revision}],seen=new Set<string>(),directMembers=new Set<string>(),materialRefs=new Map<string,{ref:string;offset?:number;length?:number}[]>();
     while(pending.length){
@@ -430,7 +444,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         if(member.kind!=='capture')return;
         const id=evidenceRefId(member.ref,'capture');if(!id)return;
         const record=scopeRecord(this.store,id);
-        if(!record||!withinEvidenceScope(record,memberScope))return;
+        if(!record||!withinEvidenceScope(record,memberScope)||this.files?.fileForRead(id)&&!this.files.readableFile(id))return;
         const first=sourceContentTime(record),last=record.stateSeries?.samples.at(-1)?.at??first;
         if(scope.after&&Date.parse(first)<Date.parse(scope.after)||scope.before&&Date.parse(last)>=Date.parse(scope.before))return;
         members.push(member);
@@ -603,8 +617,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   deletionContextAllowed(id:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy):boolean {
     const record=this.memories.readEvidence([id])[0];if(!record)return false;
     if(!fileAttachmentAvailable(this.store,id))return false;
+    if(this.files?.fileForRead(id)&&!this.files.readableFile(id))return false;
     const p=record.provenance;
-    if(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted)return false;
+    if(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted&&!this.files?.readableFile(id))return false;
     const anchor=this.materials&&this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(id);
     const material=anchor?this.materials?.get(String(anchor.material_id)):p?.sourceId&&p.externalId&&this.materials?this.materials.get(materialId(p.sourceId,p.externalId)):undefined;
     if(material)return this.materialExposure(material,'expand',policy)&&policy.allows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation:'expand',phase:material.coverage.state});
@@ -638,7 +653,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const allowMaterial=(current:MaterialRecord)=>{if(!materialAllowed.has(current.ref))materialAllowed.set(current.ref,this.materialExposure(current,'expand',policy,undefined,false,undefined,true)&&policy.allows({sourceKind:this.materialKind(current),sourceId:current.origin.sourceId,representation:'material',operation:'expand',phase:current.coverage.state}));return materialAllowed.get(current.ref)!;};
     const allowRecord=(record:CaptureRecord,attachmentId=record.id)=>{
       if(!attachment(attachmentId))return false;
-      const p=record.provenance;if(p?.sourceId&&p.externalId&&tombstone(p.sourceId,p.externalId))return false;
+      if(this.files?.fileForRead(record.id)&&!this.files.readableFile(record.id))return false;
+      const p=record.provenance;if(p?.sourceId&&p.externalId&&tombstone(p.sourceId,p.externalId))return Boolean(this.files?.readableFile(record.id)&&this.captureExposure(record,'expand',policy,'capture',true,true));
       const current=p?.sourceId&&p.externalId?material(materialId(p.sourceId,p.externalId)):undefined;
       return current?allowMaterial(current):this.captureExposure(record,'expand',policy,'capture',true,true);
     };
@@ -763,7 +779,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       if(!page.items.length)return false;
       for(const member of page.items){
         if(member.kind==='capture'){
-          const id=evidenceRefId(member.ref,'capture');if(!id||!fileAttachmentAvailable(this.store,id,metadataOnly))return false;
+          const id=evidenceRefId(member.ref,'capture');if(!id||!fileAttachmentAvailable(this.store,id,metadataOnly)||this.files?.fileForRead(id)&&!this.files.readableFile(id))return false;
         }
       }
     }
@@ -771,6 +787,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   }
   private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false,metadataOnly=false){
     if(!fileAttachmentAvailable(this.store,record.id,metadataOnly))return false;
+    const fileId=this.files?.fileForRead(record.id);
+    if(fileId&&!this.files!.readableFile(record.id))return false;
     const provenance=record.provenance,materialRef=provenance?.uri?.startsWith('material:')?provenance.uri.split('#')[0]:undefined;
     const material=materialRef?this.materials?.get(materialRef):undefined;
     if(materialRef){
@@ -786,7 +804,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     if(provenance?.sourceId&&provenance.externalId){
       const head=this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?')
         .get(provenance.sourceId,provenance.externalId) as {deleted:number}|undefined;
-      if(head?.deleted)return false;
+      if(head?.deleted&&!fileId)return false;
     }
     const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':provenance?.document?.coding?'coding-agent':this.sourceKind(provenance?.sourceId,record.source);
     const phase:EvidencePhase=record.ocr?.status==='pending'?'pending':record.ocr?.status==='failed'?'partial':'complete';
@@ -1034,7 +1052,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       seen.add(material.ref);materialViews.push(card);
     };
     for(const record of results){
-      const material=this.sourceItemMaterial(record,args);
+      const file=this.files?.fileForRead(record.id),material=file&&!fileAttachmentParent(this.store,file)?undefined:this.sourceItemMaterial(record,args);
       if(material){
         suppressed++;
         addMaterial(material);
@@ -1064,7 +1082,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const page=this.store.list({...args,cursor,limit:200,includeTotal:false});
       for(let index=0;index<page.items.length;index++){
         const record=page.items[index];
-        const material=this.sourceItemMaterial(record,args);
+        const file=this.files?.fileForRead(record.id),material=file&&!fileAttachmentParent(this.store,file)?undefined:this.sourceItemMaterial(record,args);
         // Visit a composed source once at its parent position, including across
         // page boundaries. Attachment processing receipts are not new activity.
         if(material&&fileAttachmentParent(this.store,record.id))continue;
@@ -1226,8 +1244,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
             this.captureExposure(record,operation('expand'),policy,'image',hasScreenGrant(record.id)));
         });
       },
-      readFileEvidence:async args=>{const id=z.string().uuid().parse(args.id),original=this.evidenceById([id],args)[0];if(!original||!this.captureExposure(original,operation('expand'),policy))return {status:'unavailable'};return this.readFileEvidence({...args,id:formatEvidenceRef('capture',id)});},
-      fileChunks:async args=>{const parsed=z.string().uuid().safeParse(args.id);if(!parsed.success||!this.files)return [];const id=parsed.data,parent=this.evidenceById([this.files.version(id).capture_id],args)[0];if(!parent||!this.captureExposure(parent,operation('expand'),policy))return [];return this.chunks({...args,id:formatEvidenceRef('capture',id)}).filter(record=>this.captureExposure(record,operation('expand'),policy));},
+      readFileEvidence:async args=>{const requested=z.string().uuid().parse(args.id),id=this.files?.readableFile(requested);if(!id)return {status:'unavailable'};const original=this.evidenceById([id],args)[0];if(!original||!this.captureExposure(original,operation('expand'),policy))return {status:'unavailable'};const result=await this.readFileEvidence({...args,id:formatEvidenceRef('capture',id)});return this.files?.readableFile(requested)===id?result:{status:'unavailable'};},
+      fileChunks:async args=>{const parsed=z.string().uuid().safeParse(args.id);if(!parsed.success||!this.files)return [];const id=this.files.readableFile(parsed.data);if(!id)return [];const parent=this.evidenceById([id],args)[0];if(!parent||!this.captureExposure(parent,operation('expand'),policy))return [];return this.chunks({...args,id:formatEvidenceRef('capture',id)}).filter(record=>this.captureExposure(record,operation('expand'),policy));},
       mediaActivity:async args=>diagnostics.measure('source','activity',()=>{const ids=new Set<string>(),result=store.mediaActivity(args,id=>ids.add(id));options.assertEvidence?.([...ids]);return {...result,disclosureDependencies:{version:1 as const,complete:true,ids:[...ids]}};},result=>({count:result.observations})),
       sourceHistory:async args=>this.sourceHistory({...args,id:formatEvidenceRef('capture',z.string().uuid().parse(args.id))}).filter(record=>this.captureExposure(record,operation('expand'),policy)),
       sources:async args=>{const page=browseSourceContexts(store,sources,args);options.assertSources?.(page.items.map(item=>item.id));return page;},
@@ -1242,7 +1260,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       // listItems applies calendar overlap / authored-time semantics; do not replace planned time with capture time.
       sourceItems:async args=>{const page=sources.listItems(args),scope={deviceId:args.deviceId,sourceId:args.sourceId};
         const visible=this.evidenceById(page.items.map(i=>i.captureId),{deviceId:args.deviceId}).flatMap(record=>{
-          const material=this.sourceItemMaterial(record,scope);
+          const file=this.files?.fileForRead(record.id),material=file&&!fileAttachmentParent(this.store,file)?undefined:this.sourceItemMaterial(record,scope);
           const view=material?this.materialCard(material,record):record;
           return view&&this.captureExposure(view,operation('discover'),policy)?[view]:[];
         });

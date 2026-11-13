@@ -1,6 +1,6 @@
 import {navigationScope,navigationRef,parseNavigationRef,intersectNavigationScope,type NavigationExpansion} from './context-navigation.js';
 import {createHash} from 'node:crypto';
-import {sourceContentTime,formatEvidenceRef,parseArtifactRef,parseEvidenceRef,type CaptureRecord,type SourceConnection} from '@mote/shared';
+import {sourceContentTime,formatEvidenceRef,parseArtifactRef,parseEvidenceRef,fileViewSchema,type FileView,type CaptureRecord,type SourceConnection} from '@mote/shared';
 import type {Memory} from './memory-schema.js';
 import type {CaptureContextRead,MemoryRead,MemoryReadSnapshot} from './evidence-read-ports.js';
 import type {SourceStore} from './sources.js';
@@ -42,6 +42,7 @@ export type ContextCard = {
   title:string;
   snippet:string;
   matchReasons:string[];
+  fileView?:FileView;
   origin:ContextOrigin;
   revision?:string;
   locator?:{offset:number;length:number;totalLength:number};
@@ -175,11 +176,15 @@ export function contextCard(record:CaptureRecord,query?:string,extra?:Partial<Co
   const scope=codingScope(record),body=record.ocrText||record.windowTitle||(record.metadata?.media?searchableText(record):record.appName);
   const match=snippet(body,query);
   const reasons:string[]=[];
-  if(query)reasons.push(match.locator?'literal text match':'metadata or prefix match');
+  if(query){
+    if(record.source==='file'){const chunk=(record as CaptureRecord&{fileEvidence?:unknown}).fileEvidence;reasons.push(chunk&&match.locator?'extracted file text match':!chunk&&record.ocrText&&snippet(record.ocrText,query).locator?'literal text match':'file metadata or semantic match');}
+    else reasons.push(match.locator?'literal text match':'metadata or prefix match');
+  }
   if(scope?.projectKey)reasons.push(`projectKey=${scope.projectKey}`);
   if(scope?.sessionId)reasons.push(`sessionId=${scope.sessionId}`);
-  return {ref:formatEvidenceRef('capture',record.id),id:record.id,kind:kind(record),title:(record.windowTitle||record.appName||record.source).slice(0,200),snippet:match.text,matchReasons:reasons,origin:recordOrigin(record),
-    ...(record.provenance?.revision?{revision:record.provenance.revision}:{}),...(match.locator?{locator:match.locator}:{}),evidenceRefs:[formatEvidenceRef('capture',record.id)],...extra};
+  const view=fileViewSchema.safeParse((record as CaptureRecord&{fileView?:unknown}).fileView);
+  return {ref:formatEvidenceRef('capture',record.id),id:record.id,kind:kind(record),title:(record.windowTitle||record.appName||record.source).slice(0,200),snippet:match.text,matchReasons:reasons,origin:recordOrigin(record),...(view.success?{fileView:view.data}:{}),
+    ...(record.provenance?.revision?{revision:record.provenance.revision}:{}),...(match.locator&&(record.source!=='file'||record.ocrText)?{locator:match.locator}:{}),evidenceRefs:[formatEvidenceRef('capture',record.id)],...extra};
 }
 
 function pageCoverage(records:number,items:number,memories:number,sources:SourceConnection[],stats:{lastCaptureAt?:string|null},memoryLatestAt:string|null,truncated:boolean):ContextCoverage {

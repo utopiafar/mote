@@ -6,6 +6,8 @@ import {ownerRelationSchema,type OwnerRelation,sourceCapabilities,sourceConnecti
 import {Store,StoreError,sha256} from './store.js';
 import type {MemoryInputAuthorization} from './memory-input-authorization.js';
 import {SourceContextStore} from './source-context.js';
+import {availableFileAttachmentSql,readableFileSql} from './file-access.js';
+import {fileAttachmentAvailable} from './file-attachments.js';
 
 const uuid=(text:string)=>{const h=createHash('sha256').update(text).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;};
 type Head={capture_id:string;observed_at:string;deleted:number};
@@ -122,6 +124,9 @@ export class SourceStore {
   }
   listItems(args:{sourceId?:string;deviceId?:string;kind?:string;after?:string;before?:string;limit?:number;cursor?:string;includeDeleted?:boolean;collectedOrder?:boolean}={}) {
     const clauses=['c.id=h.capture_id'],values:(string|number)[]=[];
+    clauses.push('(EXISTS(SELECT 1 FROM file_versions own WHERE own.capture_id=c.id) OR NOT EXISTS(SELECT 1 FROM file_evidence_links l JOIN file_versions parent ON parent.capture_id=l.parent_id WHERE l.capture_id=c.id))');
+    clauses.push(`(NOT EXISTS(SELECT 1 FROM file_versions v WHERE v.capture_id=c.id) OR ${readableFileSql('c.id')})`);
+    clauses.push(availableFileAttachmentSql(this.store.db,'c.id'));
     if(args.sourceId){clauses.push('h.source_id=?');values.push(args.sourceId);}
     if(args.deviceId){clauses.push('c.device_id=?');values.push(args.deviceId);}
     if(!args.includeDeleted)clauses.push('h.deleted=0');
@@ -134,7 +139,11 @@ export class SourceStore {
     let position:{at:string;id:string}|undefined;
     if(args.cursor){try{position=z.object({at:z.string().datetime(),id:z.string().uuid()}).parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid source cursor');}clauses.push(`(${sort}<? OR (${sort}=? AND c.id>?))`);values.push(position.at,position.at,position.id);}
     const limit=Math.max(1,Math.min(args.limit??50,200));
-    const rows=this.store.db.prepare(`SELECT c.id,${sort} AS context_at,h.deleted FROM captures c JOIN source_heads h ON c.id=h.capture_id WHERE ${clauses.join(' AND ')} ORDER BY ${sort} DESC,c.id LIMIT ?`).all(...values,limit+1) as {id:string;context_at:string;deleted:number}[];
+    const rows:{id:string;context_at:string;deleted:number}[]=[];
+    for(const value of this.store.db.prepare(`SELECT c.id,${sort} AS context_at,h.deleted,json_extract(v.manifest,'$.item.document.attachmentOf') AS attachment FROM captures c JOIN source_heads h ON c.id=h.capture_id LEFT JOIN file_versions v ON v.capture_id=c.id WHERE ${clauses.join(' AND ')} ORDER BY ${sort} DESC,c.id`).iterate(...values)){
+      if(value.attachment&&!fileAttachmentAvailable(this.store,String(value.id)))continue;
+      rows.push({id:String(value.id),context_at:String(value.context_at),deleted:Number(value.deleted)});if(rows.length>limit)break;
+    }
     const items=rows.slice(0,limit).flatMap(r=>this.store.evidence([r.id]).map(c=>({...this.item(c,true),deleted:Boolean(r.deleted)})));
     const last=rows.slice(0,limit).at(-1);return {items,nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({at:last.context_at,id:last.id})).toString('base64url'):null};
   }

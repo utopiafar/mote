@@ -154,6 +154,15 @@ test('read_file_evidence keeps UTF-16 offsets, result status and local record pr
   assert.equal(reader.calls.readFileEvidence.length, 2);
 });
 
+test('a retained text receipt reports its file view without claiming an offline original can open', async () => {
+  const view={captureId:CURRENT,sourceId:'source-generated',item:{externalId:'generated-file',revision:'1',observedAt:'2026-01-05T00:00:00.000Z',title:'Generated file',text:'',kind:'file',layer:'snapshot',deleted:false},retention:'snapshot',hasOriginal:false,originMissing:true,canOpenOriginal:false,coverage:{extraction:{status:'ready'},semantic:{status:'pending'},embedding:{status:'unsupported',reason:'Lexical search remains available.'}}};
+  const reader=makeReader({readFileEvidence:()=>({status:'ready',record:record(CURRENT,{ocrText:'Generated retained text',sourceType:'file',fileView:view,provenance:{sourceId:'source-generated',externalId:'generated-file',revision:'1',layer:'snapshot',originalAvailable:false}})})});
+  const result=await resolve(registryWithPacks(),'read_file_evidence').execute({id:CURRENT},makePort(reader));
+  assert.deepEqual(result.data.record.fileView,view);
+  assert.equal(result.data.record.provenance.originalAvailable,false);
+  assert.equal(result.data.record.ocrText,'Generated retained text');
+});
+
 test('file_chunks keeps chunk offsets, page cursor and display projection', async () => {
   const reader = makeReader(), port = makePort(reader, {deviceId: 'scope-device'});
   const tool = resolve(registryWithPacks(), 'file_chunks');

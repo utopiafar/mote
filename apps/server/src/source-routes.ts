@@ -8,6 +8,7 @@ import type {SourceStore,SourceRegistration} from './sources.js';
 import type {SourceFileCatalogRead} from './evidence-read-ports.js';
 import type {IngressService} from './ingress.js';
 import {captureContextChannelSchema,readCaptureContext,updateCaptureContext} from './capture-context.js';
+import {navigationScopeSchema} from './context-navigation.js';
 /** Fixed trusted C10 request binding; never an ordinary plugin service. */
 export interface SourceRouteAdmission {
   assertCurrent(request:FastifyRequest):void;
@@ -51,5 +52,5 @@ export function registerSourceRoutes(app:FastifyInstance,{layers,sources,evidenc
   app.get('/api/sources/:id/item',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {item:sources.getItem(id,externalId)??null};});
   app.get('/api/sources/:id/history',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {items:sources.history(id,externalId)};});
   app.get('/api/layers',async()=>layers.summary());
-  app.get('/api/sources/:id/catalog',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);sources.getSource(id);return evidenceReader.fileCatalog(id,z.object({parent:z.string().optional(),cursor:z.string().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query));});
+  app.get('/api/sources/:id/catalog',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);sources.getSource(id);const q=z.object({...navigationScopeSchema.shape,parent:z.string().max(2048).optional(),cursor:z.string().max(8192).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);const c=credential(req);if(c&&q.deviceId&&q.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,moteText("只能读取本设备来源。"));return evidenceReader.fileCatalog(id,{...q,...(c?{deviceId:c.deviceId}:{})});});
 }

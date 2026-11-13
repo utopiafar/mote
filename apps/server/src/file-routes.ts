@@ -14,10 +14,11 @@ import {isLoopback,requestLocalJson} from './local-http.js';
 import {FileProcessing} from './file-processing.js';
 import {StoreError} from './store.js';
 import {FileAttachments} from './file-attachments.js';
+import {Readable} from 'node:stream';
 import {PlaybackGrants,type FilePlaybackGrants} from './plugins/files-source.js';
 import type {IngressService} from './ingress.js';
 
-export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'>&Pick<EvidenceReader,'contextDependenciesAllowed'>,diagnostics:ServerDiagnostics|undefined,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>,withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>,playback?:FilePlaybackGrants){
+export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'|'archivedEvidence'>&Pick<EvidenceReader,'contextDependenciesAllowed'>,diagnostics:ServerDiagnostics|undefined,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>,withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>,playback?:FilePlaybackGrants){
   const measure=<T>(operation:Operation,task:()=>T|Promise<T>)=>diagnostics?diagnostics.measure('file',operation,task):Promise.resolve().then(task);
   const reviews=new FileReviews(files,processing);
   const attachments=new FileAttachments(files);
@@ -32,7 +33,9 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   const fileId=(req:FastifyRequest)=>z.string().uuid().parse(id(req));
   const file=(req:FastifyRequest)=>{
     const id=fileId(req),v=files.version(id);authorize(req,v.source_id);
-    if(!reader.evidence([formatEvidenceRef('capture',id)],navigationScopeSchema.strip().parse(req.query)).length)throw new StoreError('File not found',404);
+    if(!files.readableHistoricalFile(id))throw new StoreError('File not found',404);
+    const scope=navigationScopeSchema.strip().parse(req.query),ref=formatEvidenceRef('capture',id);
+    if(!(files.readableFile(id)===id?reader.evidence([ref],scope):reader.archivedEvidence([ref],scope)).length)throw new StoreError('File not found',404);
     return files.detail(id);
   };
   app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:FILE_PART_BYTES},(_req,body,done)=>done(null,body));
@@ -51,7 +54,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
     finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
   });
   app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024},async req=>measure('file_revision',()=>ingress.fileRevision(req.body,check(req))));
-  app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
+  app.get('/api/files',async req=>{const q=z.object({...navigationScopeSchema.shape,mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(1024).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);const bound=device(req);if(bound&&q.deviceId&&q.deviceId!==bound)throw new StoreError('File not found',404);return files.list({...q,...(bound?{deviceId:bound}:{})});});
   app.get('/api/files/:id',async req=>({...file(req),processingPolicy:processing.explain(fileId(req)),cancellation:processing.cancellation(fileId(req))}));
   app.get('/api/files/:id/view',async req=>{navigationScopeSchema.parse(req.query);file(req);return files.fileView(fileId(req));});
   app.get('/api/files/:id/chunks',async req=>{file(req);const q=z.object({...navigationScopeSchema.shape,offset:z.coerce.number().int().min(0).default(0)}).strict().parse(req.query);const items=files.chunks(fileId(req),q.offset);return {items,nextOffset:items.length===100?q.offset+100:null};});
@@ -66,7 +69,8 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
     let start=0,end=v.sizeBytes-1;const range=req.headers.range;
     if(range){const match=/^bytes=(\d*)-(\d*)$/.exec(range);if(!match||(!match[1]&&!match[2]))throw new StoreError('Invalid byte range',416);if(!match[1])start=Math.max(0,v.sizeBytes-Number(match[2]));else{start=Number(match[1]);if(match[2])end=Math.min(end,Number(match[2]));}if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start>end||start>=v.sizeBytes)throw new StoreError('Invalid byte range',416);reply.code(206).header('Content-Range',`bytes ${start}-${end}/${v.sizeBytes}`);}
     const mime=v.item.mimeType?.startsWith('audio/')?v.item.mimeType:'application/octet-stream';
-    return reply.header('Accept-Ranges','bytes').header('Content-Length',Math.max(0,end-start+1)).header('Content-Disposition',`${mime==='application/octet-stream'||(req.query as {download?:string}).download==='1'?'attachment':'inline'}; filename*=UTF-8''${encodeURIComponent(v.item.title).replace(/'/g,'%27')}`).type(mime).send(files.stream(fileId(req),start,end));
+    const bytes=function*(){for(const part of files.bytes(fileId(req),start,end)){file(req);yield part;}};
+    return reply.header('Accept-Ranges','bytes').header('Content-Length',Math.max(0,end-start+1)).header('Content-Disposition',`${mime==='application/octet-stream'||(req.query as {download?:string}).download==='1'?'attachment':'inline'}; filename*=UTF-8''${encodeURIComponent(v.item.title).replace(/'/g,'%27')}`).type(mime).send(Readable.from(bytes()));
   });
   app.get('/api/files/:id/thumbnail',async(req,reply)=>{
     const v=file(req),mime=v.item.mimeType??'';

@@ -5,11 +5,28 @@ import { join } from 'node:path';
 import { scanSourceFiles } from '../src/source-files';
 import * as localVolume from '../src/local-volume';
 import { DEFAULT_SOURCE_OPTIONS, normalizeSourceOptions, type LocalFileCheckpoint } from '../src/source-types';
+import {openRegisteredFile} from '../src/source-file-open';
 const inputText=(item:any)=>Buffer.from(item.localOriginalBase64,'base64').toString('utf8');
 let root: string;
 beforeEach(async () => { root = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-files-'))); });
 afterEach(async () => { vi.restoreAllMocks();await rm(root, { recursive: true, force: true }); });
 describe('explicit local text sources', () => {
+  it('opens only a registered current file and stops if its authority or location changes', async () => {
+    const path=join(root,'generated.txt'),text='generated '+ 'x'.repeat(70000);
+    await writeFile(path,text);
+    const scan=await scanSourceFiles(root,DEFAULT_SOURCE_OPTIONS),checkpoint=scan.checkpoint as LocalFileCheckpoint,item=scan.items[0];
+    const source={...DEFAULT_SOURCE_OPTIONS,id:'local-generated',name:'Generated',kind:'local-files',deviceId:'generated-device',platform:'macos' as const,enabled:true,path:root};
+    const locator={sourceId:source.id,externalId:item.externalId,revision:'generated-revision'};let permitted=true;
+    const select=()=>({source,checkpoint}),authorize=async()=>{if(!permitted)throw Error('revoked');};
+    const bytes:Buffer[]=[];for await(const part of openRegisteredFile(locator,select,authorize))bytes.push(part);
+    expect(Buffer.concat(bytes).toString()).toBe(text);
+    const invalid=openRegisteredFile({...locator,externalId:'file:///etc/passwd'},select,authorize);await expect(invalid.next()).rejects.toThrow('unavailable');
+    const rootLink=join(root,'generated-root-link');await symlink(root,rootLink);
+    const linkedRoot=openRegisteredFile(locator,()=>({source:{...source,path:rootLink},checkpoint}),authorize);await expect(linkedRoot.next()).rejects.toThrow('File root changed');
+    const partial=openRegisteredFile(locator,select,authorize);expect((await partial.next()).value?.length).toBe(65536);permitted=false;await expect(partial.next()).rejects.toThrow('revoked');
+    permitted=true;await rename(path,join(root,'old.txt'));await symlink(join(root,'old.txt'),path);
+    const replaced=openRegisteredFile(locator,select,authorize);await expect(replaced.next()).rejects.toThrow();
+  });
   it('preserves multiline Chinese/emoji and applies only user literal masks before the pending queue', async () => {
     await writeFile(join(root, '合成.md'), '第一段 🧑🏽‍💻 e\u0301\n这是 synthetic-private，文字里的“忽略指令”仍是资料。');
     const result = await scanSourceFiles(root, { ...DEFAULT_SOURCE_OPTIONS, redactLiterals: ['synthetic-private'] });

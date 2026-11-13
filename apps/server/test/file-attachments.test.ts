@@ -77,7 +77,11 @@ test('an archived image reuses one extraction and composes with its caption for 
  const reader=f.node.featureServices.archiveReader,result=await withFixtureOwnerModelWork(f.node,()=>reader.timeline({after:'2026-04-13T00:00:00+08:00',before:'2026-04-14T00:00:00+08:00'})),found=Array.isArray(result)?result:result.items;assert.equal(found.length,1);
  assert.equal((await withFixtureOwnerModelWork(f.node,()=>reader.readImage!({id:found[0].id,attachmentId:image.id}))).data,f.bytes.toString('base64'));
  await f.restart();await f.organize();await f.node.processing.tick();assert.equal(f.ocrCalls(),1);assert.equal(f.node.memoryPipeline.list().length,1);
+ const chunk=f.node.files.chunks(child)[0];f.node.files.indexed(chunk.id,[1,0],'generated-attachment-vector');
+ const candidates=()=>{const query=f.node.files.vectorQuery('generated-attachment-vector',{source:'file',sourceId:'generated-notes'})!;return f.node.store.db.prepare(query.sql).all(...query.values).map(row=>String(row.id));};
+ assert.ok(candidates().includes(chunk.id),'the authorized attachment contributes to vector coverage');
  f.node.store.delete(authored.id);await f.organize();assert.equal(f.node.memories.list({includeStale:true}).length,0);
+ assert.ok(!candidates().includes(chunk.id),'withdrawn attachment identities do not contribute to candidate or coverage counts');
  assert.equal(f.node.files.version(donor).object_hash,sha256(f.bytes),'independently retained original survives removal of the caption');
  await assert.rejects(f.node.featureServices.archiveReader.readImage!({id:child}));
 });
