@@ -4,6 +4,7 @@ import {z} from 'zod';
 import {AssistantMatters,matterCommandSchema,matterScopeContains,type MatterAuthority} from './assistant-matters.js';
 import type {AssistantRoutines} from './assistant-routines.js';
 import type {AssistantCommitments} from './assistant-commitments.js';
+import {registerAssistantCommitmentList} from './assistant-commitment-routes.js';
 import type {AssistantTasks} from './assistant-tasks.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
@@ -69,11 +70,7 @@ export function registerAssistantMatterRoutes(app:FastifyInstance,deps:{store:St
   const scope=command.type==='create'?command.scope:command.type==='edit'&&command.scope?command.scope:matters.get(command.matterId).scope;
   return matters.command(command,authority(scope));
  });
- app.get('/api/assistant/commitments',async(request,reply)=>{
-  owner(request);const {scope:raw,...args}=querySchema.parse(request.query);
-  reply.header('Cache-Control','no-store');
-  return commitments.page({...args,scope:scopeValue(raw)});
- });
+ registerAssistantCommitmentList(app,commitments,owner);
  app.get('/api/assistant/commitments/:id',async request=>{
   owner(request);const {scope}=querySchema.pick({scope:true}).parse(request.query);return commitments.get(idOf(request),scopeValue(scope));
  });
