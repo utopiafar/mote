@@ -85,7 +85,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     internal fun row(id: String, external: String): JSONObject = synchronized(lock) { read(itemFile(id, external)) }
     fun candidate(id: String, external: String): JSONObject? = synchronized(lock) { read(itemFile(id, external)).optJSONObject("candidate") }
     fun rows(id: String): List<JSONObject> = synchronized(lock) { root(id).listFiles()?.filter { it.name.startsWith("item-") && it.name.endsWith(".enc") }?.map { read(it) } ?: emptyList() }
-    private fun dirty(row: JSONObject) = row.has("pending") || (!row.optBoolean("baseline") && row.optString("signature") != signature(row.getJSONObject("candidate")))
+    private fun dirty(row: JSONObject) = row.has("pending") || (!row.optBoolean("baseline") && (row.optBoolean("recheck") || row.optString("signature") != signature(row.getJSONObject("candidate"))))
     private fun markers(id: String) = root(id).listFiles()?.filter { it.name.matches(Regex("todo-[a-f0-9]{64}")) } ?: emptyList()
     private fun mark(id: String, row: JSONObject) {
         val marker = File(root(id), "todo-" + SourceRules.hash(row.getJSONObject("candidate").getString("externalId")))
@@ -122,6 +122,38 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     internal fun sourceLease(source: LocalSource) = sourceHost?.lease(source)
     private fun scanCurrent(source: LocalSource, generation: String, lease: SourceLease?) =
         permitted(source, lease) && state(source.id).optString("generation") == generation
+    /** A checkpoint can only resume while the same process is watching the provider. */
+    internal fun beginScan(source: LocalSource, watcher: String, lease: SourceLease? = sourceLease(source)): JSONObject = synchronized(lock) {
+        val state = configure(source, lease)
+        if (state.has("stack") && state.optString("watcher") != watcher) {
+            state.remove("stack"); state.put("generation", UUID.randomUUID().toString())
+        }
+        state.put("watcher", watcher).put("scanComplete", false); saveState(source.id, state); state
+    }
+    internal fun interruptScan(source: LocalSource, generation: String, lease: SourceLease? = sourceLease(source)) = synchronized(lock) {
+        if (scanCurrent(source, generation, lease)) {
+            val state = state(source.id)
+            state.remove("stack"); state.remove("watcher")
+            state.put("generation", UUID.randomUUID().toString()).put("scanComplete", false); saveState(source.id, state)
+        }
+    }
+    /** An invalidated traversal cannot publish absences; retained content is rechecked. */
+    internal fun providerChanged(source: LocalSource, lease: SourceLease? = sourceLease(source)) = synchronized(lock) {
+        if (!permitted(source, lease)) return@synchronized
+        val state = state(source.id)
+        state.remove("stack"); state.put("generation", UUID.randomUUID().toString()).put("scanComplete", false)
+        saveState(source.id, state)
+        if (source.retention != "reference") rows(source.id).forEach { row ->
+            if (!row.optBoolean("baseline") && !row.getJSONObject("candidate").optBoolean("deleted") && (row.has("pending") || row.optString("revision").isNotBlank())) {
+                row.put("recheck", true); saveRow(source.id, row)
+            }
+        }
+    }
+    internal fun externalId(source: LocalSource, uri: String): String = synchronized(lock) {
+        val identity = SafIdentity.document(uri) ?: return@synchronized uri
+        rows(source.id).firstOrNull { row -> SafIdentity.document(row.getJSONObject("candidate").optString("uri")) == identity }
+            ?.getJSONObject("candidate")?.getString("externalId") ?: uri
+    }
     fun checkpoint(source: LocalSource, snapshot: JSONObject, generation: String, lease: SourceLease? = sourceLease(source)) = synchronized(lock) {
         if (scanCurrent(source, generation, lease)) {
             // A traversal snapshot must not replace concurrent transport/ACK state.
@@ -141,17 +173,33 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     fun configure(source: LocalSource, lease: SourceLease? = sourceLease(source)): JSONObject = synchronized(lock) {
         if (!permitted(source, lease)) throw SourceLeaseRevoked()
         val state = state(source.id)
-        val policy = SourceRules.hash(listOf(source.uri, source.tree, source.maxFileMiB, source.extensions, source.excluded, source.retention, source.allowRead, "central-snapshot-v1").joinToString("\u0000"))
+        fun policy(uri: String?) = SourceRules.hash(listOf(uri, source.tree, source.maxFileMiB, source.extensions, source.excluded, source.retention, source.allowRead, "central-snapshot-v1").joinToString("\u0000"))
+        val policy = policy(source.uri)
         if (state.optString("policy") != policy) {
-            rows(source.id).forEach { row ->
-                // An exclusion edit must not turn old new-only baseline files into uploads.
-                if (row.optBoolean("baseline") && allowed(source, row.getJSONObject("candidate"))) {
-                    row.remove("pending"); saveRow(source.id, row)
-                } else discard(source.id, row)
+            val previousUri = state.optString("sourceUri").takeIf(String::isNotBlank) ?: rows(source.id).firstNotNullOfOrNull {
+                SafIdentity.selection(it.getJSONObject("candidate").optString("uri"), source.tree)
             }
-            state.remove("activeKey")
-            File(root(source.id), "spool").deleteRecursively()
-            state.remove("importCaptured"); state.put("policy", policy).remove("stack"); state.put("generation", UUID.randomUUID().toString())
+            val oldRoot = SafIdentity.root(previousUri, source.tree)
+            val sameGrant = oldRoot != null && oldRoot == SafIdentity.root(source.uri, source.tree) && state.optString("policy") == policy(previousUri)
+            if (sameGrant) {
+                rows(source.id).forEach { row ->
+                    if (row.optString("contentPolicy") == state.optString("policy")) { row.put("contentPolicy", policy); saveRow(source.id, row) }
+                }
+                state.remove("stack"); state.put("generation", UUID.randomUUID().toString()).put("scanComplete", false)
+            } else {
+                rows(source.id).forEach { row ->
+                    // An exclusion edit must not turn old new-only baseline files into uploads.
+                    if (row.optBoolean("baseline") && allowed(source, row.getJSONObject("candidate"))) {
+                        row.remove("pending"); saveRow(source.id, row)
+                    } else discard(source.id, row)
+                }
+                state.remove("activeKey")
+                File(root(source.id), "spool").deleteRecursively()
+                state.remove("importCaptured"); state.remove("stack"); state.put("generation", UUID.randomUUID().toString()).put("scanComplete", false)
+                if (previousUri != null && oldRoot != SafIdentity.root(source.uri, source.tree)) state.remove("initialized")
+                state.remove("lastScan")
+            }
+            state.put("policy", policy)
         }
         if (source.initialSync == "all" && state.optString("initialSync") == "new_only") rows(source.id).filter { it.optBoolean("baseline") }.forEach { it.put("baseline", false); saveRow(source.id, it) }
         if (!state.has("generation")) state.put("generation", UUID.randomUUID().toString())
@@ -161,7 +209,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 val manifest = row.optJSONObject("pending")?.optJSONObject("manifest")
                 row.optString("contentPolicy") == policy && manifest?.optString("sourceId") == source.id && manifest.optJSONObject("item")?.optString("revision")?.isNotBlank() == true
             }) state.put("importCaptured", true)
-        state.put("initialSync", source.initialSync); saveState(source.id, state); state
+        state.put("initialSync", source.initialSync).put("sourceUri", source.uri); saveState(source.id, state); state
     }
     /** Remote IDs only invalidate an already-authorized current local version; no remote path is opened. */
     fun requestSnapshotRecovery(source: LocalSource, items: org.json.JSONArray) = synchronized(lock) {
@@ -194,15 +242,15 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         if (source.initialSync == "new_only" && !state(source.id).optBoolean("initialized")) row.put("baseline", true)
         saveRow(source.id, row)
     }
-    fun finish(source: LocalSource, generation: String, lease: SourceLease? = sourceLease(source), absent: (String) -> Boolean) {
+    fun finish(source: LocalSource, generation: String, lease: SourceLease? = sourceLease(source), absent: (String) -> Boolean): Boolean {
         val candidates = synchronized(lock) {
-            if (!scanCurrent(source, generation, lease)) return
+            if (!scanCurrent(source, generation, lease)) return false
             rows(source.id).filter { it.optString("seen") != generation && !it.optBoolean("baseline") && !it.getJSONObject("candidate").optBoolean("deleted") }.map { it.toString() }
         }
         // Absence probes can block in a provider, just like opening a stream.
         val missing = candidates.filter { absent(JSONObject(it).getJSONObject("candidate").getString("externalId")) }
         synchronized(lock) {
-            if (!scanCurrent(source, generation, lease)) return
+            if (!scanCurrent(source, generation, lease)) return false
             missing.forEach { selected ->
                 val row = JSONObject(selected); val item = row.getJSONObject("candidate")
                 if (read(itemFile(source.id, item.getString("externalId"))).toString() == selected) {
@@ -211,8 +259,9 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 }
             }
             val state = state(source.id).put("initialized", true).put("scanComplete", true).put("lastScan", Instant.now().toString()).put("generation", UUID.randomUUID().toString())
-            state.remove("stack"); saveState(source.id, state)
+            state.remove("stack"); state.remove("watcher"); saveState(source.id, state)
         }
+        return true
     }
     fun pendingPage(id: String, offset: Int, limit: Int = 30, source: LocalSource? = null): JSONObject = synchronized(lock) {
         require(offset >= 0 && limit in 1..60); state(id)
@@ -304,6 +353,12 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 check(unchanged(candidate)) { MoteI18n.text("复制期间文件已变化，保留原文件并稍后重试") }
                 hash = digest.digest().joinToString("") { "%02x".format(it) }
             }
+            if (row.optBoolean("recheck") && hash != null && hash == row.optString("contentHash") && row.optString("signature") == signature(candidate)) {
+                return synchronized(lock) {
+                    if (currentLocked()) { row.remove("recheck"); saveRow(source.id, row) }
+                    null
+                }
+            }
             if (source.retention == "snapshot" && !item.optBoolean("deleted")) {
                 FileSnapshotMetadata.pending(item, hash ?: signature(candidate), source)
             }
@@ -317,7 +372,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             item.put("revision", if (matchesRecovery) recovery!!.getString("revision") else SourceRules.hash(SourceRules.canonical(manifest)))
             if (matchesRecovery) item.put("observedAt", recovery!!.getString("observedAt"))
             row.put("pending", JSONObject().put("manifest", manifest).put("signature", signature(candidate)).apply { if (matchesRecovery) put("recoveryCaptureId", recovery!!.getString("captureId")) })
-            row.remove("nextPrepareAt"); row.remove("syncFailure"); row.remove("snapshotRecovery"); row.put("contentPolicy", selected.second)
+            row.remove("nextPrepareAt"); row.remove("syncFailure"); row.remove("snapshotRecovery"); row.remove("recheck"); row.put("contentPolicy", selected.second)
             if (!current()) return null
             return synchronized(lock) {
                 if (!currentLocked()) return@synchronized null
@@ -357,7 +412,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         val canonicalId = FileUploadConfirmation.canonicalId(id, manifest, ack)
         val current = read(itemFile(id, item.getString("externalId")))
         check(current.optJSONObject("pending")?.getJSONObject("manifest")?.getJSONObject("item")?.getString("revision") == item.getString("revision"))
-        current.put("captureId", canonicalId).put("acknowledgedAt", Instant.now().toString()).put("signature", pending.getString("signature")).put("revision", item.getString("revision")).apply { remove("pending"); remove("syncFailure"); remove("nextPrepareAt") }
+        current.put("captureId", canonicalId).put("acknowledgedAt", Instant.now().toString()).put("signature", pending.getString("signature")).put("revision", item.getString("revision")).apply { remove("pending"); remove("syncFailure"); remove("nextPrepareAt"); if (manifest.has("sha256")) put("contentHash", manifest.getString("sha256")) else remove("contentHash") }
         saveRow(id, current); saveState(id, state(id).put("lastAcknowledgedAt", Instant.now().toString())); File(root(id), "spool").deleteRecursively()
     }
     internal fun acknowledgeExact(source: LocalSource, identity: ItemUploadIdentity, captureId: String): Boolean = synchronized(lock) {

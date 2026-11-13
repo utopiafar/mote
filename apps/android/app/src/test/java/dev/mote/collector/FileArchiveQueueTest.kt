@@ -9,6 +9,52 @@ import java.io.ByteArrayInputStream
 import java.util.UUID
 
 class FileArchiveQueueTest {
+    @Test fun reauthorizingTheSameProviderTreePreservesAnImmutablePendingUpload() {
+        val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher)
+        val original = source("snapshot").copy(centralProcessingConsent = true)
+        val bytes = "Generated pending file".toByteArray()
+        queue.observe(original, item(layer = "snapshot", size = bytes.size.toLong()), queue.configure(original).getString("generation"), 0)
+        val pending = queue.prepare(original, { ByteArrayInputStream(bytes) }, { true }, 61000)!!
+        // The system may return an equivalent document-under-tree URI when the
+        // same provider root is granted again. It is not a different source.
+        val reauthorized = original.copy(uri = "content://fixture/tree/root/document/root")
+        val restarted = FileArchiveQueue(dir, cipher)
+        restarted.configure(reauthorized)
+        assertEquals(pending.getJSONObject("pending").toString(), restarted.next(original.id)?.getJSONObject("pending")?.toString())
+        assertArrayEquals(bytes, restarted.part(original.id, 0))
+    }
+    @Test fun reauthorizingTheSameSingleDocumentKeepsItsExternalIdAndPendingBytes() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher)
+        val original = source("snapshot").copy(tree = false, uri = "content://fixture/document/same", centralProcessingConsent = true)
+        val bytes = "Generated".toByteArray()
+        val document = item(layer = "snapshot", size = bytes.size.toLong()).put("externalId", original.uri).put("uri", original.uri)
+        queue.observe(original, document, queue.configure(original).getString("generation"), 0)
+        val pending = queue.prepare(original, { ByteArrayInputStream(bytes) }, { true }, 61000)!!
+        val renewed = original.copy(uri = "content://fixture/tree/root/document/same")
+        queue.configure(renewed)
+        assertEquals(pending.getJSONObject("pending").toString(), queue.next(original.id)!!.getJSONObject("pending").toString())
+        assertEquals(original.uri, queue.externalId(renewed, renewed.uri!!)); assertArrayEquals(bytes, queue.part(original.id, 0))
+    }
+    @Test fun firstReauthorizationCanIdentifyThePriorTreeFromItsSavedDocument() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher); val source = source("snapshot").copy(centralProcessingConsent = true)
+        val bytes = "Generated".toByteArray(); val uri = "content://fixture/tree/root/document/one"
+        queue.observe(source, item(layer = "snapshot", size = bytes.size.toLong()).put("externalId", uri).put("uri", uri), queue.configure(source).getString("generation"), 0)
+        val pending = queue.prepare(source, { ByteArrayInputStream(bytes) }, { true }, 61000)!!
+        queue.saveState(source.id, queue.state(source.id).apply { remove("sourceUri") })
+        queue.configure(source.copy(uri = "content://fixture/tree/root/document/root"))
+        assertEquals(pending.getJSONObject("pending").toString(), queue.next(source.id)!!.getJSONObject("pending").toString())
+        assertArrayEquals(bytes, queue.part(source.id, 0))
+    }
+    @Test fun changingToAnotherRootWithNewOnlyDoesNotUploadItsExistingFiles() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher); val first = source("reference", "new_only")
+        val generation = queue.configure(first).getString("generation")
+        queue.observe(first, item("before", "reference"), generation, 0); queue.finish(first, generation) { false }
+        val other = first.copy(uri = "content://fixture/tree/other")
+        val next = queue.configure(other).getString("generation")
+        queue.observe(other, item("existing", "reference"), next, 0); queue.finish(other, next) { false }
+        assertEquals(0, queue.pendingCount(other.id))
+        assertNull(queue.prepare(other, { error("New-only baseline must not open") }, { true }))
+    }
     @Test fun historyCompletionRejectsMismatchedLocatorAndFingerprintBeforeRemovingSpool() {
         val queue=FileArchiveQueue(folder.newFolder(),cipher); val source=source(); val bytes="Generated history original".toByteArray()
         queue.observe(source,item(size=bytes.size.toLong()),queue.configure(source).getString("generation"),0)

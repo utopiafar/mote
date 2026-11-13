@@ -65,6 +65,24 @@ class CentralProducerContractTest {
         CentralAttachments.upload(client, file, "Generated original.txt", "text/plain", deviceId, { time }, identityScope = scope, progress = progress)
     private fun begins() = exchanges.filter { it.path == "/api/file-sync/v1/uploads" }
 
+    @Test fun safReferenceManifestProducesTheSharedFileViewConsumedByKotlin() {
+        val api = client(collector); val source = LocalSource(id = "generated-saf-" + UUID.randomUUID(), name = "Generated SAF", kind = "local-files",
+            retention = "reference", uri = "content://generated/tree/root", tree = true, extensions = "txt")
+        api.post("/api/sources", source.registration(device))
+        val queue = FileArchiveQueue(folder.newFolder(), object : ByteCipher { override fun seal(bytes: ByteArray) = bytes; override fun open(bytes: ByteArray) = bytes })
+        val doc = SafDocument("doc", "content://generated/tree/root/document/doc", "generated.txt", "text/plain", 7, time, false)
+        queue.observe(source, doc.item(source, doc.uri), queue.configure(source).getString("generation"))
+        val row = queue.prepare(source, { error("Reference must never open a provider stream") }, { error("Reference must not read bytes") })!!
+        val manifest = row.getJSONObject("pending").getJSONObject("manifest")
+        val ack = api.put("/api/file-sync/v1/revisions", manifest)
+        queue.acknowledge(source.id, row, ack)
+        val view = CentralFileView.read(client().get("/api/files/" + ack.getString("id") + "/view"))
+        assertEquals(source.id, view.sourceId); assertEquals(doc.uri, view.externalId)
+        assertEquals("reference", view.retention); assertFalse(view.hasOriginal); assertFalse(view.canOpenOriginal)
+        assertEquals("unsupported", view.extraction.status); assertFalse(view.bodyAvailable)
+        assertEquals(0, queue.pendingCount(source.id))
+    }
+
     @Test fun newAuthorizedOriginConsumesImmediateReuseReceiptWithoutSendingBytes() {
         val bytes = ("Generated Kotlin reuse " + UUID.randomUUID()).toByteArray()
         val original = file(bytes); val api = client(collector)
@@ -141,6 +159,9 @@ class CentralProducerContractTest {
         assertTrue(detail.getBoolean("hasOriginal"))
         assertEquals(hash(bytes), detail.getJSONObject("item").getString("revision"))
         assertEquals(manifest.getJSONObject("item").getString("externalId"), detail.getJSONObject("item").getString("externalId"))
+        val view = CentralFileView.read(client().get("/api/files/$id/view"))
+        assertEquals(id, view.captureId); assertTrue(view.hasOriginal); assertTrue(view.canOpenOriginal)
+        assertEquals("pending", view.extraction.status); assertFalse(view.bodyAvailable)
         val downloaded = java.io.ByteArrayOutputStream()
         client().download("/api/files/$id/content", downloaded, bytes.size.toLong())
         assertArrayEquals(bytes, downloaded.toByteArray())
