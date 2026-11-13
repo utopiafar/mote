@@ -1,71 +1,62 @@
-# 中央 OCR 与录音转写：方案与实施
+# 中央 OCR、图片理解与录音转写：方案与实施
 
-方案记录：2026-09-24；当前契约更新：2026-10-04。依据 [原方案讨论](codex://threads/01a0d0e5-6b60-72a2-9873-c609e7e8b086) 和用户当时决定。本文区分当前代码、带日期的历史验收与尚未执行的平台验收；本次文档核对没有重新运行真实 OCR/ASR Worker 或平台测试。
+方案记录：2026-09-24；公共接线核对：2026-11-14。本文区分已合入模块、尚待装配的领域实现和带日期的历史验收。下面的公共接线与配置说明不代表本轮重新运行过真实模型或目标平台。
 
-## 产品决定
+## 当前接线范围
+
+当前共享合同包含 `ocr`、`dialogue`、`speaker-wespeaker`、`local-image` 四个安装角色。安装器已固定 InternVL3-14B-4bit 与 FunASR 四组件的制品；独立环境、受管理进程和领域引擎已提供接口。公共配置接受本地图片 endpoint/port，CLI 按角色准备环境和导入权重，媒体资产状态使用准备服务的实际生命周期健康。已安装文件不等于 Worker 就绪，更不等于插件启用。
+
+本地图片可选插件工厂与统一 hosted Plugin Center 已具备接缝；当前默认入库图片服务尚未消费本地适配，默认分发未开放该可选 build 的启用。图片入库适配、Material 纯函数接线、图片专属界面以及语音 Worker/新配方/消重的联合装配仍须对应领域实现合入后接通。不能把模型安装成功或生成合同测试写成默认本地图片路径、新默认语音链路或专项验收已经完成。
+
+## 已确认的产品决定
 
 | 项目 | 确定值 |
 |---|---|
-| 中央 OCR | 默认开启；只处理已经允许上传并成功归档的新截图。升级前旧截图不自动回扫。 |
-| 新音频 | 默认自动本地转写，默认本地说话人分离并生成匿名说话人记录；模型未装时先归档并等待。旧音频不自动补处理。 |
-| 文件时长 | 默认单文件 120 分钟，设置中可改为 1–1440 分钟；不设每日限额。512 MiB 原件上限和处理超时仍独立存在。 |
-| 模型与平台 | OCR 用 PP-OCRv5 mobile ONNX CPU；ASR 用 faster-whisper 多语言 small / CPU int8，分离用 sherpa-onnx。首发目标为 Native macOS arm64 和 Docker Linux amd64。 |
-| 分发 | Worker 程序和 Python 依赖随 Native profile 或 Docker 镜像安装；大型模型单独下载或从本机导入。默认不转发到云端。 |
+| 中央 OCR | 保留现有入库、原件与后台授权；历史图片不因安装或升级自动回扫。 |
+| 图片入库理解 | 官方本地识图插件默认关闭；明确启用后该阶段使用 InternVL3-14B-4bit，不因缺模型、忙碌或失败自动回退云端。 |
+| 图片后续处理 | Memory 提取、独立复核和 Ask 看原图继续使用各自所选模型，可为云端；不切换主力问答模型。保留后台模型授权与 `allowQueryImages`，不新增图片外发总闸或派生文字档位。 |
+| 新语音默认 | 目标为 Fun-ASR-Nano-2512 + fsmn-vad + CAM++ + CT-Punc 的完整替换；原文、匿名说话人、单独重分人、回听、复核、导出、检索、Memory 和 Ask 均在交付范围。当前装配状态见上节。 |
+| 后续文本模型 | 摘要、语义分组、复核、Memory、Ask 沿用原有模型设置。默认不启用热词或自动云端文本校正；保守消重默认开启、可关闭，原始转写保留。 |
+| 文件与历史 | 默认单个录音 120 分钟，可设 1–1440 分钟；512 MiB 原件上限和单次调用预算仍独立存在。完成历史不自动重跑，显式重试或范围预览/确认沿用现有入口。 |
+| 平台 | 本地图片首先面向 Native macOS Apple Silicon + MLX。语音仍需分别验证 Native 与现有 Linux/容器路径；不能把模块完成写成这些平台已通过。 |
 
-上述默认值已经确定，目前无产品决策阻塞。将来如需不同的模型档位、长音频分段策略、更多 CPU 架构或专门的 OCR 坐标高亮，需要再定目标质量和资源预算。
+完整体验指流程、产物、引用、回听/读图、修订、失败和恢复能力，不承诺不同模型识别文字或质量完全一致。
 
-## 运行架构
+## 运行架构与状态
 
-```mermaid
-flowchart LR
-  A[截图或录音上传] --> B[中央归档原件]
-  B --> C[持久 OCR / 文件任务]
-  C --> D[OCR Worker]
-  C --> E[ASR Worker]
-  E --> F[说话人分离和时间对齐]
-  D --> G[OCR 派生文字与索引]
-  F --> H[原始转写、匿名说话人记录与索引]
-```
+上传确认仅代表原件已持久保存。中央负责既有授权、任务检查点、派生版本、索引、只读查询与人工复核；Worker 只处理当前获准的有界字节并返回领域合同。OCR、视觉解读与原图是独立产物；文字解读不能代替像素证据。截图、录音、OCR 和模型输出均是不可信证据，外部效果仍经 Actions 授权。
 
-上传确认仅代表原件已持久保存。识别任务独立运行，失败不会删除原件。中央负责授权、任务检查点、派生版本、索引、只读查询和人工复核；Worker 仅处理当前请求字节并返回受 schema 校验的结果。原图、音频和识别文字都是不可信证据，不能向查询 Agent 提供写入工具。来源和 MIME 的路由使用用户配置的确定性规则，不根据文本关键词推断主题或意图。
+模型安装继续使用同一 `media.modelDirectory`。固定相对目录为 `ocr`、`dialogue`、`speaker-wespeaker`、`local-image`；FunASR 四组件位于 `dialogue/asr`、`dialogue/vad`、`dialogue/speaker`、`dialogue/punctuation`，不借用 WeSpeaker 资产。`media-assets.ts` 是文件、revision、size、SHA-256 与来源的权威；`mote_funasr.py` 也校验实际加载制品。两者的 Nano 来源与 manifest 身份尚须原 owner 对齐，不能混装或通过回显请求伪造就绪。
 
-Native profile 的 supervisor 启动两个只监听 `127.0.0.1` 的 Python Worker；Docker Compose 用共享 `mote` 网络命名空间连接两个 sidecar，只有中央 API 发布宿主端口。内部请求使用从 profile 主令牌派生的独立 Bearer 令牌。模型放在 Native profile 私有目录或 Docker profile 专属模型卷；Docker Worker 以只读方式挂载该卷。远程服务仍需单独配置 HTTPS 和显式外发权限，不是默认回退路径。
+`GET /api/media-models` 返回当前共享 `MediaModelsView`；`runtimeReady` 来自准备服务，而不是目录存在或旧 ASR 布尔字段。`GET /api/media-preparation` 描述准备阶段与真实 Worker 状态。当前本地图片 Worker 的 `localImage` health 字段与运行时消费者的 `ready` 判据仍需运行时 owner 接通；公共状态会保持不可用，不据安装成功改写为 ready。
 
-受管理 Worker 的目录、Python、端口、端点与凭据由 `mote.yaml` 的 `media` 领域提供，中央不再直接读取普通 `MOTE_MEDIA_*` 环境配置。该领域使用启动有效快照；资源变更需要明确重启 Worker 和中央。文件/图片处理服务、方案与路由位于同一 YAML 的 `processing` 领域，图片行为位于 `perception`；页面和文件修改共用配置事务。已有业务任务保留不可变策略快照和授权，配置变化不会自动处理未获授权的历史资料。详见 [服务端配置参考](server-configuration.md)。
+Native 运行环境按角色隔离在 `runtime/<role>/current.json` 和对应环境目录；失败准备保留上一成功标记，停止只回收该角色的自有进程。重启仅恢复已准备的 OCR/语音资源，本地图片 Worker 由可选插件启停。Linux 容器不提供 Mac MLX；Compose 的 OCR/语音 sidecar 使用各自解释器。模型卷独立于原件卷，并允许已有执行事实写入。Worker 只监听 loopback，凭据来自私有 profile，安装与推理进程不继承中央模型密钥或第三方 CLI 凭据。
 
-## 模型安装与运行
+## 模型安装与部署入口
 
-`apps/server/src/media-assets.ts` 固定模型版本、文件名、大小、SHA-256 与官方/镜像 URL。下载先取国内镜像，失败回退官方；只有全部文件校验通过，才把暂存目录原子切为当前版本。OCR 包同时安装 ONNX 和 `inference.yml`。`GET /api/media-models` 提供模型进度及 Worker 健康；`POST /api/media-models/{ocr|dialogue}/install` 只接受内置模型和来源选项，不接收任意 URL。模型文件通过 `media-import` 从本地目录按相同 SHA-256 校验后导入。
+下载/导入先校验全部必需文件的 size/SHA-256，再原子发布当前安装回执。`ready` 只表示该回执及文件完整性可用；缺文件、错大小、同长度错 hash 或非法路径均不能发布成功。现行回执不接受旧模型 marker，没有自动迁移、旧执行器或双写。新模型来源固定到 revision；只有 catalog 明确列出的同内容镜像才能参与来源选择。
 
-OCR Worker 使用 PaddleX 的 OCR pipeline，显式指定两个本地 PP-OCRv5 mobile 模型和 ONNX Runtime CPU；关闭文档矫正与方向模型，避免隐式下载。请求限制为 8 MiB、12000 像素单边和 4000 万像素总量，单 Worker 同时处理一张图。结果保留按阅读顺序输出的行文本，当前不承诺坐标和置信度。空行集表示成功但无文字。模型版本进入 OCR 任务与结果指纹；旧的成功结果不因升级而自动重算。
+`POST /api/media-models/{role}/install` 与 `/cancel` 接受共享的四个角色，不能提供任意模型 URL。本地图片安装组件只调用这组资产入口，安装不会启用插件、启动 VLM、授予后台处理或重算历史。OCR/语音的一键准备沿用 `/api/media-preparation/{role}`；该准备路由的 `local-image` 参数开放仍须媒体路由 owner 接收，当前不应假称此入口已可启动 VLM。
 
-音频 Worker 复用 faster-whisper 与 sherpa-onnx，每次录音在隔离子进程中规范化、转写或分离。FFmpeg 规范化时强制单文件时长上限，转写结果也再次校验时长；不会截断后假称完整成功。先保存未校正的时间戳转写，再生成匿名说话人和对齐结果。分离阶段失败时原始转写及检查点保留，允许单独重试。转写文字进入配置的索引、Memory 和查询；摘要与语义分组按方案开关使用所选模型，处理位置不限制后续内容用途。原件、未校正转写、分离和人工确认版本保持分层，文件详情支持回听、复核和导出。
-
-模型缺失时持久任务标为 `model_missing`，不消耗识别尝试次数；模型装好后，当前有自动资格的等待任务可继续调度。托管 OCR Worker 未就绪时，执行步骤保持 `waiting/ocr_worker_unavailable`，健康检查通过后只唤醒这些当前等待步骤，不清零已发生的识别尝试。
-
-明确的 worker busy 进入共享容量等待，不消耗处理失败次数，也不受通用六小时恢复窗口终止。实际可安全重放的暂时性错误按注册策略退避，本地处理最多四次实际尝试；无效输出、输入损坏和超过资源上限按永久失败处理。达到上限后需显式重试或调整当前处理配置，Worker 就绪不会自动重置失败。`auto_eligible` 是当前任务的处理授权字段，当前入库和用户操作明确写入；不再运行旧任务资格迁移。OCR 设置保留每批最多 100 张手动资格截图的预览与确认，文件设置保留范围预览和重处理入口；显式单条重试仍可处理当前归档中的历史原件。
-
-## 部署操作
-
-Native profile 的正式启动和 `scripts/dev-server.mjs` 开发启动都会在后台自动准备独立 Python 运行时并启动 Worker；首次安装需要网络，失败后每 30 秒重试。系统需提供 Python 3.9+，音频处理另需 FFmpeg。模型可以在启动后从网页安装，无需重启。也可先停止 profile，手工预装运行时：
+停止选定的 Native profile 后可显式准备一个角色的依赖：
 
 ```sh
-node scripts/mote.mjs media-runtime --profile dev --python python3
-# 然后正常启动该 profile，在中央感知和文件处理设置页点安装模型
+node scripts/mote.mjs media-runtime --profile dev --role ocr
+node scripts/mote.mjs media-runtime --profile dev --role dialogue
+node scripts/mote.mjs media-runtime --profile dev --role local-image
 ```
 
-启动时会核对依赖版本标记和导入检查，已就绪则复用；安装子进程不接收中央凭据。Worker 健康检查实际加载 OCR 模型，未就绪时任务等待，不消耗识别尝试次数。健康恢复只继续当前等待服务的步骤，不恢复旧版本 `processor_failed` 失败或耗尽尝试次数的任务；未授权截图不会回扫，真实处理错误保持当前重试上限和手动重试边界。
+命令调用现有固定 Python 3.11 环境准备器；`--python` 只选择准备来源。它不安装权重、不启动 Worker，输出保留 `runtimeReady:false`。普通启动不会隐式下载新依赖；依赖与模型准备由明确操作触发。配置 `media` 的目录、endpoint、port 或凭据变化需要重启，文件/图片策略和后台授权仍由各自领域控制，见 [配置参考](server-configuration.md)。
 
-`media-runtime` 安装 pinned Python 依赖到该 profile 的 `media-venv`，要求先停止该 profile；Python 3.9+ 且具有对应平台 wheel。Docker 镜像构建时安装 FFmpeg 和相同依赖，Compose 同时启动中央、OCR 与 ASR sidecar。模型卷独立于归档卷；恢复资料备份后需重新安装或导入权重。
-
-离线导入先准备固定文件名的目录，再运行：
+离线导入使用同一安装器校验生成当前回执，不联网补件：
 
 ```sh
 node scripts/mote.mjs media-import --profile dev --role ocr --from /absolute/path/ocr-bundle
 node scripts/mote.mjs media-import --profile dev --role dialogue --from /absolute/path/dialogue-bundle
+node scripts/mote.mjs media-import --profile dev --role local-image --from /absolute/path/image-bundle
 ```
 
-OCR 目录需有 `det.tar`、`rec.tar`。音频目录需有 `config.json`、`model.bin`、`tokenizer.json`、`vocabulary.txt`、`segmentation.tar.bz2`、`speaker.onnx`。必须与 catalog 哈希完全一致。`media-import` 对 Native 和 Docker profile 都有效。Docker 需本机已安装 Docker，且镜像已经构建；导入时使用无网络容器和只读源目录。任何截图或录音都不参与模型下载或导入。
+OCR 目录提供 catalog 要求的归档；语音 bundle 保留四组件子目录；图片 bundle 提供固定分片、索引和处理器配置。确切文件清单与 hash 以当前 catalog 为准，不使用历史 Whisper/Sherpa 文件名。Docker profile 的离线导入通过既有无网络容器实现；本轮没有运行 Docker。模型安装与依赖准备均不读取用户图片或录音。
 
 ## 验收边界
 
