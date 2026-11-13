@@ -12,8 +12,8 @@ export function parseSourceContextRef(ref:string):SourceContextDeclaration|undef
 /** Literal owner-metadata retrieval. It never classifies intent, identity or topics. */
 export function browseSourceContexts(_store:Store,sources:SourceStore,args:Range&{query?:string}={}){
   const contexts=sources.contexts,query=args.query?.trim().toLowerCase()??'',limit=Math.min(100,Math.max(1,args.limit??12));
-  const candidates=sources.listSources().filter(source=>(!args.deviceId||source.deviceId===args.deviceId)&&(!args.sourceId||source.id===args.sourceId)).sort((a,b)=>a.id.localeCompare(b.id)).map(source=>({source,context:contexts.current(source.id)}));
-  const fingerprint=createHash('sha256').update(JSON.stringify({deviceId:args.deviceId,sourceId:args.sourceId,query,candidates:candidates.map(({source,context})=>[source.id,source.name,context.version,context.fingerprint])})).digest('hex');
+  const candidates=sources.listSources().filter(source=>(args.sourceIds===undefined||args.sourceIds.includes(source.id))&&(!args.deviceId||source.deviceId===args.deviceId)&&(!args.sourceId||source.id===args.sourceId)).sort((a,b)=>a.id.localeCompare(b.id)).map(source=>({source,context:contexts.current(source.id)}));
+  const fingerprint=createHash('sha256').update(JSON.stringify({deviceId:args.deviceId,sourceId:args.sourceId,sourceIds:args.sourceIds,query,candidates:candidates.map(({source,context})=>[source.id,source.name,context.version,context.fingerprint])})).digest('hex');
   let after='';if(args.cursor){try{const value=JSON.parse(Buffer.from(args.cursor,'base64url').toString());if(value.fingerprint!==fingerprint||typeof value.after!=='string')throw Error();after=value.after;}catch{throw new StoreError('Source directory changed or cursor does not match this query; restart the search',409);}}
   const matches=candidates.filter(({source,context})=>source.id.localeCompare(after)>0&&(!query||source.name.toLowerCase().includes(query)||context.description.toLowerCase().includes(query))),page=matches.slice(0,limit);
   const statusObservedAt=new Date().toISOString(),items=page.map(({source,context})=>{

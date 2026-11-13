@@ -4,17 +4,18 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'node:http';
+import {randomUUID} from 'node:crypto';
 import {FILE_PART_BYTES,fileViewSchema,type FileRevision} from '@mote/shared';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
-import {buildApp} from '../src/app.js';
+import {buildApp,type QueryAgent} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {Indexer} from '../src/indexer.js';
 
-async function fixture(t:any){
+async function fixture(t:any,query?:QueryAgent['query']){
  const directory=mkdtempSync(join(tmpdir(),'mote-f9-search-')),token='generated-file-search-owner',headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
- const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});await node.app.ready();
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:Boolean(query),query:query??(async()=>{throw Error('No model expected');}),close:async()=>{}}});await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const api=(method:'GET'|'POST'|'PUT'|'PATCH',url:string,payload?:unknown)=>node.app.inject({method,url,headers,payload:payload as any});
  for(const [id,deviceId,retention] of [['visible','device-a','snapshot'],['private','device-b','snapshot'],['archive','device-a','archive']] as const){
@@ -32,6 +33,32 @@ async function fixture(t:any){
  };
  return {node,api,upload};
 }
+
+test('a source-only conversation reads file chunks and locations on demand without another source on the same device',async t=>{
+ let f!:Awaited<ReturnType<typeof fixture>>,failure:unknown,visible='';
+ f=await fixture(t,async input=>{
+  const bridge=await startBridge(f.node.featureServices.archiveReader,input);
+  try{
+   assert.equal(input.evidenceIds,undefined);assert.deepEqual(bridge.seedEvidence,[]);
+   const call=async(tool:string,args:unknown)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});const body=await response.json() as any;assert.equal(response.status,200,JSON.stringify(body));return body;};
+   const search=await call('search_context',{query:'Generated shared needle'}),metadata=await call('search_context',{query:'FILENAME'});
+   const chunk=search.data.find((item:any)=>item.fileEvidence?.captureId===visible);assert.ok(chunk,JSON.stringify(search));
+   const original=await call('evidence',{ids:[chunk.id]});assert.match(original.data[0].ocrText,/Generated shared needle/);
+   const found=await call('capability_discover',{name:'read_file_evidence'});
+   const excerpt=await call('capability_execute',{name:'read_file_evidence',version:found.data.version,argumentsJson:JSON.stringify({id:chunk.id,offset:0,length:30})});assert.equal(excerpt.data.status,'ready');
+   assert.match(JSON.stringify(metadata),/GENERATED_VISIBLE_FILENAME/);
+   assert.doesNotMatch(JSON.stringify({search,metadata,original,excerpt}),/GENERATED_HIDDEN_FILENAME|archive\/hidden/);
+   return {answer:'Generated file answer',citations:[],trace:bridge.trace,runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies,sourceContextDependencies:bridge.sourceContextDependencies};
+  }catch(error){failure=error;throw error;}finally{await bridge.close();}
+ });
+ visible=await f.upload('visible','selected','GENERATED_VISIBLE_FILENAME.txt','Generated shared needle selected body','2026-10-02T00:00:00Z');
+ await f.upload('archive','hidden','GENERATED_HIDDEN_FILENAME.txt','Generated shared needle hidden body','2026-10-02T00:00:00Z','original');
+ await f.node.processing.tick();while(await f.node.materialOrganizer.tick(100));
+ const id=f.node.conversations.main().id,admitted=await f.api('POST','/api/conversations/messages',{conversationId:id,clientRequestId:randomUUID(),question:'Generated source file question',scope:{kind:'selection',sourceIds:['visible']}});assert.equal(admitted.statusCode,202,admitted.body);
+ let message:any;const deadline=Date.now()+10000;
+ do{message=f.node.conversations.message(admitted.json().id);if(['completed','failed'].includes(message.status))break;await new Promise(resolve=>setTimeout(resolve,10));}while(Date.now()<deadline);
+ if(failure)throw failure;assert.equal(message.status,'completed',JSON.stringify(message));
+});
 
 test('file search exposes scoped locations and current availability, and a chunk leads to its retained file',async t=>{
  const {node,api,upload}=await fixture(t),body='Generated start. '+'x'.repeat(5000)+'\nGenerated 正文尾句 and common content.';

@@ -122,12 +122,13 @@ export class SourceStore {
     },validate);
     return {receipts:receipts.map((ack,index)=>({id:ack.id,sourceId,externalId:items[index].externalId,revision:items[index].revision,duplicate:ack.duplicate}))};
   }
-  listItems(args:{sourceId?:string;deviceId?:string;kind?:string;after?:string;before?:string;limit?:number;cursor?:string;includeDeleted?:boolean;collectedOrder?:boolean}={}) {
+  listItems(args:{sourceIds?:readonly string[];sourceId?:string;deviceId?:string;kind?:string;after?:string;before?:string;limit?:number;cursor?:string;includeDeleted?:boolean;collectedOrder?:boolean}={}) {
     const clauses=['c.id=h.capture_id'],values:(string|number)[]=[];
     clauses.push('(EXISTS(SELECT 1 FROM file_versions own WHERE own.capture_id=c.id) OR NOT EXISTS(SELECT 1 FROM file_evidence_links l JOIN file_versions parent ON parent.capture_id=l.parent_id WHERE l.capture_id=c.id))');
     clauses.push(`(NOT EXISTS(SELECT 1 FROM file_versions v WHERE v.capture_id=c.id) OR ${readableFileSql('c.id')})`);
     clauses.push(availableFileAttachmentSql(this.store.db,'c.id'));
     if(args.sourceId){clauses.push('h.source_id=?');values.push(args.sourceId);}
+    if(args.sourceIds!==undefined){clauses.push('h.source_id IN (SELECT value FROM json_each(?))');values.push(JSON.stringify(args.sourceIds));}
     if(args.deviceId){clauses.push('c.device_id=?');values.push(args.deviceId);}
     if(!args.includeDeleted)clauses.push('h.deleted=0');
     if(args.kind){clauses.push("json_extract(c.json,'$.source')=?");values.push(args.kind);}

@@ -22,7 +22,7 @@ const all:QueryScope={kind:'all'};
 const at='2026-10-01T10:00:00.000Z';
 const headers={authorization:'Bearer generated-followup-owner'};
 type Context={materials:{ref:string;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean}}[];originals:{id:string;offset:number;quote:string}[];
- cards:{id:string;revision:number;title:string;body:string;feedback:{action:string;note?:string}[]}[];memories:{id:string;statement:string}[];commitments:{id:string;status:string}[];mode:{kind:string}};
+ cards:{id:string;revision:number;state:string;title:string;body?:string;suppressionOnly?:boolean;feedback:{action:string;note?:string}[]}[];memories:{id:string;statement:string}[];commitments:{id:string;status:string}[];mode:{kind:string}};
 type Program=(context:Context)=>unknown|Promise<unknown>;
 const evidence=(context:Context,needle:string)=>{
  const source=context.originals.find(original=>original.quote.includes(needle));assert.ok(source,`Original not supplied: ${needle}; context=${JSON.stringify(context.materials)}; originals=${JSON.stringify(context.originals)}`);
@@ -35,13 +35,13 @@ async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.no
 async function fixture(t:TestContext){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-assistant-followup-'));
  const config:Config={dataDir,dataKey:'43'.repeat(32),contentEncryptionEnabled:true,token:'generated-followup-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
- const programs:Program[]=[],seen:Context[]=[];let providerFailure:unknown;
+ const programs:Program[]=[],seen:Context[]=[],grants:string[][]=[];let providerFailure:unknown;
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput):Promise<QueryResult>=>{
   // Component-only provider double. The HTTP journeys exercise the actual
   // complete-request gate; this estimate only bounds this generated input.
   const tokens=estimateSerializedTokens({question:input.question,taskContext:input.taskContext,evidenceIds:input.evidenceIds,contextTime:input.contextTime}).tokens;
   assert.ok(tokens+4000<=32000,'generated request must fit the declared small fixture window');
-  const context=input.taskContext as unknown as Context;assert.ok(context?.materials);seen.push(context);
+  const context=input.taskContext as unknown as Context;assert.ok(context?.materials);seen.push(context);grants.push([...(input.evidenceIds??[])]);
   const program=programs.shift();assert.ok(program,'A generated model response must be explicitly supplied');
   try{return {answer:JSON.stringify(await program(context)),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};}
   catch(error){providerFailure=error;throw error;}
@@ -78,7 +78,19 @@ async function fixture(t:TestContext){
   const progress=batch.progress(batchId);assert.equal(progress.task.state,'succeeded',JSON.stringify(progress));
  };
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
- return {node,reader,batch,service,tasks,assertCurrent,programs,seen,add,produce,start,wait,run,admission};
+ return {node,reader,batch,service,tasks,assertCurrent,programs,seen,grants,add,produce,start,wait,run,admission};
+}
+
+function versionedMaterial(f:Awaited<ReturnType<typeof fixture>>){
+ const sourceId='generated-revision-source',externalId='generated-document';
+ f.node.sources.register({id:sourceId,name:'Generated',kind:'custom',deviceId:'generated-device',platform:'import'});
+ return async(revision:string,text:string)=>{
+  const capture=await f.node.sources.upsert(sourceId,{externalId,revision,observedAt:at,kind:'message',layer:'original',text});
+  const id=materialId(sourceId,externalId),previous=f.node.materials.get(id);
+  const material=f.node.materials.publish({id,kind:'mote.message',schemaVersion:1,title:'Generated document',origin:{sourceId,externalId,deviceId:'generated-device',firstAt:at,lastAt:at},
+   blocks:[{id:'body',kind:'text',format:'plain',text,memberIds:['original']}],members:[{id:'original',kind:'capture',ref:'capture:'+capture.id}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}},previous?{expectedRevision:previous.revision}:undefined);
+  return {capture,material};
+ };
 }
 
 test('real stored Material and semantic product feed the batch consumer; the later original resolves the same suggestion and updates a commitment',async t=>{
@@ -143,7 +155,7 @@ test('two analyses based on one card revision cannot overwrite each other and a 
  const two=await f.start([initial.material.ref,b.material.ref]);await Promise.all([f.wait(one),f.wait(two)]);
  await f.service.finish(one.id);await assert.rejects(f.service.finish(two.id),{statusCode:409});
  const retry=await f.run([initial.material.ref,a.material.ref,b.material.ref],context=>{
-  assert.match(context.cards.find(value=>value.id===id)!.body,/Budget approved/);
+  assert.match(context.cards.find(value=>value.id===id)!.body!,/Budget approved/);
   return answer([card(evidence(context,a.text),{action:'update',cardId:id,relatedCardIds:[id],body:'Budget approved; date confirmed.',evidence:[evidence(context,a.text),evidence(context,b.text)]})]);
  });
  assert.deepEqual(retry.cardIds,[id]);const saved=f.node.featureServices.assistantCards.get(id,all);assert.match(saved.body,/Budget approved; date confirmed/);
@@ -242,24 +254,78 @@ test('replaying an owner request returns its original task and does not call the
  await assert.rejects(f.service.start({...request,operationId:'generated-different'},f.admission),{statusCode:409});
 });
 
-test('superseded card context fails closed instead of reviving a suppressed issue',async t=>{
- const f=await fixture(t),sourceId='generated-revision-source',externalId='generated-document';
- f.node.sources.register({id:sourceId,name:'Generated',kind:'custom',deviceId:'generated-device',platform:'import'});
- const put=async(revision:string,text:string)=>{
-  const capture=await f.node.sources.upsert(sourceId,{externalId,revision,observedAt:at,kind:'message',layer:'original',text});
-  const {materialId}=await import('../src/materials.js'),id=materialId(sourceId,externalId),previous=f.node.materials.get(id);
-  const material=f.node.materials.publish({id,kind:'mote.message',schemaVersion:1,title:'Generated document',origin:{sourceId,externalId,deviceId:'generated-device',firstAt:at,lastAt:at},
-   blocks:[{id:'body',kind:'text',format:'plain',text,memberIds:['original']}],members:[{id:'original',kind:'capture',ref:'capture:'+capture.id}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}},previous?{expectedRevision:previous.revision}:undefined);
-  return {capture,material};
- };
- const first=await put('1','Generated first version has an open issue.');
- const made=await f.run([first.material.ref],context=>answer([card(evidence(context,'Generated first version has an open issue.'))]));
- const cards=f.node.featureServices.assistantCards,prior=cards.get(made.cardIds[0],all);cards.feedback(prior.id,{expectedRevision:prior.revision,action:'never_remind'},all);
- const newer=await put('2','Generated newer version addresses the issue.');const calls=f.seen.length;
- assert.equal(cards.get(prior.id,all).state,'stale');
- await assert.rejects(f.start([newer.material.ref]),/Historical assistant context requires a current-evidence review/);
- assert.equal(f.seen.length,calls,'historical text is not sent to a current-evidence-only batch');
- assert.equal(cards.history(prior.id,{scope:all}).items.length,1);
+test('a superseded never-remind card allows current-version analysis without reviving the issue or sending historical prose',async t=>{
+ const f=await fixture(t),put=versionedMaterial(f),oldText='Generated first version has an open owner issue. GENERATED_OBSOLETE_SOURCE_ONLY';
+ const first=await put('1',oldText);
+ const matter=f.node.featureServices.assistantMatters.command({type:'create',requestId:randomUUID(),goal:'GENERATED_OBSOLETE_MATTER_ONLY',scope:all,evidenceIds:[first.capture.id]},{
+  currentEvidence:ids=>ids.filter(id=>id===first.capture.id).map(id=>({id,title:'Generated prior document',deviceId:'generated-device',at})),currentTask:()=>undefined,
+ });
+ const made=await f.run([first.material.ref],context=>answer([card(evidence(context,oldText),{title:'Generated plan owner question',body:'GENERATED_OBSOLETE_CARD_ONLY',matterId:matter.id})]));
+ const cards=f.node.featureServices.assistantCards,prior=cards.get(made.cardIds[0],all);
+ cards.feedback(prior.id,{expectedRevision:prior.revision,action:'never_remind',note:'GENERATED_OBSOLETE_FEEDBACK_ONLY'},all);
+ const currentText='Generated newer version still has an owner question and also lacks a review date.',newer=await put('2',currentText);
+ const stale=cards.get(prior.id,all),history=cards.history(prior.id,{scope:all});
+ assert.equal(stale.state,'stale');assert.ok(stale.feedback.some(value=>value.action==='never_remind'&&value.evidenceStale));
+ f.programs.push(context=>{
+  const suppressed=context.cards.find(value=>value.id===prior.id)!;
+  assert.equal(suppressed.state,'stale');assert.equal(suppressed.title,prior.title);assert.equal(suppressed.suppressionOnly,true);
+  assert.equal(suppressed.body,undefined);assert.deepEqual(suppressed.feedback,[{action:'never_remind'}]);
+  assert.doesNotMatch(JSON.stringify(context),/GENERATED_OBSOLETE_/,'historical text is not sent to a current-evidence-only batch');
+  assert.ok(!f.grants.at(-1)!.includes(first.capture.id),'suppression history is not a current retrieval grant');
+  const proof=evidence(context,currentText);
+  return answer([card(proof,{relatedCardIds:[prior.id],title:'Completely renamed owner suggestion'}),
+   card(proof,{title:'Independent review date question',body:'The new version needs a review date.'})]);
+ });
+ const task=await f.start([newer.material.ref]);await f.wait(task);
+ const result=await f.service.finish(task.id);assert.equal(result.cardIds.length,1);assert.notEqual(result.cardIds[0],prior.id);
+ assert.deepEqual(await f.service.finish(task.id),result);
+ const independent=cards.get(result.cardIds[0],all);assert.equal(independent.title,'Independent review date question');
+ assert.ok(independent.evidence.some(value=>value.quote===currentText));
+ assert.ok(!independent.evidenceDependencies.ids.includes(first.capture.id),'suppressed history does not become evidence for the independent issue');
+ assert.deepEqual(cards.get(prior.id,all),stale,'the old card stays stale with its original never-remind feedback');
+ assert.deepEqual(cards.history(prior.id,{scope:all}),history,'analysis neither deletes nor rewrites the suppressed history');
+ assert.deepEqual(cards.page({scope:all}).items.map(value=>value.id),result.cardIds);
+ const next=await f.run([newer.material.ref],context=>{
+  assert.equal(context.cards.find(value=>value.id===prior.id)!.suppressionOnly,true);
+  assert.ok(context.cards.some(value=>value.id===independent.id),'the independent suggestion remains usable in later analysis');
+  assert.doesNotMatch(JSON.stringify(context),/GENERATED_OBSOLETE_/);return answer();
+ });
+ assert.deepEqual(next.cardIds,[],'suppression history does not block subsequent current-version analysis');
+});
+
+test('an unsuppressed stale card sharing suppression history still requires a historical grant',async t=>{
+ const f=await fixture(t),put=versionedMaterial(f),first=await put('1','Generated original has owner and review date questions.');
+ const made=await f.run([first.material.ref],context=>answer([card(evidence(context,'owner'),{title:'Generated owner question'}),card(evidence(context,'review date'),{title:'Generated review date question'})]));
+ const cards=f.node.featureServices.assistantCards,suppressed=cards.get(made.cardIds[0],all),unsuppressed=cards.get(made.cardIds[1],all);
+ cards.feedback(suppressed.id,{expectedRevision:suppressed.revision,action:'never_remind'},all);
+ cards.feedback(unsuppressed.id,{expectedRevision:unsuppressed.revision,action:'ignore'},all);
+ const newer=await put('2','Generated new version names an owner and leaves the review date open.'),calls=f.seen.length;
+ assert.equal(cards.get(suppressed.id,all).state,'stale');assert.equal(cards.get(unsuppressed.id,all).state,'stale');
+ await assert.rejects(f.start([newer.material.ref]),{statusCode:409,message:'Historical assistant context requires a current-evidence review'});
+ assert.equal(f.seen.length,calls,'unsuppressed historical prose is not sent without a grant');
+ assert.equal(cards.history(unsuppressed.id,{scope:all}).items.length,1);
+});
+
+test('never-remind feedback with stale earlier-version lineage stays a constraint and still retires private batch data on deletion',async t=>{
+ const f=await fixture(t),current=await f.add('Generated current supporting note.'),put=versionedMaterial(f),first=await put('1','GENERATED_EARLIER_SUPPRESSION_SOURCE');
+ const made=await f.run([first.material.ref],context=>answer([card(evidence(context,'GENERATED_EARLIER_SUPPRESSION_SOURCE'))]));
+ const cards=f.node.featureServices.assistantCards,prior=cards.get(made.cardIds[0],all);
+ const updated=cards.publish({id:prior.id,kind:prior.kind,matterId:null,version:'generated-current',state:'open',title:prior.title,body:'GENERATED_EARLIER_SUPPRESSION_BODY',
+  evidence:[{id:current.id,quote:current.text}],evidenceDependencies:{version:1,complete:true,ids:[current.id]}},prior.revision,all,f.assertCurrent);
+ cards.feedback(prior.id,{expectedRevision:updated.revision,action:'never_remind',note:'GENERATED_EARLIER_SUPPRESSION_NOTE'},all);
+ const newer=await put('2','Generated fresh document evidence.'),saved=cards.get(prior.id,all);
+ assert.equal(saved.state,'open');assert.equal(saved.evidenceStale,undefined);assert.ok(saved.feedback.some(value=>value.action==='never_remind'&&value.evidenceStale));
+ f.programs.push(context=>{
+  assert.equal(context.cards.find(value=>value.id===prior.id)!.suppressionOnly,true);
+  assert.doesNotMatch(JSON.stringify(context),/GENERATED_EARLIER_SUPPRESSION_/);return answer();
+ });
+ const task=await f.start([newer.material.ref]);await f.wait(task);
+ const batchId=f.service.progress(task.id).batch!.task.id,itemId=(f.batch.progress(batchId).items[0].input as {itemId:string}).itemId;
+ f.node.store.delete(first.capture.id);
+ for(const id of [task.id,batchId,itemId]){const row=f.node.store.db.prepare('SELECT state,input_json,result_json FROM task_records WHERE id=?').get(id)!;
+  assert.equal(row.state,'stale');assert.equal(row.input_json,null);assert.equal(row.result_json,null);
+ }
+ await assert.rejects(f.service.finish(task.id),{statusCode:409});
 });
 
 test('a Memory correction clears both K4 frozen inputs and the follow-up snapshot before a late result can publish',async t=>{
@@ -361,8 +427,13 @@ test('a new file version lets A14 resolve the existing suggestion instead of los
  const first=await f.run([requirement.material.ref,before.ref],context=>answer([card(evidence(context,requirement.text),{evidence:[evidence(context,requirement.text),evidence(context,missing)]})]));
  const cardId=first.cardIds[0];assert.equal(f.node.featureServices.assistantCards.get(cardId,all).state,'open');
  const after=await upload('2','1',complete);
+ assert.equal(f.node.featureServices.assistantCards.get(cardId,all).state,'stale');
  const second=await f.run([requirement.material.ref,after.ref],context=>{
   const prior=context.cards.find(value=>value.id===cardId);assert.ok(prior,'the interpreter can identify the earlier suggestion');
+  assert.equal(prior.state,'stale');assert.equal(prior.suppressionOnly,undefined);assert.ok(prior.body,'the unsuppressed prior interpretation remains available for an update');
+  const observation=(context as Context&{fileObservations:{previous:{captureId:string}|null;comparison:{status:string;before?:{excerpt:string}}}[]}).fileObservations[0];
+  assert.equal(observation.previous?.captureId,before.captureId);assert.equal(observation.comparison.status,'available');
+  assert.ok(observation.comparison.before?.excerpt,'the selected successor grants the actual predecessor context');
   return answer([card(evidence(context,complete),{action:'resolve',cardId,relatedCardIds:[cardId]})],
    [{commitmentId:null,kind:'commitment',occurredAt:null,summary:'Generated next owner review.',changes:{title:'Review the assigned plan'},evidence:[evidence(context,complete)]}]);
  });

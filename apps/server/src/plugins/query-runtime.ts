@@ -4,6 +4,7 @@ import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/c
 import type {HostPluginContext} from '@mote/plugin-host';
 import {AgentNotConfiguredError,AgentYieldError,prepareTaskContext,type AgentProgress,type AgentTraceEvent,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type ConversationSettings,type InsightSnapshot,type QueryResult} from '@mote/shared';
+import type {QueryScope as ReaderQueryScope} from '../query-scope.js';
 import type {DelegationRuntime} from '../delegation-runtime.js';
 import type {AgentRunFinalizer,QueryRunLease} from '../query-agent.js';
 import {StoreError} from '../store.js';
@@ -217,10 +218,12 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       // They need correction fences even when no original quote was expanded.
       if(evidenceDependencies){
         const historicalIds=new Set([...(input.conversation?.historyContext?input.conversation.evidenceDependencies?.ids??[]:[]),...(input.historyContext?input.contextEvidenceDependencies?.ids??[]:[])]);
-        assertModelEvidence({question:'',contextEvidenceDependencies:{...evidenceDependencies,ids:evidenceDependencies.ids.filter(id=>!historicalIds.has(id))}});
+        assertModelEvidence({question:'',...((input as ReaderQueryScope).sourceIds!==undefined?{sourceIds:(input as ReaderQueryScope).sourceIds}:{}),contextEvidenceDependencies:{...evidenceDependencies,ids:evidenceDependencies.ids.filter(id=>!historicalIds.has(id))}});
       }
       const sourcePins=combineSourceContextDependencies([disclosedSourcePins,result.sourceContextDependencies]);
       assertSourceContextDependencies(sourceContexts,sourcePins);
+      const selectedSources=(input as ReaderQueryScope).sourceIds;
+      if(selectedSources!==undefined)assertModelEvidence({question:'',...{sourceIds:selectedSources},executionLane:'interactive',evidenceIds:result.citations.map(citation=>citation.id),contextSourceContextDependencies:sourcePins});
       // A long-running review may overlap routine imports and derived-layer updates.
       // Only an original actually disclosed to this run being deleted can make
       // its answer unsafe to publish; other archive changes belong to later runs.

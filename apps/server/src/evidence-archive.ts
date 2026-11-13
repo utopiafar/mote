@@ -192,6 +192,18 @@ export class EvidenceArchive {
   get(id:string){const row=this.store.db.prepare('SELECT a.json,c.json AS content FROM context_artifacts a JOIN context_contents c ON c.hash=a.content_hash WHERE a.id=?').get(id);return row?{...JSON.parse(String(row.json)) as Artifact,text:String(JSON.parse(String(row.content)).text)}:undefined;}
   page(args:Range&{query?:string;id?:string;maxCharacters?:number;originalTimeScope?:boolean}={}){
     const db=this.store.db,where=['1=1'],values:(string|number)[]=[],budget=Math.max(1000,Math.min(args.maxCharacters??(args.id?24000:12000),24000));
+    if(args.sourceIds!==undefined){
+      // Filter complete source lineage before paging: a hidden artifact must
+      // contribute neither a preview, cursor position nor a character count.
+      const materials=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name='artifact_material_inputs'").get());
+      where.push(`(WITH RECURSIVE lineage(id) AS (
+        SELECT a.id UNION SELECT d.parent_id FROM artifact_dependencies d JOIN lineage l ON d.artifact_id=l.id
+      ), origins(source_id) AS (
+        SELECT COALESCE(json_extract(c.json,'$.provenance.sourceId'),'') FROM artifact_inputs i JOIN lineage l ON i.artifact_id=l.id LEFT JOIN captures c ON c.id=i.observation_id
+        ${materials?'UNION ALL SELECT h.source_id FROM artifact_material_inputs i JOIN lineage l ON i.artifact_id=l.id LEFT JOIN material_heads h ON h.id=i.material_id':''}
+      ) SELECT COUNT(*)>0 AND MIN(COALESCE(source_id,'') IN (SELECT value FROM json_each(?))) FROM origins)`);
+      values.push(JSON.stringify(args.sourceIds));
+    }
     for(const [key,column] of [['deviceId','device_id'],['appId','app_id'],['source','source'],['id','id']] as const)if(args[key]){
       // Missing aggregate scope is only a candidate. EvidenceReader validates
       // every original dependency before returning an original-scoped page.
@@ -213,7 +225,7 @@ export class EvidenceArchive {
       const {workRecords,events,memoryCandidates,actionCues,evidenceRanges,memoryCoverage,...productHeader}=rawDetailMetadata;
       const detailMetadata=artifact.kind==='semantic'&&[1,2,3].includes(Number(rawDetailMetadata.productsVersion))?{...productHeader,productCounts:{workRecords:Array.isArray(workRecords)?workRecords.length:0,events:Array.isArray(events)?events.length:0,memoryCandidates:Array.isArray(memoryCandidates)?memoryCandidates.length:0,actionCues:Array.isArray(actionCues)?actionCues.length:0,evidenceRanges:Array.isArray(evidenceRanges)?evidenceRanges.length:0},productBodiesOmitted:true}:rawDetailMetadata;const value={...metadata,metadata:detailMetadata,...(!args.id?{members:artifact.members.slice(0,3),representatives:artifact.representatives.slice(0,3),metadata:{observationCount:artifact.members.length,uniqueTexts:artifact.metadata.uniqueTexts,complete:artifact.metadata.complete,characters:artifact.metadata.characters,detail:artifact.id}}:{}),text:text.slice(0,args.id?12000:400),textRange:{offset:0,total:Number(row.characters),complete:Number(row.characters)<=text.length}};const cost=JSON.stringify(value).length;if(items.length>=Math.min(args.limit??20,100)||used+cost>budget){truncated=true;break;}items.push(value);used+=cost;}
     const last=items.at(-1);
-    return {items,nextCursor:truncated&&last?Buffer.from(JSON.stringify({at:last.lastAt,id:last.id,scope:scopeHash})).toString('base64url'):null,truncated,characters:used,budget,coverage:{pendingGroups:Number(db.prepare('SELECT COUNT(*) AS n FROM context_dirty').get()!.n),blockedGroups:Number(db.prepare('SELECT COUNT(*) AS n FROM context_dirty WHERE error IS NOT NULL').get()!.n),scope:'processed_segments_only',fallback:'search_context',originalsPreserved:true}};
+    return {items,nextCursor:truncated&&last?Buffer.from(JSON.stringify({at:last.lastAt,id:last.id,scope:scopeHash})).toString('base64url'):null,truncated,characters:used,budget,coverage:{...(args.sourceIds===undefined?{pendingGroups:Number(db.prepare('SELECT COUNT(*) AS n FROM context_dirty').get()!.n),blockedGroups:Number(db.prepare('SELECT COUNT(*) AS n FROM context_dirty WHERE error IS NOT NULL').get()!.n)}:{}),scope:'processed_segments_only',fallback:'search_context',originalsPreserved:true}};
   }
   stats(){const db=this.store.db;return {observations:Number(db.prepare('SELECT COUNT(*) AS n FROM context_observations').get()!.n),contents:Number(db.prepare('SELECT COUNT(*) AS n FROM context_contents').get()!.n),artifacts:Number(db.prepare('SELECT COUNT(*) AS n FROM context_artifacts').get()!.n),pendingGroups:Number(db.prepare('SELECT COUNT(*) AS n FROM context_dirty').get()!.n),blockedGroups:Number(db.prepare('SELECT COUNT(*) AS n FROM context_dirty WHERE error IS NOT NULL').get()!.n)};}
   collect(){this.store.db.exec('DELETE FROM context_contents WHERE hash NOT IN (SELECT content_hash FROM context_observations WHERE content_hash IS NOT NULL) AND hash NOT IN (SELECT content_hash FROM context_artifacts)');}

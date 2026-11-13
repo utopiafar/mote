@@ -34,3 +34,17 @@ test('async authority rechecks permissions after yielding between dependency pag
  const checking=authority.assertAsync({question:'Generated paged authority check',contextEvidenceDependencies:{version:1,complete:true,ids}});
  node.store.delete(ids.at(-1)!);await assert.rejects(checking,{code:'context_evidence_restricted'});
 });
+
+test('a source-list model grant rejects another source and rechecks withdrawal before the next disclosure',async t=>{
+ const {node,authority}=await fixture(t),ids:string[]=[];
+ for(const sourceId of ['generated-selected','generated-hidden']){
+  node.sources.register({id:sourceId,name:sourceId,kind:'custom',deviceId:'generated-device',platform:'import'});
+  ids.push((await node.sources.upsert(sourceId,{externalId:'item',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated authority source original'})).id);
+ }
+ const grant={sourceIds:['generated-selected']},input={question:'Generated source disclosure',...grant,contextEvidenceDependencies:{version:1 as const,complete:true,ids:[ids[0]]}};
+ authority.assert(input);await authority.assertAsync(input);
+ assert.throws(()=>authority.assert({...input,contextEvidenceDependencies:{version:1,complete:true,ids:[ids[1]]}}),{code:'context_evidence_restricted'});
+ const withdrawn=await node.app.inject({method:'PATCH',url:'/api/sources/generated-selected',headers:{authorization:'Bearer generated-model-authority-owner'},payload:{enabled:false}});assert.equal(withdrawn.statusCode,200,withdrawn.body);
+ assert.deepEqual(authority.selectedQuerySources(['generated-selected','generated-missing']),[]);
+ assert.throws(()=>authority.assert(input),{code:'context_evidence_restricted'});await assert.rejects(authority.assertAsync(input),{code:'context_evidence_restricted'});
+});
