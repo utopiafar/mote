@@ -3,9 +3,10 @@ import {createServer} from 'node:http';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {ProviderFailure,providerHttpFailure,errorDiagnostics,sanitizeFailureDiagnostics,type FailureDiagnostics} from '@mote/shared';
 import {AgentProviderError,type AgentOptions} from '../types.js';
+import {createRequestBudget} from './request-budget.js';
 
 type FetchTransport = typeof fetch;
-type TransportConfiguration = Pick<AgentOptions,'protocol'|'provider'|'reasoningEffort'|'headers'|'extraBody'> & {baseUrl:string};
+type TransportConfiguration = Pick<AgentOptions,'protocol'|'provider'|'reasoningEffort'|'headers'|'extraBody'|'contextWindow'|'maxTokens'> & {baseUrl:string};
 type FailureReport = {status:number;retryAfter?:string;diagnostic?:FailureDiagnostics};
 
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
@@ -14,6 +15,7 @@ type FailureReport = {status:number;retryAfter?:string;diagnostic?:FailureDiagno
 export function boundedModelFetch(transport:FetchTransport,bridge:string,maximumBytes=32*1024*1024,configuration?:TransportConfiguration,reportFailure?:(value:FailureReport)=>void|Promise<void>,authorizeRequest?:()=>void|Promise<void>){
   let received=0;
   let exceeded=false;
+  const budget=configuration?.contextWindow&&configuration.maxTokens?createRequestBudget(configuration.contextWindow,configuration.maxTokens):undefined;
   const tooLarge=()=>new Error('Model response exceeds the agent byte budget');
   return async(input:RequestInfo|URL,init?:RequestInit)=>{
     const url=input instanceof Request?input.url:String(input);
@@ -66,11 +68,39 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
       if(configuration.protocol==='deepseek'){delete customized.dsh_session_log;delete customized.dsh_plugin_packages;}
       if(configuration.protocol==='openai-responses')customized.store=false;
       headers.delete('content-length');
+      if(budget&&!budget.fit(customized)){
+        await reportFailure?.({status:413});
+        return new Response(JSON.stringify({error:{message:'Model request exceeds the configured context budget'}}),{status:400,headers:{'Content-Type':'application/json'}});
+      }
       requestInit={...requestInit,headers,body:JSON.stringify(customized)};
     }
     await authorizeRequest?.();
     let response:Response;
     try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});throw error;}
+    // Only explicit structured context-limit codes (or HTTP 413) qualify.
+    // Never classify free-form provider prose or report it to the host.
+    if(budget&&!response.ok&&typeof requestInit.body==='string'){
+      const overflow=await isContextOverflow(response);
+      if(overflow){
+        await response.body?.cancel();
+        const body=JSON.parse(requestInit.body) as Record<string,unknown>,before=JSON.stringify(body);
+        const target=Math.max(0,Math.floor(budget.measure(body)*0.75));
+        budget.fit(body,target);
+        if(JSON.stringify(body)!==before&&budget.measure(body)<=configuration!.contextWindow!){
+          requestInit={...requestInit,body:JSON.stringify(body)};
+          await authorizeRequest?.();
+          try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});throw error;}
+          if(!response.ok&&await isContextOverflow(response)){
+            await reportFailure?.({status:413});
+            return new Response(JSON.stringify({error:{message:'Model context limit exceeded after bounded recovery'}}),{status:400,headers:{'Content-Type':'application/json'}});
+          }
+        }else{
+          await reportFailure?.({status:413});
+          return new Response(JSON.stringify({error:{message:'Model context limit exceeded; no safely reducible context remains'}}),{status:400,headers:{'Content-Type':'application/json'}});
+        }
+      }
+    }
+    if(response.ok&&budget&&typeof requestInit.body==='string')budget.remember(JSON.parse(requestInit.body));
     if(reportFailure&&!response.ok){
       await response.body?.cancel();
       const retryAfter=response.headers.get('retry-after');
@@ -106,6 +136,22 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
     });
     return new Response(body,{status:response.status,statusText:response.statusText,headers:response.headers});
   };
+}
+
+
+async function isContextOverflow(response:Response):Promise<boolean>{
+  if(response.status===413){await response.body?.cancel();return true;}
+  if(response.status!==400&&response.status!==422)return false;
+  const reader=response.clone().body?.getReader();if(!reader)return false;
+  let size=0,text='';
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  const deadline=new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('Provider error body timed out')),2000);});
+  try{
+    while(size<16384){const {done,value}=await Promise.race([reader.read(),deadline]);if(done)break;size+=value.byteLength;if(size>16384)break;text+=new TextDecoder().decode(value,{stream:true});}
+    const value=JSON.parse(text) as {code?:unknown;error?:{code?:unknown;type?:unknown}};
+    const codes=[value.code,value.error?.code,value.error?.type];
+    return codes.some(code=>code==='context_length_exceeded'||code==='context_window_exceeded'||code==='input_too_large');
+  }catch{return false;}finally{clearTimeout(timer);void reader.cancel().catch(()=>undefined);}
 }
 
 export function modelFailureReporter(transport:FetchTransport){

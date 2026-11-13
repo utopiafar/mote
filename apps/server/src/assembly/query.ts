@@ -67,7 +67,7 @@ export async function prepareQueryRuntime(dependencies:QueryRuntimeAssemblyDepen
   return Object.freeze({queryServices:platform satisfies QueryRuntimeServices,query:lease.value});
 }
 
-export interface QueryRunsAssemblyDependencies extends QueryRunDependencies {
+export interface QueryRunsAssemblyDependencies extends Omit<QueryRunDependencies,'conversationSettings'> {
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly backendContext:Context;
   readonly resources:ServerResources;
@@ -83,7 +83,7 @@ export interface QueryRunsAssemblyDependencies extends QueryRunDependencies {
  * execution slots and model profile of an accepted run are owned inside the
  * plugin scope; a stopped activation fences late commits. */
 export async function prepareQueryRuns(dependencies:QueryRunsAssemblyDependencies){
-  const platform=createQueryRunsPlatform(dependencies);
+  const platform=createQueryRunsPlatform({...dependencies,conversationSettings:()=>dependencies.bootstrap.configService.current<ConversationSettings>('conversations')});
   let started:QueryRunsStarted|undefined;
   const handle=await dependencies.bootstrap.host.install({
     identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.query-runs',installationId:'build:query-runs@1.0.0',instanceId:'query',activationId:randomUUID()},

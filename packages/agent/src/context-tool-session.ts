@@ -140,7 +140,7 @@ export async function createContextToolSession(
   type State=typeof canonical;
   type CallbackName='onEvidence'|'onSourceContextDependencies'|'onTrace'|'onProgress'|'onMemoryBodies';
   interface Stage {
-    base:State;state:State;evidence:ContextRecord[];signal:AbortSignal;
+    base:State;state:State;evidence:ContextRecord[];signal:AbortSignal;replay:boolean;
     callbacks:{name:CallbackName;args:unknown[]}[];delivered:(()=>void)[];
     status:'reading'|'pending'|'committed'|'discarded';fatal?:Error;cancelled?:unknown;
     reservations:Set<ImageDelivery>;checks:Set<()=>void>;discard():void;
@@ -292,6 +292,7 @@ export async function createContextToolSession(
   const failure=new Promise<never>((_,reject)=>{rejectFailure=error=>{const stage=execution.getStore();if(stage)stage.fatal??=error;reject(error);};});void failure.catch(()=>{});
   let previousFailure='',repeatedFailures=0;
   const countToolCall=()=>{
+    if(execution.getStore()?.replay)return;
     calls++;
     if(maxToolCalls!==undefined&&calls>maxToolCalls)throw new ContextToolError('tool_budget_exceeded','The explicitly configured tool call limit was reached. Finish with already retrieved evidence.','use_existing_evidence',{remainingCalls:0});
   };
@@ -877,7 +878,7 @@ export async function createContextToolSession(
     admissions.push(next);signal.addEventListener('abort',next.abort,{once:true});admit();
   });
   const activeStages=new Set<Stage>();
-  const prepareDelivery:PrepareToolDelivery=async(tool,args,requestedSignal)=>{
+  const prepareDelivery:PrepareToolDelivery=async(tool,args,requestedSignal,options)=>{
     const signal=AbortSignal.any([requestedSignal,closeSignal.signal,...(bounds.signal?[bounds.signal]:[])]);
     const release=await acquireWriter(signal);
     let stage:Stage|undefined;
@@ -893,7 +894,7 @@ export async function createContextToolSession(
       const finish=()=>{signal.removeEventListener('abort',abort);if(stage)activeStages.delete(stage);release();};
       const discard=()=>{if(settled)return;settled=true;stage!.status='discarded';clearImages();finish();};
       const abort=()=>{stage!.cancelled=signal.reason;discard();};
-      stage={base,state:working,evidence:[],signal,callbacks:[],delivered:[],reservations:new Set(),checks:new Set(),status:'reading',discard};activeStages.add(stage);
+      stage={base,state:working,evidence:[],signal,replay:options?.replay===true,callbacks:[],delivered:[],reservations:new Set(),checks:new Set(),status:'reading',discard};activeStages.add(stage);
       signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();
       let status=200,body:string|undefined;
       const reply={get destroyed(){return signal.aborted||closing;},writeHead(code:number){status=code;return reply;},end(value:string,delivered?:()=>void){body=value;if(delivered)stage!.delivered.push(delivered);},once(){},off(){}};

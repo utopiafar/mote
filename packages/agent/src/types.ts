@@ -124,7 +124,7 @@ export class AgentInputError extends ProviderFailure {
 
 export class AgentProviderError extends ProviderFailure {
   constructor(details:ProviderFailureDetails={category:'transient',code:'provider_failed'},diagnostic:FailureDiagnostics={source:'unknown'}) {
-    super(details,'The model request failed. Check the endpoint, API credential, model and protocol settings.',diagnostic);
+    super(details,details.code==='processing_limit'?'The model request exceeded a processing or context limit. Reduce the input or adjust the configured model window.':'The model request failed. Check the endpoint, API credential, model and protocol settings.',diagnostic);
     this.name = 'AgentProviderError';
   }
 }

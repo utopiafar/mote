@@ -25,4 +25,4 @@ export interface PreparedToolDelivery {
   discard(): void;
 }
 
-export type PrepareToolDelivery=(tool:string,args:Record<string,unknown>,signal:AbortSignal)=>Promise<PreparedToolDelivery>;
+export type PrepareToolDelivery=(tool:string,args:Record<string,unknown>,signal:AbortSignal,options?:{replay?:boolean})=>Promise<PreparedToolDelivery>;
