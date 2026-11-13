@@ -21,6 +21,21 @@ function contains(outer:QueryScope,inner:QueryScope){
  if(outer.kind==='selection'&&outer.sourceIds!==undefined&&(inner.kind!=='selection'||inner.sourceIds===undefined||inner.sourceIds.some(id=>!outer.sourceIds!.includes(id))))return false;
  return true;
 }
+type PageOptions={limit?:number;cursor?:string};
+/** Select visible rows before choosing a public cursor. Domain cursors remain
+ * unchanged, but must never identify an object filtered out of this request. */
+function visiblePage<T>(args:PageOptions,read:(args:PageOptions)=>{items:T[];nextCursor:string|null},visible:(item:T)=>boolean){
+ const limit=args.limit??30,items:T[]=[];let cursor=args.cursor,boundary:PageOptions|undefined;
+ for(;;){
+  const page=read({limit:100,cursor});
+  for(let index=0;index<page.items.length;index++){
+   const item=page.items[index];if(!visible(item))continue;
+   if(items.length===limit)return {items,nextCursor:read(boundary!).nextCursor};
+   items.push(item);boundary={limit:index+1,cursor};
+  }
+  if(!page.nextCursor)return {items,nextCursor:null};cursor=page.nextCursor;
+ }
+}
 const scopeValue=(value:string)=>{let parsed:unknown;try{parsed=JSON.parse(value);}catch{throw new StoreError('Invalid assistant detail scope');}return queryScopeSchema.parse(parsed);};
 const querySchema=z.object({scope:z.string().max(16000),limit:z.coerce.number().int().min(1).max(100).optional(),cursor:z.string().max(1000).optional(),matterId:z.string().uuid().optional()}).strict();
 const idOf=(request:FastifyRequest)=>z.object({id:z.string().uuid()}).parse(request.params).id;
@@ -41,7 +56,7 @@ export function registerAssistantMatterRoutes(app:FastifyInstance,deps:{store:St
  app.get('/api/assistant/matters',async request=>{
   owner(request);const {scope:raw,...args}=querySchema.omit({matterId:true}).parse(request.query),scope=scopeValue(raw);
   if(empty(scope))return {items:[],nextCursor:null};
-  const page=matters.page(args);return {...page,items:page.items.filter(item=>contains(scope,item.scope))};
+  return visiblePage(args,options=>matters.page(options),item=>contains(scope,item.scope));
  });
  app.get('/api/assistant/matters/:id',async request=>{
   owner(request);const {scope:raw}=querySchema.pick({scope:true}).parse(request.query),scope=scopeValue(raw),id=idOf(request);
@@ -63,7 +78,7 @@ export function registerAssistantMatterRoutes(app:FastifyInstance,deps:{store:St
  app.get('/api/assistant/routines',async request=>{
   owner(request);const {scope:raw,matterId,...args}=querySchema.parse(request.query),scope=scopeValue(raw);
   if(empty(scope))return {items:[],nextCursor:null};
-  const page=routines.page(args);return {...page,items:page.items.filter(item=>contains(scope,item.scope)&&(!matterId||item.matterId===matterId))};
+  return visiblePage(args,options=>routines.page(options),item=>contains(scope,item.scope)&&(!matterId||item.matterId===matterId));
  });
  app.get('/api/assistant/routines/:id',async request=>{
   owner(request);const {scope:raw}=querySchema.pick({scope:true}).parse(request.query),scope=scopeValue(raw),rule=routines.get(idOf(request));

@@ -35,3 +35,29 @@ test('owner matter routes preserve revision conflicts, explicit empty scope and 
  const withdrawn=await read();assert.equal(withdrawn.statusCode,200,withdrawn.body);assert.deepEqual(withdrawn.json().linkedEvidence,[]);assert.equal(withdrawn.json().coverage.evidence,'partial');assert.doesNotMatch(withdrawn.body,/Generated U2 original/);
  const unauthenticated=await node.app.inject({method:'GET',url:'/api/assistant/matters?scope=%7B%22kind%22%3A%22all%22%7D'});assert.equal(unauthenticated.statusCode,401);
 });
+
+test('owner matter routes paginate only objects visible in the current scope',async t=>{
+ const dataDir=mkdtempSync(join(tmpdir(),'mote-u2-pages-')),headers={authorization:'Bearer generated-u2-pages'};
+ const config:Config={dataDir,token:'generated-u2-pages',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,
+  retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
+ t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});await node.app.ready();
+ const hidden={kind:'selection',sourceIds:['generated-u2-hidden']},scope={kind:'selection',sourceIds:['generated-u2-visible']};
+ for(const kind of ['matters','routines'] as const){
+  const create=async(scope:unknown,goal:string)=>{
+   const response=await node.app.inject({method:'POST',url:kind==='matters'?'/api/assistant/matter-commands':'/api/assistant/routines',headers,
+    payload:{...(kind==='matters'?{type:'create'}:{timeZone:'UTC',trigger:{kind:'daily',localTime:'09:00'}}),requestId:randomUUID(),goal,scope}});
+   assert.equal(response.statusCode,200,response.body);return response.json().id as string;
+  };
+  const read=async(cursor?:string)=>{
+   const response=await node.app.inject({method:'GET',url:'/api/assistant/'+kind+'?'+new URLSearchParams({scope:JSON.stringify(scope),limit:'1',...(cursor?{cursor}:{})}),headers});
+   assert.equal(response.statusCode,200,response.body);return response.json() as {items:{id:string}[];nextCursor:string|null};
+  };
+  await create(hidden,'Generated hidden first');await create(hidden,'Generated hidden second');
+  assert.deepEqual(await read(),{items:[],nextCursor:null},kind+': an empty authorized list must not expose a hidden-object cursor');
+  const visibleIds=[await create(scope,'Generated visible first'),await create(scope,'Generated visible second')],first=await read();
+  assert.equal(first.items.length,1,kind);assert.ok(first.nextCursor,kind);
+  const second=await read(first.nextCursor);assert.equal(second.items.length,1,kind);assert.equal(second.nextCursor,null,kind);
+  assert.deepEqual([...first.items,...second.items].map(item=>item.id).sort(),visibleIds.sort(),kind+': scoped pagination returns each visible object once');
+ }
+});
