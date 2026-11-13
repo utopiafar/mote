@@ -74,14 +74,16 @@ services:
       - type: volume
         source: mote-models
         target: ${MOTE_MODELS_DIRECTORY:?Configured model directory is required}
-        read_only: true
+        # The existing execution-facts store shares the model resource root and
+        # must survive a sidecar restart; do not create a second receipt ledger.
+        read_only: false
         volume:
           nocopy: true
       - type: bind
         source: ${MOTE_CONFIG_DIRECTORY:?Profile configuration directory is required}
         target: /config
         read_only: true
-    command: ["node", "scripts/media-worker-entry.mjs", "ocr"]
+    command: ["node", "scripts/media-worker-entry.mjs", "ocr", "/opt/mote-media/ocr/bin/python"]
     healthcheck:
       test: ["CMD", "node", "scripts/media-worker-health.mjs", "ocr"]
       interval: 30s
@@ -94,7 +96,7 @@ services:
     init: true
   asr-worker:
     extends: ocr-worker
-    command: ["node", "scripts/media-worker-entry.mjs", "asr"]
+    command: ["node", "scripts/media-worker-entry.mjs", "asr", "/opt/mote-media/dialogue/bin/python"]
     healthcheck:
       test: ["CMD", "node", "scripts/media-worker-health.mjs", "asr"]
       interval: 30s

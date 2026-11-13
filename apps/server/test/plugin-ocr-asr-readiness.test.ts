@@ -35,7 +35,7 @@ async function settled(port:{status(role:MediaRole):Promise<{state:string}>},rol
 
 test('quiesce fences preparation, stop closes it, and a fresh activation reuses the same model directory',async t=>{
   const f=await fixture(t);f.assets.installed=true;
-  const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,fetch:async()=>Response.json({ocr:true})});
+  const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,fetch:async()=>Response.json({version:1,execution:'local',ocr:true})});
   t.after(()=>service.close());await service.prepare();service.start();
   await service.port.start('ocr');assert.equal((await settled(service.port,'ocr')).state,'ready');
   service.quiesce('disabled');assert.throws(()=>service.port.start('ocr'),{statusCode:503});
@@ -66,7 +66,7 @@ test('a failed prepare closes the partial runtime and removes its configuration 
 
 test('media routes return 503 while stopped and recover without another registration',async t=>{
  const f=await fixture(t);f.assets.installed=true;
- const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,fetch:async()=>Response.json({ocr:true})});
+ const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,fetch:async()=>Response.json({version:1,execution:'local',ocr:true})});
  const host=new PluginHost({kind:'central',id:'generated-readiness-host'}),app=Fastify(),scope=new FeatureScope();let binding:import('@mote/plugin-api/contracts').ServiceBinding|undefined;
  t.after(async()=>{await app.close();await host.close();});
  const handle=await host.install({identity:{host:host.identity,packageId:'generated.media.readiness',installationId:'generated-install',instanceId:'generated-readiness',activationId:'generated-activation'},contributions:[ocrAsrReadinessDeclaration],factory:createOcrAsrReadinessFactory(service,value=>{binding=value.readiness;})});
@@ -79,4 +79,18 @@ test('media routes return 503 while stopped and recover without another registra
  await service.stop('disabled');assert.equal((await app.inject({url:'/api/media-preparation'})).statusCode,503);assert.equal((await app.inject({url:'/api/media-activity'})).statusCode,503);
  await service.prepare();service.start();assert.equal((await app.inject({url:'/api/media-preparation'})).statusCode,200);assert.equal((await app.inject({url:'/api/media-activity'})).statusCode,200);
  await lease.release();await handle.close('disabled');assert.equal((await app.inject({url:'/api/media-preparation'})).statusCode,503);
+});
+
+test('concurrent stop, close and replacement prepare all wait for the old preparation before activating another owner',async t=>{
+ const f=await fixture(t,'native');let entered!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+ const service=createOcrAsrReadiness({...f,prepare:async options=>{entered();await held;options.signal.throwIfAborted();return{python:process.execPath};}});t.after(()=>service.close());
+ await service.prepare();service.start();await service.port.start('ocr');await started;
+ const stopped=service.stop('disabled');let replacementPrepared=false,closed=false;
+ const replacement=service.prepare().then(()=>{replacementPrepared=true;});
+ await assert.rejects(service.prepare(),{statusCode:503});
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(replacementPrepared,false,'old dependency work still owns its activation');
+ release();await stopped;await replacement;service.start();assert.equal(service.port.phase,'active');
+ // Closing twice must join the same cleanup, even after current is detached.
+ const closing=service.close().then(()=>{closed=true;});await service.close();await closing;assert.equal(closed,true);assert.equal(f.listeners.size,0);
 });

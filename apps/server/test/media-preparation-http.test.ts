@@ -39,7 +39,7 @@ for(const mode of ['ready','missing','unreachable'] as const)test(`real ${mode} 
  }
  let posts=0;const worker=createServer((req,res)=>{
   if(req.method==='POST'&&req.url==='/ocr'){posts++;req.resume();req.on('end',()=>{res.writeHead(200,{'content-type':'application/json','x-mote-execution':'local'});res.end(JSON.stringify({durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated readiness OCR'}]}));});return;}
-  res.writeHead(mode==='unreachable'?503:200,{'content-type':'application/json'});res.end(JSON.stringify({ocr:mode!=='unreachable'}));
+  res.writeHead(mode==='unreachable'?503:200,{'content-type':'application/json'});res.end(JSON.stringify({version:1,execution:'local',ocr:mode!=='unreachable'}));
  });
  worker.listen(0,'127.0.0.1');await once(worker,'listening');const port=(worker.address() as {port:number}).port,endpoint=`http://127.0.0.1:${port}/ocr`;
  const config:Config={dataDir:join(directory,'archive'),token:'generated-'+mode+'-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://fixture.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',configuration:{runtime:'docker'},media:{modelDirectory,python:'python3',ocrPort:port,asrPort:port,ocrEndpoint:endpoint,asrEndpoint:`http://127.0.0.1:${port}/transcribe`,workerToken:secret}};
