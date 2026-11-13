@@ -10497,5 +10497,15 @@ export const spanish: Readonly<Record<string, string>> = {
   "任务已创建。": "Tarea creada.",
   "消息仍需逐条确认；日历按已有授权执行。": "Cada mensaje requiere confirmación; el calendario usa los permisos existentes.",
   "创建行动建议": "Crear propuesta de acción",
-  "当前连接或授权范围不支持这项行动。": "La conexión o el permiso actual no cubre esta acción."
+  "当前连接或授权范围不支持这项行动。": "La conexión o el permiso actual no cubre esta acción.",
+  "对话与上下文": "Conversaciones y contexto",
+  "多对话": "Varias conversaciones",
+  "主对话": "Conversación principal",
+  "选择主对话": "Elegir conversación principal",
+  "历史比例": "Proporción del historial",
+  "低水位": "Marca baja",
+  "上下文窗口": "Ventana de contexto",
+  "保守配置": "Conservador",
+  "配置窗口": "Ventana configurada",
+  "正在新建对话…": "Creando conversación…"
 };

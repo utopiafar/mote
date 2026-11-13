@@ -25,4 +25,19 @@ class CentralConversationPresentationTest {
         assertSame(source.getJSONObject("result"), shown.result)
         assertNull(CentralConversationPresentation.read(JSONObject().put("evidenceUnavailable", true)).result)
     }
+    @Test fun `accepted and queued turns expose their server status without a result`() {
+        for (status in listOf("accepted", "queued", "running")) {
+            val shown = CentralConversationPresentation.read(JSONObject().put("status", status))
+            assertEquals(status, shown.status)
+            assertNull(shown.notice)
+            assertNull(shown.result)
+        }
+    }
+    @Test fun `a failed turn keeps its server error for retry and details`() {
+        val error = JSONObject().put("code", "provider_timeout").put("message", "Generated timeout")
+        val shown = CentralConversationPresentation.read(JSONObject().put("status", "failed").put("error", error))
+        assertEquals("failed", shown.status)
+        assertEquals("provider_timeout", shown.error!!.getString("code"))
+        assertNull(shown.result)
+    }
 }

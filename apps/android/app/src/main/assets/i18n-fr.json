@@ -10496,5 +10496,15 @@
   "任务已创建。": "Tâche créée.",
   "消息仍需逐条确认；日历按已有授权执行。": "Chaque message doit être confirmé ; le calendrier utilise les autorisations existantes.",
   "创建行动建议": "Créer une proposition d’action",
-  "当前连接或授权范围不支持这项行动。": "La connexion ou l’autorisation actuelle ne couvre pas cette action."
+  "当前连接或授权范围不支持这项行动。": "La connexion ou l’autorisation actuelle ne couvre pas cette action.",
+  "对话与上下文": "Conversations et contexte",
+  "多对话": "Conversations multiples",
+  "主对话": "Conversation principale",
+  "选择主对话": "Choisir la conversation principale",
+  "历史比例": "Ratio d’historique",
+  "低水位": "Seuil bas",
+  "上下文窗口": "Fenêtre de contexte",
+  "保守配置": "Conservateur",
+  "配置窗口": "Fenêtre configurée",
+  "正在新建对话…": "Création de la conversation…"
 }

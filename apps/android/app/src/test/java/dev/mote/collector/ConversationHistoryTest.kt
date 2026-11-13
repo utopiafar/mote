@@ -57,10 +57,23 @@ class ConversationHistoryTest {
             JSONObject().put("id", id).put("title", "t").put("updatedAt", "not-a-date").put("turnCount", 1),
             JSONObject().put("id", id).put("title", "t").put("updatedAt", "2026-11-05T02:00:00Z"),
             JSONObject().put("id", id).put("title", "t").put("updatedAt", "2026-11-05T02:00:00Z").put("turnCount", -1),
+            JSONObject().put("id", id).put("title", "t").put("updatedAt", "2026-11-05T02:00:00Z").put("turnCount", 1).put("status", "unknown"),
         )) {
             try { ConversationHistory.items(JSONArray().put(bad)); fail("malformed row must fail the read") }
             catch (_: Exception) { }
         }
+    }
+
+    @Test fun itemsKeepAcceptedAndFailedStatusAndTheListLabelsStayReadable() {
+        val id = UUID.randomUUID().toString()
+        val rows = JSONArray()
+            .put(JSONObject().put("id", id).put("title", "queued").put("updatedAt", "2026-11-05T02:00:00Z").put("turnCount", 1).put("status", "queued"))
+            .put(JSONObject().put("id", UUID.randomUUID().toString()).put("title", "failed").put("updatedAt", "2026-11-05T02:00:00Z").put("turnCount", 1).put("status", "failed"))
+        val parsed = ConversationHistory.items(rows)
+        assertEquals(listOf("queued", "failed"), parsed.map { it.status })
+        assertEquals("处理中", ConversationHistory.statusLabel(parsed[0].status))
+        assertEquals("未完成", ConversationHistory.statusLabel(parsed[1].status))
+        assertNull(ConversationHistory.statusLabel("completed"))
     }
 
     @Test fun deleteActionsGainDetailsOnlyAfterAFailureIsRecorded() {
