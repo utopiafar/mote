@@ -36,7 +36,7 @@ internal object NativeAskImages {
     fun merge(state:JSONObject,result:JSONObject) {
         val id=result.getString("selectionId");val rows=pending(state)
         val index=(0 until rows.length()).firstOrNull { rows.getJSONObject(it).getString("selectionId")==id } ?: return
-        if(state.has("pending") || state.optString("runStatus")=="running")return
+        if(NativeAskRunState.busy(state))return
         if(result.optString("status")=="ready") {
             val attachments=state.optJSONArray("attachments") ?: JSONArray()
             if((0 until attachments.length()).none { attachments.getJSONObject(it).getString("id")==result.getString("id") })attachments.put(JSONObject(result.toString()).apply { remove("selectionId");remove("status");remove("error") })

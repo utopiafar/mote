@@ -126,8 +126,8 @@ test('a real per-turn save keeps the server note receipt and the exact turn rela
   });
   const notes:{path:string;body:any}[]=[],{api}=apiFor(node,token,(path,init)=>{if(path==='/api/notes'&&init.method==='POST')notes.push({path,body:JSON.parse(String(init.body))});});
   const {d,opened}=await render(t,api);
-  await until(()=>d.querySelector('.conversation-item')!==null,'conversation history');
-  await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());
+  await until(()=>[...d.querySelectorAll<HTMLButtonElement>('.conversation-item')].some(button=>button.textContent?.includes('Generated saved question')),'conversation history');
+  await act(async()=>[...d.querySelectorAll<HTMLButtonElement>('.conversation-item')].find(button=>button.textContent?.includes('Generated saved question'))!.click());
   await until(()=>d.body.textContent?.includes('Generated saved answer')===true,'saved turn');
   await act(async()=>{
     const button=Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(value=>value.textContent==='保存为记录');assert.ok(button);button.click();

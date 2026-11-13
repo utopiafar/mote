@@ -29,6 +29,7 @@ export function conversationQueryInput(dependencies:QueryRunDependencies,message
   if(anchorEvidenceIds&&ids!==undefined&&anchorEvidenceIds.some(id=>!ids!.includes(id)))throw new StoreError('Reference is outside the selected scope',409);
   if(message.attachments?.some(item=>ids!==undefined&&!ids.includes(item.id)))throw new StoreError('Attachment is outside the selected scope',409);
   return {conversationId:message.conversationId,question:message.question,...range,
+    ...(message.modelProfileId?{modelProfileId:message.modelProfileId}:{}),...(message.modelOverride?{modelOverride:message.modelOverride}:{}),
     evidenceIds:ids??null,anchorEvidenceIds:anchorEvidenceIds??null,anchorMaterialRef:anchorMaterialRef??null,
     ...(message.attachments?.length?{attachmentIds:message.attachments.map(item=>item.id)}:{})};
 }
@@ -67,7 +68,7 @@ export class ConversationQueue {
     const prior=conversations.messageByClientRequestId(input.clientRequestId);
     if(prior){
       const {anchorEvidenceIds,anchorMaterialRef,...priorScope}=prior.scope;
-      if(prior.conversationId!==input.conversationId||prior.question!==input.question||!isDeepStrictEqual(priorScope,input.scope)||!isDeepStrictEqual(anchorEvidenceIds,input.anchorEvidenceIds)||anchorMaterialRef!==input.anchorMaterialRef||!isDeepStrictEqual(prior.attachments?.map(item=>item.id)??[],input.attachmentIds??[]))throw new StoreError('clientRequestId belongs to a different message',409);
+      if(prior.conversationId!==input.conversationId||prior.question!==input.question||prior.modelProfileId!==input.modelProfileId||prior.modelOverride!==input.modelOverride||!isDeepStrictEqual(priorScope,input.scope)||!isDeepStrictEqual(anchorEvidenceIds,input.anchorEvidenceIds)||anchorMaterialRef!==input.anchorMaterialRef||!isDeepStrictEqual(prior.attachments?.map(item=>item.id)??[],input.attachmentIds??[]))throw new StoreError('clientRequestId belongs to a different message',409);
       this.suspended.clear();this.wake();return this.view(prior);
     }
     if(this.closed)throw new StoreError('Conversation query admission is unavailable',503);
@@ -84,9 +85,9 @@ export class ConversationQueue {
       // MIME description that could survive withdrawal of the original.
       return {id,name:'',mimeType:''};
     });
-    const profile=modelSettings.select('chat'),connections=[...this.dependencies.availableModelConnections(),agentModelConnection({kind:'profile',id:profile.id},profile.settings)];
+    const profile=modelSettings.select('chat',input.modelProfileId),connections=[...this.dependencies.availableModelConnections(),agentModelConnection({kind:'profile',id:profile.id},{...profile.settings,model:input.modelOverride??profile.settings.model})];
     const message=this.transaction(()=>{
-      let saved=conversations.receive({conversationId:input.conversationId,clientRequestId:input.clientRequestId,question:input.question,...scope,...(attachments.length?{attachments}:{})});
+      let saved=conversations.receive({conversationId:input.conversationId,clientRequestId:input.clientRequestId,question:input.question,...scope,...(input.modelProfileId?{modelProfileId:input.modelProfileId}:{}),...(input.modelOverride?{modelOverride:input.modelOverride}:{}),...(attachments.length?{attachments}:{})});
       // This owner command and its manual model authority commit together. A
       // restart can resume it without inventing automatic permission.
       modelAuthorizationHost.control.manual('owner-query:'+saved.id,'manual',[],connections);
@@ -102,6 +103,7 @@ export class ConversationQueue {
     return conversationMessageSchema.parse({id:message.id,conversationId:message.conversationId,clientRequestId:message.clientRequestId,question:message.question,
       scope:{kind:kind??'all',...filters,...(kind==='selection'&&sourceIds!==undefined?{sourceIds}:{})},revision:message.version,status:message.status,seq:message.seq,createdAt:message.createdAt,
       ...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(anchorMaterialRef?{anchorMaterialRef}:{}),...(attachmentIds?.length?{attachmentIds}:{}),
+      ...(message.modelProfileId?{modelProfileId:message.modelProfileId}:{}),...(message.modelOverride?{modelOverride:message.modelOverride}:{}),
       ...(message.runId?{runId:message.runId}:{}),...(message.evidenceDeleted?{evidenceDeleted:true}:{}),...(message.evidenceStale?{evidenceStale:true}:{}),...(message.evidenceUnavailable?{evidenceUnavailable:true}:{}),...(message.historyEvidenceDependencies?{historyEvidenceDependencies:message.historyEvidenceDependencies}:{})});
   }
   get(conversationId:string,id:string){const message=this.dependencies.conversations.message(id);if(message.conversationId!==conversationId)throw new StoreError('Conversation message not found',404);return this.view(message);}

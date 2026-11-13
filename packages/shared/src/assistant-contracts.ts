@@ -25,6 +25,9 @@ const conversationMessageFields={
   attachmentIds:z.array(uuid).max(4).optional(),
   anchorEvidenceIds:z.array(uuid).min(1).max(30).optional(),
   anchorMaterialRef:z.string().regex(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/).optional(),
+  /** The same one-turn model intent accepted by the legacy query contract. */
+  modelProfileId:z.union([z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/),z.literal('env:deployment')]).optional(),
+  modelOverride:z.string().trim().min(1).max(512).refine(value=>!/[\u0000-\u001f\u007f]/.test(value)).optional(),
 };
 const singleAnchor=(value:{anchorEvidenceIds?:string[];anchorMaterialRef?:string})=>!(value.anchorEvidenceIds&&value.anchorMaterialRef);
 export const conversationMessageInputSchema=z.object(conversationMessageFields).strict().refine(singleAnchor,{message:'Choose one anchor'});

@@ -39,10 +39,14 @@ async function fixture(t: import('node:test').TestContext, hash = '#/today') {
   return {root, d: dom.window.document, tick};
 }
 const button = (d: Document, label: string) => [...d.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)!;
+const askSettings={revision:1,domains:[{id:'conversations',effective:{multipleConversations:true,context:{historyRatio:0.5,lowWatermarkRatio:0.5,contextWindow:null,contextWindowSource:'conservative'}},saved:{},fields:[],status:'applied'}]};
 function apiWith(read: (path: string, init?: RequestInit) => unknown): Api {
   return {request: async (path: string, init?: RequestInit) => {
     if (path.startsWith('/api/operations/changes')) return {ids: [], cursor: 0, hasMore: false, reset: false};
     if (path === '/api/model-settings') return modelView();
+    if (path === '/api/conversations/main') return {id:'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA'};
+    if (path === '/api/conversations' && init?.method === 'POST') return {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'};
+    if (path.startsWith('/api/conversations/')&&path!=='/api/conversations/messages'&&!path.includes('?')&&!path.includes('/messages/')&&!path.includes('/references/')){const value=read(path,init);if(value&&typeof value==='object'&&typeof (value as {then?:unknown}).then!=='function'&&!Array.isArray((value as {turns?:unknown}).turns))return{id:decodeURIComponent(path.slice('/api/conversations/'.length)),title:'',createdAt:when,updatedAt:when,turnCount:0,scope:{},status:'completed',revision:1,nextCursor:null,turns:[]};return value;}
     if (path === '/api/developer') return {credentials: [], endpoints: [], deliveries: []};
     if (path === '/api/plugins') return {sourceContributions: []};
     if (path === '/api/connections/mcp/oauth/requests') return {items: []};
@@ -174,27 +178,26 @@ test('source device pairing and AI access use distinct routes and inventories wi
   assert.deepEqual(writes, [{path: '/api/connections/reader'}], 'the existing selected-credential revocation API is preserved');
 });
 
-for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored ${kind} conversation can clear its reference only between turns and submits explicit scope nulls`, async t => {
+for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored ${kind} conversation submits its current scope and clears only the next turn`, async t => {
   const conversationId = 'generated-' + kind;
   const {root, d, tick} = await fixture(t, '#/ask?' + new URLSearchParams({conversation: conversationId, questionDraft: 'Generated follow-up'}));
   const materialRef='material:mat_'+'a'.repeat(64)+'@'+'b'.repeat(64);
   const scope = kind === 'anchor' ? {anchorEvidenceIds: [captureId]} : kind === 'material'?{anchorMaterialRef:materialRef}:{evidenceIds: [captureId]};
   const summary = {id: conversationId, title: 'Generated restored conversation', createdAt: when, updatedAt: when, turnCount: 1, scope, status: 'completed'};
   const detail = {...summary, revision: 1, nextCursor: null, turns: [{id: 'generated-turn', question: 'Generated original question', status: 'completed', createdAt: when, result: {runId: 'generated-old', answer: 'Generated original answer', trace: [], citations: []}}]};
-  const completed = {id: 'generated-completed', status: 'completed', conversationId, createdAt: when, updatedAt: when, events: []};
+  const submissions: Record<string, unknown>[] = [], opened: string[] = [];
   let accept!: (value: unknown) => void;
   const admission = new Promise(resolve => { accept = resolve; });
-  const submissions: {id:string;input: Record<string, unknown>}[] = [], opened: string[] = [];
   const api = apiWith((path, init) => {
+    if (path === '/api/configuration') return askSettings;
     if (path === '/api/conversations?limit=30') return {items: [summary]};
     if (path === '/api/conversations/' + conversationId) return detail;
     if (path === '/api/conversations/' + conversationId + '/references/' + captureId) return {id:captureId,available:true};
-    if (path === '/api/query-runs' && init?.method === 'POST') {
-      submissions.push(JSON.parse(String(init.body)));
-      return submissions.length === 1 ? admission : {id: submissions.at(-1)!.id, status: 'running', conversationId, createdAt: when, updatedAt: when, events: []};
+    if (path === '/api/conversations/messages' && init?.method === 'POST') {
+      const input=JSON.parse(String(init.body));
+      submissions.push(input);
+      return submissions.length===1?admission:{id:crypto.randomUUID(),...input,revision:1,status:'accepted',seq:1,createdAt:when};
     }
-    if (path === '/api/query-runs/'+completed.id) return completed;
-    if (path === '/api/query-runs/'+submissions.at(-1)?.id) return new Promise(() => {});
     return {items: []};
   });
   await act(async () => root.render(React.createElement(Conversations, {api, configured: true, devices: [], renderAnswer: answer => answer.answer, onOpen: ref => opened.push(ref)})));
@@ -206,12 +209,13 @@ for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored $
   const submit = async () => { await act(async () => d.querySelector<HTMLTextAreaElement>('[aria-label="向 Mote 提问"]')!.closest('form')!.dispatchEvent(new window.Event('submit', {bubbles: true, cancelable: true}))); };
   await submit();
   assert.equal(submissions.length, 1);
-  assert.equal(Object.hasOwn(submissions[0].input, 'anchorEvidenceIds'), false, 'an unchanged scope is inherited from the restored conversation');
-  assert.equal(Object.hasOwn(submissions[0].input,'anchorMaterialRef'),false);
-  assert.equal(button(d, clearLabel).disabled, true, 'a pending admitted turn keeps its reference fixed');
-  await act(async () => button(d, clearLabel).click());
-  assert.doesNotMatch(scopeBar().textContent!, /全部资料/);
-  completed.id=submissions[0].id;await act(async () => accept(completed));
+  assert.equal(submissions[0].conversationId,conversationId);
+  if(kind==='anchor'){assert.deepEqual(submissions[0].anchorEvidenceIds,[captureId]);assert.equal((submissions[0].scope as {kind:string}).kind,'all');}
+  if(kind==='material'){assert.equal(submissions[0].anchorMaterialRef,materialRef);assert.equal((submissions[0].scope as {kind:string}).kind,'all');}
+  if(kind==='strict'){assert.deepEqual((submissions[0].scope as {evidenceIds:string[]}).evidenceIds,[captureId]);}
+  assert.equal(button(d, clearLabel).disabled, true, 'admission in flight keeps the reference fixed');
+  await act(async () => accept({id:crypto.randomUUID(),...submissions[0],revision:1,status:'accepted',seq:0,createdAt:when}));
+  await tick();
   assert.equal(button(d, clearLabel).disabled, false);
   await act(async () => button(d, clearLabel).click());
   assert.match(scopeBar().textContent!, /全部资料/);
@@ -222,10 +226,10 @@ for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored $
   }); await tick();
   await submit();
   assert.equal(submissions.length, 2);
-  assert.equal(submissions[1].input.conversationId, conversationId);
-  assert.equal(submissions[1].input.anchorEvidenceIds, null);
-  assert.equal(submissions[1].input.evidenceIds, null);
-  assert.equal(submissions[1].input.anchorMaterialRef,null);
+  assert.equal(submissions[1].conversationId, conversationId);
+  assert.equal((submissions[1].scope as {kind:string}).kind,'all');
+  assert.equal(Object.hasOwn(submissions[1],'anchorEvidenceIds'),false);
+  assert.equal(Object.hasOwn(submissions[1],'anchorMaterialRef'),false);
 });
 
 test('an in-flight chat upload and drafts remain owned by their authenticated API across a node switch',async t=>{

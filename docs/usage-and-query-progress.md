@@ -4,6 +4,8 @@
 
 `GET /api/query-runs` 用于恢复最近运行。进度包括启动、模型请求步骤、工具开始/结束、返回项数、回答校验，以及 Agent 通过 `progress_update` 主动生成的简短公开状态。内部 reasoning delta 不会流向网页。进度消息只是展示内容，不进入系统指令或后续检索。它们随关联对话删除，资料删除也会清除已保存消息并阻止在途运行重新写入。任务只保存完成回答的 conversationId/turnId，正文仍从对话存储读取。原同步 `POST /api/query` 保留兼容。
 
+中央 Web 的 Ask 通过 `POST /api/conversations/messages` 接收问题，默认打开 `/api/conversations/main` 指向的主对话；列表按服务端 `seq` 展示 accepted、queued、running、failed 与 cancelled，客户端只轮询同一消息的持久回执，不用本地乐观状态覆盖失败或撤回。
+
 对话选择由产品客户端显式完成。`GET /api/conversations/main` 返回当前主对话；Desktop Ask 在未打开其他对话时读取它，并把该 ID 放进 `POST /api/query-runs` 的 `input.conversationId`。`POST /api/query-runs` 和旧同步 `POST /api/query` 在缺少 `conversationId` 时都保持独立查询语义，各自创建对话，不读取也不继承主对话的 `evidenceIds` 或锚点。只有显式 `conversationId` 才继承该对话的当前范围，显式 `null` 清除范围并恢复正常检索。
 
 `conversations` 配置域包含 `multipleConversations`（默认关闭）和 `context`（复用 `historyRatio`、`lowWatermarkRatio`、`contextWindow`、`contextWindowSource`）。开关关闭时 `POST /api/conversations` 拒绝新建侧对话，但不删除、不合并已有对话；`PUT /api/conversations/main` 仍可选择任一现有对话。主对话身份保存在 `main-conversation-id`，开关往返不会改变它。

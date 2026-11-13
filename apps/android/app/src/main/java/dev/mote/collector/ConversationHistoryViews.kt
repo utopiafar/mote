@@ -33,7 +33,7 @@ internal class ConversationListView(
     fun render(conversations: List<HistoryConversation>) {
         val now = Instant.now(); val zone = ZoneId.systemDefault()
         val groups = ConversationHistory.groups(conversations, now, zone)
-        val key = groups.joinToString("\u0001") { group -> group.key + "\u0002" + group.items.joinToString("\u0003") { it.id + ":" + it.updatedAt } }
+        val key = groups.joinToString("\u0001") { group -> group.key + "\u0002" + group.items.joinToString("\u0003") { it.id + ":" + it.updatedAt + ":" + it.status } }
         if (key == renderedKey) return
         removeAllViews(); renderedKey = key
         for (group in groups) {
@@ -57,7 +57,8 @@ internal class ConversationListView(
         setPadding(context.moteDp(14), context.moteDp(9), context.moteDp(14), context.moteDp(9))
         isFocusable = true; isClickable = true
         val stamp = ConversationHistory.dateLabel(conversation.updatedAt, now, zone)
-        contentDescription = conversation.title + ". " + stamp
+        val statusLabel = ConversationHistory.statusLabel(conversation.status)
+        contentDescription = conversation.title + ". " + (statusLabel?.let { it + " · " } ?: "") + stamp
         setOnClickListener { onOpen(conversation.id) }
         setOnLongClickListener { onActions(conversation.id); true }
         addView(TextView(context).apply {
@@ -66,8 +67,9 @@ internal class ConversationListView(
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }, LayoutParams(0, -2, 1f).apply { marginEnd = context.moteDp(12) })
         addView(TextView(context).apply {
-            text = stamp
-            MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED)
+            text = if (statusLabel.isNullOrBlank()) stamp else statusLabel + " · " + stamp
+            MoteUi.type(this, NativeFontRole.META)
+            MoteUi.textColor(this, if (conversation.status == "failed") NativeColorRole.WARNING else NativeColorRole.MUTED)
             maxLines = 1
         }, LayoutParams(-2, -2))
     }

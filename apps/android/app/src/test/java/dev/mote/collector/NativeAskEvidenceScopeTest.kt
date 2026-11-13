@@ -21,13 +21,16 @@ class NativeAskEvidenceScopeTest {
     @Test fun `material and UUID selections replace one another but cannot rewrite an uncertain request`() {
         val state=JSONObject();val id=UUID.randomUUID().toString()
         NativeAskEvidenceScope.select(state,id);NativeAskEvidenceScope.selectMaterial(state,material);assertTrue(state.isNull("anchorEvidenceIds"))
-        val input=JSONObject();NativeAskEvidenceScope.writeInput(state,input);state.put("pending",JSONObject().put("input",input))
+        val input=JSONObject();NativeAskEvidenceScope.writeInput(state,input)
+        state.put("pending",JSONObject().put("scope",JSONObject().put("kind","all")).put("anchorMaterialRef",input.getString("anchorMaterialRef")))
         val before=state.toString();assertFalse(NativeAskEvidenceScope.select(state,id));assertFalse(NativeAskEvidenceScope.clear(state));assertTrue(NativeAskEvidenceScope.selectMaterial(state,material));assertEquals(before,state.toString())
         state.remove("pending");NativeAskEvidenceScope.selectOnly(state,id);assertTrue(state.isNull("anchorMaterialRef"));assertEquals(id,state.getJSONArray("evidenceIds").getString(0))
     }
     @Test fun `record navigation cannot alter retryable question or accepted scope`() {
         val first = UUID.randomUUID().toString(); val other = UUID.randomUUID().toString()
-        val pending = JSONObject().put("id", UUID.randomUUID().toString()).put("input", JSONObject().put("question", "Generated exact question").put("evidenceIds", JSONArray().put(first)))
+        val pending = JSONObject().put("clientRequestId", UUID.randomUUID().toString())
+            .put("conversationId", UUID.randomUUID().toString()).put("question", "Generated exact question")
+            .put("scope", JSONObject().put("kind", "selection").put("evidenceIds", JSONArray().put(first)))
         val state = JSONObject().put("pending", pending).put("question", "Generated exact question").put("evidenceIds", JSONArray().put(first))
         val before = state.toString()
         assertFalse(NativeAskEvidenceScope.selectOnly(state, other)); assertEquals(before, state.toString())
@@ -69,7 +72,7 @@ class NativeAskEvidenceScopeTest {
         assertEquals(id, restored.getJSONArray("anchorEvidenceIds").getString(0))
         assertTrue(NativeAskEvidenceScope.selectOnly(restored, id)); assertTrue(restored.isNull("anchorEvidenceIds"))
         assertEquals(id, restored.getJSONArray("evidenceIds").getString(0))
-        restored.put("pending", JSONObject().put("input", input)); val before = restored.toString()
+        restored.put("pending", JSONObject().put("scope", JSONObject().put("kind", "all")).put("anchorEvidenceIds", JSONArray().put(id))); val before = restored.toString()
         assertFalse(NativeAskEvidenceScope.selectOnly(restored, id)); assertEquals(before, restored.toString())
         assertTrue(NativeAskEvidenceScope.select(restored, id)); assertEquals(before, restored.toString())
     }
