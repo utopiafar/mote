@@ -89,7 +89,7 @@ export const german: Readonly<Record<string, string>> = {
   "人物": "Person",
   "旅行": "Reise",
   "阅读": "Lesen",
-  "归档事项": "Vorgang archivieren",
+  "归档事项": "Angelegenheit archivieren",
   "当前范围": "Aktueller Bereich",
   "当前选择": "Aktuelle Auswahl",
   "当前范围内没有可用资料。": "Im aktuellen Bereich sind keine Materialien verfügbar.",
@@ -10668,5 +10668,17 @@ export const german: Readonly<Record<string, string>> = {
   "发生时间未知": "Ereigniszeit unbekannt",
   "推断": "Schlussfolgerung",
   "仅汇总本页记忆与本页承诺的显式关联。": "Enthält nur ausdrückliche Verknüpfungen zwischen Erinnerungen und Zusagen auf diesen Seiten.",
-  "本页暂无关联的承诺或互动。": "Keine zugehörigen Zusagen oder Interaktionen auf dieser Seite."
+  "本页暂无关联的承诺或互动。": "Keine zugehörigen Zusagen oder Interaktionen auf dieser Seite.",
+  "仅所选资料": "Nur ausgewählte Materialien",
+  "{0} 个来源": "{0} Quellen",
+  "暂无助理动态。": "Noch keine Neuigkeiten vom Assistenten.",
+  "稍后再看": "Später ansehen",
+  "反馈已保存": "Rückmeldung gespeichert",
+  "需要补充": "Weitere Angaben erforderlich",
+  "部分关联内容当前不可读取。": "Einige verknüpfte Inhalte sind derzeit nicht lesbar.",
+  "下一次：{0}": "Nächstes Mal: {0}",
+  "每天 {0}": "Täglich um {0}",
+  "每周 {0} · {1}": "Jeden {0} · {1}",
+  "日程前 {0} 分钟": "{0} Minuten vor dem Termin",
+  "当前端尚未接入此操作。": "Dieser Vorgang ist auf diesem Client noch nicht verfügbar."
 };
