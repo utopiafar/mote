@@ -35,7 +35,7 @@ export function fileConfiguration(saved:FileConfiguration,sourceId:string,mime:s
   ...(processor?.dialogue?{diarizationProcessor:settings.diarizationProcessor,semanticTurns:settings.semanticTurns}:{}),
   ...(applied?{parameters:processor?effectiveProcessorParameters(processor,applied.profile.parameters):applied.profile.parameters,diarizationProcessor:applied.profile.diarizationProcessor,services:serviceIds.map(id=>{const s=policy.services.find(s=>s.id===id);return s?{id:s.id,kind:s.kind,execution:s.execution,endpoint:s.endpoint,model:s.model,apiKey:s.apiKey}:null;}),boundServices:applied.services.map(({name,...s})=>s)}:{}),
  };
- return {analysisSettings:settings,allowSummary:processor?.allowSummary!==false,dialogue:processor?.dialogue===true,
+ return {analysisSettings:settings,deduplicate:processor?effectiveProcessorParameters(processor,applied.profile.parameters).deduplicate!==false:true,allowSummary:processor?.allowSummary!==false,dialogue:processor?.dialogue===true,
   managedModels:[...new Set(dependencies.flatMap(p=>p.managedModel?[p.managedModel]:[]))],fingerprint:hash(value),
   receipt:{owner:'file-processing',settingsRevision:saved.revision,processorId,processorVersion:processor?.version??'unavailable',sourceId,mime,serviceIds,processors:dependencies.map(processorContract)}};
 }

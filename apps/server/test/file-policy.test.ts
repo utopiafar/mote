@@ -11,7 +11,8 @@ import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing} from '../src/file-processing.js';
-import {type ProcessorInput} from '../src/file-processors.js';
+import {FileProcessorRuntime,type ProcessorInput} from '../src/file-processors.js';
+import {createDefaultFilePolicy,parseFilePolicy} from '../src/file-policy.js';
 import {TURN_GROUP_PROMPT} from '../src/file-dialogue.js';
 import {installFileRecipes} from '../src/file-recipes.js';
 import {buildApp} from '../src/app.js';
@@ -24,11 +25,12 @@ async function fixture(t:any){
  const plugin:Plugin={name:'policy-fixture',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>ctx.moteFileProcessors.register({id:'fixture.audio',name:'Parameterized ASR',version:'1',stage:'extract',mediaTypes:['audio/'],serviceKind:'asr',parameters:[{key:'speakerCount',label:'人数',type:'number',min:1,max:16,integer:true,default:2}],async process(input){calls.push(input);return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:`Generated speakers ${input.parameters?.speakerCount}`} ]};}}));ctx.effect(()=>ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Generated speakers',version:'1',stage:'diarize',mediaTypes:['audio/'],localOnly:true,async process(input){return {durationMs:1000,engine:'fixture',expectedSpeakers:input.settings.speakerCount,observedSpeakers:2,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[],warnings:[]};}}));}};
  const aliasPlugin:Plugin={name:'replacement-dialogue',inject:['moteFileProcessors'],apply(ctx){
   const native=ctx.moteFileProcessors.get('audio.local-dialogue');
-  ctx.effect(()=>ctx.moteFileProcessors.register({...native,id:'fixture.dialogue',name:'Replacement dialogue'}));
+  ctx.effect(()=>ctx.moteFileProcessors.register({...native,id:'fixture.dialogue',name:'Replacement dialogue',output:undefined,recipe:undefined,process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly:true,maxAudioMs:input.maxAudioMs,signal:input.signal,request:input.request,authorizeModel:input.authorizeModel})}));
  }};
  const analyses:any[]=[];let waitAnalysis:(()=>Promise<void>)|undefined;const provider={transcribe:async(input:any)=>{calls.push(input);return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Synthetic offline dialogue'}]};}};
  const options={plugins:[plugin,aliasPlugin],analyze:async(records:any[],prompt:string,settings:any)=>{analyses.push({settings,prompt});if(waitAnalysis)await waitAnalysis();return {answer:prompt===TURN_GROUP_PROMPT?JSON.stringify({groups:[[0]]}):'Synthetic summary',citations:[{id:records[0].id}]};}};
  let processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;
+ const initial=processing.view();for(const profile of initial.policy.profiles)if(profile.processorId==='audio.local-dialogue')profile.processorId='fixture.dialogue';processing.update({revision:initial.revision,settings:initial.settings,policy:initial.policy});
  const save=(policy:any=processing.view().policy,settings:any={})=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,...settings},policy});
  async function upload(name:string,mime='audio/wav',sourceId='phone',layer:'original'|'reference'='original',revision='1',previousRevision:string|null=null){const bytes=Buffer.from('Generated fixture '+name),manifest:FileRevision={sourceId,previousRevision,item:{externalId:name,revision,observedAt:new Date().toISOString(),title:name,kind:'file',layer,text:'',mimeType:mime,deleted:false},relativePath:name,sizeBytes:bytes.length,...(layer==='original'?{sha256:sha256(bytes)}:{})};if(layer==='reference')return (await files.revision(manifest,()=>{})).id;const session=files.begin(manifest,()=>{});files.part(session.uploadId,0,bytes,()=>{});return (await files.commit(session.uploadId,()=>{})).id;}
  t.after(async()=>{await processing.close();store.close();rmSync(dir,{force:true,recursive:true});});
@@ -39,6 +41,16 @@ function customPolicy(f:Awaited<ReturnType<typeof fixture>>):FilePolicy{
  policy.profiles.push({id:'two',name:'Two speakers',processorId:'fixture.audio',serviceId:'asr-local',parameters:{speakerCount:2},diarizationProcessor:'audio.diarize',summarize:false},{id:'four',name:'Four speakers',processorId:'fixture.audio',serviceId:'asr-local',parameters:{speakerCount:4},diarizationProcessor:'audio.diarize',summarize:false});
  policy.rules.find(r=>r.type==='audio/*')!.profileId='two';policy.rules.push({sourceId:'phone',type:'audio/*',profileId:'four'});return policy;
 }
+
+test('current local policy accepts CAM++ count ranges and the cleanup switch while rejecting newly selected retired speaker processors',async()=>{
+ const runtime=new FileProcessorRuntime();await runtime.ready;try{
+  const policy=createDefaultFilePolicy(runtime.registry,'http://127.0.0.1:9009/transcribe'),profile=policy.profiles.find(p=>p.processorId==='audio.local-dialogue')!;
+  assert.equal(profile.parameters.deduplicate,true);profile.parameters={speakerCount:null,speakerMin:2,speakerMax:4,deduplicate:false,semanticTurns:false};
+  const parsed=parseFilePolicy(policy,policy,runtime.registry);assert.deepEqual(parsed.profiles.find(p=>p.id===profile.id)!.parameters,profile.parameters);
+  const retired=structuredClone(policy);retired.profiles.find(p=>p.id===profile.id)!.diarizationProcessor='audio.diarize-wespeaker';assert.throws(()=>parseFilePolicy(retired,policy,runtime.registry),{statusCode:400});
+  const invalid=structuredClone(policy);invalid.profiles.find(p=>p.id===profile.id)!.parameters.speakerCount=3;assert.throws(()=>parseFilePolicy(invalid,policy,runtime.registry));
+ }finally{await runtime.close();}
+});
 
 test('explicit policy preserves private domain snapshots and rejects flat settings writes',async t=>{
  const f=await fixture(t),v=f.processing.view();f.processing.update({revision:v.revision,settings:{...v.settings,enabled:true,imageEndpoint:'http://127.0.0.1:9912/image',apiKey:'generated-cloud-secret',localWorkerApiKey:'generated-worker-secret',sourceProfiles:{phone:'audio.local-dialogue'},speakerCount:4},policy:fixtureFilePolicy({...v.settings,enabled:true,imageEndpoint:'http://127.0.0.1:9912/image',apiKey:'generated-cloud-secret',localWorkerApiKey:'generated-worker-secret',sourceProfiles:{phone:'audio.local-dialogue'},speakerCount:4},f.processing.runtime.registry)});
@@ -74,7 +86,7 @@ test('policy save rejects incompatible MIME, unknown parameters, bad values, dan
 test('service credentials are never transferred to changed destinations; local profiles reject cloud bindings',async t=>{
  const f=await fixture(t),policy=customPolicy(f);policy.services.find(s=>s.id==='asr-local')!.apiKey='generated-key';f.save(policy);
  const altered=f.processing.view().policy;altered.services.find(s=>s.id==='asr-local')!.endpoint='http://127.0.0.1:9999/transcribe';assert.throws(()=>f.save(altered),{statusCode:409});(altered.services.find(s=>s.id==='asr-local') as any).apiKey=null;f.save(altered);
- const local=f.processing.view().policy;local.services.push({id:'cloud',name:'Cloud',kind:'asr',endpoint:'https://example.test/transcribe',model:'',execution:'remote',apiKeyConfigured:false});local.profiles.find(p=>p.processorId==='audio.local-dialogue')!.serviceId='cloud';assert.throws(()=>f.save(local),{statusCode:400});
+ const local=f.processing.view().policy;local.services.push({id:'cloud',name:'Cloud',kind:'asr',endpoint:'https://example.test/transcribe',model:'',execution:'remote',apiKeyConfigured:false});local.profiles.find(p=>p.processorId==='fixture.dialogue')!.serviceId='cloud';assert.throws(()=>f.save(local),{statusCode:400});
 });
 
 test('completed results retain their policy until previewed reprocessing, and stale previews cannot execute',async t=>{
@@ -108,7 +120,7 @@ test('a cancelled summary remains cancelled when previewing completed files for 
 });
 
 test('local completed files use their original model service for reviews after routing edits and restart',async t=>{
- const f=await fixture(t),p=f.processing.view().policy;const local=p.profiles.find(p=>p.processorId==='audio.local-dialogue')!;local.diarizationProcessor='fixture.diarize';local.parameters.speakerCount=2;local.modelServiceId='llm';p.services.push({id:'llm',name:'Local language model',kind:'model',endpoint:'http://127.0.0.1:8800/v1',execution:'local',model:'generated-model',apiKeyConfigured:false});p.rules.find(r=>r.type==='audio/*')!.profileId=local.id;f.save(p);
+ const f=await fixture(t),p=f.processing.view().policy;const local=p.profiles.find(p=>p.processorId==='fixture.dialogue')!;local.diarizationProcessor='fixture.diarize';local.parameters.speakerCount=2;local.modelServiceId='llm';p.services.push({id:'llm',name:'Local language model',kind:'model',endpoint:'http://127.0.0.1:8800/v1',execution:'local',model:'generated-model',apiKeyConfigured:false});p.rules.find(r=>r.type==='audio/*')!.profileId=local.id;f.save(p);
  const id=await f.upload('private.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');assert.ok(f.files.pendingIndex('cloud').length>0);
  const changed=f.processing.view().policy;changed.rules.find(r=>r.type==='audio/*')!.profileId='profile.audio.http';f.save(changed);await f.restart();await f.processing.analyze(id,f.files.chunks(id),'generated review');assert.equal(f.analyses[0].settings.analysisModel.model,'generated-model');assert.ok(f.files.pendingIndex('cloud').length>0);
  const serviceChanged=f.processing.view().policy;serviceChanged.services.find(s=>s.id==='llm')!.endpoint='http://127.0.0.1:8801/v1';f.save(serviceChanged);await assert.rejects(f.processing.analyze(id,f.files.chunks(id),'review'),{statusCode:409});
@@ -148,7 +160,7 @@ test('temporarily missing Cordis plugins retain configured profiles and block un
 });
 
 test('changing dialogue speaker count reuses transcription while rebuilding downstream artifacts',async t=>{
- const f=await fixture(t),policy=f.processing.view().policy,profile=policy.profiles.find(p=>p.processorId==='audio.local-dialogue')!;
+ const f=await fixture(t),policy=f.processing.view().policy,profile=policy.profiles.find(p=>p.processorId==='fixture.dialogue')!;
  profile.diarizationProcessor='fixture.diarize';profile.parameters.speakerCount=2;policy.rules.find(r=>r.type==='audio/*')!.profileId=profile.id;f.save(policy);
  const id=await f.upload('generated-cache.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.calls.length,1);
  const oldDiarization=f.files.detail(id).artifacts.find((a:any)=>a.kind==='diarization')!.id,next=f.processing.view().policy;next.profiles.find(p=>p.id===profile.id)!.parameters.speakerCount=3;f.save(next);
@@ -173,9 +185,9 @@ test('a replacement dialogue plugin composes stages and keeps derived text avail
  assert.throws(()=>f.save(invalid),{statusCode:400});
 });
 
-test('built-in local ASR supports central-model grouping and summaries',async t=>{
+test('a local dialogue extension supports central-model grouping and summaries',async t=>{
  const f=await fixture(t),policy=f.processing.view().policy;
- policy.profiles.push({id:'analysis',name:'Composed analysis',processorId:'audio.local-dialogue',serviceId:'asr-local',parameters:{speakerCount:2,semanticTurns:true},diarizationProcessor:'fixture.diarize',summarize:true});
+ policy.profiles.push({id:'analysis',name:'Composed analysis',processorId:'fixture.dialogue',serviceId:'asr-local',parameters:{speakerCount:2,semanticTurns:true},diarizationProcessor:'fixture.diarize',summarize:true});
  policy.rules.find(rule=>rule.type==='audio/*')!.profileId='analysis';f.save(policy);
  const id=await f.upload('analysis.wav');await f.processing.tick();
  assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.files.detail(id).job.summary_state,'succeeded');

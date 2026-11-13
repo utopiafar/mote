@@ -22,12 +22,14 @@ import {FileStore} from './files.js';
 import {StoreError,sha256} from './store.js';
 import {FileProcessorRuntime,isLoopback,mediaModelConnection,type FileProcessor,type TranscriptionProvider,type ProcessorInput,type MediaRequestIdentity} from './file-processors.js';
 import {MediaExecutionCalls,readMediaExecutionFact,eraseMediaExecutionFact,type MediaExecutionCall,type MediaStage} from './plugins/media-execution-facts.js';
-import {MEDIA_CATALOG,ASR_MODEL_VERSION,SEGMENTATION_MODEL_SHA256,type MediaAssets} from './media-assets.js';
+import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
 import {withinEvidenceScope} from './evidence-reader.js';
 import {TaskRecords} from './task-records.js';
 import {alignDialogue,applySemanticGroups,TURN_GROUP_PROMPT} from './file-dialogue.js';
-import {defaultFileRecipe,defaultFileOutput,type FileRecipeContext} from './file-recipes.js';
+import {defaultFileRecipe,defaultFileOutput,type FileRecipeContext,type FileDialogueCleanup} from './file-recipes.js';
+import {FUNASR_PINS,funasrTranscriptOutput,funasrDialogueOutput,parseFunasrResponse,parseFunasrArchive,projectFunasrDiarization} from './funasr-contract.js';
+import {FunasrWorkerFailure} from './funasr-client.js';
 export {HttpTranscriptionProvider,type TranscriptionProvider} from './file-processors.js';
 
 import type {ConfigService} from './config-service.js';
@@ -66,14 +68,14 @@ export class FileProcessing {
   private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
   readonly runtime:FileProcessorRuntime;
   private unregister:Array<()=>Promise<void>>=[];
-  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginScope?:import('@mote/plugin-host').HostScope;plugins?:Plugin[];modules?:string[];builtinContributions?:boolean;analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
+  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginScope?:import('@mote/plugin-host').HostScope;plugins?:Plugin[];modules?:string[];builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup;analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
     this.media=mediaRuntimeSettings(options.media);
     files.store.db.exec('CREATE TABLE IF NOT EXISTS media_model_intents(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,phase TEXT NOT NULL,intent_id TEXT NOT NULL,PRIMARY KEY(capture_id,phase))');
     this.processorAdmission=new ProcessorAdmission(files.store);
     this.mediaCalls=new MediaExecutionCalls(files.store);
     installEvidenceDependencies(files.store);
     files.store.db.exec('CREATE TABLE IF NOT EXISTS file_diarization_overrides(capture_id TEXT PRIMARY KEY REFERENCES file_versions(capture_id) ON DELETE CASCADE,json TEXT NOT NULL)');
-    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,options.pluginScope,{builtinContributions:options.builtinContributions});
+    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,options.pluginScope,{builtinContributions:options.builtinContributions,dialogueCleanup:options.dialogueCleanup});
     const initial=options.configService?.current<ProcessingConfiguration>('processing')??options.configuration??defaultProcessingConfiguration(this.media);
     this.saved={revision:options.configService?String(options.configService.revision):'initial',...processingConfigurationSchema.parse(initial)};
     this.publishImagePolicy();
@@ -110,7 +112,7 @@ export class FileProcessing {
     }));
   }
   /** Install the activation-owned file capabilities before configuration validation. */
-  installContributions(contributions?:readonly import('./file-processors.js').FileProcessorContribution[],options?:{imageRecipes?:boolean}){return this.runtime.installContributions(contributions,options);}
+  installContributions(contributions?:readonly import('./file-processors.js').FileProcessorContribution[],options?:{imageRecipes?:boolean;dialogueCleanup?:FileDialogueCleanup}){return this.runtime.installContributions(contributions,options);}
   uninstallContributions(){this.runtime.uninstallContributions();}
   installImageRecipes(){return this.runtime.installImageRecipes();}
   uninstallImageRecipes(){this.runtime.uninstallImageRecipes();}
@@ -199,10 +201,28 @@ export class FileProcessing {
     Object.assign(result.profile.parameters,{speakerCount:options.speakerCount,speakerMin:options.range?.min??null,speakerMax:options.range?.max??null});
     return result;
   }
-  private modelVersion(processor:FileProcessor,settings:FileProcessingSettings){if(!processor.managedModel||!this.options.mediaAssets||settings.endpoint!==this.media.asrEndpoint)return '';if(processor.stage==='extract')return ASR_MODEL_VERSION;if(processor.managedModel==='speaker-wespeaker')return JSON.stringify([MEDIA_CATALOG['speaker-wespeaker'].version,SEGMENTATION_MODEL_SHA256]);return MEDIA_CATALOG[processor.managedModel].version;}
+  private modelVersion(processor:FileProcessor,settings:FileProcessingSettings){if(!processor.managedModel||!this.options.mediaAssets||settings.endpoint!==this.media.asrEndpoint)return '';return MEDIA_CATALOG[processor.managedModel].version;}
+  /** A saved job is evidence of its selected implementation. Only explicit
+   * transcription retry may discard these pins and select the current recipe. */
+  private retiredAudioVersion(id:string){
+    const db=this.files.store.db,job=db.prepare('SELECT policy_json,config_revision FROM file_jobs WHERE capture_id=?').get(id);
+    if(!job?.policy_json)return false;
+    const applied=JSON.parse(String(job.policy_json)) as AppliedFilePolicy;
+    if(applied.profile.processorId!=='audio.local-dialogue')return false;
+    const row=db.prepare('SELECT receipt FROM file_configuration_snapshots WHERE capture_id=? AND fingerprint=?').get(id,job.config_revision??null),receipt=row?JSON.parse(String(row.receipt)):undefined;
+    const retired=(ref:{id:string;version:string})=>ref.id===FUNASR_PINS.extract.id&&ref.version!==FUNASR_PINS.extract.version||ref.id===FUNASR_PINS.diarize.id&&ref.version!==FUNASR_PINS.diarize.version||ref.id==='audio.diarize-wespeaker';
+    return applied.profile.diarizationProcessor==='audio.diarize-wespeaker'||
+      Boolean(receipt?.processors?.some(retired))||
+      Boolean(receipt?.recipe?.id===FUNASR_PINS.recipe.id&&receipt.recipe.version!==FUNASR_PINS.recipe.version)||
+      db.prepare('SELECT processor AS id,version FROM file_steps WHERE capture_id=?').all(id).some(row=>retired({id:String(row.id),version:String(row.version)}));
+  }
   private configuration(id:string,phase:'pipeline'|'summary'){
     const row=this.files.store.db.prepare("SELECT v.source_id,json_extract(v.manifest,'$.item.mimeType') AS mime,j.policy_json FROM file_versions v LEFT JOIN file_jobs j ON j.capture_id=v.capture_id WHERE v.capture_id=?").get(id);
     if(!row)throw new StoreError('File not found',404);
+    if(phase==='pipeline'&&this.retiredAudioVersion(id)){
+      const frozen=this.files.store.db.prepare('SELECT s.fingerprint,s.receipt FROM file_configuration_snapshots s JOIN file_jobs j ON j.capture_id=s.capture_id AND j.config_revision=s.fingerprint WHERE j.capture_id=?').get(id);
+      if(frozen)return {fingerprint:String(frozen.fingerprint),receipt:JSON.parse(String(frozen.receipt)) as Record<string,unknown>};
+    }
     const epoch=JSON.stringify([this.saved.revision,this.options.analysisRevision?.(),this.runtime.registry.list().map(processorContract),this.runtime.recipes.list(),this.runtime.outputs.list()]);
     if(epoch!==this.configurationEpoch){this.configurationCache.clear();this.configurationEpoch=epoch;}
     const selected=phase==='summary'&&row.policy_json?JSON.parse(String(row.policy_json)):selectFilePolicy(this.saved.policy,String(row.source_id),String(row.mime??'application/octet-stream'),this.saved.revision);
@@ -212,7 +232,7 @@ export class FileProcessing {
     const result:{fingerprint:string;receipt:Record<string,unknown>}={fingerprint:resolved.fingerprint,receipt:resolved.receipt};
     const descriptor=this.runtime.registry.list().find(p=>p.id===resolved.receipt.processorId);
     if(descriptor){
-      try{const plan=this.runtime.recipes.resolve(defaultFileRecipe(descriptor),{semanticTurns:resolved.analysisSettings.semanticTurns});const output=defaultFileOutput(descriptor);this.runtime.outputs.get(output);result.fingerprint=sha256(JSON.stringify([result.fingerprint,plan.fingerprint,output]));result.receipt={...result.receipt,recipe:plan.recipe,stagePins:plan.pins,output};}
+      try{const plan=this.runtime.recipes.resolve(defaultFileRecipe(descriptor),{semanticTurns:resolved.analysisSettings.semanticTurns,deduplicate:resolved.deduplicate});const output=defaultFileOutput(descriptor);this.runtime.outputs.get(output);result.fingerprint=sha256(JSON.stringify([result.fingerprint,plan.fingerprint,output]));result.receipt={...result.receipt,recipe:plan.recipe,stagePins:plan.pins,output};}
       catch{result.fingerprint=sha256(JSON.stringify([result.fingerprint,'file-capability-unavailable']));result.receipt={...result.receipt,capabilityUnavailable:true};}
     }
     if(resolved.managedModels.length&&this.options.mediaAssets&&resolved.analysisSettings.endpoint===this.media.asrEndpoint){
@@ -226,6 +246,7 @@ export class FileProcessing {
     this.configurationCache.set(key,result);return result;
   }
   private requeueChanged(id:string,phase:'pipeline'|'summary'){
+    if(phase==='pipeline'&&this.retiredAudioVersion(id))return;
     const db=this.files.store.db;
     for(const row of db.prepare("SELECT id,input FROM execution_steps WHERE operation_id=? AND kind=? AND state NOT IN ('succeeded','cancelled','stale')").all('file:'+id,'files.'+phase)){
       const input=JSON.parse(String(row.input));if(!this.exists(id,String(input.revision),phase))this.engine.cancel(String(row.id));
@@ -457,6 +478,10 @@ export class FileProcessing {
     try{const result=await execute(signal,request);this.assertOpen();if(!this.mediaCalls.get(token))clear();return result;}
     catch(error){
       this.assertOpen();
+      if(error instanceof FunasrWorkerFailure&&error.response.execution!=='unknown'){
+        clear();if(this.mediaCalls.get(token)){this.mediaCalls.cleanup(token);if(error.response.execution==='not_started')this.mediaCalls.erased(token);}
+        throw error;
+      }
       // Explicit rejection / local validation is distinguishable from a lost response.
       const known=error instanceof ExecutionFailure&&error.category==='waiting'||error instanceof ProviderFailure&&(error.details.executionStarted===false||!['provider_timeout','provider_unavailable'].includes(error.details.code))||error instanceof StoreError&&[400,409,413,415,422].includes(error.statusCode)||error instanceof z.ZodError;
       if(request&&!this.mediaCalls.get(token)||!this.mediaCalls.get(token)&&known&&!signal.aborted)clear();
@@ -506,6 +531,8 @@ export class FileProcessing {
     this.assertOpen();
     if(this.imageControl?.owns(id))return this.imageControl.retry(id,!reuseMatchingSteps,confirmUnknown);
     this.files.version(id);const db=this.files.store.db,waits=this.processorWaits(id);
+    const retired=this.retiredAudioVersion(id);
+    if(retired&&stage!=='transcribe')throw new StoreError('The pinned audio implementation is unavailable; explicitly retry transcription with the current recipe',409);
     if(waits.some(row=>this.activeProcessorCalls.has(String(row.token))))throw new StoreError(moteText("当前处理尚未结束，请稍后再试。"),409);
     if(waits.length&&(!confirmUnknown||!this.ownerCanConfirmUnknown(id)))throw new StoreError(moteText("上次处理是否结束未知，重试可能重复执行。请确认后继续。"),409);
     if(db.prepare("SELECT 1 FROM file_jobs WHERE capture_id=? AND (state='running' OR summary_state='running')").get(id))throw new StoreError('File processing is active',409);
@@ -514,7 +541,7 @@ export class FileProcessing {
     const intentChanged=this.rememberModelIntent(id,stage==='summary'?'summary':'pipeline');if(intentChanged&&stage!=='summary')db.prepare("DELETE FROM media_model_intents WHERE capture_id=? AND phase='summary'").run(id);
     if(override){
       if(stage!=='diarize'||!db.prepare("SELECT 1 FROM file_artifacts WHERE id=? AND capture_id=? AND kind='transcript' AND current=1").get(override.artifactId,id))throw new StoreError('Current raw transcript required for scoped diarization',409);
-      if(override.options){const options=fileDiarizationOptionsSchema.parse(override.options);if(options.processor==='audio.diarize'&&options.range)throw new StoreError('Speaker range requires WeSpeaker',400);this.files.store.reserveMetadata(512);db.prepare('INSERT INTO file_diarization_overrides VALUES(?,?) ON CONFLICT(capture_id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(options));}
+      if(override.options){const options=fileDiarizationOptionsSchema.parse(override.options);if(options.processor!=='audio.diarize')throw new StoreError('The selected diarization processor is unavailable',409);this.files.store.reserveMetadata(512);db.prepare('INSERT INTO file_diarization_overrides VALUES(?,?) ON CONFLICT(capture_id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(options));}
       else db.prepare('DELETE FROM file_diarization_overrides WHERE capture_id=?').run(id);
       this.configurationCache.clear();
     }
@@ -524,7 +551,7 @@ export class FileProcessing {
       db.prepare("UPDATE file_jobs SET summary_state='waiting',available_at=0,error=NULL WHERE capture_id=?").run(id);
       if(!reuseMatchingSteps){db.prepare('DELETE FROM file_summary_pages WHERE capture_id=?').run(id);if(!intentChanged)for(const row of db.prepare("SELECT e.id FROM execution_steps e JOIN execution_operation_steps o ON o.step_id=e.id WHERE o.operation_id=? AND o.slot='file-summary' AND o.active=1 AND e.kind LIKE 'file-step.%'").all('file:'+id))this.engine.retry(String(row.id),true);}
     }
-    else {if(stage==='transcribe')db.prepare('UPDATE file_jobs SET policy_json=NULL,reuse_allowed=? WHERE capture_id=?').run(Number(reuseMatchingSteps),id);db.prepare("UPDATE file_jobs SET state='waiting',attempts=0,available_at=0,error=NULL,auto_eligible=1 WHERE capture_id=?").run(id);if(!reuseMatchingSteps)db.prepare(stage==='transcribe'?'DELETE FROM file_steps WHERE capture_id=?':"DELETE FROM file_steps WHERE capture_id=? AND step!='extract'").run(id);}
+    else {if(stage==='transcribe')db.prepare('UPDATE file_jobs SET policy_json=NULL,config_revision=NULL,reuse_allowed=? WHERE capture_id=?').run(Number(reuseMatchingSteps&&!retired),id);db.prepare("UPDATE file_jobs SET state='waiting',attempts=0,available_at=0,error=NULL,auto_eligible=1 WHERE capture_id=?").run(id);if(!reuseMatchingSteps||retired)db.prepare(stage==='transcribe'?'DELETE FROM file_steps WHERE capture_id=?':"DELETE FROM file_steps WHERE capture_id=? AND step!='extract'").run(id);}
     // An explicit retry also clears an unfinished child's provider backoff.
     if(!intentChanged&&stage!=='summary')for(const row of db.prepare("SELECT e.id FROM execution_steps e JOIN execution_operation_steps o ON o.step_id=e.id WHERE o.operation_id=? AND o.slot='file-pipeline' AND o.active=1 AND o.generation=? AND e.kind LIKE 'file-step.%' AND e.state NOT IN ('succeeded','running') AND (?=0 OR json_extract(e.input,'$.name')!='extract')").all('file:'+id,this.configuration(id,'pipeline').fingerprint,Number(stage==='diarize')))this.engine.retry(String(row.id),true);
     const prior=this.engine.list({operationId:'file:'+id,kind:stage==='summary'?'files.summary':'files.pipeline',limit:100}).items.find(step=>this.validStep(step,stage==='summary'?'summary':'pipeline'));if(prior&&!intentChanged)this.engine.retry(prior.id,true);
@@ -710,6 +737,9 @@ export class FileProcessing {
     this.recoverKnownMediaFacts();
     this.startMediaReconciliation();
     this.imageControl?.prepare();
+    for(const row of this.files.store.db.prepare("SELECT capture_id FROM file_jobs WHERE auto_eligible=1 AND state NOT IN ('succeeded','cancelled','skipped') AND (error IS NULL OR error!='file_processor_version_unavailable') AND policy_json IS NOT NULL").all()){
+      if(this.retiredAudioVersion(String(row.capture_id)))this.files.store.db.prepare("UPDATE file_jobs SET state='waiting',error=NULL,available_at=0 WHERE capture_id=?").run(row.capture_id);
+    }
     for(const row of this.files.store.db.prepare("SELECT capture_id,json FROM file_artifacts WHERE kind='summary' AND current=1").all()){
       const id=String(row.capture_id);if(JSON.parse(String(row.json)).inputFingerprint!==fileSummaryInputFingerprint(this.files,id)){
         if(this.files.store.db.prepare('SELECT 1 FROM file_semantic_withdrawals WHERE capture_id=?').get(id))this.files.store.db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind='summary'").run(id);
@@ -783,10 +813,10 @@ export class FileProcessing {
         reused=Boolean(cachedOutput);this.log(reused?'file.cached':'file.step.started',id,{operation:name as Operation,requestId},'debug');if(cachedOutput)return cachedOutput.value;
         const current=this.engine.get(stepId)!,fence=String(db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
         const stage:MediaStage=descriptor?.stage==='diarize'?'diarize':descriptor?.serviceKind==='image'?'ocr':'transcribe';
-        const managed=['audio.http','audio.local-dialogue','audio.diarize','audio.diarize-wespeaker','image.http'].includes(processor);
+        const managed=descriptor?.managedModel==='dialogue'||['audio.http','audio.local-dialogue','audio.diarize','image.http'].includes(processor);
         const url=managed?new URL(stage==='ocr'?settings.imageEndpoint||this.media.ocrEndpoint:settings.endpoint||this.media.asrEndpoint):undefined;if(stage==='diarize'&&url)url.pathname=url.pathname.replace(/\/transcribe\/?$/,'/diarize');
         const media=url?{step:current,generation:revision,endpoint:url.toString(),apiKey:settings.apiKey??'',stage,assert:()=>{signal.throwIfAborted();if(!this.exists(id,revision)||!this.engine.isCurrentGrant(stepId,fence))throw new ExecutionFailure('stale','input_changed');}}:undefined;
-        const run=()=>issuedCall?this.waitForProcessor(id,execute,descriptor?.awaitResponseOnCancel!==true,timeoutMs,media):execute(signal);return endpoint?this.processorAdmission.run(endpoint,run):run();
+        const run=()=>issuedCall?this.waitForProcessor(id,execute,descriptor?.awaitResponseOnCancel!==true,timeoutMs,media):this.trackPhysical(execute(signal));return endpoint?this.processorAdmission.run(endpoint,run):run();
       },
       commit:value=>{
         if(!extractionCurrent())throw new ExecutionFailure('stale','input_changed');
@@ -802,6 +832,7 @@ export class FileProcessing {
     });
   }
   private executionSettings(id:string,phase:'pipeline'|'summary'){
+    if(phase==='pipeline'&&this.retiredAudioVersion(id))throw new ExecutionFailure('blocked','file_processor_version_unavailable');
     const db=this.files.store.db,base=structuredClone(this.saved.settings),revision=this.configuration(id,phase).fingerprint;
     const stored=db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(id) as Job|undefined;if(!stored)throw new StoreError('File job unavailable',404);
     const job={...stored,state:phase==='summary'?'succeeded':'waiting',attempts:Math.max(0,(this.execution.getStore()?.step.attempts??stored.attempts)-1)},file=this.files.detail(id),mime=file.item.mimeType??'application/octet-stream';
@@ -837,7 +868,7 @@ export class FileProcessing {
       }else{
         if(this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now())&&(db.prepare('SELECT error FROM file_jobs WHERE capture_id=?').get(id)?.error==='snapshot_input_expired'||!this.files.store.db.prepare("SELECT 1 FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id WHERE s.capture_id=? AND s.step='extract' AND s.state='succeeded' AND a.config_revision=? AND json_extract(a.json,'$.snapshot')=1").get(id,this.configuration(id,'pipeline').fingerprint)))return new ExecutionFailure('blocked','snapshot_input_expired');
         const processor=this.runtime.registry.get(processorId);
-        try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns});this.runtime.outputs.get(defaultFileOutput(processor));}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
+        try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns,deduplicate:this.executionSettings(id,'pipeline').parameters.deduplicate!==false});this.runtime.outputs.get(defaultFileOutput(processor));}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
         if(processor.stage!=='extract'||!processor.mediaTypes.some(t=>t.endsWith('/')?mime.startsWith(t):t===mime||t.endsWith('/*')&&mime.startsWith(t.slice(0,-1))))return new ExecutionFailure('blocked','unsupported_format');
         const stages=[processor,...(processor.dialogue?[this.runtime.registry.get(settings.diarizationProcessor)]:[])];
         if(stages.some(stage=>stage.managedModel&&effective.endpoint===this.media.asrEndpoint&&this.options.mediaAssets&&!this.options.mediaAssets.ready(stage.managedModel)))return new ExecutionFailure('blocked','model_missing');
@@ -851,16 +882,16 @@ export class FileProcessing {
     if(applied)db.prepare('UPDATE file_jobs SET policy_json=? WHERE capture_id=?').run(JSON.stringify(applied),id);
     const outputType=this.runtime.outputs.get(defaultFileOutput(processor));
     const decodeOutput=(value:unknown)=>{const payload=outputType.parse(value);return {payload,transcript:transcriptSchema.parse(outputType.project(payload)),kind:outputType.kind};};
-    const input:ProcessorInput={parameters,file:{id,title:file.item.title,mimeType:mime,sizeBytes:file.sizeBytes},settings:effective,signal,maxAudioMs:Math.max(1,budget),readOriginal:()=>this.guardedOriginal(id,signal,()=>this.assertOpen())};
+    const input:ProcessorInput={parameters,file:{id,title:file.item.title,mimeType:mime,sizeBytes:file.sizeBytes,sha256:file.sha256},settingsFingerprint:processorSettingsFingerprint(processor,effective,parameters),settings:effective,signal,maxAudioMs:Math.max(1,budget),readOriginal:()=>this.guardedOriginal(id,signal,()=>this.assertOpen())};
     const started=performance.now();this.log('file.started',id,{operation:'file_process',attempt:job.attempts+1,bytes:file.sizeBytes});
     try{
-      const outputArtifact=await this.runtime.recipes.run(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns},(stage,dependencies)=>{
+      const outputArtifact=await this.runtime.recipes.run(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns,deduplicate:parameters.deduplicate!==false},(stage,dependencies)=>{
         this.assertOpen();signal.throwIfAborted();
         const read=(name:string)=>{const artifactId=dependencies[name];if(!artifactId)throw new StoreError('File stage input is missing',409);return artifactId;};
         const context:FileRecipeContext={input,dependencies,readArtifact:artifactId=>{this.assertOpen();signal.throwIfAborted();if(!Object.values(dependencies).includes(artifactId))throw new StoreError('Artifact is outside stage inputs',409);return this.artifact(artifactId);},
-          transform:(type,execute)=>this.step(id,stage.name,stage.stage.id,stage.stage.version,[file.sha256,dependencies,type,revision],revision,execute,value=>{
-            const decoded=this.runtime.outputs.decode(type,value),coverage=transcriptCoverage(decoded.transcript);return this.saveArtifact(id,decoded.kind,{transcript:decoded.transcript,output:{type,payload:decoded.payload},complete:coverage==='full',coverage,inputArtifacts:Object.values(dependencies),snapshot:file.item.layer==='snapshot'},revision,decoded.transcript);
-          }),
+          transform:(type,execute,options)=>this.step(id,stage.name,stage.stage.id,stage.stage.version,[file.sha256,dependencies,type,revision],revision,execute,value=>{
+            const decoded=this.runtime.outputs.decode(type,value),coverage=transcriptCoverage(decoded.transcript);return this.saveArtifact(id,decoded.kind,{transcript:decoded.transcript,output:{type,payload:decoded.payload},...(decoded.kind==='dialogue'?{uncorrected:true,semanticGrouping:false}:{}),complete:coverage==='full',coverage,inputArtifacts:Object.values(dependencies),snapshot:file.item.layer==='snapshot'},revision,decoded.transcript);
+          },false,!options?.deterministic),
           builtin:async operation=>{
             this.assertOpen();signal.throwIfAborted();
             if(operation==='extract')return this.step(id,stage.name,processor.id,processor.version,[fileExtractionInput(this.files,id),processor.id,processor.version,stage.stage,defaultFileOutput(processor),processorSettingsFingerprint(processor,effective,parameters),this.modelVersion(processor,effective),...(mime.startsWith('audio/')?[budget]:[])],revision,
@@ -880,26 +911,38 @@ export class FileProcessing {
             if(operation==='diarize'){
               const extractId=read('extract'),raw=this.transcript(extractId),diarizer=this.runtime.registry.get(settings.diarizationProcessor);
               if(diarizer.stage!=='diarize'||diarizer.localOnly&&!isLoopback(effective.endpoint))throw new StoreError('Dialogue requires a compatible diarization plugin and service',409);
-              return this.step(id,stage.name,diarizer.id,diarizer.version,[file.sha256,diarizer.id,diarizer.version,stage.stage,processorSettingsFingerprint(diarizer,effective,{speakerCount:settings.speakerCount,speakerMin:settings.speakerMin,speakerMax:settings.speakerMax}),this.modelVersion(diarizer,effective)],revision,
-                (processorSignal,request)=>this.runModelStage({operationId:step.operationId,captureId:id,stage:'diarization',connection:this.mediaConnection(diarizer,applied,effective),ownerIntentId:this.modelIntent(id,'pipeline')},processorSignal,(authorizedSignal,assertCurrent)=>diarizer.process({...input,signal:authorizedSignal,request,authorizeModel:assertCurrent,readOriginal:()=>this.guardedOriginal(id,authorizedSignal,assertCurrent),maxAudioMs:Math.ceil(raw.durationMs)+1000})),value=>{
-                  const data=diarizationSchema.parse(value);
+              const native=processor.output?.id===funasrTranscriptOutput.id;
+              const recognition=native?parseFunasrResponse(this.artifact(extractId).output?.payload):undefined;
+              if(recognition&&(recognition.status!=='succeeded'||recognition.operation!=='recognize'))throw new StoreError('Complete recognition checkpoint required',409);
+              const checkpoint=recognition?.status==='succeeded'?recognition.checkpoint:undefined;
+              return this.step(id,stage.name,diarizer.id,diarizer.version,[file.sha256,diarizer.id,diarizer.version,stage.stage,processorSettingsFingerprint(diarizer,effective,{speakerCount:settings.speakerCount,speakerMin:settings.speakerMin,speakerMax:settings.speakerMax}),this.modelVersion(diarizer,effective),...(checkpoint?[extractId,checkpoint.sha256]:[])],revision,
+                (processorSignal,request)=>this.runModelStage({operationId:step.operationId,captureId:id,stage:'diarization',connection:this.mediaConnection(diarizer,applied,effective),ownerIntentId:this.modelIntent(id,'pipeline')},processorSignal,(authorizedSignal,assertCurrent)=>diarizer.process({...input,recognition:checkpoint,signal:authorizedSignal,request,authorizeModel:assertCurrent,readOriginal:()=>this.guardedOriginal(id,authorizedSignal,assertCurrent),maxAudioMs:Math.min(budget,Math.ceil(raw.durationMs)+1000)})),value=>{
+                  const response=native?parseFunasrResponse(value):undefined;
+                  if(response&&(response.status!=='succeeded'||response.operation!=='diarize'||response.checkpoint.sha256!==checkpoint?.sha256))throw new StoreError('Diarization changed its persisted recognition checkpoint',502);
+                  const data=response?.status==='succeeded'&&response.operation==='diarize'?projectFunasrDiarization(parseFunasrArchive(response.checkpoint),response.diarization):diarizationSchema.parse(value);
                   if(Math.abs(data.durationMs-raw.durationMs)>2000)throw new StoreError('Diarization duration does not match the original',502);
                   if(data.expectedSpeakers!==settings.speakerCount)throw new StoreError('Diarization speaker-count constraint was ignored',502);
-                  if(settings.speakerMin!==null&&(data.declaredRange?.min!==settings.speakerMin||data.declaredRange?.max!==settings.speakerMax||!data.estimate))throw new StoreError('Diarization range was ignored',502);
+                  if(settings.speakerMin!==null&&(data.declaredRange?.min!==settings.speakerMin||data.declaredRange?.max!==settings.speakerMax))throw new StoreError('Diarization range was ignored',502);
                   db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind IN ('dialogue','corrected-dialogue','summary','speaker-names','calendar-link')").run(id);
                   db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);
-                  const artifactId=this.saveArtifact(id,'diarization',{...data,samples:data.samples.map(({wavBase64,...sample})=>sample),complete:true},revision);
+                  const artifactId=this.saveArtifact(id,'diarization',{...data,samples:data.samples.map(({wavBase64,...sample})=>sample),complete:true,...(response?{output:{type:{id:funasrDialogueOutput.id,version:funasrDialogueOutput.version},payload:response},inputArtifacts:[extractId]}:{})},revision);
                   for(const sample of data.samples){const bytes=Buffer.from(sample.wavBase64,'base64');if(bytes.length>768*1024||bytes.subarray(0,4).toString()!=='RIFF'||bytes.subarray(8,12).toString()!=='WAVE')throw new StoreError('Invalid speaker sample',502);this.files.saveAsset(artifactId,`speaker_samples/${sample.speaker}.wav`,'audio/wav',bytes);}
                   return artifactId;
                 });
             }
             if(operation==='align'){
               const extractId=read('extract'),diarizeId=read('diarize'),{complete:_,...diarization}=this.artifact(diarizeId);
+              if(stage.stage.id===FUNASR_PINS.align.id){
+                const response=parseFunasrResponse(diarization.output?.payload),recognition=parseFunasrResponse(this.artifact(extractId).output?.payload);
+                if(response.status!=='succeeded'||response.operation!=='diarize'||recognition.status!=='succeeded'||recognition.operation!=='recognize'||response.checkpoint.sha256!==recognition.checkpoint.sha256)throw new StoreError('FunASR alignment requires the same recognition checkpoint',409);
+                const aligned=this.runtime.outputs.decode(funasrDialogueOutput,response);
+                return this.step(id,stage.name,stage.stage.id,stage.stage.version,[extractId,diarizeId,response.checkpoint.sha256,stage.stage],revision,async()=>aligned.transcript,result=>this.saveArtifact(id,'dialogue',{transcript:result,output:{type:{id:funasrDialogueOutput.id,version:funasrDialogueOutput.version},payload:response},complete:true,uncorrected:true,semanticGrouping:false,inputArtifacts:[extractId,diarizeId],snapshot:file.item.layer==='snapshot'},revision,result),false,false);
+              }
               const aligned=alignDialogue(this.transcript(extractId),diarizationSchema.parse({...diarization,samples:[]}));
               return this.step(id,stage.name,stage.stage.id,stage.stage.version,[extractId,diarizeId,stage.stage],revision,async()=>aligned,result=>this.saveArtifact(id,'dialogue',{transcript:result,complete:true,uncorrected:true,semanticGrouping:false,inputArtifacts:[extractId,diarizeId],snapshot:file.item.layer==='snapshot'},revision,result),false,false);
             }
             if(db.prepare('SELECT 1 FROM file_semantic_withdrawals WHERE capture_id=?').get(id))throw new ExecutionFailure('blocked','attribution_context_changed');
-            const alignId=read('align'),aligned=this.transcript(alignId),contextFingerprint=this.semanticContextFingerprint(id);
+            const alignId=dependencies.cleanup??read('align'),aligned=this.transcript(alignId),contextFingerprint=this.semanticContextFingerprint(id);
             return this.step(id,stage.name,stage.stage.id,stage.stage.version,[alignId,stage.stage,revision,...(contextFingerprint?[contextFingerprint]:[])],revision,async processorSignal=>{
               if(!this.options.analyze)throw new StoreError('A compatible language model is required for semantic turn grouping',409);
               const ids=db.prepare('SELECT id FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,ordinal,rowid LIMIT 200').all(alignId).map(row=>String(row.id)),records=this.files.evidence(ids);
@@ -914,6 +957,18 @@ export class FileProcessing {
       },artifactId=>{this.assertOpen();signal.throwIfAborted();if(!db.prepare('SELECT 1 FROM file_artifacts WHERE id=? AND capture_id=?').get(artifactId,id))throw new StoreError('File stage returned an unpublished artifact',422);if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');});
       this.assertOpen();signal.throwIfAborted();
       if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');
+      // A disabled transform can return an earlier, cached dialogue. Publish
+      // that exact retained artifact; never reconstruct raw text from cleanup.
+      if(db.prepare("SELECT 1 FROM file_artifacts WHERE id=? AND capture_id=? AND kind='dialogue' AND current=0").get(outputArtifact,id)){
+        const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+        try{
+          signal.throwIfAborted();if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');
+          const transcript=this.transcript(outputArtifact);this.files.store.reserveMetadata(Buffer.byteLength(JSON.stringify(transcript))+4096);
+          writeFileTranscriptChunks(this.files.store,id,outputArtifact,transcript,{kind:'dialogue'});
+          db.prepare("UPDATE file_artifacts SET current=CASE WHEN id=? THEN 1 ELSE 0 END WHERE capture_id=? AND kind='dialogue'").run(outputArtifact,id);this.invalidate(id);
+          if(own)db.exec('COMMIT');
+        }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+      }
       if(file.item.layer==='snapshot'){
         const transcript=this.transcript(outputArtifact);
         // Document chunks already retain their own paragraph/row separators.
