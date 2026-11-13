@@ -300,17 +300,19 @@ export class AssistantCards {
   const selected=queryScopeSchema.parse(scope);
   if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new StoreError('Invalid assistant review limit');
   return this.transaction(()=>{
-   const items:ReturnType<AssistantCards['view']>[]=[],dependencies=new Set<string>(),pins:SourceContextDeclaration[]=[];let before=Number.MAX_SAFE_INTEGER;
-   const result=(hasMore:boolean)=>({items:items.slice(0,limit),hasMore,disclosureDependencies:{version:1 as const,complete:true as const,ids:[...dependencies].sort()},sourceContextDependencies:pins});
+   const items:(ReturnType<AssistantCards['view']>&{disclosureDependencies:{version:1;complete:true;ids:string[]};sourceContextDependencies:SourceContextDeclaration[]})[]=[];let before=Number.MAX_SAFE_INTEGER;
+   const result=(hasMore:boolean)=>({items:items.slice(0,limit),hasMore,
+    disclosureDependencies:{version:1 as const,complete:true as const,ids:[...new Set(items.flatMap(card=>card.disclosureDependencies.ids))].sort()},
+    sourceContextDependencies:items.flatMap(card=>card.sourceContextDependencies)});
    for(;;){
     const rows=this.store.db.prepare('SELECT * FROM assistant_cards WHERE seq<? ORDER BY seq DESC LIMIT 100').all(before) as CardRow[];
     if(!rows.length)break;
     for(const row of rows){
      before=row.seq;const snapshot=this.versionRow(row.id,row.current_version);
      if(snapshot&&this.visibleVersion(snapshot,selected)){
-      items.push(this.view(row,selected));
-      for(const id of this.ids(row.id,row.current_version))dependencies.add(id);
-      pins.push(...(this.payload(snapshot).sourceContextDependencies??[]));
+      // Retain each card's complete lineage, including feedback about earlier
+      // versions, so consumers can distinguish evidence from owner constraints.
+      const dependencies=new Set(this.ids(row.id,row.current_version)),pins=[...(this.payload(snapshot).sourceContextDependencies??[])];
       const feedback=this.store.db.prepare('SELECT seq,version,stale FROM assistant_card_feedback WHERE card_id=?').all(row.id) as Pick<FeedbackRow,'seq'|'version'|'stale'>[];
       for(const entry of feedback){
        const prior=this.versionRow(row.id,entry.version);
@@ -323,6 +325,7 @@ export class AssistantCards {
         for(const version of versions)for(const pin of this.payload(version).sourceContextDependencies??[])if(sources.includes(pin.sourceId))pins.push(pin);
        }
       }
+      items.push({...this.view(row,selected),disclosureDependencies:{version:1,complete:true,ids:[...dependencies].sort()},sourceContextDependencies:pins});
      }
      if(items.length>limit)return result(true);
     }
