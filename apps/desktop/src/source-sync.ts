@@ -133,15 +133,32 @@ export class SourceSync {
     });
   }
 
-  async requestSnapshotRecovery(items:SnapshotRecovery[]):Promise<number>{
+  async requestSnapshotRecovery(items:SnapshotRecovery[],targeted=false):Promise<SnapshotRecovery[]>{
     return this.mutate(async()=>{
       const pending=new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].map(item=>item.externalId));
       const matches=items.filter(item=>receiptId.test(item.captureId)&&/^[a-f0-9]{64}$/.test(item.sha256)&&Number.isSafeInteger(item.sizeBytes)&&item.sizeBytes>=0&&item.sizeBytes<=512*1024*1024&&Number.isFinite(Date.parse(item.observedAt))&&!pending.has(item.externalId)&&this.data.known[sourceHash(item.externalId)]?.revision===item.revision&&this.data.known[sourceHash(item.externalId)]?.policy===this.data.policy);
-      if(!matches.length)return 0;
+      if(!matches.length)return [];
       const known={...this.data.known};for(const item of matches){const key=sourceHash(item.externalId);known[key]={...known[key],contentHash:'',discoveryHash:undefined};}
-      // Re-enumerate authorized files instead of trusting a remote filesystem path.
-      await this.commit({...this.data,known,checkpoint:rescanFileCheckpoint(this.data.checkpoint),snapshotRecoveries:{...this.data.snapshotRecoveries,...Object.fromEntries(matches.map(item=>[sourceHash(item.externalId),{...item,identityHash:snapshotMetadataIdentity(this.data.known[sourceHash(item.externalId)].item)}]))}});return matches.length;
+      // Continuous sources re-enumerate authorized files instead of trusting a
+      // remote path. A one-time import keeps its frozen catalog and only
+      // re-reads the exact identities Central asked to resupply.
+      const next:State={...this.data,known,snapshotRecoveries:{...this.data.snapshotRecoveries,...Object.fromEntries(matches.map(item=>[sourceHash(item.externalId),{...item,identityHash:snapshotMetadataIdentity(this.data.known[sourceHash(item.externalId)].item)}]))},...(targeted?{}:{checkpoint:rescanFileCheckpoint(this.data.checkpoint)})};
+      await this.commit(next);return matches;
     });
+  }
+
+  /** Only the exact acknowledged version can enter a one-time resupply. */
+  recoveredScan(scan:SourceScan,items:readonly SnapshotRecovery[]):SourceScan{
+    const requested=new Set(items.map(item=>item.externalId));
+    const accepted=scan.items.filter(raw=>requested.has(raw.externalId)&&this.recoveryMatches(raw,this.data.snapshotRecoveries?.[sourceHash(raw.externalId)],this.data.known[sourceHash(raw.externalId)]));
+    return {...scan,items:accepted,seen:accepted.map(item=>item.externalId),complete:false,checkpoint:undefined,catalogChanges:undefined};
+  }
+
+  private recoveryMatches(raw:ScannedItem,recovery:(SnapshotRecovery&{identityHash?:string})|undefined,previous:Known|undefined):boolean{
+    if(!recovery?.identityHash||!previous||previous.policy!==this.data.policy||raw.layer!=='snapshot'||raw.deleted||recovery.revision!==previous.revision)return false;
+    const bytes=raw.localOriginalBase64?Buffer.from(raw.localOriginalBase64,'base64'):undefined;
+    const hash=raw.localOriginal?.sha256??(bytes?sourceHash(bytes):undefined),size=raw.localOriginal?.sizeBytes??bytes?.length;
+    return recovery.identityHash===snapshotMetadataIdentity(raw)&&hash===recovery.sha256&&size===recovery.sizeBytes;
   }
 
   async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime',oneTime=false,resolveHead?: (item: SourceItem) => Promise<string | null | undefined>): Promise<number> {
@@ -238,9 +255,8 @@ export class SourceSync {
       const {localOriginal, ...identity} = item;
       const key = sourceHash(item.externalId), previous = knownChanges.get(key)??next.known[key], contentHash = sourceHash(JSON.stringify({...identity, ...(localOriginal ? {originalSha256:localOriginal.sha256} : {})}));
       if (previous?.contentHash === contentHash) return;
-      const recovery=next.snapshotRecoveries?.[key],bytes=localOriginal?undefined:item.localOriginalBase64?Buffer.from(item.localOriginalBase64,'base64'):undefined;
-      const recoveryMatches=recovery&&recovery.identityHash===snapshotMetadataIdentity(item)&&previous?.policy===next.policy&&item.layer==='snapshot'&&!item.deleted&&recovery.revision===previous?.revision&&(localOriginal?.sha256??(bytes?sourceHash(bytes):undefined))===recovery.sha256&&(localOriginal?.sizeBytes??bytes?.length)===recovery.sizeBytes;
-      const revision = recoveryMatches?recovery.revision:sourceHash(contentHash + ':' + (previous?.revision ?? '')), queued: SourceItem = { ...item, revision, observedAt:recoveryMatches?recovery.observedAt:observedAt,...(recoveryMatches?{snapshotRecovery:{captureId:recovery.captureId,sha256:recovery.sha256,sizeBytes:recovery.sizeBytes}}:{}) };
+      const recovery=next.snapshotRecoveries?.[key],recovered=recovery&&this.recoveryMatches(item,recovery,previous)?recovery:undefined;
+      const revision = recovered?recovered.revision:sourceHash(contentHash + ':' + (previous?.revision ?? '')), queued: SourceItem = { ...item, revision, observedAt:recovered?recovered.observedAt:observedAt,...(recovered?{snapshotRecovery:{captureId:recovered.captureId,sha256:recovered.sha256,sizeBytes:recovered.sizeBytes}}:{}) };
       if(recovery){next.snapshotRecoveries={...next.snapshotRecoveries};delete next.snapshotRecoveries[key];}
       if ((syncQueue ?? defaultQueue) === 'history') next.pendingHistory.push(queued); else next.pendingRealtime.push(queued);
       // Coding checkpoints own their append cursor and do not need a second

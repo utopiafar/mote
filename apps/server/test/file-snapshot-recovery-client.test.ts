@@ -111,6 +111,42 @@ test('maintenance rejects out-of-scope and revoked files without revealing their
  await node.processing.tick();assert.equal(node.files.detail(other).job!.state,'cancelled');
 });
 
+test('a completed one-time import waits for released bytes, then restores the same version without importing later files',async()=>{
+ const first=await firstUpload({...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});
+ assert.ok(first.value.status()[0].source.importCompletedAt);
+ expire(first.id);await node.processing.tick();
+ assert.equal(node.files.detail(first.id).job!.state,'blocked');
+ assert.equal(node.files.detail(first.id).job!.error,'snapshot_input_expired');
+ await writeFile(join(selected,'later-generated.txt'),'Generated later file that must not be imported');
+ await recover(first.value);
+ identity(first.id,first.manifest);
+ assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM captures').get()!.n,1);
+ assert.ok(paths.some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')));
+ await finishPipeline(first.id);assert.equal(node.files.detail(first.id).job!.state,'succeeded');
+ assert.equal(node.files.chunks(first.id)[0].ocrText,'Generated current snapshot');
+ const recoveryCalls=paths.filter(path=>path.includes('/recovery/')&&path.endsWith('/uploads')).length;
+ await recover(first.value);await node.processing.tick();
+ identity(first.id,first.manifest);
+ assert.equal(paths.filter(path=>path.includes('/recovery/')&&path.endsWith('/uploads')).length,recoveryCalls);
+ assert.equal(first.value.pendingStats().pendingRecords,0);
+});
+
+test('maintenance reprocess of a completed one-time import waits for and reacquires the same released snapshot version',async()=>{
+ const first=await firstUpload({...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await finishPipeline(first.id);
+ assert.equal(node.files.detail(first.id).job!.state,'succeeded');assert.ok(first.value.status()[0].source.importCompletedAt);
+ const request=(method:'POST',url:string,payload?:unknown)=>node.app.inject({method,url,headers,...(payload===undefined?{}:{payload})});
+ const revision=node.processing.view().revision,scope={kind:'selection',sourceIds:[first.sourceId]};
+ const preview=await request('POST','/api/file-processing/preview',{revision,scope,type:'text/*'});assert.equal(preview.statusCode,200,preview.body);
+ assert.deepEqual(preview.json().items.map((item:any)=>[item.id,item.requiresOriginal]),[[first.id,true]]);
+ const accepted=await request('POST','/api/file-processing/reprocess',{token:preview.json().token});assert.equal(accepted.statusCode,200,accepted.body);assert.equal(accepted.json().queued,1);
+ await node.processing.tick();assert.equal(node.files.detail(first.id).job!.state,'blocked');assert.equal(node.files.detail(first.id).job!.error,'snapshot_input_expired');
+ await writeFile(join(selected,'later-generated-after-reprocess.txt'),'Generated later file that must not be imported');
+ await recover(first.value);identity(first.id,first.manifest);
+ assert.ok(paths.some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')));
+ await node.processing.tick();assert.equal(node.files.detail(first.id).job!.state,'succeeded');
+ assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM captures').get()!.n,1);
+});
+
 test('Desktop manual sync restores expired bytes under the same capture/revision/time and never replays completed processing',async()=>{
  const first=await firstUpload();expire(first.id);await node.processing.tick();assert.equal(node.files.detail(first.id).job!.state,'blocked');assert.equal(node.files.detail(first.id).job!.error,'snapshot_input_expired');
  await first.value.close();const restarted=await manager();await recover(restarted);identity(first.id,first.manifest);
