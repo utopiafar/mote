@@ -236,6 +236,22 @@ test('a source context revision during reduce invalidates earlier item context b
   assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(batch.id)!.result_json,null);
 });
 
+test('a continuation freezes owner input and retains its inherited source context revision',async t=>{
+ const entered=gate(),release=gate();let observed:QueryInput|undefined;t.after(()=>release.release());
+ const f=await fixture(t,async input=>{observed=input;entered.release();await release.promise;return answer(input);});
+ const sourceId='generated-continuation-source';f.node.sources.register({id:sourceId,name:'Generated source',kind:'local-files',deviceId:'generated-device',platform:'import'});
+ f.node.sources.updateContext(sourceId,{expectedVersion:0,description:'Generated original declaration'});
+ const pin=f.node.sources.contexts.identity(sourceId)!,id=await f.note('continuation');
+ const taskContext={turns:[],ownerClarificationReply:{questionId:randomUUID(),reply:'  Generated literal owner input.\n'}};
+ const batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated continuation',evidenceIds:[id],taskContext,contextSourceContextDependencies:[pin]}]},manual(f.node));
+ taskContext.ownerClarificationReply.reply='Generated caller mutation after admission';
+ await reached(entered.promise);assert.deepEqual(observed!.contextSourceContextDependencies,[pin]);
+ assert.equal((observed!.taskContext!.ownerClarificationReply as {reply:string}).reply,'  Generated literal owner input.\n');
+ f.node.sources.updateContext(sourceId,{expectedVersion:1,description:'Generated revised declaration'});release.release();
+ await until(()=>!f.node.executor.isActiveStep(f.batch.progress(batch.id).items[0].id));
+ assert.notEqual(f.batch.progress(batch.id).items[0].state,'succeeded');assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(batch.id)!.result_json,null);
+});
+
 
 test('a rejected outer cancellation cannot abort work that the transaction rolls back',async t=>{
   const entered=gate(),release=gate();let held:QueryInput|undefined;t.after(()=>release.release());

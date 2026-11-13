@@ -1,5 +1,7 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
+  "补充后，继续当前任务，资料范围和行动授权保持不变。": "Ihre Antwort setzt die aktuelle Aufgabe mit demselben Quellenumfang und denselben Aktionsberechtigungen fort.",
+  "任务已取消或版本、资料范围已变化，这个问题不再接受回答。": "Die Aufgabe wurde abgebrochen oder ihre Version bzw. ihr Quellenumfang hat sich geändert. Diese Frage nimmt keine Antworten mehr an.",
   "图片理解可能将原图发送给所选模型服务。": "Die Bildanalyse kann das Originalbild an den ausgewählten Modelldienst senden.",
   "将检查以下全部启用的本机来源，并按当前发送设置上传待发内容，包括其他采集记录。": "Alle unten aufgeführten aktivierten lokalen Quellen werden geprüft. Ausstehende Inhalte und andere erfasste Einträge werden gemäß den aktuellen Sendeeinstellungen hochgeladen.",
   "以下操作使用已保存设置。仅归档、参考和已取消的文件不会进入内容处理；每次最多重新处理 100 份当前版本，预览有效期 10 分钟。": "Verwendet gespeicherte Einstellungen. Nur archivierte, Referenz- und abgebrochene Dateien werden nicht verarbeitet. Jeder Durchlauf umfasst höchstens 100 aktuelle Versionen; Vorschauen gelten 10 Minuten.",
