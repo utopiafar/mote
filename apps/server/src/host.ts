@@ -90,6 +90,8 @@ import {connectionsFeature} from './features/connections.js';
 import {mediaModelsFeature,mediaPreparationFeature} from './features/media.js';
 import {inventoryFeature} from './features/features.js';
 import {insightFeature} from './features/insights.js';
+import {AssistantNotifications} from './assistant-notifications.js';
+import type {NotificationSettings} from './notification-configuration.js';
 import {parseCaptureBundle} from './plugins/capture-intake.js';
 import { UsageLedger } from './usage.js';
 
@@ -515,8 +517,9 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
+  const assistantNotifications=new AssistantNotifications(assistantCards,()=>configService.current<NotificationSettings>('notifications'));
   const featureServices=Object.freeze({
-    assistantCards,assistantCommitments,
+    assistantCards,assistantNotifications,assistantCommitments,
     configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
@@ -562,7 +565,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.memory'))routes.push(domain('mote.memory'));
   if(selected('mote.imports'))routes.push(domain('mote.imports'));
   if(selected('mote.ask'))routes.push(domain('mote.ask'));
-  if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices,{store:assistantCards,credential,assertRequestActive})));
+  if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices,{store:assistantCards,notifications:assistantNotifications,credential,assertRequestActive})));
   if(selected('mote.agent-view'))routes.push(domain('mote.agent-view'));
   if(selected('mote.features'))routes.push(inventoryFeature(()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()])));
   await installFeatureRoutes(featureRoutes,routes);

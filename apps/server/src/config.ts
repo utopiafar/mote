@@ -16,6 +16,7 @@ import { lifecycleSettingsSchema } from './memory-configuration.js';
 import { actionsRuntimeSettingsSchema } from './actions-configuration.js';
 import { workflowConfigurationSchema } from './workflow-configuration.js';
 import { activityConfigurationSchema } from './activity-configuration.js';
+import { notificationSettingsSchema } from './notification-configuration.js';
 import type { ConfigDomainRegistration, ConfigService } from './config-service.js';
 import { defaultLogMaxBytes, logRetentionFromDocument, LogRetentionError, MAX_LOG_FILE_BYTES, DEFAULT_LOG_RETENTION, type LogRetention, MiB } from './log-retention-config.mjs';
 
@@ -190,6 +191,7 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
     definition('conversations', conversationSettingsSchema, false, [{path:'multipleConversations',effect:'immediate'},{path:'context',effect:'next-request'}]),
     definition('actions', actionsRuntimeSettingsSchema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'timeZone', effect: 'next-request' }]),
     definition('activity', activityConfigurationSchema, false, [{path:'enabled',effect:'immediate'},{path:'modelProfileId',effect:'next-request'}]),
+    definition('notifications', notificationSettingsSchema, false, [{path:'enabled',effect:'immediate'},{path:'timeZone',effect:'immediate'},{path:'quietHours',effect:'immediate'},{path:'minIntervalMinutes',effect:'immediate'}]),
     definition('workflows', workflowConfigurationSchema, false, Object.keys(workflowConfigurationSchema.parse({})).flatMap(path => [{ path: `${path}.enabled`, effect: 'immediate' as const }, { path: `${path}.concurrency`, effect: 'next-admission' as const }])),
   ];
 }
@@ -326,6 +328,6 @@ export function documentFromConfig(config: Config): ConfigDocument {
     plugins: pluginsConfigSchema.parse({ importPythonPacks: config.importPythonPacks }),
     updates: updatesConfigSchema.parse({ repository: config.updateRepository, channel: config.updateChannel }), media: mediaConfigSchema.parse(config.media ?? {}),
     processing: defaultProcessingConfiguration(config.media), perception: perceptionConfigurationSchema.parse({}), memory: lifecycleSettingsSchema.parse({}), conversations: conversationSettingsSchema.parse({}),
-    actions: actionsRuntimeSettingsSchema.parse({}), activity: activityConfigurationSchema.parse({}), workflows: workflowConfigurationSchema.parse({}),
+    actions: actionsRuntimeSettingsSchema.parse({}), activity: activityConfigurationSchema.parse({}), notifications: notificationSettingsSchema.parse({}), workflows: workflowConfigurationSchema.parse({}),
   };
 }

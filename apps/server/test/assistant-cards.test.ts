@@ -254,7 +254,7 @@ test('encrypted card bodies and feedback survive restart and maintenance deletio
  let node=await buildApp(config,options);let closed=false;
  t.after(async()=>{if(!closed)await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const original=randomUUID(),id=randomUUID();await node.store.ingest({id:original,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated encrypted original'});
- const input={id,kind:'briefing' as const,matterId:null,version:'encrypted',state:'open' as const,title:'Generated private title',body:'Generated private body',evidence:[{id:original,quote:'Generated encrypted original'}],evidenceDependencies:dependencies([original])};
+ const input={id,kind:'briefing' as const,matterId:null,version:'encrypted',state:'open' as const,title:'Generated private title',body:'Generated private body',reminderReason:'Generated private reminder reason',evidence:[{id:original,quote:'Generated encrypted original'}],evidenceDependencies:dependencies([original])};
  let card=node.featureServices.assistantCards.publish(input,undefined,all,()=>{});
  card=node.featureServices.assistantCards.feedback(id,{expectedRevision:card.revision,action:'correct',note:'Generated private feedback'},all);
  const privateRows=JSON.stringify({version:node.store.db.prepare('SELECT private_json FROM assistant_card_versions WHERE card_id=?').get(id),feedback:node.store.db.prepare('SELECT private_json FROM assistant_card_feedback WHERE card_id=?').get(id)});

@@ -23,6 +23,7 @@ function assertPublicationCurrent(check:AssertTaskCurrent,ids:readonly string[])
 const publishSchema=z.object({
  id:uuid,kind:cardKind,matterId:uuid.nullable(),version,state:cardState,
  title:z.string().min(1).max(500),body:text,
+ reminderReason:z.string().min(1).max(2000).refine(value=>value.trim().length>0).optional(),
  evidence:z.array(ownerQuestionEvidenceSchema.extend({id:uuid})).max(100),
  evidenceDependencies:evidenceDependenciesSchema,sourceContextDependencies:z.array(sourceContextDeclarationSchema).optional(),
 }).strict();
@@ -38,7 +39,7 @@ export const assistantCardFeedbackSchema=z.object({
 export type AssistantCardFeedback=z.infer<typeof assistantCardFeedbackSchema>;
 type CardRow={seq:number;id:string;cursor_key:string;kind:z.infer<typeof cardKind>;matter_id:string|null;revision:number;current_version:string;state:'open'|'resolved'|'stale';accepted_task_id:string|null;read_at:string|null;created_at:string;updated_at:string};
 type VersionRow={seq:number;card_id:string;version:string;request_hash:string;state:'open'|'resolved';stale:number;private_json:string|null;created_at:string};
-type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'>;
+type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'>;
 type FeedbackRow={seq:number;version:string;action:Exclude<AssistantCardFeedback['action'],'read'>;stale:number;private_json:string|null;created_at:string};
 
 /** Only the domain caller chooses object identity and semantic updates. This
@@ -51,6 +52,8 @@ export class AssistantCards {
   try{const result=run();this.store.db.exec('RELEASE assistant_cards_write');return result;}
   catch(error){this.store.db.exec('ROLLBACK TO assistant_cards_write; RELEASE assistant_cards_write');throw error;}
  }
+ /** Keep a multi-page derived read on one SQLite snapshot. */
+ readSnapshot<T>(read:()=>T):T{return this.transaction(read);}
  private row(id:string):CardRow{
   const row=this.store.db.prepare('SELECT * FROM assistant_cards WHERE id=?').get(uuid.parse(id)) as CardRow|undefined;
   if(!row)throw new StoreError('Assistant card not found',404);return row;
@@ -145,7 +148,7 @@ export class AssistantCards {
    const ids=taskEvidenceIds(this.store,dependencies),sourceIds=[...new Set(pins.map(pin=>pin.sourceId))];this.assertValid(ids,scope,sourceIds);assertSourceContextDependencies(this.reader.sources.contexts,pins);
    assertPublicationCurrent(assertCurrent,ids);this.assertValid(ids,scope,sourceIds);assertSourceContextDependencies(this.reader.sources.contexts,pins);
    if(existing)this.expect(this.row(input.id),expectedRevision!);
-   const at=this.now(),body=encodeMemoryPrivate(this.store,{title:input.title,body:input.body,evidence:input.evidence,...(pins.length?{sourceContextDependencies:pins}:{})});
+   const at=this.now(),body=encodeMemoryPrivate(this.store,{title:input.title,body:input.body,evidence:input.evidence,...(input.reminderReason?{reminderReason:input.reminderReason}:{}),...(pins.length?{sourceContextDependencies:pins}:{})});
    if(existing)this.store.db.prepare('UPDATE assistant_cards SET matter_id=?,current_version=?,state=?,revision=revision+1,updated_at=? WHERE id=?').run(input.matterId,input.version,input.state,at,input.id);
    else this.store.db.prepare('INSERT INTO assistant_cards(id,cursor_key,kind,matter_id,revision,current_version,state,accepted_task_id,read_at,created_at,updated_at) VALUES(?,?,?,?,1,?,?,NULL,NULL,?,?)').run(input.id,randomBytes(32).toString('hex'),input.kind,input.matterId,input.version,input.state,at,at);
    this.store.db.prepare('INSERT INTO assistant_card_versions(card_id,version,request_hash,state,private_json,created_at) VALUES(?,?,?,?,?,?)').run(input.id,input.version,hash,input.state,body,at);
@@ -155,6 +158,34 @@ export class AssistantCards {
   });
  }
  get(id:string,rawScope:QueryScope){return this.transaction(()=>this.view(this.row(id),queryScopeSchema.parse(rawScope)));}
+ /** Find when the current run of reminder proposals began. An inaccessible
+  * previous version cannot be used to infer a new reminder. */
+ notificationTiming(id:string,rawScope:QueryScope){
+  return this.transaction(()=>{
+   const scope=queryScopeSchema.parse(rawScope),row=this.row(id),current=this.current(row,scope);
+   if(!this.payload(current).reminderReason)return null;
+   let origin=current.created_at,before=current.seq;
+   for(;;){
+    const versions=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND seq<? ORDER BY seq DESC LIMIT 100').all(id,before) as VersionRow[];
+    if(!versions.length)break;
+    for(const previous of versions){
+     if(!this.visibleVersion(previous,scope))return null;
+     if(!this.payload(previous).reminderReason)return {origin,currentVersionAt:current.created_at};
+     origin=previous.created_at;before=previous.seq;
+    }
+   }
+   return {origin,currentVersionAt:current.created_at};
+  });
+ }
+ /** A hidden historical reminder decision must not accidentally become an
+  * authorization to remind again. Do not disclose the hidden feedback itself. */
+ notificationFeedbackVisible(id:string,rawScope:QueryScope){
+  return this.transaction(()=>{
+   const card=this.view(this.row(id),queryScopeSchema.parse(rawScope));
+   const total=this.store.db.prepare("SELECT count(*) AS n FROM assistant_card_feedback WHERE card_id=? AND action IN ('later','ignore','never_remind')").get(id) as {n:number};
+   return total.n===card.feedback.filter(entry=>entry.action==='later'||entry.action==='ignore'||entry.action==='never_remind').length;
+  });
+ }
  feedback(id:string,raw:AssistantCardFeedback,rawScope:QueryScope){
   const input=assistantCardFeedbackSchema.parse(raw),scope=queryScopeSchema.parse(rawScope);
   return this.transaction(()=>{
