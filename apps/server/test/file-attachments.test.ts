@@ -69,7 +69,10 @@ test('an archived image reuses one extraction and composes with its caption for 
  assert.equal(f.node.materials.get(materialId('generated-notes',f.node.files.detail(child).item.externalId)),undefined,'the attachment belongs to the parent composition');
  const pin=f.node.materials.input(current.ref,['source-body',requirement])!;assert.equal(pin.ready,true);assert.equal(pin.evidenceIds.length,2);
  const records=f.node.materials.evidence(pin.evidenceIds);assert.ok(records.some(r=>r.ocrText.includes(caption)));assert.deepEqual(JSON.parse(records.find(r=>r.ocrText.includes(words))!.ocrText).imageLocation,location);
- const artifact=f.node.files.detail(child).artifacts.find((a:any)=>a.kind==='image-text')!;assert.equal((artifact as any).reuse.captureId,donor);
+ const artifact=f.node.files.detail(child).artifacts.find((a:any)=>a.kind==='image-text')!;
+ assert.equal((artifact as any).reuse.kind,'same-original-extraction');
+ assert.equal((artifact as any).reuse.captureId,undefined,'reuse metadata cannot disclose another logical origin');
+ assert.equal((artifact as any).reuse.artifactId,undefined,'the new artifact owns its independent lineage');
  const recipes=[{id:'fixture.attachment-personal',version:'1'},{id:'fixture.attachment-coding',version:'1'}];
  for(const [i,recipe] of recipes.entries())f.node.memoryStrategies.registerRecipe({...recipe,workContract:'range-evaluation@1',requires:['source-body',requirement],extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:i?'mote.coding-review':'mote.personal-review',version:i?'3':'5'}});
  const {job,running}=await withFixtureOwnerModelWork(f.node,async()=>{const job=f.node.memoryPipeline.create({evidenceIds:pin.evidenceIds,recipes});return {job,running:f.node.memoryPipeline.run(job.id)};});const done=await running;assert.equal(done.status,'completed',JSON.stringify(f.node.memoryPipeline.get(job.id)));
@@ -123,6 +126,42 @@ test('content reuse is opt-in and exact processor settings and versions are requ
  await authorizeFixtureModels(f.node);
  await f.upload('different-settings');await f.node.processing.tick();assert.equal(f.ocrCalls(),4);
  processor.version='generated-next-version';await authorizeFixtureModels(f.node);await f.upload('different-version');await f.node.processing.tick();assert.equal(f.ocrCalls(),5);
+});
+
+test('a Central file image cache still requires current background authorization',async t=>{
+ const f=await fixture(t);await f.upload('authorized-donor');await f.node.processing.tick();assert.equal(f.ocrCalls(),1);
+ const view=(await f.node.app.inject({url:'/api/model-authorization',headers})).json();
+ const stopped=await f.node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{action:'off',revision:view.authorization.revision,operationId:randomUUID()}});
+ assert.equal(stopped.statusCode,200,stopped.body);
+ const target=await f.upload('waiting-target');await f.node.processing.tick();
+ assert.equal(f.ocrCalls(),1);assert.equal(f.node.files.chunks(target).length,0,'a matching product cannot bypass the closed authorization gate');
+ assert.equal(f.node.files.detail(target).job?.error,'background_model_authorization_required');
+ await authorizeFixtureModels(f.node);
+ f.node.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE operation_id=?').run('image:'+target);
+ f.node.store.db.prepare('UPDATE perception_jobs SET available_at=0 WHERE capture_id=?').run(target);
+ await f.node.processing.tick();assert.equal(f.ocrCalls(),1);assert.match(f.node.files.chunks(target)[0].ocrText,/Generated participant/);
+});
+
+test('Central file image reuse preserves independent retention and exposes only the target origin',async t=>{
+ const f=await fixture(t),donor=await f.upload('private-donor');await f.node.processing.tick();
+ const target=await f.upload('public-target');await f.node.processing.tick();assert.equal(f.ocrCalls(),1);
+ const chunks=f.node.files.chunks(target);await f.organize();const material=f.node.materials.get(materialId('generated-images','public-target'))!;
+ f.node.files.forget(donor);await f.organize();f.node.files.sweep();
+ assert.equal(f.node.files.chunks(target)[0].id,chunks[0].id);assert.equal(f.node.files.isCurrentEvidence(chunks[0].id),true);
+ assert.match(f.node.materials.read(material.ref).text,/Generated participant/);
+ const image=await f.node.app.inject({url:'/api/images/'+target,headers});assert.equal(image.statusCode,200,image.body);
+ const disclosed=JSON.stringify({file:f.node.files.detail(target),view:f.node.files.fileView(target),image:image.json(),chunks:f.node.files.chunks(target),material:f.node.materials.read(material.ref)});
+ assert.ok(!disclosed.includes(donor));assert.ok(!disclosed.includes('private-donor'));
+});
+
+test('Central file image cache rejects a changed privacy transform and corrupt machine output',async t=>{
+ const f=await fixture(t),donor=await f.upload('donor');await f.node.processing.tick();
+ f.node.store.db.prepare("UPDATE image_products SET json=json_set(json,'$.payload.durationMs','invalid') WHERE capture_id=? AND kind='ocr'").run(donor);
+ const fresh=await f.upload('corrupt-cache-fallback');await f.node.processing.tick();assert.equal(f.ocrCalls(),2);assert.ok(f.node.files.chunks(fresh).length);
+ const masked=await f.upload('privacy-transformed');
+ f.node.store.db.prepare("UPDATE captures SET json=json_set(json,'$.privacy.mode','masked','$.privacy.redacted',json('true')) WHERE id=?").run(masked);
+ await f.node.processing.tick();assert.equal(f.ocrCalls(),3);assert.ok(f.node.files.chunks(masked).length);
+ assert.equal(f.node.files.detail(masked).artifacts.find((a:any)=>a.kind==='image-text')?.reuse,undefined);
 });
 
 test('retaining attachments and restarting never admits historical extraction automatically',async t=>{

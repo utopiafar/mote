@@ -6,6 +6,7 @@ import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import type {ModelSettings} from '@mote/shared/models';
 import type {ModelAgentIdentity} from './model-agent.js';
 import {fileConfiguration,processorContract,processorSettingsFingerprint} from './file-configuration.js';
+import {fileExtractionInput,readFileExtractionCache} from './file-extraction-cache.js';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES,type ExecutionPolicy} from './execution-policy.js';
@@ -765,26 +766,21 @@ export class FileProcessing {
     const installationEpoch=this.runtime.registry.epochs.get(processor),stageKey=processor+'@'+version,stageEpoch=this.runtime.recipes.epochs.get(stageKey);
     const db=this.files.store.db,fingerprint=sha256(JSON.stringify(key)),old=db.prepare('SELECT fingerprint,state,artifact_id,attempts FROM file_steps WHERE capture_id=? AND step=?').get(id,name) as Step|undefined;
     const cached=old?.state==='succeeded'&&old.fingerprint===fingerprint&&old.artifact_id&&db.prepare('SELECT 1 FROM file_artifacts WHERE id=?').get(old.artifact_id);
-    // Reuse only a raw extraction whose plugin explicitly declares byte-only
-    // semantics. Never copy human edits, speaker assignments or summaries.
-    const reusable=!cached&&reuseByContent&&name==='extract'?db.prepare(`SELECT s.capture_id,s.artifact_id,a.json
-      FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id JOIN file_versions v ON v.capture_id=s.capture_id
-      JOIN file_versions target ON target.capture_id=?
-      WHERE s.capture_id!=? AND s.step='extract' AND s.state='succeeded' AND s.fingerprint=?
-       AND s.processor=? AND s.version=? AND v.object_hash=target.object_hash
-       AND json_extract(v.manifest,'$.item.mimeType')=json_extract(target.manifest,'$.item.mimeType')
-       AND a.kind IN ('image-text','text','transcript')
-      ORDER BY s.updated_at DESC LIMIT 1`).get(id,id,fingerprint,processor,version):undefined;
-    const reused=reusable?transcriptSchema.parse(JSON.parse(String(reusable.json)).transcript):undefined;
     if(cached)this.log('file.cached',id,{operation:name as Operation},'debug');
     const active=this.execution.getStore();if(!active)throw new StoreError('File step needs an execution grant',409);
     const descriptor=this.runtime.registry.list().find(p=>p.id===processor),settings=this.executionSettings(id,'pipeline').effective;
+    const extractionInput=name==='extract'?fileExtractionInput(this.files,id):undefined;
+    const extractionCurrent=()=>name!=='extract'||Boolean(extractionInput)&&isDeepStrictEqual(extractionInput,fileExtractionInput(this.files,id));
+    let reused=false;
     const endpoint=descriptor&&(descriptor.serviceKind==='asr'||descriptor.stage==='diarize')&&isLoopback(settings.endpoint)?settings.endpoint:undefined;
     const stepId=sha256(JSON.stringify(['file-step',id,name,fingerprint,...(this.modelIntent(id,'pipeline')?[this.modelIntent(id,'pipeline')]:[])])),started=performance.now(),requestId=this.options.diagnostics?.requestId()??randomUUID(),timeoutMs=callPolicy===EXECUTION_POLICIES.modelCall?null:this.saved.settings.timeoutMs;
     db.prepare("INSERT INTO file_steps(capture_id,step,processor,version,fingerprint,state,attempts,updated_at) VALUES(?,?,?,?,?,'waiting',0,?) ON CONFLICT(capture_id,step) DO UPDATE SET processor=excluded.processor,version=excluded.version,fingerprint=excluded.fingerprint,artifact_id=CASE WHEN file_steps.fingerprint=excluded.fingerprint THEN file_steps.artifact_id ELSE NULL END").run(id,name,processor,version,fingerprint,new Date().toISOString());
-    return this.engine.runStep({id:stepId,operationId:'file:'+id,kind:'file-step',pool:'file-work',input:{captureId:id,name,fingerprint,...(this.modelIntent(id,'pipeline')?{ownerIntentId:this.modelIntent(id,'pipeline')}:{})},generation:{slot:'file-pipeline',version:this.modelGeneration(id,'pipeline',revision)},signal:active.signal,policy:issuedCall?callPolicy:EXECUTION_POLICIES.deterministic,...(endpoint?{resourceKeys:[this.processorAdmission.resourceKey(endpoint)],admit:()=>{try{this.processorAdmission.check(endpoint);}catch(error){if(error instanceof ProviderFailure)return new ExecutionFailure('waiting',error.details.code,error.details.retryAfterMs);throw error;}}}:{}),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):error instanceof StoreError&&error.statusCode===422?new ExecutionFailure('permanent','unsupported_format'):new ExecutionFailure('permanent','step_failed'),timeoutMs,cached:Boolean(cached),initialAttempts:old?.fingerprint===fingerprint?old.attempts:0,validate:()=>this.exists(id,revision),
+    return this.engine.runStep({id:stepId,operationId:'file:'+id,kind:'file-step',pool:'file-work',input:{captureId:id,name,fingerprint,...(this.modelIntent(id,'pipeline')?{ownerIntentId:this.modelIntent(id,'pipeline')}:{})},generation:{slot:'file-pipeline',version:this.modelGeneration(id,'pipeline',revision)},signal:active.signal,policy:issuedCall?callPolicy:EXECUTION_POLICIES.deterministic,...(endpoint?{resourceKeys:[this.processorAdmission.resourceKey(endpoint)],admit:()=>{try{this.processorAdmission.check(endpoint);}catch(error){if(error instanceof ProviderFailure)return new ExecutionFailure('waiting',error.details.code,error.details.retryAfterMs);throw error;}}}:{}),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):error instanceof StoreError&&error.statusCode===422?new ExecutionFailure('permanent','unsupported_format'):new ExecutionFailure('permanent','step_failed'),timeoutMs,cached:Boolean(cached),initialAttempts:old?.fingerprint===fingerprint?old.attempts:0,validate:()=>this.exists(id,revision)&&extractionCurrent(),
       execute:async signal=>{
-        this.log(reused?'file.cached':'file.step.started',id,{operation:name as Operation,requestId},'debug');if(reused)return reused;
+        // Lookup stays inside the existing authorized execution. The engine
+        // validates again before publishing the new origin's own artifact.
+        const cachedOutput=reuseByContent&&name==='extract'?readFileExtractionCache(this.files,id,fingerprint,processor,version,defaultFileOutput(descriptor!),this.runtime.outputs,Boolean(descriptor?.output)):undefined;
+        reused=Boolean(cachedOutput);this.log(reused?'file.cached':'file.step.started',id,{operation:name as Operation,requestId},'debug');if(cachedOutput)return cachedOutput.value;
         const current=this.engine.get(stepId)!,fence=String(db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
         const stage:MediaStage=descriptor?.stage==='diarize'?'diarize':descriptor?.serviceKind==='image'?'ocr':'transcribe';
         const managed=['audio.http','audio.local-dialogue','audio.diarize','audio.diarize-wespeaker','image.http'].includes(processor);
@@ -792,8 +788,16 @@ export class FileProcessing {
         const media=url?{step:current,generation:revision,endpoint:url.toString(),apiKey:settings.apiKey??'',stage,assert:()=>{signal.throwIfAborted();if(!this.exists(id,revision)||!this.engine.isCurrentGrant(stepId,fence))throw new ExecutionFailure('stale','input_changed');}}:undefined;
         const run=()=>issuedCall?this.waitForProcessor(id,execute,descriptor?.awaitResponseOnCancel!==true,timeoutMs,media):execute(signal);return endpoint?this.processorAdmission.run(endpoint,run):run();
       },
-      commit:value=>{if(stageEpoch&&!this.runtime.recipes.epochs.matches(stageKey,stageEpoch))throw new ExecutionFailure('blocked','processor_instance_unavailable');if(installationEpoch&&!this.runtime.registry.epochs.matches(processor,installationEpoch))throw new ExecutionFailure('blocked','processor_instance_unavailable');const artifactId=save(value);if(reusable)db.prepare("UPDATE file_artifacts SET json=json_set(json,'$.reuse',json(?)) WHERE id=?").run(JSON.stringify({kind:'same-original-extraction',captureId:reusable.capture_id,artifactId:reusable.artifact_id,processor,version,fingerprint}),artifactId);db.prepare('UPDATE file_steps SET artifact_id=? WHERE capture_id=? AND step=?').run(artifactId,id,name);this.completeMediaStep(stepId);this.invalidate(id);this.log('file.step.completed',id,{operation:name as Operation,requestId,durationMs:performance.now()-started});},
-      read:()=>{const row=db.prepare('SELECT artifact_id FROM file_steps WHERE capture_id=? AND step=? AND fingerprint=?').get(id,name,fingerprint);return row?.artifact_id&&db.prepare('SELECT 1 FROM file_artifacts WHERE id=?').get(row.artifact_id)?String(row.artifact_id):undefined;},
+      commit:value=>{
+        if(!extractionCurrent())throw new ExecutionFailure('stale','input_changed');
+        if(stageEpoch&&!this.runtime.recipes.epochs.matches(stageKey,stageEpoch))throw new ExecutionFailure('blocked','processor_instance_unavailable');
+        if(installationEpoch&&!this.runtime.registry.epochs.matches(processor,installationEpoch))throw new ExecutionFailure('blocked','processor_instance_unavailable');
+        const artifactId=save(value);
+        if(reused)db.prepare("UPDATE file_artifacts SET json=json_set(json,'$.reuse',json(?)) WHERE id=?").run(JSON.stringify({kind:'same-original-extraction',processor,version,fingerprint}),artifactId);
+        db.prepare('UPDATE file_steps SET artifact_id=? WHERE capture_id=? AND step=?').run(artifactId,id,name);this.completeMediaStep(stepId);this.invalidate(id);
+        this.log('file.step.completed',id,{operation:name as Operation,requestId,durationMs:performance.now()-started});
+      },
+      read:()=>{if(!extractionCurrent())return;const row=db.prepare('SELECT artifact_id FROM file_steps WHERE capture_id=? AND step=? AND fingerprint=?').get(id,name,fingerprint);return row?.artifact_id&&db.prepare('SELECT 1 FROM file_artifacts WHERE id=?').get(row.artifact_id)?String(row.artifact_id):undefined;},
       project:step=>{if(!this.exists(id,revision))return;db.prepare('UPDATE file_steps SET state=?,attempts=?,error=?,updated_at=? WHERE capture_id=? AND step=? AND fingerprint=?').run(step.state,step.attempts,step.error??null,new Date().toISOString(),id,name,fingerprint);if(step.state==='running')db.prepare('UPDATE file_jobs SET stage=? WHERE capture_id=?').run(name,id);if(step.state==='failed')this.log('file.step.failed',id,{operation:name as Operation,requestId,category:step.error??'step_failed',durationMs:performance.now()-started},'error');},
     });
   }
@@ -859,7 +863,7 @@ export class FileProcessing {
           }),
           builtin:async operation=>{
             this.assertOpen();signal.throwIfAborted();
-            if(operation==='extract')return this.step(id,stage.name,processor.id,processor.version,[file.sha256,processor.id,processor.version,stage.stage,defaultFileOutput(processor),processorSettingsFingerprint(processor,effective,parameters),this.modelVersion(processor,effective)],revision,
+            if(operation==='extract')return this.step(id,stage.name,processor.id,processor.version,[fileExtractionInput(this.files,id),processor.id,processor.version,stage.stage,defaultFileOutput(processor),processorSettingsFingerprint(processor,effective,parameters),this.modelVersion(processor,effective),...(mime.startsWith('audio/')?[budget]:[])],revision,
               async (processorSignal,request)=>{
                 const connection=this.mediaConnection(processor,applied,effective),invoke=(authorizedSignal:AbortSignal,assertCurrent:()=>void)=>processor.process({...input,signal:authorizedSignal,request,authorizeModel:assertCurrent,readOriginal:()=>this.guardedOriginal(id,authorizedSignal,assertCurrent)});
                 const raw=await(connection?this.runModelStage({operationId:step.operationId,captureId:id,stage:processor.id==='image.http'?'ocr':'asr',connection,ownerIntentId:this.modelIntent(id,'pipeline')},processorSignal,invoke):processor.process({...input,signal:processorSignal,request})),decoded=decodeOutput(raw);
@@ -872,7 +876,7 @@ export class FileProcessing {
                 db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=?").run(id);
                 return this.saveArtifact(id,processor.output?decoded.kind:mime.startsWith('audio/')?'transcript':mime.startsWith('image/')?'image-text':'text',
                   {transcript,output:{type:defaultFileOutput(processor),...(processor.output?{payload:decoded.payload}:{})},durationMs:transcript.durationMs,segments:transcript.segments.length,complete:coverage==='full',coverage,processor:processor.id,processorVersion:processor.version,uncorrected:true,snapshot:file.item.layer==='snapshot'},revision,transcript);
-              },!processor.output&&processor.reuseByContent===true&&job.reuse_allowed!==0);
+              },processor.reuseByContent===true&&job.reuse_allowed!==0);
             if(operation==='diarize'){
               const extractId=read('extract'),raw=this.transcript(extractId),diarizer=this.runtime.registry.get(settings.diarizationProcessor);
               if(diarizer.stage!=='diarize'||diarizer.localOnly&&!isLoopback(effective.endpoint))throw new StoreError('Dialogue requires a compatible diarization plugin and service',409);

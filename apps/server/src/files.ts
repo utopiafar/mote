@@ -339,7 +339,10 @@ export class FileStore {
   detail(id:string,includeArtifacts=true){
     const v=this.version(id),db=this.store.db,head=db.prepare('SELECT origin_missing FROM file_heads WHERE capture_id=?').get(id) as {origin_missing:number}|undefined;
     const artifacts=includeArtifacts?(db.prepare('SELECT id,kind,created_at,json FROM file_artifacts WHERE capture_id=? AND current=1 ORDER BY created_at').all(id) as {id:string;kind:string;created_at:string;json:string}[]).map(a=>{
-      const {transcript,segments,output,...data}=JSON.parse(a.json);return {id:a.id,kind:a.kind,createdAt:a.created_at,...data,...(output?{output:{type:output.type}}:{}),...(transcript?{durationMs:transcript.durationMs,segments:transcript.segments.length,warnings:transcript.warnings}:segments?{segments:Array.isArray(segments)?segments.length:segments}:{})};
+      const {transcript,segments,output,reuse,...data}=JSON.parse(a.json);
+      // A computation receipt never grants disclosure of another file origin.
+      const receipt=reuse?{kind:reuse.kind,processor:reuse.processor,version:reuse.version,fingerprint:reuse.fingerprint}:undefined;
+      return {id:a.id,kind:a.kind,createdAt:a.created_at,...data,...(receipt?{reuse:receipt}:{}),...(output?{output:{type:output.type}}:{}),...(transcript?{durationMs:transcript.durationMs,segments:transcript.segments.length,warnings:transcript.warnings}:segments?{segments:Array.isArray(segments)?segments.length:segments}:{})};
     }):[];
     let rawJob=db.prepare('SELECT state,stage,attempts,error,summary_state,available_at AS availableAt,config_revision AS inputVersion FROM file_jobs WHERE capture_id=?').get(id) as ({state:string;stage:string;attempts:number;error:string|null;summary_state:string;availableAt:number;inputVersion:string|null}|undefined);
     const rawSteps=includeArtifacts?db.prepare('SELECT step,processor,version,fingerprint,state,attempts,error,updated_at AS updatedAt FROM file_steps WHERE capture_id=? ORDER BY rowid').all(id) as {step:string;processor:string;version:string;fingerprint:string;state:string;attempts:number;error:string|null;updatedAt:string}[]:[];

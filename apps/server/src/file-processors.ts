@@ -138,8 +138,8 @@ function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
   const processors=[
     audio('audio.http'),
     audio('audio.local-dialogue',true),
-    builtin({id:'text.utf8',version:'3',name:"UTF-8 文字提取",stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}),
-    builtin({id:'document.generic',version:'2',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,serviceKind:'image',optionalService:true,dependencies:{settings:['imageEndpoint','apiKey']},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal,{endpoint:input.settings.imageEndpoint,apiKey:input.settings.apiKey})}),
+    builtin({id:'text.utf8',version:'3',name:"UTF-8 文字提取",stage:'extract',mediaTypes:['text/'],localOnly:true,reuseByContent:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}),
+    builtin({id:'document.generic',version:'2',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,reuseByContent:true,serviceKind:'image',optionalService:true,dependencies:{settings:['imageEndpoint','apiKey']},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal,{endpoint:input.settings.imageEndpoint,apiKey:input.settings.apiKey})}),
     builtin({id:'image.http',version:'2',name:"图片文字提取接口",stage:'extract',mediaTypes:['image/'],serviceKind:'image',awaitResponseOnCancel:true,reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
       if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
       const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};

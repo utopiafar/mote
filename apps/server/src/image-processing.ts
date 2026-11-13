@@ -7,6 +7,7 @@ import {Store,StoreError,sha256} from './store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {FileProcessing} from './file-processing.js';
 import {processorSettingsFingerprint,processorContract} from './file-configuration.js';
+import {fileExtractionPrivacy} from './file-extraction-cache.js';
 import type {AppliedFilePolicy} from './file-policy.js';
 import {ImageInputRegistry,ImageAttachmentIntake,installImageInputs,installImageSchema,type ImageInputRow,type ImageOriginal} from './image-inputs.js';
 import {DEFAULT_IMAGE_RECIPE,ImageInterpretationError,ImagePixelsNotInspectedError,ImageRegionOutOfBoundsError,imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
@@ -190,9 +191,10 @@ export class ImageProcessing {
   const meaningful=attribution&&(attribution.basis!=='default'||attribution.correction||attribution.sourceDeclaration||attribution.materialDeclarations||attribution.declarations||attribution.ownerStatements||attribution.importDeclarations||attribution.importStatements||attribution.sourceContextDeclarations?.length||attribution.sourceContextStatements?.length||attribution.recordContextDeclarations?.length||attribution.recordContextStatements?.length);
   // Truly unknown/default context retains the pre-attribution cache identity.
   // Declaration and correction versions (including cleared values) fence ABA.
-  const context=step.kind==='ocr'&&processor.reuseByContent===true&&this.processing.runtime.imageRecipes.get(step.stage).reuseByContent===true?null:{...this.context(record),...(meaningful?{attributionContext:attribution}:{})};
+  const privacy=this.inputPrivacy(row);
+  const context=step.kind==='ocr'&&privacy?.reusable&&processor.reuseByContent===true&&this.processing.runtime.imageRecipes.get(step.stage).reuseByContent===true?null:{...this.context(record),...(meaningful?{attributionContext:attribution}:{})};
   return sha256(JSON.stringify([row.hash,row.mime,processorContract(processor),processor.output?this.processing.runtime.outputs.list():null,processorSettingsFingerprint(processor,binding.settings,binding.applied.profile.parameters),settings.providerRevision,
-   binding.settings.imageEndpoint===this.media.ocrEndpoint?MEDIA_CATALOG.ocr.version:'',step.stage,step.kind==='ocr'?null:recipe,dependencyProducts,model,context]));
+   binding.settings.imageEndpoint===this.media.ocrEndpoint?MEDIA_CATALOG.ocr.version:'',step.stage,step.kind==='ocr'?null:recipe,dependencyProducts,model,context,...(step.kind==='ocr'?[privacy?.fingerprint]:[])]));
  }
  private materials(){return this.options.materials??this.processing.files.sources.pipelines?.materials;}
  /** Context correction retires interpretations, keeps reusable OCR, and waits
@@ -226,10 +228,14 @@ export class ImageProcessing {
  }
  private context(record:CaptureRecord){return {id:record.id,source:record.source,capturedAt:record.capturedAt,appName:record.appName,title:record.windowTitle,sourceVersion:record.provenance?{sourceId:record.provenance.sourceId,revision:record.provenance.revision,document:{contentRole:record.provenance.document?.contentRole,timeBasis:record.provenance.document?.timeBasis,recordedAt:record.provenance.document?.recordedAt,attachmentOf:record.provenance.document?.attachmentOf}}:undefined};}
  private product(id:string,name:string){return this.store.db.prepare('SELECT * FROM image_products WHERE capture_id=? AND name=? AND current=1 ORDER BY rowid DESC LIMIT 1').get(id,name);}
+ private inputPrivacy(row:ImageInputRow){
+  if(!this.store.isCurrentEvidence(row.capture_id)||row.adapter==='mote.file-image'&&this.processing.files.readableFile(row.capture_id)!==row.capture_id)return;
+  return fileExtractionPrivacy(this.processing.files,row.capture_id);
+ }
  private semanticWithdrawn(id:string){return Boolean(this.row(id)?.semantic_withdrawn);}
  private valid(step:ExecutionStep){
   if(this.closed||this.exclusion(String(step.input.captureId)))return false;if(step.kind!=='images.ocr'&&this.semanticWithdrawn(String(step.input.captureId)))return false;const row=this.row(String(step.input.captureId));if(!row||row.hash!==step.input.hash||row.generation!==step.input.generation||step.input.ownerIntentId!==this.processing.modelIntent(row.capture_id,'image')||!this.store.isCurrentEvidence(row.capture_id))return false;
-  try{const plan=this.recipe(row),stage=plan.steps.find(s=>s.name===step.input.name);return Boolean(stage&&this.fingerprint(row,stage)===step.input.fingerprint&&this.inputs.get(row.adapter)?.version===step.input.adapterVersion);}catch{return false;}
+  try{const plan=this.recipe(row),stage=plan.steps.find(s=>s.name===step.input.name);return Boolean(this.inputPrivacy(row)&&stage&&this.fingerprint(row,stage)===step.input.fingerprint&&this.inputs.get(row.adapter)?.version===step.input.adapterVersion);}catch{return false;}
  }
  private processorEndpoint(step:ExecutionStep){
   if(step.kind!=='images.ocr')return;const row=this.row(String(step.input.captureId));if(!row)return;const plan=this.recipe(row),processor=this.processing.runtime.registry.get(plan.binding.applied.profile.processorId),endpoint=plan.binding.settings.imageEndpoint;
@@ -297,7 +303,7 @@ export class ImageProcessing {
   for(const raw of rows){
    this.prepareCursor=Number(raw.position);
    let row=raw as ImageInputRow;
-   if(!this.store.isCurrentEvidence(row.capture_id))continue;
+   if(!this.inputPrivacy(row))continue;
    try{
     if(this.excludeMetadata(row))continue;
     if(!row.policy_json){const selected=this.binding(row).applied;db.prepare('UPDATE image_inputs SET policy_json=? WHERE capture_id=?').run(JSON.stringify(selected),row.capture_id);row={...row,policy_json:JSON.stringify(selected)};}
@@ -329,18 +335,33 @@ export class ImageProcessing {
  async tick(){await this.attachments.prepare();await this.refreshWorker();for(let i=0;i<32;i++){const ids=this.prepare();if(!ids.length)break;const before=ids.map(id=>this.engine.get(id)?.state);await this.engine.drain(ids);if(ids.every((id,index)=>this.engine.get(id)?.state===before[index]))break;}}
  private async execute(step:ExecutionStep,signal:AbortSignal){
   const row=this.row(String(step.input.captureId))!,plan=this.recipe(row),stage=plan.steps.find(s=>s.name===step.input.name)!;
-  // A stored byte-only result is a deterministic reuse, not a new model send.
-  const cached=row.reuse_allowed?this.store.db.prepare('SELECT json,id,capture_id FROM image_products WHERE fingerprint=? AND current=1 LIMIT 1').get(String(step.input.fingerprint)):undefined;
-  if(cached)return {...JSON.parse(String(cached.json)),reuse:{productId:cached.id,captureId:cached.capture_id}};
   if(stage.kind!=='ocr'&&stage.kind!=='understanding')return this.executeAuthorized(step,signal,()=>signal.throwIfAborted());
   const processor=this.processing.runtime.registry.get(plan.binding.applied.profile.processorId),connection=stage.kind==='ocr'?this.processing.mediaConnection(processor,plan.binding.applied,plan.binding.settings):undefined;
   return this.processing.runModelStage({operationId:step.operationId,captureId:row.capture_id,stage:stage.kind==='ocr'?'ocr':'image-understanding',connection,ownerIntentId:this.processing.modelIntent(row.capture_id,'image')},signal,(authorizedSignal,assertCurrent)=>this.executeAuthorized(step,authorizedSignal,assertCurrent),this.options.modelAuthority);
  }
+ private cachedOutput(step:ExecutionStep,row:ImageInputRow){
+  if(!row.reuse_allowed)return;
+  const target=this.inputPrivacy(row);if(!target)return;
+  const candidates=this.store.db.prepare(`SELECT p.capture_id,p.json,p.kind FROM image_products p
+   JOIN perception_jobs j ON j.capture_id=p.capture_id AND j.kind=p.name AND j.state='succeeded'
+   WHERE p.fingerprint=? AND p.current=1 AND (p.kind='ocr' OR p.capture_id=?)`).iterate(String(step.input.fingerprint),row.capture_id);
+  for(const cached of candidates){
+   const origin=this.row(String(cached.capture_id));if(!origin)continue;
+   const privacy=this.inputPrivacy(origin);if(!privacy||privacy.fingerprint!==target.fingerprint||cached.capture_id!==row.capture_id&&(!privacy.reusable||!target.reusable))continue;
+   try{
+    const result=JSON.parse(String(cached.json));
+    if(cached.kind!=='ocr'){imageInterpretationSchema.parse(result.payload);return result;}
+    const payload=transcriptSchema.parse(result.payload);
+    if(result.kind!=='ocr'||payload.durationMs!==0||payload.segments.map(s=>s.text).join('\n').length>100000||
+      (payload.extraction?payload.extraction.status!=='ready':payload.coverage&&payload.coverage!=='full'))continue;
+    return {payload,kind:'ocr',reuse:{kind:'same-original-extraction',fingerprint:String(step.input.fingerprint)}};
+   }catch{/* A corrupt or incomplete cache falls back to the selected stage. */}
+  }
+ }
  private async executeAuthorized(step:ExecutionStep,signal:AbortSignal,assertCurrent:()=>void){
   const fence=String(this.store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(step.id)?.fence??'');
   const row=this.row(String(step.input.captureId))!,original=this.original(row)!;
-  const cached=row.reuse_allowed?this.store.db.prepare('SELECT json,id,capture_id FROM image_products WHERE fingerprint=? AND current=1 LIMIT 1').get(String(step.input.fingerprint)):undefined;
-  if(cached)return {...JSON.parse(String(cached.json)),reuse:{productId:cached.id,captureId:cached.capture_id}};
+  signal.throwIfAborted();assertCurrent();const cached=this.cachedOutput(step,row);if(cached)return cached;
   const plan=this.recipe(row),stage=this.processing.runtime.imageRecipes.get(step.input.stage as {id:string;version:string}),rawRecord=this.store.evidence([row.capture_id])[0];
   const record={...rawRecord,attributionContext:this.materials()?.contextForEvidence(rawRecord)??unknownAttributionContext()};
   const dependencies=Object.fromEntries(plan.steps.find(s=>s.name===step.input.name)!.dependsOn.map(name=>[name,this.product(row.capture_id,name)?JSON.parse(String(this.product(row.capture_id,name)!.json)).payload:undefined]));
