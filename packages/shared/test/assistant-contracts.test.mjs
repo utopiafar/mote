@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {
-  assistantDraftCommandSchema, assistantDraftProposalSchema, assistantDraftSchema,
+  assistantDraftCommandSchema, assistantDraftProposalSchema, assistantDraftSchema,assistantActionCommandSchema,assistantTaskOutputSchema,
   assistantTaskInputSchema, assistantTaskRecordSchema, attributionContextSchema,
   codingEvidenceSchema, conversationMessageInputSchema, conversationMessageSchema,
   documentSchema, evidenceDependenciesSchema, fileViewSchema, modelBudgetSchema, conversationSettingsSchema, queryScopeSchema,
@@ -14,6 +14,17 @@ const roundTrip=(schema,value)=>schema.parse(JSON.parse(JSON.stringify(schema.pa
 const sourceA='generated.source-a',sourceB='generated.source-b';
 const captureA=randomUUID(),captureB=randomUUID();
 const originals=[{sourceId:sourceA,captureId:captureA},{sourceId:sourceB,captureId:captureB}];
+
+test('assistant action content cannot carry authority and owner commands retain exact task scope and revision',()=>{
+ const draft={kind:'message.send',message:{conversationId:'generated-thread',text:'Generated follow-up'},evidence:[{id:captureA,quote:'Generated evidence'}]};
+ assert.deepEqual(roundTrip(assistantTaskOutputSchema,{answer:'Generated result',actions:[draft]}).actions,[draft]);
+ for(const extra of [{target:{deviceId:'generated',calendarId:'generated'}},{status:'succeeded'},{grantId:randomUUID()},{operationId:randomUUID()}])
+  assert.equal(assistantTaskOutputSchema.safeParse({answer:'Generated result',actions:[{...draft,...extra}]}).success,false);
+ const command={taskId:randomUUID(),expectedRevision:3,index:0,scope:{kind:'selection',evidenceIds:[]}};
+ assert.deepEqual(roundTrip(assistantActionCommandSchema,command),command);
+ assert.equal(assistantActionCommandSchema.safeParse({...command,index:8}).success,false);
+ assert.equal(assistantActionCommandSchema.safeParse({...command,grant:true}).success,false);
+});
 
 test('explicit source scopes survive JSON, including empty selections and empty evidence filters',()=>{
   // An illustrative consumer of the wire discriminator, not an authority check.

@@ -10493,5 +10493,8 @@
   "模型上下文预算尚未就绪，任务未执行。": "Das Kontextbudget des Modells ist noch nicht verfügbar. Die Aufgabe wurde nicht ausgeführt.",
   "任务未能完成，请查看处理状态。": "Die Aufgabe wurde nicht abgeschlossen. Prüfe den Bearbeitungsstatus.",
   "读取任务状态失败，请刷新重试。": "Der Aufgabenstatus konnte nicht gelesen werden. Aktualisiere die Seite und versuche es erneut.",
-  "任务已创建。": "Aufgabe erstellt."
+  "任务已创建。": "Aufgabe erstellt.",
+  "消息仍需逐条确认；日历按已有授权执行。": "Jede Nachricht muss bestätigt werden; Kalender verwenden vorhandene Berechtigungen.",
+  "创建行动建议": "Aktionsvorschlag erstellen",
+  "当前连接或授权范围不支持这项行动。": "Die aktuelle Verbindung oder Berechtigung deckt diese Aktion nicht ab."
 }

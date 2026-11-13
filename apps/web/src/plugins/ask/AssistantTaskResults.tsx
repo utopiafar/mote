@@ -1,10 +1,11 @@
 import React,{useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
-import type {AssistantTaskRecord,QueryScope} from '@mote/shared';
+import type {AssistantTaskRecord,AssistantActionDraft,QueryScope} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import type {Answer,Api} from '../../api';
 import {FeaturePanels} from '../../features/runtime';
+import {AssistantActionResults} from '../work/AssistantActionResults';
 
-export type AssistantTaskResultItem={task:Pick<AssistantTaskRecord,'id'|'state'> & Partial<AssistantTaskRecord>;workId?:string;expectedRevision?:number;result?:Answer;error?:string};
+export type AssistantTaskResultItem={task:Pick<AssistantTaskRecord,'id'|'state'> & Partial<AssistantTaskRecord>;workId?:string;expectedRevision?:number;result?:Answer;error?:string;actionDrafts?:AssistantActionDraft[]};
 type Item=AssistantTaskResultItem;
 type Page={items:Item[]};
 
@@ -43,7 +44,7 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
   finally{if(openRequest.current===controller)openRequest.current=null;}
  })();};
  return <>
-  {items.map(({task,workId,result,error:reason})=><section className="assistant-task-result" key={task.id}>
+  {items.map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id}>
    {task.goal&&<p>{task.goal}</p>}
    <strong>{moteText('任务状态')}</strong>{' · '}
    <span role="status">{task.state==='completed'?moteText('已完成'):task.state==='running'?moteText('正在进行'):
@@ -56,6 +57,7 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
    {task.state==='failed'&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
    {task.state==='needs_input'&&workId&&<FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.work.activity',schemaVersion:1,representation:'overview',ref:workId,revision:String(task.revision),title:'',text:''}}/>}
    {task.state==='completed'&&result&&renderAnswer(result,ref=>open(task.id,ref))}
+   {task.state==='completed'&&result&&Boolean(actionDrafts?.length)&&<AssistantActionResults api={api} taskId={task.id} scope={scope}/>}
   </section>)}
   {error&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}</p>}
  </>;

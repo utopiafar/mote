@@ -15,6 +15,9 @@ import type {SourceStore} from '../sources.js';
 import type {Connections,ConnectionCredential} from '../connections.js';
 import type {ConfigService} from '../config-service.js';
 import type {ExecutionEngine} from '../execution-engine.js';
+import {AssistantActions,registerAssistantActionRoutes} from '../assistant-actions.js';
+import type {AssistantTasks} from '../assistant-tasks.js';
+import type {CaptureRecord} from '@mote/shared';
 
 /** C25 owns the action domain: durable proposals, the todo store, owner action
  * capability grants and the managed calendar delivery/claim/receipt channel.
@@ -43,6 +46,9 @@ export interface ActionsServicesDependencies {
   readonly connectorAction?:(input:{target:CentralConnectorActionTarget;request:ConnectorActionExecution})=>Promise<ConnectorActionReceipt>;
   readonly query:(input:QueryInput)=>Promise<QueryResult>;
   readonly configured:()=>boolean;
+  readonly assistantTasks?:Pick<AssistantTasks,'actionSource'|'actionCurrent'>;
+  readonly readEvidence?:(ids:string[])=>CaptureRecord[];
+  readonly currentEvidence?:(id:string)=>boolean;
   readonly semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
   readonly configService?:ConfigService;
   readonly authorization:{
@@ -54,6 +60,7 @@ export interface ActionsServicesDependencies {
 export function createActionsServices(deps:ActionsServicesDependencies){
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'='created';
   let actions:Actions|undefined,todos:TodoStore|undefined,capabilities:ActionCapabilities|undefined,managed:ManagedCalendar|undefined;
+  let assistant:AssistantActions|undefined;
   let timer:ReturnType<typeof setInterval>|undefined,inflight:Promise<void>|undefined,closing:Promise<void>|undefined;
   const mounted=new WeakSet<FastifyInstance>();
   const readable=()=>phase==='prepared'||phase==='active'||phase==='quiescing';
@@ -66,7 +73,7 @@ export function createActionsServices(deps:ActionsServicesDependencies){
     phase='stopped';clearTimer();
     await inflight?.catch(()=>{});
     try{await actions?.close();}
-    finally{actions=undefined;todos=undefined;capabilities=undefined;managed=undefined;}
+    finally{actions=undefined;todos=undefined;capabilities=undefined;managed=undefined;assistant=undefined;}
   })();
   /** Mounted once by the feature bridge before listen. The phase hook resolves
    * per request against the current activation, so reads survive quiesce, new
@@ -83,6 +90,11 @@ export function createActionsServices(deps:ActionsServicesDependencies){
       registerActions(child,current.actions,deps.connections,deps.authorization.credential,()=>void current.managed.tick().catch(()=>{}),request=>{const identity=deps.authorization.connectionIdentity(request);return !identity||deps.connections.isOwner(identity);});
       registerTodoRoutes(child,current.todos);
       registerActionCapabilityRoutes(child,{capabilities:current.capabilities,managed:current.managed,connections:deps.connections,connectionIdentity:deps.authorization.connectionIdentity});
+      if(assistant)registerAssistantActionRoutes(child,assistant,request=>{
+        const identity=deps.authorization.connectionIdentity(request);
+        if(identity&&!deps.connections.isOwner(identity))throw new StoreError('Only the owner can create assistant actions',403);
+        if(identity)deps.connections.assertActive(identity);
+      });
     });
   };
   return Object.freeze({
@@ -93,10 +105,12 @@ export function createActionsServices(deps:ActionsServicesDependencies){
       if(phase!=='created')throw unavailable();
       try{
         if(deps.store.db.isTransaction)throw new StoreError('Actions services preparation requires an idle vault transaction',503);
-        actions=new Actions(deps.store,deps.files,deps.query,deps.configured,{executor:deps.executor,semanticArtifacts:deps.semanticArtifacts,configService:deps.configService,connectorTargets:()=>capabilities?.centralConnectors()??[],messageSendAuthorized:target=>capabilities?.messageSendGranted(target)??false});
-        todos=new TodoStore(deps.store);
+        actions=new Actions(deps.store,deps.files,deps.query,deps.configured,{executor:deps.executor,semanticArtifacts:deps.semanticArtifacts,configService:deps.configService,connectorTargets:()=>capabilities?.centralConnectors()??[],messageSendAuthorized:target=>capabilities?.messageSendGranted(target)??false,
+          proposalCurrent:id=>assistant?.current(id)??true,readEvidence:deps.readEvidence,currentEvidence:deps.currentEvidence});
+        todos=new TodoStore(deps.store,id=>assistant?.currentTodo(id)??true);
         capabilities=new ActionCapabilities(deps.store,deps.sources,deps.connections,deps.actionProviders);
         managed=new ManagedCalendar(deps.store,actions,capabilities,deps.connections,deps.connectorAction);
+        if(deps.assistantTasks)assistant=new AssistantActions(deps.store,deps.assistantTasks,actions,todos,managed);
         phase='prepared';
       }catch(error){
         try{await close();}

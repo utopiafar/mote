@@ -10494,5 +10494,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "模型上下文预算尚未就绪，任务未执行。": "El presupuesto de contexto del modelo aún no está disponible. La tarea no se ha ejecutado.",
   "任务未能完成，请查看处理状态。": "La tarea no se ha completado. Comprueba el estado del procesamiento.",
   "读取任务状态失败，请刷新重试。": "No se pudo leer el estado de la tarea. Actualiza e inténtalo de nuevo.",
-  "任务已创建。": "Tarea creada."
+  "任务已创建。": "Tarea creada.",
+  "消息仍需逐条确认；日历按已有授权执行。": "Cada mensaje requiere confirmación; el calendario usa los permisos existentes.",
+  "创建行动建议": "Crear propuesta de acción",
+  "当前连接或授权范围不支持这项行动。": "La conexión o el permiso actual no cubre esta acción."
 };

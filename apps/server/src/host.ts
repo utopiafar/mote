@@ -281,7 +281,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // window or validate complete requests. Do not send a batch model request
   // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
   let assistantTasks:AssistantTasks|undefined;
-  const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?.prepare(input)??input,'query','conversations'),ids=>{
+  const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
     ()=>new ExecutionFailure('blocked','model_context_budget_unavailable'),()=>1,true,evidenceReader.memories,{
@@ -425,7 +425,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // child app inherits owner-facing validation/conflict mapping (not Fastify's
   // default 500 serializer).
   const sourceIntegration=await startSourceIntegration();
-  const {actions}=await assembleActions({store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)});
+  const {actions}=await assembleActions({store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)});
   const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;

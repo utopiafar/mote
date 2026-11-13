@@ -15,6 +15,8 @@ export type ActionStatus='proposed'|'dismissed'|'approved'|'executing'|'succeede
 export interface ActionEvidence {id:string;quote:string;fingerprint:string;source:string;capturedAt:string}
 export const messageSendDraftSchema=z.object({conversationId:z.string().min(1).max(200),conversationName:z.string().trim().max(200).optional(),text:z.string().trim().min(1).max(40000)}).strict();
 export type MessageSendDraft=z.infer<typeof messageSendDraftSchema>;
+/** Current local Todo input, shared by the owner editor and assistant drafts. */
+export const todoInputSchema=z.object({id:z.string().uuid().optional(),title:z.string().trim().min(1).max(200),description:z.string().max(4000).default(''),dueAt:z.string().datetime({offset:true}).nullable().default(null),evidenceIds:z.array(z.string().uuid()).max(30).default([])}).strict();
 export type ActionKind='calendar.create'|'calendar.update'|'calendar.cancel'|'calendar.complete'|'message.send';
 /** The legacy device-calendar target keeps its exact `{deviceId,calendarId}`
  * shape. A central connector target is a separate, explicitly located shape. */

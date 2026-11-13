@@ -4,6 +4,7 @@ import {evidenceDependenciesSchema} from './evidence-dependencies.js';
 import {queryScopeSchema} from './query-scope.js';
 import {provenanceSchema} from './sources.js';
 import {sourceContextDeclarationSchema} from './material-context.js';
+import {actionProposalTargetSchema,calendarDraftSchema,messageSendDraftSchema,todoInputSchema,type ActionProposalTarget,type ActionStatus} from './actions.js';
 
 const uuid=z.string().uuid();
 const revision=z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -78,3 +79,20 @@ export const assistantDraftCommandSchema=assistantTaskInputSchema.extend({
   capability:assistantDraftCapabilitySchema,
 }).strict();
 export type AssistantDraftCommand=z.infer<typeof assistantDraftCommandSchema>;
+
+/** Proposed content only. Models cannot choose an execution target, grant,
+ * identity or success state. The owner command creates an existing domain object. */
+const actionProof=z.array(z.object({id:uuid,quote:z.string().min(1).max(2000)}).strict()).min(1).max(20);
+export const assistantActionDraftSchema=z.discriminatedUnion('kind',[
+  z.object({kind:z.literal('todo.create'),todo:todoInputSchema.omit({id:true,evidenceIds:true}),evidence:actionProof}).strict(),
+  z.object({kind:z.literal('calendar.create'),event:calendarDraftSchema,uncertainty:z.string().max(2000),evidence:actionProof}).strict(),
+  z.object({kind:z.literal('message.send'),message:messageSendDraftSchema,evidence:actionProof}).strict(),
+]);
+export type AssistantActionDraft=z.infer<typeof assistantActionDraftSchema>;
+export const assistantTaskOutputSchema=z.object({answer:z.string().trim().min(1).max(100000),actions:z.array(assistantActionDraftSchema).max(8)}).strict();
+export const assistantActionCommandSchema=z.object({taskId:uuid,expectedRevision:revision,index:z.number().int().min(0).max(7),scope:queryScopeSchema,target:actionProposalTargetSchema.optional()}).strict();
+export type AssistantActionCommand=z.infer<typeof assistantActionCommandSchema>;
+export type AssistantActionResults={taskId:string;revision:number;matterId:string|null;drafts:{index:number;draft:AssistantActionDraft;
+  targets:{name:string;target:ActionProposalTarget}[];
+  linked?:{id:string;kind:AssistantActionDraft['kind'];status:ActionStatus|'open'|'completed'|'cancelled';operationId?:string;externalId?:string;error?:string};
+}[]};

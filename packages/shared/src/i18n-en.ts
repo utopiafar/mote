@@ -10494,5 +10494,8 @@ export const english: Readonly<Record<string, string>> = {
   "模型上下文预算尚未就绪，任务未执行。": "The model context budget is not ready. The task has not run.",
   "任务未能完成，请查看处理状态。": "The task did not finish. Check its processing status.",
   "读取任务状态失败，请刷新重试。": "Could not read the task status. Refresh and try again.",
-  "任务已创建。": "Task created."
+  "任务已创建。": "Task created.",
+  "消息仍需逐条确认；日历按已有授权执行。": "Messages still require individual confirmation; calendars use existing grants.",
+  "创建行动建议": "Create action proposal",
+  "当前连接或授权范围不支持这项行动。": "The current connection or grant does not cover this action."
 };

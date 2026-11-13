@@ -30,7 +30,7 @@ test('the actual server task response is rendered by the conversation result com
  const config:Config={dataDir:directory,dataKey:'32'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,
   retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,
   embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
- const query=async(input:QueryInput)=>({answer:input.executionLane==='background'?'Generated persisted task result':'Generated initial answer',
+ const query=async(input:QueryInput)=>({answer:input.executionLane==='background'?JSON.stringify({answer:'Generated persisted task result',actions:[]}):'Generated initial answer',
   citations:input.executionLane==='background'?[{id:evidenceId,capturedAt:'2026-10-01T00:00:00Z',appName:'Generated source',excerpt:'Generated original content'}]:[],
   trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]},
   ...(input.assistantDraft?{draftProposal:{goal:'Generated follow-up task'}}:{})} as QueryResult);
