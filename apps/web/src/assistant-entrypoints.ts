@@ -19,7 +19,7 @@ export const assistantEntrypoints:readonly AssistantEntrypoint[]=Object.freeze([
     href:'#/assistant/matters',
     title:'事项与规则',
     purpose:'跟踪事项、承诺、期限和定期规则。',
-    requires:[{id:'assistant.matters',version:'1',host:'server'}],
+    requires:[{id:'http:GET:/api/assistant/matters',version:'1',host:'server'}],
   },
   {
     pageId:'assistantMemory',

@@ -32,7 +32,7 @@ export async function assistantQuestionFixture(t:TestContext){
   let answer:unknown={answer:'Generated initial answer',citationIds:[],draft:{goal}};
   if(isTask){
    if(isContinuation){if(!hasTool)continued++;wire=body;if(hold){entered();await held;}
-    answer={answer:'Generated continued task result',citationIds:[evidenceId]};
+    answer={answer:JSON.stringify({answer:'Generated continued task result',actions:[]}),citationIds:[evidenceId]};
    }else answer={answer:JSON.stringify({state:'needs_owner_input',question:{
     prompt:'Which generated option should this task use?',reason:'The original does not establish a choice.',
     choices:[{id:'first',label:'Generated first option',answer:ownerAnswer}],evidence:[{id:evidenceId,quote:original,ref:'https://generated.invalid/untrusted-model-locator'}],

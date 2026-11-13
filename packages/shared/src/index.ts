@@ -199,6 +199,7 @@ export * from './activity.js';
 export * from './query-scope.js';
 export * from './model-budget.js';
 export * from './assistant-contracts.js';
+export * from './assistant-views.js';
 export * from './file-view.js';
 export * from './workspace-template.js';
 
