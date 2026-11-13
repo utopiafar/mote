@@ -1,138 +1,107 @@
-"""Generated fixtures only. Optional real-model checks live in test-file-dialogue.ts."""
+"""Generated PCM only; normalization, interval mapping and WAV export stay real."""
+import base64
 import hashlib
-import importlib.util
 import io
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import wave
-from mote_audio import candidate_score, choose_candidate, diarization_output, exclusive_sample, normalize, sample_bytes, transcribe
+
+from mote_audio import (exclusive_sample, file_sha256, frame_interval, normalize,
+                        read_pcm, sample_bytes, speaker_previews)
+
+
+def generated_wav(path, frames, channels=1, rate=16000):
+    pcm = b''.join(struct.pack('<h', (i % 2000) - 1000) * channels for i in range(frames))
+    with wave.open(str(path), 'wb') as writer:
+        writer.setparams((channels, 2, rate, 0, 'NONE', 'not compressed'))
+        writer.writeframes(pcm)
+    return pcm
+
 
 class AudioPrimitives(unittest.TestCase):
-    def test_single_cluster_is_not_forced_and_missing_silhouette_is_not_a_probability(self):
-        one = {'clusters': -1, 'observedSpeakers': 1, 'score': None}
-        forced = {'clusters': 3, 'observedSpeakers': 3, 'score': .9}
-        self.assertEqual(choose_candidate([one, forced], 1, 3), (one, None))
-        self.assertIsNone(candidate_score([SimpleNamespace(confidence=-2, start=0, end=5)]))
-        self.assertAlmostEqual(candidate_score([SimpleNamespace(confidence=.2, start=0, end=1), SimpleNamespace(confidence=.8, start=1, end=4)]), .65)
-
-    def test_range_retains_internal_cluster_count_separately_from_observed_labels(self):
-        automatic = {'clusters': -1, 'observedSpeakers': 20, 'score': .99}
-        two = {'clusters': 2, 'observedSpeakers': 2, 'score': .5}
-        three = {'clusters': 3, 'observedSpeakers': 2, 'score': .6}
-        chosen, gap = choose_candidate([automatic, two, three], 1, 3)
-        self.assertIs(chosen, three)
-        self.assertEqual(chosen['observedSpeakers'], 2)
-        self.assertAlmostEqual(gap, .1)
-        # If the acoustic model fails to meet a constraint, retain evidence.
-        self.assertEqual(choose_candidate([automatic], 2, 3), (automatic, None))
-
-    def asr_modules(self, speech, samples=64000):
-        calls = []
-        def model(*args, **kwargs):
-            calls.append(('model', kwargs))
-            return object()
-        def decode(_path, sampling_rate):
-            self.assertEqual(sampling_rate, 16000)
-            return [0] * samples
-        def recognize(audio, **kwargs):
-            calls.append(('transcribe', kwargs))
-            words = [SimpleNamespace(start=1.1, end=1.3, word='合成', probability=.9)]
-            return iter([SimpleNamespace(start=1.1, end=1.3, text='合成', words=words)]), SimpleNamespace(duration=3)
-        modules = {'faster_whisper': SimpleNamespace(WhisperModel=model, BatchedInferencePipeline=lambda _model: SimpleNamespace(transcribe=recognize)),
-                   'faster_whisper.audio': SimpleNamespace(decode_audio=decode),
-                   'faster_whisper.vad': SimpleNamespace(VadOptions=lambda **kwargs: SimpleNamespace(**kwargs),
-                       get_speech_timestamps=lambda _audio, _options: speech)}
-        return calls, modules
-
-    def test_speech_clips_keep_original_time_and_do_not_repack_decoder_windows(self):
-        calls, modules = self.asr_modules([{'start': 16000, 'end': 24000}, {'start': 48000, 'end': 64000}])
-        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, modules):
-            result = transcribe('generated.wav', directory, 2)
-        options = dict(calls)['transcribe']
-        self.assertEqual(options['clip_timestamps'], [{'start': 1.0, 'end': 1.5}, {'start': 3.0, 'end': 4.0}])
-        self.assertEqual(options['batch_size'], 1)
-        self.assertFalse(options['vad_filter'])
-        self.assertEqual(result['durationMs'], 4000)
-        self.assertEqual(result['segments'][0]['words'][0]['startMs'], 1100)
-
-    def test_no_speech_keeps_full_duration_without_inventing_text(self):
-        calls, modules = self.asr_modules([])
-        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, modules):
-            result = transcribe('generated-silence.wav', directory, 2)
-        self.assertEqual(result['segments'], [])
-        self.assertEqual(result['durationMs'], 4000)
-        self.assertEqual(calls, [])
-
-    def test_invalid_speech_spans_fail_instead_of_truncating_or_overlapping(self):
-        for speech in [[{'start': 0, 'end': 64001}], [{'start': 0, 'end': 20000}, {'start': 19000, 'end': 24000}]]:
-            calls, modules = self.asr_modules(speech)
-            with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, modules):
-                with self.assertRaises(ValueError):
-                    transcribe('generated.wav', directory, 2)
-            self.assertEqual(calls, [])
-
-    def test_clip_over_decoder_capacity_fails_even_inside_the_original_duration(self):
-        calls, modules = self.asr_modules([{'start': 0, 'end': 480001}], samples=640000)
-        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, modules):
-            with self.assertRaises(ValueError):
-                transcribe('generated-long-clip.wav', directory, 2)
-        self.assertEqual(calls, [])
-
     def test_model_labels_do_not_share_the_preview_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'generated.wav'
-            with wave.open(str(source), 'wb') as writer:
-                writer.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
-                writer.writeframes(b'\0\0' * 16000 * 30)
-            segments = [SimpleNamespace(speaker=i, start=i * 0.5, end=i * 0.5 + 0.4) for i in range(48)]
-            result = diarization_output(source, segments, 30000, 0)
-            self.assertEqual(result['observedSpeakers'], 48)
-            self.assertEqual(len(result['segments']), 48)
-            self.assertEqual(result['segments'][-1]['speaker'], 'SPEAKER_47')
-            self.assertEqual(len(result['samples']), 16)
-            self.assertEqual(len(result['warnings']), 2)
-            self.assertIsNone(result['expectedSpeakers'])
+            generated_wav(source, 16000 * 30)
+            rows = [{'speaker': i, 'startMs': i*500, 'endMs': i*500+400} for i in range(48)]
+            clips = speaker_previews(source, rows)
+            self.assertEqual(len({r['speaker'] for r in rows}), 48)
+            self.assertEqual(len(rows), 48)
+            self.assertEqual(rows[-1]['speaker'], 47)
+            self.assertEqual(len(clips), 16)
+            self.assertEqual([clip['speaker'] for clip in clips], list(range(16)))
 
     def test_label_output_keeps_a_hard_bound(self):
-        segments = (SimpleNamespace(speaker=i, start=i, end=i + 0.5) for i in range(100001))
+        rows = [{'speaker': i, 'startMs': i*1000, 'endMs': i*1000+500} for i in range(100001)]
         with self.assertRaises(OverflowError):
-            diarization_output('no-file-needed', segments, 100002000, 0)
+            speaker_previews('no-file-needed', rows)
 
     def test_long_recording_fragmentation_retains_every_model_label(self):
         for count in (140, 189):
-            segments = [SimpleNamespace(speaker=i, start=i * 0.5, end=i * 0.5 + 0.4) for i in range(count)]
-            # Generated sample bytes; no personal recording or model inference.
-            with patch('mote_audio.sample_bytes', return_value=b'generated-preview'):
-                result = diarization_output('generated.wav', segments, count * 500, 0)
-            self.assertEqual(result['observedSpeakers'], count)
-            self.assertEqual([r['speaker'] for r in result['segments']], ['SPEAKER_' + str(i) for i in range(count)])
-            self.assertEqual(len(result['samples']), 16)
-            self.assertIsNone(result['expectedSpeakers'])
-            self.assertTrue(any('不等于已确认的真人数量' in warning for warning in result['warnings']))
+            with tempfile.TemporaryDirectory() as directory:
+                source = Path(directory)/'generated.wav'
+                generated_wav(source, count*8000)
+                rows = [{'speaker': i, 'startMs': i*500, 'endMs': i*500+400} for i in range(count)]
+                before = [dict(row) for row in rows]
+                clips = speaker_previews(source, rows)
+                self.assertEqual(rows, before)
+                self.assertEqual([r['speaker'] for r in rows], list(range(count)))
+                self.assertEqual(len(clips), 16)
+                for clip in clips:
+                    with wave.open(io.BytesIO(base64.b64decode(clip['wavBase64']))) as reader:
+                        self.assertEqual(reader.getnframes(), 6400)
 
-    def test_exclusive_samples_exclude_other_speakers(self):
-        rows = [{'startMs': 0, 'endMs': 5000, 'speaker': 'SPEAKER_0'},
-                {'startMs': 2000, 'endMs': 4000, 'speaker': 'SPEAKER_1'}]
-        self.assertEqual(exclusive_sample(rows, 'SPEAKER_0'), (0, 2000))
-        self.assertIsNone(exclusive_sample(rows, 'SPEAKER_1'))
-        self.assertIsNone(exclusive_sample(rows, 'SPEAKER_9'))
+    def test_exclusive_samples_exclude_other_and_unknown_speakers(self):
+        rows = [{'startMs': 0, 'endMs': 5000, 'speaker': 0},
+                {'startMs': 2000, 'endMs': 4000, 'speaker': 1}]
+        self.assertEqual(exclusive_sample(rows, 0), (0, 2000))
+        self.assertIsNone(exclusive_sample(rows, 1))
+        self.assertIsNone(exclusive_sample(rows, 9))
+        self.assertEqual(exclusive_sample([rows[0], {**rows[1], 'speaker': None}], 0), (0, 2000))
 
-    def test_sample_is_independently_playable_wav(self):
+    def test_fully_overlapped_speakers_get_no_fabricated_clean_sample(self):
+        rows = [{'startMs': 0, 'endMs': 2000, 'speaker': speaker} for speaker in (0, 1)]
+        self.assertEqual(speaker_previews('no-file-needed', rows), [])
+        self.assertEqual(speaker_previews('no-file-needed', [{'startMs': 0, 'endMs': 200, 'speaker': 0}]), [])
+
+    def test_preview_budget_counts_playable_clips_rather_than_hiding_later_voices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'generated.wav'
+            generated_wav(source, 40000)
+            rows = [{'startMs': 0, 'endMs': 100, 'speaker': i} for i in range(16)]
+            rows.append({'startMs': 1000, 'endMs': 2000, 'speaker': 189})
+            self.assertEqual([c['speaker'] for c in speaker_previews(source, rows)], [189])
+
+    def test_sample_is_independently_playable_wav_with_exact_original_frames(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'source.wav'
-            with wave.open(str(source), 'wb') as writer:
-                writer.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
-                writer.writeframes(b'\0\0' * 32000)
+            pcm = generated_wav(source, 32000)
             data = sample_bytes(source, 500, 1500)
             with wave.open(io.BytesIO(data)) as reader:
                 self.assertEqual(reader.getnframes(), 16000)
                 self.assertEqual(reader.getframerate(), 16000)
+                self.assertEqual(reader.getnchannels(), 1)
+                self.assertEqual(reader.getsampwidth(), 2)
+                self.assertEqual(reader.readframes(16000), pcm[16000:48000])
+            self.assertEqual(read_pcm(source), pcm)
+            self.assertEqual(file_sha256(source), hashlib.sha256(source.read_bytes()).hexdigest())
+
+    def test_preview_never_silently_clamps_outside_audio_or_exceeds_byte_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'source.wav'
+            generated_wav(source, 16000*30)
+            for start, end in [(-1, 100), (0, 30001), (100, 100), (200, 100), (0, float('inf')), (float('nan'), 100)]:
+                with self.subTest(start=start, end=end), self.assertRaises(ValueError):
+                    sample_bytes(source, start, end)
+            with self.assertRaises(OverflowError):
+                sample_bytes(source, 0, 30000)
+            self.assertEqual(frame_interval(.0625, .125, 2), (1, 2))
 
     def test_inference_child_denies_network(self):
         code = "from mote_audio import offline_process; import socket; offline_process(); socket.create_connection(('127.0.0.1', 9))"
@@ -144,9 +113,7 @@ class AudioPrimitives(unittest.TestCase):
     def test_normalization_preserves_original_and_rejects_over_budget(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'source.wav'
-            with wave.open(str(source), 'wb') as writer:
-                writer.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
-                writer.writeframes(b'\0' * (44100 * 4 * 2))
+            generated_wav(source, 44100*2, channels=2, rate=44100)
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
             self.assertEqual(normalize(source, Path(directory) / 'normalized.wav', 3000), 2000)
             self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), digest)
@@ -154,6 +121,32 @@ class AudioPrimitives(unittest.TestCase):
                 normalize(source, source, 3000)
             with self.assertRaises(OverflowError):
                 normalize(source, Path(directory) / 'limited.wav', 500)
+
+    def test_decoder_keeps_protocol_duration_and_wall_clock_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source, destination = Path(directory)/'input.wav', Path(directory)/'output.wav'
+            generated_wav(destination, 16000)
+            with patch('mote_audio.subprocess.run') as run:
+                normalize(source, destination, 1000, 17)
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index('-protocol_whitelist')+1], 'file,pipe')
+            self.assertIn('-n', command)
+            self.assertEqual(run.call_args.kwargs['timeout'], 17)
+            for budget in (0, -1, float('inf'), float('nan'), 86400001):
+                with self.subTest(budget=budget), self.assertRaises(ValueError):
+                    normalize(source, destination, budget)
+
+    def test_pcm_reader_rejects_wrong_format_and_truncated_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'input.wav'
+            generated_wav(source, 100, channels=2)
+            with self.assertRaises(ValueError):
+                read_pcm(source)
+            generated_wav(source, 100)
+            source.write_bytes(source.read_bytes()[:-2])
+            with self.assertRaises(ValueError):
+                read_pcm(source)
+
 
 if __name__ == '__main__':
     unittest.main()

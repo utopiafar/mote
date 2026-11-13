@@ -1,12 +1,11 @@
-"""Offline audio primitives shared by the central worker and deterministic tests.
+"""Offline PCM primitives used by the single-recording FunASR child.
 
-Model APIs follow faster-whisper and sherpa-onnx's official Python examples.
-No model downloads, remote inference, speaker naming, or term correction occur here.
+No model loading, downloads, speaker naming or text correction occurs here.
 """
 import base64
 import hashlib
-import math
 import io
+import math
 import os
 from pathlib import Path
 import socket
@@ -14,15 +13,16 @@ import subprocess
 import wave
 
 MAX_DIARIZATION_SEGMENTS = 100000
-# A model can fragment a long recording into many anonymous clusters. Keep
-# labels bounded by the existing segment budget, independently of person-count
-# constraints and preview clips; never merge them to satisfy a presentation cap.
 MAX_SPEAKER_LABELS = MAX_DIARIZATION_SEGMENTS
 MAX_SPEAKER_PREVIEWS = 16
+MAX_SAMPLE_BYTES = 768 * 1024
 
 
 def offline_process():
-    os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1', DO_NOT_TRACK='1')
+    """Call only in the isolated inference child, never in the HTTP parent."""
+    os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
+                      HF_HUB_DISABLE_TELEMETRY='1', MODELSCOPE_OFFLINE='1',
+                      DO_NOT_TRACK='1', PYTORCH_ENABLE_MPS_FALLBACK='0')
     def denied(*_args, **_kwargs):
         raise OSError('Network is disabled in the local audio worker')
     socket.socket.connect = denied
@@ -32,9 +32,12 @@ def offline_process():
 
 
 def normalize(source, destination, budget_ms, timeout=600):
-    """Bound decoding by both decoded duration and wall clock; never overwrite source."""
+    """Bound decoding by duration and wall clock, without trimming the timeline."""
     if Path(source).resolve() == Path(destination).resolve():
         raise ValueError('Original audio cannot be overwritten')
+    if (type(budget_ms) not in (int, float) or not math.isfinite(budget_ms)
+            or not 0 < budget_ms <= 86400000 or not 0 < timeout <= 3600):
+        raise ValueError('Invalid normalization budget')
     formats = 'wav,mp3,mov,ogg,flac,aac,amr,aiff,matroska,webm,asf'
     command = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
                '-protocol_whitelist', 'file,pipe', '-format_whitelist', formats,
@@ -42,56 +45,59 @@ def normalize(source, destination, budget_ms, timeout=600):
                '-t', str(budget_ms / 1000 + 1), '-c:a', 'pcm_s16le', '-n', str(destination)]
     subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
     with wave.open(str(destination), 'rb') as reader:
-        duration_ms = reader.getnframes() * 1000 / reader.getframerate()
-        if reader.getnchannels() != 1 or reader.getframerate() != 16000 or duration_ms > budget_ms:
+        duration_ms = reader.getnframes() / 16
+        if (reader.getnchannels() != 1 or reader.getframerate() != 16000
+                or reader.getsampwidth() != 2 or reader.getcomptype() != 'NONE'):
+            raise ValueError('Expected mono PCM16 at 16 kHz')
+        if duration_ms > budget_ms:
             raise OverflowError('Audio duration exceeds budget')
     return duration_ms
 
 
-def transcribe(normalized, model_path, threads):
-    from faster_whisper import WhisperModel, BatchedInferencePipeline
-    from faster_whisper.audio import decode_audio
-    from faster_whisper.vad import VadOptions, get_speech_timestamps
-    if not Path(model_path).is_dir():
-        raise ValueError('A local ASR model directory is required')
-    audio = decode_audio(str(normalized), sampling_rate=16000)
-    duration_ms = len(audio) / 16
-    # Keep model-detected speech clips separate. Packing distinct voices back into
-    # one decoder window dropped complete turns in the generated control.
-    speech = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=500, max_speech_duration_s=30))
-    if len(speech) > 50000:
-        raise OverflowError('Too many speech clips')
-    clips = []
-    previous_end = 0
-    for clip in speech:
-        start, end = clip['start'], clip['end']
-        if start < previous_end or end <= start or end > len(audio) or end - start > 30 * 16000:
-            raise ValueError('Invalid or oversized speech clip')
-        clips.append({'start': start / 16000, 'end': end / 16000})
-        previous_end = end
-    if not clips:
-        return {'durationMs': duration_ms, 'segments': [], 'engine': 'faster-whisper-local/vad-clips-1', 'uncorrected': True}
-    model = WhisperModel(str(model_path), device='cpu', compute_type='int8', cpu_threads=threads, local_files_only=True)
-    segments, _info = BatchedInferencePipeline(model).transcribe(
-        audio, beam_size=5, vad_filter=False, clip_timestamps=clips, word_timestamps=True, batch_size=1)
-    result = []
-    for segment in segments:
-        if not segment.text.strip():
-            continue
-        words = [{'startMs': round(w.start * 1000), 'endMs': round(w.end * 1000),
-                  'text': w.word, 'probability': max(0, min(1, w.probability))} for w in (segment.words or [])]
-        result.append({'startMs': round(segment.start * 1000), 'endMs': round(segment.end * 1000),
-                       'text': segment.text.strip(), 'words': words})
-        if len(result) > 50000:
-            raise OverflowError('Too many transcript segments')
-    return {'durationMs': duration_ms, 'segments': result,
-            'engine': 'faster-whisper-local/vad-clips-1', 'uncorrected': True}
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as reader:
+        for block in iter(lambda: reader.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def read_pcm(normalized):
+    with wave.open(str(normalized), 'rb') as reader:
+        if (reader.getnchannels(), reader.getsampwidth(), reader.getframerate(), reader.getcomptype()) != (1, 2, 16000, 'NONE'):
+            raise ValueError('Expected mono PCM16 at 16 kHz')
+        frames = reader.getnframes()
+        if frames > 1382400000:
+            raise OverflowError('PCM exceeds duration limit')
+        pcm = reader.readframes(frames)
+        if len(pcm) != frames * 2:
+            raise ValueError('Incomplete PCM input')
+    return pcm
+
+
+def frame_interval(start_ms, end_ms, frames):
+    """Use original PCM coordinates once, with no rounding beyond the input."""
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in (start_ms, end_ms)):
+        raise ValueError('Nonfinite audio interval')
+    if not 0 <= start_ms < end_ms <= frames / 16:
+        raise ValueError('Audio interval outside recording')
+    start, end = int(start_ms * 16), int(end_ms * 16)
+    if end <= start:
+        raise ValueError('Audio interval contains no PCM frames')
+    return start, end
 
 
 def sample_bytes(normalized, start_ms, end_ms):
     with wave.open(str(normalized), 'rb') as reader:
-        reader.setpos(min(reader.getnframes(), int(start_ms * 16)))
-        pcm = reader.readframes(int((end_ms - start_ms) * 16))
+        if (reader.getnchannels(), reader.getsampwidth(), reader.getframerate(), reader.getcomptype()) != (1, 2, 16000, 'NONE'):
+            raise ValueError('Expected mono PCM16 at 16 kHz')
+        start, end = frame_interval(start_ms, end_ms, reader.getnframes())
+        if (end - start) * 2 + 44 > MAX_SAMPLE_BYTES:
+            raise OverflowError('Audio preview exceeds byte limit')
+        reader.setpos(start)
+        pcm = reader.readframes(end - start)
+        if len(pcm) != (end - start) * 2:
+            raise ValueError('Incomplete PCM preview')
     output = io.BytesIO()
     with wave.open(output, 'wb') as writer:
         writer.setnchannels(1)
@@ -102,7 +108,7 @@ def sample_bytes(normalized, start_ms, end_ms):
 
 
 def exclusive_sample(rows, speaker):
-    """Choose an acoustically exclusive interval; never infer a person's identity."""
+    """Choose an exclusive interval, including exclusion of unknown speech."""
     best = None
     candidates = sorted((r for r in rows if r['speaker'] == speaker),
                         key=lambda r: r['endMs'] - r['startMs'], reverse=True)[:20]
@@ -119,130 +125,22 @@ def exclusive_sample(rows, speaker):
     return best
 
 
-def candidate_score(rows):
-    valid = [(float(r.confidence), r.end - r.start) for r in rows
-             if math.isfinite(float(r.confidence)) and -1 <= r.confidence <= 1 and r.end > r.start]
-    return sum(score * duration for score, duration in valid) / sum(duration for _, duration in valid) if valid else None
-
-
-def choose_candidate(candidates, minimum, maximum):
-    """Acoustic ranking only; the declared range is not an identity assertion.
-
-    One cluster has no silhouette. Keep an automatic one-cluster hypothesis
-    rather than manufacturing several voices by forcing K. Never hide fallback
-    candidates or turn the ranking into a calibrated probability.
-    """
-    automatic = candidates[0]
-    if automatic['observedSpeakers'] <= 1 and minimum == 1:
-        return automatic, None
-    eligible = [c for c in candidates if c['clusters'] != -1 and minimum <= c['observedSpeakers'] <= maximum]
-    scored = sorted((c for c in eligible if c['score'] is not None), key=lambda c: c['score'], reverse=True)
-    if scored:
-        return scored[0], scored[0]['score'] - scored[1]['score'] if len(scored) > 1 else None
-    return (eligible[0] if eligible else automatic), None
-
-
-def diarize(normalized, segmentation_path, embedding_path, speaker_count, threads, speaker_range=None, embedding='3d-speaker'):
-    import numpy as np
-    import sherpa_onnx
-    if not Path(segmentation_path).is_file() or not Path(embedding_path).is_file():
-        raise ValueError('Local segmentation and speaker embedding models are required')
-    if speaker_range and (speaker_count or not 1 <= speaker_range[0] <= speaker_range[1] <= 16 or embedding != 'wespeaker-zh'):
-        raise ValueError('Invalid declared speaker range')
-    with wave.open(str(normalized), 'rb') as reader:
-        duration_ms = reader.getnframes() / 16
-        samples = np.frombuffer(reader.readframes(reader.getnframes()), dtype=np.int16).astype(np.float32) / 32768
-
-    def run(count):
-        config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
-            segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
-                pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=str(segmentation_path)),
-                num_threads=threads, provider='cpu'),
-            embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(embedding_path), num_threads=threads, provider='cpu'),
-            clustering=sherpa_onnx.FastClusteringConfig(num_clusters=count, threshold=0.5, compute_confidence=bool(speaker_range)),
-            min_duration_on=0.1, min_duration_off=0.3)
-        if not config.validate():
-            raise ValueError('Invalid local diarization models')
-        model = sherpa_onnx.OfflineSpeakerDiarization(config)
-        if model.sample_rate != 16000:
-            raise ValueError('Diarization model must accept 16 kHz')
-        result = model.process(samples).sort_by_start_time()
-        if len(result) > MAX_DIARIZATION_SEGMENTS:
-            raise OverflowError('Diarization output exceeds limit')
-        return result
-
-    result = run(speaker_count or -1)
-    estimation = None
-    if speaker_range:
-        minimum, maximum = speaker_range
-        runs = [(-1, result)]
-        automatic_count = len({r.speaker for r in result})
-        if not (automatic_count <= 1 and minimum == 1):
-            for count in range(max(2, minimum), maximum + 1):
-                runs.append((count, run(count)))
-            if maximum == 1:
-                runs.append((1, run(1)))
-        candidates = []
-        for count, rows in runs:
-            labels = {}
-            segments = []
-            for r in rows:
-                labels.setdefault(r.speaker, 'SPEAKER_' + str(len(labels)))
-                start, end = max(0, round(r.start * 1000)), min(round(duration_ms), round(r.end * 1000))
-                if end > start:
-                    segments.append({'startMs': start, 'endMs': end, 'speaker': labels[r.speaker]})
-            candidates.append({'clusters': count, 'observedSpeakers': len(labels),
-                               'score': candidate_score(rows), 'segments': segments})
-        chosen, gap = choose_candidate(candidates, minimum, maximum)
-        result = runs[candidates.index(chosen)][1]
-        estimation = {'method': 'bounded-silhouette-v1', 'selectedClusters': chosen['clusters'],
-                      'needsReview': True, 'scoreGap': gap, 'candidates': candidates}
-    output = diarization_output(normalized, result, duration_ms, speaker_count)
-    output['engine'] = 'sherpa-onnx/pyannote-3.0+' + ('WeSpeaker-zh-CN-Celeb' if embedding == 'wespeaker-zh' else '3D-Speaker')
-    output['modelProvenance'] = {'embedding': embedding,
-                               'embeddingSha256': hashlib.sha256(Path(embedding_path).read_bytes()).hexdigest(),
-                               'segmentationSha256': hashlib.sha256(Path(segmentation_path).read_bytes()).hexdigest(),
-                               'runtime': sherpa_onnx.__version__, 'threshold': 0.5, 'minDurationOn': 0.1, 'minDurationOff': 0.3, 'threads': threads}
-    if estimation:
-        output['declaredRange'] = {'min': speaker_range[0], 'max': speaker_range[1]}
-        output['estimate'] = estimation
-        output['warnings'].insert(0, '人数范围为用户声明；候选为声学模型估计，评分不是概率。自动单标签也可能漏分，需试听确认。')
-        if not speaker_range[0] <= output['observedSpeakers'] <= speaker_range[1]:
-            output['warnings'].insert(1, '未得到范围内的候选；已保留自动结果及候选，不会补造或隐藏说话人。')
-    return output
-
-
-def diarization_output(normalized, segments, duration_ms, speaker_count):
-    """Preserve bounded model labels independently of the audio-preview budget.
-
-    Labels are unverified acoustic clusters, not confirmed people. No merging,
-    threshold adjustment, speaker naming or semantic attribution occurs here.
-    """
-    labels = {}
-    rows = []
-    for segment in segments:
-        if segment.speaker not in labels:
-            labels[segment.speaker] = 'SPEAKER_' + str(len(labels))
-        start, end = max(0, round(segment.start * 1000)), min(round(duration_ms), round(segment.end * 1000))
-        if end > start:
-            rows.append({'startMs': start, 'endMs': end, 'speaker': labels[segment.speaker]})
-        if len(rows) > MAX_DIARIZATION_SEGMENTS or len(labels) > MAX_SPEAKER_LABELS:
-            raise OverflowError('Diarization output exceeds limit')
-    warnings = []
-    if speaker_count and len(labels) != speaker_count:
-        warnings.append('预期说话人数与识别结果不同；请试听并确认，不会补造说话人。')
+def speaker_previews(normalized, rows):
+    """A 16-preview budget never clips transcript rows or anonymous labels."""
+    if len(rows) > MAX_DIARIZATION_SEGMENTS:
+        raise OverflowError('Diarization output exceeds limit')
+    labels = list(dict.fromkeys(row['speaker'] for row in rows if row['speaker'] is not None))
+    if len(labels) > MAX_SPEAKER_LABELS:
+        raise OverflowError('Diarization labels exceed limit')
     clips = []
-    if len(labels) > MAX_SPEAKER_PREVIEWS:
-        warnings.append('自动分离产生 ' + str(len(labels)) + ' 个匿名标签，不等于已确认的真人数量；分离准确性需要核听。')
-        warnings.append('全部分离区间已保留；预先生成的试听片段最多覆盖前 ' + str(MAX_SPEAKER_PREVIEWS) + ' 个标签。')
-    for speaker in list(labels.values())[:MAX_SPEAKER_PREVIEWS]:
+    for speaker in labels:
+        if len(clips) == MAX_SPEAKER_PREVIEWS:
+            break
         interval = exclusive_sample(rows, speaker)
-        if not interval or interval[1] - interval[0] < 300:
-            warnings.append(speaker + ' 没有足够长的独立发言可供试听。')
+        if interval is None or interval[1] - interval[0] < 300:
             continue
-        start, end = interval
+        # Export exact frame boundaries so metadata describes the actual WAV.
+        start, end = int(interval[0] * 16) / 16, int(interval[1] * 16) / 16
         clips.append({'speaker': speaker, 'startMs': start, 'endMs': end,
                       'wavBase64': base64.b64encode(sample_bytes(normalized, start, end)).decode('ascii')})
-    return {'durationMs': duration_ms, 'engine': 'sherpa-onnx/pyannote-3.0+3D-Speaker',
-            'expectedSpeakers': speaker_count or None, 'observedSpeakers': len(labels),
-            'overlapDetection': 'unknown', 'segments': rows, 'samples': clips, 'warnings': warnings}
+    return clips

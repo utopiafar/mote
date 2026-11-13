@@ -1,4 +1,84 @@
-# Optional isolated CPU worker; weights are prepared separately and never auto-downloaded.
-faster-whisper==1.2.1
-sherpa-onnx==1.13.8
+# Python 3.11; resolved from empty caches, without an experiment pip freeze.
+# Targets: macOS arm64 (MPS), macOS x86_64 (CPU), Linux x86_64/aarch64 (CPU).
+# These are metadata resolutions. Clean installs and model/platform runs are
+# separate acceptance gates. Intel Mac uses its last available Torch wheels.
+# Linux arm64 torchaudio is the exact CPU wheel, not the PyPI CUDA build.
+--extra-index-url https://download.pytorch.org/whl/cpu
+aliyun-python-sdk-core==2.16.1
+aliyun-python-sdk-kms==2.16.5
+antlr4-python3-runtime==4.9.3
+audioread==3.1.0
+certifi==2026.10.23
+cffi==2.1.1
+charset-normalizer==3.5.2
+cloudpickle==3.1.2
+crcmod==1.7
+cryptography==50.0.2
+decorator==5.3.1
+einops==0.8.1
+filelock==4.2.10
+fsspec==2026.9.0
+funasr==1.4.25
+hf-xet==1.8.0
+huggingface-hub==0.36.2
+hydra-core==1.3.8
+idna==3.20
 imageio-ffmpeg==0.7.0
+jaconv==0.5.0
+jamo==0.4.1
+jieba==0.42.1
+jinja2==3.1.6
+jmespath==1.1.0
+joblib==1.6.0
+kaldiio==2.18.1
+lazy-loader==0.6
+librosa==0.11.0
+llvmlite==0.44.0
+markupsafe==3.0.4
+modelscope==1.33.0
+mpmath==1.3.0
+msgpack==1.2.4
+networkx==3.6.1
+numba==0.61.2
+numpy==1.26.4 ; (sys_platform == 'darwin' and platform_machine == 'x86_64')
+numpy==2.2.6 ; (sys_platform == 'darwin' and platform_machine == 'arm64') or (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64')
+omegaconf==2.3.1
+oss2==2.19.1
+packaging==26.3
+platformdirs==4.14.5
+pooch==1.9.0
+protobuf==7.36.2
+pycparser==3.12
+pycryptodome==4.4.0
+pynndescent==0.7.0
+pyyaml==6.0.3
+rapidfuzz==3.14.6
+regex==2026.11.9
+requests==2.34.2
+safetensors==0.8.0
+scikit-learn==1.7.2
+scipy==1.15.3
+sentencepiece==0.2.3
+setuptools==80.9.0
+six==1.17.0
+soundfile==0.13.1
+soxr==1.1.0
+sympy==1.14.0
+tensorboardx==2.6.5
+threadpoolctl==3.8.0
+tiktoken==0.14.0
+tokenizers==0.22.2
+torch-complex==0.4.4
+torch==2.2.2 ; (sys_platform == 'darwin' and platform_machine == 'x86_64')
+torch==2.8.0 ; (sys_platform == 'darwin' and platform_machine == 'arm64')
+torch==2.8.0+cpu ; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64')
+torchaudio @ https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0-cp311-cp311-manylinux_2_28_aarch64.whl#sha256=4573c6042950c20278e3608a9a38050ba0bc72e0049e1bbfd249caf859a8029b ; (sys_platform == 'linux' and platform_machine == 'aarch64')
+torchaudio==2.2.2 ; (sys_platform == 'darwin' and platform_machine == 'x86_64')
+torchaudio==2.8.0 ; (sys_platform == 'darwin' and platform_machine == 'arm64')
+torchaudio==2.8.0+cpu ; (sys_platform == 'linux' and platform_machine == 'x86_64')
+tqdm==4.70.1
+transformers==4.57.6
+typing-extensions==4.16.0
+umap-learn==0.5.9.post2
+urllib3==2.8.0
+websockets==17.4
