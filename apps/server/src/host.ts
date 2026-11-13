@@ -1,5 +1,6 @@
 import {AssistantMatters} from './assistant-matters.js';
 import {AssistantCards} from './assistant-cards.js';
+import {AssistantCommitments} from './assistant-commitments.js';
 import {assertSourceContextDependencies} from './source-context-lineage.js';
 import {BatchProcessing} from './batch-processing.js';
 import {AssistantChangeFeed} from './assistant-change-feed.js';
@@ -505,8 +506,9 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const assistantMatters=new AssistantMatters(store);
   const assistantCards=new AssistantCards(store,evidenceReader);
+  const assistantCommitments=new AssistantCommitments(store,evidenceReader);
   const featureServices=Object.freeze({
-    assistantCards,
+    assistantCards,assistantCommitments,
     configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
