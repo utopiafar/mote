@@ -17,7 +17,9 @@ import {UsageLedger} from '../src/usage.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {assertSourceContextDependencies} from '../src/source-context-lineage.js';
 import {SourceContextStore} from '../src/source-context.js';
-import {StoreError} from '../src/store.js';
+import {StoreError,sha256} from '../src/store.js';
+import {materialId} from '../src/materials.js';
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 const all:QueryScope={kind:'all'};
@@ -308,4 +310,30 @@ test('the assembled production batch keeps the existing model-budget admission b
  await until(()=>node.batchProcessing.progress(snapshot.batchId).items.some(item=>item.state==='blocked'));
  assert.equal(node.batchProcessing.progress(snapshot.batchId).items[0].error,'model_context_budget_unavailable');assert.equal(calls,0);
  await assert.rejects(node.featureServices.assistantFollowup.finish(task.id),{statusCode:409});
+});
+
+
+test('a new file version lets A14 resolve the existing suggestion instead of losing its identity',async t=>{
+ const f=await fixture(t),requirement=await f.add('Generated requirement: name an owner.');
+ const source=await f.node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'generated-followup-files',name:'Generated files',kind:'local-files',deviceId:'generated-followup',platform:'macos',retention:'archive'}});assert.equal(source.statusCode,200,source.body);
+ const settings={...f.node.processing.view().settings,enabled:true,summarize:false};
+ await f.node.processing.save({revision:f.node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.node.processing.runtime.registry)});
+ const upload=async(revision:string,previousRevision:string|null,text:string)=>{
+  const bytes=Buffer.from(text),payload={sourceId:'generated-followup-files',relativePath:'draft.txt',previousRevision,item:{externalId:'draft.txt',revision,observedAt:new Date().toISOString(),title:'Generated draft',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)};
+  const begin=await f.node.app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload});assert.equal(begin.statusCode,200,begin.body);const id=begin.json().uploadId;
+  const part=await f.node.app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${id}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes});assert.equal(part.statusCode,200,part.body);
+  const done=await f.node.app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${id}/commit`,headers,payload:{}});assert.equal(done.statusCode,200,done.body);
+  await f.node.processing.tick();await f.node.materialOrganizer.tick(100);
+  const material=f.node.materials.get(materialId('generated-followup-files','draft.txt'));assert.ok(material);return material;
+ };
+ const missing='Generated draft: the owner is missing.',complete='Generated draft: Alex is the owner.';
+ const before=await upload('1',null,missing);
+ const first=await f.run([requirement.material.ref,before.ref],context=>answer([card(evidence(context,requirement.text),{evidence:[evidence(context,requirement.text),evidence(context,missing)]})]));
+ const cardId=first.cardIds[0];assert.equal(f.node.featureServices.assistantCards.get(cardId,all).state,'open');
+ const after=await upload('2','1',complete);
+ const second=await f.run([requirement.material.ref,after.ref],context=>{
+  const prior=context.cards.find(value=>value.id===cardId);assert.ok(prior,'the interpreter can identify the earlier suggestion');
+  return answer([card(evidence(context,complete),{action:'resolve',cardId,relatedCardIds:[cardId]})]);
+ });
+ assert.deepEqual(second.cardIds,[cardId]);assert.equal(f.node.featureServices.assistantCards.get(cardId,all).state,'resolved');
 });
