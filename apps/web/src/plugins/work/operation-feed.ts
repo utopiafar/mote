@@ -34,6 +34,7 @@ export function affectedResource(key:string,ids:Set<string>,reset:boolean){
  if(/^\/api\/(files|capture-browser|captures|source-items|sources)(\/|$)/.test(path))return changed('file','capture','import');
  if(/^\/api\/(materials|agent-view\/materials|agent-view\/material-read)(\/|$)/.test(path))return changed('material-index','workflow','file','capture','import');
  if(/^\/api\/(query-runs|conversations)(\/|$)/.test(path))return changed('query','capture','file','import');
+ if(/^\/api\/(assistant-cards|assistant\/tasks)(\/|$)/.test(path))return changed('query','capture','file','import','memory','workflow');
  // The collection contains fixed execution receipts. Details and saved reports
  // below also read current evidence/results and must retain withdrawal hints.
  if(path==='/api/insight-runs')return changed('insight','workflow','import');
