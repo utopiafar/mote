@@ -47,6 +47,7 @@ class CalendarActionsActivity : MoteActivity() {
     private var cursor = 0L
     private var nextCursor = 0L
     private var selectedTab = "calendar"
+    private var focusActionId: String? = null
     private var active = false
     private var todoContent: CentralContent? = null
     private var todoState: Bundle? = null
@@ -60,7 +61,10 @@ class CalendarActionsActivity : MoteActivity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE); task = UiTask(this)
         restoredTodoDraft=lastNonConfigurationInstance as? NativeTodoDraft
-        selectedTab=state?.getString("actionTab")?.takeIf { it in setOf("calendar","todos") } ?: "calendar";todoState=state?.getBundle("todoContent");cursor=state?.getLong("calendarCursor") ?: 0L
+        selectedTab=state?.getString("actionTab")?.takeIf { it in setOf("calendar","todos") }
+            ?: intent.getStringExtra("actionTab")?.takeIf { it in setOf("calendar","todos") } ?: "calendar"
+        focusActionId=state?.getString("focusActionId") ?: intent.getStringExtra("actionId")
+        todoState=state?.getBundle("todoContent");cursor=state?.getLong("calendarCursor") ?: 0L
         val body = moteDetailPageContent(primary=null,title=MoteI18n.text("日程与待办"),onBack=::navigateBack) { calendarBody->
             LinearLayout(this).apply {
                 orientation=LinearLayout.VERTICAL
@@ -100,7 +104,7 @@ class CalendarActionsActivity : MoteActivity() {
     }
     private fun navigateBack(){if(selectedTab=="todos"&&todoContent?.backWithinPage()==true)return;finish()}
     @Deprecated("Native back navigation") override fun onBackPressed()=navigateBack()
-    override fun onSaveInstanceState(state:Bundle){state.putString("actionTab",selectedTab);state.putLong("calendarCursor",cursor);state.putBundle("todoContent",Bundle().also { todoContent?.saveState(it) ?: todoState?.let(it::putAll) });super.onSaveInstanceState(state)}
+    override fun onSaveInstanceState(state:Bundle){state.putString("actionTab",selectedTab);state.putString("focusActionId",focusActionId);state.putLong("calendarCursor",cursor);state.putBundle("todoContent",Bundle().also { todoContent?.saveState(it) ?: todoState?.let(it::putAll) });super.onSaveInstanceState(state)}
     override fun onResume(){super.onResume();active=true;selectTab(selectedTab)}
     @Deprecated("In-memory generated owner draft") override fun onRetainNonConfigurationInstance():Any?=todoContent?.retainTodoDraft() ?: restoredTodoDraft
     override fun onPause(){active=false;handler.removeCallbacks(poll);todoContent?.pause();super.onPause()}
@@ -146,8 +150,9 @@ class CalendarActionsActivity : MoteActivity() {
             val a = items.getJSONObject(i); val e = a.getJSONObject("event"); val state = a.getString("status")
             val managed = a.optJSONObject("managed")
             val card = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(MoteTheme.spacePanel), moteDp(MoteTheme.spaceInline), moteDp(MoteTheme.spacePanel), moteDp(MoteTheme.spaceInline)); background = MoteUi.shape(this@CalendarActionsActivity); tag="calendar-action:"+a.getString("id") }; list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(MoteTheme.spaceItem) })
-            text(card, e.getString("title"), 21f)
+            text(card, e.optString("title").ifBlank { MoteI18n.text("消息") }, 21f)
             val kind = a.getString("kind")
+            if (kind == "message.send") { messageAction(a, card); continue }
             text(card, when (kind) { "calendar.update" -> MoteI18n.text("更新日程"); "calendar.cancel" -> MoteI18n.text("取消日程"); "calendar.complete" -> MoteI18n.text("标记安排完成"); else -> MoteI18n.text("添加日程") })
             a.optJSONObject("related")?.getJSONObject("event")?.let { text(card, MoteI18n.text("原安排") + ": " + it.getString("title") + " · " + it.optString("start") + " → " + it.optString("end")) }
             if (managed?.has("cancelRequestedAt") == true && state == "succeeded") text(card, MoteI18n.text("取消请求后收到成功回执；未删除系统日历事件。"))
@@ -162,7 +167,64 @@ class CalendarActionsActivity : MoteActivity() {
             }
             if (a.optJSONObject("target")?.optString("deviceId") == deviceId && state in listOf("approved", "executing", "uncertain")) button(card, MoteI18n.text("写入 / 核实保存结果"), primary = true) { work(MoteI18n.text("正在写入已确认日程…")) { page -> execute(a.getString("id"), a.optJSONObject("managed")?.let { a.getString("operationId") }); list(page) } }
         }
+        focusActionId?.let { id ->
+            list.findViewWithTag<View>("calendar-action:$id")?.let { card -> card.post { card.requestRectangleOnScreen(android.graphics.Rect(0, 0, card.width, card.height)) } }
+            focusActionId = null
+        }
     }
+    private fun messageAction(action: JSONObject, card: LinearLayout) {
+        val message = action.optJSONObject("message") ?: return
+        val state = action.getString("status")
+        val target = action.optJSONObject("target")
+        val label = CalendarActionPresentation.stateKey("message.send", state, action.optString("resolution"),
+            action.optJSONObject("managed")?.optString("state").orEmpty())?.let { MoteI18n.text(it) } ?: state
+        text(card, message.optString("conversationName").ifBlank { message.optString("conversationId") })
+        text(card, message.optString("conversationId"), MoteTheme.fontBody.toFloat())
+        text(card, message.optString("text"))
+        if (target?.optString("executionLocation") == "central-connector") text(card, MoteI18n.text("中央连接器"))
+        text(card, label).apply { tag = "calendar-action-status:" + action.getString("id") }
+        if (state == "uncertain") text(card, MoteI18n.text("保存结果待核实，请刷新检查结果，避免重复发送。"))
+        if (state == "stale") text(card, MoteI18n.text("这份建议暂不能确认，请查看当前原文。"))
+        if (state == "succeeded") text(card, MoteI18n.text("已收到执行回执。"))
+        button(card, MoteI18n.text("查看原文依据")) {
+            val evidence = action.optJSONArray("evidence") ?: org.json.JSONArray()
+            val content = (0 until evidence.length()).joinToString("\n\n") {
+                val row = evidence.getJSONObject(it); "${row.optString("source")} · ${row.optString("capturedAt")}\n${row.optString("quote")}"
+            }
+            own(MoteDialogBuilder(this).setTitle(MoteI18n.text("原文依据")).setMessage(content).setPositiveButton(MoteI18n.text("关闭"), null).create()).show()
+        }
+        if (state == "proposed" && !action.has("resolution")) {
+            button(card, MoteI18n.text("确认") + " · " + MoteI18n.text("发送"), primary = true) {
+                own(MoteDialogBuilder(this).setTitle(MoteI18n.text("确认") + " · " + MoteI18n.text("发送"))
+                    .setMessage((message.optString("conversationName").ifBlank { message.optString("conversationId") }) + "\n\n" + message.optString("text") + "\n\n" + MoteI18n.text("消息仍需逐条确认；日历按已有授权执行。"))
+                    .setNegativeButton(MoteI18n.text("返回"), null)
+                    .setPositiveButton(MoteI18n.text("确认")) { _, _ ->
+                        messageTask(MoteI18n.text("正在确认发送…")) { client -> client.confirmMessage(action); client.list(cursor) }
+                    }.create()).show()
+            }
+            button(card, MoteI18n.text("忽略这条建议")) { messageTask(MoteI18n.text("正在保存选择…")) { client -> client.dismiss(action); client.list(cursor) } }
+        }
+        if (state in setOf("approved", "executing", "uncertain")) button(card, MoteI18n.text("刷新状态")) { messageTask(MoteI18n.text("正在刷新行动…"), read = true) { client -> client.list(cursor) } }
+    }
+
+    /** Message proposals belong to the existing Actions approval path, not to
+     * calendar permission. They still require the same owner confirmation and
+     * never auto-retry an uncertain send. */
+    private fun messageTask(label: String, read: Boolean = false, run: (CalendarActions) -> JSONObject) {
+        val expected = withdrawChangedCalendar(); val epoch = calendarEpoch
+        val show = MoteComponents.progress(status, read)
+        task.start(label, {
+            if (current(expected, epoch)) show(it) else withdrawChangedCalendar()
+        }, {
+            val client = CalendarActions(this, foreground = true, sessionIdentity = expected)
+            run(client)
+        }) { result ->
+            if (!current(expected, epoch)) { withdrawChangedCalendar(); return@start }
+            result.onSuccess { data -> render(data); status.text = MoteI18n.text("已刷新。范围授权内的日程由设备执行，其余建议仍需确认。") }
+                .onFailure { status.text = it.message ?: MoteI18n.text("操作失败，请重试") }
+        }
+    }
+
     private fun edit(action: JSONObject, data: JSONObject) {
         val expected=calendarIdentity;val epoch=calendarEpoch
         fun valid()=current(expected,epoch).also { if(!it)withdrawChangedCalendar() }

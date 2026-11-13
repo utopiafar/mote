@@ -465,6 +465,7 @@ fun Context.declarativePluginView(
     label: (String) -> String,
     busy: () -> Boolean,
     onCommand: (String, org.json.JSONObject) -> Unit,
+    onItem: ((String, org.json.JSONObject) -> Unit)? = null,
 ): LinearLayout {
     val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     val tv = { value: String -> TextView(this).apply { MoteUi.textColor(this, NativeColorRole.INK); setText(value) } }
@@ -475,7 +476,14 @@ fun Context.declarativePluginView(
             if (items.length() == 0) body.addView(tv(label("empty")))
             for (i in 0 until items.length()) {
                 val row = items.optJSONObject(i) ?: continue
-                body.addView(tv(component.fields.joinToString(" · ") { f -> label(f.labelKey ?: f.key) + " " + row.opt(f.key)?.toString() }))
+                val rowView = tv(component.fields.joinToString(" · ") { f -> label(f.labelKey ?: f.key) + " " + row.opt(f.key)?.toString() })
+                if (onItem != null) {
+                    rowView.isClickable = true
+                    rowView.isFocusable = true
+                    rowView.contentDescription = component.fields.joinToString(" · ") { f -> label(f.labelKey ?: f.key) + " " + row.opt(f.key)?.toString() }
+                    rowView.setOnClickListener { if (!busy()) onItem(component.itemKey, row) }
+                }
+                body.addView(rowView)
             }
         }
         is dev.mote.collector.plugins.DeclarativeNode.Detail -> for (f in component.fields)

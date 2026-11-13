@@ -10,6 +10,7 @@ import android.text.InputFilter
 import android.text.TextWatcher
 import android.text.style.ReplacementSpan
 import android.widget.*
+import dev.mote.collector.plugins.AssistantPlugin
 import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeAskPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
@@ -88,6 +89,16 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private val workDiscovery = NativeWorkDiscoveryPlugin.owner(ui)
     private val activity = workDiscovery.work(this)
     private val insights = workDiscovery.insights(this)
+    private val workbench by lazy { AssistantWorkbench(this) }
+
+    init {
+        AssistantPlugin.owner(ui)
+        AssistantPlugin.bind(ui.hostActivity(), this)
+    }
+
+    /** The assistant route factory mounts this same controller into the host
+     * slot; it is not a second navigation tree. */
+    internal fun assistantWorkbench(): AssistantWorkbench = workbench
 
     fun show(page: String) {
         currentPage = page; detailBack = null; question = null; messages = null; noteText = null; noteMood = null
@@ -102,6 +113,10 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 if (ui.requestedFileOriginMatches()) library.openFile(id) else ui.text(MoteI18n.text("访问凭据已失效，请重新连接。"))
             } ?: library.show(page)
             "archive", "timeline", "materials", "coding", "memories", "insights", "sources", MoteNavigation.SEARCH -> library.show(page)
+            AssistantPlugin.WORKBENCH_ROUTE -> if (!ui.pluginRoute(page, body)) {
+                ui.text(MoteI18n.text("助理功能") + " · " + MoteI18n.text("已停用"))
+                ui.button(MoteI18n.text("插件")) { ui.navigate("plugins") }
+            }
             else -> if (!ui.pluginRoute(page, body)) admin.show(page)
         }
     }
@@ -110,7 +125,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     fun clearBack() { detailBack = null }
     /** Encrypted screen state owned by the same profile as Central drafts. */
     fun stateFile(name: String) = CentralStateFile(directory, name, cipher)
-    fun resume() { if (currentPage in setOf("plugins", "extensions")) admin.resume(); if (currentPage == "activity") ui.scheduleActivityPoll(); if (currentPage == "memories") ui.scheduleMemoryTopicsPoll(); if (currentPage == "insights") insights.resume() }
+    fun resume() { if (currentPage in setOf("plugins", "extensions")) admin.resume(); if (currentPage == "activity") ui.scheduleActivityPoll(); if (currentPage == "memories") ui.scheduleMemoryTopicsPoll(); if (currentPage == "insights") insights.resume(); if (currentPage == AssistantPlugin.WORKBENCH_ROUTE) workbench.resume() }
     fun pollMemoryTopics() { if (currentPage == "memories") library.pollTopics() }
     fun saveMemoryTopics(out: android.os.Bundle) = library.saveTopics(out)
     fun restoreMemoryTopics(value: android.os.Bundle) = library.restoreTopics(value)
@@ -1389,6 +1404,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             "overview" to "中央工作台", "archive" to "资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "conversations" to "对话", "activity" to "活动", "notes" to "记录",
             "materials" to "正式资料", "coding" to "Coding 会话同步状态", "timeline" to "片段", "files" to "文件与录音",
             "memories" to "记忆", "insights" to "洞察", "actions" to "行动", "agentView" to "Agent 视角",
+            AssistantPlugin.WORKBENCH_ROUTE to "工作台",
             "sources" to "来源", "devices" to "设备", "connections" to "对外授权", "lark" to "飞书",
             "statistics" to "运行状态", "processing" to "处理任务", "plugins" to "插件", "settings" to "模型与服务",
             "usage" to "用量与费用", "vault" to "存储与索引", "developer" to "诊断与更新", "about" to "设置", "imports" to "导入", "help" to "帮助与反馈"
