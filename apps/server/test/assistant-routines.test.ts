@@ -26,7 +26,7 @@ const processScript=String.raw`
  const config={dataDir:process.env.MOTE_TEST_DIRECTORY,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,token:'generated-routine-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
   maxStorageBytes:20000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
- const node=await buildApp(config,{backgroundWorker:false});let clock=Date.parse('2026-11-01T08:00:00Z');node.assistantRoutines.now=()=>clock;
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call in admission-only process');},close:async()=>{}}});let clock=Date.parse('2026-11-01T08:00:00Z');node.assistantRoutines.now=()=>clock;
  await node.app.ready();process.send({type:'ready'});
  process.on('message',async message=>{try{
   clock=Date.parse('2026-11-01T09:00:00Z');
@@ -34,16 +34,15 @@ const processScript=String.raw`
   const result=node.assistantRoutines.admit(message.ref);process.send({type:'result',...result});await node.app.close();process.exit(0);
  }catch(error){process.send({type:'error',message:String(error)});try{await node.app.close();}finally{process.exit(1);}}});`;
 
-async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<QueryResult>=async input=>answer(input),guard=false){
+async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<QueryResult>=async input=>answer(input),configured=true){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-routine-'));
  const config:Config={dataDir,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,token:'generated-routine-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
   maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  let clock=Date.parse('2026-11-01T08:00:00Z');
  const build=async()=>{
-  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query,close:async()=>{}}});
+  const node=await buildApp(config,{backgroundWorker:false,agent:{configured,query,close:async()=>{}}});
   (node.assistantRoutines as unknown as {now:()=>number}).now=()=>clock;
-  if(!guard)(node.batchProcessing as unknown as {modelAdmission:()=>undefined}).modelAdmission=()=>undefined;
   await node.app.ready();return node;
  };
  let node=await build();
@@ -291,8 +290,8 @@ for(const action of ['edit','pause','exclude','stop'] as const)test(`${action} d
  if(action==='stop'){await f.restart();f.command('on');assert.notEqual(f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(task.taskId)!.state,'succeeded');}
 });
 
-test('production keeps the complete-request budget guard for scheduled work',async t=>{
- let calls=0;const f=await fixture(t,async input=>{calls++;return answer(input);},true);
+test('scheduled work waits for a configured model without sending its input',async t=>{
+ let calls=0;const f=await fixture(t,async input=>{calls++;return answer(input);},false);
  await f.note('generated-budget');f.command('on');const rule=await f.create();f.setClock('2026-11-01T09:00:00Z');
  const result=f.node.assistantRoutines.admit({ruleId:rule.id,revision:rule.revision,scheduledAt:rule.nextDue});
  await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(result.taskId)?.state==='blocked');

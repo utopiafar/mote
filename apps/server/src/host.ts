@@ -281,16 +281,13 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     bootstrap,resources,store,lifecycle:serverLifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,
     executor,agentGate,modelSettings,agent,observabilityAssembly,modelEvidenceAuthority,assertModelEvidence,sourceContexts,assistantDrafts,conversations,
   });
-  // The existing query provider does not yet expose the configured model
-  // window or validate complete requests. Do not send a batch model request
-  // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
   let assistantTasks:AssistantTasks|undefined;
   let assistantFollowup:AssistantFollowup|undefined;
   let tickAssistantFollowup=()=>{};
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
-    ()=>new ExecutionFailure('blocked','model_context_budget_unavailable'),()=>1,true,evidenceReader.memories,{
+    ()=>agent.configured?undefined:new ExecutionFailure('blocked','model_not_configured'),()=>1,true,evidenceReader.memories,{
       assertDependencies:(id,ids)=>assistantFollowup?.assertBatchDependencies(id,ids)??false,
       valid:step=>assistantTasks?.valid(step)??true,project:step=>assistantTasks?.project(step),commit:(step,result)=>{
         assistantTasks?.commit(step,result);executor.localEffect(()=>queueMicrotask(()=>tickAssistantFollowup()));

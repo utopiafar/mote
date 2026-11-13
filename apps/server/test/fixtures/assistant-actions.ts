@@ -34,9 +34,6 @@ export async function assistantActionFixture(t:TestContext){
    return {answer:JSON.stringify({answer:'Generated preparation result',actions:drafts}),citations:ids.slice(0,1).map(id=>({id,capturedAt:'2026-11-01T00:00:00Z',appName:'Generated source',excerpt:actionText})),
     runId:randomUUID(),trace:[],evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};
   }}});
-  // This controlled adapter exercises product wiring. Keep the production
-  // budget gate intact; its blocked behavior is covered in task-journey.
-  (value.batchProcessing as unknown as {modelAdmission:()=>undefined}).modelAdmission=()=>undefined;
   t.mock.method(value.pluginCenter,'actionProviders',()=>enabled?providers:[]);
   t.mock.method(value.pluginCenter,'executeConnectorAction',async({request}:{request:ConnectorActionExecution})=>{
    calls.push(structuredClone(request));if(loseResponse)throw Error('Generated lost external response');

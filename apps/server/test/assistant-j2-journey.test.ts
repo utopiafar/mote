@@ -26,7 +26,7 @@ async function until<T>(read:()=>T|Promise<T>,label:string,timeout=8000):Promise
  throw Error(`Timed out waiting for ${label}: ${JSON.stringify(value)}`);
 }
 
-async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclude'){
+async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclude'|'budget'){
  const directory=mkdtempSync(join(tmpdir(),'mote-j2-'));
  const held=Promise.withResolvers<void>();let entered=false;
  const requests:string[]=[],providerErrors:unknown[]=[],observations:ReturnType<FileObservationReader['read']>[]=[];
@@ -52,7 +52,7 @@ async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclu
   const all=JSON.stringify(context),cards=all.includes(complete)?[{action:'resolve',cardId:context.cards[0].id,relatedCardIds:[context.cards[0].id],title:'Generated owner assigned',body:'Alex is the named owner.',reason:'The updated draft names an owner.',evidence:[proof(complete)],matterId:null}]:
    all.includes(missing)?[{action:'new',cardId:null,relatedCardIds:[],title:'Generated owner missing',body:'The draft needs a named owner.',reason:'The requirement asks for an owner.',reminderReason:'The owner has not been named.',evidence:[proof(requirement),proof(missing)],matterId:null}]:[];
   const answer=JSON.stringify({reason:'Generated controlled interpretation',cards,commitments:[]});
-  if(interruption&&requests.length===1){entered=true;await held.promise;}
+  if(interruption&&interruption!=='budget'&&requests.length===1){entered=true;await held.promise;}
   if(res.destroyed)return;
   res.writeHead(200,{'content-type':'text/event-stream'});
   const send=(value:unknown)=>res.write('data: '+JSON.stringify(value)+'\n\n');
@@ -66,8 +66,10 @@ async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclu
  let node:Awaited<ReturnType<typeof buildApp>>,base='',now=Date.now();
  const start=async()=>{
   node=await buildApp(config,{backgroundWorker:false});
-  // Test-only bypass of the explicitly blocked production C5 batch budget gate.
-  (node.batchProcessing as unknown as {modelAdmission:()=>undefined}).modelAdmission=()=>undefined;
+  const settings=await node.app.inject({method:'GET',url:'/api/configuration',headers});
+  const configured=await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:settings.json().revision,
+   value:{context:{contextWindow:interruption==='budget'?1024:32000,contextWindowSource:'configured'}}}});
+  assert.equal(configured.statusCode,200,configured.body);
   (node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
   base=await node.app.listen({host:'127.0.0.1',port:0});
  };
@@ -106,6 +108,15 @@ async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclu
   const state=await call('GET','/api/model-authorization');
   return call('POST','/api/model-authorization/commands',{action,revision:state.authorization.revision,operationId:randomUUID(),...(excludedSourceIds?{excludedSourceIds}:{})});
  };
+ if(interruption==='budget'){
+  const batchId=String(await until(()=>node.store.db.prepare('SELECT started_batch FROM assistant_change_work WHERE capture_id=?').get(changed)?.started_batch,'the automatic review to enter its durable batch'));
+  const rejected=await until(()=>node.batchProcessing.progress(batchId).items.find(item=>item.state==='failed'||item.state==='blocked'),'the production budget to reject the full automatic request');
+  assert.equal(rejected.error,'processing_limit');assert.equal(requests.length,0,'an over-budget request never reaches the provider');
+  assert.deepEqual((await call('GET',cardsPath)).items,[]);
+  assert.deepEqual((await call('GET','/api/assistant-notifications?'+scopeQuery)).items,[]);
+  const calls=requests.length;await node.materialOrganizer.tick(100);await node.executor.tick();
+  assert.equal(requests.length,calls,'polling cannot bypass a rejected budget');return;
+ }
  if(interruption){
   await until(()=>{if(providerErrors.length)throw providerErrors[0];return entered;},'the real automatic provider request before its response');
   const batchId=String(node.store.db.prepare('SELECT started_batch FROM assistant_change_work WHERE capture_id=?').get(changed)!.started_batch);
@@ -168,6 +179,7 @@ async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclu
 }
 
 test('J2 a real file change generates and resolves one suggestion without sending an excluded source',t=>journey(t));
+test('the production budget blocks an oversized automatic file review before provider disclosure',t=>journey(t,'budget'));
 test('a queued automatic file review resumes after restart with the same analysis and suggestion',t=>journey(t,'restart'));
 test('off drains the admitted file review and withholds the next review until on',t=>journey(t,'off'));
 test('stop rejects a held automatic file response without re-admitting its original',t=>journey(t,'stop'));

@@ -8,15 +8,11 @@ import {estimateSerializedTokens,type QueryInput} from '@mote/agent';
 import type {QueryResult,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {AssistantFollowup} from '../src/assistant-followup.js';
-import {BatchProcessing} from '../src/batch-processing.js';
 import {TaskRecords} from '../src/task-records.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {semanticProcessor} from '../src/semantic-extraction.js';
 import {UsageLedger} from '../src/usage.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
-import {assertSourceContextDependencies} from '../src/source-context-lineage.js';
-import {SourceContextStore} from '../src/source-context.js';
 import {StoreError,sha256} from '../src/store.js';
 import {materialId} from '../src/materials.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
@@ -41,9 +37,8 @@ async function fixture(t:TestContext){
  const config:Config={dataDir,dataKey:'43'.repeat(32),contentEncryptionEnabled:true,token:'generated-followup-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const programs:Program[]=[],seen:Context[]=[];let providerFailure:unknown;
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput):Promise<QueryResult>=>{
-  // This controlled provider has a declared 32k test window. Include its
-  // serialized request and a conservative fixed output/system reserve; the
-  // real provider remains behind the production budget admission guard.
+  // Component-only provider double. The HTTP journeys exercise the actual
+  // complete-request gate; this estimate only bounds this generated input.
   const tokens=estimateSerializedTokens({question:input.question,evidenceIds:input.evidenceIds,contextTime:input.contextTime}).tokens;
   assert.ok(tokens+4000<=32000,'generated request must fit the declared small fixture window');
   const marker='\nUntrusted context: ',offset=input.question.indexOf(marker);assert.notEqual(offset,-1);
@@ -52,18 +47,13 @@ async function fixture(t:TestContext){
   try{return {answer:JSON.stringify(await program(context)),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};}
   catch(error){providerFailure=error;throw error;}
  },close:async()=>{}}});
- await node.batchProcessing.close();
  const reader=node.featureServices.evidenceReader;
  const assertCurrent=(ids:readonly string[])=>{if(!reader.contextDependenciesAllowed(ids))throw new StoreError('Generated evidence changed',409);};
- let service:AssistantFollowup;
- const batch=new BatchProcessing(node.store,node.executor,node.modelAuthorization,input=>node.query.queryAgent(input,'query','conversations'),assertCurrent,
-  ids=>node.modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(new SourceContextStore(node.store),result.sourceContextDependencies??[]),()=>undefined,()=>2,false,reader.memories,
-  {assertDependencies:(id,ids)=>service?.assertBatchDependencies(id,ids)??false,valid:()=>true,project:()=>{},commit:()=>{}});
- service=new AssistantFollowup(node.store,node.materials,reader,node.featureServices.assistantCards,node.featureServices.assistantCommitments,node.featureServices.assistantMatters,batch,assertCurrent);
+ const batch=node.batchProcessing,service=node.featureServices.assistantFollowup;
  const tasks=new TaskRecords(node.store);
  await node.app.ready();
  const runtime=new ProcessingRuntime(node.store,[],{},Date.now,undefined,node.materials);
- t.after(async()=>{await runtime.close();await batch.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+ t.after(async()=>{await runtime.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const add=async(text:string,deviceId='generated-device')=>{
   const id=randomUUID(),response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId,deviceName:'Generated',platform:'import',capturedAt:at,text}});
   assert.equal(response.statusCode,201,response.body);await node.materialOrganizer.tick(100);
@@ -298,20 +288,26 @@ test('a newly completed understanding product forces a fresh analysis before pub
  assert.deepEqual(retry.cardIds,[]);
 });
 
-test('the assembled production batch keeps the existing model-budget admission block',async t=>{
+test('the assembled batch passes the configured product budget to its query consumer',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-followup-budget-'));let calls=0;
- const config:Config={dataDir,token:'generated-followup-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
- const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async()=>{calls++;throw Error('Unexpected provider call');},close:async()=>{}}});
+ const config:Config={dataDir,token:'generated-followup-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelMaxTokens:512,modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput)=>{
+  calls++;assert.deepEqual(input.modelBudget,{contextWindow:32000,maxTokens:512,historyRatio:0.5,lowWatermarkRatio:0.5,tokenCounting:'estimated',contextWindowSource:'configured'});
+  return {answer:JSON.stringify(answer()),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:input.contextEvidenceDependencies};
+ },close:async()=>{}}});
  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+ const view=await node.app.inject({method:'GET',url:'/api/configuration',headers});
+ const configured=await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:view.json().revision,value:{context:{contextWindow:32000,contextWindowSource:'configured'}}}});
+ assert.equal(configured.statusCode,200,configured.body);
  const id=randomUUID(),created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-device',deviceName:'Generated',platform:'import',capturedAt:at,text:'Generated budget-block note.'}});
  assert.equal(created.statusCode,201,created.body);await node.materialOrganizer.tick(100);
  const material=node.materials.list({kind:'mote.note',limit:100}).items.find(item=>item.origin.externalId===id)!;assert.ok(material);
  const profile=node.modelSettings.select('chat'),task=await node.featureServices.assistantFollowup.start({operationId:'generated-production-budget',requestId:randomUUID(),scope:all,materialRefs:[material.ref],mode:{kind:'change'}},
   {identities:[],connections:[agentModelConnection({kind:'profile',id:profile.id},profile.settings)]});
  const tasks=new TaskRecords(node.store),snapshot=tasks.input<{batchId:string}>(task.id,task.revision,()=>{});
- await until(()=>node.batchProcessing.progress(snapshot.batchId).items.some(item=>item.state==='blocked'));
- assert.equal(node.batchProcessing.progress(snapshot.batchId).items[0].error,'model_context_budget_unavailable');assert.equal(calls,0);
- await assert.rejects(node.featureServices.assistantFollowup.finish(task.id),{statusCode:409});
+ await until(()=>node.batchProcessing.progress(snapshot.batchId).items.some(item=>['succeeded','failed','blocked'].includes(item.state)));
+ assert.equal(node.batchProcessing.progress(snapshot.batchId).items[0].state,'succeeded');assert.equal(calls,1);
+ assert.deepEqual((await node.featureServices.assistantFollowup.finish(task.id)).cardIds,[]);
 });
 
 

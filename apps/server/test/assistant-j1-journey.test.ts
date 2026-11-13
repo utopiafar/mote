@@ -61,9 +61,10 @@ test('J1 uploaded evidence reaches a clicked draft once after lost replies and a
  let node:Awaited<ReturnType<typeof buildApp>>,central='';
  const start=async()=>{
   node=await buildApp(config,{backgroundWorker:false});
-  // C5 is not merged: bypass its deliberate production batch block only in this
-  // controlled-provider fixture. This does not establish a production budget.
-  (node.batchProcessing as unknown as {modelAdmission:()=>undefined}).modelAdmission=()=>undefined;
+  const settings=await node.app.inject({method:'GET',url:'/api/configuration',headers:{authorization:'Bearer '+token}});
+  const configured=await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers:{authorization:'Bearer '+token},payload:{revision:settings.json().revision,
+   value:{context:{contextWindow:32000,contextWindowSource:'configured'}}}});
+  assert.equal(configured.statusCode,200,configured.body);
   central=await node.app.listen({host:'127.0.0.1',port:0});
  };
  await start();

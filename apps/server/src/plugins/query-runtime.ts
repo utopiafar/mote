@@ -3,13 +3,14 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {AgentNotConfiguredError,AgentYieldError,prepareTaskContext,type AgentProgress,type AgentTraceEvent,type QueryInput} from '@mote/agent';
-import {ProviderFailure,type InsightSnapshot,type QueryResult} from '@mote/shared';
+import {ProviderFailure,type ConversationSettings,type InsightSnapshot,type QueryResult} from '@mote/shared';
 import type {DelegationRuntime} from '../delegation-runtime.js';
 import type {AgentRunFinalizer,QueryRunLease} from '../query-agent.js';
 import {StoreError} from '../store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import {ExecutionFailure} from '../execution-engine.js';
 import {modelConfiguration} from '../model-configuration.js';
+import {queryModelBudget} from '../query-model-budget.js';
 import {createMemoryModelAuthorityJobReader} from '../memory-model-authority.js';
 import {createHostRunUsageObserver} from '../agent-runtime-events.js';
 import {agentDeadline} from '../agent-deadline.js';
@@ -58,6 +59,7 @@ export interface QueryRuntimeDependencies {
   readonly executor:Pick<ExecutionEngine,'get'>;
   readonly agentGate:Pick<ConcurrencyGate,'snapshot'>;
   readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
+  readonly conversationSettings:()=>ConversationSettings;
   readonly agent:Pick<AgentRuntimeRegistry,'configured'|'query'>;
   readonly observabilityAssembly:Pick<ObservabilityAssembly,'admittedUsage'>;
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
@@ -121,6 +123,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       }
     }
     const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
+    if(!input.modelBudget&&moduleId==='conversations')input={...input,modelBudget:queryModelBudget(profile.settings.maxTokens,dependencies.conversationSettings().context)};
     input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
     if(input.contextEvidenceDependencies)input={...input,contextEvidenceDependencies:resolveDependencies(store,input.contextEvidenceDependencies)};
     const configuration=modelConfiguration(profile.id,{...profile.settings,model:input.modelOverride!},modelSettings.view().revision);
