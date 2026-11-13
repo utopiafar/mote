@@ -95,6 +95,7 @@ test('owner start, cancellation and continuation use the real onboarding route a
  assert.ok(d.querySelector('.source-onboarding-stage[data-stage=semantic]')!.textContent!.includes('1 / 2'));
  assert.match(d.querySelector('.source-onboarding-items')!.textContent!,/已完成/);
  assert.ok(button(d,'取消初次认识'));
+ assert.equal(button(d,'继续初次认识'),undefined,'an active run offers cancel, not a duplicate continue start');
  assert.equal(calls.some(call=>call.path==='/api/model-authorization/commands'),false,'starting onboarding does not flip another permission switch');
  await act(async()=>button(d,'取消初次认识')!.click());await flush();
  const cancel=calls.find(call=>call.method==='POST'&&call.path.endsWith('/cancel'))!;assert.ok(cancel);assert.equal(cancel.body!.expectedRevision,1);assert.deepEqual(cancel.body!.scope,{kind:'selection',sourceIds:['generated-files']});

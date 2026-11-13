@@ -216,10 +216,10 @@ export function SourceOnboarding({api,sources,onAdd,loading=false}:{api:Api;sour
    </div>
    <div className="source-onboarding-actions">
     {active&&<button className="button" type="button" disabled={busy} onClick={()=>void cancel()}>{moteText('取消初次认识')}</button>}
-    {resumable.length>0&&<button className="button primary" type="button" disabled={busy} onClick={continueRun}>{moteText('继续初次认识')}</button>}
+    {!active&&resumable.length>0&&<button className="button primary" type="button" disabled={busy} onClick={continueRun}>{moteText('继续初次认识')}</button>}
     {!active&&<button className={resumable.length>0?'button subtle':'button primary'} type="button" disabled={busy||!selectedRefs.length||selectedInvalid} onClick={startSelected}>{moteText('开始初次认识')}</button>}
    </div>
-   {resumable.length>0&&<p className="fine-print">{moteText('取消后已完成的结果会保留；继续只会处理未完成的资料。')}</p>}
+   {!active&&resumable.length>0&&<p className="fine-print">{moteText('取消后已完成的结果会保留；继续只会处理未完成的资料。')}</p>}
    {run?.state==='empty'&&<p className="source-onboarding-unavailable" role="status">{moteText('所选资料当前不可读取，请检查来源授权后重新选择。')}</p>}
    {run?.state==='completed'&&<p className="source-onboarding-complete" role="status">{moteText('本次选择的资料已完成；其他资料未包含。')}</p>}
    {run&&run.items.length>0&&<ul className="source-onboarding-items" aria-label={moteText('本次资料')}>{run.items.map(item=><li key={item.material.ref} data-item-state={item.state}><div><strong>{item.material.title}</strong><span>{itemStateLabel(item.state)}</span></div><small>{moteText('正文提取')} · {statusLabels[item.coverage.extraction.status]} · {moteText('语义理解')} · {statusLabels[item.coverage.semantic.status]}</small>{item.reason&&<p>{reasonText(item.reason)}{modelReasons.has(item.reason)&&<> · <a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a></>}</p>}{item.memory&&item.memory.status!=='completed'&&<small>{moteText('处理中')} · {item.memory.completedBatches} / {item.memory.totalBatches}</small>}</li>)}</ul>}
