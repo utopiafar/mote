@@ -35,7 +35,6 @@ export function registerAssistantCommandRoutes(app:FastifyInstance,commands:Pick
   // These owner commands configure rules; the occurrence admission itself is
   // intentionally not an HTTP or query-tool capability.
   app.post('/api/assistant/routines',{bodyLimit:65536},async request=>{owner(request);return routines.create(request.body);});
-  app.get('/api/assistant/routines/:id',async request=>{owner(request);return routines.get(z.object({id:z.string().uuid()}).parse(request.params).id);});
   app.post('/api/assistant/routines/:id',{bodyLimit:65536},async request=>{
     owner(request);const {id}=z.object({id:z.string().uuid()}).parse(request.params);
     const body=z.record(z.unknown()).parse(request.body);if('ruleId' in body)throw new StoreError('Routine ID belongs in the path');

@@ -1,6 +1,6 @@
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
-import {evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type QueryScope} from '@mote/shared';
+import {evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type QueryScope,type Commitment} from '@mote/shared';
 import {AssistantMatters} from './assistant-matters.js';
 import {withinEvidenceScope,type EvidenceReader} from './evidence-reader.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
@@ -157,7 +157,7 @@ export class AssistantCommitments {
    }
   }
  }
- private view(row:Row,scope:QueryScope){
+ private view(row:Row,scope:QueryScope):Commitment{
   const rows=this.store.db.prepare('SELECT * FROM assistant_commitment_events WHERE commitment_id=? AND stale=0 AND private_json IS NOT NULL ORDER BY seq').all(row.id) as EventRow[];
   // An inaccessible correction can change the meaning of an earlier item. Do
   // not disclose a partial, misleading projection or the hidden item count.

@@ -7,14 +7,14 @@ import {useForegroundResources} from '../../useForegroundResources';
 
 /** Propose through an owner product command, then read the original domain's
  * status. Navigation to confirmation never counts as execution. */
-export function AssistantActionResults({api,taskId,scope}:{api:Api;taskId:string;scope:QueryScope}){
+export function AssistantActionResults({api,taskId,scope,canCreate=true}:{api:Api;taskId:string;scope:QueryScope;canCreate?:boolean}){
  const path=`/api/assistant/tasks/${encodeURIComponent(taskId)}/actions?${new URLSearchParams({scope:JSON.stringify(scope)})}`;
  const read=useResource<Results>(api,path,15000);useForegroundResources(api,[path]);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[choices,setChoices]=useState<Record<number,number>>({});
  const pending=useRef(false),identity=useRef({api,path});identity.current={api,path};
  useEffect(()=>{setBusy(false);setError('');setChoices({});pending.current=false;},[api,path]);
  const create=async(index:number)=>{
-  const data=read.data,item=data?.drafts.find(item=>item.index===index);if(!data||!item||pending.current)return;
+  const data=read.data,item=data?.drafts.find(item=>item.index===index);if(!canCreate||!data||!item||pending.current)return;
   pending.current=true;setBusy(true);setError('');
   const target=item.targets[choices[index]??0]?.target;
   try{
@@ -45,7 +45,8 @@ export function AssistantActionResults({api,taskId,scope}:{api:Api;taskId:string
      <>{targets.length>0&&<select aria-label={moteText('目标设备')} value={choices[index]??0} disabled={busy} onChange={event=>setChoices(value=>({...value,[index]:Number(event.target.value)}))}>
       {targets.map((target,i)=><option key={i} value={i}>{target.name}</option>)}
      </select>}
-     <button type="button" className="button" disabled={busy||draft.kind!=='todo.create'&&!targets.length} onClick={()=>void create(index)}>{draft.kind==='todo.create'?moteText('记为待办'):moteText('创建行动建议')}</button>
+     <button type="button" className="button" disabled={!canCreate||busy||draft.kind!=='todo.create'&&!targets.length} onClick={()=>void create(index)}>{draft.kind==='todo.create'?moteText('记为待办'):moteText('创建行动建议')}</button>
+     {!canCreate&&<p>{moteText('当前服务未提供此入口')}</p>}
      {draft.kind!=='todo.create'&&!targets.length&&<p>{moteText('当前连接或授权范围不支持这项行动。')}</p>}</>}
    </section>;
   })}

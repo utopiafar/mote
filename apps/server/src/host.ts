@@ -1,5 +1,6 @@
 import {AssistantMatters} from './assistant-matters.js';
 import {AssistantWorkbench} from './assistant-workbench.js';
+import {registerAssistantMatterRoutes} from './assistant-matter-routes.js';
 import {AssistantCards} from './assistant-cards.js';
 import {AssistantFollowup} from './assistant-followup.js';
 import {AssistantOnboarding} from './assistant-onboarding.js';
@@ -282,7 +283,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   });
   // The existing query provider does not yet expose the configured model
   // window or validate complete requests. Do not send a batch model request
-  // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
+  // using its hard-coded 128k assumption; connect the configured budget check first.
   let assistantTasks:AssistantTasks|undefined;
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
@@ -307,6 +308,8 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     if(!record||!withinEvidenceScope(record,scope)||!evidenceReader.contextDependenciesAllowed([record.id],new EvidenceExposurePolicy())||!automaticEvidenceAllowed([record.id]))return;
     return {revision:item.revision,calendar:item.calendar};
   },(id,scope)=>{try{const matter=assistantMatters.get(id);return matter.state==='active'&&isDeepStrictEqual(matter.scope,scope);}catch{return false;}});
+  contributeDomainRoutes(backendContext,{'mote.ask':{mount:app=>registerAssistantMatterRoutes(app,{store,matters:assistantMatters,routines:assistantRoutines,
+    commitments:assistantCommitments,tasks:assistantTasks!,reader:evidenceReader,owner:req=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);}})}});
   assistantDrafts.setVersionValidator(context=>assistantTasks!.validateDraftVersion(context));
   assistantDrafts.register('assistant.task.start',context=>assistantTasks!.start(context));
   resources.defer(()=>batchProcessing.close());

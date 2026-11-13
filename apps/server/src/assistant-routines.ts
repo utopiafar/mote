@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {queryScopeSchema,sourceIdSchema,type QueryScope} from '@mote/shared';
+import {queryScopeSchema,sourceIdSchema,type QueryScope,type Routine} from '@mote/shared';
 import {z} from 'zod';
 import {BackgroundModelAuthorization,routineModelIdentity} from './background-model-authorization.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
@@ -53,8 +53,15 @@ export class AssistantRoutines {
   const event=this.calendar(payload);if(payload.event&&!event)return null;
   return nextRoutineOccurrence(payload.schedule,new Date(at),event);
  }
- private view(row:Row){return {id:row.id,revision:row.revision,enabled:Boolean(row.enabled),nextDue:row.next_due,...this.payload(row)};}
+ private view(row:Row):Routine{return {id:row.id,revision:row.revision,enabled:Boolean(row.enabled),nextDue:row.next_due,...this.payload(row)};}
  get(id:string){return this.view(this.row(id));}
+ /** Stable owner browsing; changing or pausing a rule does not reorder it. */
+ page(args:{limit?:number;cursor?:string}={}){
+  const input=z.object({limit:z.number().int().min(1).max(100).default(30),cursor:z.string().uuid().optional()}).strict().parse(args);
+  const rows=this.store.db.prepare('SELECT * FROM assistant_routines WHERE id>? ORDER BY id LIMIT ?').all(input.cursor??'',input.limit+1) as Row[];
+  const items=rows.slice(0,input.limit).map(row=>this.view(row));
+  return {items,nextCursor:rows.length>input.limit?items.at(-1)!.id:null};
+ }
  /** Called only from an owner product command, never from a query tool. */
  create(raw:unknown){
   const input=z.object({requestId:z.string().uuid(),goal:payloadSchema.innerType().shape.goal,scope:queryScopeSchema,
