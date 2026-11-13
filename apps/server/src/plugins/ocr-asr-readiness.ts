@@ -18,7 +18,7 @@ export const ocrAsrReadinessDeclaration={id:ocrAsrReadinessContribution.id,apiVe
 export const ocrAsrReadinessReplacement='hot' as const;
 
 export type OcrAsrReadinessPhase='created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed';
-export type MediaReadinessPort=Pick<MediaPreparation,'status'|'statuses'|'start'|'cancel'>&{readonly phase:OcrAsrReadinessPhase;assertCurrent():void};
+export type MediaReadinessPort=Pick<MediaPreparation,'status'|'statuses'|'start'|'cancel'|'stop'|'restart'>&{readonly phase:OcrAsrReadinessPhase;assertCurrent():void};
 type PreparationOptions=ConstructorParameters<typeof MediaPreparation>[0];
 export interface OcrAsrReadinessDependencies {
   readonly runtime:PreparationOptions['runtime'];
@@ -45,7 +45,7 @@ const unavailable=()=>new StoreError('OCR/ASR readiness is unavailable',503);
  * and the managed worker subprocesses. A stopped activation is fully closed;
  * re-enabling prepares a fresh runtime without adding another HTTP route. */
 export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):OcrAsrReadiness {
-  let phase:OcrAsrReadinessPhase='created',current:MediaPreparation|undefined,unsubscribe:(()=>void)|undefined,closing:Promise<void>|undefined,disposed=false;
+  let phase:OcrAsrReadinessPhase='created',current:MediaPreparation|undefined,unsubscribe:(()=>void)|undefined,closing:Promise<void>|undefined,disposed=false,preparing=false,generation=0;
   const readable=()=>{
     if(!current||!['prepared','active','quiescing'].includes(phase))throw unavailable();
     return current;
@@ -55,9 +55,10 @@ export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):
     return readable();
   };
   const retire=(final:boolean)=>{
+    generation++;
     if(final){disposed=true;phase='disposed';}else if(phase!=='disposed')phase='stopped';
     const owned=current,remove=unsubscribe;current=undefined;unsubscribe=undefined;remove?.();
-    if(!owned)return Promise.resolve();
+    if(!owned)return closing??Promise.resolve();
     if(closing)return closing;
     closing=(async()=>{await owned.close();})().finally(()=>{closing=undefined;});
     return closing;
@@ -69,12 +70,21 @@ export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):
     statuses:()=>readable().statuses(),
     start:(role,allowInstall)=>active().start(role,allowInstall),
     cancel:role=>readable().cancel(role),
+    stop:role=>readable().stop(role),
+    restart:(role,allowInstall)=>active().restart(role,allowInstall),
   });
   return Object.freeze({
     port,
     async prepare(){
-      if(disposed||!['created','stopped'].includes(phase))throw unavailable();
+      if(disposed||preparing||!['created','stopped'].includes(phase))throw unavailable();
+      const attempt=generation;
+      preparing=true;
+      // Stop/dispose can still be reaping an old process group. Never activate
+      // a replacement on the same ports before that work has actually finished,
+      // and do not resurrect an activation that was stopped while it waited.
       try{
+        await closing;
+        if(disposed||attempt!==generation||!['created','stopped'].includes(phase))throw unavailable();
         current=new MediaPreparation({runtime:dependencies.runtime,media:dependencies.media,assets:dependencies.assets,
           ...(dependencies.repository?{repository:dependencies.repository}:{}),...(dependencies.prepare?{prepare:dependencies.prepare}:{}),
           ...(dependencies.fetch?{fetch:dependencies.fetch}:{}),...(dependencies.startupTimeoutMs!==undefined?{startupTimeoutMs:dependencies.startupTimeoutMs}:{})});
@@ -85,7 +95,7 @@ export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):
       }catch(error){
         try{await retire(false);}catch(cleanup){throw new AggregateError([error,cleanup],'OCR/ASR readiness preparation and disposal failed',{cause:error});}
         throw error;
-      }
+      }finally{preparing=false;}
     },
     start(){
       if(phase!=='prepared')throw unavailable();

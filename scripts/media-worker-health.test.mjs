@@ -86,7 +86,7 @@ test('an unknown worker role is rejected with usage instead of reporting health'
   await writeConfig(root, {});
   const result = await run(root, 'dialogue');
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /Usage: node scripts\/media-worker-health\.mjs <ocr\|asr>/);
+  assert.match(result.stderr, /Usage: node scripts\/media-worker-health\.mjs <ocr\|asr\|local-image>/);
 });
 
 function workerHealthProblems(compose) {

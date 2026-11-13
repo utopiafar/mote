@@ -107,3 +107,54 @@ test('ASR execution facts and identified POSTs stay private even when the old un
  for(const method of ['GET','DELETE'])assert.equal((await fetch(endpoint+'/executions/'+id,{method,headers})).status,401);
  const response=await fetch(endpoint+'/transcribe',{method:'POST',headers:{...headers,'X-Mote-Request-Id':id},body:'generated'});assert.equal(response.status,401);assert.equal(response.headers.get('x-mote-execution-started'),'false');
 });
+
+test('inference receives a private HOME and only its worker credential, never Central, provider or CLI credentials',async()=>{
+ const {mediaWorkerEnvironment}=await import('./media-workers.mjs');
+ const env=mediaWorkerEnvironment('/generated/private-worker','/generated/python/bin/python','generated-worker-token',{PATH:'/generated/bin',HOME:'/generated/cli-home',OPENAI_API_KEY:'generated-secret',MOTE_TOKEN:'generated-central-token',PYTHONPATH:'/generated/injection',HF_TOKEN:'generated-hub-token',AWS_SECRET_ACCESS_KEY:'generated-secret',HTTPS_PROXY:'http://127.0.0.1:9999'});
+ assert.equal(env.HOME,'/generated/private-worker');assert.equal(env.PATH,'/generated/python/bin:/generated/bin');assert.equal(env.MOTE_MEDIA_WORKER_TOKEN,'generated-worker-token');assert.equal(env.HF_HUB_OFFLINE,'1');
+ for(const name of ['OPENAI_API_KEY','MOTE_TOKEN','PYTHONPATH','HF_TOKEN','AWS_SECRET_ACCESS_KEY','HTTPS_PROXY'])assert.equal(env[name],undefined,name);
+ assert.equal(mediaEnvironment({HOME:'/generated/cli-home'}).HOME,undefined);
+});
+
+for(const crash of [false,true])test(`the actual sidecar entry ${crash?'reaps children after an unexpected worker exit':'waits for its entire process group on termination'}`,async t=>{
+ const {spawn,execFileSync}=await import('node:child_process'),{once}=await import('node:events');
+ const root=await fixture(t),entry=fileURLToPath(new URL('./media-worker-entry.mjs',import.meta.url));
+ const python=execFileSync('python3',['-c','import sys;print(sys.executable)'],{encoding:'utf8'}).trim(),modelDirectory=join(root,'models');await mkdir(modelDirectory);
+ await writeFile(join(root,'mote.yaml'),JSON.stringify({version:1,revision:0,media:{modelDirectory,workerToken:'generated-sidecar-worker-token',ocrPort:19001,asrPort:19002}}));
+ await writeFile(join(root,'scripts/ocr-server.py'),String.raw`import json,os,signal,subprocess,sys,time
+from pathlib import Path
+root=Path(__file__).parent.parent
+(root/'arguments.json').write_text(json.dumps(sys.argv[1:]))
+(root/'environment.json').write_text(json.dumps({key:os.environ.get(key) for key in ['HOME','MOTE_CONFIG_FILE','MOTE_MEDIA_WORKER_TOKEN','OPENAI_API_KEY','MOTE_TOKEN','PYTHONPATH','HF_TOKEN']}))
+code='import os,signal,time;from pathlib import Path;signal.signal(signal.SIGTERM,signal.SIG_IGN);Path('+repr(str(root/'descendant.pid'))+').write_text(str(os.getpid()));time.sleep(60)'
+subprocess.Popen([sys.executable,'-c',code],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+(root/'worker.pid').write_text(str(os.getpid()))
+while True:
+    if (root/'crash-now').exists(): os._exit(7)
+    time.sleep(.01)
+`);
+ const child=spawn(process.execPath,[entry,'ocr',python],{cwd:root,env:{...mediaEnvironment(process.env),MOTE_CONFIG_FILE:join(root,'mote.yaml'),OPENAI_API_KEY:'generated-private-key',MOTE_TOKEN:'generated-central-token',PYTHONPATH:'/generated/injection',HF_TOKEN:'generated-hub-token'},stdio:['ignore','ignore','pipe']});
+ let stderr='';child.stderr.on('data',bytes=>stderr+=bytes);const closed=once(child,'close');
+ t.after(async()=>{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGTERM');await closed;});
+ const wait=async name=>{for(let i=0;i<300;i++){const text=await readFile(join(root,name),'utf8').catch(()=>undefined);if(text!==undefined)return text;assert.equal(child.exitCode,null,stderr);await new Promise(resolve=>setTimeout(resolve,10));}assert.fail('Generated sidecar did not publish '+name);};
+ const descendant=Number(await wait('descendant.pid')),worker=Number(await wait('worker.pid')),env=JSON.parse(await wait('environment.json'));
+ assert.deepEqual(JSON.parse(await wait('arguments.json')),['--model-root',join(modelDirectory,'ocr'),'--port','19001']);
+ for(const name of ['OPENAI_API_KEY','MOTE_TOKEN','PYTHONPATH','HF_TOKEN','MOTE_CONFIG_FILE'])assert.equal(env[name],null,name);
+ assert.equal(env.MOTE_MEDIA_WORKER_TOKEN,'generated-sidecar-worker-token');assert.notEqual(env.HOME,process.env.HOME);
+ if(crash)await writeFile(join(root,'crash-now'),'generated');else child.kill('SIGTERM');
+ const [code]=await closed;assert.equal(code,crash?7:1,stderr);
+ for(const pid of [worker,descendant])assert.throws(()=>process.kill(pid,0),error=>error.code==='ESRCH','sidecar exit must prove its owned children are gone');
+ await assert.rejects(readFile(join(env.HOME,'anything')));const {stat}=await import('node:fs/promises');await assert.rejects(stat(env.HOME));
+});
+
+test('Docker carries worker/domain sources and isolates CPU audio dependencies from OCR',async()=>{
+ const docker=await readFile(new URL('../Dockerfile',import.meta.url),'utf8'),{parse}=await import('yaml'),compose=parse(await readFile(new URL('../compose.yaml',import.meta.url),'utf8'));
+ assert.match(docker,/COPY scripts \.\/scripts\//,'all worker sources, contracts and fixed manifests ship together');
+ assert.match(docker,/\/opt\/mote-media\/ocr\/bin\/pip install[^\n]+requirements-ocr\.txt/);
+ assert.match(docker,/\/opt\/mote-media\/dialogue\/bin\/pip install[^\n]+requirements-audio\.txt/);
+ assert.doesNotMatch(docker,/pip install[^\n]+requirements-audio\.txt[^\n]+requirements-ocr\.txt/);
+ assert.deepEqual(compose.services['ocr-worker'].command,['node','scripts/media-worker-entry.mjs','ocr','/opt/mote-media/ocr/bin/python']);
+ assert.deepEqual(compose.services['asr-worker'].command,['node','scripts/media-worker-entry.mjs','asr','/opt/mote-media/dialogue/bin/python']);
+ assert.equal(compose.services['ocr-worker'].volumes.find(volume=>volume.source==='mote-models').read_only,false,'the existing execution-facts store must remain persistent and writable');
+ assert.equal(compose.services['local-image-worker'],undefined,'Linux does not advertise an MLX sidecar');
+});
