@@ -11,6 +11,7 @@ import {vaultStorageMeters} from './vault-storage-meters.js';
 import {isStateExtension,samples as stateSamples} from '@mote/shared/state-series';
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
+import {availableFileAttachmentSql,readableFileSql} from './file-access.js';
 import {systemEventText,sourceContentTime,resolveFileRule,type FilePolicy} from '@mote/shared';
 import {exportMemoryDeletions,restoreMemoryDeletions} from './plugins/memory-deletions.js';
 import {notificationEvidenceText} from './notification-evidence.js';
@@ -122,6 +123,10 @@ export class EvidenceStore {
   }
   private clauses(range:Range={}) {
     const clauses:string[]=["(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=captures.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=captures.id AND h.deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
+    clauses.push(`(NOT EXISTS(SELECT 1 FROM file_versions v WHERE v.capture_id=captures.id) OR ${readableFileSql('captures.id')})`);
+    clauses.push(availableFileAttachmentSql(this.db,'captures.id'));
+    // An excerpt created to cite a range is not another discovered file.
+    clauses.push(`(EXISTS(SELECT 1 FROM file_versions own WHERE own.capture_id=captures.id) OR NOT EXISTS(SELECT 1 FROM file_evidence_links l JOIN file_versions parent ON parent.capture_id=l.parent_id WHERE l.capture_id=captures.id))`);
     if(range.after) {clauses.push(range.capturedOrder?'captured_at >= ?':'context_end >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push(range.capturedOrder?'captured_at < ?':'context_at < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}

@@ -535,7 +535,10 @@ export async function createContextToolSession(
             if(!method)throw hostError('The requested read operation is unavailable');
             const scopedDirectory=timeBounded&&(operation==='sources'||operation==='catalog'&&(actual.path==='/context/sources'||(actual.path===undefined||actual.path==='/context')&&Boolean(actual.query)));
             let value=scopedDirectory?await sourceDirectory(operation as 'sources'|'catalog',actual):await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual]))),originals:ContextRecord[]|undefined,views:ContextRecord[]|undefined;
-            if(['search','sourceHistory','fileChunks'].includes(operation)&&Array.isArray(value))value=(value as ContextRecord[]).filter(inScope);
+            if(['search','sourceHistory','fileChunks'].includes(operation)&&Array.isArray(value)){
+              const retrieval=(value as ContextRecord[]&{retrieval?:unknown}).retrieval,filtered=(value as ContextRecord[]).filter(inScope);
+              value=operation==='search'&&retrieval!==undefined?Object.assign(filtered,{retrieval}):filtered;
+            }
             if(['timeline','sourceItems'].includes(operation)&&value&&typeof value==='object'&&Array.isArray((value as {items?:unknown}).items))value={...value,items:(value as {items:ContextRecord[]}).items.filter(inScope)};
             if(operation==='evidence'){
               if(!Array.isArray(value))throw hostError('The evidence reader returned invalid records');

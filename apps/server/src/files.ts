@@ -14,12 +14,15 @@ import {SourceStore} from './sources.js';
 import {privateDirectory} from './private-storage.js';
 import {readFileSpeakerAttributions} from './file-speaker-attribution.js';
 import {fileAttachmentAvailable,fileAttachmentParent} from './file-attachments.js';
+import {availableFileAttachmentSql,readableFileSql} from './file-access.js';
 
 type Upload={id:string;source_id:string;manifest:string;fingerprint:string;created_at:string;ack:string|null};
 type Version={capture_id:string;source_id:string;external_id:string;revision:string;manifest:string;object_hash:string|null};
 type Chunk={id:string;capture_id:string;artifact_id:string;start_ms:number|null;end_ms:number|null;text:string;metadata?:string};
 const activeChunks="a.current=1 AND NOT EXISTS (SELECT 1 FROM file_artifacts preferred WHERE preferred.capture_id=a.capture_id AND preferred.current=1 AND ((preferred.kind='corrected-dialogue' AND a.kind!='corrected-dialogue') OR (preferred.kind='dialogue' AND a.kind IN ('transcript','text','image-text'))))";
 const timestamp=()=>new Date().toISOString();
+const fileListSignature=(args:Range&{query?:string;mimePrefix?:string})=>sha256(JSON.stringify(['sourceId','deviceId','after','before','appId','source','collection','projectKey','repositoryKey','provider','sessionId','query','mimePrefix'].map(key=>args[key as keyof typeof args]??null)));
+
 
 /** Bounded parts using the configured content write policy. No caller supplies a filesystem path. */
 export class FileStore {
@@ -403,7 +406,8 @@ export class FileStore {
     else if(completed)embedding={status:'partial',completed,total,reason:failed?'Some extracted chunks could not be embedded.':'Some extracted chunks are awaiting embedding.'};
     else embedding={status:failed===total?'failed':'pending',completed,total,...(failed?{reason:'Embedding failed for some extracted chunks; lexical search remains available.'}:{})};
     const hasOriginal=!reference&&detail.hasOriginal;
-    return fileViewSchema.parse({captureId:id,sourceId:version.source_id,item,retention:source.retention,hasOriginal,originMissing:detail.originMissing,canOpenOriginal:hasOriginal&&source.enabled,coverage:{extraction,semantic,embedding}});
+    let retained=false;if(hasOriginal&&version.object_hash)try{retained=this.store.assets.retained(version.object_hash);}catch{/* Missing storage is unavailable, not proof of an openable original. */}
+    return fileViewSchema.parse({captureId:id,sourceId:version.source_id,item,retention:source.retention,hasOriginal,originMissing:detail.originMissing,canOpenOriginal:retained&&source.enabled,coverage:{extraction,semantic,embedding}});
   }
   saveAsset(artifactId:string,name:string,mime:string,bytes:Buffer){
     if(!/^speaker_samples\/SPEAKER_[0-9]{1,5}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');
@@ -419,14 +423,24 @@ export class FileStore {
     return {mime:row.mime,bytes:this.store.assets.read(row.object_hash)};
   }
 
-  list(args:ContextRange&{sourceId?:string;query?:string;mimePrefix?:string}={}){
-    const clauses=['h.capture_id=v.capture_id','c.id=v.capture_id'],values:(string|number)[]=[];
-    for(const [key,column] of [['sourceId','v.source_id'],['deviceId','c.device_id'],['after','c.captured_at'],['before','c.captured_at']] as const){if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(args[key]!);}}
-    if(args.query){clauses.push("(instr(lower(json_extract(c.json,'$.windowTitle')),lower(?))>0 OR instr(lower(json_extract(v.manifest,'$.relativePath')),lower(?))>0)");values.push(args.query,args.query);}
+  list(args:Range&{query?:string;mimePrefix?:string}={}){
+    const clauses=['h.capture_id=v.capture_id','c.id=v.capture_id',readableFileSql('v.capture_id'),availableFileAttachmentSql(this.store.db,'v.capture_id')],values:(string|number)[]=[];
+    for(const [key,column] of [['sourceId','v.source_id'],['deviceId','c.device_id'],['after','c.context_at'],['before','c.context_at'],['appId',"json_extract(c.json,'$.appId')"],['source',"json_extract(c.json,'$.source')"],['projectKey',"json_extract(c.json,'$.provenance.document.coding.projectKey')"],['repositoryKey',"json_extract(c.json,'$.provenance.document.coding.repositoryKey')"],['provider',"json_extract(c.json,'$.provenance.document.coding.provider')"],['sessionId',"json_extract(c.json,'$.provenance.document.coding.sessionId')"]] as const){if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(key==='after'||key==='before'?new Date(args[key]!).toISOString():args[key]!);}}
+    if(args.collection==='activity')clauses.push("json_extract(c.json,'$.privacy.collection')='activity'");
+    if(args.collection==='content')clauses.push("COALESCE(json_extract(c.json,'$.privacy.collection'),'content')='content'");
+    for(const term of (args.query?.trim().slice(0,1000).split(/\s+/u).filter(Boolean)??[]).slice(0,12)){
+      clauses.push("(instr(lower(json_extract(c.json,'$.windowTitle')),lower(?))>0 OR instr(lower(COALESCE(json_extract(v.manifest,'$.relativePath'),'')),lower(?))>0 OR instr(lower(COALESCE(json_extract(c.json,'$.provenance.uri'),'')),lower(?))>0 OR instr(lower(COALESCE(json_extract(c.json,'$.provenance.document.path'),'')),lower(?))>0)");values.push(term,term,term,term);
+    }
     if(args.mimePrefix){clauses.push("instr(json_extract(v.manifest,'$.item.mimeType'),?)=1");values.push(args.mimePrefix);}
-    const offset=Number(args.cursor??0);if(!Number.isSafeInteger(offset)||offset<0)throw new StoreError('Invalid cursor');
-    const limit=Math.min(200,Math.max(1,args.limit??50)),rows=this.store.db.prepare(`SELECT v.capture_id FROM file_versions v,file_heads h,captures c WHERE ${clauses.join(' AND ')} ORDER BY c.captured_at DESC,c.id LIMIT ? OFFSET ?`).all(...values,limit+1,offset) as {capture_id:string}[];
-    return {items:rows.slice(0,limit).map(r=>this.detail(r.capture_id,false)),nextCursor:rows.length>limit?String(offset+limit):null};
+    const signature=fileListSignature(args);
+    if(args.cursor){let cursor:{signature:string;at:string;id:string};try{cursor=z.object({signature:z.literal(signature),at:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid file cursor');}clauses.push('(c.context_at<? OR (c.context_at=? AND c.id<?))');values.push(cursor.at,cursor.at,cursor.id);}
+    const limit=Math.min(200,Math.max(1,args.limit??50)),selected:{id:string;at:string}[]=[];
+    for(const row of this.store.db.prepare(`SELECT v.capture_id,c.context_at FROM file_versions v,file_heads h,captures c WHERE ${clauses.join(' AND ')} ORDER BY c.context_at DESC,c.id DESC`).iterate(...values)){
+      const id=String(row.capture_id);if(!fileAttachmentAvailable(this.store,id))continue;
+      selected.push({id,at:String(row.context_at)});if(selected.length>limit)break;
+    }
+    const page=selected.slice(0,limit),last=page.at(-1);
+    return {items:page.map(row=>this.detail(row.id,false)),nextCursor:selected.length>limit&&last?Buffer.from(JSON.stringify({signature,at:last.at,id:last.id})).toString('base64url'):null};
   }
   *bytes(id:string,start=0,end?:number):Generator<Buffer>{const v=this.version(id);if(!v.object_hash)throw new StoreError('Original is not archived',404);
     for(const bytes of this.store.assets.bytes(v.object_hash,start,end)){this.version(id);yield bytes;}
@@ -448,18 +462,51 @@ export class FileStore {
   /** Only the preferred transcript/text of the retained current file revision is independent evidence. */
   isCurrentEvidence(id:string):boolean {
     if(!fileAttachmentAvailable(this.store,id))return false;
-    return Boolean(this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`).get(id));
+    return Boolean(this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${readableFileSql('c.capture_id')} AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`).get(id));
+  }
+  /** Resolve a currently permitted file or chunk; an identity is never a path grant. */
+  readableFile(id:string):string|undefined {
+    const captureId=this.fileForRead(id);if(!captureId||!fileAttachmentAvailable(this.store,captureId))return;
+    if(!this.store.db.prepare(`SELECT 1 WHERE ${readableFileSql('?')}`).get(captureId))return;
+    if(id!==captureId&&!this.isCurrentEvidence(id)&&!this.store.isCurrentEvidence(id))return;
+    return captureId;
+  }
+  /** An owner may explicitly open a retained historical version while the
+   * logical source is still authorized. It is never a current search hit. */
+  readableHistoricalFile(id:string):boolean {
+    if(!fileAttachmentAvailable(this.store,id))return false;
+    return Boolean(this.store.db.prepare(`SELECT 1 FROM file_versions v
+      JOIN file_heads h ON h.source_id=v.source_id AND h.external_id=v.external_id
+      JOIN source_heads sh ON sh.source_id=v.source_id AND sh.external_id=v.external_id
+      JOIN source_connections s ON s.id=v.source_id WHERE v.capture_id=? AND json_extract(s.json,'$.enabled')=1
+        AND (json_extract(s.json,'$.retention')!='reference' OR json_extract(v.manifest,'$.item.layer')='reference')
+        AND (sh.deleted=0 OR h.origin_missing=1 AND sh.deleted=1 AND EXISTS(SELECT 1 FROM file_versions missing WHERE missing.capture_id=sh.capture_id AND missing.source_id=v.source_id AND missing.external_id=v.external_id))`).get(id));
   }
   evidence(ids:string[]){return ids.flatMap(id=>{const c=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1').get(id) as Chunk|undefined;return c?[this.chunkRecord(c)]:[];});}
   search(args:ContextRange&{query?:string}){return this.searchPage(args).items;}
+  /** Directory metadata is a separate lexical channel from extracted chunks. */
+  searchMetadata(args:Range&{query?:string}){
+    return this.searchMetadataPage({...args,cursor:undefined}).items;
+  }
+  searchMetadataPage(args:Range&{query?:string}){
+    if(!args.query?.trim()||args.source&&args.source!=='file'||args.collection==='activity')return {items:[] as CaptureRecord[],nextCursor:null};
+    let cursor:string|undefined;
+    if(args.cursor){let position:{t:string;id:string};try{position=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid file search cursor');}cursor=Buffer.from(JSON.stringify({signature:fileListSignature(args),at:position.t,id:position.id})).toString('base64url');}
+    const page=this.list({...args,cursor,limit:Math.min(args.limit??50,200)});
+    const position=page.nextCursor?JSON.parse(Buffer.from(page.nextCursor,'base64url').toString()) as {at:string;id:string}:undefined;
+    return {items:this.store.evidence(page.items.map(item=>item.captureId)),nextCursor:position?Buffer.from(JSON.stringify({t:position.at,id:position.id})).toString('base64url'):null};
+  }
   searchPage(args:ContextRange&{query?:string;sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string}){
     const empty={items:[] as (CaptureRecord & ContextRecord)[],nextCursor:null as string|null};
     if(args.source&&args.source!=='file'||args.collection==='activity'||!args.query?.trim())return empty;
-    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id'],values:(string|number)[]=[];
-    for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.context_at'],['before','r.context_at'],['sourceId',"json_extract(r.json,'$.provenance.sourceId')"],['projectKey',"json_extract(r.json,'$.provenance.document.coding.projectKey')"],['repositoryKey',"json_extract(r.json,'$.provenance.document.coding.repositoryKey')"],['provider',"json_extract(r.json,'$.provenance.document.coding.provider')"],['sessionId',"json_extract(r.json,'$.provenance.document.coding.sessionId')"]] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(args[key]!);}
+    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id',readableFileSql('c.capture_id'),availableFileAttachmentSql(this.store.db,'c.capture_id')],values:(string|number)[]=[];
+    for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.context_at'],['before','r.context_at'],['sourceId',"json_extract(r.json,'$.provenance.sourceId')"],['projectKey',"json_extract(r.json,'$.provenance.document.coding.projectKey')"],['repositoryKey',"json_extract(r.json,'$.provenance.document.coding.repositoryKey')"],['provider',"json_extract(r.json,'$.provenance.document.coding.provider')"],['sessionId',"json_extract(r.json,'$.provenance.document.coding.sessionId')"]] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(key==='after'||key==='before'?new Date(args[key]!).toISOString():args[key]!);}
     if(args.cursor){let p:{t:string;id:string};try{p=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid file search cursor');}clauses.push('(r.context_at<? OR (r.context_at=? AND c.id<?))');values.push(p.t,p.t,p.id);}
     const lexical=textSearch(args.query!,{id:'c.id',text:'c.text',words:'file_chunks_fts',trigrams:'file_chunks_trigram'}),limit=Math.max(1,Math.min(args.limit??30,200));
-    const rows=this.store.db.prepare(`SELECT c.*,r.context_at AS context_at FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')} AND ${lexical.sql} ORDER BY r.context_at DESC,c.id DESC LIMIT ?`).all(...values,...lexical.values,limit+1) as (Chunk & {context_at:string})[];
+    const rows:(Chunk & {context_at:string})[]=[];
+    for(const value of this.store.db.prepare(`SELECT c.*,r.context_at AS context_at FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')} AND ${lexical.sql} ORDER BY r.context_at DESC,c.id DESC`).iterate(...values,...lexical.values)){
+      const row=value as unknown as Chunk & {context_at:string};if(!fileAttachmentAvailable(this.store,row.capture_id))continue;rows.push(row);if(rows.length>limit)break;
+    }
     const selected=rows.slice(0,limit),last=selected.at(-1);
     return {items:selected.map(c=>this.chunkRecord(c)),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({t:last.context_at,id:last.id})).toString('base64url'):null};
   }
@@ -468,7 +515,7 @@ export class FileStore {
   indexFailed(id:string){this.store.db.prepare("UPDATE file_chunks SET index_error='provider_failed' WHERE id=?").run(id);}
   vectorQuery(model:string,args:Range){
     if(args.source&&args.source!=='file'||args.collection==='activity')return;
-    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id','c.embedding_model=?','c.embedding IS NOT NULL'],values:(string|number)[]=[model];
+    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id',readableFileSql('c.capture_id'),availableFileAttachmentSql(this.store.db,'c.capture_id'),'c.embedding_model=?','c.embedding IS NOT NULL'],values:(string|number)[]=[model];
     for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.context_end'],['before','r.context_at'],['sourceId',"json_extract(r.json,'$.provenance.sourceId')"],['projectKey',"json_extract(r.json,'$.provenance.document.coding.projectKey')"],['repositoryKey',"json_extract(r.json,'$.provenance.document.coding.repositoryKey')"],['provider',"json_extract(r.json,'$.provenance.document.coding.provider')"],['sessionId',"json_extract(r.json,'$.provenance.document.coding.sessionId')"]] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(key==='after'||key==='before'?new Date(args[key]!).toISOString():args[key]!);}
     return {sql:`SELECT c.id,c.embedding FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')}`,values};
   }
@@ -477,6 +524,11 @@ export class FileStore {
   captureForEvidence(id:string):string|undefined {
     const row=this.store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(id,id);
     return row?String(row.capture_id):undefined;
+  }
+  /** Excerpt identities inherit read authority from their original file, while
+   * retaining their existing independent deletion semantics. */
+  fileForRead(id:string):string|undefined {
+    return this.captureForEvidence(id)??(this.store.db.prepare('SELECT l.parent_id FROM file_evidence_links l JOIN file_versions v ON v.capture_id=l.parent_id WHERE l.capture_id=? LIMIT 1').get(id)?.parent_id as string|undefined);
   }
   syncHead(sourceId:string,externalId:string){
     return {revision:this.sources.getItem(sourceId,externalId)?.revision??null,forgotten:!!this.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(sourceId,externalId)};
@@ -504,7 +556,8 @@ export class FileStore {
     const db=this.store.db;
     const stale=`capture_id NOT IN (SELECT h.capture_id FROM file_heads h JOIN source_connections s ON s.id=h.source_id WHERE json_extract(s.json,'$.enabled')=1 AND json_extract(s.json,'$.retention')!='reference' AND h.origin_missing=0)`;
     const removed=db.prepare(`DELETE FROM file_snapshot_inputs WHERE expires<=? OR ${stale}`).run(Date.now()).changes;
-    const retired=db.prepare(`DELETE FROM file_snapshot_text WHERE ${stale}`).run().changes;if(removed||retired)this.store.assets.sweep();
+    // A disconnected or removed device original does not erase already retained text.
+    const retired=db.prepare(`DELETE FROM file_snapshot_text WHERE capture_id NOT IN (SELECT h.capture_id FROM file_heads h JOIN source_connections s ON s.id=h.source_id WHERE json_extract(s.json,'$.enabled')=1 AND json_extract(s.json,'$.retention')!='reference')`).run().changes;if(removed||retired)this.store.assets.sweep();
   }
   sweep(){this.sweepSnapshotInputs();
 

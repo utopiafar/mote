@@ -103,6 +103,12 @@ export class SourceSync {
     if(isFileCheckpoint(checkpoint)&&checkpoint.identityVersion!==1)throw Error('Unsupported local file identity registry; existing source state was preserved');
     return isFileCheckpoint(checkpoint)?{...structuredClone({...checkpoint,catalog:undefined}),catalog:checkpoint.catalog}:undefined;
   }
+  /** A device locator must be the current locally acknowledged source revision. */
+  fileOpenCheckpoint(externalId:string,revision:string,policy:string):LocalFileCheckpoint|undefined {
+    const key=sourceHash(externalId),known=this.data.known[key];
+    if(!known||known.revision!==revision||known.item.deleted||this.data.policy!==policy||known.policy!==policy||this.data.delivered?.[key]!==revision||known.deletionPending||known.absentWhileInflight)return;
+    return this.fileCheckpoint();
+  }
   initialized() { return Boolean(this.data.initialized); }
   oneTimeCompletedAt(policy:string):string|undefined { return this.data.policy===policy?this.data.oneTimeCompletedAt:undefined; }
   async resetOneTimeCompletion():Promise<void>{await this.mutate(async()=>{if(this.data.oneTimeCompletedAt)await this.commit({...this.data,oneTimeCompletedAt:undefined});});}

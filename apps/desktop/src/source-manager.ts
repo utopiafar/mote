@@ -21,6 +21,7 @@ import { decideSync } from './sync-policy';
 import { FileWatcher, type FileWatchEvent } from './file-watcher';
 import {INGRESS_VERSION_HEADERS} from './ingress-protocol';
 import {SourceContextOutbox,type SourceContextState} from './source-context-outbox';
+import {openRegisteredFile,type LocalFileLocator} from './source-file-open';
 export const captureContextChannels=['screen','structured','activity','notifications'] as const;
 import type { CaptureContextChannel } from './contracts/sources';
 export type { CaptureContextChannel } from './contracts/sources';
@@ -130,6 +131,23 @@ export class LocalSourceManager {
     try{const state=await task;await this.persist();void this.sync(true);return state;}finally{if(this.contextTask===task)this.contextTask=undefined;}
   }
   pendingForHistory(sourceId: string, versionKey: string): import('./source-types').SourceItem | undefined { return this.engines.get(sourceId)?.pendingForHistory(versionKey); }
+  /** Product host adapter; a query tool never receives this method or a local path. */
+  openFileOriginal(locator:LocalFileLocator):AsyncGenerator<Buffer>{
+    const select=()=>{
+      if(this.stopped||this.connectionHeld||!this.nodeBinding.matches(this.connection))return;
+      const source=this.sources.find(value=>value.id===locator.sourceId),checkpoint=source&&this.engines.get(locator.sourceId)?.fileOpenCheckpoint(locator.externalId,locator.revision,sourcePolicy(source));
+      return source&&checkpoint?{source:structuredClone(source),checkpoint}:undefined;
+    };
+    const authorize=async()=>{
+      const current=select();if(!current)throw Error('File authorization changed');
+      const request=this.request(new AbortController().signal),directory=await request('/api/sources',undefined,'GET') as {items?:{id:string;deviceId:string;enabled:boolean;retention:string}[]};
+      const source=directory.items?.find(value=>value.id===locator.sourceId);
+      if(!source?.enabled||source.deviceId!==current.source.deviceId||source.retention!==current.source.retention)throw Error('File source authorization changed');
+      const head=await request('/api/file-sync/v1/head?sourceId='+encodeURIComponent(locator.sourceId)+'&externalId='+encodeURIComponent(locator.externalId),undefined,'GET') as {revision?:string|null;forgotten?:boolean};
+      if(head.forgotten||head.revision!==locator.revision||!select())throw Error('File version or authorization changed');
+    };
+    return openRegisteredFile(locator,select,authorize);
+  }
   connectionActivity(): { pending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0)+this.sources.filter(source=>this.contexts?.pending(source.id)).length+this.captureContextIds().filter(id=>this.contexts?.pending(id)).length, inFlight: Boolean(this.task || this.uploadTask || this.permissionTask || this.contextTask) }; }
   async holdConnection(): Promise<() => void> {
     if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，请稍后重试连接"));

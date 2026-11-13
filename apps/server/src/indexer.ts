@@ -125,7 +125,7 @@ export class Indexer {
     // A completed vector scan is not full-text semantic coverage. Preserve this
     // distinction in the tool envelope, including empty and degraded results.
     const embeddingInput=this.configured?{maxUtf16CodeUnits:EMBEDDING_INPUT_CODE_UNITS,evidencePolicy:'prefix_per_capture_or_file_chunk',queryTruncated:(args.query?.length??0)>EMBEDDING_INPUT_CODE_UNITS,fullTextFallback:'lexical'}:undefined;
-    const readLexical=()=>[this.store.search(args),this.files?.search(args)??[]];
+    const readLexical=()=>[this.store.search(args),this.files?.search(args)??[],this.files?.searchMetadata?.(args)??[]];
     const lexical=readLexical();
     let channels=lexical,degraded=Boolean(args.query&&!this.configured);let vectorCoverage:unknown,reason:string|undefined=degraded?'embedding_not_configured':undefined;
     if(this.configured&&args.query&&args.source!=='activity'&&args.source!=='media'&&args.collection!=='activity'){
@@ -149,7 +149,7 @@ export class Indexer {
     }
     // An asynchronous provider/worker may overlap deletion or source replacement.
     // Refresh bounded lexical results as well before exposing this response.
-    if(this.configured&&args.query){const current=readLexical();lexical[0]=current[0];lexical[1]=current[1];if(channels!==lexical){channels[0]=current[0];channels[1]=current[1];}}
+    if(this.configured&&args.query){const current=readLexical();for(let index=0;index<current.length;index++){lexical[index]=current[index];if(channels!==lexical)channels[index]=current[index];}}
     // Reciprocal rank fusion across independent channels; no file-table priority.
     const ranked=new Map<string,{record:(typeof lexical)[number][number];score:number}>();
     for(const channel of channels){const seen=new Set<string>();channel.forEach((record,index)=>{
