@@ -1,5 +1,6 @@
 import {AssistantMatters} from './assistant-matters.js';
 import {AssistantCards} from './assistant-cards.js';
+import {AssistantFollowup} from './assistant-followup.js';
 import {AssistantCommitments} from './assistant-commitments.js';
 import {assertSourceContextDependencies} from './source-context-lineage.js';
 import {BatchProcessing} from './batch-processing.js';
@@ -518,8 +519,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const assistantNotifications=new AssistantNotifications(assistantCards,()=>configService.current<NotificationSettings>('notifications'));
+  const assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
+    if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
+  });
   const featureServices=Object.freeze({
-    assistantCards,assistantNotifications,assistantCommitments,
+    assistantCards,assistantNotifications,assistantCommitments,assistantFollowup,
     configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
