@@ -17,7 +17,7 @@ import {hostRun} from './fixtures/host-run.js';
 const headers={authorization:'Bearer generated-routine-owner'};
 const gate=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};};
 async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.now()<end){if(check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Timed out waiting for routine');}
-const answer=(input:QueryInput):QueryResult=>({answer:'Generated routine review',citations:[],trace:[],runId:hostRun(input),
+const answer=(input:QueryInput):QueryResult=>({answer:JSON.stringify({answer:'Generated routine review',actions:[]}),citations:[],trace:[],runId:hostRun(input),
  evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}});
 const processScript=String.raw`
  import {buildApp} from './src/app.ts';
