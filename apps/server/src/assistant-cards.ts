@@ -1,9 +1,9 @@
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
-import {evidenceDependenciesSchema,ownerQuestionEvidenceSchema,queryScopeSchema,sourceContextDeclarationSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
+import {evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {StoreError,sha256,type Store} from './store.js';
 import {type EvidenceReader,withinEvidenceScope} from './evidence-reader.js';
-import {taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
+import {retireTaskRecordsSql,taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
 import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
@@ -122,17 +122,18 @@ export class AssistantCards {
    return [{version:entry.version,action:entry.action,...detail,...(entry.stale?{evidenceStale:true}:{}),createdAt:entry.created_at}];
   });
   return {id:row.id,kind:row.kind,matterId:row.matter_id,version:row.current_version,state:row.state,revision:row.revision,...(snapshot.stale?{evidenceStale:true}:{}),
-   ...body,evidenceDependencies:{version:1 as const,complete:true as const,ids},readAt:row.read_at,acceptedTaskId:this.acceptedTask(row,scope),
+   ...body,evidenceDependencies:{version:1 as const,complete:true as const,ids:ids.filter(id=>Boolean(parseEvidenceId(id)))},readAt:row.read_at,acceptedTaskId:this.acceptedTask(row,scope),
    feedback,createdAt:row.created_at,updatedAt:row.updated_at};
  }
  private expect(row:CardRow,expectedRevision:number){if(row.revision!==revision.parse(expectedRevision))throw new StoreError('Assistant card changed; reload before continuing',409);}
 
  /** Replaying the same explicitly assigned id/version and complete payload is
   * idempotent. Hashes detect conflicting retries only; no text similarity is used. */
- publish(raw:AssistantCardPublication,expectedRevision:number|undefined,rawScope:QueryScope,assertCurrent:AssertTaskCurrent){
-  const input=publishSchema.parse(raw),scope=queryScopeSchema.parse(rawScope),dependencies=validateTaskDependencies(input.evidenceDependencies),pins=input.sourceContextDependencies??[];
+ publish(raw:AssistantCardPublication,expectedRevision:number|undefined,rawScope:QueryScope,assertCurrent:AssertTaskCurrent,internalDependencies:readonly string[]=[]){
+  const input=publishSchema.parse(raw),scope=queryScopeSchema.parse(rawScope),publicDependencies=validateTaskDependencies(input.evidenceDependencies),pins=input.sourceContextDependencies??[];
+  const extra=[...new Set(internalDependencies)].sort(),dependencies=validateTaskDependencies({...publicDependencies,ids:[...publicDependencies.ids,...extra]});
   if(input.evidence.some(entry=>!dependencies.ids.includes(entry.id)))throw new StoreError('Card evidence is outside its disclosure dependencies',409);
-  const hash=sha256(canonicalRecipeJson({...input,evidenceDependencies:dependencies}));
+  const hash=sha256(canonicalRecipeJson({...input,evidenceDependencies:publicDependencies,...(extra.length?{internalDependencies:extra}:{})}));
   return this.transaction(()=>{
    const prior=this.versionRow(input.id,input.version);
    if(prior){
@@ -210,6 +211,14 @@ export class AssistantCards {
     // The owner's selected scope is part of this input, not a permission to
     // read the wider card history when a later consumer resumes it.
     this.store.db.prepare('INSERT INTO assistant_card_feedback_scopes VALUES(?,?)').run(saved.lastInsertRowid,encodeMemoryPrivate(this.store,{scope,cardRevision:row.revision+1}));
+    // Follow-up snapshots include the visible card and its feedback. Retire
+    // their private inputs and batch results when an owner changes that context;
+    // shared original evidence may conservatively retire an unrelated review.
+    this.store.db.prepare(retireTaskRecordsSql(`SELECT id FROM task_records WHERE operation_id IN (
+     SELECT DISTINCT t.operation_id FROM task_records t JOIN task_evidence e ON e.task_id=t.id
+     WHERE t.kind='assistant.followup' AND t.operation_id LIKE 'assistant-followup:%'
+      AND e.evidence_id IN (SELECT evidence_id FROM assistant_card_evidence WHERE card_id=?))
+     AND kind IN ('assistant.followup','batch','batch.item')`)).run(id);
     this.store.db.prepare('UPDATE assistant_cards SET revision=revision+1,updated_at=? WHERE id=?').run(at,id);
    }
    this.store.reserveMetadata(0);return this.view(this.row(id),scope);
@@ -277,6 +286,44 @@ export class AssistantCards {
    return {items,nextCursor:found.length>selected.limit&&last?this.cursor(selected.scope,last.id):null};
   });
  }
+ /** Internal analysis input. Historical versions remain explicitly marked stale;
+  * the ordinary feed continues to expose only current cards. A caller must not
+  * infer semantic identity from the order, title or storage key. */
+ review(scope:QueryScope,limit=100){
+  const selected=queryScopeSchema.parse(scope);
+  if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new StoreError('Invalid assistant review limit');
+  return this.transaction(()=>{
+   const items:ReturnType<AssistantCards['view']>[]=[],dependencies=new Set<string>(),pins:SourceContextDeclaration[]=[];let before=Number.MAX_SAFE_INTEGER;
+   const result=(hasMore:boolean)=>({items:items.slice(0,limit),hasMore,disclosureDependencies:{version:1 as const,complete:true as const,ids:[...dependencies].sort()},sourceContextDependencies:pins});
+   for(;;){
+    const rows=this.store.db.prepare('SELECT * FROM assistant_cards WHERE seq<? ORDER BY seq DESC LIMIT 100').all(before) as CardRow[];
+    if(!rows.length)break;
+    for(const row of rows){
+     before=row.seq;const snapshot=this.versionRow(row.id,row.current_version);
+     if(snapshot&&this.visibleVersion(snapshot,selected)){
+      items.push(this.view(row,selected));
+      for(const id of this.ids(row.id,row.current_version))dependencies.add(id);
+      pins.push(...(this.payload(snapshot).sourceContextDependencies??[]));
+      const feedback=this.store.db.prepare('SELECT seq,version,stale FROM assistant_card_feedback WHERE card_id=?').all(row.id) as Pick<FeedbackRow,'seq'|'version'|'stale'>[];
+      for(const entry of feedback){
+       const prior=this.versionRow(row.id,entry.version);
+       const ids=this.store.db.prepare('SELECT evidence_id FROM assistant_card_feedback_evidence WHERE feedback_seq=? ORDER BY evidence_id').all(entry.seq).map(value=>String(value.evidence_id));
+       const sources=this.store.db.prepare('SELECT source_id FROM assistant_card_feedback_context WHERE feedback_seq=? ORDER BY source_id').all(entry.seq).map(value=>String(value.source_id));
+       if(!prior?.private_json||!this.valid(ids,selected,Boolean(entry.stale),sources))continue;
+       for(const id of ids)dependencies.add(id);
+       if(sources.length){
+        const versions=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND private_json IS NOT NULL').all(row.id) as VersionRow[];
+        for(const version of versions)for(const pin of this.payload(version).sourceContextDependencies??[])if(sources.includes(pin.sourceId))pins.push(pin);
+       }
+      }
+     }
+     if(items.length>limit)return result(true);
+    }
+    if(rows.length<100)break;
+   }
+   return result(false);
+  });
+ }
  history(id:string,args:{scope:QueryScope;limit?:number;cursor?:string}){
   const selected=z.object({scope:queryScopeSchema,limit:z.number().int().min(1).max(100).default(30),cursor:z.string().max(1000).optional()}).strict().parse(args);
   return this.transaction(()=>{
@@ -290,7 +337,7 @@ export class AssistantCards {
    while(found.length<=selected.limit){
     const rows=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND seq<? ORDER BY seq DESC LIMIT ?').all(id,before,batch) as VersionRow[];
     if(!rows.length)break;
-    for(const row of rows){before=row.seq;const ids=this.ids(id,row.version);if(this.visibleVersion(row,selected.scope))found.push({version:row.version,state:row.state,...this.payload(row),evidenceDependencies:{version:1,complete:true,ids},...(row.stale?{evidenceStale:true as const}:{}),createdAt:row.created_at});if(found.length>selected.limit)break;}
+    for(const row of rows){before=row.seq;const ids=this.ids(id,row.version);if(this.visibleVersion(row,selected.scope))found.push({version:row.version,state:row.state,...this.payload(row),evidenceDependencies:{version:1,complete:true,ids:ids.filter(value=>Boolean(parseEvidenceId(value)))},...(row.stale?{evidenceStale:true as const}:{}),createdAt:row.created_at});if(found.length>selected.limit)break;}
     if(found.length>selected.limit||rows.length<batch)break;
    }
    const items=found.slice(0,selected.limit),last=items.at(-1);

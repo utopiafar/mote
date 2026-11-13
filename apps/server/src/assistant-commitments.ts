@@ -179,11 +179,12 @@ export class AssistantCommitments {
    sourceContextDependencies:combineSourceContextDependencies(timeline.map(item=>item.sourceContextDependencies)),
    createdAt:row.created_at,updatedAt:row.updated_at};
  }
- private write(raw:unknown,origin:'proposal'|'owner',expectedRevision:number|undefined,rawScope:QueryScope,assertCurrent:AssertTaskCurrent){
+ private write(raw:unknown,origin:'proposal'|'owner',expectedRevision:number|undefined,rawScope:QueryScope,assertCurrent:AssertTaskCurrent,internalDependencies:readonly string[]=[]){
   const input=origin==='proposal'?commitmentProposalSchema.parse(raw):commitmentCorrectionSchema.parse(raw);
-  const scope=queryScopeSchema.parse(rawScope),dependencies=validateTaskDependencies(input.evidenceDependencies),pins=input.sourceContextDependencies??[];
+  const scope=queryScopeSchema.parse(rawScope),publicDependencies=validateTaskDependencies(input.evidenceDependencies),pins=input.sourceContextDependencies??[];
+  const extra=[...new Set(internalDependencies)].sort(),dependencies=validateTaskDependencies({...publicDependencies,ids:[...publicDependencies.ids,...extra]});
   if(input.evidence.some(item=>!dependencies.ids.includes(item.id)))throw new StoreError('Commitment proof is outside its disclosure dependencies',409);
-  const hash=sha256(canonicalRecipeJson({origin,...input,evidenceDependencies:dependencies}));
+  const hash=sha256(canonicalRecipeJson({origin,...input,evidenceDependencies:publicDependencies,...(extra.length?{internalDependencies:extra}:{})}));
   return this.transaction(()=>{
    const prior=this.event(input.eventId);
    if(prior){if(prior.commitment_id!==input.commitmentId||prior.request_hash!==hash||!this.visible(prior,scope))throw new StoreError('Commitment event was reused or retired',409);return this.view(this.row(input.commitmentId),scope);}
@@ -223,7 +224,7 @@ export class AssistantCommitments {
    this.store.reserveMetadata(0);return this.view(this.row(input.commitmentId),scope);
   });
  }
- publish(input:CommitmentProposal,expectedRevision:number|undefined,scope:QueryScope,assertCurrent:AssertTaskCurrent){return this.write(input,'proposal',expectedRevision,scope,assertCurrent);}
+ publish(input:CommitmentProposal,expectedRevision:number|undefined,scope:QueryScope,assertCurrent:AssertTaskCurrent,internalDependencies:readonly string[]=[]){return this.write(input,'proposal',expectedRevision,scope,assertCurrent,internalDependencies);}
  correct(input:CommitmentCorrection,expectedRevision:number,scope:QueryScope,assertCurrent:AssertTaskCurrent){return this.write(input,'owner',expectedRevision,scope,assertCurrent);}
  get(id:string,scope:QueryScope){return this.transaction(()=>this.view(this.row(id),queryScopeSchema.parse(scope)));}
  private sign(row:Row,value:unknown){return createHmac('sha256',Buffer.from(row.cursor_key,'hex')).update(canonicalRecipeJson(value)).digest('hex');}
