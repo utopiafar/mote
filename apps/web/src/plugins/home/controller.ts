@@ -9,6 +9,7 @@ import {webFeatures} from '../../features/registry';
 import {operationFeed,type OperationFeed} from '../work/operation-feed';
 import {ownerQuestionListPath} from '../../owner-question-route';
 import {resources,type Resource,type ResourceSnapshot} from '../../resource-cache';
+import {assistantScopeQuery,homeAssistantScope,type AssistantCardPage} from './assistant-cards';
 
 export type FirstDeviceData={state:'waiting'|'unverified'|'received_unavailable'|'ready';originalAvailable:boolean;checkedDevices:number;checkedRecords:number;windowLimited:boolean;candidate?:{id:string;deviceId:string;deviceName:string;source:string;capturedAt:string;receivedAt:string}};
 export type HomeSource={id:string;name?:string;status?:{state:string}};
@@ -27,7 +28,7 @@ export interface HomeRead<T> extends ResourceSnapshot<T>{refresh:()=>void;}
 const idle:HomeRead<never>={loading:false,refresh:()=>{}};
 const read=<T>(resource:Resource<unknown>|undefined):HomeRead<T>=>resource?{...resource.getSnapshot(),refresh:resource.refresh} as HomeRead<T>:idle as HomeRead<T>;
 
-export type HomeReadName='features'|'sources'|'connections'|'catalog'|'conversations'|'questions'|'insightRuns'|'actions'|'todos'|'firstData'|'firstPreview';
+export type HomeReadName='features'|'sources'|'connections'|'catalog'|'conversations'|'questions'|'insightRuns'|'actions'|'todos'|'firstData'|'firstPreview'|'cards';
 
 export interface HomeSnapshot {
   readonly api:Api;
@@ -46,6 +47,8 @@ export interface HomeSnapshot {
   readonly todos:HomeRead<HomeTodoPage>;
   readonly firstData:HomeRead<FirstDeviceData>;
   readonly firstPreview:HomeRead<Capture>;
+  readonly cards:HomeRead<AssistantCardPage>;
+  readonly cardPaging:{page:number;previous:()=>void;next:(cursor:string)=>void;reset:()=>void};
 }
 
 export interface HomeControllerOptions {
@@ -56,7 +59,7 @@ export interface HomeControllerOptions {
 
 interface Slot { name:HomeReadName; path:string; resource:Resource<unknown>; unsubscribe?:()=>void }
 
-const names:readonly HomeReadName[]=['features','sources','connections','catalog','conversations','questions','insightRuns','actions','todos','firstData','firstPreview'];
+const names:readonly HomeReadName[]=['features','sources','connections','catalog','conversations','questions','insightRuns','actions','todos','firstData','firstPreview','cards'];
 
 /** Owns Home's reads and pollers: registry/inventory projection, first-use
  * receipt and preview, catalog/sources/connections, optional Ask/Action reads,
@@ -81,6 +84,7 @@ export class HomeController {
   #updating=false;
   #pending=false;
   #disposed=false;
+  #cardCursors:(string|undefined)[]=[undefined];
 
   constructor(options:HomeControllerOptions){
     this.api=options.api;
@@ -132,6 +136,9 @@ export class HomeController {
   refreshAll():void{for(const slot of this.#slots.values())slot.resource.refresh();}
   refreshFirstData():void{this.refresh('firstData');}
   refreshFirstPreview():void{this.refresh('firstPreview');}
+  previousCards=():void=>{if(this.#cardCursors.length>1){this.#cardCursors.pop();this.#changed();}};
+  nextCards=(cursor:string):void=>{if(cursor&&cursor!==this.#cardCursors.at(-1)){this.#cardCursors.push(cursor);this.#changed();}};
+  resetCards=():void=>{this.#cardCursors=[undefined];this.#changed();};
 
   #emit():void{for(const listener of this.#listeners)listener();}
   #changed=():void=>{
@@ -222,6 +229,11 @@ export class HomeController {
     if(canInsightRuns)plan.set('insightRuns','/api/insight-runs');
     if(canActions)plan.set('actions','/api/actions?cursor=0');
     if(canTodos)plan.set('todos','/api/todos?status=open');
+    if(this.#hasPage('insights')&&this.#supports('/api/assistant-cards')){
+      const query=assistantScopeQuery(homeAssistantScope);query.set('limit','6');
+      const cursor=this.#cardCursors.at(-1);if(cursor)query.set('cursor',cursor);
+      plan.set('cards','/api/assistant-cards?'+query);
+    }
     const candidate=read<FirstDeviceData>(this.#slots.get('firstData')?.resource).data?.candidate;
     if(this.#firstUse&&candidate)plan.set('firstPreview','/api/capture-browser/'+encodeURIComponent(candidate.id));
     return plan;
@@ -258,6 +270,7 @@ export class HomeController {
     if(!this.#started||!this.#foreground)return;
     const running=Boolean(read<{items:HomeInsightRun[]}>(this.#slots.get('insightRuns')?.resource).data?.items.some(run=>run.status==='running'));
     const wanted=new Map<HomeReadName,number>([['features',5000]]);
+    if(this.#slots.has('cards'))wanted.set('cards',5000);
     if(running)wanted.set('insightRuns',5000);
     for(const [name,poller]of this.#pollers)if(wanted.get(name)!==poller.interval){poller.off();this.#pollers.delete(name);}
     for(const [name,interval]of wanted){
@@ -294,6 +307,8 @@ export class HomeController {
       todos:read(this.#slots.get('todos')?.resource),
       firstData:read(this.#slots.get('firstData')?.resource),
       firstPreview:read(this.#slots.get('firstPreview')?.resource),
+      cards:read(this.#slots.get('cards')?.resource),
+      cardPaging:{page:this.#cardCursors.length,previous:this.previousCards,next:this.nextCards,reset:this.resetCards},
     };
   }
 }

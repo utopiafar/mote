@@ -217,7 +217,13 @@ export class AssistantTasks implements BatchProductProjection {
     {kind:'manual',identities:[],connections:this.connections()});});
   return {requestId:request.requestId,revision:command.expectedRevision,taskId:task.id};
  }
- acceptSuggestion(request:AssistantTaskInput,card:{cardId:string;expectedRevision:number},authority:MatterAuthority){
+ acceptSuggestion(request:AssistantTaskInput,card:{cardId:string;expectedRevision:number},authority:MatterAuthority={
+  currentEvidence:ids=>this.reader.evidence(ids.map(id=>formatEvidenceRef('capture',id)),request.scope).map(record=>({
+   id:record.id,title:record.windowTitle??'',deviceId:record.deviceId,sourceId:record.provenance?.sourceId,at:record.capturedAt,
+  })),
+  currentTask:id=>{try{const task=this.tasks.get(id);this.tasks.evidenceDependencies(id,task.revision,this.assertCurrent);
+   return {id:task.id,state:task.state,revision:task.revision,updatedAt:task.updatedAt};}catch{return undefined;}},
+ }){
   const prior=this.store.db.prepare('SELECT id FROM task_records WHERE request_id=?').get(request.requestId);
   if(prior){const task=this.tasks.get(String(prior.id));if(task.kind!=='assistant.task')throw new StoreError('Task request ID was reused with different content',409);
    if(!this.current(task)){this.retire(task);throw new StoreError('Assistant task input is no longer current',409);}}

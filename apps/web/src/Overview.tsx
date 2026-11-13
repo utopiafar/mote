@@ -15,6 +15,7 @@ import {openQuestionDraft} from './open-question-draft';
 import {useWorkspaceStyle} from './workspace-final-style';
 import {useHomeController} from './plugins/home/hooks';
 import { Loading } from './Loading';
+import {AssistantHome} from './plugins/home/AssistantHome';
 
 export function Overview({api,status,devices,insights,onPage,onOpen}: {
  api:Api;status:Status;devices:Device[];insights:Answer[];
@@ -74,6 +75,7 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
   </section>;
  return <DiscoveryProvider state={availability}><div className="home-page central-overview">
   <div className="page-heading home-heading"><h1>{moteText('首页')}</h1><div className="home-heading-meta"><time>{new Date().toLocaleDateString(getLocale(),{month:'long',day:'numeric'})} · {new Date().toLocaleDateString(getLocale(),{weekday:'short'})}</time><button className="text-button" onClick={()=>onPage('activity')}>{moteText('后台活动')}<ArrowRight size={13}/></button></div></div>
+  <AssistantHome api={api} state={state} onOpen={onOpen}/>
   {firstUse?<FirstUseHome data={firstData.data} error={firstData.error} loading={firstData.loading} configured={status.agent.configured} preview={firstPreview} onRefresh={()=>{controller.refreshFirstData();controller.refreshFirstPreview();}} onPage={onPage} onOpen={onOpen}/>:<>
   {!foldReceipt&&firstReceipt}
   <form className="home-find" role="search" aria-label={moteText('搜索资料或提问')} onSubmit={event=>{event.preventDefault();if(query.trim())window.location.hash='/search?query='+encodeURIComponent(query.trim());}}>

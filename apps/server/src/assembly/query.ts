@@ -73,7 +73,7 @@ export interface QueryRunsAssemblyDependencies extends QueryRunDependencies {
   readonly resources:ServerResources;
   readonly availableModelConnections:()=>ModelConnection[];
   readonly assistantDrafts:Pick<AssistantDrafts,'command'>;
-  readonly assistantTasks:Pick<AssistantTasks,'byTurn'|'get'>;
+  readonly assistantTasks:Pick<AssistantTasks,'byTurn'|'get'|'acceptSuggestion'>;
   readonly assistantRoutines:Pick<AssistantRoutines,'create'|'update'|'get'>;
   readonly assistantOwner:(request:FastifyRequest)=>void;
 }
