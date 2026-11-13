@@ -337,7 +337,12 @@ export class LocalSourceManager {
         // scan was running; it must trigger another scan after this one.
         if ((this.sourceWakeVersions.get(source.id) ?? 0) === wakeVersion) this.dirtySources.delete(source.id);
         const paths = this.dirtyPathVersions.get(source.id);
-        if (paths) { for (const [path, version] of priorityVersions) if (paths.get(path) === version) paths.delete(path); if (!paths.size) this.dirtyPathVersions.delete(source.id); }
+        if (paths) {
+          const checked=new Set(scan.checkedPriorityPaths??[]);
+          for (const [path, version] of priorityVersions) if ((scan.complete||checked.has(path)) && paths.get(path) === version) paths.delete(path);
+          if (!paths.size) this.dirtyPathVersions.delete(source.id);
+          else if (!scan.degraded) this.dirtySources.add(source.id);
+        }
         void this.events?.record('SOURCE', scan.complete ? 'OK' : 'SCHEDULER', { elapsedMs: Date.now() - started,sourceId:source.id,sourceKind:source.kind });
       } catch (e) {
         if (!accessValidated) this.readable.delete(source.id);
@@ -379,7 +384,11 @@ export class LocalSourceManager {
     if (!this.sources.some(source => source.id === event.sourceId && source.enabled)) return;
     this.dirtySources.add(event.sourceId);
     this.sourceWakeVersions.set(event.sourceId, (this.sourceWakeVersions.get(event.sourceId) ?? 0) + 1);
-    if (event.path) { const path = isAbsolute(event.path) ? event.path : join(event.root, event.path); const paths = this.dirtyPathVersions.get(event.sourceId) ?? new Map<string, number>(); paths.set(path, (paths.get(path) ?? 0) + 1); this.dirtyPathVersions.set(event.sourceId, paths); }
+    // Some backends provide only a root or a relative basename for a watched
+    // file. Treat either as a signal for that root rather than losing it.
+    const path = !event.path ? event.root : isAbsolute(event.path) ? event.path : event.path===basename(event.root) ? event.root : join(event.root, event.path);
+    const paths = this.dirtyPathVersions.get(event.sourceId) ?? new Map<string, number>();
+    paths.set(path, (paths.get(path) ?? 0) + 1); this.dirtyPathVersions.set(event.sourceId, paths);
     if (this.task) this.rerunRequested = true;
     void this.events?.record('SOURCE', 'SCHEDULER');
     void this.sync(false);

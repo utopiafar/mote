@@ -6,7 +6,7 @@ import { moteText } from '@mote/shared/i18n';
 import { constants, type Stats } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { lstat, open, realpath,rm } from 'node:fs/promises';
-import { basename, extname, isAbsolute, join, relative } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { FileCatalogEntry, FileScanDegraded, LocalFileCheckpoint, SourceOptions, SourceScan } from './source-types';
@@ -44,6 +44,10 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
   const scopeVolume=prior?.identityScopeVolume??prior?.volumeIdentity;
   const changedVolume=Boolean(prior && volumeIdentity && scopeVolume!==volumeIdentity);
   const verifyIdentity=unverifiedReturn || changedVolume || Boolean(prior?.identityVerificationPending);
+  // Only the verified local APFS volume can use its metadata as a fast path.
+  // A faulted/offline root must be reconciled even if it comes back unchanged.
+  const verifyContent=Boolean(prior?.contentVerificationPending || prior?.degradedReason);
+  const trustedMetadata=Boolean(volumeIdentity && prior?.volumeIdentity===volumeIdentity && !verifyContent && !verifyIdentity);
   const identityRoot=!unverifiedReturn && !changedVolume && prior?.identityScope?.startsWith(rootIdentity+':')?prior.identityScope:`${rootIdentity}:${randomUUID()}`;
   const byFileId=new Map<string,FileCatalogEntry[]>();
   for(const entry of Object.values(prior?.catalog??{}))if(entry.entryId){const values=byFileId.get(entry.fileId)??[];values.push(entry);byFileId.set(entry.fileId,values);}
@@ -54,8 +58,13 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
   const catalog = new DirectoryCatalog(root, catalogPrevious, undefined, incrementalCheckpoint);
   catalog.setIdentityScope(identityRoot,volumeIdentity??scopeVolume);
   catalog.setIdentityVerificationPending(verifyIdentity);
+  catalog.setContentVerificationPending(verifyContent);
   catalog?.begin();
-  const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0, ...(catalog ? { checkpoint: catalog.checkpoint(incrementalCheckpoint) } : {}) };
+  const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0, checkedPriorityPaths: [], ...(catalog ? { checkpoint: catalog.checkpoint(incrementalCheckpoint) } : {}) };
+  const priority = [...new Set(priorityPaths)].map(original=>({original,path:isAbsolute(original)?resolve(original):resolve(selected.isDirectory()?root:dirname(root),original)}));
+  const signalled=(path:string)=>priority.some(value=>{const child=relative(value.path,path);return !child || child!=='..' && !child.startsWith('..'+sep) && !isAbsolute(child);});
+  const handled=new Map<string,string>();
+  const candidateSignature=(candidate:DirectoryCandidate)=>`${candidate.fileId}:${candidate.birthtimeMs}:${candidate.quickHash}`;
   let totalBytes = 0;
   const candidateForPath = async (path: string): Promise<DirectoryCandidate | undefined> => {
     if (!catalog) return undefined;
@@ -96,10 +105,16 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     const bind=()=>{catalog.bind(candidate.relativePath,externalId,identityRoot,matched);claimed.set(externalId,candidate.relativePath);result.seen.push(externalId);};
     const maximumFile=accessMarkerPath?512*1024*1024:16*1024*1024;
     if (options.retention !== 'reference' && candidate.size > maximumFile) { bind();result.skipped++; return 'ok'; }
-    if (result.items.length >= 2000 || options.retention !== 'reference' && result.items.length>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
+    if (result.items.length >= 2000 || options.retention !== 'reference' && totalBytes>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
     const unchanged = matched && matched.relativePath===candidate.relativePath && matched.syncState === 'synced' && matched.contentQuickHash === candidate.quickHash && matched.fileId === candidate.fileId && matched.size === candidate.size && matched.mtimeMs === candidate.mtimeMs && matched.ctimeMs === candidate.ctimeMs && matched.quickHash === candidate.quickHash && matched.contentVersion;
-    if (!reRead && matched && unchanged) { bind();accessMarkers.retain(externalId);catalog.markContent(candidate.relativePath, matched.contentVersion, 'synced',matched.contentHash); return 'ok'; }
-    if (options.initialSync === 'new_only' && !previous?.initialized) { bind();catalog.markContent(candidate.relativePath, candidate.quickHash, 'synced'); return 'ok'; }
+    const mime=fileMime(candidate.path);
+    const canReadBody=options.retention!=='reference' && !(options.retention==='snapshot' && options.redactLiterals.length>0 && !mime.startsWith('text/'));
+    // A selected local root can itself contain a mounted network filesystem;
+    // its files do not inherit the root volume's metadata guarantees.
+    const candidateOnTrustedVolume=trustedMetadata && candidate.fileId.startsWith(`${selected.dev}:`);
+    if (!reRead && matched && unchanged && (!canReadBody || candidateOnTrustedVolume && !signalled(candidate.path))) { bind();accessMarkers.retain(externalId);catalog.markContent(candidate.relativePath, matched.contentVersion, 'synced',matched.contentHash); return 'ok'; }
+    const baseline=options.initialSync === 'new_only' && !previous?.initialized;
+    if (baseline && !canReadBody) { bind();catalog.markContent(candidate.relativePath, candidate.quickHash, 'synced'); return 'ok'; }
     let handle;let spooled:OriginalSpool|undefined;
     try {
       // Reconciliation validates the path before and after reading. It never follows a replaced symlink.
@@ -115,7 +130,6 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         if (stable.mtimeMs !== before.mtimeMs || stable.ctimeMs !== before.ctimeMs || stable.size !== before.size) throw new Error('file is still changing');
       }
       let original: Buffer | undefined; let inputState: {parser:string;status:'ready'|'pending'|'blocked';warnings?:string[]} = { parser: 'none', status: 'ready' };
-      const mime=fileMime(candidate.path);
       if(options.retention==='snapshot'&&options.redactLiterals.length&&!mime.startsWith('text/')){
         inputState={parser:'privacy-blocked',status:'blocked',warnings:['Source literal masks cannot be safely applied to this format; input was not uploaded.']};
       }else if(options.retention!=='reference'){
@@ -123,6 +137,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
           const buffer=Buffer.alloc(before.size+1),read=await handle.read(buffer,0,buffer.length,0);if(read.bytesRead!==before.size)throw Error('changed file');
           const decoded=new TextDecoder('utf-8',{fatal:true}).decode(buffer.subarray(0,read.bytesRead));if(decoded.includes('\0'))throw Error('Invalid UTF-8 text');
           original=Buffer.from(redactSourceText(decoded,options.redactLiterals));
+          if(accessMarkerPath){spooled=await sourceWork.run<OriginalSpool>({kind:'spool-bytes',bytes:original,directory:accessMarkerPath+'.index-inputs'});original=undefined;signal?.throwIfAborted();}
         }else if(accessMarkerPath){
           spooled=await sourceWork.run<OriginalSpool>({kind:'spool-original',path:candidate.path,directory:accessMarkerPath+(options.retention==='snapshot'?'.index-inputs':'.originals'),expected:{dev:before.dev,ino:before.ino,size:before.size,mtimeMs:before.mtimeMs,ctimeMs:before.ctimeMs}});signal?.throwIfAborted();
         }else{const buffer=Buffer.alloc(before.size+1),read=await handle.read(buffer,0,buffer.length,0);if(read.bytesRead!==before.size)throw Error('changed file');original=buffer.subarray(0,read.bytesRead);}
@@ -135,6 +150,13 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       totalBytes += before.size;
       const accessedAtMs = accessMarkers.record(externalId, before, after), fileMetadata = observedFileMetadata(before, accessedAtMs);
       const contentHash = spooled?.sha256??(original ? fileDigest(original) : undefined),contentVersion=contentHash??candidate.quickHash;
+      // The digest is always of the exact bytes destined for Central, including
+      // literal masking. Never compare a raw original to a transformed digest.
+      if (baseline || matched && unchanged && contentHash && contentHash===matched.contentHash) {
+        bind();catalog.markContent(candidate.relativePath, contentVersion, 'synced',contentHash);
+        if(spooled){await rm(spooled.directory,{force:true,recursive:true});spooled=undefined;}
+        return 'ok';
+      }
       result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text: '', uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: 'none', parser: inputState.parser, ...(inputState.warnings?.length?{warnings:inputState.warnings.map(warning=>redactSourceText(warning,options.redactLiterals))}:{}), status: options.retention === 'archive' ? 'pending' : inputState.status, totalCharacters: 0, offset: 0, length: 0, ...(options.retention==='snapshot'?{maxIndexCharacters:100000}:{}), allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(spooled && options.retention !== 'reference'?{localOriginal:spooled}:{}), ...(options.retention !== 'reference' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
       bind();catalog.markContent(candidate.relativePath, contentVersion, 'synced',contentHash);
       return 'ok';
@@ -172,15 +194,15 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
   }
   if (selected.isDirectory() && catalog) {
     let examined = 0;
-    const priority = [...new Set(priorityPaths)].map(path => isAbsolute(path) ? path : `${root}/${path}`);
     // A root that cannot be read, or whose device/inode changed, is checked
     // before any path is treated as absent. Priority paths wait for that check.
     if (await catalog.verifyRoot()) {
-      for (const path of priority) {
+      for (const {original,path} of priority) {
         if (examined >= 2000) break;
         catalog.savepoint(); const candidate = await candidateForPath(path); if (!candidate) continue;
         const outcome = await processFile(candidate, catalog.previous(candidate.relativePath)); examined++;
         if (outcome === 'stop') { catalog.rollbackSavepoint(); result.complete = false; break; }
+        handled.set(candidate.relativePath,candidateSignature(candidate));result.checkedPriorityPaths!.push(original);
       }
     } else { result.complete = false; result.degraded = catalog.degraded; }
     while (examined < 2000 && result.complete) {
@@ -191,6 +213,9 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       const itemsBeforeBatch = result.items.length, seenBeforeBatch = result.seen.length;
       let stopped = false;
       for (const candidate of batch.candidates) {
+        // Priority paths can also occur in the regular page. Avoid reading the
+        // same observation twice while still noticing a later metadata change.
+        if(handled.get(candidate.relativePath)===candidateSignature(candidate))continue;
         const outcome = await processFile(candidate, catalog.previous(candidate.relativePath));
         if (outcome === 'stop') { stopped = true; break; }
       }
@@ -217,14 +242,15 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     }
     if (!result.complete && catalog.degraded) result.degraded = catalog.degraded;
     if(verifyIdentity && result.complete){result.complete=false;result.degraded='root_changed';}
-    if(catalog.checkpoint(true).lastScanComplete){catalog.setVolumeIdentity(volumeIdentity);if(verifyIdentity)catalog.setIdentityVerificationPending(false);}
+    if(catalog.checkpoint(true).lastScanComplete){catalog.setVolumeIdentity(volumeIdentity);catalog.setContentVerificationPending(false);if(verifyIdentity)catalog.setIdentityVerificationPending(false);}
     result.checkpoint = catalog.checkpoint(incrementalCheckpoint);
     if(incrementalCheckpoint)result.catalogChanges=catalog.catalogChanges();
   } else {
     const fileId = `${selected.dev}:${selected.ino}`, candidate: DirectoryCandidate = { path: root, relativePath: basename(root), fileId, birthtimeMs: selected.birthtimeMs, size: selected.size, mtimeMs: selected.mtimeMs, ctimeMs: selected.ctimeMs, quickHash: sourceHash(`${fileId}:${selected.size}:${selected.mtimeMs}:${selected.ctimeMs}`),nlink:selected.nlink };
     catalog.savepoint(); catalog.observe(candidate);
     await processFile(candidate, catalog.previous(candidate.relativePath));
-    if (result.complete) {catalog.finishSingle(verifyIdentity);catalog.setVolumeIdentity(volumeIdentity);if(verifyIdentity){catalog.setIdentityVerificationPending(false);result.complete=false;result.degraded='root_changed';}}
+    result.checkedPriorityPaths!.push(...priority.filter(value=>value.path===root).map(value=>value.original));
+    if (result.complete) {catalog.finishSingle(verifyIdentity);catalog.setVolumeIdentity(volumeIdentity);catalog.setContentVerificationPending(false);if(verifyIdentity){catalog.setIdentityVerificationPending(false);result.complete=false;result.degraded='root_changed';}}
     result.checkpoint = catalog.checkpoint(incrementalCheckpoint);
     if (incrementalCheckpoint) result.catalogChanges = catalog.catalogChanges();
   }

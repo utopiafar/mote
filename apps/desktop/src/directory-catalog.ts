@@ -94,6 +94,7 @@ export class DirectoryCatalog {
   setVolumeIdentity(value: string | undefined): void { this.state.volumeIdentity=value; }
   setIdentityScope(value: string, volume: string | undefined): void { this.state.identityScope=value;this.state.identityScopeVolume=volume; }
   setIdentityVerificationPending(value: boolean): void { this.state.identityVerificationPending=value; }
+  setContentVerificationPending(value: boolean): void { this.state.contentVerificationPending=value; }
 
   /** A failed read must not pair an old logical ID with unverified metadata. */
   reject(relativePath: string, previous: FileCatalogEntry | undefined): void {

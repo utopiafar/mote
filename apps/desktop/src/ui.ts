@@ -14,6 +14,7 @@ import {createMemoryTopicsUi} from './memory-topics-ui';
 import {desktopAppearance} from './appearance';
 import {createContentLibraryUi} from './content-library-ui';
 import {createSourceWorkspaceUi} from './source-workspace-ui';
+import {createSourceFilePolicyDraft} from './source-file-policy-ui';
 import {normalizeSourceOptions} from './source-types';
 import {createSourceSyncPreview,renderSourceMaintenancePreview} from './source-maintenance-preview';
 import {createWorkbenchUi, type RecentConversation} from './workbench-ui';
@@ -765,7 +766,8 @@ function refreshSourcePolicySummaries():void {
   for(const [fieldId,summaryId] of [['source-initial-sync','source-history-value'],['source-retention','source-retention-value']]) byId(summaryId).textContent=byId<HTMLSelectElement>(fieldId).selectedOptions[0]?.textContent??'';
 }
 function restoreSourceRules():void {restoreSourceRuleFields();sourceRulesHome.append(sourceRules);sourceRules.open=false;byId('source-maintenance-preview').hidden=true;byId<HTMLSelectElement>('source-initial-sync').disabled=false;refreshSourcePolicySummaries();}
-function updateSourceHistoryChoice():void {const field=byId<HTMLSelectElement>('source-initial-sync'),once=sourceMode==='files'&&!byId<HTMLInputElement>('source-continuous').checked;field.disabled=Boolean(once);byId('source-initial-sync-row').hidden=once;byId('source-once-row').hidden=!once;if(once)field.value='all';refreshSourcePolicySummaries();}
+const sourceFilePolicyDraft=createSourceFilePolicyDraft(byId<HTMLSelectElement>('source-initial-sync'),byId<HTMLSelectElement>('source-retention'));
+function updateSourceHistoryChoice():void {const once=sourceMode==='files'&&!byId<HTMLInputElement>('source-continuous').checked;sourceFilePolicyDraft.setOneTime(once);byId('source-initial-sync-row').hidden=once;byId('source-once-row').hidden=!once;refreshSourcePolicySummaries();}
 byId('source-initial-sync').addEventListener('change',refreshSourcePolicySummaries);
 refreshSourcePolicySummaries();
 byId('source-continuous').addEventListener('change',updateSourceHistoryChoice);
@@ -800,7 +802,8 @@ function configureSourceEditor(mode:'files'|'directory'):void{
 async function beginSourceSelection(mode:'files'|'directory',pick=false):Promise<void>{
   if(sourceBusy)return;sourceAddDialog.close();
   byId<HTMLTextAreaElement>('source-initial-description').placeholder=sourceDescriptionPlaceholder('files');
-  if(mode!==sourceMode||sourceEditingId){byId<HTMLInputElement>('source-continuous').checked=mode==='directory';if(sourceSelection)await desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId<HTMLInputElement>('source-name').value='';byId<HTMLTextAreaElement>('source-initial-description').value='';byId<HTMLSelectElement>('source-initial-sync').value='all';byId<HTMLSelectElement>('source-retention').value='snapshot';}
+  const continuingDraft=currentPage==='source-editor'&&!sourceEditingId;
+  if(mode!==sourceMode||!continuingDraft){byId<HTMLInputElement>('source-continuous').checked=mode==='directory';if(sourceSelection)await desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId<HTMLInputElement>('source-name').value='';byId<HTMLTextAreaElement>('source-initial-description').value='';if(!continuingDraft)sourceFilePolicyDraft.reset();}
   configureSourceEditor(mode);if(!showPage('source-editor'))return;if(!pick)return;
   await sourceAction(async()=>{const result=await desktopApi.selectSourceFiles(mode);if(result.canceled||!result.selectionId){if(!sourceSelection&&workbenchUi.cancelFirstFile())showPage('overview');return;}sourceSelection={id:result.selectionId,mode,names:result.names??[]};byId<HTMLInputElement>('source-name').value=sourceSelection.names.length===1?sourceSelection.names[0]:'';configureSourceEditor(mode);});
 }

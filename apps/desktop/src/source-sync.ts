@@ -264,7 +264,19 @@ export class SourceSync {
       const recovery=next.snapshotRecoveries?.[key],recovered=recovery&&this.recoveryMatches(item,recovery,previous)?recovery:undefined;
       const revision = recovered?recovered.revision:sourceHash(contentHash + ':' + (previous?.revision ?? '')), queued: SourceItem = { ...item, revision, observedAt:recovered?recovered.observedAt:observedAt,...(recovered?{snapshotRecovery:{captureId:recovered.captureId,sha256:recovered.sha256,sizeBytes:recovered.sizeBytes}}:{}) };
       if(recovery){next.snapshotRecoveries={...next.snapshotRecoveries};delete next.snapshotRecoveries[key];}
-      if ((syncQueue ?? defaultQueue) === 'history') next.pendingHistory.push(queued); else next.pendingRealtime.push(queued);
+      let queue=syncQueue ?? defaultQueue;
+      if(item.kind==='file' && (item.layer==='reference' || localOriginal || item.localOriginalBase64 || item.document?.fileIndex?.status==='blocked')){
+        // Revisions of one file must reach Central in capture order even when
+        // a later watcher observation changes its scheduling lane. This covers
+        // the scanner's frozen inputs, reference-only files and blocked inputs.
+        const sameFile=(value:SourceItem)=>value.kind==='file' && value.externalId===item.externalId;
+        if(queue==='history' && next.pendingRealtime.some(sameFile))queue='realtime';
+        if(queue==='realtime'){
+          const older=next.pendingHistory.filter(sameFile);
+          if(older.length){next.pendingHistory=next.pendingHistory.filter(value=>!sameFile(value));next.pendingRealtime.push(...older);}
+        }
+      }
+      if (queue === 'history') next.pendingHistory.push(queued); else next.pendingRealtime.push(queued);
       // Coding checkpoints own their append cursor and do not need a second
       // content index. A local directory catalog only skips discovery work;
       // SourceSync still needs its durable known map for revision deduplication.

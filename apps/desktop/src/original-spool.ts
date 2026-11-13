@@ -27,6 +27,21 @@ export async function spoolOriginal(path:string,directory:string,expected:Origin
   return {directory:destination,sha256:digest.digest('hex'),sizeBytes:expected.size,partBytes:PART};
  }catch(error){await rm(staging,{force:true,recursive:true});throw error;}finally{await input?.close();}
 }
+/** Freeze already privacy-transformed bytes without ever staging the raw input. */
+export async function spoolBytes(bytes:Uint8Array,directory:string):Promise<OriginalSpool>{
+ if(bytes.byteLength>512*1024*1024)throw Error('Original outside snapshot bounds');
+ await mkdir(directory,{recursive:true,mode:0o700});const id=randomUUID(),staging=join(directory,id+'.tmp'),destination=join(directory,id);await mkdir(staging,{mode:0o700});
+ try{
+  const digest=createHash('sha256');
+  for(let offset=0;offset<bytes.byteLength;offset+=PART){
+   const part=bytes.subarray(offset,Math.min(offset+PART,bytes.byteLength));digest.update(part);
+   const output=await open(join(staging,String(offset/PART)),'wx',0o600);try{await output.writeFile(part);await output.sync();}finally{await output.close();}
+  }
+  const handle=await open(staging,'r');try{await handle.sync();}finally{await handle.close();}
+  await rename(staging,destination);const parent=await open(directory,'r');try{await parent.sync();}finally{await parent.close();}
+  return {directory:destination,sha256:digest.digest('hex'),sizeBytes:bytes.byteLength,partBytes:PART};
+ }catch(error){await rm(staging,{force:true,recursive:true});throw error;}
+}
 export async function originalPart(spool:OriginalSpool,part:number){
  if(!Number.isSafeInteger(part)||part<0||part>=Math.ceil(spool.sizeBytes/PART)||spool.partBytes!==PART)throw Error('Invalid original part');
  const bytes=await readFile(join(spool.directory,String(part)));if(bytes.length!==Math.min(PART,spool.sizeBytes-part*PART))throw Error('Incomplete original snapshot');return bytes;
