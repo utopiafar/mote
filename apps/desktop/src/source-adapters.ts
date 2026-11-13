@@ -13,6 +13,8 @@ export interface SourceScanContext {
   checkpoint?: SourceCheckpoint;
   fileCheckpoint?: LocalFileCheckpoint;
   priorityPaths: string[];
+  /** Central asked for these exact acknowledged identities; re-read only them. */
+  recoveryIds?: readonly string[];
   stateDirectory: string;
   helperPath: string;
   scope: { start: string; end: string };
@@ -65,8 +67,8 @@ export function builtInSourceAdapters(): SourceAdapterRegistry {
       } })
     .register({ kind: 'local-files', checkpointMode: 'file', version: 2, watchesPath: true, tracksDeletions: true, allowsArchive: true,
       validateConfiguration(source) { if (typeof source.path !== 'string') throw new Error('Invalid file source'); },
-      async scan({ source, signal, stateDirectory, fileCheckpoint, priorityPaths }) {
-        const scan = await scanSourceFiles(source.path!, source, signal, join(stateDirectory, 'access-markers', source.id + '.json'), fileCheckpoint, priorityPaths, true);
+      async scan({ source, signal, stateDirectory, fileCheckpoint, priorityPaths, recoveryIds }) {
+        const scan = await scanSourceFiles(source.path!, source, signal, join(stateDirectory, 'access-markers', source.id + '.json'), fileCheckpoint, priorityPaths, true, recoveryIds);
         return { version: 1, scan };
       } })
     .register({ kind: 'local-calendar', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false,

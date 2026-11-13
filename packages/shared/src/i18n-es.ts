@@ -1,5 +1,12 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "图片理解可能将原图发送给所选模型服务。": "La comprensión de imágenes puede enviar la imagen original al servicio de modelo seleccionado.",
+  "将检查以下全部启用的本机来源，并按当前发送设置上传待发内容，包括其他采集记录。": "Se revisarán todas las fuentes locales activadas de abajo y se subirá el contenido pendiente, incluidos otros registros capturados, según la configuración de envío actual.",
+  "以下操作使用已保存设置。仅归档、参考和已取消的文件不会进入内容处理；每次最多重新处理 100 份当前版本，预览有效期 10 分钟。": "Usa la configuración guardada. No se procesan archivos solo archivados, de referencia ni cancelados. Cada lote incluye hasta 100 versiones actuales; las vistas previas caducan en 10 minutos.",
+  "份仅归档、已取消或正在处理的文件。": "archivos solo archivados, cancelados o en proceso.",
+  "重新处理将生成新的派生结果，已有校正会标为过期。": "El reprocesamiento crea nuevos resultados derivados y marca las correcciones existentes como obsoletas.",
+  "已释放的快照原件需由来源设备重新上传后才能处理。": "El dispositivo de origen debe volver a subir el original de la instantánea liberado antes de procesarlo.",
+  "本机当前清单 {0} 项；重新扫描结果可能不同，符合新规则的文件可能再次发送到中央。": "El inventario local contiene {0} elementos. Un nuevo escaneo puede variar y los archivos que cumplan las nuevas reglas podrían volver a enviarse a Central.",
   "先在部署配置中启用 MCP、独立令牌；写入还需单独启用及来源允许列表，合并配置后重启。Bearer 客户端需要 URL 和请求头；OAuth 客户端只需服务地址，并在「AI 接入」批准发现请求。": "Active MCP y su token independiente en la configuración del despliegue. La escritura también requiere una activación explícita y una lista de fuentes permitidas. Reinicie tras aplicar la configuración. Los clientes Bearer necesitan una URL y cabeceras; los clientes OAuth solo necesitan la URL del servicio y la aprobación de sus solicitudes de descubrimiento en Acceso de IA.",
   "只接受 OAuth 的客户端使用同一服务地址自动发现授权，需由所有者批准。": "Los clientes que requieren OAuth descubren la autorización desde la misma URL del servicio, con aprobación del propietario.",
   "生成标准 HTTP MCP 连接 JSON，或复制 OAuth 服务地址交给只走标准发现的客户端。": "Genere el JSON de conexión HTTP MCP estándar o copie la URL del servicio OAuth para clientes que usan el descubrimiento estándar.",

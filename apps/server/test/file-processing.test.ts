@@ -787,8 +787,8 @@ test('reprocessing passes the frozen file targets through the owner batch wrappe
  const f=await fixture(t);
  const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js');const app=Fastify();t.after(()=>app.close());
  const batches:string[][]=[];
- registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},()=>undefined,{evidence:()=>[{}]} as any,undefined,async(_id,task)=>task(),async(ids,task)=>{batches.push([...ids]);return task();});
- const preview=f.processing.preview({revision:f.processing.view().revision});
+ registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},()=>undefined,{evidence:()=>f.store.evidence([f.id]),contextDependenciesAllowed:()=>true} as any,undefined,async(_id,task)=>task(),async(ids,task)=>{batches.push([...ids]);return task();});
+ const preview=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'all'}});
  assert.deepEqual(preview.items.map(item=>item.id),[f.id]);
  const response=await app.inject({method:'POST',url:'/api/file-processing/reprocess',payload:{token:preview.token}});
  assert.equal(response.statusCode,200,response.body);
@@ -805,7 +805,7 @@ test('a rejected owner wrapper returns 403 and leaves retry and reprocess withou
  const calls:string[]=[],processing={retry:(id:string)=>{calls.push('retry:'+id);return {queued:true};},reprocessTargets:(raw:unknown)=>f.processing.reprocessTargets(raw),reprocess:()=>{calls.push('reprocess');return {queued:1};}} as any;
  const denied=()=>{throw new StoreError('Owner access required',403);};
  registerFileRoutes(app,f.files,processing,{} as any,()=>{},()=>undefined,{evidence:()=>[{}]} as any,undefined,async(_id,_task)=>denied(),async(_ids,_task)=>denied());
- const preview=f.processing.preview({revision:f.processing.view().revision}),before=JSON.stringify(f.store.db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(f.id));
+ const preview=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'all'}}),before=JSON.stringify(f.store.db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(f.id));
  const retry=await app.inject({method:'POST',url:'/api/files/'+f.id+'/retry',payload:{}});
  assert.equal(retry.statusCode,403,retry.body);
  const reprocess=await app.inject({method:'POST',url:'/api/file-processing/reprocess',payload:{token:preview.token}});

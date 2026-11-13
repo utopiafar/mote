@@ -15,6 +15,7 @@ import {desktopAppearance} from './appearance';
 import {createContentLibraryUi} from './content-library-ui';
 import {createSourceWorkspaceUi} from './source-workspace-ui';
 import {normalizeSourceOptions} from './source-types';
+import {createSourceSyncPreview,renderSourceMaintenancePreview} from './source-maintenance-preview';
 import {createWorkbenchUi, type RecentConversation} from './workbench-ui';
 import {createSyncHistoryUi} from './sync-history-ui';
 import {createDesktopPresentation} from './presentation';
@@ -35,6 +36,7 @@ const captureContextUi=createCaptureContextUi(desktopApi,document,markSettingsDi
 document.getElementById('ui-page-builtins')!.addEventListener('click',()=>{byId<HTMLTextAreaElement>('ui-page-rules').value=JSON.stringify(builtinUiRules,null,2);appCaptureUi.refreshRules();markSettingsDirty();});
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 let currentStatus: import('./contracts').Status;
+let sourceSyncPreview:ReturnType<typeof createSourceSyncPreview>|undefined;
 let initialized = false;
 let busy = false;
 let statusReadEpoch = 0;
@@ -421,11 +423,11 @@ function renderOperations(jobs:NonNullable<import('./contracts').Status['operati
 function render(status: import('./contracts').Status): void {
   syncHistoryUi.update(status);libraryUi.update(status);memoryTopicsUi.update(status);workActivityUi.update(status);
   if(currentStatus&&(currentStatus.authorizationGeneration!==status.authorizationGeneration||currentStatus.config.serverUrl!==status.config.serverUrl||currentStatus.config.tokenConfigured!==status.config.tokenConfigured||currentStatus.config.authSignedOut!==status.config.authSignedOut||currentStatus.config.authExpiresAt!==status.config.authExpiresAt)){
-    sourceWorkspace.clear();localSourceRows=[];invalidateSourceEditor();byId<HTMLTextAreaElement>('source-initial-description').value='';byId<HTMLTextAreaElement>('source-initial-description').disabled=true;sourceReadGeneration++;recordsRevision++;closeRecordDetail();byId('records-grid').replaceChildren();byId('record-detail-title').textContent='';byId('record-detail-meta').textContent='';byId('record-detail-text').textContent='';
+    sourceSyncPreview?.close();sourceWorkspace.clear();localSourceRows=[];invalidateSourceEditor();byId<HTMLTextAreaElement>('source-initial-description').value='';byId<HTMLTextAreaElement>('source-initial-description').disabled=true;sourceReadGeneration++;recordsRevision++;closeRecordDetail();byId('records-grid').replaceChildren();byId('record-detail-title').textContent='';byId('record-detail-meta').textContent='';byId('record-detail-text').textContent='';
     const retained=askDraftScopes.switch(currentStatus,status,snapshotAskDraft());
     askGeneration++;clearTimeout(askTimer);askConversation=undefined;askCursor=undefined;askMultipleConversations=false;skipNextAskRefresh=false;byId('ask-more').hidden=true;byId('ask-history').replaceChildren();restoreScopedAskDraft(retained);renderAsk();setText('ask-login-status','');setText('ask-error','');
   }
-  currentStatus = status;workPendingUi.update(status);chromeCaptureUi.update(status);captureContextUi.update(status);renderSettingsWorkspace(status);sourceWorkspace.status(status);captureSyncUi.update(status,localSourceRows);renderStorage();appCaptureUi.setStatus(status);if(!quickNote)workbenchUi.update(status);
+  currentStatus = status;sourceSyncPreview?.revalidate();workPendingUi.update(status);chromeCaptureUi.update(status);captureContextUi.update(status);renderSettingsWorkspace(status);sourceWorkspace.status(status);captureSyncUi.update(status,localSourceRows);renderStorage();appCaptureUi.setStatus(status);if(!quickNote)workbenchUi.update(status);
   askConnectionState();
   maybeRestoreAskConversation();
   updateTokenField();
@@ -762,7 +764,7 @@ function restoreSourceRuleFields():void{sourceRules.prepend(byId('source-initial
 function refreshSourcePolicySummaries():void {
   for(const [fieldId,summaryId] of [['source-initial-sync','source-history-value'],['source-retention','source-retention-value']]) byId(summaryId).textContent=byId<HTMLSelectElement>(fieldId).selectedOptions[0]?.textContent??'';
 }
-function restoreSourceRules():void {restoreSourceRuleFields();sourceRulesHome.append(sourceRules);sourceRules.open=false;byId<HTMLSelectElement>('source-initial-sync').disabled=false;refreshSourcePolicySummaries();}
+function restoreSourceRules():void {restoreSourceRuleFields();sourceRulesHome.append(sourceRules);sourceRules.open=false;byId('source-maintenance-preview').hidden=true;byId<HTMLSelectElement>('source-initial-sync').disabled=false;refreshSourcePolicySummaries();}
 function updateSourceHistoryChoice():void {const field=byId<HTMLSelectElement>('source-initial-sync'),once=sourceMode==='files'&&!byId<HTMLInputElement>('source-continuous').checked;field.disabled=Boolean(once);byId('source-initial-sync-row').hidden=once;byId('source-once-row').hidden=!once;if(once)field.value='all';refreshSourcePolicySummaries();}
 byId('source-initial-sync').addEventListener('change',refreshSourcePolicySummaries);
 refreshSourcePolicySummaries();
@@ -815,6 +817,13 @@ byId('source-confirm').addEventListener('click',()=>void sourceAction(async()=>{
 function sourceOptions(): import('./source-types').SourceOptions {
   return normalizeSourceOptions({name:readInput('source-name').trim()||undefined, ...(!sourceEditingId?{description:readInput('source-initial-description')}:{}),syncContinuously:sourceEditingId?byId<HTMLInputElement>('source-edit-continuous').checked:sourceSelection?byId<HTMLInputElement>('source-continuous').checked:true,centralProcessingConsent:true, initialSync: readInput('source-initial-sync') as 'all' | 'new_only', allowRead:readInput('source-retention')==='snapshot'&&byId<HTMLInputElement>('source-allow-read').checked,retention: readInput('source-retention') as 'snapshot' | 'reference' | 'archive', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) });
 }
+function refreshSourceMaintenancePreview():void {
+  const row=localSourceRows.find(value=>value.source.id===sourceEditingId);let options:ReturnType<typeof sourceOptions>|undefined;
+  try{options=sourceOptions();}catch{/* Invalid edits may still change the affected scope. */}
+  renderSourceMaintenancePreview(byId('source-maintenance-preview'),row,options);
+}
+sourceRules.addEventListener('input',refreshSourceMaintenancePreview);
+sourceRules.addEventListener('change',refreshSourceMaintenancePreview);
 async function editSource(id?: string): Promise<void> {
   if(sourceSelection){void desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;}byId('source-confirmation').hidden=true;restoreSourceRules();
   invalidateSourceEditor();sourceEditingId = id;const request=sourceEditorRequest();
@@ -831,7 +840,7 @@ async function editSource(id?: string): Promise<void> {
   byId<HTMLSelectElement>('source-initial-sync').disabled=true;byId<HTMLSelectElement>('source-initial-sync').value=source.initialSync??'all'; byId<HTMLSelectElement>('source-retention').value = source.retention;byId<HTMLInputElement>('source-allow-read').checked=source.allowRead??false; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
   byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
   byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n'); refreshPresets();
-  refreshSourceTextOptions();
+  refreshSourceTextOptions();refreshSourceMaintenancePreview();
   try{const value=await desktopApi.sourceContext(id!);if(sourceEditorCurrent(request)){sourceEditingContext=value;byId<HTMLTextAreaElement>('source-initial-description').value=value.pending?.description??value.snapshot.description;byId<HTMLTextAreaElement>('source-initial-description').disabled=value.error==='denied'||Boolean(value.error)&&!value.pending;byId('source-description-scope').textContent=value.error?moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。'):value.conflict?moteText('中央说明已改变，请核对后保存。'):moteText('适用于这个来源的已有与后续资料。');}}catch{/* Local rules remain editable when Central is unavailable. */}
 }
 function sourceWorkspaceDescription(id:string):string{const row=localSourceRows.find(row=>row.source.id===id);return row?.context?.pending?.description??row?.context?.snapshot.description??'';}
@@ -853,7 +862,7 @@ async function refreshSources(): Promise<void> {
   if (sourcesReading) return;
   sourcesReading = true;const generation=sourceReadGeneration;
   try {
-  const rows = await desktopApi.sources();if(generation!==sourceReadGeneration)return;localSourceRows = rows;
+  const rows = await desktopApi.sources();if(generation!==sourceReadGeneration)return;localSourceRows = rows;sourceSyncPreview?.revalidate();
   sourceWorkspace.update(rows);if(currentStatus)captureSyncUi.update(currentStatus,rows);workbenchUi.setHasSource(rows.some(row=>row.source.syncContinuously!==false));
   } finally { sourcesReading = false; }
 }
@@ -897,7 +906,12 @@ byId('source-calendar-add').addEventListener('click', () => void sourceAction(()
 byId('source-calendar-cancel').addEventListener('click',()=>{if(sourceBusy)return;sourceConnectGeneration++;byId<HTMLTextAreaElement>('source-initial-description').value='';showPage('sources');});
 byId('source-calendar-choice').addEventListener('change',()=>{byId<HTMLButtonElement>('source-calendar-add').disabled=sourceBusy||!readInput('source-calendar-choice');});
 byId('source-agent-choice').addEventListener('change',()=>{byId<HTMLButtonElement>('source-agent-add').disabled=sourceBusy||!readInput('source-agent-choice');});
-byId('source-sync').addEventListener('click', () => void sourceAction(() => desktopApi.syncSources()));
+sourceSyncPreview=createSourceSyncPreview({panel:byId('source-sync-preview'),destination:byId('source-sync-preview-destination'),items:byId('source-sync-preview-items'),confirm:byId<HTMLButtonElement>('source-sync-confirm'),cancel:byId<HTMLButtonElement>('source-sync-cancel')},()=>localSourceRows,()=>currentStatus,scope=>void sourceAction(()=>desktopApi.syncSources(scope)));
+byId('source-sync').addEventListener('click',()=>void (async()=>{
+  const generation=sourceReadGeneration,page=pageRevision;let ready=false;
+  await sourceAction(async()=>{const rows=await desktopApi.sources();if(generation!==sourceReadGeneration||page!==pageRevision)return;localSourceRows=rows;ready=true;});
+  if(ready&&generation===sourceReadGeneration&&page===pageRevision)sourceSyncPreview?.open();
+})());
 byId('calendar-actions-connect').addEventListener('click', () => void sourceAction(async()=>{await desktopApi.connectActionCalendar();await desktopApi.openCentral('actions');}));
 byId('source-calendar-permissions').addEventListener('click', () => void sourceAction(() => desktopApi.openCalendarPermissions()));
 byId('source-cancel-edit').addEventListener('click',()=>{if(sourceEditingId)sourceWorkspace.open(sourceEditingId);else showPage('sources');});

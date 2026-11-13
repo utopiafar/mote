@@ -26,13 +26,13 @@ async function fixture(t:any){
   const native=ctx.moteFileProcessors.get('audio.local-dialogue');
   ctx.effect(()=>ctx.moteFileProcessors.register({...native,id:'fixture.dialogue',name:'Replacement dialogue'}));
  }};
- const analyses:any[]=[];const provider={transcribe:async(input:any)=>{calls.push(input);return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Synthetic offline dialogue'}]};}};
- const options={plugins:[plugin,aliasPlugin],analyze:async(records:any[],prompt:string,settings:any)=>{analyses.push({settings,prompt});return {answer:prompt===TURN_GROUP_PROMPT?JSON.stringify({groups:[[0]]}):'Synthetic summary',citations:[{id:records[0].id}]};}};
+ const analyses:any[]=[];let waitAnalysis:(()=>Promise<void>)|undefined;const provider={transcribe:async(input:any)=>{calls.push(input);return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Synthetic offline dialogue'}]};}};
+ const options={plugins:[plugin,aliasPlugin],analyze:async(records:any[],prompt:string,settings:any)=>{analyses.push({settings,prompt});if(waitAnalysis)await waitAnalysis();return {answer:prompt===TURN_GROUP_PROMPT?JSON.stringify({groups:[[0]]}):'Synthetic summary',citations:[{id:records[0].id}]};}};
  let processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;
  const save=(policy:any=processing.view().policy,settings:any={})=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,...settings},policy});
  async function upload(name:string,mime='audio/wav',sourceId='phone',layer:'original'|'reference'='original',revision='1',previousRevision:string|null=null){const bytes=Buffer.from('Generated fixture '+name),manifest:FileRevision={sourceId,previousRevision,item:{externalId:name,revision,observedAt:new Date().toISOString(),title:name,kind:'file',layer,text:'',mimeType:mime,deleted:false},relativePath:name,sizeBytes:bytes.length,...(layer==='original'?{sha256:sha256(bytes)}:{})};if(layer==='reference')return (await files.revision(manifest,()=>{})).id;const session=files.begin(manifest,()=>{});files.part(session.uploadId,0,bytes,()=>{});return (await files.commit(session.uploadId,()=>{})).id;}
  t.after(async()=>{await processing.close();store.close();rmSync(dir,{force:true,recursive:true});});
- return {dir,store,files,calls,analyses,save,upload,get processing(){return processing;},async restart(){const configuration=processing.configurationSnapshot();await processing.close();processing=new FileProcessing(files,provider,undefined,{...options,configuration});await processing.runtime.ready;}};
+ return {dir,store,files,calls,analyses,save,upload,holdAnalysis(wait:()=>Promise<void>){waitAnalysis=wait;},get processing(){return processing;},async restart(){const configuration=processing.configurationSnapshot();await processing.close();processing=new FileProcessing(files,provider,undefined,{...options,configuration});await processing.runtime.ready;}};
 }
 function customPolicy(f:Awaited<ReturnType<typeof fixture>>):FilePolicy{
  const policy=f.processing.view().policy as FilePolicy;
@@ -80,14 +80,31 @@ test('service credentials are never transferred to changed destinations; local p
 test('completed results retain their policy until previewed reprocessing, and stale previews cannot execute',async t=>{
  const f=await fixture(t);f.save(customPolicy(f));const id=await f.upload('sample.wav');await f.processing.tick();const original=f.files.chunks(id)[0].id,revision=f.processing.explain(id).applied!.revision;
  const policy=f.processing.view().policy;policy.profiles.find(p=>p.id==='four')!.parameters.speakerCount=3;f.save(policy);await f.processing.tick();assert.equal(f.calls.length,1);assert.equal(f.files.chunks(id)[0].id,original);assert.equal(f.processing.explain(id).applied!.revision,revision);assert.equal(f.processing.explain(id).current.profile.parameters.speakerCount,3);
- const stale=f.processing.preview({revision:f.processing.view().revision});f.save(undefined,{maxAudioMinutes:f.processing.view().settings.maxAudioMinutes+1});assert.throws(()=>f.processing.reprocess({token:stale.token}),{statusCode:409});
- const preview=f.processing.preview({revision:f.processing.view().revision,sourceId:'phone',type:'audio/*'});assert.equal(preview.count,1);assert.equal(f.processing.reprocess({token:preview.token}).queued,1);assert.throws(()=>f.processing.reprocess({token:preview.token}),{statusCode:409});await f.processing.tick();assert.equal(f.calls.length,2);assert.equal(f.calls[1].parameters?.speakerCount,3);assert.notEqual(f.files.chunks(id)[0].id,original);
+ const stale=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'all'}});f.save(undefined,{maxAudioMinutes:f.processing.view().settings.maxAudioMinutes+1});assert.throws(()=>f.processing.reprocess({token:stale.token}),{statusCode:409});
+ const preview=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'selection',sourceIds:['phone']},type:'audio/*'});assert.equal(preview.count,1);assert.equal(f.processing.reprocess({token:preview.token}).queued,1);assert.equal(f.processing.reprocess({token:preview.token}).queued,1);await f.processing.tick();assert.equal(f.calls.length,2);assert.equal(f.calls[1].parameters?.speakerCount,3);assert.notEqual(f.files.chunks(id)[0].id,original);
 });
 
 test('batch preview excludes Shadow, archive-only, superseded and active files and rejects changed file states',async t=>{
  const f=await fixture(t),policy=customPolicy(f);policy.rules.find(r=>r.type==='application/pdf')!.profileId='archive';f.save(policy);await f.upload('ref.wav','audio/wav','phone','reference');await f.upload('archive.pdf','application/pdf');const old=await f.upload('version.wav');const current=await f.upload('version.wav','audio/wav','phone','original','2','1');const running=await f.upload('running.wav');f.store.db.prepare("UPDATE file_jobs SET state='running' WHERE capture_id=?").run(running);
- const p=f.processing.preview({revision:f.processing.view().revision});assert.deepEqual(p.items.map(x=>x.id),[current]);assert.equal(p.skipped,2);assert.ok(!p.items.some(x=>x.id===old));
+ const p=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'all'}});assert.deepEqual(p.items.map(x=>x.id),[current]);assert.equal(p.skipped,2);assert.ok(!p.items.some(x=>x.id===old));
  f.processing.retry(current);f.store.db.prepare("UPDATE file_jobs SET attempts=1 WHERE capture_id=?").run(current);assert.throws(()=>f.processing.reprocess({token:p.token}),{statusCode:409});
+});
+
+test('maintenance refuses a selected archived file whose retained original is no longer readable',async t=>{
+ const f=await fixture(t);f.save(customPolicy(f));const id=await f.upload('missing-generated.wav');
+ const hash=f.files.version(id).object_hash!;f.store.contentEncryption.remove(join(f.files.store.assets.directory,hash,'0'));
+ assert.throws(()=>f.processing.preview({revision:f.processing.view().revision,scope:{kind:'selection',evidenceIds:[id]}}),{statusCode:409});
+ assert.equal(f.calls.length,0);assert.equal(f.store.db.prepare("SELECT COUNT(*) n FROM task_records WHERE kind='file-reprocess'").get()!.n,0);
+});
+
+test('a cancelled summary remains cancelled when previewing completed files for maintenance',async t=>{
+ const f=await fixture(t),policy=customPolicy(f);policy.profiles.find(profile=>profile.id==='four')!.summarize=true;f.save(policy);
+ let entered!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
+ t.after(()=>release());f.holdAnalysis(async()=>{entered();await gate;});
+ const id=await f.upload('generated-cancelled-summary.wav'),running=f.processing.tick();await started;
+ f.processing.cancel(id);release();await running;assert.equal(f.files.detail(id).job.summary_state,'cancelled');
+ const preview=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'selection',sourceIds:['phone']}});
+ assert.equal(preview.count,0);assert.equal(preview.skipped,1);assert.equal(f.calls.length,1);assert.equal(f.analyses.length,1);
 });
 
 test('local completed files use their original model service for reviews after routing edits and restart',async t=>{
@@ -135,7 +152,7 @@ test('changing dialogue speaker count reuses transcription while rebuilding down
  profile.diarizationProcessor='fixture.diarize';profile.parameters.speakerCount=2;policy.rules.find(r=>r.type==='audio/*')!.profileId=profile.id;f.save(policy);
  const id=await f.upload('generated-cache.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.calls.length,1);
  const oldDiarization=f.files.detail(id).artifacts.find((a:any)=>a.kind==='diarization')!.id,next=f.processing.view().policy;next.profiles.find(p=>p.id===profile.id)!.parameters.speakerCount=3;f.save(next);
- const preview=f.processing.preview({revision:f.processing.view().revision});f.processing.reprocess({token:preview.token});await f.processing.tick();
+ const preview=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'all'}});f.processing.reprocess({token:preview.token});await f.processing.tick();
  assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.calls.length,1,'downstream-only settings do not spend ASR again');assert.notEqual(f.files.detail(id).artifacts.find((a:any)=>a.kind==='diarization')!.id,oldDiarization);
 });
 
@@ -149,7 +166,7 @@ test('a replacement dialogue plugin composes stages and keeps derived text avail
  assert.deepEqual(f.files.detail(id).artifacts.map((artifact:any)=>artifact.kind).sort(),['dialogue','diarization','transcript']);
  assert.ok(f.files.pendingIndex('cloud').length>0);
  const updated=f.processing.view().policy;updated.profiles.find(p=>p.id==='replacement')!.parameters.speakerCount=3;f.save(updated);
- const preview=f.processing.preview({revision:f.processing.view().revision});f.processing.reprocess({token:preview.token});await f.processing.tick();
+ const preview=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'all'}});f.processing.reprocess({token:preview.token});await f.processing.tick();
  assert.equal(f.calls.length,1,'declared extraction dependencies exclude downstream speaker count');
  await f.restart();assert.ok(f.files.pendingIndex('cloud').length>0);
  const invalid=f.processing.view().policy;invalid.services.push({id:'remote',name:'Remote',kind:'asr',execution:'remote',endpoint:'https://example.test/transcribe',model:''});invalid.profiles.find(p=>p.id==='replacement')!.serviceId='remote';

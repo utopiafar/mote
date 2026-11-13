@@ -18,7 +18,7 @@ type AckGate = { allowed: boolean; sent: number; dropped: number };
 async function endpoint(dropFirstAck = false, ackGate?: AckGate) {
   const items: SourceItem[] = []; const registered: unknown[] = []; let id = ''; let dropNext = dropFirstAck;
   let acknowledgements = 0;
-  const sessions=new Map<string,any>();let recoveries:unknown[]=[];
+  const sessions=new Map<string,any>();let recoveries:unknown[]=[];let recoveryUploads=0;
   const server = createServer(async (req, res) => {
     expect(req.headers['x-mote-ingress-version']).toBe('2');
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
@@ -26,7 +26,7 @@ async function endpoint(dropFirstAck = false, ackGate?: AckGate) {
     res.setHeader('Content-Type','application/json');
     if(req.url?.includes('/uploads/')&&req.url.includes('/parts/')){const bytes=Buffer.concat(chunks),part=Number(req.url.split('/').at(-1));res.end(JSON.stringify({part,hash:(await import('../src/source-sync')).sourceHash(bytes),bytes:bytes.length}));return;}
     const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
-    if(req.url?.startsWith('/api/file-sync/v1/recovery/')&&req.url.endsWith('/uploads')){const m=[...sessions.values()].at(-1),uploadId='recovery-'+m.item.revision;sessions.set(uploadId,m);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
+    if(req.url?.startsWith('/api/file-sync/v1/recovery/')&&req.url.endsWith('/uploads')){recoveryUploads++;const m=[...sessions.values()].at(-1),uploadId='recovery-'+m.item.revision;sessions.set(uploadId,m);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
     if(req.url==='/api/file-sync/v1/uploads'){const uploadId=body.revision;sessions.set(uploadId,manifest);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
     const replyAck=(ack:unknown)=>{if(dropNext||ackGate?.allowed===false){dropNext=false;if(ackGate)ackGate.dropped++;res.destroy();return;}acknowledgements++;if(ackGate)ackGate.sent++;res.end(JSON.stringify(ack));};
     if(req.url?.endsWith('/commit')){const m=sessions.get(req.url.split('/').at(-2)!);items.push(m.item);replyAck({...sourceAck(id,m.item,'file-revision',items.length>1),sha256:m.sha256,sizeBytes:m.sizeBytes});return;}
@@ -37,7 +37,7 @@ async function endpoint(dropFirstAck = false, ackGate?: AckGate) {
     else { items.push(body); replyAck(sourceAck(id,body,body.kind==='file'?'file-revision':'source-item',items.length>1)); }
   });
   servers.push(server); await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, acknowledgements:()=>acknowledgements, loseNextAck: () => { dropNext = true; },recoverLast:()=>{const m=[...sessions.values()].at(-1);expect(m).toBeDefined();recoveries=[{captureId:'b67c1b84-f2cd-4e59-bf67-215545a882dc',externalId:m.item.externalId,revision:m.item.revision,sha256:m.sha256,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt}];} };
+  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, acknowledgements:()=>acknowledgements, loseNextAck: () => { dropNext = true; },recoverLast:()=>{const m=[...sessions.values()].at(-1);expect(m).toBeDefined();recoveries=[{captureId:'b67c1b84-f2cd-4e59-bf67-215545a882dc',externalId:m.item.externalId,revision:m.item.revision,sha256:m.sha256,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt}];},recoveryUploads:()=>recoveryUploads };
 }
 async function manager(url: string, token = 'synthetic-source-token', adapters?:SourceAdapterRegistry, controlledWatcher = false) {
   const value = new LocalSourceManager(join(directory, 'private-state'), { serverUrl: url, token, deviceId: 'synthetic-device' }, '/must-not-be-invoked-calendar-helper',false,undefined,adapters);
@@ -285,6 +285,30 @@ for (const retention of ['snapshot','archive','reference'] as const) it(`freezes
   await value.sync(true);expect(value.status()[0].pending).toBe(0);
 });
 
+it('a completed one-time snapshot import reacquires only the acknowledged version Central asks for',async()=>{
+ const server=await endpoint(),file=join(directory,'once-recovery.md');await writeFile(file,'Generated immutable one-time recovery content');
+ const value=await manager(server.url);await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);
+ expect(value.status()[0].source.importCompletedAt).toBeDefined();expect(server.items).toHaveLength(1);
+ // A forced check without a Central resupply request must not rescan or resend.
+ await value.sync(true);expect(server.items).toHaveLength(1);
+ server.recoverLast();await value.flushPending(new AbortController().signal);
+ expect(value.pendingStats().pendingRecords).toBe(0);expect(server.items).toHaveLength(2);
+ expect(server.items[1]).toEqual(server.items[0]);expect(server.recoveryUploads()).toBe(1);
+ expect(value.status()[0].source.importCompletedAt).toBeDefined();
+});
+
+it('a completed one-time import keeps later local changes out of snapshot recovery',async()=>{
+ const server=await endpoint(),file=join(directory,'once-recovery-changed.md');await writeFile(file,'Generated selected one-time version');
+ const value=await manager(server.url);await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);
+ expect(server.items).toHaveLength(1);
+ server.recoverLast();await writeFile(file,'Changed generated content that must not be imported');
+ await value.flushPending(new AbortController().signal);
+ expect(server.items).toHaveLength(1);expect(server.recoveryUploads()).toBe(0);expect(value.pendingStats().pendingRecords).toBe(0);
+ server.recoverLast();await value.sync(true);await value.flushPending(new AbortController().signal);
+ expect(server.items).toHaveLength(1);expect(server.recoveryUploads()).toBe(0);
+ expect(value.status()[0].source.importCompletedAt).toBeDefined();
+});
+
 it('explicit continuation opt-in resumes change discovery after a one-time import',async()=>{
   const server=await endpoint(),file=join(directory,'opt-in.md');await writeFile(file,'Generated first body');
   const value=new LocalSourceManager(join(directory,'opt-in-state'),{serverUrl:server.url,token:'synthetic-source-token',deviceId:'synthetic-device'},'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();
@@ -370,7 +394,13 @@ it.each(['file','default'] as const)('E preserves %s checkpoint mode through nor
     expect(contexts).toHaveLength(2); // Normal scan plus recovery scan after a matched revision invalidates the cursor.
     expect(full).toHaveBeenCalledTimes(mode==='file'?0:2);
     expect(contexts[0].fileCheckpoint?.catalog).toBeDefined();
-    expect(contexts[1].fileCheckpoint).toBeUndefined();
+    // F2 keeps the frozen identities while invalidating the scan cursor for
+    // recovery. Live rows settle to synced after the scan, so compare identity.
+    const recoveryCheckpoint=contexts[1].fileCheckpoint!,priorCatalog=contexts[0].fileCheckpoint!.catalog;
+    expect(recoveryCheckpoint.inProgress).toBe(false);
+    expect(recoveryCheckpoint.pendingDirectories).toEqual([]);
+    expect(Object.keys(recoveryCheckpoint.catalog)).toEqual(Object.keys(priorCatalog));
+    expect(Object.values(recoveryCheckpoint.catalog).map(entry=>entry.entryId)).toEqual(Object.values(priorCatalog).map(entry=>entry.entryId));
     expect(server.items).toHaveLength(2);expect(app.pendingStats().pendingRecords).toBe(0);
     if(mode==='file')expect(contexts.every(context=>context.checkpoint===undefined)).toBe(true);
     else expect(contexts[0].checkpoint).toBeDefined();

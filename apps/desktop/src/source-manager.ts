@@ -12,7 +12,7 @@ import { atomicSourceJson, sourceHash, SourceSync, type PendingSourceSummary } f
 import { readLocalContent } from './local-content';
 import { codingRoot, codingProviders, type CodingProvider } from './coding-agents';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices } from './source-calendar';
-import { normalizeSourceOptions, redactSourceText, type FileScanDegraded, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
+import { normalizeSourceOptions, redactSourceText, sourcePolicySignature, type FileScanDegraded, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
 import { builtInSourceAdapters, type SourceAdapterRegistry } from './source-adapters';
 import type { Config } from './contracts';
 import { readResponseText } from './response-body';
@@ -34,7 +34,7 @@ export function sourceDefinition(source: LocalSource): SourceDefinition {
   const { id, name, kind, deviceId, platform, retention, enabled, initialSync } = source;
   return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || moteText("本地来源"), kind, deviceId, platform, retention, enabled, initialSync };
 }
-export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ allowRead:options.allowRead,retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
+export function sourcePolicy(options: SourceOptions): string { return sourceHash(sourcePolicySignature(options)); }
 const rootDegraded=(reason:FileScanDegraded|undefined)=>reason==='root_unavailable'||reason==='root_changed';
 const degradedMessage=(reason:FileScanDegraded|undefined)=>rootDegraded(reason)?moteText("来源根不可用或已变化；已保留本机清单，未判断删除（已降级）"):moteText("已同步可读取项；扫描不完整，未判断删除");
 export class LocalSourceManager {
@@ -338,14 +338,15 @@ export class LocalSourceManager {
   }
   /** Recovery is transport work: local-only scans never contact the central node. */
   private async recoverSnapshot(source:LocalSource,engine:SourceSync,request:SourceRequest,signal:AbortSignal):Promise<void>{
-    if(source.kind!=='local-files'||source.retention!=='snapshot'||source.syncContinuously===false&&source.importCompletedAt)return;
-    let count=0;
+    if(source.kind!=='local-files'||source.retention!=='snapshot')return;
+    const oneTime=source.syncContinuously===false&&Boolean(source.importCompletedAt);
+    let accepted:import('./source-sync').SnapshotRecovery[]=[];
     try{const response=await request('/api/file-sync/v1/recovery?sourceId='+encodeURIComponent(source.id),undefined,'GET',signal) as {items?:import('./source-sync').SnapshotRecovery[]};
-      if(Array.isArray(response.items)&&response.items.length<=200&&response.items.every(item=>typeof item.externalId==='string'&&typeof item.revision==='string'))count=await engine.requestSnapshotRecovery(response.items);
+      if(Array.isArray(response.items)&&response.items.length<=200&&response.items.every(item=>typeof item.externalId==='string'&&typeof item.revision==='string'))accepted=await engine.requestSnapshotRecovery(response.items,oneTime);
     }catch(error){if(signal.aborted)throw error;return;/* Older nodes can still receive ordinary revisions. */}
-    if(!count)return;
-    const now=Date.now(),adapter=this.adapters.get(source.kind),scan=await this.adapters.scan({source,signal,checkpoint:adapter.checkpointMode==='file'?undefined:engine.checkpoint(),fileCheckpoint:engine.fileCheckpoint(),priorityPaths:[],stateDirectory:this.directory,helperPath:this.helperPath,scope:{start:new Date(now-30*86400000).toISOString(),end:new Date(now+90*86400000).toISOString()}});
-    try{signal.throwIfAborted();await engine.stage(scan,adapter.tracksDeletions&&source.trackDeletions,undefined,source.initialSync);}finally{await engine.discardUnqueuedOriginals(scan.items);}
+    if(!accepted.length)return;
+    const now=Date.now(),adapter=this.adapters.get(source.kind),scan=await this.adapters.scan({source,signal,checkpoint:adapter.checkpointMode==='file'?undefined:engine.checkpoint(),fileCheckpoint:engine.fileCheckpoint(),priorityPaths:[],stateDirectory:this.directory,helperPath:this.helperPath,scope:{start:new Date(now-30*86400000).toISOString(),end:new Date(now+90*86400000).toISOString()},...(oneTime?{recoveryIds:accepted.map(item=>item.externalId)}:{})});
+    try{signal.throwIfAborted();const staged=oneTime?engine.recoveredScan(scan,accepted):scan;await engine.stage(staged,oneTime?false:adapter.tracksDeletions&&source.trackDeletions,undefined,source.initialSync);}finally{await engine.discardUnqueuedOriginals(scan.items);}
   }
   private async prepareSource(source: LocalSource, request: SourceRequest, signal: AbortSignal): Promise<void> {
     if (!this.metadataDirty.has(source.id)&&!this.contexts.pending(source.id)) return;

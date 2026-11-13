@@ -5,7 +5,8 @@
 import { moteText } from '@mote/shared/i18n';
 import type {Config} from '../contracts';
 import type {CalendarChoice, SourceOptions} from '../contracts/sources';
-import { normalizeSourceOptions } from '../source-types';
+import { normalizeSourceOptions,sourceSyncScope } from '../source-types';
+import {publicConfig} from '../config';
 import { SourceSelectionController } from '../source-selection';
 import { CalendarPermissionError } from '../source-calendar';
 import { LocalSourceManager } from '../source-manager';
@@ -143,10 +144,13 @@ export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugi
           if (typeof id !== 'string') throw Error('Invalid source');
           return manager.saveSourceContext(id, args[1]);
         })));
-        register(sourcesChannels.sync, sourcesWriteCapability, () => execute(sourcesChannels.sync, async () => {
+        register(sourcesChannels.sync, sourcesWriteCapability, args => execute(sourcesChannels.sync, async () => {
+          const scope=args[0],assertScope=()=>{if(typeof scope!=='string'||scope!==sourceSyncScope(manager.status(),publicConfig(options.settings())))throw new Error(moteText('设置已改变，请刷新后重新预览'));};
+          assertScope();
           const scan = manager.sync(true);
           await options.retry?.();
           await scan;
+          assertScope();
           await options.retry?.();
         }));
         register(sourcesChannels.calendarAuthorize, sourcesWriteCapability, () =>

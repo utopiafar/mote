@@ -14,7 +14,7 @@ import { redactSourceText } from './source-types';
 import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
 import { localVolumeIdentity } from './local-volume';
-export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = [], incrementalCheckpoint=false): Promise<SourceScan> {
+export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = [], incrementalCheckpoint=false, recoveryIds: readonly string[] = []): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   if(previous && (previous.version!==1 || previous.identityVersion!==1))throw Error('Unsupported local file identity registry; existing source state was preserved');
   const prior=previous&&previous.version===1&&typeof previous.root==='string'&&previous.catalog&&typeof previous.catalog==='object'?previous:undefined;
@@ -69,7 +69,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       catalog.observe(candidate); return candidate;
     } catch { return undefined; }
   };
-  const processFile = async (candidate: DirectoryCandidate, prior: FileCatalogEntry | undefined): Promise<'ok'|'stop'> => {
+  const processFile = async (candidate: DirectoryCandidate, prior: FileCatalogEntry | undefined, reRead=false): Promise<'ok'|'stop'> => {
     signal?.throwIfAborted();
     const extension = extname(candidate.path).toLowerCase();
     if (!options.extensions.includes(extension)) { result.skipped++; return 'ok'; }
@@ -98,7 +98,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     if (options.retention !== 'reference' && candidate.size > maximumFile) { bind();result.skipped++; return 'ok'; }
     if (result.items.length >= 2000 || options.retention !== 'reference' && result.items.length>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
     const unchanged = matched && matched.relativePath===candidate.relativePath && matched.syncState === 'synced' && matched.contentQuickHash === candidate.quickHash && matched.fileId === candidate.fileId && matched.size === candidate.size && matched.mtimeMs === candidate.mtimeMs && matched.ctimeMs === candidate.ctimeMs && matched.quickHash === candidate.quickHash && matched.contentVersion;
-    if (matched && unchanged) { bind();accessMarkers.retain(externalId);catalog.markContent(candidate.relativePath, matched.contentVersion, 'synced',matched.contentHash); return 'ok'; }
+    if (!reRead && matched && unchanged) { bind();accessMarkers.retain(externalId);catalog.markContent(candidate.relativePath, matched.contentVersion, 'synced',matched.contentHash); return 'ok'; }
     if (options.initialSync === 'new_only' && !previous?.initialized) { bind();catalog.markContent(candidate.relativePath, candidate.quickHash, 'synced'); return 'ok'; }
     let handle;let spooled:OriginalSpool|undefined;
     try {
@@ -141,6 +141,35 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     } catch { if(spooled)await rm(spooled.directory,{force:true,recursive:true});result.skipped++; result.complete = false; catalog.reject(candidate.relativePath,prior); return 'ok'; }
     finally { await handle?.close(); }
   };
+  const recovery = recoveryIds.length ? new Set(recoveryIds) : undefined;
+  if (recovery) {
+    // Re-read only the identities Central explicitly asked to resupply. This is
+    // not re-enumeration or reconciliation: no other file, new content or
+    // absence is observed, so a one-time import keeps its frozen scope.
+    if (selected.isDirectory() && catalog) {
+      if (await catalog.verifyRoot()) {
+        for (const entry of Object.values(prior?.catalog ?? {})) {
+          if (!entry.entryId || !recovery.has(entry.entryId)) continue;
+          catalog.savepoint();
+          const candidate = await candidateForPath(join(root, entry.relativePath));
+          if (!candidate) { catalog.rollbackSavepoint(); result.skipped++; continue; }
+          const outcome = await processFile(candidate, catalog.previous(candidate.relativePath), true);
+          if (outcome === 'stop') { catalog.rollbackSavepoint(); result.skipped++; break; }
+        }
+      } else { result.complete = false; result.degraded = catalog.degraded; }
+    } else {
+      const fileId = `${selected.dev}:${selected.ino}`, candidate: DirectoryCandidate = { path: root, relativePath: basename(root), fileId, birthtimeMs: selected.birthtimeMs, size: selected.size, mtimeMs: selected.mtimeMs, ctimeMs: selected.ctimeMs, quickHash: sourceHash(`${fileId}:${selected.size}:${selected.mtimeMs}:${selected.ctimeMs}`), nlink: selected.nlink };
+      catalog.savepoint(); catalog.observe(candidate);
+      const entry = catalog.previous(basename(root));
+      if (!entry?.entryId || !recovery.has(entry.entryId)) { catalog.rollbackSavepoint(); result.skipped++; }
+      else await processFile(candidate, entry, true);
+    }
+    // A targeted re-read never proves what else exists or changed.
+    result.complete = false;
+    result.checkpoint = undefined;
+    await accessMarkers.persist(result.complete);
+    return result;
+  }
   if (selected.isDirectory() && catalog) {
     let examined = 0;
     const priority = [...new Set(priorityPaths)].map(path => isAbsolute(path) ? path : `${root}/${path}`);

@@ -150,6 +150,27 @@ test('expired snapshot images request transport recovery and release recovered p
  assert.equal(material.artifacts!.find(a=>a.key==='image-understanding')!.state,'ready');assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE capture_id=?').get(ack.id)!.n,1);await f.images.tick();assert.deepEqual(f.calls(),{ocr:1,visual:1});
 });
 
+test('file maintenance reacquires a released snapshot image before running its existing image pipeline again',async t=>{
+ const f=await fixture(t);f.sources.register({id:'generated-maintenance-image',name:'Generated image source',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'snapshot'});
+ const hash=sha256(f.bytes),begun=f.files.begin({sourceId:'generated-maintenance-image',relativePath:'generated.png',sha256:hash,sizeBytes:f.bytes.length,item:{externalId:'generated-image',revision:hash,observedAt:'2026-10-01T00:00:00Z',title:'Generated image',kind:'file',layer:'snapshot',mimeType:'image/png',text:'',document:{fileIndex:{version:1,fileId:'generated-image',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead:true}}}},()=>{});
+ f.files.part(begun.uploadId,0,f.bytes,()=>{});const id=String((await f.files.commit(begun.uploadId,()=>{})).id);await f.images.tick();
+ assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(id),undefined);
+ const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js'),app=Fastify();t.after(()=>app.close());
+ const reader=new EvidenceReader(f.store,f.sources,f.files,undefined,undefined,f.materials);
+ registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},()=>undefined,reader,undefined,async(_id,task)=>task(),async(_ids,task)=>task());
+ const before=f.calls(),requestPreview=()=>app.inject({method:'POST',url:'/api/file-processing/preview',payload:{revision:f.processing.view().revision,scope:{kind:'selection',sourceIds:['generated-maintenance-image']}}});
+ const stale=await requestPreview();assert.equal(stale.statusCode,200,stale.body);assert.equal(stale.json().items[0].understandingEnabled,true);
+ f.images.configure({...f.images.settings(),understandingEnabled:false});
+ assert.equal((await app.inject({method:'POST',url:'/api/file-processing/reprocess',payload:{token:stale.json().token}})).statusCode,409);
+ assert.deepEqual(f.calls(),before);f.images.configure({...f.images.settings(),understandingEnabled:true});
+ const response=await requestPreview();assert.equal(response.statusCode,200,response.body);const preview=response.json();assert.deepEqual(preview.items.map((item:any)=>item.id),[id]);assert.equal(preview.items[0].requiresOriginal,true);
+ const accepted=await app.inject({method:'POST',url:'/api/file-processing/reprocess',payload:{token:preview.token}});assert.equal(accepted.statusCode,200,accepted.body);assert.deepEqual(accepted.json(),{queued:1});await f.images.tick();assert.deepEqual(f.calls(),before);
+ assert.equal(f.files.detail(id).job.error,'snapshot_input_expired');assert.equal(f.files.snapshotRecovery('generated-maintenance-image').items[0].captureId,id);
+ const recovery=f.files.beginSnapshotRecovery(id,()=>{});f.files.part(recovery.uploadId,0,f.bytes,()=>{});await f.files.commit(recovery.uploadId,()=>{});await f.images.tick();
+ assert.equal(f.files.detail(id).job.state,'succeeded');assert.deepEqual(f.calls(),{ocr:before.ocr+1,visual:before.visual+1});
+ const duplicate=await app.inject({method:'POST',url:'/api/file-processing/reprocess',payload:{token:preview.token}});assert.equal(duplicate.statusCode,200,duplicate.body);assert.deepEqual(duplicate.json(),accepted.json());await f.images.tick();assert.deepEqual(f.calls(),{ocr:before.ocr+1,visual:before.visual+1});
+});
+
 test('one historical request drains more than 100 images and installing a plugin adds no historical work',async t=>{
  const f=await fixture(t);f.images.configure({...f.images.settings(),understandingEnabled:false});
  const ids=[];for(let i=0;i<205;i++)ids.push(await f.upload());f.store.db.exec('UPDATE image_inputs SET auto_eligible=0');

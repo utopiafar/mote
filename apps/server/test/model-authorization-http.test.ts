@@ -155,7 +155,7 @@ test('historical audio batch confirmation authorizes only previewed originals ac
  f.node.sources.register({id:'generated-audio',name:'Generated audio',kind:'local-files',deviceId:'generated-device',platform:'android',retention:'archive'});
  const upload=async()=>{const bytes=Buffer.from('Generated audio '+randomUUID()),begun=f.node.files.begin({sourceId:'generated-audio',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),title:'Generated audio',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});f.node.files.part(begun.uploadId,0,bytes,()=>{});return {id:(await f.node.files.commit(begun.uploadId,()=>{})).id,bytes};};
  const first=await upload(),second=await upload();await f.node.processing.tick();assert.equal(bodies.length,0);
- const preview=await f.node.app.inject({method:'POST',url:'/api/file-processing/preview',headers:f.headers,payload:{revision:f.node.processing.view().revision,sourceId:'generated-audio',type:'audio/*'}});assert.equal(preview.statusCode,200,preview.body);assert.equal(preview.json().count,2);
+ const preview=await f.node.app.inject({method:'POST',url:'/api/file-processing/preview',headers:f.headers,payload:{revision:f.node.processing.view().revision,scope:{kind:'selection',sourceIds:['generated-audio']},type:'audio/*'}});assert.equal(preview.statusCode,200,preview.body);assert.equal(preview.json().count,2);
  const later=await upload();
  // Neither preview nor a partial scope may authorize a mixed batch; the
  // rejected attempt must leave the preview usable and roll back all intents.
@@ -164,8 +164,8 @@ test('historical audio batch confirmation authorizes only previewed originals ac
  for(const file of [first,second,later])assert.equal(f.node.processing.modelIntent(file.id,'pipeline'),undefined);
  assert.equal(bodies.length,0);
  const confirmed=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(confirmed.statusCode,200,confirmed.body);assert.equal(confirmed.json().queued,2);
- const duplicate=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(duplicate.statusCode,409);
- await f.restart();await f.node.processing.tick();
+ const duplicate=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(duplicate.statusCode,200,duplicate.body);assert.deepEqual(duplicate.json(),confirmed.json());
+ await f.restart();assert.doesNotThrow(()=>f.node.processing.reprocessTargets({token:preview.json().token}));const afterRestart=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(afterRestart.statusCode,200,afterRestart.body);assert.deepEqual(afterRestart.json(),confirmed.json());await f.node.processing.tick();
  assert.equal(bodies.length,2);assert.deepEqual(new Set(bodies.map(body=>body.toString())),new Set([first.bytes.toString(),second.bytes.toString()]));
  for(const file of [first,second])assert.equal(f.node.files.chunks(file.id)[0].ocrText,'Generated batch transcript');
  assert.equal(f.node.files.chunks(later.id).length,0);assert.equal(f.node.modelAuthorization.view().state,'off');

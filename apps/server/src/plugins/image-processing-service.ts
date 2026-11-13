@@ -126,6 +126,7 @@ export function createImageProcessingService(dependencies:ImageProcessingService
   };
   const control:NonNullable<FileProcessing['imageControl']>=Object.freeze({
     owns:id=>Boolean(images?.owns(id)),
+    settings:()=>readable().settings(),
     prepare:()=>phase==='active'&&images?images.prepare():[],
     tick:()=>phase==='active'||phase==='quiescing'?images?track(images.tick()):Promise.resolve():Promise.resolve(),
     retry:(id,recompute,confirmUnknown)=>writable().retry(id,recompute,confirmUnknown),

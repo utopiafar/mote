@@ -8,6 +8,7 @@ import {defaultConfig} from '../../desktop/src/config.js';
 import {DEFAULT_SOURCE_OPTIONS,type SourceOptions} from '../../desktop/src/source-types.js';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
+import {sha256} from '../src/store.js';
 
 // Real Desktop manual discovery/outbox/upload and Central routes/pipeline.
 // All bytes and credentials are generated fixtures; no live model or ASR.
@@ -47,6 +48,104 @@ async function finishPipeline(id:string){
  try{await Promise.race([completing,new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(Error('Timed out waiting for recovered pipeline completion')),20_000);})]);}
  finally{clearTimeout(timeout);}
 }
+
+test('maintenance preview requires explicit scope, cancellation is inert, and an idempotent reprocess reacquires released snapshot bytes',async()=>{
+ const first=await firstUpload();await finishPipeline(first.id);
+ assert.equal(node.files.detail(first.id).job!.state,'succeeded');
+ assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs WHERE capture_id=?').get(first.id)!.n,0);
+ const request=(method:'POST'|'DELETE',url:string,payload?:unknown)=>node.app.inject({method,url,headers,...(payload===undefined?{}:{payload})});
+ const scope={kind:'selection',sourceIds:[first.sourceId]},body={revision:node.processing.view().revision,scope,type:'text/*'};
+ const empty=await request('POST','/api/file-processing/preview',{...body,scope:{kind:'selection',sourceIds:[]}});
+ assert.equal(empty.statusCode,200,empty.body);assert.equal(empty.json().count,0);
+ const cancelled=await request('POST','/api/file-processing/preview',body);assert.equal(cancelled.statusCode,200,cancelled.body);
+ assert.equal(cancelled.json().count,1);assert.equal(cancelled.json().items[0].requiresOriginal,true);
+ assert.equal((await request('DELETE','/api/file-processing/preview/'+cancelled.json().token)).statusCode,200);
+ assert.equal((await request('POST','/api/file-processing/reprocess',{token:cancelled.json().token})).statusCode,409);
+ const before=paths.length;await recover(first.value);await node.processing.tick();
+ assert.equal(paths.slice(before).some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')),false);
+ const preview=await request('POST','/api/file-processing/preview',body);assert.equal(preview.statusCode,200,preview.body);
+ const accepted=await request('POST','/api/file-processing/reprocess',{token:preview.json().token});assert.equal(accepted.statusCode,200,accepted.body);assert.equal(accepted.json().queued,1);
+ const repeated=await request('POST','/api/file-processing/reprocess',{token:preview.json().token});assert.equal(repeated.statusCode,200,repeated.body);assert.deepEqual(repeated.json(),accepted.json());
+ await node.processing.tick();
+ assert.equal(node.files.detail(first.id).job!.error,'snapshot_input_expired');
+ assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs WHERE capture_id=?').get(first.id)!.n,0);
+ await recover(first.value);assert.ok(paths.slice(before).some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')));
+ await node.processing.tick();identity(first.id,first.manifest);assert.equal(node.files.detail(first.id).job!.state,'succeeded');
+ node.sources.update(first.sourceId,{enabled:false});
+ assert.equal((await request('POST','/api/file-processing/reprocess',{token:preview.json().token})).statusCode,409,'a duplicate must recheck current access before disclosing its receipt');
+});
+
+test('cancelling an accepted snapshot reprocess prevents recovery and repeating the command cannot restart it',async()=>{
+ const first=await firstUpload();await finishPipeline(first.id);
+ const preview=await node.app.inject({method:'POST',url:'/api/file-processing/preview',headers,payload:{revision:node.processing.view().revision,scope:{kind:'selection',sourceIds:[first.sourceId]}}});assert.equal(preview.statusCode,200,preview.body);
+ const payload={token:preview.json().token},accepted=await node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers,payload});assert.equal(accepted.statusCode,200,accepted.body);
+ await node.processing.tick();const cancel=await node.app.inject({method:'POST',url:'/api/files/'+first.id+'/cancel',headers,payload:{}});assert.equal(cancel.statusCode,200,cancel.body);
+ const repeated=await node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers,payload});assert.equal(repeated.statusCode,200,repeated.body);assert.deepEqual(repeated.json(),accepted.json());
+ const before=paths.length;await recover(first.value);await node.processing.tick();
+ assert.equal(node.files.detail(first.id).job!.state,'cancelled');assert.equal(paths.slice(before).some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')),false);
+});
+
+test('maintenance rejects out-of-scope and revoked files without revealing their names or restarting cancelled work',async()=>{
+ const first=await firstUpload();await finishPipeline(first.id);
+ const bytes=Buffer.from('Generated unrelated file');
+ node.sources.register({id:'generated-other',name:'Generated other',kind:'local-files',deviceId:'other-device',platform:'macos',retention:'archive'});
+ const upload=node.files.begin({sourceId:'generated-other',item:{externalId:'other',revision:'1',observedAt:new Date().toISOString(),title:'Generated secret title',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
+ node.files.part(upload.uploadId,0,bytes,()=>{});const other=(await node.files.commit(upload.uploadId,()=>{})).id;
+ const request=(payload:unknown)=>node.app.inject({method:'POST',url:'/api/file-processing/preview',headers,payload});
+ const revision=node.processing.view().revision,scope={kind:'selection',sourceIds:[first.sourceId]};
+ const empty=await request({revision,scope:{kind:'selection',sourceIds:[],evidenceIds:[other]}});assert.equal(empty.statusCode,200,empty.body);assert.equal(empty.json().count,0);
+ const wrong=await request({revision,scope:{...scope,evidenceIds:[other]}});assert.equal(wrong.statusCode,409);assert.doesNotMatch(wrong.body,/Generated secret title/);
+ const selected=await request({revision,scope});assert.equal(selected.statusCode,200,selected.body);assert.deepEqual(selected.json().items.map((item:any)=>item.id),[first.id]);assert.doesNotMatch(selected.body,/Generated secret title/);
+ node.sources.update('generated-other',{enabled:false});
+ const emptyEvidence=await request({revision,scope:{kind:'selection',sourceIds:['generated-other'],evidenceIds:[]}});assert.equal(emptyEvidence.statusCode,200,emptyEvidence.body);assert.equal(emptyEvidence.json().count,0);
+ const all=await request({revision,scope:{kind:'all'}});assert.equal(all.statusCode,200,all.body);assert.deepEqual(all.json().items.map((item:any)=>item.id),[first.id]);assert.doesNotMatch(all.body,/Generated secret title/);
+ assert.equal((await request({revision,scope:{kind:'selection',sourceIds:['generated-other']}})).statusCode,409);
+ node.sources.update(first.sourceId,{enabled:false});
+ const rejected=await node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers,payload:{token:selected.json().token}});assert.equal(rejected.statusCode,409,rejected.body);
+ assert.equal(node.store.db.prepare("SELECT COUNT(*) n FROM task_records WHERE kind='file-reprocess'").get()!.n,0);
+ node.sources.update(first.sourceId,{enabled:true,retention:'reference'});
+ assert.equal((await request({revision,scope})).statusCode,409);
+ node.sources.update(first.sourceId,{retention:'snapshot'});node.sources.update('generated-other',{enabled:true});
+ assert.equal((await node.app.inject({method:'POST',url:'/api/files/'+other+'/cancel',headers,payload:{}})).statusCode,200);
+ const afterCancel=await request({revision,scope:{kind:'selection',sourceIds:['generated-other']}});assert.equal(afterCancel.statusCode,200,afterCancel.body);assert.equal(afterCancel.json().count,0);
+ await node.processing.tick();assert.equal(node.files.detail(other).job!.state,'cancelled');
+});
+
+test('a completed one-time import waits for released bytes, then restores the same version without importing later files',async()=>{
+ const first=await firstUpload({...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});
+ assert.ok(first.value.status()[0].source.importCompletedAt);
+ expire(first.id);await node.processing.tick();
+ assert.equal(node.files.detail(first.id).job!.state,'blocked');
+ assert.equal(node.files.detail(first.id).job!.error,'snapshot_input_expired');
+ await writeFile(join(selected,'later-generated.txt'),'Generated later file that must not be imported');
+ await recover(first.value);
+ identity(first.id,first.manifest);
+ assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM captures').get()!.n,1);
+ assert.ok(paths.some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')));
+ await finishPipeline(first.id);assert.equal(node.files.detail(first.id).job!.state,'succeeded');
+ assert.equal(node.files.chunks(first.id)[0].ocrText,'Generated current snapshot');
+ const recoveryCalls=paths.filter(path=>path.includes('/recovery/')&&path.endsWith('/uploads')).length;
+ await recover(first.value);await node.processing.tick();
+ identity(first.id,first.manifest);
+ assert.equal(paths.filter(path=>path.includes('/recovery/')&&path.endsWith('/uploads')).length,recoveryCalls);
+ assert.equal(first.value.pendingStats().pendingRecords,0);
+});
+
+test('maintenance reprocess of a completed one-time import waits for and reacquires the same released snapshot version',async()=>{
+ const first=await firstUpload({...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await finishPipeline(first.id);
+ assert.equal(node.files.detail(first.id).job!.state,'succeeded');assert.ok(first.value.status()[0].source.importCompletedAt);
+ const request=(method:'POST',url:string,payload?:unknown)=>node.app.inject({method,url,headers,...(payload===undefined?{}:{payload})});
+ const revision=node.processing.view().revision,scope={kind:'selection',sourceIds:[first.sourceId]};
+ const preview=await request('POST','/api/file-processing/preview',{revision,scope,type:'text/*'});assert.equal(preview.statusCode,200,preview.body);
+ assert.deepEqual(preview.json().items.map((item:any)=>[item.id,item.requiresOriginal]),[[first.id,true]]);
+ const accepted=await request('POST','/api/file-processing/reprocess',{token:preview.json().token});assert.equal(accepted.statusCode,200,accepted.body);assert.equal(accepted.json().queued,1);
+ await node.processing.tick();assert.equal(node.files.detail(first.id).job!.state,'blocked');assert.equal(node.files.detail(first.id).job!.error,'snapshot_input_expired');
+ await writeFile(join(selected,'later-generated-after-reprocess.txt'),'Generated later file that must not be imported');
+ await recover(first.value);identity(first.id,first.manifest);
+ assert.ok(paths.some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')));
+ await node.processing.tick();assert.equal(node.files.detail(first.id).job!.state,'succeeded');
+ assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM captures').get()!.n,1);
+});
 
 test('Desktop manual sync restores expired bytes under the same capture/revision/time and never replays completed processing',async()=>{
  const first=await firstUpload();expire(first.id);await node.processing.tick();assert.equal(node.files.detail(first.id).job!.state,'blocked');assert.equal(node.files.detail(first.id).job!.error,'snapshot_input_expired');

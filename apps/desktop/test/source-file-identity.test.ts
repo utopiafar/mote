@@ -291,7 +291,7 @@ it('reopens the same registry identity when Central requests snapshot input reco
     throw Error(path);
   };
   await sync.flush(source,request);
-  expect(await sync.requestSnapshotRecovery([{captureId:'00000000-0000-4000-8000-000000000035',externalId:queued.externalId,revision:queued.revision,sha256:hash(bytes),sizeBytes:Buffer.byteLength(bytes),observedAt:queued.observedAt}])).toBe(1);
+  expect(await sync.requestSnapshotRecovery([{captureId:'00000000-0000-4000-8000-000000000035',externalId:queued.externalId,revision:queued.revision,sha256:hash(bytes),sizeBytes:Buffer.byteLength(bytes),observedAt:queued.observedAt}])).toHaveLength(1);
   sync=new SourceSync(state);await sync.initialize();
   const retry=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,marker,sync.fileCheckpoint(),[],true);
   expect(retry.items[0].externalId).toBe(queued.externalId);await sync.stage(retry,false);
