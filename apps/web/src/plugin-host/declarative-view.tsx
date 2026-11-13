@@ -6,19 +6,10 @@
 import React from 'react';
 import { ViewLifetime } from '@mote/shared/plugin-view-lifetime';
 import { strictDataArray, strictDataObject, isToken, type UiContributionDescriptor } from '@mote/shared/plugin-ui';
+import type {DeclarativeState, FieldRef, FormFieldSpec, DeclarativeComponent, DeclarativeViewSpec} from '@mote/shared/plugin-ui';
+export type {DeclarativeState, FieldFormat, FieldRef, FormFieldSpec, DeclarativeComponent, DeclarativeViewSpec} from '@mote/shared/plugin-ui';
 
 export const declarativeStates = ['pending', 'error', 'empty', 'unavailable'] as const;
-export type DeclarativeState = typeof declarativeStates[number];
-export type FieldFormat = 'text' | 'number' | 'date' | 'badge';
-export interface FieldRef { readonly key: string; readonly labelKey?: string; readonly format?: FieldFormat }
-export interface FormFieldSpec extends FieldRef { readonly input: 'text' | 'number' | 'boolean'; readonly required?: boolean }
-export type DeclarativeComponent =
-  | { readonly type: 'status'; readonly state: DeclarativeState; readonly textKey?: string }
-  | { readonly type: 'list'; readonly itemKey: string; readonly fields: readonly FieldRef[] }
-  | { readonly type: 'detail'; readonly fields: readonly FieldRef[] }
-  | { readonly type: 'form'; readonly fields: readonly FormFieldSpec[]; readonly submitCommand?: string }
-  | { readonly type: 'action'; readonly command: string; readonly labelKey: string };
-export interface DeclarativeViewSpec { readonly components: readonly DeclarativeComponent[] }
 export type DeclarativeRejection = { readonly reason: string; readonly path: string };
 
 const MAX_COMPONENTS = 64, MAX_FIELDS = 32, MAX_ITEMS = 500;
@@ -132,14 +123,14 @@ export function DeclarativeView({ session, data, translate, onResult }: {
   session: DeclarativeViewSession;
   data?: Record<string, unknown>;
   translate: (key: string) => string;
-  onResult?: (command: string, ok: boolean) => void;
+  onResult?: (command: string, ok: boolean, value?: unknown) => void;
 }) {
   const t = (k?: string) => (k ? translate(k) : '');
   const run = (id: string, input?: unknown) => {
     const generation = session.lifetime.generation;
     // Stale outcomes never reach onResult: only results admitted by the
     // issuing generation may update the view.
-    void session.command(id, input).then(r => { if ((r.ok || r.reason !== 'stale') && session.lifetime.admits(generation)) onResult?.(id, r.ok); });
+    void session.command(id, input).then(r => { if ((r.ok || r.reason !== 'stale') && session.lifetime.admits(generation)) onResult?.(id, r.ok, r.ok ? r.value : undefined); });
   };
   return <>
     {session.spec.components.map((c, i) => {
@@ -149,10 +140,10 @@ export function DeclarativeView({ session, data, translate, onResult }: {
           const raw = data?.[c.itemKey];
           // Absent data is pending; a malformed present array is an explicit
           // error state — never a render crash.
-          if (raw === undefined) return <p key={i} role="status" className="declarative-status pending">{t() || 'pending'}</p>;
+          if (raw === undefined) return <p key={i} role="status" className="declarative-status pending">{t('pending') || 'pending'}</p>;
           const rows = (() => { try { return strictDataArray(raw, MAX_ITEMS) as Record<string, unknown>[]; } catch { return null; } })();
-          if (rows === null) return <p key={i} role="status" className="declarative-status error">{t() || 'error'}</p>;
-          if (rows.length === 0) return <p key={i} role="status" className="declarative-status empty">{t() || 'empty'}</p>;
+          if (rows === null) return <p key={i} role="status" className="declarative-status error">{t('error') || 'error'}</p>;
+          if (rows.length === 0) return <p key={i} role="status" className="declarative-status empty">{t('empty') || 'empty'}</p>;
           return <ul key={i} className="declarative-list">{rows.map((row, j) => <li key={j}>{c.fields.map((f, k) => <span key={k}>{t(f.labelKey)}{fieldValue(row, f)} </span>)}</li>)}</ul>;
         }
         case 'detail': return <dl key={i} className="declarative-detail">{c.fields.map((f, k) => <div key={k}><dt>{t(f.labelKey) || f.key}</dt><dd>{fieldValue(data ?? {}, f)}</dd></div>)}</dl>;

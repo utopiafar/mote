@@ -48,6 +48,20 @@ export interface UiContributionCommand {
   readonly apiVersion: string;
 }
 
+/** The existing declarative-view vocabulary, shared by fixed producers and
+ * their decoders. This carries field and command references, never code. */
+export type DeclarativeState = 'pending' | 'error' | 'empty' | 'unavailable';
+export type FieldFormat = 'text' | 'number' | 'date' | 'badge';
+export interface FieldRef { readonly key: string; readonly labelKey?: string; readonly format?: FieldFormat }
+export interface FormFieldSpec extends FieldRef { readonly input: 'text' | 'number' | 'boolean'; readonly required?: boolean }
+export type DeclarativeComponent =
+  | { readonly type: 'status'; readonly state: DeclarativeState; readonly textKey?: string }
+  | { readonly type: 'list'; readonly itemKey: string; readonly fields: readonly FieldRef[] }
+  | { readonly type: 'detail'; readonly fields: readonly FieldRef[] }
+  | { readonly type: 'form'; readonly fields: readonly FormFieldSpec[]; readonly submitCommand?: string }
+  | { readonly type: 'action'; readonly command: string; readonly labelKey: string };
+export interface DeclarativeViewSpec { readonly components: readonly DeclarativeComponent[] }
+
 export const uiDraftScopes = ['owner', 'connection', 'plugin-instance', 'view'] as const;
 export type UiDraftScope = typeof uiDraftScopes[number];
 

@@ -47,6 +47,7 @@ export interface InsightServicesDependencies {
 }
 export interface InsightServices extends PluginLifecycle {
   readonly runs:InsightRuns;
+  readonly available:boolean;
   /** Mount the owned HTTP contribution once, before Fastify listen. */
   routes(app:FastifyInstance):void;
   close():Promise<void>;
@@ -131,6 +132,7 @@ export function createInsightServices(dependencies:InsightServicesDependencies):
     });
   }
   return Object.freeze({
+    get available(){return phase==='active';},
     prepare(){
       if(phase!=='created')throw unavailable();
       if(openRuns){const created=openRuns();if(!created)throw new StoreError('Insight run manager is unavailable',503);runs=created;ownsRuns=true;}
@@ -173,6 +175,7 @@ export function createInsightServicesFactory(dependencies:InsightServicesDepende
       quiesce:(reason:StopReason)=>service.quiesce(reason),
       stop:(reason:StopReason)=>service.stop(reason),
       dispose:()=>service.dispose(),
+      get available(){return service.available;},
       get runs(){return service.runs;},
       routes:service.routes,
       close:()=>service.close(),

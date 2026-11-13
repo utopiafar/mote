@@ -1,4 +1,5 @@
 import {AssistantMatters} from './assistant-matters.js';
+import {AssistantWorkbench} from './assistant-workbench.js';
 import {AssistantCards} from './assistant-cards.js';
 import {AssistantFollowup} from './assistant-followup.js';
 import {AssistantCommitments} from './assistant-commitments.js';
@@ -280,7 +281,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   });
   // The existing query provider does not yet expose the configured model
   // window or validate complete requests. Do not send a batch model request
-  // using its hard-coded 128k assumption; connect the configured budget first.
+  // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
   let assistantTasks:AssistantTasks|undefined;
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
@@ -541,11 +542,12 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const assistantNotifications=new AssistantNotifications(assistantCards,()=>configService.current<NotificationSettings>('notifications'));
+  const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
   const assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
   });
   const featureServices=Object.freeze({
-    assistantCards,assistantNotifications,assistantCommitments,assistantFollowup,
+    assistantCards,assistantNotifications,assistantCommitments,assistantFollowup,assistantWorkbench,
     configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
@@ -591,7 +593,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.memory'))routes.push(domain('mote.memory',app=>registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);})));
   if(selected('mote.imports'))routes.push(domain('mote.imports'));
   if(selected('mote.ask'))routes.push(domain('mote.ask'));
-  if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices,{store:assistantCards,notifications:assistantNotifications,credential,assertRequestActive})));
+  if(selected('mote.insights'))routes.push(withAgentTools(insightFeature(insightServices,{store:assistantCards,notifications:assistantNotifications,workbench:assistantWorkbench,credential,assertRequestActive})));
   if(selected('mote.agent-view'))routes.push(domain('mote.agent-view'));
   if(selected('mote.features'))routes.push(inventoryFeature(()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()])));
   await installFeatureRoutes(featureRoutes,routes);

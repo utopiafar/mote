@@ -24,7 +24,7 @@ const page=(id:string,overrides:Partial<PageEntry>={}):PageEntry=>({id,featureId
 const capability=(id:string,version='1',state:FeatureCapability['state']='active'):FeatureCapability=>({id,version,state,featureId:'mote.assistant',surface:'page'});
 const inventory=(capabilities:FeatureCapability[]=[]):FeatureInventory=>({schemaVersion:1,revision:1,features:[],capabilities});
 
-test('the Memory assistant entry uses its real page and unrelated planned pages stay unavailable',async()=>{
+test('the Memory and workbench assistant entries use their real pages and unrelated planned pages stay unavailable',async()=>{
   await featuresReady;
   assert.equal(readPage('#/activity'),'activity');
   assert.equal(readPage('#/activity?work=generated-run'),'activity');
@@ -37,7 +37,9 @@ test('the Memory assistant entry uses its real page and unrelated planned pages 
   const live=inventory(memory.requires!.map(requirement=>capability(typeof requirement==='string'?requirement:requirement.id)));
   assert.equal(resolveAssistantEntrypoint(memory,{pages:webFeatures.pages(),collections:[],inventory:live}).state,'available');
   assert.equal(resolveAssistantEntrypoint(memory,{pages:webFeatures.pages(),collections:[],inventory:inventory([])}).state,'unavailable');
-  for(const entry of assistantEntrypoints.filter(entry=>entry.pageId!=='assistantMemory'))assert.equal(webFeatures.page(entry.pageId),undefined,'unimplemented pages remain unavailable');
+  assert.equal(readPage('#/assistant/workbench'),'assistantWorkbench');
+  assert.ok(webFeatures.page('assistantWorkbench'));
+  for(const entry of assistantEntrypoints.filter(entry=>entry.pageId!=='assistantMemory' && entry.pageId!=='assistantWorkbench'))assert.equal(webFeatures.page(entry.pageId),undefined,'unimplemented pages remain unavailable');
 });
 
 test('a planned assistant destination stays non-executable until its page and capability are live',async()=>{
