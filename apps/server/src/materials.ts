@@ -906,9 +906,10 @@ export class MaterialStore {
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
 
-  list(args:{id?:string;sourceId?:string;kind?:string;type?:LibraryMaterialType;deviceId?:string;after?:string;before?:string;limit?:number;cursor?:string;query?:string;order?:'source'|'library'}={}):MaterialPage {
+  list(args:{id?:string;sourceIds?:readonly string[];sourceId?:string;kind?:string;type?:LibraryMaterialType;deviceId?:string;after?:string;before?:string;limit?:number;cursor?:string;query?:string;order?:'source'|'library'}={}):MaterialPage {
     const limit=args.limit??30;if(!Number.isInteger(limit)||limit<1||limit>100)throw new StoreError('Invalid material page size');
     const clauses=[`h.retired=0`,`h.sequence>=h.min_visible_sequence`],values:(string|number)[]=[];
+    if(args.sourceIds!==undefined){clauses.push('h.source_id IN (SELECT value FROM json_each(?))');values.push(JSON.stringify(args.sourceIds));}
     if(args.query){const terms=args.query.trim().split(/\s+/).filter(Boolean);for(const term of terms){
       const codingBoundary=`EXISTS(SELECT 1 FROM material_block_versions left_block
         JOIN material_block_versions right_block ON right_block.material_id=left_block.material_id AND right_block.idx=left_block.idx+1

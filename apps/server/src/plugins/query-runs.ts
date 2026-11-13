@@ -65,7 +65,7 @@ export interface QueryRunDependencies {
   readonly conversationSettings:()=>ConversationSettings;
   readonly archiveReader:ContextReader;
   readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
-  readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
+  readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQuerySources'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
   readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
   /** Resolved from the already-active admitted query runtime. */
   readonly queryRuntime:()=>QueryRuntime;

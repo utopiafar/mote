@@ -36,7 +36,7 @@ import {installAssistantCommitments,invalidateAssistantCommitmentEvidence} from 
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
-export type Range = {capturedOrder?:boolean;sources?:CaptureInput['source'][];sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
+export type Range = {capturedOrder?:boolean;sources?:CaptureInput['source'][];sourceIds?:readonly string[];sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
 type Row = {id:string;json:string;received_at:string;blob_hash:string|null;mime:string|null;index_status:CaptureRecord['indexingStatus'];summary:string|null};
 // Media evidence is searchable without rewriting the original screenshot OCR.
@@ -130,6 +130,7 @@ export class EvidenceStore {
     if(range.after) {clauses.push(range.capturedOrder?'captured_at >= ?':'context_end >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push(range.capturedOrder?'captured_at < ?':'context_at < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
+    if(range.sourceIds!==undefined){clauses.push("json_extract(json,'$.provenance.sourceId') IN (SELECT value FROM json_each(?))");values.push(JSON.stringify(range.sourceIds));}
     for(const [key,path] of [['sourceId','sourceId'],['projectKey','document.coding.projectKey'],['repositoryKey','document.coding.repositoryKey'],['provider','document.coding.provider'],['sessionId','document.coding.sessionId']] as const)if(range[key]){clauses.push("json_extract(json,'$.provenance."+path+"') = ?");values.push(range[key]!);}
 
     if(range.appId!==undefined) {
@@ -557,7 +558,7 @@ export class EvidenceStore {
   activity(range:Range={},onContributor?:(id:string)=>void):Activity {
     // Assign overlapping sample intervals once per device before applying content/app filters.
     // A filtered query must not reassign another app's already measured interval to its own samples.
-    const extended:Range={deviceId:range.deviceId,after:range.after?new Date(Date.parse(range.after)-21600000).toISOString():undefined,before:range.before?new Date(Date.parse(range.before)+300000).toISOString():undefined};
+    const extended:Range={deviceId:range.deviceId,sourceIds:range.sourceIds,after:range.after?new Date(Date.parse(range.after)-21600000).toISOString():undefined,before:range.before?new Date(Date.parse(range.before)+300000).toISOString():undefined};
     const {where,values}=this.clauses(extended);
     const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY captured_at ASC,id ASC`).all(...values) as unknown as Row[];
     type Counts={durationMs:number;captures:number;activityEvents:number;contentCaptures:number};
@@ -586,10 +587,10 @@ export class EvidenceStore {
     }
     return {apps:[...apps.values()].sort((a,b)=>b.durationMs-a.durationMs),devices:[...devices.values()],totalDurationMs,captures,activityEvents,contentCaptures};
   }
-  mediaActivity(range:MediaActivityRange={},onContributor?:(id:string)=>void) {
+  mediaActivity(range:MediaActivityRange&Pick<Range,'sourceIds'>={},onContributor?:(id:string)=>void) {
     // Intervals end at capturedAt and can overlap the exclusive upper bound.
     // Snapshot metadata on screen/activity events never participates in media accounting.
-    const {where,values}=this.clauses({deviceId:range.deviceId,source:'media',after:range.after,before:range.before?new Date(Date.parse(range.before)+60000).toISOString():undefined});
+    const {where,values}=this.clauses({deviceId:range.deviceId,sourceIds:range.sourceIds,source:'media',after:range.after,before:range.before?new Date(Date.parse(range.before)+60000).toISOString():undefined});
     // SQLite sorts interval starts before streaming; rich session metadata is parsed one row at a time.
     const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY unixepoch(captured_at,'subsec')*1000-json_extract(json,'$.durationMs') ASC,captured_at ASC,id ASC`).iterate(...values);
     const record=this.record.bind(this);

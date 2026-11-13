@@ -12,21 +12,27 @@ import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import {memoryEvidenceFingerprint} from './memory.js';
 import type {assertMemoryImageGrants} from './memory-image-grants.js';
 import {StoreError} from './store.js';
+import {querySourcePolicy} from './query-source-scope.js';
+import type {QueryScope} from './query-scope.js';
 
 export const contextFailure=(code:'context_lineage_incomplete'|'context_evidence_restricted')=>Object.assign(new StoreError(code,409),{code});
 export interface ModelEvidenceAuthorityDependencies {
   resolveLineage:(value:EvidenceDependencies|undefined)=>EvidenceDependencies|undefined;
   assertImageGrants:(materials:Parameters<typeof assertMemoryImageGrants>[1],images:Parameters<typeof assertMemoryImageGrants>[2])=>void;
-  reader:Pick<EvidenceReader,'deletionContextAllowed'|'contextDependenciesAllowed'|'currentMemoryLeadsAllowed'|'evidence'|'memoryCatalogMetadataAllowed'|'processingEvidenceAllowed'|'memoryCatalogMetadata'|'queryMaterialReference'>;
+  reader:Pick<EvidenceReader,'sources'|'deletionContextAllowed'|'contextDependenciesAllowed'|'currentMemoryLeadsAllowed'|'evidence'|'memoryCatalogMetadataAllowed'|'processingEvidenceAllowed'|'memoryCatalogMetadata'|'queryMaterialReference'>;
   conversations:Pick<Conversations,'assertHistoryContext'|'retiredSelection'>;
   sourceContexts:SourceContextStore;
-  authorization:Pick<BackgroundModelAuthorization,'currentId'|'assertDisclosure'>;
+  authorization:Pick<BackgroundModelAuthorization,'currentId'|'assertDisclosure'|'allowsDisclosure'>;
   host:Pick<ModelAuthorizationHost,'assertEvidence'>;
   readEvidence:(ids:string[])=>CaptureRecord[];
 }
 /** One authority fence shared by preparation, outbound model requests and publication. */
 export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthorityDependencies){
   const {resolveLineage,assertImageGrants,reader:evidenceReader,conversations,sourceContexts,authorization:modelAuthorization,host:modelAuthorizationHost,readEvidence}=dependencies;
+  const sourceAllowed=(id:string)=>{
+    try{const source=evidenceReader.sources.getSource(id);return source.enabled&&source.retention!=='reference'&&(!modelAuthorization.currentId||modelAuthorization.allowsDisclosure({sourceId:id}));}catch{return false;}
+  };
+  const selectedQuerySources=(ids:readonly string[])=>[...new Set(ids)].filter(sourceAllowed);
   const contextDependencies=(input:QueryInput|undefined)=>resolveLineage(combineDependencies([
     ...(input?.conversation?[input.conversation.evidenceDependencies??{version:1 as const,complete:false,ids:[]}]:[]),
     ...(input?.contextEvidenceDependencies?[input.contextEvidenceDependencies]:[]),
@@ -50,6 +56,8 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
       if(removed.some(id=>!permitted.has(id))||input.historicalSelection.evidenceIds&&input.evidenceIds===undefined)throw contextFailure('context_evidence_restricted');
     }
     assertSourceContextDependencies(sourceContexts,sourceContextDependencies(input));
+    const sources=(input as QueryScope|undefined)?.sourceIds;
+    if(sources!==undefined&&sourceContextDependencies(input).some(pin=>!sources.includes(pin.sourceId)||!sourceAllowed(pin.sourceId)))throw contextFailure('context_evidence_restricted');
     if(input?.derivedContextEvidenceIds?.some(id=>!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy())))throw new StoreError('Derived context evidence is no longer permitted for this model',409);
     const conversationText=Boolean(input?.conversation?.workingMemory?.text||input?.conversation?.turns.some(turn=>!turn.evidenceDeleted&&turn.answer));
     const taskText=Boolean(input?.taskContext?.previousSummary||input?.taskContext?.turns?.length);
@@ -61,7 +69,7 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
   const selectedQueryEvidence=(input:QueryInput)=>{
     const ids=input.evidenceIds??input.anchorEvidenceIds;
     if(input.executionLane!=='interactive'||ids===undefined||input.responseMode==='memory-extraction')return [];
-    if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw contextFailure('context_evidence_restricted');
+    if(!evidenceReader.contextDependenciesAllowed(ids,querySourcePolicy(input,sourceAllowed)))throw contextFailure('context_evidence_restricted');
     const records=evidenceReader.evidence(ids.map(id=>'capture:'+id),input);
     if(records.length!==ids.length||input.processingEvidence&&records.some(record=>input.processingEvidence![record.id]!==memoryEvidenceFingerprint(record)))throw contextFailure('context_evidence_restricted');
     return records;
@@ -92,7 +100,7 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     }
     // Derived nodes remain in the fence alongside every original ancestor.
     // Private metadata checks never disclose bodies or grant raw reads.
-    for(const group of modelContextGroups(input))if(!evidenceReader.contextDependenciesAllowed(group.ids,new EvidenceExposurePolicy(),group.historical,group.snapshot?conversations.assertHistoryContext(group.snapshot):undefined))throw contextFailure('context_evidence_restricted');
+    for(const group of modelContextGroups(input))if(!evidenceReader.contextDependenciesAllowed(group.ids,querySourcePolicy(input,sourceAllowed),group.historical,group.snapshot?conversations.assertHistoryContext(group.snapshot):undefined))throw contextFailure('context_evidence_restricted');
     // The bridge may already hold restricted originals while deletion or a
     // Formal input/owner declaration changes. Check the frozen Memory grant at
     // every outbound request as well as before entering the agent; publication
@@ -106,7 +114,7 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     selectedQueryEvidence(input);
     input.assertContextAuthority?.();
     assertModelContext(input);
-    const policy=new EvidenceExposurePolicy();
+    const policy=querySourcePolicy(input,sourceAllowed);
     // This is scheduling granularity, not a scope or processing limit. Inspect
     // every dependency while allowing lease renewal, cancellation and intake.
     for(const group of modelContextGroups(input))for(let offset=0;offset<group.ids.length;offset+=256){
@@ -123,5 +131,5 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     const missing=input.evidenceIds.filter(id=>!input.processingEvidence?.[id]);
     return missing.length?{...input,processingEvidence:{...Object.fromEntries(readEvidence(missing).map(record=>[record.id,memoryEvidenceFingerprint(record)])),...input.processingEvidence}}:input;
   };
-  return {contextDependencies,sourceContextDependencies,selectedQueryEvidence,selectedQueryMaterial,pinProcessingEvidence,assert:assertModelEvidence,assertAsync:assertModelEvidenceAsync};
+  return {contextDependencies,sourceContextDependencies,selectedQuerySources,selectedQueryEvidence,selectedQueryMaterial,pinProcessingEvidence,assert:assertModelEvidence,assertAsync:assertModelEvidenceAsync};
 }

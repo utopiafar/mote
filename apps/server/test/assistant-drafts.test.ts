@@ -58,6 +58,18 @@ test('a model draft can be previewed without creating a task and unoffered comma
   assert.equal(f.store.db.prepare('SELECT count(*) AS count FROM task_records').get().count,0,'K5 preview has no task side effect');
 });
 
+test('a source-only conversation keeps its source reader grant on the offered draft without creating a task',async t=>{
+  const f=await fixture(t);
+  f.sources.register({id:'generated-selected-source',name:'Generated selected source',kind:'custom',deviceId:'generated-device',platform:'import'});
+  const id=f.conversations.main().id;
+  const admitted=await f.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId:id,clientRequestId:randomUUID(),question:'Generated source-only draft',scope:{kind:'selection',sourceIds:['generated-selected-source']}}});assert.equal(admitted.statusCode,202,admitted.body);
+  let message:any;const deadline=Date.now()+10000;
+  do{message=f.conversations.message(admitted.json().id);if(['completed','failed'].includes(message.status))break;await new Promise(resolve=>setTimeout(resolve,10));}while(Date.now()<deadline);
+  assert.equal(message.status,'completed',JSON.stringify(message));
+  assert.deepEqual(message.result.draft.scope,{kind:'selection',sourceIds:['generated-selected-source']});
+  assert.equal(f.store.db.prepare('SELECT count(*) AS count FROM task_records').get().count,0);
+});
+
 test('an explicit edit starts a distinct immutable task and retries keep their identity',async t=>{
   const f=await fixture(t);
   const response=await f.query({question:'Generated question'}),body=response.json(),draft=body.draft;
