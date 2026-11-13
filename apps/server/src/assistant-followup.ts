@@ -109,7 +109,7 @@ export class AssistantFollowup {
   // Batch processing accepts current evidence. Without a historical context grant, an
   // old card cannot be interpreted safely or ignored as an unrelated issue.
   if(review.items.some(card=>card.state==='stale'||card.evidenceStale||card.feedback.some(feedback=>feedback.evidenceStale))){
-   const historical=this.historicalDependencies(review.disclosureDependencies.ids,observations,scope);
+   const historical=this.historicalDependencies(unique([...review.disclosureDependencies.ids,...memoryPage.items.flatMap(memory=>[memory.id,...memory.evidenceIds])]),observations,scope);
    if(!historical?.length)throw new StoreError('Historical assistant context requires a current-evidence review',409);
   }
   const cards=review.items;
@@ -150,21 +150,23 @@ export class AssistantFollowup {
   const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),review.sourceContextDependencies,...commitments.map(item=>item.sourceContextDependencies),
    ...this.materials.contextsForEvidence(memoryRecords).map(context=>context.sourceContextDeclarations)]);
   const evidenceIds=unique(this.reader.memories.readEvidence(taskEvidenceIds(this.store,deps(dependencies))).map(record=>record.id).filter(id=>this.reader.memories.isCurrentEvidence(id)));
-  const context={asOf,scope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
+  const context={turns:[],asOf,scope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
    memoryTruncated:Boolean(memoryPage.nextCursor),matters:matters.map(matter=>({id:matter.id,revision:matter.revision,goal:matter.goal,correction:matter.correction})),
    cards:cards.map(card=>({id:card.id,revision:card.revision,kind:card.kind,state:card.state,matterId:card.matterId,title:card.title,body:card.body,feedback:card.feedback})),
    commitments:commitments.map(item=>({id:item.id,revision:item.revision,title:item.title,status:item.status,deadline:item.deadline,dueState:item.dueState,timeline:item.timeline}))};
-  const question=PROMPT+'\nUntrusted context: '+JSON.stringify(context);
-  if(question.length>8000)throw new StoreError('Assistant context exceeds the bounded model input; narrow the scope',413);
+  // Keep the owner's bounded question separate from the existing batch task
+  // context. Coding products and their exact tail citations are not user text;
+  // the batch context bound and complete provider budget still apply to them.
+  const question=PROMPT;
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
   this.assertSnapshot({input,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,pins,originals,observations,historicalIds,admission:selectedAdmission});
   return this.transaction(()=>{
    assertActive();
    const existing=this.prior(input,selectedAdmission);if(existing)return accept(existing);
    const operationId='assistant-followup:'+sha256(canonicalRecipeJson([input.operationId,input.requestId]));
-   const request={operationId,requestId:input.requestId,items:[{question,evidenceIds}]};
+   const request={operationId,requestId:input.requestId,items:[{question,taskContext:context,evidenceIds}]};
    const batch=submit?submit(request):this.batch.submit(request,selectedAdmission);
-   // The batch question contains derived context as well as original reads. Its
+   // The batch input contains derived context as well as original reads. Its
    // persisted parent and item must retain the same complete invalidation
    // lineage, including Memory IDs, even though those IDs are not read grants.
    const allDependencies=taskEvidenceIds(this.store,deps(dependencies));
@@ -180,8 +182,8 @@ export class AssistantFollowup {
    accepted(task);return task;
   });
  }
- /** Historical text is context, never a current retrieval grant. Only a retained
-  * predecessor proved by the selected file observation can survive this check. */
+ /** Historical text is context, never a current retrieval grant. A retained
+  * predecessor needs a selected file successor or a current owner correction. */
  private historicalDependencies(ids:readonly string[],observations:readonly FileObservation[],scope:QueryScope):string[]|undefined{
   const predecessors=new Set(observations.flatMap(value=>{
    if(!value.previous||!('captureId' in value.previous))return [];
@@ -197,7 +199,23 @@ export class AssistantFollowup {
   })),historical:string[]=[],checkedRoots=new Set<string>();
   const records=new Map(this.reader.memories.readEvidence([...ids]).map(record=>[record.id,record]));
   const memories=this.store.db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids));
-  for(const memory of memories){const value=JSON.parse(String(memory.json));if(value.status!=='published'||value.supersededBy)return;}
+  for(const memory of memories){
+   let value=JSON.parse(String(memory.json));if(value.status!=='published')return;
+   if(!value.supersededBy)continue;
+   const predecessor=value.id,visited=new Set<string>();
+   // Follow explicit owner corrections only. A model's supersedes relation is
+   // not permission to reuse an obsolete interpretation. The current reader
+   // must have supplied the successor and its original correction note.
+   while(value.supersededBy){
+    if(visited.has(value.id))return;visited.add(value.id);
+    const row=this.store.db.prepare('SELECT json FROM memories WHERE id=?').get(value.supersededBy);if(!row)return;
+    const next=JSON.parse(String(row.json));
+    if(next.status!=='published'||next.correction?.memoryId!==value.id||next.correction.fingerprint!==value.fingerprint)return;
+    value=next;
+   }
+   if(!ids.includes(value.id)||!ids.includes(value.correction.noteId)||!this.reader.contextDependenciesAllowed([value.id,value.correction.noteId]))return;
+   historical.push(...taskEvidenceIds(this.store,deps([predecessor])));
+  }
   for(const id of ids){
    const record=records.get(id);
    if(!record||this.reader.memories.isCurrentEvidence(id))continue;
@@ -212,7 +230,7 @@ export class AssistantFollowup {
    historical.push(id);
   }
   if(historical.length&&!this.reader.contextDependenciesAllowed(historical,undefined,true))return;
-  return historical.sort();
+  return unique(historical);
  }
  private assertDependencies(snapshot:Snapshot,ids:readonly string[]){
   if(this.closed)throw new StoreError('Assistant consumer is closed',409);
