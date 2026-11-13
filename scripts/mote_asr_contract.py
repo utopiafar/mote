@@ -442,9 +442,9 @@ def speaker_clustering_plan(options, embedding_count):
     """
     validate_speakers(options)
     number(embedding_count, 0, LIMITS['acousticSegments'], True)
-    if embedding_count == 0:
-        return {'class': 'empty', 'init': {}, 'call': {}}
     if options['mode'] == 'unknown':
+        if embedding_count == 0:
+            return {'class': 'empty', 'init': {}, 'call': {}}
         return {'class': 'ClusterBackend', 'init': {'max_num_spks': 16}, 'call': {'oracle_num': None}}
     lower = options['count'] if options['mode'] == 'exact' else options['min']
     upper = options['count'] if options['mode'] == 'exact' else options['max']

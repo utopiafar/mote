@@ -230,10 +230,13 @@ class AsrContract(unittest.TestCase):
 
     def test_speaker_modes_use_real_sdk_arguments_without_the_short_input_bypass(self):
         self.assertEqual(contract.speaker_clustering_plan({'mode': 'unknown'}, 10)['class'], 'ClusterBackend')
+        self.assertEqual(contract.speaker_clustering_plan({'mode': 'unknown'}, 0)['class'], 'empty')
         for options in [{'mode': 'exact', 'count': 2}, {'mode': 'range', 'min': 2, 'max': 4}]:
             plan = contract.speaker_clustering_plan(options, 10)
             self.assertEqual(plan['class'], 'SpectralCluster')
             self.assertEqual(plan['init']['min_num_spks'], 2)
+            with self.assertRaisesRegex(contract.ContractError, 'constraint_unsatisfied'):
+                contract.speaker_clustering_plan(options, 0)
         self.assertEqual(contract.speaker_clustering_plan({'mode': 'exact', 'count': 2}, 2048),
                          {'class': 'KMeansCluster', 'init': {}, 'call': {'num_clusters': 2}})
         self.assertEqual(contract.speaker_clustering_plan({'mode': 'range', 'min': 2, 'max': 4}, 3)['init']['max_num_spks'], 2)
