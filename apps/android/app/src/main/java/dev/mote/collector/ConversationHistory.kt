@@ -9,7 +9,12 @@ import java.time.temporal.WeekFields
 import java.util.Locale
 
 /** One validated conversation summary from the Central page. */
-internal data class HistoryConversation(val id: String, val title: String, val updatedAt: Instant)
+internal data class HistoryConversation(
+    val id: String,
+    val title: String,
+    val updatedAt: Instant,
+    val status: String = "completed",
+)
 
 /** Pure grouping, date labels and delete-menu state for the conversation list.
  * No View or network access: JVM tests pin the same rules the screen renders. */
@@ -26,7 +31,9 @@ internal object ConversationHistory {
             require(item.get("title") is String && item.get("updatedAt") is String)
             val updatedAt = Instant.parse(item.getString("updatedAt"))
             require(item.get("turnCount") is Number && item.getInt("turnCount") >= 0)
-            items.add(HistoryConversation(id, item.getString("title"), updatedAt))
+            val status = if (item.has("status")) item.getString("status") else "completed"
+            require(status in CentralConversationMessage.statuses)
+            items.add(HistoryConversation(id, item.getString("title"), updatedAt, status))
         }
         return items
     }
@@ -53,6 +60,13 @@ internal object ConversationHistory {
         val weekStart = today.with(WeekFields.ISO.dayOfWeek(), 1L)
         val pattern = if (day in weekStart..weekStart.plusDays(6)) "EEE" else "M月d日"
         return zoned.format(DateTimeFormatter.ofPattern(pattern, locale))
+    }
+
+    /** List rows expose a pending or failed turn without inventing a local status. */
+    fun statusLabel(status: String): String? = when (status) {
+        "accepted", "queued", "running" -> MoteI18n.text("处理中")
+        "failed" -> MoteI18n.text("未完成")
+        else -> null
     }
 
     private const val DELETE_FAILURE_KEY = "conversationDeleteFailure"

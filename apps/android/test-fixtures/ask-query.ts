@@ -8,9 +8,9 @@ import {fileURLToPath} from 'node:url';
 import {buildApp} from '../../server/src/app.js';
 import type {Config} from '../../server/src/config.js';
 
-// Real Central query admission and conversation responses feed the production
-// native Ask plugin/controller. Only the unavailable Android HTTP runtime is
-// replaced by JDK HTTP inside the JVM test.
+// Real Central queue admission, accepted message state, conversation paging
+// and settings responses feed the production native Ask controller. Only the
+// unavailable Android HTTP runtime is replaced by JDK HTTP inside the JVM test.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 assert.deepEqual(process.argv.slice(2), [], 'This case accepts no arguments');
 const directory = await mkdtemp(join(tmpdir(), 'mote-ask-query-'));
@@ -39,16 +39,21 @@ process.once('SIGTERM', interrupt);
 try {
   central = await buildApp(config, {backgroundWorker: false, agent: {
     configured: true,
-    query: async () => { await gate; return {answer: 'Generated real native ask answer', citations: [], trace: [], runId: randomUUID()}; },
+    query: async () => { await gate; return {answer: 'Generated real native ask answer', citations: [], trace: [], runId: randomUUID(), evidenceDependencies: {version: 1, complete: true, ids: []}}; },
     close: async () => { release(); },
   }});
+  const evidenceId = randomUUID();
+  await central.store.ingest({
+    id: evidenceId, deviceId: 'generated-ask-phone', deviceName: 'Generated phone', platform: 'import',
+    source: 'note', capturedAt: '2026-11-01T00:00:00Z', durationMs: 0, ocrText: 'Generated ask scope original',
+  });
   central.app.post('/__fixture/release-query', async () => { release(); return {released: true}; });
   const origin = await central.app.listen({host: '127.0.0.1', port: 0});
   if (interrupted) throw Error('Ask query ingress interrupted before Gradle started');
   const args = ['-p', 'apps/android', '--no-daemon', ':app:testDebugUnitTest', '--rerun',
     '--tests', 'dev.mote.collector.plugins.NativeAskQueryContractTest'];
   child = spawn(resolve(root, 'apps/android/gradlew'), args, {cwd: root, stdio: 'inherit', detached: process.platform !== 'win32',
-    env: {...process.env, MOTE_ASK_QUERY_ORIGIN: origin, MOTE_ASK_QUERY_TOKEN: token}});
+    env: {...process.env, MOTE_ASK_QUERY_ORIGIN: origin, MOTE_ASK_QUERY_TOKEN: token, MOTE_ASK_QUERY_EVIDENCE: evidenceId}});
   await new Promise<void>((done, reject) => {
     let processFailure: Error | undefined;
     let force: ReturnType<typeof setTimeout> | undefined;
@@ -75,7 +80,7 @@ try {
   const suite = report.match(/<testsuite\b[^>]*>/)?.[0] ?? '';
   assert.ok(Number(suite.match(/\btests="(\d+)"/)?.[1]) >= 1, 'The Ask query case must execute');
   for (const attribute of ['skipped', 'failures', 'errors']) assert.match(suite, new RegExp(`\\b${attribute}="0"`), `Ask query ${attribute}`);
-  console.log('Real Fastify query admission/conversation → Kotlin Ask plugin passed (generated SQLite/HTTP; no device or model).');
+  console.log('Real Fastify queue admission/conversation/settings → Kotlin Ask controller passed (generated SQLite/HTTP; no device or model).');
 } catch (error) {
   failure = error;
 } finally {

@@ -17,6 +17,7 @@ import {useSourceConnectorStyle} from '../../source-connectors-ui';
 import { recordingSourceStatus, recordingSyncText } from '../../recording-status';
 import {sourcePluginBound,sourcePluginFor,sourcePluginStatus,sourcePlugins} from './registry';
 import { Loading } from '../../Loading';
+import {FileRetentionSettings} from './FileRetentionSettings';
 const readSource=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('sourceId');
 const readSetup=(hash:string)=>{const value=new URLSearchParams(hash.slice(hash.indexOf('?')+1)).get('setup');return value&&['gmail','google','mcp','reference'].includes(value)?value:null;};
 const layerNames: Record<string, string> = { reference: moteText("引用 / Shadow"), snapshot: moteText("内容快照"), original: moteText("原始文本"), derived: moteText("派生记录") };
@@ -127,6 +128,7 @@ export function Sources({ api, onOpen, onImport, mode = 'connections', onBrowse,
  </section>;
 }
 function SourceConnectionConfig({api,source,catalog,onOpen,refresh,onSources}:{api:Api;source:SourceConnection;catalog:Record<string,unknown>|null;onOpen:(ref:string)=>void;refresh:()=>Promise<void>;onSources:()=>void}){
+ if(source.kind==='local-files')return <FileRetentionSettings api={api} source={source}/>;
  const plugin=sourcePluginFor(source,catalog);
  if(!plugin?.settings)return null;
  if(plugin.binding?.endsWith('-recordings'))return <>{plugin.settings({api,source,catalog,refresh,onSources,onOpen})}</>;

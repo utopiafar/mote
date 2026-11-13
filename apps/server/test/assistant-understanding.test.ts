@@ -93,6 +93,16 @@ test('pending and partial extraction are independent of semantic coverage, and a
   assert.equal(f.adapter.readOriginal({ref:ready.ref,scope,id,offset:0,length:pieces[0].length}).quote,pieces[0]);
 });
 
+test('persisted Coding reports with contradictory confirmation are rejected again before assistant disclosure',async t=>{
+  const f=await fixture(t),offset=pieces[0].length+pieces[1].length,product=await f.produce(offset,pieces[2].length);
+  const saved=f.store.db.prepare('SELECT json FROM context_artifacts WHERE id=?').get(product.artifact.id)!;
+  for(const change of [{status:'confirmed_outcome'},{basis:'user_confirmed'}]){
+    const data=JSON.parse(String(saved.json));Object.assign(data.metadata.workRecords[0].results[0],change);
+    f.store.db.prepare('UPDATE context_artifacts SET json=? WHERE id=?').run(JSON.stringify(data),product.artifact.id);
+    assert.throws(()=>f.adapter.readProduct({ref:f.material.ref,scope,artifactRef:product.ref}),{statusCode:409});
+  }
+});
+
 test('understanding all available text does not fill a missing source page, and reference materials never become original proof',async t=>{
   const f=await fixture(t,{state:'partial',reason:'missing_page'});await f.produce(0,f.body.length);
   const view=f.adapter.read({ref:f.material.ref,scope});

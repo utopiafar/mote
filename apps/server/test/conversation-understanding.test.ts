@@ -74,6 +74,21 @@ test('no candidates is valid and still preserves full bounded input coverage for
  assert.deepEqual(outputs[0].metadata.memoryCandidates,[]);assert.deepEqual(outputs[0].metadata.evidenceRanges,[{id:f.anchor,offset:0,length:body.length}]);assert.equal(f.memories.list().length,0);
 });
 
+test('assistant reports cannot be promoted to confirmed outcomes or owner confirmation in work or events',async t=>{
+ const f=await fixture(t);
+ for(const product of ['work','event'] as const)for(const change of [{status:'confirmed_outcome'},{basis:'user_confirmed'}]){
+  const output=products(f.anchor,false),report=output.workRecords[0].results[0];
+  Object.assign(report,change);
+  if(product==='event'){output.events=[report];output.workRecords=[];}
+  await assert.rejects(processor(f,async request=>{
+   const response=result(f.anchor,output),rejection=await request.validateOutput!(response);
+   assert.equal(rejection?.code,'conversation_products');assert.match(rejection!.feedback,/assistant.*report/i);
+   return response;
+  }).process(input(f.page())),{category:'permanent',message:'invalid_model_output'});
+ }
+ assert.equal(f.memories.list().length,0);
+});
+
 test('partial pages forbid quotes from the unsupplied beginning, preserve absolute offsets and allow unknown source time',async t=>{
  const f=await fixture(t),page=f.page(user.length,assistant.length),valid=products(f.anchor,false);
  valid.evidence=[{id:f.anchor,quote:assistant}];valid.workRecords=[];

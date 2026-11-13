@@ -16,9 +16,10 @@ import org.junit.Test
 import java.nio.file.Files
 import java.util.UUID
 
-/** Ask is one plugin-owned run ticket and draft journal. The generated store
- * survives view recreate; an in-flight run is adopted, never resubmitted, and
- * a draft never migrates into another conversation. */
+/** Ask is one plugin-owned queue admission and draft journal. The generated
+ * store survives view recreate; the exact client request id is retried only
+ * while the receipt is unconfirmed, and a draft never migrates into another
+ * conversation. */
 class NativeAskPluginTest {
     private val cipher = object : ByteCipher {
         override fun seal(bytes: ByteArray) = bytes.map { (it.toInt() xor 71).toByte() }.toByteArray()
@@ -32,8 +33,10 @@ class NativeAskPluginTest {
 
     private fun storage(directory: java.io.File) = NativeAskDraftStorage(CentralStateFile(directory, "ask", cipher))
 
-    private fun run(id: String, conversation: String, status: String = "running") = JSONObject()
-        .put("id", id).put("status", status).put("conversationId", conversation)
+    private fun receipt(body: JSONObject, status: String = "accepted", id: String = UUID.randomUUID().toString()) = JSONObject()
+        .put("id", id).put("conversationId", body.getString("conversationId"))
+        .put("clientRequestId", body.getString("clientRequestId")).put("status", status)
+        .put("seq", 0).put("revision", 1)
 
     @Test fun builtinProviderRegistersTheAskScopeAndItsDurableServices() {
         val registry = NativePluginRegistry().apply { NativeAskPlugin.register(this, "generated-build") }
@@ -49,81 +52,119 @@ class NativeAskPluginTest {
         }
     }
 
-    @Test fun recreatedActivityRestoresTheRunningTicketWithoutAnotherSubmission() = temporary { directory ->
+    @Test fun recreatedActivityRestoresTheAcceptedMessageWithoutAnotherSubmission() = temporary { directory ->
         val conversation = UUID.randomUUID().toString()
         val first = NativeAskController(storage(directory))
-        first.restore(JSONArray())
-        var submissions = 0
-        fun submit(controller: NativeAskController, question: String): String? {
-            val admitted = controller.admission(question, "UTC") ?: return null
-            submissions++
-            controller.receive(run(admitted.getString("id"), conversation), admitted.getString("id"), admitted)
-            return admitted.getString("id")
-        }
-        val id = requireNotNull(submit(first, "Generated admitted question"))
+        first.restore()
+        first.attachConversation(conversation)
+        val admitted = requireNotNull(first.admission("Generated admitted question", "UTC"))
+        first.receive(receipt(admitted, status = "running"), admitted)
         first.persistNow()
-        assertEquals(1, submissions)
 
         val recreated = NativeAskController(storage(directory))
-        val restored = recreated.restore(JSONArray().put(run(id, conversation)))
+        val restored = recreated.restore()
         assertTrue(recreated.busy())
-        assertEquals(id, recreated.currentId())
+        assertEquals(admitted.getString("conversationId"), restored.getString("conversationId"))
         assertEquals("running", restored.getString("runStatus"))
-        assertFalse("an accepted ticket has no pending retry body", restored.has("pending"))
-        assertNull("a running ticket cannot submit a second request", submit(recreated, "Generated later question"))
-        assertEquals("the recreated view did not repeat the admission", 1, submissions)
-        assertEquals(conversation, restored.getString("conversationId"))
+        assertTrue(recreated.messageId().isNotBlank())
+        assertFalse("an accepted message has no pending retry body", restored.has("pending"))
+        assertNull("a running message cannot submit a second request", recreated.admission("Generated later question", "UTC"))
+        assertEquals("the recreated view did not repeat the admission", conversation, restored.getString("conversationId"))
     }
 
     @Test fun aListQuestionStartsANewThreadWithoutDroppingItsStagedImages() = temporary { directory ->
         val controller = NativeAskController(storage(directory))
-        controller.restore(JSONArray())
+        controller.restore()
+        val selected = UUID.randomUUID().toString()
         controller.replace(JSONObject()
             .put("conversationId", UUID.randomUUID().toString())
-            .put("runId", UUID.randomUUID().toString()).put("runStatus", "running")
+            .put("messageId", UUID.randomUUID().toString()).put("runStatus", "running")
             .put("question", "Generated prior question")
             .put("attachments", JSONArray().put(JSONObject().put("id", UUID.randomUUID().toString())))
             .put("imageUploads", JSONObject().put("file:///generated-image", JSONObject().put("status", "pending"))))
-        controller.startConversation("Generated list question")
+        controller.startConversation("Generated list question", selected)
         assertEquals("Generated list question", controller.state.getString("question"))
         assertEquals(1, controller.state.getJSONArray("attachments").length())
         assertEquals("pending", controller.state.getJSONObject("imageUploads").getJSONObject("file:///generated-image").getString("status"))
-        assertFalse(controller.state.has("conversationId"))
-        assertFalse(controller.state.has("runId"))
+        assertEquals(selected, controller.state.getString("conversationId"))
+        assertFalse(controller.state.has("messageId"))
         assertFalse(controller.state.has("runStatus"))
     }
 
     @Test fun recreatedActivityRetriesTheExactUnconfirmedAdmissionInsteadOfCreatingANewOne() = temporary { directory ->
         val first = NativeAskController(storage(directory))
-        first.restore(JSONArray())
+        first.restore()
+        first.attachConversation(UUID.randomUUID().toString())
         val request = requireNotNull(first.admission("Generated uncertain question", "UTC"))
         first.persistNow()
 
         val recreated = NativeAskController(storage(directory))
-        val restored = recreated.restore(JSONArray())
+        val restored = recreated.restore()
         assertTrue(restored.has("pending"))
-        assertEquals(request.getString("id"), recreated.currentId())
+        assertEquals(request.getString("clientRequestId"), recreated.currentId())
         assertEquals(request.toString(), requireNotNull(recreated.admission("Generated edited question", "UTC")).toString())
-        assertEquals("the retry keeps the original admission identity", request.getString("id"), recreated.currentId())
+        assertEquals("the retry keeps the original client request id", request.getString("clientRequestId"), recreated.currentId())
     }
 
-    @Test fun adoptedRunningRunFromAnotherDeviceIsReadableButNeverResubmitted() = temporary { directory ->
-        val id = UUID.randomUUID().toString()
+    @Test fun aTerminalFailureRetriesAsANewQuestionInsteadOfReplayingTheFailedMessage() = temporary { directory ->
+        val controller = NativeAskController(storage(directory))
+        controller.restore()
+        controller.attachConversation(UUID.randomUUID().toString())
+        val failed = requireNotNull(controller.admission("Generated failed question", "UTC"))
+        controller.receive(receipt(failed, status = "failed"), failed)
+        assertEquals("failed", controller.status())
+        assertNull("a failed terminal message is not retryable as the same request", controller.state.optJSONObject("activeRequest"))
+        val next = requireNotNull(controller.admission("Generated retry question", "UTC"))
+        assertNotEquals(failed.getString("clientRequestId"), next.getString("clientRequestId"))
+        assertEquals("Generated retry question", next.getString("question"))
+    }
+
+    @Test fun aMissingAcceptedMessageRestoresTheExactUnconfirmedBody() = temporary { directory ->
+        val controller = NativeAskController(storage(directory))
+        controller.restore()
+        controller.attachConversation(UUID.randomUUID().toString())
+        val request = requireNotNull(controller.admission("Generated missing question", "UTC"))
+        val receipt = receipt(request, status = "running")
+        controller.receive(receipt, request)
+        assertTrue(controller.missingRun())
+        assertEquals("the check action retries the original request id",
+            request.getString("clientRequestId"), requireNotNull(controller.admission("Generated later question", "UTC")).getString("clientRequestId"))
+    }
+
+    @Test fun aRejectedAdmissionKeepsTheDraftEditableInsteadOfLockingTheExactBody() = temporary { directory ->
+        val controller = NativeAskController(storage(directory))
+        controller.restore()
+        controller.attachConversation(UUID.randomUUID().toString())
+        controller.editQuestion("Generated rejected question")
+        val rejected = requireNotNull(controller.admission("Generated rejected question", "UTC"))
+        controller.rejectedAdmission()
+        assertFalse(controller.state.has("pending"))
+        assertEquals("Generated rejected question", controller.state.getString("question"))
+        val next = requireNotNull(controller.admission("Generated corrected question", "UTC"))
+        assertNotEquals(rejected.getString("clientRequestId"), next.getString("clientRequestId"))
+        assertEquals("Generated corrected question", next.getString("question"))
+    }
+
+    @Test fun anAcceptedMessageFromAnotherDeviceIsReadableButNeverResubmitted() = temporary { directory ->
+        val message = UUID.randomUUID().toString()
         val conversation = UUID.randomUUID().toString()
         val controller = NativeAskController(storage(directory))
-        val restored = controller.restore(JSONArray().put(run(id, conversation)))
-        assertEquals(id, restored.getString("runId"))
-        assertEquals("running", restored.getString("runStatus"))
+        controller.replace(JSONObject()
+            .put("conversationId", conversation).put("messageId", message).put("runStatus", "running"))
+        val restored = controller.state
+        assertTrue(controller.busy())
+        assertEquals(message, controller.currentId())
         assertEquals(conversation, restored.getString("conversationId"))
         assertFalse(restored.has("pending"))
-        assertNull("an adopted run has no local body to retry", controller.admission("Generated unrelated question", "UTC"))
+        assertFalse("an adopted message has no local body to retry", controller.missingRun())
+        assertNull("an adopted running message cannot submit a second request", controller.admission("Generated unrelated question", "UTC"))
     }
 
-    @Test fun draftsStayInsideTheirConversationAndNeverAdoptAnotherConversationsRun() = temporary { directory ->
+    @Test fun draftsStayInsideTheirConversationAndNeverAdoptAnotherConversationsMessage() = temporary { directory ->
         val first = UUID.randomUUID().toString()
         val second = UUID.randomUUID().toString()
         val controller = NativeAskController(storage(directory))
-        controller.restore(JSONArray())
+        controller.restore()
         controller.selectConversation(first)
         controller.editQuestion("Generated first conversation draft")
         controller.persistNow()
@@ -138,22 +179,21 @@ class NativeAskPluginTest {
         assertFalse(switched.has("imageUploads"))
 
         controller.editQuestion("Generated second conversation draft")
-        val running = UUID.randomUUID().toString()
-        controller.adoptRunning(JSONArray().put(run(running, first)), requestedConversation = second)
-        assertFalse("another conversation's run is not adopted", controller.state.has("runId"))
+        controller.replace(JSONObject(controller.state.toString())
+            .put("messageId", UUID.randomUUID().toString()).put("runStatus", "running"))
         assertEquals("Generated second conversation draft", controller.state.getString("question"))
     }
 
-    @Test fun newConversationClearsOnlyTheUnsentDraftAndRunIdentity() = temporary { directory ->
+    @Test fun newConversationClearsOnlyTheUnsentDraftAndMessageIdentity() = temporary { directory ->
         val conversation = UUID.randomUUID().toString()
         val controller = NativeAskController(storage(directory))
-        controller.restore(JSONArray())
+        controller.restore()
         controller.selectConversation(conversation)
         controller.editQuestion("Generated discarded question")
-        controller.state.put("runStatus", "completed").put("runId", UUID.randomUUID().toString())
+        controller.state.put("runStatus", "completed").put("messageId", UUID.randomUUID().toString())
         controller.newConversation()
         assertFalse(controller.state.has("conversationId"))
-        assertFalse(controller.state.has("runId"))
+        assertFalse(controller.state.has("messageId"))
         assertFalse(controller.state.has("runStatus"))
         assertEquals("", controller.state.getString("question"))
     }

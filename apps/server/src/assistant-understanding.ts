@@ -4,6 +4,7 @@ import {EvidenceExposurePolicy,defaultEvidenceExposurePolicy} from './evidence-e
 import {EvidenceReader} from './evidence-reader.js';
 import {parseMaterialRef,type MaterialRecord,type MaterialStore} from './materials.js';
 import {parseSemanticProducts} from './semantic-extraction.js';
+import {validateConversationClaims} from './conversation-understanding.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
 import {StoreError,type Store} from './store.js';
 
@@ -190,14 +191,7 @@ export class AssistantUnderstandingReader {
         workRecords:metadata.workRecords,memoryCandidates:metadata.memoryCandidates,actionCues:metadata.actionCues}),[...records.values()],cited,ranges,
         metadata.productsVersion===3?'range-evaluation@1':undefined);
       if(output.evidenceRanges.some(range=>!contains(support,range)))throw invalid();
-      if(artifact.processor==='mote.coding-conversation-understanding'){
-        const claims=[...output.events,...(output.workRecords??[]).flatMap(record=>[...record.requirements,...record.constraints,...record.decisions,...record.results,...record.validation,...record.openItems,...record.artifactRefs])];
-        for(const claim of claims){
-          if(!claim.actor||!claim.status||!claim.basis||claim.sourceTime===undefined||
-            claim.sourceTime&&!claim.evidence.some(evidence=>evidence.quote.includes(claim.sourceTime!)||records.get(evidence.id)?.provenance?.document?.recordedAt===claim.sourceTime))throw invalid();
-          if('ref' in claim&&(typeof claim.ref!=='string'||!claim.evidence.some(evidence=>evidence.quote.includes(claim.ref as string))))throw invalid();
-        }
-      }
+      if(artifact.processor==='mote.coding-conversation-understanding')validateConversationClaims(output,[...records.values()]);
       for(const candidate of output.memoryCandidates){
         if(!candidate.admission||!candidate.evidence||candidate.evidenceIds.some(id=>!candidate.evidence!.some(span=>span.id===id))||candidate.evidence.some(span=>!candidate.evidenceIds.includes(span.id)))throw invalid();
       }

@@ -66,13 +66,14 @@ test('clearing Ask scope changes only the next submitted turn and history naviga
  const id='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',evidence='33333333-3333-4333-8333-333333333333',when='2026-10-01T00:00:00Z';
  const summary=(value:string)=>({id:value,title:value===id?'Generated scoped conversation':'Generated other conversation',createdAt:when,updatedAt:when,turnCount:0,scope:value===id?{evidenceIds:[evidence]}:{},status:'completed'});
  const scopedRecord={...summary(id),revision:1,turns:[],nextCursor:null},otherRecord={...summary(other),revision:1,turns:[],nextCursor:null};
- const writes:any[]=[];const api={request:async(path:string,init?:RequestInit)=>{
+ const writes:any[]=[];const settingsView={revision:1,domains:[{id:'conversations',effective:{multipleConversations:true,context:{historyRatio:0.5,lowWatermarkRatio:0.5,contextWindow:null,contextWindowSource:'conservative'}},saved:{},fields:[],status:'applied'}]};const api={request:async(path:string,init?:RequestInit)=>{
   if(path==='/api/model-settings')return modelView();
+  if(path==='/api/configuration')return settingsView;
+  if(path==='/api/conversations/main')return {id};
   if(path==='/api/conversations?limit=30')return {items:[summary(id),summary(other)],nextCursor:null};
-  if(path.startsWith('/api/conversations/'))return path.split('/').pop()===id?scopedRecord:otherRecord;
-  if(path==='/api/query-runs'&&init?.method==='POST'){writes.push(JSON.parse(String(init.body)));return {id:writes.at(-1).id,status:'running',createdAt:when,updatedAt:when,events:[]};}
+  if(path==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));writes.push(input);return {id:crypto.randomUUID(),...input,revision:1,status:'accepted',seq:0,createdAt:when};}
+  if(path.startsWith('/api/conversations/')&&!path.includes('/messages/'))return path.split('/').pop()===id?scopedRecord:otherRecord;
   if(path==='/api/query-runs')return {items:[]};
-  if(path==='/api/query-runs/'+writes.at(-1)?.id)return new Promise(()=>{});
   if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
   if(path.startsWith('/api/owner-questions'))return {items:[],nextCursor:null};
   throw Error('Unexpected generated scope fixture path '+path);
@@ -88,8 +89,8 @@ test('clearing Ask scope changes only the next submitted turn and history naviga
  await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(button=>button.textContent==='清除范围')!.click());
  await act(async()=>{const input=d.querySelector<HTMLTextAreaElement>('textarea[aria-label="向 Mote 提问"]')!;Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype,'value')!.set!.call(input,'Generated next unscoped question');input.dispatchEvent(new w.Event('input',{bubbles:true}));});
  await act(async()=>d.querySelector<HTMLTextAreaElement>('textarea[aria-label="向 Mote 提问"]')!.closest('form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));
- assert.equal(writes.length,1);assert.equal(writes[0].input.conversationId,id);assert.equal(writes[0].input.evidenceIds,null,'the actual public transport explicitly clears inherited scope');assert.equal(writes[0].input.question,'Generated next unscoped question');assert.deepEqual(scopedRecord.scope.evidenceIds,[evidence],'historical scope remains unchanged');
- assert.equal(d.querySelector<HTMLTextAreaElement>('textarea[aria-label="向 Mote 提问"]')!.disabled,true,'running submission freezes its composer');
+ assert.equal(writes.length,1);assert.equal(writes[0].conversationId,id);assert.equal(writes[0].scope.kind,'all');assert.equal(Object.hasOwn(writes[0].scope,'evidenceIds'),false,'the actual public transport explicitly clears inherited scope');assert.equal(writes[0].question,'Generated next unscoped question');assert.deepEqual(scopedRecord.scope.evidenceIds,[evidence],'historical scope remains unchanged');
+ assert.equal(d.querySelector<HTMLTextAreaElement>('textarea[aria-label="向 Mote 提问"]')!.disabled,false,'accepted message releases the composer for the next queued turn');
 });
 
 test('search keeps independent real material and Memory cursors and literal filters while withdrawing a 403 page',async t=>{

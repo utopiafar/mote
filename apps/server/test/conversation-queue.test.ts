@@ -252,3 +252,17 @@ test('deleting a conversation during a query does not recreate its turn',async t
   assert.equal((await f.node.app.inject({url:`/api/conversations/${id}`,headers})).statusCode,404);
   const listed=await f.node.app.inject({url:'/api/conversations',headers});assert.doesNotMatch(listed.body,/Generated deleted conversation answer|Generated delete while running/);
 });
+
+test('one-turn model selection is persisted and part of idempotent admission',async t=>{
+  const f=await fixture(t,async()=>result('Generated model answer'));
+  const id=await main(f.node),payload={conversationId:id,clientRequestId:randomUUID(),question:'Generated model question',scope:{kind:'all'},modelProfileId:'env:deployment',modelOverride:'generated-model'};
+  let response=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload});
+  assert.equal(response.statusCode,202,response.body);const message=response.json();
+  assert.equal(message.modelProfileId,'env:deployment');assert.equal(message.modelOverride,'generated-model');
+  assert.equal(f.node.conversations.message(message.id).modelProfileId,'env:deployment');
+  assert.equal((await settled(f.node,id,message.id)).status,'completed');
+  response=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload});
+  assert.equal(response.statusCode,202,response.body);assert.equal(response.json().id,message.id);
+  const conflict=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{...payload,modelOverride:'generated-other-model'}});
+  assert.equal(conflict.statusCode,409,conflict.body);
+});

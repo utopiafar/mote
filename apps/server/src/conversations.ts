@@ -12,7 +12,7 @@ export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'tim
 export type ConversationStatus = 'accepted'|'queued'|'running'|'completed'|'failed'|'cancelled';
 type Attachment = {id:string;name:string;mimeType:string};
 type Failure = {code:string;message:string};
-export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[]};
+export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;modelProfileId?:string;modelOverride?:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[]};
 export type ConversationMessage = ConversationTurn & {conversationId:string};
 export type ConversationSummary = {id:string;title:string;createdAt:string;updatedAt:string;turnCount:number;scope:ConversationScope;status:ConversationStatus};
 export type Conversation = ConversationSummary & {turns:ConversationTurn[];revision?:number};
@@ -177,8 +177,8 @@ export class Conversations {
    * response may retry the same clientRequestId; a different body is a conflict.
    * Sequence numbers are assigned inside the write transaction and are unique
    * per conversation, including accepted messages that are not yet answers. */
-  receive(input:ConversationScope&{question:string;conversationId?:string;clientRequestId?:string;attachments?:Attachment[]}):ConversationMessage {
-    const question=input.question,scope=scopeOf(input);
+  receive(input:ConversationScope&{question:string;conversationId?:string;clientRequestId?:string;attachments?:Attachment[];modelProfileId?:string;modelOverride?:string}):ConversationMessage {
+    const question=input.question,scope=scopeOf(input),modelProfileId=input.modelProfileId,modelOverride=input.modelOverride;
     const attachments=input.attachments?.length?input.attachments.map(item=>({...item})):undefined;
     if(typeof question!=='string'||!question.trim())throw new StoreError('Conversation message requires a question',400);
     if(input.clientRequestId!==undefined&&(typeof input.clientRequestId!=='string'||!input.clientRequestId||input.clientRequestId.length>200))throw new StoreError('Invalid client request id',400);
@@ -188,14 +188,14 @@ export class Conversations {
         const existing=this.store.db.prepare("SELECT conversation_id,json FROM conversation_turns WHERE json_extract(json,'$.clientRequestId')=? LIMIT 1").get(input.clientRequestId) as {conversation_id:string;json:string}|undefined;
         if(existing){
           const message=JSON.parse(existing.json) as ConversationTurn;
-          if((input.conversationId&&input.conversationId!==existing.conversation_id)||message.question!==question||JSON.stringify(scopeOf(message.scope))!==JSON.stringify(scope)||JSON.stringify(message.attachments??null)!==JSON.stringify(attachments??null))throw new StoreError('clientRequestId belongs to a different message',409);
+          if((input.conversationId&&input.conversationId!==existing.conversation_id)||message.question!==question||JSON.stringify(scopeOf(message.scope))!==JSON.stringify(scope)||JSON.stringify(message.attachments??null)!==JSON.stringify(attachments??null)||message.modelProfileId!==modelProfileId||message.modelOverride!==modelOverride)throw new StoreError('clientRequestId belongs to a different message',409);
           return {conversationId:existing.conversation_id,...message};
         }
       }
       const conversationId=input.conversationId??randomUUID();
       const conversation=input.conversationId?this.store.db.prepare('SELECT json FROM conversations WHERE id=?').get(conversationId) as {json:string}|undefined:undefined;
       if(input.conversationId&&!conversation)throw new StoreError('Conversation not found',404);
-      const message:ConversationTurn={id:randomUUID(),seq:this.nextSeq(conversationId),question,scope,status:'accepted',version:1,...(input.clientRequestId?{clientRequestId:input.clientRequestId}:{}),...(attachments?.length?{attachments}:{}),createdAt:now};
+      const message:ConversationTurn={id:randomUUID(),seq:this.nextSeq(conversationId),question,scope,status:'accepted',version:1,...(input.clientRequestId?{clientRequestId:input.clientRequestId}:{}),...(modelProfileId?{modelProfileId}:{}),...(modelOverride?{modelOverride}:{}),...(attachments?.length?{attachments}:{}),createdAt:now};
       const json=JSON.stringify(message),size=Buffer.byteLength(json);
       this.store.reserveMetadata(size+512);
       if(conversation)this.store.db.prepare("UPDATE conversations SET title=CASE WHEN title='' THEN ? ELSE title END,updated_at=?,json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.status','accepted','$.nextSeq',?) WHERE id=?").run(Array.from(question).slice(0,80).join(''),now,size,message.seq+1,conversationId);
