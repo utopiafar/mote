@@ -82,8 +82,8 @@ class NotificationsTest {
     private val id = "10000000-0000-4000-8000-000000000001"
     private val at = "2026-11-13T10:00:00.000Z"
     private val until = "2026-11-13T11:00:00.000Z"
-    private fun event(revision: Int = 1, eligibleAt: String = at) = JSONObject().put("id", id).put("revision", revision)
-        .put("title", "Generated useful card").put("reason", "Generated current reminder").put("eligibleAt", eligibleAt).put("expiresAt", until)
+    private fun event(revision: Int = 1, eligibleAt: String = at, expiresAt: String = until) = JSONObject().put("id", id).put("revision", revision)
+        .put("title", "Generated useful card").put("reason", "Generated current reminder").put("eligibleAt", eligibleAt).put("expiresAt", expiresAt)
     private fun snapshot(value: JSONObject = event()) = JSONObject().put("items", JSONArray().put(value))
     private fun card() = event().put("state", "open").put("body", "Generated current result").put("readAt", JSONObject.NULL).put("evidence", JSONArray())
 
@@ -94,12 +94,12 @@ class NotificationsTest {
         fun presenter() = AssistantNoticePresenter({ cursor }, { cursor = it }, { shown += it; visible = it }, { visible = null }, { now })
         val first = presenter()
         first.update(origin, snapshot(), true); first.update(origin, snapshot(), true)
-        assertEquals(1, shown.size); assertEquals(AssistantNoticeCursor(origin, id, at), cursor)
+        assertEquals(1, shown.size); assertEquals(AssistantNoticeCursor(origin, id, at, java.time.Instant.parse(at).toEpochMilli()), cursor)
         first.clear()
         val restored = presenter(); restored.update(origin, snapshot(), true)
         assertEquals(1, shown.size); assertNull(visible)
-        now += 30 * 60_000
-        restored.update(origin, snapshot(event(2, "2026-11-13T10:30:00.000Z")), true)
+        now += 60 * 60_000
+        restored.update(origin, snapshot(event(2, "2026-11-13T11:00:00.000Z", "2026-11-13T12:00:00.000Z")), true)
         assertEquals("A server later-until occurrence can remind again", 2, shown.size)
         restored.update(origin, snapshot(), true)
         assertEquals("A preference change cannot replay an older slot", 2, shown.size)
@@ -125,10 +125,23 @@ class NotificationsTest {
         assertFalse(visible); assertEquals("A content revision never re-alerts", 1, posts)
         presenter.update(origin, JSONObject().put("items", JSONArray()), true)
         presenter.update(origin, snapshot(), true); assertEquals(1, posts)
-        now += 30 * 60_000
-        presenter.update(origin, snapshot(event(3, "2026-11-13T10:30:00.000Z")), true); assertTrue(visible)
-        now = java.time.Instant.parse(until).toEpochMilli(); presenter.expire(); assertFalse(visible)
+        now += 60 * 60_000
+        presenter.update(origin, snapshot(event(3, "2026-11-13T11:00:00.000Z", "2026-11-13T12:00:00.000Z")), true); assertTrue(visible)
+        now = java.time.Instant.parse("2026-11-13T12:00:00.000Z").toEpochMilli(); presenter.expire(); assertFalse(visible)
         presenter.update(origin, snapshot(), true); assertEquals("Offline expired events never replay", 2, posts)
+    }
+
+    @Test fun delayedPollingCannotCompressTheConfiguredDisplayInterval() {
+        var cursor: AssistantNoticeCursor? = null; var posts = 0
+        var now = java.time.Instant.parse(at).toEpochMilli()
+        val presenter = AssistantNoticePresenter({ cursor }, { cursor = it }, { posts++ }, {}, { now })
+        presenter.update(origin, snapshot(), true)
+        now = java.time.Instant.parse("2026-11-13T10:30:00.000Z").toEpochMilli()
+        presenter.update(origin, snapshot(event(2, "2026-11-13T10:30:00.000Z", "2026-11-13T11:30:00.000Z")), true)
+        assertEquals("A delayed poll cannot show again before the configured interval", 1, posts)
+        now = java.time.Instant.parse("2026-11-13T11:00:00.000Z").toEpochMilli()
+        presenter.update(origin, snapshot(event(2, "2026-11-13T10:30:00.000Z", "2026-11-13T11:30:00.000Z")), true)
+        assertEquals(2, posts)
     }
 
     @Test fun inboxReadsAllCurrentCardsEvenWhenTheNotificationProjectionIsEmpty() {

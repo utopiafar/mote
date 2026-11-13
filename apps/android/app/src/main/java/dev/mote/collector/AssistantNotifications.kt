@@ -20,11 +20,13 @@ internal data class AssistantNotice(val id: String, val revision: Long, val titl
     }
 }
 
-internal data class AssistantNoticeCursor(val origin: String, val id: String, val eligibleAt: String)
+internal data class AssistantNoticeCursor(val origin: String, val id: String, val eligibleAt: String, val shownAt: Long)
 
 /** One bounded presentation cursor, never an inbox or a delivery ledger.
  * A content update cancels stale OS text without alerting again. Only a new
- * server occurrence (e.g. later-until) changes eligibleAt. */
+ * server occurrence (e.g. later-until) changes eligibleAt. The server spaces
+ * eligible instants; this client also keeps the configured gap between its
+ * actual displays when polling was delayed. */
 internal class AssistantNoticePresenter(
     private val cursor: () -> AssistantNoticeCursor?,
     private val save: (AssistantNoticeCursor) -> Unit,
@@ -41,11 +43,16 @@ internal class AssistantNoticePresenter(
         if (!allowed || event == null) { clear(); return }
         if (activeOrigin == origin && active == event) return
         clear()
-        val key = AssistantNoticeCursor(origin, event.id, event.eligibleAt)
+        val key = AssistantNoticeCursor(origin, event.id, event.eligibleAt, now())
         // A frequency/quiet-hours edit may project an older slot again. It must
         // not replay an alert that precedes this device's presentation cursor.
         if (cursor()?.let { it.origin == origin && !Instant.parse(it.eligibleAt).isBefore(Instant.parse(event.eligibleAt)) } == true) return
-        try { post(event); save(key); active = event; activeOrigin = origin }
+        // The server only spaces eligible instants; without a delivery ledger a
+        // delayed poll could otherwise show this event too soon after the last one.
+        // Its slot length is the server interval capped at 24 hours.
+        val interval = Instant.parse(event.expiresAt).toEpochMilli() - Instant.parse(event.eligibleAt).toEpochMilli()
+        if (cursor()?.let { it.origin == origin && now() < it.shownAt + interval } == true) return
+        try { post(event); save(key.copy(shownAt = now())); active = event; activeOrigin = origin }
         catch (error: Exception) { clear(); throw error }
     }
 }

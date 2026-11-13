@@ -68,7 +68,7 @@ describe('Mac online notification adapter (simulated Electron boundary)', () => 
     await vi.waitFor(() => expect(os.notifications).toHaveLength(1));
     expect(os.notifications[0].options).toEqual({ title: '通知', body: '打开 Mote' });
     const stored = readFileSync(join(f.directory, 'assistant-notification-cursor.json'), 'utf8');
-    expect(JSON.parse(stored)).toEqual({ origin, id, eligibleAt: event.eligibleAt });
+    expect(JSON.parse(stored)).toEqual({ origin, id, eligibleAt: event.eligibleAt, shownAt: event.eligibleAt });
     expect(stored).not.toMatch(/Generated private|generated-owner|result/);
     bridge.close(); const restored = f.create(); restored.tick(); await settle();
     expect(os.notifications).toHaveLength(1);

@@ -7,7 +7,7 @@ import { httpFailureMessage, responseFailureCode } from '@mote/shared';
 
 /** The server's current projection. The card store owns content, eligibility and read state. */
 export type AssistantNotice = { id: string; revision: number; title: string; reason: string; eligibleAt: string; expiresAt: string };
-export type AssistantNoticeCursor = Pick<AssistantNotice, 'id' | 'eligibleAt'> & { origin: string };
+export type AssistantNoticeCursor = Pick<AssistantNotice, 'id' | 'eligibleAt'> & { origin: string; shownAt: string };
 export type AssistantCardPreview = { id: string; revision: number; title: string; body: string; readAt: string | null; evidence: { id: string }[] };
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export class AssistantNotificationError extends Error {
@@ -44,7 +44,9 @@ export function assistantCardPreview(value: unknown): AssistantCardPreview {
 
 /** One local presentation cursor, without bodies or a second unread/delivery store.
  * Content revisions retire the old OS text without alerting again. A snoozed
- * occurrence has a new eligibleAt and can alert again. Other devices read the card store. */
+ * occurrence has a new eligibleAt and can alert again. Other devices read the card store.
+ * The server spaces eligible instants; this client also keeps the configured gap
+ * between its actual displays when polling was delayed. */
 export class AssistantNoticePresenter {
   private active?: { origin: string; event: AssistantNotice; close(): void };
   constructor(private readonly options: {
@@ -65,11 +67,17 @@ export class AssistantNoticePresenter {
     // Settings changes can move the projected slot backwards. A high-water
     // cursor prevents re-alerting an older slot; its cards remain in the inbox.
     if (cursor?.origin === origin && Date.parse(cursor.eligibleAt) >= Date.parse(event.eligibleAt)) return;
+    // The server only spaces eligible instants; without a delivery ledger a
+    // delayed poll could otherwise show this event too soon after the last one.
+    // Its slot length is the server interval capped at 24 hours.
+    const shownAt = cursor?.origin === origin ? Date.parse(cursor.shownAt) : NaN;
+    if (Number.isFinite(shownAt) && now < shownAt + (Date.parse(event.expiresAt) - Date.parse(event.eligibleAt))) return;
     const active = { origin, event, close: () => {} };
     this.active = active;
     try {
       const handle = this.options.show(event, () => {
-        if (this.active === active) this.options.save({ origin, id: event.id, eligibleAt: event.eligibleAt });
+        if (this.active === active) this.options.save({ origin, id: event.id, eligibleAt: event.eligibleAt,
+          shownAt: new Date(this.options.now?.() ?? Date.now()).toISOString() });
       }, () => { if (this.active === active) this.clear(); });
       active.close = () => handle.close();
       if (this.active !== active) handle.close();

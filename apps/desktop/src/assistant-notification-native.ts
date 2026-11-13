@@ -27,7 +27,7 @@ export class DesktopAssistantNotifications {
     const file = join(options.directory, 'assistant-notification-cursor.json');
     try {
       const value = JSON.parse(readFileSync(file, 'utf8'));
-      if (typeof value.origin === 'string' && typeof value.id === 'string' && typeof value.eligibleAt === 'string') this.cursor = value;
+      if (typeof value.origin === 'string' && typeof value.id === 'string' && typeof value.eligibleAt === 'string' && typeof value.shownAt === 'string') this.cursor = value;
     } catch { /* A new profile has no presentation cursor. Cards stay in Central. */ }
     this.presenter = new AssistantNoticePresenter({
       cursor: () => this.cursor,

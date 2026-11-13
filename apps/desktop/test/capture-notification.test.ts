@@ -136,7 +136,7 @@ describe('online assistant notifications', () => {
     f.displayed[0].shown(); first.clear();
     const restored = f.create(); restored.update(noticeOrigin, snapshot(), true);
     expect(f.displayed).toHaveLength(1);
-    expect(f.cursor).toEqual({ origin: noticeOrigin, id: notice.id, eligibleAt: notice.eligibleAt });
+    expect(f.cursor).toEqual({ origin: noticeOrigin, id: notice.id, eligibleAt: notice.eligibleAt, shownAt: notice.eligibleAt });
     // Snooze is a new server occurrence over the same card, not a content update.
     f.time('2026-11-13T10:30:00.000Z');
     restored.update(noticeOrigin, snapshot({ ...notice, eligibleAt: '2026-11-13T10:30:00.000Z' }), true);
@@ -153,7 +153,7 @@ describe('online assistant notifications', () => {
     expect(f.cursor).toBeUndefined(); expect(f.displayed[0].closed).toBe(true);
     presenter.update(noticeOrigin, snapshot(), true); f.displayed[1].shown();
     expect(f.displayed).toHaveLength(2);
-    const unseen = { ...notice, id: '10000000-0000-4000-8000-000000000002', eligibleAt: '2026-11-13T10:01:00.000Z' };
+    const unseen = { ...notice, id: '10000000-0000-4000-8000-000000000002', eligibleAt: '2026-11-13T11:00:00.000Z', expiresAt: '2026-11-13T12:00:00.000Z' };
     f.time(unseen.eligibleAt);
     presenter.clear(); presenter.update(noticeOrigin, snapshot(unseen), true);
     expect(f.displayed.at(-1)?.event.id).toBe(unseen.id);
@@ -166,11 +166,22 @@ describe('online assistant notifications', () => {
     expect(f.displayed[0].closed).toBe(true); expect(f.displayed).toHaveLength(1);
     presenter.update(noticeOrigin, { items: [] }, true); // card read/withdrawal, quiet time or frequency suppression.
     presenter.update(noticeOrigin, snapshot(), true); expect(f.displayed).toHaveLength(1);
-    const next = { ...notice, id: '10000000-0000-4000-8000-000000000002', eligibleAt: '2026-11-13T10:01:00.000Z' };
+    const next = { ...notice, id: '10000000-0000-4000-8000-000000000002', eligibleAt: '2026-11-13T11:00:00.000Z', expiresAt: '2026-11-13T12:00:00.000Z' };
     f.time(next.eligibleAt);
     presenter.update(noticeOrigin, snapshot(next), true); f.displayed[1].shown();
-    f.time(notice.expiresAt); presenter.expire(); expect(f.displayed[1].closed).toBe(true);
+    f.time(next.expiresAt); presenter.expire(); expect(f.displayed[1].closed).toBe(true);
     presenter.update(noticeOrigin, snapshot(), true); expect(f.displayed).toHaveLength(2);
+  });
+
+  it('keeps the configured interval between actual local displays when polling is delayed', () => {
+    const f = noticeFixture(), presenter = f.create();
+    presenter.update(noticeOrigin, snapshot(), true); f.displayed[0].shown();
+    const later = { ...notice, id: '10000000-0000-4000-8000-000000000002',
+      eligibleAt: '2026-11-13T10:30:00.000Z', expiresAt: '2026-11-13T11:30:00.000Z' };
+    f.time(later.eligibleAt); presenter.update(noticeOrigin, snapshot(later), true);
+    expect(f.displayed).toHaveLength(1); // 30 minutes after the last actual display; the server interval is 60.
+    f.time('2026-11-13T11:00:00.000Z'); presenter.update(noticeOrigin, snapshot(later), true);
+    expect(f.displayed).toHaveLength(2); // A delayed poll cannot compress the configured gap.
   });
 
   it('ignores a late shown callback after withdrawal and keeps origins separate', () => {

@@ -27,9 +27,11 @@ internal class OnlineAssistantNotifications(context: Context, private val enable
     private val presenter = AssistantNoticePresenter(
         cursor = {
             val origin = preferences.getString("origin", null); val id = preferences.getString("id", null); val at = preferences.getString("eligibleAt", null)
-            if (origin != null && id != null && at != null) AssistantNoticeCursor(origin, id, at) else null
+            val shown = preferences.getLong("shownAt", 0L)
+            if (origin != null && id != null && at != null && shown > 0) AssistantNoticeCursor(origin, id, at, shown) else null
         },
-        save = { cursor -> check(preferences.edit().putString("origin", cursor.origin).putString("id", cursor.id).putString("eligibleAt", cursor.eligibleAt).commit()) },
+        save = { cursor -> check(preferences.edit().putString("origin", cursor.origin).putString("id", cursor.id)
+            .putString("eligibleAt", cursor.eligibleAt).putLong("shownAt", cursor.shownAt).commit()) },
         post = { event ->
             check(!closed && enabled())
             val selected = CentralAccess.resolve(app)
