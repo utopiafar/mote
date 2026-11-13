@@ -5,7 +5,7 @@ import {
   assistantDraftCommandSchema, assistantDraftProposalSchema, assistantDraftSchema,
   assistantTaskInputSchema, assistantTaskRecordSchema, attributionContextSchema,
   codingEvidenceSchema, conversationMessageInputSchema, conversationMessageSchema,
-  documentSchema, evidenceDependenciesSchema, fileViewSchema, modelBudgetSchema, queryScopeSchema,
+  documentSchema, evidenceDependenciesSchema, fileViewSchema, modelBudgetSchema, conversationSettingsSchema, queryScopeSchema,
   sourceEvidenceRevisionSchema, transcriptSchema, workspaceTemplateSchema,
 } from '../dist/index.js';
 import {acceptUiContribution,parseUiContribution} from '../dist/plugin-ui.js';
@@ -54,6 +54,19 @@ test('context window and output limit remain distinct and conservative estimates
   assert.equal(modelBudgetSchema.safeParse({...input,lowWatermarkRatio:1}).success,false);
   assert.equal(modelBudgetSchema.safeParse({...input,contextWindowSource:undefined}).success,false);
   assert.equal(modelBudgetSchema.safeParse({...input,historyRatio:1.1}).success,false);
+});
+
+test('conversation preferences distinguish a declared chat window from the conservative fallback',()=>{
+  const defaults=roundTrip(conversationSettingsSchema,{});
+  assert.deepEqual(defaults,{multipleConversations:false,context:{historyRatio:0.5,lowWatermarkRatio:0.5,contextWindow:null,contextWindowSource:'conservative'}});
+  const configured={multipleConversations:true,context:{historyRatio:0,lowWatermarkRatio:0,contextWindow:8000,contextWindowSource:'configured'}};
+  assert.deepEqual(roundTrip(conversationSettingsSchema,configured),configured);
+  for(const context of [
+    {...configured.context,historyRatio:-0.1}, {...configured.context,historyRatio:1.01},
+    {...configured.context,lowWatermarkRatio:1}, {...configured.context,contextWindow:0},
+    {...configured.context,contextWindow:null}, {...configured.context,contextWindowSource:'unknown'},
+    {...configured.context,contextWindowSource:'conservative'}, {...configured.context,totalHistoryLimit:200},
+  ])assert.equal(conversationSettingsSchema.safeParse({context}).success,false);
 });
 
 test('message and task round trips retain scope, anchors, versions and original dependencies',()=>{

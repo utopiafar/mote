@@ -93,7 +93,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
         const visible=await Promise.all(page.items.map(item=>archiveReader.memories!({...args,id:item.id,query:undefined,cursor:undefined,limit:1})));
         return {...page,items:page.items.filter((item,index)=>visible[index].items.some(value=>Boolean(value&&typeof value==='object'&&(value as {id?:unknown}).id===item.id)))};
       }},question,{...scope,contextTime}),
-      scopedPrevious?Promise.resolve(conversations.context(scopedPrevious,20,Math.max(1000,lifecycleSettings().contextCharacters-question.length))):previous?working.prepare(previous,lifecycleSettings(),question,input=>query({...input,contextTime,traceContext:{...input.traceContext,operationId:work.operationId},executionLane:'interactive',modelProfileId:profile.id,modelOverride:model,signal}),{signal,commit}):undefined,
+      !previous?.turns.length?undefined:scopedPrevious?Promise.resolve(conversations.context(scopedPrevious,20,Math.max(1000,lifecycleSettings().contextCharacters-question.length))):working.prepare(previous,lifecycleSettings(),question,input=>query({...input,contextTime,traceContext:{...input.traceContext,operationId:work.operationId},executionLane:'interactive',modelProfileId:profile.id,modelOverride:model,signal}),{signal,commit}),
     ]);
     // Empty product selections must still answer the owner's text, but cannot
     // expose archive tools or seed the agent's nonempty extraction session.

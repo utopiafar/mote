@@ -5,6 +5,7 @@ import { getLocale, moteText } from '@mote/shared/i18n';
 import type { Config } from './contracts';
 import { validateServerUrl } from './config';
 import { readResponseText } from './response-body';
+import {conversationSettingsSchema} from '@mote/shared';
 
 /** Fixed endpoints only. Owner credentials remain in the main process and are scoped to one origin. */
 export class AskClient {
@@ -17,6 +18,9 @@ export class AskClient {
     switch (command) {
       case 'history': path = '/api/conversations?limit=30' + (input.cursor ? '&cursor=' + encodeURIComponent(input.cursor.slice(0, 1000)) : ''); break;
       case 'runs': path = '/api/query-runs'; break;
+      case 'main': path = '/api/conversations/main'; break;
+      case 'settings': path = '/api/configuration'; break;
+      case 'new-conversation': path = '/api/conversations'; body = '{}'; break;
       case 'conversation':
         if (input.cursor !== undefined && !/^\d{1,9}$/.test(input.cursor)) throw Error('Invalid turn cursor');
         path = '/api/conversations/' + id() + '?limit=20' + (input.cursor !== undefined ? '&cursor=' + input.cursor : ''); break;
@@ -38,6 +42,9 @@ export class AskClient {
       if (command === 'run' && response.status === 404) return {id: input.id, notFound:true, status: 'failed', events: [], error: {message: moteText('对话或运行记录已删除。')}};
       throw Error(response.status === 401 || response.status === 403 ? moteText('令牌无效或已失效，请检查后重新登录。') : command==='history'?moteText('对话暂不可读取，请稍后重试。'):command==='reference'?moteText('这条引用暂时打不开，请稍后重试。'):moteText('问答请求失败（HTTP {0}）。检查中央模型设置或稍后重试', response.status));
     }
-    const value=JSON.parse(await readResponseText(response,8*1024*1024));this.check(config);if(['start','run','cancel'].includes(command)&&(value?.id!==input.id||value?.notFound!==undefined||!['running','completed','failed','cancelled'].includes(value?.status)||!Array.isArray(value?.events)))throw Error('Invalid query run response');if(command==='reference'&&(value?.id!==input.id||typeof value?.available!=='boolean'))throw Error('Invalid reference availability');return value;
+    const value=JSON.parse(await readResponseText(response,8*1024*1024));this.check(config);if(['start','run','cancel'].includes(command)&&(value?.id!==input.id||value?.notFound!==undefined||!['running','completed','failed','cancelled'].includes(value?.status)||!Array.isArray(value?.events)))throw Error('Invalid query run response');if(command==='reference'&&(value?.id!==input.id||typeof value?.available!=='boolean'))throw Error('Invalid reference availability');
+    if((command==='main'||command==='new-conversation')&&(typeof value?.id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value.id)))throw Error('Invalid conversation ID');
+    if(command==='settings')return conversationSettingsSchema.parse(value?.domains?.find((domain:{id?:string})=>domain.id==='conversations')?.effective);
+    return value;
   }
 }

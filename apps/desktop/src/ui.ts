@@ -23,7 +23,7 @@ import {createPermissionsUi} from './permissions-ui';
 import {createCaptureSyncUi} from './capture-sync-ui';
 import {nativeStatusSummary} from './native-status';
 import { renderAskAnswer, renderAskCitation, renderAskScope } from './ask-presentation';
-import {currentTurnCites,prependConversationTurns} from './ask-conversation';
+import {currentTurnCites,prependConversationTurns,resolveAskConversation} from './ask-conversation';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {builtinUiRules} from '@mote/shared';
 import {createAppCaptureUi,describeCaptureSelection} from './app-capture-ui';
@@ -423,7 +423,7 @@ function render(status: import('./contracts').Status): void {
   if(currentStatus&&(currentStatus.authorizationGeneration!==status.authorizationGeneration||currentStatus.config.serverUrl!==status.config.serverUrl||currentStatus.config.tokenConfigured!==status.config.tokenConfigured||currentStatus.config.authSignedOut!==status.config.authSignedOut||currentStatus.config.authExpiresAt!==status.config.authExpiresAt)){
     sourceWorkspace.clear();localSourceRows=[];invalidateSourceEditor();byId<HTMLTextAreaElement>('source-initial-description').value='';byId<HTMLTextAreaElement>('source-initial-description').disabled=true;sourceReadGeneration++;recordsRevision++;closeRecordDetail();byId('records-grid').replaceChildren();byId('record-detail-title').textContent='';byId('record-detail-meta').textContent='';byId('record-detail-text').textContent='';
     const retained=askDraftScopes.switch(currentStatus,status,snapshotAskDraft());
-    askGeneration++;clearTimeout(askTimer);askConversation=undefined;askCursor=undefined;skipNextAskRefresh=false;byId('ask-more').hidden=true;byId('ask-history').replaceChildren();restoreScopedAskDraft(retained);renderAsk();setText('ask-login-status','');setText('ask-error','');
+    askGeneration++;clearTimeout(askTimer);askConversation=undefined;askCursor=undefined;askMultipleConversations=false;skipNextAskRefresh=false;byId('ask-more').hidden=true;byId('ask-history').replaceChildren();restoreScopedAskDraft(retained);renderAsk();setText('ask-login-status','');setText('ask-error','');
   }
   currentStatus = status;workPendingUi.update(status);chromeCaptureUi.update(status);captureContextUi.update(status);renderSettingsWorkspace(status);sourceWorkspace.status(status);captureSyncUi.update(status,localSourceRows);renderStorage();appCaptureUi.setStatus(status);if(!quickNote)workbenchUi.update(status);
   askConnectionState();
@@ -1333,6 +1333,7 @@ let askRun: import('./ask').AskRun | undefined;
 let askConversation: import('./ask').AskConversation | undefined;
 let askScopeUnavailable = false;
 let askView:'history'|'conversation'='history';
+let askMultipleConversations=false;
 let askSubmittedQuestion='',askStopPending=false,askRunLookupPending=false,askPendingMessage='';
 let askBusy = false, askGeneration = 0, askCursor: string | undefined;
 type AskPendingInput = {id: string; question: string; conversationId?: string};
@@ -1412,6 +1413,7 @@ function askControls(): void {
   byId('ask-draft-state').textContent=readInput('ask-question').trim()?moteText('未发送 · 此窗口中的草稿'):'';
   byId('ask-resume-current').hidden=askView!=='history'||!askPendingInput&&!running;
   byId('ask-refresh').hidden=askView==='history'&&!byId('ask-error').textContent;
+  byId('ask-new').hidden=!currentStatus?.config.serverUrl||!askMultipleConversations;
   byId<HTMLButtonElement>('ask-new').disabled = askBusy || running || Boolean(askPendingInput);
   byId<HTMLButtonElement>('ask-login').disabled = askBusy;
   byId<HTMLButtonElement>('ask-logout').disabled = askBusy;
@@ -1508,6 +1510,10 @@ async function askAction(action: () => Promise<void>): Promise<void> {
   try { await action(); } catch (error) { if(generation===askGeneration){if(askPendingInput)askPendingMessage='';askFailure(error);} }
   finally { askBusy = false; askControls();maybeRestoreAskConversation(); }
 }
+async function refreshAskSettings():Promise<void>{
+  try{const value=await askCall<import('@mote/shared').ConversationSettings>('settings');askMultipleConversations=value?.multipleConversations===true;}
+  catch{askMultipleConversations=false;}
+}
 async function refreshAsk(): Promise<void> {
   if(askPendingInput){askView='conversation';renderAsk();await askAction(checkPendingAsk);return;}
   const connected = askConnectionState();
@@ -1522,15 +1528,25 @@ async function refreshAsk(): Promise<void> {
     setText('ask-login-status', moteText('正在连接中央…'));
     try { await askHistory(); } catch (error) { if(generation===askGeneration)setText('ask-login-status', moteText('请求失败，请重试')); throw error; }
     if(generation!==askGeneration)return;
+    await refreshAskSettings();
+    if(generation!==askGeneration)return;
     setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));
     const page = await askCall<{items: import('./ask').AskRun[]}>('runs');
     if(generation!==askGeneration)return;
     if(!askRun)askRun=page.items.find(item=>item.status==='running');
-    if (askRun?.status==='running'&&askRun.conversationId) {askView='conversation';await loadAskConversation(askRun.conversationId);}
-    else if (askConversation) await loadAskConversation(askConversation.id);
+    if (askRun?.status==='running'&&askRun.conversationId){askView='conversation';await loadAskConversation(askRun.conversationId);}
+    else if(askConversation)await loadAskConversation(askConversation.id);
     if(generation!==askGeneration)return;
     renderAsk(); if (askRun?.status === 'running') scheduleAskPoll();
   });
+}
+async function loadAskAfterLogin():Promise<void>{
+  if(askRestoringConversationId||askPendingInput||askRun)return;
+  const generation=askGeneration;
+  await askHistory();
+  await refreshAskSettings();
+  if(generation!==askGeneration)return;
+  askView='history';renderAsk();
 }
 async function refreshAskStatus():Promise<void>{const previous=currentStatus;const next=await desktopApi.status();if(currentStatus===previous)render(next);}
 function askConnectionState(): boolean {
@@ -1539,7 +1555,7 @@ function askConnectionState(): boolean {
   byId('ask-workspace').hidden = !connected;
   byId('node-login-panel').hidden = !connected || currentStatus.config.tokenConfigured;
   byId('ask-logout').hidden = !connected || !currentStatus.config.tokenConfigured;
-  byId('ask-new').hidden = !connected;
+  byId('ask-new').hidden = !connected || !askMultipleConversations;
   return connected;
 }
 function scheduleAskPoll(): void {
@@ -1563,7 +1579,12 @@ byId('ask-form').addEventListener('submit', event => {
   const question = readInput('ask-question').trim(); if (!question) return;
   void askAction(async () => {
     const generation=askGeneration;
-    const input = askPendingInput?.question === question && askPendingInput.conversationId === askConversation?.id ? askPendingInput : {id: crypto.randomUUID(), question, ...(askConversation ? {conversationId: askConversation.id} : {})};
+    // An ordinary Ask with no explicit conversation uses the server's current
+    // main. The selection is read once and sent explicitly; the legacy
+    // no-conversation query contract remains untouched.
+    const conversationId=askConversation?.id??await resolveAskConversation(undefined,()=>askCall('main'));
+    if(generation!==askGeneration)return;
+    const input = askPendingInput?.question === question && askPendingInput.conversationId === conversationId ? askPendingInput : {id: crypto.randomUUID(), question, conversationId};
     askPendingInput = input;askPendingMessage=moteText('正在提交问题…');askSubmittedQuestion=question;askRun=undefined;askStopPending=false;askRunLookupPending=false;renderAsk();
     let admitted:import('./ask').AskRun;try { admitted = await askCall('start', input); }
     catch (error) { if(generation!==askGeneration)throw error;admitted = await askCall('start', input); } // Same admission ID after an ambiguous network response.
@@ -1590,7 +1611,7 @@ byId('ask-edit-failed').addEventListener('click',()=>{const question=failedAskQu
 byId('ask-check-existing').addEventListener('click',()=>void askAction(checkPendingAsk));
 byId('ask-retry-existing').addEventListener('click',()=>void askAction(async()=>{const input=askPendingInput,generation=askGeneration;if(input){const run=await askCall<import('./ask').AskRun>('start',input);if(generation===askGeneration)await acceptPendingAsk(input,run);}}));
 byId('ask-stop').addEventListener('click', () => void askAction(async () => { if(!askRun||askStopPending)return;const id=askRun.id,generation=askGeneration;askStopPending=true;askPendingMessage='';renderAsk();const run=await askCall<import('./ask').AskRun>('cancel',{id});if(generation!==askGeneration||askRun?.id!==id)return;askRun=run;askRunLookupPending=false;askStopPending=run.status==='running';renderAsk();scheduleAskPoll(); }));
-byId('ask-new').addEventListener('click', () => { if (askBusy || askPendingInput || askRun?.status === 'running'||!mayReplaceAskDraft('')) return; askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined;askRestoringConversationId=undefined;askRestoringReading=undefined; askScopeUnavailable = false;askPendingInput=undefined;askSubmittedQuestion='';askView='conversation';byId<HTMLTextAreaElement>('ask-question').value='';renderAsk();byId('ask-question').focus(); });
+byId('ask-new').addEventListener('click', () => { if (askBusy || askPendingInput || askRun?.status === 'running'||!askMultipleConversations||!mayReplaceAskDraft('')) return; const generation=++askGeneration;void askAction(async()=>{const {id}=await askCall<{id:string}>('new-conversation');if(generation!==askGeneration)return;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askRestoringConversationId=undefined;askRestoringReading=undefined;askScopeUnavailable=false;askPendingInput=undefined;askSubmittedQuestion='';askView='conversation';byId<HTMLTextAreaElement>('ask-question').value='';await loadAskConversation(id);byId('ask-question').focus();}); });
 byId('ask-resume-current').addEventListener('click',()=>{askView='conversation';renderAsk();});
 byId('ask-back').addEventListener('click',()=>{askView='history';renderAsk();void askAction(()=>askHistory());});
 byId('ask-question').addEventListener('input',askControls);
@@ -1613,6 +1634,6 @@ async function openAskEvidence(id:string,rendered:import('./ask').AskConversatio
   }
   await desktopApi.openCentral('ask',id,conversationId);
 }
-byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('先登录中央，各页面会共用这次登录')); throw error; } await refreshAskStatus();setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));if(!askRestoringConversationId&&!askPendingInput&&!askRun)await askHistory(); }); });
-byId('ask-browser-login').addEventListener('click',()=>void askAction(async()=>{await askCall('login-browser',{durationMs:Number(readInput('ask-lifetime'))});await refreshAskStatus();if(!askRestoringConversationId&&!askPendingInput&&!askRun)await askHistory();setText('ask-login-status',moteText('已登录 · {0}',currentStatus.config.serverUrl));}));
+byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('先登录中央，各页面会共用这次登录')); throw error; } await refreshAskStatus();setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));await loadAskAfterLogin(); }); });
+byId('ask-browser-login').addEventListener('click',()=>void askAction(async()=>{await askCall('login-browser',{durationMs:Number(readInput('ask-lifetime'))});await refreshAskStatus();await loadAskAfterLogin();setText('ask-login-status',moteText('已登录 · {0}',currentStatus.config.serverUrl));}));
 byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout');await refreshAskStatus();setText('ask-login-status', moteText('已退出中央登录')); }));

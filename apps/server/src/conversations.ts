@@ -71,17 +71,31 @@ export class Conversations {
   }
 
   get(id:string):Conversation {return this.read(id);}
+  /** Create an empty side conversation; product admission is checked by the route. */
+  create():{id:string} {return this.transaction(()=>this.createEmpty());}
+  private createEmpty():{id:string} {
+    const id=randomUUID(),now=new Date().toISOString();
+    this.store.reserveMetadata(512);
+    this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(id,'',now,now,JSON.stringify({scope:{},turnCount:0,status:'completed',bytes:0,revision:0,nextSeq:0}));
+    return {id};
+  }
+  /** Select an existing conversation, without changing its contents or any other conversation. */
+  selectMain(id:string):{id:string} {
+    return this.transaction(()=>{
+      if(!this.store.db.prepare('SELECT 1 FROM conversations WHERE id=?').get(id))throw new StoreError('Conversation not found',404);
+      this.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(id);
+      return {id};
+    });
+  }
   /** A stable, owner-local identity; deleting the conversation starts a new one. */
   main():{id:string} {
     return this.transaction(()=>{
       const saved=this.store.db.prepare("SELECT value FROM settings WHERE key='main-conversation-id'").get();
       const id=saved&&String(saved.value);
       if(id&&this.store.db.prepare('SELECT 1 FROM conversations WHERE id=?').get(id))return {id};
-      const next=randomUUID(),now=new Date().toISOString();
-      this.store.reserveMetadata(512);
-      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(next,'',now,now,JSON.stringify({scope:{},turnCount:0,status:'completed',bytes:0,revision:0,nextSeq:0}));
-      this.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(next);
-      return {id:next};
+      const next=this.createEmpty();
+      this.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(next.id);
+      return next;
     });
   }
   message(id:string):ConversationMessage {const row=this.messageRow(id);return {conversationId:row.conversation_id,...JSON.parse(row.json) as ConversationTurn};}
@@ -310,14 +324,14 @@ export class Conversations {
   private write(previous:Conversation|undefined,turn:NewTurn) {
     const now=turn.createdAt;
     const question=turn.question;
-    const id=previous?.id??randomUUID(),title=previous?.title??Array.from(question).slice(0,80).join('');
+    const id=previous?.id??randomUUID(),title=previous?.title||Array.from(question).slice(0,80).join('');
     return this.transaction(()=>{
       const existing=this.store.db.prepare('SELECT json,updated_at FROM conversations WHERE id=?').get(id) as {json:string;updated_at:string}|undefined;
       const meta=existing?JSON.parse(String(existing.json)) as {turnCount?:number;bytes?:number;revision?:number}:undefined;
       if(previous&&(!meta||meta.turnCount!==previous.turnCount||meta.revision!==previous.revision||existing!.updated_at!==previous.updatedAt))throw new StoreError('Conversation changed during this answer; reload and retry',409);
       const count=meta?.turnCount??0,seq=this.nextSeq(id),stored={...turn,seq} as ConversationTurn,json=JSON.stringify(stored),size=Buffer.byteLength(json);
       this.store.reserveMetadata(size+512);
-      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:stored.scope,turnCount:count+1,status:stored.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1,nextSeq:seq+1}));
+      this.store.db.prepare("INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=CASE WHEN conversations.title='' THEN excluded.title ELSE conversations.title END,updated_at=excluded.updated_at,json=excluded.json").run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:stored.scope,turnCount:count+1,status:stored.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1,nextSeq:seq+1}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(id,seq,stored.id,json);
       inheritRetiredConversationRoots(this.store,id,stored);
       this.onTurnReceived?.(stored.id,id);

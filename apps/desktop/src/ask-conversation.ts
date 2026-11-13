@@ -1,6 +1,12 @@
 import {moteText} from '@mote/shared/i18n';
 import type {AskConversation} from './ask';
 
+/** Explicitly opened history keeps its identity; an ordinary Ask entry reads
+ * the server's current main instead of guessing from recent activity. */
+export async function resolveAskConversation(currentId:string|undefined,main:()=>Promise<{id:string}>):Promise<string>{
+  return currentId??(await main()).id;
+}
+
 /** Keep older pages within the exact conversation and history revision. */
 export function prependConversationTurns(current: AskConversation, older: AskConversation): AskConversation {
   if (older.id !== current.id || older.revision !== current.revision) throw Error(moteText('对话状态已变化，请重新读取后继续。'));

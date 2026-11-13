@@ -13,6 +13,7 @@ import type {AssistantDrafts} from '../assistant-drafts.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {ServerResources} from '../server-resources.js';
+import type {ConversationSettings} from '@mote/shared';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:conversationsContribution,declaration:conversationsDeclaration,replacement:conversationsReplacement},
@@ -31,7 +32,7 @@ export interface ConversationInputDependencies {
 /** Install the conversation owner and lend its gated repository to the remaining
  * query, Memory and evidence-authority consumers through one host lease. */
 export async function prepareConversations(dependencies:ConversationInputDependencies){
-  const platform=createConversations(dependencies.store,dependencies.modelAuthorizationHost),routes=createConversationRoutes();
+  const platform=createConversations(dependencies.store,dependencies.modelAuthorizationHost),routes=createConversationRoutes(()=>dependencies.bootstrap.configService.current<ConversationSettings>('conversations').multipleConversations);
   let bindings:ConversationsBindings|undefined;
   const handle=await dependencies.bootstrap.host.install({
     identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.conversations',installationId:'build:conversations@1.0.0',instanceId:'query',activationId:randomUUID()},

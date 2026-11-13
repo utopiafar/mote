@@ -35,6 +35,8 @@ export function registerQueryRunRoutes(app:FastifyInstance,dependencies:QueryRun
     const profile=dependencies.modelSettings.select('chat',input.modelProfileId);
     return [...dependencies.availableModelConnections(),agentModelConnection({kind:'profile',id:profile.id},{...profile.settings,model:input.modelOverride??profile.settings.model})];
   };
+  // Legacy synchronous entrypoint: keep its independent no-conversation
+  // behavior. Product clients select the main conversation explicitly.
   app.post('/api/query',async req=>{if(!dependencies.agent.configured)throw new AgentNotConfiguredError();const id=randomUUID(),input=queryWithAttachmentsSchema.parse(req.body);return dependencies.modelAuthorizationHost.manual('owner-query:'+id,queryConnections(input),()=>queryRuns().perform(id,input));});
   app.post('/api/query-runs/:id/cancel',async req=>queryRuns().cancel(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.get('/api/query-runs',async()=>({items:queryRuns().list()}));
