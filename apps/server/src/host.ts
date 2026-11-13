@@ -8,6 +8,7 @@ import {createModelEvidenceAuthority} from './model-evidence-authority.js';
 import {conversationHistoryReader} from './conversation-history.js';
 import type {QueryAgent} from './query-agent.js';
 import {AssistantDrafts} from './assistant-drafts.js';
+import {AssistantTasks} from './assistant-tasks.js';
 import {insightRequestSchema} from './query-request.js';
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
@@ -146,6 +147,9 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,{conversations}=await prepareConversations({bootstrap,store,resources,backendContext,modelAuthorizationHost});
   const assistantDrafts=new AssistantDrafts(conversations);
+  const assistantMatters=new AssistantMatters(store);
+  const assistantCards=new AssistantCards(store,evidenceReader);
+  const assistantCommitments=new AssistantCommitments(store,evidenceReader);
   const {pluginCenter,close:closePluginCenter}=openPluginControlRoot({store,executor,directory:join(config.dataDir,'plugins','packages')});
   // Outbound packages never write through their own code. This host owns the
   // cursor, sandbox, sensitive-source filter and hand-edit conflict ledger.
@@ -270,10 +274,16 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // The existing query provider does not yet expose the configured model
   // window or validate complete requests. Do not send a batch model request
   // using its hard-coded 128k assumption; C1/C5 must connect that budget check.
+  let assistantTasks:AssistantTasks|undefined;
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(input,'query','conversations'),ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
-    ()=>new ExecutionFailure('blocked','model_context_budget_unavailable'),()=>1,true,evidenceReader.memories);
+    ()=>new ExecutionFailure('blocked','model_context_budget_unavailable'),()=>1,true,evidenceReader.memories,{
+      valid:step=>assistantTasks?.valid(step)??true,project:step=>assistantTasks?.project(step),commit:(step,result)=>assistantTasks?.commit(step,result),
+    });
+  assistantTasks=new AssistantTasks(store,assistantCards,assistantMatters,evidenceReader,materials,conversations,sourceContexts,()=>batchProcessing,()=>availableModelConnections());
+  assistantDrafts.setVersionValidator(context=>assistantTasks!.validateDraftVersion(context));
+  assistantDrafts.register('assistant.task.start',context=>assistantTasks!.start(context));
   resources.defer(()=>batchProcessing.close());
   const assistantChanges=new AssistantChangeFeed(store,materials,modelAuthorization,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant input is no longer permitted',409);
@@ -445,7 +455,8 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const {delegation,queryRuns,queryRunServices}=await prepareQueryRuns({bootstrap,backendContext,resources,store,executor,executionObserver,runtimeSettings,evidenceReader,sourceContexts,assertModelEvidence,files,conversations,working:queryWorking,
     lifecycleSettings:queryLifecycleSettings,archiveReader,agent,modelEvidenceAuthority,modelSettings,queryRuntime:()=>queryRuntimeServices.runtime,
     semanticContextTime:dependencies?.semanticContextTime,usageLedger,
-    modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),assistantDrafts});
+    modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),assistantDrafts,assistantTasks,
+    assistantOwner:req=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);}});
   historyBeforeSeq=workId=>queryRunServices.delegation.journal.payload<import('./plugins/query-preparation.js').SavedQuery>(workId).historyBeforeSeq;
   memoryPhasePipeline.attachDelegation({runtime:delegation,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
     const input=materialMemoryWork.planningInput(candidate);
@@ -504,9 +515,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
-  const assistantMatters=new AssistantMatters(store);
-  const assistantCards=new AssistantCards(store,evidenceReader);
-  const assistantCommitments=new AssistantCommitments(store,evidenceReader);
   const featureServices=Object.freeze({
     assistantCards,assistantCommitments,
     configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
@@ -565,7 +573,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,batchProcessing,assistantChanges,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureRoutes,insightServices,materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,insightRuns,lifecycle,working,activity,activityServices,conversations,assistantDrafts,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
+  return {app,bootstrap,batchProcessing,assistantTasks,assistantChanges,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureRoutes,insightServices,materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,insightRuns,lifecycle,working,activity,activityServices,conversations,assistantDrafts,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();

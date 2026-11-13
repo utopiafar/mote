@@ -7,6 +7,7 @@ import {memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
 import {sha256,StoreError,type Store} from './store.js';
 import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
+import {resolveDependencies} from './conversation-lineage.js';
 
 // This is a server-local adapter for the existing read-only query, not another
 // task DTO. The owner supplies the exact originals after applying its scope.
@@ -16,6 +17,13 @@ type FrozenQuery=BatchQuery & {processingEvidence:Record<string,string>};
 type Plan={items:string[];contextTime:string;reduce?:string};
 type StepInput={batchId:string;itemId?:string;index?:number;revision:number};
 type Admission={kind:'automatic';purpose:AutomaticModelPurpose;roots:readonly string[]}|{kind:'manual';identities:readonly string[];connections:ModelConnection[]};
+/** A product owner may project its own record in the existing step lifecycle.
+ * These callbacks neither admit work nor create another execution mechanism. */
+export type BatchProductProjection={
+  valid(step:ExecutionStep):boolean;
+  project(step:ExecutionStep):void;
+  commit(step:ExecutionStep,result:QueryResult):void;
+};
 const deps=(ids:readonly string[]):EvidenceDependencies=>({version:1,complete:true,ids:[...new Set(ids)].sort()});
 const terminal=(state:string)=>['succeeded','cancelled','stale','skipped'].includes(state);
 const itemStep=(id:string,index:number)=>`batch:${id}:item:${index}`;
@@ -33,7 +41,8 @@ export class BatchProcessing {
     private readonly query:(input:QueryInput)=>Promise<QueryResult>,private readonly assertCurrent:AssertTaskCurrent,
     private readonly assertDisclosure:(ids:readonly string[])=>void,private readonly assertResultCurrent:(result:QueryResult)=>void,
     private readonly modelAdmission:()=>ExecutionFailure|undefined,private readonly concurrency:()=>number=()=>1,deferStart=false,
-    private readonly evidence:Pick<MemoryStore,'readEvidence'|'isCurrentEvidence'>={readEvidence:ids=>store.evidence(ids),isCurrentEvidence:id=>store.isCurrentEvidence(id)}){
+    private readonly evidence:Pick<MemoryStore,'readEvidence'|'isCurrentEvidence'>={readEvidence:ids=>store.evidence(ids),isCurrentEvidence:id=>store.isCurrentEvidence(id)},
+    private readonly product?:BatchProductProjection){
     this.tasks=new TaskRecords(store);if(!deferStart)this.start();
   }
   start(){
@@ -81,14 +90,16 @@ export class BatchProcessing {
       this.tasks.evidenceDependencies(parent.id,parent.revision,this.assertCurrent);
       if(input.itemId){const item=this.tasks.get(input.itemId);if(item.state!=='waiting'&&item.state!=='running')return false;
         this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,this.assertCurrent));}
-      return true;
+      return this.product?.valid(step)??true;
     }catch{return false;}
   }
   private project(step:ExecutionStep){
-    if(step.state!=='running')return;
-    const input=step.input as StepInput,parent=this.batch(input.batchId);
-    if(parent.state==='waiting'&&parent.revision===input.revision)this.tasks.setState(parent.id,parent.revision,'running');
-    if(input.itemId){const item=this.tasks.get(input.itemId);if(item.state==='waiting')this.tasks.setState(item.id,item.revision,'running');}
+    if(step.state==='running'){
+      const input=step.input as StepInput,parent=this.batch(input.batchId);
+      if(parent.state==='waiting'&&parent.revision===input.revision)this.tasks.setState(parent.id,parent.revision,'running');
+      if(input.itemId){const item=this.tasks.get(input.itemId);if(item.state==='waiting')this.tasks.setState(item.id,item.revision,'running');}
+    }
+    this.product?.project(step);
   }
   private async execute(step:ExecutionStep,signal:AbortSignal,assertGrant:()=>void):Promise<QueryResult>{
     const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.assertCurrent);
@@ -115,7 +126,8 @@ export class BatchProcessing {
       traceContext:{operationId:step.operationId,jobId:parent.id,batchId:step.id,...(input.index===undefined?{}:{batchIndex:input.index}),attempt:step.attempts}});
     assert();
     const allowed=new Set(frozen.evidenceIds);
-    if(result.evidenceDependencies?.complete!==true||result.evidenceDependencies.ids.some(id=>!allowed.has(id))||result.citations.some(citation=>!allowed.has(citation.id)))
+    const lineage=new Set(resolveDependencies(this.store,deps(frozen.evidenceIds))!.ids);
+    if(result.evidenceDependencies?.complete!==true||result.evidenceDependencies.ids.some(id=>!lineage.has(id))||result.citations.some(citation=>!allowed.has(citation.id)))
       throw new ExecutionFailure('stale','batch_evidence_outside_scope');
     return result;
   }
@@ -131,6 +143,7 @@ export class BatchProcessing {
         const itemResult=this.tasks.result<QueryResult>(id,item.revision,this.assertCurrent);if(!itemResult)throw new ExecutionFailure('stale','batch_item_incomplete');this.assertResultCurrent(itemResult);}
       this.tasks.saveResult(parent.id,parent.revision,result,dependencies,this.assertCurrent);
     }
+    if(!input.itemId||plan.reduce===undefined)this.product?.commit(step,result);
   }
   /** The whole admission, K3 records and step authority either commit together
    * or roll back. Replaying a request never mints another automatic trigger. */

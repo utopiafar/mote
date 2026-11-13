@@ -10485,5 +10485,11 @@
   "草稿已开始。": "Draft started.",
   "草稿范围已确认。": "Draft scope confirmed.",
   "这份草稿已失效，请回到原回答重新生成。": "This draft is no longer current. Return to the original answer and generate a new one.",
-  "草稿提交失败，请重试。": "The draft could not be submitted. Try again."
+  "草稿提交失败，请重试。": "The draft could not be submitted. Try again.",
+  "资料已变化，这项任务的结果已失效。": "The material has changed; this task result is no longer current.",
+  "当前范围没有可用正文，任务尚未执行。": "No readable content is available in this scope. The task has not run.",
+  "模型上下文预算尚未就绪，任务未执行。": "The model context budget is not ready. The task has not run.",
+  "任务未能完成，请查看处理状态。": "The task did not finish. Check its processing status.",
+  "读取任务状态失败，请刷新重试。": "Could not read the task status. Refresh and try again.",
+  "任务已创建。": "Task created."
 }

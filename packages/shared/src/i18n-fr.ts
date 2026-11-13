@@ -10486,5 +10486,11 @@ export const french: Readonly<Record<string, string>> = {
   "草稿已开始。": "Brouillon démarré.",
   "草稿范围已确认。": "Portée du brouillon confirmée.",
   "这份草稿已失效，请回到原回答重新生成。": "Ce brouillon n'est plus à jour. Revenez à la réponse d'origine et générez-en un nouveau.",
-  "草稿提交失败，请重试。": "Le brouillon n'a pas pu être envoyé. Réessayez."
+  "草稿提交失败，请重试。": "Le brouillon n'a pas pu être envoyé. Réessayez.",
+  "资料已变化，这项任务的结果已失效。": "Les documents ont changé ; le résultat de cette tâche n’est plus à jour.",
+  "当前范围没有可用正文，任务尚未执行。": "Aucun contenu lisible dans ce périmètre. La tâche n’a pas été exécutée.",
+  "模型上下文预算尚未就绪，任务未执行。": "Le budget de contexte du modèle n’est pas encore disponible. La tâche n’a pas été exécutée.",
+  "任务未能完成，请查看处理状态。": "La tâche n’a pas abouti. Vérifiez son état de traitement.",
+  "读取任务状态失败，请刷新重试。": "Impossible de lire l’état de la tâche. Actualisez la page et réessayez.",
+  "任务已创建。": "Tâche créée."
 };

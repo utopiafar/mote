@@ -111,7 +111,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     // A draft is a host-issued answer attachment, never a tool or model
     // capability. Only ordinary interactive conversation answers can carry one.
     let draftScope:ReturnType<typeof assistantDraftScope>;
-    if(operation==='query'&&moduleId==='conversations'&&assistantDrafts.capabilities().length){
+    if(operation==='query'&&moduleId==='conversations'&&input.executionLane!=='background'&&assistantDrafts.capabilities().length){
       const scope=assistantDraftScope(input);
       if(scope){
         const prepared=prepareTaskContext({...input,assistantDraft:true});
