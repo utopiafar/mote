@@ -60,6 +60,39 @@ class LibrarySourceProjectionTest {
         val malformed = view("ready"); malformed.getJSONObject("coverage").getJSONObject("extraction").put("completed", "1").put("total", 1)
         row.put("_fileView", malformed); projection.central("central", row); assertFalse(projection.visible("").single().centralReadable)
     }
+    @Test fun fileCapabilitiesAndRetentionComeFromTheVerifiedExactView() {
+        val projection = LibrarySourceProjection(); val id = "35b8fadb-8f0a-4769-8545-cdad61c4041d"
+        val row = original().put("captureId", id).put("fileArchive", JSONObject().put("captureId", id))
+        fun view(retention: String, hasOriginal: Boolean, canOpen: Boolean, status: String) = JSONObject().put("captureId", id)
+            .put("sourceId", "source").put("retention", retention)
+            .put("item", JSONObject().put("kind", "file").put("externalId", "external").put("revision", "v1"))
+            .put("hasOriginal", hasOriginal).put("originMissing", false).put("canOpenOriginal", canOpen)
+            .put("coverage", JSONObject().put("extraction", JSONObject().put("status", status))
+                .put("semantic", JSONObject().put("status", "pending")).put("embedding", JSONObject().put("status", "pending")))
+        row.put("_fileView", view("archive", true, false, "ready")); projection.central("central", row)
+        val closed = projection.visible("").single()
+        assertNotNull(closed.fileView); assertTrue(closed.centralReadable); assertFalse(closed.canOpenOriginal)
+        row.put("_fileView", view("archive", true, true, "ready")); projection.central("central", row)
+        assertTrue(projection.visible("").single().canOpenOriginal)
+        row.put("_fileView", view("reference", false, false, "ready")); projection.central("central", row)
+        val reference = projection.visible("").single()
+        assertFalse(reference.centralReadable); assertFalse(reference.canOpenOriginal)
+        row.put("_fileView", JSONObject().put("captureId", id)); projection.central("central", row)
+        val malformed = projection.visible("").single()
+        assertNull(malformed.fileView); assertFalse(malformed.centralReadable); assertFalse(malformed.canOpenOriginal)
+    }
+
+    @Test fun anOfflinePreparedLocalFileStaysReadableButAReferenceRowDoesNot() {
+        val projection = LibrarySourceProjection()
+        val pending = JSONObject().put("type", "original").put("sourceId", "source").put("externalId", "external")
+            .put("deviceId", "phone").put("revision", "v1").put("title", "Generated local").put("sortAt", "2026-10-01T00:00:00Z")
+            .put("localFile", true).put("layer", "snapshot").put("pending", JSONObject().put("manifest", JSONObject().put("sha256", "hash")))
+        projection.local("central", pending)
+        assertTrue(projection.visible("").single().localReadable)
+        projection.clear(); projection.local("central", JSONObject(pending.toString()).put("layer", "reference"))
+        assertFalse(projection.visible("").single().localReadable)
+    }
+
     @Test fun aRevokedFileStopsTheWholeRemotePageBeforePublishingItsMetadata() {
         val projection = LibrarySourceProjection()
         val first = original().put("captureId", "first").put("fileArchive", JSONObject())

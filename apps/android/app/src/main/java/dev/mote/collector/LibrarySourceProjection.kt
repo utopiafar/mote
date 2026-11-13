@@ -7,10 +7,19 @@ internal class LibrarySourceProjection {
     data class Key(val origin: String, val type: String, val source: String, val external: String, val device: String, val revision: String, val provisional: Boolean = false)
     data class Row(val key: Key, val local: JSONObject? = null, val central: JSONObject? = null) {
         val item get() = local ?: requireNotNull(central)
-        val centralReadable get() = central?.let { value ->
-            if (value.has("fileArchive")) CentralFileView.forOriginal(value)?.bodyAvailable == true
-            else value.optString("layer") != "reference"
-        } == true
+        /** Only a verified exact file version publishes a FileView. A malformed
+         * projection loses capabilities rather than falling back to metadata. */
+        val fileView get() = central?.takeIf { it.has("fileArchive") }?.let(CentralFileView::forOriginal)
+        val centralReadable get() = when {
+            central == null -> false
+            central.has("fileArchive") -> fileView?.bodyAvailable == true
+            else -> central.optString("layer") != "reference"
+        }
+        val canOpenOriginal get() = fileView?.let { it.hasOriginal && it.canOpenOriginal } == true
+        /** A prepared local file keeps its pending bytes readable offline; a
+         * reference row never claims a body it deliberately did not read. */
+        val localReadable get() = local?.optBoolean("localReadable") == true ||
+            (local?.optBoolean("localFile") == true && local.optString("layer") != "reference" && local.optJSONObject("pending") != null)
     }
     private val rows = linkedMapOf<Key, Row>()
     fun key(origin: String, value: JSONObject): Key = if (value.optString("type") == "material") Key(origin, "material", value.getString("id"), "", "", value.getString("revision"))

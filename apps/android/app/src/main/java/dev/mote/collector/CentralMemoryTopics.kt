@@ -81,12 +81,16 @@ internal class CentralMemoryTopics(
     private var history = false
     private var loadVersion = 0L
     private var searchTask: Runnable? = null
+    private var peopleMode = false
+    private var peopleCursor: String? = null
+    private var peopleSignature: String? = null
     private fun scrollView() = body.parent as? ScrollView
-    fun clear() { invalidated = false; detail.clear(); generation++; loadVersion++; searchTask?.let(body::removeCallbacks); navigation = MemoryTopicNavigation(); catalog = null; query = ""; kind = "all"; history = false }
-    fun save(out: Bundle) { if (navigation.selectedMemory == null) navigation.scroll = scrollView()?.scrollY ?: 0; out.putString("navigation", navigation.save().toString()); out.putString("query", query); out.putString("kind", kind); out.putBoolean("history", history) }
-    fun restore(value: Bundle) { runCatching { navigation.restore(JSONObject(value.getString("navigation") ?: "{}")); query = value.getString("query").orEmpty().take(500); kind = value.getString("kind").orEmpty().takeIf { it in setOf("all", "personal", "event") } ?: "all"; history = value.getBoolean("history") }.onFailure { clear() } }
+    fun clear() { invalidated = false; detail.clear(); generation++; loadVersion++; searchTask?.let(body::removeCallbacks); navigation = MemoryTopicNavigation(); catalog = null; query = ""; kind = "all"; history = false; peopleMode = false; peopleCursor = null; peopleSignature = null }
+    fun save(out: Bundle) { if (navigation.selectedMemory == null) navigation.scroll = scrollView()?.scrollY ?: 0; out.putString("navigation", navigation.save().toString()); out.putString("query", query); out.putString("kind", kind); out.putBoolean("history", history); out.putBoolean("people", peopleMode) }
+    fun restore(value: Bundle) { runCatching { navigation.restore(JSONObject(value.getString("navigation") ?: "{}")); query = value.getString("query").orEmpty().take(500); kind = value.getString("kind").orEmpty().takeIf { it in setOf("all", "personal", "event") } ?: "all"; history = value.getBoolean("history"); peopleMode = value.getBoolean("people") }.onFailure { clear() } }
     fun show() {
-        invalidated = false
+        invalidated = false; peopleCursor = null; peopleSignature = null
+        if (peopleMode) { showPeople(); return }
         val stamp = ++generation; val api = screens.client
         ui.work(MoteI18n.text("正在读取…"), { runCatching { MemoryTopicCatalog.read(api.get("/api/context-trees")) } }) { result ->
             if (stamp != generation) return@work
@@ -105,6 +109,7 @@ internal class CentralMemoryTopics(
     }
     fun poll() {
         if (invalidated) return
+        if (peopleMode) { pollPeople(); return }
         val stamp = generation; val api = screens.client; val selected = navigation.selectedMemory
         ui.work("", { runCatching {
             val directory = MemoryTopicCatalog.read(api.get("/api/context-trees"))
@@ -119,6 +124,74 @@ internal class CentralMemoryTopics(
                 else if (changed && navigation.selectedMemory == null) { navigation.scroll = scrollView()?.scrollY ?: 0; list(directory) }
             }.onFailure(::failure)
             ui.scheduleMemoryTopicsPoll()
+        }
+    }
+    private fun showPeople(cursor: String? = null) {
+        val stamp = ++generation; val api = screens.client
+        ui.work(MoteI18n.text("正在读取…"), { runCatching {
+            val page = api.get(MemoryPeoplePresentation.path(cursor))
+            val groups = MemoryPeoplePresentation.groups(page)
+            groups.map { person -> person to MemoryPeoplePresentation.person(api, person.memoryId) }
+                .filter { (_, memory) -> memory != null } to page
+        } }) { result ->
+            if (stamp != generation) return@work
+            result.onSuccess { (found, page) ->
+                body.removeAllViews(); screens.setBack { peopleMode = false; peopleCursor = null; show() }
+                peopleMode = true; peopleCursor = cursor; peopleSignature = found.joinToString("|") { (person, _) -> person.signature }
+                body.setPadding(ui.moteDp(16), 0, ui.moteDp(16), ui.moteDp(24))
+                ui.text(MoteI18n.text("人物"), NativeFontRole.TITLE_MOBILE)
+                ui.text(MoteI18n.text("按已关联的记忆身份浏览；同名人物分别保留。"), NativeFontRole.SUPPORT)
+                val target = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+                body.addView(target)
+                if (found.isEmpty()) ui.text(MoteI18n.text("本页暂无已关联的人物。可继续浏览记忆或主题。"), parent = target)
+                else {
+                    val group = MoteComponents.group(ui); target.addView(group)
+                    found.forEachIndexed { index, (person, nullableMemory) ->
+                        val memory = nullableMemory ?: return@forEachIndexed
+                        if (index > 0) group.addView(MoteComponents.divider(ui))
+                        val row = LinearLayout(ui).apply {
+                            orientation = LinearLayout.VERTICAL; minimumHeight = ui.moteDp(60)
+                            setPadding(ui.moteDp(14), ui.moteDp(10), ui.moteDp(14), ui.moteDp(10))
+                            background = MoteUi.clickable(ui, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTAINER, false)
+                            tag = "person-memory:" + person.memoryId; isFocusable = true
+                        }
+                        row.addView(TextView(ui).apply { text = memory.optString("title"); MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK) })
+                        memory.optString("statement").takeIf(String::isNotBlank)?.let { statement ->
+                            row.addView(TextView(ui).apply { text = statement; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED); maxLines = 2 })
+                        }
+                        row.addView(TextView(ui).apply {
+                            text = MemoryPeoplePresentation.stateLabel(memory) + " · " + MoteI18n.text("本页 {0} 条承诺", person.commitmentCount) +
+                                " · " + MoteI18n.text("本页关联 {0} 个事项", person.matterCount)
+                            MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED)
+                        })
+                        row.contentDescription = memory.optString("title") + "，" + MemoryPeoplePresentation.stateLabel(memory)
+                        row.setOnClickListener {
+                            openMemory(person.memoryId, { peopleMode = true; showPeople(cursor) }) { current -> current.optString("id") == person.memoryId }
+                        }
+                        MemoryPeoplePresentation.replacement(memory)?.let { current ->
+                            ui.button(MoteI18n.text("查看替代版本"), parent = row) {
+                                openMemory(current, { peopleMode = true; showPeople(cursor) }) { value -> value.optString("id") == current }
+                            }
+                        }
+                        group.addView(row)
+                    }
+                }
+                val next = page.optString("nextCursor").takeIf { it.isNotBlank() && it != "null" }
+                if (cursor != null) ui.button(MoteI18n.text("返回第一页"), parent = target) { peopleCursor = null; showPeople() }
+                if (next != null) ui.button(MoteI18n.text("下一页"), parent = target) { peopleCursor = next; showPeople(next) }
+                ui.button(MoteI18n.text("刷新"), parent = target) { showPeople(cursor) }
+                ui.scheduleMemoryTopicsPoll()
+            }.onFailure(::failure)
+        }
+    }
+    private fun pollPeople() {
+        if (invalidated) return
+        val stamp = generation
+        ui.work("", { runCatching { MemoryPeoplePresentation.groups(screens.client.get(MemoryPeoplePresentation.path(null))) } }) { result ->
+            if (stamp != generation) return@work
+            val signature = result.getOrNull()?.joinToString("|") { it.signature }
+            if (peopleCursor == null && signature != null && signature != peopleSignature) showPeople()
+            else ui.scheduleMemoryTopicsPoll()
         }
     }
     private fun list(directory: MemoryTopicCatalog) {
@@ -139,6 +212,7 @@ internal class CentralMemoryTopics(
         ui.memoryLibraryHeader(::filters)
         ui.text(MoteI18n.text("资料与记忆"), NativeFontRole.TITLE_MOBILE).setPadding(ui.moteDp(4), 0, 0, ui.moteDp(12))
         body.addView(LibraryBrowseUi.tabs(ui, "memories") { selected -> if (selected == "materials") ui.openLibraryMaterials() }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(10) })
+        ui.button(MoteI18n.text("人物"), parent = body) { peopleMode = true; showPeople() }.tag = "memory-people"
         val search = LibraryBrowseUi.search(ui, "搜索记忆", query)
         body.addView(search, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(16) })
         val target = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }

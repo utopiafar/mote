@@ -108,6 +108,8 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     fun back(): Boolean = detailBack?.let { detailBack = null; it(); true } ?: false
     fun setBack(action: () -> Unit) { ui.enterDetail(); detailBack = action; question = null; messages = null; close() }
     fun clearBack() { detailBack = null }
+    /** Encrypted screen state owned by the same profile as Central drafts. */
+    fun stateFile(name: String) = CentralStateFile(directory, name, cipher)
     fun resume() { if (currentPage in setOf("plugins", "extensions")) admin.resume(); if (currentPage == "activity") ui.scheduleActivityPoll(); if (currentPage == "memories") ui.scheduleMemoryTopicsPoll(); if (currentPage == "insights") insights.resume() }
     fun pollMemoryTopics() { if (currentPage == "memories") library.pollTopics() }
     fun saveMemoryTopics(out: android.os.Bundle) = library.saveTopics(out)

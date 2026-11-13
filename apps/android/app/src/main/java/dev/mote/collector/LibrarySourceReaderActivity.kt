@@ -3,6 +3,8 @@ package dev.mote.collector
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.LibraryReader
@@ -26,6 +28,17 @@ class LibrarySourceReaderActivity : MoteActivity() {
     private var memberOffset = 0
     private var exportGeneration: Long? = null
     private var exportOrigin: String? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var resumed = false
+    private var renderedAvailability: String? = null
+    private var renderedPage: String? = null
+    private val availabilityCheck = object : Runnable {
+        override fun run() {
+            if (!resumed) return
+            checkAvailability()
+            handler.postDelayed(this, 5000)
+        }
+    }
     private fun key(name: String) = intent.getStringExtra(name).orEmpty()
     private fun request() = LibraryReader.Request(
         origin = key("origin"), type = key("type"), source = key("source"), external = key("external"),
@@ -38,9 +51,48 @@ class LibrarySourceReaderActivity : MoteActivity() {
         exportGeneration = state?.getLong("exportGeneration")?.takeIf { it >= 0 }; exportOrigin = state?.getString("exportOrigin")
         body = moteDetailPage()
     }
-    override fun onResume() { super.onResume(); load() }
-    override fun onPause() { generation++; body.removeAllViews(); super.onPause() }
-    override fun onDestroy() { task.close(); super.onDestroy() }
+    override fun onResume() { super.onResume(); resumed = true; load(); handler.postDelayed(availabilityCheck, 5000) }
+    override fun onPause() {
+        resumed = false; generation++; handler.removeCallbacks(availabilityCheck); body.removeAllViews(); super.onPause()
+    }
+    override fun onDestroy() { handler.removeCallbacks(availabilityCheck); task.close(); super.onDestroy() }
+    /** A revoked selection or a changed FileView replaces the page; an unchanged
+     * projection never reloads a body that is already current. */
+    private fun checkAvailability() {
+        if (task.busy) return
+        val request = request(); val stamp = generation
+        if (key("type") != "original") {
+            val current = renderedPage
+            task.start("", {}, {
+                when (val outcome = reader.open(request, offset, memberOffset)) {
+                    is LibraryReader.Available -> pageSignature(outcome.page) to false
+                    is LibraryReader.Unreadable -> null to true
+                    is LibraryReader.Failed -> null to FileViewPresentation.revoked(outcome.error)
+                }
+            }) { result ->
+                if (!resumed || stamp != generation) return@start
+                result.onSuccess { (next, revoked) ->
+                    if (revoked || next != null && next != current) load()
+                }
+            }
+            return
+        }
+        val current = renderedAvailability
+        task.start("", {}, {
+            if (reader.unreadable(request)) null to true
+            else runCatching { reader.view(request) }.let { outcome ->
+                outcome.getOrNull() to FileViewPresentation.revoked(outcome.exceptionOrNull())
+            }
+        }) { result ->
+            if (!resumed || stamp != generation) return@start
+            result.onSuccess { (view, revoked) ->
+                if (revoked || FileViewPresentation.shouldReload(current, view)) load()
+            }
+        }
+    }
+    private fun pageSignature(page: LibraryReader.LibraryPage): String = listOf(key("type"), page.item.toString(), page.text,
+        page.nextOffset, page.range?.toString(), page.members?.toString(), page.fileView?.let { FileViewPresentation.summary(it).signature })
+        .joinToString("|")
     override fun onSaveInstanceState(state: Bundle) { state.putInt("offset", offset); state.putInt("members", memberOffset); state.putLong("exportGeneration", exportGeneration ?: -1); state.putString("exportOrigin", exportOrigin); super.onSaveInstanceState(state) }
     private fun load() {
         if (task.busy) return
@@ -51,11 +103,15 @@ class LibrarySourceReaderActivity : MoteActivity() {
             body.removeAllViews()
             // A result assembled under a selection that has since been revoked
             // never reaches the page: only the unreadable notice is published.
-            if (reader.unreadable(request())) { unavailable(); return@start }
+            if (reader.unreadable(request())) { renderedAvailability = null; renderedPage = null; unavailable(); return@start }
             when (result) {
-                is LibraryReader.Unreadable -> unavailable()
+                is LibraryReader.Unreadable -> { renderedAvailability = null; renderedPage = null; unavailable() }
                 is LibraryReader.Failed -> { text(result.error.message ?: MoteI18n.text("内容暂不可读取，原数据保留。")); retry() }
-                is LibraryReader.Available -> render(result.page)
+                is LibraryReader.Available -> {
+                    renderedPage = pageSignature(result.page)
+                    renderedAvailability = if (key("type") == "original") result.page.fileView?.let { FileViewPresentation.summary(it).signature } else null
+                    render(result.page)
+                }
             }
             MoteUi.styleTree(body)
         }
@@ -77,10 +133,16 @@ class LibrarySourceReaderActivity : MoteActivity() {
         Regex("^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$").matchEntire(ref)?.let { match -> button(MoteI18n.text("整理资料")) { open(this, key("origin"), "material", match.groupValues[1], "", "", match.groupValues[2]) } }
         page.file?.let { file ->
             text(LocalContentPresentation.centralStatus(file, null))
-            if (file.optBoolean("hasOriginal")) button(MoteI18n.text("保存原件")) {
-                val selection = reader.selection()
-                exportGeneration = selection.generation; exportOrigin = selection.server
-                @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(file.optJSONObject("item")?.optString("mimeType") ?: "application/octet-stream").putExtra(Intent.EXTRA_TITLE, page.item.optString("windowTitle", "mote-file")), 812)
+            val view = page.fileView
+            if (view == null) {
+                text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META)
+            } else {
+                FileViewPresentation.summary(view).lines.forEach { line -> text(line, NativeFontRole.META) }
+                if (view.hasOriginal && view.canOpenOriginal) button(MoteI18n.text("保存原件")) {
+                    val selection = reader.selection()
+                    exportGeneration = selection.generation; exportOrigin = selection.server
+                    @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(file.optJSONObject("item")?.optString("mimeType") ?: "application/octet-stream").putExtra(Intent.EXTRA_TITLE, page.item.optString("windowTitle", "mote-file")), 812)
+                }
             }
         }
         page.members?.let { members ->
