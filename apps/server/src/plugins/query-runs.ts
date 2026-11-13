@@ -171,7 +171,13 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       const message=assertMessage(work.id.slice('query:'.length),body);
       if(message){
         if(evidenceIds?.length===0&&(result.citations.length||(result.evidenceDependencies?.ids.length??0)>0||result.evidenceDependencies?.complete===false||(result.sourceContextDependencies?.length??0)>0))throw new StoreError('Query result is outside the empty selection',409);
-        const stored=evidenceIds?.length===0?{...result,evidenceDependencies:{version:1 as const,complete:true,ids:[]}}:result;
+        // Preparation suppresses archive tools for an empty selection by
+        // omitting the array from the agent input. Restore the owner's actual
+        // accepted scope on a draft before it becomes a product command.
+        const stored=evidenceIds?.length===0?{...result,evidenceDependencies:{version:1 as const,complete:true,ids:[]},
+          ...(result.draft?{draft:{...result.draft,scope:{kind:'selection' as const,evidenceIds:[],
+            ...(message.scope.after?{after:message.scope.after}:{}),...(message.scope.before?{before:message.scope.before}:{}),
+            ...(message.scope.deviceId?{deviceId:message.scope.deviceId}:{}),...(message.scope.timeZone?{timeZone:message.scope.timeZone}:{})}}}:{})}:result;
         conversations.complete(message.id,stored,{expectedVersion:message.version});
         return {conversationId:message.conversationId,turnId:message.id};
       }

@@ -10486,5 +10486,11 @@ export const spanish: Readonly<Record<string, string>> = {
   "草稿已开始。": "Borrador iniciado.",
   "草稿范围已确认。": "Alcance del borrador confirmado.",
   "这份草稿已失效，请回到原回答重新生成。": "Este borrador ya no está vigente. Vuelve a la respuesta original y genera uno nuevo.",
-  "草稿提交失败，请重试。": "No se pudo enviar el borrador. Inténtalo de nuevo."
+  "草稿提交失败，请重试。": "No se pudo enviar el borrador. Inténtalo de nuevo.",
+  "资料已变化，这项任务的结果已失效。": "El material ha cambiado; el resultado de esta tarea ya no está actualizado.",
+  "当前范围没有可用正文，任务尚未执行。": "No hay contenido legible en este ámbito. La tarea no se ha ejecutado.",
+  "模型上下文预算尚未就绪，任务未执行。": "El presupuesto de contexto del modelo aún no está disponible. La tarea no se ha ejecutado.",
+  "任务未能完成，请查看处理状态。": "La tarea no se ha completado. Comprueba el estado del procesamiento.",
+  "读取任务状态失败，请刷新重试。": "No se pudo leer el estado de la tarea. Actualiza e inténtalo de nuevo.",
+  "任务已创建。": "Tarea creada."
 };

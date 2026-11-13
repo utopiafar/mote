@@ -49,7 +49,7 @@ test('start retries keep the same requestId',async t=>{
   await act(async()=>button(d,'开始')!.click());
   assert.equal(calls[0].requestId,calls[1].requestId);
   assert.equal(calls[0].requestId,startDraft.requestId);
-  assert.match(d.querySelector('[role=status]')!.textContent!,/草稿已开始/);
+  assert.match(d.querySelector('[role=status]')!.textContent!,/任务已创建/);
   assert.equal(button(d,'开始')!.disabled,true);
 });
 
@@ -77,4 +77,17 @@ test('stale or deleted drafts keep the goal and explain the retry path',async t=
   await act(async()=>button(d,'查看将使用的范围')!.click());
   assert.match(d.querySelector('[role=alert]')!.textContent!,/这份草稿已失效/);
   assert.equal(d.querySelector<HTMLTextAreaElement>('textarea[aria-label="工作目标"]')!.value,'Generated goal');
+});
+
+test('each edit after a started task creates the next immutable command version',async t=>{
+  const {root,d}=await fixture(t),calls:any[]=[];
+  const startDraft={...previewDraft,capabilities:['assistant.task.start','assistant.task.preview'] as AssistantDraft['capabilities']};
+  const api={request:async(_path:string,init?:RequestInit)=>{const body=JSON.parse(String(init?.body));calls.push(body);return {requestId:body.requestId};}} as Api;
+  await render(root,api,startDraft);await act(async()=>button(d,'开始')!.click());
+  await field(d,'Generated first edit');await act(async()=>button(d,'开始')!.click());
+  await field(d,'Generated second edit');await act(async()=>button(d,'开始')!.click());
+  await field(d,'Generated goal');await act(async()=>button(d,'开始')!.click());
+  assert.deepEqual(calls.map(call=>call.expectedRevision),[1,2,3,4]);
+  assert.equal(new Set(calls.map(call=>call.requestId)).size,4);
+  assert.deepEqual(calls.map(call=>call.goal),['Generated goal','Generated first edit','Generated second edit','Generated goal']);
 });

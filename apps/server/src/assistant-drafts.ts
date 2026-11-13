@@ -44,6 +44,7 @@ export type AssistantDraftCommandHandler=(context:AssistantDraftCommandContext)=
  * domain owners; the task service owns the actual creation and acceptance receipt. */
 export class AssistantDrafts {
   private readonly handlers=new Map<AssistantDraftCapability,AssistantDraftCommandHandler>();
+  private validateVersion?:(context:AssistantDraftCommandContext)=>void;
   constructor(private readonly conversations:Pick<ConversationRepository,'get'|'referenceAvailability'>){
     // Preview is the side-effect-free command available before a task service.
     this.register('assistant.task.preview',({command,draft})=>({
@@ -62,6 +63,8 @@ export class AssistantDrafts {
     return ()=>{if(this.handlers.get(capability)===handler)this.handlers.delete(capability);};
   }
 
+  setVersionValidator(validate:(context:AssistantDraftCommandContext)=>void){this.validateVersion=validate;}
+
   issue(input:{goal:string;scope:QueryScope}):AssistantDraft{
     const capabilities=this.capabilities();
     if(!capabilities.length)throw new StoreError('No assistant draft command is available',503);
@@ -76,14 +79,14 @@ export class AssistantDrafts {
     if(turn.evidenceDeleted||turn.evidenceUnavailable)throw new StoreError('Assistant draft evidence is no longer available',409);
     if(turn.evidenceStale)throw new StoreError('Assistant draft is out of date; generate a new one',409);
     const draft=assistantDraftSchema.parse(turn.result.draft);
-    const edited=command.expectedRevision===draft.revision+1;
-    if(command.expectedRevision!==draft.revision&&!edited)
+    const edited=command.expectedRevision>draft.revision;
+    if(command.expectedRevision<draft.revision)
       throw new StoreError('Assistant draft changed; reload before continuing',409);
     // An unchanged draft keeps its original request identity. An explicit edit
     // is a new command version and must not collide with the original request.
     if(edited?command.requestId===draft.requestId:command.requestId!==draft.requestId)
       throw new StoreError('Assistant draft request identity does not match this version',409);
-    if(edited?command.goal===draft.goal:command.goal!==draft.goal)
+    if(edited?command.expectedRevision===draft.revision+1&&command.goal===draft.goal:command.goal!==draft.goal)
       throw new StoreError('Assistant draft changed; reload before continuing',409);
     if(JSON.stringify(command.scope)!==JSON.stringify(draft.scope))
       throw new StoreError('Assistant draft scope does not match the stored answer',409);
@@ -94,6 +97,8 @@ export class AssistantDrafts {
         throw new StoreError('Assistant draft evidence is no longer available',409);
     const handler=this.handlers.get(command.capability);
     if(!handler)throw new StoreError('Assistant draft capability is unavailable',409);
-    return await handler({command,draft,conversationId:command.conversationId,turnId:command.turnId,turn});
+    const context={command,draft,conversationId:command.conversationId,turnId:command.turnId,turn};
+    this.validateVersion?.(context);
+    return await handler(context);
   }
 }
