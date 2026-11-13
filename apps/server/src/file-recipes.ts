@@ -3,6 +3,8 @@ import {transcriptSchema,type Transcript} from '@mote/shared';
 import type {ProcessorInput} from './file-processors.js';
 import {StoreError} from './store.js';
 import {recipeFingerprint,freezeRecipe} from './recipe-contract.js';
+import {ExecutionFailure} from './execution-engine.js';
+import {FUNASR_PINS,funasrTranscriptOutput,funasrDialogueOutput,parseFunasrResponse,parseFunasrArchive,type FunasrCheckpoint} from './funasr-contract.js';
 
 export type ComponentRef={id:string;version:string};
 export interface FileOutputType extends ComponentRef {
@@ -23,16 +25,24 @@ export function defaultFileOutput(processor:{output?:ComponentRef;mediaTypes:str
   return processor.output??TRANSCRIPT_OUTPUT;
 }
 const componentKey=(ref:ComponentRef)=>{if(!/^[a-z][a-z0-9.-]{2,127}$/.test(ref.id)||!ref.version)throw Error('Invalid file component');return `${ref.id}@${ref.version}`;};
-export type FileRecipeStep={name:string;stage:ComponentRef;dependsOn:string[];enabled?:'semanticTurns'};
+export type FileRecipeStep={name:string;stage:ComponentRef;dependsOn:string[];enabled?:'semanticTurns'|'deduplicate'};
 export type FileRecipe=ComponentRef&{steps:FileRecipeStep[];output:string};
 export type FileRecipeContext={
   input:ProcessorInput;dependencies:Readonly<Record<string,string>>;
   readArtifact(id:string):unknown;
   /** Host validates, caches, fences and publishes every custom stage output. */
-  transform(type:ComponentRef,execute:(signal:AbortSignal)=>Promise<unknown>):Promise<string>;
+  transform(type:ComponentRef,execute:(signal:AbortSignal)=>Promise<unknown>,options?:{deterministic?:boolean}):Promise<string>;
   builtin(operation:'extract'|'diarize'|'align'|'turns'):Promise<string>;
 };
 export interface FileRecipeStage extends ComponentRef {run(context:FileRecipeContext):Promise<string>;}
+/** ASR-04 owns the conservative transform, its native mapping and output parser.
+ * Assembly supplies this dependency; absence is an explicit stage block after
+ * the complete uncleaned dialogue has been committed, never an identity shim. */
+export interface FileDialogueCleanup extends ComponentRef {
+  output:FileOutputType;
+  process(input:{transcript:Transcript;checkpoint:FunasrCheckpoint;signal:AbortSignal}):unknown|Promise<unknown>;
+}
+type RecipeFlags={semanticTurns:boolean;deduplicate?:boolean};
 export class FileRecipeRegistry {
   readonly epochs:PluginEpochs;
   private stages=new Map<string,FileRecipeStage>();
@@ -47,13 +57,13 @@ export class FileRecipeRegistry {
     const visit=(name:string)=>{if(visited.has(name))return;const step=names.get(name);if(!step||active.has(name))throw Error('Missing dependency or cyclic file recipe');if(!/^[a-z][a-z0-9.-]{0,63}$/.test(name))throw Error('Invalid file step name');componentKey(step.stage);active.add(name);step.dependsOn.forEach(visit);active.delete(name);visited.add(name);ordered.push(step);};
     recipe.steps.forEach(step=>visit(step.name));return ordered;
   }
-  resolve(ref:ComponentRef,flags:{semanticTurns:boolean}){
+  resolve(ref:ComponentRef,flags:RecipeFlags){
     const recipe=this.recipes.get(componentKey(ref));if(!recipe)throw new StoreError('File recipe is unavailable',409);
-    const steps=this.order(recipe).map(step=>({...step,active:!step.enabled||flags[step.enabled]}));
+    const steps=this.order(recipe).map(step=>({...step,active:!step.enabled||(step.enabled==='deduplicate'?flags.deduplicate!==false:flags[step.enabled])}));
     const pins=steps.filter(step=>step.active).map(step=>{const stage=this.stages.get(componentKey(step.stage));if(!stage)throw new StoreError('File recipe stage is unavailable',409);return {name:step.name,...step.stage};});
     return {recipe,steps,pins,fingerprint:recipeFingerprint({recipe,pins,flags})};
   }
-  async run(ref:ComponentRef,flags:{semanticTurns:boolean},context:(step:FileRecipeStep,dependencies:Record<string,string>)=>FileRecipeContext,verify:(artifactId:string)=>void){
+  async run(ref:ComponentRef,flags:RecipeFlags,context:(step:FileRecipeStep,dependencies:Record<string,string>)=>FileRecipeContext,verify:(artifactId:string)=>void){
     const plan=this.resolve(ref,flags),outputs:Record<string,string>={};
     for(const step of plan.steps){
       const dependencies=Object.fromEntries(step.dependsOn.map(name=>[name,outputs[name]]));
@@ -67,14 +77,29 @@ export class FileRecipeRegistry {
   list(){return {recipes:[...this.recipes.values()],stages:[...this.stages.values()].map(({id,version})=>({id,version}))};}
 }
 export function defaultFileRecipe(processor:{dialogue?:boolean;recipe?:ComponentRef}):ComponentRef{return processor.recipe??{id:processor.dialogue?'mote.audio-dialogue':'mote.file-extraction',version:processor.dialogue?'2':'1'};}
-export function installFileRecipes(recipes:FileRecipeRegistry,outputs:FileOutputRegistry){
+export function installFileRecipes(recipes:FileRecipeRegistry,outputs:FileOutputRegistry,cleanup?:FileDialogueCleanup){
   const dispose:(()=>void)[]=[];
   try{
     dispose.push(outputs.register({...TRANSCRIPT_OUTPUT,kind:'text',parse:value=>transcriptSchema.parse(value),project:value=>value as Transcript}));
+    dispose.push(outputs.register(funasrTranscriptOutput));
+    dispose.push(outputs.register(funasrDialogueOutput));
     for(const name of ['extract','diarize','align','turns'] as const)dispose.push(recipes.registerStage({id:'mote.'+name,version:name==='align'?'2':'1',run:context=>context.builtin(name)}));
     const stage=(name:string,dependsOn:string[]=[],enabled?:'semanticTurns'):FileRecipeStep=>({name,stage:{id:'mote.'+name,version:'1'},dependsOn,...(enabled?{enabled}:{})});
     dispose.push(recipes.registerRecipe({id:'mote.file-extraction',version:'1',steps:[stage('extract')],output:'extract'}));
     dispose.push(recipes.registerRecipe({id:'mote.audio-dialogue',version:'2',steps:[stage('extract'),stage('diarize',['extract']),{...stage('align',['extract','diarize']),stage:{id:'mote.align',version:'2'}},stage('turns',['align'],'semanticTurns')],output:'turns'}));
+    dispose.push(recipes.registerStage({...FUNASR_PINS.align,run:context=>context.builtin('align')}));
+    const cleanupStage=cleanup?{id:cleanup.id,version:cleanup.version}:{id:'mote.transcript-cleanup',version:'1'};
+    if(cleanup){if(cleanup.output.kind!=='dialogue')throw Error('Dialogue cleanup must project dialogue');dispose.push(outputs.register(cleanup.output));}
+    dispose.push(recipes.registerStage({...cleanupStage,async run(context){
+      if(!cleanup)throw new ExecutionFailure('blocked','dialogue_cleanup_unavailable');
+      const artifact=context.readArtifact(context.dependencies.align) as {output?:{payload:unknown}};
+      const response=parseFunasrResponse(artifact.output?.payload);
+      if(response.status!=='succeeded'||response.operation!=='diarize')throw new StoreError('Complete FunASR dialogue is required for cleanup',409);
+      return context.transform(cleanup.output,async signal=>cleanup.process({transcript:funasrDialogueOutput.project(response),checkpoint:parseFunasrArchive(response.checkpoint),signal}),{deterministic:true});
+    }}));
+    dispose.push(recipes.registerRecipe({...FUNASR_PINS.recipe,steps:[stage('extract'),stage('diarize',['extract']),
+      {name:'align',stage:FUNASR_PINS.align,dependsOn:['extract','diarize']},
+      {name:'cleanup',stage:cleanupStage,dependsOn:['align'],enabled:'deduplicate'},stage('turns',['cleanup'],'semanticTurns')],output:'turns'}));
   }catch(error){
     for(const stop of dispose.reverse()){try{stop();}catch{}}
     throw error;

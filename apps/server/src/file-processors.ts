@@ -15,6 +15,9 @@ import {ImportIntakeRegistry,installImportIntake} from './import-intake.js';
 import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes,type ComponentRef} from './file-recipes.js';
 import {ImageInputRegistry} from './image-inputs.js';
 import {ImageRecipeRegistry,installImageRecipes} from './image-recipes.js';
+import {FUNASR_PINS,funasrTranscriptOutput,type FunasrArchive} from './funasr-contract.js';
+import {runFunasr} from './funasr-client.js';
+import type {FileDialogueCleanup} from './file-recipes.js';
 
 export type MediaRequestIdentity={requestId:string;requestScope:string;onRequest:()=>void;onExecutionFacts?:(supported:boolean)=>void};
 export interface TranscriptionProvider {
@@ -45,16 +48,17 @@ export class HttpTranscriptionProvider implements TranscriptionProvider {
 /** Only builtin, host-controlled transports can declare their actual model
  * destination. Secrets are incorporated only into the final digest. */
 export function mediaModelConnection(processor:Pick<FileProcessor,'id'|'version'|'localOnly'>,service:ProcessingService,settings:FileProcessingSettings):ModelConnection|undefined {
- if(!['audio.http','audio.local-dialogue','audio.diarize','audio.diarize-wespeaker','image.http'].includes(processor.id))return;
+ if(!['audio.http','audio.local-dialogue','audio.diarize','image.http'].includes(processor.id))return;
  if(processor.localOnly&&service.execution!=='local')return;
  const endpoint=processor.id==='image.http'?settings.imageEndpoint:settings.endpoint;
  if(!endpoint)return;
- const url=new URL(endpoint);if(processor.id==='audio.diarize'||processor.id==='audio.diarize-wespeaker')url.pathname=url.pathname.replace(/\/transcribe\/?$/,'/diarize');
+ const url=new URL(endpoint);if(processor.id==='audio.diarize')url.pathname=url.pathname.replace(/\/transcribe\/?$/,'/diarize');
  return {id:'media:'+service.id+':'+processor.id,fingerprint:sha256(JSON.stringify({processor:processor.id,version:processor.version,service:service.id,execution:service.execution,endpoint:url.toString(),model:service.model,credential:sha256(settings.apiKey??'')}))};
 }
 export interface ProcessorInput {
-  file:{id:string;title:string;mimeType:string;sizeBytes:number};
+  file:{id:string;title:string;mimeType:string;sizeBytes:number;sha256?:string};
   parameters?:Record<string,string|number|boolean|null>;settings:FileProcessingSettings;signal:AbortSignal;maxAudioMs:number;
+  settingsFingerprint?:string;recognition?:FunasrArchive;
   request?:MediaRequestIdentity;authorizeModel?:()=>void;
   readOriginal():AsyncIterable<Buffer>;
 }
@@ -131,10 +135,10 @@ export function installFileProcessorContributions(registry:ProcessorRegistry,con
   return ()=>{for(const remove of installed){try{remove();}catch{}}};
 }
 function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
-  const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'4':'3',name:localOnly?"本地多人录音":"转写接口",stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
-    ...(localOnly?{dialogue:true,managedModel:'dialogue' as const}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
-    parameters:localOnly?[{key:'speakerCount',label:"预期说话人数",type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:"留空由模型自动识别"},{key:'speakerMin',label:'说话人数下限',type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:'仅在已知范围时填写；与准确人数互斥'},{key:'speakerMax',label:'说话人数上限',type:'number',nullable:true,default:null,min:1,max:16,integer:true},{key:'semanticTurns',label:"使用所选语言模型合并自然发言轮次",type:'boolean',default:false}]:[],
-    process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly,maxAudioMs:input.maxAudioMs,signal:input.signal,request:input.request,authorizeModel:input.authorizeModel})});
+  const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?FUNASR_PINS.extract.version:'3',name:localOnly?"本地多人录音":"转写接口",stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
+    ...(localOnly?{dialogue:true,managedModel:'dialogue' as const,recipe:FUNASR_PINS.recipe,output:{id:funasrTranscriptOutput.id,version:funasrTranscriptOutput.version}}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
+    parameters:localOnly?[{key:'speakerCount',label:"预期说话人数",type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:"留空由模型自动识别"},{key:'speakerMin',label:'说话人数下限',type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:'仅在已知范围时填写；与准确人数互斥'},{key:'speakerMax',label:'说话人数上限',type:'number',nullable:true,default:null,min:1,max:16,integer:true},{key:'deduplicate',label:'保守消重',type:'boolean',default:true},{key:'semanticTurns',label:"使用所选语言模型合并自然发言轮次",type:'boolean',default:false}]:[],
+    process:input=>localOnly?runFunasr(input,'recognize'):provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly,maxAudioMs:input.maxAudioMs,signal:input.signal,request:input.request,authorizeModel:input.authorizeModel})});
   const processors=[
     audio('audio.http'),
     audio('audio.local-dialogue',true),
@@ -148,14 +152,8 @@ function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
       const transcript=transcriptSchema.parse(value);if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
     }}),
   ];
-  for(const alternative of [false,true])processors.push(builtin({id:alternative?'audio.diarize-wespeaker':'audio.diarize',version:alternative?'1':'3',name:alternative?'本地说话人分离 · WeSpeaker 中文':'本地说话人分离',stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:alternative?'speaker-wespeaker':'dialogue',awaitResponseOnCancel:true,dependencies:alternative?{settings:['endpoint','apiKey','speakerCount','speakerMin','speakerMax'],parameters:['speakerCount','speakerMin','speakerMax']}:{settings:['endpoint','apiKey','speakerCount'],parameters:['speakerCount']},async process(input){
-    if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);
-    const endpoint=new URL(input.settings.endpoint);endpoint.pathname=endpoint.pathname.replace(/\/transcribe\/?$/,'/diarize');
-    if(!endpoint.pathname.endsWith('/diarize'))throw new StoreError('Local worker URL must end with /transcribe',409);
-    if(!alternative&&input.settings.speakerMin!==null)throw new StoreError('Speaker range requires the WeSpeaker plugin',409);
-    const headers={...(alternative?{'X-Mote-Speaker-Model':'wespeaker-zh',...(input.settings.speakerMin!==null?{'X-Mote-Speaker-Min':String(input.settings.speakerMin),'X-Mote-Speaker-Max':String(input.settings.speakerMax)}:{})}:{}),'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Offline':'1','X-Mote-Max-Audio-Ms':String(input.maxAudioMs),'X-Mote-Processing-Timeout-Ms':String(input.settings.timeoutMs),'X-Mote-Speaker-Count':String(input.settings.speakerCount??0),...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
-    return diarizationSchema.parse(await postLocalProcessor(endpoint.toString(),headers,input.readOriginal(),input.signal,true,input.request,input.authorizeModel));
-  }}));
+  processors.push(builtin({...FUNASR_PINS.diarize,name:'本地说话人分离',stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:'dialogue',awaitResponseOnCancel:true,
+    dependencies:{settings:['endpoint','apiKey','speakerCount','speakerMin','speakerMax'],parameters:['speakerCount','speakerMin','speakerMax']},process:input=>runFunasr(input,'diarize')}));
   return processors;
 }
 /** File processing plugins mount into the host scope's Cordis root when mounted
@@ -166,7 +164,7 @@ export class FileProcessorRuntime {
   readonly imageRecipes=new ImageRecipeRegistry();readonly imageInputs=new ImageInputRegistry();
   private removeContributions:(()=>void)|undefined;
   private removeImageRecipes:(()=>void)|undefined;
-  constructor(private readonly provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,scope?:HostScope,options:{builtinContributions?:boolean}={}){
+  constructor(private readonly provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,scope?:HostScope,private readonly options:{builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup}={}){
     this.context=scope?.cordis.root??new Context();
     if(!scope)this.resources.retire(()=>this.context.fiber.dispose());
     if(scope)scope.defer(()=>this.resources.close());
@@ -204,13 +202,13 @@ export class FileProcessorRuntime {
    * contribution. The image plugin owns image recipes; standalone embedded
    * runtimes keep installing them with the built-ins unless the host excludes
    * them. Re-enabling installs exactly one copy. */
-  installContributions(contributions:readonly FileProcessorContribution[]=[],options:{imageRecipes?:boolean}={}){
+  installContributions(contributions:readonly FileProcessorContribution[]=[],options:{imageRecipes?:boolean;dialogueCleanup?:FileDialogueCleanup}={}){
     if(this.removeContributions)throw new Error('File processing contributions are already installed');
     const dispose:(()=>void)[]=[];
     try{
       dispose.push(installImportIntake(this.intake));
       dispose.push(installFileProcessorContributions(this.registry,[{id:'mote.builtin-file-processors',processors:builtinFileProcessors(this.provider)},...contributions]));
-      dispose.push(installFileRecipes(this.recipes,this.outputs));
+      dispose.push(installFileRecipes(this.recipes,this.outputs,options.dialogueCleanup??this.options.dialogueCleanup));
       if(options.imageRecipes!==false)dispose.push(this.installImageRecipes());
     }catch(error){
       for(const remove of dispose.reverse()){try{remove();}catch{}}

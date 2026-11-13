@@ -7,7 +7,7 @@ import {DEFAULT_MEDIA_OCR_ENDPOINT} from './media-configuration.js';
 import {effectiveProcessorParameters} from './processor-parameters.js';
 
 export function createDefaultFilePolicy(_registry:ProcessorRegistry|undefined,endpoint:string,ocrEndpoint=DEFAULT_MEDIA_OCR_ENDPOINT):FilePolicy{
-  const profile=(processorId:string,serviceId?:string):ProcessingProfile=>({id:processorId==='archive'?'archive':`profile.${processorId}`,name:processorId,processorId,parameters:processorId==='audio.local-dialogue'?{speakerCount:null,semanticTurns:false}:{},diarizationProcessor:'audio.diarize',...(serviceId?{serviceId}:{}),summarize:false});
+  const profile=(processorId:string,serviceId?:string):ProcessingProfile=>({id:processorId==='archive'?'archive':`profile.${processorId}`,name:processorId,processorId,parameters:processorId==='audio.local-dialogue'?{speakerCount:null,deduplicate:true,semanticTurns:false}:{},diarizationProcessor:'audio.diarize',...(serviceId?{serviceId}:{}),summarize:false});
   return {version:1,
     services:[{id:'central-image-ocr',name:'Central OCR',kind:'image',execution:isLoopback(ocrEndpoint)?'local':'remote',endpoint:ocrEndpoint,model:''},{id:'asr-api',name:moteText("录音转写接口"),kind:'asr',execution:'local',endpoint,model:''},{id:'asr-local',name:moteText("本地录音服务"),kind:'asr',execution:'local',endpoint,model:''}],
     profiles:[{...profile('image.http','central-image-ocr'),id:'central-image',name:'Central images'},profile('audio.local-dialogue','asr-local'),profile('audio.http','asr-api'),profile('text.utf8'),profile('document.generic','central-image-ocr'),profile('archive')],
@@ -33,7 +33,7 @@ export function parseFilePolicy(raw:unknown,previous:FilePolicy,registry:Process
     if(plugin.localOnly&&!plugin.optionalService&&service?.execution==='remote')throw new StoreError(moteText("本地处理插件只能绑定本地服务"),400);
     if(plugin.allowSummary===false&&profile.summarize)throw new StoreError(moteText("此处理插件不支持自动摘要"),400);
     if(plugin.dialogue){
-      const diarizer=registry.get(profile.diarizationProcessor);if(diarizer.stage!=='diarize')throw new StoreError(moteText("需要说话人分离插件"),400);
+      const diarizer=registry.list().find(p=>p.id===profile.diarizationProcessor);if(!diarizer&&previous.profiles.some(p=>JSON.stringify(p)===JSON.stringify(profile)))continue;if(!diarizer)throw new StoreError('The selected diarization processor is unavailable',400);if(diarizer.stage!=='diarize')throw new StoreError(moteText("需要说话人分离插件"),400);
       if(diarizer.localOnly&&service?.execution==='remote')throw new StoreError(moteText("本地处理插件只能绑定本地服务"),400);
     }
     const definitions=plugin.parameters??[];
@@ -41,7 +41,7 @@ export function parseFilePolicy(raw:unknown,previous:FilePolicy,registry:Process
     for(const d of definitions){const v=profile.parameters[d.key];if(v===undefined){if(options.applyParameterDefaults!==false&&d.default!==undefined)profile.parameters[d.key]=d.default;continue;}if(v===null&&d.nullable)continue;
       if(typeof v!==d.type||typeof v==='number'&&(d.integer&&!Number.isInteger(v)||d.min!==undefined&&v<d.min||d.max!==undefined&&v>d.max)||typeof v==='string'&&d.options&&!d.options.includes(v))throw new StoreError(moteText("参数 {0} 的值不合法", d.label),400);
     }
-    if(plugin.dialogue){const speakers=fileProcessingSchema.parse({speakerCount:profile.parameters.speakerCount??null,speakerMin:profile.parameters.speakerMin??null,speakerMax:profile.parameters.speakerMax??null});if(speakers.speakerMin!==null&&profile.diarizationProcessor!=='audio.diarize-wespeaker')throw new StoreError('Speaker range requires WeSpeaker',400);}
+    if(plugin.dialogue)fileProcessingSchema.parse({speakerCount:profile.parameters.speakerCount??null,speakerMin:profile.parameters.speakerMin??null,speakerMax:profile.parameters.speakerMax??null});
   }
   for(const rule of policy.rules){const profile=policy.profiles.find(p=>p.id===rule.profileId)!;if(profile.processorId==='archive')continue;
     const plugin=registry.list().find(p=>p.id===profile.processorId);if(!plugin)continue;

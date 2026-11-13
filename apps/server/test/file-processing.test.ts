@@ -36,6 +36,16 @@ import {Operations} from '../src/operations.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {evidenceDependents} from '../src/evidence-dependencies.js';
 import {sourceMaterialView} from '../src/source-material-view.js';
+import {createServer} from 'node:http';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {buildApp} from '../src/app.js';
+import {configFromDocument} from '../src/config.js';
+import {MEDIA_CATALOG,mediaModelIdentities} from '../src/media-assets.js';
+import {FUNASR_PINS,FUNASR_PROTOCOL,parseFunasrRequest,parseFunasrResponse,parseFunasrArchive,funasrDialogueOutput,type FunasrRequest} from '../src/funasr-contract.js';
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
+import type {FileDialogueCleanup} from '../src/file-recipes.js';
 
 const raw:Transcript={durationMs:3000,segments:[{startMs:0,endMs:1000,text:'使用扣迪斯插件。',words:[{startMs:0,endMs:300,text:'使用'},{startMs:300,endMs:700,text:'扣迪斯'},{startMs:700,endMs:1000,text:'插件。'}]},{startMs:1500,endMs:2500,text:'嗯，对，尚未完成。'}]};
 const wave=Buffer.alloc(32044);wave.write('RIFF');wave.writeUInt32LE(wave.length-8,4);wave.write('WAVEfmt ',8);wave.writeUInt32LE(16,16);wave.writeUInt16LE(1,20);wave.writeUInt16LE(1,22);wave.writeUInt32LE(16000,24);wave.writeUInt32LE(32000,28);wave.writeUInt16LE(2,32);wave.writeUInt16LE(16,34);wave.write('data',36);wave.writeUInt32LE(32000,40);
@@ -51,11 +61,18 @@ async function fixture(t:any,options:any={}){
  const bytes=options.file?.bytes??wave,filename=options.file?.name??'fixture.wav';
  const manifest={sourceId:'phone',item:{externalId:filename,revision:'1',observedAt:new Date().toISOString(),title:options.file?.name??'Synthetic interview.wav',kind:'file',layer:'original',text:'',mimeType:options.file?.mimeType??'audio/wav',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)};
  const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,bytes,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
- const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(input){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return options.diarize?options.diarize(input):options.diarization??diary;}});return()=>{disposed=true;dispose();};});}};
+ const provider={transcribe:async(input:any)=>{asrCalls++;return options.transcribe?options.transcribe(input):raw;}};
+ // Generic extension coverage keeps its independently authored Transcript and
+ // alignment semantics. The public FunASR tests below use the native transport.
+ const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){
+  const native=ctx.moteFileProcessors.get('audio.local-dialogue');
+  ctx.effect(()=>ctx.moteFileProcessors.register({...native,id:'fixture.dialogue',version:'1',output:undefined,recipe:undefined,
+    process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly:true,maxAudioMs:input.maxAudioMs,signal:input.signal,request:input.request,authorizeModel:input.authorizeModel})}));
+  ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(input){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return options.diarize?options.diarize(input):options.diarization??diary;}});return()=>{disposed=true;dispose();};});}};
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
- const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async input=>{asrCalls++;return options.transcribe?options.transcribe(input):raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics,configuration:instances.at(-1)?.configurationSnapshot(),...(options.modelAuthority?{modelAuthority:options.modelAuthority}:{})});instances.push(instance);return instance;};const processing=createProcessing();
+ const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,provider,async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics,configuration:instances.at(-1)?.configurationSnapshot(),...(options.modelAuthority?{modelAuthority:options.modelAuthority}:{})});instances.push(instance);return instance;};const processing=createProcessing();
  await processing.runtime.ready;
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},processing.runtime.registry)});
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'fixture.dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'fixture.dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},processing.runtime.registry)});
  t.after(async()=>{for(const instance of instances)await instance.close();await diagnostics.close();if(store.db.isOpen)store.close();rmSync(dir,{recursive:true,force:true});});
  return {dir,store,sources,files,processing,createProcessing,diagnostics,id:ack.id,counts:()=>({asrCalls,diaryCalls,summaries,disposed})};
 }
@@ -870,26 +887,6 @@ test('archive-only original pipeline is skipped without executing a content proc
 });
 
 
-test('scoped speaker parameters survive restart, reuse ASR, preserve old results and never update the default policy',async t=>{
- const {createServer}=await import('node:http');const {once}=await import('node:events');
- const worker=createServer((req,res)=>{req.resume();res.setHeader('Content-Type','application/json');res.setHeader('X-Mote-Execution','local');assert.equal(req.headers['x-mote-speaker-model'],'wespeaker-zh');assert.equal(req.headers['x-mote-speaker-count'],'0');assert.equal(req.headers['x-mote-speaker-min'],'1');assert.equal(req.headers['x-mote-speaker-max'],'3');res.end(JSON.stringify({...diary,expectedSpeakers:null,declaredRange:{min:1,max:3},estimate:{method:'bounded-silhouette-v1',selectedClusters:3,needsReview:true,scoreGap:.1,candidates:[{clusters:3,observedSpeakers:2,score:.6,segments:diary.segments}]}}));});worker.listen(0,'127.0.0.1');await once(worker,'listening');t.after(()=>new Promise<void>(resolve=>worker.close(()=>resolve())));
- const port=(worker.address() as {port:number}).port;
- const f=await fixture(t,{settings:{localEndpoint:`http://127.0.0.1:${port}/transcribe`}});await f.processing.tick();const before=f.files.detail(f.id),transcript=before.artifacts.find((a:any)=>a.kind==='transcript')!,old=before.artifacts.find((a:any)=>a.kind==='diarization')!;
- const global=structuredClone(f.processing.view()),invalid={artifactId:transcript.id,options:{processor:'audio.diarize-wespeaker' as const,speakerCount:2,range:{min:1,max:3}}};
- assert.throws(()=>f.processing.retry(f.id,'diarize',false,false,invalid));
- assert.equal(f.store.db.prepare('SELECT count(*) AS n FROM file_diarization_overrides').get()!.n,0);
- assert.throws(()=>f.processing.retry(f.id,'diarize',false,false,{artifactId:old.id,options:{processor:'audio.diarize',speakerCount:2,range:null}}),{statusCode:409});
- f.processing.retry(f.id,'diarize',false,false,{artifactId:transcript.id,options:{processor:'audio.diarize-wespeaker',speakerCount:null,range:{min:1,max:3}}});
- await f.processing.close();const resumed=f.createProcessing();await resumed.runtime.ready;await resumed.tick();
- assert.equal(f.files.detail(f.id).job.state,'succeeded',JSON.stringify(f.files.detail(f.id).job));assert.equal(f.counts().asrCalls,1,'no second ASR for acoustic-only change');
- assert.equal(f.files.detail(f.id).artifacts.find((a:any)=>a.kind==='transcript')!.id,transcript.id);
- assert.equal(f.store.db.prepare('SELECT count(*) AS n FROM file_artifacts WHERE id=?').get(old.id)!.n,1);
- assert.equal(resumed.explain(f.id).current.profile.diarizationProcessor,'audio.diarize-wespeaker');
- const estimate=f.files.detail(f.id).artifacts.find((a:any)=>a.kind==='diarization')!;assert.equal(estimate.expectedSpeakers,null);assert.equal(estimate.observedSpeakers,2);assert.equal(estimate.estimate.selectedClusters,3);
- assert.deepEqual(resumed.view().policy,global.policy);
-});
-
-
 test('file call defaults are generous while an explicit call budget does not cap a multi-stage recording',async t=>{
  assert.equal(fileProcessingSchema.parse({}).timeoutMs,3600000);
  const {createServer}=await import('node:http'),{requestLocalJson}=await import('../src/local-http.js');
@@ -1018,9 +1015,196 @@ test('a delayed recipe stage cannot invoke builtins against a Store retired afte
    {name:'align',stage:{id:'mote.align',version:'2'},dependsOn:['extract','diarize']},
    {name:'held',stage:{id:'fixture.held-builtin',version:'1'},dependsOn:['extract','diarize','align']},
  ],output:'held'});
- f.processing.runtime.registry.get('audio.local-dialogue').recipe=recipe;f.processing.retry(f.id);
+ f.processing.runtime.registry.get('fixture.dialogue').recipe=recipe;f.processing.retry(f.id);
  const running=f.processing.tick();await Promise.race([started,running.then(()=>assert.fail('Generated delayed recipe stage did not start'))]);
  await f.processing.close();await running;assert.equal(f.counts().disposed,false);
  f.store.close();let reads=0;const prepare=f.store.db.prepare;t.mock.method(f.store.db,'prepare',function(this:typeof f.store.db,...args:Parameters<typeof prepare>){reads++;return prepare.apply(this,args);});
  release();await f.processing.settle();assert.equal(reads,0);assert.equal(f.counts().disposed,true);
+});
+
+// Only the unavailable model/ASR-02 worker boundary is generated. This producer
+// calls the real Python checkpoint and CAM serializers for each actual request.
+const generatedFunasrProducer=String.raw`
+import sys,json,hashlib
+sys.path.insert(0,sys.argv[1])
+import mote_asr_contract as c
+from test_mote_asr_contract import generated_bundle,generated_source
+v=json.load(sys.stdin);r=c.parse_request(v['request']);b=generated_bundle();source=generated_source()
+assert source['audioSha256']==v['audioSha256']==r['audioSha256']
+actual={**v['loaded'],**c.PINS,'settingsFingerprint':r['identity']['settingsFingerprint']}
+if v.get('failure'):
+ print(c.worker_failure(r['operation'],v['failure']))
+elif r['operation']=='recognize':
+ print(c.recognize_to_checkpoint(r,source,actual,{'value':[[0,1000]]},b['native'],[{'text':b['native']['text']}]))
+else:
+ result=json.loads(b['diarizeResponse'])['diarization'];result['speakers']=r['speakers']
+ print(c.diarize_from_checkpoint(r,source,actual,lambda cp,options:result))
+`;
+async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:boolean}={}){
+ const directory=mkdtempSync(join(tmpdir(),'mote-native-funasr-')),bundle=join(directory,'bundle'),previous=MEDIA_CATALOG.dialogue;
+ const modelBytes=Buffer.from('Generated ASR component; no model weights.');
+ const files=Object.keys(previous.models!).map(role=>({name:role+'/model.bin',size:modelBytes.length,sha256:sha256(modelBytes),official:'https://example.invalid/'+role}));
+ MEDIA_CATALOG.dialogue={version:'generated-funasr-v1',files,models:Object.fromEntries(Object.entries(previous.models!).map(([role,model])=>[role,{...model,revision:sha256('generated revision '+role)}]))};
+ const identity={sdkVersion:'1.4.25',sdkWheelSha256:'11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75',models:mediaModelIdentities('dialogue'),dependencies:{torch:'2.10.0',numpy:'2.2.0'},backend:'cpu',threads:1};
+ const requests:FunasrRequest[]=[],wires:string[]=[],errors:unknown[]=[],modelCalls:{model:string;question:string}[]=[];
+ let central:Awaited<ReturnType<typeof buildApp>>|undefined,fail:string|undefined,serial=0,cleanupCalls=0;
+ let held:{path:string;started:()=>void;gate:Promise<void>;release:()=>void}|undefined;
+ const token='generated-funasr-worker-token-00001';
+ const worker=createServer((req,res)=>{void(async()=>{
+  assert.equal(req.headers.authorization,'Bearer '+token);
+  res.setHeader('Content-Type','application/json');res.setHeader('X-Mote-Execution','local');
+  if(req.url==='/health'){res.end(JSON.stringify({protocol:FUNASR_PROTOCOL,execution:'local',asr:true,diarization:true,identity}));return;}
+  if(req.url?.startsWith('/executions/')){res.writeHead(404).end('{}');return;}
+  assert.ok(req.url==='/transcribe'||req.url==='/diarize');
+  const buffers:Buffer[]=[];for await(const part of req)buffers.push(Buffer.from(part));const body=Buffer.concat(buffers);
+  assert.equal(body.length,Number(req.headers['content-length']));assert.equal(req.headers['x-mote-offline'],'1');
+  const boundary=/boundary=([^;]+)$/.exec(String(req.headers['content-type']))![1],separator=Buffer.from('\r\n--'+boundary),first=body.indexOf('\r\n\r\n')+4,next=body.indexOf(separator,first),audioStart=body.indexOf('\r\n\r\n',next)+4,audioEnd=body.lastIndexOf(separator);
+  const request=parseFunasrRequest(body.subarray(first,next)),audio=body.subarray(audioStart,audioEnd);
+  assert.deepEqual(audio,wave);assert.equal(request.audioSha256,sha256(audio));
+  assert.equal(request.operation,req.url==='/transcribe'?'recognize':'diarize');requests.push(request);
+  if(request.operation==='diarize'){
+   const saved=central!.store.db.prepare("SELECT json FROM file_artifacts WHERE kind='transcript' AND current=1 ORDER BY rowid DESC LIMIT 1").get();assert.ok(saved,'raw transcript must be committed before CAM++ receives a request');
+   assert.deepEqual(JSON.parse(String(saved.json)).output.payload.checkpoint,request.checkpoint);
+  }
+  if(held?.path===req.url){const gate=held;held=undefined;gate.started();await gate.gate;}
+  const wire=execFileSync('python3',['-c',generatedFunasrProducer,fileURLToPath(new URL('../../../scripts',import.meta.url))],{input:JSON.stringify({request,loaded:identity,audioSha256:sha256(audio),...(request.operation==='diarize'&&fail?{failure:fail}:{})}),encoding:'utf8',maxBuffer:4*1024*1024,timeout:30000}).trim();
+  parseFunasrResponse(wire,request);wires.push(wire);res.end(wire);
+ })().catch(error=>{errors.push(error);res.writeHead(500).end();});});
+ await new Promise<void>(resolve=>worker.listen(0,'127.0.0.1',resolve));const port=(worker.address() as {port:number}).port,endpoint=`http://127.0.0.1:${port}/transcribe`;
+ const configuration=configFromDocument({version:1,revision:0,storage:{dataDir:join(directory,'data')},media:{modelDirectory:join(directory,'models'),asrEndpoint:endpoint,asrPort:port,workerToken:token}},join(directory,'mote.yaml'),{token:'generated-funasr-owner',tokenPath:join(directory,'owner-token')});
+ const factory:import('../src/model-agent.js').ModelAgentFactory=async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+  modelCalls.push({model:settings.model,question:input.question});const records=(await reader.timeline({limit:100})).items;
+  return {answer:input.question===importedTurnPrompt?JSON.stringify({groups:records.map((_,i)=>[i])}):'Generated chosen-model summary',citations:records.slice(0,1).map(record=>({id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText})),trace:[],runId:randomUUID()};
+ }});
+ const cleanup:FileDialogueCleanup={id:'mote.generated-cleanup',version:'1',output:{id:'mote.generated-cleanup-output',version:'1',kind:'dialogue',parse:value=>value,project:value=>transcriptSchema.parse((value as {transcript:unknown}).transcript)},process:input=>{
+  cleanupCalls++;input.signal.throwIfAborted();return {transcript:input.transcript,version:'generated-only',mapping:input.checkpoint.sentences.map((_,index)=>({source:index,output:index}))};
+ }};
+ const installCleanup=(node:Awaited<ReturnType<typeof buildApp>>)=>{node.processing.uninstallContributions();node.processing.installContributions([],{imageRecipes:false,dialogueCleanup:cleanup});};
+ const start=async()=>{const node=await buildApp(configuration,{backgroundWorker:false,createModelAgent:factory});central=node;if(options.cleanup)installCleanup(node);return node;};
+ let node=await start();
+ t.after(async()=>{held?.release();try{await node.app.close();}finally{worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));MEDIA_CATALOG.dialogue=previous;rmSync(directory,{recursive:true,force:true});}assert.deepEqual(errors,[],'worker boundary assertions must surface');});
+ for(const file of files){mkdirSync(join(bundle,file.name.split('/')[0]),{recursive:true});writeFileSync(join(bundle,file.name),modelBytes);}
+ await node.featureServices.mediaAssets.importBundle('dialogue',bundle);
+ if(options.authorize!==false)await authorizeFixtureModels(node);
+ node.sources.register({id:'generated-native-audio',name:'Generated native audio',kind:'upload',deviceId:'generated-native',platform:'import',retention:'archive'});
+ const headers={authorization:'Bearer '+configuration.token};
+ const save=async(change:(policy:any)=>void)=>{const v=node.processing.view(),policy=structuredClone(v.policy);change(policy);const response=await node.app.inject({method:'PUT',url:'/api/file-processing',headers,payload:{revision:v.revision,settings:v.settings,policy}});assert.equal(response.statusCode,200,response.body);};
+ if(!options.cleanup)await save(policy=>{policy.profiles.find((p:any)=>p.processorId==='audio.local-dialogue').parameters.deduplicate=false;});
+ const upload=async(name='generated-'+(++serial)+'.wav',revision='1',previousRevision:string|null=null)=>{
+  const response=await node.app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:{sourceId:'generated-native-audio',previousRevision,sizeBytes:wave.length,sha256:sha256(wave),item:{externalId:name,revision,observedAt:'2026-11-14T00:00:00Z',title:name,kind:'file',layer:'original',text:'',mimeType:'audio/wav'}}});assert.equal(response.statusCode,200,response.body);
+  const session=response.json();if(session.ack)return String(session.ack.id);
+  const part=await node.app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${session.uploadId}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:wave});assert.equal(part.statusCode,200,part.body);
+  const committed=await node.app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${session.uploadId}/commit`,headers,payload:{}});assert.equal(committed.statusCode,200,committed.body);return String(committed.json().id);
+ };
+ const details=async(id:string)=>{const response=await node.app.inject({url:'/api/files/'+id,headers});assert.equal(response.statusCode,200,response.body);return response.json();};
+ const retry=async(id:string,payload:unknown={stage:'transcribe'})=>{const response=await node.app.inject({method:'POST',url:'/api/files/'+id+'/retry',headers,payload});assert.equal(response.statusCode,200,response.body);};
+ const reprocess=async(id:string)=>{const preview=await node.app.inject({method:'POST',url:'/api/file-processing/preview',headers,payload:{revision:node.processing.view().revision,scope:{kind:'selection',evidenceIds:[id]}}});assert.equal(preview.statusCode,200,preview.body);assert.equal(preview.json().count,1);const response=await node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers,payload:{token:preview.json().token}});assert.equal(response.statusCode,200,response.body);};
+ const settle=async(id:string)=>{for(const until=Date.now()+5000;Date.now()<until;){await node.processing.tick();await new Promise<void>(resolve=>setImmediate(resolve));const job=node.files.detail(id).job;if(!['running','waiting'].includes(job.state)&&(job.state!=='succeeded'||!['running','waiting'].includes(job.summary_state))||job.state==='waiting'&&job.error)return;}assert.fail('Generated native file work did not settle: '+JSON.stringify(node.files.detail(id).job));};
+ return {get node(){return node;},headers,identity,requests,wires,cleanup,installCleanup,modelCalls,save,upload,details,retry,reprocess,settle,counts:()=>({recognize:requests.filter(r=>r.operation==='recognize').length,diarize:requests.filter(r=>r.operation==='diarize').length,cleanup:cleanupCalls}),failure(code?:string){fail=code;},async restart(){await node.app.close();node=await start();},hold(path='/diarize'){
+  let started!:()=>void,release!:()=>void;const began=new Promise<void>(resolve=>started=resolve),gate=new Promise<void>(resolve=>release=resolve);held={path,started,gate,release};t.after(release);return {started:began,release};
+ }};
+}
+const importedTurnPrompt=(await import('../src/file-dialogue.js')).TURN_GROUP_PROMPT;
+
+test('public upload uses the current FunASR recipe, persists raw bytes before CAM and exposes exact shared sentence attribution',async t=>{
+ const f=await nativeFunasrFixture(t,{cleanup:true}),id=await f.upload();await f.node.processing.tick();
+ const detail=await f.details(id);assert.equal(detail.job.state,'succeeded',JSON.stringify(detail.job));assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:1});
+ const raw=detail.artifacts.find((a:any)=>a.kind==='transcript'),diarization=detail.artifacts.find((a:any)=>a.kind==='diarization');assert.ok(raw);assert.ok(diarization);
+ const recognition=f.node.processing.artifact(raw.id).output.payload,checkpoint=parseFunasrArchive(recognition.checkpoint);
+ assert.equal(checkpoint.text,'  合成原文：零、二十、一百、一百零一、一千。\n尾段保留。  ');assert.equal(raw.processorVersion,FUNASR_PINS.extract.version);
+ assert.deepEqual(f.node.files.chunks(id).map(r=>r.fileEvidence?.speaker),['SPEAKER_0','SPEAKER_0','SPEAKER_UNKNOWN','SPEAKER_1','SPEAKER_1']);
+ assert.deepEqual(f.node.files.chunks(id).map(r=>[r.fileEvidence?.startMs,r.fileEvidence?.endMs]),[[0,20],[20,100],[100,101],[101,1000],[900,1000]]);
+ assert.equal(diarization.estimate,undefined);assert.equal(diarization.modelProvenance,undefined);assert.equal(diarization.engine,'CAM++ / FunASR 1.4.25');
+ assert.deepEqual(f.node.processing.artifact(diarization.id).output.payload.checkpoint,recognition.checkpoint);
+ const current=f.node.files.chunks(id)[0].fileEvidence!.artifactId,payload=f.node.processing.artifact(current).output.payload;
+ assert.equal(payload.mapping.length,5);assert.equal(payload.version,'generated-only');
+ const snapshot=f.node.processing.explain(id).snapshots[0];assert.equal((snapshot.recipe as any).version,'3');assert.ok((snapshot.stagePins as any[]).some(p=>p.id===FUNASR_PINS.align.id));
+ if(process.env.MOTE_ASR03_EXAMPLE_PATH)writeFileSync(process.env.MOTE_ASR03_EXAMPLE_PATH,JSON.stringify({protocol:FUNASR_PROTOCOL,pins:FUNASR_PINS,requests:f.requests,responses:f.wires.map(wire=>JSON.parse(wire)),job:detail.job,configurationReceipt:snapshot,raw:f.node.processing.artifact(raw.id),diarization:f.node.processing.artifact(diarization.id),selectedDialogue:f.node.processing.artifact(current)},null,2)+'\n');
+ const materials=new MaterialStore(f.node.store),organizers=new MaterialOrganizerRuntime(f.node.store,materials);try{while(await organizers.tick(100));const result=materials.get(materialId('generated-native-audio','generated-1.wav'))!;assert.ok(result);assert.match(materials.read(result.ref).text,/一百零一/);}finally{await organizers.close();}
+});
+
+test('CAM failure leaves the committed transcript readable and scoped range retry after restart never repeats recognition',async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();f.failure('inference_failed');await f.node.processing.tick();
+ const before=await f.details(id),raw=before.artifacts.find((a:any)=>a.kind==='transcript');assert.ok(raw);assert.equal(before.job.state,'failed');assert.equal(f.node.processing.cancellation(id).wait,null);assert.equal(f.node.files.chunks(id).length,5);
+ const checkpoint=f.node.processing.artifact(raw.id).output.payload.checkpoint,global=f.node.processing.view().policy;
+ await f.restart();f.failure();await f.retry(id,{stage:'diarize',diarization:{artifactId:raw.id,options:{processor:'audio.diarize',speakerCount:null,range:{min:2,max:4}}}});await f.settle(id);
+ assert.equal((await f.details(id)).job.state,'succeeded',JSON.stringify({detail:(await f.details(id)).job,steps:f.node.processing.engine.list({operationId:'file:'+id}).items}));assert.equal(f.counts().recognize,1);assert.equal(f.counts().diarize,2);
+ assert.deepEqual((f.requests.at(-1) as any).checkpoint,checkpoint);assert.deepEqual((f.requests.at(-1) as any).speakers,{mode:'range',min:2,max:4});
+ assert.deepEqual(f.node.processing.view().policy,global);assert.equal(f.node.files.detail(id).artifacts.find((a:any)=>a.kind==='transcript')!.id,raw.id);
+ assert.deepEqual(f.node.files.detail(id).artifacts.find((a:any)=>a.kind==='diarization')!.declaredRange,{min:2,max:4});
+});
+
+test('cleanup is an explicit default-on dependency and switching it restores the retained dialogue without another ASR or CAM call',async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();await f.save(policy=>{policy.profiles.find((p:any)=>p.processorId==='audio.local-dialogue').parameters.deduplicate=true;});await f.node.processing.tick();
+ assert.equal((await f.details(id)).job.error,'dialogue_cleanup_unavailable');assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:0});
+ const original=f.node.files.chunks(id)[0].fileEvidence!.artifactId;f.installCleanup(f.node);await f.reprocess(id);await f.settle(id);
+ assert.equal((await f.details(id)).job.state,'succeeded');assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:1});assert.notEqual(f.node.files.chunks(id)[0].fileEvidence!.artifactId,original);
+ const history=JSON.stringify(f.node.files.detail(id).artifacts);await f.save(policy=>{policy.profiles.find((p:any)=>p.processorId==='audio.local-dialogue').parameters.deduplicate=false;});await f.node.processing.tick();
+ assert.equal(JSON.stringify(f.node.files.detail(id).artifacts),history,'saving defaults never reprocesses completed history');
+ await f.reprocess(id);await f.settle(id);assert.equal((await f.details(id)).job.state,'succeeded');assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:1});assert.equal(f.node.files.chunks(id)[0].fileEvidence!.artifactId,original);
+});
+
+for(const action of ['cancel','delete','replace','withdraw'] as const)test(`a held native CAM response cannot publish after ${action}`,async t=>{
+ const f=await nativeFunasrFixture(t),held=f.hold(),id=await f.upload('held.wav'),running=f.node.processing.tick();await Promise.race([held.started,running.then(()=>assert.fail('CAM did not receive the request'))]);
+ if(action==='cancel'){const response=await f.node.app.inject({method:'POST',url:'/api/files/'+id+'/cancel',headers:f.headers,payload:{}});assert.equal(response.statusCode,200,response.body);}
+ if(action==='delete')f.node.files.forget(id);
+ if(action==='replace')await f.upload('held.wav','2','1');
+ if(action==='withdraw'){const view=f.node.modelAuthorization.view();f.node.modelAuthorization.command({action:'stop',revision:view.revision,operationId:randomUUID()});}
+ held.release();await running;await new Promise<void>(resolve=>setImmediate(resolve));
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM file_artifacts WHERE capture_id=? AND kind IN ('diarization','dialogue')").get(id)!.n,0);
+ if(action!=='delete')assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM file_artifacts WHERE capture_id=? AND kind='transcript'").get(id)!.n,1,'already committed raw text is retained');
+});
+
+test('ready native models do not bypass background authorization or invoke the remote transcription provider',async t=>{
+ const f=await nativeFunasrFixture(t,{authorize:false}),id=await f.upload();await f.node.processing.tick();assert.deepEqual(f.counts(),{recognize:0,diarize:0,cleanup:0});
+ assert.equal((await f.details(id)).hasOriginal,true);assert.equal(f.node.files.chunks(id).length,0);assert.equal(f.modelCalls.length,0);
+ await authorizeFixtureModels(f.node);for(const row of f.node.processing.engine.list({operationId:'file:'+id}).items)if(row.state==='waiting')f.node.processing.engine.retry(row.id);await f.node.processing.tick();assert.equal(f.counts().recognize,1);
+});
+
+for(const completed of [false,true])test(`retired pinned audio ${completed?'history remains unchanged':'work blocks until explicit transcription retry selects current versions'}`,async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();if(completed)await f.node.processing.tick();
+ const db=f.node.store.db,applied=f.node.processing.explain(id).current,oldRevision=sha256('generated retired audio receipt'),receipt={owner:'file-processing',processorId:'audio.local-dialogue',processorVersion:'4',processors:[{id:'audio.local-dialogue',version:'4'},{id:'audio.diarize',version:'3'}],recipe:{id:'mote.audio-dialogue',version:'2'},output:{id:'mote.transcript',version:'2'}};
+ db.prepare('INSERT INTO file_configuration_snapshots VALUES(?,?,?)').run(id,oldRevision,JSON.stringify(receipt));db.prepare('UPDATE file_jobs SET config_revision=?,policy_json=? WHERE capture_id=?').run(oldRevision,JSON.stringify(applied),id);
+ const policyBefore=db.prepare('SELECT policy_json FROM file_jobs WHERE capture_id=?').get(id)!.policy_json,before=f.counts(),artifacts=JSON.stringify(f.node.files.detail(id).artifacts);
+ await f.node.processing.tick();await f.save(policy=>{policy.profiles.find((p:any)=>p.processorId==='audio.local-dialogue').parameters.speakerCount=2;});await f.node.processing.tick();
+ assert.deepEqual(f.counts(),before);assert.equal(db.prepare('SELECT policy_json FROM file_jobs WHERE capture_id=?').get(id)!.policy_json,policyBefore);assert.equal(JSON.stringify(f.node.files.detail(id).artifacts),artifacts);
+ if(completed){assert.equal((await f.details(id)).job.state,'succeeded');return;}
+ assert.equal((await f.details(id)).job.state,'blocked');assert.equal((await f.details(id)).job.error,'file_processor_version_unavailable');assert.equal((await f.details(id)).job.attempts,0);
+ const partial=await f.node.app.inject({method:'POST',url:'/api/files/'+id+'/retry',headers:f.headers,payload:{stage:'diarize'}});assert.equal(partial.statusCode,409);
+ await f.retry(id);await f.node.processing.tick();const current=await f.details(id);assert.equal(current.job.state,'succeeded',JSON.stringify(current.job));assert.equal(f.counts().recognize,1);assert.equal(current.artifacts.find((a:any)=>a.kind==='transcript').processorVersion,'5');
+ assert.equal(db.prepare('SELECT receipt FROM file_configuration_snapshots WHERE capture_id=? AND fingerprint=?').get(id,oldRevision)!.receipt,JSON.stringify(receipt),'old receipt stays available for review');
+});
+
+for(const code of ['resource_busy','component_missing','response_unknown'] as const)test(`native ${code} retains the checkpoint and its existing execution semantics`,async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();f.failure(code);await f.node.processing.tick();const detail=await f.details(id);
+ assert.equal(f.counts().recognize,1);assert.equal(f.counts().diarize,1);assert.equal(detail.artifacts.filter((a:any)=>a.kind==='transcript').length,1);assert.ok(!detail.artifacts.some((a:any)=>a.kind==='dialogue'));
+ if(code==='resource_busy'){assert.equal(detail.job.state,'waiting');assert.equal(detail.job.attempts,0);assert.equal(detail.steps.find((s:any)=>s.step==='diarize').attempts,0);assert.equal(f.node.processing.cancellation(id).wait,null);}
+ if(code==='component_missing'){assert.equal(detail.job.state,'blocked');assert.equal(detail.job.error,code);assert.equal(f.node.processing.cancellation(id).wait,null);}
+ if(code==='response_unknown'){assert.equal(detail.job.state,'blocked');assert.equal(f.node.processing.cancellation(id).wait,'unknown');const retried=await f.node.app.inject({method:'POST',url:'/api/files/'+id+'/retry',headers:f.headers,payload:{stage:'diarize'}});assert.equal(retried.statusCode,409);}
+});
+
+test('an unrelated or retired worker health identity is rejected before transmitting original audio',async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();f.identity.models.asr.revision=sha256('different loaded model');await f.node.processing.tick();
+ assert.equal(f.requests.length,0);assert.equal((await f.details(id)).job.state,'blocked');assert.equal(f.node.files.chunks(id).length,0);assert.equal(f.modelCalls.length,0);
+});
+
+test('native grouping and summary keep the chosen file model while Memory and Ask retain their own selections',async t=>{
+ const f=await nativeFunasrFixture(t,{cleanup:true}),models=f.node.modelSettings.view();
+ await f.node.modelSettings.update({revision:models.revision,settings:{...f.node.modelSettings.current(),provider:'custom',protocol:'openai-completions',baseUrl:'https://generated-model.example.invalid/v1',apiKey:'generated-analysis-key',model:'generated-file-model'}});
+ const selected=f.node.modelSettings.view();await f.node.modelSettings.updateDefaults({revision:selected.revision,defaults:selected.defaults,defaultModels:{file:'generated-file-model',memory:'generated-memory-model',chat:'generated-chat-model'}});
+ await f.save(policy=>{const profile=policy.profiles.find((p:any)=>p.processorId==='audio.local-dialogue');profile.parameters.semanticTurns=true;profile.summarize=true;});const before=f.node.modelSettings.view();
+ const id=await f.upload();await f.node.processing.tick();const detail=await f.details(id);
+ assert.equal(detail.job.state,'succeeded',JSON.stringify(detail.job));assert.equal(detail.job.summary_state,'succeeded',JSON.stringify(detail.job));
+ assert.deepEqual(f.modelCalls.map(call=>call.model),['generated-file-model','generated-file-model']);assert.equal(f.modelCalls[0].question,importedTurnPrompt);
+ assert.deepEqual(f.node.modelSettings.view(),before);assert.equal(f.node.modelSettings.select('memory').settings.model,'generated-memory-model');assert.equal(f.node.modelSettings.select('chat').settings.model,'generated-chat-model');assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:1});
+});
+
+test('cancelling a delayed cleanup retains the uncleaned dialogue and rejects the late derived artifact',async t=>{
+ const f=await nativeFunasrFixture(t,{cleanup:true});let entered!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve),process=f.cleanup.process;
+ f.cleanup.process=async input=>{entered();await gate;return process(input);};t.after(release);
+ const id=await f.upload(),running=f.node.processing.tick();await Promise.race([started,running.then(()=>assert.fail('Cleanup did not reach its dependency'))]);
+ const before=f.node.files.chunks(id).map(chunk=>({id:chunk.id,evidence:chunk.fileEvidence,text:chunk.ocrText}));assert.equal(before.length,5);
+ const response=await f.node.app.inject({method:'POST',url:'/api/files/'+id+'/cancel',headers:f.headers,payload:{}});assert.equal(response.statusCode,200,response.body);release();await running;await new Promise<void>(resolve=>setImmediate(resolve));
+ assert.equal((await f.details(id)).job.state,'cancelled');assert.deepEqual(f.node.files.chunks(id).map(chunk=>({id:chunk.id,evidence:chunk.fileEvidence,text:chunk.ocrText})),before);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM file_artifacts WHERE capture_id=? AND json_extract(json,'$.output.type.id')='mote.generated-cleanup-output'").get(id)!.n,0);
 });

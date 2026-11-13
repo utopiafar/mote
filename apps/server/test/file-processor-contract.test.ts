@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {fileProcessingSchema} from '@mote/shared';
-import {HttpTranscriptionProvider,ProcessorRegistry,installFileProcessorContributions,type FileProcessor} from '../src/file-processors.js';
+import {HttpTranscriptionProvider,ProcessorRegistry,FileProcessorRuntime,installFileProcessorContributions,type FileProcessor} from '../src/file-processors.js';
+import {FUNASR_PINS,funasrTranscriptOutput,funasrDialogueOutput} from '../src/funasr-contract.js';
+import {defaultFileRecipe,defaultFileOutput} from '../src/file-recipes.js';
 import {decodeDocument,documentChunks} from '@mote/shared/document-decoder';
 
 test('a failed PDF page preserves later pages and reports actual page coverage',async()=>{
@@ -59,4 +61,25 @@ test('a duplicate processor contribution fails atomically and never replaces the
  assert.throws(()=>registry.get('fixture.rolled-back'),/unavailable/,'a rejected contribution installs none of its processors');
  remove();
  assert.throws(()=>registry.get('fixture.contribution'),/unavailable/);
+});
+
+test('the default local recording capability installs the current recipe and native outputs together and removes retired speaker choices',async()=>{
+ const runtime=new FileProcessorRuntime();try{await runtime.ready;
+  const audio=runtime.registry.get('audio.local-dialogue'),diarize=runtime.registry.get('audio.diarize');
+  assert.equal(audio.name,'本地多人录音');assert.equal(audio.version,FUNASR_PINS.extract.version);assert.equal(diarize.version,FUNASR_PINS.diarize.version);
+  assert.deepEqual(defaultFileRecipe(audio),FUNASR_PINS.recipe);assert.deepEqual(defaultFileOutput(audio),{id:funasrTranscriptOutput.id,version:funasrTranscriptOutput.version});
+  assert.equal(runtime.outputs.get(funasrDialogueOutput).kind,'dialogue');assert.equal(audio.parameters!.find(p=>p.key==='deduplicate')!.default,true);
+  assert.ok(diarize.dependencies!.settings.includes('speakerMin'));assert.ok(diarize.dependencies!.settings.includes('speakerMax'));
+  assert.throws(()=>runtime.registry.get('audio.diarize-wespeaker'),/unavailable/);
+  const plan=runtime.recipes.resolve(FUNASR_PINS.recipe,{semanticTurns:true});assert.deepEqual(plan.steps.map(s=>s.name),['extract','diarize','align','cleanup','turns']);assert.deepEqual(plan.steps.find(s=>s.name==='align')!.stage,FUNASR_PINS.align);
+  assert.equal(runtime.recipes.resolve(FUNASR_PINS.recipe,{semanticTurns:false,deduplicate:false}).steps.find(s=>s.name==='cleanup')!.active,false);
+ }finally{await runtime.close();}
+});
+
+test('a native output conflict rolls back the whole default processor and recipe contribution',async()=>{
+ const runtime=new FileProcessorRuntime(undefined,[],[],undefined,undefined,{builtinContributions:false});await runtime.ready;
+ const remove=runtime.outputs.register(funasrDialogueOutput);try{
+  assert.throws(()=>runtime.installContributions(),/Duplicate file output/);assert.deepEqual(runtime.registry.list(),[]);assert.deepEqual(runtime.recipes.list(),{recipes:[],stages:[]});
+  assert.deepEqual(runtime.outputs.list(),[{id:funasrDialogueOutput.id,version:funasrDialogueOutput.version,kind:'dialogue'}]);
+ }finally{remove();await runtime.close();}
 });
