@@ -84,7 +84,7 @@ const occurrence=(schedule:RoutineSchedule,value:Temporal.ZonedDateTime,eventRev
  * "compatible" resolution shifts by the gap length (02:00-03:00 requested
  * 02:30 becomes 03:30); this resolves to the first valid instant after the
  * gap instead (03:00). An ambiguous wall clock takes its first occurrence. */
-const resolveWallClock=(timeZone:string,date:Temporal.PlainDate,time:Temporal.PlainTime)=>{
+export const resolveRoutineWallClock=(timeZone:string,date:Temporal.PlainDate,time:Temporal.PlainTime)=>{
  const fields={year:date.year,month:date.month,day:date.day,hour:time.hour,minute:time.minute,second:0,timeZone};
  const earlier=Temporal.ZonedDateTime.from(fields,{disambiguation:'earlier'});
  const later=Temporal.ZonedDateTime.from(fields,{disambiguation:'later'});
@@ -118,7 +118,7 @@ export function nextRoutineOccurrence(schedule:RoutineSchedule,after:Date|string
  // malformed zone or clock from becoming an unbounded catch-up loop.
  for(let offset=0;offset<15;offset++){
   if(rule.trigger.kind==='daily'||date.dayOfWeek===rule.trigger.weekday){
-   const resolved=resolveWallClock(rule.timeZone,date,time);
+   const resolved=resolveRoutineWallClock(rule.timeZone,date,time);
    if(resolved.epochMilliseconds>afterMs)return occurrence(rule,resolved);
   }
   date=date.add({days:1});
