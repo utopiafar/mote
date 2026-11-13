@@ -134,13 +134,16 @@ test('scope, current version, exposure policy and forgetting are rechecked for e
   assert.throws(()=>f.reader.read({captureId:one.id,scope}),{statusCode:404});assert.throws(()=>f.reader.readBody({captureId:one.id,scope}),{statusCode:404});
  }
  const blocked=new FileObservationReader(f.evidence,new EvidenceExposurePolicy([{sourceId:'archive',representation:'capture',allow:false}]));assert.throws(()=>blocked.read({captureId:one.id,scope:all}),{statusCode:404});
- const updated=Buffer.from('Generated second authorized body'),two=await upload(f.files,manifest('archive','scope','two','one',updated,'original'),updated);await f.processing.tick();
+ const updated=Buffer.from('Generated second authorized body'),next=manifest('archive','scope','two','one',updated,'original');next.item.observedAt='2026-10-02T10:00:00.000Z';
+ const two=await upload(f.files,next,updated);await f.processing.tick();
  assert.throws(()=>f.reader.read({captureId:one.id,scope:all}),{statusCode:404});
  const metadataReads:string[]=[],readMetadata=f.store.evidenceMetadata.bind(f.store);
  f.store.evidenceMetadata=ids=>{metadataReads.push(...ids);return readMetadata(ids);};
  const onlyCurrent=f.reader.read({captureId:two.id,scope:{kind:'selection',evidenceIds:[two.id]}});f.store.evidenceMetadata=readMetadata;
  assert.equal(onlyCurrent.previous,null);assert.equal(onlyCurrent.comparison.status,'unavailable');assert.deepEqual(onlyCurrent.changes,[]);assert.ok(!metadataReads.includes(one.id));
  const both=f.reader.read({captureId:two.id,scope:{kind:'selection',evidenceIds:[one.id,two.id]}});assert.equal(both.comparison.status,'available');
+ const newerOnly=f.reader.read({captureId:two.id,scope:{kind:'all',after:'2026-10-02T00:00:00.000Z'}});
+ assert.equal(newerOnly.previous,null);assert.equal(newerOnly.comparison.status,'unavailable');assert.deepEqual(newerOnly.changes,[],'a time-excluded predecessor cannot disclose its title or differences');
  f.sources.update('archive',{enabled:false});assert.throws(()=>f.reader.read({captureId:two.id,scope:all}),{statusCode:404});f.sources.update('archive',{enabled:true});
  f.files.forget(two.id);assert.throws(()=>f.reader.read({captureId:two.id,scope:all}),{statusCode:404});assert.throws(()=>f.reader.readBody({captureId:two.id,scope:all}),{statusCode:404});
 });

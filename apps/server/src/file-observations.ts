@@ -64,7 +64,7 @@ export class FileObservationReader {
     const head=this.store.db.prepare('SELECT capture_id,deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId);
     if(!head||head.capture_id!==id||Boolean(head.deleted)!==p.deleted)throw unavailable();
     if(p.deleted){if(!this.reader.fileTombstoneMetadataAllowed(id,scope,this.policy))throw unavailable();}
-    else if(!this.store.isCurrentEvidence(id)||!this.allowed(record,scope))throw unavailable();
+    else if(!this.store.isCurrentEvidence(id)||(!this.allowed(record,scope)&&!this.reader.fileReferenceObservationAllowed(id,scope,this.policy)))throw unavailable();
     return record;
   }
   private manifest(id:string):FileRevision|undefined {
@@ -143,7 +143,7 @@ export class FileObservationReader {
     }
     const priorRecord=previousId&&(scope.evidenceIds===undefined||scope.evidenceIds.includes(previousId))?this.capture(previousId):undefined;
     const prior=priorRecord&&!p.deleted&&priorRecord.provenance?.sourceId===p.sourceId&&priorRecord.provenance.externalId===p.externalId&&
-      !priorRecord.provenance.deleted&&this.allowed(priorRecord,scope)?this.snapshot(priorRecord):undefined;
+      !priorRecord.provenance.deleted&&(this.allowed(priorRecord,scope)||this.reader.fileHistoricalObservationAllowed(priorRecord.id,scope,this.policy))?this.snapshot(priorRecord):undefined;
     const first=current.manifest?current.manifest.previousRevision===null:!db.prepare('SELECT 1 FROM source_versions WHERE source_id=? AND external_id=? AND capture_id!=? LIMIT 1').get(p.sourceId,p.externalId,id);
     const changes:FileObservation['changes']=[];
     let comparison:Comparison={status:'unavailable',reason:first?'no_previous_version':'previous_unavailable'};
