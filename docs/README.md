@@ -31,6 +31,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 
 | 文档 | 内容 |
 | --- | --- |
+| [assistant-delivery-review-2026-11-13](assistant-delivery-review-2026-11-13.md) | 个人助理大专项 Q3 交付复核、54 卡覆盖清单与遗留风险 |
 | [action-updates](action-updates.md) | Evidence-backed action updates |
 | [agent-prompt-and-startup](agent-prompt-and-startup.md) | Bounded prompts and startup measurements |
 | [agent](agent.md) | Agent 配置与权限 |
