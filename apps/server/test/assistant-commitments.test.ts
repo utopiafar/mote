@@ -126,6 +126,16 @@ test('scope and current evidence gate every event, quotation, and cursor without
  assert.throws(()=>f.commitments.page({scope:narrow,limit:1,cursor:page.nextCursor!}));
 });
 
+test('a newer owner correction outranks a proposal that was published before it',async t=>{
+ const f=await fixture(t),original=await f.capture('Generated agreement with a vague deadline.'),later=await f.capture('Generated later agreement moves the deadline to Monday.'),correction=await f.capture('Generated owner corrects the original deadline to Friday.');
+ const initial=f.proposal(randomUUID(),original,'commitment',{title:'Generated agreement',deadline:{text:'soon',at:null}}),created=f.commitments.publish(initial,undefined,all,()=>{});
+ const newer={...f.proposal(created.id,later,'progress',{deadline:{text:'Monday',at:null}}),evidenceDependencies:{version:1 as const,complete:true,ids:[original.id,later.id]}};
+ const updated=f.commitments.publish(newer,created.revision,all,()=>{});assert.equal(updated.deadline?.text,'Monday');
+ const corrected=f.commitments.correct({commitmentId:created.id,eventId:randomUUID(),targetEventId:initial.eventId,occurredAt:null,summary:correction.body,
+  changes:{deadline:{text:'Friday',at:null}},evidence:[{id:correction.id,quote:correction.body,offset:0}],evidenceDependencies:{version:1,complete:true,ids:[correction.id]}},updated.revision,all,()=>{});
+ assert.equal(corrected.deadline?.text,'Friday','the newest owner correction must not be overridden by an earlier proposal');
+});
+
 test('a later proposal can use a correction and new evidence, and retires with the correction it read',async t=>{
  const f=await fixture(t),original=await f.capture('Generated agreement mentions a vague deadline.'),correction=await f.capture('Generated owner corrects the deadline to Friday.'),later=await f.capture('Generated later agreement moves the deadline to Monday.');
  const initial=f.proposal(randomUUID(),original,'commitment',{title:'Generated agreement',deadline:{text:'soon',at:null}}),created=f.commitments.publish(initial,undefined,all,()=>{});

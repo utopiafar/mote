@@ -165,11 +165,12 @@ export class AssistantCommitments {
   // The public dependency contract contains UUIDs; non-UUID artifact nodes
   // remain in the internal retirement index together with their UUID roots.
   const timeline=rows.map(item=>({...this.body(item),evidenceDependencies:{version:1 as const,complete:true,ids:this.ids(item.event_id).filter(id=>Boolean(parseEvidenceId(id)))},createdAt:item.created_at}));
-  const corrections=new Map<string,z.infer<typeof changes>>();
-  for(const item of timeline)if(item.origin==='owner')corrections.set(item.targetEventId,{...corrections.get(item.targetEventId),...item.changes});
   const current:{title?:string;status:z.infer<typeof status>;deadline:z.infer<typeof changes>['deadline'];matterId:string|null;personMemoryId:string|null;todoId:string|null}=
    {status:'pending_confirmation',deadline:null,matterId:null,personMemoryId:null,todoId:null};
-  for(const item of timeline)if(item.origin==='proposal')Object.assign(current,item.changes,corrections.get(item.eventId));
+  // Corrections are timeline assertions too. Apply every event at its own
+  // sequence position so a newer owner correction is not overwritten by an
+  // earlier proposal that happened to be published after its target.
+  for(const item of timeline)Object.assign(current,item.changes);
   if(!current.title)throw new StoreError('Commitment not found',404);
   const dueState=!current.deadline?'none':!current.deadline.at?'unknown':current.status==='completed'||current.status==='cancelled'?'closed':Date.parse(current.deadline.at)<=Date.parse(this.now())?'overdue':'upcoming';
   return {id:row.id,revision:row.revision,title:current.title,status:current.status,deadline:current.deadline,dueState,
