@@ -103,14 +103,17 @@ class CentralProducerContractTest {
         for (index in 0 until fixture.length()) {
             val generated = fixture.getJSONObject(index)
             val scope = AssistantScope(generated.getJSONObject("scope"))
-            val api = CentralAssistant(client(), scope)
+            val transport = client()
+            val api = CentralAssistant(transport, scope, AssistantHttpBindings(transport))
             val disk = CentralStateFile(folder.newFolder(), "generated-assistant", object : ByteCipher {
                 override fun seal(bytes: ByteArray) = bytes
                 override fun open(bytes: ByteArray) = bytes
             })
             val model = AssistantFeedViewModel(api, disk::read, disk::write)
             model.refresh(); assertNull(model.error)
-            val card = model.cards.single()
+            assertEquals("Only this persona's five cards are visible in its exact selection", 5, model.cards.size)
+            assertEquals(setOf("suggestion", "briefing", "activity"), model.cards.map { it.kind }.toSet())
+            val card = model.cards.single { it.id == generated.getString("cardId") }
             assertEquals(generated.getString("cardId"), card.id)
             assertEquals("two", card.version); assertTrue(card.body.contains(generated.getString("kind")))
             assertEquals(generated.getString("evidenceId"), card.evidence.single().id)
@@ -120,10 +123,10 @@ class CentralProducerContractTest {
             // suggestion did not manufacture a completed result on the phone.
             assertEquals(api.task(card.acceptedTaskId!!).state, model.tasks[card.id]!!.state)
             model.feedback(card.id, card.revision, "later"); assertNull(model.error)
-            val later = model.cards.single(); assertEquals("later", later.feedback.last())
+            val later = model.cards.single { it.id == card.id }; assertEquals("later", later.feedback.last())
             model.feedback(card.id, later.revision, "ignore"); assertNull(model.error)
-            assertEquals("ignore", model.cards.single().feedback.last())
-            assertEquals(card.evidence, model.cards.single().evidence)
+            assertEquals("ignore", model.cards.single { it.id == card.id }.feedback.last())
+            assertEquals(card.evidence, model.cards.single { it.id == card.id }.evidence)
             assertEquals(2, model.history(card.id).getJSONArray("items").length())
 
             val matter = AssistantMatterDetail.read(generated.getJSONObject("matter"))
@@ -133,6 +136,70 @@ class CentralProducerContractTest {
             assertEquals("confirmed", commitment.status); assertEquals("unknown", commitment.dueState)
             assertEquals(card.evidence.single().id, commitment.timeline.single().evidence.single().id)
             assertNull(commitment.timeline.single().occurredAt); assertEquals("proposal", commitment.timeline.single().origin)
+
+            // Exact-ID selections can return a retired task when Central's
+            // current derived read set changes. Consume that receipt verbatim;
+            // acceptance never manufactures a work link or a completed result.
+            val selected = model.cards.single { it.id == generated.getString("startCardId") }
+            val selectedId = model.start(selected.id, selected.revision, "Generated selected Android goal")
+            assertNull(model.error); assertNotNull(selectedId)
+            val selectedReceipt = model.tasks.getValue(selected.id)
+            val selectedWire = exchanges.last { it.path == "/api/assistant/tasks/$selectedId" }.response!!
+            assertEquals(selectedId, selectedReceipt.id)
+            assertEquals(selectedWire.getJSONObject("task").getString("state"), selectedReceipt.state)
+            assertEquals(AssistantJson.optional(selectedWire, "workId"), selectedReceipt.workId)
+            assertNotEquals("completed", selectedReceipt.state)
+
+            // The production all-material entry also admits a new suggestion
+            // with a saved device scope. This current task supplies a real work
+            // link, matter commands, commitments and discovered rules over HTTP.
+            val hostFixture = generated.getJSONObject("host")
+            assertFalse("A restricted page cannot start the broader saved matter", model.canStart(hostFixture.getString("cardId")))
+            val hostScope = AssistantScope(hostFixture.getJSONObject("scope"))
+            val hostApi = CentralAssistant(transport, AssistantScope(JSONObject().put("kind", "all")), AssistantHttpBindings(transport))
+            val hostDisk = CentralStateFile(folder.newFolder(), "generated-host-feed", object : ByteCipher {
+                override fun seal(bytes: ByteArray) = bytes
+                override fun open(bytes: ByteArray) = bytes
+            })
+            val host = AssistantFeedViewModel(hostApi, hostDisk::read, hostDisk::write)
+            host.refresh(); assertNull(host.error)
+            val suggestion = host.cards.single { it.id == hostFixture.getString("cardId") }
+            assertTrue(host.canStart(suggestion.id)); assertTrue(suggestion.startable)
+            assertTrue("The all-material production entry keeps the server's saved matter scope", hostScope.same(host.scope(suggestion.id)))
+            val started = host.start(suggestion.id, suggestion.revision, "Generated ${generated.getString("kind")} Android owner goal")
+            assertNull(host.error); assertNotNull(started)
+            assertEquals(started, host.start(suggestion.id, suggestion.revision, "Generated duplicate click"))
+            val task = host.tasks.getValue(suggestion.id)
+            assertEquals(started, task.id); assertNotEquals("completed", task.state)
+            assertNotNull("Generated ${generated.getString("kind")} task must keep its current work link: $task", task.workId)
+            val workId = requireNotNull(task.workId)
+            val work = transport.get("/api/work-activity/" + java.net.URLEncoder.encode(workId, "UTF-8") + "?limit=20&cursor=0")
+            assertEquals(workId, work.getString("id"))
+            assertTrue(AssistantJson.rows(hostApi.questions(workId), "items", AssistantQuestionLink::read).all { it.workId == workId })
+            val request = exchanges.last { it.method == "POST" && it.path == "/api/assistant/tasks" }.request!!
+            assertEquals(suggestion.id, request.getString("cardId")); assertEquals(suggestion.revision, request.getLong("expectedRevision"))
+            assertTrue(hostScope.same(AssistantScope(request.getJSONObject("scope"))))
+            assertFalse(hostDisk.read().has("pending"))
+            assertTrue(AssistantJson.rows(api.matters(), "items") { AssistantJson.id(it) }.contains(matter.id))
+            val hostMatterId = hostFixture.getString("matterId")
+            assertTrue(AssistantJson.rows(hostApi.matters(), "items") { AssistantJson.id(it) }.contains(hostMatterId))
+            val detail = AssistantMatterViewModel(hostApi, hostMatterId)
+            detail.refresh(); assertNull(detail.error); assertTrue(detail.canEdit)
+            assertEquals(listOf(started), detail.detail!!.tasks.map { it.first })
+            assertTrue(hostScope.same(detail.detail!!.scope))
+            assertEquals(hostFixture.getString("commitmentId"), detail.commitments.single().id)
+            val hostRule = AssistantRoutine.read(hostFixture.getJSONObject("routine"))
+            assertEquals(hostRule.id, detail.routines.single().id)
+            detail.edit(detail.detail!!.revision, "Generated Android edited matter")
+            assertNull(detail.error); assertEquals("Generated Android edited matter", detail.detail!!.goal)
+            detail.transition(detail.detail!!.revision, "pause")
+            assertNull(detail.error); assertEquals("paused", detail.detail!!.state)
+            assertTrue("Pausing a matter does not pause its rule", detail.routines.single().enabled)
+            detail.transition(detail.detail!!.revision, "resume")
+            assertNull(detail.error); assertEquals("active", detail.detail!!.state)
+            detail.updateRoutine(hostRule.id, hostRule.revision, false)
+            assertNull(detail.error); assertFalse(detail.routines.single().enabled); assertNull(detail.routines.single().nextDue)
+
             val rule = AssistantRoutine.read(generated.getJSONObject("routine"))
             assertEquals(rule.nextDue, api.routine(rule.id).nextDue)
             val paused = api.updateRoutine(rule.id, JSONObject().put("expectedRevision", rule.revision).put("enabled", false))

@@ -36,6 +36,10 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
     fun show() { selected?.let { id ->
         if(section=="results"&&memoryResults.hasSelection(id))memoryResults.showSelected(id) else detail(id)
     } ?: list() }
+    fun selectWork(id: String) {
+        require(MoteLink.runId(id))
+        selected = id; section = "overview"; branchCursor = 0; branchPrevious.clear(); memoryResults.clear()
+    }
     fun clearPrivateState() { detailBody = null; rendered = ""; selected = null; section = "overview"; state = "active"; cursor = 0; previous.clear(); branchCursor = 0; branchPrevious.clear();detailLive=false;detailSignature="";memoryResults.clear();questionAttempts.clear();questionGeneration++ }
     fun saveState(out: Bundle) { out.putString("state", state); out.putString("selected", selected); out.putString("section", section); out.putInt("cursor", cursor); out.putInt("branchCursor", branchCursor); out.putIntegerArrayList("previous", ArrayList(previous)); out.putIntegerArrayList("branchPrevious", ArrayList(branchPrevious));out.putBundle("memoryResults",Bundle().also(memoryResults::save)) }
     fun restoreState(value: Bundle, allowMemoryResult: Boolean) {

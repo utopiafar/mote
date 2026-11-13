@@ -41,5 +41,6 @@ internal open class GeneratedAssistantDomain : AssistantDomainBindings {
     override fun start(request: JSONObject, card: JSONObject): String = error("Unexpected start")
     override fun matter(id: String, scope: AssistantScope) = AssistantMatterDetail.read(AssistantFixtures.matter())
     override fun commitments(matterId: String, scope: AssistantScope) = listOf(AssistantCommitment.read(AssistantFixtures.commitment()))
+    override fun routines(matterId: String, scope: AssistantScope) = emptyList<AssistantRoutine>()
     override fun matterCommand(command: JSONObject) { error("Unexpected matter command") }
 }

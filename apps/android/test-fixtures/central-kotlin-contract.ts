@@ -51,7 +51,7 @@ try {
   // suite separately exercises command/action states.
   const workbenchFile=join(directory,'workbench.json'),workbench:unknown[]=[];
   for(const template of ['project','person','travel','reading'] as const){
-    const response=await central.app.inject({url:'/api/assistant/workbench?request='+encodeURIComponent(JSON.stringify({template,scope:{kind:'all'}})),
+    const response:{statusCode:number;body:string;json():unknown}=await central.app.inject({url:'/api/assistant/workbench?request='+encodeURIComponent(JSON.stringify({template,scope:{kind:'all'}})),
       headers:{authorization:'Bearer '+token}});
     assert.equal(response.statusCode,200,response.body);workbench.push(response.json());
   }

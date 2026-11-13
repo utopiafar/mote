@@ -47,6 +47,7 @@ open class CentralActivity : MoteActivity() {
                     next.putExtra("page", destination.page)
                     destination.conversationId?.let { next.putExtra("conversationId", it) }
                     destination.evidenceId?.let { next.putExtra("evidenceId", it); next.putExtra("evidenceOrigin", MoteLink.parse(raw)?.scope?.origin) }
+                    destination.workId?.let { next.putExtra("workId", it); next.putExtra("workOrigin", MoteLink.parse(raw)?.scope?.origin) }
                 }
             }
             is MoteLinkNavigation.Outcome.Refused -> next.putExtra("linkNotice", outcome.reason.messageKey)

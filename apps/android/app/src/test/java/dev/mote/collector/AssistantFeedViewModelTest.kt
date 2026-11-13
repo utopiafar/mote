@@ -24,6 +24,20 @@ class AssistantFeedViewModelTest {
             exchange(method, url, bytes?.let { JSONObject(String(it)) })
         }), scope, domain)
 
+    @Test fun `a task accepted under another exact scope does not blank readable feed cards`() {
+        val accepted = f.card().put("acceptedTaskId", f.taskId)
+        val api = api { _, url, _ ->
+            if (url.contains("/tasks/")) 404 to JSONObject() else 200 to f.page(accepted, f.card(f.life))
+        }
+        val disk = store(); val model = AssistantFeedViewModel(api, disk::read, disk::write)
+        model.refresh()
+        assertNull(model.error)
+        assertEquals(listOf(f.work, f.life), model.cards.map { it.id })
+        assertEquals(f.taskId, model.cards.first().acceptedTaskId)
+        assertTrue(model.tasks.isEmpty()); assertEquals(setOf(f.work), model.taskErrors.keys)
+        assertTrue(model.cards.last().startable)
+    }
+
     @Test fun `work and life cards retain evidence feedback and later revisions through the feed entrance`() {
         val work = f.card(); val life = f.card(f.life)
         val lifeTaskId = "30000000-0000-4000-8000-000000000002"

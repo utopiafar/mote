@@ -174,6 +174,9 @@ internal class CentralContent(
     private val restoredWorkOrigin = state?.getString("workActivityOrigin")
     private val restoredWorkGeneration = state?.getLong("workActivityGeneration",-1) ?: -1
     private val restoredWorkProcess = state?.getString("workActivityProcess")
+    private var restoredAssistantState = state?.getString("assistantState")
+    private val restoredAssistantOrigin = state?.getString("assistantOrigin")
+    private val restoredAssistantGeneration = state?.getLong("assistantGeneration", -1) ?: -1
     private var restoredInsightState = state?.getBundle("insightState")
     private val restoredInsightOrigin = state?.getString("insightOrigin")
     private var pendingInsightId = state?.getString("insightId")
@@ -328,14 +331,18 @@ internal class CentralContent(
             restoredWorkState = null
             if (endpoint == restoredTopicsOrigin) restoredTopicsState?.let { screens?.restoreMemoryTopics(it) }
             restoredTopicsState = null
+            if (endpoint == restoredAssistantOrigin && selected.generation == restoredAssistantGeneration)
+                restoredAssistantState?.let { runCatching { screens?.restoreAssistantState(org.json.JSONObject(it)) } }
+            restoredAssistantState = null
         }
         if (client != null) {
             if (endpoint == restoredInsightOrigin) restoredInsightState?.let { screens?.restoreInsightState(it) }
             restoredInsightState = null
             pendingInsightId?.let { screens?.selectInsight(it) }; pendingInsightId = null
         }
+        val requestedWork = page == "activity" && activity.intent.hasExtra("workId")
         if (client == null) { screens?.clearPrivateState(); login() }
-        else if (changed || authenticated || sessionChanged || body.childCount == 0 || (page == "ask" && activity.intent.hasExtra("conversationId"))) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll() else if (page == "conversations") screens?.refreshConversationList()
+        else if (changed || authenticated || sessionChanged || requestedWork || body.childCount == 0 || (page == "ask" && activity.intent.hasExtra("conversationId"))) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll() else if (page == "conversations") screens?.refreshConversationList()
         linkNotice?.let { message -> linkNotice = null; notice(message) }
     }
     private fun deliverPendingResult() {
@@ -357,6 +364,8 @@ internal class CentralContent(
         state.putString("workActivityOrigin", server)
         state.putLong("workActivityGeneration",accessGeneration);state.putString("workActivityProcess",WorkMemoryProcess.nonce)
         state.putBundle("workActivity", Bundle().also { screens?.saveWorkState(it) })
+        state.putString("assistantOrigin", server); state.putLong("assistantGeneration", accessGeneration)
+        state.putString("assistantState", screens?.saveAssistantState()?.toString())
         state.putString("insightId", pendingInsightId); state.putString("insightOrigin", server)
         state.putBundle("insightState", Bundle().also { screens?.saveInsightState(it) ?: restoredInsightState?.let(it::putAll) })
     }
@@ -445,6 +454,11 @@ internal class CentralContent(
         title.visibility = View.VISIBLE
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
+        if (next == "activity") activity.intent.getStringExtra("workId")?.let { id ->
+            val expected = activity.intent.getStringExtra("workOrigin")
+            activity.intent.removeExtra("workId"); activity.intent.removeExtra("workOrigin")
+            if (MoteLink.runId(id) && expected == server) screens?.selectWork(id)
+        }
         screens?.show(next)
     }
     internal fun openInsight(id: String) {
