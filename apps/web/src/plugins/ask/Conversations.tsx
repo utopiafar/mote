@@ -19,6 +19,7 @@ import React,{useCallback,useEffect, useLayoutEffect, useMemo, useRef, useState,
 import {AlertCircle, ArrowRight, ArrowUp, ImagePlus, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
 import {ApiError,dateTime, type Answer, type Api, type Device, type Range} from '../../api';
 import {ConversationHeading,ConversationComposer} from './ConversationShell';
+import {ConversationSourceScope,type SourceScopeChoice} from './ConversationSourceScope';
 import {AssistantDraftActions} from './AssistantDraftActions';
 import {FeaturePanels} from '../../features/runtime';
 import {readOwnerQuestion} from '../../owner-question-route';
@@ -79,14 +80,14 @@ function DraftComposer({draft,children}:{draft:ReturnType<typeof createQuestionD
  const question=useSyncExternalStore(draft.subscribe,draft.getSnapshot,draft.getSnapshot);
  return children(question);
 }
-/** Product admission carries the scope explicitly. A cleared scope is all
- * sources; a stored selection stays a selection, including an empty evidence
- * intersection or a source-only restriction. */
-function admissionScope(scope:ConversationSummary['scope']|undefined,cleared:boolean,timeZone:string):ConversationMessageScope{
+/** An explicit composer choice replaces stored source/evidence restrictions.
+ * Without one, keep the stored selection, including an empty intersection. */
+function admissionScope(scope:ConversationSummary['scope']|undefined,choice:SourceScopeChoice|undefined,timeZone:string):ConversationMessageScope{
  const range={timeZone,...(scope?.after?{after:scope.after}:{}),...(scope?.before?{before:scope.before}:{}),...(scope?.deviceId?{deviceId:scope.deviceId}:{})};
+ if(choice)return {...range,...choice};
  // A selection can be source-only or an empty intersection. Missing evidenceIds
  // never turns it into "all"; the next turn keeps the stored restriction.
- if(!cleared&&(scope?.kind==='selection'||scope?.evidenceIds!==undefined||scope?.sourceIds!==undefined))return {kind:'selection',...(scope?.evidenceIds!==undefined?{evidenceIds:[...scope.evidenceIds]}:{}),...(scope?.sourceIds!==undefined?{sourceIds:[...scope.sourceIds]}:{}),...range};
+ if(scope?.kind==='selection'||scope?.evidenceIds!==undefined||scope?.sourceIds!==undefined)return {kind:'selection',...(scope?.evidenceIds!==undefined?{evidenceIds:[...scope.evidenceIds]}:{}),...(scope?.sourceIds!==undefined?{sourceIds:[...scope.sourceIds]}:{}),...range};
  return {kind:'all',...range};
 }
 export function Conversations({api, configured, devices, renderAnswer,onOpen=()=>{},controller:provided}: {
@@ -108,7 +109,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
   const changeModelProfile=useCallback((value:string)=>{queryRecovery.draftEdited(api);setModelProfileId(value);},[api]);
   const changeModelOverride=useCallback((value:string)=>{queryRecovery.draftEdited(api);setModelOverride(value);},[api]);
   const [items, setItems] = useState<ConversationSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
-  const [clearedScope,setClearedScope]=useState<{owner:Api;id:string}|null>(null);
+  const [scopeChoice,setScopeChoice]=useState<{owner:Api;id:string;value:SourceScopeChoice}|null>(null);
   const [selectedId,setSelectedId]=useState<string|null>(()=>new URLSearchParams(window.location.hash.split('?')[1]??'').get('conversation')),[older,setOlder]=useState<OlderTurns|null>(null),[pageRevoked,setPageRevoked]=useState(false);
   const [historyOpen,setHistoryOpen]=useState(false),[moreOpen,setMoreOpen]=useState(false),[moreTurn,setMoreTurn]=useState<{owner:Api;conversationId:string;turnId:string}|null>(null),[pendingSwitch,setPendingSwitch]=useState<{owner:Api;id:string|null}|null>(null),[dialogOwner,setDialogOwner]=useState(api);
   const [settingsOpen,setSettingsOpen]=useState(false);
@@ -158,8 +159,14 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       finally{if(historyReferenceRequest.current===controller)historyReferenceRequest.current=null;}
     })();
   };
-  const scopeCleared=clearedScope?.owner===api&&clearedScope.id===conversation?.id;
-  useEffect(()=>{setClearedScope(null);setUnavailableReference(null);setMoreOpen(false);setMoreTurn(null);setConfirmDelete(false);setPendingSwitch(null);setDialogOwner(api);},[api,selectedId]);
+  const currentScopeChoice=scopeChoice?.owner===api&&scopeChoice.id===conversation?.id?scopeChoice.value:undefined;
+  const scopeOverridden=currentScopeChoice!==undefined;
+  const messageScope=admissionScope(conversation?.scope,currentScopeChoice,Intl.DateTimeFormat().resolvedOptions().timeZone);
+  function changeSourceScope(value:SourceScopeChoice){
+    if(!conversation)return;
+    queryRecovery.contextChanged(api);setScopeChoice({owner:api,id:conversation.id,value});reference.clear();
+  }
+  useEffect(()=>{setScopeChoice(null);setUnavailableReference(null);setMoreOpen(false);setMoreTurn(null);setConfirmDelete(false);setPendingSwitch(null);setDialogOwner(api);},[api,selectedId]);
   const draftOwner=useRef(api);
   const [draft]=useState(()=>createQuestionDraft(question=>{const owner=draftOwner.current;unsentDrafts.set(owner,{question,attachments:unsentDrafts.get(owner)?.attachments??[]});})),setQuestion=draft.set;
   const [attachments,updateAttachments]=useState<ChatAttachment[]>([]);
@@ -216,7 +223,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
     // even when Ask was already mounted with a historical conversation.
     if(!draftQuery.get('conversation')){
       cancelHistoryReference();olderRequest.current?.abort();olderRequest.current=null;setLoadingOlder(false);
-      setSelectedId(null);setOlder(null);setTargetTurn(null);setClearedScope(null);setHistoryOpen(false);
+      setSelectedId(null);setOlder(null);setTargetTurn(null);setScopeChoice(null);setHistoryOpen(false);
       if(!queryRecovery.get(api)){operation.current?.abort();operation.current=null;setRun(null);setBusy(false);setPendingQuestion('');setPollError('');setPollReceiptMissing(false);}
     }
     setQuestion(nextQuestion);draftQuery.delete('questionDraft');const route=window.location.hash.split('?')[0];window.history.replaceState(null,'',route+(draftQuery.size?'?'+draftQuery:''));window.dispatchEvent(new window.Event('mote:workspace-state'));}const questionId=readOwnerQuestion(window.location.hash);setSelectedOwnerQuestion(questionId);if(questionId)selectionMade.current=true;const next=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(next){if(next!==latestDetail.current.selectedId)cancelHistoryReference();const retained=queryRecovery.get(api);if(retained&&next!==retained.conversationId&&next!==retained.run?.conversationId)queryRecovery.contextChanged(api);selectionMade.current=true;setTargetTurn(draftQuery.get('turn'));setSelectedId(next);setRun(null);}};changed();window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[api]);
@@ -390,7 +397,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
     if(!force&&id!==selectedId&&(draft.getSnapshot().trim()||attachments.length||imageUploads.length||queryRecovery.get(api))){setPendingSwitch({owner:api,id});return;}
     cancelHistoryReference();queryRecovery.contextChanged(api);attachmentRequest.current?.abort();attachmentRequest.current=null;setUploading(false);
     setHistoryOpen(false);
-    setTargetTurn(null);setClearedScope(null);
+    setTargetTurn(null);setScopeChoice(null);
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
     setRun(null);setPollError('');setPollReceiptMissing(false);setError('');setTurnError('');setConfirmDelete(false);setQuestion('');setAttachments([]);storeImages(()=>[]);setPendingQuestion('');
     setOlder(null);setSelectedId(id);setSelectedOwnerQuestion(null);
@@ -417,7 +424,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       if(controller.signal.aborted)return;
       if(!created||typeof created.id!=='string'||!/^[a-f0-9-]{36}$/i.test(created.id))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
       cancelHistoryReference();queryRecovery.contextChanged(api);attachmentRequest.current?.abort();attachmentRequest.current=null;setUploading(false);setHistoryOpen(false);
-      setTargetTurn(null);setClearedScope(null);
+      setTargetTurn(null);setScopeChoice(null);
       selectionMade.current=true;olderRequest.current?.abort();setLoadingOlder(false);
       setRun(null);setPollError('');setPollReceiptMissing(false);setTurnError('');setOlder(null);setQuestion('');setAttachments([]);storeImages(()=>[]);setPendingQuestion('');setConfirmDelete(false);setSelectedOwnerQuestion(null);
       setSelectedId(created.id);history.refresh();main.refresh();
@@ -441,10 +448,9 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
     try {
       if(!conversation)await reference.verify(controller.signal);
       if(controller.signal.aborted)return;
-      const timeZone=Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const scope=admissionScope(conversation?.scope,scopeCleared,timeZone);
-      const anchorMaterialRef=scopeCleared?undefined:reference.origin&&!conversation&&reference.materialRef?reference.materialRef:conversation?.scope.anchorMaterialRef;
-      const anchorEvidenceIds=scopeCleared?undefined:reference.origin&&!conversation&&!reference.materialRef&&reference.ids.length?reference.ids:conversation?.scope.anchorEvidenceIds;
+      const scope=messageScope;
+      const anchorMaterialRef=scopeOverridden?undefined:reference.origin&&!conversation&&reference.materialRef?reference.materialRef:conversation?.scope.anchorMaterialRef;
+      const anchorEvidenceIds=scopeOverridden?undefined:reference.origin&&!conversation&&!reference.materialRef&&reference.ids.length?reference.ids:conversation?.scope.anchorEvidenceIds;
       const id=crypto.randomUUID();
       const input:ConversationMessageInput={conversationId,clientRequestId:id,question:text,scope,...(anchorMaterialRef?{anchorMaterialRef}:{}),...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(modelProfileId?{modelProfileId}:{}),...(modelOverride?{modelOverride}:{}),...(attachments.length?{attachmentIds:attachments.map(attachment=>attachment.id)}:{})};
       const retained:OwnedQuery={kind:'owned',id,body:JSON.stringify(input),question:text,attachments:attachments.map(value=>({...value})),...queryRecovery.versions(api),conversationId,unknown:false};
@@ -547,11 +553,12 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       </div>
       {Boolean(error||detail.error||recentRuns.error||feedError)&&<p className="notice error" role="alert">{error||conversationFailure(detail.error||recentRuns.error||feedError)}</p>}
       <div className="conversation-compose">
+      <ConversationSourceScope api={api} scope={messageScope} onChange={changeSourceScope} disabled={busy||opening||!conversation}/>
       {!reference.origin&&threadEmpty&&<a className="conversation-add-reference text-button" href="#/library">＋ {moteText('参考资料')}</a>}
       {threadEmpty&&reference.origin&&<nav className="filter-bar ask-original-reference" aria-label={moteText('参考记录')}><span>{reference.origin.kind==='memory'?moteText('这条记忆的原始依据'):reference.origin.kind==='material'?moteText('参考这份资料'):reference.origin.kind==='insight'?moteText('原始依据'):moteText('参考这条记录，自动查找相关上下文')}{reference.title?' · '+reference.title:''}</span>{reference.loading?<LoadingText/>:reference.error?<span role="alert">{reference.error}</span>:reference.origin.kind==='material'?<button className="text-button" onClick={()=>onOpen(reference.origin!.id)}>{moteText('查看参考资料')}</button>:reference.ids.map((id,index)=><button className="text-button" key={id} onClick={()=>onOpen('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<a className="text-button" href={reference.origin.kind==='memory'?'#/library?view=memories&memory='+encodeURIComponent(reference.origin.id):reference.returnRoute??'#/library?view=materials&selected='+encodeURIComponent(reference.origin.kind==='material'?reference.origin.id:'capture:'+reference.origin.id)}>{reference.origin.kind==='memory'?moteText('返回记忆'):moteText('返回资料')}</a><button className="text-button" disabled={busy||opening} onClick={()=>{queryRecovery.contextChanged(api);reference.clear();}}>{moteText('清除参考记录')}</button></nav>}
-      {Boolean(conversation?.scope.evidenceIds?.length)&&<nav className="filter-bar" aria-label={moteText('查询范围')}>{scopeCleared?<span>{moteText('全部资料')}</span>:<><span>{moteText('{0} 条证据',conversation!.scope.evidenceIds!.length)}</span>{conversation!.scope.evidenceIds!.map((id,index)=><button className="text-button" key={id} onClick={()=>openHistoryReference('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<button className="text-button" disabled={busy||opening} onClick={()=>{queryRecovery.contextChanged(api);setClearedScope({owner:api,id:conversation!.id});}}>{moteText('清除范围')}</button></>}</nav>}
-      {conversation?.scope.anchorMaterialRef&&<nav className="filter-bar" aria-label={moteText('参考资料')}>{scopeCleared?<span>{moteText('全部资料')}</span>:<><span>{moteText('参考这份资料')}</span><button className="text-button" onClick={()=>onOpen(conversation.scope.anchorMaterialRef!)}>{moteText('查看参考资料')}</button></>}<button className="text-button" disabled={busy||opening} onClick={()=>{queryRecovery.contextChanged(api);setClearedScope({owner:api,id:conversation.id});}}>{moteText('清除参考记录')}</button></nav>}
-      {Boolean(conversation?.scope.anchorEvidenceIds?.length)&&<nav className="filter-bar" aria-label={moteText('参考记录')}>{scopeCleared?<span>{moteText('全部资料')}</span>:<><span>{moteText('参考这条记录，自动查找相关上下文')}</span>{conversation!.scope.anchorEvidenceIds!.map((id,index)=><button className="text-button" key={id} onClick={()=>openHistoryReference('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<button className="text-button" disabled={busy||opening} onClick={()=>{queryRecovery.contextChanged(api);setClearedScope({owner:api,id:conversation!.id});}}>{moteText('清除参考记录')}</button></>}</nav>}
+      {!scopeOverridden&&Boolean(conversation?.scope.evidenceIds?.length)&&<nav className="filter-bar" aria-label={moteText('查询范围')}><span>{moteText('{0} 条证据',conversation!.scope.evidenceIds!.length)}</span>{conversation!.scope.evidenceIds!.map((id,index)=><button className="text-button" key={id} onClick={()=>openHistoryReference('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<button className="text-button" disabled={busy||opening} onClick={()=>changeSourceScope({kind:'all'})}>{moteText('清除范围')}</button></nav>}
+      {!scopeOverridden&&conversation?.scope.anchorMaterialRef&&<nav className="filter-bar" aria-label={moteText('参考资料')}><span>{moteText('参考这份资料')}</span><button className="text-button" onClick={()=>onOpen(conversation.scope.anchorMaterialRef!)}>{moteText('查看参考资料')}</button><button className="text-button" disabled={busy||opening} onClick={()=>changeSourceScope({kind:'all'})}>{moteText('清除参考记录')}</button></nav>}
+      {!scopeOverridden&&Boolean(conversation?.scope.anchorEvidenceIds?.length)&&<nav className="filter-bar" aria-label={moteText('参考记录')}><span>{moteText('参考这条记录，自动查找相关上下文')}</span>{conversation!.scope.anchorEvidenceIds!.map((id,index)=><button className="text-button" key={id} onClick={()=>openHistoryReference('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<button className="text-button" disabled={busy||opening} onClick={()=>changeSourceScope({kind:'all'})}>{moteText('清除参考记录')}</button></nav>}
       <DraftComposer draft={draft}>{question=><ConversationComposer label={moteText('向 Mote 提问')} placeholder={threadEmpty?moteText('比如，我最近都在忙什么？'):moteText('接着问，Mote 会结合前面的对话。')} value={question} onChange={value=>{queryRecovery.draftEdited(api);setQuestion(value);}} onSubmit={()=>void submit()} disabled={busy||opening} hintId="composer-hint">
         {Boolean(attachments.length||imageUploads.length)&&<div className="chat-attachment-list">{attachments.map(attachment=><span key={attachment.id} className="chat-attachment"><ChatDraftThumbnail file={localImageFiles.get(api)?.get(attachment.id)}/><span><strong>{attachment.name}</strong><small>{moteText('已添加')}</small></span><button type="button" disabled={busy||uploading} aria-label={moteText("移除图片 {0}",attachment.name)} onClick={()=>{queryRecovery.draftEdited(api);setAttachments(current=>current.filter(item=>item.id!==attachment.id));}}><X size={13}/></button></span>)}{imageUploads.map(item=><span key={item.key} className="chat-attachment chat-image-upload" data-status={item.status}><ChatDraftThumbnail file={item.file}/><span><strong>{item.file.name}</strong><small role={item.status==='uploading'?'status':undefined}>{item.status==='uploading'?moteText('正在上传'):moteText('图片上传失败')}</small></span>{item.status==='failed'&&<button type="button" disabled={busy||uploading||opening} onClick={()=>{queryRecovery.draftEdited(api);void uploadImages([item]);}}>{moteText('重试')}</button>}<button type="button" disabled={busy||uploading} aria-label={moteText('移除图片 {0}',item.file.name)} onClick={()=>{queryRecovery.draftEdited(api);storeImages(rows=>rows.filter(row=>row.key!==item.key));setError('');}}><X size={13}/></button></span>)}</div>}
         <details className="chat-model-options"><summary>{moteText("本次模型")}</summary><StableModelSelector api={api} feature="chat" value={modelProfileId} onChange={changeModelProfile} model={modelOverride} onModelChange={changeModelOverride} disabled={busy||opening} detachedFromForm/></details>

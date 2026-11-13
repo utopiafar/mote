@@ -207,10 +207,81 @@ test('a source-only empty selection stays a selection instead of widening to all
   return base.request(p,init);
  }} as Api;
  await view(root,owner);await act(async()=>{});
+ assert.equal(d.querySelector<HTMLSelectElement>('select[aria-label="来源范围"]')!.value,'empty');
  await field(d,'textarea[aria-label="向 Mote 提问"]','Generated source-only question');
  await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
  assert.equal(posts.length,1);assert.equal(posts[0].conversationId,id);assert.equal(posts[0].scope.kind,'selection');
  assert.deepEqual(posts[0].scope.sourceIds,[]);assert.equal(Object.hasOwn(posts[0].scope,'evidenceIds'),false,'an empty source selection never becomes all sources');
+});
+
+const scopeSources=[
+ {id:'generated-diary',name:'Generated diary',kind:'local-files',deviceId:'generated-device',platform:'import',retention:'snapshot',enabled:true,createdAt:at,updatedAt:at},
+ {id:'generated-calendar',name:'Generated calendar',kind:'local-calendar',deviceId:'generated-device',platform:'import',retention:'snapshot',enabled:false,createdAt:at,updatedAt:at},
+];
+async function chooseSourceScope(d:Document,value:string){
+ await act(async()=>{const select=d.querySelector<HTMLSelectElement>('select[aria-label="来源范围"]');assert.ok(select,'Ask must expose the scope beside the composer');assert.equal(select.disabled,false);select.value=value;select.dispatchEvent(new d.defaultView!.Event('change',{bubbles:true}));});
+}
+for(const [label,choice,expected] of [
+ ['all','all',{kind:'all'}],
+ ['one source','source:generated-diary',{kind:'selection',sourceIds:['generated-diary']}],
+ ['empty','empty',{kind:'selection',sourceIds:[]}],
+] as const){
+ test('the default main conversation submits the visible '+label+' scope without expanding source evidence',async t=>{
+  const {root,d}=await fixture(t),posts:any[]=[],reads:string[]=[];
+  const base=api(),owner={...base,request:async(p:string,init?:RequestInit)=>{
+   if(init?.method){assert.equal(p,'/api/conversations/messages','scope selection must use the existing main conversation');const input=JSON.parse(String(init.body));posts.push(input);return receipt(input);}
+   reads.push(p);
+   if(p==='/api/sources')return{items:scopeSources};
+   if(p==='/api/configuration')return{...settingsView,domains:[{...settingsView.domains[0],effective:{...settingsView.domains[0].effective,multipleConversations:false}}]};
+   if(p==='/api/conversations/'+id)return{...conversation,scope:{kind:'selection',sourceIds:['generated-calendar'],evidenceIds:[cite],anchorEvidenceIds:[cite],anchorMaterialRef:'material:generated-anchor'}};
+   return base.request(p,init);
+  }} as Api;
+  await view(root,owner);await act(async()=>{});
+  assert.equal(d.defaultView!.location.hash,'#/ask');assert.equal([...d.querySelectorAll('button')].some(button=>button.textContent==='新对话'),false);
+  const select=d.querySelector<HTMLSelectElement>('select[aria-label="来源范围"]');assert.ok(select);
+  assert.match(select.querySelector('option[value="source:generated-diary"]')!.textContent!,/Generated diary/);
+  if(choice==='all'){await click(d,'清除范围');assert.equal(select.value,'all','clearing an inherited evidence restriction explicitly selects all');}
+  await chooseSourceScope(d,choice==='all'?'empty':'source:generated-calendar');
+  await chooseSourceScope(d,choice);
+  await field(d,'textarea[aria-label="向 Mote 提问"]','Generated scoped question');
+  await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(posts.length,1);assert.equal(posts[0].conversationId,id);
+  assert.deepEqual(posts[0].scope,{...expected,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
+  assert.equal(Object.hasOwn(posts[0],'anchorEvidenceIds'),false);assert.equal(Object.hasOwn(posts[0],'anchorMaterialRef'),false);
+  assert.equal(select.value,choice,'the chosen scope remains visible after admission and a conversation refresh');
+  assert.equal(d.querySelector('nav[aria-label="查询范围"]'),null,'replaced evidence restrictions must not remain as the next question scope');
+  assert.equal(reads.some(path=>path.startsWith('/api/sources/')||/^\/api\/(source-items|library|evidence|materials)([/?]|$)/.test(path)),false,'choosing a source must not read its evidence list or body');
+  if(choice==='empty'){
+   await field(d,'textarea[aria-label="向 Mote 提问"]','Generated next empty question');
+   await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
+   assert.equal(posts.length,2);assert.deepEqual(posts[1].scope,posts[0].scope,'an empty choice must never reset to all on the next send');
+  }
+ });
+}
+
+test('source scope is selectable in the main conversation before a model is configured',async t=>{
+ const {root,d}=await fixture(t),base=api(),owner={...base,request:async(p:string,init?:RequestInit)=>p==='/api/sources'?{items:scopeSources}:base.request(p,init)} as Api;
+ await act(async()=>root.render(React.createElement(Conversations,{api:owner,configured:false,devices:[],renderAnswer:()=>null})));
+ await chooseSourceScope(d,'source:generated-diary');
+ assert.equal(d.querySelector<HTMLSelectElement>('select[aria-label="来源范围"]')!.selectedOptions[0].textContent!.includes('Generated diary'),true);
+ await chooseSourceScope(d,'empty');assert.match(d.querySelector('.conversation-source-scope')!.textContent!,/当前范围内没有可读取的内容/);
+ await chooseSourceScope(d,'all');assert.equal(d.querySelector<HTMLSelectElement>('select[aria-label="来源范围"]')!.selectedOptions[0].textContent,'全部资料');
+ assert.equal(d.querySelector<HTMLButtonElement>('.send-button')!.disabled,true);
+});
+
+test('an unavailable source list never widens an inherited source selection to all',async t=>{
+ const {root,d}=await fixture(t),posts:any[]=[],base=api(),owner={...base,request:async(p:string,init?:RequestInit)=>{
+  if(p==='/api/sources')throw new ApiError('Generated source list unavailable',503);
+  if(p==='/api/conversations/'+id)return{...conversation,scope:{kind:'selection',sourceIds:['generated-diary']}};
+  if(p==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));posts.push(input);return receipt(input);}
+  return base.request(p,init);
+ }} as Api;
+ await view(root,owner);assert.ok(d.querySelector('.conversation-source-scope [role="alert"]'));
+ const select=d.querySelector<HTMLSelectElement>('select[aria-label="来源范围"]')!;
+ assert.equal(select.value,'source:generated-diary');assert.match(select.selectedOptions[0].textContent!,/generated-diary/);
+ await field(d,'textarea[aria-label="向 Mote 提问"]','Generated question with retained source grant');
+ await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(posts.length,1);assert.deepEqual(posts[0].scope,{kind:'selection',sourceIds:['generated-diary'],timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
 });
 
 test('server accepted, queued, running, failed and cancelled states are shown without optimistic rewriting',async t=>{
