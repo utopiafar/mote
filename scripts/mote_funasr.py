@@ -214,7 +214,10 @@ class SdkRuntime:
                 self.torch.mps.empty_cache()
 
     def waveform(self, pcm):
-        return self.np.frombuffer(pcm, dtype='<i2').astype(self.np.float32) / 32768
+        # Nano's chat adapter accepts Tensor audio, not NumPy arrays. FSMN and
+        # CAMPPlus's common SDK loader accepts the same CPU float32 tensor.
+        samples = self.np.frombuffer(pcm, dtype='<i2').astype(self.np.float32) / 32768
+        return self.torch.from_numpy(samples)
 
     def cluster(self, embeddings, plan):
         from funasr.models.campplus import cluster_backend

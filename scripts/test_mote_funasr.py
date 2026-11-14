@@ -1,16 +1,20 @@
 """Generated model boundaries; real hashing, PCM mapping, limits and consumers.
 
 --emit serializes the actual engine's generated run, for downstream owners.
-It never loads weights, imports a model runtime or uses personal recordings.
+It never loads weights or uses personal recordings. In the pinned audio
+environment, the SDK input regression also exercises real adapters without
+constructing neural models; it is skipped when FunASR is not installed.
 """
 from contextlib import contextmanager
 import base64
 import copy
 import hashlib
+import importlib.util
 import io
 import json
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -380,6 +384,71 @@ console.log('actual engine bytes -> FileOutputRegistry / Transcript / Diarizatio
 
 
 class MappingAndRuntime(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec('funasr'), 'requires pinned audio dependencies; no model weights')
+    def test_generated_pcm_reaches_pinned_nano_chat_template_without_losing_vad_samples(self):
+        # Exercise the installed SDK's AutoModel -> Nano.inference -> chat
+        # template path. Only neural decoding and the other model stages are
+        # generated; neither AutoModel nor Nano's input adapter is reimplemented.
+        import numpy as np
+        import torch
+        from funasr import AutoModel
+        from funasr.models.fun_asr_nano.model import FunASRNano
+        from funasr.utils.load_utils import load_audio_text_image_video
+
+        self.assertEqual(engine.inspect_dependencies()['funasr'], contract.SDK_VERSION)
+        templates = []
+
+        class TemplateNano(FunASRNano):
+            def __init__(self):
+                torch.nn.Module.__init__(self)
+                self.anchor = torch.nn.Parameter(torch.zeros(1))
+
+            def inference_llm(self, data_in, **_kwargs):
+                templates.append(self.data_template(data_in[0]))
+                return [{'text': 'generated recognition'}], {}
+
+        wrapper = AutoModel.__new__(AutoModel)
+        wrapper.kwargs = {'device': 'cpu', 'batch_size': 1, 'disable_pbar': True}
+        wrapper.model, wrapper.vad_model, wrapper.punc_model = TemplateNano(), None, None
+
+        class PinnedInputRuntime(GeneratedRuntime):
+            waveform = engine.SdkRuntime.waveform
+
+            @contextmanager
+            def component(self, role, directory):
+                if role == 'asr':
+                    try:
+                        yield wrapper
+                    finally:
+                        self.released.append(role)
+                else:
+                    with super().component(role, directory) as model:
+                        yield model
+
+        with generated_engine(frames=64001) as f:
+            runtime = PinnedInputRuntime([[1000, 1500], [3000, 4000.0625]], [], ['首块。', '尾段。'])
+            runtime.np, runtime.torch = np, torch
+            response = contract.parse_response(f.run(runtime), f.request)
+            cp = contract.read_checkpoint(response['checkpoint'])
+            self.assertEqual(len(templates), 2)
+            for template, pcm in zip(templates, (f.pcm[32000:48000], f.pcm[96000:128002])):
+                audio = template['user'][0][1]
+                self.assertIsInstance(audio, torch.Tensor)
+                self.assertEqual(audio.dtype, torch.float32)
+                self.assertEqual(audio.device.type, 'cpu')
+                expected = torch.tensor(struct.unpack('<'+'h'*(len(pcm)//2), pcm), dtype=torch.float32) / 32768
+                self.assertTrue(torch.equal(audio, expected))
+                # The same input also remains valid for FSMN and CAMPPlus's
+                # common SDK loader, without files, URLs or resampling.
+                self.assertTrue(torch.equal(load_audio_text_image_video(audio, fs=16000), expected))
+            self.assertEqual(cp['source']['durationMs'], 4000.0625)
+            self.assertEqual([(s['startMs'], s['endMs'], s['text']) for s in cp['sentences']],
+                             [(1000, 1500, '首块。'), (3000, 4000.0625, '尾段。')])
+            self.assertEqual(cp['recognitionChunks'], [{'vadIndex': 0, 'text': 'generated recognition'},
+                                                       {'vadIndex': 1, 'text': 'generated recognition'}])
+            self.assertEqual(runtime.released, ['vad', 'asr', 'punctuation'])
+            self.assertEqual(runtime.closed, 1)
+
     def test_decoder_generation_limit_is_a_failure_until_eos_is_proven(self):
         class Llm:
             generation_config = SimpleNamespace(eos_token_id=[20, 21])
