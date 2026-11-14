@@ -17,7 +17,6 @@ import {SourceStore} from '../src/sources.js';
 import {ImportStore} from '../src/imports.js';
 import type {ImportPreparation,ImportPreparationResult} from '../src/imports.js';
 import {prepareImportInput} from '../src/import-runtime.js';
-import {FeatureScope} from '../src/features/index.js';
 import {materialId} from '../src/materials.js';
 import {ImportIntakeRegistry,installImportIntake} from '../src/import-intake.js';
 import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes} from '../src/file-recipes.js';
@@ -26,8 +25,9 @@ import {generatedAppleDouble} from './fixtures/appledouble.js';
 import {repliesAfterExit} from './fixtures/format-worker-lifecycle.js';
 
 async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>,prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>,configureImage=false){
-  // Advance durable workers explicitly, so wall-clock load cannot race assertions.
-  t.mock.method(FeatureScope.prototype,'every',()=>()=>{});
+  // Domain services own setInterval polls directly. Freeze that clock while
+  // advancing durable workers explicitly; real I/O and deadlines still run.
+  t.mock.timers.enable({apis:['setInterval']});
   const directory=mkdtempSync(join(tmpdir(),'mote-media-import-'));
   let node:Awaited<ReturnType<typeof buildApp>>;
   t.after(async()=>{try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
@@ -108,19 +108,66 @@ test('a metadata-only original produces an accounted preview without a model or 
  assert.deepEqual(f.node.archivedFiles.read(job.files[0].id),metadata);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
 });
 
-test('61 generated MP3 container members use the Android file pipeline without model import or invented dates',async t=>{
-  const f=await fixture(t),zip=Buffer.from(zipSync(Object.fromEntries(Array.from({length:61},(_,i)=>[`2020-01-01-call-${i}.mp3`,Buffer.from('ID3-generated-'+i)]))));
+for(const pollDuringOrganizing of [false,true])test(pollDuringOrganizing?
+ '61 generated MP3 originals and receipts survive a processing poll during organizer publication without duplicate extraction':
+ '61 generated MP3 container members use the Android file pipeline without model import or invented dates',async t=>{
+  const f=await fixture(t),originals=Object.fromEntries(Array.from({length:61},(_,i)=>[`2020-01-01-call-${i}.mp3`,Buffer.from('ID3-generated-'+i)])),zip=Buffer.from(zipSync(originals));
   const job=await f.create([entry('calls.zip',zip)]);assert.equal(job.status,'completed',JSON.stringify(job));assert.equal(job.files.length,62);assert.equal(job.media?.length,61);
   assert.equal(job.dispositions?.counts.processing,61);assert.equal(job.dispositions?.counts.container,1);assert.equal(job.dispositions?.counts.parsed,0);
   assert.equal(job.progress.imported,61);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
   assert.ok(job.media!.every(item=>item.format.mimeType==='audio/mpeg'&&!item.searchable&&item.processing?.state==='waiting'));
-  for(const item of job.media!){const record=f.node.files.detail(item.captureId!).item;assert.equal(record.observedAt,job.createdAt);assert.equal(record.document?.recordedAt,undefined);assert.equal(record.document?.occurredAt,undefined);}
-  await f.organize();await f.node.sourcePipelines.drainMemory(f.node.memoryPipeline,true,100);assert.equal(f.node.memoryPipeline.list().length,0,'Memory waits for extracted text');
+  const received=job.media!.map(item=>{
+    const record=f.node.files.detail(item.captureId!).item;assert.equal(record.observedAt,job.createdAt);assert.equal(record.document?.recordedAt,undefined);assert.equal(record.document?.occurredAt,undefined);
+    const source=f.node.sources.getItem(job.sourceId,record.externalId)!;assert.equal(source.captureId,item.captureId);assert.ok(source.receivedAt);
+    return {captureId:source.captureId,externalId:source.externalId,revision:source.revision,receivedAt:source.receivedAt};
+  });
+  if(pollDuringOrganizing){
+    let enter!:()=>void,release!:()=>void,paused=false;
+    const entered=new Promise<void>(resolve=>enter=resolve),held=new Promise<void>(resolve=>release=resolve);
+    // Hold an actual source snapshot, then deliver the real domain polls before
+    // its commit. The producer must finish before asserting organizer quiescence.
+    const boundary=f.node.materialOrganizer as unknown as {readSourceHead:(sourceId:string,externalId:string,signal:AbortSignal)=>Promise<unknown>},read=boundary.readSourceHead.bind(boundary);
+    t.mock.method(boundary,'readSourceHead',async(...args:Parameters<typeof read>)=>{const value=await read(...args);if(!paused){paused=true;enter();await held;}return value;});
+    const organizing=f.node.materialOrganizer.tick(200);await entered;
+    let processing:Promise<void>,accepted:string[]=[];
+    try{
+      t.mock.timers.tick(5000);processing=f.node.processingServices.tick();
+      accepted=f.node.store.db.prepare("SELECT id FROM execution_steps WHERE kind='files.pipeline'").all().map(row=>String(row.id));
+      assert.equal(accepted.length,61,'the actual due poll admits all generated files');
+    }finally{release();}
+    await Promise.all([organizing,processing!]);
+    // A poll promises its admitted wave, while the shared engine keeps filling
+    // freed slots. Join these exact accepted programs before draining changes.
+    await f.node.executor.drain(accepted);
+  }else{
+    await f.organize();await f.node.sourcePipelines.drainMemory(f.node.memoryPipeline,true,100);assert.equal(f.node.memoryPipeline.list().length,0,'Memory waits for extracted text');
+  }
   await f.node.processing.tick();await f.organize();const ready=f.node.imports.get(job.id);assert.equal(f.calls.length,61);assert.ok(ready.media!.every(item=>item.searchable&&item.processing?.state==='succeeded'));
+  assert.deepEqual([...f.calls].sort(),Object.values(originals).map(bytes=>bytes.toString()).sort(),'each original is transcribed exactly once');
   assert.equal(f.node.files.search({query:'Generated participant',limit:100}).length,61);
   const imported=job.media![0].captureId!,receipt=f.node.processing.explain(imported).snapshots[0] as any;assert.equal(receipt.recipe.id,'mote.file-extraction');assert.equal(receipt.stagePins[0].id,'mote.extract');
+  const retained=()=>{
+    for(const file of job.files)assert.deepEqual(f.node.archivedFiles.read(file.id),file.name==='calls.zip'?zip:originals[file.name]);
+    assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM source_versions WHERE source_id=?').get(job.sourceId)!.n,61);
+    assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM file_versions WHERE source_id=?').get(job.sourceId)!.n,61);
+    return received.map(receipt=>{
+      const source=f.node.sources.getItem(job.sourceId,receipt.externalId)!;
+      assert.deepEqual({captureId:source.captureId,externalId:source.externalId,revision:source.revision,receivedAt:source.receivedAt},receipt);
+      const detail=f.node.files.detail(receipt.captureId),file=job.files.find(file=>file.id===job.media!.find(media=>media.captureId===receipt.captureId)!.fileId)!;
+      assert.deepEqual(Buffer.concat([...f.node.files.bytes(receipt.captureId)]),originals[file.name]);
+      assert.equal(detail.job?.state,'succeeded');assert.equal(detail.job?.attempts,1);
+      assert.equal(detail.artifacts.filter(artifact=>artifact.kind==='transcript').length,1);
+      const chunks=f.node.files.chunks(receipt.captureId);assert.equal(chunks.length,1);assert.equal(chunks[0].ocrText,'Generated participant described a plan; its outcome is unknown.');
+      assert.equal(f.node.materials.input(materialId(job.sourceId,receipt.externalId),['extracted-text'])?.ready,true);
+      return {source,job:detail.job,steps:detail.steps,artifacts:detail.artifacts,chunks};
+    });
+  };
+  const outputs=retained();
   const before=f.calls.length;const duplicate=await f.create([entry('calls.zip',zip)]);assert.equal(duplicate.progress.duplicates,61);assert.deepEqual(duplicate.media!.map(item=>item.captureId),job.media!.map(item=>item.captureId));await f.node.processing.tick();assert.equal(f.calls.length,before);
-  await f.restart();await f.node.processing.tick();assert.equal(f.calls.length,before);assert.ok(f.node.imports.get(job.id).media!.every(item=>item.searchable));
+  assert.deepEqual(retained(),outputs,'duplicate intake preserves every source receipt and extraction result');
+  await f.restart();await f.node.processing.tick();await f.organize();assert.equal(f.calls.length,before);assert.ok(f.node.imports.get(job.id).media!.every(item=>item.searchable));
+  assert.deepEqual(retained(),outputs,'restart preserves the same originals, source receipts and processing results');
+  assert.equal(f.modelCalls.length,0);
 });
 
 test('one failed extraction is isolated, retries without reupload, then enters automatic Memory',async t=>{
