@@ -20,7 +20,7 @@ import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {assemblePlatform} from './assembly/platform.js';
 import {assembleSources} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
-import {assembleMedia,assemblePerception,assembleProcessing} from './assembly/processing.js';
+import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages} from './assembly/processing.js';
 import {memoryInputs,memoryRuntime} from './assembly/memory.js';
 import {assembleAgent} from './assembly/agent.js';
 import {prepareConversations,prepareQueryRuntime,prepareQueryRuns} from './assembly/query.js';
@@ -345,6 +345,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   const {insightRuns,insightServices}=assembleInsightRuns({store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics});
   const {workflows,processing,resolveFileModel,mediaModelAuthority,processingServices}=await assembleProcessing({bootstrap,store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,archivedFiles,evidenceReader,indexer,plugins:dependencies?.processingPlugins,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider,withMediaOwnerBatch,withMediaOwnerIntent});
+  const localImages=assembleLocalImages({plugins:pluginCenter,mediaAssets,processing,config,usage:usageLedger});
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));
   resources.defer(disposeCaptureMemoryIntake);
@@ -603,6 +604,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // only after connector and Memory consumers have attached their live ports.
   await pluginControl.startBuilds();
   registerPluginControlHttp(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
+  app.get('/api/local-image-processing',async request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);return localImages.state();});
   const domainRoutes=backendContext.get('moteDomainRoutes')??{};
   const selected=(id:string)=>bootstrap.selectsFeature(id);
   const routes:FeatureRoute[]=[];

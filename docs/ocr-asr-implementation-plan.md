@@ -6,7 +6,7 @@
 
 当前共享合同包含 `ocr`、`dialogue`、`speaker-wespeaker`、`local-image` 四个安装角色。安装器已固定 InternVL3-14B-4bit 与 FunASR 四组件的制品；独立环境、受管理进程和领域引擎已提供接口。公共配置接受本地图片 endpoint/port，CLI 按角色准备环境和导入权重，媒体资产状态使用准备服务的实际生命周期健康。已安装文件不等于 Worker 就绪，更不等于插件启用。
 
-本地图片可选插件工厂与统一 hosted Plugin Center 已具备接缝；当前默认入库图片服务尚未消费本地适配，默认分发未开放该可选 build 的启用。图片入库适配、Material 纯函数接线、图片专属界面以及语音 Worker/新配方/消重的联合装配仍须对应领域实现合入后接通。不能把模型安装成功或生成合同测试写成默认本地图片路径、新默认语音链路或专项验收已经完成。
+默认 Central 现已注册关闭状态的本地图片 build，并把现有本地适配接入入库图片服务。「模型与服务」的图片设置页复用已有图片组件、Plugin Center 开关和模型安装入口。语音默认配方包含新 Worker 与保守消重。生成数据的联合链路测试覆盖实际 Central 导入、Memory 提取、独立复核、Ask 原件读取以及启用/关闭后的重启；模型推理与物理 VLM 运行环境是受控边界，不能据此宣称真实模型质量或所有目标平台通过。
 
 ## 已确认的产品决定
 
@@ -28,7 +28,7 @@
 
 模型安装继续使用同一 `media.modelDirectory`。固定相对目录为 `ocr`、`dialogue`、`speaker-wespeaker`、`local-image`；FunASR 四组件位于 `dialogue/asr`、`dialogue/vad`、`dialogue/speaker`、`dialogue/punctuation`，不借用 WeSpeaker 资产。FunASR 的文件、revision、size、SHA-256 与来源统一固定在 `scripts/funasr-models.json`，由 `media-assets.ts` 安装器和 `mote_funasr.py` 引擎共同读取。Nano 使用 ModelScope revision `05201c46f1c38592b1567f857c0d56eab3d0d8ef`，`model.pt` 为 2,127,426,538 字节、SHA-256 `81fec8616083c69377f3ceef36aba3655660ee0ca69a5d4a1e9810cd340ca499`。组件 manifest 统一使用模型相对路径、revision、license 和每个必需文件的 size/SHA-256 的规范 JSON 摘要；下载位置和安装根目录不参与组件内容身份。完整安装回执仍校验整个 catalog。旧 HF 权重和混装目录不能当作当前版本就绪，实际模型加载与已安装 SDK 源文件校验继续独立执行。
 
-`GET /api/media-models` 返回当前共享 `MediaModelsView`；`runtimeReady` 来自准备服务，而不是目录存在或旧 ASR 布尔字段。`GET /api/media-preparation` 描述准备阶段与真实 Worker 状态。当前本地图片 Worker 的 `localImage` health 字段与运行时消费者的 `ready` 判据仍需运行时 owner 接通；公共状态会保持不可用，不据安装成功改写为 ready。
+`GET /api/media-models` 返回当前共享 `MediaModelsView`；`runtimeReady` 来自准备服务，而不是目录存在或旧 ASR 布尔字段。`GET /api/media-preparation` 描述准备阶段与真实 Worker 状态。本地图片消费者读取 Worker 的 `localImage` health 字段，并继续检查协议、模型身份和支持平台；安装成功不能改写为运行就绪。`GET /api/local-image-processing` 向所有者返回现有插件的实际状态，启停仍由 `/api/plugin-builds/local-image` 的版本检查命令控制。
 
 Native 运行环境按角色隔离在 `runtime/<role>/current.json` 和对应环境目录；失败准备保留上一成功标记，停止只回收该角色的自有进程。重启仅恢复已准备的 OCR/语音资源，本地图片 Worker 由可选插件启停。Linux 容器不提供 Mac MLX；Compose 的 OCR/语音 sidecar 使用各自解释器。模型卷独立于原件卷，并允许已有执行事实写入。Worker 只监听 loopback，凭据来自私有 profile，安装与推理进程不继承中央模型密钥或第三方 CLI 凭据。
 
@@ -36,7 +36,7 @@ Native 运行环境按角色隔离在 `runtime/<role>/current.json` 和对应环
 
 下载/导入先校验全部必需文件的 size/SHA-256，再原子发布当前安装回执。`ready` 只表示该回执及文件完整性可用；缺文件、错大小、同长度错 hash 或非法路径均不能发布成功。现行回执不接受旧模型 marker，没有自动迁移、旧执行器或双写。新模型来源固定到 revision；只有 catalog 明确列出的同内容镜像才能参与来源选择。
 
-`POST /api/media-models/{role}/install` 与 `/cancel` 接受共享的四个角色，不能提供任意模型 URL。本地图片安装组件只调用这组资产入口，安装不会启用插件、启动 VLM、授予后台处理或重算历史。OCR/语音的一键准备沿用 `/api/media-preparation/{role}`；该准备路由的 `local-image` 参数开放仍须媒体路由 owner 接收，当前不应假称此入口已可启动 VLM。
+`POST /api/media-models/{role}/install` 与 `/cancel` 接受共享的四个角色，不能提供任意模型 URL。本地图片安装组件只调用这组资产入口，安装不会启用插件、启动 VLM、授予后台处理或重算历史。OCR/语音的一键准备沿用 `/api/media-preparation/{role}`；VLM 由已选中的本地图片插件通过现有准备服务启停，不另外开放手动启动入口。
 
 停止选定的 Native profile 后可显式准备一个角色的依赖：
 

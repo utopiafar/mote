@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "本地图片解析": "Local image processing",
+  "启用后，入库图片由本地 InternVL3-14B-4bit 解析，失败时等待恢复。Memory 提取、独立复核和 Ask 仍使用各自选择的模型。": "When enabled, incoming images are interpreted locally by InternVL3-14B-4bit; failures wait for recovery. Memory extraction, independent review and Ask still use their selected models.",
+  "关闭后，新图片沿用已配置的图片模型；原图、OCR 与已保存的理解结果继续保留。": "When disabled, new images use the configured image model. Originals, OCR and saved interpretations are retained.",
   "模型已安装": "Model installed",
   "安装模型不会启用本地识图或改变处理设置。": "Installing model files does not enable local image processing or change processing settings.",
   "保守消重": "Conservative duplicate cleanup",

@@ -553,6 +553,7 @@ class VlmTests(unittest.TestCase):
 import {imageOutput} from './apps/server/src/evidence-image.ts';
 import {localImageRequestSchema,parseLocalImageResponse,LOCAL_IMAGE_ERRORS} from './apps/server/src/local-image-contract.ts';
 import {requestLocalJson} from './apps/server/src/local-http.ts';
+import {mediaModelHealth} from './apps/server/src/media-configuration.ts';
 let data='';for await(const part of process.stdin)data+=part;
 const input=JSON.parse(data),r=input.request;
 const image=await imageOutput(Buffer.from(r.image.data,'base64'),r.image.mimeType,
@@ -561,7 +562,8 @@ const request=localImageRequestSchema.parse({...r,image});
 const body=Buffer.from(JSON.stringify(request));
 const raw=await requestLocalJson(input.url+'/v1/interpret',{method:'POST',headers:{Authorization:'Bearer '+input.token,'Content-Type':'application/json','Content-Length':String(body.length)},body:(async function*(){yield body;})(),signal:AbortSignal.timeout(10000),limit:1048576,requireOfflineExecution:true});
 const response=parseLocalImageResponse(raw,request);
-console.log(JSON.stringify({request,response,...(response.status==='error'?{host:LOCAL_IMAGE_ERRORS[response.error.code]}:{})}));
+const health=await requestLocalJson(input.url+'/health',{headers:{Authorization:'Bearer '+input.token},signal:AbortSignal.timeout(10000),limit:65536,requireOfflineExecution:true});
+console.log(JSON.stringify({request,response,health:mediaModelHealth('local-image',health),...('localImage' in health?{workerReady:health.localImage}:{}),...(response.status==='error'?{host:LOCAL_IMAGE_ERRORS[response.error.code]}:{})}));
 '''
         result = subprocess.run(['node', '--import', 'tsx', '--input-type=module', '-e', script], cwd=ROOT,
                                 input=json.dumps({'request': request, 'url': url, 'token': TOKEN}),
@@ -569,6 +571,9 @@ console.log(JSON.stringify({request,response,...(response.status==='error'?{host
         self.assertEqual(result.returncode, 0, result.stderr)
         bundle = json.loads(result.stdout)
         self.assertEqual(bundle['response']['status'], 'ok')
+        self.assertTrue(bundle['workerReady'])
+        self.assertEqual(bundle['health']['ready'], sys.platform == 'darwin' and os.uname().machine == 'arm64',
+                         'Central consumes the actual worker health field, with its existing supported-platform gate')
         self.assertEqual(bundle['response']['result']['regions'][0],
                          {'x': 360, 'y': 230, 'width': 120, 'height': 60, 'description': 'Generated red rectangle.'})
         self.assertEqual(bundle['request']['image']['imageView']['original']['sha256'], request['image']['imageView']['original']['sha256'])
@@ -579,6 +584,8 @@ console.log(JSON.stringify({request,response,...(response.status==='error'?{host
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         failed = json.loads(result.stdout)
+        self.assertFalse(failed['workerReady'])
+        self.assertFalse(failed['health']['ready'])
         self.assertEqual(failed['response']['error']['code'], 'worker_unavailable')
         self.assertEqual(failed['host'], {'category': 'blocked', 'hostCode': 'image_worker_unavailable'})
         # Optional evidence capture stays outside the repository; no token,

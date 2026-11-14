@@ -45,6 +45,26 @@ const label=(d:Document,text:string)=>[...d.querySelectorAll<HTMLLabelElement>('
 async function select(d:Document,text:string,value:string){await act(async()=>{const control=label(d,text).querySelector('select')!;control.value=value;control.dispatchEvent(new window.Event('change',{bubbles:true}));});}
 const view=(api:Api,kind:'images'|'audio'|'documents'='images')=>React.createElement(MaterialProcessing,{api,kind});
 
+test('ordinary image settings reach the default optional build without granting background models or changing processing policy',async t=>{
+ const f=await fixture(t),authority=structuredClone(f.node.modelAuthorization.view()),policy=structuredClone(f.node.processing.view());
+ await act(async()=>f.root.render(view(f.api)));
+ const toggle=()=>f.d.querySelector<HTMLButtonElement>('.local-image-settings [role=switch]');
+ await until(()=>!!toggle()&&!toggle()!.disabled,'local image setting on the ordinary image page');
+ assert.equal(toggle()!.getAttribute('aria-checked'),'false');
+ assert.match(f.d.querySelector('.local-image-settings')!.textContent!,/InternVL3-14B-4bit/);
+ assert.equal((await f.call('/api/plugin-builds/local-image')).desired,null);
+ await act(async()=>toggle()!.click());
+ await until(()=>toggle()!.getAttribute('aria-checked')==='true'&&!toggle()!.disabled,'acknowledged local image selection');
+ assert.deepEqual(await f.call('/api/local-image-processing'),{enabled:true,state:'waiting',reason:'model_missing'});
+ assert.deepEqual(f.node.modelAuthorization.view(),authority);
+ assert.deepEqual(f.node.processing.view(),policy);
+ await act(async()=>toggle()!.click());
+ await until(()=>toggle()!.getAttribute('aria-checked')==='false'&&!toggle()!.disabled,'local image selection stopped');
+ assert.deepEqual(await f.call('/api/local-image-processing'),{enabled:false,state:'stopped'});
+ assert.deepEqual(f.node.modelAuthorization.view(),authority);
+ assert.deepEqual(f.writes.map(value=>value.path),['/api/plugin-builds/local-image','/api/plugin-builds/local-image']);
+});
+
 test('image edits use real policy and perception CAS, report a partial save and retry only the unconfirmed image settings',async t=>{
  const f=await fixture(t),first=await f.call('/api/file-processing');
  first.policy.services.push({id:'generated-image',name:'Generated OCR',kind:'image',execution:'remote',endpoint:'https://generated.invalid/ocr',model:''});

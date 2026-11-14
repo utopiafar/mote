@@ -114,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
         if state=='legacy': payload={'version':2,'execution':'local','asr':True,'diarization':True,'wespeaker':True}
         elif role=='ocr': payload={'version':1,'execution':'local','ocr':state not in ('loading','load-failure')}
         elif role=='dialogue': payload={'protocol':PROTOCOL,'execution':'local','asr':state not in ('loading','load-failure'),'diarization':True,'identity':json.loads((root/'identity.json').read_text())}
-        else: payload={'version':1,'execution':'local','ready':state not in ('loading','load-failure'),'model':json.loads((root/'image-model.json').read_text())}
+        else: payload={'version':1,'execution':'local','localImage':state not in ('loading','load-failure'),'model':json.loads((root/'image-model.json').read_text())}
         if state=='load-failure': payload['loadError']=True
         if state=='busy': payload['busy']=True
         raw=serialize(payload).encode()

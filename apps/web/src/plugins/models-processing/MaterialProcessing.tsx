@@ -6,6 +6,7 @@ import {useResource} from '../../useResource';
 import {useUnsavedChanges} from '../../unsaved';
 import {invalidateConfiguration} from '../../configuration-cache';
 import {MediaPreparation} from '../../MediaPreparation';
+import {LocalImageSettings} from '../../LocalImageSettings';
 import {PerceptionSettings} from '../../PerceptionSettings';
 import {FileProcessingSettings} from '../../FileProcessingSettings';
 import {useProcessingRelatedPages} from './ProcessingRelatedPages';
@@ -100,6 +101,11 @@ export function MaterialProcessing({api,kind,onDetailChange}:{api:Api;kind:Kind;
    <div className="model-save-footer"><span>{moteText('保存后续处理设置，原件继续保留')}</span><button className="button primary" disabled={busy||!current.dirty}>{moteText('保存设置')}</button></div>
   </fieldset></form>
   {runtime&&<section className="managed-runtime"><h2>{moteText('中心本机处理')}</h2><MediaPreparation api={api} role={kind==='images'?'ocr':'dialogue'} title={moteText(kind==='images'?'图片文字识别':'录音转写与说话人分离')}/>{kind==='audio'&&<details><summary>{moteText('可选：中文声纹模型')}</summary><MediaPreparation api={api} role="speaker-wespeaker" title={moteText('中文声纹模型')}/></details>}<details><summary>{moteText('高级连接配置')}</summary><button className="text-button" disabled={!profile?.serviceId} onClick={()=>{if(profile?.serviceId)related.openService(profile.serviceId);}}>{moteText('自定义本机处理服务')} →</button></details></section>}
+  {kind==='images'&&<LocalImageSettings api={api} control={{instanceId:'local-image',selection:{packageId:'mote.local-image-processing',version:'1.0.0',configurationRevision:0},statePath:'/api/local-image-processing'}} modelName="InternVL3-14B-4bit" copy={{
+   title:moteText('本地图片解析'),scope:moteText('启用后，入库图片由本地 InternVL3-14B-4bit 解析，失败时等待恢复。Memory 提取、独立复核和 Ask 仍使用各自选择的模型。'),
+   preparationNote:moteText('安装模型不会启用本地识图或改变处理设置。'),disabled:moteText('关闭后，新图片沿用已配置的图片模型；原图、OCR 与已保存的理解结果继续保留。'),
+   ready:moteText('可使用'),waiting:moteText('未就绪'),stopping:moteText('正在停止'),unavailable:moteText('暂不可用'),reasons:{model_missing:moteText('所需本地模型尚未安装。'),model_failed:moteText('模型校验失败')},
+  }} preparation={<MediaPreparation api={api} role="local-image" title="InternVL3-14B-4bit"/>}/>}
   <details className="material-processing-advanced"><summary>{moteText(kind==='images'?'更多：已有图片与完整处理策略':'来源覆盖、规则试算与完整处理策略')}</summary>{kind==='images'?<PerceptionSettings api={api}/>:<FileProcessingSettings api={api}/>}</details>
   </>}
   <button type="button" className="text-button processing-refresh" disabled={busy} onClick={refresh}>{moteText('重新读取并还原草稿')}</button>

@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const french: Readonly<Record<string, string>> = {
+  "本地图片解析": "Traitement local des images",
+  "启用后，入库图片由本地 InternVL3-14B-4bit 解析，失败时等待恢复。Memory 提取、独立复核和 Ask 仍使用各自选择的模型。": "Une fois activé, InternVL3-14B-4bit interprète localement les images entrantes ; en cas d’échec, le traitement attend la reprise. L’extraction de Memory, la vérification indépendante et Ask utilisent toujours leurs modèles sélectionnés.",
+  "关闭后，新图片沿用已配置的图片模型；原图、OCR 与已保存的理解结果继续保留。": "Une fois désactivé, les nouvelles images utilisent le modèle d’image configuré. Les originaux, l’OCR et les interprétations enregistrées sont conservés.",
   "模型已安装": "Modèle installé",
   "安装模型不会启用本地识图或改变处理设置。": "L’installation des fichiers du modèle n’active pas le traitement local des images et ne modifie pas les paramètres de traitement.",
   "保守消重": "Nettoyage prudent des doublons",
