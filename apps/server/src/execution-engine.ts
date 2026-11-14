@@ -266,11 +266,19 @@ export class ExecutionEngine {
   return Promise.all(started).then(()=>{});
  }
  private async execute(row:Row,handler:ExecutionHandler,controller:AbortController){
+  try{await this.executeWithinTurn(row,handler,controller);}
+  finally{
+   // Every admission outcome keeps its local slot until the next event-loop
+   // turn. In particular, blocked inputs and exhausted retries do not reach
+   // the running-handler cleanup below, but can have expensive validation.
+   // Their durable decision has committed before HTTP/timers resume.
+   await yieldTurn();
+  }
+ }
+ private async executeWithinTurn(row:Row,handler:ExecutionHandler,controller:AbortController){
   if(!handler.validate(view(row))){
    this.store.db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),row.id);this.project(row.id);
-   // Keep the local slot until the next turn, without claiming a lease or
-   // opening a transaction. A revoked backlog must not starve HTTP or timers.
-   await yieldTurn();return;
+   return;
   }
   const db=this.store.db,now=this.now(),fence=randomUUID(),policy=this.policy(handler,view(row)),timeout=policy.timeoutMs;
   db.exec('BEGIN IMMEDIATE');
@@ -283,10 +291,7 @@ export class ExecutionEngine {
    const admission=handler.admit?.(view(row));
    if(admission){
     db.prepare("UPDATE execution_steps SET state=?,available_at=?,error=?,recovery_deadline=CASE WHEN ? THEN 0 ELSE recovery_deadline END,updated_at=? WHERE id=? AND state='waiting'").run(admission.category==='waiting'?'waiting':'blocked',admission.category==='waiting'?this.now()+Math.max(1,admission.retryAfterMs??1000):0,admission.code,Number(admission.category==='waiting'),now,row.id);this.project(row.id);db.exec('COMMIT');
-    // A short retry can become due again while the backlog is being checked.
-    // Yield after the durable decision, with no transaction or running lease,
-    // so both background completion wakes and explicit drains allow timers.
-    if(admission.category==='waiting')await yieldTurn();return;
+    return;
    }
    if(this.get(row.id)!.attempts>=policy.maxAttempts){
     db.prepare("UPDATE execution_steps SET state='failed',error='retry_budget_exhausted',updated_at=? WHERE id=? AND state='waiting'").run(now,row.id);
@@ -376,7 +381,6 @@ export class ExecutionEngine {
    try{changed=Boolean(db.prepare("UPDATE execution_steps SET state=?,attempts=?,error=?,available_at=?,recovery_deadline=?,fence=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(state,attempts,code,availableAt,recoveryDeadline,at,row.id,fence,at).changes);if(changed)this.retainFailure(this.get(row.id)!,state,new ExecutionFailure(failure.category,code),error);if(own)db.exec('COMMIT');}catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
    if(changed)handler.project?.(this.get(row.id)!);
   }finally{accepted=false;clearTimeout(deadline);clearInterval(renewal);}
-  await yieldTurn();
  }
  /** Replayable host programs define a substep when reached. State and its artifact
   * commit still belong to this engine; a restart reconstructs the definition. */
