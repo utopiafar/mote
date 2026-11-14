@@ -8,6 +8,11 @@ const pattern = /^(central|supervisor)\.(error|warn|info|debug|trace)\.(\d{13})\
 const priority = ['trace', 'debug', 'info', 'warn', 'error'];
 const lockProtocol = JSON.stringify({protocol:'mote-retention-sqlite'}) + '\n';
 const offlineRecovery = 'Diagnostic retention lock unavailable; existing retention.lock requires offline recovery after all log writers are stopped';
+const lockPollMs = 10;
+// A live Central section was measured at 11.55 s under import load. Appends
+// keep their bounded buffers through temporary contention, with room for that
+// work and ordinary scheduling/IO variation. Other operations retain 5 s.
+const appendLockWaitMs = 30000;
 
 /** Publish a complete, immutable protocol marker. It remains in place between
  * operations so an old wx/PID writer cannot enter through a different mutex.
@@ -95,7 +100,7 @@ export class DiagnosticLogStore {
     this.current = new Map();
     this.otherBytes = 0;
   }
-  exclusive(task) {
+  exclusive(task, waitMs = 5000) {
     const result = this.serial.then(async () => {
       await mkdir(this.directory, {
         recursive: true,
@@ -103,7 +108,8 @@ export class DiagnosticLogStore {
       });
       let database, acquired = false, protocol = false;
       try {
-        for (let attempt = 0; attempt < 500; attempt++) {
+        const deadline = performance.now() + waitMs;
+        do {
           protocol = await retentionProtocol(this.directory);
           if (protocol) {
             database ??= retentionMutex(this.directory);
@@ -112,9 +118,9 @@ export class DiagnosticLogStore {
           }
           // A synchronous busy timeout would block another writer on this same
           // event loop from finishing its asynchronous filesystem operations.
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
-        if (!acquired) throw Error(protocol ? 'Diagnostic retention lock unavailable' : offlineRecovery);
+          await new Promise(resolve => setTimeout(resolve, lockPollMs));
+        } while (performance.now() < deadline);
+        if (!acquired) throw Object.assign(Error(protocol ? 'Diagnostic retention lock unavailable' : offlineRecovery), {code: protocol ? 'MOTE_LOG_RETENTION_BUSY' : 'MOTE_LOG_RETENTION_PROTOCOL'});
         return await task();
       } finally {
         try { if (acquired) database.exec('ROLLBACK'); }
@@ -243,10 +249,17 @@ export class DiagnosticLogStore {
     // while the Central event loop is also admitting a source backlog.
     for (let offset = 0; offset < Math.max(1, records.length); offset++) {
       result.push(...await this.appendGroup(records.slice(offset, offset + 1)));
+      // SQLite's nonblocking mutex has no waiter queue. Give a contending
+      // process a whole polling interval before this writer can take it again,
+      // including when its next append is a separate one-record call.
+      await new Promise(resolve => setTimeout(resolve, lockPollMs));
     }
     return result;
   }
   async appendGroup(records) {
+    // Only acquisition is retried, before any IO for this record starts. Never
+    // replay an append batch: earlier records may already be durable, and a
+    // write/rename/state error may occur after this record's bytes were saved.
     return this.exclusive(async () => {
       const written = [];
       await this.inventory();
@@ -319,7 +332,7 @@ export class DiagnosticLogStore {
       await this.prune();
       await this.saveState();
       return written;
-    });
+    }, appendLockWaitMs);
   }
   async saveState() {
     const previous = await this.readState();
