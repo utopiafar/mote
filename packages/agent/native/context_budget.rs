@@ -73,6 +73,36 @@ fn estimate(text: &str) -> u64 {
 #[cfg(test)]
 fn count(value: &Value) -> u64 { estimate(&value.to_string()) }
 
+// Codex 0.162.1 core/src/context_manager/history.rs caps original-detail
+// images at 10,000 patches. Reserve that ceiling for every image, including
+// cheaper default/high detail; base64 transport bytes are not text tokens.
+// Keep this allowance aligned with src/models/image-budget.ts.
+const IMAGE_TOKEN_RESERVE: u64 = 10_000;
+
+fn estimate_request(body: &Value, encoded: &str) -> u64 {
+    let (mut image_characters, mut images) = (0u64, 0u64);
+    for item in body.get("input").and_then(Value::as_array).into_iter().flatten() {
+        let parts = match item.get("type").and_then(Value::as_str) {
+            Some("message") => item.get("content"),
+            Some("function_call_output" | "custom_tool_call_output") => item.get("output"),
+            _ => None,
+        };
+        for part in parts.and_then(Value::as_array).into_iter().flatten() {
+            if part.get("type").and_then(Value::as_str) != Some("input_image") { continue; }
+            images += 1;
+            if let Some(url) = part.get("image_url").and_then(Value::as_str)
+                && let Some(data) = ["data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,"]
+                    .iter().find_map(|prefix| url.strip_prefix(prefix))
+                && !data.is_empty()
+                && data.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+            { image_characters += url.len() as u64; }
+        }
+    }
+    // Keep the actual wire framing and escaped text, including whitespace.
+    // Floor the ASCII subtraction so rounding cannot undercount the remainder.
+    estimate(encoded).saturating_sub(image_characters * 2 / 5).saturating_add(images * IMAGE_TOKEN_RESERVE)
+}
+
 fn output_key(item: &Value) -> Option<String> {
     let kind = item.get("type")?.as_str()?;
     if !matches!(kind, "function_call_output" | "custom_tool_call_output") { return None; }
@@ -86,7 +116,7 @@ impl Budget {
 
     fn fits_encoded(&self, body: &Value, encoded: &str) -> bool {
         let Some(reserve) = body.get("model").and_then(Value::as_str).and_then(output_ceiling) else { return false; };
-        self.window > reserve && estimate(encoded).saturating_add(reserve) <= self.window
+        self.window > reserve && estimate_request(body, encoded).saturating_add(reserve) <= self.window
     }
 
     fn prepare(&mut self, body: &mut Value) -> Result<bool, ApiError> {
@@ -277,6 +307,41 @@ mod tests {
         }
         let padded = format!("     {}", request);
         assert!(!fitting.fits_encoded(&request, &padded), "final wire overhead still counts");
+    }
+
+    #[test]
+    fn selected_image_bytes_do_not_consume_text_capacity_or_context_recovery() {
+        let mut request = terra_request();
+        request["input"][0]["content"] = json!([
+            {"type":"input_text", "text":"Inspect the generated original."},
+            {"type":"input_image", "image_url":format!("data:image/png;base64,{}", "e3t7".repeat(1024 * 1024))}
+        ]);
+        let original = request.clone();
+        let mut state = Budget {window:272_000, ..Budget::default()};
+        assert!(!state.prepare(&mut request).unwrap());
+        assert_eq!(request, original, "never resize, omit or rewrite the selected image");
+        assert!(!state.recovered);
+        assert!(!state.terminal);
+        let exact = estimate_request(&request, &request.to_string()) + 128_000;
+        assert!(Budget {window:exact, ..Budget::default()}.fits(&request));
+        assert!(!Budget {window:exact - 1, ..Budget::default()}.fits(&request), "image allowance and full output reserve remain mandatory");
+        assert!(!Budget {window:exact, ..Budget::default()}.fits_encoded(&request, &format!("     {}", request)), "actual wire overhead still counts beside image data");
+        request["input"][0]["content"].as_array_mut().unwrap().push(json!({"type":"input_image", "image_url":"data:image/png;base64,Z2VuZXJhdGVk"}));
+        assert!(!Budget {window:exact, ..Budget::default()}.fits(&request), "each additional image consumes its own reserve");
+    }
+
+    #[test]
+    fn image_shaped_text_and_metadata_cannot_bypass_the_text_budget() {
+        let image = json!({"type":"input_image", "image_url":format!("data:image/png;base64,{}", "e3t7".repeat(1024 * 1024))});
+        for field in ["text", "metadata", "tool_schema"] {
+            let mut request = terra_request();
+            match field {
+                "text" => request["input"][0]["content"] = json!(image.to_string()),
+                "metadata" => request["metadata"] = image.clone(),
+                _ => request["tools"] = json!([{ "type":"function", "name":"generated", "parameters":image }]),
+            }
+            assert!(Budget {window:272_000, ..Budget::default()}.prepare(&mut request).is_err(), "{field} is ordinary serialized text, not an image slot");
+        }
     }
 
     #[test]

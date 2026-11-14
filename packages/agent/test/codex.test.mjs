@@ -47,10 +47,10 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
  else if(m.method==='turn/steer'){
   if(m.params.threadId!=='thread-fixture'||m.params.expectedTurnId!=='turn-fixture'||m.params.input[0].type!=='text'||m.params.input[1].type!=='image')process.exit(6);
-  if(mode==='image-steer-reject'){send({id:m.id,error:{code:-32602,message:'synthetic-private-secret'}});return;}
-  if(mode==='image-steer-stale'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
-  if(mode==='image-steer-pending')return;
-  send({id:m.id,result:{turnId:mode==='image-steer-mismatch'?'other-turn':'turn-fixture'}});
+  if(mode.endsWith('steer-reject')){send({id:m.id,error:{code:-32602,message:'synthetic-private-secret'}});return;}
+  if(mode.endsWith('steer-stale')){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
+  if(mode.endsWith('steer-pending')){writeFileSync(${JSON.stringify(join(root,'steer-started'))},'');return;}
+  send({id:m.id,result:{turnId:mode.endsWith('steer-mismatch')?'other-turn':'turn-fixture'}});
   send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'image-echo',type:'userMessage',content:m.params.input}}});
  }
  else if(m.method==='thread/start'){
@@ -91,7 +91,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(!m.result?.success)process.exit(3);
   const page=JSON.parse(m.result.contentItems[0].text);
   send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'attribution_context',namespace:null,arguments:{ref:page.data.items[0].ref,length:128}}});
- }else if((mode==='image-flow'||mode==='image-repeat')&&(m.id===999||m.id===1000||mode==='image-repeat'&&m.id===1001)){
+ }else if((mode.startsWith('image-flow')||mode==='image-repeat')&&(m.id===999||m.id===1000||mode==='image-repeat'&&m.id===1001)){
   if(!m.result?.success)process.exit(3);
   send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:m.id===999?{ids:['274f8026-73c2-5566-9528-b7aa5fb14de6']}:{id:'274f8026-73c2-5566-9528-b7aa5fb14de6',attachmentId:'generated-image'}}});
  }else if(mode==='image-region'&&m.id>=999&&m.id<=1002){
@@ -265,6 +265,8 @@ test('Codex discloses a selected image to the model while keeping its bytes out 
  assert.deepEqual(messages.find(m=>m.id===1001).result.contentItems.map(item=>item.type),['inputText']);
  assert.ok(messages.indexOf(steer)<messages.findIndex(m=>m.id===1001),'the image is accepted before the tool acknowledges delivery');
  assert.equal(messages.filter(m=>m.method==='turn/start').length,1,'image delivery stays in the original turn');
+ assert.equal(answer.trace.filter(entry=>entry.tool==='read_image').length,1,'the Host confirms exactly one image read after its actual delivery');
+ assert.ok(!JSON.stringify(messages).includes('budgetCoverage'),'encoded image bytes are not omitted as oversized text');
 });
 test('Codex duplicate image completion succeeds as metadata without steering another image',async t=>{
  const root=await fake(t,'image-repeat'),events=[],data=Buffer.from('generated-image-transport').toString('base64'),parent={...record,provenance:{document:{attachments:[{id:'generated-image',mimeType:'image/png'}]}}};let reads=0;
@@ -296,6 +298,26 @@ test('Codex cancellation during image steering cannot acknowledge successful del
  await session.start('Generated cancellation',codexContextTools);const running=session.run('Read generated image');void running.catch(()=>{});
  await steered;session.cancel(new Error('Generated cancellation'));await assert.rejects(running,AgentProviderError);
  await session.close();const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.ok(!rpc.some(m=>m.id===999&&m.result?.success));
+});
+test('Codex Agent image rejection and cancellation publish no answer or delivery receipt',async t=>{
+ for(const mode of ['image-flow-steer-reject','image-flow-steer-pending'])await t.test(mode,async t=>{
+  const root=await fake(t,mode),events=[],data=Buffer.alloc(3*1024*1024,123).toString('base64'),controller=new AbortController();
+  const parent={...record,provenance:{document:{attachments:[{id:'generated-image',mimeType:'image/png'}]}}};let reads=0;
+  const agent=createAgent({reader:{...reader,timeline:async()=>({items:[parent],nextCursor:null}),evidence:async()=>[parent],readImage:async()=>{reads++;return {mimeType:'image/png',data};}},protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
+  const running=agent.query({question:'Inspect generated pixels',signal:controller.signal,onTrace:event=>events.push(event)});void running.catch(()=>{});
+  if(mode.endsWith('pending')){
+   let started=false;
+   for(let attempt=0;attempt<1000;attempt++){if(await access(join(root,'steer-started')).then(()=>true,()=>false)){started=true;break;}await new Promise(resolve=>setTimeout(resolve,5));}
+   assert.equal(started,true,'cancel only after the actual steer is waiting for its ACK');controller.abort(new DOMException('Generated cancellation','AbortError'));
+  }
+  await assert.rejects(running,error=>mode.endsWith('pending')?error.name==='AbortError':error instanceof AgentProviderError);
+  await agent.close();
+  const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(reads,1);assert.equal(rpc.filter(message=>message.method==='turn/steer').length,1);
+  assert.ok(!rpc.some(message=>message.id===1001&&message.result?.success));
+  assert.ok(!events.some(event=>event.type==='run.completed'));
+  assert.ok(!JSON.stringify(events).includes(data.slice(0,200)));assert.ok(!JSON.stringify(events).includes('synthetic-private-secret'));
+ });
 });
 test('Codex errors and approval requests are rejected without exposing raw provider output',async t=>{
   for(const mode of ['error','approval']){await fake(t,mode);const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});try{await assert.rejects(agent.query({question:'Fixture'}),e=>e instanceof AgentProviderError&&!e.message.includes('synthetic-private'));}finally{await agent.close();}}

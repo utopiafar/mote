@@ -47,6 +47,6 @@ export function mediaModelHealth(role:MediaRole,raw:unknown):{ready:boolean;erro
     const backend=identity.success&&((process.platform==='darwin'&&process.arch==='arm64')?['mps','cpu']:['cpu']).includes(identity.data.backend);
     return {ready:value.protocol===FUNASR_PROTOCOL&&value.asr===true&&value.diarization===true&&identity.success&&Boolean(backend),...diagnostic};
   }
-  if(role==='local-image')return {ready:process.platform==='darwin'&&process.arch==='arm64'&&value.version===LOCAL_IMAGE_PROTOCOL.version&&value.ready===true&&localImageSuccessSchema.shape.model.safeParse(value.model).success,...diagnostic};
+  if(role==='local-image')return {ready:process.platform==='darwin'&&process.arch==='arm64'&&value.version===LOCAL_IMAGE_PROTOCOL.version&&value.localImage===true&&localImageSuccessSchema.shape.model.safeParse(value.model).success,...diagnostic};
   return {ready:false,...diagnostic};
 }

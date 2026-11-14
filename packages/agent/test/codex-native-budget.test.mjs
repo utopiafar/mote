@@ -15,6 +15,8 @@ import {createAgent, AgentNotConfiguredError, AgentProviderError} from '../dist/
 import {createImportAgent} from '../dist/import-agent.js';
 import {CodexSession} from '../dist/codex-session.js';
 import {estimateSerializedTokens} from '../dist/models/context-budget.js';
+import {estimateCodexRequestTokens} from '../dist/models/image-budget.js';
+import sharp from 'sharp';
 
 const native = fileURLToPath(new URL('../native/codex.mjs', import.meta.url));
 const record = {id: '274f8026-73c2-5566-9528-b7aa5fb14de6', capturedAt: '2026-01-01T00:00:00Z', appName: 'Generated fixture', ocrText: '证'.repeat(3000)};
@@ -33,7 +35,7 @@ async function generatedTls(root) {
   return {ca, key: await readFile(key), cert: await readFile(cert)};
 }
 
-async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, model = 'gpt-5.4', serviceTier, singleReply = false, finalText = 'ok', repair = false, chatgpt = false, forceCompaction = false, authRetry = false, nativeWindow = 272000, workspace = false, connectionProbe = false, hostDefaults = false, seedRecords = []} = {}) {
+async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, model = 'gpt-5.4', serviceTier, singleReply = false, finalText = 'ok', repair = false, chatgpt = false, forceCompaction = false, authRetry = false, nativeWindow = 272000, workspace = false, connectionProbe = false, hostDefaults = false, seedRecords = [], imageData} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'mote-codex-native-budget-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const workspacePath = join(root, 'workspace');
@@ -63,11 +65,13 @@ async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, mod
     let output = [];
     if (body.generate !== false) output = singleReply ? [
       {id: 'generated-ok', type: 'message', role: 'assistant', phase: 'final_answer', status: 'completed', content: [{type: 'output_text', text: finalText, annotations: []}]},
+    ] : imageData && generations === 1 ? [
+      {id: 'generated-image-call', type: 'function_call', call_id: 'generated-image-call', name: 'read_image', arguments: JSON.stringify({id: record.id}), status: 'completed'},
     ] : connectionProbe && generations <= 2 ? [
       {id: `generated-probe-${generations}`, type: 'function_call', call_id: `generated-probe-${generations}`,
         name: generations === 1 ? 'search_context' : 'evidence',
         arguments: JSON.stringify(generations === 1 ? {query: 'generated connection test record'} : {ids: [record.id]}), status: 'completed'},
-    ] : !connectionProbe && generations === 1 ? [
+    ] : !imageData && !connectionProbe && generations === 1 ? [
       {id: 'generated-commentary', type: 'message', role: 'assistant', phase: 'commentary', status: 'completed', content: [{type: 'output_text', text: '证'.repeat(1200), annotations: []}]},
       {id: 'generated-call', type: 'function_call', call_id: 'generated-call', name: workspace ? 'exec_command' : 'timeline',
         arguments: workspace ? JSON.stringify({cmd: 'python3 -c "from pathlib import Path; p=Path(\'execution-count.txt\'); p.write_text(p.read_text()+\'executed\\n\' if p.exists() else \'executed\\n\'); print(\'generated workspace output \'*200)"', max_output_tokens: 3000}) : '{}', status: 'completed'},
@@ -158,6 +162,7 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
     codex: {home: root, executable}, agentTimeoutMs: 20000, authorizeModelRequest: () => {authorizations++;},
     reader: {search: async () => {if (!connectionProbe) return []; probeReads.push('search_context'); return [probeRecord];},
       evidence: async args => {if (connectionProbe) probeReads.push('evidence'); return (connectionProbe ? [probeRecord] : seedRecords).filter(item => args.ids.includes(item.id));},
+      ...(imageData ? {readImage: async () => ({mimeType: 'image/png', data: imageData})} : {}),
       devices: async () => [], activity: async () => ({}),
       timeline: async () => {reads++; return {items: [record], nextCursor: null};}},
   };
@@ -174,8 +179,8 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
     const result = {generations, upgrades, reads, authorizations, turns: rpc.filter(m => m.method === 'turn/start').length,
       compacts: rpc.filter(m => m.method === 'thread/compact/start').length, ...(authRetry ? {authRetries} : {})};
     for (const {body, fullInput} of requests) {
-      assert.ok(estimateSerializedTokens({...body, input: fullInput}).tokens + reserve <= window, 'every actual effective request fits with the full reasoning/output reserve');
-      assert.ok(estimateSerializedTokens(body).tokens + reserve <= window, 'the final incremental payload also fits');
+      assert.ok(estimateCodexRequestTokens({...body, input: fullInput}) + reserve <= window, 'every actual effective request fits with the full reasoning/output reserve');
+      assert.ok(estimateCodexRequestTokens(body) + reserve <= window, 'the final incremental payload also fits');
       assert.equal(body.max_output_tokens, undefined, 'the fixture does not rely on an unsupported output cap');
     }
     return result;
@@ -185,6 +190,26 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
     return ((await readFile(stderrPath, 'utf8').catch(() => '')) + JSON.stringify(errors)).replaceAll(jwt, '[generated credential]').replaceAll('generated-unused-key', '[generated credential]');
   }};
 }
+
+for (const mode of ['websocket', 'http-fallback']) test(`native selected images keep 3 MiB of original pixels within the model budget over ${mode}`, {timeout: 30000}, async t => {
+  const bytes = await sharp({create: {width: 1024, height: 1024, channels: 3, background: '#145abc'}}).png({compressionLevel: 0}).toBuffer();
+  assert.ok(bytes.length >= 3 * 1024 * 1024);
+  const data = bytes.toString('base64'), events = [];
+  const f = await fixture(t, {mode, window: 272000, imageData: data});
+  const answer = await f.agent.query({question: 'Inspect the generated image.',
+    directImages: [{id: record.id, name: 'Generated image', mimeType: 'image/png', hash: createHash('sha256').update(bytes).digest('hex'), sizeBytes: bytes.length}],
+    onTrace: event => events.push(event)});
+  assert.equal(answer.citations[0].id, record.id);
+  const actual = f.requests.filter(request => request.body.generate !== false);
+  assert.equal(actual.length, 2, 'one model-selected image read and its continuation, with no replay');
+  assert.ok(!JSON.stringify(actual[0].fullInput).includes('data:image/'));
+  const image = actual[1].fullInput.flatMap(item => item.content ?? []).find(part => part.type === 'input_image');
+  assert.equal(image.image_url, 'data:image/png;base64,' + data, 'the actual provider receives every original byte');
+  assert.equal(actual[1].transport, mode === 'websocket' ? 'websocket' : 'http');
+  assert.ok(!JSON.stringify(events).includes(data.slice(0, 200)), 'neither tool nor native image echoes enter traces');
+  const stats = await f.stats();
+  assert.equal(stats.turns, 1); assert.equal(stats.compacts, 0); assert.equal(stats.authorizations, 1);
+});
 
 for (const mode of ['websocket', 'http-fallback']) test(`automatic Memory uses the native default window for full recording targets and independent review over ${mode}`, {timeout: 30000}, async t => {
   const records = Array.from({length: 120}, (_, index) => ({

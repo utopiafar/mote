@@ -1,5 +1,6 @@
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
 import type {Context,Plugin} from '@deepseek-ai/cordis';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryAgent} from '../query-agent.js';
@@ -34,6 +35,8 @@ import {vaultStorageRoutes} from '../plugins/vault-storage-routes.js';
 import {createProcessingServices,createProcessingServicesFactory,processingServicesContribution,processingServicesDeclaration,processingServicesReplacement,type ProcessingServicesStarted} from '../plugins/processing-services.js';
 import {createImageProcessingRoutes,createImageProcessingService,createImageProcessingServiceFactory,imageProcessingServiceContribution,imageProcessingServiceDeclaration,imageProcessingServiceForAssembly,imageProcessingServiceReplacement,registerImageProcessingServiceForAssembly} from '../plugins/image-processing-service.js';
 import type {FileAnalysis,FileProcessing,TranscriptionProvider} from '../file-processing.js';
+import type {PluginCenter} from '../plugin-center.js';
+import {createLocalImageProcessing,LOCAL_IMAGE_PROCESSING_INSTANCE,localImageProcessingSelection} from '../plugins/local-image-processing.js';
 
 /** Admitted usage accounting shared with query/import metering: the ledger
  * receipt starts lazily inside the admitted task. */
@@ -76,6 +79,32 @@ export function assembleMedia(dependencies:MediaAssemblyDependencies){
   const readiness=createOcrAsrReadiness({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets,configService,backgroundWorker:dependencies.backgroundWorker});
   registerOcrAsrReadinessForAssembly(readiness,mediaAssets);resources.defer(()=>readiness.close());
   return Object.freeze({mediaAssets,mediaPreparation:readiness.port});
+}
+
+/** Bind the existing optional intake plugin to the one control and media owner. */
+export function assembleLocalImages({plugins,mediaAssets,processing,config,usage}:{plugins:PluginCenter;mediaAssets:MediaAssets;processing:FileProcessing;config:Pick<Config,'media'>;usage:UsageLedger}){
+  const readiness=ocrAsrReadinessForAssembly(mediaAssets).port;
+  const local=createLocalImageProcessing({
+    desired:()=>plugins.control.build(LOCAL_IMAGE_PROCESSING_INSTANCE)?.desired,
+    modelStatus:async()=>{const value=await readiness.status('local-image');return {...mediaAssets.status('local-image'),runtimeReady:value.runtimeReady};},
+    createWorker:signal=>({
+      prepare(){},
+      async start(){
+        let value=await readiness.start('local-image',false);
+        while(!value.runtimeReady){
+          signal.throwIfAborted();
+          if(['failed','cancelled','unsupported'].includes(value.state))throw new StoreError('Local image worker is unavailable',503);
+          await delay(100,undefined,{signal});value=await readiness.status('local-image');
+        }
+      },
+      quiesce(){},async stop(){await readiness.stop('local-image');},dispose(){},
+    }),
+  });
+  plugins.registerBuild(local.build);
+  if(!plugins.control.build(LOCAL_IMAGE_PROCESSING_INSTANCE))plugins.control.saveBuild({id:LOCAL_IMAGE_PROCESSING_INSTANCE,packageId:localImageProcessingSelection.packageId,
+    installationId:randomUUID(),revision:1,desired:null,retired:false,observed:'stopped',blockers:[],operationId:'builtin-local-image'});
+  imageProcessingServiceForAssembly(processing).bindLocalImages({selection:local.selection,media:config.media,usage});
+  return local.port;
 }
 
 export interface ProcessingAssemblyDependencies {

@@ -88,19 +88,16 @@ test('installed assets and an active build do not claim the image worker started
 
 test('local image settings reuse the preparation view for installation progress, failure, cancellation and retry without enabling processing',async t=>{
     const ui=await domFixture(t),f=unitApi();
-    // Runtime props are already supported by MediaPreparation; its shared Role
-    // annotation awaits CORE-03's frozen MediaRole import. This cast is confined
-    // to this UI contract, never shipped in the feature or a shared entry.
-    const preparation=React.createElement(MediaPreparation,{api:f.api,role:'local-image' as Parameters<typeof MediaPreparation>[0]['role'],title:'准备本地图片模型'});
+    const preparation=React.createElement(MediaPreparation,{api:f.api,role:'local-image',title:'准备本地图片模型'});
     await ui.render(f.api,{preparation});
-    f.onCommand(async()=>{f.value.preparation.state='models';f.value.preparation.model={state:'downloading',bytes:25,totalBytes:100};return {};});
+    f.onCommand(async()=>{f.value.model={...f.value.model,state:'downloading',bytes:25,totalBytes:100};return {};});
     await act(async()=>ui.button('一键安装').click());
-    assert.equal(f.calls[0].path,'/api/media-preparation/local-image');assert.match(ui.text(),/正在下载模型/);assert.equal(ui.button('安装中…').disabled,true);
+    assert.equal(f.calls[0].path,'/api/media-models/local-image/install');assert.match(ui.text(),/正在下载模型/);assert.equal(ui.button('安装中…').disabled,true);
     const progress=ui.dom.window.document.querySelector('progress')!;assert.equal(progress.value,25);assert.equal(progress.max,100);
-    f.value.preparation.model.state='verifying';await f.refresh();assert.match(ui.text(),/正在验证模型/);
-    f.value.preparation.model.state='installing';await f.refresh();assert.match(ui.text(),/正在安装模型/);
-    f.onCommand(async()=>{f.value.preparation.state='cancelled';return {};});await act(async()=>ui.button('取消').click());assert.match(ui.text(),/安装已取消/);
-    f.value.preparation.state='failed';await f.refresh();assert.ok(ui.button('重试'));assert.match(ui.text(),/准备未完成/);
+    f.value.model.state='verifying';await f.refresh();assert.match(ui.text(),/正在验证模型/);
+    f.value.model.state='installing';await f.refresh();assert.match(ui.text(),/正在安装模型/);
+    f.onCommand(async()=>{f.value.model.state='cancelled';return {};});await act(async()=>ui.button('取消').click());assert.equal(f.calls[1].path,'/api/media-models/local-image/cancel');assert.match(ui.text(),/安装已取消/);
+    f.value.model.state='failed';await f.refresh();assert.ok(ui.button('重试'));assert.match(ui.text(),/准备未完成/);
     assert.equal(f.calls.some(call=>call.path.startsWith('/api/plugin-builds')),false);assert.equal(ui.toggle().getAttribute('aria-checked'),'false');
     await ui.unmount();assert.equal(f.calls.length,2,'unmount sends no cancel or authorization command');
 });

@@ -1,4 +1,7 @@
 {
+  "本地图片解析": "Lokale Bildverarbeitung",
+  "启用后，入库图片由本地 InternVL3-14B-4bit 解析，失败时等待恢复。Memory 提取、独立复核和 Ask 仍使用各自选择的模型。": "Wenn aktiviert, interpretiert InternVL3-14B-4bit eingehende Bilder lokal; bei Fehlern wird auf die Wiederherstellung gewartet. Memory-Extraktion, unabhängige Prüfung und Ask verwenden weiterhin ihre jeweils ausgewählten Modelle.",
+  "关闭后，新图片沿用已配置的图片模型；原图、OCR 与已保存的理解结果继续保留。": "Wenn deaktiviert, verwenden neue Bilder das konfigurierte Bildmodell. Originale, OCR und gespeicherte Interpretationen bleiben erhalten.",
   "模型已安装": "Modell installiert",
   "安装模型不会启用本地识图或改变处理设置。": "Die Installation der Modelldateien aktiviert die lokale Bildverarbeitung nicht und ändert keine Verarbeitungseinstellungen.",
   "保守消重": "Zurückhaltende Duplikatbereinigung",

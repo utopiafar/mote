@@ -227,12 +227,19 @@ release-matrix row also remains `not_run`; real model identity/revision, cold/ho
 latency and memory measurements remain null until measured separately. A passing
 fixture/material report does not certify the default distribution or release.
 
-The current candidate still needs the shared owner to register the optional
-local-image build in the default Central, bind its intake adapter before
-admission, expose its state in the shared controls and mount the dedicated
-settings component. The VLM health producer's `localImage` field and the shared
-consumer's `ready` check also need to agree. These are outstanding default
-assembly boundaries; this entry does not register a second control platform or
-replace them with a test-only success path. Full A/B journeys, supported-platform
-installation/restart, hidden Web/Android/Mac UI, OCR/ASR/VLM coexistence, real
-models and physical devices require their separate stage evidence.
+The default Central registers the optional local-image build in the existing
+Plugin Center, binds its intake adapter before admission, and exposes its state
+at the owner-only `/api/local-image-processing` route. The ordinary image settings
+page mounts the existing dedicated component. Worker readiness consumes the
+producer's `localImage` field, including its protocol, model and platform checks.
+
+`apps/server/test/media-memory-ask-journey.test.ts` separately exercises actual
+default startup, HTTP uploads of generated audio and a 3 MiB image, default intake,
+Memory extraction and independent review, publication, native Codex Ask tools,
+exact original bytes, and enabled/disabled restart. Each extraction, review and
+Ask uses a distinct actual native session. Neural inference and the physical VLM
+runtime remain generated boundaries; `scripts/test_mote_vlm.py` separately feeds
+the actual worker's HTTP health and image responses into the TypeScript consumers.
+These tests add no second control platform. Supported-platform dependency/model
+installation, hidden Web/Android/Mac UI, real model quality and physical devices
+still require separate stage evidence.

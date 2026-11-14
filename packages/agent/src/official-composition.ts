@@ -24,6 +24,7 @@ import {displayTime} from './time.js';
 import {CODEX_CONSERVATIVE_CONTEXT_WINDOW} from './runtime/codex/launch.js';
 import {harnessPrivacyEntries, resolveModelCapabilities, validateModelOptions} from './models/provider-registry.js';
 import {estimateSerializedTokens} from './models/context-budget.js';
+import {estimateToolPayloadTokens} from './models/image-budget.js';
 import {bundledSkills, SKILL_VERSION} from './skills.js';
 import {AgentYieldError} from './host-controls.js';
 import {createImportAgent as createRegisteredImportAgent, dshImportCapabilityDescriptor, defaultImportCapabilities} from './import-agent.js';
@@ -372,7 +373,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
               const value=JSON.parse(payload.text) as Record<string,unknown>;
               payload={...payload,text:JSON.stringify({...value,budgetCoverage:{truncated:true,requestedLength:original.length??null,deliveredLength:args.length,instruction:'The host shortened this page for the model context budget. Follow the returned continuation to inspect more; the unread tail is not evidence.'}})};
             }
-            const payloadTokens=estimateSerializedTokens(payload).tokens;
+            const payloadTokens=selectedRuntime.id===CODEX_RUNTIME_ID?estimateToolPayloadTokens(payload):estimateSerializedTokens(payload).tokens;
             if(!controlled.has(call.name)&&payloadTokens>toolRemaining){
               staged.discard();
               return {payload:omitted(),confirm(){},discard(){}};
