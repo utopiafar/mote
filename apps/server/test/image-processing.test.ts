@@ -267,7 +267,7 @@ for(const named of [false,true])test(`OCR failure stays visible while pixel unde
 
 test('a ready screen original admits one Memory grant while vision is pending; late OCR and recompute never replace that scope',async t=>{
  const f=await fixture(t),id=await f.screen();await f.organize();f.advance(20000);
- let calls=0;const runner={create:()=>({id:'generated-memory-'+(++calls)}),get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+ let calls=0;const runner={create:()=>({id:'generated-memory-'+(++calls)}),state:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
  f.memoryWork.drain(runner,true);assert.equal(calls,1,'retained originals can be independently inspected before a derived visual product');
  await f.images.tick();await f.organize();f.advance(70000);f.memoryWork.drain(runner,true);assert.equal(calls,1);
  await f.organize();f.advance(70000);f.memoryWork.drain(runner,true);assert.equal(calls,1);
@@ -287,7 +287,7 @@ test('imported images wait for pending OCR before claiming Memory while an indep
  const stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),understand=stage.run;
  stage.run=async input=>{startVision();await visionHeld;return understand(input);};
  const created:Parameters<import('../src/material-memory-work.js').MaterialMemoryRunner['create']>[0][]=[];
- const runner={create:(input:typeof created[number])=>{created.push(structuredClone(input));return {id:randomUUID()};},get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+ const runner={create:(input:typeof created[number])=>{created.push(structuredClone(input));return {id:randomUUID()};},state:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
  const running=f.images.tick();
  try{
   await Promise.race([ocrStarted,running.then(()=>assert.fail('generated OCR must reach its controlled boundary'))]);await f.organize();
@@ -322,7 +322,7 @@ test('an accepted image attachment waits for pending OCR without consuming its p
  let begin!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>begin=resolve),held=new Promise<void>(resolve=>release=resolve);
  f.processing.runtime.registry.get('image.http').process=async()=>{begin();await held;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated attachment article text.'}]};};
  const created:Parameters<import('../src/material-memory-work.js').MaterialMemoryRunner['create']>[0][]=[];
- const runner={create:(input:typeof created[number])=>{created.push(input);return {id:randomUUID()};},get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+ const runner={create:(input:typeof created[number])=>{created.push(input);return {id:randomUUID()};},state:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
  const running=f.images.tick();
  try{
   await Promise.race([started,running.then(()=>assert.fail('generated attachment OCR must reach its controlled boundary'))]);await f.organize();
@@ -349,7 +349,7 @@ for(const ocr of ['absent','failed'] as const)test(`an image attachment with ${o
  const stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),understand=stage.run;stage.run=async input=>{begin();await held;return understand(input);};
  const attachment=f.archived.put({name:'generated.png',mimeType:'image/png',bytes:f.bytes}),parent=await f.sources.upsert('generated-parent',{externalId:'optional-attachment-ocr',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',title:'Generated parent',text:'Generated parent caption.',document:{contentRole:'authored',timeBasis:'unknown',attachments:[{id:attachment.id,mimeType:'image/png'}]}});f.archived.attach(parent.id,[attachment.id]);
  const created:Parameters<import('../src/material-memory-work.js').MaterialMemoryRunner['create']>[0][]=[];
- const runner={create:(input:typeof created[number])=>{created.push(input);return {id:randomUUID()};},get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+ const runner={create:(input:typeof created[number])=>{created.push(input);return {id:randomUUID()};},state:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
  const running=f.images.tick();
  try{
   await Promise.race([started,running.then(()=>assert.fail('generated attachment interpretation must reach its controlled boundary'))]);await f.organize();

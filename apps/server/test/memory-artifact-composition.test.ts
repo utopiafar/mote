@@ -98,7 +98,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
     return {id:(await node.files.commit(begun.uploadId,()=>{})).id,materialId:materialId(sourceId,'sample')};
   };
   const organize=async()=>{for(let i=0;i<10;i++)if(await node.materialOrganizer.tick(100)===0)return;throw Error('Organizer did not drain');};
-  const queue=async()=>{const p=node.memoryPipeline;await node.sourcePipelines.drainMemory({create:i=>p.create(i),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
+  const queue=async()=>{const p=node.memoryPipeline;await node.sourcePipelines.drainMemory({create:i=>p.create(i),state:id=>p.state(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
   const run=async()=>{await queue();await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   return {get node(){return node;},control,calls,boundaryChecks,upload,organize,queue,run,request:(payload:Record<string,unknown>)=>node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload}),count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,asrCalls:()=>asrCalls,

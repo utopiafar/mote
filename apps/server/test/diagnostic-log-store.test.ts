@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile,writeFile,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {DiagnosticLogStore} from '../src/diagnostic-log-store.mjs';
 import {DEFAULT_LOG_RETENTION,type LogRetention} from '../src/log-retention-config.mjs';
 async function fixture(t:import('node:test').TestContext,options:Record<string,unknown>={}){const directory=await mkdtemp(join(tmpdir(),'mote-level-logs-'));t.after(()=>rm(directory,{recursive:true,force:true}));let at=new Date('2026-10-01T12:00:00Z');const retention=Object.fromEntries(Object.entries(DEFAULT_LOG_RETENTION).map(([k,v])=>[k,{...v,maxBytes:8192}])) as LogRetention;const store=new DiagnosticLogStore(directory,{maxBytes:1024,maxTotalBytes:32768,retention,minFreeBytes:0,now:()=>at,...options});await store.init();const record=(channel:'error'|'warn'|'info'|'debug'|'trace',body:string)=>({channel,at:at.toISOString(),line:JSON.stringify({at:at.toISOString(),body})+'\n'});return {directory,store,record,clock:(date:string)=>{at=new Date(date);},retention};}
@@ -20,4 +21,37 @@ test('a supervisor write cannot erase the last cleanup reason saved by Central',
  const f=await fixture(t);const supervisor=new DiagnosticLogStore(f.directory,{family:'supervisor',maxBytes:1024,maxTotalBytes:32768,retention:f.retention,minFreeBytes:0,now:()=>new Date('2026-10-01T12:01:00Z')});await supervisor.init();
  await f.store.append([f.record('trace','Generated trace')]);await f.store.clear(await f.store.preview('trace'));await supervisor.append([{channel:'info',at:'2026-10-01T12:01:00Z',line:'{"event":"generated.supervisor"}\n'}]);
  const restarted=new DiagnosticLogStore(f.directory,{retention:f.retention,minFreeBytes:0,now:()=>new Date('2026-10-01T12:02:00Z')});await restarted.init();assert.equal(restarted.snapshot().lastCleanup?.reason,'manual');
+});
+
+test('a buffered Central log append lets a waiting supervisor persist stderr before the whole buffer finishes',async t=>{
+ const f=await fixture(t,{maxBytes:8192}),supervisor=new DiagnosticLogStore(f.directory,{family:'supervisor',maxBytes:8192,maxTotalBytes:32768,retention:f.retention,minFreeBytes:0,now:()=>new Date('2026-10-01T12:00:00Z')});await supervisor.init();
+ type LockStore=DiagnosticLogStore&{exclusive:<T>(task:()=>Promise<T>)=>Promise<T>};
+ const central=f.store as LockStore,exclusive=central.exclusive.bind(central);
+ let entered!:()=>void,release!:()=>void,contended!:()=>void,supervisorDone!:()=>void,acquisitions=0,supervisorFinished=false,finishedBeforeCentral=false;
+ const prefix=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve),busy=new Promise<void>(resolve=>contended=resolve),otherDone=new Promise<void>(resolve=>supervisorDone=resolve);
+ // Hold the first real append section after its handles close. Observe the
+ // other writer's actual SQLite contention before releasing it, then reserve
+ // the gap before Central's next section for that waiting supervisor.
+ const owner=t.mock.method(central,'exclusive',async task=>{
+  const first=++acquisitions===1;if(!first)await otherDone;
+  return exclusive(async()=>{const value=await task();if(first){entered();await held;}return value;});
+ });
+ const execute=DatabaseSync.prototype.exec;
+ const observe=t.mock.method(DatabaseSync.prototype,'exec',function(this:DatabaseSync,sql:string){
+  try{return execute.call(this,sql);}catch(error){if(sql==='BEGIN IMMEDIATE'&&(error as {errcode?:number}).errcode===5)contended();throw error;}
+ });
+ const records=Array.from({length:64},(_,index)=>f.record('info','Generated Central '+index));
+ const writing=central.append(records).then(value=>{finishedBeforeCentral=supervisorFinished;return value;});
+ try{
+  await prefix;
+  const other=supervisor.append([f.record('debug','Generated suppressed inspector stderr')]).then(value=>{supervisorFinished=true;supervisorDone();return value;});
+  await busy;release();
+  const [saved,suppressed]=await Promise.all([writing,other]);
+  assert.equal(saved.length,64);assert.ok(saved.every(Boolean));assert.equal(suppressed.length,1);assert.ok(suppressed[0]);
+  assert.equal(finishedBeforeCentral,true,'supervisor must not wait for the entire 64-record Central buffer while holding its own bounded output');
+  await central.refresh();
+  const lines=(await Promise.all(central.files.map(file=>readFile(join(f.directory,file.name),'utf8')))).flatMap(text=>text.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line) as {body:string}));
+  assert.equal(new Set(lines.filter(line=>line.body.startsWith('Generated Central ')).map(line=>line.body)).size,64,'splitting the lock must preserve every Central event exactly once');
+  assert.equal(lines.filter(line=>line.body==='Generated suppressed inspector stderr').length,1);
+ }finally{release();supervisorDone();await writing;owner.mock.restore();observe.mock.restore();}
 });

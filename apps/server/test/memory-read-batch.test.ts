@@ -109,6 +109,7 @@ test('batch Memory guards reuse formal metadata while preserving exact originals
  const chunks=batch.map(record=>({id:record.id,offset:0,length:record.ocrText.length,fingerprint:memoryEvidenceFingerprint(record),key:record.id}));
  let canonicalReads=0;const read=reader.memories.readEvidence.bind(reader.memories);reader.memories.readEvidence=ids=>{canonicalReads++;return read(ids);};
  assert.equal(pipeline['validMany'](chunks),true);assert.equal(canonicalReads,1,'current resolver and fingerprint checks share one canonical batch');
+ assert.equal(pipeline['validMany']([...chunks,{...chunks[0],fingerprint:'0'.repeat(64)}]),false,'a conflicting range pin cannot hide behind the first pin for the same original');
  const changed=materials.declareContext(first.material.id,first.material.revision,{id:randomUUID(),question:'Who narrated these generated paragraphs?',answer:'The owner described these synthetic paragraphs.'});
  assertCurrentParity(ids);
  assert.equal(pipeline['validMany'](chunks),false,'a new owner declaration is freshly observed by the next guard');

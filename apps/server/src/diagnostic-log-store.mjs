@@ -236,6 +236,17 @@ export class DiagnosticLogStore {
     return this.files.reduce((n, f) => n + f.bytes, 0) + this.otherBytes + Math.min(4096, Math.floor(this.policy.maxTotalBytes / 4)) + (incoming?.bytes ?? 0) <= this.policy.maxTotalBytes;
   }
   async append(records) {
+    const result = [];
+    // Central and its supervisor share this directory. A buffered append must
+    // release the mutex between records: asynchronous file operations can
+    // otherwise keep a waiting supervisor out for its entire acquisition budget
+    // while the Central event loop is also admitting a source backlog.
+    for (let offset = 0; offset < Math.max(1, records.length); offset++) {
+      result.push(...await this.appendGroup(records.slice(offset, offset + 1)));
+    }
+    return result;
+  }
+  async appendGroup(records) {
     return this.exclusive(async () => {
       const written = [];
       await this.inventory();

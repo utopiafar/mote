@@ -4892,6 +4892,11 @@
       "fingerprint": "73e307df9dd66a789858a7b2c96243b5b03f33f069df04a5a70bc0cbeb5eb530"
     },
     {
+      "type": "index",
+      "name": "memory_batches_scheduling",
+      "fingerprint": "184f4d5dda3797a11b9fb44af6c5cc0fe81fbaa69d98b72c07328724682e1d78"
+    },
+    {
       "type": "table",
       "name": "memory_binding_commands",
       "fingerprint": "4895afd6131d19928d3285c6c4b6cad1d84e9e719854a9ce0bf0cb3c925dfd41"
@@ -5100,6 +5105,16 @@
       "type": "table",
       "name": "memory_jobs",
       "fingerprint": "731dfc72ef8aac59e1884e1fd4998b6b1b1035cfa7ac2c198dc15490a3d8f07c"
+    },
+    {
+      "type": "index",
+      "name": "memory_jobs_queue_status",
+      "fingerprint": "0869948aadb44e3c8283e162cfb9dba2ba385f97bf64cb088da126e919fb6fd6"
+    },
+    {
+      "type": "index",
+      "name": "memory_jobs_scheduling",
+      "fingerprint": "2a2b32994f42c4a3befc73d6b6e0bb9bd2e5eb582d9f2703d1104d31c6b9011c"
     },
     {
       "type": "table",
@@ -5555,6 +5570,11 @@
       "type": "table",
       "name": "processing_jobs",
       "fingerprint": "da2caa6033a0cfbda9e12f52212ccbc0f5e587c0f77df4aa9534a168f7459ee1"
+    },
+    {
+      "type": "index",
+      "name": "processing_parent_grant",
+      "fingerprint": "c66b88a682d6880a6e4c6d7a07656fc8340bf9baed4bbed3007aa8784cfd9726"
     },
     {
       "type": "index",
