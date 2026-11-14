@@ -6,15 +6,30 @@ import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mediaAssetStatusSchema} from '@mote/shared';
+import {tsImport} from 'tsx/esm/api';
 import {initialize,profilePaths,loadProfile,atomicJson,repository} from '../profile-lib.mjs';
 
+const {mediaAssetStatusSchema}=await tsImport('../../packages/shared/src/files.ts',import.meta.url);
 const cli=fileURLToPath(new URL('../mote.mjs',import.meta.url));
 async function fixture(t){
  const home=await mkdtemp(join(tmpdir(),'mote-media-cli-')),paths=profilePaths('core03',home);
  t.after(()=>rm(home,{recursive:true,force:true}));await initialize(paths,{port:49173});
  const run=(args,env={})=>spawnSync(process.execPath,[cli,...args,'--profile',paths.profile,'--home',home],{cwd:repository,env:{...process.env,...env},encoding:'utf8',timeout:30_000});
  return {home,paths,run};
+}
+
+async function sourceConfiguration(home){
+ // Tooling runs after npm ci without workspace builds. Resolve the real source
+ // behind each public export, including exports whose names differ from files.
+ const paths={};
+ for(const name of ['shared','agent','plugin-api','plugin-host']){
+  const directory=join(repository,'packages',name),metadata=JSON.parse(await readFile(join(directory,'package.json'),'utf8'));
+  for(const [subpath,conditions] of Object.entries(metadata.exports)){
+   const target=typeof conditions==='string'?conditions:conditions.import??conditions.default;
+   paths[`@mote/${name}${subpath.slice(1)}`]=[join(directory,target.replace('./dist/','./src/').replace(/\.js$/,'.ts'))];
+  }
+ }
+ const tsconfig=join(home,'generated-tsconfig.json');await writeFile(tsconfig,JSON.stringify({compilerOptions:{paths}}));return tsconfig;
 }
 
 test('the real CLI requires a runtime role and passes only that role to preparation without claiming a running worker',async t=>{
@@ -48,9 +63,22 @@ test('top-level local-image import feeds its real verified receipt to the shared
  const {home,paths,run}=await fixture(t),profile=await loadProfile(paths),bundle=join(home,'bundle'),bytes=Buffer.from('Generated local-image offline asset');
  await mkdir(join(bundle,'component'),{recursive:true});await writeFile(join(bundle,'component/model.bin'),bytes);
  const preload=join(home,'generated-catalog.mjs'),assetsUrl=pathToFileURL(join(repository,'apps/server/dist/media-assets.js')).href;
+ const sourceUrl=pathToFileURL(join(repository,'apps/server/src/media-assets.ts')).href,tsconfig=await sourceConfiguration(home);
  // Generate the catalog at the model boundary; retain the production importer,
  // hash/size checks, staging publication, profile lock and receipt serializer.
- await writeFile(preload,`import {MEDIA_CATALOG} from ${JSON.stringify(assetsUrl)};MEDIA_CATALOG['local-image']=${JSON.stringify({version:'generated-core03-image',files:[{name:'component/model.bin',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://example.invalid/generated-model'}]})};`);
+ // Redirect only the importer's compiled module reference to its source. No
+ // generated implementation replaces MediaAssets, even if stale dist exists.
+ await writeFile(preload,`
+ import {register} from ${JSON.stringify(import.meta.resolve('tsx/esm/api'))};
+ import {registerHooks} from 'node:module';
+ register({tsconfig:${JSON.stringify(tsconfig)}});
+ registerHooks({resolve(specifier,context,nextResolve){
+  const target=specifier.startsWith('.')&&context.parentURL?new URL(specifier,context.parentURL).href:specifier;
+  return nextResolve(target===${JSON.stringify(assetsUrl)}?${JSON.stringify(sourceUrl)}:specifier,context);
+ }});
+ const {MEDIA_CATALOG}=await import(${JSON.stringify(assetsUrl)});
+ MEDIA_CATALOG['local-image']=${JSON.stringify({version:'generated-core03-image',files:[{name:'component/model.bin',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://example.invalid/generated-model'}]})};
+ `);
  const env={NODE_OPTIONS:`--import=${pathToFileURL(preload).href}`};
  const result=run(['media-import','--role','local-image','--from',bundle],env);assert.equal(result.status,0,result.stderr);
  const receipt=mediaAssetStatusSchema.parse(JSON.parse(result.stdout));assert.equal(receipt.role,'local-image');assert.equal(receipt.state,'ready');assert.equal(receipt.bytes,bytes.length);

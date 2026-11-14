@@ -53,7 +53,8 @@ test('Docker uses the same parent-mounted YAML, declared paths and private file 
  assert.equal(config.services.mote.healthcheck,undefined,'Central retains the image healthcheck with its local PID check');
  for(const [name,role] of [['ocr-worker','ocr'],['asr-worker','asr']])assert.deepEqual(config.services[name].healthcheck.test,['CMD','node','scripts/media-worker-health.mjs',role],'each media worker reports its own idle or listening health instead of probing the Central listener');
  assert.equal(config.services.mote.ports[0].target,47954);assert.equal(config.services.mote.volumes.find(value=>value.target==='/config').source,p.directory);assert.equal(config.services.mote.volumes.find(value=>value.target==='/config').read_only,undefined);
- assert.deepEqual(config.services['asr-worker'].command,['node','scripts/media-worker-entry.mjs','asr']);assert.equal(config.services['storage-init'].network_mode,'none');
+ for(const [name,role,runtime] of [['ocr-worker','ocr','ocr'],['asr-worker','asr','dialogue']])assert.deepEqual(config.services[name].command,['node','scripts/media-worker-entry.mjs',role,`/opt/mote-media/${runtime}/bin/python`],'each worker selects its own bundled interpreter');
+ assert.equal(config.services['storage-init'].network_mode,'none');
  for(const name of ['mote','ocr-worker','asr-worker','storage-init']) {
   for(const volume of config.services[name].volumes) {
    if(volume.type==='volume')assert.equal(volume.volume.nocopy,true,`${name} must preserve initialized volume ownership`);
