@@ -231,7 +231,13 @@ test('model readiness rejects malformed dependency diagnostics and mismatched ac
  const {mediaModelHealth}=await import('../src/media-configuration.js');
  assert.equal(mediaModelHealth('dialogue',asrHealth).ready,true);
  const {settingsFingerprint:_settings,recipe:_recipe,extract:_extract,diarize:_diarize,align:_align,...loadedIdentity}=asrIdentity;
- assert.equal(mediaModelHealth('dialogue',{...asrHealth,identity:loadedIdentity}).ready,true,'boot health must use actual model facts without fabricating host request settings');
+ assert.equal(mediaModelHealth('dialogue',{...asrHealth,identity:loadedIdentity}).ready,false,'the current worker reports complete implementation pins and its own inference settings at boot');
+ for(const identity of [
+  {...asrIdentity,extra:'generated'},
+  {...asrIdentity,settingsFingerprint:'invalid'},
+  {...asrIdentity,sdkWheelSha256:'0'.repeat(64)},
+  ...['recipe','extract','diarize','align'].map(pin=>({...asrIdentity,[pin]:{...asrIdentity[pin],version:'0'}})),
+ ])assert.equal(mediaModelHealth('dialogue',{...asrHealth,identity}).ready,false);
  assert.equal(mediaModelHealth('dialogue',{...asrHealth,identity:{...asrIdentity,sdkVersion:'generated-wrong-sdk'}}).ready,false);
  assert.equal(mediaModelHealth('dialogue',{...asrHealth,identity:{...asrIdentity,models:{...asrIdentity.models,speaker:{...asrIdentity.models.speaker,id:'generated-wrong-speaker'}}}}).ready,false);
  assert.deepEqual(mediaModelHealth('dialogue',{...asrHealth,missingDependencies:['funasr']}),{ready:false,missingDependencies:['funasr']});

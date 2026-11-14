@@ -4,7 +4,7 @@ import {ProviderFailure} from '@mote/shared';
 import {StoreError} from './store.js';
 import {isLoopback,requestLocalJson} from './local-http.js';
 import {mediaModelIdentities} from './media-assets.js';
-import {FUNASR_HTTP,FUNASR_LIMITS,FUNASR_PINS,FUNASR_PROTOCOL,funasrIdentitySchema,parseFunasrArchive,parseFunasrRequest,parseFunasrResponse,type FunasrFailure,type FunasrRequest,type FunasrIdentity} from './funasr-contract.js';
+import {FUNASR_HTTP,FUNASR_LIMITS,FUNASR_PROTOCOL,funasrIdentitySchema,parseFunasrArchive,parseFunasrRequest,parseFunasrResponse,type FunasrFailure,type FunasrRequest,type FunasrIdentity} from './funasr-contract.js';
 import type {ProcessorInput} from './file-processors.js';
 
 /** Only a validated current worker response can prove that an issued call did
@@ -17,7 +17,6 @@ export class FunasrWorkerFailure extends ProviderFailure {
       ...(response.retryAfterMs!==null?{retryAfterMs:response.retryAfterMs}:{})});
   }
 }
-const loadedIdentity=funasrIdentitySchema.pick({sdkVersion:true,sdkWheelSha256:true,models:true,dependencies:true,backend:true,threads:true});
 function endpoint(input:ProcessorInput,path:string){
   const url=new URL(input.settings.endpoint);
   if(!isLoopback(url.toString())||url.username||url.password||url.search||url.hash||!['http:','https:'].includes(url.protocol)||!/\/transcribe\/?$/.test(url.pathname))throw new StoreError('FunASR requires a loopback /transcribe endpoint',409);
@@ -28,14 +27,16 @@ const headers=(input:ProcessorInput):Record<string,string>=>input.settings.apiKe
 async function identity(input:ProcessorInput):Promise<FunasrIdentity>{
   input.signal.throwIfAborted();input.authorizeModel?.();
   const raw=await requestLocalJson(endpoint(input,'/health'),{headers:headers(input),signal:input.signal,limit:64*1024,requireOfflineExecution:true});
-  const health=raw as Record<string,unknown>|null,loaded=loadedIdentity.safeParse(health?.identity);
+  const health=raw as Record<string,unknown>|null,loaded=funasrIdentitySchema.safeParse(health?.identity);
   if(health?.protocol!==FUNASR_PROTOCOL||health.execution!=='local'||!loaded.success)throw new StoreError('Current FunASR worker identity is unavailable',409);
   // CORE-01 owns the catalog. Never substitute a generated revision or accept
   // the request's identity as proof of which installed models the worker uses.
   if(!isDeepStrictEqual(loaded.data.models,mediaModelIdentities('dialogue')))throw new StoreError('FunASR worker does not match the installed model catalog',409);
   if(health.asr!==true)throw new ProviderFailure({category:'blocked',code:'worker_not_ready',executionStarted:false});
-  if(!input.settingsFingerprint)throw new StoreError('Recognition settings fingerprint is required',409);
-  return funasrIdentitySchema.parse({...loaded.data,...FUNASR_PINS,settingsFingerprint:input.settingsFingerprint});
+  // This fingerprint describes the worker's inference settings. Host connection
+  // settings are already bound by file-step inputs and model authorization;
+  // replacing loaded facts with that host digest would falsify provenance.
+  return loaded.data;
 }
 
 /** One current multipart transport. audio.http retains its independently
@@ -48,7 +49,8 @@ export async function runFunasr(input:ProcessorInput,operation:FunasrRequest['op
   else {
     if(!input.recognition)throw new StoreError('Persisted FunASR recognition checkpoint is required',409);
     pinned=parseFunasrArchive(input.recognition).identity;
-    if(pinned.settingsFingerprint!==input.settingsFingerprint)throw new StoreError('Recognition settings changed; explicitly retry transcription',409);
+    // A retry retains the archived identity. The worker checks it against its
+    // loaded identity before starting inference, then verifies it in the engine.
   }
   const speakers=input.settings.speakerCount!==null?{mode:'exact',count:input.settings.speakerCount}:
     input.settings.speakerMin!==null?{mode:'range',min:input.settings.speakerMin,max:input.settings.speakerMax}:{mode:'unknown'};

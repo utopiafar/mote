@@ -75,9 +75,12 @@ test('archived bytes, audio digest, model revision, dependency versions and sett
   assert.throws(()=>parseFunasrArchive({...recognition.checkpoint,json:recognition.checkpoint.json+' '},request),/digest mismatch/);
   const mutations:((r:FunasrRequest)=>void)[]=[r=>r.audioSha256=hash('another original'),
     r=>r.identity.models.asr.manifestSha256=hash('another model'),r=>r.identity.models.vad.revision=hash('another VAD'),
-    r=>r.identity.settingsFingerprint=hash('different recognition settings'),r=>r.identity.dependencies.torch='9.0.0',r=>r.maxAudioMs=999];
+    r=>r.identity.settingsFingerprint=hash('different inference settings'),r=>r.identity.dependencies.torch='9.0.0',
+    r=>r.identity.backend='mps',r=>r.identity.threads++,r=>r.maxAudioMs=999];
   for(const mutate of mutations){const expected=structuredClone(request);mutate(expected);assert.throws(()=>parseFunasrResponse(bundle.response,expected));}
   assert.throws(()=>parseFunasrArchive(changed(cp=>{(cp.identity.extract.version as string)='4';})),/Invalid literal/);
+  for(const pin of ['recipe','diarize','align'] as const)
+    assert.throws(()=>parseFunasrArchive(changed(cp=>{(cp.identity[pin].version as string)='0';})),/Invalid literal/);
   assert.throws(()=>parseFunasrArchive(changed(cp=>{(cp.identity.sdkVersion as string)='1.4.24';})),/Invalid literal/);
   assert.throws(()=>parseFunasrRequest({...bundle.request,protocol:'mote.funasr/0'}));
 });

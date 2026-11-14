@@ -2,10 +2,6 @@ import {funasrIdentitySchema,FUNASR_PROTOCOL} from './funasr-contract.js';
 import {LOCAL_IMAGE_PROTOCOL,localImageSuccessSchema} from './local-image-contract.js';
 import type {MediaRole} from '@mote/shared';
 
-// Health describes loaded resources. Host settings fingerprints and per-request
-// processor pins belong to inference requests, and cannot be invented at boot.
-const funasrLoadedIdentitySchema=funasrIdentitySchema.pick({sdkVersion:true,sdkWheelSha256:true,models:true,dependencies:true,backend:true,threads:true}).strip();
-
 /** Managed workers are deployment resources. These values are a startup snapshot;
  * changing them requires restarting the node and its managed workers. */
 export interface MediaRuntimeSettings {
@@ -44,7 +40,7 @@ export function mediaModelHealth(role:MediaRole,raw:unknown):{ready:boolean;erro
   if(value.execution!=='local'||diagnostic.error||missing?.length)return {ready:false,...diagnostic};
   if(role==='ocr')return {ready:value.version===1&&value.ocr===true,...diagnostic};
   if(role==='dialogue'){
-    const identity=funasrLoadedIdentitySchema.safeParse(value.identity);
+    const identity=funasrIdentitySchema.safeParse(value.identity);
     const backend=identity.success&&((process.platform==='darwin'&&process.arch==='arm64')?['mps','cpu']:['cpu']).includes(identity.data.backend);
     return {ready:value.protocol===FUNASR_PROTOCOL&&value.asr===true&&value.diarization===true&&identity.success&&Boolean(backend),...diagnostic};
   }
