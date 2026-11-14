@@ -264,10 +264,12 @@ class FunasrEngine(unittest.TestCase):
     def test_wrong_assets_original_runtime_or_checkpoint_identity_never_run_models(self):
         with generated_engine() as f:
             runtime = GeneratedRuntime([], [], [])
-            for key in ('models', 'dependencies', 'settingsFingerprint'):
+            for key in ('models', 'revision', 'dependencies', 'settingsFingerprint'):
                 request = copy.deepcopy(f.request)
                 if key == 'models':
                     request['identity'][key]['speaker']['manifestSha256'] = '0'*64
+                elif key == 'revision':
+                    request['identity']['models']['asr']['revision'] = '0'*40
                 elif key == 'dependencies':
                     request['identity'][key]['torch'] = '9.0.0'
                 else:
@@ -481,7 +483,7 @@ class MappingAndRuntime(unittest.TestCase):
     def test_manifest_has_all_local_components_and_immutable_download_identities(self):
         manifest = engine.asset_manifest()
         self.assertEqual(set(manifest), set(contract.MODEL_IDS))
-        self.assertEqual(sum(len(m['files']) for m in manifest.values()), 23)
+        self.assertEqual(sum(len(m['files']) for m in manifest.values()), 27)
         for role, data in manifest.items():
             self.assertEqual(data['directory'], 'dialogue/'+role)
             self.assertEqual(data['id'], contract.MODEL_IDS[role])
@@ -489,7 +491,12 @@ class MappingAndRuntime(unittest.TestCase):
             self.assertEqual(data['license'], 'Apache-2.0')
             self.assertEqual(data['manifestSha256'], hashlib.sha256(contract.serialize(engine.component_manifest(role)).encode()).hexdigest())
             for item in data['files']:
-                self.assertIn(data['revision'], item['url'])
+                if item['name'].endswith('.whl'):
+                    self.assertEqual(item['sha256'], contract.SDK_WHEEL_SHA256)
+                    self.assertEqual(item['size'], 1015440)
+                    self.assertIn('/funasr-'+contract.SDK_VERSION+'-', item['url'])
+                else:
+                    self.assertIn(data['revision'], item['url'])
                 self.assertGreater(item['size'], 0)
                 self.assertRegex(item['sha256'], '^[a-f0-9]{64}$')
                 self.assertNotIn('..', Path(item['name']).parts)
@@ -507,13 +514,17 @@ class MappingAndRuntime(unittest.TestCase):
             root = Path(directory)
             code = root/'funasr'/'generated.py'
             code.parent.mkdir()
-            code.write_text('generated inert SDK file')
+            # Several hashing chunks: a same-size edit after the first MiB
+            # must still reject an installed SDK with the right version label.
+            code.write_bytes(b'# generated inert SDK file\n'*50000)
             expected = {'generated.py': hashlib.sha256(code.read_bytes()).hexdigest()}
             distribution = SimpleNamespace(locate_file=lambda relative: root/relative)
             with patch.object(engine, 'SDK_SOURCES', expected), patch.object(engine.importlib.metadata, 'version', side_effect=names.__getitem__), patch.object(engine.importlib.metadata, 'distribution', return_value=distribution):
                 versions = engine.inspect_dependencies()
                 self.assertEqual(versions['torch'], '2.8.0+cpu')
-                code.write_text('altered SDK source')
+                with code.open('r+b') as edited:
+                    edited.seek(-1, 2)
+                    edited.write(b'!')
                 with self.assertRaisesRegex(engine.EngineError, 'component_missing'):
                     engine.inspect_dependencies()
             with patch.object(engine.importlib.metadata, 'version', side_effect=engine.importlib.metadata.PackageNotFoundError):

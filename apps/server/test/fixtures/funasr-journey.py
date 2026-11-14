@@ -45,13 +45,13 @@ def catalog():
 
 
 def identities():
-    # The generated asset boundary uses the real Central catalog's digest input.
-    # Production catalog/engine disagreement is checked separately in the TS
-    # journey; this generated identity must never be used to claim it is fixed.
+    # Same canonical component digest as the production engine. Asset sources
+    # and installation paths do not change model content identity.
     data = catalog()
     return {role: {'id': model['id'], 'revision': model['revision'], 'manifestSha256': hashlib.sha256(
-        json.dumps({'model': model, 'files': [item for item in data['files'] if item['name'].startswith(role+'/')]},
-                   separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()}
+        contract.serialize({'id': model['id'], 'revision': model['revision'], 'license': model['license'],
+            'files': [{'name': item['name'][len(role)+1:], 'size': item['size'], 'sha256': item['sha256']}
+                      for item in data['files'] if item['name'].startswith(role+'/')]}).encode()).hexdigest()}
         for role, model in data['models'].items()}
 
 

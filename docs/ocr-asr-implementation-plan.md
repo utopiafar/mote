@@ -26,7 +26,7 @@
 
 上传确认仅代表原件已持久保存。中央负责既有授权、任务检查点、派生版本、索引、只读查询与人工复核；Worker 只处理当前获准的有界字节并返回领域合同。OCR、视觉解读与原图是独立产物；文字解读不能代替像素证据。截图、录音、OCR 和模型输出均是不可信证据，外部效果仍经 Actions 授权。
 
-模型安装继续使用同一 `media.modelDirectory`。固定相对目录为 `ocr`、`dialogue`、`speaker-wespeaker`、`local-image`；FunASR 四组件位于 `dialogue/asr`、`dialogue/vad`、`dialogue/speaker`、`dialogue/punctuation`，不借用 WeSpeaker 资产。`media-assets.ts` 是文件、revision、size、SHA-256 与来源的权威；`mote_funasr.py` 也校验实际加载制品。两者的 Nano 来源与 manifest 身份尚须原 owner 对齐，不能混装或通过回显请求伪造就绪。
+模型安装继续使用同一 `media.modelDirectory`。固定相对目录为 `ocr`、`dialogue`、`speaker-wespeaker`、`local-image`；FunASR 四组件位于 `dialogue/asr`、`dialogue/vad`、`dialogue/speaker`、`dialogue/punctuation`，不借用 WeSpeaker 资产。FunASR 的文件、revision、size、SHA-256 与来源统一固定在 `scripts/funasr-models.json`，由 `media-assets.ts` 安装器和 `mote_funasr.py` 引擎共同读取。Nano 使用 ModelScope revision `05201c46f1c38592b1567f857c0d56eab3d0d8ef`，`model.pt` 为 2,127,426,538 字节、SHA-256 `81fec8616083c69377f3ceef36aba3655660ee0ca69a5d4a1e9810cd340ca499`。组件 manifest 统一使用模型相对路径、revision、license 和每个必需文件的 size/SHA-256 的规范 JSON 摘要；下载位置和安装根目录不参与组件内容身份。完整安装回执仍校验整个 catalog。旧 HF 权重和混装目录不能当作当前版本就绪，实际模型加载与已安装 SDK 源文件校验继续独立执行。
 
 `GET /api/media-models` 返回当前共享 `MediaModelsView`；`runtimeReady` 来自准备服务，而不是目录存在或旧 ASR 布尔字段。`GET /api/media-preparation` 描述准备阶段与真实 Worker 状态。当前本地图片 Worker 的 `localImage` health 字段与运行时消费者的 `ready` 判据仍需运行时 owner 接通；公共状态会保持不可用，不据安装成功改写为 ready。
 

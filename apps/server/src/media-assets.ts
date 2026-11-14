@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {constants,createReadStream,copyFileSync,existsSync,fstatSync,lstatSync,mkdirSync,readFileSync,realpathSync,renameSync,rmSync,writeFileSync,openSync,closeSync,fsyncSync,type Stats} from 'node:fs';
 import {dirname,join,relative,resolve} from 'node:path';
 import {MEDIA_MODEL_PATHS,MEDIA_MODEL_COMPONENT_PATHS,mediaRoleSchema,type MediaRole,type MediaAssetStatus} from '@mote/shared';
-import {FUNASR_MODEL_IDS,FUNASR_SDK_VERSION,FUNASR_SDK_WHEEL_SHA256} from './funasr-contract.js';
+import {FUNASR_MODEL_IDS} from './funasr-contract.js';
 import {LOCAL_IMAGE_MODEL} from './local-image-contract.js';
 import {StoreError} from './store.js';
 
@@ -18,10 +18,22 @@ const sherpa='https://github.com/k2-fsa/sherpa-onnx/releases/download';
 // install time. The conversion card has inconsistent base-model metadata; its
 // immutable artifact is pinned here, not a claim about model quality/ancestry.
 const imageRevision='26328eaab82cdc642fa3b73d8fa0b73db398710d';
-const asrRevision='272c57b82523ada6fd87095e955f8e29100979ab';
 const hfFile=(repo:string,revision:string,name:string)=>`https://huggingface.co/${repo}/resolve/${revision}/${name}`;
 const msFile=(repo:string,revision:string,name:string)=>`https://modelscope.cn/api/v1/models/${repo}/repo?Revision=${revision}&FilePath=${encodeURIComponent(name)}`;
 const component=(key:keyof typeof FUNASR_MODEL_IDS)=>relative(MEDIA_MODEL_PATHS.dialogue,MEDIA_MODEL_COMPONENT_PATHS.dialogue[key]);
+type DialogueComponent={revision:string;license:string;files:{name:string;size:number;sha256:string;url?:string}[]};
+// Shipped with the worker scripts in Native, Docker and packaged Central. Both
+// consumers read these pins; no Python runtime is needed to inspect the catalog.
+const dialogueBundle=JSON.parse(readFileSync(new URL('../../../scripts/funasr-models.json',import.meta.url),'utf8')) as Record<keyof typeof FUNASR_MODEL_IDS,DialogueComponent>;
+function dialogueCatalog():Catalog {
+  const models:Record<string,ModelSource>={},files:Item[]=[];
+  for(const key of Object.keys(FUNASR_MODEL_IDS) as (keyof typeof FUNASR_MODEL_IDS)[]){
+    const model=dialogueBundle[key],id=FUNASR_MODEL_IDS[key],directory=component(key);
+    models[key]={id,repository:id,revision:model.revision,license:model.license,directory};
+    for(const {name,size,sha256,url} of model.files)files.push({name:`${directory}/${name}`,size,sha256,official:url??msFile(id,model.revision,name)});
+  }
+  return {version:'funasr-nano-2512-sdk-1.4.25-2',models,files};
+}
 export const MEDIA_CATALOG:Record<MediaRole,Catalog>={
   'speaker-wespeaker':{version:'wespeaker-zh-cnceleb-resnet34-f86cd6c5',files:[{name:'speaker.onnx',size:26534363,sha256:'f86cd6c509f331f0e20b07bd48d1b2eb7de54202643401c4e84695ac861a0e5a',official:`${sherpa}/speaker-recongition-models/wespeaker_zh_cnceleb_resnet34.onnx`}]},
   ocr:{version:'pp-ocrv5-mobile-onnx-1',files:[
@@ -47,41 +59,7 @@ export const MEDIA_CATALOG:Record<MediaRole,Catalog>={
     {name:'vocab.json',size:3383407,sha256:'87a257b04b17642a0688c98cd1df89c398bda4fee532d6f88b38a659ecb4ac8d',official:hfFile('mlx-community/InternVL3-14B-4bit',imageRevision,'vocab.json')},
     {name:'README.md',size:834,sha256:'aee159cbdccf4e079f87f7b41e92e2c254e52cfa674e79caf9582b893343fb17',official:hfFile('mlx-community/InternVL3-14B-4bit',imageRevision,'README.md')},
   ]},
-  dialogue:{version:'funasr-nano-2512-sdk-1.4.25-1',models:{
-    asr:{id:FUNASR_MODEL_IDS.asr,repository:FUNASR_MODEL_IDS.asr,revision:asrRevision,license:'Apache-2.0',directory:component('asr')},
-    vad:{id:FUNASR_MODEL_IDS.vad,repository:FUNASR_MODEL_IDS.vad,revision:'f9a8b8274674755d925277e27063869038d41515',license:'Apache-2.0',directory:component('vad')},
-    speaker:{id:FUNASR_MODEL_IDS.speaker,repository:FUNASR_MODEL_IDS.speaker,revision:'a045b2afcaa9c3049c98a9215a2bc274407ab237',license:'Apache-2.0',directory:component('speaker')},
-    punctuation:{id:FUNASR_MODEL_IDS.punctuation,repository:FUNASR_MODEL_IDS.punctuation,revision:'45ab6961ad58a973ce7785401b4e93a0aab907a3',license:'Apache-2.0',directory:component('punctuation')},
-  },files:[
-    {name:`${component('asr')}/Qwen3-0.6B/config.json`,size:726,sha256:'660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'Qwen3-0.6B/config.json')},
-    {name:`${component('asr')}/Qwen3-0.6B/generation_config.json`,size:239,sha256:'2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'Qwen3-0.6B/generation_config.json')},
-    {name:`${component('asr')}/Qwen3-0.6B/merges.txt`,size:1671853,sha256:'8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'Qwen3-0.6B/merges.txt')},
-    {name:`${component('asr')}/Qwen3-0.6B/tokenizer.json`,size:11422654,sha256:'aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'Qwen3-0.6B/tokenizer.json')},
-    {name:`${component('asr')}/Qwen3-0.6B/tokenizer_config.json`,size:9732,sha256:'d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'Qwen3-0.6B/tokenizer_config.json')},
-    {name:`${component('asr')}/Qwen3-0.6B/vocab.json`,size:2776833,sha256:'ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'Qwen3-0.6B/vocab.json')},
-    {name:`${component('asr')}/config.yaml`,size:3140,sha256:'daed38ea6484f5650fb32cbd9069b9aa13880acaf2bcb1f0bf4be2712837917c',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'config.yaml')},
-    {name:`${component('asr')}/configuration.json`,size:398,sha256:'b64a3a55d35bcbe2cf4d31f2d3ef25a423d3ba2ebff203298c27fa055f3c7612',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'configuration.json')},
-    {name:`${component('asr')}/model.pt`,size:1971149431,sha256:'55ae0d2fee369f0f11cce0795f6927934ad17cf11b278a7e56a51272074160bb',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'model.pt')},
-    {name:`${component('asr')}/multilingual.tiktoken`,size:907395,sha256:'747979631e813193436aabcff7c1c235d37de8097b71c563ec8b63b7a515c718',official:hfFile(FUNASR_MODEL_IDS.asr,asrRevision,'multilingual.tiktoken')},
-    // Pin executable model code as well as weights; runtime installation belongs to CORE-02.
-    {name:`${component('asr')}/funasr-${FUNASR_SDK_VERSION}-py3-none-any.whl`,size:1015440,sha256:FUNASR_SDK_WHEEL_SHA256,official:'https://files.pythonhosted.org/packages/14/b4/797868730158cafc9c715d61ecffb94c28a3bc59b822bd77a584f264ffde/funasr-1.4.25-py3-none-any.whl'},
-    {name:`${component('vad')}/README.md`,size:11567,sha256:'42377011603a186fc2bae41a5cc5e548ebf98d8ec307bbae9dd405f82567f543',official:msFile(FUNASR_MODEL_IDS.vad,'f9a8b8274674755d925277e27063869038d41515','README.md')},
-    {name:`${component('vad')}/am.mvn`,size:8040,sha256:'6820fef9687708c4fc3fab2530179c8fcea6262daa25514380056cd8f6eb1754',official:msFile(FUNASR_MODEL_IDS.vad,'f9a8b8274674755d925277e27063869038d41515','am.mvn')},
-    {name:`${component('vad')}/config.yaml`,size:1215,sha256:'486861ca26ddb79081663b6179cb204c6bfae71c52f04aafc48a9e9d8dde1e93',official:msFile(FUNASR_MODEL_IDS.vad,'f9a8b8274674755d925277e27063869038d41515','config.yaml')},
-    {name:`${component('vad')}/configuration.json`,size:365,sha256:'7bce8867e37d55c3dd8f672695ced18077a2be199ea529a5d432d5350fc0acba',official:msFile(FUNASR_MODEL_IDS.vad,'f9a8b8274674755d925277e27063869038d41515','configuration.json')},
-    {name:`${component('vad')}/model.pt`,size:1721366,sha256:'b3be75be477f0780277f3bae0fe489f48718f585f3a6e45d7dd1fbb1a4255fc5',official:msFile(FUNASR_MODEL_IDS.vad,'f9a8b8274674755d925277e27063869038d41515','model.pt')},
-    {name:`${component('speaker')}/README.md`,size:6732,sha256:'85e7f149c9d5910da9dbdd4ab5206e33db85e9763107d439a09ef40b004e2f4c',official:msFile(FUNASR_MODEL_IDS.speaker,'a045b2afcaa9c3049c98a9215a2bc274407ab237','README.md')},
-    {name:`${component('speaker')}/campplus_cn_common.bin`,size:28036335,sha256:'3388cf5fd3493c9ac9c69851d8e7a8badcfb4f3dc631020c4961371646d5ada8',official:msFile(FUNASR_MODEL_IDS.speaker,'a045b2afcaa9c3049c98a9215a2bc274407ab237','campplus_cn_common.bin')},
-    {name:`${component('speaker')}/config.yaml`,size:537,sha256:'17342041bd5b22f6fd7e32f6e7a267b0bf65f018c0a721bada6547e3d28fbfc9',official:msFile(FUNASR_MODEL_IDS.speaker,'a045b2afcaa9c3049c98a9215a2bc274407ab237','config.yaml')},
-    {name:`${component('speaker')}/configuration.json`,size:581,sha256:'6f7acaf1e81ca121f4a3c71b6ddb66beec24350a3ef330e2c846f17829176a8f',official:msFile(FUNASR_MODEL_IDS.speaker,'a045b2afcaa9c3049c98a9215a2bc274407ab237','configuration.json')},
-    {name:`${component('punctuation')}/README.md`,size:11561,sha256:'d1f2f3c30db716fb995208608d4305b045f6ef7b7b46a84e7e2d200160df50e0',official:msFile(FUNASR_MODEL_IDS.punctuation,'45ab6961ad58a973ce7785401b4e93a0aab907a3','README.md')},
-    {name:`${component('punctuation')}/config.yaml`,size:812,sha256:'c5ffb25cd063ed366cb26283908dca05a08ecfef8e90bef1d498ef9ffacd7552',official:msFile(FUNASR_MODEL_IDS.punctuation,'45ab6961ad58a973ce7785401b4e93a0aab907a3','config.yaml')},
-    {name:`${component('punctuation')}/configuration.json`,size:450,sha256:'7043245e6264cea789404e498a6f55a330a18585a4690d35dfe71741e6982237',official:msFile(FUNASR_MODEL_IDS.punctuation,'45ab6961ad58a973ce7785401b4e93a0aab907a3','configuration.json')},
-    {name:`${component('punctuation')}/jieba.c.dict`,size:41536866,sha256:'eb0a68f8bfa65e6956d59e8f9652b49f5c91952273e24737bc9a8c5e23055221',official:msFile(FUNASR_MODEL_IDS.punctuation,'45ab6961ad58a973ce7785401b4e93a0aab907a3','jieba.c.dict')},
-    {name:`${component('punctuation')}/jieba_usr_dict`,size:11280857,sha256:'059aa2af152734d5fd011a4d69cbab171f62347074db0db5157c17b5649010f5',official:msFile(FUNASR_MODEL_IDS.punctuation,'45ab6961ad58a973ce7785401b4e93a0aab907a3','jieba_usr_dict')},
-    {name:`${component('punctuation')}/model.pt`,size:1125507622,sha256:'7176cae922a872e130e6b88aef9a1153581711baf79c9124c7c95be383cd6f81',official:msFile(FUNASR_MODEL_IDS.punctuation,'45ab6961ad58a973ce7785401b4e93a0aab907a3','model.pt')},
-    {name:`${component('punctuation')}/tokens.json`,size:8280697,sha256:'89951fe0669380ed33298ee048c4a2b0ebcaaf6ee8f332d85c281c41d0f38392',official:msFile(FUNASR_MODEL_IDS.punctuation,'45ab6961ad58a973ce7785401b4e93a0aab907a3','tokens.json')},
-  ]},
+  dialogue:dialogueCatalog(),
 };
 // Existing processing consumers still import these pins. ASR-03 removes the
 // segmentation pin when replacing its old processor; it is not installable via
@@ -144,8 +122,15 @@ const catalogHash=(catalog:Catalog)=>digest({version:catalog.version,files:catal
  * request identities or reading a different downloaded repository revision. */
 export function mediaModelIdentities(role:MediaRole){
   const catalog=catalogFor(role);
-  return Object.fromEntries(Object.entries(catalog.models??{}).map(([key,model])=>[key,{id:model.id,revision:model.revision,
-    manifestSha256:digest({model,files:catalog.files.filter(file=>model.directory==='.'||file.name.startsWith(model.directory+'/'))})}]));
+  return Object.fromEntries(Object.entries(catalog.models??{}).map(([key,model])=>{
+    const files=catalog.files.filter(file=>model.directory==='.'||file.name.startsWith(model.directory+'/'));
+    // Match mote_asr_contract.serialize's sorted-key, compact JSON. Identity
+    // covers model-relative content only, independently of download URLs and
+    // the installation root. Keep the installer receipt's full catalog hash.
+    const manifest=role==='dialogue'?{files:files.map(file=>({name:relative(model.directory,file.name),sha256:file.sha256,size:file.size})),
+      id:model.id,license:model.license,revision:model.revision}:{model,files};
+    return [key,{id:model.id,revision:model.revision,manifestSha256:digest(manifest)}];
+  }));
 }
 type Signature=Pick<Stats,'size'|'mtimeMs'|'ctimeMs'|'ino'>;
 const signature=(stat:Stats):Signature=>({size:stat.size,mtimeMs:stat.mtimeMs,ctimeMs:stat.ctimeMs,ino:stat.ino});
