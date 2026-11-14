@@ -68,7 +68,10 @@ export class PluginControlStore {
   }
   builds():BuildInstance[]{return this.store.db.prepare('SELECT json FROM plugin_build_instances ORDER BY rowid').all().map(row=>JSON.parse(String(row.json)));}
   saveBuild(value:BuildInstance){
-    const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json)+Buffer.byteLength(value.id)+128);
+    const json=JSON.stringify(value),prior=this.store.db.prepare('SELECT json FROM plugin_build_instances WHERE id=?').get(value.id);
+    if(prior?.json===json)return;
+    const growth=prior?Buffer.byteLength(json)-Buffer.byteLength(String(prior.json)):Buffer.byteLength(json)+Buffer.byteLength(value.id)+128;
+    if(growth>0)this.store.reserveMetadata(growth);
     this.store.db.prepare('INSERT INTO plugin_build_instances VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,json);
   }
 }
