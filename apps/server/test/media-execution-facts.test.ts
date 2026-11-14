@@ -1,10 +1,10 @@
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {spawn,type ChildProcess} from 'node:child_process';
+import {execFileSync,spawn,type ChildProcess} from 'node:child_process';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -12,15 +12,28 @@ import {setTimeout as delay} from 'node:timers/promises';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {MEDIA_CATALOG} from '../src/media-assets.js';
+import {MEDIA_CATALOG,MediaAssets} from '../src/media-assets.js';
 import {readMediaExecutionFact} from '../src/plugins/media-execution-facts.js';
 
 async function until(check:()=>Promise<boolean>,label:string,diagnostics?:()=>unknown){const deadline=Date.now()+15000;while(!await check()){if(Date.now()>deadline)throw Error('Generated media journey did not reach '+label+(diagnostics?' '+JSON.stringify(diagnostics()):''));await delay(10);}}
 async function fixture(t:TestContext,mode='fail2',hold=true){
  const root=await mkdtemp(join(tmpdir(),'mote-media-facts-')),modelDirectory=join(root,'models'),models=join(modelDirectory,'ocr'),secret='generated-media-worker-'+randomUUID();
  const cleanup:(()=>Promise<unknown>)[]=[()=>rm(root,{recursive:true,force:true})];t.after(async()=>{const errors:unknown[]=[];for(const action of cleanup.reverse())try{await action();}catch(error){errors.push(error);}if(errors.length)throw new AggregateError(errors,'Generated media cleanup failed');});
- for(const name of ['det','rec']){await mkdir(join(models,name),{recursive:true});for(const file of ['inference.onnx','inference.yml'])await writeFile(join(models,name,file),'generated model marker');}
- await writeFile(join(models,'complete.json'),JSON.stringify({version:MEDIA_CATALOG.ocr.version}));
+ const priorCatalog=MEDIA_CATALOG.ocr,bundle=join(root,'bundle'),tree=join(root,'tree'),files=[];
+ cleanup.push(async()=>{MEDIA_CATALOG.ocr=priorCatalog;});
+ await mkdir(bundle);
+ for(const kind of ['det','rec']){
+  const folder='generated-'+kind;await mkdir(join(tree,folder),{recursive:true});
+  for(const name of ['inference.onnx','inference.yml'])await writeFile(join(tree,folder,name),`Generated OCR ${kind} ${name}`);
+  execFileSync('tar',['-cf',join(bundle,kind+'.tar'),'-C',tree,folder]);const bytes=await readFile(join(bundle,kind+'.tar'));
+  files.push({name:kind+'.tar',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://fixture.invalid/'+kind+'.tar',extract:{kind:'tar' as const,entry:folder+'/inference.onnx',destination:kind+'/inference.onnx'}});
+ }
+ MEDIA_CATALOG.ocr={version:'generated-ocr-execution-facts',files};
+ // Use the real offline installer so every restarted Central consumes its
+ // verified receipt. Only the model bytes and recognizer boundary are generated.
+ const assets=new MediaAssets(modelDirectory);
+ try{await assets.importBundle('ocr',bundle);assert.equal(assets.ready('ocr'),true);}
+ finally{await assets.close();}
  await mkdir(join(root,'paddlex/inference'),{recursive:true});
  await writeFile(join(root,'paddlex/inference/pipelines.py'),`def load_pipeline_config(name): return {'SubModules':{'TextDetection':{},'TextRecognition':{}}}
 class Pipeline:
@@ -47,9 +60,9 @@ def recognize_image(image, predict):
  const startWorker=async()=>{
   const reservation=createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');const port=(reservation.address() as {port:number}).port;await new Promise<void>(resolve=>reservation.close(()=>resolve()));
   child=spawn('python3',[join(root,'ocr-server.py'),'--model-root',models,'--port',String(port)],{cwd:root,env:{PATH:process.env.PATH,PYTHONPATH:root,MOTE_MEDIA_WORKER_TOKEN:secret},stdio:'ignore'});closed=once(child,'close');workerUrl='http://127.0.0.1:'+port;
-  await until(async()=>{try{return (await fetch(workerUrl+'/health',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(500)})).ok;}catch{return false;}},'actual copied Python worker startup');
+  await until(async()=>{try{const response=await fetch(workerUrl+'/health',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(500)});return response.ok&&(await response.json()).ocr===true;}catch{return false;}},'actual copied Python worker startup');
  };
- await startWorker();cleanup.push(stopWorker);
+ cleanup.push(stopWorker);await startWorker();
  const posts:string[]=[],drop=new Set([1,2]);let probes=0;
  const proxy=createServer((req,res)=>{void(async()=>{
   const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
@@ -64,7 +77,7 @@ def recognize_image(image, predict):
  cleanup.push(async()=>{proxy.closeAllConnections();await new Promise<void>(resolve=>proxy.close(()=>resolve()));});
  const config:Config={dataDir:join(root,'archive'),token:'generated-owner-'+randomUUID(),tokenPath:'generated-only',host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://example.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',media:{modelDirectory,python:'python3',ocrPort:Number(new URL(endpoint).port),asrPort:1,ocrEndpoint:endpoint,asrEndpoint:'http://127.0.0.1:1/transcribe',workerToken:secret}};
  let node:Awaited<ReturnType<typeof buildApp>>|undefined,centralUrl='',initialOwnerApproval=true;
- const start=async()=>{node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model belongs in this media fixture');},close:async()=>{}}});centralUrl=await node.app.listen({host:'127.0.0.1',port:0});const settings=node.perception.settings();await node.perception.save({revision:node.configService.revision,settings:{...settings,enabled:true,understandingEnabled:false}});if(initialOwnerApproval){await authorizeFixtureModels(node);initialOwnerApproval=false;}return node;};
+ const start=async()=>{node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model belongs in this media fixture');},close:async()=>{}}});assert.equal(node.featureServices.mediaAssets.ready('ocr'),true,'a fresh Central accepts the installed OCR receipt');centralUrl=await node.app.listen({host:'127.0.0.1',port:0});const settings=node.perception.settings();await node.perception.save({revision:node.configService.revision,settings:{...settings,enabled:true,understandingEnabled:false}});if(initialOwnerApproval){await authorizeFixtureModels(node);initialOwnerApproval=false;}return node;};
  const close=async()=>{await node?.app.close();node=undefined;};cleanup.push(close);
  const intake=async()=>{const id=randomUUID(),bytes=await sharp({create:{width:8,height:8,channels:3,background:'#aabbcc'}}).png().toBuffer();const response=await fetch(centralUrl+'/api/captures',{method:'POST',headers:{Authorization:'Bearer '+config.token,'Content-Type':'application/json','x-mote-ingress-version':'2'},body:JSON.stringify({id,deviceId:'generated-android',deviceName:'Generated phone',platform:'android',source:'screen',capturedAt:new Date().toISOString(),durationMs:0,appId:'generated',appName:'Generated',ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64')})});assert.equal(response.status,201,await response.text());return id;};
  return {root,config,posts,drop,start,close,intake,startWorker,stopWorker,probes:()=>probes,get node(){return node!;},release:()=>rm(join(root,'hold'),{force:true}),worker:()=>workerUrl,headers:{Authorization:'Bearer '+secret},request:(path:string,method:string)=>fetch(centralUrl+path,{method,headers:{Authorization:'Bearer '+config.token}})};
