@@ -81,6 +81,20 @@ node scripts/mote.mjs stop --profile prod --home "$HOME/Library/Application Supp
 
 原生 stdout/stderr 先经监督进程白名单化：保留固定启动/停止事件，未知 SDK 输出只记类型与字节数。监督进程和中央诊断都按级别分段，使用同一目录与 2 GiB 总预算；各级别保留目标和容量见[日志保留决策](adr-dev-log-retention.md)。所有 profile 默认关闭 debug 与详细过程记录。详细记录开启后最多持续 24 小时；开关、级别和截止时间经校验热应用，目录与容量修改需要重启。
 
+### 日志锁与离线恢复
+
+中央与监督进程以 `retention-mutex.sqlite` 上的 SQLite `BEGIN IMMEDIATE` 协调日志追加和清理，退出或崩溃由操作系统释放锁。该文件始终为 0 字节：不创建表、不写入数据，以 rollback 结束每次操作。`retention.lock` 是完整写入、同步后原子发布的永久协议标记，内容为 `{"protocol":"mote-retention-sqlite"}`，阻止旧版 PID 写入器绕过新互斥。两个文件在正常退出后都会保留；运行中不得移动、删除、重建或用普通文件句柄打开/关闭 `retention-mutex.sqlite`，否则可能破坏互斥。锁要求支持 SQLite 文件锁的本地文件系统。
+
+旧版可能在创建 `retention.lock` 后、写入 PID 前退出，留下空锁。空内容、文件年龄、未监听端口或某个 PID 已退出，都不能单独证明没有写入者。遇到 `existing retention.lock requires offline recovery` 时，程序保留原文件并拒绝日志写入，不自动接管任何旧锁。
+
+仅在维护窗口内完成以下条件后，才可手动恢复旧空锁：
+
+1. 先停止并禁用该 profile 的 launchd、Docker restart policy 或其他自动重启管理，再正常停止中央、监督进程及所有共享该日志目录的写入者。确认没有仍在启动、退出或访问该目录的进程，且维护期间不会重启。只执行 `mote stop` 或只检查端口不充分。
+2. 保留日志与 profile 的备份，核对目标确为已停止 profile 日志目录中的普通 0 字节 `retention.lock`，而非符号链接、当前协议标记或 `retention-mutex.sqlite`。无法证明全部写入者停止时，不操作锁。
+3. 把这一个旧锁原子重命名到同一目录的唯一备份名，保留其 inode 和现场；不截断日志、不删除日志目录，也不批量清理其他锁。然后启动当前版本，确认经过认证的健康检查、中央与监督日志及正常停止/重启，再恢复自动管理。
+
+代价是维护停机及一次显式的旧锁恢复；升级不会自动转换归属不明的文件。中断发生在新协议标记发布前时，可能留下独立的 `retention.<uuid>.tmp` 候选文件，它不持有互斥，其字节仍计入日志总预算；需要删除时同样先停写并保留所需现场。当前协议不支持与旧版同时使用同一日志目录；回退到旧版也须在全部写入者停止后单独处理协议标记，不得在线删锁。
+
 <a id="dev-log-retention"></a>
 
 ### DEV 日志默认容量
