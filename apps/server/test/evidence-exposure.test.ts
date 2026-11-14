@@ -316,7 +316,11 @@ test('a source tombstone revokes model access to prior raw revisions',async t=>{
     text:'',kind:'message',layer:'original',deleted:true});
   assert.deepEqual(await agent.evidence({ids:[old.id]}),[]);
   assert.equal((await agent.search({query:'Generated private body'})).length,0);
-  assert.equal(reader.evidence(fixtureCaptureRefs([old.id])).length,1,'owner history remains available');
+  assert.deepEqual(reader.evidence(fixtureCaptureRefs([old.id])),[],'ordinary reads remain current-only');
+  const archived=reader.archivedEvidence(fixtureCaptureRefs([old.id]));
+  assert.equal(archived.length,1,'owner history remains available');
+  assert.equal(archived[0]!.ocrText,'Generated private body');
+  assert.equal(archived[0]!.provenance?.revision,'1','archive access retains the original revision');
   assert.equal(reader.contextDependenciesAllowed([old.id]),false);assert.equal(reader.contextDependenciesAllowed([old.id]),reader.deletionContextAllowed(old.id));
 });
 
