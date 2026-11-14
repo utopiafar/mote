@@ -40,3 +40,25 @@ for(const mode of ['background','drain','mixed-lanes'])test(`a large admission-w
  assert.equal(result.ready,true);assert.equal(result.callbackRan,true);assert.equal(result.provider,'succeeded');
  assert.equal(result.waiting.length,64);assert.ok(result.waiting.every((step:{state:string;attempts:number})=>step.state==='blocked'&&step.attempts===0));
 });
+
+for(const outcome of ['blocked','exhausted','admission-error'] as const)test(`draining ${outcome} decisions lets event-loop callbacks run before the backlog settles`,async t=>{
+ const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const {Store}=await import('../src/store.js'),{ExecutionEngine,ExecutionFailure}=await import('../src/execution-engine.js');
+ const directory=mkdtempSync(join(tmpdir(),'mote-terminal-admission-')),store=new Store(directory),engine=new ExecutionEngine(store);
+ t.after(async()=>{await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ let executions=0;
+ engine.register({kind:'generated',pool:'generated',concurrency:()=>2,maxAttempts:1,validate:()=>true,
+  admit:()=>{if(outcome==='admission-error')throw Error('Generated admission failure');if(outcome==='blocked')return new ExecutionFailure('blocked','processor_version_unavailable');},
+  execute:async()=>{executions++;},commit:()=>{}});
+ const ids=Array.from({length:64},(_,n)=>engine.enqueue('generated-'+n,'generated',{n},outcome==='exhausted'?{initial:{state:'waiting',attempts:1,availableAt:0}}:{}));
+ const callback=new Promise<{settled:number;transaction:boolean}>(resolve=>setImmediate(()=>resolve({settled:ids.filter(id=>engine.get(id)!.state!=='waiting').length,transaction:store.db.isTransaction})));
+ await engine.drain(ids);const observed=await callback;
+ assert.ok(observed.settled>0&&observed.settled<ids.length,`callback saw ${observed.settled}/${ids.length} settled decisions`);
+ assert.equal(observed.transaction,false);assert.equal(executions,0);
+ for(const id of ids){const step=engine.get(id)!;
+  assert.equal(step.state,outcome==='exhausted'?'failed':'blocked');
+  assert.equal(step.error,outcome==='blocked'?'processor_version_unavailable':outcome==='exhausted'?'retry_budget_exhausted':'admission_failed');
+  assert.equal(step.attempts,outcome==='exhausted'?1:0);
+  const stored=store.db.prepare('SELECT fence,lease_until FROM execution_steps WHERE id=?').get(id)!;assert.equal(stored.fence,null);assert.equal(stored.lease_until,0);
+ }
+});
