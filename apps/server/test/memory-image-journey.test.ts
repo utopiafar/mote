@@ -240,6 +240,30 @@ test('disabled archive pixels still allow OCR-backed Memory extraction and indep
  assert.equal(f.node.perception.settings().allowQueryImages,false);
 });
 
+test('explicit current OCR selection recovers an incomplete image evaluation without changing its frozen failed job',async t=>{
+ const f=await fixture(t,{ocr:'text',denied:true,deferJob:true}),headers={authorization:'Bearer generated-memory-image-owner'};
+ const original=f.node.materials.input(f.material.ref,['image-original'])!;
+ const first=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:original.evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]}});
+ assert.equal(first.statusCode,202,first.body);const failedId=String(first.json().id),failed=await f.node.memoryPipeline.run(failedId);
+ assert.equal(failed.status,'failed');assert.equal(failed.errorCode,'memory_evaluation_incomplete');assert.deepEqual(failed.memoryIds,[]);
+ const before=f.inputs.length,retry=await f.node.app.inject({method:'POST',url:`/api/memory-jobs/${failedId}/retry`,headers});
+ assert.equal(retry.statusCode,202,retry.body);const retried=await f.node.memoryPipeline.run(failedId);
+ assert.equal(retried.status,'failed');assert.equal(retried.errorCode,'memory_evaluation_incomplete');assert.deepEqual(retried.materialInputs,failed.materialInputs,'retry cannot add OCR to a frozen original-only input');
+ assert.ok(f.inputs.slice(before).every(input=>input.processingMaterialInputs?.every(pin=>!pin.required.includes('extracted-text'))));const afterRetry=f.inputs.length;
+ const frozen=f.node.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(failedId)!.json;
+ const phases=f.node.store.db.prepare('SELECT * FROM memory_phase_outputs WHERE batch_id=? ORDER BY phase').all(retried.batches[0].id);
+ const selected=f.node.materials.input(f.material.id,['image-original','extracted-text'])!;assert.equal(selected.ready,true);
+ const recovery=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:selected.evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]}});
+ assert.equal(recovery.statusCode,202,recovery.body);const recoveryId=String(recovery.json().id);assert.notEqual(recoveryId,failedId);
+ const done=await f.node.memoryPipeline.run(recoveryId);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
+ assert.deepEqual(done.materialInputs?.map(input=>input.required),[['extracted-text','image-original']]);
+ assert.deepEqual(done.evidenceIds.sort(),[...selected.evidenceIds].sort());
+ assert.equal(f.node.memories.get(done.memoryIds[0]).evidence[0].quote,'GENERATED_OCR_TEXT: the article author resigned.');
+ assert.equal(f.node.perception.settings().allowQueryImages,false);assert.equal(f.inputs.length,afterRetry+2,'the new current selection gets a fresh extraction and independent review');
+ assert.equal(f.node.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(failedId)!.json,frozen);
+ assert.deepEqual(f.node.store.db.prepare('SELECT * FROM memory_phase_outputs WHERE batch_id=? ORDER BY phase').all(retried.batches[0].id),phases);
+});
+
 test('revoking image disclosure during extraction blocks the official task without publication or automatic replay',async t=>{
  const f=await fixture(t,{ocr:'empty',revokeImagesDuringExtract:true}),done=await f.node.memoryPipeline.run(f.jobId);
  assert.equal(done.status,'waiting_for_input',JSON.stringify(done));assert.equal(done.errorCode,'image_disclosure_disabled');

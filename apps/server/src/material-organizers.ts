@@ -332,6 +332,16 @@ function imageBlocks(body:MaterialBody,record:CaptureRecord,image:ImageMaterialP
   })];
 }
 
+function fileExtractionDependency(file:MaterialOrganizerFile):{state:NonNullable<MaterialDraft['artifacts']>[number]['state'];reason?:string}{
+  const job=file.job,state=job?.state==='succeeded'?'ready':['waiting','running'].includes(job?.state??'waiting')?'pending':['blocked','failed','cancelled'].includes(job?.state??'')?'failed':'unavailable';
+  if(!file.image)return {state,...(job?.error?{reason:job.error}:{})};
+  const ocr=file.image.jobs.find(product=>product.kind==='ocr'),known=file.image.jobs.every(product=>Boolean(product.kind));
+  // Only a declared OCR stage owns text readiness. An absent/failed OCR stage
+  // must not turn back into pending because independent interpretation runs.
+  return {state:file.image.products.some(product=>product.kind==='ocr')?'ready':ocr?.state??(file.image.archiveOnly||known?'unavailable':state),
+    reason:ocr?.reason??(!file.image.archiveOnly&&!known?job?.error??undefined:undefined)};
+}
+
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
   id:'mote.source-item',version:'15',slot:'source-item',
@@ -373,8 +383,8 @@ const sourceItem:MaterialOrganizer={
           {fileId,captureId:attached.id,chunkId:c.id,...(c.imageLocation?{imageLocation:c.imageLocation}:{}),...(c.documentLocation?{documentLocation:c.documentLocation}:{}),...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],evidenceContext(attached,c.startMs===null?'other':'transcript'));
         blockIds.push(...body.blocks.slice(before).map(b=>b.id));
       }
-      const waiting=['waiting','running'].includes(processed.job?.state??'waiting'),failed=['blocked','failed'].includes(processed.job?.state??'');
-      attachedArtifacts.push({key:`attachment/${fileId}/text`,blockIds,state:processed.extraction?'ready':waiting?'pending':failed?'failed':'unavailable',...(!processed.extraction&&processed.job?.error?{reason:processed.job.error}:{})});
+      const extraction=fileExtractionDependency(processed);
+      attachedArtifacts.push({key:`attachment/${fileId}/text`,blockIds,state:processed.extraction?'ready':extraction.state==='ready'?'unavailable':extraction.state,...(!processed.extraction&&extraction.reason?{reason:extraction.reason}:{})});
       attachedArtifacts.push(...imageBlocks(body,attached,processed.image,`attachment/${fileId}`));
     }
     for(const attachment of attachments.filter(a=>a.mimeType.startsWith('image/')&&!(file.attachedFiles??[]).some(f=>f.fileId===a.id))){
@@ -390,15 +400,7 @@ const sourceItem:MaterialOrganizer={
     // OCR publishes an independent product: a later visual interpretation can
     // fail without invalidating that completed extraction. Other file recipes
     // may replace intermediate text (for example ASR followed by alignment).
-    const fileState:NonNullable<MaterialDraft['artifacts']>[number]['state']=job?.state==='succeeded'?'ready':['waiting','running'].includes(job?.state??'waiting')?'pending':['blocked','failed','cancelled'].includes(job?.state??'')?'failed':'unavailable';
-    const imageOcr=file.image?.jobs.find(product=>product.kind==='ocr');
-    // A fully typed plan without OCR never scheduled text extraction. Missing
-    // kinds still mean preparation/admission may be blocked, not absent OCR.
-    const imagePlanKnown=file.image?.jobs.every(product=>Boolean(product.kind));
-    const extractionState:NonNullable<MaterialDraft['artifacts']>[number]['state']=file.image
-      ?file.image.products.some(product=>product.kind==='ocr')?'ready':imageOcr?.state??(file.image.archiveOnly||imagePlanKnown?'unavailable':fileState)
-      :fileState;
-    const extractionError=file.image?imageOcr?.reason??(!file.image.archiveOnly&&!imagePlanKnown?job?.error:undefined):job?.error;
+    const {state:extractionState,reason:extractionError}=fileExtractionDependency(file);
     let state:'complete'|'pending'|'partial'='complete',reason:string|undefined;
     if(file.processingRequired){
       if(['waiting','running'].includes(job?.state??'waiting')){state='pending';reason='processing_pending';}
@@ -767,8 +769,11 @@ export class MaterialOrganizerRuntime {
           materials.setSearchable(input.materialId,true);
           if(input.organizerId===sourceItem.id){
             const artifacts=prepared.draft.artifacts??[],image=artifacts.some(item=>item.key==='image-original');
-            const required=image?['image-original',...artifacts.filter(item=>item.key==='extracted-text'&&item.state==='ready'&&item.blockIds?.length).map(item=>item.key)]:[artifacts.some(item=>item.key==='original')?'extracted-text':'source-body'];
-            const attachments=artifacts.filter(item=>item.key.startsWith('attachment/')&&(item.key.endsWith('/original-image')||item.key.endsWith('/text')&&item.state==='ready'&&item.blockIds?.length)).map(item=>item.key);
+            // Preserve pending OCR as a dependency before claiming the raw
+            // input. Otherwise the frozen scope contains only image locators,
+            // even when original-pixel disclosure is disabled for Memory.
+            const required=image?['image-original',...artifacts.filter(item=>item.key==='extracted-text'&&(item.state==='pending'||item.state==='ready'&&item.blockIds?.length)).map(item=>item.key)]:[artifacts.some(item=>item.key==='original')?'extracted-text':'source-body'];
+            const attachments=artifacts.filter(item=>item.key.startsWith('attachment/')&&(item.key.endsWith('/original-image')||item.key.endsWith('/text')&&(item.state==='pending'||item.state==='ready'&&item.blockIds?.length))).map(item=>item.key);
             const selected=prepared.pinnedSourceHead?this.claimedImageRequirements(input.materialId,prepared.pinnedSourceHead,[...required,...attachments]):[...required,...attachments];
             const activity=Boolean(prepared.pinnedSourceHead&&capture(store,prepared.pinnedSourceHead)?.provenance?.document?.activity);
             if(prepared.pinnedSourceHead)this.memoryWork?.observe(input.materialId,activity?['daily-events']:selected,{
