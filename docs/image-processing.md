@@ -50,6 +50,17 @@ new work. Unfinished work keeps its admitted selection until an explicit retry
 adopts the current configuration. Installing assets or enabling the plugin does
 not rescan historical images.
 
+Local image installation readiness checks the fixed catalog, required files and
+their sizes. File timestamps and inode changes do not invalidate that state:
+the worker's private hardlink snapshot changes metadata without changing model
+bytes. The installer and the actual VLM loader still verify the pinned SHA-256
+contents. Other media roles keep their existing readiness checks.
+
+Local prompt version 2 includes two unrelated examples of plain JSON responses,
+explicit right/bottom coordinate bounds, and permission to omit uncertain boxes.
+The response parser continues to reject invalid JSON and out-of-bounds geometry;
+it does not clip boxes or accept incomplete generations.
+
 Memory extraction, independent review and Ask continue to use their separately
 selected models, including cloud models. They can still read the original image
 or a permitted region. Local intake does not change those model settings, the

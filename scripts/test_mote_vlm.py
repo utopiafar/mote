@@ -136,7 +136,7 @@ class ControlledEngine:
         if self.control.fail_load.value:
             raise vlm.VlmError('worker_unavailable')
         return {'id': vlm.MODEL_ID, 'quantization': '4bit', 'revision': 'generated-boundary-revision',
-                'engine': 'mlx', 'engineVersion': 'generated-model-boundary', 'promptVersion': '1'}
+                'engine': 'mlx', 'engineVersion': 'generated-model-boundary', 'promptVersion': vlm.PROMPT_VERSION}
 
     def infer(self, request):
         image, geometry = vlm.prepare_pixels(request)
