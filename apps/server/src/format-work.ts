@@ -21,15 +21,26 @@ export async function formatWork<K extends FormatTask['kind']>(task:Extract<Form
  signal?.throwIfAborted();const controller=new AbortController(),deadline=controller.signal,abortParent=()=>controller.abort(signal?.reason);let admitted=false,timeout:ReturnType<typeof setTimeout>|undefined;
  signal?.addEventListener('abort',abortParent,{once:true});
  try{await new Promise<void>((resolve,reject)=>{const enter=()=>{deadline.removeEventListener('abort',abort);active++;admitted=true;resolve();};const abort=()=>{const index=queue.indexOf(enter);if(index>=0)queue.splice(index,1);reject(deadline.reason);};deadline.addEventListener('abort',abort,{once:true});if(active<2)enter();else queue.push(enter);});
+ deadline.throwIfAborted();
  timeout=setTimeout(()=>controller.abort(new DOMException('Format decoding timed out','TimeoutError')),FORMAT_EXECUTION_TIMEOUT_MS);timeout.unref();
  return await new Promise<Results[K]>((resolve,reject)=>{
   const extension=import.meta.url.endsWith('.ts')?'ts':'js',execArgv=extension==='ts'?['--import',createRequire(import.meta.url).resolve('tsx')]:[];
-  const child=fork(new URL(`./format-worker.${extension}`,import.meta.url),[],{stdio:['ignore','ignore','ignore','ipc'],execArgv});let settled=false;
-  const done=(error?:unknown,result?:Results[K])=>{if(settled)return;settled=true;deadline.removeEventListener('abort',abort);if(error){if(child.exitCode!==null||child.signalCode!==null||!child.pid){reject(error);}else{child.once('exit',()=>reject(error));child.kill('SIGKILL');}}else resolve(result!);};
-  const abort=()=>done(deadline.reason);deadline.addEventListener('abort',abort,{once:true});if(deadline.aborted){abort();return;}
-  child.once('error',error=>done(error));child.once('exit',()=>{if(!settled)done(new StoreError('Format worker interrupted',503));});
-  child.once('message',(message:any)=>message.ok?done(undefined,message.result):done(new StoreError(message.code==='manifest_invalid'&&typeof message.message==='string'?message.message.slice(0,2000):'Format decoding failed: '+String(message.code),message.status===409?409:message.status===413?413:message.code==='decode_failed'?500:422)));
-  child.send(temporary?{...task,temporary}:task,error=>{if(error)done(error);});
+  const child=fork(new URL(`./format-worker.${extension}`,import.meta.url),[],{stdio:['ignore','ignore','ignore','ipc'],execArgv});
+  let failure:{error:unknown}|undefined,reply:{ok:true;result:Results[K]}|{ok:false;error:StoreError}|undefined;
+  const fail=(error:unknown)=>{failure??={error};if(child.exitCode===null&&child.signalCode===null&&child.pid)child.kill('SIGKILL');};
+  const abort=()=>fail(deadline.reason);deadline.addEventListener('abort',abort,{once:true});
+  child.once('error',fail);
+  child.once('message',(message:any)=>{reply=message.ok?{ok:true,result:message.result}:{ok:false,error:new StoreError(message.code==='manifest_invalid'&&typeof message.message==='string'?message.message.slice(0,2000):'Format decoding failed: '+String(message.code),message.status===409?409:message.status===413?413:message.code==='decode_failed'?500:422)};});
+  // exit can precede the last IPC message. close joins both the process and its
+  // channel, so cancellation and the worker slot remain live until cleanup ends.
+  child.once('close',(code,signal)=>{
+   deadline.removeEventListener('abort',abort);
+   if(failure)reject(failure.error);
+   else if(!reply||signal||reply.ok&&code!==0)reject(new StoreError(`Format worker interrupted (${task.kind}; exit code ${code}; signal ${signal??'none'})`,503));
+   else if(reply.ok)resolve(reply.result);
+   else reject(reply.error);
+  });
+  if(deadline.aborted)abort();else child.send(temporary?{...task,temporary}:task,error=>{if(error)fail(error);});
  });}finally{clearTimeout(timeout);signal?.removeEventListener('abort',abortParent);if(temporary)await rm(temporary,{force:true});if(admitted){active--;queue.shift()?.();}}
 }
 

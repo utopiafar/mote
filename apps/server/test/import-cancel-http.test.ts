@@ -1,5 +1,5 @@
 import {readAgentCredential} from './login-fixture.js';
-import test from 'node:test';
+import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -7,6 +7,50 @@ import {join} from 'node:path';
 import {setTimeout} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
+import {observeFormatWorkers} from './fixtures/format-worker-lifecycle.js';
+
+async function stoppedFormatImport(t:TestContext,shutdown:boolean){
+ const lifecycle=observeFormatWorkers(t),directory=mkdtempSync(join(tmpdir(),'mote-import-format-stop-'));
+ const config:Config={dataDir:directory,token:'generated-format-stop-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const dependencies={backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model belongs in this generated decoder fixture');}}};
+ let node:Awaited<ReturnType<typeof buildApp>>|undefined;
+ t.after(async()=>{try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
+ node=await buildApp(config,dependencies);await node.app.ready();
+ const headers={authorization:'Bearer '+config.token},original='Generated original survives a stopped decoder';
+ const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{processing:'automatic',files:[{name:'generated.txt',dataBase64:Buffer.from(original).toString('base64')}]}});
+ assert.equal(created.statusCode,202,created.body);const id=created.json().id;
+ const worker=await lifecycle.first,task=node.importServices.importTasks.get(id);assert.ok(task);
+ assert.equal(node.imports.get(id).status,'preparing');
+ if(shutdown){await node.app.close();node=undefined;}
+ else{
+  const cancelled=await node.app.inject({method:'POST',url:`/api/imports/${id}/cancel`,headers});
+  assert.equal(cancelled.statusCode,200,cancelled.body);assert.equal(cancelled.json().status,'cancelled');
+ }
+ await task;await worker.closed;
+ // Finish the aborted decoder's local cleanup before reopening or retrying.
+ await new Promise<void>(resolve=>setImmediate(resolve));
+ if(shutdown){node=await buildApp(config,dependencies);await node.app.ready();}
+ const current=node!,saved=current.imports.get(id);
+ assert.equal(saved.status,shutdown?'failed':'cancelled',JSON.stringify(saved));
+ if(shutdown){assert.equal(saved.execution?.failure?.code,'interrupted');assert.match(saved.error!,/server stopped/);}
+ else{assert.equal(saved.error,undefined);assert.equal(saved.execution?.failure?.code,'cancelled');}
+ assert.equal(saved.preview,undefined);assert.equal(saved.progress.imported,0);assert.equal(current.store.list().items.length,0);
+ assert.equal(current.archivedFiles.read(saved.files[0].id).toString(),original);
+ assert.equal(worker.child.signalCode,'SIGKILL');assert.deepEqual(worker.events,['exit','close']);
+ await current.executor.tick();assert.equal(current.imports.get(id).status,saved.status,'neither stop cause silently restarts the import');
+ const retry=await current.app.inject({method:'POST',url:`/api/imports/${id}/retry`,headers});assert.equal(retry.statusCode,202,retry.body);
+ await current.importServices.importTasks.get(id);
+ assert.equal(current.imports.get(id).status,'completed');assert.equal(current.imports.get(id).progress.imported,1);
+ assert.equal(current.store.search({query:original}).length,1);
+}
+
+test('owner cancellation of an actual format worker keeps originals and requires explicit retry',async t=>{
+ await stoppedFormatImport(t,false);
+});
+
+test('application shutdown interrupts an actual format worker without recording owner cancellation',async t=>{
+ await stoppedFormatImport(t,true);
+});
 
 test('owner cancellation aborts import parsing, fences late results, survives restart and resumes only explicitly',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-cancel-'));
