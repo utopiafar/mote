@@ -154,7 +154,7 @@ class FunasrEngine(unittest.TestCase):
                 self.assertEqual(cam.closed, 1)
 
     def test_invalid_overlapping_nonfinite_and_incomplete_vad_never_start_asr(self):
-        for vad in ([[0, 4001]], [[0, 2000], [1900, 3000]], [[-1, 100]], [[10, -1]],
+        for vad in ([[0, 4100]], [[0, 2000], [1900, 3000]], [[-1, 100]], [[10, -1]],
                     [[0, float('inf')]], [[float('nan'), 100]], [[100, 100]]):
             with self.subTest(vad=vad), generated_engine() as f:
                 runtime = GeneratedRuntime(vad, ['must not run'], [])
@@ -163,12 +163,37 @@ class FunasrEngine(unittest.TestCase):
                 self.assertEqual(runtime.released, ['vad'])
                 self.assertEqual(runtime.closed, 1)
 
-    def test_clip_over_decoder_capacity_fails_even_inside_original_duration(self):
-        with generated_engine(640000) as f:
-            runtime = GeneratedRuntime([[0, 30000.0625]], [], [])
-            with self.assertRaises(engine.EngineError):
-                f.run(runtime)
-            self.assertEqual(runtime.released, ['vad'])
+    def test_vad_frame_rounding_and_long_speech_keep_every_pcm_sample_without_failing_the_recording(self):
+        for duration, intervals in (
+                (30000, [(0, 30000)]),
+                (30010, [(0, 30010)]),
+                (30100, [(0, 30100)]),
+                (30100.0625, [(0, 30000), (30000, 30100.0625)]),
+                (64000.0625, [(0, 30000), (30000, 60000), (60000, 64000.0625)])):
+            with self.subTest(duration=duration), generated_engine(int(duration*16)) as f:
+                count = len(intervals)
+                runtime = GeneratedRuntime([[0, duration]], ['generated speech']*count, ['合成语音。']*count)
+                response = contract.parse_response(f.run(runtime), f.request)
+                cp = contract.read_checkpoint(response['checkpoint'])
+                inputs = [call[2]['input'] for call in runtime.calls if call[:2] == ('generate', 'asr')]
+                self.assertEqual(len(inputs), count)
+                self.assertEqual(b''.join(inputs), f.pcm)
+                self.assertTrue(all(len(pcm)/32 <= 30100 for pcm in inputs))
+                self.assertEqual(cp['source']['durationMs'], duration)
+                self.assertEqual(cp['vad'], [{'startMs': start, 'endMs': end} for start, end in intervals])
+                self.assertEqual(len(cp['recognitionChunks']), count)
+                self.assertEqual(runtime.released, ['vad', 'asr', 'punctuation'])
+                self.assertEqual(runtime.closed, 1)
+
+    def test_vad_final_frame_padding_and_subsample_jitter_use_the_original_pcm_boundary(self):
+        with generated_engine(64001) as f:
+            runtime = GeneratedRuntime([[-1e-9, 1000.000000001], [1000, 4010]], ['first', 'tail'], ['首段。', '尾段。'])
+            cp = contract.read_checkpoint(json.loads(f.run(runtime))['checkpoint'])
+            inputs = [call[2]['input'] for call in runtime.calls if call[:2] == ('generate', 'asr')]
+            self.assertEqual(b''.join(inputs), f.pcm)
+            self.assertEqual(cp['vad'], [{'startMs': 0, 'endMs': 1000}, {'startMs': 1000, 'endMs': 4000.0625}])
+            self.assertEqual(cp['sentences'][-1]['endMs'], 4000.0625)
+            self.assertEqual(cp['source']['sampleCount'], 64001)
 
     def test_missing_final_asr_result_cannot_become_complete_success(self):
         with generated_engine() as f:
@@ -384,6 +409,60 @@ console.log('actual engine bytes -> FileOutputRegistry / Transcript / Diarizatio
 
 
 class MappingAndRuntime(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec('funasr'), 'requires pinned audio dependencies; no model weights')
+    def test_pinned_fsmn_frame_boundaries_reach_recognition_with_the_rounding_buffer(self):
+        import torch
+        from funasr.models.fsmn_vad_streaming.model import FsmnVADStreaming, FrameState, VADXOptions
+
+        native_regions = []
+        def vad_factory(**options):
+            # Only acoustic classification is generated. Use the installed
+            # SDK's actual window detector, frame state machine and finalizer.
+            model = FsmnVADStreaming.__new__(FsmnVADStreaming)
+            torch.nn.Module.__init__(model)
+            model.vad_opts = VADXOptions(max_single_segment_time=options['max_single_segment_time'])
+            def generate(input, **_kwargs):
+                count = len(input)//320
+                cache = model.init_cache({})
+                stats = cache['stats']
+                stats.frm_cnt, stats.decibel = count, [0]*count
+                stats.scores = torch.zeros((1, count, 2))
+                stats.data_buf_all = torch.zeros(len(input)//2)
+                stats.data_buf = stats.data_buf_all
+                for index in range(count):
+                    model.DetectOneFrame(FrameState.kFrameStateSpeech, index, index == count-1, cache=cache)
+                rows = [[row.start_ms, row.end_ms] for row in stats.output_data_buf]
+                self.assertTrue(all(row.contain_seg_start_point and row.contain_seg_end_point for row in stats.output_data_buf))
+                native_regions.extend(rows)
+                return [{'value': rows}]
+            return SimpleNamespace(kwargs=options, model=model, generate=generate)
+
+        class PinnedVadRuntime(GeneratedRuntime):
+            backend, threads, active = 'cpu', 1, None
+            auto_model = staticmethod(vad_factory)
+            release = engine.SdkRuntime.release
+
+            @contextmanager
+            def component(self, role, directory):
+                if role == 'vad':
+                    with engine.SdkRuntime.component(self, role, directory) as model:
+                        yield model
+                else:
+                    with super().component(role, directory) as model:
+                        yield model
+
+        with generated_engine(688000) as f:
+            runtime = PinnedVadRuntime([], ['first', 'tail'], ['首段。', '尾段。'])
+            cp = contract.read_checkpoint(json.loads(f.run(runtime))['checkpoint'])
+            self.assertEqual(native_regions, [[0, 30010], [30010, 43000]])
+            self.assertEqual(cp['vad'], [{'startMs': start, 'endMs': end} for start, end in native_regions])
+            inputs = [call[2]['input'] for call in runtime.calls if call[:2] == ('generate', 'asr')]
+            self.assertEqual(b''.join(inputs), f.pcm)
+            self.assertEqual(cp['source']['durationMs'], 43000)
+            self.assertEqual(cp['recognitionChunks'], [{'vadIndex': 0, 'text': 'first'}, {'vadIndex': 1, 'text': 'tail'}])
+            self.assertEqual(runtime.closed, 1)
+            self.assertIsNone(runtime.active)
+
     @unittest.skipUnless(importlib.util.find_spec('funasr'), 'requires pinned audio dependencies; no model weights')
     def test_generated_pcm_reaches_pinned_nano_chat_template_without_losing_vad_samples(self):
         # Exercise the installed SDK's AutoModel -> Nano.inference -> chat

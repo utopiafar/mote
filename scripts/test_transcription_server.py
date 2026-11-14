@@ -571,7 +571,9 @@ const processing=new FileProcessing(files,provider,undefined,{media:{asrEndpoint
 const until=async(check,label)=>{const deadline=Date.now()+10000;while(!await check()){assert.ok(Date.now()<deadline,label+' '+JSON.stringify(store.db.prepare('SELECT kind,state,error FROM execution_steps').all()));await delay(10);}};
 try{
  await processing.runtime.ready;
- const settings={...processing.view().settings,enabled:true,summarize:false,localEndpoint:input.url,localWorkerApiKey:input.token,timeoutMs:10000};
+ // Select the supplied generated transport adapter explicitly. The default
+ // native FunASR processor owns its client and never invokes this provider.
+ const settings={...processing.view().settings,enabled:true,summarize:false,audioProcessor:'audio.http',endpoint:input.url,apiKey:input.token,localEndpoint:input.url,localWorkerApiKey:input.token,timeoutMs:10000};
  processing.update({revision:processing.view().revision,settings,policy:fixtureFilePolicy(settings,processing.runtime.registry)});
  sources.register({id:'generated-asr02',name:'Generated ASR-02',kind:'local-files',deviceId:'generated-device',platform:'import',retention:'archive'});
  const bytes=Buffer.from(input.audio,'base64');
