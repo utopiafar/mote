@@ -28,6 +28,8 @@ for(const adapter of ['http','codex'] as const)for(const mutation of mutations.f
  if(adapter==='codex'){
   writeFileSync(join(directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused'}),{mode:0o600});
   writeFileSync(executable,`#!${process.execPath}
+// Protocol fixture only; the real native send gate has separate coverage.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';import {appendFileSync} from 'node:fs';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
@@ -60,6 +62,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
  const result=await node.memoryPipeline.run(jobId);assert.equal(assembled,true);assert.notEqual(result.status,'completed');
  if(adapter==='codex'){assert.equal(hooksReceived,true);const native=existsSync(turns)?readFileSync(turns,'utf8').trim().split('\n').map(line=>JSON.parse(line)):[];providerStarts=native.length;wireHadOriginal=native.some(turn=>turn.hadOriginal);}
  assert.equal(providerStarts,mutation==='unchanged'?1:0,'a loaded original is never a retained model permission');assert.equal(wireHadOriginal,mutation==='unchanged');
+ if(mutation==='unchanged')assert.equal(result.errorCode,'provider_authentication','the authorized seed reaches the generated provider refusal, not a startup failure');
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);assert.equal(result.memoryIds.length,0);
  if(mutation!=='unchanged'){
   assert.equal(changed,true);const step=node.store.db.prepare("SELECT state,error,attempts FROM execution_steps WHERE kind='memory.batch' AND operation_id=?").get('memory:'+jobId)!;

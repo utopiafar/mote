@@ -36,6 +36,8 @@ test('wide packages use short exact coverage identities through Codex extraction
  const summary='Generated derived context. '.repeat(500).slice(0,12000),artifact=f.store.archive.save('3'.repeat(64),'generated-group','1'.repeat(64),{kind:'semantic',text:summary,metadata:{evidenceRanges:f.ids.map(id=>({id,offset:0,length:20}))}},f.ids.map(id=>({id,fingerprint:f.store.archive.fingerprint(id)!})),'generated-only','1','2'.repeat(64));
  writeFileSync(join(f.directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'synthetic-unused-key'}),{mode:0o600});
  writeFileSync(executable,`#!${process.execPath}
+// Protocol fixture only; the real native send gate has separate coverage.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync} from 'node:fs';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
@@ -76,6 +78,8 @@ test('a real Central Memory input enters the Memory pack and the runtime keeps i
  const f=await fixture(t,2),executable=join(f.directory,'generated-memory-pack-codex.mjs'),delivered=join(f.directory,'memory-pack-context.ndjson');
  writeFileSync(join(f.directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'synthetic-unused-key'}),{mode:0o600});
  writeFileSync(executable,`#!${process.execPath}
+// Protocol fixture only; the real native send gate has separate coverage.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync} from 'node:fs';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
@@ -157,6 +161,8 @@ test('the real Codex package path repairs quote feedback on its existing thread 
  const f=await fixture(t,1),executable=join(f.directory,'generated-quote-codex.mjs'),delivered=join(f.directory,'quote-turns.ndjson');
  writeFileSync(join(f.directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'synthetic-unused-key'}),{mode:0o600});
  writeFileSync(executable,`#!${process.execPath}
+// Protocol fixture only; the real native send gate has separate coverage.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';import {appendFileSync} from 'node:fs';
 const threadId='generated-'+process.pid,send=value=>process.stdout.write(JSON.stringify(value)+'\\n');let original;
 readline.createInterface({input:process.stdin}).on('line',line=>{
