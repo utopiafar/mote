@@ -17,6 +17,15 @@ export function memoryReviewReceipt(result:QueryResult){return receipts.get(resu
 export type MemoryDraftOrigin='mote'|'native-engine';
 type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy;taskInstructions?:string};
 
+/** Shared by request planning and the actual independent review. */
+export function memoryReviewQuestion(input:QueryInput&{memoryReviewQuestion?:string;memoryReviewRepair?:string},strategy?:MemoryReviewStrategy,taskInstructions?:string){
+  const workPackage=Boolean(input.taskContext?.memoryWork),contract=(input.taskContext?.memoryWork as {workContract?:MemoryWorkContract}|undefined)?.workContract;
+  const task=input.memoryReviewQuestion??input.question,taskQuestion=task.startsWith(MEMORY_ADMISSION_PROMPT)?task.slice(MEMORY_ADMISSION_PROMPT.length):task;
+  const repair=input.memoryReviewRepair;
+  return (strategy?strategy.policy+'\n'+memoryCandidateOutputContract(contract)+(taskInstructions?'\n'+taskInstructions:''):
+    MEMORY_ADMISSION_PROMPT+'\n'+taskQuestion+'\n'+defaultMemoryReviewStrategy.policy.slice(MEMORY_ADMISSION_PROMPT.length+1))+(workPackage?'\nIndependently inspect every listed target range in full and verify each member coverage decision, including all no_candidates entries. Verify the quality and usefulness of the selected set; deliberate selection is permitted and is not incomplete evaluation. Do not infer completeness from candidate count. Explicit unread/truncated or unassessed target ranges require incomplete with a concrete reason. Apply the batch-local coverage contract in taskContext.memoryWork. The overall package goal does not authorize other ranges or require this call to complete the whole original. Verify owner questions and their exact source quotes as well as independently supported candidates in the same range. A named participant or conversational role does not establish owner identity, and diarization labels may mix speakers. Use needs_context only for specific useful additional authorized evidence; use needs_owner_input with a concrete minimal question when a meaningful result requires an owner fact unavailable from the evidence. Preserve completed uncertainty or useful observed context when no question is needed. Consult supplied prior inspection outcomes and never recommend unchanged reading to infer a missing owner association. An empty candidate array still requires this independent review.':'')+(repair?'\nHost review repair: '+repair:'');
+}
+
 /** A separate read-only model pass. The host still validates exact evidence after review. */
 export async function reviewMemory(input:QueryInput&{memoryReviewQuestion?:string;memoryReviewRepair?:string},draft:QueryResult,query:(input:QueryInput)=>Promise<QueryResult>,options?:ReviewOptions):Promise<QueryResult> {
   input.signal?.throwIfAborted();
@@ -88,13 +97,14 @@ export async function reviewMemory(input:QueryInput&{memoryReviewQuestion?:strin
     if(cached){await validate(cached.result);return receipt(await finish(cached.result),'reused',key,cached.model);}
   }
   // Keep one authoritative policy and the complete task without duplicating it.
-  const task=input.memoryReviewQuestion??input.question,taskQuestion=task.startsWith(MEMORY_ADMISSION_PROMPT)?task.slice(MEMORY_ADMISSION_PROMPT.length):task;
-  const repair=input.memoryReviewRepair;
-  const question=(strategy?strategy.policy+'\n'+memoryCandidateOutputContract(contract)+(options?.taskInstructions?'\n'+options.taskInstructions:''):
-    MEMORY_ADMISSION_PROMPT+'\n'+taskQuestion+'\n'+defaultMemoryReviewStrategy.policy.slice(MEMORY_ADMISSION_PROMPT.length+1))+(workPackage?'\nIndependently inspect every listed target range in full and verify each member coverage decision, including all no_candidates entries. Verify the quality and usefulness of the selected set; deliberate selection is permitted and is not incomplete evaluation. Do not infer completeness from candidate count. Explicit unread/truncated or unassessed target ranges require incomplete with a concrete reason. Apply the batch-local coverage contract in taskContext.memoryWork. The overall package goal does not authorize other ranges or require this call to complete the whole original. Verify owner questions and their exact source quotes as well as independently supported candidates in the same range. A named participant or conversational role does not establish owner identity, and diarization labels may mix speakers. Use needs_context only for specific useful additional authorized evidence; use needs_owner_input with a concrete minimal question when a meaningful result requires an owner fact unavailable from the evidence. Preserve completed uncertainty or useful observed context when no question is needed. Consult supplied prior inspection outcomes and never recommend unchanged reading to infer a missing owner association. An empty candidate array still requires this independent review.':'')+(repair?'\nHost review repair: '+repair:'');
+  const question=memoryReviewQuestion(input,strategy,options?.taskInstructions);
   const contextReading=contextPagesRequired?'\nThe extractor\'s additional original page ranges do not form a valid initial evidence scope for this review. This review starts with the original target seeds and retains the same context read grant. Use context_evidence to read the necessary original pages before retaining claims that rely on them. Quoted text in the untrusted draft and the extractor\'s reading do not establish that this reviewer read those originals. Only originals actually delivered in this review support its citations; additional context does not add targets or complete other coverage. If necessary context cannot be inspected, preserve the specific uncertainty or omit unsupported claims without inventing absence.':'';
   const reviewed=await query({...input,traceContext:{...traceContext,phase:'review'},taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:draftImages.length?{...value,imageViews:draftImages}:value},question:question+contextReading+(draftImages.length||input.processingImages?.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:'')});
   await validate(reviewed);
-  if(key)options!.cache!.put(key,reviewed);
+  // An explicit incomplete assessment is a recoverable failure, not a reusable
+  // verdict. A later owner retry still needs a fresh independent review.
+  const coverage=workPackage?(JSON.parse(reviewed.answer) as {coverage?:{state:string}[]}).coverage:undefined;
+  const incomplete=Array.isArray(coverage)&&coverage.some(row=>row.state==='incomplete');
+  if(key&&!incomplete)options!.cache!.put(key,reviewed);
   return receipt(await finish(reviewed),'independent',key);
 }

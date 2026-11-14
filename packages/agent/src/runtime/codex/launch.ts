@@ -13,6 +13,14 @@ export const CODEX_BUDGET_VERSION = 'mote-context-budget-v1';
 // metadata. The native client rejects models without a verified output ceiling.
 export const CODEX_CONSERVATIVE_CONTEXT_WINDOW = 272_000;
 
+/** Planning allowance aligned with native/context_budget.rs. The native send
+ * gate still intersects the window with its catalog and measures every turn.
+ * SIWC has no request output cap: Host maxTokens cannot replace this ceiling. */
+export function codexContextCapacity(model:string,contextWindow=CODEX_CONSERVATIVE_CONTEXT_WINDOW){
+  if(!['gpt-5.4','gpt-5.4-2026-03-05','gpt-6.1-terra'].includes(model))return undefined;
+  return {contextWindow:Math.min(contextWindow,CODEX_CONSERVATIVE_CONTEXT_WINDOW),maxOutputTokens:128_000};
+}
+
 export const CODEX_APP_SERVER_ARGS = Object.freeze(['app-server', '--listen', 'stdio://']);
 /** Native subagent/team producers stay off in every Mote App Server home. */
 export const CODEX_NATIVE_DELEGATION_FEATURES = Object.freeze(['multi_agent', 'multi_agent_v2', 'collab'] as const);
