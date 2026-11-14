@@ -30,14 +30,25 @@ async function settled(preparation:MediaPreparation,role:MediaRole){for(let inde
 test('one preparation owns repeated clicks; cancel fences late dependency completion and retry remains possible',async t=>{
  const f=await fixture(t);let release!:()=>void,calls=0;const prepared=new Promise<void>(resolve=>release=resolve);
  const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>{calls++;await prepared;return {python:process.execPath};},fetch:async()=>new Response('{}')});t.after(()=>preparation.close());
- const first=await preparation.start('ocr'),second=await preparation.start('ocr');assert.equal(first.id,second.id);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);
- const cancel=preparation.cancel('ocr');release();await cancel;assert.equal((await preparation.status('ocr')).state,'cancelled');assert.equal(f.assets.installs,0);
+ assert.equal(preparation.preparing('ocr',f.media.ocrEndpoint),false);
+ const pending=preparation.start('ocr');assert.equal(preparation.preparing('ocr',f.media.ocrEndpoint),true,'queued native work is already owned');
+ const first=await pending,second=await preparation.start('ocr');assert.equal(first.id,second.id);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);
+ assert.equal(preparation.preparing('ocr',f.media.ocrEndpoint+'/custom'),false);assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),false);
+ const cancel=preparation.cancel('ocr');assert.equal(preparation.preparing('ocr',f.media.ocrEndpoint),false,'cancel takes effect before dependency completion');release();await cancel;assert.equal((await preparation.status('ocr')).state,'cancelled');assert.equal(f.assets.installs,0);
  const retry=await preparation.start('ocr');assert.notEqual(retry.id,first.id);await preparation.cancel('ocr');assert.equal(f.assets.installs,0);
 });
 test('configuration change cancels queued dependency work before any model installation or worker spawn',async t=>{
  const f=await fixture(t);let release!:()=>void;const prepared=new Promise<void>(resolve=>release=resolve);
  const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>{await prepared;return {python:process.execPath};}});t.after(()=>preparation.close());
- await preparation.start('ocr');await preparation.start('dialogue');preparation.invalidate();release();await preparation.close();assert.equal(f.assets.installs,0);assert.equal((await preparation.status('ocr')).error,'configuration_changed');
+ await preparation.start('ocr');await preparation.start('dialogue');assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),true);preparation.invalidate();assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),false);release();await preparation.close();assert.equal(f.assets.installs,0);assert.equal((await preparation.status('ocr')).error,'configuration_changed');
+});
+test('native model installation remains a preparation wait until cancellation fences the late installer',async t=>{
+ const f=await fixture(t);let entered!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve),install=f.assets.installAsync.bind(f.assets);
+ f.assets.installAsync=async(role,source,signal)=>{entered();await held;return install(role,source,signal);};
+ const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>({python:process.execPath})});t.after(async()=>{release();await preparation.close();});
+ await preparation.start('dialogue');await started;assert.equal((await preparation.status('dialogue')).state,'models');assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),true);
+ const cancelled=preparation.cancel('dialogue');assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),false);release();await cancelled;assert.equal(f.assets.installs,0);assert.equal((await preparation.status('dialogue')).state,'cancelled');
 });
 test('native start failure is not ready, retry runs an owned authenticated HTTP worker, and close frees its port',async t=>{
  const f=await fixture(t),script=join(f.directory,'scripts','ocr-server.py');await writeFile(script,'process.exit(1)');
@@ -49,7 +60,7 @@ test('native start failure is not ready, retry runs an owned authenticated HTTP 
 });
 test('Docker prepares model files and checks its existing sidecar without invoking native dependency installation',async t=>{
  const f=await fixture(t);let native=0;const preparation=new MediaPreparation({runtime:'docker',...f,prepare:async()=>{native++;throw Error('must not run');},fetch:async()=>Response.json(asrHealth)});t.after(()=>preparation.close());
- await preparation.start('dialogue');assert.equal((await settled(preparation,'dialogue')).state,'ready');assert.equal(native,0);assert.equal(f.assets.installs,1);
+ const pending=preparation.start('dialogue');assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),false,'deployment-owned sidecars are not Central-owned native listeners');await pending;assert.equal((await settled(preparation,'dialogue')).state,'ready');assert.equal(native,0);assert.equal(f.assets.installs,1);
 });
 test('preparation uses the automatic model source so an unreachable official host can fall back to the mirror',async t=>{
  const f=await fixture(t),preparation=new MediaPreparation({runtime:'docker',...f,fetch:async()=>Response.json(asrHealth)});t.after(()=>preparation.close());

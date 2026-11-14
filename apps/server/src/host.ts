@@ -20,7 +20,7 @@ import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {assemblePlatform} from './assembly/platform.js';
 import {assembleSources} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
-import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages} from './assembly/processing.js';
+import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages,type MediaAssemblyDependencies} from './assembly/processing.js';
 import {memoryInputs,memoryRuntime} from './assembly/memory.js';
 import {assembleAgent} from './assembly/agent.js';
 import {prepareConversations,prepareQueryRuntime,prepareQueryRuns} from './assembly/query.js';
@@ -108,7 +108,7 @@ import { UsageLedger } from './usage.js';
 
 export type {QueryAgent} from './query-agent.js';
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export type HostDependencies={distribution?:CentralDistribution;configService?:ConfigService;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;connectorManifests?:readonly ConnectorManifest[];processingPlugins?:readonly Plugin[];semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void};
+export type HostDependencies={distribution?:CentralDistribution;configService?:ConfigService;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;connectorManifests?:readonly ConnectorManifest[];processingPlugins?:readonly Plugin[];semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareMediaRuntime?:MediaAssemblyDependencies['prepareMediaRuntime'];prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void};
 export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const resources=new ServerResources();
   let startupApp:FastifyInstance|undefined;
@@ -133,7 +133,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   backendContext.provide('moteExecution',executor);
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
   const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback,codingFeature}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
-  const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker});
+  const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker,prepareMediaRuntime:dependencies?.prepareMediaRuntime});
   const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
     const start=()=>meter??=observabilityAssembly.admittedUsage(...args);

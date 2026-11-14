@@ -21,6 +21,7 @@ import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';
 import {contributeDomainRoutes} from './domain-routes.js';
 import {registerProcessingJobRoutes} from '../features/processing/processing-services.js';
+import type {MediaReadinessPort} from './ocr-asr-readiness.js';
 
 /** C17's durable ProcessingRuntime, its job storage/poll and FileProcessing.
  * Materials source a product consumer from the same activation. */
@@ -51,6 +52,7 @@ export interface ProcessingServicesDependencies {
   readonly materials:MaterialStore;
   readonly sourcePipelines:SourcePipelineRuntime;
   readonly mediaAssets:MediaAssets;
+  readonly mediaPreparation?:Pick<MediaReadinessPort,'preparing'>;
   readonly transcriptionProvider?:TranscriptionProvider;
   readonly plugins?:readonly Plugin[];
   readonly media?:Partial<MediaRuntimeSettings>;
@@ -194,7 +196,7 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
           modelAuthority:dependencies.modelAuthority,configService:dependencies.configService,executor:dependencies.executor,
           ...(dependencies.plugins?.length?{plugins:[...dependencies.plugins]}:{}),builtinContributions:false,analyze:dependencies.analyze,analysisSnapshot:dependencies.analysisSnapshot,
           analysisRevision:dependencies.analysisRevision,diagnostics:dependencies.diagnostics,contextProcessors:workflows.registry,
-          pluginScope:scope,mediaAssets:dependencies.mediaAssets,media:dependencies.media,
+          pluginScope:scope,mediaAssets:dependencies.mediaAssets,mediaPreparation:dependencies.mediaPreparation,media:dependencies.media,
           contextForEvidence:record=>dependencies.materials.contextForEvidence(record),
         });
         installContributions();

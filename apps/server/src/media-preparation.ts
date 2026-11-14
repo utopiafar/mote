@@ -86,6 +86,13 @@ export class MediaPreparation {
     const worker=this.workers.get(role as NativeMediaRole);
     return worker&&worker.child.exitCode===null&&worker.child.signalCode===null&&!worker.error;
   }
+  /** A listener can be absent while this Central installs or starts its own
+   * native runtime. Loopback alone never establishes that ownership. */
+  preparing(role:MediaRole,endpoint:string){
+    const job=this.jobs.get(role);
+    return this.options.runtime==='native'&&!this.closing&&!this.stopping.has(role)&&!this.unsupported(role)&&
+      endpoint===mediaRoleEndpoint(role,this.options.media)&&Boolean(job&&active(job.state)&&!job.controller.signal.aborted);
+  }
   async status(role:MediaRole){
     const before=this.model(role),health:ReturnType<typeof mediaModelHealth>=before.state==='ready'&&!this.unsupported(role)?await this.health(role):{ready:false};
     // Read job and ownership AFTER health: cancellation/stop/configuration may
