@@ -32,6 +32,21 @@ test('completion-driven admissions yield a turn while preserving all queued work
  await engine.drain(ids);assert.equal(committed,ids.length);assert.ok(ids.every(id=>engine.get(id)!.state==='succeeded'));
 });
 
+test('retiring stale queued inputs yields to the event loop without executing or losing work',async t=>{
+ const {engine}=await fixture(t);let current=true,retired=0,executed=0,committed=0;
+ engine.register({...base,validate:()=>current,resourceKeys:()=>['generated-shared-resource'],
+  execute:async()=>{executed++;},commit:()=>{committed++;},project:step=>{if(step.state==='stale')retired++;}});
+ const ids=Array.from({length:80},(_,n)=>engine.enqueue('generated-stale','fixture',{n}));
+ current=false;
+ let retiredBeforeTurn=-1;
+ const unrelatedTurn=new Promise<void>(resolve=>setImmediate(()=>{retiredBeforeTurn=retired;resolve();}));
+ await engine.tick();await unrelatedTurn;
+ assert.ok(retiredBeforeTurn>0&&retiredBeforeTurn<ids.length,'unrelated event-loop work runs before the stale backlog retires');
+ await engine.drain(ids);
+ assert.equal(retired,ids.length);assert.equal(executed,0);assert.equal(committed,0);
+ for(const id of ids){const step=engine.get(id)!;assert.equal(step.state,'stale');assert.equal(step.error,'input_changed');assert.equal(step.attempts,0);}
+});
+
 test('one engine fills slots, fairly interleaves operations and keeps one step per immutable input',async t=>{
  const {engine}=await fixture(t),started:string[]=[],committed:string[]=[];let release!:()=>void,enter!:()=>void;
  const held=new Promise<void>(r=>release=r),entered=new Promise<void>(r=>enter=r);

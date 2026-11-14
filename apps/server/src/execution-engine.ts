@@ -256,7 +256,7 @@ export class ExecutionEngine {
      const candidates=this.store.db.prepare(`SELECT e.* FROM execution_steps e LEFT JOIN execution_fairness f ON f.pool=e.pool AND f.operation_id=e.operation_id WHERE e.pool=? AND e.state='waiting' AND e.available_at<=? AND e.kind IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM execution_dependencies d JOIN execution_steps parent ON parent.id=d.dependency_id WHERE d.step_id=e.id AND parent.state!='succeeded') AND NOT EXISTS(SELECT 1 FROM execution_resources requested JOIN execution_resources held ON held.resource_key=requested.resource_key JOIN execution_steps owner ON owner.id=held.step_id WHERE requested.step_id=e.id AND owner.id!=e.id AND owner.state='running' AND owner.lease_until>?) ORDER BY coalesce(f.last_started,0),e.created_at,e.rowid`).iterate(pool,this.now(),JSON.stringify(handlers.map(h=>h.kind)),this.now());
      let row:Row|undefined;for(const candidate of candidates){if(!this.active.has(String(candidate.id))&&this.lane(view(candidate as Row))===lane){row=candidate as Row;break;}}
      if(!row)break;
-     const handler=this.handlers.get(row.kind)!;if(!handler.validate(view(row))){this.store.db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),row.id);this.project(row.id);continue;}
+     const handler=this.handlers.get(row.kind)!;
      const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{if(this.active.get(row.id)?.controller===controller)this.active.delete(row.id);if(completed)this.scheduleTick();});
      this.active.set(row.id,{controller,task,pool,kind:row.kind,lane});started.push(task);
     }
@@ -266,6 +266,12 @@ export class ExecutionEngine {
   return Promise.all(started).then(()=>{});
  }
  private async execute(row:Row,handler:ExecutionHandler,controller:AbortController){
+  if(!handler.validate(view(row))){
+   this.store.db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),row.id);this.project(row.id);
+   // Keep the local slot until the next turn, without claiming a lease or
+   // opening a transaction. A revoked backlog must not starve HTTP or timers.
+   await yieldTurn();return;
+  }
   const db=this.store.db,now=this.now(),fence=randomUUID(),policy=this.policy(handler,view(row)),timeout=policy.timeoutMs;
   db.exec('BEGIN IMMEDIATE');
   try{
