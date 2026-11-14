@@ -189,7 +189,7 @@ export class ConfigService {
   private failedDomains = new Set<string>();
   private listeners = new Set<() => void>();
   private validateDocument?: (resolvedDocument: ConfigDocument) => void;
-  private normalizeDocument?: (rawDocument: unknown) => unknown;
+  private normalizeDocument?: (rawDocument: unknown, previous?: Readonly<ConfigDocument>) => unknown;
   constructor(private readonly options: ConfigServiceOptions) {
     this.path = resolve(options.path);
     this.io = { open: fs.open, mkdir: fs.mkdir, rename: fs.rename, unlink: fs.unlink, ...options.fileSystem };
@@ -258,7 +258,8 @@ export class ConfigService {
   /** Internal bootstrap only; HTTP owners receive the redacted view. */
   document(): ConfigDocument { return clone(this.state()); }
   setValidator(validate: (resolvedDocument: ConfigDocument) => void): void { this.validateDocument = validate; }
-  setNormalizer(normalize: (rawDocument: unknown) => unknown): void { this.normalizeDocument = normalize; }
+  /** Startup has no previous document; updates receive a detached saved snapshot. */
+  setNormalizer(normalize: (rawDocument: unknown, previous?: Readonly<ConfigDocument>) => unknown): void { this.normalizeDocument = normalize; }
   private notify(): void { for (const listener of this.listeners) { try { listener(); } catch { /* observers cannot invalidate a committed configuration */ } } }
   private state(): ConfigDocument { if (!this.raw || this.unavailable) throw new ConfigServiceError('config_unavailable'); return this.raw; }
   private pluginValues(parent: unknown, read: (domain: RegisteredDomain) => unknown): unknown {
@@ -305,7 +306,7 @@ export class ConfigService {
     return this.parseDomainInput(domain,this.resolveDomainInput(domain,raw,document));
   }
   private parse(raw: unknown): { raw: ConfigDocument; inputs:Map<string,unknown>; values: Map<string, unknown> } {
-    if (this.normalizeDocument) { try { raw = this.normalizeDocument(raw); } catch { throw new ConfigServiceError('config_invalid'); } }
+    if (this.normalizeDocument) { try { raw = this.normalizeDocument(raw, this.raw ? clone(this.raw) : undefined); } catch { throw new ConfigServiceError('config_invalid'); } }
     if (!object(raw) || raw.version !== 1 || !Number.isSafeInteger(raw.revision) || Number(raw.revision) < 0 || Object.keys(raw).some(key => !['version', 'revision'].includes(key) && !this.domains.has(key))) throw new ConfigServiceError('config_invalid');
     const next = clone(raw) as ConfigDocument, values = new Map<string, unknown>(),inputs=new Map<string,unknown>();
     for (const domain of this.domains.values()) {

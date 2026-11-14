@@ -201,7 +201,18 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
 }
 export function registerBuiltinDomains(service: ConfigService, config?: Config): void {
   for (const domain of configDocumentDomains(config)) service.register(domain);
-  service.setNormalizer(raw => parseConfigDocument(serializeConfigDocument(raw as ConfigDocument)));
+  service.setNormalizer((raw, previous) => {
+    const document = parseConfigDocument(serializeConfigDocument(raw as ConfigDocument));
+    const diagnostics = document.diagnostics as z.infer<typeof diagnosticsConfigSchema>;
+    const before = previous?.diagnostics as z.infer<typeof diagnosticsConfigSchema> | undefined;
+    // A live YAML activation needs the same persisted deadline as an API save.
+    // Keep existing (including expired) deadlines across unrelated saves/restarts.
+    if (before) {
+      if (!diagnostics.traceEnabled) diagnostics.traceExpiresAt = 0;
+      else if (diagnostics.traceExpiresAt === 0) diagnostics.traceExpiresAt = before.traceEnabled ? before.traceExpiresAt : Date.now() + 86400000;
+    }
+    return document;
+  });
   service.setValidator(document => validateResolvedConfigDocument(document, config?.token));
 }
 

@@ -30,8 +30,88 @@ test('execution API and external YAML edits share admission limits, global confl
  const path=join(directory,'mote.yaml'),doc=parse(await readFile(path,'utf8'));doc.execution.agentConcurrency=3;doc.execution.memoryConcurrency=2;doc.diagnostics.enabled=true;doc.diagnostics.debug=true;doc.diagnostics.traceEnabled=true;doc.diagnostics.level='debug';
  await writeFile(path,stringify(doc));await node.configService.reload();
  const reloaded=(await node.app.inject({url:'/api/execution-settings',headers})).json();assert.equal(reloaded.agentConcurrency,3);assert.equal(reloaded.queues.agents.limit,3);assert.equal(reloaded.memoryConcurrency,2);assert.equal(reloaded.revision,saved.json().revision+1);
- assert.equal((await node.app.inject({url:'/api/diagnostics-settings',headers})).json().traceEnabled,true);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,true);
+ const diagnostics=(await node.app.inject({url:'/api/diagnostics-settings',headers})).json();assert.equal(diagnostics.enabled,true);assert.equal(diagnostics.debug,true);assert.equal(diagnostics.level,'debug');assert.equal(diagnostics.traceEnabled,true);assert.equal(node.diagnostics.snapshot().enabled,true);assert.equal(node.diagnostics.snapshot().level,'debug');assert.equal(node.diagnostics.snapshot().agentTrace.enabled,true);
  doc.revision=reloaded.revision;doc.execution.agentConcurrency=0;await writeFile(path,stringify(doc));await assert.rejects(node.configService.reload(),{code:'config_invalid'});assert.equal(node.featureServices.agentGate.snapshot().limit,3);assert.equal(node.configService.revision,reloaded.revision);
+});
+
+test('YAML trace activation persists its deadline, survives restart and cannot renew through unrelated saves', async t => {
+ const now=Date.now(),day=86400000;
+ t.mock.timers.enable({apis:['Date'],now});
+ const directory=await mkdtemp(join(tmpdir(),'mote-yaml-trace-expiry-'));
+ let node=await buildApp({...config(directory),diagnosticsEnabled:false},{agent:inactive,backgroundWorker:false});
+ t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
+ const path=join(directory,'mote.yaml');
+ const edit=async(patch:Record<string,unknown>)=>{
+  const document=parse(await readFile(path,'utf8'));Object.assign(document.diagnostics,patch);
+  await writeFile(path,stringify(document));await node.configService.reload();
+ };
+ const preferences=async()=>(await node.app.inject({url:'/api/diagnostics-settings',headers})).json();
+ await edit({enabled:true,debug:true,traceEnabled:true,level:'warn'});
+ const expiresAt=now+day;
+ assert.equal((await preferences()).traceEnabled,true);
+ assert.equal((await preferences()).traceExpiresAt,expiresAt);
+ assert.equal(parse(await readFile(path,'utf8')).diagnostics.traceExpiresAt,expiresAt,'YAML activation persists its bounded deadline before publishing');
+ assert.equal(node.diagnostics.snapshot().level,'debug');
+ assert.equal(node.diagnostics.snapshot().agentTrace.expiresAt,expiresAt);
+ node.diagnostics.agentTrace({type:'fixture.yaml-activation',payload:{prompt:'generated YAML trace'}});await node.diagnostics.flush();
+ assert.ok(node.diagnostics.recent().some(event=>(event.trace as Record<string,unknown>|undefined)?.type==='fixture.yaml-activation'));
+
+ t.mock.timers.setTime(now+3600000);
+ const execution=(await node.app.inject({url:'/api/execution-settings',headers})).json();
+ const saved=await node.app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:execution.revision,interactiveConcurrency:execution.interactiveConcurrency,agentConcurrency:5,llmConcurrency:execution.llmConcurrency,memoryConcurrency:execution.memoryConcurrency}});
+ assert.equal(saved.statusCode,200,saved.body);assert.equal(node.featureServices.agentGate.snapshot().limit,5);
+ await edit({debug:false,traceExpiresAt:0});
+ assert.equal((await preferences()).traceExpiresAt,expiresAt,'clearing a deadline while tracing stays enabled cannot extend the window');
+ assert.equal(node.diagnostics.snapshot().level,'warn');
+ await node.app.close();node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false});
+ assert.equal((await preferences()).traceEnabled,true);assert.equal(node.diagnostics.snapshot().agentTrace.expiresAt,expiresAt);
+ assert.ok(node.diagnostics.recent().some(event=>(event.trace as Record<string,unknown>|undefined)?.type==='fixture.yaml-activation'),'the activated writer persists generated traces across restart');
+
+ t.mock.timers.setTime(expiresAt-1);
+ const before=node.diagnostics.snapshot().lastSeq;node.diagnostics.agentTrace({type:'fixture.before-expiry'});
+ assert.equal(node.diagnostics.snapshot().lastSeq,before+1);await node.diagnostics.flush();
+ t.mock.timers.setTime(expiresAt);
+ const expired=node.diagnostics.snapshot().lastSeq;node.diagnostics.agentTrace({type:'fixture.at-expiry'});
+ assert.equal(node.diagnostics.snapshot().lastSeq,expired);assert.equal((await preferences()).traceEnabled,false);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,false);
+ await edit({debug:true,traceExpiresAt:0});
+ assert.equal((await preferences()).traceExpiresAt,expiresAt);assert.equal((await preferences()).traceEnabled,false);
+ await node.app.close();node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false});
+ assert.equal((await preferences()).traceEnabled,false);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,false);assert.equal(node.diagnostics.snapshot().agentTrace.expiresAt,expiresAt);
+
+ await edit({traceEnabled:false});
+ assert.equal(parse(await readFile(path,'utf8')).diagnostics.traceExpiresAt,0);
+ await edit({traceEnabled:true});
+ assert.equal((await preferences()).traceExpiresAt,expiresAt+day);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,true);
+ const disabled=await node.app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{revision:node.configService.revision,enabled:true,debug:false,traceEnabled:false,level:'info'}});
+ assert.equal(disabled.statusCode,200,disabled.body);assert.equal(disabled.json().traceExpiresAt,0);
+ const stopped=node.diagnostics.snapshot().lastSeq;node.diagnostics.agentTrace({type:'fixture.after-disable'});
+ assert.equal(node.diagnostics.snapshot().lastSeq,stopped);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,false);
+});
+
+test('YAML diagnostics validate the trace deadline before applying execution limits or enabling capture', async t => {
+ const now=Date.now();t.mock.timers.enable({apis:['Date'],now});
+ const directory=await mkdtemp(join(tmpdir(),'mote-yaml-trace-validation-'));
+ const node=await buildApp({...config(directory),diagnosticsEnabled:false,agentTraceEnabled:true,agentTraceExpiresAt:0},{agent:inactive,backgroundWorker:false});
+ t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
+ const settings=(await node.app.inject({url:'/api/execution-settings',headers})).json();
+ const update=await node.app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:settings.revision,agentConcurrency:5}});
+ assert.equal(update.statusCode,200,update.body);
+ assert.equal((await node.app.inject({url:'/api/diagnostics-settings',headers})).json().traceExpiresAt,0,'an unrelated save must not activate a startup trace setting without a deadline');
+ const path=join(directory,'mote.yaml'),document=parse(await readFile(path,'utf8'));
+ const revision=node.configService.revision,limit=node.featureServices.agentGate.snapshot().limit;
+ document.execution.agentConcurrency=1;
+ Object.assign(document.diagnostics,{enabled:true,traceEnabled:true,traceExpiresAt:now+2*86400000});
+ await writeFile(path,stringify(document));await assert.rejects(node.configService.reload(),{code:'config_invalid'});
+ assert.equal(node.configService.revision,revision);assert.equal(node.featureServices.agentGate.snapshot().limit,limit);
+ assert.equal(node.diagnostics.snapshot().enabled,false);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,false);
+ document.diagnostics.traceExpiresAt=now+60000;
+ await writeFile(path,stringify(document));await node.configService.reload();
+ assert.equal(node.featureServices.agentGate.snapshot().limit,1);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,true);
+ assert.equal(node.diagnostics.snapshot().agentTrace.expiresAt,now+60000,'an explicit shorter deadline is preserved');
+ assert.equal(parse(await readFile(path,'utf8')).diagnostics.traceExpiresAt,now+60000);
+ t.mock.timers.setTime(now+60000);
+ assert.equal((await node.app.inject({url:'/api/diagnostics-settings',headers})).json().traceEnabled,false);
+ assert.equal(node.diagnostics.snapshot().agentTrace.enabled,false);
 });
 
 test('legacy SQLite execution and diagnostics rows never override YAML and remain preserved',async t=>{
