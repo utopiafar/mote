@@ -5845,6 +5845,86 @@
       "type": "trigger",
       "name": "ledger_assistant_onboarding_items_update",
       "fingerprint": "2e7740431b0b3e94219e52a3cc0210564654a761326b557acd91edf4361b851f"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_accepted_task_card_changed",
+      "fingerprint": "b12942544377b01a2468eb29eb20639d7abe44bd63efeb11f23b0f625f0afb0a"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_accepted_task_card_corrected",
+      "fingerprint": "b7348aa5e6b3c7bee45c4cdfb10e567b006b89146a6d89cd2abe3a2d212b3bd2"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_accepted_task_card_deleted",
+      "fingerprint": "2cfaac6b4c7f7a51fe317db5691e2fb8c2a2ba11ce5b5ab2184af6473ff3fc4b"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_accepted_task_work_stale",
+      "fingerprint": "88cc680822739f1e668ce78c4116277f93b33a34c64d4ac8bc86b0caec02cda2"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_task_question_retired",
+      "fingerprint": "9c8793e59ce9a690f80c8fc5b0dd21ae4b62454fcdda62e280c70bb586c4c7fe"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_task_scope_stale",
+      "fingerprint": "56521312f80164c55ad51625d27595ee0c65b15923e26c4259d6c0ad3f3ea33e"
+    },
+    {
+      "type": "table",
+      "name": "assistant_task_scopes",
+      "fingerprint": "4d31f32b01e36e9e7fd29aa8bcbfae599673d6af723fd6a4b2e0eba7f80e3bce"
+    },
+    {
+      "type": "trigger",
+      "name": "assistant_task_turn_deleted",
+      "fingerprint": "490a33c9fb1b064789e4793a2df66ec4cb5317da0bfab9624c32f04080c961c4"
+    },
+    {
+      "type": "table",
+      "name": "assistant_task_turns",
+      "fingerprint": "3146ca4bd46fc4918359f4ee9b7b71248d318f96434590dc8598cb9c03115b30"
+    },
+    {
+      "type": "index",
+      "name": "assistant_task_turns_turn",
+      "fingerprint": "900892f564a0f4078794d81d222732341aaa7247bb618f0435df0b40e9fdafca"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_scopes_delete",
+      "fingerprint": "a59527fbb25b8be1b47956b550f3942c123e6648dc446db4c06c8e3f50f6fb4f"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_scopes_insert",
+      "fingerprint": "a436632073ea505a649c2d02bb6ea336e6707b97be8acedf4d42342bb3e6bbce"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_scopes_update",
+      "fingerprint": "98552e315bd20fc87a4d3e21d73a6060e63d24fdc9ef9a76877819af416cef10"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_turns_delete",
+      "fingerprint": "d2f22093df2f977b5701485dac0862355644f05ea49401a9fb51f69b2d71ac3d"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_turns_insert",
+      "fingerprint": "0d05f83fe19ebeda7b547d8ace59dc56019863cb913173cd616dc093229c3f22"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_turns_update",
+      "fingerprint": "c9052365fa1b902bc0d77040decb9127141f2cd57f533f7e3756fc47fc534e2b"
     }
   ]
 }

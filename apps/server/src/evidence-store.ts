@@ -95,10 +95,12 @@ export class EvidenceStore {
     this.archive=new EvidenceArchive(this);
     this.ledger=new StorageLedger(this.db,['blobs','file_blobs','file_objects']);
     this.ledger.registerAll(vaultStorageMeters);
-    this.ledger.bytes();
     installTaskRecords(this);
     installAssistantCards(this);
     installAssistantCommitments(this);
+    // Complete the metering schema for every vault-owned table before exposing
+    // the new store. Reopening must not install triggers omitted on first use.
+    this.ledger.bytes();
     if(!priorTable)this.db.exec('COMMIT');
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
     if(!options.maintenance)this.sweep();
