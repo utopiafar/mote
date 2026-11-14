@@ -345,7 +345,7 @@ test('late progress and validation from a failed attempt cannot overwrite its re
  try{const job=pipeline.create({evidenceIds:ids});await pipeline.run(job.id);const retry=pipeline.retry(job.id);await started;
  const before=store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(job.batches[0].id)!.json;
  oldInput.onProgress?.({stage:'model',message:'Generated late callback'});oldInput.onTrace?.({type:'generated.late'});
- assert.throws(()=>oldInput.validateOutput!(empty()));
+ await assert.rejects(async()=>oldInput.validateOutput!(empty()));
  assert.equal(store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(job.batches[0].id)!.json,before);
  release();assert.equal((await retry).status,'completed');
  }finally{release?.();await pipeline.close();}
@@ -539,9 +539,9 @@ test('review quote failure persists run and attempt locations and emits an ordin
 
 test('independent memory batches overlap; same evidence is serialized and pause finishes only in-flight work',async t=>{
  const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('parallel-a','a'.repeat(600))),b=await sources.upsert('generated',item('parallel-b','b'.repeat(300)));
- const running=new Set<string>(),releases:(()=>void)[]=[];let peak=0;
- const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>3,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async input=>{const id=input.evidenceIds[0];assert.ok(!running.has(id));running.add(id);peak=Math.max(peak,running.size);await new Promise<void>(r=>releases.push(r));running.delete(id);return empty();}}});t.after(()=>pipeline.close());
- const job=pipeline.create({evidenceIds:[a.id,b.id]}),done=pipeline.run(job.id);await new Promise(r=>setImmediate(r));assert.equal(peak,2);assert.equal(pipeline.get(job.id).runningBatches,2);
+ const running=new Set<string>(),releases:(()=>void)[]=[];let peak=0,entered!:()=>void;const bothEntered=new Promise<void>(resolve=>entered=resolve);
+ const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>3,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async input=>{const id=input.evidenceIds[0];assert.ok(!running.has(id));running.add(id);peak=Math.max(peak,running.size);await new Promise<void>(r=>{releases.push(r);if(running.size===2)entered();});running.delete(id);return empty();}}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id,b.id]}),done=pipeline.run(job.id);await bothEntered;assert.equal(peak,2);assert.equal(pipeline.get(job.id).runningBatches,2);
  assert.equal(pipeline.pause(job.id).status,'pausing');for(const release of releases.splice(0))release();const paused=await done;assert.equal(paused.status,'paused');assert.equal(paused.completedBatches,2);assert.ok(paused.pendingBatches!>0);
  pipeline.resume(job.id);await new Promise(r=>setImmediate(r));pipeline.cancel(job.id);for(const release of releases.splice(0))release();await pipeline.run(job.id);assert.equal(pipeline.get(job.id).status,'cancelled');
 });
