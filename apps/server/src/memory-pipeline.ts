@@ -20,6 +20,7 @@ import {MemoryStrategies} from './memory-strategies.js';
 import {defaultMemoryReviewStrategy} from './memory-review-policy.js';
 import {memoryStrategyRefSchema,memoryStrategyPin,memoryCandidateOutputContract,type MemoryWorkContract,type MemoryStrategyRef,type MemoryRecipeBinding,type MemoryReviewStrategy} from './memory-strategy-contract.js';
 import {randomUUID} from 'node:crypto';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
 import {modelProfileIdSchema} from './model-settings.js';
 import {ProviderFailure,executionEnvelope,type ExecutionEnvelope,type QueryResult} from '@mote/shared';
@@ -153,8 +154,8 @@ export class MemoryPipeline {
   private owned:boolean;
   private completions=new Map<string,{resolve:(job:MemoryJobDetail)=>void;reject:(error:unknown)=>void}>();
   private scheduled=false;
-  /** Notify completion observers and ask the shared engine to fill available slots. */
-  wake(){this.engine.localEffect(()=>{if(this.scheduled)return;this.scheduled=true;queueMicrotask(()=>{this.scheduled=false;this.settle();if(!this.closed)void this.engine.tick().catch(error=>{for(const done of this.completions.values())done.reject(error);this.completions.clear();this.active.clear();});});});}
+  /** Coalesce completion observers on the next loop turn, then fill slots. */
+  wake(){this.engine.localEffect(()=>{if(this.scheduled)return;this.scheduled=true;setImmediate(()=>{this.scheduled=false;this.settle();if(!this.closed)void this.engine.tick().catch(error=>{for(const done of this.completions.values())done.reject(error);this.completions.clear();this.active.clear();});});});}
   private settle(){
     for(const id of this.active.keys()){
       this.refreshJob(id);const job=this.storedJob(id),counts=this.counts(id);
@@ -234,6 +235,7 @@ export class MemoryPipeline {
         const publication=this.options.publication,job=this.storedJob(String(step.input.jobId)),batch=this.batch(String(step.input.batchId));
         const output=await this.execute(job.id,batch.id,signal,current);
         if(!output)return output;
+        await yieldTurn();
         const assertAuthority=()=>{signal.throwIfAborted();if(!current()||!this.validateStep(step))throw new ExecutionFailure('stale','memory_publication_revoked');const job=this.storedJob(String(step.input.jobId)),batch=this.batch(String(step.input.batchId));this.assertAutomatic(job);this.assertConfiguration(job);this.assertStrategies(batch);this.admitBatch(job,batch);this.assertContextReadScope(job,batch,output.contextReadChunks??[]);};
         assertAuthority();for(const pin of output.engineDrafts??[])await this.nativeStages.settle(pin);
         if(output.feedbackPlan)return output;
@@ -609,7 +611,7 @@ export class MemoryPipeline {
   }
   private admitBatch(job:MemoryJob,batch:StoredBatch){
     for(const id of batch.planIds??[]){const plan=this.inputPlans.get(id);if(!plan||!this.inputAdmission.sourceCurrent(plan.sourcePin,plan.materialId))throw new StoreError('Memory original selection changed',409);}
-    const scope=this.batchScope(job,batch);this.inputAdmission.admit([...new Set([...batch.chunks,...(batch.contextChunks??[])].map(c=>c.id))],scope.materialRefs,job.modelProfileId,scope.materialInputs);
+    const scope=this.batchScope(job,batch),chunks=[...batch.chunks,...(batch.contextChunks??[])];this.inputAdmission.admit([...new Set(chunks.map(c=>c.id))],scope.materialRefs,job.modelProfileId,scope.materialInputs,chunks);
   }
   private createManual(input:Parameters<MemoryPipeline['create']>[0]):MemoryJobDetail {
     if(input.automaticGrant||input.automaticGrants||input.workPackage||input.artifactRefs||input.evidenceRanges)throw new StoreError('Manual input plans cannot change another processing grant',409);
@@ -755,7 +757,7 @@ export class MemoryPipeline {
     const batch=JSON.parse(String(row.json)) as StoredBatch;
     try{const job=this.storedJob(String(step.input.jobId));this.admitBatch(job,batch);}
     catch{return false;}
-    return batch.status!=='invalidated'&&this.validMany([...batch.chunks,...(batch.contextChunks??[])])&&(batch.artifactRefs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision);
+    return batch.status!=='invalidated'&&(batch.artifactRefs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision);
   }
   private projectStep(step:ExecutionStep){
     this.nativeRuntime.finalize(step);
@@ -886,6 +888,9 @@ export class MemoryPipeline {
   }
   private assertAutomatic(job:MemoryJob){if((job.automaticGrant||job.automaticGrants?.length)&&!this.inputAdmission.automaticAllowed(job))throw new ExecutionFailure('permanent','memory_authorization_revoked');}
   private async execute(id:string,batchId:string,signal:AbortSignal,currentGrant:()=>boolean):Promise<BatchOutput|undefined> {
+    // Slot admission and complete recording preparation must not form one
+    // synchronous burst. The accepted grant is rechecked after each turn.
+    await yieldTurn();
     const assertGrant=()=>{signal.throwIfAborted();if(!currentGrant())throw new ExecutionFailure('waiting','interrupted');this.assertAutomatic(this.storedJob(id));};assertGrant();
     const observeCurrent=(update:()=>void):boolean=>{
       const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
@@ -898,7 +903,14 @@ export class MemoryPipeline {
       if(batch.chunks.every(c=>!c.strategy&&c.profile!=='coding')&&job.skillVersion!==currentSkill){batch.skillVersion=currentSkill;batch.chunks=batch.chunks.map(c=>({...c,key:sha256(JSON.stringify([c.id,c.fingerprint,c.offset,c.length,currentSkill,c.reviewFingerprint]))}));this.saveBatch(batch);}
       chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));const skipped=batch.chunks.length-chunks.length;if(skipped>0){const currentJob=this.storedJob(id);currentJob.skippedChunks+=skipped;this.saveJob(currentJob);}
     }))throw new ExecutionFailure('waiting','interrupted');
-    if(batch.chunks.some(chunk=>{const record=this.options.memories.readEvidence([chunk.id])[0];return !chunk.strategy&&record&&chunk.profile==='coding'&&chunk.profileVersion&&chunk.profileVersion!==memoryProfile(record).version;}))throw new ExecutionFailure('stale','skill_changed');
+    // Only Coding chunks without a recipe depend on this profile version. Reading every
+    // personal/recipe segment separately reparses the same recording context
+    // hundreds of times before the first asynchronous model boundary.
+    const codingChunks=batch.chunks.filter(chunk=>!chunk.strategy&&chunk.profile==='coding'&&chunk.profileVersion);
+    if(codingChunks.length){
+      const records=new Map(this.options.memories.readEvidence([...new Set(codingChunks.map(chunk=>chunk.id))]).map(record=>[record.id,record]));
+      if(codingChunks.some(chunk=>{const record=records.get(chunk.id);return record&&chunk.profileVersion!==memoryProfile(record).version;}))throw new ExecutionFailure('stale','skill_changed');
+    }
     if(!chunks.length)return;
     const processingChunks=[...chunks,...(batch.contextChunks??[])],ranges=processingChunks.map(({id,offset,length})=>({id,offset,length}));
     const readScope=this.contextReadScope(job,batch),readRanges=readScope.ranges;
@@ -963,7 +975,8 @@ export class MemoryPipeline {
           const imageInputs=readRanges?this.contextReadMaterialInputs(job,readScope.chunks):this.batchScope(job,batch).materialInputs;
           const processingImages=memoryImageGrants(this.store,imageInputs);
           const validateArtifacts=()=>{assertMemoryImageGrants(this.store,imageInputs,processingImages);assertGrant();this.assertStrategies(batch);this.assertConfiguration(job);this.admitBatch(job,batch);if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
-          const validateOutput:QueryInput['validateOutput']=result=>{
+          const validateOutput:QueryInput['validateOutput']=async result=>{
+            await yieldTurn();
             validateArtifacts();
             this.assertContextReadScope(job,batch,observedReadChunks(result));
             try{
@@ -984,6 +997,7 @@ export class MemoryPipeline {
           const draftKey=sha256(JSON.stringify(['memory-extraction-draft@2',generationContract,(batch.artifactRefs??[]).map(ref=>({...ref})).sort((a,b)=>a.id.localeCompare(b.id)),summaries.slice().sort((a,b)=>a.id.localeCompare(b.id))]));
 
         type Extracted={result:QueryResult;draftOrigin:MemoryDraftOrigin;repair?:string;nativeDraft?:StoredBatch['nativeDraft'];engineDrafts?:MemoryEngineDraftPin[]};
+        await yieldTurn();assertGrant();
         const phaseValid=()=>this.engine.isCurrentInputAuthority(batch.id)&&this.validateStep(this.engine.get(batch.id)!);
         const extracted=await this.phaseOutputs.run<Extracted>({batchId:batch.id,jobId:id,phase:'extract',inputHash:draftKey,generation:generationContract,signal,validate:phaseValid,
           assertCommit:()=>{validateArtifacts();},execute:async stageSignal=>{
@@ -1001,7 +1015,7 @@ export class MemoryPipeline {
           if(native&&!cachedNative){const pin=memoryEngineDraftPin(nativeContext);if(!observeCurrent(()=>{batch.nativeDraft={key:draftKey,context:pin};batch.engineDrafts=[...(batch.engineDrafts??[]).filter(item=>item.opId!==pin.opId),pin];this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');}
           let result=native??cached??(generation===0&&workMembers&&contract?this.reuseCandidates(batch,ranges,generationContract,workMembers,contract):undefined)??await withExecutionCancellation(stageSignal,()=>this.options.phases.query(phaseInput));
           attempted=result;
-
+          await yieldTurn();
           stageSignal.throwIfAborted();
           validateArtifacts();
           if(this.options.phases.review){

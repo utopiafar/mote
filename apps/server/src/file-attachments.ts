@@ -4,11 +4,18 @@ import {StoreError,sha256,type Store} from './store.js';
 import type {FileStore} from './files.js';
 import {ArchivedFileStore} from './archived-files.js';
 import {linkOperationParent} from './operation-projection.js';
+import type {StatementSync} from 'node:sqlite';
+
+// Retain compiled SQL only. Attachment lineage and revocation are read anew
+// on every check, including checks inside a caller's current transaction.
+const availableStatements=new WeakMap<Store,StatementSync>();
+const parentStatements=new WeakMap<Store,StatementSync>();
 
 /** The declaration is not authority. Resolve only the host's retained lineage,
  * exact archived bytes and original parent attachment link. */
 export function fileAttachmentParent(store:Store,id:string,metadataOnly=false):{record:CaptureRecord;fileId:string}|undefined {
- const row=store.db.prepare(`SELECT p.id,a.id file_id FROM file_versions v
+ let statement=parentStatements.get(store);
+ if(!statement){statement=store.db.prepare(`SELECT p.id,a.id file_id FROM file_versions v
   JOIN file_evidence_links l ON l.capture_id=v.capture_id
   JOIN captures p ON p.id=l.parent_id
   JOIN capture_files f ON f.capture_id=p.id
@@ -17,7 +24,8 @@ export function fileAttachmentParent(store:Store,id:string,metadataOnly=false):{
    AND json_extract(v.manifest,'$.item.document.attachmentOf.fileId')=a.id
    AND v.source_id=json_extract(p.json,'$.provenance.sourceId')
    AND EXISTS(SELECT 1 FROM json_each(p.json,'$.provenance.document.attachments') d WHERE json_extract(d.value,'$.id')=a.id)
-  LIMIT 1`).get(id) as {id:string;file_id:string}|undefined;
+  LIMIT 1`);parentStatements.set(store,statement);}
+ const row=statement.get(id) as {id:string;file_id:string}|undefined;
  if(!row||!store.isCurrentEvidence(row.id)||!store.isCurrentEvidence(id))return;
  const record=(metadataOnly?store.evidenceMetadata([row.id]):store.evidence([row.id]))[0];return record?{record,fileId:row.file_id}:undefined;
 }
@@ -26,8 +34,10 @@ export function fileAttachmentChildren(store:Store,parentId:string){
   .flatMap(row=>{const id=String(row.capture_id),parent=fileAttachmentParent(store,id),record=parent&&store.evidence([id])[0];return parent?.record.id===parentId&&record?[{record,fileId:parent.fileId}]:[];});
 }
 export function fileAttachmentAvailable(store:Store,id:string,metadataOnly=false){
- const row=store.db.prepare(`SELECT v.capture_id,json_extract(v.manifest,'$.item.document.attachmentOf') parent
-  FROM file_versions v WHERE v.capture_id=? OR v.capture_id=(SELECT capture_id FROM file_chunks WHERE id=?) LIMIT 1`).get(id,id);
+ let statement=availableStatements.get(store);
+ if(!statement){statement=store.db.prepare(`SELECT v.capture_id,json_extract(v.manifest,'$.item.document.attachmentOf') parent
+  FROM file_versions v WHERE v.capture_id=? OR v.capture_id=(SELECT capture_id FROM file_chunks WHERE id=?) LIMIT 1`);availableStatements.set(store,statement);}
+ const row=statement.get(id,id);
  return !row?.parent||Boolean(fileAttachmentParent(store,String(row.capture_id),metadataOnly));
 }
 

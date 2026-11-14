@@ -80,8 +80,11 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     // projection below decorates it with source metadata for display and must
     // not replace its identity when validating a durable dependency.
     this.memories=openMemoryRecords(store,ids=>{
-      const records=[...store.evidence(ids),...(materials?.evidence(ids)??[]),...(files?.evidence(ids)??[])],contexts=materials?.contextsForEvidence(records);
-      return records.map((record,index)=>({...record,...(contexts?{attributionContext:contexts[index]}:{})}));
+      const read=()=>{
+        const records=[...store.evidence(ids),...(materials?.evidence(ids)??[]),...(files?.evidence(ids)??[])],contexts=materials?.contextsForEvidence(records);
+        return records.map((record,index)=>({...record,...(contexts?{attributionContext:contexts[index]}:{})}));
+      };
+      return materials?materials.withReadMetadata(read):read();
     },id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||files?.readableFile(id)===id||store.isCurrentEvidence(id)));
   }
   imageReference(ref:string,scope:Range={}){
@@ -900,7 +903,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   }
   /** Memory runners can inspect a material only after its declared route admits the current phase. */
   materialAllowedForMemory(ref:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,required?:readonly string[]){
-    const material=this.materials?.get(ref);return Boolean(material&&this.materials?.get(material.id)?.ref===material.ref&&this.materialExposure(material,'memory',policy,required));
+    return this.materials?.withReadMetadata(()=>{const material=this.materials!.get(ref);return Boolean(material&&this.materials!.get(material.id)?.ref===material.ref&&this.materialExposure(material,'memory',policy,required));})??false;
   }
   /** Planning checks permission to derive after readiness; no original content
    * is disclosed by admitting a waiting plan. Actual batches recheck readiness. */
