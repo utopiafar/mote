@@ -9,12 +9,12 @@ import {runChromeExtensionFixture} from '../scripts/chrome-extension-smoke';
 import {Collector} from '../src/collector';
 import {DurableQueue} from '../src/queue';
 import {defaultConfig} from '../src/config';
-const hardware=vi.hoisted(()=>({pid:0,appId:'com.google.Chrome',appName:'Chrome',snapshot:undefined as any,pixels:vi.fn()}));
+const hardware=vi.hoisted(()=>({pid:0,appId:'com.google.Chrome',appName:'Chrome',snapshot:undefined as any,helpers:[] as string[],pixels:vi.fn()}));
 vi.mock('electron',async()=>{
  const {EventEmitter}=await import('node:events');
  return {app:{getVersion:()=> 'fixture',getLocale:()=> 'en'},powerMonitor:Object.assign(new EventEmitter(),{getSystemIdleTime:()=>0,getSystemIdleState:()=> 'active'}),systemPreferences:{getMediaAccessStatus:()=> 'denied'},desktopCapturer:{getSources:hardware.pixels},screen:{getPrimaryDisplay:()=>({id:1,size:{width:1600,height:1200}})},nativeImage:{}};
 });
-vi.mock('../src/native',async original=>{const actual=await original<typeof import('../src/native')>();return {...actual,foregroundApplication:async()=>({appId:hardware.appId,appName:hardware.appName,pid:hardware.pid}),runHelper:async(...args:Parameters<typeof actual.runHelper>)=>args[1]==='ui-page'?{snapshot:hardware.snapshot}:actual.runHelper(...args)};});
+vi.mock('../src/native',async original=>{const actual=await original<typeof import('../src/native')>();return {...actual,foregroundApplication:async()=>({appId:hardware.appId,appName:hardware.appName,pid:hardware.pid}),runHelper:async(...args:Parameters<typeof actual.runHelper>)=>{hardware.helpers.push(args[1]);return args[1]==='ui-page'?{snapshot:hardware.snapshot}:actual.runHelper(...args);}};});
 const chrome=process.env.MOTE_FIXTURE_CHROME??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 it.skipIf(process.platform!=='darwin'||!existsSync(chrome))('real Chrome native messaging feeds Collector, durable restart, HTTP archive and searchable material without Memory',async()=>{
  const root=await mkdtemp(join(tmpdir(),'mote-mac-central-')),token=randomUUID()+randomUUID();let central:ChildProcess|undefined;let collector:Collector|undefined;
@@ -46,7 +46,7 @@ it.skipIf(process.platform!=='darwin'||!existsSync(chrome))('real Chrome native 
    ]};
    const chatQueue=new DurableQueue(join(root,'wechat-queue'),cfg);await chatQueue.initialize();
    collector=new Collector(cfg,chatQueue,'generated-unused-helper',()=>false,()=>{});await collector.start();await collector.settleCapture();collector.stop();
-   const messages=(await chatQueue.exportArchive()).records;expect(messages).toHaveLength(2);expect(messages.map(r=>r.event.metadata?.captureObservation?.objectIndex).sort()).toEqual([0,1]);expect(new Set(messages.map(r=>r.event.id)).size).toBe(2);expect(messages.every(r=>r.event.ocrText?.includes('Generated repeated message'))).toBe(true);
+   const messages=(await chatQueue.exportArchive()).records,status=collector.status();expect(messages,JSON.stringify({phase:'wechat-capture',state:status.state,message:status.message,lastCaptureAt:status.lastCaptureAt,helpers:hardware.helpers})).toHaveLength(2);expect(messages.map(r=>r.event.metadata?.captureObservation?.objectIndex).sort()).toEqual([0,1]);expect(new Set(messages.map(r=>r.event.id)).size).toBe(2);expect(messages.every(r=>r.event.ocrText?.includes('Generated repeated message'))).toBe(true);
    await collector.upload(true);expect(chatQueue.stats().depth).toBe(0);const chatInspected=nextMessage();central!.send({type:'inspect'});const chatResult=await chatInspected;expect(chatResult.wechatMaterials).toHaveLength(2);expect(chatResult.wechatMaterials.every((m:any)=>m.text.includes('Generated repeated message'))).toBe(true);expect(chatResult.memoryJobs).toBe(0);
   });
  }finally{collector?.shutdown();if(central){central.kill();await new Promise<void>(r=>{if(central!.exitCode!==null)r();else central!.once('exit',()=>r());});}await rm(root,{recursive:true,force:true});}

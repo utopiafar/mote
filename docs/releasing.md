@@ -103,6 +103,8 @@ Desktop：在 `Release Desktop` 的 Run workflow 中选择 `main` 和 `profile=d
 gh workflow run release-desktop.yml --repo utopiafar/mote --ref main -f profile=dev
 ```
 
+只验证候选、暂不分发时加 `-f publish=false`：仍执行完整组件检查、签名、打包后 smoke 并保留 Artifact，跳过公开发布步骤。验收通过后再从同一提交发布。
+
 桌面组件检查、签名与打包后 smoke 通过后，发布 `desktop-dev-<run number>-<短 SHA>` Pre-release，公开附件只有当前构建架构的 `mote-desktop-macos-dev-<arch>-<组件版本>.zip`。收藏 [Mac Dev 下载入口](https://github.com/utopiafar/mote/releases?q=desktop-dev-+prerelease%3Atrue+draft%3Afalse&expanded=true)，打开最新发布，点击 **Download Mac ZIP**；退出 Mote Collector Dev 后解压并覆盖应用目录中的同名 App，保留包外资料目录。App 版本沿用组件版本，每次分发由独立 Tag、构建序号和完整提交区分；不要求递增 Prod 版本。发布说明明确实际签名模式，默认 ad-hoc 不代表 Apple 公证。
 
 Desktop Dev 与 Android Dev 均只允许可信仓库 `main` 的手动触发公开分发，不设置全仓库 Latest，不覆盖已发布版本；失败草稿只允许原提交修复，旧构建不能晚于新构建发布。其他允许分支保留 Actions Artifact。公开 ZIP / APK 不随 7 天 Artifact 过期。
