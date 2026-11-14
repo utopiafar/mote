@@ -351,7 +351,11 @@ export class EvidenceStore {
     const more=rows.length>limit;const items=rows.slice(0,limit).map(r=>this.record(r));const last=items.at(-1);
     return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:new Date(range.capturedOrder?last.capturedAt:sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null,totalCount};
   }
-  evidence(ids:string[]) {return ids.map(id=>this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));}
+  evidence(ids:string[]) {
+    if(!ids.length)return [];
+    const select=this.db.prepare('SELECT * FROM captures WHERE id=?');
+    return ids.map(id=>select.get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));
+  }
   /** Host authorization only. Preserve permission/processing metadata without
    * copying original or derived bodies into repeated dependency fences. */
   evidenceMetadata(ids:readonly string[]) {

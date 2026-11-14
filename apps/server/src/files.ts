@@ -490,7 +490,11 @@ export class FileStore {
         AND (json_extract(s.json,'$.retention')!='reference' OR json_extract(v.manifest,'$.item.layer')='reference')
         AND (sh.deleted=0 OR h.origin_missing=1 AND sh.deleted=1 AND EXISTS(SELECT 1 FROM file_versions missing WHERE missing.capture_id=sh.capture_id AND missing.source_id=v.source_id AND missing.external_id=v.external_id))`).get(id));
   }
-  evidence(ids:string[]){const rows=ids.flatMap(id=>{const c=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1').get(id) as Chunk|undefined;return c?[c]:[];});return this.chunkRecords(rows);}
+  evidence(ids:string[]){
+    if(!ids.length)return [];
+    const select=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1');
+    const rows=ids.flatMap(id=>{const c=select.get(id) as Chunk|undefined;return c?[c]:[];});return this.chunkRecords(rows);
+  }
   search(args:ContextRange&{query?:string}){return this.searchPage(args).items;}
   /** Directory metadata is a separate lexical channel from extracted chunks. */
   searchMetadata(args:Range&{query?:string}){

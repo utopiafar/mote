@@ -44,7 +44,7 @@ export class BatchProcessing {
     private readonly query:(input:QueryInput)=>Promise<QueryResult>,private readonly assertCurrent:AssertTaskCurrent,
     private readonly assertDisclosure:(ids:readonly string[])=>void,private readonly assertResultCurrent:(result:QueryResult)=>void,
     private readonly modelAdmission:()=>ExecutionFailure|undefined,private readonly concurrency:()=>number=()=>1,deferStart=false,
-    private readonly evidence:Pick<MemoryStore,'readEvidence'|'isCurrentEvidence'>={readEvidence:ids=>store.evidence(ids),isCurrentEvidence:id=>store.isCurrentEvidence(id)},
+    private readonly evidence:Pick<MemoryStore,'readCurrentEvidence'>={readCurrentEvidence:ids=>store.evidence([...new Set(ids)]).filter(record=>store.isCurrentEvidence(record.id))},
     private readonly product?:BatchProductProjection){
     this.tasks=new TaskRecords(store);if(!deferStart)this.start();
   }
@@ -71,8 +71,8 @@ export class BatchProcessing {
     if(!input||typeof input.question!=='string'||!input.question.trim()||input.question.length>8000||!Array.isArray(input.evidenceIds)||
        input.evidenceIds.some(id=>typeof id!=='string'||!id)||new Set(input.evidenceIds).size!==input.evidenceIds.length)
       throw new StoreError('Invalid batch query',400);
-    const ids=[...input.evidenceIds],records=this.evidence.readEvidence(ids);
-    if(records.length!==ids.length||ids.some(id=>!this.evidence.isCurrentEvidence(id)))throw new StoreError('Batch evidence is unavailable',409);
+    const ids=[...input.evidenceIds],records=this.evidence.readCurrentEvidence(ids);
+    if(records.length!==ids.length)throw new StoreError('Batch evidence is unavailable',409);
     this.assertCurrent(ids);
     let context:string;try{context=JSON.stringify(input.taskContext??null);}catch{throw new StoreError('Invalid batch context',400);}
     if(Buffer.byteLength(context)>48000)throw new StoreError('Batch context exceeds the bounded model input',413);
@@ -81,8 +81,11 @@ export class BatchProcessing {
       ...(input.taskContext?{taskContext:JSON.parse(context)}:{}),...(sourceContexts.length?{contextSourceContextDependencies:sourceContexts}:{})};
   }
   private pins(input:FrozenQuery){
-    const records=this.evidence.readEvidence(input.evidenceIds);
-    if(records.length!==input.evidenceIds.length||records.some(record=>!this.evidence.isCurrentEvidence(record.id)||input.processingEvidence[record.id]!==memoryEvidenceFingerprint(record)))
+    // Check currentness and fingerprints against one fresh canonical batch.
+    // Per-ID currentness rereads the shared Material/recording context for every
+    // segment, making one admission block HTTP even when the model is disabled.
+    const records=this.evidence.readCurrentEvidence(input.evidenceIds);
+    if(records.length!==input.evidenceIds.length||records.some(record=>input.processingEvidence[record.id]!==memoryEvidenceFingerprint(record)))
       throw new StoreError('Batch evidence changed',409);
     this.assertCurrent(input.evidenceIds);
   }

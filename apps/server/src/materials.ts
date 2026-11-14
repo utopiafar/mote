@@ -131,6 +131,7 @@ export class MaterialStore {
   // Only compiled handles are retained; every call below executes against the current transaction.
   private headStatement?:StatementSync;
   private versionStatement?:StatementSync;
+  private currentEvidenceStatement?:StatementSync;
   private rebuildStatement?:StatementSync;
   private indexStatusStatement?:StatementSync;
   index?:MaterialIndexRuntime;
@@ -583,8 +584,11 @@ export class MaterialStore {
   /** includeRetired is only for host archive proof validation; product readers
    * always use the default visibility and retirement fences. */
   evidence(ids:string[],includeRetired=false):CaptureRecord[]{
+    if(!ids.length)return [];
     const materials=new Map<string,MaterialRecord|undefined>(),layouts=new Map<string,boolean>();
     const anchors=this.store.db.prepare('SELECT * FROM material_evidence WHERE id=?');
+    const contexts=this.store.db.prepare('SELECT json FROM material_evidence_context WHERE anchor_id=?');
+    let codingBlocks:StatementSync|undefined,snapshotBlocks:StatementSync|undefined;
     return ids.flatMap(id=>{
     const anchor=anchors.get(id);if(!anchor)return [];
     const ref=formatMaterialRef(String(anchor.material_id),String(anchor.revision));
@@ -596,11 +600,11 @@ export class MaterialStore {
     const material=materials.get(ref);
     if(!material)return [];
     if(!layouts.has(ref))layouts.set(ref,this.codingLayout(material.id,material.revision));
-    const block=layouts.get(ref)?this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_block_versions b
-      JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.from_revision=? AND b.block_id=? AND b.anchor_id=?`)
-      .get(material.id,material.revision,anchor.block_id,id):this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash
-      WHERE b.material_id=? AND b.revision=? AND b.block_id=?`).get(material.id,material.revision,anchor.block_id);if(!block)return [];
-    const contextRow=this.store.db.prepare('SELECT json FROM material_evidence_context WHERE anchor_id=?').get(id);
+    const block=layouts.get(ref)?(codingBlocks??=this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_block_versions b
+      JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.from_revision=? AND b.block_id=? AND b.anchor_id=?`))
+      .get(material.id,material.revision,anchor.block_id,id):(snapshotBlocks??=this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash
+      WHERE b.material_id=? AND b.revision=? AND b.block_id=?`)).get(material.id,material.revision,anchor.block_id);if(!block)return [];
+    const contextRow=contexts.get(id);
     const context=contextRow?materialEvidenceContextSchema.parse(JSON.parse(String(contextRow.json))):undefined;
     const coding=material.origin.provider&&material.origin.projectKey&&material.origin.sessionId;
     const at=context?.observedAt??material.createdAt;
@@ -609,7 +613,7 @@ export class MaterialStore {
     const document=context?.document??{timeBasis:'unknown',contentRole:'other'};
     return [{id,attributionContext:material.attributionContext??unknownAttributionContext(),deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
   });}
-  isCurrentEvidence(id:string){return currentEvidenceAllowed(this.store.db.prepare(currentEvidenceSelection+' WHERE e.id=?').get(id) as CurrentEvidenceRow|undefined);}
+  isCurrentEvidence(id:string){return currentEvidenceAllowed((this.currentEvidenceStatement??=this.store.db.prepare(currentEvidenceSelection+' WHERE e.id=?')).get(id) as CurrentEvidenceRow|undefined);}
   /** The same exact current-anchor predicate as the single-ID resolver. Each
    * synchronous Formal input check reads its full selection once, including
    * retained Coding prefixes; no result survives the next check. */
