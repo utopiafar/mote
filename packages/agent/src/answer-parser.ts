@@ -62,12 +62,14 @@ export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRec
       throw new AgentResponseError(
         "The model returned a draft when the host did not request one.", 'invalid_shape',
       );
-    const parsed = assistantDraftProposalSchema.safeParse(value.draft);
-    if (!parsed.success)
-      throw new AgentResponseError(
-        "The model draft must contain only a nonempty goal.", 'invalid_shape',
-      );
-    draftProposal = {goal: parsed.data.goal.trim()};
+    if (value.draft !== null) {
+      const parsed = assistantDraftProposalSchema.safeParse(value.draft);
+      if (!parsed.success)
+        throw new AgentResponseError(
+          "The model draft must contain only a nonempty goal.", 'invalid_shape',
+        );
+      draftProposal = {goal: parsed.data.goal.trim()};
+    }
   }
   return {
     answer: value.answer,
