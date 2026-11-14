@@ -1,5 +1,7 @@
 # 中央文件处理：Cordis 插件与本地多人录音
 
+本地录音的当前默认实现是 **Fun-ASR-Nano-2512 + fsmn-vad + CAM++ + CT-Punc**。当前候选仍有[集成阻断](#当前集成边界)，尚不能宣称可干净安装并完成默认完整链路；安装文件、模型健康和完整处理成功是分别验证的事实。
+
 2026-10-15 已接受[任务恢复与按类型设计执行预算的原则](adr-task-recovery-and-execution-budgets.md)：每种任务在开发和注册时声明适合自身的宽松默认超时策略，不统一套用 600 秒；明确的资源等待不耗处理失败预算，也不因通用恢复窗口结束主流程。中央各类任务的具体策略见[任务执行策略](task-execution-policies.md)。
 
 ## 用户配置
@@ -8,11 +10,13 @@
 
 - **仅归档原件**：保存原始文件，不读取内容。
 - **转写接口**：调用配置的 Mote HTTP 转写接口；可接本地服务，也可接云 ASR 适配器。远端必须显式启用且使用 HTTPS。
-- **本地多人录音**：本地 ASR → 本地说话人分离 → 时间对齐 → 未校正记录。选择预期人数（1–16），留空自动识别。转写文字正常进入配置的向量索引、Memory 和问答；摘要与语义分组由方案开关决定，使用所选分析模型。
+- **本地多人录音**：FSMN 分段 → Nano 识别 / CT-Punc 标点 → 保存识别检查点 → CAM++ 匿名分人 → 共同句段归属 → 可关闭的保守消重 → 未校正记录。人数默认为未知，也可显式声明准确人数或完整范围（1–16）；证据不足明确失败。转写文字进入配置的索引、Memory 和问答；摘要、语义分组和复核使用各自所选分析模型，可以是本地或云端。
 
-自动分离的标签是未经确认的声纹簇，不代表已经确认的人数。保留模型输出的全部匿名标签，标签和区间共用既有 100,000 个区间的有界输出预算；试听片段独立限制为前 16 个标签中有足够独立发言的片段。超过试听额度时保留全部区间并显示限制，不合并、改名或丢弃后续发言。标签过多可能意味着分离效果需要核听；扩大可容纳的输出不等于证明识别准确。默认聚类阈值沿用官方示例，实际适用性需要校准，参见 [sherpa-onnx 示例](https://github.com/k2-fsa/sherpa-onnx/blob/master/python-api-examples/offline-speaker-diarization.py)。
+自动分离的 `SPEAKER_n` 是未经确认的匿名声纹簇，不代表真人姓名、主人身份或跨录音身份。保留全部合法标签和声学区间，沿用 100,000 个区间的有界预算；试听独立限制为最多 16 个有足够独立发言的标签。超过试听额度不丢弃后续发言。CAM++ 结果没有 WeSpeaker 的轮廓系数估计或旧分割模型 provenance；缺失归属为 `SPEAKER_UNKNOWN`，明确标记不确定，不按文本猜人。
 
-ASR 句子与词级时间由模型独立给出。词级时间略超出所属句子但仍在录音范围内时，原始文字和时间原样保存；对齐使用整句并明确标记说话人不确定，避免丢掉完整转写或移动词级时间。负数、倒序、反向区间及超过录音既有容差的输出仍拒绝。此契约由 `mote.transcript@2`、`mote.align@2` 和 `mote.audio-dialogue@2` 固定；当前 MVP 只注册这套转写、对齐与录音配方；图片和文字提取也使用 `mote.transcript@2`。旧转写与录音配方不再读取或选择，旧库由 epoch 7 边界拒绝。安装修复不会自动重算已完成的历史文件。 图片的显式“继续处理”会为当前计划的未完成步骤重置执行预算，成功 OCR 产物保留；过期窗口不再使手动请求立即重新失败，自动恢复策略不变。
+默认语音协议是 `mote.funasr/1`：`audio.local-dialogue@5`、`audio.diarize@4`、`mote.audio-dialogue@3`、`mote.funasr-align@1`。原生输出是 `mote.funasr-transcript@1` / `mote.funasr-dialogue@1`；通用文字、图片及自选 HTTP 处理器继续使用现有 `mote.transcript@2`。旧固定版本的未完成任务明确阻塞，显式重新转写才选择当前版本；安装、重启和默认设置改变不自动重算完成历史，没有旧引擎或云端自动回退。
+
+原件完整规范化为 PCM16 单声道 16 kHz，时长来自实际 PCM 帧数，保留尾部静音。检查点保存原始识别块、标点后的全文、同一次 VAD、句段、精度和模型/依赖身份。当前引擎使用 VAD 粒度；没有可靠词时间时省略 `words`，不插值制造时间戳。所有当前领域时间明确为毫秒，负数、倒序、反向、越界或不完整识别都拒绝；合法的重叠和短句段保留。通用外部处理器提供的原生词时间仍按其现有合同保存。
 
 不同来源可以覆盖默认方式；精确 MIME 或 `audio/*` 等类型规则由文件策略设置。普通文件图片默认仅归档；截图的中央 OCR 由独立的「中央感知」设置处理。UTF-8 文本内置提取。Shadow 不下载内容、不创建处理任务。
 
@@ -30,43 +34,38 @@ ASR 句子与词级时间由模型独立给出。词级时间略超出所属句�
 
 ## 在中央主机启动本地服务
 
-受管理部署先参见 [OCR 与转写方案](ocr-asr-implementation-plan.md)：Native 启动时自动准备该 profile 的独立运行时（也可用 `node scripts/mote.mjs media-runtime --profile dev` 预装），Docker 镜像已包含运行时，两者均在设置页安装模型。下面的手工启动方式供自定义部署使用。需要 Python 3.9+、FFmpeg 和 CPU 内存。推理用独立进程运行；每次只处理一个请求，退出时回收模型内存。服务只监听 127.0.0.1，中央服务与音频服务应在同一网络命名空间。
+受管理部署入口见 [OCR 与转写方案](ocr-asr-implementation-plan.md)。语音依赖使用独立的 Python **3.11** 环境与 [requirements-audio.txt](../scripts/requirements-audio.txt)，不混用 OCR 或视觉环境。`node scripts/mote.mjs media-runtime --profile dev --role dialogue` 只准备所选角色的运行依赖，不等于安装模型、后台授权或真实推理通过。各平台干净安装仍需独立验证。
+
+四组件属于同一个 `dialogue` 安装角色，目录相对该 profile 的私有 `modelDirectory`：
+
+| 组件 | 模型 ID | 目录 |
+| --- | --- | --- |
+| ASR | `FunAudioLLM/Fun-ASR-Nano-2512` | `dialogue/asr` |
+| VAD | `iic/speech_fsmn_vad_zh-cn-16k-common-pytorch` | `dialogue/vad` |
+| 匿名分人 | `iic/speech_campplus_sv_zh-cn_16k-common` | `dialogue/speaker` |
+| 标点 | `iic/punc_ct-transformer_cn-en-common-vocab471067-large` | `dialogue/punctuation` |
+
+SDK 固定 `funasr==1.4.25`，wheel SHA-256 为 `11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75`。制品文件、revision、size、SHA 和许可证由 [安装 catalog](../apps/server/src/media-assets.ts) 与 [引擎 manifest](../scripts/mote_funasr.py) 提供，二者必须一致才能接通；当前差异见下文。推理只读已校验的本地文件，不下载权重、不换旧引擎。
+
+当前 worker 的手工调用接口如下，路径由部署者选择；不要把个人目录或密钥写进仓库：
 
 ```sh
-python3 -m venv .mote/audio/venv
-.mote/audio/venv/bin/pip install -r scripts/requirements-audio.txt
-# 用系统包管理器安装 ffmpeg，例如 apt install ffmpeg / brew install ffmpeg
+"$DIALOGUE_PYTHON" scripts/transcription-server.py \
+  --model-root "$MODEL_DIRECTORY/dialogue" \
+  --backend cpu --threads 4 --timeout 3600 --port 9009
 ```
 
-部署时提前下载/导入模型，推理阶段不下载：
+Native Apple Silicon 可显式选择 `--backend mps`；当前引擎入口接受 `cpu|mps`，不支持的后端不静默替换。令牌来自私有环境的 `MOTE_MEDIA_WORKER_TOKEN`。服务固定监听 `127.0.0.1`，每次只处理一个录音请求，识别和分人各用可回收子进程；所有端点均需 Bearer，包括 `/health` 和执行事实查询。中央与 worker 需共享可达的 loopback 环境，远程 Central 部署继续要求 TLS 和强令牌。
 
-1. faster-whisper 格式 ASR 模型目录，例如 `Systran/faster-whisper-small`（多语言）或适合主机性能的更大模型。`tiny.en` 只适合英文链路冒烟测试，不能用来验收中文识别质量。
-2. [sherpa-onnx pyannote segmentation 3.0](https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-segmentation-models) 中的 `model.onnx`。
-3. [3D-Speaker ERes2Net 中文 16k embedding](https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models) 中的 `3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx`。
+`POST /transcribe` / `/diarize` 接收 multipart 的 `request`（UTF-8 JSON，最多 32 MiB）和 `audio`（原件，最多 512 MiB）。分人必须携带已经保存的原样检查点。传输复用 offline、处理预算、request ID / scope 和执行事实头；`audio.http` 是独立的自选 octet-stream 接口，不使用这份原生协议。
 
-开发验收使用的两个 ONNX 文件 SHA-256：
+模型缺失、组件缺失和 worker 未就绪是未开始的阻塞；容量忙是未开始的等待，不消耗实际推理失败预算。执行后的推理失败、超时、输出超限、人数约束不足、已终止取消和响应未知分别保存。断连或重启本身不能证明推理已终止。取消、删除、原件版本改变和后台授权停止后，迟到结果不能发布；已完成转写在非删除情况下保留。
 
-```text
-segmentation: 220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079
-3D-Speaker:   1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b
-```
+### 当前集成边界
 
-模型权重不随应用发布；下载前检查各模型许可证和适用语言。ASR 可通过 `huggingface_hub.snapshot_download` 预取到本机目录；命令在部署阶段执行：
+当前源码中，安装 catalog 的 Nano revision 与引擎 manifest 不同，四组件 manifest 的摘要输入也不同；真实安装不能据此标为引擎可用。worker 的健康输出是完整 identity，Central 的严格健康消费者只接受加载身份子集；识别身份中的宿主设置指纹与引擎固定算法指纹也尚未统一。默认配方的消重阶段尚未由公共 processing 装配提供实现，会报 `dialogue_cleanup_unavailable`。这些分别需要资产、worker/身份和公共接线实现修复，关闭消重不会修复前面的身份问题。
 
-```sh
-.mote/audio/venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('Systran/faster-whisper-small', local_dir='.mote/audio/models/whisper-small')"
-.mote/audio/venv/bin/python scripts/transcription-server.py \
-  --model .mote/audio/models/whisper-small \
-  --segmentation-model .mote/audio/models/segmentation.onnx \
-  --speaker-model .mote/audio/models/3dspeaker.onnx \
-  --threads 4 --timeout 3600 --port 9009
-```
-
-在设置里选择「本地多人录音」，保留 `http://127.0.0.1:9009/transcribe`，保存后点「检测已保存的本地服务」。健康检查确认模型文件/依赖存在；实际可用性以第一次录音处理结果为准。可通过环境变量 `MOTE_TRANSCRIPTION_TOKEN` 配置音频服务令牌，对应网页中的本地服务密钥。不要把密钥写进命令行、模型路径或仓库。
-
-长期部署建议由 systemd / launchd / 容器进程管理器监督。Linux 可复制并调整 [服务模板](../deploy/mote-audio.service)，将模型置于服务用户可读目录，并在升级前停止任务、备份中央数据及模型配置。模型缺失等待依赖就绪，格式不支持明确停止；资源忙进入持久等待，不耗处理失败预算。实际可安全重放的临时调用故障最多尝试 3 次（首次加两次自动重试），结果未知仍受原有确认保护；原件与已完成步骤保留。
-
-实现基于官方 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) 时间戳接口和 [sherpa-onnx 离线说话人示例](https://github.com/k2-fsa/sherpa-onnx/blob/master/python-api-examples/offline-speaker-diarization.py)。sherpa-onnx 使用 pyannote 分割与 3D-Speaker 声纹向量，不要求启动云端 pyannote 服务。
+部署/Compose、systemd 模板、公共健康与设置页须随对应实现一并核对；不要使用仍携带旧 `--model` / ONNX 参数的服务模板来启动当前 worker。生成模型边界下的成功后段不能替代这些直接生产接缝的验收。
 
 ## 分层、导出和人工确认
 
@@ -74,16 +73,19 @@ segmentation: 220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079
 
 ```text
 不可变原件 + 来源/版本/SHA-256
-  → 原始未校正转写（句级、词级时间戳）
+  → 原始未校正转写 + 不可变识别检查点（真实句段/VAD 精度）
   → 原始 diarization + 匿名声纹试听片段
   → 带说话人的未校正记录（可检索、引用、回听）
+  → 保守消重派生稿（默认开启；原始带说话人稿与映射保留）
   → 可选所选模型语义分组（只能合并连续同说话人片段）
   → 人工确认的场次关联 / 说话人名称 / 独立校正版
 ```
 
-单文件导出 `.tar.gz` 包含：原始转写 Markdown/JSON、diarization RTTM/JSON/CSV、带说话人完整记录 Markdown/CSV、`speaker_samples/` WAV、来源与处理版本清单。有人工确认时另附确认结果和校正版；未校正文件继续保留。原件在中央单独下载，不重复放进处理结果包。
+单文件导出 `.tar.gz` 保留原始转写 Markdown/JSON、diarization RTTM/JSON/CSV、完整记录 Markdown/CSV、`speaker_samples/` WAV、来源与版本清单。`artifacts/<id>.json` 保留完整产物及历史、原生检查点和输入引用；消重产物另提供 `dialogue.original.*`、`dialogue.derived.json`、`dialogue.cleanup.json`，人工稿提供 `dialogue.corrected.json`，`locations.json` 绑定当前片段。所有条目计入导出大小上限。原件单独下载，不重复放入结果包。
 
-基于时间重叠对齐，不猜真人姓名；低覆盖、说话人冲突和已检测重叠明确标记。当前模型链的重叠检测覆盖未验收，导出中明确注明「未标记不代表没有重叠」。短插话可以独立出现；不润色、不删口语、不替换术语。
+默认 FunASR 归属直接消费同一检查点的句段与 CAM++ assignments，不再将新转写贴到另一套旧分人时间上。自动消重只合并相邻、句级精度、正时长、同一已知簇、所有文字和时间等字段完全相同的重复观察；VAD 粗精度、真实重复、短插话、细微词语差别、未知归属及重叠均保留。它始终是 `dialogue/uncorrected`，不会变成人工 `corrected-dialogue`。关闭消重从保存的原始带说话人稿生成新版本，不从清洗文字猜回原文。
+
+重叠检测当前为 `unknown`，未标记不代表没有重叠；匿名标签也不等于独立人声音轨。当前链路不承诺跨模型逐字、识别质量或时间精度完全一致。
 
 ASR 原始片段允许时间重叠。若某句的词级开始时间晚于下一片段的开始时间，词级展开会产生逆序的派生时间线；此处沿用整句文字与句级时间，明确标记说话人不确定并在产物警告中披露。原始转写、原件和原时间戳保持不变，不排序识别词语、不挪动时间，也不把片段重叠当作已确认的真人同时发言。
 
@@ -156,8 +158,8 @@ export default {
 
 扩展接口在 [file-processors.ts](../apps/server/src/file-processors.ts)：
 
-- `extract` 处理器接受原文件并返回严格 Transcript；内置音频 HTTP、UTF-8、图片 HTTP。
-- `diarize` 处理器返回严格 Diarization；用 `diarizationProcessor` 替换，声明 `localOnly:true` 的分离器只能绑定本地服务。自定义插件仍需由部署者审查代码。
+- `extract` 接受原文件，通过注册的输出 parser/projector 投影标准 Transcript；默认 FunASR 同时保留原生识别 envelope。音频 HTTP、UTF-8、图片 HTTP 保留各自通用输出。
+- 默认 CAM++ `diarize` 消费保存的原生检查点并返回当前 FunASR envelope，由输出注册表投影标准 Diarization / dialogue。自定义分人插件仍可返回现有 Diarization；声明 `localOnly:true` 时只能绑定本地服务。部署者继续审查自定义可执行代码。
 - 中央负责队列、检查点、版本、存储、引用、确认及导出；不能把这些一致性机制交给 prompt。
 - 服务的音频/图片选择取 MIME 结构与用户配置，不用关键词判断内容主题。
 - 自定义云 HTTP 服务接收原始字节 `POST`，响应 `{durationMs, segments:[{startMs,endMs,text,words?}]}`。支持 Bearer 密钥、`X-Mote-Max-Audio-Ms`，JSON 上限 32 MiB；图片响应 `durationMs=0`。这不是任意厂商 ASR URL 的直接兼容层：不同鉴权/请求协议由自定义 Cordis 插件适配。
@@ -166,27 +168,26 @@ export default {
 ## 验证
 
 ```sh
-node --import tsx --test apps/server/test/file-processing.test.ts apps/server/test/files.test.ts
-python3 -m unittest discover -s scripts -p test_mote_audio.py
-# 启动隔离 fixture 中央 + 本地模型服务后，传入已生成的双人录音：
-MOTE_FILE_TEST_DIR=.mote/processing-validation/cross-end \
-  MOTE_FILE_TEST_ASR=http://127.0.0.1:9009/transcribe \
-  node --import tsx scripts/test-file-dialogue.ts /absolute/generated-dialogue.wav
+npm run test:file -w @mote/server -- test/funasr-journey.test.ts
+python3 -m unittest discover -s scripts -p 'test_audio_control.py'
+npm run check:affected -- --dry-run
 ```
 
-真实模型、合成 fixture、物理设备验证分开报告。
+轻量 journey 使用私有生成 profile、生产 Central / Store / 上传路由、生产 Python HTTP / 子进程 worker 和受控模型边界。直接安装身份与健康接缝、默认消重装配各自设独立断言；后段隔离用例明确标注生成的健康身份投影和显式关闭消重，不能用它们的通过覆盖直接接缝失败。整个命令未通过时必须保留失败和接收方。
+
+真实模型、平台、长录音、质量、UI 和物理设备验收只在明确请求后执行。轻量检查不下载模型或声音，不安装依赖，不占用日常 Central，也不证明发布资格。
 
 ### 可核对的本地语音对照
 
-`scripts/generate-audio-control.py --output /absolute/new-directory` 使用本机已安装的两种 macOS 中文声音，生成八轮对话及精确台词、时间范围、声音和文件哈希。`--gap-ms 0` 可去掉轮次之间额外加入的静音。它不下载声音，不使用私人录音，也不证明真实访谈准确率。
+获准执行质量验收后，`scripts/generate-audio-control.py --output /absolute/new-directory` 可用本机已安装的两种 macOS 中文声音，生成八轮对话及台词、时间范围、声音和文件哈希，并记录源码 commit、系统、Python、语速、采样格式和间隔参数。`--gap-ms 0` 去掉额外静音。输出须位于仓库外的全新目录；它不下载声音、不使用私人录音，也不覆盖静音、短插话、重叠、长录音或真人泛化。
 
-把生成的 `manifest.json` 交给 `scripts/test-file-journey-live.ts`，再使用 `scripts/evaluate-audio-control.py --reference .../reference.json --run ... --output .../quality.json` 读取已关闭的隔离资料库。评估器报告字符错误率和两个已知声音的一对一匿名标签匹配；轮次内部的未标注部分可能包含自然静音，因此该指标不是标准 DER。可在独立评估环境安装 `scripts/requirements-audio-evaluation.txt` 并加 `--normalize-chinese-script`，同时报告原始 CER 与 OpenCC 繁简归一后的 CER，不改写归档转写。
+把生成 manifest 交给隔离的真实模型验收入口后，`scripts/evaluate-audio-control.py --reference .../reference.json --run ... --output .../quality.json` 只读已关闭、WAL 已检查点化的资料库。评估从持久原始 artifact 取全文，不从已经移往派生稿的当前 chunks 反推原文；原生 FunASR 检查点、分人检查点和标准投影必须相符。报告包括原始 CER、匿名标签的一对一匹配、带说话人的字符错误、人数、未归属、重叠、逐轮漏段和起止偏差、尾段时刻、完整时长、模型/依赖/后端身份及已有执行记录。未知标签不算一个人，多余簇不能合并抵消。
 
-对照发现，默认连续解码会漏掉完整发言；关闭 VAD 或直接换成默认批量解码均未解决。本地处理器从 v2 起使用 Silero 检测的语音片段分别解码，保留原始时间偏移，每段最多 30 秒、推理批量为 1，片段间不再拼回同一个解码窗口。v3 增加显式能力和依赖契约，不改变该声学算法。500 ms 静音分隔及显式片段接口来自 [faster-whisper](https://github.com/SYSTRAN/faster-whisper)；这是声学处理参数，不是用户意图或 Memory 分类规则。原始模型权重和匿名说话人分离保持不变。空语音保留原时长，越界或过长片段明确失败，避免 SDK 静默只解码前 30 秒。
+轮次内部可能包含自然静音，标签混淆与未归属指标不等于标准 DER；逐轮位置也不是词级对齐。带说话人的字符错误只使用真实 native assignments，缺该数据时报告不可用。可在独立评估环境准备固定的评估依赖并使用 `--normalize-chinese-script`，同时报告原始与 OpenCC 繁简归一 CER；主带说话人字符指标仍采用 NFKC/casefold，不改写归档文字。
 
-同一份 129 秒生成录音经过正式文件流程，繁简归一后的 CER 从 25.85% 降到 3.77%，两个匿名标签在已识别语音上无混淆；新流程约 30.8 秒。原始 CER 与完整输出另行保存。该单一对照尚不能替代真实长录音核听。
+工具内的阈值只用于生成对照的回归边界，不是用户接受的真人 SLO。发布质量验收需先冻结更完整的中文/中英、不同人数、静音、短插话、真实重复、重叠数据集与评分规则，再固定权重、参数、环境和源码版本运行。已有旧引擎或私人实验分数不能算作当前 FunASR 结果；私录复测须另获明确授权，原件与转写始终留在私人目录。
 
-去掉额外静音后的连续换人对照仍未通过：同一指标由旧解码的 47.92% 降至 26.04%，仍有遗漏，分离产生三个匿名标签。不能把带停顿样例的通过推广到连续交谈；连续换人和真实访谈质量仍是功能验收缺口。
+Native Apple Silicon 的干净安装/离线模型/完整交互，Linux 或容器的构建、安装和 CPU/GPU 实际处理，现有 512 MiB 文件上限与 1–1440 分钟配置边界的长录音完整性、取消和资源，以及真实浏览器/设备回听、Memory/Ask 模型质量均仍需对应独立证据。MPS 结果不能替代 Linux，生成 fixture 也不能替代任一平台。未运行项应标为未完成，不据一个成功短录音宣布完整替换验收通过。
 
 ## 安装状态与执行状态
 

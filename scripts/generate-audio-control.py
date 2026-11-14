@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import platform
 from pathlib import Path
 import subprocess
 import wave
@@ -46,10 +47,16 @@ def main():
         audio.setsampwidth(2)
         audio.setframerate(rate)
         audio.writeframes(b''.join(parts))
+    source_commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, check=True,
+                                   capture_output=True, text=True, timeout=10).stdout.strip()
     data.update(fixtureSha256=hashlib.sha256(fixture.read_bytes()).hexdigest(),
                 audioPath=str(audio_path), audioSha256=hashlib.sha256(audio_path.read_bytes()).hexdigest(),
                 durationMs=cursor / rate * 1000, sampleRate=rate, generator='macOS say, 175 words per minute',
-                personalDataUsed=False, humanAudioTested=False, overlaps=False, insertedGapMs=args.gap_ms)
+                personalDataUsed=False, humanAudioTested=False, overlaps=False, insertedGapMs=args.gap_ms,
+                generation={'sourceCommit': source_commit, 'platform': platform.platform(),
+                            'python': platform.python_version(), 'voices': voices, 'wordsPerMinute': 175,
+                            'sampleRate': rate, 'channels': 1, 'sampleWidthBytes': 2},
+                evaluationScope='Generated two-voice control; does not cover silence, overlap, short interjections, long recordings or human generalization.')
     (output / 'reference.json').write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
     manifest = {'personalDataUsed': False, 'files': [{'id': 'generated-two-voices', 'path': str(audio_path),
                 'mimeType': 'audio/wav', 'observedAt': '2026-09-26T00:00:00Z'}]}
