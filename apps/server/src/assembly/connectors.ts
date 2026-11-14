@@ -5,6 +5,7 @@ import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
 import type {Store} from '../store.js';
 import type {Connections} from '../connections.js';
+import type {AuthorizationPlatform} from '../plugins/authorization-platform.js';
 import type {MemoryRecipeSettings} from '../memory-recipe-settings.js';
 import type {MemoryStrategies} from '../memory-strategies.js';
 import type {FileStore} from '../files.js';
@@ -17,8 +18,6 @@ import type {ProcessingRuntime} from '../processing-runtime.js';
 import {registerConnectors,type ConnectorTestDependencies} from '../connectors/index.js';
 import type {ConnectorManifest} from '../connectors/registry.js';
 import {ConnectorError} from '../connectors/types.js';
-import {McpOAuthServer} from '../connectors/mcp-oauth.js';
-import {registerMcpOAuthRoutes} from '../connectors/mcp-oauth-routes.js';
 import {createDynamicHttpDispatcher} from '../plugins/dynamic-http-dispatcher.js';
 import {ZodError} from 'zod';
 
@@ -39,6 +38,7 @@ export interface ConnectorsAssemblyDependencies {
   readonly config:Config;
   readonly validOwnerBearer:(authorization:string|undefined)=>boolean;
   readonly connections:Connections;
+  readonly authorizationPlatform:AuthorizationPlatform;
   readonly connectorTesting?:ConnectorTestDependencies;
   readonly additionalManifests?:readonly ConnectorManifest[];
 }
@@ -48,11 +48,7 @@ export interface ConnectorsAssemblyDependencies {
 export async function assembleConnectors(dependencies:ConnectorsAssemblyDependencies){
   const {app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config,validOwnerBearer,connections,additionalManifests=[]}=dependencies;
   const ownerAuthorization=(header:string|undefined)=>{if(validOwnerBearer(header))return true;const c=connections.authenticate(header);return !!c&&connections.isOwner(c);};
-  // OAuth is a host capability over the existing credential store, not an
-  // installable connector package and not a second MCP tool surface.
-  const oauthPolicy=()=>{const local=config.connectors;return {enabled:Boolean(local?.mcpEnabled),writeEnabled:Boolean(local?.mcpEnabled&&local.mcpWriteEnabled&&local.mcpWriteSourceIds?.length),writeSourceIds:local?.mcpWriteSourceIds??[]};};
-  const oauth=new McpOAuthServer({connections,directory:config.connectors?.directory||join(config.dataDir,'connectors'),policy:oauthPolicy});
-  registerMcpOAuthRoutes(app,{oauth,configuration:()=>config.connectors,publicUrl:config.configuration?.publicUrl??undefined,allowedOrigins:config.allowedOrigins,ownerAuthorization});
+  dependencies.authorizationPlatform.mcpOAuthRoutes(app,{directory:config.connectors?.directory||join(config.dataDir,'connectors'),publicUrl:config.configuration?.publicUrl??undefined});
   // Attached before Fastify listen: one host-owned table serves every installed
   // connector and selects the activation that registered each route/callback.
   const dispatcher=createDynamicHttpDispatcher({

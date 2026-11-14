@@ -34,6 +34,9 @@ export function mediaRoleEndpoint(role:MediaRole,media:MediaRuntimeSettings){
 export function mediaModelHealth(role:MediaRole,raw:unknown):{ready:boolean;error?:string;missingDependencies?:string[]}{
   if(!raw||typeof raw!=='object')return {ready:false};
   const value=raw as Record<string,unknown>;
+  // Only the current audio worker can describe this installation's runtime
+  // dependencies. A retired worker's diagnostics do not belong to FunASR.
+  if(role==='dialogue'&&value.protocol!==FUNASR_PROTOCOL)return {ready:false,missingDependencies:[]};
   const missing=Array.isArray(value.missingDependencies)&&value.missingDependencies.length<=32&&value.missingDependencies.every(name=>typeof name==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(name))?value.missingDependencies as string[]:undefined;
   if(value.missingDependencies!==undefined&&!missing)return {ready:false,error:'worker_health_invalid'};
   const diagnostic={...(missing?{missingDependencies:missing}:{}),...(value.loadError===true?{error:'model_load_failed'}:{})};
