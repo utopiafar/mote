@@ -18,6 +18,7 @@ import {sha256} from '../src/store.js';
 import {processorSettingsFingerprint} from '../src/file-configuration.js';
 import {effectiveFileSettings,selectFilePolicy} from '../src/file-policy.js';
 import {mediaModelHealth} from '../src/media-configuration.js';
+import {readDialogueCleanup} from '../src/file-dialogue.js';
 import {FUNASR_PINS,parseFunasrArchive,parseFunasrRequest,type FunasrRequest} from '../src/funasr-contract.js';
 import {runFunasr} from '../src/funasr-client.js';
 import type {ProcessorInput} from '../src/file-processors.js';
@@ -274,13 +275,33 @@ test('owner denial before health or during health prevents original audio from r
  assert.equal(JSON.stringify(response.checkpoint),saved,'denied retry leaves the persisted input intact');
 });
 
-test('default-on cleanup is wired by actual Central startup and completes a generated upload',async t=>{
+test('default-on cleanup completes a generated upload and preserves located original evidence across restart and setting changes',async t=>{
  const f=await fixture(t),id=await f.upload();await f.settle(id);const detail=await f.detail(id);
  assert.equal(f.node.processing.view().policy.profiles.find(profile=>profile.processorId==='audio.local-dialogue')!.parameters.deduplicate,true);
  assert.equal(detail.job.state,'succeeded',JSON.stringify({job:detail.job,steps:detail.steps}));
- const current=f.artifact((await f.chunks(id))[0].fileEvidence.artifactId);
+ const raw=detail.artifacts.find((artifact:any)=>artifact.kind==='transcript'),recognition=f.artifact(raw.id),saved=JSON.stringify(recognition),checkpoint=parseFunasrArchive(recognition.output.payload.checkpoint);
+ const chunks=await f.chunks(id),dialogueId=chunks[0].fileEvidence.artifactId,current=f.artifact(dialogueId),cleanup=readDialogueCleanup(current)!;
  assert.equal(current.output.type.id,'mote.cleaned-dialogue');assert.equal(current.transcript.uncorrected,true);
- assert.deepEqual(current.output.payload.cleanup.sourceToDerived,[0,0,1,2,3,4]);
+ assert.deepEqual(cleanup.cleanup.sourceToDerived,[0,0,1,2,3,4]);assert.deepEqual(cleanup.cleanup.sourcePrecisions,Array(6).fill('sentence'));
+ assert.equal(cleanup.uncleanedTranscript.segments.length,6);assert.equal(chunks.length,5);
+ assert.deepEqual(recognition.transcript.segments.map((row:any)=>row.text),f.generated.rows.map((row:any[])=>row[2]));
+ assert.equal(checkpoint.text,'  不是不是不是。不是不是不是。嗯。使用扣迪士记录。重叠发言。完整尾段保留。\n  ');
+ assert.deepEqual(chunks.map(row=>[row.fileEvidence.startMs,row.fileEvidence.endMs]),f.generated.rows.filter((_:unknown,index:number)=>index!==1).map((row:any[])=>row.slice(0,2)));
+ assert.deepEqual(chunks.map(row=>row.fileEvidence.speaker),['SPEAKER_0','SPEAKER_UNKNOWN','SPEAKER_0','SPEAKER_1','SPEAKER_1']);assert.equal(chunks[1].fileEvidence.uncertain,true);
+ assert.ok(chunks.every(row=>row.fileEvidence.captureId===id&&row.fileEvidence.revision==='1'&&row.provenance.sourceId===sourceId&&!row.fileEvidence.speakerAttribution));
+ const entries=tar((await f.request('GET',`/api/files/${id}/export`)).rawPayload),read=(name:string)=>JSON.parse(entries.get(name)!.toString()),manifest=read('manifest.json');
+ assert.deepEqual(read('dialogue.original.json'),cleanup.uncleanedTranscript);assert.deepEqual(read('dialogue.cleanup.json'),cleanup.cleanup);
+ assert.deepEqual(read(`artifacts/${raw.id}.json`).data.output.payload.checkpoint,recognition.output.payload.checkpoint);
+ assert.equal(manifest.sourceId,sourceId);assert.equal(manifest.originalSha256,sha256(f.audio));assert.equal(manifest.selectedTranscript.artifactId,dialogueId);
+ await f.restart();assert.deepEqual(f.artifact(dialogueId),current);
+ const reprocess=async()=>{
+  const preview=(await f.request('POST','/api/file-processing/preview',{revision:f.node.processing.view().revision,scope:{kind:'selection',evidenceIds:[id]}})).json();assert.equal(preview.count,1);
+  await f.request('POST','/api/file-processing/reprocess',{token:preview.token});await f.settle(id);assert.equal((await f.detail(id)).job.state,'succeeded');
+ };
+ await f.saveCleanup(false);await reprocess();assert.equal((await f.chunks(id)).length,6);
+ assert.equal(JSON.stringify(f.artifact(raw.id)),saved);assert.deepEqual(f.artifact(dialogueId),current,'cleanup changes keep the prior derived evidence');
+ await f.saveCleanup(true);await reprocess();assert.equal((await f.chunks(id))[0].fileEvidence.artifactId,dialogueId);
+ assert.deepEqual(f.calls().map(call=>call.operation),['recognize','diarize'],'cleanup revisions never repeat native inference');
 });
 
 test('explicit cleanup-off upload preserves raw bytes before CAM, complete tail, playback, review, export, Material, Memory and Ask evidence',async t=>{

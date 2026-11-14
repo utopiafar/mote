@@ -2,14 +2,21 @@ import { moteText } from './i18n.js';
 import {type Transcript,type Diarization,transcriptSchema} from '@mote/shared';
 import {isDeepStrictEqual} from 'node:util';
 import {parseFunasrResponse,parseFunasrArchive,projectFunasrDialogue} from './funasr-contract.js';
-import type {FileOutputType} from './file-recipes.js';
-import {cleanupTranscript,parseTranscriptCleanup,type TranscriptCleanupSettings} from './transcript-cleanup.js';
+import type {FileOutputType,FileDialogueCleanup} from './file-recipes.js';
+import {cleanupTranscript,parseTranscriptCleanup,TRANSCRIPT_CLEANUP,type TranscriptCleanupSettings} from './transcript-cleanup.js';
 
 /** ASR-03 registers this through the existing output registry and publishes it
  * as dialogue. The native recognition checkpoint remains in the extract output;
  * this payload retains the untouched speaker projection and its full mapping. */
 export const cleanedDialogueOutput:FileOutputType={id:'mote.cleaned-dialogue',version:'1',kind:'dialogue',
   parse:parseTranscriptCleanup,project:value=>parseTranscriptCleanup(value).transcript};
+/** The default recipe enables this transform only when deduplicate is on.
+ * Preserve the checkpoint's actual timing precision when deriving its mapping. */
+export const funasrDialogueCleanup:FileDialogueCleanup={...TRANSCRIPT_CLEANUP,output:cleanedDialogueOutput,
+  process({transcript,checkpoint,signal}){
+    signal.throwIfAborted();
+    return cleanupTranscript(transcript,{},checkpoint.sentences.map(sentence=>sentence.precision));
+  }};
 export function prepareFunasrDialogue(value:unknown,settings:Partial<TranscriptCleanupSettings>={}){
   const response=parseFunasrResponse(value);
   if(response.status!=='succeeded'||response.operation!=='diarize')throw Error('Expected complete FunASR dialogue');

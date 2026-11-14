@@ -16,6 +16,7 @@ import type {ModelProcessingAuthority} from '../model-processing-authority.js';
 import {ProcessingRuntime} from '../processing-runtime.js';
 import {FileProcessing,type FileAnalysis,type TranscriptionProvider} from '../file-processing.js';
 import type {FileProcessorContribution} from '../file-processors.js';
+import {funasrDialogueCleanup} from '../file-dialogue.js';
 import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';
 import {contributeDomainRoutes} from './domain-routes.js';
@@ -129,7 +130,7 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
   };
   const installContributions=()=>{
     if(contributionsInstalled)return;
-    processing!.installContributions(dependencies.contributions,{imageRecipes:false});
+    processing!.installContributions(dependencies.contributions,{imageRecipes:false,dialogueCleanup:funasrDialogueCleanup});
     contributionsInstalled=true;
   };
   const removeContributions=()=>{

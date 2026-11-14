@@ -10742,5 +10742,14 @@
   "待补 {0}": "{0} en attente",
   "失败 {0}": "{0} en échec",
   "已完成 {0}/{1}": "{0}/{1} terminés",
-  "尚未选择资料": "Aucun document sélectionné"
+  "尚未选择资料": "Aucun document sélectionné",
+  "缺少运行依赖：{0}": "Dépendances d’exécution manquantes : {0}",
+  "摘要、语义分组、复核、Memory 与 Ask 继续使用各自所选模型。": "Les résumés, le regroupement sémantique, la révision, Memory et Ask continuent d’utiliser les modèles choisis pour chacun.",
+  "保守消重仅影响派生稿；原文始终可对照和导出。": "La déduplication prudente ne modifie que la transcription dérivée ; l’original reste disponible pour comparaison et exportation.",
+  "使用 CAM++": "Utiliser CAM++",
+  "请选择 1–16 的准确人数或完整有序范围。": "Choisissez un nombre exact de locuteurs entre 1 et 16 ou une plage complète avec les bornes dans l’ordre.",
+  "模型只提出建议，确认后生成单独的校正版；未校正原文始终保留。复核使用所选模型。": "Le modèle ne fait que proposer des modifications. La confirmation crée une version corrigée distincte et conserve l’original non corrigé. La révision utilise le modèle sélectionné.",
+  "原文对照": "Comparer avec l’original",
+  "转写结果为空。": "La transcription est vide.",
+  "当前稿": "Transcription actuelle"
 }
