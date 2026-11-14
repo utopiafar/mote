@@ -64,7 +64,7 @@ node scripts/mote.mjs token --profile dev
 
 This creates a local trial environment, with configuration, data, and logs under `.mote/profiles/dev/`. Keep the token private: it grants full archive access. To stop this environment, run `node scripts/mote.mjs stop --profile dev`.
 
-Central prepares its local OCR and audio worker runtime in the background. Those workers need **Python 3.9+** and network access for their first installation; audio processing also needs **FFmpeg**. Install OCR/transcription models explicitly in settings when you need them. Originals remain archived while processing waits for its runtime or models. See the [media setup guide](docs/ocr-asr-implementation-plan.md).
+When you need local OCR or audio processing, start its preparation explicitly in settings. Native Central downloads a pinned uv installer, private **Python 3.11**, the selected worker's dependencies and audio **FFmpeg** under the profile's model directory; you do not need to install those tools globally. The first preparation needs network access and model downloads. Originals remain archived while processing waits for its runtime or models. See the [local environment checks](docs/deployment.md#native-environment-checks) and [media setup guide](docs/ocr-asr-implementation-plan.md).
 
 For a daily archive, use a profile outside the checkout. The [deployment guide](docs/deployment.md) covers Mac mini, Docker, startup services, backups, and migration; [Cloudflare Tunnel](docs/cloudflare-tunnel.md) covers an HTTPS address for other devices.
 

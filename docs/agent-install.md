@@ -23,7 +23,7 @@ The installation request authorizes ordinary setup for the selected environment.
 
 ## 1. Discover the environment
 
-Inspect OS/architecture, Node/npm versions, available disk space, the selected checkout, existing profile locations and occupied ports. Read [deployment](deployment.md), [connections](connections.md) and the CLI help in the actual checkout. Check package engines and the lockfile rather than inventing dependency versions or install commands.
+Inspect OS/architecture, Node/npm versions, available disk space, the selected checkout, existing profile locations and occupied ports. Actually run `node --version` and `npm --version`; an executable path alone does not prove that its dynamic libraries load. Use the documented Node 24 environment, and follow the [native environment checks](deployment.md#native-environment-checks) for Homebrew PATH or `dyld: Library not loaded` failures. Read [deployment](deployment.md), [connections](connections.md) and the CLI help in the actual checkout. Check package engines and the lockfile rather than inventing dependency versions or install commands.
 
 If Mote already exists, first identify its checkout, explicit `--profile` and `--home`, runtime, data location and process owner. Use its existing CLI `status` without printing configuration secrets. A healthy instance can be handed back to the user; do not clone another instance, stop it, initialize over it, switch its target, or treat its archive as disposable. Old or unsupported formats remain intact and are reported; this guide does not authorize automatic conversion or reset.
 
@@ -31,7 +31,7 @@ For a new trial, use a new private directory and explicit dev profile. For a dai
 
 ## 2. Use the existing deployment path
 
-On macOS/Linux with Node.js 24 or newer, the native path is the simplest local trial. From a new checkout:
+On macOS/Linux with Node.js 24, the native path is the simplest local trial. From a new checkout:
 
 ```sh
 git clone https://github.com/utopiafar/mote.git
@@ -62,7 +62,7 @@ Check the actual model/module settings before the first record; unconfigured AI 
 
 For Linux/NAS Docker, follow the [Docker path](deployment.md#linux--nas-docker) instead. Check Docker Engine/Compose requirements, use the pinned project build and private profile, and verify the configured volume is new or explicitly selected. Native and Docker are deployment choices for the same Central service; do not run two writers against one archive.
 
-The first local OCR/audio worker setup may need Python, FFmpeg, network access and explicit model installation. A missing optional processing runtime does not mean the saved original was lost. Report its actual readiness separately; do not silently download large models or enable paid processing to finish onboarding.
+Native OCR/audio preparation manages its own pinned uv, Python 3.11, dependencies and audio FFmpeg in the selected profile's model directory. Do not ask the owner to install system Python, uv or FFmpeg for this path. It needs network access and explicit preparation/model installation in settings; ordinary restart only restores an already prepared runtime. On macOS, missing compiler tools for source dependencies are covered by the [native environment checks](deployment.md#native-environment-checks). A missing optional processing runtime does not mean the saved original was lost. Report its actual readiness separately; do not silently download large models or enable paid processing to finish onboarding.
 
 ## 3. Verify and hand over Central
 

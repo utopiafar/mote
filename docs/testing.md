@@ -28,6 +28,8 @@ For timing-sensitive behavior, explicitly control relevant states such as cancel
 
 For a small fictional owner spanning desktop, Android, Central, imports, files and recording connectors, use the [Lin Zhao dataset and isolated replay guide](synthetic-persona-dataset.md). Offline transport checks, opt-in local-model runs, manual semantic review and physical/cloud boundaries are recorded separately.
 
+For an explicitly requested native installer check, `node apps/server/test/media-index-resolution.mjs --uv /absolute/pinned/uv --python /absolute/python3.11` runs the production audio preparer with generated local wheel indexes and network access disabled. Supply uv at the pinned `MEDIA_UV_VERSION`; the test creates and removes its own private profile. It verifies a pin available only on the primary index, a CPU package available only on the secondary index, dependency probing, atomic publication and restart without reinstallation. It does not install real audio dependencies or download model weights; actual platform/package installation remains separate evidence.
+
 ## Daily feedback
 
 Run the narrow command that exercises changed behavior after a coherent batch of edits. Ordinary changes need affected unit/module checks; interface changes also need a light contract against the real consumer, such as the [Android intake contract](testing-runbook.md#android-intake-contract). A small fix involving permissions, deletion or restoration still needs the corresponding risk regression, without expanding to unrelated repository suites.

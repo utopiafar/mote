@@ -24,6 +24,38 @@ CLI 清除继承的普通 `MOTE_*`、`COMPOSE_*` 参数，只用 `MOTE_CONFIG_FI
 
 ## Mac mini / 原生 Node.js
 
+<a id="native-environment-checks"></a>
+
+### 本机环境检查
+
+先实际执行以下命令；只找到可执行文件不代表其动态库完整：
+
+```sh
+command -v node
+node --version
+npm --version
+```
+
+本文使用 Node.js 24。macOS 使用 Homebrew 时，`node` 可能指向另一个主版本；即使已经安装 Node 24，终端或 Agent 也可能选错。尚未安装时可执行 `brew install node@24`，已安装则直接在当前终端选择它：
+
+```sh
+export PATH="$(brew --prefix node@24)/bin:$PATH"
+node --version
+npm --version
+```
+
+确认 Node 输出 `v24.`，再在同一终端执行下方 npm/CLI 命令；npm 的子命令也必须使用同一个 Node。该 PATH 设置只影响当前终端。长期服务按下文 `launchd --node` 固定可执行路径。[Homebrew 的 Node 24 配方](https://formulae.brew.sh/formula/node@24)为 keg-only，不会自动替换默认 `node`。
+
+如果启动即出现 `dyld: Library not loaded: ...libsimdjson...dylib` 等错误，说明所选 Homebrew Node 的动态库链接失效，尚未执行 Mote。先用上面的命令选择可运行的 Node 24；如果 Node 24 本身也无法加载，再通过原安装方式修复或重装它（Homebrew 为 `brew reinstall node@24`），不要手工伪造缺失 dylib 的符号链接。切换 Node 主版本后，`better-sqlite3` 必须匹配当前 ABI；在选定的源码目录重新执行 `npm ci`，或定向执行 `npm rebuild better-sqlite3`。
+
+从源码安装 npm 原生依赖或 Python 源码包时，macOS 还需要 Xcode Command Line Tools。用 `xcode-select -p` 检查；缺失时执行 `xcode-select --install` 并完成系统安装提示。仅运行 Central 不需要完整 Xcode、Android SDK、屏幕或麦克风权限。
+
+Native OCR/语音在设置中显式准备后，会把固定版本的 uv、Python 3.11、角色依赖和语音 FFmpeg 安装到 `media.modelDirectory/runtime/<role>/`，无需全局安装 Python、uv 或 FFmpeg。首次准备需要访问 GitHub Release、PyPI 和语音依赖使用的官方 PyTorch CPU wheel 源；模型下载另需当前 catalog 的固定来源。运行依赖准备完成与模型/Worker 就绪分别报告，旧 Whisper 模型不能替代当前 FunASR 四组件。普通重启不会隐式安装缺失依赖。
+
+如果语音准备在 `dependencies` 阶段失败并报告 `command_failed`，仅凭这个错误码不能断定是缺系统软件。已知旧安装器会因 uv 的首索引策略把 PyTorch CPU 索引中的旧版通用依赖当作唯一候选，导致明明在 PyPI 存在的固定版本无法解析；修复后的语音安装器使用固定官方源之间的版本回退。应使用含修复的版本重试准备，保留已有 profile 和模型；不要靠全局 pip 安装、改版本锁或删除模型目录绕过。代理、下载失败或编译错误仍需按实际失败命令排查，不应只据此错误码归因。
+
+### 安装与启动
+
 ```sh
 npm ci
 npm run build:libs

@@ -95,6 +95,9 @@ test('parallel roles publish independent verified environments and an audio depe
   const pip=f.calls.find(call=>call.args[0]==='pip'&&call.command.includes(`/runtime/${role}/`))!;
   assert.equal(pip.args.filter(arg=>arg==='-r').length,1,'each feature installs only its requirements');
   assert.equal(pip.args.at(-1),join(f.repository,'scripts',role==='ocr'?'requirements-ocr.txt':'requirements-audio.txt'));
+  const strategy=pip.args.indexOf('--index-strategy');
+  if(role==='dialogue')assert.equal(pip.args[strategy+1],'unsafe-first-match','the fixed audio lock needs pinned PyPI fallback after the official CPU index');
+  else assert.equal(strategy,-1,'single-index OCR keeps the default resolver policy');
  }
  const probes=f.calls.filter(call=>call.args[0]==='-c');
  assert.match(probes.find(call=>call.command===audio.python)!.args[1],/funasr/);assert.doesNotMatch(probes.map(call=>call.args[1]).join('\n'),/faster_whisper|sherpa_onnx/);
@@ -132,6 +135,7 @@ test('VLM platform rejection precedes dependency installation and MLX is never t
  if(mediaRoleSupported('local-image')){
   await prepareNativeMediaRuntime({...f,role:'local-image',sourcePython:'/generated/python'});
   const pip=f.calls.find(call=>call.args[0]==='pip')!;assert.equal(pip.args.at(-1),join(f.repository,'scripts/requirements-vlm.txt'));
+  assert.equal(pip.args.includes('--index-strategy'),false,'VLM keeps its single-index resolver policy');
   assert.match(f.calls.find(call=>call.args[0]==='-c')!.args[1],/mlx/);
  }else{
   await assert.rejects(prepareNativeMediaRuntime({...f,role:'local-image'}),/unsupported_platform/);assert.equal(f.calls.length,0);
