@@ -120,6 +120,8 @@ def run_audio(request, original, dialogue_directory, *, backend, threads, timeou
         sys.stderr.write('Generated SDK diagnostic with private recording text')
     while (ROOT/'hold-run').exists() or mode == 'ffmpeg':
         time.sleep(.01)
+    if (ROOT/'delay').exists():
+        time.sleep(float((ROOT/'delay').read_text()))
     if mode.startswith('error:'):
         raise EngineError(mode.split(':', 1)[1])
     if mode == 'crash':
@@ -194,7 +196,7 @@ def multipart(request, audio, boundary='generated-asr02-boundary', audio_first=F
 
 
 class WorkerFixture:
-    def __init__(self, timeout=3, max_audio_ms=86400000, token=TOKEN, install=True, load_timeout=5):
+    def __init__(self, timeout=3, max_audio_ms=86400000, token=TOKEN, install=True, load_timeout=5, request_timeout=12):
         self.temporary = tempfile.TemporaryDirectory(prefix='mote-asr02-test-')
         self.root = Path(self.temporary.name)
         self.models = self.root/'models/dialogue'
@@ -207,6 +209,7 @@ class WorkerFixture:
         if install:
             self.install()
         self.timeout, self.max_audio_ms, self.token, self.load_timeout = timeout, max_audio_ms, token, load_timeout
+        self.request_timeout = request_timeout
         self.child = None
         self.log = (self.root/'worker.log').open('wb')
         self.start()
@@ -250,7 +253,7 @@ class WorkerFixture:
             self.temporary.cleanup()
 
     def http(self, method, path, body=None, headers=None, auth=True):
-        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=12)
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=self.request_timeout)
         fields = {'Authorization': 'Bearer '+self.token} if auth else {}
         fields.update(headers or {})
         try:
@@ -648,20 +651,63 @@ try{
         self.assertEqual(f.post(request, audio, request_id)[0], 409)
 
     def test_request_timeout_and_independent_worker_cap_terminate_before_releasing_capacity(self):
-        f = self.fixture(timeout=2)
+        f = self.fixture(timeout=2, request_timeout=5)
         request, audio = f.request()
+        self.assertTrue(f.health()['dependencies']['ffmpeg'])
+        self.assertTrue(f.health()['diarization'])
+        self.assertFalse(f.health()['wespeaker'])
+        recognition = self.response(f.post(request, audio), request)
+        diarize = {**request, 'operation': 'diarize', 'checkpoint': recognition['checkpoint'],
+                   'speakers': {'mode': 'range', 'min': 1, 'max': 3}}
+        for speakers in ({'mode': 'arbitrary-url'}, {'mode': 'range', 'min': 1},
+                         {'mode': 'range', 'min': 3, 'max': 1},
+                         {'mode': 'range', 'min': 1, 'max': 3, 'count': 2}):
+            result = f.post({**diarize, 'speakers': speakers}, audio)
+            self.assertEqual(result[0], 400)
+            self.assertEqual(result[1].get('x-mote-execution-started'), 'false')
+        diarize_id = str(uuid.uuid4())
+        result = f.post(diarize, audio, diarize_id)
+        self.assertEqual(result[1]['x-mote-receipt-id'], diarize_id)
+        self.assertEqual(self.response(result, diarize)['diarization']['speakers'], diarize['speakers'])
+        fact = f.fact(diarize_id)
+        self.assertEqual((fact['state'], fact['stage']), ('succeeded', 'diarize'))
+        self.assertGreaterEqual(fact['finishedAt'], fact['startedAt'])
+        self.assertNotIn(str(f.root), json.dumps(fact))
+
         (f.root/'hold-run').touch()
-        for timeout in ('1000', '3600000'):
+        with ThreadPoolExecutor(1) as executor:
+            held = executor.submit(f.post, request, audio, str(uuid.uuid4()), {'X-Mote-Processing-Timeout-Ms': '2000'})
+            until(lambda: len(f.runs()) == 3, 'occupied shared ASR/diarization slot')
+            busy = f.post(diarize, audio)
+            self.response(busy, diarize, 'resource_busy')
+            self.assertEqual(busy[0], 429)
+            self.assertEqual(busy[1]['retry-after'], '5')
+            self.assertEqual(busy[1]['x-mote-execution-started'], 'false')
+            self.assertEqual(f.http('GET', '/health')[0], 200)
+            (f.root/'hold-run').unlink()
+            self.response(held.result(timeout=5), request)
+
+        for timeout, cap, delay in (('1000', 1, '1.35'), ('3600000', 2, '2.2')):
+            (f.root/'delay').write_text(delay)
             request_id = str(uuid.uuid4())
             result = f.post(request, audio, request_id, {'X-Mote-Processing-Timeout-Ms': timeout})
             self.response(result, request, 'inference_timeout')
             fact = f.fact(request_id)
             self.assertEqual((fact['state'], fact['failureCode']), ('failed', 'processing_timeout'))
+            self.assertGreaterEqual(fact['finishedAt'], fact['startedAt'])
             self.assertFalse(pid_alive(f.runs()[-1]['pid']))
-        self.assertLessEqual(f.runs()[0]['timeout'], 1)
-        self.assertLessEqual(f.runs()[1]['timeout'], 2)
-        (f.root/'hold-run').unlink()
+            self.assertLessEqual(f.runs()[-1]['timeout'], cap)
+            self.assertEqual(list(f.scratch.iterdir()), [])
+            if timeout == '1000':
+                self.assertEqual(f.http('DELETE', '/executions/'+request_id, headers={'X-Mote-Request-Scope': SCOPE})[0], 200)
+                self.assertEqual(f.post(request, audio, request_id)[0], 409)
+                self.response(f.post(request, audio, extra={'X-Mote-Processing-Timeout-Ms': '2000'}), request)
+                self.assertGreater(f.runs()[-1]['timeout'], 1)
+                self.assertLessEqual(f.runs()[-1]['timeout'], 2)
+        (f.root/'delay').write_text('0.01')
         self.response(f.post(request, audio), request)
+        self.assertGreater(f.runs()[-1]['timeout'], 1)
+        self.assertLessEqual(f.runs()[-1]['timeout'], 2)
         self.assertEqual(list(f.scratch.iterdir()), [])
 
     def test_complete_output_cannot_succeed_when_child_termination_exceeds_request_budget(self):
@@ -706,8 +752,11 @@ try{
                 result = f.post(invalid, audio, request_id)
             self.assertEqual(result[1].get('x-mote-execution-started'), 'false', result)
             self.assertEqual(f.fact(request_id)['outcome'], 'receipt_unavailable')
-        for extra in ({'X-Mote-Processing-Timeout-Ms': '999'}, {'X-Mote-Processing-Timeout-Ms': '3600001'},
-                      {'X-Mote-Processing-Timeout-Ms': '1.0'}, {'X-Mote-Max-Audio-Ms': 'NaN'},
+        for extra in ({'X-Mote-Processing-Timeout-Ms': str(value)} for value in (999, 3600001, '1000.5', '100000000000', 'bad', '1.0')):
+            result = f.post(request, audio, extra=extra)
+            self.assertEqual(result[0], 400)
+            self.assertEqual(result[1].get('x-mote-execution-started'), 'false')
+        for extra in ({'X-Mote-Max-Audio-Ms': 'NaN'},
                       {'X-Mote-Max-Audio-Ms': '-1'}, {'X-Mote-Request-Id': 'not-a-uuid'}):
             result = f.post(request, audio, extra=extra)
             self.assertEqual(result[0], 400)
@@ -814,12 +863,21 @@ try{
 
     def test_no_configured_token_never_accepts_recordings_or_exposes_execution_facts(self):
         f = self.fixture(token='')
-        self.assertEqual(f.http('GET', '/health', auth=False)[0], 401)
-        for method in ('GET', 'DELETE'):
-            self.assertEqual(f.http(method, '/executions/'+str(uuid.uuid4()))[0], 401)
-        result = f.post({'operation': 'recognize'}, generated_audio())
-        self.assertEqual(result[0], 401)
-        self.assertEqual(result[1].get('x-mote-execution-started'), 'false')
+        request_id = str(uuid.uuid4())
+        for authorization in (None, 'Bearer generated-but-not-configured'):
+            headers = {'X-Mote-Request-Scope': SCOPE}
+            if authorization is not None:
+                headers['Authorization'] = authorization
+            self.assertEqual(f.http('GET', '/health', headers=headers, auth=False)[0], 401)
+            for method in ('GET', 'DELETE'):
+                self.assertEqual(f.http(method, '/executions/'+request_id, headers=headers, auth=False)[0], 401)
+            for operation in ('recognize', 'diarize'):
+                body, content_type = multipart({'operation': operation}, generated_audio())
+                result = f.http('POST', '/transcribe' if operation == 'recognize' else '/diarize', body,
+                                {**headers, 'Content-Type': content_type, 'X-Mote-Request-Id': request_id}, auth=False)
+                self.assertEqual(result[0], 401)
+                self.assertEqual(result[1].get('x-mote-execution-started'), 'false')
+                self.assertEqual(json.loads(result[2])['execution'], 'not_started')
         self.assertEqual(f.runs(), [])
 
 
