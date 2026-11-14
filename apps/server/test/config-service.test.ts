@@ -61,8 +61,10 @@ test('semantic no-op edits, object key ordering and self writes do not reapply o
   await service.update('execution', { limit: 4 }, 0); await delay(300);
   assert.equal(applications, 1); assert.equal(service.revision, 1);
   const doc = parse(await fs.readFile(file, 'utf8')) as ConfigDocument;
-  await fs.writeFile(file, stringify(Object.fromEntries(Object.entries(doc).reverse()))); await service.reload();
+  const reordered = '# Generated formatting remains owner-controlled\n' + stringify(Object.fromEntries(Object.entries(doc).reverse()));
+  await fs.writeFile(file, reordered); await service.reload();
   assert.equal(applications, 1); assert.equal(service.revision, 1);
+  assert.equal(await fs.readFile(file, 'utf8'), reordered);
 });
 test('pending external edits and two concurrent API editors conflict instead of overwriting each other', async t => {
   const { service, file } = await fixture(t);
@@ -194,6 +196,10 @@ test('rename acknowledgement failure reads back the committed file and advances 
   assert.equal(service.revision, 1); assert.deepEqual(service.current('execution'), { limit: 5 });
   assert.equal(parse(await fs.readFile(file, 'utf8')).revision, 1);
   assert.ok(!JSON.stringify(service.view()).includes('synthetic-private-key'));
+  await edit(file, document => { document.revision++; });
+  await assert.rejects(service.reload(), { code: 'config_commit_uncertain' });
+  assert.equal(service.revision, 1); assert.deepEqual(service.current('execution'), { limit: 5 });
+  assert.equal(parse(await fs.readFile(file, 'utf8')).revision, 1);
 });
 test('failed atomic replacement keeps the previous file, effective settings, and revision', async t => {
   let fail = false, disposed = 0;
