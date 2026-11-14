@@ -26,6 +26,8 @@ for(const adapter of ['http','codex'] as const)for(const mutation of ['unchanged
  if(adapter==='codex'){
   writeFileSync(join(directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused'}),{mode:0o600});
   writeFileSync(executable,`#!${process.execPath}
+// Protocol fixture only; the real native send gate has separate coverage.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';import {appendFileSync} from 'node:fs';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
@@ -108,6 +110,10 @@ test('a complete 4097-member catalog receipt checks metadata without reading bod
  const originals=node.store.evidence,anchors=node.materials.evidence,text=node.materials.read,canonical=node.memories.readEvidence;
  node.store.evidence=()=>{assert.fail('A catalog guard must not load original bodies');};node.materials.evidence=()=>{assert.fail('A catalog guard must not load anchor bodies');};node.materials.read=()=>{assert.fail('A catalog guard must not read material text');};node.memories.readEvidence=()=>{assert.fail('A catalog guard must not acquire canonical body receipts');};
  try{
+  assert.equal(node.files.readableFile(child.captureId),child.captureId,'attachment file authority needs only parent metadata');
+  assert.equal(node.files.readableFile(chunk),child.captureId,'chunk resolution must not read its attachment parent body');
+  assert.equal(node.files.isCurrentEvidence(chunk),true,'current chunk authority needs only parent metadata');
+  assert.equal(node.files.readableHistoricalFile(child.captureId),true,'retained file authority needs only parent metadata');
   const started=performance.now();assert.equal(reader.memoryCatalogMetadataAllowed(receipt),true);t.diagnostic('Generated 4097-member metadata guard: '+Math.round(performance.now()-started)+' ms');
   assert.equal(reader.memoryCatalogMetadataAllowed(receipt,new EvidenceExposurePolicy([{sourceId,representation:'material',operation:'memory',allow:false}])),false);
   assert.equal(reader.memoryCatalogMetadataAllowed(attachmentReceipt),true,'the existing parent attachment authority is checked without its private body');
@@ -116,4 +122,7 @@ test('a complete 4097-member catalog receipt checks metadata without reading bod
  }finally{node.store.evidence=originals;node.materials.evidence=anchors;node.materials.read=text;node.memories.readEvidence=canonical;}
  node.materials.correctContext(material.id,material.revision,'third_party');assert.equal(reader.memoryCatalogMetadataAllowed(receipt),false,'the next synchronous check has no retained metadata cache');
  node.store.delete(parent.id);assert.equal(reader.memoryCatalogMetadataAllowed(attachmentReceipt),false);assert.equal(fileAttachmentParent(node.store,child.captureId,true),undefined);
+ assert.equal(node.files.readableFile(child.captureId),undefined);assert.equal(node.files.readableFile(chunk),undefined);
+ assert.equal(node.files.isCurrentEvidence(chunk),false);assert.equal(node.files.readableHistoricalFile(child.captureId),false);
+ assert.equal(reader.contextDependenciesAllowed([chunk]),false,'parent deletion also revokes raw attachment chunk dependencies');
 });
