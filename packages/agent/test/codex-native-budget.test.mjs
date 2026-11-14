@@ -32,7 +32,7 @@ async function generatedTls(root) {
   return {ca, key: await readFile(key), cert: await readFile(cert)};
 }
 
-async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, model = 'gpt-5.4', serviceTier, singleReply = false, repair = false, chatgpt = false, forceCompaction = false, authRetry = false, nativeWindow = 272000, workspace = false} = {}) {
+async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, model = 'gpt-5.4', serviceTier, singleReply = false, repair = false, chatgpt = false, forceCompaction = false, authRetry = false, nativeWindow = 272000, workspace = false, connectionProbe = false} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'mote-codex-native-budget-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const workspacePath = join(root, 'workspace');
@@ -45,6 +45,8 @@ async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, mod
     : {OPENAI_API_KEY: 'generated-unused-key'}), {mode: 0o600});
   const rpcPath = join(root, 'rpc.jsonl'), stderrPath = join(root, 'stderr.log'), eventPath = join(root, 'events.jsonl');
   const requests = [], contexts = new Map();
+  const probeRecord = {...record, ocrText: 'This generated test record confirms a read-only model tool round trip. No personal archive is connected.'};
+  const probeReads = [];
   let generations = 0, upgrades = 0, reads = 0, authorizations = 0, authRetries = 0;
   function reply(body, transport, emit) {
     const parent = body.previous_response_id ? contexts.get(body.previous_response_id) : [];
@@ -60,7 +62,11 @@ async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, mod
     let output = [];
     if (body.generate !== false) output = singleReply ? [
       {id: 'generated-ok', type: 'message', role: 'assistant', phase: 'final_answer', status: 'completed', content: [{type: 'output_text', text: 'ok', annotations: []}]},
-    ] : generations === 1 ? [
+    ] : connectionProbe && generations <= 2 ? [
+      {id: `generated-probe-${generations}`, type: 'function_call', call_id: `generated-probe-${generations}`,
+        name: generations === 1 ? 'search_context' : 'evidence',
+        arguments: JSON.stringify(generations === 1 ? {query: 'generated connection test record'} : {ids: [record.id]}), status: 'completed'},
+    ] : !connectionProbe && generations === 1 ? [
       {id: 'generated-commentary', type: 'message', role: 'assistant', phase: 'commentary', status: 'completed', content: [{type: 'output_text', text: '证'.repeat(1200), annotations: []}]},
       {id: 'generated-call', type: 'function_call', call_id: 'generated-call', name: workspace ? 'exec_command' : 'timeline',
         arguments: workspace ? JSON.stringify({cmd: 'python3 -c "from pathlib import Path; p=Path(\'execution-count.txt\'); p.write_text(p.read_text()+\'executed\\n\' if p.exists() else \'executed\\n\'); print(\'generated workspace output \'*200)"', max_output_tokens: 3000}) : '{}', status: 'completed'},
@@ -88,6 +94,9 @@ async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, mod
         default_reasoning_level: 'medium', supported_reasoning_levels: [{effort: 'medium', description: 'Generated fixture'}],
         shell_type: 'shell_command', visibility: 'list', supported_in_api: true, priority: 0,
         supports_reasoning_summary_parameter: true, support_verbosity: false,
+        // The actual Terra catalog selects code mode even when Mote explicitly
+        // disables it. Responses Lite also projects functions into a namespace.
+        ...(connectionProbe ? {tool_mode: 'code_mode_only', use_responses_lite: true} : {}),
         truncation_policy: {mode: 'tokens', limit: 10000}, context_window: nativeWindow,
         effective_context_window_percent: 95, experimental_supported_tools: [],
         service_tiers: [{id: 'priority', name: 'Fast', description: 'Generated Fast capability'}], additional_speed_tiers: ['fast'],
@@ -146,12 +155,14 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
 `, {mode: 0o700});
   const options = {protocol: 'codex-app-server', model, serviceTier, contextWindow: window, maxTokens: 512,
     codex: {home: root, executable}, agentTimeoutMs: 20000, authorizeModelRequest: () => {authorizations++;},
-    reader: {search: async () => [], evidence: async () => [], devices: async () => [], activity: async () => ({}),
+    reader: {search: async () => {if (!connectionProbe) return []; probeReads.push('search_context'); return [probeRecord];},
+      evidence: async args => {if (!connectionProbe) return []; probeReads.push('evidence'); return args.ids.includes(record.id) ? [probeRecord] : [];},
+      devices: async () => [], activity: async () => ({}),
       timeline: async () => {reads++; return {items: [record], nextCursor: null};}},
   };
   const agent = (workspace ? createImportAgent : createAgent)(options);
   t.after(() => agent.close());
-  return {agent, requests, workspacePath, async requestSingleWord() {
+  return {agent, requests, workspacePath, probeRecord, probeReads, async requestSingleWord() {
     const session = new CodexSession(options, async () => assert.fail('a single-word request needs no tool'));
     try {
       await session.start('Generated fixture instructions.', []);
@@ -173,6 +184,41 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
     return ((await readFile(stderrPath, 'utf8').catch(() => '')) + JSON.stringify(errors)).replaceAll(jwt, '[generated credential]').replaceAll('generated-unused-key', '[generated credential]');
   }};
 }
+
+for (const mode of ['websocket', 'http-fallback']) test(`native Terra Fast keeps connection tools callable with code-mode-only catalog over ${mode}`, {timeout: 30000}, async t => {
+  const f = await fixture(t, {mode, model: 'gpt-6.1-terra', serviceTier: 'fast', chatgpt: true, window: 272000, connectionProbe: true});
+  const answer = await f.agent.query({question: 'Run a connection test using only the generated fixture in the connected reader. Call search to find the test record, then evidence to read it. Briefly state what the record confirms and cite its complete ID. Follow the required final answer JSON format.'});
+  const actual = f.requests.filter(r => r.body.generate !== false);
+  assert.equal(actual.length, 3, 'search, evidence and the cited answer each have one generation');
+  for (const request of actual) {
+    assert.equal(request.body.tools, undefined, 'Responses Lite carries tools in additional_tools input items');
+    const specs = [...(request.body.tools ?? []), ...request.fullInput.filter(item => item.type === 'additional_tools').flatMap(item => item.tools)];
+    const tools = specs.flatMap(tool => tool.type === 'namespace' ? tool.tools : [tool]);
+    assert.ok(tools.some(tool => tool.name === 'search_context'), 'search must actually be exposed to the model');
+    assert.ok(tools.some(tool => tool.name === 'evidence'), 'evidence must actually be exposed to the model');
+    assert.equal(tools.find(tool => tool.name === 'search_context').parameters.properties.query.type, 'string');
+    assert.equal(tools.find(tool => tool.name === 'evidence').parameters.properties.ids.items.type, 'string');
+    assert.ok(!tools.some(tool => ['exec', 'exec_command', 'shell_command', 'apply_patch'].includes(tool.name)), 'query tools cannot enable native execution');
+    assert.equal(request.body.model, 'gpt-6.1-terra');
+    assert.equal(request.body.service_tier, 'priority');
+    assert.equal(request.transport, mode === 'websocket' ? 'websocket' : 'http');
+  }
+  assert.deepEqual(f.probeReads, ['search_context', 'evidence']);
+  assert.deepEqual(answer.trace.map(call => call.tool), f.probeReads);
+  assert.deepEqual(answer.citations.map(citation => citation.id), [record.id]);
+  const results = actual.at(-1).fullInput.filter(item => item.type === 'function_call_output');
+  assert.deepEqual(results.map(item => item.call_id), ['generated-probe-1', 'generated-probe-2']);
+  for (const result of results) {
+    const payload = JSON.parse(result.output);
+    assert.equal(payload.source, 'untrusted_personal_context');
+    assert.equal(payload.data[0].id, record.id);
+    assert.equal(payload.data[0].ocrText, f.probeRecord.ocrText);
+  }
+  const stats = await f.stats();
+  assert.equal(stats.turns, 1);
+  assert.equal(stats.authorizations, 1);
+  assert.equal(stats.compacts, 0);
+});
 
 for (const mode of ['websocket', 'http-fallback']) test(`native Terra Fast sends a short request and returns ok over ${mode}`, {timeout: 30000}, async t => {
   const f = await fixture(t, {mode, model: 'gpt-6.1-terra', serviceTier: 'fast', singleReply: true, chatgpt: true, window: 272000});
