@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
 import {parseArtifactRef,parseEvidenceId,queryScopeSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js';
@@ -100,7 +101,8 @@ export class AssistantFollowup {
   if(new Set(input.materialRefs).size!==input.materialRefs.length)throw new StoreError('Material references must be distinct');
   const accept=(task:TaskRecord)=>this.transaction(()=>{assertActive();accepted(task);return task;});
   const prior=this.prior(input,selectedAdmission);if(prior)return accept(prior);
-  const asOf=this.now(),views=input.materialRefs.map(ref=>this.understanding.read({ref,scope,limit:10}));
+  const asOf=this.now(),views:ReturnType<AssistantUnderstandingReader['read']>[]=[];
+  for(const ref of input.materialRefs){assertActive();views.push(this.understanding.read({ref,scope,limit:10}));await yieldTurn();assertActive();}
   const observations=unique(views.flatMap(view=>view.disclosureDependencies.ids)).flatMap(id=>{
    const record=this.store.evidenceMetadata([id])[0];return record?.source==='file'&&record.provenance?[this.files.read({captureId:id,scope})]:[];
   });
@@ -122,26 +124,29 @@ export class AssistantFollowup {
    ...contextCards.flatMap(card=>card.evidenceDependencies.ids),...commitments.flatMap(item=>item.evidenceDependencies.ids)]);
   const matters=matterPage.items.filter(matter=>scopeContains(scope,matter.scope)&&matter.evidenceIds.every(id=>readable.has(id)));
   const originals:{id:string;offset:number;quote:string}[]=[];
-  const materialContext=views.map(view=>{
+  const materialContext=[];
+  for(const view of views){
    const material=view.material;let body:{text:string;complete:boolean}|undefined;
    if(['ready','partial'].includes(view.coverage.extraction.status)&&material.textLength){
     const page=this.reader.materialRead({ref:material.ref,...scope,offset:0,length:Math.min(material.textLength,1000)});
-    for(const span of page.spans){
-     if(span.kind!=='text'||!span.evidenceId||span.evidenceOffset===undefined)continue;
-     const record=this.reader.memories.readCurrentEvidence([span.evidenceId])[0];
+    const spans=page.spans.filter(span=>span.kind==='text'&&span.evidenceId&&span.evidenceOffset!==undefined);
+    const records=new Map(this.reader.memories.readCurrentEvidence(unique(spans.map(span=>span.evidenceId!))).map(record=>[record.id,record]));
+    const windows=spans.flatMap(span=>{
+     const record=records.get(span.evidenceId!);
      // Material pages can append a layout newline to a block; that separator
      // is not part of the cited original and must not enter the quote.
-     const length=Math.min(span.pageRange.end-span.pageRange.start,(record?.ocrText.length??0)-span.evidenceOffset);if(length<1)continue;
-     try{const original=this.understanding.readOriginal({ref:material.ref,scope,id:span.evidenceId,offset:span.evidenceOffset,length});
-      if(original.quote===page.text.slice(span.pageRange.start,span.pageRange.start+length))originals.push({id:original.id,offset:original.offset,quote:original.quote});
-     }catch(error){if(!(error instanceof StoreError&&(error.statusCode===404||error.statusCode===416)))throw error;}
-    }
+     const length=Math.min(span.pageRange.end-span.pageRange.start,(record?.ocrText.length??0)-span.evidenceOffset!);return length<1?[]:[{id:span.evidenceId!,offset:span.evidenceOffset!,length,start:span.pageRange.start}];
+    });
+    try{const selected=this.understanding.readOriginals({ref:material.ref,scope,ranges:windows});
+     for(const [index,original] of selected.entries())if(original&&original.quote===page.text.slice(windows[index].start,windows[index].start+windows[index].length))originals.push({id:original.id,offset:original.offset,quote:original.quote});
+    }catch(error){if(!(error instanceof StoreError&&(error.statusCode===404||error.statusCode===416)))throw error;}
     body={text:page.text,complete:page.text.length===material.textLength&&view.coverage.extraction.status==='ready'};
    }
    for(const product of view.products)for(const original of product.sourceEvidence)originals.push({id:original.id,offset:original.offset,quote:original.quote});
-   return {ref:material.ref,title:material.title,origin:material.origin,coverage:view.coverage,products:view.products.map(product=>({summary:product.summary,events:product.events,workRecords:product.workRecords,generatedAt:product.generatedAt})),
-    productsTruncated:Boolean(view.nextCursor),...(body?{body}:{})};
-  });
+   materialContext.push({ref:material.ref,title:material.title,origin:material.origin,coverage:view.coverage,products:view.products.map(product=>({summary:product.summary,events:product.events,workRecords:product.workRecords,generatedAt:product.generatedAt})),
+    productsTruncated:Boolean(view.nextCursor),...(body?{body}:{})});
+   await yieldTurn();assertActive();
+  }
   const memoryRevisions=memoryPage.items.map(memory=>({id:memory.id,version:memory.version,fingerprint:memory.fingerprint}));
   const contextDependencies=taskEvidenceIds(this.store,deps([...views.flatMap(view=>view.disclosureDependencies.ids),...views.flatMap(view=>view.products.map(product=>{const parsed=parseArtifactRef(product.ref);if(!parsed)throw new StoreError('Semantic product reference is invalid',409);return parsed.id;})),...memoryPage.items.flatMap(memory=>[memory.id,...memory.evidenceIds]),
    ...contextCards.flatMap(card=>card.disclosureDependencies.ids),...commitments.flatMap(item=>item.evidenceDependencies.ids),...observations.flatMap(observation=>observation.disclosureDependencies.ids)]));
@@ -155,7 +160,7 @@ export class AssistantFollowup {
   const memoryRecords=this.reader.memories.readEvidence(unique(memoryPage.items.flatMap(memory=>memory.evidenceIds)));
   const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),...contextCards.map(card=>card.sourceContextDependencies),...commitments.map(item=>item.sourceContextDependencies),
    ...this.materials.contextsForEvidence(memoryRecords).map(context=>context.sourceContextDeclarations)]);
-  const evidenceIds=unique(this.reader.memories.readEvidence(contextDependencies).map(record=>record.id).filter(id=>this.reader.memories.isCurrentEvidence(id)));
+  const evidenceIds=unique(this.reader.memories.readCurrentEvidence(contextDependencies).map(record=>record.id));
   const context={turns:[],asOf,scope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
    memoryTruncated:Boolean(memoryPage.nextCursor),matters:matters.map(matter=>({id:matter.id,revision:matter.revision,goal:matter.goal,correction:matter.correction})),
    cards:cards.map(card=>({id:card.id,revision:card.revision,kind:card.kind,state:card.state,matterId:card.matterId,title:card.title,
@@ -204,7 +209,7 @@ export class AssistantFollowup {
      WHERE s.source_id=? AND s.external_id=?) SELECT capture_id FROM versions WHERE capture_id!=?`)
     .all(value.current.captureId,value.sourceId,value.externalId,value.current.captureId).map(row=>String(row.capture_id));
   })),historical:string[]=[],checkedRoots=new Set<string>();
-  const records=new Map(this.reader.memories.readEvidence([...ids]).map(record=>[record.id,record]));
+  const records=new Map(this.reader.memories.readEvidence([...ids]).map(record=>[record.id,record])),current=new Set(this.reader.memories.readCurrentEvidence(ids).map(record=>record.id));
   const memories=this.store.db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids));
   for(const memory of memories){
    let value=JSON.parse(String(memory.json));if(value.status!=='published')return;
@@ -225,7 +230,7 @@ export class AssistantFollowup {
   }
   for(const id of ids){
    const record=records.get(id);
-   if(!record||this.reader.memories.isCurrentEvidence(id))continue;
+   if(!record||current.has(id))continue;
    let root=this.store.evidenceMetadata([id])[0]?.source==='file'?id:undefined;
    root??=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(id)?.capture_id as string|undefined;
    if(!root){const members=this.store.db.prepare(`SELECT m.ref FROM material_evidence e JOIN material_members m

@@ -209,8 +209,11 @@ export class MemoryStore {
     const own=!options.validateOnly&&!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{
       const evidenceIds=[...new Set([...Object.keys(options.expectedFingerprints??{}),...result.citations.map(c=>c.id)])];
-      const evidenceById=new Map(this.readEvidence(evidenceIds).map(record=>[record.id,record]));
-      const fingerprints=evidenceIds.map(id=>{const record=evidenceById.get(id);return [id,record?memoryEvidenceFingerprint(record):null,this.isCurrentEvidence(id)];});
+      const evidence=this.readEvidence(evidenceIds),evidenceById=new Map(evidence.map(record=>[record.id,record])),current=new Map<string,boolean>();
+      // This guard is synchronous: reuse its canonical read while checking the
+      // live resolver once per ID. Later validation/commit calls read afresh.
+      for(const record of evidence)if(!current.has(record.id))current.set(record.id,this.recordIsCurrent(record));
+      const fingerprints=evidenceIds.map(id=>{const record=evidenceById.get(id);return [id,record?memoryEvidenceFingerprint(record):null,current.get(id)??false];});
       const related=[...new Set([...(options.relatedMemoryIds??[]),...parsed.data.memories.flatMap(m=>(m.relations??[]).map(r=>r.memoryId))])].map(id=>this.get(id));
       let imageReads:ReturnType<typeof memoryImageReadReceipts>;
       try{imageReads=memoryImageReadReceipts(result);}catch{throw new MemoryOutputValidationError('image_evidence','Invalid host image read proof');}
@@ -218,7 +221,7 @@ export class MemoryStore {
       // Validate all batch inputs after model completion, including zero-candidate batches.
       for(const [id,expected] of Object.entries(options.expectedFingerprints??{})){
         const record=evidenceById.get(id);
-        if(!record||!this.isCurrentEvidence(id)||memoryEvidenceFingerprint(record)!==expected)throw new StoreError('Memory evidence changed during extraction',409);
+        if(!record||!current.get(id)||memoryEvidenceFingerprint(record)!==expected)throw new StoreError('Memory evidence changed during extraction',409);
       }
       const validateClaims=()=>parsed.data.memories.map((m,candidateIndex)=>{
         if((!m.admission||!m.evidence))throw new MemoryOutputValidationError('schema','Admission and exact evidence are required');
@@ -231,7 +234,7 @@ export class MemoryStore {
           if(!allowed.has(id))throw new MemoryOutputValidationError('citations','Memory evidence was not retrieved or declared in the outer citations');
           if(options.evidenceRanges&&!options.evidenceRanges.some(range=>range.id===id))throw new MemoryOutputValidationError('scope','Memory evidence is outside this batch');
           const record=evidenceById.get(id);
-          if(!record||!this.isCurrentEvidence(id))throw new StoreError('Memory evidence is missing or superseded',409);
+          if(!record||!current.get(id))throw new StoreError('Memory evidence is missing or superseded',409);
           if(record.provenance?.document?.fileIndex?.coverage==='lightweight')throw new MemoryOutputValidationError('scope','Lightweight indexes require verified original excerpts before memory extraction');
           records.set(id,record);
         }

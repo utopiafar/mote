@@ -7,6 +7,8 @@ import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
+import {FileStore} from '../src/files.js';
+import {RecordContextStore} from '../src/record-context.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
@@ -17,6 +19,46 @@ import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
+
+test('reading a recording batch resolves each exact original context once while keeping segment attribution and fresh revocation',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-recording-context-batch-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),materials=new MaterialStore(store),contexts=new RecordContextStore(store);
+ t.after(async()=>{await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-recording-context',name:'Generated recordings',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});
+ const originals=[];
+ for(const [index,count] of [40,80].entries()){
+  const transcript={durationMs:count*1000,coverage:'full' as const,engine:'generated',segments:Array.from({length:count},(_,n)=>({startMs:n*1000,endMs:(n+1)*1000,speaker:'Generated speaker',text:'Generated segment '+index+'/'+n}))};
+  const original=await files.transcriptRevision('generated-recording-context',{externalId:'generated-recording-'+index,kind:'file',title:'Generated recording '+index,observedAt:'2026-10-13T00:00:00Z'},'Generated recording export '+index,transcript,()=>{});
+  contexts.bind(original.id,'Generated owner description '+index,false);
+  originals.push({id:original.id,chunks:files.chunks(original.id,0,200)});
+ }
+ // One Material contains segments from two originals. Their range-specific
+ // declarations must stay separate even when a batch reuses context reads.
+ const blocks=originals.flatMap((original,index)=>original.chunks.map((chunk,n)=>({id:`segment-${index}-${n}`,kind:'text' as const,format:'transcript',text:chunk.ocrText,memberIds:[original.id],evidenceIds:[chunk.id]})));
+ const material=materials.publish({id:materialId('generated-recording-context','combined'),kind:'mote.note',schemaVersion:1,title:'Generated combined recordings',origin:{sourceId:'generated-recording-context',externalId:'combined'},members:originals.map(original=>({id:original.id,kind:'capture',ref:'capture:'+original.id})),blocks,artifacts:[{key:'material',state:'ready',blockIds:blocks.map(block=>block.id)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
+ const reader=new EvidenceReader(store,sources,files,undefined,undefined,materials),ids=materials.evidenceIds(material.ref),individual=ids.flatMap(id=>reader.memories.readEvidence([id]));
+ let contextReads=0;const prepare=store.db.prepare.bind(store.db);
+ const spy=t.mock.method(store.db,'prepare',(sql:string)=>{if(sql.includes('SELECT DISTINCT c.id,c.device_id'))contextReads++;return prepare(sql);});
+ const records=reader.memories.readEvidence(ids);spy.mock.restore();
+ assert.equal(records.length,120);assert.deepEqual(records,individual,'batched reads preserve every segment and exact original declaration');
+ for(const [index,original] of originals.entries())for(const record of records.slice(index===0?0:40,index===0?40:120)){
+  assert.deepEqual(record.attributionContext?.recordContextStatements?.map(statement=>({id:statement.captureId,text:statement.description})),[{id:original.id,text:'Generated owner description '+index}]);
+ }
+ assert.ok(contextReads<=4,`a two-original batch must not resolve original context for every segment (${contextReads} reads)`);
+ const output={answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-recording-validation'},options={validateOnly:true,expectedFingerprints:Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)]))};
+ let originalReads=0;const read=reader.memories.readEvidence.bind(reader.memories);
+ const readSpy=t.mock.method(reader.memories,'readEvidence',(ids:string[])=>{originalReads++;return read(ids);});
+ assert.deepEqual(reader.memories.extract(output,'generated',options),{items:[],runId:output.runId});readSpy.mock.restore();
+ assert.equal(originalReads,1,'zero-candidate validation must check the whole current batch without rereading every original twice');
+ store.db.prepare('INSERT INTO file_evidence_links(parent_id,capture_id) VALUES(?,?)').run(originals[1].id,originals[0].chunks[0].id);
+ const selected=[ids[0],ids[1],ids[40]],linked=reader.memories.readEvidence(selected);
+ assert.deepEqual(linked,selected.flatMap(id=>reader.memories.readEvidence([id])),'an explicit chunk-parent link must not reuse a sibling context');
+ assert.deepEqual(linked[0].attributionContext?.recordContextStatements?.map(statement=>statement.description).sort(),['Generated owner description 0','Generated owner description 1']);
+ assert.deepEqual(linked[1].attributionContext?.recordContextStatements?.map(statement=>statement.description),['Generated owner description 0']);
+ assert.throws(()=>reader.memories.extract(output,'generated',options),/Memory evidence changed/,'the next validation must observe changed original attribution');
+ store.delete(originals[0].id);
+ assert.equal(reader.memories.readCurrentEvidence(ids).length,0,'the next guard must observe deletion of a combined Material member');
+ assert.equal(reader.memories.readCurrentEvidence(originals[1].chunks.map(chunk=>chunk.id)).length,80,'the independent surviving original stays current');
+});
 
 test('batch Memory guards reuse formal metadata while preserving exact originals and fresh revocation',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-read-batch-')),store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store),reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials),engine=new ExecutionEngine(store);

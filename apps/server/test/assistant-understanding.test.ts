@@ -61,6 +61,17 @@ async function fixture(t:TestContext,coverage:MaterialDraft['coverage']={state:'
   return {store,sources,materials,runtime,reader,adapter,memories,a,b,body,draft,material,anchor,produce};
 }
 
+test('batched original windows preserve exact reads, omit unavailable ranges and recheck source authority on the next call',async t=>{
+ const f=await fixture(t),first={id:f.anchor,offset:0,length:pieces[0].length},tail={id:f.anchor,offset:pieces[0].length+pieces[1].length,length:pieces[2].length};
+ const expected=[f.adapter.readOriginal({ref:f.material.ref,scope,...first}),f.adapter.readOriginal({ref:f.material.ref,scope,...tail})];
+ let unrelatedRead=false;const read=f.reader.evidence.bind(f.reader);
+ const spy=t.mock.method(f.reader,'evidence',(...args:Parameters<typeof read>)=>{if(args[0].includes('capture:'+f.b.id))unrelatedRead=true;return read(...args);});
+ const actual=f.adapter.readOriginals({ref:f.material.ref,scope,ranges:[first,tail,{id:f.b.id,offset:0,length:1},{id:f.anchor,offset:f.body.length,length:1}]});
+ assert.deepEqual(actual,[...expected,undefined,undefined]);assert.equal(unrelatedRead,false,'an out-of-lineage original must not be loaded');spy.mock.restore();
+ f.store.delete(f.a.id);
+ assert.throws(()=>f.adapter.readOriginals({ref:f.material.ref,scope,ranges:[first]}),{statusCode:404});
+});
+
 test('real persisted conversation products retain original role, reported status and exact sources with no Memory candidates',async t=>{
   const f=await fixture(t);const first=await f.produce(0,pieces[0].length),tailOffset=pieces[0].length+pieces[1].length,tail=await f.produce(tailOffset,pieces[2].length);
   const view=f.adapter.read({ref:f.material.ref,scope});
