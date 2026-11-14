@@ -79,6 +79,8 @@ internal object NativeDefaultPluginInventory {
         NativeComponentOwner("activity", component("FileContentActivity"), "dev.mote.sources", SourceProviderPlugin.CAPABILITY),
         NativeComponentOwner("activity", component("SourcesActivity"), "dev.mote.sources", SourceProviderPlugin.CAPABILITY),
         NativeComponentOwner("activity", component("FileTaskActivity"), "dev.mote.sources", SourceProviderPlugin.CAPABILITY),
+        NativeComponentOwner("activity", component("meeting.MeetingRecordingActivity"), "dev.mote.sources", SourceProviderPlugin.CAPABILITY),
+        NativeComponentOwner("service", component("meeting.MeetingRecordingService"), "dev.mote.sources", SourceProviderPlugin.CAPABILITY),
 
         NativeComponentOwner("activity", component("UploadHistorySettingsActivity"), "dev.mote.durable-upload", "mote.durable-upload"),
         NativeComponentOwner("activity", component("UploadOriginalActivity"), "dev.mote.durable-upload", "mote.durable-upload"),
