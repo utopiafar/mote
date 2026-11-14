@@ -110,21 +110,43 @@ Material pin, original membership, source permissions and original hash. Model
 requests and publication recheck the same authority after deletion, replacement,
 attribution changes, restart and late delivery.
 
-Sufficient delivered OCR can support exact text quotations without an image
-request. An unread pure-image locator cannot support a successful assessment:
-missing necessary pixels or same-original OCR must remain incomplete. OCR from
-another member in the same Material is not proof of that image. Visual claims
-select a successfully delivered `imageView`; the host saves its original hash,
-coordinates, transform and output identity as `MemoryEvidence.image`. A model's
+Selecting only the OCR/text output evaluates its exact text and can support
+quotations without an image request. It makes no assessment of unseen visual
+contents. An original-image locator selected as a target retains a separate
+image-evaluation responsibility, identified by `memoryWork.members[].imageTarget`
+and the exact original SHA256. Successful coverage requires a delivered view of
+the complete image in each independent evaluation. Metadata, a partial crop,
+interpretation and even nonempty OCR from that same original cannot certify the
+unseen remainder. The model still decides meaning, uncertainty and whether more
+detailed regions are needed. A context-only original locator is optional context,
+not another target, and does not force disclosure for a sufficient text target.
+
+If any selected image target has disclosure disabled, the task enters
+`waiting_for_input` with `image_disclosure_disabled` before preparation, extraction
+or review. It preserves all frozen targets and makes no model call. Explicit
+retry of an existing incomplete task uses the same check, including after
+restart; repeating that retry while disabled cannot re-review an impossible
+scope. The owner can use the existing image setting and explicit retry, select
+OCR/text in a separate manual task, or cancel. Neither retry nor an OCR-only
+reselection silently removes the old image targets or changes the image setting.
+Revocation during work also fences phase and publication results. New image
+target checkpoints and model-phase identities include this image-assessment
+responsibility; a prior locator-as-text checkpoint cannot complete a new image
+selection. Existing completed jobs are not replayed.
+
+Visual claims select a successfully delivered `imageView`; the host saves its
+original hash, coordinates, transform and output identity as `MemoryEvidence.image`. A model's
 JSON, interpretation, metadata response or prepared-but-unconfirmed payload
 cannot supply that delivery receipt. Interpretation JSON and locator JSON cannot
 be quoted as original image contents.
 
 Independent review receives the same frozen read grant, but no inherited pixel
 delivery. A retained visual claim requires the reviewer's own current image or a
-region covering its required original proof. The reviewer can discard an
-image's visual claims without making a needless image request. Bounded deletion
-review and consolidation can reuse the same scoped read contract; consolidation
+region covering its required original proof. Discarding visual proposals does
+not complete a selected image target without the reviewer's own full-image
+assessment. For context-only images, discarding all visual claims removes the
+need for their pixel reads. Bounded deletion review and consolidation can reuse
+the same scoped read contract; consolidation
 derives it only from the exact selected cards' current saved visual proofs.
 
 Coverage identity is the evidence anchor and original hash, independent of
@@ -133,8 +155,8 @@ cites that visual group, every draft view actually cited for the group needs a
 covering view cited by the reviewer. Separate reviewer views can cover separate
 draft crops; partial views are not geometrically stitched to cover one larger
 proof. Extra uncited extraction reads add no requirement. Dropping the entire
-group's visual citations removes its coverage requirement. This conservative
-grouping avoids inferring claim identity from prose when candidates are edited,
+group's visual citations removes its draft-proof coverage requirement, while
+selected image targets still require assessment. This conservative grouping avoids inferring claim identity from prose when candidates are edited,
 split or merged.
 
 The current external full-engine native integration protocol accepts exact text
@@ -148,8 +170,9 @@ not create a new current image grant or a runtime pixel receipt.
 Native extraction likewise receives text ranges, including a locator when it is
 selected; the external engine does not thereby receive pixels. Its empty draft
 still goes through Mote's independent review. That reviewer can inspect the
-frozen original grant, or use sufficient delivered OCR from the same original.
-Without either, the target remains unfinished rather than becoming a successful
+frozen original grant. Sufficient delivered OCR supports text targets only;
+selected image targets still require the reviewer's own complete image view.
+Without it, the image target remains unfinished rather than becoming a successful
 empty result. A successful host review with its own visual proof is not evidence
 of native visual-extraction support in that engine.
 
