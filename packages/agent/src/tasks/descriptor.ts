@@ -16,17 +16,17 @@ export const TASK_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = Object.free
   additionalProperties: false,
 });
 
-/** Ordinary answer tasks may additionally propose one goal-only draft. The
- * nested object is strict so the model cannot supply host identity, scope,
- * revision, capability, task or action fields. */
+/** Strict provider schemas require every property; null means no proposal.
+ * The goal-only object cannot supply host identity, scope, revision,
+ * capability, task or action fields. */
 export const ASSISTANT_DRAFT_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({
   type: 'object',
   properties: {
     answer: {type: 'string'},
     citationIds: {type: 'array', items: {type: 'string'}},
-    draft: {type: 'object', properties: {goal: {type: 'string'}}, required: ['goal'], additionalProperties: false},
+    draft: {type: ['object', 'null'], properties: {goal: {type: 'string'}}, required: ['goal'], additionalProperties: false},
   },
-  required: ['answer', 'citationIds'],
+  required: ['answer', 'citationIds', 'draft'],
   additionalProperties: false,
 });
 
