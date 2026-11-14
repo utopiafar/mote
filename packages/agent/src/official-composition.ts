@@ -316,21 +316,21 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       trace({type: 'instructions.assembled', stage: 'starting', payload: {system, tools: definitions}});
       trace({type: 'context.assembled', stage: 'starting', payload: {prompt, metrics, seedEvidence: bridge.seedEvidence}});
       const traceTool = (event: Parameters<typeof reportTrace>[1]) => { if (selectedRuntime.emitHostToolTrace) trace(event); };
-      // A conservative HTTP fallback is not a smaller native model window. The
-      // native client owns the documented 272k fallback and still intersects it
-      // with the catalog's real window; an owner-configured value stays pinned.
-      const codexConservative=selectedRuntime.id===CODEX_RUNTIME_ID&&input.modelBudget?.contextWindowSource==='conservative';
-      const capacity=codexConservative
-        ?{...input.modelBudget!,contextWindow:CODEX_CONSERVATIVE_CONTEXT_WINDOW}
-        :input.modelBudget??resolveModelCapabilities(options);
-      const window=capacity.contextWindow,outputReserve='maxOutputTokens' in capacity?capacity.maxOutputTokens:capacity.maxTokens;
+      // Both an explicit conservative conversation budget and a background run
+      // without a per-run budget use the same native default. Applying the HTTP
+      // fallback here can reject full Memory targets before App Server starts.
+      // The native gate still intersects this window with the actual catalog;
+      // configured per-run and model windows remain pinned.
+      const codexConservative=selectedRuntime.id===CODEX_RUNTIME_ID&&(input.modelBudget?.contextWindowSource==='conservative'||!input.modelBudget&&options.contextWindow===undefined);
+      const capacity=input.modelBudget??resolveModelCapabilities(options);
+      const window=codexConservative?CODEX_CONSERVATIVE_CONTEXT_WINDOW:capacity.contextWindow,outputReserve='maxOutputTokens' in capacity?capacity.maxOutputTokens:capacity.maxTokens;
       // This is a conservative pre-delivery allowance. The HTTP adapter checks
       // its complete, actual serialized body again for every provider turn.
       const initialEstimate=estimateSerializedTokens({system,tools:definitions,prompt}).tokens;
       // Early Host allowance only. The required Mote native dependency checks
       // each complete provider request again, including internal continuations,
       // using its documented model output ceiling rather than Host maxTokens.
-      if(selectedRuntime.id===CODEX_RUNTIME_ID&&initialEstimate+outputReserve>window)throw new AgentProviderError({category:'permanent',code:'processing_limit'});
+      if(selectedRuntime.id===CODEX_RUNTIME_ID&&initialEstimate+outputReserve>window)throw new AgentProviderError({category:'permanent',code:'processing_limit',executionStarted:false},{source:'runtime',stage:'startup',code:'contextWindowExceeded',modelId:options.model});
       let toolRemaining=Math.max(0,window-outputReserve-initialEstimate-2048);
       const controlled=new Set((input.hostControlChannel?.definitions??[]).map(tool=>tool.name));
       const paged=new Set(['evidence','context_evidence','material_read','attribution_context']);

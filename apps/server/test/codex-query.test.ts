@@ -36,6 +36,8 @@ async function fixture(t: import('node:test').TestContext) {
   const modePath = join(directory, 'mode'), eventsPath = join(directory, 'events.ndjson');
   writeFileSync(join(directory, 'auth.json'), JSON.stringify({OPENAI_API_KEY: 'generated-unused'}), {mode: 0o600});
   writeFileSync(executable, `#!${process.execPath}
+// Protocol fixture only; the real native send gate has separate coverage.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync,readFileSync} from 'node:fs';
 const mode=readFileSync(${JSON.stringify(modePath)},'utf8').trim();
