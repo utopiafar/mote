@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {execFile} from 'node:child_process';
+import {execFile,spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {existsSync} from 'node:fs';
-import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
+import {lstat,mkdtemp,mkdir,open,readdir,realpath,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -79,4 +80,42 @@ test('import-files dry run scans a generated file without contacting a node',asy
   const script=fileURLToPath(new URL('./import-files.ts',import.meta.url));
   const {stdout}=await promisify(execFile)(process.execPath,['--import','tsx',script,'--root',file,'--dry-run'],{cwd:fileURLToPath(new URL('../',import.meta.url))});
   assert.match(stdout,/Would send 1 changed files/);
+});
+
+test('import-files archive preview counts all seven eligible audio files across the 16 MiB shard boundary',async t=>{
+  const directory=await realpath(await mkdtemp(join(tmpdir(),'mote-cli-audio-preview-')));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const selected=join(directory,'selected'),profile=join(directory,'profile'),temporary=join(directory,'temporary');
+  for(const path of [selected,profile,temporary])await mkdir(path,{mode:0o700});
+  const MiB=1024*1024,sizes=[1024,16*MiB,16*MiB+1,17*MiB,18*MiB,19*MiB,20*MiB,512*MiB+1];
+  for(const [index,size] of sizes.entries()){
+    const handle=await open(join(selected,`generated-${index}.m4a`),'wx',0o600);
+    try{await handle.truncate(size);}finally{await handle.close();}
+  }
+  const configFile=join(profile,'mote.yaml');
+  await writeFile(configFile,'version: 1\nrevision: 0\nserver:\n  profile: test\n  host: 127.0.0.1\n  port: 9\n  token: generated-preview-only\n',{mode:0o600});
+  const env={...Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('MOTE_'))),MOTE_CONFIG_FILE:configFile,TMPDIR:temporary,TSX_DISABLE_CACHE:'1'};
+  const script=fileURLToPath(new URL('./import-files.ts',import.meta.url));
+  const {stdout}=await promisify(execFile)(process.execPath,['--import','tsx',script,'--root',selected,'--retention','archive','--dry-run'],{env,cwd:fileURLToPath(new URL('../',import.meta.url))});
+  assert.match(stdout,/Would send 7 changed files; skipped 1; deletion scan not applied\./);
+  assert.deepEqual(await readdir(profile),['mote.yaml'],'preview must not create a durable outbox or access markers in the selected profile');
+  assert.deepEqual(await readdir(temporary),[],'preview must clean its temporary original spools');
+  assert.equal((await readdir(selected)).length,8);
+
+  const watcher=spawn(process.execPath,['--import','tsx',script,'--root',join(selected,'generated-2.m4a'),'--retention','archive','--dry-run','--watch'],{env,cwd:fileURLToPath(new URL('../',import.meta.url)),stdio:['ignore','pipe','pipe']});
+  const exited=once(watcher,'close');
+  try{
+    let output='',errors='';watcher.stderr.on('data',part=>{errors+=part.toString();});
+    await new Promise<void>((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('Watch preview did not finish its first scan: '+errors)),10_000);
+      watcher.stdout.on('data',part=>{output+=part.toString();if(/Would send 1 changed files; skipped 0; deletion scan not applied\./.test(output)){clearTimeout(timer);resolve();}});
+      watcher.once('close',()=>{clearTimeout(timer);reject(Error('Watch preview exited before its first scan: '+errors));});
+    });
+    const directories=await readdir(temporary);assert.equal(directories.length,1);
+    const preview=join(temporary,directories[0]!);assert.equal((await lstat(preview)).mode&0o777,0o700);
+    assert.deepEqual(await readdir(join(preview,'access.json.originals')),[],'watch preview must release original bytes before waiting');
+    watcher.kill('SIGTERM');assert.equal((await exited)[0],0);
+    assert.deepEqual(await readdir(temporary),[],'SIGTERM must clean the remaining preview markers');
+    assert.deepEqual(await readdir(profile),['mote.yaml']);
+  }finally{watcher.kill('SIGKILL');await exited;}
 });

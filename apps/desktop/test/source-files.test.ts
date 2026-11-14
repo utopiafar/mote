@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmod, copyFile, mkdtemp, mkdir, lstat, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, mkdir, lstat, open, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanSourceFiles } from '../src/source-files';
@@ -169,6 +171,45 @@ it('skips unchanged audio after spooling its transient central input',async()=>{
  const spool=first.items[0].localOriginal!;
  const second=await scanSourceFiles(path,options,undefined,marker,first.checkpoint as any);expect(second.items).toEqual([]);
  expect(await readFile(join(spool.directory,'0'))).toEqual(Buffer.from('Generated audio fixture'));
+});
+
+it('spools audio above 16 MiB in private bounded parts while rejecting originals above 512 MiB',async()=>{
+ const selected=join(root,'selected');await mkdir(selected);
+ const path=join(selected,'generated.m4a'),size=16*1024*1024+1;
+ for(const [file,bytes] of [[path,size],[join(selected,'oversized.m4a'),512*1024*1024+1]] as const){
+  const handle=await open(file,'wx',0o600);try{await handle.truncate(bytes);await handle.write(Buffer.from('Generated audio fixture'));}finally{await handle.close();}
+ }
+ const options={...DEFAULT_SOURCE_OPTIONS,retention:'archive' as const},before=await lstat(path);
+ const inline=await scanSourceFiles(selected,options);expect(inline.items).toEqual([]);expect(inline.skipped).toBe(2);
+ const first=await scanSourceFiles(selected,options,undefined,join(root,'access.json'));
+ expect(first.items).toHaveLength(1);expect(first.complete).toBe(false);expect(first.items[0].localOriginalBase64).toBeUndefined();
+ const item=first.items[0],spool=item.localOriginal!;
+ expect(spool.sizeBytes).toBe(size);expect(spool.partBytes).toBe(4*1024*1024);
+ expect(item.metadata?.file?.sizeBytes).toBe(size);expect(item.modifiedAt).toBe(before.mtime.toISOString());expect(item.mimeType).toBe('audio/mp4');
+ expect((await lstat(spool.directory)).mode&0o777).toBe(0o700);
+ expect((await readdir(spool.directory)).sort()).toEqual(['0','1','2','3','4']);
+ const inputHash=createHash('sha256');for await(const bytes of createReadStream(path))inputHash.update(bytes);
+ const outputHash=createHash('sha256');
+ for(let part=0;part<5;part++){
+  const partPath=join(spool.directory,String(part)),bytes=await readFile(partPath);
+  expect(bytes.length).toBe(Math.min(4*1024*1024,size-part*4*1024*1024));expect((await lstat(partPath)).mode&0o777).toBe(0o600);outputHash.update(bytes);
+ }
+ expect(outputHash.digest('hex')).toBe(spool.sha256);expect(spool.sha256).toBe(inputHash.digest('hex'));expect(item.document?.fileIndex?.contentVersion).toBe(spool.sha256);
+ const tail=await scanSourceFiles(selected,options,undefined,join(root,'access.json'),first.checkpoint as LocalFileCheckpoint);
+ expect(tail.items).toEqual([]);expect(tail.skipped).toBe(1);expect(tail.complete).toBe(true);
+});
+
+it('large audio keeps metadata-only reference and literal-mask privacy boundaries',async()=>{
+ const path=join(root,'generated.m4a'),handle=await open(path,'wx',0o600);
+ try{await handle.truncate(512*1024*1024+1);}finally{await handle.close();}
+ const reference=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,retention:'reference'},undefined,join(root,'reference-access.json'));
+ expect(reference.complete).toBe(true);expect(reference.items).toHaveLength(1);expect(reference.items[0].metadata?.file?.sizeBytes).toBe(512*1024*1024+1);
+ expect(reference.items[0].localOriginal).toBeUndefined();expect(reference.items[0].localOriginalBase64).toBeUndefined();
+ const smaller=await open(path,'r+');try{await smaller.truncate(16*1024*1024+1);}finally{await smaller.close();}
+ const blocked=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,redactLiterals:['generated-private']},undefined,join(root,'masked-access.json'));
+ expect(blocked.complete).toBe(true);expect(blocked.items).toHaveLength(1);expect(blocked.items[0].document?.fileIndex?.status).toBe('blocked');
+ expect(blocked.items[0].localOriginal).toBeUndefined();expect(blocked.items[0].localOriginalBase64).toBeUndefined();expect(blocked.items[0].text).toBe('');
+ expect((await readdir(root)).sort()).toEqual(['generated.m4a','masked-access.json','reference-access.json']);
 });
 
 it('blocks complex formats with literal privacy masks without copying raw input',async()=>{const path=join(root,'generated.wav');await writeFile(path,'synthetic-private audio bytes');const result=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,extensions:['.wav'],redactLiterals:['synthetic-private']});expect(result.items[0].document?.fileIndex?.status).toBe('blocked');expect(result.items[0].localOriginal).toBeUndefined();expect(result.items[0].localOriginalBase64).toBeUndefined();expect(result.items[0].text).toBe('');});
