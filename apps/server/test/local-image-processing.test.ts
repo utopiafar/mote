@@ -24,6 +24,7 @@ import {createImageProcessingService,imageProcessingServiceForAssembly} from '..
 import {createPluginControlPlatform,pluginControlDeclaration,type PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {PluginControlStore} from '../src/plugins/plugin-control-store.js';
+import {agentModelConnection} from '../src/model-authorization-host.js';
 import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 
 const scripts=fileURLToPath(new URL('../../../scripts/',import.meta.url));
@@ -135,7 +136,7 @@ async function fixture(t:TestContext,options:{enabled?:boolean;authorize?:boolea
  const settle=async()=>{await central.perception.tick();for(let i=0;i<30;i++)if(await central.materialOrganizer.tick(100)===0)return;assert.fail('Material organizer did not settle');};
  const held=(kind:'local'|'cloud'|'ocr'|'queued'|'status')=>{const value=gate();gates.push(value);if(kind==='local')localGate=value;else if(kind==='cloud')cloudGate=value;else if(kind==='ocr')ocrGate=value;else if(kind==='queued')queuedGate=value;else statusGate=value;return value;};
  const product=(id:string,kind='understanding')=>{const row=central.store.db.prepare('SELECT json FROM image_products WHERE capture_id=? AND kind=? AND current=1').get(id,kind);return row?JSON.parse(String(row.json)):undefined;};
- const retry=async(id:string)=>withFixtureOwnerModelWork(central,async()=>central.perception.retry(id,false),{identities:['capture:'+id],connections:[...central.featureServices.availableModelConnections(),...central.perception.modelConnections()]});
+ const retry=async(id:string)=>{const response=await central.app.inject({method:'POST',url:`/api/images/${id}/retry`,headers,payload:{mode:'complete'}});assert.equal(response.statusCode,200,response.body);return response.json();};
  return {node:central,headers,directory,controlStore,local,plugins,enable,image,upload,screen,settle,held,product,retry,localCalls,cloudCalls,responses,ocrCalls:()=>ocrCalls,setFault:(value:string)=>{fault=value;},failOcr:()=>{failOcr=true;},intakeCloud:()=>cloudCalls.filter(call=>call.phase==='image-understanding'),usage:()=>central.store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt)};
 }
 
@@ -193,8 +194,25 @@ test('stopping background authorization during the local readiness wait prevents
 test('manual completion checks the actual local connection rather than inheriting a cloud connection grant',async t=>{
  const f=await fixture(t);f.setFault('model_missing');const id=await f.upload(await f.image());await f.settle();
  const off=await f.node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:f.headers,payload:{revision:f.node.modelAuthorization.view().revision,operationId:randomUUID(),action:'off'}});assert.equal(off.statusCode,200,off.body);f.setFault('');
+ const ocrCalls=f.ocrCalls();
  await withFixtureOwnerModelWork(f.node,async()=>f.node.perception.retry(id,false),{identities:['capture:'+id]});await f.settle();assert.equal(f.localCalls.length,1);assert.equal(f.product(id),undefined);assert.equal(f.node.perception.detail(id).jobs.find(j=>j.name==='understanding')!.error,'background_model_authorization_required');
- await f.retry(id);await f.settle();assert.equal(f.localCalls.length,2);assert.ok(f.product(id));assert.equal(f.intakeCloud().length,0);assert.equal(f.node.modelAuthorization.view().state,'off');
+ const available=f.node.featureServices.availableModelConnections();assert.ok(!f.node.perception.modelConnections().some(local=>local.id.startsWith('local-image:')&&available.some(connection=>connection.id===local.id&&connection.fingerprint===local.fingerprint)));
+ await f.retry(id);await f.settle();assert.equal(f.localCalls.length,2);assert.ok(f.product(id));assert.equal(f.ocrCalls(),ocrCalls);assert.equal(f.intakeCloud().length,0);assert.equal(f.node.modelAuthorization.view().state,'off');
+});
+
+test('explicit cloud and OCR grants cannot authorize a ready local image while background authorization is off',async t=>{
+ const f=await fixture(t,{authorize:false}),id=await f.upload(await f.image()),selected=f.node.modelSettings.select('file');
+ const connections=[agentModelConnection({kind:'profile',id:selected.id},selected.settings),...f.node.processing.modelConnections()];
+ await withFixtureOwnerModelWork(f.node,async()=>f.node.perception.retry(id,false),{identities:['capture:'+id],connections});await f.settle();
+ assert.equal(f.localCalls.length,0);assert.equal(f.product(id),undefined);assert.ok(f.product(id,'ocr'));assert.equal(f.ocrCalls(),1);assert.equal(f.node.files.detail(id).hasOriginal,true);assert.equal(f.node.perception.detail(id).jobs.find(j=>j.name==='understanding')!.error,'background_model_authorization_required');assert.equal(f.usage().filter(item=>item.operation==='image-understanding').length,0);
+ await f.retry(id);await f.settle();assert.equal(f.localCalls.length,1);assert.ok(f.product(id));assert.equal(f.ocrCalls(),1);assert.equal(f.intakeCloud().length,0);assert.equal(f.node.modelAuthorization.view().state,'off');
+});
+
+test('confirmed historical image processing grants the local connection while background authorization stays off',async t=>{
+ const f=await fixture(t,{authorize:false}),ids=[await f.upload(await f.image()),await f.upload(await f.image())];
+ const preview=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-preview',headers:f.headers,payload:{sourceId:'generated-import'}});assert.equal(preview.statusCode,200,preview.body);assert.equal(preview.json().count,2);
+ const processed=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-process',headers:f.headers,payload:{token:preview.json().token}});assert.equal(processed.statusCode,200,processed.body);assert.equal(processed.json().queued,true);
+ await f.settle();assert.equal(f.localCalls.length,2);for(const id of ids){assert.ok(f.product(id));assert.ok(f.product(id,'ocr'));}assert.equal(f.ocrCalls(),2);assert.equal(f.intakeCloud().length,0);assert.equal(f.node.modelAuthorization.view().state,'off');
 });
 
 for(const mutation of ['cancel','delete','replace','source'] as const)test(`${mutation} while local HTTP is in flight cannot publish its late interpretation`,async t=>{

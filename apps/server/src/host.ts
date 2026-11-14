@@ -283,8 +283,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     if(config.embeddingModel&&config.embeddingBaseUrl)models.push(modelConnection('embedding:central',{model:config.embeddingModel,baseUrl:config.embeddingBaseUrl,apiKey:config.embeddingApiKey}));
     return [...new Map([...models,...additionalModelConnections()].map(connection=>[connection.id+'@'+connection.fingerprint,connection])).values()];
   };
-  const withMediaOwnerIntent=<T>(id:string,task:()=>Promise<T>|T)=>modelAuthorizationHost.manual('owner-media:'+randomUUID(),availableModelConnections(),async()=>task(),undefined,'manual',[captureModelIdentity(id)]);
-  const withMediaOwnerBatch=async<T>(ids:readonly string[],task:()=>T)=>modelAuthorization.manualCommand('owner-media-batch:'+randomUUID(),ids.map(captureModelIdentity),availableModelConnections(),task);
+  // Intake-only models belong to explicit media work, never to a general
+  // model grant. Resolve them at the existing retry/backfill boundary.
+  const mediaOwnerConnections=()=>[...new Map([...availableModelConnections(),...perception.modelConnections()].map(connection=>[connection.id+'@'+connection.fingerprint,connection])).values()];
+  const withMediaOwnerIntent=<T>(id:string,task:()=>Promise<T>|T)=>modelAuthorizationHost.manual('owner-media:'+randomUUID(),mediaOwnerConnections(),async()=>task(),undefined,'manual',[captureModelIdentity(id)]);
+  const withMediaOwnerBatch=async<T>(ids:readonly string[],task:()=>T)=>modelAuthorization.manualCommand('owner-media-batch:'+randomUUID(),ids.map(captureModelIdentity),mediaOwnerConnections(),task);
   // Memory runtime is assembled after the query activation and lends its
   // prepared working context through stable late-bound handles.
   let memoryWorkingHost:Pick<WorkingMemory,'prepare'>|undefined;
@@ -346,7 +349,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));
   resources.defer(disposeCaptureMemoryIntake);
   const {perception}=assemblePerception({store,config,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
-  additionalModelConnections=()=>[...processing.modelConnections(),...perception.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
+  additionalModelConnections=()=>[...processing.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return query.withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
   workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,
