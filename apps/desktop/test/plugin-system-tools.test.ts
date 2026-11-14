@@ -64,7 +64,11 @@ const register=async(plugin:SystemToolsPlugin,host:DesktopPluginHost)=>{
 };
 
 let directories:string[]=[];
+let plugins:SystemToolsPlugin[]=[];
 afterEach(async()=>{
+  // IPC event writes are queued independently of the response. Drain them
+  // before removing their private profiles, including after a failed assertion.
+  await Promise.all(plugins.splice(0).map(async plugin=>{await plugin.close();await plugin.events.read();}));
   await Promise.all(directories.splice(0).map(path=>rm(path,{recursive:true,force:true})));
   vi.clearAllMocks();
 });
@@ -73,6 +77,7 @@ it('exports a privacy bounded support bundle and never includes secrets or priva
   const directory=await mkdtemp(join(tmpdir(),'mote-system-tools-support-'));directories.push(directory);
   const target=join(directory,'support.json');
   const plugin=createSystemToolsPlugin(options(directory,{chooseSupportPath:async()=>target}));
+  plugins.push(plugin);
   await plugin.events.record('UPLOAD','AUTH',{httpStatus:401});
   const forgedAt=Date.now()-1000;
   await appendFile(join(directory,'diagnostics','events.0.ndjson'),
@@ -98,6 +103,7 @@ it('applies local log levels through the real settings IPC and retains them afte
   const prod=options(directory,{profile:{name:'prod',defaultProfile:true,dataDirectory:directory,defaultServerUrl:'http://127.0.0.1:47832'},chooseLogPath:async()=>logExport});
   expect(prod.status().config.diagnosticsEnabled).toBe(false);
   const plugin=createSystemToolsPlugin(prod),fake=makeRouter(),host=new DesktopPluginHost({router:fake.router,native:new NativeProviderRegistry('mac')});
+  plugins.push(plugin);
   host.registerWindow(7,'main',[systemToolsReadCapability,systemToolsManageCapability]);await register(plugin,host);
   try {
     expect(await okValue(fake.invoke(systemToolsChannels.logSettings,view()))).toMatchObject({enabled:true,level:'info',directory:join(directory,'diagnostics')});
@@ -110,6 +116,7 @@ it('applies local log levels through the real settings IPC and retains them afte
     expect(await okValue(fake.invoke(systemToolsChannels.logExport,view()))).toEqual({canceled:false});
     expect((await readFile(logExport,'utf8')).trim().split('\n').map(line=>JSON.parse(line).code)).toEqual(['OK','STARTED']);
     const reopened=createSystemToolsPlugin(prod);
+    plugins.push(reopened);
     const nextFake=makeRouter(),nextHost=new DesktopPluginHost({router:nextFake.router,native:new NativeProviderRegistry('mac')});
     nextHost.registerWindow(7,'main',[systemToolsReadCapability,systemToolsManageCapability]);await register(reopened,nextHost);
     try {expect(await okValue(nextFake.invoke(systemToolsChannels.logSettings,view()))).toMatchObject({enabled:false,level:'debug'});}
@@ -137,6 +144,7 @@ it('aborts an in-flight update download when the plugin is disabled',async()=>{
     extract:async(_archive,path)=>{await mkdir(join(path,'Mote.app'));},
   };
   const plugin=createSystemToolsPlugin(options(directory));
+  plugins.push(plugin);
   await plugin.initialize({updatesDirectory:join(directory,'updates'),helperPath:'/generated/no-helper',updaterDependencies:dependencies});
   const fake=makeRouter(),host=new DesktopPluginHost({router:fake.router,native:new NativeProviderRegistry('mac')});
   host.registerWindow(7,'main',[systemToolsReadCapability,systemToolsManageCapability]);
