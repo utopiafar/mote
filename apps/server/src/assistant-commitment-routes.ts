@@ -4,8 +4,8 @@ import {z} from 'zod';
 import type {AssistantCommitments} from './assistant-commitments.js';
 import {StoreError} from './store.js';
 
-/** Shared owner read of the existing commitment projection. Memory (U3) and
- * matter details (U2) use the same list; register it once per server. */
+/** Shared owner read of the existing commitment projection. Memory and
+ * matter details use the same list; register it once per server. */
 const registeredServers=new WeakSet<object>();
 const listQuery=z.object({
   scope:z.string().max(16000),

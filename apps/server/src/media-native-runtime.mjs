@@ -127,7 +127,10 @@ async function prepareRoleRuntime({repository,directory,role,signal,onStage=()=>
   if(!sourcePython)await run(uv,['python','install',MEDIA_PYTHON_REQUEST],{env:clean,signal,cwd:directory});
   await run(uv,['venv',...(sourcePython?['--no-python-downloads','--python',sourcePython]:['--managed-python','--python',MEDIA_PYTHON_REQUEST]),'--seed',target],{env:clean,signal,cwd:directory});
   const python=join(target,'bin','python');
-  await run(uv,['pip','install','--python',python,'--index-url','https://pypi.org/simple',...requirements.flatMap(path=>['-r',path])],{env:clean,signal,cwd:directory});
+  // The fixed audio lock uses both PyPI and the official CPU wheel index.
+  // uv's first-index default can shadow a pinned PyPI version with the CPU
+  // index's older copy. Exhaust compatible pins before trying the next source.
+  await run(uv,['pip','install','--python',python,'--index-url','https://pypi.org/simple',...(role==='dialogue'?['--index-strategy','unsafe-first-match']:[]),...requirements.flatMap(path=>['-r',path])],{env:clean,signal,cwd:directory});
   onStage('verifying_dependencies');
   const receipt=JSON.parse(String(await run(python,['-c',probeScript],{env:clean,signal,timeoutMs:120000})));
   if(role==='dialogue'){
