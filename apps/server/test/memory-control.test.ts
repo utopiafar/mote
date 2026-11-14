@@ -13,6 +13,7 @@ import {MemoryAutomation} from '../src/memory-automation.js';
 import {MemoryInputAuthorization,DEFAULT_MEMORY_INPUT_SCOPE} from '../src/memory-input-authorization.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {createMemoryControl} from '../src/memory-control.js';
+import {seedMemoryControlBacklog} from './fixtures/memory-control-backlog.js';
 
 test('Memory control counts real receipt claims separately from manual queued jobs and stop preserves the manual tail',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-control-')),store=new Store(directory),executor=new ExecutionEngine(store),automation=new MemoryAutomation(store);
@@ -35,4 +36,37 @@ test('Memory control counts real receipt claims separately from manual queued jo
  assert.equal(pipeline.get(manual.id).status,'queued','automatic stop must retain independent manual work');
  assert.deepEqual(control.counts(),{queued:0,running:0,checkpointed:0,resultUnknown:0});assert.equal(control.pendingTail(),1);
  const revision=automation.state().revision;automation.command('stop',stop);assert.equal(automation.state().revision,revision);assert.equal(pipeline.get(manual.id).status,'queued');
+});
+
+test('automatic control stays readable with 540 persisted jobs and keeps partial, running and terminal counts current',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-control-backlog-')),store=new Store(directory),executor=new ExecutionEngine(store);
+ const grants=new MemoryInputAuthorization(store,()=>true),sources=new SourceStore(store,undefined,grants),memories=new MemoryStore(store);
+ const pipeline=new MemoryPipeline({store,memories,executor,models:{model:()=> 'generated',configured:()=>true},phases:{query:async()=>assert.fail('Reading automatic state must never call a model')}});
+ const lifecycle=new MemoryLifecycle(store,()=>true,Date.now,executor);
+ t.after(async()=>{await lifecycle.close();await pipeline.close();await executor.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ const {ids}=await seedMemoryControlBacklog({store,sources,pipeline,grants});
+ const control=createMemoryControl({store,pipeline,lifecycle,executor,publication:{pending:()=>0}});
+ const began=performance.now();
+ assert.deepEqual(control.counts(),{queued:540,running:0,checkpointed:0,resultUnknown:0});
+ const elapsed=performance.now()-began;
+ assert.ok(elapsed<1000,`Reading automatic state blocked the event loop for ${elapsed.toFixed(0)} ms with 540 jobs`);
+ const status=(id:string,value:string)=>store.db.prepare("UPDATE memory_jobs SET json=json_set(json,'$.status',?) WHERE id=?").run(value,id);
+ const batchStatus=(id:string,value:string)=>store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status',?) WHERE job_id=?").run(value,id);
+ status(ids[0],'running');
+ batchStatus(ids[1],'running'); // Queued job with an admitted batch projects running.
+ status(ids[2],'paused');store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','completed') WHERE id=(SELECT id FROM memory_batches WHERE job_id=? ORDER BY idx LIMIT 1)").run(ids[2]);
+ status(ids[3],'completed');batchStatus(ids[3],'completed');
+ status(ids[4],'cancelled');
+ status(ids[5],'completed');batchStatus(ids[5],'invalidated'); // A revoked completed job is failed, not silently dropped.
+ status(ids[7],'completed');batchStatus(ids[7],'completed');store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','failed') WHERE id=(SELECT id FROM memory_batches WHERE job_id=? ORDER BY idx LIMIT 1)").run(ids[7]);
+ status(ids[8],'waiting_for_model');status(ids[9],'waiting_for_input');status(ids[10],'pausing');status(ids[11],'failed');
+ store.db.prepare('UPDATE memory_input_authorizations SET revoked_at=1 WHERE job_id=?').run(ids[6]);
+ // Multiple receipt claims for the same job count once.
+ store.db.exec('BEGIN IMMEDIATE');grants.receive({sourceId:'generated',inputKey:'duplicate-claim',scope:DEFAULT_MEMORY_INPUT_SCOPE});assert.equal(grants.claim('generated','duplicate-claim',ids[0]),true);store.db.exec('COMMIT');
+ assert.deepEqual(control.counts(),{queued:533,running:2,checkpointed:2,resultUnknown:0});
+ store.db.exec('BEGIN IMMEDIATE');status(ids[0],'completed');batchStatus(ids[0],'completed');
+ assert.deepEqual(control.counts(),{queued:533,running:1,checkpointed:2,resultUnknown:0});
+ store.db.exec('ROLLBACK');
+ assert.deepEqual(control.counts(),{queued:533,running:2,checkpointed:2,resultUnknown:0},'a rolled-back batch transition cannot change control counts');
+ t.diagnostic(`540 jobs, 261 frozen ranges per job: automatic state ${elapsed.toFixed(0)} ms`);
 });
