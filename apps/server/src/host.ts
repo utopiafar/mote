@@ -453,7 +453,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // default 500 serializer).
   const sourceIntegration=await startSourceIntegration();
   const {actions}=await assembleActions({store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)});
-  const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
+  const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
   // Built-in Google/Lark calendar writes stay deployment connectors: they reuse

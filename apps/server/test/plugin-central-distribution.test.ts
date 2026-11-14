@@ -18,6 +18,7 @@ import {plugins as workPlugins} from '../src/assembly/work.js';
 import {plugins as importPlugins} from '../src/assembly/imports.js';
 import type {CentralDistribution,FoundationProvider} from '../src/bootstrap.js';
 import type {Config} from '../src/config.js';
+import {FUNASR_PINS} from '../src/funasr-contract.js';
 
 function fixture(t:{after(fn:()=>void):void}){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-central-distribution-'));
@@ -82,8 +83,10 @@ test('[K] the real default manifest discovers every feature, connector, processo
   assert.equal(connectors.length,6,JSON.stringify(connectors.map((feature:{id:string})=>feature.id)));
   for(const connector of connectors)assert.ok(inventory.capabilities.some((value:{featureId:string;state:string})=>value.featureId===connector.id&&value.state==='active'),`connector ${connector.id} has no active capability`);
 
-  const fileProcessors=node.processing.view().processors.map((processor:{id:string})=>processor.id);
-  for(const id of ['audio.http','audio.local-dialogue','text.utf8','document.generic','image.http','audio.diarize','audio.diarize-wespeaker'])assert.ok(fileProcessors.includes(id),`missing file processor ${id}`);
+  const processors=node.processing.view().processors,fileProcessors=processors.map((processor:{id:string})=>processor.id);
+  for(const id of ['audio.http','audio.local-dialogue','text.utf8','document.generic','image.http','audio.diarize'])assert.ok(fileProcessors.includes(id),`missing file processor ${id}`);
+  for(const pin of [FUNASR_PINS.extract,FUNASR_PINS.diarize])assert.equal(processors.find(processor=>processor.id===pin.id)?.version,pin.version,`default startup must expose the current ${pin.id} processor`);
+  assert.equal(fileProcessors.includes('audio.diarize-wespeaker'),false,'the retired WeSpeaker processor cannot be installed by the default manifest');
   const contextProcessors=node.workflows.view().processors.map((processor:{id:string})=>processor.id);
   for(const id of ['mote.segment-understanding','mote.coding-conversation-understanding'])assert.ok(contextProcessors.includes(id),`missing context processor ${id}`);
 

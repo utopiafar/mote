@@ -22,6 +22,8 @@ import {assertExternalCaptures,assertCaptureAttachments} from '../capture-admiss
 import {BackgroundModelAuthorization,type ModelConnection} from '../background-model-authorization.js';
 import {ModelAuthorizationHost,sourceModelIdentity} from '../model-authorization-host.js';
 import {registerModelAuthorizationRoutes} from './model-authorization-routes.js';
+import {McpOAuthServer} from '../connectors/mcp-oauth.js';
+import {registerMcpOAuthRoutes} from '../connectors/mcp-oauth-routes.js';
 import {automaticMemoryGrantSchema,type AutomaticMemoryGrant,type MemoryInputAuthorization} from '../memory-input-authorization.js';
 import type {RequestAuthority,RequestAuthorization,CommitAuthority,CommitAuthorization,CaptureIntake,SourceIntake} from './central-contracts.js';
 
@@ -80,7 +82,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
   let phase:'created'|'prepared'|'bound'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let control:BackgroundModelAuthorization|undefined,host:ModelAuthorizationHost|undefined,connections:Connections|undefined,handoffs:LoginHandoffs|undefined;
   let repositories:AuthorizationRepositories|undefined,ingress:IngressService|undefined,closing:Promise<void>|undefined;
-  let routesInstalled=false,modelRoutesInstalled=false;
+  let routesInstalled=false,modelRoutesInstalled=false,oauthRoutesInstalled=false;
   const disposers:(()=>void)[]=[],pending=new Set<Promise<unknown>>();
   const requestRegistry=new WeakMap<object,RequestState>(),commitRegistry=new WeakMap<object,Admission>();
   const liveAdmissions=new Set<Admission>();
@@ -276,6 +278,18 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     };
     registerModelAuthorizationRoutes(app,controlGate,context.credential);
   }
+  /** OAuth uses this platform's credential owner and live connector policy. */
+  function mcpOAuthRoutes(app:FastifyInstance,context:{directory:string;publicUrl?:string}){
+    if(oauthRoutesInstalled)throw denied('oauth_routes_installed',409);
+    running();
+    const oauth=new McpOAuthServer({connections:connections!,directory:context.directory,clock:now,policy:()=>{
+      const local=configuration();return {enabled:Boolean(local?.mcpEnabled),writeEnabled:Boolean(local?.mcpEnabled&&local.mcpWriteEnabled&&local.mcpWriteSourceIds?.length),writeSourceIds:local?.mcpWriteSourceIds??[]};
+    }});
+    registerMcpOAuthRoutes(app,{oauth,configuration,publicUrl:context.publicUrl,allowedOrigins:origins,ownerAuthorization:header=>{
+      running();if(equalBearer(header,ownerToken))return true;const credential=connections!.authenticate(header);return !!credential&&connections!.isOwner(credential);
+    }});
+    oauthRoutesInstalled=true;
+  }
   function refreshFences(){
     for(const [request,value] of liveRequests)try{
       assertRequest(request);
@@ -338,7 +352,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     bindRequest,releaseRequest,requestSignal:(request:RequestAuthority)=>assertRequest(request).signal,
     withCapture:<T>(request:RequestAuthority,input:CaptureInput|CaptureInput[],work:()=>Promise<T>)=>withTarget(request,Array.isArray(input)?{kind:'captures',input:input.map(value=>captureSchema.parse(value))}:{kind:'capture',input:captureSchema.parse(input)},work),
     withSource:<T>(request:RequestAuthority,sourceId:string,input:unknown,work:()=>Promise<T>)=>withTarget(request,Array.isArray(input)?{kind:'sources',sourceId,input:input.map(value=>sourceItemSchema.parse(value))}:{kind:'source',sourceId,input:sourceItemSchema.parse(input)},work),
-    withMemoryGrant,refreshFences,modelAuthorizationRoutes,
+    withMemoryGrant,refreshFences,modelAuthorizationRoutes,mcpOAuthRoutes,
   });
 }
 export type AuthorizationPlatform=ReturnType<typeof createAuthorizationPlatform>;
