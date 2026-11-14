@@ -36,6 +36,11 @@ SETTINGS = {'sampleRate': 16000, 'maxSegmentMs': 30000, 'segmentBufferMs': 100, 
             'punctuation': 'per-vad', 'speakerWindowFrames': 24000,
             'speakerShiftFrames': 12000, 'speakerSmoothing': False}
 SETTINGS_FINGERPRINT = hashlib.sha256(contract.serialize(SETTINGS).encode()).hexdigest()
+# Recovery only retries a decoder that could not produce a complete result.
+# Model parameters and successful checkpoints stay unchanged. Smaller inputs
+# remain on the same original PCM/VAD basis; at most 15 calls per initial region.
+DECODER_RECOVERY_MAX_DEPTH = 3
+DECODER_RECOVERY_MIN_FRAMES = 16000
 SDK_SOURCES = {
     'auto/auto_model.py': '6e3aadc33b014452ca31c06e8261054fd94a26038caa60e669a6bfb70aa9abe1',
     'models/campplus/cluster_backend.py': '5bdea46a947e78be3c8501ab3ac4392a6d1107c8c9d727902c986264277c9140',
@@ -57,6 +62,12 @@ class EngineError(RuntimeError):
             raise ValueError('Unknown engine failure')
         super().__init__(code)
         self.code = code
+
+
+class DecoderOutputLimit(EngineError):
+    """Only a decoder cap may request PCM refinement, not other output limits."""
+    def __init__(self):
+        super().__init__('output_limit')
 
 
 def component_manifest(role):
@@ -249,7 +260,7 @@ def validate_generation(sequences, limit, eos):
     if not sequences or any(not row for row in sequences):
         raise EngineError('inference_failed')
     if any(len(row) >= limit and row[-1] not in eos for row in sequences):
-        raise EngineError('output_limit')
+        raise DecoderOutputLimit()
 
 
 def model_text(value, byte_limit, units=None):
@@ -298,6 +309,37 @@ def recognition_regions(value, frames):
     return regions
 
 
+def recognize_intervals(model, pcm, intervals, runtime, cancelled):
+    """Retry only capped intervals, preserving completed siblings verbatim.
+
+    Binary subdivision uses integer sample boundaries, without overlap, gaps or
+    discarded tails. A pending child never turns into a complete checkpoint.
+    The worker still owns the overall deadline and child termination boundary.
+    """
+    pending = [(first, last, 0) for first, last in reversed(intervals)]
+    region_count = len(intervals)
+    while pending:
+        first, last, depth = pending.pop()
+        check_cancelled(cancelled)
+        try:
+            result = one_result(model.generate(input=runtime.waveform(pcm[first*2:last*2]),
+                                               batch_size=1, fs=16000))
+        except DecoderOutputLimit:
+            check_cancelled(cancelled)
+            middle = (first+last)//2
+            if (depth >= DECODER_RECOVERY_MAX_DEPTH or middle-first < DECODER_RECOVERY_MIN_FRAMES
+                    or region_count >= contract.LIMITS['vad']):
+                raise
+            region_count += 1
+            pending.extend(((middle, last, depth+1), (first, middle, depth+1)))
+            # Leave the except block before decoding again, releasing the failed
+            # generation's traceback/tensors rather than retaining a model tree.
+            continue
+        check_cancelled(cancelled)
+        model_text(result.get('text'), contract.LIMITS['textBytes'])
+        yield first, last, {'text': result['text']}
+
+
 def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
     frames = len(pcm) // 2
     if frames == 0:
@@ -312,15 +354,13 @@ def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
         raise EngineError('output_limit')
     vad = {**vad, 'value': recognition_regions(vad['value'], frames)}
     intervals = [frame_interval(start, end, frames) for start, end in vad['value']]
-    chunks = []
+    chunks, completed_regions = [], []
     if intervals:
         with runtime.component('asr', root / 'asr') as model:
-            for first, last in intervals:
-                check_cancelled(cancelled)
-                result = one_result(model.generate(input=runtime.waveform(pcm[first*2:last*2]),
-                                                   batch_size=1, fs=16000))
-                model_text(result.get('text'), contract.LIMITS['textBytes'])
-                chunks.append({'text': result['text']})
+            for first, last, chunk in recognize_intervals(model, pcm, intervals, runtime, cancelled):
+                completed_regions.append([first/16, last/16])
+                chunks.append(chunk)
+    vad = {**vad, 'value': completed_regions}
     # Keep the Nano text verbatim in recognitionChunks. Punctuation is a local
     # model stage, not deduplication or correction. No forced token timestamps.
     sentences = []
