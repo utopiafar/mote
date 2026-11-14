@@ -48,7 +48,7 @@ async function fixture(t:import('node:test').TestContext){
   const run=async()=>{await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running','waiting_for_model'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
   // Hold scheduling, not admission: the production queue still creates and
   // claims actual jobs. Tests can then choose a producer or restart before work.
-  const queue=async()=>{const p=node.memoryPipeline;await node.sourcePipelines.drainMemory({create:input=>p.create(input),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
+  const queue=async()=>{const p=node.memoryPipeline;await node.sourcePipelines.drainMemory({create:input=>p.create(input),state:id=>p.state(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   return {get node(){return node;},jobs:()=>node.memoryPipeline.list().map(j=>node.memoryPipeline.get(j.id)),calls,control,config,configure,source,add,publish,run,queue,count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase||phase==='extract'&&understanding(c)).length,async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();}};
 }

@@ -139,7 +139,7 @@ test('serialized Memory pins are consumed by their exact real SQLite claim and s
   engine.register({kind:'generated.c04-memory',pool:'generated-c04',concurrency:()=>1,validate:step=>f.memory.authorized({id:step.id,automaticGrant:pin}),
     execute:async step=>p.withMemoryGrant(step.input.pin,step.id,async(_signal,assertCurrent)=>{assertCurrent();control.assertCurrent(f.model);executed++;return 'generated accepted Memory result';}),
     commit:step=>{assert.equal(f.memory.authorized({id:step.id,automaticGrant:pin}),true);}});
-  assert.equal(f.memory.drain({create:input=>{jobId=engine.enqueue('generated-memory-job','generated.c04-memory',{pin,evidenceIds:input.evidenceIds});return {id:jobId};},get:id=>({status:engine.get(id)?.state==='succeeded'?'completed':'queued'}),run:id=>engine.drain([id]),cancel:id=>{engine.cancel(id);}},true),1);
+  assert.equal(f.memory.drain({create:input=>{jobId=engine.enqueue('generated-memory-job','generated.c04-memory',{pin,evidenceIds:input.evidenceIds});return {id:jobId};},state:id=>({status:engine.get(id)?.state==='succeeded'?'completed':'queued'}),run:id=>engine.drain([id]),cancel:id=>{engine.cancel(id);}},true),1);
   await engine.drain([jobId]);assert.equal(engine.get(jobId)?.state,'succeeded');assert.equal(executed,1);await engine.close();
   await p.withMemoryGrant(pin,jobId,async(signal,assertCurrent)=>{f.store.db.exec('BEGIN IMMEDIATE');try{f.memory.inputs.forgetSource(pin.sourceId);}finally{f.store.db.exec('ROLLBACK');}await Promise.resolve();assert.equal(signal.aborted,false,'rolled-back source withdrawal must not revoke the accepted grant');assertCurrent();});
   let uses=0;await p.withMemoryGrant(pin,jobId,async(_signal,assertCurrent)=>{assertCurrent();control.assertCurrent(f.model);uses++;});assert.equal(uses,1);
@@ -241,7 +241,7 @@ test('two selected recipe scopes independently consume the same original through
     validate:step=>f.memory.authorized({id:step.id,automaticGrant:automaticMemoryGrantSchema.parse(step.input.pin)}),
     execute:async step=>p.withMemoryGrant(step.input.pin,step.id,async(_signal,assertCurrent)=>{assertCurrent();control.assertCurrent(f.model);executed.push(automaticMemoryGrantSchema.parse(step.input.pin).scope);return 'generated recipe result';}),
     commit:step=>{assert.equal(f.memory.authorized({id:step.id,automaticGrant:automaticMemoryGrantSchema.parse(step.input.pin)}),true);}});
-  assert.equal(f.memory.drain({create:input=>{const id=engine.enqueue('generated-sibling-memory-job','generated.c04-sibling-memory',{pin:input.automaticGrant,evidenceIds:input.evidenceIds});jobs.push(id);return {id};},get:id=>({status:engine.get(id)?.state==='succeeded'?'completed':'queued'}),run:id=>engine.drain([id]),cancel:id=>{engine.cancel(id);}},true),2);
+  assert.equal(f.memory.drain({create:input=>{const id=engine.enqueue('generated-sibling-memory-job','generated.c04-sibling-memory',{pin:input.automaticGrant,evidenceIds:input.evidenceIds});jobs.push(id);return {id};},state:id=>({status:engine.get(id)?.state==='succeeded'?'completed':'queued'}),run:id=>engine.drain([id]),cancel:id=>{engine.cancel(id);}},true),2);
   await engine.drain(jobs);
   assert.deepEqual(jobs.map(id=>engine.get(id)?.state),['succeeded','succeeded']);
   assert.equal(new Set(executed).size,2,'both independently selected scopes execute once');

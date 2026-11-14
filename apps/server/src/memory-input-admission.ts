@@ -53,8 +53,12 @@ export class MemoryInputAdmission implements MemoryInputAdmissionPort {
   selection(ref:string,required:readonly string[]){return this.options.materialInput?.(ref,required);}
   requirements(ref:string){return this.options.materialRequirements?.(ref);}
   admit(ids:readonly string[],pinned?:Readonly<Record<string,string>>,profileId?:string,inputs:readonly MaterialInputPin[]=[],expected:readonly {id:string;fingerprint:string}[]=[]):Record<string,string> {
-    const refs:Record<string,string>={},currentEvidence=new Map(this.evidence.readCurrentEvidence(ids).map(record=>[record.id,record]));
-    for(const pin of expected){const record=currentEvidence.get(pin.id);if(!record||memoryEvidenceFingerprint(record)!==pin.fingerprint)throw new StoreError('Memory evidence changed',409);}
+    const refs:Record<string,string>={},currentEvidence=new Map(this.evidence.readCurrentEvidence(ids).map(record=>[record.id,record])),fingerprints=new Map<string,string>();
+    for(const pin of expected){
+      const record=currentEvidence.get(pin.id);if(!record)throw new StoreError('Memory evidence changed',409);
+      const current=fingerprints.get(pin.id)??memoryEvidenceFingerprint(record);fingerprints.set(pin.id,current);
+      if(current!==pin.fingerprint)throw new StoreError('Memory evidence changed',409);
+    }
     const byEvidence=new Map<string,MaterialInputPin[]>(),checked=new Map<MaterialInputPin,{ref:string;allowed:boolean}>();
     for(const input of inputs)for(const id of input.evidenceIds){const selected=byEvidence.get(id)??[];selected.push(input);byEvidence.set(id,selected);}
     for(const id of ids){

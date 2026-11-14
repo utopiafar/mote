@@ -29,7 +29,7 @@ function fakeRunner(){
   const jobs=new Map<string,{id:string;status:string;errorCode?:string}>(),byOrigin=new Map<string,string>(),created:Parameters<MaterialMemoryRunner['create']>[0][]=[],ran:string[]=[],cancelled:string[]=[];
   const runner:MaterialMemoryRunner={
     create:input=>{let id=byOrigin.get(input.originKey);if(!id){id=`memory-${byOrigin.size+1}`;byOrigin.set(input.originKey,id);jobs.set(id,{id,status:'queued'});created.push(input);}return {id};},
-    get:id=>{const job=jobs.get(id);if(!job)throw Error('Missing generated Memory job');return job;},
+    state:id=>{const job=jobs.get(id);if(!job)throw Error('Missing generated Memory job');return job;},
     run:async id=>{ran.push(id);},
     cancel:id=>{cancelled.push(id);const job=jobs.get(id);if(job)job.status='cancelled';},
   };

@@ -65,7 +65,7 @@ for(const localCleanup of [true,false])test(`automatic stop rolls back a tail SQ
   const job=node.memoryPipeline.get(window.checkpoint!);assert.equal(job.status,'running');assert.equal(calls,2);
   await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);
   const pipeline=node.memoryPipeline;
-  await node.sourcePipelines.drainMemory({create:input=>pipeline.create(input),get:id=>pipeline.get(id),cancel:(id,options)=>pipeline.cancel(id,options),run:async()=>{}},true,100);
+  await node.sourcePipelines.drainMemory({create:input=>pipeline.create(input),state:id=>pipeline.state(id),cancel:(id,options)=>pipeline.cancel(id,options),run:async()=>{}},true,100);
   await new Promise<void>(resolve=>setImmediate(resolve));
   const automaticJob=node.memoryPipeline.list().find(value=>value.automaticGrants?.length)!;
   assert.ok(automaticJob,'the real Material queue admitted an independently scoped automatic job');

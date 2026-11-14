@@ -13,7 +13,7 @@ type WorkRow={material_id:string;scope:string;revision:string;required_json:stri
 const TERMINAL_AT=Number.MAX_SAFE_INTEGER,RESUME_DELAY_MS=5000,RETRY_DELAY_MS=60000;
 export type MaterialMemoryRunner={
   create:(input:{evidenceIds:string[];originKey:string;contextTime?:string;recipes?:MemoryStrategyRef[];automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[];workPackage?:MemoryWorkPackage})=>{id:string};
-  get:(id:string)=>{status:string;errorCode?:string};configurationStillChanged?:(id:string)=>boolean;run:(id:string)=>Promise<unknown>;cancel:(id:string,options?:{cause:'authority'})=>unknown;
+  state:(id:string)=>{status:string;errorCode?:string};configurationStillChanged?:(id:string)=>boolean;run:(id:string)=>Promise<unknown>;cancel:(id:string,options?:{cause:'authority'})=>unknown;
 };
 const isConfigurationWait=(job:{status:string;errorCode?:string})=>job.status==='waiting_for_model'&&job.errorCode==='configuration_changed';
 const configurationStillChanged=(runner:MaterialMemoryRunner,id:string)=>{try{return runner.configurationStillChanged?.(id)??true;}catch{return true;}};
@@ -179,7 +179,7 @@ export class MaterialMemoryWork {
     this.dormantCursor=rows.length===limit?[rows.at(-1)!.material_id,rows.at(-1)!.scope]:['',''];
     for(const row of rows){let job:{status:string;errorCode?:string};let changed:boolean|undefined;try{
       if(row.error==='memory_job_configuration_changed'&&runner.configurationStillChanged){changed=configurationStillChanged(runner,row.job_id!);if(changed)continue;}
-      job=runner.get(row.job_id!);
+      job=runner.state(row.job_id!);
     }catch{continue;}
       if((!isConfigurationWait(job)||changed===false)&&['queued','running','waiting_for_model','waiting_for_input'].includes(job.status))this.update(row,'ready_at=?,error=NULL',[this.now()]);
     }
@@ -207,7 +207,7 @@ export class MaterialMemoryWork {
     this.rejoinResumed(runner,limit);
     // Resume prior packages first; do not create ordinary per-material jobs.
     for(const row of this.store.db.prepare('SELECT * FROM material_memory_requests WHERE auto_authorized=1 AND job_id IS NOT NULL AND ready_at<=? ORDER BY ready_at LIMIT ?').all(this.now(),limit) as WorkRow[]){
-      let job:{status:string;errorCode?:string};try{job=runner.get(row.job_id!);}catch{this.update(row,"ready_at=?,error='memory_job_unavailable'",[TERMINAL_AT]);continue;}
+      let job:{status:string;errorCode?:string};try{job=runner.state(row.job_id!);}catch{this.update(row,"ready_at=?,error='memory_job_unavailable'",[TERMINAL_AT]);continue;}
       if(job.status==='completed')this.update(row,'ready_at=?,error=NULL',[TERMINAL_AT]);
       else if(isConfigurationWait(job)&&configurationStillChanged(runner,row.job_id!))this.update(row,'ready_at=?,error=?',[TERMINAL_AT,'memory_job_configuration_changed']);
       else if(['queued','running','waiting_for_model','waiting_for_input'].includes(job.status)){this.update(row,'ready_at=?',[this.now()+RESUME_DELAY_MS]);this.launch(runner,row,allowed);}
@@ -294,7 +294,7 @@ export class MaterialMemoryWork {
         }catch{this.update(row,"error='memory_enqueue_failed',ready_at=?",[this.now()+RETRY_DELAY_MS]);continue;}
       }
       let job:{status:string;errorCode?:string};
-      try{job=runner.get(row.job_id!);}catch{this.update(row,"error='memory_job_unavailable',ready_at=?",[TERMINAL_AT]);continue;}
+      try{job=runner.state(row.job_id!);}catch{this.update(row,"error='memory_job_unavailable',ready_at=?",[TERMINAL_AT]);continue;}
       if(job.status==='completed')this.update(row,'ready_at=?,error=NULL',[TERMINAL_AT]);
       else if(isConfigurationWait(job)&&configurationStillChanged(runner,row.job_id!))this.update(row,'ready_at=?,error=?',[TERMINAL_AT,'memory_job_configuration_changed']);
       else if(['queued','running','waiting_for_model'].includes(job.status)){if(existing)this.update(row,'ready_at=?',[this.now()+RESUME_DELAY_MS]);this.launch(runner,row,allowed);started++;}
