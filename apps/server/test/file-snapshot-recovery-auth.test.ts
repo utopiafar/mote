@@ -233,5 +233,7 @@ test('HTTP snapshot range reads use only central retained text without device po
  await f.node.processing.tick();const result=await withFixtureOwnerModelWork(f.node,()=>reader.readFileEvidence!({id:ack.id,offset:0,length:9}));assert.equal(result.status,'ready');assert.equal(result.record!.ocrText,'Generated');
  const emojiOffset=bytes.toString().indexOf('🌱'),emoji=await withFixtureOwnerModelWork(f.node,()=>reader.readFileEvidence!({id:ack.id,offset:emojiOffset,length:2}));assert.equal(emoji.record!.ocrText,'🌱');assert.equal(emoji.record!.provenance!.document!.fileIndex!.length,2);
  assert.deepEqual({...f.node.store.db.prepare('SELECT parent_id,capture_id FROM file_evidence_links WHERE capture_id=?').get(result.record!.id)},{parent_id:ack.id,capture_id:result.record!.id});
- f.node.sources.update(input.sourceId,{enabled:false});await assert.rejects(withFixtureOwnerModelWork(f.node,()=>reader.readFileEvidence!({id:ack.id,offset:0,length:9})),{statusCode:409});
+ f.node.sources.update(input.sourceId,{enabled:false});
+ assert.deepEqual(await withFixtureOwnerModelWork(f.node,()=>reader.readFileEvidence!({id:ack.id,offset:0,length:9})),{status:'unavailable'},'the model adapter must withhold the retained range after revocation');
+ await assert.rejects(new FileEvidence(f.node.sources).read(ack.id,0,9),{statusCode:409},'the domain range reader also rechecks source permission');
 });

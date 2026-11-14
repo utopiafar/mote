@@ -68,9 +68,9 @@ test('external file changes use plugin validation and invalid policy retains the
 });
 
 test('unrelated domain revisions permit a fresh processing preview and retain its existing semantic token',async t=>{
-  const f=await fixture(t),first=f.processing.preview({revision:f.processing.view().revision});
+  const f=await fixture(t),first=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'all'}});
   await f.service.update('perception',{concurrency:2},f.service.revision);
-  const fresh=f.processing.preview({revision:f.processing.view().revision});
+  const fresh=f.processing.preview({revision:f.processing.view().revision,scope:{kind:'all'}});
   assert.equal(fresh.revision,String(f.service.revision));assert.equal(fresh.count,0);
   assert.deepEqual(f.processing.reprocess({token:first.token}),{queued:0});
 });

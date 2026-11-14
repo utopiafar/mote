@@ -252,6 +252,9 @@ test('HTTP historical quota failures leave no manual admission or bytes across r
  f.node.sources.register({id:'generated-quota',name:'Generated quota',kind:'local-files',deviceId:'generated-device',platform:'import',retention:'archive'});
  const bytes=await sharp({create:{width:4,height:4,channels:3,background:'#224466'}}).png().toBuffer(),begun=f.node.files.begin({sourceId:'generated-quota',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),kind:'file',layer:'original',text:'',mimeType:'image/png'},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});f.node.files.part(begun.uploadId,0,bytes,()=>{});await f.node.files.commit(begun.uploadId,()=>{});f.node.perception.prepare();
  const preview=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-preview',headers:f.headers,payload:{sourceId:'generated-quota'}});assert.equal(preview.statusCode,200,preview.body);
+ // Finish the generated original's ordinary Material/change-feed preparation
+ // before measuring bytes attributable to the confirmed historical command.
+ await f.node.materialOrganizer.tick();f.node.assistantChanges.tick();
  const before=f.node.store.logicalBytes(),count=f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n;
  const connections=f.node.featureServices.availableModelConnections(),manualBytes=Buffer.byteLength(JSON.stringify({id:'owner-media-batch:'+randomUUID(),kind:'manual',roots:['capture:'+('0'.repeat(36))],connections}))+300;
  limits.maxStorageBytes=before+manualBytes;

@@ -20,6 +20,10 @@ function manifest(bytes:Buffer,mimeType:string,title:string,externalId:string,re
 async function upload(app:any,headers:any,input:FileRevision,bytes:Buffer){
   const started=await app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:input});
   assert.equal(started.statusCode,200,started.body);const session=started.json();
+  if(session.ack){
+    assert.equal(session.ack.sha256,input.sha256);assert.equal(session.ack.sizeBytes,bytes.length);
+    return session.ack;
+  }
   for(let n=0;n<Math.ceil(bytes.length/FILE_PART_BYTES);n++)
     assert.equal((await app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${session.uploadId}/parts/${n}`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes.subarray(n*FILE_PART_BYTES,(n+1)*FILE_PART_BYTES)})).statusCode,200);
   const committed=await app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${session.uploadId}/commit`,headers,payload:{}});
