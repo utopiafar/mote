@@ -42,6 +42,21 @@ coordinates. It never replaces OCR or claims an author's words as the owner's
 experience. The scoped model harness exposes only read-only tools and requires a
 verified pixel read before publishing an interpretation.
 
+The optional local image service selects **InternVL3-14B-4bit** for intake
+understanding only. An enabled selection remains local while the model is
+missing, busy, stopped or failed; none of those states authorizes an automatic
+cloud fallback. Disabling the plugin restores the configured intake model for
+new work. Unfinished work keeps its admitted selection until an explicit retry
+adopts the current configuration. Installing assets or enabling the plugin does
+not rescan historical images.
+
+Memory extraction, independent review and Ask continue to use their separately
+selected models, including cloud models. They can still read the original image
+or a permitted region. Local intake does not change those model settings, the
+existing background-model authorization, source exclusions or `allowQueryImages`.
+OCR, interpretation, retained original, Material/index and Memory keep their
+independent readiness and failure states.
+
 Pure OCR reuse requires both the OCR stage and processor to opt into content
 reuse. Identity includes bytes, MIME, processor contract/version and settings.
 Understanding and derived-stage identity additionally includes source observation,
@@ -169,3 +184,55 @@ policy precedence, snapshot expiration/recovery, more than 100 historical images
 pixel-read enforcement, independent Memory grants, and UI readiness. These are
 fixture and harness checks. They do not constitute a live VLM/local-worker or
 physical Android device acceptance run.
+
+## Local image candidate checks
+
+The manual entry below previews and runs the existing narrow image assemblies.
+It accepts only generated inputs. With no arguments it prints help; it never
+attaches to an existing Central or reads a user profile, image folder or model
+credential. The ordinary argument/material tests do not run its contract mode.
+
+```sh
+node --import tsx scripts/journeys/local-image-plugin.ts --dry-run
+node --import tsx scripts/journeys/local-image-plugin.ts --fixtures-only
+node --import tsx --test --test-concurrency=4 --test-timeout=120000 scripts/journeys/local-image-plugin.test.ts
+# Explicit narrow module assemblies, when this validation is requested:
+node --import tsx scripts/journeys/local-image-plugin.ts --run-contracts
+```
+
+`--fixtures-only` reuses the six procedural specimens from the image contract:
+a wordless scene, small text, a long image, a region, successful empty OCR and
+untrusted depicted instructions. It verifies unchanged original bytes, actual
+crop pixels, metadata without pixel delivery and the current request/response
+parsers. It writes PNGs, serialized transport examples, a manifest and a report
+in a new private temporary directory. Optional `--output` selects a new absolute
+directory outside all repository worktrees; its parent must already exist.
+Existing destinations and symlink paths into a worktree are rejected. No input
+path, endpoint, profile, dependency installer or live-model option is accepted.
+The generated model revision and `elapsedMs:17` in the transport examples are
+fixture constants, and do not measure inference quality, latency or memory.
+
+`--run-contracts` runs the IMG-03/04/05/06 fixture files with the existing four
+test workers and 120-second per-test limit, once per file. It retains TAP output
+and propagates failures. Missing summaries, skipped/cancelled tests and unknown
+counts cannot become a passing result. Old `MOTE_*` deployment and example-output
+variables are removed from the test subprocess environment. This mode exercises
+the real module stores, routes, publishers and consumers used by those tests;
+their generated model/control boundaries remain explicitly fixture evidence.
+
+Reports record the actual Git candidate. Both complete paths—default Central
+startup through Ask, and the same original through Memory extraction, independent
+review, publication and deletion—remain `not_run` in this narrow entry. Every
+release-matrix row also remains `not_run`; real model identity/revision, cold/hot
+latency and memory measurements remain null until measured separately. A passing
+fixture/material report does not certify the default distribution or release.
+
+The current candidate still needs the shared owner to register the optional
+local-image build in the default Central, bind its intake adapter before
+admission, expose its state in the shared controls and mount the dedicated
+settings component. The VLM health producer's `localImage` field and the shared
+consumer's `ready` check also need to agree. These are outstanding default
+assembly boundaries; this entry does not register a second control platform or
+replace them with a test-only success path. Full A/B journeys, supported-platform
+installation/restart, hidden Web/Android/Mac UI, OCR/ASR/VLM coexistence, real
+models and physical devices require their separate stage evidence.
