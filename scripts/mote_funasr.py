@@ -44,56 +44,9 @@ SDK_SOURCES = {
     'utils/load_utils.py': 'c94ce198771935c22b467b9a279a219306df356e307d4c245d04c2d1dc7ef84d',
 }
 
-# Immutable ModelScope revisions, all relative to the frozen dialogue role.
-BUNDLE = {
-    'asr': {
-        'revision': '05201c46f1c38592b1567f857c0d56eab3d0d8ef',
-        'license': 'Apache-2.0',
-        'files': [
-            {'name': 'Qwen3-0.6B/config.json', 'size': 726, 'sha256': '660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd'},
-            {'name': 'Qwen3-0.6B/generation_config.json', 'size': 239, 'sha256': '2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2'},
-            {'name': 'Qwen3-0.6B/merges.txt', 'size': 1671853, 'sha256': '8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5'},
-            {'name': 'Qwen3-0.6B/tokenizer.json', 'size': 11422654, 'sha256': 'aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4'},
-            {'name': 'Qwen3-0.6B/tokenizer_config.json', 'size': 9732, 'sha256': 'd5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101'},
-            {'name': 'Qwen3-0.6B/vocab.json', 'size': 2776833, 'sha256': 'ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910'},
-            {'name': 'config.yaml', 'size': 3140, 'sha256': 'daed38ea6484f5650fb32cbd9069b9aa13880acaf2bcb1f0bf4be2712837917c'},
-            {'name': 'configuration.json', 'size': 398, 'sha256': 'b64a3a55d35bcbe2cf4d31f2d3ef25a423d3ba2ebff203298c27fa055f3c7612'},
-            {'name': 'model.pt', 'size': 2127426538, 'sha256': '81fec8616083c69377f3ceef36aba3655660ee0ca69a5d4a1e9810cd340ca499'},
-            {'name': 'multilingual.tiktoken', 'size': 907395, 'sha256': '747979631e813193436aabcff7c1c235d37de8097b71c563ec8b63b7a515c718'},
-        ],
-    },
-    'vad': {
-        'revision': 'f9a8b8274674755d925277e27063869038d41515',
-        'license': 'Apache-2.0',
-        'files': [
-            {'name': 'am.mvn', 'size': 8040, 'sha256': '6820fef9687708c4fc3fab2530179c8fcea6262daa25514380056cd8f6eb1754'},
-            {'name': 'config.yaml', 'size': 1215, 'sha256': '486861ca26ddb79081663b6179cb204c6bfae71c52f04aafc48a9e9d8dde1e93'},
-            {'name': 'configuration.json', 'size': 365, 'sha256': '7bce8867e37d55c3dd8f672695ced18077a2be199ea529a5d432d5350fc0acba'},
-            {'name': 'model.pt', 'size': 1721366, 'sha256': 'b3be75be477f0780277f3bae0fe489f48718f585f3a6e45d7dd1fbb1a4255fc5'},
-        ],
-    },
-    'speaker': {
-        'revision': 'a045b2afcaa9c3049c98a9215a2bc274407ab237',
-        'license': 'Apache-2.0',
-        'files': [
-            {'name': 'campplus_cn_common.bin', 'size': 28036335, 'sha256': '3388cf5fd3493c9ac9c69851d8e7a8badcfb4f3dc631020c4961371646d5ada8'},
-            {'name': 'config.yaml', 'size': 537, 'sha256': '17342041bd5b22f6fd7e32f6e7a267b0bf65f018c0a721bada6547e3d28fbfc9'},
-            {'name': 'configuration.json', 'size': 581, 'sha256': '6f7acaf1e81ca121f4a3c71b6ddb66beec24350a3ef330e2c846f17829176a8f'},
-        ],
-    },
-    'punctuation': {
-        'revision': '45ab6961ad58a973ce7785401b4e93a0aab907a3',
-        'license': 'Apache-2.0',
-        'files': [
-            {'name': 'config.yaml', 'size': 812, 'sha256': 'c5ffb25cd063ed366cb26283908dca05a08ecfef8e90bef1d498ef9ffacd7552'},
-            {'name': 'configuration.json', 'size': 450, 'sha256': '7043245e6264cea789404e498a6f55a330a18585a4690d35dfe71741e6982237'},
-            {'name': 'jieba.c.dict', 'size': 41536866, 'sha256': 'eb0a68f8bfa65e6956d59e8f9652b49f5c91952273e24737bc9a8c5e23055221'},
-            {'name': 'jieba_usr_dict', 'size': 11280857, 'sha256': '059aa2af152734d5fd011a4d69cbab171f62347074db0db5157c17b5649010f5'},
-            {'name': 'model.pt', 'size': 1125507622, 'sha256': '7176cae922a872e130e6b88aef9a1153581711baf79c9124c7c95be383cd6f81'},
-            {'name': 'tokens.json', 'size': 8280697, 'sha256': '89951fe0669380ed33298ee048c4a2b0ebcaaf6ee8f332d85c281c41d0f38392'},
-        ],
-    },
-}
+# One checked-in asset authority, shared with Central's installer and identity
+# builder. Every installed file is verified, including the archived SDK wheel.
+BUNDLE = contract.loads(Path(__file__).with_name('funasr-models.json').read_bytes())
 
 
 class EngineError(RuntimeError):
@@ -105,7 +58,10 @@ class EngineError(RuntimeError):
 
 
 def component_manifest(role):
-    return {'id': contract.MODEL_IDS[role], **copy.deepcopy(BUNDLE[role])}
+    data = copy.deepcopy(BUNDLE[role])
+    # Download locations are transport metadata, not model content identity.
+    data['files'] = [{key: item[key] for key in ('name', 'size', 'sha256')} for item in data['files']]
+    return {'id': contract.MODEL_IDS[role], **data}
 
 
 def asset_manifest():
@@ -115,8 +71,9 @@ def asset_manifest():
         manifest = component_manifest(role)
         manifest['manifestSha256'] = hashlib.sha256(contract.serialize(manifest).encode()).hexdigest()
         manifest['directory'] = 'dialogue/' + role
+        sources = {item['name']: item for item in BUNDLE[role]['files']}
         for item in manifest['files']:
-            item['url'] = ('https://modelscope.cn/api/v1/models/' + contract.MODEL_IDS[role]
+            item['url'] = sources[item['name']].get('url') or ('https://modelscope.cn/api/v1/models/' + contract.MODEL_IDS[role]
                            + '/repo?' + urlencode({'Revision': manifest['revision'], 'FilePath': item['name']}))
         components[role] = manifest
     return components

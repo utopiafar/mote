@@ -7,9 +7,67 @@ import {execFileSync} from 'node:child_process';
 import {mkdtemp,rm,mkdir,writeFile,readFile,symlink,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {MEDIA_MODEL_PATHS,MEDIA_MODEL_COMPONENT_PATHS,mediaAssetStatusSchema} from '@mote/shared';
 import {FUNASR_MODEL_IDS,FUNASR_SDK_WHEEL_SHA256} from '../src/funasr-contract.js';
 import {MEDIA_CATALOG,MediaAssets,mediaModelIdentities} from '../src/media-assets.js';
+
+const scripts=fileURLToPath(new URL('../../../scripts/',import.meta.url));
+const engineManifest=()=>JSON.parse(execFileSync('python3',[join(scripts,'mote_funasr.py'),'--manifest'],{encoding:'utf8',timeout:30000}));
+
+test('a clean dialogue install publishes exactly the files, sources and identities the actual engine verifies',()=>{
+ const manifest=engineManifest(),catalog=MEDIA_CATALOG.dialogue;
+ const files=Object.entries(manifest).flatMap(([role,value])=>{
+  const model=value as {id:string;revision:string;license:string;directory:string;manifestSha256:string;files:{name:string;size:number;sha256:string;url:string}[]};
+  const source=catalog.models![role];
+  assert.deepEqual(source,{id:model.id,repository:model.id,revision:model.revision,license:model.license,directory:role});
+  assert.equal(model.directory,`${MEDIA_MODEL_PATHS.dialogue}/${role}`);
+  assert.deepEqual(mediaModelIdentities('dialogue')[role],{id:model.id,revision:model.revision,manifestSha256:model.manifestSha256});
+  return model.files.map(({name,size,sha256,url})=>({name:`${role}/${name}`,size,sha256,official:url}));
+ });
+ const byName=(a:{name:string},b:{name:string})=>a.name.localeCompare(b.name);
+ assert.deepEqual(catalog.files.toSorted(byName),files.toSorted(byName),'every installed asset, including SDK code, must be verified by the engine');
+});
+
+test('an imported generated bundle is read by the actual engine and rejects a different or corrupt model version',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-catalog-engine-')),bundle=join(directory,'bundle'),description=join(directory,'manifest.json');
+ const manifest=engineManifest(),prior=MEDIA_CATALOG.dialogue;
+ const models:Record<string,{revision:string;license:string;files:{name:string;size:number;sha256:string}[]}>={},files=[];
+ for(const [role,value] of Object.entries(manifest)){
+  const model=value as {revision:string;license:string;files:{name:string}[]};
+  const generated=[];
+  for(const item of model.files){
+   const name=`${role}/${item.name}`,bytes=Buffer.from('Generated inert model asset: '+name);
+   const file={name:item.name,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+   generated.push(file);files.push({...file,name,official:'https://example.invalid/'+name});
+   await mkdir(join(bundle,name,'..'),{recursive:true});await writeFile(join(bundle,name),bytes);
+  }
+  models[role]={revision:createHash('sha256').update('generated revision '+role).digest('hex'),license:model.license,files:generated};
+ }
+ MEDIA_CATALOG.dialogue={version:'generated-catalog-engine',models:Object.fromEntries(Object.entries(prior.models!).map(([role,model])=>[role,{...model,revision:models[role].revision}])),files};
+ await writeFile(description,JSON.stringify(models));
+ const assets=new MediaAssets(join(directory,'models'));
+ t.after(async()=>{await assets.close();MEDIA_CATALOG.dialogue=prior;await rm(directory,{recursive:true,force:true});});
+ await assets.importBundle('dialogue',bundle);
+ const inspect=()=>JSON.parse(execFileSync('python3',['-c',[
+  'import sys,json; from pathlib import Path',
+  'sys.path.insert(0,sys.argv[1]); import mote_funasr as engine',
+  'engine.BUNDLE=json.loads(Path(sys.argv[2]).read_text())',
+  'try: print(json.dumps({"models":engine.verify_models(sys.argv[3])}))',
+  'except engine.EngineError as error: print(json.dumps({"error":error.code}))',
+ ].join('\n'),scripts,description,assets.path('dialogue')],{encoding:'utf8',timeout:30000}));
+ assert.equal(assets.ready('dialogue'),true);
+ const identity=mediaModelIdentities('dialogue');assert.deepEqual(inspect(),{models:identity});
+ const asr=join(assets.path('dialogue'),'asr/model.pt'),original=await readFile(asr);
+ for(const bytes of [Buffer.alloc(original.length+1),Buffer.alloc(original.length)]){
+  await writeFile(asr,bytes);assert.deepEqual(inspect(),{error:'model_missing'});assert.equal(assets.ready('dialogue'),false);
+ }
+ await assets.importBundle('dialogue',bundle);
+ models.asr.revision='0'.repeat(40);await writeFile(description,JSON.stringify(models));
+ assert.notDeepEqual(inspect(),{models:identity},'a different revision cannot impersonate the installed checkpoint identity');
+ await writeFile(join(bundle,'asr/model.pt'),Buffer.alloc(original.length));
+ await assert.rejects(assets.importBundle('dialogue',bundle));
+});
 
 test('the fixed catalog contains both large image shards, pinned model code and all four FunASR components',()=>{
  const image=MEDIA_CATALOG['local-image'],dialogue=MEDIA_CATALOG.dialogue;
