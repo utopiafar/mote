@@ -5,7 +5,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import type {QueryInput,ContextReader} from '@mote/agent';
+import {prepareTaskContext,type QueryInput,type ContextReader} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import {materialId} from '../src/materials.js';
 import {generatedMemoryOutput} from './fixtures/memory-planning.js';
@@ -55,7 +55,23 @@ test('manual context reads reject unselected IDs, out-of-body ranges and split U
  assert.equal(f.node.memoryPipeline.list().length,0);assert.equal(f.calls.length,0);
 });
 
-for(const change of ['cancel','delete'] as const)test(`an admitted Memory query rechecks ${change} after yielding before model disclosure`,async t=>{
+test('a selected Memory query keeps its task contract when conversation drafts are available',async t=>{
+ const f=await fixture(t),selected=await f.material('draft-isolation',['Generated selected original.']);
+ f.setInspect(async input=>{
+  const task=prepareTaskContext(input);
+  assert.equal(task.id,'extraction');assert.equal(task.responseMode,'memory-extraction');assert.equal(task.profile.retrieval,'evidence');
+  assert.equal(input.assistantDraft,undefined,'Memory never receives an answer draft opt-in');
+  assert.equal(Object.hasOwn(task.outputSchema.properties as object,'draft'),false);
+  return {...response(input),draftProposal:{goal:'Generated unoffered follow-up'}};
+ });
+ for(const selection of [{responseMode:'memory-extraction' as const},{skill:'coding-memory' as const}]){
+  const result=await withFixtureOwnerModelWork(f.node,()=>f.node.featureServices.queryAgent({question:'Generated Memory task selection',evidenceIds:selected.ids,processingMaterialInputs:[f.node.materials.input(selected.value.ref,['source-body'])!],...selection}));
+  assert.deepEqual(JSON.parse(result.answer),{memories:[]});assert.equal(result.draft,undefined,'an unoffered model proposal cannot issue a draft');
+ }
+ assert.equal(f.calls.length,2,'both explicit response mode and skill-selected Memory reach the model');
+});
+
+for(const change of ['cancel','delete','material withdrawal'] as const)test(`an admitted Memory query rechecks ${change} after yielding before model disclosure`,async t=>{
  const f=await fixture(t),selected=await f.material('yield-boundary',['Generated selected original.']);
  const abort=new AbortController(),gate=f.node.featureServices.agentGate,run=gate.run.bind(gate) as typeof gate.run;
  let entered=0,callsAtSuspension=-1;
@@ -63,7 +79,7 @@ for(const change of ['cancel','delete'] as const)test(`an admitted Memory query 
  // generated grant immediately after the admitted callback first suspends.
  gate.run=<T>(work:()=>Promise<T>,signal?:AbortSignal,key?:string):Promise<T>=>run<T>(async()=>{
   const pending=work();entered++;callsAtSuspension=f.calls.length;
-  if(change==='cancel')abort.abort();else f.node.store.delete(selected.originalId);
+  if(change==='cancel')abort.abort();else if(change==='delete')f.node.store.delete(selected.originalId);else f.node.materials.retire(selected.value.id,{expectedRevision:selected.value.revision});
   return pending;
  },signal,key);
  const records=f.node.featureServices.evidenceReader.memories.readEvidence(selected.ids);
@@ -71,7 +87,7 @@ for(const change of ['cancel','delete'] as const)test(`an admitted Memory query 
  const outcome=await withFixtureOwnerModelWork(f.node,()=>f.node.featureServices.queryAgent(input))
   .then(result=>({result,error:undefined}),error=>({result:undefined,error}));
  await new Promise<void>(resolve=>setImmediate(resolve));
- assert.equal(entered,1);assert.equal(callsAtSuspension,0,'the admitted callback must suspend before disclosure');
+ assert.equal(entered,1,outcome.error?.stack);assert.equal(callsAtSuspension,0,'the admitted callback must suspend before disclosure');
  assert.equal(outcome.result,undefined);assert.equal(f.calls.length,0,'changed authority never reaches the fake model');
  if(change==='cancel')assert.equal(outcome.error?.name,'AbortError');else assert.equal(outcome.error?.code,'context_evidence_restricted');
  assert.equal(gate.snapshot().active,0,'a denied admitted query releases its execution slot');
