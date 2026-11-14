@@ -4,6 +4,7 @@ import {openMemoryDeletions,type MemoryDeletions} from './plugins/memory-deletio
 import {PERSONAL_CONTEXT_POLICY} from './memory-policy.js';
 import {codingProjectIdentity} from './coding-project.js';
 import {randomUUID} from 'node:crypto';
+import type {StatementSync} from 'node:sqlite';
 import {z} from 'zod';
 import {validateInlineCitations,SOURCE_TIME_INSTRUCTIONS,skillCatalog} from '@mote/agent';
 import {fileEvidenceSchema,sourceContentTime,noteCapture,type CaptureRecord,type QueryResult} from '@mote/shared';
@@ -48,6 +49,9 @@ export type MemoryExtractOptions={workContract?:MemoryWorkContract;prepared?:Pre
 const initializedStores=new WeakSet<Store>();
 export class MemoryStore {
   readonly deletions:MemoryDeletions;
+  // Retain compiled handles only. Each guard still reads the current transaction.
+  private materialEvidenceTableStatement?:StatementSync;
+  private materialEvidenceStatement?:StatementSync;
   constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){this.deletions=openMemoryDeletions(store,{records:{read:ids=>this.readEvidence([...ids])}});if(!initializedStores.has(store)){this.ensureIndex();this.ensureCatalog();initializedStores.add(store);}}
   /** Native card inventory, including stale cards retained in the owner archive. */
   count(){return Number(this.store.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n);}
@@ -96,10 +100,10 @@ export class MemoryStore {
     // Coding append reuses an unchanged prefix. The injected currentEvidence
     // resolver checks that the block is still active in the current head.
     if(record.appId==='mote.material'&&record.provenance?.uri?.startsWith('material:')){
-      if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get())return false;
-      const anchor=this.store.db.prepare(`SELECT e.material_id,e.revision,e.block_id FROM material_evidence e
+      if(!(this.materialEvidenceTableStatement??=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'")).get())return false;
+      const anchor=(this.materialEvidenceStatement??=this.store.db.prepare(`SELECT e.material_id,e.revision,e.block_id FROM material_evidence e
         JOIN material_heads h ON h.id=e.material_id
-        WHERE e.id=? AND h.retired=0`).get(id) as {material_id:string;revision:string;block_id:string}|undefined;
+        WHERE e.id=? AND h.retired=0`)).get(id) as {material_id:string;revision:string;block_id:string}|undefined;
       return Boolean(anchor&&record.provenance.uri===`material:${anchor.material_id}@${anchor.revision}#${anchor.block_id}`);
     }
     if(record.provenance?.layer!=='derived')return true;

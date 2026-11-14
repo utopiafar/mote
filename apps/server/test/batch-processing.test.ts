@@ -178,6 +178,30 @@ test('assembled batches wait for a configured model without starting a provider 
   assert.equal(calls,0);assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(batch.id)!.result_json,null);
 });
 
+for(const change of ['last-segment','source-disabled'] as const)test(`retrying a recording batch freshly rejects ${change} before model admission`,async t=>{
+  let calls=0;const f=await fixture(t,async input=>{calls++;return answer(input);},false);
+  const sourceId='generated-recording-retry';
+  f.node.sources.register({id:sourceId,name:'Generated recording retry',kind:'custom',deviceId:'generated-recording-device',platform:'import',retention:'archive'});
+  const transcript={durationMs:32000,coverage:'full' as const,engine:'generated',segments:Array.from({length:32},(_,index)=>({
+    startMs:index*1000,endMs:(index+1)*1000,speaker:'Generated speaker',text:'Generated unchanged recording segment '+index,
+  }))};
+  const original=await f.node.files.transcriptRevision(sourceId,{externalId:'recording',kind:'file',title:'Generated recording',observedAt:'2026-10-01T00:00:00Z'},'Generated original recording export',transcript,()=>{});
+  const chunks=f.node.files.chunks(original.id,0,200),ids=chunks.map(chunk=>chunk.id);
+  assert.equal(ids.length,32);
+  const batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Review every generated recording segment',evidenceIds:ids}]},manual(f.node));
+  await until(()=>f.batch.progress(batch.id).items[0].state==='blocked');
+  assert.equal(f.batch.progress(batch.id).items[0].error,'model_not_configured');
+  if(change==='last-segment')f.node.store.db.prepare('UPDATE file_chunks SET text=? WHERE id=?').run('Generated replacement of the final exact segment',ids.at(-1)!);
+  else f.node.sources.update(sourceId,{enabled:false});
+  f.batch.retry(batch.id);
+  await until(()=>f.batch.progress(batch.id).items[0].state==='stale');
+  const step=f.batch.progress(batch.id).items[0];
+  assert.equal(step.error,'input_changed');assert.equal(step.attempts,0);assert.equal(calls,0);
+  assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(batch.id)!.result_json,null);
+  assert.equal(f.node.store.evidence([original.id])[0].capturedAt,'2026-10-01T00:00:00.000Z');
+  assert.deepEqual(f.node.files.chunks(original.id,0,31),chunks.slice(0,31),'unrelated original segments retain their text, attribution and timing');
+});
+
 
 test('item and reduce calls retain the existing query usage receipts',async t=>{
   const f=await fixture(t,async(input,lease)=>{
