@@ -1,11 +1,70 @@
-import { constants } from 'node:fs';
-import { mkdir, open, readdir, rename, lstat, unlink, statfs } from 'node:fs/promises';
+import { constants, lstatSync, chmodSync } from 'node:fs';
+import { mkdir, open, readdir, rename, lstat, unlink, statfs, link } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { LOG_CHANNELS, logRetentionFromDocument, MAX_LOG_FILE_BYTES } from './log-retention-config.mjs';
 const pattern = /^(central|supervisor)\.(error|warn|info|debug|trace)\.(\d{13})\.(\d{13})\.([a-f0-9-]{36})\.ndjson$/;
 const priority = ['trace', 'debug', 'info', 'warn', 'error'];
-const processStartedAt = Date.now() - process.uptime() * 1000;
+const lockProtocol = JSON.stringify({protocol:'mote-retention-sqlite'}) + '\n';
+const offlineRecovery = 'Diagnostic retention lock unavailable; existing retention.lock requires offline recovery after all log writers are stopped';
+
+/** Publish a complete, immutable protocol marker. It remains in place between
+ * operations so an old wx/PID writer cannot enter through a different mutex.
+ * Unknown/legacy locks are never removed, even if empty, old or apparently dead. */
+async function retentionProtocol(directory) {
+  const path = join(directory, 'retention.lock');
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const info = await handle.stat();
+    return info.isFile() && info.size === Buffer.byteLength(lockProtocol) && await handle.readFile('utf8') === lockProtocol;
+  } catch (error) {
+    if (error.code === 'ELOOP' || error.code === 'EISDIR') return false;
+    if (error.code !== 'ENOENT') throw error;
+  } finally {
+    await handle?.close();
+  }
+  const temporary = join(directory, 'retention.' + randomUUID() + '.tmp');
+  let candidate, created = false;
+  try {
+    candidate = await open(temporary, 'wx', 0o600);
+    created = true;
+    await candidate.writeFile(lockProtocol);
+    await candidate.sync();
+    await candidate.close();candidate = undefined;
+    // link is create-if-absent. Neither a partial marker nor an overwrite is
+    // visible at retention.lock; a crash leaves at most an unused private temp.
+    try { await link(temporary, path); return true; }
+    catch (error) { if (error.code !== 'EEXIST') throw error; return false; }
+  } finally {
+    try { await candidate?.close(); }
+    finally { if (created) await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+  }
+}
+
+/** A zero-byte, persistent SQLite file needs no schema, journal or owner data.
+ * BEGIN IMMEDIATE holds its OS-backed reserved lock until rollback/close/death.
+ * Never unlink it or open/close it outside SQLite: POSIX close would release
+ * another connection's process locks. Creation is performed by SQLite itself. */
+function retentionMutex(directory) {
+  const path = join(directory, 'retention-mutex.sqlite');
+  const inspect = () => {
+    let info;
+    try { info = lstatSync(path); }
+    catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    if (!info.isFile() || info.nlink !== 1 || info.size !== 0 || process.getuid && info.uid !== process.getuid()) throw Error('Invalid diagnostic retention mutex');
+    return info;
+  };
+  const prior = inspect();
+  const database = new DatabaseSync(path, {timeout:0});
+  try {
+    const current = inspect();
+    if (!current || prior && (prior.dev !== current.dev || prior.ino !== current.ino)) throw Error('Diagnostic retention mutex changed');
+    if ((current.mode & 0o777) !== 0o600) chmodSync(path, 0o600);
+    return database;
+  } catch (error) { database.close(); throw error; }
+}
 const conflict = () => Object.assign(new Error('Log cleanup selection changed; preview again'), {
   statusCode: 409
 });
@@ -42,58 +101,24 @@ export class DiagnosticLogStore {
         recursive: true,
         mode: 0o700
       });
-      const path = join(this.directory, 'retention.lock');
-      let lock;
-      for (let attempt = 0; attempt < 500; attempt++) {
-        try {
-          lock = await open(path, 'wx', 0o600);
-          try {
-            await lock.writeFile(JSON.stringify({
-              pid: process.pid,
-              startedAt: processStartedAt
-            }));
-          } catch (error) {
-            await lock.close();
-            lock = undefined;
-            await unlink(path);
-            throw error;
-          }
-          break;
-        } catch (e) {
-          if (e.code !== 'EEXIST') throw e;
-        }
-        try {
-          const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-          let owner, identity;
-          try {
-            identity = await handle.stat();
-            if (identity.size <= 256) owner = JSON.parse(await handle.readFile('utf8'));
-          } finally {
-            await handle.close();
-          }
-          let stale = owner?.pid === process.pid && owner.startedAt !== processStartedAt;
-          if (Number.isSafeInteger(owner?.pid) && owner.pid > 0) try {
-            process.kill(owner.pid, 0);
-          } catch (e) {
-            if (e.code === 'ESRCH') stale = true;
-          }
-          if (stale) {
-            const current = await lstat(path);
-            if (current.ino === identity.ino && current.dev === identity.dev) await unlink(path);
-          }
-        } catch (e) {
-          if (e.code === 'ENOENT') continue;
-        }
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
-      if (!lock) throw Error('Diagnostic retention lock unavailable');
+      let database, acquired = false, protocol = false;
       try {
+        for (let attempt = 0; attempt < 500; attempt++) {
+          protocol = await retentionProtocol(this.directory);
+          if (protocol) {
+            database ??= retentionMutex(this.directory);
+            try { database.exec('BEGIN IMMEDIATE'); acquired = true; break; }
+            catch (error) { if (error.code !== 'ERR_SQLITE_ERROR' || error.errcode !== 5) throw error; }
+          }
+          // A synchronous busy timeout would block another writer on this same
+          // event loop from finishing its asynchronous filesystem operations.
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        if (!acquired) throw Error(protocol ? 'Diagnostic retention lock unavailable' : offlineRecovery);
         return await task();
       } finally {
-        await lock.close();
-        await unlink(path).catch(e => {
-          if (e.code !== 'ENOENT') throw e;
-        });
+        try { if (acquired) database.exec('ROLLBACK'); }
+        finally { database?.close(); }
       }
     });
     this.serial = result.catch(() => {});
@@ -105,7 +130,7 @@ export class DiagnosticLogStore {
     for (const name of await readdir(this.directory)) {
       const m = pattern.exec(name);
       if (!m) {
-        if (/\.(?:log|ndjson|gz|tmp)$/.test(name) || ['central.lock', 'retention.lock', 'retention-state.json'].includes(name)) {
+        if (/\.(?:log|ndjson|gz|tmp)$/.test(name) || ['central.lock', 'retention.lock', 'retention-mutex.sqlite', 'retention-state.json'].includes(name)) {
           try {
             const s = await lstat(join(this.directory, name));
             if (s.isFile()) this.otherBytes += s.size;
