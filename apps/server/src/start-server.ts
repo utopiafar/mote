@@ -37,15 +37,32 @@ writeFileSync(pidPath,String(process.pid),{mode:0o600,flag:'wx'});
 process.on('exit',()=>{try{if(existsSync(pidPath)&&readFileSync(pidPath,'utf8').trim()===String(process.pid))unlinkSync(pidPath);}catch{/* Never print a filesystem exception containing private paths. */}});
 const {app}=await buildApp(config,{...options.dependencies,backgroundWorker:true,configService,distribution:defaultDistribution});
 app.addHook('onSend',async(req,reply,payload)=>{if(req.routeOptions.url==='/api/health')reply.header('X-Mote-Runtime-Instance',instanceId);return payload;});
-try{
+let closing=false;
+const signals=['SIGTERM','SIGINT'] as const;
+const shutdown=async()=>{
+  if(closing)return;closing=true;
+  try{
+    await app.close();
+    // HTTP can already serve requests while the runtime locator is being
+    // published. Join that write before exit so it cannot outlive cleanup.
+    await starting;
+    console.info(JSON.stringify({event:'server.stopped'}));process.exit(0);
+  }catch{console.error(JSON.stringify({event:'server.stop_failed',category:'shutdown'}));process.exit(1);}
+};
+// Install before listen(): callers may stop Central as soon as HTTP is live,
+// including on restart while old server.listening diagnostics remain on disk.
+for(const signal of signals)process.on(signal,shutdown);
+const starting=(async()=>{
   await app.listen({host:config.host,port:config.port});
   const address=app.server.address();
   if(!address||typeof address==='string')throw Error('Invalid server listener');
   await writeRuntimeListener(configFile,{version:1,pid:process.pid,port:address.port,address:address.address,instanceId});
   console.info(JSON.stringify({event:'server.listening',port:address.port,tokenConfigured:true}));
-}catch(error){await app.close();throw error;}
-let closing=false;
-for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,async()=>{if(closing)return;closing=true;try{await app.close();console.info(JSON.stringify({event:'server.stopped'}));process.exit(0);}catch{console.error(JSON.stringify({event:'server.stop_failed',category:'shutdown'}));process.exit(1);}});
+})();
+try{await starting;}catch(error){
+  if(!closing)for(const signal of signals)process.off(signal,shutdown);
+  await app.close();throw error;
+}
 }
 
 /** Stable, secret-free startup failure report shared by the entry and trusted hosts. */

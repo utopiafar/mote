@@ -83,3 +83,22 @@ test('a real central process refuses a lock belonging to another live process wi
   assert.match(node.output(), /data_directory_in_use/);
   assert.equal(await readFile(path, 'utf8'), String(process.pid));
 });
+
+test('a real central process reports an occupied HTTP port and releases startup resources', { timeout:20000 }, async t => {
+  const directory=await mkdtemp(join(tmpdir(),'mote-startup-test-'));
+  const socket=createServer();
+  let node:Awaited<ReturnType<typeof startNode>>|undefined;
+  t.after(async()=>{
+    try{if(node)await stop(node.child,node.exited);}finally{
+      await new Promise<void>((resolve,reject)=>socket.close(error=>error?reject(error):resolve()));
+      await rm(directory,{recursive:true,force:true});
+    }
+  });
+  await new Promise<void>((resolve,reject)=>{socket.once('error',reject);socket.listen(0,'127.0.0.1',resolve);});
+  const port=(socket.address() as {port:number}).port;
+  node=await startNode(directory,port,false);
+  assert.equal(await node.exited,1);
+  assert.match(node.output(),/"event":"server.start_failed","category":"port_in_use"/);
+  await assert.rejects(readFile(join(directory,'server.pid')),{code:'ENOENT'});
+  await assert.rejects(readFile(join(directory,'.mote.yaml.runtime.json')),{code:'ENOENT'});
+});
