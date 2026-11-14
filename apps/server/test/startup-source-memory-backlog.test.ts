@@ -12,12 +12,36 @@ import {setTimeout as delay} from 'node:timers/promises';
 
 type Drain={type:'drain';drains:number;rejoins:number;fullDetailReads:number;durationMs:number;cpuMs:number;resumed:boolean};
 const digest=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
-function frozenRanges(directory:string){
+function frozenRanges(directory:string,originalBatches?:readonly string[]){
  const db=new DatabaseSync(join(directory,'mote.sqlite'),{readOnly:true}),hash=createHash('sha256');
  try{
   for(const row of db.prepare("SELECT id,json_extract(json,'$.authorizedChunks') chunks,json_extract(json,'$.materialInputs') inputs,json_extract(json,'$.materialRefs') refs,json_extract(json,'$.automaticGrants') grants,json_extract(json,'$.workPackage') package FROM memory_jobs ORDER BY id").iterate())hash.update(JSON.stringify(row));
-  for(const row of db.prepare("SELECT id,job_id,idx,json_extract(json,'$.chunks') chunks,json_extract(json,'$.evidenceRanges') ranges,json_extract(json,'$.materialInputs') inputs,json_extract(json,'$.materialRefs') refs FROM memory_batches ORDER BY id").iterate())hash.update(JSON.stringify(row));
-  return hash.digest('hex');
+  const batchIds:string[]=[];
+  for(const row of db.prepare("SELECT id,job_id,idx,json_extract(json,'$.chunks') chunks,json_extract(json,'$.evidenceRanges') ranges,json_extract(json,'$.materialInputs') inputs,json_extract(json,'$.materialRefs') refs FROM memory_batches ORDER BY id").iterate()){
+   const id=String(row.id);batchIds.push(id);if(!originalBatches||originalBatches.includes(id))hash.update(JSON.stringify(row));
+  }
+  if(originalBatches)assert.ok(originalBatches.every(id=>batchIds.includes(id)),'transport partitioning cannot erase a saved parent');
+  return {hash:hash.digest('hex'),batchIds};
+ }finally{db.close();}
+}
+function assertPartitions(directory:string,originalBatches:readonly string[]){
+ const db=new DatabaseSync(join(directory,'mote.sqlite'),{readOnly:true});
+ try{
+  let splitParents=0;const visited=new Set<string>();
+  const batches=new Map(db.prepare('SELECT id,json FROM memory_batches').all().map(row=>[String(row.id),JSON.parse(String(row.json))]));
+  const leaves=(id:string):any[]=>{assert.ok(!visited.has(id),'transport children cannot repeat or form a cycle');visited.add(id);const batch=batches.get(id);assert.ok(batch,'every transport child must remain durable');return batch.supersededBy?.length?batch.supersededBy.flatMap(leaves):[batch];};
+  for(const id of originalBatches){
+   const parent=batches.get(id),children=leaves(id);
+   if(children.length>1)splitParents++;
+   assert.deepEqual(children.flatMap(child=>child.chunks),parent.chunks,'transport children retain every exact original target/checkpoint in order');
+   assert.deepEqual(children.flatMap(child=>child.evidenceRanges),parent.evidenceRanges,'transport subdivision cannot omit, clip or duplicate a frozen range');
+   for(const child of children){
+    assert.ok(child.materialInputs.every((pin:unknown)=>parent.materialInputs.some((original:unknown)=>JSON.stringify(original)===JSON.stringify(pin))),'transport children cannot mint or expand an original Material pin');
+    assert.ok(Object.entries(child.materialRefs).every(([id,ref])=>parent.materialRefs[id]===ref),'transport children retain the original authorizing Material identities');
+   }
+  }
+  assert.ok(splitParents>0,'native request/review sizing must durably subdivide saved over-budget work, including after restart');
+  assert.deepEqual([...visited].sort(),[...batches.keys()].sort(),'every added transport batch must descend from exactly one frozen original parent');
  }finally{db.close();}
 }
 async function originalFiles(directory:string){
@@ -27,7 +51,7 @@ async function originalFiles(directory:string){
  return hash.digest('hex');
 }
 
-test('Central keeps HTTP responsive through sustained source-owned Memory drain, dormant rejoin and two starts with 540 frozen jobs',{timeout:180000},async t=>{
+test('Central keeps HTTP responsive through native-budget source Memory recovery, debug logging and two starts with 540 frozen jobs',{timeout:180000},async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-source-startup-backlog-')),fixture=fileURLToPath(new URL('./fixtures/startup-source-memory-backlog.ts',import.meta.url));
  const socket=createServer();await new Promise<void>(resolve=>socket.listen(0,'127.0.0.1',resolve));
  const port=(socket.address() as {port:number}).port;await new Promise<void>((resolve,reject)=>socket.close(error=>error?reject(error):resolve()));
@@ -82,7 +106,8 @@ test('Central keeps HTTP responsive through sustained source-owned Memory drain,
   assert.ok(run.drains.some(event=>event.resumed),'rotation past a whole paused page must rejoin the existing resumed claim');
   phase=`restart ${restart} original range`;const range=await request('/api/materials/'+expected.material+'/read?offset=27&length=81');assert.equal(range.status,200);assert.deepEqual(await range.json(),expected.range);
   await stop(run);await assert.rejects(readFile(join(directory,'server.pid')),{code:'ENOENT'});await assert.rejects(readFile(join(directory,'.mote.yaml.runtime.json')),{code:'ENOENT'});
-  assert.equal(frozenRanges(directory),frozen,'shutdown/restart must retain every frozen target, pin and grant');assert.equal(await originalFiles(directory),originals,'all original archive bytes and identities must survive');
+  assert.ok((await readdir(join(directory,'logs'))).some(name=>name.startsWith('central.')),'enabled Central debug diagnostics must remain active through recovery and shutdown');
+  assert.equal(frozenRanges(directory,frozen.batchIds).hash,frozen.hash,'shutdown/restart must retain every frozen job and original batch target, pin and grant');assertPartitions(directory,frozen.batchIds);assert.equal(await originalFiles(directory),originals,'all original archive bytes and identities must survive');
   t.diagnostic(`restart ${restart}: startup ${startupMs.toFixed(0)} ms, ${latencies.length} health probes, max ${Math.max(...latencies).toFixed(0)} ms; ${run.drains.length} drains/rejoins, max drain ${Math.max(...run.drains.map(event=>event.durationMs)).toFixed(0)} ms, full detail reads 0, generated model calls ${run.modelCalls()}`);
  }
 });

@@ -1,6 +1,6 @@
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {MEMORY_VISUAL_EVIDENCE_CONTRACT} from './memory-image-proof.js';
-import {memoryImageGrants,memoryImageLocator,assertMemoryImageGrants,uninspectedMemoryImageTargets} from './memory-image-grants.js';
+import {memoryImageGrants,memoryImageLocator,memoryImageLocators,assertMemoryImageGrants,uninspectedMemoryImageTargets,type MemoryImageLocator,type MemoryImageGrant} from './memory-image-grants.js';
 import {ActivityMemoryIndex} from './activity-memory-index.js';
 import {memoryFeedbackBatchId,validMemoryFeedbackPlan,hasUsefulMemoryFeedbackScope,type MemoryFeedbackPlanner,type MemoryFeedbackRequest,type MemoryFeedbackPlan,type MemoryFeedbackGroup} from './memory-feedback.js';
 import {decodeMemoryJob,encodeMemoryJob,decodeMemoryBatch,encodeMemoryBatch,installMemoryPrivateRetirement} from './plugins/memory-private-storage.js';
@@ -30,7 +30,7 @@ import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_
 import type {MemoryValidationDetails} from './memory-validation.js';
 import type {ModelConfiguration} from './model-configuration.js';
 import {memoryReviewReceipt,memoryReviewQuestion,type MemoryDraftOrigin} from './memory-review.js';
-import {memoryRequestUsage,type MemoryRequestCapacity} from './memory-request-budget.js';
+import {memoryRequestSizer,type MemoryRequestCapacity} from './memory-request-budget.js';
 import type {Memory} from './memory-schema.js';
 import {memoryReviewReceiptSchema,type MemoryReviewReceipt} from './memory-schema.js';
 import {MemoryPhaseOutputs} from './memory-phase-outputs.js';
@@ -49,6 +49,8 @@ type Chunk=EvidenceRange&{materialInputFingerprints?:string[];strategy?:MemoryRe
 export type MemoryBatch={contextFeedbackChildId?:string;failureReceipt?:ExecutionFailureReceipt;workContract?:MemoryWorkContract;evaluation?:{workContract:MemoryWorkContract;selectedCandidates:number;assessedTargets:number;incompleteTargets:number;reviewRunId?:string;resultHash:string;checkedAt:string};generationContract?:string;replanRound?:number;feedbackRound?:number;feedbackWorkId?:string;workerGoal?:string;workerInstruction?:string;contextRanges?:EvidenceRange[];coverage?:MemoryWorkMember[];reviewReceipt?:MemoryReviewReceipt;supersededBy?:string[];strategy?:MemoryRecipeBinding;configuration?:ModelConfiguration;id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];availableAt?:number;errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope};
 type BatchInputScope={planIds?:string[];materialInputs:MaterialInputPin[];materialRefs:Record<string,string>};
 type StoredBatch=MemoryBatch&BatchInputScope&{readRanges?:EvidenceRange[];transitionStamp?:string;nativeDraft?:{key:string;context:MemoryEngineDraftPin};engineDrafts?:MemoryEngineDraftPin[];feedbackOnly?:boolean;contextFeedbackChildId?:string;artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];contextChunks?:Chunk[];skillVersion?:string;resourceEvidenceIds?:string[]};
+type EvidenceSnapshot=ReadonlyMap<string,ReturnType<MemoryStore['readEvidence']>[number]>;
+type MemorySizingSnapshot={images:ReadonlyMap<string,MemoryImageLocator>;grants:MemoryImageGrant[];batches:StoredBatch[];members:Map<string,MemoryWorkMember>};
 export type MemoryJob={failureReceipt?:ExecutionFailureReceipt;priorValidationFailure?:(MemoryValidationFailure&{batchId:string;batchIndex:number});outcome?:'completed'|'processing_failed'|'input_invalidated';invalidatedBatches?:number;workContract?:MemoryWorkContract;continuationOf?:string;cancellationCause?:'authority'|'owner';authorizedChunks:Chunk[];activationRequired:boolean;inputPlanVersion:1;inputPlans:MemoryPlanSummary;recipeProgress:MemoryRecipeProgress[];materialInputs:MaterialInputPin[];batchCharacters:number;automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[];workPackage?:MemoryWorkPackage;contextTime:string;recipes?:MemoryStrategyRef[];configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs:Record<string,string>;language:Locale;id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'waiting_for_input'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];memoryCount:number;availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryJobState=Pick<MemoryJob,'id'|'status'|'errorCode'|'availableAt'>;
@@ -527,26 +529,44 @@ export class MemoryPipeline {
    * Every target keeps its exact range/checkpoint identity. Only the current
    * call's optional read catalog is narrowed; the job retains every grant. */
   private budgetBatches(job:MemoryJob,batches:StoredBatch[],records:ReadonlyMap<string,ReturnType<MemoryStore['readEvidence']>[number]>){
+    const candidates=this.budgetCandidates(job,batches,records);let next=candidates.next();
+    while(!next.done)next=candidates.next();return next.value;
+  }
+  /** Recovery measures the same candidates as synchronous admission, allowing
+   * HTTP, shutdown and authority withdrawal between complete measurements. */
+  private async budgetRecoveredBatch(job:MemoryJob,batch:StoredBatch,records:EvidenceSnapshot,assertGrant:()=>void){
+    const candidates=this.budgetCandidates(job,[batch],records);
+    while(true){await yieldTurn();assertGrant();this.assertStrategies(batch);this.assertConfiguration(job);const next=candidates.next();if(next.done)return next.value;}
+  }
+  private *budgetCandidates(job:MemoryJob,batches:StoredBatch[],records:EvidenceSnapshot):Generator<void,StoredBatch[],void>{
     const capacity=this.options.models.capacity?.(job.modelProfileId,job.modelOverride);if(!capacity)return batches;
     const missing=job.authorizedChunks.filter(chunk=>!records.has(chunk.id)).map(chunk=>chunk.id);
     if(missing.length)records=new Map([...records,...this.options.memories.readEvidence([...new Set(missing)]).map(record=>[record.id,record] as const)]);
-    const fits=(batch:StoredBatch)=>{
-      const input=this.modelInput(job,batch,batch.chunks,records),review=this.options.phases.review;
-      const planned=review?{...input,question:memoryReviewQuestion(input,batch.strategy?this.strategies.resolvePinned(batch.strategy).review:undefined),taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:{memories:[],coverage:[]}}}:input;
-      return memoryRequestUsage(planned,[...records.values()],capacity,review?capacity.draftTokens:0).fits;
+    // A planning pass reuses this bounded local snapshot. Rebuilding image
+    // identities and opening saved inspections for every candidate starves
+    // startup and HTTP. This snapshot grants no execution/publication authority;
+    // recovery rechecks live input pins after the final measurement.
+    const sizing:MemorySizingSnapshot={images:memoryImageLocators(this.store,[...records.keys()]),grants:memoryImageGrants(this.store,job.materialInputs),batches:this.batches(job.id),members:new Map()},measure=memoryRequestSizer([...records.values()],capacity);
+    const pipeline=this;
+    const fits=function*(batch:StoredBatch):Generator<void,boolean,void>{
+      yield;
+      const input=pipeline.modelInput(job,batch,batch.chunks,records,sizing),review=pipeline.options.phases.review;
+      const planned=review?{...input,question:memoryReviewQuestion(input,batch.strategy?pipeline.strategies.resolvePinned(batch.strategy).review:undefined),taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:{memories:[],coverage:[]}}}:input;
+      return measure(planned,review?capacity.draftTokens:0).fits;
     };
-    const bound=(batch:StoredBatch):StoredBatch[]=>{
+    const bound=function*(batch:StoredBatch):Generator<void,StoredBatch[],void>{
       const initial=[...batch.chunks,...(batch.contextChunks??[])],rangeKey=(range:EvidenceRange)=>JSON.stringify([range.id,range.offset,range.length]);
-      const initialKeys=new Set(initial.map(rangeKey)),all=this.contextReadScope(job,{...batch,readRanges:undefined}).chunks;
+      const initialKeys=new Set(initial.map(rangeKey)),all=pipeline.contextReadScope(job,{...batch,readRanges:undefined}).chunks;
       const required=initial.map(({id,offset,length})=>({id,offset,length}));
       const limited={...batch,readRanges:required};
-      if(!fits(limited)){
+      if(!(yield* fits(limited))){
         // An indivisible range can still exceed capacity (for example large
         // attribution metadata). Keep it intact and explicitly recoverable;
         // the actual pre-dispatch guard will fail it without certifying it.
         if(batch.chunks.length<2)return [limited];
-        const middle=Math.ceil(batch.chunks.length/2);
-        return [batch.chunks.slice(0,middle),batch.chunks.slice(middle)].flatMap(chunks=>bound({id:randomUUID(),index:batch.index,status:'pending',attempts:0,memoryIds:[],strategy:batch.strategy,workContract:batch.workContract,workerGoal:batch.workerGoal,workerInstruction:batch.workerInstruction,skillVersion:batch.skillVersion,artifactRefs:batch.artifactRefs,replanRound:batch.replanRound,contextChunks:batch.contextChunks,contextRanges:batch.contextRanges,chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),...this.sliceBatchScope(job,batch,chunks)}));
+        const middle=Math.ceil(batch.chunks.length/2),result:StoredBatch[]=[];
+        for(const chunks of [batch.chunks.slice(0,middle),batch.chunks.slice(middle)])result.push(...yield* bound({id:randomUUID(),index:batch.index,status:'pending',attempts:0,memoryIds:[],strategy:batch.strategy,workContract:batch.workContract,workerGoal:batch.workerGoal,workerInstruction:batch.workerInstruction,skillVersion:batch.skillVersion,artifactRefs:batch.artifactRefs,replanRound:batch.replanRound,contextChunks:batch.contextChunks,contextRanges:batch.contextRanges,chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),...pipeline.sliceBatchScope(job,batch,chunks)}));
+        return result;
       }
       // Nearby ranges are a deterministic transport order, not semantic
       // selection. The model can request useful missing context through the
@@ -555,10 +575,10 @@ export class MemoryPipeline {
       const optional=all.map((chunk,index)=>({chunk,distance:index<first?first-index:index>last?index-last:0,index})).filter(({chunk})=>!initialKeys.has(rangeKey(chunk))).sort((a,b)=>a.distance-b.distance||a.index-b.index).map(({chunk})=>chunk);
       const candidate=(count:number)=>({...limited,readRanges:[...required,...optional.slice(0,count).map(({id,offset,length})=>({id,offset,length}))]});
       let low=0,high=optional.length;
-      while(low<high){const middle=Math.ceil((low+high)/2);if(fits(candidate(middle)))low=middle;else high=middle-1;}
+      while(low<high){const middle=Math.ceil((low+high)/2);if(yield* fits(candidate(middle)))low=middle;else high=middle-1;}
       return [candidate(low)];
     };
-    return batches.flatMap(bound);
+    const result:StoredBatch[]=[];for(const batch of batches)result.push(...yield* bound(batch));return result;
   }
   private insertBatch(jobId:string,batch:StoredBatch){
     const json=encodeMemoryBatch(this.store,batch),dependencies=[...new Set([...batch.chunks,...(batch.contextChunks??[])].flatMap(c=>this.options.memories.dependencyIds(c.id)))];
@@ -581,31 +601,33 @@ export class MemoryPipeline {
   }
   private sliceBatchScope(job:MemoryJob,batch:StoredBatch,chunks:Chunk[]):BatchInputScope{const scope=this.batchScope(job,batch),ids=new Set([...chunks,...(batch.contextChunks??[])].map(c=>c.id));return {materialInputs:scope.materialInputs.filter(pin=>pin.evidenceIds.some(id=>ids.has(id))),materialRefs:Object.fromEntries(Object.entries(scope.materialRefs).filter(([id])=>ids.has(id))),planIds:batch.planIds?.filter(id=>this.inputPlans.get(id)?.resolvedInput?.evidenceIds.some(evidenceId=>ids.has(evidenceId)))};}
   private assertImageDisclosure(chunks:readonly Chunk[]){
-    if(!this.options.allowQueryImages?.()&&chunks.some(chunk=>memoryImageLocator(this.store,chunk.id)))throw new ExecutionFailure('blocked','image_disclosure_disabled');
+    if(!this.options.allowQueryImages?.()&&memoryImageLocators(this.store,chunks.map(chunk=>chunk.id)).size)throw new ExecutionFailure('blocked','image_disclosure_disabled');
   }
-  private workMembers(job:MemoryJob,batch:StoredBatch,chunks:Chunk[],snapshot?:ReadonlyMap<string,ReturnType<MemoryStore['readEvidence']>[number]>):MemoryWorkMember[]{
+  private workMembers(job:MemoryJob,batch:StoredBatch,chunks:Chunk[],snapshot?:EvidenceSnapshot,sizing?:MemorySizingSnapshot):MemoryWorkMember[]{
     const records=snapshot??new Map(this.options.memories.readEvidence([...new Set(chunks.map(chunk=>chunk.id))]).map(record=>[record.id,record]));
+    const images=sizing?.images??memoryImageLocators(this.store,chunks.map(chunk=>chunk.id));
     return chunks.map(chunk=>{const materialRef=batch.materialRefs[chunk.id],identity=job.workPackage?.inputs?.find(input=>input.ref===materialRef);
+      const cacheKey=JSON.stringify([chunk.key,materialRef]),cached=sizing?.members.get(cacheKey);if(cached)return cached;
       // Coverage names the exact source range, while checkpoints and grants
       // retain their independent review-policy identities. Identical authorized
       // extraction inputs can therefore reuse a private draft across reviewers.
-      const record=records.get(chunk.id),image=memoryImageLocator(this.store,chunk.id);
-      return {...(image?{imageTarget:{originalSha256:image.sha256}}:{}),key:sha256(JSON.stringify(['memory-member@2',chunk.id,chunk.offset,chunk.length,chunk.fingerprint,identity?.inputKey,identity?.contextTime??job.contextTime,record?.attributionContext])),id:chunk.id,offset:chunk.offset,length:chunk.length,fingerprint:chunk.fingerprint,materialRef,inputKey:identity?.inputKey,scope:identity?.scope,contextTime:identity?.contextTime??job.contextTime,sourceId:identity?.sourceId??record?.provenance?.sourceId,attributionContext:record?.attributionContext,state:'pending',memoryIds:[]};});
+      const record=records.get(chunk.id),image=images.get(chunk.id);
+      const member:MemoryWorkMember={...(image?{imageTarget:{originalSha256:image.sha256}}:{}),key:sha256(JSON.stringify(['memory-member@2',chunk.id,chunk.offset,chunk.length,chunk.fingerprint,identity?.inputKey,identity?.contextTime??job.contextTime,record?.attributionContext])),id:chunk.id,offset:chunk.offset,length:chunk.length,fingerprint:chunk.fingerprint,materialRef,inputKey:identity?.inputKey,scope:identity?.scope,contextTime:identity?.contextTime??job.contextTime,sourceId:identity?.sourceId??record?.provenance?.sourceId,attributionContext:record?.attributionContext,state:'pending',memoryIds:[]};sizing?.members.set(cacheKey,member);return member;});
   }
   private workPackageContext(job:MemoryJob,batch:StoredBatch){return {goal:batch.workerGoal??job.workPackage?.goal??'Independently evaluate the authorized original ranges',instruction:batch.workerInstruction??job.workPackage?.instruction??'Preserve source attribution, semantic time and uncertainty for every supplied target range.'};}
   private workContract(job:MemoryJob,batch:StoredBatch):MemoryWorkContract|undefined{return batch.strategy?batch.strategy.workContract:batch.workContract??job.workContract;}
   /** Shared initial input for admission sizing and real phase execution. */
-  private modelInput(job:MemoryJob,batch:StoredBatch,chunks:Chunk[],snapshot?:ReadonlyMap<string,ReturnType<MemoryStore['readEvidence']>[number]>):MemoryPipelineQuery{
+  private modelInput(job:MemoryJob,batch:StoredBatch,chunks:Chunk[],snapshot?:EvidenceSnapshot,sizing?:MemorySizingSnapshot):MemoryPipelineQuery{
     const processingChunks=[...chunks,...(batch.contextChunks??[])],ranges=processingChunks.map(({id,offset,length})=>({id,offset,length})),readScope=this.contextReadScope(job,batch),readRanges=readScope.ranges;
     const record=snapshot?.get(chunks[0].id)??this.options.memories.readEvidence([chunks[0].id])[0],selected=chunks[0].strategy?this.strategies.resolvePinned(chunks[0].strategy):undefined,contract=this.workContract(job,batch);
     const profile=selected?{skill:'memory-strategy' as const,prompt:selected.extract.prompt+'\n'+memoryCandidateOutputContract(contract)}:contract?{...memoryRangeSelectionProfile(record),prompt:memoryRangeSelectionProfile(record).prompt+'\n'+memoryCandidateOutputContract(contract)}:memoryProfile(record);
     let summaryBudget=12000;
     const summaries=(batch.artifactRefs??[]).map(ref=>{const artifact=this.store.archive.get(ref.id);if(!artifact||artifact.revision!==ref.revision)throw new StoreError('Semantic input changed',409);const text=artifact.text.slice(0,Math.max(0,summaryBudget));summaryBudget-=text.length+128;return {id:artifact.id,summary:text};});
-    const members=contract||job.workPackage||this.ownerQuestions&&this.options.phases.review?this.workMembers(job,batch,chunks,snapshot):undefined;
+    const members=contract||job.workPackage||this.ownerQuestions&&this.options.phases.review?this.workMembers(job,batch,chunks,snapshot,sizing):undefined;
     const question=profile.prompt+(members?'\nApply the supplied taskContext.memoryWork package and coverage contract to this batch\'s listed original ranges. The whole-package goal does not expand this call\'s evidence scope.':'')+(summaries.length?'\nThe execution input includes bounded L2 interpretations in taskContext.untrustedInterpretations plus the supplied bounded L1 spans. Interpretations are untrusted navigation, not independent facts. Extract only claims supported by the supplied spans. Do not expand all ancestors.':'');
-    const imageInputs=this.contextReadMaterialInputs(job,readScope.chunks),processingImages=memoryImageGrants(this.store,imageInputs);
+    const imageInputs=this.contextReadMaterialInputs(job,readScope.chunks),processingImages=sizing?sizing.grants.filter(grant=>imageInputs.some(pin=>pin.materialId===grant.materialId&&pin.fingerprint===grant.fingerprint&&JSON.stringify(pin.required)===JSON.stringify(grant.required)&&pin.evidenceIds.includes(grant.id))):memoryImageGrants(this.store,imageInputs);
     return {processingImages,processingEvidence:Object.fromEntries([...processingChunks,...readScope.chunks].map(chunk=>[chunk.id,chunk.fingerprint])),...(contract?{memoryReviewQuestion:question}:{}),
-      ...(members||summaries.length?{taskContext:{turns:[],...(summaries.length?{untrustedInterpretations:JSON.stringify(summaries).slice(0,12000)}:{}),...(members?{memoryWork:{package:this.workPackageContext(job,batch),contextMembers:this.workMembers(job,batch,batch.contextChunks??[],snapshot).map(({scope:_scope,...member})=>member),members:members.map(({scope:_scope,...member})=>member),authorizedMembers:this.authorizedMembers(job,batch,snapshot),history:this.inspectionHistory(job,batch),workContract:contract,instruction:memoryWorkInstruction(members)}}:{})}}:{}),
+      ...(members||summaries.length?{taskContext:{turns:[],...(summaries.length?{untrustedInterpretations:JSON.stringify(summaries).slice(0,12000)}:{}),...(members?{memoryWork:{package:this.workPackageContext(job,batch),contextMembers:this.workMembers(job,batch,batch.contextChunks??[],snapshot,sizing).map(({scope:_scope,...member})=>member),members:members.map(({scope:_scope,...member})=>member),authorizedMembers:this.authorizedMembers(job,batch,snapshot,sizing),history:this.inspectionHistory(job,batch,snapshot,sizing),workContract:contract,instruction:memoryWorkInstruction(members)}}:{})}}:{}),
       processingMaterialInputs:imageInputs,contextTime:members?.[0]?.contextTime??job.contextTime,language:job.language,modelProfileId:job.configuration?.profileId??job.modelProfileId,modelOverride:job.configuration?.model??job.modelOverride??this.options.models.model(job.modelProfileId),question:question+(processingImages.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:''),skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(processingChunks.map(chunk=>chunk.id))],evidenceRanges:ranges,evidenceReadRanges:readRanges,timeZone:job.timeZone};
   }
   /** Reuse the existing bounded original catalog, prioritizing current
@@ -661,13 +683,13 @@ export class MemoryPipeline {
     const readScope=this.contextReadScope(job,batch),readContract=[1,readScope.ranges.sort((a,b)=>a.id.localeCompare(b.id)||a.offset-b.offset),readScope.chunks.map(({id,fingerprint})=>({id,fingerprint})).sort((a,b)=>a.id.localeCompare(b.id))];
     return sha256(JSON.stringify(['memory-generation@2',...readContract,SYSTEM_PROMPT,profile,skillCatalog().find(skill=>skill.id===(selected||contract?'memory-strategy':memoryProfile(this.options.memories.readEvidence([chunks[0].id])[0]).skill))?.version,batch.skillVersion??job.skillVersion,job.configuration?.fingerprint??this.options.models.configuration?.(job.modelProfileId,job.modelOverride)?.fingerprint,job.modelOverride??this.options.models.model(job.modelProfileId),job.language,job.timeZone,members,context,batch.workerGoal??job.workPackage?.goal,batch.workerInstruction??job.workPackage?.instruction,this.options.memories.readEvidence([...new Set([...chunks,...(batch.contextChunks??[])].map(chunk=>chunk.id))]).sort((a,b)=>a.id.localeCompare(b.id)),Boolean(this.options.requireAdmission),this.inspectionHistory(job,batch).map(({targets,contextMembers})=>({targets:targets.sort((a,b)=>a.key.localeCompare(b.key)),contextMembers:contextMembers.sort((a,b)=>a.key.localeCompare(b.key))})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))),this.authorizedMembers(job,batch).map(({scope:_scope,state:_state,memoryIds:_ids,...member})=>member).sort((a,b)=>a.key.localeCompare(b.key)),contract||job.workPackage||this.ownerQuestions&&this.options.phases.review?memoryWorkInstruction(this.workMembers(job,batch,chunks)):undefined]));
   }
-  private authorizedMembers(job:MemoryJob,batch:StoredBatch,snapshot?:ReadonlyMap<string,ReturnType<MemoryStore['readEvidence']>[number]>):MemoryWorkMember[]{
-    return this.workMembers(job,{...batch,materialRefs:job.materialRefs},this.contextReadScope(job,batch).chunks,snapshot);
+  private authorizedMembers(job:MemoryJob,batch:StoredBatch,snapshot?:EvidenceSnapshot,sizing?:MemorySizingSnapshot):MemoryWorkMember[]{
+    return this.workMembers(job,{...batch,materialRefs:job.materialRefs},this.contextReadScope(job,batch).chunks,snapshot,sizing);
   }
-  private inspectionHistory(job:MemoryJob,batch:StoredBatch):MemoryWorkInspection[]{
-    const targetKeys=new Set(this.workMembers(job,batch,batch.chunks).map(member=>member.key)),compatible=(source:StoredBatch)=>JSON.stringify(source.strategy)===JSON.stringify(batch.strategy),authorized=new Set(job.authorizedChunks.map(chunk=>JSON.stringify([chunk.id,chunk.offset,chunk.length,chunk.fingerprint])));
+  private inspectionHistory(job:MemoryJob,batch:StoredBatch,snapshot?:EvidenceSnapshot,sizing?:MemorySizingSnapshot):MemoryWorkInspection[]{
+    const targetKeys=new Set(this.workMembers(job,batch,batch.chunks,snapshot,sizing).map(member=>member.key)),compatible=(source:StoredBatch)=>JSON.stringify(source.strategy)===JSON.stringify(batch.strategy),authorized=new Set(job.authorizedChunks.map(chunk=>JSON.stringify([chunk.id,chunk.offset,chunk.length,chunk.fingerprint])));
     const allowed=(member:MemoryWorkMember)=>authorized.has(JSON.stringify([member.id,member.offset,member.length,member.fingerprint]));
-    return this.batches(job.id).filter(source=>!source.feedbackOnly&&source.reviewReceipt&&compatible(source)&&source.coverage?.some(member=>targetKeys.has(member.key))).map(source=>({batchId:source.id,reviewRunId:source.reviewReceipt?.reviewRunId,targets:(source.coverage??[]).filter(allowed).map(({question:_question,questionId:_questionId,memoryIds:_memoryIds,...member})=>({...member,memoryIds:[]})),contextMembers:this.workMembers(job,source,source.contextChunks??[]).filter(allowed)})).filter(inspection=>inspection.targets.length>0);
+    return (sizing?.batches??this.batches(job.id)).filter(source=>!source.feedbackOnly&&source.reviewReceipt&&compatible(source)&&source.coverage?.some(member=>targetKeys.has(member.key))).map(source=>({batchId:source.id,reviewRunId:source.reviewReceipt?.reviewRunId,targets:(source.coverage??[]).filter(allowed).map(({question:_question,questionId:_questionId,memoryIds:_memoryIds,...member})=>({...member,memoryIds:[]})),contextMembers:this.workMembers(job,source,source.contextChunks??[],snapshot,sizing).filter(allowed)})).filter(inspection=>inspection.targets.length>0);
   }
   private feedbackRequest(job:MemoryJob,batch:StoredBatch,targets:MemoryWorkMember[],coverage:MemoryWorkCoverage):MemoryFeedbackRequest {
     const compatible=(chunk:Chunk)=>JSON.stringify([chunk.strategy??null,chunk.profile,chunk.profileVersion,chunk.reviewFingerprint])===JSON.stringify([batch.chunks[0]?.strategy??null,batch.chunks[0]?.profile,batch.chunks[0]?.profileVersion,batch.chunks[0]?.reviewFingerprint]),all=this.workMembers(job,{...batch,materialRefs:job.materialRefs},job.authorizedChunks.filter(compatible)),wanted=new Set(coverage.flatMap(row=>row.contextRefs??[]));
@@ -1032,7 +1054,8 @@ export class MemoryPipeline {
     if(!batch.feedbackOnly&&batch.readRanges===undefined&&this.options.models.capacity?.(job.modelProfileId,job.modelOverride)){
       this.admitBatch(job,batch);this.assertStrategies(batch);this.assertConfiguration(job);
       const records=new Map(this.options.memories.readEvidence([...new Set(job.authorizedChunks.map(chunk=>chunk.id))]).map(record=>[record.id,record]));
-      const planned=this.budgetBatches(job,[batch],records);assertGrant();
+      const planned=await this.budgetRecoveredBatch(job,batch,records,assertGrant);assertGrant();
+      this.admitBatch(job,batch);this.assertStrategies(batch);this.assertConfiguration(job);
       if(planned.length>1)return {transportBatches:planned};
       if(!observeCurrent(()=>{batch.readRanges=planned[0].readRanges;this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
     }
