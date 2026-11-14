@@ -4,6 +4,8 @@ import { mkdtempSync,rmSync,readFileSync,readdirSync,mkdirSync,chmodSync,statSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import sharp from 'sharp';
 import { Store } from '../src/store.js';
 
@@ -15,6 +17,34 @@ function vault(t:{after(fn:()=>void):void},options:ConstructorParameters<typeof 
   const directory=mkdtempSync(join(tmpdir(),'mote-store-test-'));const store=new Store(directory,options);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return store;
 }
+test('opening a current vault waits for an existing process lock before its first schema read',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-store-open-lock-')),path=join(directory,'mote.sqlite');
+  new Store(directory).close();
+  // An exclusive rollback-journal writer makes the initial schema read block
+  // deterministically, without relying on a chance WAL recovery collision.
+  const setup=new DatabaseSync(path);setup.exec('PRAGMA journal_mode=DELETE');setup.close();
+  const writer=spawn(process.execPath,['--input-type=module','-e',String.raw`
+    import {DatabaseSync} from 'node:sqlite';
+    const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN EXCLUSIVE');
+    db.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('generated-open-lock','committed-before-open');
+    process.send('locked');
+    process.once('message',()=>setTimeout(()=>{db.exec('COMMIT');db.close();process.disconnect();},100));
+  `,path],{stdio:['ignore','ignore','pipe','ipc'],env:{PATH:process.env.PATH}});
+  let stderr='',reopened:Store|undefined;writer.stderr!.on('data',chunk=>{stderr+=String(chunk);});
+  const exited=new Promise<number|null>((resolve,reject)=>{writer.once('exit',resolve);writer.once('error',reject);});
+  t.after(async()=>{try{if(writer.exitCode===null&&writer.signalCode===null)writer.kill();await exited;}finally{reopened?.close();rmSync(directory,{recursive:true,force:true});}});
+  await new Promise<void>((resolve,reject)=>{
+    writer.once('message',message=>{assert.equal(message,'locked');resolve();});
+    writer.once('error',reject);writer.once('exit',()=>reject(Error(stderr||'Generated writer exited before locking')));
+  });
+  const probe=new DatabaseSync(path);
+  try{assert.throws(()=>probe.prepare('SELECT value FROM settings').get(),{errcode:5});}finally{probe.close();}
+  // Release only after proving the lock is held. The new Store must wait on
+  // that same lock rather than failing before its configured busy handler exists.
+  writer.send('release');reopened=new Store(directory);
+  assert.equal(reopened.db.prepare('SELECT value FROM settings WHERE key=?').get('generated-open-lock')!.value,'committed-before-open');
+  assert.equal(await exited,0,stderr);
+});
 test('pre-created storage and restored databases gain private permissions before use',t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-store-permissions-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
   chmodSync(directory,0o755);mkdirSync(join(directory,'files'),{mode:0o755});

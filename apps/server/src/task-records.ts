@@ -48,12 +48,15 @@ export function installTaskRecords(store:Store){
 export class TaskRecords {
   constructor(private readonly store:Store,private readonly now=()=>new Date().toISOString()){}
 
-  // Always use a savepoint, including inside a caller-owned acceptance/change
-  // transaction: a caught quota/write failure must not leave a half task there.
-  private transaction<T>(run:()=>T):T{
-    const db=this.store.db;db.exec('SAVEPOINT task_records_write');
-    try{const value=run();db.exec('RELEASE task_records_write');return value;}
-    catch(error){db.exec('ROLLBACK TO task_records_write; RELEASE task_records_write');throw error;}
+  // Own writes reserve the writer before reading; a deferred snapshot cannot
+  // upgrade after another process commits. Nested writes retain savepoints so
+  // a caller can catch quota/write failures without keeping a half task.
+  // Private reads keep a read snapshot without reserving the vault writer.
+  private transaction<T>(run:()=>T,mode:'read'|'write'='write'):T{
+    const db=this.store.db,own=mode==='write'&&!db.isTransaction;
+    db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT task_records_write');
+    try{const value=run();db.exec(own?'COMMIT':'RELEASE task_records_write');return value;}
+    catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else db.exec('ROLLBACK TO task_records_write; RELEASE task_records_write');throw error;}
   }
   private row(id:string):Row{
     const row=this.store.db.prepare('SELECT * FROM task_records WHERE id=?').get(id) as Row|undefined;
@@ -136,20 +139,20 @@ export class TaskRecords {
     return this.transaction(()=>{
       this.current(id,expectedRevision);const ids=this.dependencies(id);checkCurrent(assertCurrent,ids);this.current(id,expectedRevision);
       return {version:1,complete:true,ids};
-    });
+    },'read');
   }
   input<T>(id:string,expectedRevision:number,assertCurrent:AssertTaskCurrent):T{
     return this.transaction(()=>{
       const row=this.current(id,expectedRevision);checkCurrent(assertCurrent,this.dependencies(id));this.current(id,expectedRevision);
       if(row.input_json===null)throw new StoreError('Task input is no longer available',409);
       return decodeMemoryPrivate<T>(this.store,row.input_json);
-    });
+    },'read');
   }
   result<T>(id:string,expectedRevision:number,assertCurrent:AssertTaskCurrent):T|undefined{
     return this.transaction(()=>{
       const row=this.current(id,expectedRevision);checkCurrent(assertCurrent,this.dependencies(id));this.current(id,expectedRevision);
       return row.result_json===null?undefined:decodeMemoryPrivate<T>(this.store,row.result_json);
-    });
+    },'read');
   }
   setState(id:string,expectedRevision:number,state:OperationState):TaskRecord{
     operationStateSchema.parse(state);

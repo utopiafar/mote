@@ -127,7 +127,14 @@ export class AssistantChangeFeed {
    assistant_change_deferred:'64',
   });
  }
- private transaction<T>(fn:()=>T):T{const db=this.store.db;db.exec('SAVEPOINT assistant_change_write');try{const result=fn();db.exec('RELEASE assistant_change_write');return result;}catch(error){db.exec('ROLLBACK TO assistant_change_write; RELEASE assistant_change_write');throw error;}}
+ // Reserve the writer before reading an input snapshot. A top-level savepoint
+ // is deferred and cannot upgrade after another Central commits in WAL mode.
+ private transaction<T>(fn:()=>T):T{
+  const db=this.store.db,own=!db.isTransaction;
+  db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT assistant_change_write');
+  try{const result=fn();db.exec(own?'COMMIT':'RELEASE assistant_change_write');return result;}
+  catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else db.exec('ROLLBACK TO assistant_change_write; RELEASE assistant_change_write');throw error;}
+ }
  private snapshot(root:string,sourceId:string,captureId:string|null,materialIdValue:string|null,previousRevision:string|null):AssistantChangeInput|undefined{
   if(!captureId){const checkpoint=JSON.parse(root.slice('source:'.length)) as [string,string];
    if(!this.store.db.prepare('SELECT 1 FROM source_archive_groups WHERE source_id=? AND checkpoint=?').get(sourceId,checkpoint[1]))return;}
@@ -226,18 +233,32 @@ export class AssistantChangeFeed {
   // An unavailable input is not allowed to stall unrelated sources. Its
   // original log row stays durable and is retried on later existing polls.
   const deferred=this.store.db.prepare('SELECT l.* FROM assistant_change_deferred d JOIN assistant_change_log l ON l.seq=d.seq ORDER BY d.attempts,d.seq LIMIT ?').all(limit) as ChangeRow[];
-  for(const row of deferred)try{this.transaction(()=>{process(row);this.store.db.prepare('DELETE FROM assistant_change_deferred WHERE seq=?').run(row.seq);this.store.reserveMetadata(0);});}
-   catch(error){if(error instanceof StoreError&&error.statusCode===507)return 0;if(!(error instanceof StoreError&&error.statusCode===409))throw error;this.store.db.prepare('UPDATE assistant_change_deferred SET attempts=attempts+1 WHERE seq=?').run(row.seq);}
+  for(const {seq} of deferred)try{this.transaction(()=>{
+   // A different Central may have retried or deleted this event while we waited.
+   const row=this.store.db.prepare('SELECT l.* FROM assistant_change_deferred d JOIN assistant_change_log l ON l.seq=d.seq WHERE d.seq=?').get(seq) as ChangeRow|undefined;
+   if(!row)return;
+   process(row);this.store.db.prepare('DELETE FROM assistant_change_deferred WHERE seq=?').run(seq);this.store.reserveMetadata(0);
+  });}
+   catch(error){if(error instanceof StoreError&&error.statusCode===507)return 0;if(!(error instanceof StoreError&&error.statusCode===409))throw error;this.store.db.prepare('UPDATE assistant_change_deferred SET attempts=attempts+1 WHERE seq=?').run(seq);}
   let count=0;
   for(;count<limit;count++){
-   const row=this.store.db.prepare('SELECT * FROM assistant_change_log WHERE seq>(SELECT cursor FROM assistant_change_state WHERE id=1) ORDER BY seq LIMIT 1').get() as ChangeRow|undefined;
-   if(!row)break;
-   try{this.transaction(()=>{process(row);this.store.db.prepare('UPDATE assistant_change_state SET cursor=? WHERE id=1').run(row.seq);this.store.reserveMetadata(0);});}
+   let row:ChangeRow|undefined;
+   try{const processed=this.transaction(()=>{
+    // Select only after writer admission: waiting on another process must not
+    // replay its old event or move the shared cursor backwards.
+    row=this.store.db.prepare('SELECT * FROM assistant_change_log WHERE seq>(SELECT cursor FROM assistant_change_state WHERE id=1) ORDER BY seq LIMIT 1').get() as ChangeRow|undefined;
+    if(!row)return false;
+    process(row);this.store.db.prepare('UPDATE assistant_change_state SET cursor=? WHERE id=1').run(row.seq);this.store.reserveMetadata(0);return true;
+   });if(!processed)break;}
    catch(error){
     if(error instanceof StoreError&&error.statusCode===507)return count;
     if(!(error instanceof StoreError&&error.statusCode===409))throw error;
-    try{this.transaction(()=>{this.store.db.prepare('INSERT OR IGNORE INTO assistant_change_deferred(seq) VALUES(?)').run(row.seq);
-     this.store.db.prepare('UPDATE assistant_change_state SET cursor=? WHERE id=1').run(row.seq);this.store.reserveMetadata(0);});}
+    const seq=row!.seq;
+    try{this.transaction(()=>{
+     if(!this.store.db.prepare('SELECT 1 FROM assistant_change_log WHERE seq=? AND seq>(SELECT cursor FROM assistant_change_state WHERE id=1)').get(seq))return;
+     this.store.db.prepare('INSERT OR IGNORE INTO assistant_change_deferred(seq) VALUES(?)').run(seq);
+     this.store.db.prepare('UPDATE assistant_change_state SET cursor=? WHERE id=1').run(seq);this.store.reserveMetadata(0);
+    });}
     catch(error){if(error instanceof StoreError&&error.statusCode===507)return count;throw error;}
    }
   }

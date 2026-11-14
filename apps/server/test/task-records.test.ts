@@ -14,6 +14,7 @@ import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {installEvidenceDependencies} from '../src/evidence-dependencies.js';
 import {restoreProfile,verifiedBackup} from '../../../scripts/profile-lib.mjs';
+import {competingSqliteWrite} from './fixtures/sqlite-writer.js';
 
 const dependencies=(ids:string[]=[]):EvidenceDependencies=>({version:1,complete:true,ids});
 const request=(ids:string[]=[])=>({operationId:randomUUID(),kind:'generated.task',requestId:randomUUID(),input:{instruction:'Generated private request'},evidenceDependencies:dependencies(ids)});
@@ -45,6 +46,20 @@ test('lost task responses replay one immutable request after restart and conflic
   assert.deepEqual(tasks.result(initial.id,completed.revision,ownerInputOnly),result);
   assert.throws(()=>tasks.saveResult(initial.id,running.revision,{answer:'Second writer'},dependencies(),ownerInputOnly),conflict);
   assert.throws(()=>tasks.setState(initial.id,completed.revision,'running'),conflict);
+});
+
+test('a competing process cannot invalidate an encrypted task write, and private reads leave other writers available',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-task-contention-')),store=new Store(directory,{dataKey:'43'.repeat(32),contentEncryptionEnabled:true}),tasks=new TaskRecords(store);
+  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  const input=request();let contender:'committed'|'busy'|undefined;
+  const task=tasks.create(input,ids=>{ownerInputOnly(ids);contender=competingSqliteWrite(directory,'during-task');});
+  assert.equal(contender,'busy');assert.equal(store.db.isTransaction,false);
+  assert.equal(competingSqliteWrite(directory,'after-task'),'committed');
+  assert.deepEqual(tasks.input(task.id,task.revision,ids=>{
+    ownerInputOnly(ids);assert.equal(competingSqliteWrite(directory,'during-read'),'committed');
+  }),input.input);
+  assert.deepEqual(tasks.create(input,()=>assert.fail('replay cannot re-authorize')),task);
+  assert.equal(tasks.page().items.length,1);
 });
 
 test('task pages keep stable creation ordering while state changes and newer tasks arrive',t=>{

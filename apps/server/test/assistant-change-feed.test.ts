@@ -4,6 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
@@ -17,6 +18,7 @@ import {SourceArchive} from '../src/source-archive.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
+import {competingSqliteWrite} from './fixtures/sqlite-writer.js';
 
 async function fixture(t:TestContext,limits?:{maxStorageBytes:number}){
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-changes-'));
@@ -35,6 +37,36 @@ async function fixture(t:TestContext,limits?:{maxStorageBytes:number}){
  t.after(async()=>{await node.app.close();fixtureStore?.close();rmSync(directory,{recursive:true,force:true});});
  return {get node(){return node;},get feed(){return feed;},headers,createSource,upsert,command,advance(ms:number){now+=ms;},async restart(){await node.app.close();fixtureStore?.close();node=await build();feed=open();await node.app.ready();}};
 }
+
+test('a competing process cannot invalidate the encrypted change input snapshot before its task and cursor commit',async t=>{
+ const f=await fixture(t);await f.createSource();f.command('on');const id=await f.upsert('competing','1');
+ let contender:'committed'|'busy'|undefined;
+ const feed=new AssistantChangeFeed(f.node.store,f.node.materials,f.node.modelAuthorization,ids=>{
+  if(!f.node.featureServices.evidenceReader.contextDependenciesAllowed(ids))throw new StoreError('Evidence unavailable',409);
+  contender??=competingSqliteWrite(f.node.store.directory,'during-change');
+ },()=>1000,0,0);
+ const before=Number(feed.coverage().cursor);
+ const writer=new DatabaseSync(join(f.node.store.directory,'mote.sqlite'));
+ try{
+  writer.exec('BEGIN IMMEDIATE');f.node.store.db.exec('PRAGMA busy_timeout=0');
+  assert.throws(()=>feed.tick(),{errcode:5});
+  assert.equal(f.node.store.db.isTransaction,false);assert.equal(Number(feed.coverage().cursor),before);
+  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.change'").get()!.n,0);
+  writer.exec('COMMIT');
+ }finally{writer.close();f.node.store.db.exec('PRAGMA busy_timeout=5000');}
+ contender=undefined;
+ feed.tick();
+ assert.equal(contender,'busy');assert.equal(f.node.store.db.isTransaction,false);
+ assert.ok(Number(feed.coverage().cursor)>before);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.change'").get()!.n,1);
+ const ready=feed.ready();assert.equal(ready.length,1);assert.equal(ready[0].input.captureId,id);
+ assert.equal(competingSqliteWrite(f.node.store.directory,'after-change'),'committed');
+ const cursor=feed.coverage().cursor,task=ready[0].task;
+ await f.restart();f.feed.tick();f.advance(11);
+ assert.ok(Number(f.feed.coverage().cursor)>=Number(cursor));
+ assert.equal(f.feed.ready()[0].task.id,task.id);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.change'").get()!.n,1);
+});
 
 test('quota exhaustion preserves pending input through restart and resumes when capacity returns',async t=>{
  const limits={maxStorageBytes:30_000_000},f=await fixture(t,limits);

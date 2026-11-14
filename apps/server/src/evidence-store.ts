@@ -61,6 +61,9 @@ export class EvidenceStore {
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new StoreDatabase(join(directory,'mote.sqlite'));
     try {
+    // Initial schema reads can contend with another process recovering the WAL.
+    // Install the existing wait policy before any access to the vault schema.
+    this.db.exec('PRAGMA busy_timeout=5000');
     this.db.function('mote_image_device_hash',{deterministic:true},value=>sha256(JSON.stringify(String(value))));
     this.db.function('mote_image_policy',{deterministic:true},(raw,sourceId,mime,override)=>{
       if(raw===null)return null;
@@ -78,7 +81,7 @@ export class EvidenceStore {
         throw new StoreError('Unsupported Mote vault epoch. Backend epoch 7 requires a new empty data directory; existing data is retained.',409);
       }
     }
-    this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000');
+    this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON');
     // A failed first installation must not leave a populated, epoch-less vault.
     // Closing this connection rolls back its own unfinished schema transaction.
     if(!priorTable)this.db.exec('BEGIN IMMEDIATE');
