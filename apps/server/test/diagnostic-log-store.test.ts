@@ -23,6 +23,15 @@ test('a supervisor write cannot erase the last cleanup reason saved by Central',
  const restarted=new DiagnosticLogStore(f.directory,{retention:f.retention,minFreeBytes:0,now:()=>new Date('2026-10-01T12:02:00Z')});await restarted.init();assert.equal(restarted.snapshot().lastCleanup?.reason,'manual');
 });
 
+test('a failed append suffix never replays the already persisted diagnostic prefix',async t=>{
+ const f=await fixture(t),prefix=f.record('info','Generated persisted prefix');
+ await assert.rejects(f.store.append([prefix,{...f.record('info','Generated invalid suffix'),at:'invalid'}]),/Invalid diagnostic record/);
+ await f.store.append([f.record('info','Generated recovered suffix')]);
+ await f.store.refresh();
+ const lines=(await Promise.all(f.store.files.map(file=>readFile(join(f.directory,file.name),'utf8')))).flatMap(text=>text.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line) as {body:string}));
+ assert.deepEqual(lines.map(line=>line.body).sort(),['Generated persisted prefix','Generated recovered suffix']);
+});
+
 test('a buffered Central log append lets a waiting supervisor persist stderr before the whole buffer finishes',async t=>{
  const f=await fixture(t,{maxBytes:8192}),supervisor=new DiagnosticLogStore(f.directory,{family:'supervisor',maxBytes:8192,maxTotalBytes:32768,retention:f.retention,minFreeBytes:0,now:()=>new Date('2026-10-01T12:00:00Z')});await supervisor.init();
  type LockStore=DiagnosticLogStore&{exclusive:<T>(task:()=>Promise<T>)=>Promise<T>};

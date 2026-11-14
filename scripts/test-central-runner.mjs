@@ -8,6 +8,8 @@ import {spawn} from 'node:child_process';
 import {command} from './profile-fixtures.mjs';
 import {repository} from './profile-lib.mjs';
 import {serializeConfigDocument} from '../packages/shared/src/config-file.ts';
+import {pathToFileURL} from 'node:url';
+import {DatabaseSync} from 'node:sqlite';
 const directory=await mkdtemp(join(tmpdir(),'mote-central-runner-fixture-')),runner=join(repository,'scripts/central-runner.mjs'),MiB=1024*1024;
 const names=async folder=>(await readdir(folder)).filter(name=>/^supervisor\.(error|warn|info|debug|trace)\./.test(name));
 const rows=async folder=>(await Promise.all((await names(folder)).map(name=>readFile(join(folder,name),'utf8')))).join('').trim().split('\n').filter(Boolean).map(JSON.parse).sort((a,b)=>a.seq-b.seq);
@@ -32,6 +34,50 @@ try{
  const tail=join(directory,'tail.mjs');await writeFile(tail,`process.stdout.write('synthetic-private-body\\n');process.stdout.write('{"event":"server.');setTimeout(()=>{process.stdout.write('listening","port":12345,"tokenConfigured":true,"secret":"synthetic-private-token"}');process.exitCode=7;},10);`);
  const tailFixture=await fixture('tail',{debug:true});assert.equal((await command(process.execPath,launch(tail,tailFixture.folder),{env:tailFixture.env})).code,7);const events=await rows(tailFixture.folder);assert.ok(events.some(e=>e.event==='process.output_suppressed'&&e.bytes===22));assert.ok(events.some(e=>e.event==='server.listening'&&e.port===12345&&e.tokenConfigured));assert.ok(events.some(e=>e.event==='process.exited'&&e.exitCode===7&&e.level==='error'));assert.ok(!JSON.stringify(events).includes('synthetic-private'));
  const shutdown=join(directory,'shutdown.mjs');await writeFile(shutdown,`process.on('SIGTERM',()=>{process.stdout.write('{"event":"server.stopped","secret":"synthetic-private-token"}');process.exit(0);});console.log('{"event":"server.listening","port":12345}');setInterval(()=>console.log('{"event":"server.listening","port":12345}'),50);`);
+ // Reproduce a live Central writer finishing slow filesystem work while its
+ // supervisor has already persisted a prefix and receives more child output.
+ // Historical segments retain the same real 300 MiB capacity boundary above.
+ const contention=await fixture('contention',{debug:true,maxBytes:100*MiB,maxTotalBytes:512*MiB,retention:{info:{days:7,maxBytes:300*MiB}}});
+ for(let index=0;index<3;index++){const file=await open(join(contention.folder,`central.info.${at-index}.${at-index}.${randomUUID()}.ndjson`),'w',0o600);try{await file.truncate(100*MiB);}finally{await file.close();}}
+ const contended=join(directory,'contended.mjs'),storeUrl=pathToFileURL(join(repository,'apps/server/src/diagnostic-log-store.mjs')).href;
+ await writeFile(contended,`import {DiagnosticLogStore} from ${JSON.stringify(storeUrl)};
+ import {readFile,writeFile} from 'node:fs/promises';import {join} from 'node:path';
+ const directory=${JSON.stringify(contention.folder)},store=new DiagnosticLogStore(directory,{maxBytes:100*1024*1024,maxTotalBytes:512*1024*1024,retention:{info:{days:7,maxBytes:300*1024*1024}}});
+ process.on('SIGTERM',()=>{console.log('{"event":"server.stopped"}');process.exit(0);});
+ await store.init();console.log('{"event":"server.listening","port":12345}');
+ while(!await readFile(join(directory,'begin')).then(()=>true,()=>false))await new Promise(resolve=>setTimeout(resolve,10));
+ await store.exclusive(async()=>{await writeFile(join(directory,'entered'),'generated');
+ console.log('{"event":"server.listening","port":12346}');console.error('synthetic-private-token');
+ while(!await readFile(join(directory,'release')).then(()=>true,()=>false))await new Promise(resolve=>setTimeout(resolve,10));});
+ const at=new Date().toISOString();await store.append([{channel:'info',at,line:'{"event":"generated.central.after_contention"}\\n'}]);
+ await writeFile(join(directory,'released'),'generated');setInterval(()=>{},1000);`);
+ const contending=spawn(process.execPath,launch(contended,contention.folder),{cwd:repository,env:{...process.env,...contention.env},stdio:['ignore','ignore','pipe']}),contendingClosed=new Promise(resolve=>contending.once('close',resolve));let contentionOutput='';contending.stderr.on('data',chunk=>contentionOutput+=chunk);
+ try{
+  await wait(async()=>{try{return (await rows(contention.folder)).some(e=>e.event==='server.listening'&&e.port===12345);}catch{return false;}},'Supervisor must persist the successful prefix before contention');
+  await writeFile(join(contention.folder,'begin'),'generated');await wait(()=>readFile(join(contention.folder,'entered')).then(()=>true,()=>false),'Generated Central must hold the real retention mutex');
+  // Measured production work held a single section for 11.55 s. This is a
+  // controlled filesystem pause, not a race that needs repeated test runs.
+  await new Promise(resolve=>setTimeout(resolve,12000));
+  assert.equal(contending.exitCode,null,'A healthy Central must survive temporary log contention beyond the first acquisition budget: '+contentionOutput);
+  await writeFile(join(contention.folder,'release'),'generated');
+  await wait(async()=>{try{const saved=await rows(contention.folder);return saved.some(e=>e.port===12346)&&saved.some(e=>e.event==='process.output_suppressed');}catch{return false;}},'Supervisor must recover and persist the unwritten suffix');
+  await wait(()=>readFile(join(contention.folder,'released')).then(()=>true,()=>false),'Central must finish its own append after the supervisor recovers');
+  contending.kill('SIGTERM');assert.equal(await contendingClosed,0,contentionOutput);
+  const saved=await rows(contention.folder);assert.equal(saved.filter(e=>e.port===12345).length,1);assert.equal(saved.filter(e=>e.port===12346).length,1);assert.equal(saved.filter(e=>e.event==='process.output_suppressed').length,1);assert.equal(saved.filter(e=>e.event==='server.stopped').length,1);assert.equal(new Set(saved.map(e=>e.seq)).size,saved.length);assert.ok(!JSON.stringify(saved).includes('synthetic-private'));
+  const history=(await readdir(contention.folder)).filter(name=>/^central\.info\./.test(name));assert.ok(history.length>=2);const retained=await Promise.all(history.map(name=>stat(join(contention.folder,name))));assert.ok(retained.every(s=>s.size<=100*MiB&&(s.mode&0o777)===0o600));assert.ok(retained.reduce((sum,s)=>sum+s.size,0)<=300*MiB);
+ }finally{await writeFile(join(contention.folder,'release'),'generated');if(contending.exitCode===null&&contending.signalCode===null)contending.kill('SIGTERM');await contendingClosed;}
+ const stalled=await fixture('stalled',{debug:true});
+ const stalledChild=spawn(process.execPath,launch(shutdown,stalled.folder),{cwd:repository,env:{...process.env,...stalled.env},stdio:['ignore','ignore','pipe']}),stalledClosed=new Promise(resolve=>stalledChild.once('close',resolve));let stalledOutput='',mutex;
+ stalledChild.stderr.on('data',chunk=>stalledOutput+=chunk);
+ try{
+  await wait(async()=>{try{return (await rows(stalled.folder)).some(e=>e.event==='server.listening');}catch{return false;}},'Stalled fixture must first be running');
+  mutex=new DatabaseSync(join(stalled.folder,'retention-mutex.sqlite'),{timeout:0});mutex.exec('BEGIN IMMEDIATE');
+  const began=performance.now();let deadline;
+  try{assert.equal(await Promise.race([stalledClosed,new Promise(resolve=>{deadline=setTimeout(()=>resolve('timeout'),35000);})]),1,'A persistently unavailable retention mutex must still stop the supervised child');}
+  finally{clearTimeout(deadline);}
+  assert.ok(performance.now()-began>=29000,'Persistent contention must receive its bounded recovery budget');
+  assert.match(stalledOutput,/"event":"process.log_failed"/);assert.match(stalledOutput,/"category":"retention_lock"/);assert.ok(!stalledOutput.includes('synthetic-private'));
+ }finally{mutex?.close();if(stalledChild.exitCode===null&&stalledChild.signalCode===null)stalledChild.kill('SIGTERM');await stalledClosed;}
  for(const failDisk of [false,true]){
   const s=await fixture(failDisk?'disk-failure':'shutdown');const child=spawn(process.execPath,launch(shutdown,s.folder),{cwd:repository,env:{...process.env,...s.env},stdio:'ignore'}),closed=new Promise(resolve=>child.once('close',resolve));
   try{await wait(async()=>{try{return (await rows(s.folder)).some(e=>e.event==='server.listening');}catch{return false;}},'Supervisor must flush while the child is active');
@@ -40,5 +86,5 @@ try{
    if(!failDisk)assert.ok((await rows(s.folder)).some(e=>e.event==='server.stopped'));
   }finally{if(child.exitCode===null)child.kill('SIGKILL');}
  }
- console.info(JSON.stringify({status:'passed',noisyRestarts:2,stdoutLinesPerRestart:60000,stderrBytesPerRestart:Buffer.byteLength('synthetic-private-token')*100000,generatedBoundaryMiB:300,separateLevels:true,privateContentSuppressed:true,childExitCodePreserved:true,signalFlush:true,diskFailureStopsChild:true}));
+ console.info(JSON.stringify({status:'passed',noisyRestarts:2,stdoutLinesPerRestart:60000,stderrBytesPerRestart:Buffer.byteLength('synthetic-private-token')*100000,generatedBoundaryMiB:300,temporaryContentionMs:12000,contentionSuffixExactlyOnce:true,persistentContentionBounded:true,separateLevels:true,privateContentSuppressed:true,childExitCodePreserved:true,signalFlush:true,diskFailureStopsChild:true}));
 }finally{await rm(directory,{recursive:true,force:true});}
