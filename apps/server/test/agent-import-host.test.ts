@@ -117,6 +117,8 @@ test('Codex App Server fixture preview is consumed by the same ImportRuntime and
   const root=mkdtempSync(join(tmpdir(),'mote-codex-import-')),executable=join(root,'generated-codex.mjs'),rpcPath=join(root,'rpc.ndjson');
   writeFileSync(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused'}),{mode:0o600});
   writeFileSync(executable,`#!${process.execPath}
+// Protocol fixture only; the real native send gate has separate coverage.
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 import {appendFileSync,readFileSync,writeFileSync} from 'node:fs';
 const rpc=value=>appendFileSync(${JSON.stringify(rpcPath)},JSON.stringify(value)+'\\n');
