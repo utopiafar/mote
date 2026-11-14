@@ -5,7 +5,76 @@ import {mkdtemp, mkdir, writeFile, readFile, rm, chmod} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {mediaEnvironment} from './media-workers.mjs';
+import childProcess from 'node:child_process';
+import {once} from 'node:events';
+import {syncBuiltinESMExports} from 'node:module';
+import {mediaEnvironment,mediaWorkerEnvironment,spawnMediaProcess} from './media-workers.mjs';
+
+// Every signal and inspection below is restricted to a process created here.
+async function ownedProcess(t,{ignoreTerm=false}={}){
+ const root=await mkdtemp(join(tmpdir(),'mote-process-lifecycle-'));
+ const owner=spawnMediaProcess(process.execPath,['-e',`${ignoreTerm?"process.on('SIGTERM',()=>{});":''}setInterval(()=>{},60000);process.stdout.write('ready');`],{cwd:root,env:mediaWorkerEnvironment(root,process.execPath,'generated-token'),stdio:['ignore','pipe','ignore']});
+ const closed=once(owner.child,'close');
+ t.after(async()=>{
+  try{if(owner.child.exitCode===null&&owner.child.signalCode===null)owner.child.kill('SIGKILL');await closed;await owner.done.catch(()=>{});}
+  finally{await rm(root,{recursive:true,force:true});}
+ });
+ await once(owner.child.stdout,'data');
+ return {owner,closed,kill:process.kill,pid:owner.child.pid};
+}
+function waitForZombie(pid){
+ // Keep Node from waitpid until the kernel state is observable. This controls
+ // the exit/probe race without faking Darwin's kill(2) result or reusing a PID.
+ for(let n=0;n<200;n++){
+  const state=childProcess.execFileSync('/bin/ps',['-o','stat=','-p',String(pid)],{encoding:'utf8'}).trim();
+  if(state.startsWith('Z'))return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);
+ }
+ assert.fail('Generated worker did not reach its unreaped exit state');
+}
+for(const phase of ['signal','probe'])test(`close reaps an owned Darwin zombie when the ${phase} returns native EPERM`,{skip:process.platform!=='darwin'},async t=>{
+ const {owner,closed,kill,pid}=await ownedProcess(t);let denied=0;
+ t.mock.method(process,'kill',function(target,kind){
+  try{
+   const sent=kill.call(process,target,kind);
+   if(phase==='probe'&&target===-pid&&kind==='SIGTERM')waitForZombie(pid);
+   return sent;
+  }catch(error){if(target===-pid&&error.code==='EPERM')denied++;throw error;}
+ });
+ if(phase==='signal'){kill.call(process,pid,'SIGKILL');waitForZombie(pid);}
+ await owner.close();await closed;await owner.done;
+ assert.ok(denied>0,'the actual kernel must exercise the ambiguous EPERM boundary');
+ assert.notEqual(owner.child.signalCode,null,'close waits for the child to be reaped');
+});
+for(const phase of ['signal','probe'])test(`close retains a real cleanup failure when the owned live group denies its ${phase}`,{skip:process.platform==='win32'},async t=>{
+ const {owner,kill,pid}=await ownedProcess(t,{ignoreTerm:true}),denied=Object.assign(Error('generated permission denial'),{code:'EPERM'});
+ t.mock.method(process,'kill',function(target,kind){if(target===-pid&&kind===(phase==='signal'?'SIGTERM':0))throw denied;return kill.call(process,target,kind);});
+ await assert.rejects(owner.close(),error=>error===denied);
+ assert.equal(kill.call(process,pid,0),true,'a live worker cannot be certified as stopped');
+});
+for(const result of [{status:2,stdout:''},{status:0,stdout:'unreadable generated state'}])test(`close cannot certify an EPERM cleanup from ${result.status?'a failed':'a malformed'} process inspection`,{skip:process.platform==='win32'},async t=>{
+ const {owner,kill,pid}=await ownedProcess(t,{ignoreTerm:true}),denied=Object.assign(Error('generated permission denial'),{code:'EPERM'}),spawnSync=childProcess.spawnSync;let inspected=0;
+ t.mock.method(process,'kill',function(target,kind){if(target===-pid&&kind===0)throw denied;return kill.call(process,target,kind);});
+ const inspection=t.mock.method(childProcess,'spawnSync',function(command,args,options){
+  if(command==='/bin/ps'&&args.includes('-g')&&args.includes(String(pid))){inspected++;return {...result,signal:null};}
+  return spawnSync.call(this,command,args,options);
+ });
+ syncBuiltinESMExports();
+ try{await assert.rejects(owner.close(),/media\.runtime\.process_stop_failed/);assert.equal(inspected,1);assert.equal(kill.call(process,pid,0),true);}
+ finally{inspection.mock.restore();syncBuiltinESMExports();}
+});
+test('close never probes or signals a reused group number after observing its owned group disappear',{skip:process.platform==='win32'},async t=>{
+ const {owner,closed,kill,pid}=await ownedProcess(t);let disappeared=false,reusedCalls=0;
+ t.mock.method(process,'kill',function(target,kind){
+  if(target===-pid){
+   if(disappeared){reusedCalls++;throw Error('generated group number now belongs to another owner');}
+   if(kind===0){disappeared=true;throw Object.assign(Error('generated group exit'),{code:'ESRCH'});}
+  }
+  return kill.call(process,target,kind);
+ });
+ await owner.close();await closed;await owner.close();
+ assert.equal(disappeared,true);assert.equal(reusedCalls,0,'an absent owned group must never be reacquired by number');
+});
 
 const fixture = async t => {
   const root=await mkdtemp(join(tmpdir(),'mote-workers-'));

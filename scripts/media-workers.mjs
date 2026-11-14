@@ -1,4 +1,4 @@
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {join,dirname} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {MEDIA_MODEL_PATHS} from '@mote/shared';
@@ -27,13 +27,29 @@ export function mediaWorkerEnvironment(directory,python,token,env=process.env){
  const clean=Object.fromEntries(['LANG','TMPDIR','TMP','TEMP'].filter(key=>env[key]!==undefined).map(key=>[key,env[key]]));
  return {...clean,PATH:`${dirname(python)}:${env.PATH??'/usr/bin:/bin'}`,HOME:directory,XDG_CACHE_HOME:join(directory,'cache'),HF_HOME:join(directory,'cache','huggingface'),PYTHONUNBUFFERED:'1',PYTHONNOUSERSITE:'1',PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK:'True',HF_HUB_OFFLINE:'1',HF_HUB_DISABLE_TELEMETRY:'1',TRANSFORMERS_OFFLINE:'1',MOTE_MEDIA_WORKER_TOKEN:token};
 }
+function groupRunning(pgid){
+ // Darwin killpg can return EPERM for a group containing only unreaped zombies.
+ // Inspect only group IDs/states, never command lines or the owner's environment.
+ const result=spawnSync('/bin/ps',['-o','pgid=,stat=','-g',String(pgid)],{encoding:'utf8',stdio:['ignore','pipe','ignore'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'},timeout:2000,maxBuffer:64*1024});
+ if(result.error||result.signal||![0,1].includes(result.status)||result.status===1&&result.stdout.trim())throw Error('media.runtime.process_stop_failed');
+ const rows=result.stdout.trim().split(/\r?\n/).filter(Boolean).map(row=>row.trim().match(/^(\d+)\s+(\S+)$/));
+ if(rows.some(row=>!row))throw Error('media.runtime.process_stop_failed');
+ // On Linux -g selects the session; retain only the exact owned process group.
+ return rows.some(row=>Number(row[1])===pgid&&!row[2].startsWith('Z'));
+}
 /** Own the POSIX process group, including descendants with detached output.
  * A leader exiting is not proof that its FFmpeg/model children have stopped. */
 export function spawnMediaProcess(command,args,{cwd,env,stdio='ignore',graceMs=5000}={}){
  const child=spawn(command,args,{cwd,env,stdio,detached:process.platform!=='win32'});
- let exited=false,closed=false,stopping,spawnError;
- const signal=kind=>{try{if(process.platform!=='win32'&&child.pid)process.kill(-child.pid,kind);else if(!exited)child.kill(kind);}catch(error){if(error.code!=='ESRCH')throw error;}};
- const alive=()=>{if(!child.pid)return false;if(process.platform==='win32')return !exited;try{process.kill(-child.pid,0);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}};
+ let exited=false,closed=false,stopping,spawnError,groupStopped=false;
+ const stopped=error=>{
+  if(error.code!=='ESRCH'&&(process.platform==='win32'||error.code!=='EPERM'||groupRunning(child.pid)))return false;
+  // Never reacquire an absent/stopped group by number: it could be reused while
+  // we still wait for the ChildProcess close event and inherited output pipes.
+  groupStopped=true;return true;
+ };
+ const signal=kind=>{if(groupStopped)return;try{if(process.platform!=='win32'&&child.pid)process.kill(-child.pid,kind);else if(!exited)child.kill(kind);}catch(error){if(!stopped(error))throw error;}};
+ const alive=()=>{if(groupStopped||!child.pid)return false;if(process.platform==='win32')return !exited;try{process.kill(-child.pid,0);return true;}catch(error){if(stopped(error))return false;throw error;}};
  let completed,failed;
  const done=new Promise((resolve,reject)=>{completed=resolve;failed=reject;});
  // Install an observer immediately; callers still receive a rejecting done.
