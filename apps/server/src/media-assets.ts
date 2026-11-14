@@ -156,6 +156,7 @@ const inProgress=(state:string)=>['downloading','verifying','installing'].includ
 // A retiring service and its replacement may briefly share the same directory.
 // Admission belongs to the directory/role, not only to one JavaScript object.
 const installingDirectories=new Set<string>();
+const downloadIdleMs=60_000,downloadAttemptsPerSource=2;
 
 export class MediaAssets {
   private active=new Map<MediaRole,Progress>();
@@ -298,37 +299,48 @@ export class MediaAssets {
     rmSync(target,{force:true});
     const choices=source==='official'?[item.official]:source==='mirror'?[item.mirror??item.official]:[item.mirror??item.official,item.official];
     let last:unknown;const completed=progress.bytes;
-    for(const candidate of new Set(choices))try{
-      const partial=target+'.part';let offset=0;
-      let partialStat:Stats|undefined;
-      try{partialStat=lstatSync(partial);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
-      if(partialStat){
-        if(!partialStat.isFile())throw Error('Invalid model partial file');offset=partialStat.size;
-        if(offset===item.size&&await sha256File(partial,signal)===item.sha256){signal.throwIfAborted();renameSync(partial,target);progress.bytes=completed+item.size;return;}
-        if(offset>=item.size){rmSync(partial);offset=0;}
-      }
-      let url=safeUrl(candidate),response:Response|undefined;
-      for(let redirect=0;redirect<6;redirect++){
-        response=await fetch(url,{headers:offset?{Range:`bytes=${offset}-`}:{},redirect:'manual',signal:AbortSignal.any([signal,AbortSignal.timeout(60*60*1000)])});
-        if([301,302,303,307,308].includes(response.status)){
-          const location=response.headers.get('location');await response.body?.cancel();if(!location)throw Error('Model redirect is missing');url=safeUrl(new URL(location,url).toString());continue;
-        }break;
-      }
-      if(!response||!response.ok){await response?.body?.cancel();throw Error('Model source unavailable');}
-      if(offset&&response.status!==206){rmSync(partial,{force:true});offset=0;}
-      if(response.status===206&&response.headers.get('content-range')!==`bytes ${offset}-${item.size-1}/${item.size}`){await response.body?.cancel();rmSync(partial,{force:true});throw Error('Invalid model range');}
-      const length=response.headers.get('content-length');if(length!==null&&Number(length)!==item.size-offset){await response.body?.cancel();throw Error('Invalid model response size');}
-      const handle=openSync(partial,constants.O_WRONLY|constants.O_CREAT|constants.O_NOFOLLOW|(offset?constants.O_APPEND:constants.O_TRUNC),0o600);let received=offset;progress.state='downloading';progress.bytes=completed+offset;
+    for(const candidate of new Set(choices))for(let attempt=0;attempt<downloadAttemptsPerSource;attempt++){
+      const request=new AbortController();let idle:ReturnType<typeof setTimeout>|undefined,stalled=false;
+      // Bound silence, not throughput: even a single received byte renews the
+      // deadline. A stalled connection gets one fresh request before fallback.
+      const renew=()=>{
+        clearTimeout(idle);idle=setTimeout(()=>{stalled=true;request.abort(Error('Model download made no progress'));},downloadIdleMs);idle.unref?.();
+      };
       try{
-        if(!response.body)throw Error('Empty model response');const reader=response.body.getReader();
-        try{for(;;){signal.throwIfAborted();const {done,value:bytes}=await reader.read();if(done)break;received+=bytes.length;if(received>item.size)throw new InvalidAsset(item.name);writeFileSync(handle,bytes);progress.bytes=completed+received;progress.source=new URL(candidate).hostname;}}
-        catch(error){await reader.cancel().catch(()=>{});throw error;}finally{reader.releaseLock();}
-      }finally{closeSync(handle);}
-      progress.state='verifying';
-      if(received!==item.size)throw Error('Incomplete model response');
-      if(await sha256File(partial,signal)!==item.sha256){rmSync(partial,{force:true});throw new InvalidAsset(item.name);}
-      signal.throwIfAborted();renameSync(partial,target);return;
-    }catch(error){signal.throwIfAborted();last=error;progress.state='downloading';progress.bytes=completed;if(error instanceof InvalidAsset)rmSync(target+'.part',{force:true});}
+        const partial=target+'.part';let offset=0;
+        let partialStat:Stats|undefined;
+        try{partialStat=lstatSync(partial);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+        if(partialStat){
+          if(!partialStat.isFile())throw Error('Invalid model partial file');offset=partialStat.size;
+          if(offset===item.size&&await sha256File(partial,signal)===item.sha256){signal.throwIfAborted();renameSync(partial,target);progress.bytes=completed+item.size;return;}
+          if(offset>=item.size){rmSync(partial);offset=0;}
+        }
+        let url=safeUrl(candidate),response:Response|undefined;
+        for(let redirect=0;redirect<6;redirect++){
+          renew();response=await fetch(url,{headers:offset?{Range:`bytes=${offset}-`}:{},redirect:'manual',signal:AbortSignal.any([signal,request.signal,AbortSignal.timeout(60*60*1000)])});
+          if([301,302,303,307,308].includes(response.status)){
+            const location=response.headers.get('location');await response.body?.cancel();if(!location)throw Error('Model redirect is missing');url=safeUrl(new URL(location,url).toString());continue;
+          }break;
+        }
+        if(!response||!response.ok){await response?.body?.cancel();throw Error('Model source unavailable');}
+        if(offset&&response.status!==206){rmSync(partial,{force:true});offset=0;}
+        if(response.status===206&&response.headers.get('content-range')!==`bytes ${offset}-${item.size-1}/${item.size}`){await response.body?.cancel();rmSync(partial,{force:true});throw Error('Invalid model range');}
+        const length=response.headers.get('content-length');if(length!==null&&Number(length)!==item.size-offset){await response.body?.cancel();throw Error('Invalid model response size');}
+        const handle=openSync(partial,constants.O_WRONLY|constants.O_CREAT|constants.O_NOFOLLOW|(offset?constants.O_APPEND:constants.O_TRUNC),0o600);let received=offset;progress.state='downloading';progress.bytes=completed+offset;
+        try{
+          if(!response.body)throw Error('Empty model response');const reader=response.body.getReader();
+          try{for(;;){signal.throwIfAborted();const {done,value:bytes}=await reader.read();if(done)break;received+=bytes.length;if(received>item.size)throw new InvalidAsset(item.name);writeFileSync(handle,bytes);progress.bytes=completed+received;progress.source=new URL(candidate).hostname;if(bytes.length)renew();}}
+          catch(error){await reader.cancel().catch(()=>{});throw error;}finally{reader.releaseLock();}
+        }finally{clearTimeout(idle);closeSync(handle);}
+        progress.state='verifying';
+        if(received!==item.size)throw Error('Incomplete model response');
+        if(await sha256File(partial,signal)!==item.sha256){rmSync(partial,{force:true});throw new InvalidAsset(item.name);}
+        signal.throwIfAborted();renameSync(partial,target);return;
+      }catch(error){
+        signal.throwIfAborted();last=error;progress.state='downloading';progress.bytes=completed;if(error instanceof InvalidAsset)rmSync(target+'.part',{force:true});
+        if(!stalled)break;
+      }finally{clearTimeout(idle);request.abort();}
+    }
     throw last??Error('Model download failed');
   }
 }
