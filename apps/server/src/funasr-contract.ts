@@ -35,7 +35,8 @@ const ref=<I extends string,V extends string>(value:{id:I;version:V})=>z.object(
 export const funasrIdentitySchema=z.object({
   sdkVersion:z.literal(FUNASR_SDK_VERSION),sdkWheelSha256:z.literal(FUNASR_SDK_WHEEL_SHA256),
   recipe:ref(FUNASR_PINS.recipe),extract:ref(FUNASR_PINS.extract),diarize:ref(FUNASR_PINS.diarize),align:ref(FUNASR_PINS.align),
-  // Existing extract processor/settings fingerprint; excludes person-count overrides.
+  // Loaded worker inference settings; excludes host connection/task settings
+  // and per-request person-count overrides. Retained unchanged across stages.
   settingsFingerprint:digest,
   models:z.object({asr:model(FUNASR_MODEL_IDS.asr),vad:model(FUNASR_MODEL_IDS.vad),speaker:model(FUNASR_MODEL_IDS.speaker),punctuation:model(FUNASR_MODEL_IDS.punctuation)}).strict(),
   dependencies:z.record(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9.+_-]{0,99}$/)).refine(v=>Object.keys(v).length>0&&Object.keys(v).length<=32&&Object.keys(v).every(k=>/^[a-z][a-z0-9_-]{0,63}$/.test(k))),

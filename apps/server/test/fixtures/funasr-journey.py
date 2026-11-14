@@ -22,8 +22,7 @@ from mote_audio import normalize, read_pcm, speaker_previews
 
 ROOT = Path(__file__).resolve().parent
 ASSET = b'Generated ASR-07 component; never model weights.'
-SETTINGS_FINGERPRINT = ((ROOT/'host-fingerprint').read_text() if (ROOT/'host-fingerprint').exists()
-                        else hashlib.sha256(b'generated journey settings').hexdigest())
+SETTINGS_FINGERPRINT = hashlib.sha256(b'generated journey inference settings').hexdigest()
 VERSIONS = {'funasr': contract.SDK_VERSION, 'torch': 'generated', 'numpy': 'generated'}
 ROWS = [(0, 500, '不是不是不是。', 0), (0, 500, '不是不是不是。', 0),
         (500, 520, '嗯。', None), (1000, 2400, '使用扣迪士记录。', 0),
@@ -94,11 +93,13 @@ def run_audio(request, original, dialogue_directory, *, backend, threads, timeou
     source = {'audioSha256': hashlib.sha256(Path(original).read_bytes()).hexdigest(),
               'pcmSha256': hashlib.sha256(pcm).hexdigest(), 'sampleRate': 16000,
               'sampleCount': len(pcm)//2, 'durationMs': len(pcm)/32, 'timeline': 'original'}
-    # Only the unavailable recognizer is scripted. Host settings are a fixture
-    # parameter; the production engine's independent fingerprint is audited too.
+    # The loaded inference identity is independent of the host's connection and
+    # task settings, just as in the production engine. Never echo request facts.
     actual = {'sdkVersion': contract.SDK_VERSION, 'sdkWheelSha256': contract.SDK_WHEEL_SHA256,
               **contract.PINS, 'models': verify_models(dialogue_directory), 'dependencies': VERSIONS,
-              'backend': backend, 'threads': threads, 'settingsFingerprint': request['identity']['settingsFingerprint']}
+              'backend': backend, 'threads': threads, 'settingsFingerprint': SETTINGS_FINGERPRINT}
+    if actual != request['identity']:
+        raise EngineError('contract_mismatch')
     rows = [] if (ROOT/'silence').exists() else ROWS
     if operation == 'recognize':
         native = {'text': '  '+''.join(row[2] for row in rows)+'\n  ' if rows else '',
