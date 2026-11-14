@@ -154,6 +154,13 @@ test('control JSON rows are charged and a quota failure rolls intent, state and 
   control.command('select',input,()=>control.revision(),()=>control.saveBuild({id:'fixture',packageId:'fixture.build',installationId:randomUUID(),revision:1,desired:selection,retired:false,observed:'queued',blockers:[],operationId:input.operationId}));
   const rows=store.db.prepare("SELECT name,bytes FROM storage_ledger WHERE name IN ('plugin_control_receipts','plugin_build_instances') ORDER BY name").all();
   assert.equal(rows.length,2);assert.ok(rows.every(row=>Number(row.bytes)>128));assert.ok(store.logicalBytes()>before);
+  const queued=control.build('fixture')!,grown={...queued,blockers:['Generated quota detail 🌱']};
+  limits.maxStorageBytes=store.logicalBytes()+Buffer.byteLength(JSON.stringify(grown))-Buffer.byteLength(JSON.stringify(queued));
+  control.saveBuild(grown);assert.equal(store.logicalBytes(),limits.maxStorageBytes,'a replacement reserves exactly its UTF-8 growth');
+  control.saveBuild(grown);control.saveBuild({...grown,observed:'active'});
+  assert.equal(store.logicalBytes(),limits.maxStorageBytes,'replaying or updating an equal-size status needs no free quota');
+  control.saveBuild({...grown,observed:'active',blockers:[]});
+  assert.ok(store.logicalBytes()<limits.maxStorageBytes,'a smaller status releases its previous payload bytes');
   const previous=control.build('fixture')!,revision=control.revision(),failed=command(revision);
   // A generated profile's actual ledger is the enforcement boundary, not a
   // fake reserveMetadata method or a second per-plugin quota counter.
