@@ -264,8 +264,9 @@ export async function nativeIdentity(p) {
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   return { ...supervisor, record };
 }
-export async function health(p) {
-  try { const response = await fetch(p.url + '/api/status', { headers: { Authorization: `Bearer ${p.env.MOTE_TOKEN}` }, redirect: 'error', signal: AbortSignal.timeout(1500) }); return response.ok; }
+const HEALTH_PROBE_TIMEOUT_MS = 5000;
+export async function health(p, timeoutMs = HEALTH_PROBE_TIMEOUT_MS) {
+  try { const response = await fetch(p.url + '/api/status', { headers: { Authorization: `Bearer ${p.env.MOTE_TOKEN}` }, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) }); return response.ok; }
   catch { return false; }
 }
 async function ensurePortFree(p) {
@@ -301,7 +302,7 @@ export async function startNative(p, foreground = false, options = {}) {
   const record = { pid: child.pid, marker, configurationFile: p.configFile, dataDir: p.dataDir, release: p.meta.release, startedAt: new Date().toISOString() };
   try { await atomicJson(p.processFile, record); } catch (error) { child.kill('SIGTERM'); throw error; }
   const deadline = Date.now() + 20000;
-  while (!(await health(p))) {
+  while (!(await health(p, Math.max(1, Math.min(HEALTH_PROBE_TIMEOUT_MS, deadline - Date.now()))))) {
     if (failure || child.exitCode !== null || child.signalCode !== null) throw Error(`Central exited during startup; inspect logs in ${resolve(p.directory,p.env.MOTE_LOG_DIR||'logs')}`);
     if (Date.now() > deadline) { child.kill('SIGTERM'); throw Error('Central did not become healthy within 20 seconds; process was asked to stop'); }
     await sleep(100);

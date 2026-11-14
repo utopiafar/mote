@@ -12,7 +12,7 @@ import type {Config} from '../src/config.js';
 import {materialId} from '../src/materials.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {memoryWorkInstruction} from '../src/memory-work-contract.js';
-import {assertMemoryRequestFits,memoryRequestUsage,type MemoryRequestCapacity} from '../src/memory-request-budget.js';
+import {assertMemoryRequestFits,memoryRequestUsage,memoryRequestSizer,type MemoryRequestCapacity} from '../src/memory-request-budget.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
@@ -40,6 +40,11 @@ test('the serialized request fits exactly at its buffered boundary and fails bef
  const reviewed={...input,taskContext:{...input.taskContext!,untrustedMemoryDraft:{memories:[],coverage:[],generatedDetail:'x'.repeat(100000)}}};
  assert.throws(()=>assertMemoryRequestFits(reviewed,[record],capacity),ProviderFailure,'an unexpectedly large real review draft is rejected before calling the provider');
  assert.equal(bridge.deliveredRanges[0].length,record.ocrText.length,'budget rejection does not shorten the original or certify its coverage');
+ const measure=memoryRequestSizer([record],capacity);
+ for(const timeZone of ['UTC','Asia/Shanghai','UTC']){
+  const request={...input,timeZone},consumer=await startBridge({search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]},request);
+  try{const actual=assembleHostContext(request,consumer.seedEvidence,capacity.draftTokens);assert.equal(measure(request).inputTokens,estimateSerializedTokens({system:actual.system,tools:actual.tools,prompt:actual.prompt,outputSchema:actual.outputSchema}).tokens,'repeated sizing preserves the real consumer envelope and each requested time zone');}finally{await consumer.close();}
+ }
 });
 
 test('owner retry repartitions a saved overflow using current budgets without certifying or losing any old target',async t=>{
@@ -65,6 +70,30 @@ test('owner retry repartitions a saved overflow using current budgets without ce
  assert.deepEqual(leaves.flatMap(batch=>batch.evidenceRanges),job.batches[0].evidenceRanges,'all replacement batches preserve the complete original range vector in order');
  for(const phase of ['extract','review']){const evaluated=calls.filter(call=>call.phase===phase).flatMap(call=>call.ids);assert.equal(evaluated.length,160);assert.deepEqual(new Set(evaluated),new Set(ids));}
  assert.ok(leaves.every(batch=>batch.reviewReceipt?.decision==='independent'));assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,160);
+});
+
+for(const withdrawal of ['cancel','replace-original','change-model'] as const)test(`recovered native-budget planning yields to ${withdrawal} before dispatch and preserves its frozen targets`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-budget-withdrawal-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ let enabled=false,capacityReads=0,calls=0,entered!:()=>void,fingerprint='a'.repeat(64);
+ const measuring=new Promise<void>(resolve=>entered=resolve),capacity={contextWindow:200000,maxOutputTokens:128000,draftTokens:16000};
+ const pipeline=new MemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'gpt-6.1-terra',configuration:()=>({owner:'models',fingerprint,revision:0,profileId:'generated',provider:'codex',model:'gpt-6.1-terra'}),capacity:()=>{if(!enabled)return;if(++capacityReads===2)entered();return capacity;}},phases:{query:async()=>{calls++;throw Error('Withdrawn originals must not reach the provider');},review:async()=>{throw Error('Withdrawn originals must not reach review');}}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-budget-withdrawal',name:'Generated recovery originals',kind:'custom',deviceId:'generated',platform:'import'});
+ const originals=[];
+ for(let index=0;index<160;index++)originals.push(await sources.upsert('generated-budget-withdrawal',{externalId:String(index),revision:'1',title:'Generated recorded metadata '.repeat(40),text:'Generated original segment '+index,observedAt:at,kind:'file',layer:'original'}));
+ const job=pipeline.create({evidenceIds:originals.map(original=>original.id)}),ranges=job.batches.map(batch=>batch.evidenceRanges);assert.equal(job.totalBatches,1);
+ enabled=true;const done=pipeline.run(job.id);await measuring;
+ // The capacity has been sampled inside the real planning pass. The owner
+ // mutation runs at its next yielded boundary, before any model dispatch.
+ if(withdrawal==='cancel')pipeline.cancel(job.id);
+ else if(withdrawal==='replace-original')await sources.upsert('generated-budget-withdrawal',{externalId:'0',revision:'2',text:'Generated replacement invalidates the old exact proof.',observedAt:at,kind:'file',layer:'original'});
+ else fingerprint='b'.repeat(64);
+ const stopped=await done;
+ assert.equal(calls,0);assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ assert.deepEqual(stopped.batches.map(batch=>batch.evidenceRanges),ranges,'withdrawal cannot erase the original target vector or publish planned replacement batches');
+ assert.equal(stopped.status,withdrawal==='cancel'?'cancelled':withdrawal==='change-model'?'waiting_for_model':'failed');
+ if(withdrawal==='replace-original')assert.equal(stopped.outcome,'input_invalidated');
+ if(withdrawal==='change-model')assert.equal(stopped.errorCode,'configuration_changed');
 });
 
 test('owner retry of an explicit incomplete evaluation performs a fresh review and never reuses it as completed coverage',async t=>{

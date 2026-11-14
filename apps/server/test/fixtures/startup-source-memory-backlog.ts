@@ -25,7 +25,7 @@ if(mode==='seed'){
   server:{profile:'test',runtime:'native',host:'127.0.0.1',port:Number(port),token:'generated-source-backlog-owner-only'},
   storage:{dataDir:directory,maxStorageBytes:2*1024**3,maxExportBytes:1024**2,retentionDays:0},
   models:{deployment:{provider:'custom',protocol:'openai-completions',model:'generated-source-model',baseUrl:'https://generated.invalid/v1',apiKey:'generated-model-fixture-only'}},
-  diagnostics:{enabled:false,level:'silent'},
+  diagnostics:{enabled:true,level:'debug',debug:true},
  }),{mode:0o600});
  if(!process.env.MOTE_STARTUP_WEB_ROOT){
   await mkdir(join(webRoot,'assets'),{recursive:true});
@@ -37,6 +37,12 @@ if(mode==='seed'){
  try{
   await node.app.ready();await authorizeFixtureModels(node);
   const {ids,receipts,text,sourceId}=await seedSourceMemoryBacklog(node);
+  // Reproduce saved work that has not yet had a native transport allowance.
+  // Reopening it must measure the real native request/review envelope while
+  // retaining the entire frozen job catalog and all source claims.
+  const {apiKey:_apiKey,headers:_headers,extraBody:_extraBody,...settings}=node.modelSettings.current();
+  await node.modelSettings.update({revision:node.modelSettings.view().revision,settings:{...settings,provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'gpt-6.1-terra',reasoningEffort:'auto',serviceTier:'default',maxTokens:65536,modelRequestTimeoutMs:null,agentTimeoutMs:null,apiKey:''}});
+  await authorizeFixtureModels(node);
   // Persist a full dormant page ahead of a resumed request, plus completed
   // history. These are generated lifecycle snapshots, never owner originals.
   for(const id of ids.slice(0,65)){

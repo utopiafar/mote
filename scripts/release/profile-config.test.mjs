@@ -4,8 +4,10 @@ import {mkdtemp,readFile,writeFile,rm,mkdir,stat,rename} from 'node:fs/promises'
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
+import {createServer} from 'node:http';
+import {setTimeout as delay} from 'node:timers/promises';
 const composeAvailable = spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status === 0;
-import {profilePaths,initialize,loadProfile,effectiveConfiguration,isolatedEnvironment,setPublicUrl,compose,composeEnvironment,dockerConfigurationUser} from '../profile-lib.mjs';
+import {profilePaths,initialize,loadProfile,effectiveConfiguration,isolatedEnvironment,setPublicUrl,compose,composeEnvironment,dockerConfigurationUser,health} from '../profile-lib.mjs';
 import {parseConfigDocument,serializeConfigDocument} from '../../packages/shared/src/config-file.ts';
 async function fixture(t) {const directory=await mkdtemp(join(tmpdir(),'mote-yaml-profile-'));t.after(()=>rm(directory,{recursive:true,force:true}));return directory;}
 function changedPaths(before,after,path=[]) {
@@ -14,6 +16,21 @@ function changedPaths(before,after,path=[]) {
  const keys=new Set([...Object.keys(before),...Object.keys(after)]);
  return [...keys].flatMap(key=>changedPaths(before[key],after[key],[...path,key]));
 }
+test('CLI accepts a busy authenticated Central beyond 1.5 seconds while stalled, unauthorized and redirected probes remain unhealthy',{timeout:10000},async t=>{
+ let mode='busy',received,reply;
+ const requested=new Promise(resolve=>received=resolve),server=createServer((req,res)=>{
+  assert.equal(req.url,'/api/status');assert.equal(req.headers.authorization,'Bearer generated-health-owner');
+  if(mode==='busy'){reply=res;received();}
+  else if(mode==='unauthorized'){res.writeHead(401);res.end();}
+  else if(mode==='redirect'){res.writeHead(302,{location:'/generated-redirect'});res.end();}
+  // A stalled server deliberately holds its response until the probe aborts.
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ t.after(async()=>{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
+ const p={url:`http://127.0.0.1:${server.address().port}`,env:{MOTE_TOKEN:'generated-health-owner'}};
+ const busy=health(p);await requested;await delay(1800);reply.writeHead(200);reply.end();assert.equal(await busy,true,'normal bounded backlog work must not make the CLI report a healthy Central as failed');
+ for(mode of ['unauthorized','redirect','stalled'])assert.equal(await health(p),false,mode+' must never be reported healthy');
+});
 test('init creates one private YAML without a model, preserves secret references during atomic edits, and rejects ambient server overrides',async t=>{
  const home=await fixture(t),paths=profilePaths('test',home);await initialize(paths);let p=await loadProfile(paths);
  assert.equal((await stat(paths.configFile)).mode&0o777,0o600);assert.equal(await stat(paths.legacyEnvFile).then(()=>true,()=>false),false);
