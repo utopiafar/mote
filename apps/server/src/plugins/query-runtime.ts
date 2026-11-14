@@ -116,7 +116,9 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     let draftScope:ReturnType<typeof assistantDraftScope>;
     if(operation==='query'&&moduleId==='conversations'&&input.executionLane!=='background'&&assistantDrafts.capabilities().length){
       const scope=assistantDraftScope(input);
-      if(scope){
+      // Resolve the original task before opting into answer-draft selection;
+      // specialized tasks may share its priority and never offer a draft.
+      if(scope&&prepareTaskContext(input).responseMode==='answer'){
         const prepared=prepareTaskContext({...input,assistantDraft:true});
         if(prepared.responseMode==='answer'&&Object.hasOwn((prepared.outputSchema.properties??{}) as Record<string,unknown>,'draft')){
           draftScope=scope;input={...input,assistantDraft:true};
