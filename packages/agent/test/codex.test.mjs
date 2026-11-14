@@ -514,6 +514,10 @@ test('Codex import preview corrections keep the staging thread and are bounded a
 
 test('Codex rejects an irreducible oversized Host request before starting the App Server',async t=>{
  const root=await fake(t),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000,maxTokens:512,contextWindow:20000});t.after(()=>agent.close());
- await assert.rejects(agent.query({question:'Generated oversized input '+('x'.repeat(30000))}),error=>error instanceof AgentProviderError&&error.details.code==='processing_limit'&&/context limit/i.test(error.message));
+ await assert.rejects(agent.query({question:'Generated oversized input '+('x'.repeat(30000))}),error=>{
+  assert.ok(error instanceof AgentProviderError);assert.equal(error.details.code,'processing_limit');assert.equal(error.details.executionStarted,false);
+  assert.deepEqual(error.diagnostic,{source:'runtime',stage:'startup',code:'contextWindowExceeded',modelId:'fixture'});
+  return /context limit/i.test(error.message);
+ });
  await assert.rejects(access(join(root,'rpc.ndjson')),'no App Server turn was started');
 });

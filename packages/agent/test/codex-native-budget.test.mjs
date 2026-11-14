@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import {createServer as createTlsServer} from 'node:https';
 import {execFile} from 'node:child_process';
@@ -32,7 +33,7 @@ async function generatedTls(root) {
   return {ca, key: await readFile(key), cert: await readFile(cert)};
 }
 
-async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, model = 'gpt-5.4', serviceTier, singleReply = false, repair = false, chatgpt = false, forceCompaction = false, authRetry = false, nativeWindow = 272000, workspace = false, connectionProbe = false} = {}) {
+async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, model = 'gpt-5.4', serviceTier, singleReply = false, finalText = 'ok', repair = false, chatgpt = false, forceCompaction = false, authRetry = false, nativeWindow = 272000, workspace = false, connectionProbe = false, hostDefaults = false, seedRecords = []} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'mote-codex-native-budget-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const workspacePath = join(root, 'workspace');
@@ -61,7 +62,7 @@ async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, mod
     }
     let output = [];
     if (body.generate !== false) output = singleReply ? [
-      {id: 'generated-ok', type: 'message', role: 'assistant', phase: 'final_answer', status: 'completed', content: [{type: 'output_text', text: 'ok', annotations: []}]},
+      {id: 'generated-ok', type: 'message', role: 'assistant', phase: 'final_answer', status: 'completed', content: [{type: 'output_text', text: finalText, annotations: []}]},
     ] : connectionProbe && generations <= 2 ? [
       {id: `generated-probe-${generations}`, type: 'function_call', call_id: `generated-probe-${generations}`,
         name: generations === 1 ? 'search_context' : 'evidence',
@@ -153,10 +154,10 @@ child.stderr.on('data', chunk => appendFileSync(${JSON.stringify(stderrPath)}, c
 child.on('exit', code => process.exit(code ?? 1));
 process.on('SIGTERM', () => child.kill('SIGTERM'));
 `, {mode: 0o700});
-  const options = {protocol: 'codex-app-server', model, serviceTier, contextWindow: window, maxTokens: 512,
+  const options = {protocol: 'codex-app-server', model, serviceTier, ...(hostDefaults ? {} : {contextWindow: window, maxTokens: 512}),
     codex: {home: root, executable}, agentTimeoutMs: 20000, authorizeModelRequest: () => {authorizations++;},
     reader: {search: async () => {if (!connectionProbe) return []; probeReads.push('search_context'); return [probeRecord];},
-      evidence: async args => {if (!connectionProbe) return []; probeReads.push('evidence'); return args.ids.includes(record.id) ? [probeRecord] : [];},
+      evidence: async args => {if (connectionProbe) probeReads.push('evidence'); return (connectionProbe ? [probeRecord] : seedRecords).filter(item => args.ids.includes(item.id));},
       devices: async () => [], activity: async () => ({}),
       timeline: async () => {reads++; return {items: [record], nextCursor: null};}},
   };
@@ -184,6 +185,62 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
     return ((await readFile(stderrPath, 'utf8').catch(() => '')) + JSON.stringify(errors)).replaceAll(jwt, '[generated credential]').replaceAll('generated-unused-key', '[generated credential]');
   }};
 }
+
+for (const mode of ['websocket', 'http-fallback']) test(`automatic Memory uses the native default window for full recording targets and independent review over ${mode}`, {timeout: 30000}, async t => {
+  const records = Array.from({length: 120}, (_, index) => ({
+    id: `274f8026-73c2-5566-9528-${String(index).padStart(12, '0')}`, capturedAt: record.capturedAt,
+    appName: 'Generated recording', sourceType: 'file', deviceId: 'generated-recorder',
+    ocrText: `这是生成的测试日记句子。我计划周六完成示例，结果尚未确定。${index}`,
+    provenance: {sourceId: 'generated-recording-source', externalId: `generated-recording/segment/${index}`, revision: '1',
+      document: {contentRole: 'transcript', recordedAt: record.capturedAt, timeBasis: 'recorded'}},
+    fileEvidence: {captureId: record.id, revision: '1', artifactId: record.id,
+      chunkId: `274f8026-73c2-5566-9528-${String(index).padStart(12, '0')}`, speaker: 'Unverified', startMs: index * 5000, endMs: (index + 1) * 5000},
+    attributionContext: {version: 1, ownerRelation: 'unknown', basis: 'default'},
+  }));
+  const members = records.map(item => ({key: createHash('sha256').update(item.id).digest('hex'), id: item.id,
+    offset: 0, length: item.ocrText.length, materialRef: 'material:generated-recording@1', sourceId: item.provenance.sourceId,
+    contextTime: item.capturedAt, attributionContext: item.attributionContext, state: 'pending', memoryIds: []}));
+  const coverage = members.map((member, index) => ({key: `member_${index}`, state: 'no_candidates', candidateIndexes: []}));
+  const f = await fixture(t, {mode, model: 'gpt-6.1-terra', serviceTier: 'fast', chatgpt: true, window: 272000,
+    hostDefaults: true, seedRecords: records, singleReply: true,
+    finalText: JSON.stringify({answer: JSON.stringify({memories: [], coverage}), citationIds: []})});
+  const input = {question: 'Evaluate every generated recording target under this complete host policy. '.repeat(200),
+    skill: 'memory-strategy', responseMode: 'memory-extraction', evidenceIds: records.map(item => item.id),
+    evidenceRanges: members.map(({id, offset, length}) => ({id, offset, length})),
+    taskContext: {turns: [], memoryWork: {members, contextMembers: [], authorizedMembers: members,
+      history: [], workContract: 'range-evaluation@1', instruction: 'Inspect every supplied original range in full.'}}};
+  const extracted = await f.agent.query(input);
+  const reviewed = await f.agent.query({...input, taskContext: {...input.taskContext, untrustedMemoryDraft: JSON.parse(extracted.answer)}});
+  for (const result of [extracted, reviewed]) {
+    assert.deepEqual(JSON.parse(result.answer).coverage.map(member => member.key), members.map(member => member.key));
+  }
+  const actual = f.requests.filter(request => request.body.generate !== false);
+  assert.equal(actual.length, 2, 'extraction and independent review each send exactly once');
+  const envelopes = [];
+  for (const request of actual) {
+    const envelope = request.fullInput.filter(item => item.role === 'user').flatMap(item => item.content ?? [])
+      .map(item => {try {return JSON.parse(item.text);} catch {return undefined;}}).find(value => value?.taskId === 'extraction');
+    envelopes.push(envelope);
+    assert.equal(envelope.untrustedEvidence.length, records.length);
+    for (const item of records) {
+      const seed = envelope.untrustedEvidence.find(seed => seed.id === item.id), context = envelope.evidenceContexts[seed.commonContextRef];
+      assert.equal(seed.ocrText, item.ocrText, 'every complete original must reach the native transport');
+      assert.equal(context.provenance.externalId, item.provenance.externalId);
+      assert.equal(context.provenance.sourceId, item.provenance.sourceId);
+      assert.deepEqual(context.provenance.document, item.provenance.document);
+      assert.deepEqual(context.fileEvidence, item.fileEvidence, 'speaker and exact source timestamps remain attached to the original');
+      assert.deepEqual(context.attributionContext, item.attributionContext);
+    }
+    assert.ok(!JSON.stringify(request.fullInput).includes('budgetCoverage'), 'neither originals nor the review draft need reduction');
+    assert.equal(request.transport, mode === 'websocket' ? 'websocket' : 'http');
+    assert.equal(request.body.service_tier, 'priority');
+  }
+  assert.deepEqual(envelopes[1].untrustedTaskContext.untrustedMemoryDraft, {memories: [], coverage}, 'review receives the complete extraction draft');
+  const stats = await f.stats();
+  assert.equal(stats.turns, 2);
+  assert.equal(stats.compacts, 0);
+  assert.equal(stats.authorizations, 2);
+});
 
 for (const mode of ['websocket', 'http-fallback']) test(`native Terra Fast keeps connection tools callable with code-mode-only catalog over ${mode}`, {timeout: 30000}, async t => {
   const f = await fixture(t, {mode, model: 'gpt-6.1-terra', serviceTier: 'fast', chatgpt: true, window: 272000, connectionProbe: true});
