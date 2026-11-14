@@ -86,6 +86,11 @@ export async function runChromeExtensionFixture(consume?:(provider:BrowserCaptur
  const geometry=(await page.call('Runtime.evaluate',{expression:'JSON.stringify({url:location.href,viewport:{x:screenX+(outerWidth-innerWidth)/2,y:screenY+outerHeight-innerHeight-(outerWidth-innerWidth)/2,width:innerWidth,height:innerHeight}})',returnByValue:true})).result.value;
  const state=(await worker.call('Runtime.evaluate',{expression:'chrome.windows.getLastFocused({populate:true}).then(w=>JSON.stringify({focused:w.focused,window:{x:w.left,y:w.top,width:w.width,height:w.height}}))',awaitPromise:true,returnByValue:true})).result.value;const g=JSON.parse(geometry),w=JSON.parse(state);assert(w.focused,'headless Chrome reports its active window');
  await writeFile(contextPath,JSON.stringify({status:'ok',appId:'com.google.Chrome',pid:browser.pid,visibleBrowserWindows:1,url,window:w.window,viewport:g.viewport,screen:{x:0,y:0,width:1600,height:1200}}));
+ // Socket authentication alone does not establish MV3 request readiness or
+ // the granted origin. Finish the actual permission round-trip before capture.
+ const permissions=await bridge.permissionStatus([origin],new AbortController().signal);
+ assert.equal(permissions.state,'checked',JSON.stringify({permissions,exchanges}));
+ assert.deepEqual(permissions.origins,[{origin,allowed:true}]);
  const request={observationId:'6b79d144-1644-426c-927d-49f2478c62cc',appId:'com.google.Chrome',pid:browser.pid!,origins:[origin],observedAt:new Date().toISOString(),masks:[],structured:true};const result=await bridge.sample(request,new AbortController().signal);assert.equal(result.status,'ok',JSON.stringify({result,exchanges,peers:[...(bridge as any).peers].map((peer:any)=>({ready:peer.ready,destroyed:peer.socket.destroyed,pending:peer.pending.size}))}));assert.equal(result.pages.length,1);const text=JSON.stringify(result.pages);assert(text.includes('Visible generated article body'));assert(!text.includes('Hidden fixture secret'));assert(!text.includes('never captured'));assert(await bridge.validate(result.identity!,new AbortController().signal));
  if(consume)await consume(bridge,request,JSON.parse(await readFile(contextPath,'utf8')));
  const paragraph=JSON.parse((await page.call('Runtime.evaluate',{expression:'JSON.stringify((()=>{const r=document.querySelector("p").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};})())',returnByValue:true})).result.value);
@@ -99,6 +104,7 @@ export async function runChromeExtensionFixture(consume?:(provider:BrowserCaptur
   const restored=await bridge.sample(request,new AbortController().signal);assert.equal(restored.status,'ok');assert(JSON.stringify(restored.pages).includes('Visible generated article body'),'page evidence resumes after generated overlay removal');
  }
  const identityOnly=await bridge.sample({...request,structured:false},new AbortController().signal);assert.equal(identityOnly.status,'ok');assert.deepEqual(identityOnly.pages,[]);await page.call('Page.navigate',{url:origin+'/different'});await sleep(100);assert.equal(await bridge.validate(identityOnly.identity!,new AbortController().signal),false);
+ console.info('Generated Chrome relay:',JSON.stringify({requests:exchanges.length,maxElapsedMs:Math.max(...exchanges.map(exchange=>Number(exchange.elapsedMs))),closedDuringRequest:exchanges.some(exchange=>exchange.socketDestroyed)}));
  }catch(error){failure=error;failed=true;}
  try{await cleanupChromeFixture({root,browser:observedBrowser,requestBrowserClose,sessions,bridge,preserveRoot:failed,closeServer:()=>new Promise<void>((resolve,reject)=>{if(!server.listening){resolve();return;}server.close(error=>error?reject(error):resolve());server.closeAllConnections();})});}
  catch(error){throw new AggregateError(failed?[failure,error]:[error],'Chrome fixture failed; retained '+root);}

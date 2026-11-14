@@ -72,9 +72,12 @@ test('top-level local-image import feeds its real verified receipt to the shared
  import {register} from ${JSON.stringify(import.meta.resolve('tsx/esm/api'))};
  import {registerHooks} from 'node:module';
  import {appendFileSync} from 'node:fs';
- import {threadId} from 'node:worker_threads';
+ import {isMainThread,threadId} from 'node:worker_threads';
  const trace=stage=>appendFileSync(${JSON.stringify(trace)},JSON.stringify({pid:process.pid,threadId,stage})+'\\n');
  trace('preload-start');
+ // NODE_OPTIONS is inherited by both the CLI's child and esbuild workers.
+ // The generated model boundary belongs only to the actual importer.
+ if(isMainThread&&process.argv[1]===${JSON.stringify(fileURLToPath(new URL('../media-import.mjs',import.meta.url)))}){
  register({tsconfig:${JSON.stringify(tsconfig)}});
  trace('registered');
  registerHooks({resolve(specifier,context,nextResolve){
@@ -84,10 +87,14 @@ test('top-level local-image import feeds its real verified receipt to the shared
  const {MEDIA_CATALOG}=await import(${JSON.stringify(assetsUrl)});
  trace('assets-loaded');
  MEDIA_CATALOG['local-image']=${JSON.stringify({version:'generated-core03-image',files:[{name:'component/model.bin',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://example.invalid/generated-model'}]})};
+ }
  `);
- const env={NODE_OPTIONS:`--import=${pathToFileURL(preload).href}`};
+ const env={NODE_OPTIONS:`--import=${pathToFileURL(preload).href}`,TSX_DISABLE_CACHE:'1'};
  const result=run(['media-import','--role','local-image','--from',bundle],env);
  assert.equal(result.status,0,JSON.stringify({signal:result.signal,error:result.error?.message,preload:await readFile(trace,'utf8').catch(()=>null)})+'\n'+result.stderr);
+ const loads=(await readFile(trace,'utf8')).trim().split('\n').map(line=>JSON.parse(line)).filter(event=>event.stage==='assets-loaded');
+ assert.equal(loads.length,1,'only the actual importer loads the generated catalog; the CLI and esbuild workers must not repeat source loading');
+ assert.equal(loads[0].threadId,0);assert.notEqual(loads[0].pid,result.pid);
  const receipt=mediaAssetStatusSchema.parse(JSON.parse(result.stdout));assert.equal(receipt.role,'local-image');assert.equal(receipt.state,'ready');assert.equal(receipt.bytes,bytes.length);
  const installed=JSON.parse(await readFile(join(profile.modelDirectory,'local-image/complete.json'),'utf8'));assert.equal(installed.version,receipt.version);
  await writeFile(join(bundle,'component/model.bin'),Buffer.alloc(bytes.length));
