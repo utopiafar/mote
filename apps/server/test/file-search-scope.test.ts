@@ -159,6 +159,50 @@ test('a device-reported missing original retains its independently authorized sn
  const disabled=await api('PATCH','/api/sources/visible',{enabled:false});assert.equal(disabled.statusCode,200,disabled.body);assert.equal(node.evidenceContext.assembly.reader.contextDependenciesAllowed([id,chunks[0].id]),false);
 });
 
+test('retained file history stays owner-readable while context and model reads recheck the current revision and source grant',async t=>{
+ const {node,api,upload}=await fixture(t),oldBody='Generated FILE_HISTORY_SCOPE previous body',newBody='Generated FILE_HISTORY_SCOPE current body';
+ const previous=await upload('archive','history','Generated FILE_HISTORY_SCOPE previous.txt',oldBody,'2026-10-01T00:00:00Z','original');
+ await node.processing.tick();
+ const previousChunk=node.files.chunks(previous)[0];assert.ok(previousChunk,'the real text processor publishes a searchable chunk');
+ const bridge=await startBridge(node.featureServices.archiveReader,{question:'Generated file history query',deviceId:'device-a',executionLane:'interactive'} as any);
+ try{
+  const tool=async(name:string,args:unknown)=>{const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});const body=await response.json() as any;assert.equal(response.status,200,JSON.stringify(body));return body;};
+  const read=async(ids:string[],scope:Record<string,string>={})=>{const response=await api('POST','/api/context/read',{refs:ids.map(id=>'capture:'+id),offset:0,length:100,deviceId:'device-a',...scope});assert.equal(response.statusCode,200,response.body);return response.json();};
+  const search=async()=>{
+   const pages=[];
+   for(const route of ['search','retrieve']){const response=await api('GET','/api/context/'+route+'?source=file&sourceId=archive&deviceId=device-a&query=FILE_HISTORY_SCOPE');assert.equal(response.statusCode,200,response.body);pages.push(response.json().items);}
+   pages.push((await tool('search_context',{source:'file',query:'FILE_HISTORY_SCOPE'})).data);
+   return pages as any[][];
+  };
+  assert.deepEqual((await read([previous])).items.map((item:any)=>item.id),[previous]);
+  for(const page of await search())assert.ok(page.some(item=>item.id===previous||item.fileView?.captureId===previous),JSON.stringify(page));
+  assert.deepEqual((await tool('evidence',{ids:[previousChunk.id]})).data.map((item:any)=>item.id),[previousChunk.id]);
+
+  const current=await upload('archive','history','Generated FILE_HISTORY_SCOPE current.txt',newBody,'2026-10-02T00:00:00Z','original',sha256(Buffer.from(oldBody)));
+  await node.processing.tick();
+  const currentChunk=node.files.chunks(current)[0];assert.ok(currentChunk);
+  const history=await api('GET',`/api/files/${previous}/content?deviceId=device-a&sourceId=archive`);assert.equal(history.statusCode,200,history.body);assert.equal(history.body,oldBody);
+  for(const scope of ['deviceId=device-b','sourceId=visible','after=2026-10-03T00%3A00%3A00Z'])assert.equal((await api('GET',`/api/files/${previous}/content?${scope}`)).statusCode,404,scope);
+  const retired=await read([previous,previousChunk.id]);assert.deepEqual(retired.items,[]);assert.deepEqual(retired.missingRefs,['capture:'+previous,'capture:'+previousChunk.id]);
+  assert.deepEqual((await read([current,currentChunk.id])).items.map((item:any)=>item.id),[current,currentChunk.id]);
+  for(const scope of [{sourceId:'visible'},{deviceId:'device-b'},{after:'2026-10-03T00:00:00Z'}])assert.deepEqual((await read([current,currentChunk.id],scope)).items,[]);
+  for(const page of await search()){
+   assert.ok(page.some(item=>item.id===current||item.fileView?.captureId===current),JSON.stringify(page));
+   assert.ok(page.every(item=>item.id!==previous&&item.id!==previousChunk.id&&item.fileView?.captureId!==previous),JSON.stringify(page));
+  }
+  assert.deepEqual((await tool('evidence',{ids:[previous,previousChunk.id]})).data,[]);
+  assert.match(JSON.stringify((await tool('evidence',{ids:[currentChunk.id]})).data),/current body/);
+
+  for(const change of [{enabled:false},{enabled:true,retention:'reference'}]){
+   const changed=await api('PATCH','/api/sources/archive',change);assert.equal(changed.statusCode,200,changed.body);
+   for(const id of [previous,current])assert.equal((await api('GET',`/api/files/${id}/content`)).statusCode,404);
+   const withdrawn=await read([previous,previousChunk.id,current,currentChunk.id]);assert.deepEqual(withdrawn.items,[]);assert.equal(withdrawn.missingRefs.length,4);
+   assert.deepEqual((await tool('evidence',{ids:[previous,previousChunk.id,current,currentChunk.id]})).data,[]);
+   for(const page of await search())assert.deepEqual(page,[]);
+  }
+ }finally{await bridge.close();}
+});
+
 test('a source withdrawn while the vector request is in flight cannot appear in the refreshed results',async t=>{
  const {node,api,upload}=await fixture(t),id=await upload('visible','vector','Generated vector.txt','Generated vector search tail','2026-10-01T00:00:00Z');await node.processing.tick();
  let entered!:()=>void,release!:()=>void,blocking=false;const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
