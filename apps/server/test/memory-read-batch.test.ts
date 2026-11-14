@@ -31,11 +31,24 @@ test('reading a recording batch resolves each exact original context once while 
   contexts.bind(original.id,'Generated owner description '+index,false);
   originals.push({id:original.id,chunks:files.chunks(original.id,0,200)});
  }
+ const chunkIds=originals.flatMap(original=>original.chunks.map(chunk=>chunk.id)),expectedChunks=chunkIds.flatMap(id=>files.evidence([id]));
+ let parentReads=0,versionReads=0;const evidence=store.evidence.bind(store),version=files.version.bind(files);
+ const parentSpy=t.mock.method(store,'evidence',(ids:string[])=>{parentReads+=ids.length;return evidence(ids);});
+ const versionSpy=t.mock.method(files,'version',(id:string)=>{versionReads++;return version(id);});
+ const chunkBatch=files.evidence(chunkIds);parentSpy.mock.restore();versionSpy.mock.restore();
+ assert.deepEqual(chunkBatch,expectedChunks,'every chunk keeps its exact original, speaker and time range');
+ assert.equal(parentReads,2,'one synchronous recording batch opens each parent body once');
+ assert.equal(versionReads,2,'one synchronous recording batch opens each original manifest once');
  // One Material contains segments from two originals. Their range-specific
  // declarations must stay separate even when a batch reuses context reads.
  const blocks=originals.flatMap((original,index)=>original.chunks.map((chunk,n)=>({id:`segment-${index}-${n}`,kind:'text' as const,format:'transcript',text:chunk.ocrText,memberIds:[original.id],evidenceIds:[chunk.id]})));
  const material=materials.publish({id:materialId('generated-recording-context','combined'),kind:'mote.note',schemaVersion:1,title:'Generated combined recordings',origin:{sourceId:'generated-recording-context',externalId:'combined'},members:originals.map(original=>({id:original.id,kind:'capture',ref:'capture:'+original.id})),blocks,artifacts:[{key:'material',state:'ready',blockIds:blocks.map(block=>block.id)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
  const reader=new EvidenceReader(store,sources,files,undefined,undefined,materials),ids=materials.evidenceIds(material.ref),individual=ids.flatMap(id=>reader.memories.readEvidence([id]));
+ const rawIndividual=chunkIds.flatMap(id=>reader.memories.readEvidence([id]));let rawContextReads=0;
+ const rawPrepare=store.db.prepare.bind(store.db),rawSpy=t.mock.method(store.db,'prepare',(sql:string)=>{if(sql.includes('CROSS JOIN material_members'))rawContextReads++;return rawPrepare(sql);});
+ const rawBatch=reader.memories.readEvidence(chunkIds);rawSpy.mock.restore();
+ assert.deepEqual(rawBatch,rawIndividual,'raw transcript lineage preserves the same exact per-original declarations as individual reads');
+ assert.equal(rawContextReads,2,'raw transcript siblings resolve each exact original context once per synchronous read');
  let contextReads=0;const prepare=store.db.prepare.bind(store.db);
  const spy=t.mock.method(store.db,'prepare',(sql:string)=>{if(sql.includes('SELECT DISTINCT c.id,c.device_id'))contextReads++;return prepare(sql);});
  const records=reader.memories.readEvidence(ids);spy.mock.restore();
@@ -55,6 +68,10 @@ test('reading a recording batch resolves each exact original context once while 
  assert.deepEqual(linked[0].attributionContext?.recordContextStatements?.map(statement=>statement.description).sort(),['Generated owner description 0','Generated owner description 1']);
  assert.deepEqual(linked[1].attributionContext?.recordContextStatements?.map(statement=>statement.description),['Generated owner description 0']);
  assert.throws(()=>reader.memories.extract(output,'generated',options),/Memory evidence changed/,'the next validation must observe changed original attribution');
+ store.db.prepare('INSERT INTO file_evidence_links(parent_id,capture_id) VALUES(?,?)').run(originals[1].id,originals[0].id);
+ const changedRaw=reader.memories.readEvidence(originals[0].chunks.map(chunk=>chunk.id));
+ assert.ok(changedRaw.every(record=>record.attributionContext?.recordContextStatements?.length===2),'the next raw read observes a new exact ancestor for every sibling');
+ assert.deepEqual(reader.memories.readEvidence([originals[1].chunks[0].id])[0].attributionContext?.recordContextStatements?.map(statement=>statement.description),['Generated owner description 1'],'an independent original never borrows a sibling cache');
  store.delete(originals[0].id);
  assert.equal(reader.memories.readCurrentEvidence(ids).length,0,'the next guard must observe deletion of a combined Material member');
  assert.equal(reader.memories.readCurrentEvidence(originals[1].chunks.map(chunk=>chunk.id)).length,80,'the independent surviving original stays current');

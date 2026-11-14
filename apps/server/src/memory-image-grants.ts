@@ -57,6 +57,7 @@ export function memoryImageOriginal(store:Store,grant:MemoryImageGrant):string|u
  return locator.captureId;
 }
 export function assertMemoryImageGrants(store:Store,pins:readonly MaterialInputPin[],grants:readonly MemoryImageGrant[]){
+ if(!grants.length)return;
  const current=memoryImageGrants(store,pins);
  if(grants.some(grant=>!current.some(value=>JSON.stringify(value)===JSON.stringify(grant))||!memoryImageOriginal(store,grant)))throw new StoreError('Memory original image changed or is unavailable',409);
 }

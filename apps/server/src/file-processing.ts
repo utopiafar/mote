@@ -806,7 +806,9 @@ export class FileProcessing {
     const stepId=sha256(JSON.stringify(['file-step',id,name,fingerprint,...(this.modelIntent(id,'pipeline')?[this.modelIntent(id,'pipeline')]:[])])),started=performance.now(),requestId=this.options.diagnostics?.requestId()??randomUUID(),timeoutMs=callPolicy===EXECUTION_POLICIES.modelCall?null:this.saved.settings.timeoutMs;
     db.prepare("INSERT INTO file_steps(capture_id,step,processor,version,fingerprint,state,attempts,updated_at) VALUES(?,?,?,?,?,'waiting',0,?) ON CONFLICT(capture_id,step) DO UPDATE SET processor=excluded.processor,version=excluded.version,fingerprint=excluded.fingerprint,artifact_id=CASE WHEN file_steps.fingerprint=excluded.fingerprint THEN file_steps.artifact_id ELSE NULL END").run(id,name,processor,version,fingerprint,new Date().toISOString());
     return this.engine.runStep({id:stepId,operationId:'file:'+id,kind:'file-step',pool:'file-work',input:{captureId:id,name,fingerprint,...(this.modelIntent(id,'pipeline')?{ownerIntentId:this.modelIntent(id,'pipeline')}:{})},generation:{slot:'file-pipeline',version:this.modelGeneration(id,'pipeline',revision)},signal:active.signal,policy:issuedCall?callPolicy:EXECUTION_POLICIES.deterministic,...(endpoint?{resourceKeys:[this.processorAdmission.resourceKey(endpoint)],admit:()=>{try{this.processorAdmission.check(endpoint);}catch(error){if(error instanceof ProviderFailure)return new ExecutionFailure('waiting',error.details.code,error.details.retryAfterMs);throw error;}}}:{}),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):error instanceof StoreError&&error.statusCode===422?new ExecutionFailure('permanent','unsupported_format'):new ExecutionFailure('permanent','step_failed'),timeoutMs,cached:Boolean(cached),initialAttempts:old?.fingerprint===fingerprint?old.attempts:0,validate:()=>this.exists(id,revision)&&extractionCurrent(),
-      execute:async signal=>{
+      // A queued stage can be dispatched by another job's completion. Retain
+      // this file program's scope, including its own cancellation signal.
+      execute:async signal=>this.execution.run(active,async()=>{
         // Lookup stays inside the existing authorized execution. The engine
         // validates again before publishing the new origin's own artifact.
         const cachedOutput=reuseByContent&&name==='extract'?readFileExtractionCache(this.files,id,fingerprint,processor,version,defaultFileOutput(descriptor!),this.runtime.outputs,Boolean(descriptor?.output)):undefined;
@@ -817,7 +819,7 @@ export class FileProcessing {
         const url=managed?new URL(stage==='ocr'?settings.imageEndpoint||this.media.ocrEndpoint:settings.endpoint||this.media.asrEndpoint):undefined;if(stage==='diarize'&&url)url.pathname=url.pathname.replace(/\/transcribe\/?$/,'/diarize');
         const media=url?{step:current,generation:revision,endpoint:url.toString(),apiKey:settings.apiKey??'',stage,assert:()=>{signal.throwIfAborted();if(!this.exists(id,revision)||!this.engine.isCurrentGrant(stepId,fence))throw new ExecutionFailure('stale','input_changed');}}:undefined;
         const run=()=>issuedCall?this.waitForProcessor(id,execute,descriptor?.awaitResponseOnCancel!==true,timeoutMs,media):this.trackPhysical(execute(signal));return endpoint?this.processorAdmission.run(endpoint,run):run();
-      },
+      }),
       commit:value=>{
         if(!extractionCurrent())throw new ExecutionFailure('stale','input_changed');
         if(stageEpoch&&!this.runtime.recipes.epochs.matches(stageKey,stageEpoch))throw new ExecutionFailure('blocked','processor_instance_unavailable');

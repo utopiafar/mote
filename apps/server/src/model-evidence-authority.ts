@@ -110,6 +110,10 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     ))throw Object.assign(new ProviderFailure({category:'permanent',code:'context_evidence_restricted'}),{statusCode:409,code:'context_evidence_restricted'});
   };
   const assertModelEvidenceAsync=async(input:QueryInput)=>{
+    // Original-only Memory inputs can have no context groups. They still need
+    // real event-loop boundaries around their complete synchronous guards;
+    // an already-resolved promise only extends the current microtask burst.
+    await yieldEventLoop();input.signal?.throwIfAborted();
     selectedQueryMaterial(input);
     selectedQueryEvidence(input);
     input.assertContextAuthority?.();
@@ -122,7 +126,7 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
       if(!evidenceReader.contextDependenciesAllowed(group.ids.slice(offset,offset+256),policy,group.historical,group.snapshot?conversations.assertHistoryContext(group.snapshot):undefined))throw contextFailure('context_evidence_restricted');
       await yieldEventLoop();
     }
-    input.signal?.throwIfAborted();
+    await yieldEventLoop();input.signal?.throwIfAborted();
   };
   const pinProcessingEvidence=(input:QueryInput):QueryInput=>{
     const supplied=input as QueryInput&{memoryCatalogMetadata?:MemoryCatalogMetadataReceipt};

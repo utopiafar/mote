@@ -6,6 +6,7 @@ import {rmSync} from 'node:fs';
 import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
+import type {StatementSync} from 'node:sqlite';
 import {fileRevisionSchema,fileViewSchema,sourceItemSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,transcriptSchema,type FileCoverage,type SourceItem,type Transcript,type FileRevision,type CaptureRecord,type ArchivedFile,type FileProcessingJobView,type ExecutionEnvelope,fileEvidenceSchema} from '@mote/shared';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import type {ContextRecord,ContextRange} from '@mote/agent';
@@ -26,6 +27,8 @@ const fileListSignature=(args:Range&{query?:string;mimePrefix?:string})=>sha256(
 
 /** Bounded parts using the configured content write policy. No caller supplies a filesystem path. */
 export class FileStore {
+  private currentEvidenceStatement?:StatementSync;
+  private readableFileStatement?:StatementSync;
   /** Processing owns input authority and the transition after bounded resupply. */
   processingReceiptCurrent?:(input:Record<string,unknown>,phase:'pipeline'|'summary')=>boolean;
   snapshotInputResupplied?:(id:string)=>void;
@@ -460,22 +463,31 @@ export class FileStore {
   speakerAttributions(captureId:string,artifactId:string){
     return readFileSpeakerAttributions(this.store,captureId,artifactId);
   }
-  private chunkRecords(rows:Chunk[]){const attributions=new Map<string,ReturnType<typeof readFileSpeakerAttributions>>();
-    return rows.map(c=>{let names=attributions.get(c.artifact_id);if(!names){names=this.speakerAttributions(c.capture_id,c.artifact_id);attributions.set(c.artifact_id,names);}return this.chunkRecord(c,names);});}
-  private chunkRecord(c:Chunk,attributions=this.speakerAttributions(c.capture_id,c.artifact_id)):CaptureRecord & ContextRecord{
-    const record=this.store.evidence([c.capture_id])[0],v=this.version(c.capture_id),metadata=JSON.parse(c.metadata??'{}'),attribution=metadata.speaker?attributions[metadata.speaker]:undefined;
+  private chunkRecords(rows:Chunk[]){
+    const attributions=new Map<string,ReturnType<typeof readFileSpeakerAttributions>>(),originals=new Map<string,{record:CaptureRecord;version:Version}>();
+    return rows.map(c=>{
+      // A transcript's parent body and manifest can be large. Share them only
+      // within this synchronous projection; the next read resolves them anew.
+      let original=originals.get(c.capture_id);
+      if(!original){original={record:this.store.evidence([c.capture_id])[0],version:this.version(c.capture_id)};originals.set(c.capture_id,original);}
+      let names=attributions.get(c.artifact_id);if(!names){names=this.speakerAttributions(c.capture_id,c.artifact_id);attributions.set(c.artifact_id,names);}
+      return this.chunkRecord(c,names,original.record,original.version);
+    });
+  }
+  private chunkRecord(c:Chunk,attributions:ReturnType<typeof readFileSpeakerAttributions>,record:CaptureRecord,v:Version):CaptureRecord & ContextRecord{
+    const metadata=JSON.parse(c.metadata??'{}'),attribution=metadata.speaker?attributions[metadata.speaker]:undefined;
     return {...record,id:c.id,capturedAt:record.capturedAt,deviceId:record.deviceId,appName:record.appName,windowTitle:record.windowTitle,sourceType:'file',ocrText:(metadata.speaker?`[${metadata.speaker}] `:'')+c.text,durationMs:0,provenance:{...record.provenance!,layer:'derived'},fileEvidence:fileEvidenceSchema.parse({captureId:c.capture_id,revision:v.revision,artifactId:c.artifact_id,chunkId:c.id,...metadata,...(attribution?{speakerAttribution:attribution}:{}),...(c.start_ms===null?{}:{startMs:c.start_ms,endMs:c.end_ms})})};
   }
   /** Only the preferred transcript/text of the retained current file revision is independent evidence.
    * Identity/permission checks need attachment lineage metadata, never parent bodies. */
   isCurrentEvidence(id:string):boolean {
     if(!fileAttachmentAvailable(this.store,id,true))return false;
-    return Boolean(this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${readableFileSql('c.capture_id')} AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`).get(id));
+    return Boolean((this.currentEvidenceStatement??=this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${readableFileSql('c.capture_id')} AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`)).get(id));
   }
   /** Resolve a currently permitted file or chunk; an identity is never a path grant. */
   readableFile(id:string):string|undefined {
     const captureId=this.fileForRead(id);if(!captureId||!fileAttachmentAvailable(this.store,captureId,true))return;
-    if(!this.store.db.prepare(`SELECT 1 WHERE ${readableFileSql('?')}`).get(captureId))return;
+    if(!(this.readableFileStatement??=this.store.db.prepare(`SELECT 1 WHERE ${readableFileSql('?')}`)).get(captureId))return;
     if(id!==captureId&&!this.isCurrentEvidence(id)&&!this.store.isCurrentEvidence(id))return;
     return captureId;
   }

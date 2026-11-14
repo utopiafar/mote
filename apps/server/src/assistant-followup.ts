@@ -156,6 +156,7 @@ export class AssistantFollowup {
   const suppressionIds=dependencies.filter(id=>!contextIds.has(id));
   const historicalIds=this.historicalDependencies(contextDependencies,observations,scope);
   if(!historicalIds)throw new StoreError('Historical assistant context requires a current-evidence review',409);
+  await yieldTurn();assertActive();
   if(views.some(view=>!view.disclosureDependencies.complete))throw new StoreError('Assistant material lineage is incomplete',409);
   const memoryRecords=this.reader.memories.readEvidence(unique(memoryPage.items.flatMap(memory=>memory.evidenceIds)));
   const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),...contextCards.map(card=>card.sourceContextDependencies),...commitments.map(item=>item.sourceContextDependencies),
@@ -170,8 +171,10 @@ export class AssistantFollowup {
   // context. Coding products and their exact tail citations are not user text;
   // the batch context bound and complete provider budget still apply to them.
   const question=PROMPT;
+  await yieldTurn();assertActive();
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
   this.assertSnapshot({input,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
+  await yieldTurn();assertActive();
   return this.transaction(()=>{
    assertActive();
    const existing=this.prior(input,selectedAdmission);if(existing)return accept(existing);
@@ -209,7 +212,8 @@ export class AssistantFollowup {
      WHERE s.source_id=? AND s.external_id=?) SELECT capture_id FROM versions WHERE capture_id!=?`)
     .all(value.current.captureId,value.sourceId,value.externalId,value.current.captureId).map(row=>String(row.capture_id));
   })),historical:string[]=[],checkedRoots=new Set<string>();
-  const records=new Map(this.reader.memories.readEvidence([...ids]).map(record=>[record.id,record])),current=new Set(this.reader.memories.readCurrentEvidence(ids).map(record=>record.id));
+  const current=new Set(this.reader.memories.readCurrentEvidence(ids).map(record=>record.id));
+  const records=new Map(this.reader.memories.readEvidence(ids.filter(id=>!current.has(id))).map(record=>[record.id,record]));
   const memories=this.store.db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids));
   for(const memory of memories){
    let value=JSON.parse(String(memory.json));if(value.status!=='published')return;

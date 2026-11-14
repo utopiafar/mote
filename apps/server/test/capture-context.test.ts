@@ -9,7 +9,7 @@ import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
-import {captureContextSourceId,readCaptureContext,updateCaptureContext} from '../src/capture-context.js';
+import {captureContextMembers,captureContextSourceId,readCaptureContext,updateCaptureContext} from '../src/capture-context.js';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {structuredObject} from './fixtures/structured-page.js';
@@ -32,6 +32,28 @@ function draft(ids:string[]):MaterialDraft{
     members:ids.map(id=>({id,kind:'capture',ref:'capture:'+id})),blocks:ids.map((id,index)=>({id:'body-'+index,kind:'text',format:'plain',text:'Generated independent member',memberIds:[id],evidenceContext:{observedAt:at,document:{}}})),artifacts:[],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};
 }
 const reseal=(archive:{materials?:unknown})=>{const section=archive.materials as Record<string,unknown>,{checksum:_,...body}=section;const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;section.checksum=sha256(JSON.stringify(canonical(body)));};
+
+test('channel attribution follows only exact linked originals without scanning the capture archive',async t=>{
+  const f=fixture(t),screen=capture('screen'),activity=capture('activity'),other=capture('screen','generated-other-device');
+  for(const input of [screen,activity,other])await f.store.ingest(input);
+  for(let index=0;index<256;index++)await f.store.ingest(capture('screen','generated-unrelated-'+index));
+  const screenContext=updateCaptureContext(f.store,f.sources,screen.deviceId,'screen',{expectedVersion:0,description:'Generated screen scope'});
+  const activityContext=updateCaptureContext(f.store,f.sources,activity.deviceId,'activity',{expectedVersion:0,description:'Generated activity scope'});
+  updateCaptureContext(f.store,f.sources,other.deviceId,'screen',{expectedVersion:0,description:'Generated unrelated scope'});
+  const middle=randomUUID(),leaf=randomUUID(),link=f.store.db.prepare('INSERT INTO file_evidence_links VALUES(?,?)');
+  link.run(screen.id,middle);link.run(activity.id,middle);link.run(middle,leaf);link.run(leaf,middle);
+  const prepare=f.store.db.prepare.bind(f.store.db);let sql='';
+  const spy=t.mock.method(f.store.db,'prepare',(statement:string)=>{if(statement.includes('WITH RECURSIVE originals')&&statement.includes('JOIN captures'))sql=statement;return prepare(statement);});
+  const selected=[leaf,leaf,randomUUID()],groups=captureContextMembers(f.store,selected);spy.mock.restore();
+  assert.deepEqual([...groups],[ [screenContext.sourceId,[screen.id]], [activityContext.sourceId,[activity.id]] ].sort((a,b)=>String(a[1]).localeCompare(String(b[1]))));
+  assert.ok(sql,'inspect the query actually used by the attribution reader');
+  const plan=prepare('EXPLAIN QUERY PLAN '+sql).all(JSON.stringify(selected),JSON.stringify(selected)).map(row=>String(row.detail));
+  assert.ok(plan.some(detail=>/SEARCH c USING (?:INDEX|PRIMARY KEY)/.test(detail)),`look up each exact original by identity: ${plan.join('; ')}`);
+  assert.ok(!plan.some(detail=>/\bSCAN c\b/.test(detail)),`unrelated captures must not be scanned on every Memory guard: ${plan.join('; ')}`);
+  f.store.delete(screen.id);
+  assert.deepEqual([...captureContextMembers(f.store,selected)],[],'deleting an original also retires its linked descendants');
+  assert.deepEqual([...captureContextMembers(f.store,[activity.id])],[[activityContext.sourceId,[activity.id]]],'the independent original remains available');
+});
 
 test('four explicit channel descriptions cover existing and future originals without crossing device or channel',async t=>{
   const f=fixture(t),types={screen:'screen',structured:'ui_page',activity:'activity',notifications:'notification'} as const;

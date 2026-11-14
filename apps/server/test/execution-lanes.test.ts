@@ -50,9 +50,12 @@ test('same-format shutdown and recovery retain lane identity and reject an uncoo
 });
 
 test('background retains its effective 32 limit while interactive has an independent reservation',async t=>{
- const {engine}=fixture(t);lanes(engine,64,2);let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
- engine.register({...handler,execute:async()=>held});engine.register({...handler,kind:'generated.interactive',execute:async()=>held});
+ const {engine}=fixture(t);lanes(engine,64,2);let release!:()=>void,filled!:()=>void,started=0;
+ const held=new Promise<void>(resolve=>release=resolve),capacity=new Promise<void>(resolve=>filled=resolve);
+ const execute=async()=>{if(++started===34)filled();await held;};
+ engine.register({...handler,execute});engine.register({...handler,kind:'generated.interactive',execute});
+ t.after(()=>release());
  const ids=[...Array.from({length:33},(_,n)=>engine.enqueue('background-'+n,handler.kind,{})),...Array.from({length:3},(_,n)=>engine.enqueue('ask-'+n,'generated.interactive',{}))];
- const running=engine.tick();await turn();assert.deepEqual(engine.poolSnapshot(handler.pool),{background:{limit:32,running:32,waiting:1},interactive:{limit:2,running:2,waiting:1}});
+ const running=engine.tick();await capacity;assert.deepEqual(engine.poolSnapshot(handler.pool),{background:{limit:32,running:32,waiting:1},interactive:{limit:2,running:2,waiting:1}});
  release();await running;await engine.drain(ids);
 });

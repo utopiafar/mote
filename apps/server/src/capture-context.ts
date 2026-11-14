@@ -4,6 +4,7 @@ import {sourceConnectionSchema} from '@mote/shared';
 import {sha256,StoreError,type Store} from './store.js';
 import type {SourceStore} from './sources.js';
 import {moteText} from './i18n.js';
+import type {StatementSync} from 'node:sqlite';
 
 export const captureContextChannelSchema=z.enum(['screen','structured','activity','notifications']);
 type Channel=z.infer<typeof captureContextChannelSchema>;
@@ -22,14 +23,19 @@ function matchingSource(store:Store,id:string,deviceId:string,platform:string){
   const source=JSON.parse(String(row.json)) as SourceConnection;
   return source.kind==='custom'&&source.deviceId===deviceId&&source.platform===platform;
 }
+const memberStatements=new WeakMap<Store,StatementSync>();
 /** Exact original lineage only. A neighboring record sharing the same app, file
  * or Material never acquires another device/channel's description. */
 export function captureContextMembers(store:Store,captureIds:string[]):Map<string,string[]> {
   const groups=new Map<string,string[]>();if(!captureIds.length)return groups;
-  const rows=store.db.prepare(`WITH RECURSIVE originals(id) AS (
+  // Keep exact ancestors outside the capture lookup. ORDER BY otherwise lets
+  // SQLite scan the entire capture archive for every synchronous Memory guard.
+  let statement=memberStatements.get(store);
+  if(!statement){statement=store.db.prepare(`WITH RECURSIVE originals(id) AS (
     SELECT value FROM json_each(?) UNION SELECT capture_id FROM file_chunks WHERE id IN (SELECT value FROM json_each(?)) UNION SELECT l.parent_id FROM file_evidence_links l JOIN originals o ON l.capture_id=o.id)
     SELECT DISTINCT c.id,c.device_id,json_extract(c.json,'$.source') source,json_extract(c.json,'$.platform') platform
-    FROM originals o JOIN captures c ON c.id=o.id ORDER BY c.id`).all(JSON.stringify(captureIds),JSON.stringify(captureIds));
+    FROM originals o CROSS JOIN captures c ON c.id=o.id ORDER BY c.id`);memberStatements.set(store,statement);}
+  const rows=statement.all(JSON.stringify(captureIds),JSON.stringify(captureIds));
   for(const row of rows){
     const id=captureContextSourceId(String(row.source),String(row.device_id));
     if(!id||!matchingSource(store,id,String(row.device_id),String(row.platform)))continue;

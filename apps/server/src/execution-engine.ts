@@ -216,8 +216,13 @@ export class ExecutionEngine {
   this.scheduled=setImmediate(()=>{this.scheduled=undefined;if(!this.stopping)void this.tick().catch(()=>{});});
  }
  async drain(ids:string[]){
-  void this.tick().catch(()=>{});
-  for(;;){const tasks=ids.flatMap(id=>{const task=this.active.get(id)?.task;return task?[task]:[];});if(!tasks.length)return;await Promise.all(tasks);void this.tick().catch(()=>{});}
+  for(;;){void this.tick().catch(()=>{});const tasks=ids.flatMap(id=>{const task=this.active.get(id)?.task;return task?[task]:[];});
+   if(!tasks.length){
+    if((this.pumping||this.scheduled)&&ids.some(id=>this.get(id)?.state==='waiting')){await yieldTurn();continue;}
+    return;
+   }
+   await Promise.all(tasks);
+  }
  }
  private recover(){
   const db=this.store.db,now=this.now();
@@ -251,15 +256,17 @@ export class ExecutionEngine {
    for(const pool of pools){
     const handlers=[...this.handlers.values()].filter(h=>h.pool===pool),lanes:ExecutionLane[]=this.admissions.has(pool)?['background','interactive']:['background'];
     for(const lane of lanes){const limit=this.limit(pool,lane);
-    while([...this.active.values()].filter(a=>a.pool===pool&&a.lane===lane).length<limit){
-     if(this.running(pool,lane)>=limit)break;
+    // Fill a lane across event-loop turns. Each admission can synchronously
+    // validate a complete recording and prepare its model input; filling every
+    // slot in one pass compounds those guards before HTTP can run.
+     if([...this.active.values()].filter(a=>a.pool===pool&&a.lane===lane).length>=limit||this.running(pool,lane)>=limit)continue;
      const candidates=this.store.db.prepare(`SELECT e.* FROM execution_steps e LEFT JOIN execution_fairness f ON f.pool=e.pool AND f.operation_id=e.operation_id WHERE e.pool=? AND e.state='waiting' AND e.available_at<=? AND e.kind IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM execution_dependencies d JOIN execution_steps parent ON parent.id=d.dependency_id WHERE d.step_id=e.id AND parent.state!='succeeded') AND NOT EXISTS(SELECT 1 FROM execution_resources requested JOIN execution_resources held ON held.resource_key=requested.resource_key JOIN execution_steps owner ON owner.id=held.step_id WHERE requested.step_id=e.id AND owner.id!=e.id AND owner.state='running' AND owner.lease_until>?) ORDER BY coalesce(f.last_started,0),e.created_at,e.rowid`).iterate(pool,this.now(),JSON.stringify(handlers.map(h=>h.kind)),this.now());
      let row:Row|undefined;for(const candidate of candidates){if(!this.active.has(String(candidate.id))&&this.lane(view(candidate as Row))===lane){row=candidate as Row;break;}}
-     if(!row)break;
+     if(!row)continue;
      const handler=this.handlers.get(row.kind)!;
      const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{if(this.active.get(row.id)?.controller===controller)this.active.delete(row.id);if(completed)this.scheduleTick();});
      this.active.set(row.id,{controller,task,pool,kind:row.kind,lane});started.push(task);
-    }
+     this.scheduleTick();
     }
    }
   }finally{this.pumping=false;if(this.pumpAgain){this.pumpAgain=false;this.scheduleTick();}}
