@@ -1215,6 +1215,14 @@ export class MemoryPipeline {
                 try{
                   result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,signal:stageSignal},validDraft,selected?.review,native?'native-engine':'mote'));
                   const failure=await validateOutput({...result,trace:[]});if(failure)throw new MemoryOutputValidationError(failure.code as import('./memory-validation.js').MemoryOutputValidationCode,'Memory review failed host validation',{workContract:contract});
+                  // An incomplete text verdict may confuse a referenced original
+                  // with this exact target. Let the model reconsider once within
+                  // the existing two-attempt review budget; only its fresh output
+                  // can resolve the gap, and a second incomplete verdict stays so.
+                  if(reviewAttempt===0&&contract&&workMembers&&readMemoryWorkCoverage(result,workMembers).notAssessed.some(row=>workMembers.some(member=>member.key===row.key&&!member.imageTarget))){
+                    input.memoryReviewRepair='The previous independent review left text targets incomplete. Re-inspect all exact supplied targets and the same valid draft using only existing read grants. Members without imageTarget cover only their supplied text; attachment links do not add unseen attachment contents to their target. Fully inspected text with no useful supported result may be no_candidates without claiming linked content was read. Use needs_context for a specific unresolved interpretive dependency or needs_owner_input with a minimal consequential question when appropriate. If the listed target itself remains unassessed, keep incomplete with a concrete reason. Preserve independently supported candidates and every target coverage entry; never invent missing contents or bypass image disclosure. This is the final attempt within the existing review repair budget.';
+                    continue;
+                  }
                   break;
                 }catch(error){
                   if(!(error instanceof MemoryOutputValidationError)||reviewAttempt===1)throw error;

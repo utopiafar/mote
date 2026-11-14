@@ -17,6 +17,8 @@ import type {Config} from '../src/config.js';
 import {fixtureMemoryPlan} from './fixtures/memory-planning.js';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {materialId} from '../src/materials.js';
+import {taskTools,buildContextEnvelope} from '../../../packages/agent/dist/task-context.js';
+import {fixtureTopicResult} from './fixtures/model-authorization.js';
 
 const contract='range-evaluation@1';
 const at='2026-10-13T00:00:00Z';
@@ -116,14 +118,73 @@ test('model selection may retain one useful claim while independent review asses
  assert.ok(!done.batches[0].supersededBy);
 });
 
-test('explicit incomplete assessment remains unfinished without committing partial proposals or semantically subdividing',async t=>{
+test('explicit incomplete assessment remains unfinished until an owner retries its exact scope with the prior outcome',async t=>{
  const f=await fixture(t,[facts(12).join('\n')]);
  f.setGenerate(async input=>{const draft=result(input,[{member:work(input).members[0],quote:facts(12)[0]}]),value=JSON.parse(draft.answer);value.coverage[0]={...value.coverage[0],state:'incomplete',reason:'Generated fixture did not assess the final supplied passages'};return {...draft,answer:JSON.stringify(value)};});
  const job=f.create(),blocked=await f.pipeline.run(job.id);
  assert.notEqual(blocked.status,'completed');assert.equal(blocked.errorCode,'memory_evaluation_incomplete');assert.equal(blocked.batches.length,1);
  assert.equal(blocked.batches[0].coverage![0].state,'incomplete');assert.ok(blocked.batches[0].coverage![0].reason);assert.ok(!blocked.batches[0].supersededBy);
- assert.equal(f.reviews.length,1);assert.equal(f.memories.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ assert.equal(f.reviews.length,2,'a still-incomplete text verdict exhausts only the existing review repair budget');assert.equal(f.memories.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ const calls=f.reviews.length;await f.pipeline.run(job.id);assert.equal(f.reviews.length,calls,'incomplete work never loops automatically');
  await f.restart();assert.equal(f.pipeline.get(job.id).errorCode,'memory_evaluation_incomplete');assert.equal(f.memories.list().length,0);
+ f.setReview(async input=>result(input,[{member:work(input).members[0],quote:facts(12)[0]}],'generated-owner-retried-review'));
+ const recovered=await f.pipeline.retry(job.id);assert.equal(recovered.status,'completed');assert.equal(recovered.memoryIds.length,1);assert.equal(f.extracts.length,2,'the new generation includes its prior incomplete inspection');assert.deepEqual(f.extracts[1].evidenceRanges,f.extracts[0].evidenceRanges);assert.ok((f.extracts[1].taskContext!.memoryWork as {history:{targets:MemoryWorkMember[]}[]}).history.some(inspection=>inspection.targets.some(target=>target.state==='incomplete')));assert.equal(f.reviews.length,calls+1);assert.equal(recovered.batches[0].reviewReceipt?.reviewRunId,'generated-owner-retried-review');assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);
+});
+
+for(const disposition of ['no_candidates','needs_context','needs_owner_input'] as const)test(`attachment-link text gets bounded independent reassessment into ${disposition} without losing assessed siblings`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-link-text-')),calls:QueryInput[]=[],failures:unknown[]=[];
+ const config:Config={dataDir:directory,token:'generated-link-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const texts=[...Array.from({length:6},(_,i)=>`Generated owner preference ${i}: I prefer option ${i}.`),'Generated neutral record.','![](attachments/generated-photo.png)'];
+ let reviews=0,node:Awaited<ReturnType<typeof buildApp>>;
+ node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
+  calls.push(input);const bridge=await startBridge(reader,input);
+  try{
+   assert.equal(input.archiveImagesEnabled,false);assert.ok(!taskTools(input).includes('read_image'));
+   assert.ok(!taskTools(input).includes('material_catalog'),'a link does not open discovery outside the frozen job');
+   assert.equal(buildContextEnvelope(input,bridge.seedEvidence).authorizedImages,undefined);
+   const members=work(input).members;assert.equal(members.length,8);assert.ok(members.every(member=>!member.imageTarget));
+   assert.equal(bridge.seedEvidence.length,8);assert.equal(bridge.imageReadReceipts.length,0);
+   const link=members.find(member=>bridge.records.get(member.id)?.ocrText===texts[7])!;assert.ok(link);
+   const picks=members.flatMap(member=>{const quote=bridge.records.get(member.id)!.ocrText;return texts.slice(0,6).includes(quote)?[{member,quote}]:[];});
+   const output=result(input,picks),value=JSON.parse(output.answer),isReview=input.traceContext?.phase==='review';
+   if(isReview)reviews++;
+   const revised=isReview&&reviews===2;
+   const row=value.coverage.find((row:{key:string})=>row.key===link.key);
+   Object.assign(row,{state:revised?disposition:'incomplete',reason:revised?'The complete text is an attachment reference; its unseen contents remain unknown.':'Only an attachment link was supplied; original contents are unavailable.',contextRefs:[]});
+   if(revised){
+    const repair=(input as QueryInput&{memoryReviewRepair?:string}).memoryReviewRepair;
+    assert.ok(repair,'reassessment must use the existing independent-review repair budget');assert.ok(input.question.includes(repair));
+    assert.deepEqual(input.evidenceRanges,calls[0].evidenceRanges,'repair cannot widen the target or pixel scope');
+    assert.deepEqual((input.taskContext!.untrustedMemoryDraft as {memories:unknown[]}).memories,value.memories,'the same six supported candidates remain available for independent review');
+    if(disposition==='needs_owner_input')row.question={prompt:'Can you supply a textual caption for this attachment if it records something you want remembered?',choices:[],evidence:[{id:link.id,quote:texts[7]}]};
+   }
+   return {...output,answer:JSON.stringify(value),evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};
+  }catch(error){failures.push(error);throw error;}finally{await bridge.close();}
+ }})});await node.app.ready();
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const lifecycle=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)lifecycle[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings:lifecycle});
+ const headers={authorization:'Bearer '+config.token};
+ assert.equal(node.perception.settings().allowQueryImages,false);
+ node.sources.register({id:'generated-links',name:'Generated linked notes',kind:'custom',deviceId:'generated',platform:'import'});
+ const selected:string[]=[],originals:string[]=[];
+ for(const [i,text] of texts.entries()){
+  const original=await node.sources.upsert('generated-links',{externalId:String(i),revision:'1',text,observedAt:at,kind:'message',layer:'original'});originals.push(original.id);
+ }
+ for(let i=0;i<30;i++)if(await node.materialOrganizer.tick(100)===0)break;
+ for(let i=0;i<texts.length;i++){const material=node.materials.get(materialId('generated-links',String(i)))!;assert.ok(material);selected.push(...node.materials.input(material.ref,['source-body'])!.evidenceIds);}
+ const originalSnapshot=node.store.evidence(originals);
+ const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:selected,recipes:[{id:'mote.personal-memory',version:'5'}]}});assert.equal(created.statusCode,202,created.body);
+ const done=await node.memoryPipeline.run(created.json().id);if(failures.length)throw failures[0];
+ assert.equal(done.status,disposition==='no_candidates'?'completed':'waiting_for_input',JSON.stringify({status:done.status,error:done.errorCode}));
+ assert.deepEqual(calls.map(input=>input.traceContext?.phase),['extract','review','review']);assert.equal(done.memoryIds.length,6);
+ const parent=done.batches.find(batch=>batch.coverage?.length===8)!;assert.ok(parent.reviewReceipt?.reviewRunId);assert.equal(parent.coverage!.filter(row=>row.state==='checked').length,6);assert.equal(parent.coverage!.filter(row=>row.state===disposition).length,disposition==='no_candidates'?2:1);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,disposition==='no_candidates'?8:7);
+ assert.ok(selected.every(id=>node.memories.readEvidence([id]).length===1));assert.ok(originals.every(id=>node.store.isCurrentEvidence(id)));
+ assert.deepEqual(node.store.evidence(originals),originalSnapshot,'assessment preserves every original and its metadata');
+ assert.equal(node.perception.settings().allowQueryImages,false);assert.ok(!done.batches.some(batch=>batch.supersededBy?.length));
+ const before=calls.length,ids=done.memoryIds;
+ await node.memoryPipeline.run(done.id);await node.memoryPipeline.retry(done.id);assert.equal(calls.length,before,'completed and owner/context waiting work stays dormant');assert.deepEqual(node.memoryPipeline.get(done.id).memoryIds,ids);
 });
 
 test('missing target coverage is repaired from the same grant and cannot complete through a subset response',async t=>{
