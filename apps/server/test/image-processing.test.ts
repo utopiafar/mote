@@ -275,6 +275,92 @@ test('a ready screen original admits one Memory grant while vision is pending; l
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE capture_id=?').get(id)!.n,1);
 });
 
+test('imported images wait for pending OCR before claiming Memory while an independent text input completes',async t=>{
+ const f=await fixture(t),ids:string[]=[];
+ for(let n=0;n<5;n++){
+  const bytes=await sharp({create:{width:16,height:16,channels:3,background:{r:40+n*30,g:80,b:120}}}).png().toBuffer();
+  ids.push(await f.upload('generated-import',undefined,'image/png',bytes));
+ }
+ let startOcr!:()=>void,releaseOcr!:()=>void,startVision!:()=>void,releaseVision!:()=>void;
+ const ocrStarted=new Promise<void>(resolve=>startOcr=resolve),ocrHeld=new Promise<void>(resolve=>releaseOcr=resolve),visionStarted=new Promise<void>(resolve=>startVision=resolve),visionHeld=new Promise<void>(resolve=>releaseVision=resolve);
+ f.processing.runtime.registry.get('image.http').process=async()=>{startOcr();await ocrHeld;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated imported article: its author chose a blue notebook.'}]};};
+ const stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),understand=stage.run;
+ stage.run=async input=>{startVision();await visionHeld;return understand(input);};
+ const created:Parameters<import('../src/material-memory-work.js').MaterialMemoryRunner['create']>[0][]=[];
+ const runner={create:(input:typeof created[number])=>{created.push(structuredClone(input));return {id:randomUUID()};},get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+ const running=f.images.tick();
+ try{
+  await Promise.race([ocrStarted,running.then(()=>assert.fail('generated OCR must reach its controlled boundary'))]);await f.organize();
+  assert.equal(await f.memoryWork.drainBounded(runner,true),0,'an original locator cannot consume the receipt while its OCR is pending');
+  assert.ok(ids.every(id=>f.store.db.prepare('SELECT job_id FROM memory_input_authorizations WHERE capture_id=?').get(id)!.job_id===null));
+  const note=await f.sources.upsert('generated-parent',{externalId:'independent-note',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',mimeType:'text/markdown',layer:'original',title:'Generated independent note',text:'Generated owner note about choosing a green notebook.'});
+  await f.organize();assert.equal(await f.memoryWork.drainBounded(runner,true),1);assert.deepEqual(created[0].automaticGrants?.map(grant=>grant.inputKey),[note.id]);
+  releaseOcr();await Promise.race([visionStarted,running.then(()=>assert.fail('generated interpretation must reach its controlled boundary'))]);await f.organize();
+  for(const id of ids){
+   const material=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!;
+   assert.equal(material.artifacts!.find(artifact=>artifact.key==='extracted-text')!.state,'ready');
+   assert.notEqual(material.artifacts!.find(artifact=>artifact.key==='image-understanding')?.state,'ready');
+  }
+  f.advance(70000);assert.equal(await f.memoryWork.drainBounded(runner,true),1);assert.equal(created.length,2);
+  assert.deepEqual(created[1].automaticGrants?.map(grant=>grant.inputKey).sort(),[...ids].sort());
+  for(const input of created[1].workPackage!.inputs!){
+   const pin=f.materials.input(input.ref,['image-original','extracted-text'])!;
+   assert.equal(pin.ready,true);assert.equal(pin.fingerprint,input.fingerprint);
+   assert.ok(pin.evidenceIds.every(id=>created[1].evidenceIds.includes(id)));
+   assert.ok(f.materials.evidence(pin.evidenceIds).some(record=>record.ocrText.includes('Generated imported article')));
+  }
+  const receipts=f.store.db.prepare('SELECT * FROM memory_input_authorizations ORDER BY rowid').all();
+  releaseVision();await running;await f.organize();f.advance(70000);
+  assert.equal(await f.memoryWork.drainBounded(runner,true),0);assert.equal(created.length,2,'late interpretation never reruns the completed note or images');
+  assert.deepEqual(f.store.db.prepare('SELECT * FROM memory_input_authorizations ORDER BY rowid').all(),receipts);
+ }finally{releaseOcr();releaseVision();await running;}
+});
+
+test('an accepted image attachment waits for pending OCR without consuming its parent Memory receipt',async t=>{
+ const f=await fixture(t),attachment=f.archived.put({name:'generated.png',mimeType:'image/png',bytes:f.bytes});
+ const parent=await f.sources.upsert('generated-parent',{externalId:'pending-attachment',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',title:'Generated parent',text:'Generated caption for a retained article.',document:{contentRole:'authored',timeBasis:'unknown',attachments:[{id:attachment.id,mimeType:'image/png'}]}});f.archived.attach(parent.id,[attachment.id]);
+ let begin!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>begin=resolve),held=new Promise<void>(resolve=>release=resolve);
+ f.processing.runtime.registry.get('image.http').process=async()=>{begin();await held;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated attachment article text.'}]};};
+ const created:Parameters<import('../src/material-memory-work.js').MaterialMemoryRunner['create']>[0][]=[];
+ const runner={create:(input:typeof created[number])=>{created.push(input);return {id:randomUUID()};},get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+ const running=f.images.tick();
+ try{
+  await Promise.race([started,running.then(()=>assert.fail('generated attachment OCR must reach its controlled boundary'))]);await f.organize();
+  assert.equal(await f.memoryWork.drainBounded(runner,true),0,'the parent scope must not freeze before attachment OCR arrives');
+  assert.equal(f.store.db.prepare('SELECT job_id FROM memory_input_authorizations WHERE capture_id=?').get(parent.id)!.job_id,null);
+  release();await running;await f.organize();f.advance(70000);
+  assert.equal(await f.memoryWork.drainBounded(runner,true),1);assert.equal(created.length,1);
+  const material=f.materials.get(materialId('generated-parent','pending-attachment'))!,required=f.memoryWork.sourceRequirements(material.ref)!;
+  assert.ok(required.some(key=>key.startsWith('attachment/')&&key.endsWith('/text')));
+  const pin=f.materials.input(material.ref,required)!;assert.equal(pin.ready,true);
+  assert.ok(f.materials.evidence(created[0].evidenceIds).some(record=>record.ocrText.includes('Generated attachment article text.')));
+ }finally{release();await running;}
+});
+
+for(const ocr of ['absent','failed'] as const)test(`an image attachment with ${ocr} OCR can use its original while interpretation remains pending`,async t=>{
+ const f=await fixture(t);
+ if(ocr==='absent'){
+  const recipe={id:'fixture.attachment-visual-only',version:'1'};
+  f.processing.runtime.imageRecipes.registerRecipe({...recipe,steps:[{name:'understanding',stage:{id:'mote.image-understanding',version:'1'},dependsOn:[]}]});
+  const view=f.processing.view(),policy=structuredClone(view.policy);policy.profiles.push({...policy.profiles.find(profile=>profile.id==='central-image')!,id:'attachment-visual-only',name:'Generated attachment visual only',imageRecipe:recipe});
+  f.processing.update({revision:view.revision,settings:view.settings,policy});f.processing.configureImageDefault({profileId:'attachment-visual-only'});
+ }else f.processing.runtime.registry.get('image.http').process=async()=>{throw new StoreError('Generated failed attachment OCR',422);};
+ let begin!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>begin=resolve),held=new Promise<void>(resolve=>release=resolve);
+ const stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),understand=stage.run;stage.run=async input=>{begin();await held;return understand(input);};
+ const attachment=f.archived.put({name:'generated.png',mimeType:'image/png',bytes:f.bytes}),parent=await f.sources.upsert('generated-parent',{externalId:'optional-attachment-ocr',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',title:'Generated parent',text:'Generated parent caption.',document:{contentRole:'authored',timeBasis:'unknown',attachments:[{id:attachment.id,mimeType:'image/png'}]}});f.archived.attach(parent.id,[attachment.id]);
+ const created:Parameters<import('../src/material-memory-work.js').MaterialMemoryRunner['create']>[0][]=[];
+ const runner={create:(input:typeof created[number])=>{created.push(input);return {id:randomUUID()};},get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+ const running=f.images.tick();
+ try{
+  await Promise.race([started,running.then(()=>assert.fail('generated attachment interpretation must reach its controlled boundary'))]);await f.organize();
+  const material=f.materials.get(materialId('generated-parent','optional-attachment-ocr'))!;
+  assert.equal(material.artifacts!.find(artifact=>artifact.key===`attachment/${attachment.id}/text`)!.state,ocr==='absent'?'unavailable':'failed');
+  assert.equal(await f.memoryWork.drainBounded(runner,true),1,'optional interpretation cannot delay a declared original-image path after OCR has settled');
+  assert.equal(created.length,1);assert.ok(f.memoryWork.sourceRequirements(material.ref)!.includes(`attachment/${attachment.id}/original-image`));
+  assert.ok(!f.memoryWork.sourceRequirements(material.ref)!.includes(`attachment/${attachment.id}/text`));
+ }finally{release();await running;}
+});
+
 
 test('the real harness adapter requires a pixel read, scopes evidence and meters interpretation separately',async t=>{
  const f=await fixture(t),id=await f.upload(),record=f.store.evidence([id])[0],settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'generated-model',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',headers:{},extraBody:{},maxTokens:8192,agentTimeoutMs:2000,modelRequestTimeoutMs:1000,reasoningEffort:'auto',allowUnauthenticatedLocal:true};
