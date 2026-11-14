@@ -1,7 +1,7 @@
 import {readAgentCredential} from './login-fixture.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ModelSettingsView, ModelSettingsInput } from '@mote/shared/models';
@@ -9,6 +9,7 @@ import { buildApp } from '../src/app.js';
 import type { Config } from '../src/config.js';
 import type { ModelAgentFactory } from '../src/model-agent.js';
 import { testModelConnection } from '../src/model-agent.js';
+import {appCleanup} from './fixtures/app-cleanup.js';
 
 const owner = 'synthetic-model-settings-owner-token';
 const headers = { authorization: `Bearer ${owner}` };
@@ -24,9 +25,9 @@ function input(view: ModelSettingsView): ModelSettingsInput {
 }
 async function fixture(t: TestContext, factory: ModelAgentFactory) {
   const directory = await mkdtemp(join(tmpdir(), 'mote-model-settings-api-'));
-  const cfg = config(directory), node = await buildApp(cfg, { createModelAgent: factory });
-  t.after(async () => { await node.app.close(); await rm(directory, { recursive: true, force: true }); });
-  return { ...node, cfg, directory };
+  const cleanup=appCleanup(t,directory);
+  const cfg = config(directory), node = cleanup.own(await buildApp(cfg, { createModelAgent: factory }));
+  return { ...node, cfg, directory, cleanup };
 }
 
 test('owner model saves apply to new queries while an existing query retains its original runtime', async t => {
@@ -34,10 +35,11 @@ test('owner model saves apply to new queries while an existing query retains its
   const began = new Promise<void>(resolve => { started = resolve; });
   const held = new Promise<void>(resolve => { finish = resolve; });
   const closed: string[] = [];
-  const { app, cfg } = await fixture(t, async settings => ({ configured: true,
+  const { app, cfg, cleanup } = await fixture(t, async settings => ({ configured: true,
     query: async args => { if (args.question === 'hold fixture') { started(); await held; } return answer(settings.model); },
     close: async () => { closed.push(settings.model); },
   }));
+  cleanup.beforeClose(finish);
   const first = await app.inject({ url: '/api/model-settings', headers }), view = first.json<ModelSettingsView>();
   assert.equal(first.headers['cache-control'], 'no-store');
   assert.equal(view.source, 'file'); assert.ok(view.profiles.every(profile => profile.source === 'file'), 'model profiles are backed by the shared configuration file');
@@ -68,7 +70,7 @@ test('owner model saves apply to new queries while an existing query retains its
 
 test('model settings enforce owner authorization, optimistic revisions, explicit credential reuse and reset persistence', async t => {
   const factory: ModelAgentFactory = async settings => ({ configured: true, query: async () => answer(settings.model), close: async () => {} });
-  const { app, cfg, connections } = await fixture(t, factory);
+  const { app, cfg, connections, cleanup } = await fixture(t, factory);
   const invitation = await app.inject({ method: 'POST', url: '/api/connections/invitations', headers, payload: { serverUrl: 'https://synthetic.invalid', label: 'Fixture phone' } });
   const redeemed = await app.inject({ method: 'POST', url: '/api/connections/redeem', payload: { code: invitation.json().invitation.code, deviceId: 'fixture-phone', deviceName: 'Fixture phone', platform: 'android' } });
   assert.equal(redeemed.statusCode, 200);
@@ -86,8 +88,7 @@ test('model settings enforce owner authorization, optimistic revisions, explicit
   assert.equal(response.statusCode, 200, response.body); view = response.json();
   assert.equal((await app.inject({ method: 'PUT', url: '/api/model-settings', headers, payload: { ...payload, allowCredentialReuse: true } })).statusCode, 409);
   await app.close();
-  const restarted = await buildApp(cfg, { createModelAgent: factory });
-  t.after(() => restarted.app.close());
+  const restarted = cleanup.own(await buildApp(cfg, { createModelAgent: factory }));
   assert.equal((await restarted.app.inject({ url: '/api/status', headers })).json().agent.model, 'fixture-new');
   response = await restarted.app.inject({ method: 'DELETE', url: '/api/model-settings', headers, payload: { revision: view.revision } });
   assert.equal(response.statusCode, 200, response.body); assert.equal(response.json().source, 'file');
@@ -146,7 +147,7 @@ test('the normal file watcher reloads models while old requests keep their gener
  const {readFile,writeFile}=await import('node:fs/promises'),{parse,stringify}=await import('yaml');
  let release!:()=>void,started!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;}),began=new Promise<void>(resolve=>{started=resolve;}),closed:string[]=[];
  const node=await fixture(t,async settings=>({configured:true,query:async input=>{if(input.question==='hold file generation'){started();await held;}return answer(settings.model);},close:async()=>{closed.push(settings.model);}}));
- t.after(()=>release());
+ node.cleanup.beforeClose(release);
  const pending=node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'hold file generation'}});await began;
  const path=join(node.directory,'mote.yaml'),doc=parse(await readFile(path,'utf8'));doc.models.deployment.model='file-hot-model';await writeFile(path,stringify(doc));
  const waitFor=async(check:()=>boolean)=>{const until=Date.now()+5000;while(!check()){if(Date.now()>until)throw Error('Fixture configuration watcher did not settle');await new Promise(resolve=>setTimeout(resolve,20));}};
