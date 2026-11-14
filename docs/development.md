@@ -62,7 +62,9 @@ node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /abso
 node scripts/mote.mjs exec --profile test -- npm run import:files -- --root /absolute/selected-notes
 ```
 
-导入脚本只读取用户明确选择的 UTF-8 文件夹，默认 `.md,.txt`，单文件不超过 100 KB，不递归隐藏目录或符号链接。加 `--extensions .md,.txt,.csv` 明确类型；`--watch` 每 30 秒检查更改。文件状态基于实际所选节点 URL，落在该 profile 的 `file-sync/`，所以同一个源目录可以分别导入 dev 与 test；成功 ACK 后同环境再次运行会跳过不变文件。原文删除不删除中央历史。
+导入脚本只读取用户明确选择的文件或文件夹，默认包含 `.md,.txt,.json,.csv,.ics,.pdf,.docx,.wav,.mp3,.m4a`，不递归隐藏目录或符号链接。加 `--extensions .md,.txt,.csv` 明确类型；`--watch` 每 30 秒检查更改。`snapshot` 与 `archive` 单文件最多 512 MiB，以 4 MiB 分块暂存和上传；16 MiB 是扫描分片预算，大文件可独占一个分片，单次运行会继续扫描至目录完成。`reference` 只发送元信息，不读取文件内容，不受原件上传大小上限限制。`snapshot` 实际传输须加 `--allow-transient-upload`；文字遮盖无法安全应用的复杂格式会保留阻止状态，不上传原始内容。
+
+`--dry-run` 使用相同的大小限制和扫描规则，读取并暂存可导入文件以核对范围，但不连接中央，也不修改所选 profile 的导入状态；副本在每个扫描分片统计后删除，退出时清理私有临时目录。预览不能保证中央的可用性、来源授权或存储额度。实际导入的文件状态基于所选节点 URL，落在该 profile 的 `file-sync/`，所以同一个源目录可以分别导入 dev 与 test；成功 ACK 后同环境再次运行会跳过不变文件。原文删除不删除中央历史。
 
 `exec` 清除继承的普通 `MOTE_*` 与 `COMPOSE_*` 参数，设置所选 `MOTE_CONFIG_FILE`，并从同一 YAML 派生设备/工具连接 URL 与令牌。普通进程环境不能覆盖服务端 YAML；只有声明的敏感字段支持 `${SECRET_NAME}` 引用。直接运行 `npm start` 默认读取工作目录的 `mote.yaml`，或显式设置 `MOTE_CONFIG_FILE=/absolute/mote.yaml`；导入工具同样支持该文件选择。`MOTE_ENV_FILE` 已拒绝，根 `.env` 不参与加载。API/model 密钥不要写进命令参数、示例文件或公开诊断。
 

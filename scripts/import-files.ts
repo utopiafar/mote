@@ -1,6 +1,6 @@
-import { mkdir, open, rm, readFile, realpath, lstat } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, rm, readFile, realpath, lstat } from 'node:fs/promises';
 import { resolve, join, basename } from 'node:path';
-import { hostname } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { apiClient, resolvedConnection } from './client.js';
 import { SourceSync, sourceHash } from '../apps/desktop/src/source-sync.js';
 import { scanSourceFiles } from '../apps/desktop/src/source-files.js';
@@ -38,11 +38,16 @@ const statePath = join(stateDirectory, id + '-' + (client?.binding.slice(0, 16) 
 const policy = sourceHash(JSON.stringify({ retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals }));
 const request: SourceRequest | undefined = client;
 let lock: Awaited<ReturnType<typeof open>> | undefined;
+let previewDirectory: string | undefined;
 let stopped = false;
 const controller = new AbortController();
 const stop = () => { stopped = true; controller.abort(); };
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
 try {
+  // Preview uses the same bounded spool and 512 MiB file limit as an import,
+  // with private, disposable state instead of the selected profile's outbox.
+  if (!request) previewDirectory = await mkdtemp(join(tmpdir(), 'mote-file-import-preview-'));
+  const accessMarkerPath = request ? statePath + '.atime.json' : join(previewDirectory!, 'access.json');
   let engine: SourceSync | undefined;
   if (request) {
     await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
@@ -79,7 +84,7 @@ try {
     // catalog pass is complete instead of leaving the rest for a later run.
     for (;;) {
       passes++;
-      const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined, engine?.fileCheckpoint() ?? checkpoint);
+      const result = await scanSourceFiles(root, options, controller.signal, accessMarkerPath, engine?.fileCheckpoint() ?? checkpoint);
       checkpoint = result.checkpoint as LocalFileCheckpoint | undefined;
       let count = result.items.length;
       skipped += result.skipped;
@@ -88,6 +93,9 @@ try {
         const synced = await engine.syncScan(result, options.trackDeletions, source, request, controller.signal, prepare);
         count = synced.changes;
         if (synced.state === 'paused') { console.info('Central source is paused; pending revisions retained locally.'); return; }
+      } else {
+        // Release each shard before scanning another, including --watch previews.
+        for (const item of result.items) if (item.localOriginal) await rm(item.localOriginal.directory, { recursive: true, force: true });
       }
       total += count;
       complete = result.complete;
@@ -105,5 +113,6 @@ try {
   } while (!stopped);
 } finally {
   process.off('SIGINT', stop); process.off('SIGTERM', stop);
+  if (previewDirectory) await rm(previewDirectory, { recursive: true, force: true });
   if (lock) { await lock.close(); await rm(statePath + '.lock', { force: true }); }
 }
