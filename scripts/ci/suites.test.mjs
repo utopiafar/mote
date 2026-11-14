@@ -14,6 +14,18 @@ test('actual Central consumers build the Cordis host before application librarie
   }
 });
 
+test('generated image disclosure and authorization guards are selected by the regular test plans', () => {
+  const guards = ['scripts/composed-image-disclosure.test.ts', 'scripts/test-image-context-live.test.ts'];
+  for (const task of ['central-units', 'integration-units']) {
+    const plan = taskPlan(task);
+    const runs = plan.filter(step => step.command === process.execPath && step.args.includes('--test') && guards.every(file => step.args.includes(file)));
+    assert.equal(runs.length, 1, `${task} must run both generated image guards once`);
+  }
+  assert.ok(!taskPlan('tooling').some(step => step.command === 'npm'), 'tooling-only checks must not require app builds');
+  const rootTest = JSON.parse(readFileSync('package.json', 'utf8')).scripts.test;
+  for (const guard of guards) assert.ok(rootTest.includes(guard), `npm test must include ${guard}`);
+});
+
 test('host changes select the light task that runs host lifecycle contracts once', () => {
   const selected = automaticTasks(selectScopes(['packages/plugin-host/src/host.ts']), 'pull_request').tasks;
   assert.ok(selected.includes('server-build'));

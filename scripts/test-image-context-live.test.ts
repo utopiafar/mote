@@ -1,14 +1,16 @@
 /** Generated manifest guards only: no source vault, image, provider or private plan is opened. */
-import test from 'node:test';
+import test,{after} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdtemp,mkdir,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 
-const output=process.env.MOTE_IMAGE_REUSE_TEST_OUTPUT?resolve(process.env.MOTE_IMAGE_REUSE_TEST_OUTPUT):await mkdtemp(join(tmpdir(),'mote-generated-image-reuse-'));
+const suppliedOutput=process.env.MOTE_IMAGE_REUSE_TEST_OUTPUT;
+const output=suppliedOutput?resolve(suppliedOutput):await mkdtemp(join(tmpdir(),'mote-generated-image-reuse-'));
 await mkdir(output,{recursive:true});
+after(async()=>{if(!suppliedOutput)await rm(output,{recursive:true,force:true});});
 const outcomes:Array<Record<string,unknown>>=[];
 for(const protocol of [undefined,'bounded-views'] as const){
  for(const [name,mode,privateData,switches,expected] of [

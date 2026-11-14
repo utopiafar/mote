@@ -29,6 +29,8 @@ const server = (files, ...options) => {
 const sharedBuild = () => npm('build', '-w', '@mote/shared');
 const agentBuild = () => npm('build', '-w', '@mote/agent');
 const libs = () => [sharedBuild(), agentBuild()];
+// These are generated-data guards; neither test invokes a model or reads a real profile.
+const imageAuditTests = () => node('--import', 'tsx', '--test', 'scripts/composed-image-disclosure.test.ts', 'scripts/test-image-context-live.test.ts');
 // Server runtime adapters consume plugin-host. Its prebuild builds plugin-api.
 const serverLibs = () => [npm('build', '-w', '@mote/plugin-host'), ...libs()];
 export function taskPlan(task, root = '.', selectedServer = ['all']) {
@@ -36,13 +38,13 @@ export function taskPlan(task, root = '.', selectedServer = ['all']) {
   if (task === 'central-units') return [
     npm('test', '-w', '@mote/shared', '-w', '@mote/agent', '-w', '@mote/web'),
     ...[1, 2, 3, 4].map(shard => server(serverFiles(shard, root), '--test-skip-pattern', automaticSkipPattern)),
-    node('--test', ...listTests('scripts/release', '.test.mjs', root), ...listTests('scripts/ci', '.test.mjs', root)), node('scripts/test-central-runner.mjs'),
+    node('--test', ...listTests('scripts/release', '.test.mjs', root), ...listTests('scripts/ci', '.test.mjs', root)), imageAuditTests(), node('scripts/test-central-runner.mjs'),
   ];
   if (task === 'integration-units') return [
     npm('test', '-w', '@mote/shared', '-w', '@mote/agent', '-w', '@mote/diagnostics', '-w', '@mote/desktop', '-w', '@mote/web'),
     ...[1, 2, 3, 4].map(shard => server(serverFiles(shard, root), '--test-skip-pattern', automaticSkipPattern)),
     node('--test', ...listTests('scripts/release', '.test.mjs', root), ...listTests('scripts/ci', '.test.mjs', root), 'scripts/media-workers.test.mjs', 'scripts/security-tests.mjs', 'scripts/reset-mvp-vault.test.mjs', 'scripts/journey-network-proxy.test.mjs'),
-    node('--import', 'tsx', '--test', 'scripts/client.test.ts'), node('scripts/test-central-runner.mjs'),
+    node('--import', 'tsx', '--test', 'scripts/client.test.ts'), imageAuditTests(), node('scripts/test-central-runner.mjs'),
   ];
   if (task === 'plugin-sdk') return [npm('build', '-w', '@mote/plugin-sdk'), node('--test', 'packages/plugin-sdk/test/package-boundary.test.mjs')];
   if (task === 'tooling') return [node('--test', ...listTests('scripts/ci', '.test.mjs', root), ...listTests('scripts/release', '.test.mjs', root))];
