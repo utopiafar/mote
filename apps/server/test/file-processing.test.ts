@@ -1047,13 +1047,13 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
  MEDIA_CATALOG.dialogue={version:'generated-funasr-v1',files,models:Object.fromEntries(Object.entries(previous.models!).map(([role,model])=>[role,{...model,revision:sha256('generated revision '+role)}]))};
  const identity={sdkVersion:'1.4.25',sdkWheelSha256:'11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75',...FUNASR_PINS,settingsFingerprint:sha256('generated inference settings'),models:mediaModelIdentities('dialogue'),dependencies:{torch:'2.10.0',numpy:'2.2.0'},backend:'cpu',threads:1};
  const requests:FunasrRequest[]=[],wires:string[]=[],errors:unknown[]=[],modelCalls:{model:string;question:string}[]=[];
- let central:Awaited<ReturnType<typeof buildApp>>|undefined,fail:string|undefined,serial=0,cleanupCalls=0;
+ let central:Awaited<ReturnType<typeof buildApp>>|undefined,fail:string|undefined,serial=0,cleanupCalls=0,health:Record<string,unknown>|'disconnect'|undefined;
  let held:{path:string;started:()=>void;gate:Promise<void>;release:()=>void}|undefined;
  const token='generated-funasr-worker-token-00001';
  const worker=createServer((req,res)=>{void(async()=>{
   assert.equal(req.headers.authorization,'Bearer '+token);
   res.setHeader('Content-Type','application/json');res.setHeader('X-Mote-Execution','local');
-  if(req.url==='/health'){res.end(JSON.stringify({protocol:FUNASR_PROTOCOL,execution:'local',asr:true,diarization:true,identity}));return;}
+  if(req.url==='/health'){if(health==='disconnect'){req.socket.destroy();return;}res.end(JSON.stringify(health??{protocol:FUNASR_PROTOCOL,execution:'local',asr:true,diarization:true,identity}));return;}
   if(req.url?.startsWith('/executions/')){res.writeHead(404).end('{}');return;}
   assert.ok(req.url==='/transcribe'||req.url==='/diarize');
   const buffers:Buffer[]=[];for await(const part of req)buffers.push(Buffer.from(part));const body=Buffer.concat(buffers);
@@ -1100,7 +1100,7 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
  const retry=async(id:string,payload:unknown={stage:'transcribe'})=>{const response=await node.app.inject({method:'POST',url:'/api/files/'+id+'/retry',headers,payload});assert.equal(response.statusCode,200,response.body);};
  const reprocess=async(id:string)=>{const preview=await node.app.inject({method:'POST',url:'/api/file-processing/preview',headers,payload:{revision:node.processing.view().revision,scope:{kind:'selection',evidenceIds:[id]}}});assert.equal(preview.statusCode,200,preview.body);assert.equal(preview.json().count,1);const response=await node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers,payload:{token:preview.json().token}});assert.equal(response.statusCode,200,response.body);};
  const settle=async(id:string)=>{for(const until=Date.now()+5000;Date.now()<until;){await node.processing.tick();await new Promise<void>(resolve=>setImmediate(resolve));const job=node.files.detail(id).job;if(!['running','waiting'].includes(job.state)&&(job.state!=='succeeded'||!['running','waiting'].includes(job.summary_state))||job.state==='waiting'&&job.error)return;}assert.fail('Generated native file work did not settle: '+JSON.stringify(node.files.detail(id).job));};
- return {get node(){return node;},headers,identity,requests,wires,cleanup,installCleanup,modelCalls,save,upload,details,retry,reprocess,settle,counts:()=>({recognize:requests.filter(r=>r.operation==='recognize').length,diarize:requests.filter(r=>r.operation==='diarize').length,cleanup:cleanupCalls}),failure(code?:string){fail=code;},async restart(){await node.app.close();node=await start();},hold(path='/diarize'){
+ return {get node(){return node;},headers,identity,requests,wires,cleanup,installCleanup,modelCalls,save,upload,details,retry,reprocess,settle,counts:()=>({recognize:requests.filter(r=>r.operation==='recognize').length,diarize:requests.filter(r=>r.operation==='diarize').length,cleanup:cleanupCalls}),health(value?:typeof health){health=value;},failure(code?:string){fail=code;},async restart(){await node.app.close();node=await start();},hold(path='/diarize'){
   let started!:()=>void,release!:()=>void;const began=new Promise<void>(resolve=>started=resolve),gate=new Promise<void>(resolve=>release=resolve);held={path,started,gate,release};t.after(release);return {started:began,release};
  }};
 }
@@ -1186,6 +1186,26 @@ for(const code of ['resource_busy','component_missing','response_unknown'] as co
 test('an unrelated or retired worker health identity is rejected before transmitting original audio',async t=>{
  const f=await nativeFunasrFixture(t),id=await f.upload();f.identity.models.asr.revision=sha256('different loaded model');await f.node.processing.tick();
  assert.equal(f.requests.length,0);assert.equal((await f.details(id)).job.state,'blocked');assert.equal(f.node.files.chunks(id).length,0);assert.equal(f.modelCalls.length,0);
+});
+
+for(const unavailable of ['loading','disconnect'] as const)test(`a local audio job waits through worker ${unavailable} and resumes without an owner retry`,async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();
+ f.health(unavailable==='loading'?{protocol:FUNASR_PROTOCOL,execution:'local',asr:false,diarization:false,loading:true,busy:false}:unavailable);
+ await f.node.processing.tick();
+ const detail=await f.details(id),extract=detail.steps.find((step:any)=>step.step==='extract');
+ assert.equal(detail.job.state,'waiting',JSON.stringify(detail.job));
+ assert.equal(detail.job.error,unavailable==='loading'?'worker_not_ready':'provider_unavailable');
+ assert.equal(extract.attempts,unavailable==='loading'?0:1);
+ assert.equal(f.requests.length,0,'health failure must not transmit original audio');
+ assert.equal(f.node.files.chunks(id).length,0);
+ assert.equal(f.node.processing.cancellation(id).wait,null,'no inference was issued');
+ f.health();
+ // Advance the persisted retry deadline explicitly, without sleeping or
+ // issuing an owner retry that could hide a terminal classification.
+ f.node.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE operation_id=? AND state='waiting'").run('file:'+id);
+ await f.settle(id);
+ assert.equal((await f.details(id)).job.state,'succeeded');
+ assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:0});
 });
 
 test('native grouping and summary keep the chosen file model while Memory and Ask retain their own selections',async t=>{

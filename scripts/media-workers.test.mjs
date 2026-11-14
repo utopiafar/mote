@@ -89,15 +89,20 @@ test('media execution facts reject incompatible storage before worker readiness 
 // Reuse the current generated FunASR engine boundary and production multipart,
 // normalization, process owner and serializers. Missing dependencies must fail
 // this ordinary entrypoint instead of silently skipping its regression cases.
-const asrHttpRegressions = async names => {
+const audioRegressions = async names => {
   const {execFileSync}=await import('node:child_process');
   execFileSync('python3',['-c',`import sys, unittest
 sys.path.insert(0, sys.argv[1])
 suite = unittest.defaultTestLoader.loadTestsFromNames(sys.argv[2:])
 result = unittest.TextTestRunner(verbosity=2).run(suite)
 sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
-`,fileURLToPath(new URL('.',import.meta.url)),...names.map(name=>'test_transcription_server.TranscriptionHTTP.'+name)],{stdio:'pipe'});
+`,fileURLToPath(new URL('.',import.meta.url)),...names],{stdio:'pipe'});
 };
+const asrHttpRegressions = names => audioRegressions(names.map(name=>'test_transcription_server.TranscriptionHTTP.'+name));
+test('local audio keeps every PCM sample through VAD rounding, final padding and long-speech splitting',()=>audioRegressions([
+  'test_mote_funasr.FunasrEngine.test_vad_frame_rounding_and_long_speech_keep_every_pcm_sample_without_failing_the_recording',
+  'test_mote_funasr.FunasrEngine.test_vad_final_frame_padding_and_subsample_jitter_use_the_original_pcm_boundary',
+]));
 test('audio HTTP worker enforces the authenticated request budget, preserves its host cap and releases timed-out work',()=>asrHttpRegressions([
   'test_directory_only_partial_install_and_failed_load_never_report_ready_and_control_recovers',
   'test_ffmpeg_disappearance_blocks_execution_without_claiming_funasr_packages_are_missing',

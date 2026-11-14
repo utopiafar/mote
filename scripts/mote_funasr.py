@@ -13,6 +13,7 @@ import copy
 import gc
 import hashlib
 import importlib.metadata
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -29,7 +30,8 @@ from mote_audio import (file_sha256, frame_interval, normalize, offline_process,
 # Full, untrimmed PCM; independent VAD regions are never concatenated. Nano's
 # token timings are deliberately not exported: the truthful common basis here
 # is VAD precision, not interpolated words. CT-Punc is local, with no hotwords.
-SETTINGS = {'sampleRate': 16000, 'maxSegmentMs': 30000, 'maxNewTokens': 512, 'batchSize': 1,
+SETTINGS = {'sampleRate': 16000, 'maxSegmentMs': 30000, 'segmentBufferMs': 100, 'vadFrameMs': 10,
+            'maxNewTokens': 512, 'batchSize': 1,
             'mergeVad': False, 'llmDtype': 'fp32', 'hotwords': False,
             'punctuation': 'per-vad', 'speakerWindowFrames': 24000,
             'speakerShiftFrames': 12000, 'speakerSmoothing': False}
@@ -262,6 +264,40 @@ def check_cancelled(cancelled):
         raise EngineError('cancelled')
 
 
+def recognition_regions(value, frames):
+    """Map SDK frame precision to PCM, then bound model inputs without clipping.
+
+    FSMN ends a segment after its duration threshold, in 10 ms frames. Keep a
+    small decoder buffer for ordinary rounding; partition longer valid speech
+    instead of rejecting the recording. A final padded VAD frame has no audio
+    beyond the original PCM. Incomplete markers and invalid timelines still fail.
+    """
+    duration, previous_end, regions = frames/16, 0, []
+    target = SETTINGS['maxSegmentMs']*16
+    for region in value:
+        if type(region) not in (tuple, list) or len(region) != 2:
+            raise EngineError('inference_failed')
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in region):
+            raise EngineError('inference_failed')
+        # Subsample floating-point jitter cannot describe a different PCM frame.
+        start, end = (round(v*16)/16 for v in region)
+        if start < previous_end and previous_end-start <= 1/16:
+            start = previous_end
+        if duration < end <= duration + SETTINGS['vadFrameMs']:
+            end = duration
+        first, last = frame_interval(start, end, frames)
+        if start < previous_end:
+            raise EngineError('inference_failed')
+        if end-start <= SETTINGS['maxSegmentMs'] + SETTINGS['segmentBufferMs']:
+            regions.append([start, end])
+        else:
+            regions.extend([offset/16, min(last, offset+target)/16] for offset in range(first, last, target))
+        if len(regions) > contract.LIMITS['vad']:
+            raise EngineError('output_limit')
+        previous_end = end
+    return regions
+
+
 def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
     frames = len(pcm) // 2
     if frames == 0:
@@ -274,19 +310,8 @@ def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
         raise EngineError('inference_failed')
     if len(vad['value']) > contract.LIMITS['vad']:
         raise EngineError('output_limit')
-    previous_end = 0
-    intervals = []
-    for region in vad['value']:
-        if type(region) not in (tuple, list) or len(region) != 2:
-            raise EngineError('inference_failed')
-        start, end = region
-        # Reject incomplete final markers (-1), overlap or oversized chunks;
-        # don't clamp, reorder, concatenate or silently drop a tail.
-        first, last = frame_interval(start, end, frames)
-        if start < previous_end or end - start > SETTINGS['maxSegmentMs']:
-            raise EngineError('inference_failed')
-        intervals.append((first, last))
-        previous_end = end
+    vad = {**vad, 'value': recognition_regions(vad['value'], frames)}
+    intervals = [frame_interval(start, end, frames) for start, end in vad['value']]
     chunks = []
     if intervals:
         with runtime.component('asr', root / 'asr') as model:
