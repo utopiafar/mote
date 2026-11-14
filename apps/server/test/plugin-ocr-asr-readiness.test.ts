@@ -51,7 +51,7 @@ test('a media configuration change aborts in-flight native preparation and canno
   const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
   const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,prepare:async options=>{signal=options.signal;entered();await held;options.signal.throwIfAborted();return{python:process.execPath};}});
   t.after(()=>service.close());await service.prepare();service.start();await service.port.start('ocr');await started;
-  f.change();assert.equal(signal?.aborted,true);release();await service.stop('disabled');
+  assert.equal(service.port.preparing('ocr',f.media.ocrEndpoint),true);f.change();assert.equal(service.port.preparing('ocr',f.media.ocrEndpoint),false);assert.equal(signal?.aborted,true);release();await service.stop('disabled');assert.equal(service.port.preparing('ocr',f.media.ocrEndpoint),false);
   assert.equal(f.assets.installs,0);assert.equal(f.listeners.size,0);
   assert.throws(()=>service.port.status('ocr'),{statusCode:503});await service.close();
 });
@@ -86,7 +86,9 @@ test('a stop while a replacement prepare waits for the previous close keeps the 
  const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
  const service=createOcrAsrReadiness({...f,prepare:async options=>{entered();await held;options.signal.throwIfAborted();return{python:process.execPath};}});t.after(()=>service.close());
  await service.prepare();service.start();await service.port.start('ocr');await started;
+ assert.equal(service.port.preparing('ocr',f.media.ocrEndpoint),true);
  const stopped=service.stop('disabled');
+ assert.equal(service.port.preparing('ocr',f.media.ocrEndpoint),false,'retired readiness must not keep consumers waiting for its old process');
  const replacement=service.prepare();
  const second=service.stop('disabled');
  await new Promise(resolve=>setImmediate(resolve));

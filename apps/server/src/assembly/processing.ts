@@ -29,7 +29,7 @@ import type {ModelProcessingAuthority} from '../model-processing-authority.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {CentralDomainPlugin,bootstrapCentral} from '../bootstrap.js';
 import {createMediaAssetsService,mediaAssetsServiceContribution,mediaAssetsServiceDeclaration,mediaAssetsServiceReplacement} from '../plugins/media-assets-service.js';
-import {createOcrAsrReadiness,createOcrAsrReadinessFactory,ocrAsrReadinessContribution,ocrAsrReadinessDeclaration,ocrAsrReadinessForAssembly,ocrAsrReadinessReplacement,registerOcrAsrReadinessForAssembly} from '../plugins/ocr-asr-readiness.js';
+import {createOcrAsrReadiness,createOcrAsrReadinessFactory,ocrAsrReadinessContribution,ocrAsrReadinessDeclaration,ocrAsrReadinessForAssembly,ocrAsrReadinessReplacement,registerOcrAsrReadinessForAssembly,type OcrAsrReadinessDependencies} from '../plugins/ocr-asr-readiness.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {vaultStorageRoutes} from '../plugins/vault-storage-routes.js';
 import {createProcessingServices,createProcessingServicesFactory,processingServicesContribution,processingServicesDeclaration,processingServicesReplacement,type ProcessingServicesStarted} from '../plugins/processing-services.js';
@@ -66,6 +66,7 @@ export interface MediaAssemblyDependencies {
   readonly configService:ConfigService;
   readonly resources:ServerResources;
   readonly backgroundWorker?:boolean;
+  readonly prepareMediaRuntime?:OcrAsrReadinessDependencies['prepare'];
 }
 
 /** Media assets remain available to the later processing assembly. C18B is
@@ -76,7 +77,7 @@ export function assembleMedia(dependencies:MediaAssemblyDependencies){
   resources.defer(()=>mediaAssetsService.close());
   mediaAssetsService.prepare();mediaAssetsService.start();
   const mediaAssets=mediaAssetsService.assetsForAssembly;
-  const readiness=createOcrAsrReadiness({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets,configService,backgroundWorker:dependencies.backgroundWorker});
+  const readiness=createOcrAsrReadiness({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets,configService,backgroundWorker:dependencies.backgroundWorker,prepare:dependencies.prepareMediaRuntime});
   registerOcrAsrReadinessForAssembly(readiness,mediaAssets);resources.defer(()=>readiness.close());
   return Object.freeze({mediaAssets,mediaPreparation:readiness.port});
 }
@@ -199,7 +200,7 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   });
   resources.defer(()=>readinessHandle.close('shutdown'));
   const platform=createProcessingServices({
-    store,files,configService,diagnostics,executor,backendContext,materials,sourcePipelines,mediaAssets,
+    store,files,configService,diagnostics,executor,backendContext,materials,sourcePipelines,mediaAssets,mediaPreparation:readiness.port,
     ...(dependencies.transcriptionProvider?{transcriptionProvider:dependencies.transcriptionProvider}:{}),
     ...(dependencies.plugins?.length?{plugins:dependencies.plugins}:{}),
     ...(config.media?{media:config.media}:{}),modelAuthority:mediaModelAuthority,analyze:analyzeFile,analysisSnapshot:resolveFileModel,
