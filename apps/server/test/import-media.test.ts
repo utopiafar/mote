@@ -23,6 +23,7 @@ import {ImportIntakeRegistry,installImportIntake} from '../src/import-intake.js'
 import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes} from '../src/file-recipes.js';
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {generatedAppleDouble} from './fixtures/appledouble.js';
+import {repliesAfterExit} from './fixtures/format-worker-lifecycle.js';
 
 async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>,prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>,configureImage=false){
   // Advance durable workers explicitly, so wall-clock load cannot race assertions.
@@ -138,6 +139,9 @@ test('one failed extraction is isolated, retries without reupload, then enters a
 });
 
 test('mixed image and text import uses separate native extraction and preserves original text',async t=>{
+  // Preparation succeeds normally; deliver the commit validator's real reply
+  // after exit, matching a saved preview followed by an interrupted import.
+  const lifecycle=repliesAfterExit(t,1);
   const f=await fixture(t,[],undefined,undefined,true),image=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
   f.node.processing.runtime.registry.get('image.http').process=async()=>{ocr++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image text'}]};};
   await f.node.processing.save({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},policy:fixtureFilePolicy({...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},f.node.processing.runtime.registry)});
@@ -145,6 +149,9 @@ test('mixed image and text import uses separate native extraction and preserves 
   const job=await f.create([entry('note.txt','Generated original note'),entry('image.png',image)]);assert.equal(job.status,'completed',JSON.stringify(job));assert.equal(job.media?.length,1);assert.equal(job.progress.imported,2);
   await f.node.processing.tick();assert.equal(ocr,1);assert.equal(f.modelCalls.length,0);assert.equal(f.node.files.chunks(job.media![0].captureId!)[0].ocrText,'Generated image text');
   assert.equal(f.node.store.search({query:'Generated original note'}).length,1);
+  assert.equal(lifecycle.workers.length,2,'plain decoding and commit manifest validation both use real workers');
+  for(const worker of lifecycle.workers)await worker.closed;
+  assert.equal(lifecycle.workers[1].child.exitCode,0);assert.deepEqual(lifecycle.workers[1].events,['exit','message','close']);
 });
 
 test('a deployment plugin extends format, output schema and DAG without changing import or file hosts',async t=>{
