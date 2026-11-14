@@ -19,6 +19,7 @@ import {fileProcessingSchema} from '@mote/shared';
 const token='generated-prc01-owner',headers={authorization:`Bearer ${token}`};
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const record=(text='Generated processing plugin evidence')=>({id:randomUUID(),deviceId:'generated-prc01-device',deviceName:'Generated fixture',platform:'import',capturedAt:'2026-11-01T00:00:00Z',durationMs:0,source:'note' as const,appName:'Fixture',ocrText:text,privacy:{excluded:false,redacted:false,mode:'none'}});
+const fileRecipes=[{id:'mote.file-extraction',version:'1'},{id:'mote.audio-dialogue',version:'2'},{id:'mote.audio-dialogue',version:'3'}];
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;
 const fixtureFingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)??'null').digest('hex');
 
@@ -56,18 +57,20 @@ test('processing disables without admitting writes, drains accepted work and re-
   assert.equal((await node.app.inject({url:'/api/processing',headers})).statusCode,503);
   assert.deepEqual(node.processing.runtime.registry.list(),[],'stopping withdraws the file processor contributions');
   assert.deepEqual(node.processing.runtime.recipes.list(),{recipes:[],stages:[]},'stopping withdraws the file recipes');
+  assert.throws(()=>node.processing.runtime.outputs.get({id:'mote.cleaned-dialogue',version:'1'}),{statusCode:409},'stopping withdraws the cleanup output');
   assert.equal(node.processing.runtime.imageRecipes.list().recipes.length,1,'image recipes belong to the still-active image plugin');
   assert.equal(node.processing.runtime.imageRecipes.list().stages.length,2,'stopping processing does not withdraw image stages');
   node.processingServices.start();
   assert.equal(registrations,0,'re-enable reuses the one activation handler set');
   assert.equal(node.processingServices.port.phase,'active');
-  assert.deepEqual(node.processing.runtime.registry.list().map(processor=>processor.id),['audio.http','audio.local-dialogue','text.utf8','document.generic','image.http','audio.diarize','audio.diarize-wespeaker'],'re-enable installs exactly one processor set');
-  assert.equal(node.processing.runtime.recipes.list().recipes.length,2,'re-enable installs each file recipe once');
-  assert.equal(node.processing.runtime.recipes.list().stages.length,4,'re-enable installs each file stage once');
+  assert.deepEqual(node.processing.runtime.registry.list().map(processor=>processor.id),['audio.http','audio.local-dialogue','text.utf8','document.generic','image.http','audio.diarize'],'re-enable installs exactly one current processor set');
+  assert.deepEqual(node.processing.runtime.recipes.list().recipes.map(({id,version})=>({id,version})),fileRecipes,'re-enable installs each file recipe once');
+  assert.deepEqual(node.processing.runtime.recipes.list().stages,[{id:'mote.extract',version:'1'},{id:'mote.diarize',version:'1'},{id:'mote.align',version:'2'},{id:'mote.turns',version:'1'},{id:'mote.funasr-align',version:'1'},{id:'mote.transcript-cleanup',version:'1'}],'re-enable installs each file stage once');
+  assert.equal(node.processing.runtime.outputs.get({id:'mote.cleaned-dialogue',version:'1'}).kind,'dialogue','re-enable restores the cleanup output');
   assert.equal(node.processing.runtime.imageRecipes.list().recipes.length,1,'re-enable still has exactly one image recipe');
   assert.equal(node.processing.runtime.imageRecipes.list().stages.length,2,'re-enable still has exactly one copy of each image stage');
   node.processingServices.start();
-  assert.equal(node.processing.runtime.recipes.list().recipes.length,2,'an active start is idempotent');
+  assert.deepEqual(node.processing.runtime.recipes.list().recipes.map(({id,version})=>({id,version})),fileRecipes,'an active start is idempotent');
   const reopened=await node.app.inject({url:'/api/processing',headers});
   assert.equal(reopened.statusCode,200,reopened.body);
   assert.ok((reopened.json() as {jobs:{id:string;state:string}[]}).jobs.some(job=>job.id===id&&job.state==='succeeded'));
@@ -160,7 +163,7 @@ test('a duplicate processor contribution fails prepare and leaves no partial cap
     const clean=createProcessingServices({...dependencies,contributions:[]});
     await clean.prepare();
     assert.equal(clean.processing.runtime.registry.get('text.utf8').version,'3','the built-in definition was never replaced');
-    assert.equal(clean.processing.runtime.recipes.list().recipes.length,2,'the failed contribution left no recipe behind');
+    assert.deepEqual(clean.processing.runtime.recipes.list().recipes.map(({id,version})=>({id,version})),fileRecipes,'the failed contribution left no recipe behind');
     await clean.close();
   }finally{
     await failed.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});

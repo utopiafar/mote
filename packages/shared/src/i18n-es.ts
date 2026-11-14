@@ -10743,5 +10743,14 @@ export const spanish: Readonly<Record<string, string>> = {
   "待补 {0}": "{0} pendientes",
   "失败 {0}": "{0} fallidos",
   "已完成 {0}/{1}": "{0}/{1} completados",
-  "尚未选择资料": "No hay materiales seleccionados"
+  "尚未选择资料": "No hay materiales seleccionados",
+  "缺少运行依赖：{0}": "Faltan dependencias de ejecución: {0}",
+  "摘要、语义分组、复核、Memory 与 Ask 继续使用各自所选模型。": "Los resúmenes, la agrupación semántica, la revisión, Memory y Ask siguen usando sus respectivos modelos seleccionados.",
+  "保守消重仅影响派生稿；原文始终可对照和导出。": "La deduplicación conservadora solo afecta a la transcripción derivada; el original sigue disponible para comparar y exportar.",
+  "使用 CAM++": "Usar CAM++",
+  "请选择 1–16 的准确人数或完整有序范围。": "Elige un número exacto de hablantes entre 1 y 16 o un intervalo completo con los límites en orden.",
+  "模型只提出建议，确认后生成单独的校正版；未校正原文始终保留。复核使用所选模型。": "El modelo solo propone cambios. Al confirmarlos se crea una versión corregida independiente y se conserva el original sin corregir. La revisión usa el modelo seleccionado.",
+  "原文对照": "Comparar con el original",
+  "转写结果为空。": "La transcripción está vacía.",
+  "当前稿": "Transcripción actual"
 };

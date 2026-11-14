@@ -10743,5 +10743,14 @@ export const english: Readonly<Record<string, string>> = {
   "待补 {0}": "{0} pending",
   "失败 {0}": "{0} failed",
   "已完成 {0}/{1}": "{0}/{1} completed",
-  "尚未选择资料": "No materials selected"
+  "尚未选择资料": "No materials selected",
+  "缺少运行依赖：{0}": "Missing runtime dependencies: {0}",
+  "摘要、语义分组、复核、Memory 与 Ask 继续使用各自所选模型。": "Summaries, semantic grouping, review, Memory and Ask continue to use their selected models.",
+  "保守消重仅影响派生稿；原文始终可对照和导出。": "Conservative deduplication only affects the derived transcript; the original remains available for comparison and export.",
+  "使用 CAM++": "Use CAM++",
+  "请选择 1–16 的准确人数或完整有序范围。": "Choose an exact speaker count from 1–16 or a complete, ordered range.",
+  "模型只提出建议，确认后生成单独的校正版；未校正原文始终保留。复核使用所选模型。": "The model only suggests changes. Confirming creates a separate corrected version while preserving the uncorrected original. Review uses the selected model.",
+  "原文对照": "Compare with original",
+  "转写结果为空。": "The transcription is empty.",
+  "当前稿": "Current transcript"
 };

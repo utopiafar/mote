@@ -15,7 +15,7 @@ import {FileProcessing} from '../src/file-processing.js';
 import {FileReviews,latestFileTranscript} from '../src/file-reviews.js';
 import {fileExportEntries,exportTar} from '../src/file-export.js';
 import {cleanedDialogueOutput,prepareFunasrDialogue,readDialogueCleanup} from '../src/file-dialogue.js';
-import {funasrTranscriptOutput,parseFunasrArchive,parseFunasrResponse,projectFunasrDiarization} from '../src/funasr-contract.js';
+import {funasrTranscriptOutput,parseFunasrArchive,parseFunasrResponse} from '../src/funasr-contract.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 
 // Model boundaries only: the actual Python producer serializes both stages.
@@ -48,7 +48,7 @@ print(c.serialize({'recognition':recognition,'diarization':diarization,'coarseDi
 assert.equal(producer.status,0,producer.stderr||String(producer.error));
 const generated=JSON.parse(producer.stdout),nativeResponse=parseFunasrResponse(generated.diarization);
 if(nativeResponse.status!=='succeeded'||nativeResponse.operation!=='diarize')throw Error('Expected generated diarization');
-const checkpoint=parseFunasrArchive(nativeResponse.checkpoint),diarization=projectFunasrDiarization(checkpoint,nativeResponse.diarization);
+const checkpoint=parseFunasrArchive(nativeResponse.checkpoint);
 const wave=Buffer.alloc(32044);
 wave.write('RIFF');wave.writeUInt32LE(wave.length-8,4);wave.write('WAVEfmt ',8);wave.writeUInt32LE(16,16);wave.writeUInt16LE(1,20);wave.writeUInt16LE(1,22);wave.writeUInt32LE(16000,24);wave.writeUInt32LE(32000,28);wave.writeUInt16LE(2,32);wave.writeUInt16LE(16,34);wave.write('data',36);wave.writeUInt32LE(32000,40);
 assert.equal(sha256(wave),checkpoint.source.audioSha256);
@@ -62,12 +62,12 @@ async function fixture(t:TestContext){
   files.part(upload.uploadId,0,wave,()=>{});const {id}=await files.commit(upload.uploadId,()=>{});
   const counts={recognize:0,diarize:0,cleanup:0,review:0};
   const plugin:Plugin={name:'generated-cleanup-producer',inject:['moteFileProcessors','moteFileOutputs','moteFileRecipes'],apply(ctx){ctx.effect(()=>{
-    const disposes=[ctx.moteFileOutputs.register(funasrTranscriptOutput),ctx.moteFileOutputs.register(cleanedDialogueOutput)];
+    const disposes=[ctx.moteFileOutputs.register(cleanedDialogueOutput)];
     disposes.push(ctx.moteFileProcessors.register({id:'generated.funasr',version:'1',name:'Generated FunASR boundary',stage:'extract',mediaTypes:['audio/'],dialogue:true,allowSummary:false,
       parameters:[{key:'transcriptCleanup',label:'Generated cleanup setting',type:'boolean',default:true}],
       dependencies:{settings:[],parameters:[]},output:funasrTranscriptOutput,recipe:{id:'generated.audio-cleanup',version:'1'},
       async process(input){counts.recognize++;const parts:Buffer[]=[];for await(const part of input.readOriginal())parts.push(part);assert.deepEqual(Buffer.concat(parts),wave);return JSON.parse(generated.recognition);}}));
-    disposes.push(ctx.moteFileProcessors.register({id:'generated.cam',version:'1',name:'Generated CAM boundary',stage:'diarize',mediaTypes:['audio/'],dependencies:{settings:[],parameters:[]},async process(){counts.diarize++;return diarization;}}));
+    disposes.push(ctx.moteFileProcessors.register({id:'generated.cam',version:'1',name:'Generated CAM boundary',stage:'diarize',mediaTypes:['audio/'],dependencies:{settings:[],parameters:[]},async process(input){counts.diarize++;assert.equal(input.recognition?.sha256,nativeResponse.checkpoint.sha256);return JSON.parse(generated.diarization);}}));
     disposes.push(ctx.moteFileRecipes.registerStage({id:'generated.dialogue-cleanup',version:'1',run:context=>context.transform(cleanedDialogueOutput,async()=>{
       counts.cleanup++;
       const stored=context.readArtifact(context.dependencies.extract) as {output:{payload:unknown}},response=parseFunasrResponse(stored.output.payload);

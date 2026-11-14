@@ -63,7 +63,7 @@ Native Apple Silicon 可显式选择 `--backend mps`；当前引擎入口接受 
 
 ### 当前集成边界
 
-当前源码中，安装 catalog 的 Nano revision 与引擎 manifest 不同，四组件 manifest 的摘要输入也不同；真实安装不能据此标为引擎可用。worker 的健康输出是完整 identity，Central 的严格健康消费者只接受加载身份子集；识别身份中的宿主设置指纹与引擎固定算法指纹也尚未统一。默认配方的消重阶段尚未由公共 processing 装配提供实现，会报 `dialogue_cleanup_unavailable`。这些分别需要资产、worker/身份和公共接线实现修复，关闭消重不会修复前面的身份问题。
+安装 catalog 与引擎使用同一份固定的四组件清单和内容摘要。Central 校验 worker 的完整 identity，并在识别与分人检查点中原样保留推理设置指纹。默认配方的保守消重由公共 processing 装配提供实现，按检查点记录的真实时间精度生成派生稿并保留原始带说话人稿和完整映射；关闭消重直接使用保留的完整记录。生成模型边界下的联合合同验证不代表真实模型安装与识别质量已通过。
 
 部署/Compose、systemd 模板、公共健康与设置页须随对应实现一并核对；不要使用仍携带旧 `--model` / ONNX 参数的服务模板来启动当前 worker。生成模型边界下的成功后段不能替代这些直接生产接缝的验收。
 

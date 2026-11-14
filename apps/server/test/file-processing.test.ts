@@ -1045,7 +1045,7 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
  const modelBytes=Buffer.from('Generated ASR component; no model weights.');
  const files=Object.keys(previous.models!).map(role=>({name:role+'/model.bin',size:modelBytes.length,sha256:sha256(modelBytes),official:'https://example.invalid/'+role}));
  MEDIA_CATALOG.dialogue={version:'generated-funasr-v1',files,models:Object.fromEntries(Object.entries(previous.models!).map(([role,model])=>[role,{...model,revision:sha256('generated revision '+role)}]))};
- const identity={sdkVersion:'1.4.25',sdkWheelSha256:'11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75',models:mediaModelIdentities('dialogue'),dependencies:{torch:'2.10.0',numpy:'2.2.0'},backend:'cpu',threads:1};
+ const identity={sdkVersion:'1.4.25',sdkWheelSha256:'11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75',...FUNASR_PINS,settingsFingerprint:sha256('generated inference settings'),models:mediaModelIdentities('dialogue'),dependencies:{torch:'2.10.0',numpy:'2.2.0'},backend:'cpu',threads:1};
  const requests:FunasrRequest[]=[],wires:string[]=[],errors:unknown[]=[],modelCalls:{model:string;question:string}[]=[];
  let central:Awaited<ReturnType<typeof buildApp>>|undefined,fail:string|undefined,serial=0,cleanupCalls=0;
  let held:{path:string;started:()=>void;gate:Promise<void>;release:()=>void}|undefined;
@@ -1134,8 +1134,8 @@ test('CAM failure leaves the committed transcript readable and scoped range retr
  assert.deepEqual(f.node.files.detail(id).artifacts.find((a:any)=>a.kind==='diarization')!.declaredRange,{min:2,max:4});
 });
 
-test('cleanup is an explicit default-on dependency and switching it restores the retained dialogue without another ASR or CAM call',async t=>{
- const f=await nativeFunasrFixture(t),id=await f.upload();await f.save(policy=>{policy.profiles.find((p:any)=>p.processorId==='audio.local-dialogue').parameters.deduplicate=true;});await f.node.processing.tick();
+test('omitting the cleanup dependency blocks explicitly and installing it restores the retained dialogue without another ASR or CAM call',async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();f.node.processing.uninstallContributions();f.node.processing.installContributions([],{imageRecipes:false});await f.save(policy=>{policy.profiles.find((p:any)=>p.processorId==='audio.local-dialogue').parameters.deduplicate=true;});await f.node.processing.tick();
  assert.equal((await f.details(id)).job.error,'dialogue_cleanup_unavailable');assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:0});
  const original=f.node.files.chunks(id)[0].fileEvidence!.artifactId;f.installCleanup(f.node);await f.reprocess(id);await f.settle(id);
  assert.equal((await f.details(id)).job.state,'succeeded');assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:1});assert.notEqual(f.node.files.chunks(id)[0].fileEvidence!.artifactId,original);
