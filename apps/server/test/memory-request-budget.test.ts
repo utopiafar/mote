@@ -106,9 +106,10 @@ test('owner retry of an explicit incomplete evaluation performs a fresh review a
  const original=await sources.upsert('generated-incomplete',{externalId:'one',revision:'1',text:'A complete generated original for an explicit retry.',observedAt:at,kind:'file',layer:'original'});
  const job=pipeline.create({evidenceIds:[original.id]}),failed=await pipeline.run(job.id);
  assert.equal(failed.status,'failed');assert.equal(failed.batches[0].errorCode,'memory_evaluation_incomplete');assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
- assert.equal((await pipeline.retry(job.id)).status,'failed','another independently reported incomplete outcome stays failed');assert.equal(reviews,2);assert.equal(extracts,2,'the first owner retry includes the saved exact incomplete inspection history in its new generation');
+ assert.equal(reviews,2,'an unresolved text assessment uses only the existing two-attempt review budget');await pipeline.run(job.id);assert.equal(reviews,2,'ordinary reentry cannot reopen the failed assessment');
+ assert.equal((await pipeline.retry(job.id)).status,'failed','another independently reported incomplete outcome stays failed');assert.equal(reviews,4);assert.equal(extracts,2,'the first owner retry includes the saved exact incomplete inspection history in its new generation');
  incomplete=false;const done=await pipeline.retry(job.id);
- assert.equal(done.status,'completed');assert.equal(reviews,3);assert.equal(extracts,2,'the unchanged generation retains its valid extraction while review runs again');assert.equal(done.batches[0].coverage![0].state,'no_candidates');assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);
+ assert.equal(done.status,'completed');assert.equal(reviews,5);assert.equal(extracts,2,'the unchanged generation retains its valid extraction while review runs again');assert.equal(done.batches[0].coverage![0].state,'no_candidates');assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);
 });
 
 test('owner retry reopens a timed-out review against its saved bounded scope before recalculating the allowance',async t=>{
