@@ -476,12 +476,17 @@ export async function restoreProfile(p, backup) {
   }
 }
 export function launchdXml(p, nodePath = process.execPath, env = process.env) {
+  if (typeof nodePath !== 'string' || !isAbsolute(nodePath) || /[\x00-\x1f\x7f:]/.test(nodePath)) throw Error('LaunchAgent Node path must be absolute and contain no colon or control characters');
   const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
   const label = `dev.mote.central.${p.profile}.${p.project.split('-').at(-1)}`;
-  const args = [resolve(nodePath), join(repository, 'scripts/mote.mjs'), 'run', '--profile', p.profile, '--home', p.home];
+  const node = resolve(nodePath);
+  const args = [node, join(repository, 'scripts/mote.mjs'), 'run', '--profile', p.profile, '--home', p.home];
   const strings = args.map(value => `<string>${escape(value)}</string>`).join('');
-  const proxyEnvironment = inheritedProxyEnvironment(env);
-  const environment = Object.keys(proxyEnvironment).length ? `<key>EnvironmentVariables</key><dict>${Object.entries(proxyEnvironment).map(([name, value]) => `<key>${escape(name)}</key><string>${escape(value)}</string>`).join('')}</dict>` : '';
+  // env-node CLI shims need the same owner-selected runtime as the supervisor.
+  // Fixed install/system directories support trusted CLIs without snapshotting
+  // shell PATH entries, current-directory lookups or unrelated environment data.
+  const launchEnvironment = { PATH: [...new Set([dirname(node), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])].join(':'), ...inheritedProxyEnvironment(env) };
+  const environment = `<key>EnvironmentVariables</key><dict>${Object.entries(launchEnvironment).map(([name, value]) => `<key>${escape(name)}</key><string>${escape(value)}</string>`).join('')}</dict>`;
   return { label, contents: `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${strings}</array><key>WorkingDirectory</key><string>${escape(repository)}</string>${environment}<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer><key>ProcessType</key><string>Background</string><key>Umask</key><integer>63</integer><key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string></dict></plist>\n` };
 }
 

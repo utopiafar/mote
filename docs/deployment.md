@@ -73,6 +73,8 @@ node scripts/mote.mjs launchd --profile prod --home "$HOME/Library/Application S
 
 命令只生成 plist，返回 `generated` 路径和 `label`，不会安装、加载、停止任何系统服务。检查内容中的 Node 路径、仓库路径与环境路径。Node 必须是稳定的 Node 24 可执行文件；必要时加 `--node /absolute/path/to/node`，不要依赖交互 shell 的版本切换。保留该仓库路径作为控制入口，升级使用独立 release 目录。
 
+plist 的 `PATH` 以所选 Node 所在目录开头，随后依次包含 `/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin`、`/bin`、`/usr/sbin`、`/sbin`，重复目录只保留第一次出现的位置。这样通过 `#!/usr/bin/env node` 启动的 CLI 也能找到该 Node。生成器不复制 shell 的 `PATH` 或登录、模型凭据；自定义 CLI 安装在其他目录时，在私有 `mote.yaml` 中用 `models.codex.executable` 指定可信的绝对路径。Node 路径必须是绝对路径，且不能含冒号或控制字符。
+
 下面是管理员确认 plist 后自行执行的用户级 LaunchAgent 命令。将 `PLIST` 与 `LABEL` 设置为生成结果：
 
 ```sh

@@ -1,18 +1,63 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {connect} from 'node:net';
-import {isolatedEnvironment,launchdXml} from '../profile-lib.mjs';
+import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {isolatedEnvironment,launchdXml,profilePaths,initialize,loadProfile,repository} from '../profile-lib.mjs';
 
 const profile={profile:'test',env:{MOTE_TOKEN:'generated-profile-token'},meta:{runtime:'native'},home:'/tmp/generated-profile-proxy-home',project:'generated-profile-proxy',directory:'/tmp/generated-profile-proxy',dataDir:'/tmp/generated-profile-proxy/data',configFile:'/tmp/generated-profile-proxy/mote.yaml',url:'http://127.0.0.1:47852'};
 const cleanProxy={HTTP_PROXY:undefined,http_proxy:undefined,HTTPS_PROXY:undefined,https_proxy:undefined,ALL_PROXY:undefined,all_proxy:undefined,NO_PROXY:undefined,no_proxy:undefined};
+const decodePlist=value=>value.replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('&amp;','&');
 function plistEnvironment(xml){
   const match=/<key>EnvironmentVariables<\/key><dict>([\s\S]*?)<\/dict>/.exec(xml);
   if(!match)return {};
-  const decode=value=>value.replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('&amp;','&');
-  return Object.fromEntries([...match[1].matchAll(/<key>([^<]+)<\/key><string>([^<]*)<\/string>/g)].map(([,key,value])=>[decode(key),decode(value)]));
+  return Object.fromEntries([...match[1].matchAll(/<key>([^<]+)<\/key><string>([^<]*)<\/string>/g)].map(([,key,value])=>[decodePlist(key),decodePlist(value)]));
 }
+
+test('launchd runs absolute env-node CLI shims with the selected Node without the shell PATH',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'mote-launchd-path-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const nodeDirectory=join(root,'selected Node & "quoted"'),cliDirectory=join(root,'trusted CLI'),emptyPath=join(root,'empty-bin');
+  await Promise.all([nodeDirectory,cliDirectory,emptyPath].map(path=>mkdir(path)));
+  const node=join(nodeDirectory,'node'),shim=join(cliDirectory,'codex.cjs'),invocations=join(root,'node-invocations');
+  const quote=value=>"'"+value.replaceAll("'","'\\''")+"'";
+  // Record every interpreter invocation, then execute the real Node binary. This
+  // distinguishes the selected runtime from any Node installed in a fallback dir.
+  await writeFile(node,`#!/bin/sh\nprintf '%s\\n' "$1" >> ${quote(invocations)}\nexec ${quote(process.execPath)} "$@"\n`,{mode:0o700});
+  await writeFile(shim,'#!/usr/bin/env node\nconsole.log(JSON.stringify({node:process.execPath,args:process.argv.slice(2),proxy:process.env.http_proxy,proxyEnabled:process.env.NODE_USE_ENV_PROXY}));\n',{mode:0o700});
+  const paths=profilePaths('test',join(root,'profiles'));await initialize(paths);const p=await loadProfile(paths);
+  const entry=join(repository,'scripts/mote.mjs');
+  const source={HOME:root,PATH:emptyPath,HTTP_PROXY:'http://proxy.fixture:1',http_proxy:'http://lower.fixture:2',OPENAI_API_KEY:'generated-model-key',MOTE_TOKEN:'generated-ambient-owner-token',CODEX_HOME:join(root,'private-login'),NODE_OPTIONS:'--no-warnings'};
+  const generated=spawnSync(process.execPath,[entry,'launchd','--profile','test','--home',paths.home,'--node',node],{env:source,encoding:'utf8',timeout:10000});
+  assert.equal(generated.status,0,generated.stderr);
+  const file=JSON.parse(generated.stdout);assert.equal(file.installed,false);
+  const xml=await readFile(file.generated,'utf8');
+  for(const secret of [p.env.MOTE_TOKEN,source.MOTE_TOKEN,source.OPENAI_API_KEY,source.CODEX_HOME])assert.equal(xml.includes(secret),false);
+  assert.equal(xml.includes('NODE_OPTIONS'),false);
+  let launch={EnvironmentVariables:plistEnvironment(xml),ProgramArguments:[...xml.match(/<key>ProgramArguments<\/key><array>([\s\S]*?)<\/array>/)[1].matchAll(/<string>([^<]*)<\/string>/g)].map(([,value])=>decodePlist(value))};
+  if(process.platform==='darwin'){
+    // Use macOS's actual plist consumer for the local execution evidence.
+    const parsed=spawnSync('/usr/bin/plutil',['-convert','json','-o','-',file.generated],{encoding:'utf8',timeout:10000});
+    assert.equal(parsed.status,0,parsed.stderr);launch=JSON.parse(parsed.stdout);
+  }
+  assert.deepEqual(launch.ProgramArguments,[node,entry,'run','--profile','test','--home',paths.home]);
+  const gui={HOME:root,PATH:emptyPath};
+  const missing=spawnSync(shim,['--version'],{env:gui,encoding:'utf8',timeout:10000});
+  assert.notEqual(missing.status,0,'negative control has no Node on PATH');assert.match(missing.stderr,/node/);
+  const env={...gui,...launch.EnvironmentVariables};
+  const direct=spawnSync(shim,['--version'],{env,cwd:root,encoding:'utf8',timeout:10000});
+  assert.equal(direct.status,0,direct.stderr);
+  assert.deepEqual(JSON.parse(direct.stdout),{node:process.execPath,args:['--version'],proxy:source.http_proxy});
+  // Exercise the same isolatedEnvironment boundary used by `run`, through the
+  // public `exec` command; no Central or LaunchAgent needs to be installed.
+  const [executable,script,,...profileArgs]=launch.ProgramArguments;
+  const child=spawnSync(executable,[script,'exec',...profileArgs,'--',shim,'--version'],{env,cwd:root,encoding:'utf8',timeout:10000});
+  assert.equal(child.status,0,child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout),{node:process.execPath,args:['--version'],proxy:source.http_proxy,proxyEnabled:'1'});
+  assert.deepEqual((await readFile(invocations,'utf8')).trim().split('\n'),[shim,entry,shim]);
+});
 
 test('profile proxies preserve configured bypasses and always bypass IPv4/IPv6 loopback in both cases',()=>{
   const env=isolatedEnvironment(profile,{...cleanProxy,HTTP_PROXY:'http://upper.fixture:1',http_proxy:'http://lower.fixture:2',HTTPS_PROXY:'http://tls.fixture:3',ALL_PROXY:'socks5://all-upper.fixture:6',all_proxy:'socks5://all-lower.fixture:7',NO_PROXY:'internal.fixture, localhost',no_proxy:'.private.fixture,internal.fixture'});
@@ -37,10 +82,11 @@ test('profile proxies preserve configured bypasses and always bypass IPv4/IPv6 l
   const all=isolatedEnvironment(profile,{...cleanProxy,no_proxy:'*'});assert.ok(all.NO_PROXY.split(',').includes('*'),'explicit all-traffic bypass is retained');
 });
 
-test('launchd generation snapshots only proxy variables present in the generating process',()=>{
+test('launchd generation adds a stable PATH and snapshots only proxy variables present in the generating process',()=>{
   const env={PATH:'/generated/bin',HTTP_PROXY:'http://upper.fixture:1',http_proxy:'http://lower.fixture:2',HTTPS_PROXY:'http://tls.fixture:3',all_proxy:'socks5://all.fixture:4',NO_PROXY:'internal.fixture',no_proxy:'private.fixture',NODE_USE_ENV_PROXY:'0'};
   const xml=launchdXml(profile,'/generated/node',env).contents;
-  assert.deepEqual(plistEnvironment(xml),{HTTP_PROXY:'http://upper.fixture:1',http_proxy:'http://lower.fixture:2',HTTPS_PROXY:'http://tls.fixture:3',all_proxy:'socks5://all.fixture:4',NO_PROXY:'internal.fixture',no_proxy:'private.fixture'});
+  const PATH='/generated:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+  assert.deepEqual(plistEnvironment(xml),{PATH,HTTP_PROXY:'http://upper.fixture:1',http_proxy:'http://lower.fixture:2',HTTPS_PROXY:'http://tls.fixture:3',all_proxy:'socks5://all.fixture:4',NO_PROXY:'internal.fixture',no_proxy:'private.fixture'});
   assert.equal(xml.includes('NODE_USE_ENV_PROXY'),false);
   assert.equal(xml.includes(profile.env.MOTE_TOKEN),false);
   const runtime=isolatedEnvironment(profile,plistEnvironment(xml));
@@ -48,9 +94,21 @@ test('launchd generation snapshots only proxy variables present in the generatin
   assert.equal(runtime.http_proxy,'http://lower.fixture:2');assert.equal(runtime.ALL_PROXY,'socks5://all.fixture:4');assert.equal(runtime.all_proxy,runtime.ALL_PROXY);
   assert.ok(runtime.NO_PROXY.split(',').includes('127.0.0.1'));
   const noProxy=launchdXml(profile,'/generated/node',{PATH:'/generated/bin'}).contents;
-  assert.equal(noProxy.includes('EnvironmentVariables'),false);
+  assert.deepEqual(plistEnvironment(noProxy),{PATH});
   const allOnly=plistEnvironment(launchdXml(profile,'/generated/node',{ALL_PROXY:'socks5://all-upper.fixture:6'}).contents);
-  assert.deepEqual(allOnly,{ALL_PROXY:'socks5://all-upper.fixture:6'});
+  assert.deepEqual(allOnly,{PATH,ALL_PROXY:'socks5://all-upper.fixture:6'});
+});
+
+test('launchd ignores shell PATH entries and credentials and deduplicates the selected Node directory',()=>{
+  const env={PATH:':.:relative:/generated/untrusted-bin',OPENAI_API_KEY:'generated-secret',MOTE_TOKEN:'generated-owner-secret',CODEX_HOME:'/generated/private-login',NODE_OPTIONS:'--require /generated/injected.cjs'};
+  const generated=launchdXml(profile,'/usr/local/bin/node',env);
+  assert.deepEqual(plistEnvironment(generated.contents),{PATH:'/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin'});
+  for(const value of Object.values(env))assert.equal(generated.contents.includes(value),false);
+  assert.deepEqual(launchdXml(profile,'/usr/local/bin/node',{}),generated,'shell environment cannot change the stable executable search path');
+});
+
+test('launchd refuses relative Node paths and PATH separators or control characters',()=>{
+  for(const node of ['node','./node','/generated:untrusted/node','/generated/\nnode','/generated/\0node','/generated/\t/node','/generated/\x7f/node'])assert.throws(()=>launchdXml(profile,node,{}),/Node path must be absolute and contain no colon or control characters/);
 });
 
 test('profile startup bypasses local authenticated HTTP and fetch while remote model downloads still use the proxy',async t=>{
