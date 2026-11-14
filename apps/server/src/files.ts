@@ -466,14 +466,15 @@ export class FileStore {
     const record=this.store.evidence([c.capture_id])[0],v=this.version(c.capture_id),metadata=JSON.parse(c.metadata??'{}'),attribution=metadata.speaker?attributions[metadata.speaker]:undefined;
     return {...record,id:c.id,capturedAt:record.capturedAt,deviceId:record.deviceId,appName:record.appName,windowTitle:record.windowTitle,sourceType:'file',ocrText:(metadata.speaker?`[${metadata.speaker}] `:'')+c.text,durationMs:0,provenance:{...record.provenance!,layer:'derived'},fileEvidence:fileEvidenceSchema.parse({captureId:c.capture_id,revision:v.revision,artifactId:c.artifact_id,chunkId:c.id,...metadata,...(attribution?{speakerAttribution:attribution}:{}),...(c.start_ms===null?{}:{startMs:c.start_ms,endMs:c.end_ms})})};
   }
-  /** Only the preferred transcript/text of the retained current file revision is independent evidence. */
+  /** Only the preferred transcript/text of the retained current file revision is independent evidence.
+   * Identity/permission checks need attachment lineage metadata, never parent bodies. */
   isCurrentEvidence(id:string):boolean {
-    if(!fileAttachmentAvailable(this.store,id))return false;
+    if(!fileAttachmentAvailable(this.store,id,true))return false;
     return Boolean(this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${readableFileSql('c.capture_id')} AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`).get(id));
   }
   /** Resolve a currently permitted file or chunk; an identity is never a path grant. */
   readableFile(id:string):string|undefined {
-    const captureId=this.fileForRead(id);if(!captureId||!fileAttachmentAvailable(this.store,captureId))return;
+    const captureId=this.fileForRead(id);if(!captureId||!fileAttachmentAvailable(this.store,captureId,true))return;
     if(!this.store.db.prepare(`SELECT 1 WHERE ${readableFileSql('?')}`).get(captureId))return;
     if(id!==captureId&&!this.isCurrentEvidence(id)&&!this.store.isCurrentEvidence(id))return;
     return captureId;
@@ -481,7 +482,7 @@ export class FileStore {
   /** An owner may explicitly open a retained historical version while the
    * logical source is still authorized. It is never a current search hit. */
   readableHistoricalFile(id:string):boolean {
-    if(!fileAttachmentAvailable(this.store,id))return false;
+    if(!fileAttachmentAvailable(this.store,id,true))return false;
     return Boolean(this.store.db.prepare(`SELECT 1 FROM file_versions v
       JOIN file_heads h ON h.source_id=v.source_id AND h.external_id=v.external_id
       JOIN source_heads sh ON sh.source_id=v.source_id AND sh.external_id=v.external_id
