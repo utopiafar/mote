@@ -1,5 +1,6 @@
 import {existsSync,lstatSync,readFileSync,rmSync} from 'node:fs';
 import {resolve,join,parse} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 const paths=['mote.sqlite','mote.sqlite-wal','mote.sqlite-shm','mote.sqlite-journal','blobs','files','source-archive','imports','import-uploads','model-settings.json','file-processing.json'];
 
@@ -24,7 +25,7 @@ export function resetMvpVault(directory,{confirm=false}={}){
   return {storageEpoch:7,dataDir:root,removed,preserved:['access-token','content-key','connectors (client and external credentials)','logs','media-models']};
 }
 
-if(process.argv[1]&&resolve(process.argv[1])===new URL(import.meta.url).pathname){
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   const index=process.argv.indexOf('--data-dir');
   if(index!==2||!process.argv[index+1]||process.argv.length!==5||process.argv[4]!=='--confirm-clear'){
     console.error('Usage: node scripts/reset-mvp-vault.mjs --data-dir <directory> --confirm-clear');process.exitCode=2;
