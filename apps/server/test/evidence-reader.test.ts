@@ -100,6 +100,7 @@ test('shared read grants agree across HTTP MCP and Agent while owner archive acc
  const retained=await app.inject({url:'/api/captures/'+original.id,headers});
  assert.equal(retained.statusCode,200,retained.body);assert.equal(retained.json().ocrText,item.text,'owner history retains the exact immutable original');
  assert.equal((await contextRead(ref)).items[0].text,item.text,'owner ContextQuery retains the immutable archived original');
+ assert.deepEqual((await contextRead(ref,'outside')).items,[],'owner archive reads retain the requested device scope');
  assert.deepEqual((await call('mote_read',{refs:[ref]})).items,[],'MCP rechecks withdrawal after ContextQuery resolves the archived ref');
  assert.deepEqual(await call('mote_evidence',{ids:[ref]}),[],'a source tombstone revokes external model disclosure');
  assert.deepEqual(await ownerRead(()=>agentReader.evidence({ids:[original.id]})),[],'a source tombstone also revokes internal model disclosure');
