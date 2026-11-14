@@ -60,8 +60,11 @@ test('YAML trace activation persists its deadline, survives restart and cannot r
  const execution=(await node.app.inject({url:'/api/execution-settings',headers})).json();
  const saved=await node.app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:execution.revision,interactiveConcurrency:execution.interactiveConcurrency,agentConcurrency:5,llmConcurrency:execution.llmConcurrency,memoryConcurrency:execution.memoryConcurrency}});
  assert.equal(saved.statusCode,200,saved.body);assert.equal(node.featureServices.agentGate.snapshot().limit,5);
- await edit({debug:false,traceExpiresAt:0});
+ await edit({traceExpiresAt:0});
  assert.equal((await preferences()).traceExpiresAt,expiresAt,'clearing a deadline while tracing stays enabled cannot extend the window');
+ assert.equal(node.configService.revision,saved.json().revision,'a normalization-only correction does not change the configuration revision');
+ assert.equal(parse(await readFile(path,'utf8')).diagnostics.traceExpiresAt,expiresAt,'the unchanged runtime deadline is restored on disk');
+ await edit({debug:false});
  assert.equal(node.diagnostics.snapshot().level,'warn');
  await node.app.close();node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false});
  assert.equal((await preferences()).traceEnabled,true);assert.equal(node.diagnostics.snapshot().agentTrace.expiresAt,expiresAt);
@@ -73,8 +76,9 @@ test('YAML trace activation persists its deadline, survives restart and cannot r
  t.mock.timers.setTime(expiresAt);
  const expired=node.diagnostics.snapshot().lastSeq;node.diagnostics.agentTrace({type:'fixture.at-expiry'});
  assert.equal(node.diagnostics.snapshot().lastSeq,expired);assert.equal((await preferences()).traceEnabled,false);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,false);
- await edit({debug:true,traceExpiresAt:0});
+ await edit({traceExpiresAt:0});
  assert.equal((await preferences()).traceExpiresAt,expiresAt);assert.equal((await preferences()).traceEnabled,false);
+ assert.equal(parse(await readFile(path,'utf8')).diagnostics.traceExpiresAt,expiresAt);
  await node.app.close();node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false});
  assert.equal((await preferences()).traceEnabled,false);assert.equal(node.diagnostics.snapshot().agentTrace.enabled,false);assert.equal(node.diagnostics.snapshot().agentTrace.expiresAt,expiresAt);
 

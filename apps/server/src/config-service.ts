@@ -401,8 +401,8 @@ export class ConfigService {
       throw new ConfigServiceError('config_save_failed');
     } finally { await this.io.unlink(temporary).catch(() => {}); }
   }
-  private async commit(parsed: ReturnType<ConfigService['parse']>, observedText: string | null): Promise<ConfigServiceView> {
-    const previous = this.state(), next = parsed.raw;
+  private async commit(parsed: ReturnType<ConfigService['parse']>, observed: Awaited<ReturnType<ConfigService['read']>>): Promise<ConfigServiceView> {
+    const previous = this.state(), next = parsed.raw, observedText = observed?.text ?? null;
     const nextEffective=new Map<string,unknown>(),nextInputs=new Map<string,unknown>();
     for(const domain of this.domains.values()){
       const input=this.effectiveCandidate(domain,parsed.inputs.get(domain.id),this.effectiveInputs.get(domain.id));
@@ -418,9 +418,15 @@ export class ConfigService {
     }
     const changes = [...this.domains.values()].filter(domain => !isDeepStrictEqual(this.saved(domain.id), parsed.values.get(domain.id)) || !isDeepStrictEqual(nextEffective.get(domain.id), this.effective.get(domain.id)));
     if (!changes.length) {
-      const revisionChanged = next.revision !== previous.revision; next.revision = previous.revision;
-      if (revisionChanged) await this.persist(next, observedText); else this.diskText = observedText;
-      this.raw = next; this.effectiveInputs=nextInputs; this.lastError = null; this.notify(); return this.view();
+      next.revision = previous.revision;
+      // Normalization can repair the file without changing the active domains.
+      // Compare documents so formatting/key order alone remain untouched.
+      const corrected = !isDeepStrictEqual(next, observed?.document);
+      const uncertain = corrected ? await this.persist(next, observedText) : false;
+      if (!corrected) this.diskText = observedText;
+      this.raw = next; this.effectiveInputs=nextInputs; this.lastError = uncertain ? { code: 'config_commit_uncertain' } : null; this.notify();
+      if (uncertain) throw new ConfigServiceError('config_commit_uncertain');
+      return this.view();
     }
     if (previous.revision === Number.MAX_SAFE_INTEGER) throw new ConfigServiceError('config_unavailable');
     next.revision = previous.revision + 1;
@@ -507,7 +513,7 @@ export class ConfigService {
           }
           this.assignRaw(next, domain, preserveReferences(this.domainRaw(state, domain), saved, value));
         }
-        return await this.commit(this.parse(next), disk?.text ?? null);
+        return await this.commit(this.parse(next), disk);
       } catch (error) { this.recordError(error); throw error; }
     });
   }
@@ -517,7 +523,7 @@ export class ConfigService {
     const parsed = this.parse(disk.document);
     const revision = this.state().revision;
     if (parsed.raw.revision !== revision && parsed.raw.revision !== revision + 1) throw new ConfigServiceError('config_conflict');
-    return this.commit(parsed, disk.text);
+    return this.commit(parsed, disk);
   }
   reload(): Promise<ConfigServiceView> {
     return this.serialize(async () => { try { return await this.reloadInternal(await this.read()); } catch (error) { this.recordError(error); throw error; } });
