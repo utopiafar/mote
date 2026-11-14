@@ -19,6 +19,7 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import type {ModelProcessingAuthority,ModelProcessingRequest} from '../src/model-processing-authority.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
+import {serveGeneratedFunasr} from './fixtures/funasr.js';
 const audio=Buffer.from('Generated audio fixture bytes, not a microphone recording.');
 const transcript={durationMs:3000,segments:[{startMs:0,endMs:1000,text:'Generated orchard transcript.'}]};
 async function fixture(t:import('node:test').TestContext){
@@ -128,8 +129,11 @@ test('remote ASR cannot read an original or invoke its transport before the host
 
 
 test('local dialogue preserves one original authority across ASR, diarization and semantic grouping',async t=>{
- const f=await fixture(t),config=f.processing.configurationSnapshot();const settings={...config.settings,audioProcessor:'audio.local-dialogue',diarizationProcessor:'audio.diarize',speakerCount:null,semanticTurns:true};f.processing.update({revision:f.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.processing.runtime.registry)});f.command('on');const id=await f.upload();await f.processing.tick();
- assert.equal(f.files.detail(id).job?.state,'succeeded');assert.deepEqual(f.requests.map(r=>r.path),['/transcribe','/diarize']);for(const request of f.requests)assert.deepEqual(request.bytes,audio);
+ const f=await fixture(t),config=f.processing.configurationSnapshot(),native=await serveGeneratedFunasr(t,{audio,durationMs:3000,segments:transcript.segments.map(segment=>({...segment,speaker:0}))});
+ const settings={...config.settings,audioProcessor:'audio.local-dialogue',diarizationProcessor:'audio.diarize',localEndpoint:native.endpoint,localWorkerApiKey:native.token,speakerCount:null,semanticTurns:true};
+ const policy=fixtureFilePolicy(settings,f.processing.runtime.registry);policy.profiles.find(profile=>profile.processorId==='audio.local-dialogue')!.parameters.deduplicate=false;
+ f.processing.update({revision:f.processing.view().revision,settings,policy});f.command('on');const id=await f.upload();await f.processing.tick();
+ assert.equal(f.files.detail(id).job?.state,'succeeded');assert.deepEqual(native.originals.map(r=>r.path),['/transcribe','/diarize']);for(const request of native.originals)assert.deepEqual(request.bytes,audio);
  assert.ok(f.files.detail(id).artifacts.some(a=>a.kind==='dialogue'&&a.semanticGrouping===true));assert.ok(f.seen.some(r=>r.stage==='diarization'));assert.ok(f.seen.some(r=>r.stage==='semantic-turns'));
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM background_model_work WHERE id=?').get('automatic-media:'+id)!.n,1);
 });

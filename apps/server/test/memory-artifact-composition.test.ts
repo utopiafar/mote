@@ -12,6 +12,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {materialId} from '../src/materials.js';
+import {serveGeneratedFunasr} from './fixtures/funasr.js';
 
 const caption='I felt proud of completing the generated prototype.';
 const transcript='I verified that an idempotency key prevents duplicate prototype writes.';
@@ -100,7 +101,9 @@ async function fixture(t:import('node:test').TestContext,remote=false){
   const queue=async()=>{const p=node.memoryPipeline;await node.sourcePipelines.drainMemory({create:i=>p.create(i),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
   const run=async()=>{await queue();await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  return {get node(){return node;},control,calls,boundaryChecks,upload,organize,queue,run,request:(payload:Record<string,unknown>)=>node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload}),count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,asrCalls:()=>asrCalls,async restart(){await node.app.close();await start();}};
+  return {get node(){return node;},control,calls,boundaryChecks,upload,organize,queue,run,request:(payload:Record<string,unknown>)=>node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload}),count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,asrCalls:()=>asrCalls,
+    nativeDialogue:()=>serveGeneratedFunasr(t,{audio:wave,durationMs:1000,segments:[{startMs:0,endMs:1000,text:control.transcript,speaker:0}],speakers:{mode:'exact',count:1}},()=>asrCalls++),
+    async restart(){await node.app.close();await start();}};
 }
 
 test('ready record index survives failed media, restart and recovery; two waiting recipes share one extraction',async t=>{
@@ -144,15 +147,16 @@ test('the same named-output recipes reuse a different source and deterministic t
 });
 
 for(const revoke of [false,true])test(`dialogue intermediate transcript preserves the unused Memory receipt${revoke?' until recipe withdrawal':''}`,async t=>{
-  const f=await fixture(t);
+  const f=await fixture(t),native=await f.nativeDialogue();
   let enter!:()=>void,release!:()=>void;
   const entered=new Promise<void>(resolve=>enter=resolve),held=new Promise<void>(resolve=>release=resolve);
-  f.node.processing.runtime.registry.register({id:'fixture.held-diarizer',name:'Generated held diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){
+  f.node.processing.runtime.registry.register({id:'fixture.held-diarizer',name:'Generated held diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(input){
     enter();await held;
-    return {durationMs:1000,engine:'generated',expectedSpeakers:1,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[]};
+    assert.deepEqual(input.recognition,native.recognition.checkpoint);return native.diarization;
   }});
-  const settings={...f.node.processing.view().settings,localEndpoint:'http://127.0.0.1:1234/transcribe',audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.held-diarizer',speakerCount:1};
-  await f.node.processing.save({revision:f.node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.node.processing.runtime.registry)});
+  const settings={...f.node.processing.view().settings,localEndpoint:native.endpoint,localWorkerApiKey:native.token,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.held-diarizer',speakerCount:1};
+  const policy=fixtureFilePolicy(settings,f.node.processing.runtime.registry);policy.profiles.find(profile=>profile.processorId==='audio.local-dialogue')!.parameters.deduplicate=false;
+  await f.node.processing.save({revision:f.node.processing.view().revision,settings,policy});
   await authorizeFixtureModels(f.node);
   const file=await f.upload();await f.organize();await f.queue();
   const processing=f.node.processing.tick();
