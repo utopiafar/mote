@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import {syncBuiltinESMExports} from 'node:module';
 import {execFileSync} from 'node:child_process';
-import {mkdtemp,rm,mkdir,writeFile,readFile,symlink,readdir} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,writeFile,readFile,symlink,readdir,link,utimes} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -160,6 +160,30 @@ test('published content changes and stale old-model markers cannot claim the cur
  await f.assets.importBundle('dialogue',f.bundle);assert.equal(new MediaAssets(f.root).ready('dialogue'),true,'the published verification survives a fresh reader');
  await writeFile(join(f.assets.path('dialogue'),'complete.json'),JSON.stringify({version:MEDIA_CATALOG.dialogue.version}));
  assert.equal(f.assets.ready('dialogue'),false,'a version label alone does not prove verified assets');
+});
+
+test('local image startup accepts unchanged weights after snapshot links and timestamp changes; the real loader still rejects changed bytes',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-image-asset-metadata-')),bundle=join(directory,'bundle'),prior=MEDIA_CATALOG['local-image'];
+ const bytes=Buffer.from('Generated pinned image model bytes'),files=['model.bin','config.json'].map(name=>({name,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://example.invalid/'+name}));
+ await mkdir(bundle);for(const file of files)await writeFile(join(bundle,file.name),bytes);
+ MEDIA_CATALOG['local-image']={version:'generated-image-metadata',files};
+ const root=join(directory,'models'),assets=new MediaAssets(root);
+ t.after(async()=>{await assets.close();MEDIA_CATALOG['local-image']=prior;await rm(directory,{recursive:true,force:true});});
+ await assets.importBundle('local-image',bundle);
+ const inspect=()=>JSON.parse(execFileSync('python3',['-c',[
+  'import json,sys;sys.path.insert(0,sys.argv[1]);from mote_vlm import verify_assets,VlmError',
+  'try: verify_assets(sys.argv[2],json.loads(sys.argv[3]));print(json.dumps({"verified":True}))',
+  'except VlmError as error: print(json.dumps({"error":error.code}))',
+ ].join('\n'),scripts,assets.path('local-image'),JSON.stringify(files.map(file=>[file.name,file.size,file.sha256]))],{encoding:'utf8',timeout:30000}));
+ const installed=join(assets.path('local-image'),'model.bin'),snapshot=join(directory,'snapshot.bin');
+ await link(installed,snapshot);await utimes(join(assets.path('local-image'),'config.json'),new Date('2024-01-01'),new Date('2024-01-01'));
+ assert.deepEqual(inspect(),{verified:true});
+ assert.equal(assets.ready('local-image'),true,'link metadata and timestamps are not changed model contents');
+ await rm(snapshot);assert.equal(new MediaAssets(root).ready('local-image'),true,'the same verified installation survives a new reader');
+ await writeFile(installed,Buffer.alloc(bytes.length,1));
+ assert.deepEqual(inspect(),{error:'model_missing'},'same-size corruption is rejected before the real worker loads it');
+ await writeFile(join(bundle,'model.bin'),Buffer.alloc(bytes.length,1));await assert.rejects(assets.importBundle('local-image',bundle),'installation still verifies SHA-256');
+ await rm(installed);assert.equal(assets.ready('local-image'),false,'missing required assets remain unavailable');
 });
 
 test('invalid catalog paths and symlinked download parents cannot escape the model root',async t=>{

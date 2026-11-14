@@ -23,7 +23,7 @@ import {ImageInterpretationError,imageInterpretationSchema} from './image-recipe
  */
 export const LOCAL_IMAGE_PROTOCOL={version:1,method:'POST',path:'/v1/interpret',maxRequestBytes:12*1024*1024,maxResponseBytes:1024*1024} as const;
 export const LOCAL_IMAGE_MODEL={id:'InternVL3-14B-4bit',quantization:'4bit'} as const;
-export const LOCAL_IMAGE_PROMPT_VERSION='1';
+export const LOCAL_IMAGE_PROMPT_VERSION='2';
 const digest=z.string().regex(/^[a-f0-9]{64}$/);
 const identity=z.string().min(1).max(200);
 const mime=z.enum(['image/png','image/jpeg','image/webp']);

@@ -161,10 +161,11 @@ export class MediaAssets {
     return names.every(name=>{
       const file=files.get(name);if(!file||! /^[a-f0-9]{64}$/.test(file.sha256))return false;
       const stat=lstatSync(assetPath(root,name)),raw=catalog.files.find(item=>!item.extract&&item.name===name);
-      // Hashes were verified before publication. Stat identity invalidation
-      // detects deletion/replacement and same-size edits without hashing 9 GB
-      // on every status poll. A changed file must be verified by installation.
-      return (!raw||file.sha256===raw.sha256&&file.size===raw.size)&&Object.entries(signature(stat)).every(([key,value])=>file[key as keyof Signature]===value);
+      // Local VLM loads verify pinned bytes themselves. Snapshot hardlinks,
+      // touches and other metadata changes do not undo a verified installation;
+      // readiness polls check its files without repeatedly hashing 9 GB.
+      const present=role==='local-image'?stat.size===file.size:Object.entries(signature(stat)).every(([key,value])=>file[key as keyof Signature]===value);
+      return (!raw||file.sha256===raw.sha256&&file.size===raw.size)&&present;
     });
   }catch{return false;}}
   status(role:MediaRole):MediaAssetStatus {
