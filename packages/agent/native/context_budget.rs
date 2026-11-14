@@ -50,12 +50,14 @@ pub fn constrain_window(native_window: Option<i64>) -> Result<(), ApiError> {
 
 // Published model ceiling, NOT a request cap. Responses output includes reasoning.
 // https://developers.openai.com/api/docs/models/gpt-5.4
+// https://developers.openai.com/api/docs/models/gpt-6.1-terra
 // https://developers.openai.com/api/reference/resources/responses/methods/create
 // SIWC does not accept max_output_tokens. Reserve the whole documented ceiling;
 // never substitute Host maxTokens or effective_context_window_percent for it.
 fn output_ceiling(model: &str) -> Option<u64> {
     match model {
         "gpt-5.4" | "gpt-5.4-2026-03-05" => Some(128_000),
+        "gpt-6.1-terra" => Some(128_000),
         _ => None,
     }
 }
@@ -241,6 +243,54 @@ pub fn check_http(request: &Request) -> Result<(), TransportError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn terra_request() -> Value { json!({"model":"gpt-6.1-terra", "service_tier":"priority", "input":[
+        {"type":"message", "role":"user", "content":"Reply with the single word ok."}
+    ]}) }
+
+    #[test]
+    fn terra_small_request_and_fast_tier_do_not_consume_context_recovery() {
+        for tier in [None, Some("priority")] {
+            let mut request = terra_request();
+            if tier.is_none() { request.as_object_mut().unwrap().remove("service_tier"); }
+            let original = request.clone();
+            let mut state = Budget {window:272_000, ..Budget::default()};
+            assert!(!state.prepare(&mut request).unwrap());
+            assert_eq!(request, original);
+            assert!(!state.recovered);
+            assert!(!state.terminal);
+        }
+    }
+
+    #[test]
+    fn terra_fast_requires_the_full_published_output_reserve_at_the_exact_boundary() {
+        let request = terra_request();
+        let exact = count(&request) + 128_000;
+        let mut fitting = Budget {window:exact, ..Budget::default()};
+        assert!(!fitting.prepare(&mut request.clone()).unwrap());
+        for window in [exact - 1, 128_000] {
+            let mut state = Budget {window, ..Budget::default()};
+            let mut blocked = request.clone();
+            assert!(matches!(state.prepare(&mut blocked), Err(ApiError::ContextWindowExceeded)));
+            assert!(state.terminal);
+            assert_eq!(blocked, request, "owner input must not be shortened to fit");
+        }
+        let padded = format!("     {}", request);
+        assert!(!fitting.fits_encoded(&request, &padded), "final wire overhead still counts");
+    }
+
+    #[test]
+    fn unknown_models_and_unverified_terra_aliases_cannot_borrow_its_output_reserve() {
+        for model in ["generated-unknown-model", "gpt-6.1-terra-unverified", "gpt-6.1-terra-2026-11-14"] {
+            let mut request = terra_request();
+            request["model"] = json!(model);
+            let mut state = Budget {window:1_050_000, ..Budget::default()};
+            assert!(matches!(state.prepare(&mut request), Err(ApiError::ContextWindowExceeded)));
+            assert!(state.terminal);
+            request["model"] = json!("gpt-6.1-terra");
+            assert!(state.prepare(&mut request).is_err(), "a rejected process cannot resume sending");
+        }
+    }
 
     fn body() -> Value { json!({"model":"gpt-5.4", "instructions":"Stable", "input":[
         {"type":"message", "role":"user", "content":"Owner input"},

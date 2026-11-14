@@ -12,6 +12,7 @@ import {zstdDecompressSync} from 'node:zlib';
 import {WebSocketServer} from 'ws';
 import {createAgent, AgentNotConfiguredError, AgentProviderError} from '../dist/index.js';
 import {createImportAgent} from '../dist/import-agent.js';
+import {CodexSession} from '../dist/codex-session.js';
 import {estimateSerializedTokens} from '../dist/models/context-budget.js';
 
 const native = fileURLToPath(new URL('../native/codex.mjs', import.meta.url));
@@ -31,7 +32,7 @@ async function generatedTls(root) {
   return {ca, key: await readFile(key), cert: await readFile(cert)};
 }
 
-async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, model = 'gpt-5.4', repair = false, chatgpt = false, forceCompaction = false, authRetry = false, nativeWindow = 272000, workspace = false} = {}) {
+async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, model = 'gpt-5.4', serviceTier, singleReply = false, repair = false, chatgpt = false, forceCompaction = false, authRetry = false, nativeWindow = 272000, workspace = false} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'mote-codex-native-budget-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const workspacePath = join(root, 'workspace');
@@ -57,7 +58,9 @@ async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, mod
       return;
     }
     let output = [];
-    if (body.generate !== false) output = generations === 1 ? [
+    if (body.generate !== false) output = singleReply ? [
+      {id: 'generated-ok', type: 'message', role: 'assistant', phase: 'final_answer', status: 'completed', content: [{type: 'output_text', text: 'ok', annotations: []}]},
+    ] : generations === 1 ? [
       {id: 'generated-commentary', type: 'message', role: 'assistant', phase: 'commentary', status: 'completed', content: [{type: 'output_text', text: '证'.repeat(1200), annotations: []}]},
       {id: 'generated-call', type: 'function_call', call_id: 'generated-call', name: workspace ? 'exec_command' : 'timeline',
         arguments: workspace ? JSON.stringify({cmd: 'python3 -c "from pathlib import Path; p=Path(\'execution-count.txt\'); p.write_text(p.read_text()+\'executed\\n\' if p.exists() else \'executed\\n\'); print(\'generated workspace output \'*200)"', max_output_tokens: 3000}) : '{}', status: 'completed'},
@@ -87,6 +90,7 @@ async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, mod
         supports_reasoning_summary_parameter: true, support_verbosity: false,
         truncation_policy: {mode: 'tokens', limit: 10000}, context_window: nativeWindow,
         effective_context_window_percent: 95, experimental_supported_tools: [],
+        service_tiers: [{id: 'priority', name: 'Fast', description: 'Generated Fast capability'}], additional_speed_tiers: ['fast'],
       }]}));
       return;
     }
@@ -140,13 +144,20 @@ child.stderr.on('data', chunk => appendFileSync(${JSON.stringify(stderrPath)}, c
 child.on('exit', code => process.exit(code ?? 1));
 process.on('SIGTERM', () => child.kill('SIGTERM'));
 `, {mode: 0o700});
-  const agent = (workspace ? createImportAgent : createAgent)({protocol: 'codex-app-server', model, contextWindow: window, maxTokens: 512,
+  const options = {protocol: 'codex-app-server', model, serviceTier, contextWindow: window, maxTokens: 512,
     codex: {home: root, executable}, agentTimeoutMs: 20000, authorizeModelRequest: () => {authorizations++;},
     reader: {search: async () => [], evidence: async () => [], devices: async () => [], activity: async () => ({}),
       timeline: async () => {reads++; return {items: [record], nextCursor: null};}},
-  });
+  };
+  const agent = (workspace ? createImportAgent : createAgent)(options);
   t.after(() => agent.close());
-  return {agent, requests, workspacePath, async stats() {
+  return {agent, requests, workspacePath, async requestSingleWord() {
+    const session = new CodexSession(options, async () => assert.fail('a single-word request needs no tool'));
+    try {
+      await session.start('Generated fixture instructions.', []);
+      return await session.run('Reply with the single word ok.');
+    } finally {await session.close();}
+  }, async stats() {
     const rpc = (await readFile(rpcPath, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
     const result = {generations, upgrades, reads, authorizations, turns: rpc.filter(m => m.method === 'turn/start').length,
       compacts: rpc.filter(m => m.method === 'thread/compact/start').length, ...(authRetry ? {authRetries} : {})};
@@ -163,9 +174,46 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
   }};
 }
 
+for (const mode of ['websocket', 'http-fallback']) test(`native Terra Fast sends a short request and returns ok over ${mode}`, {timeout: 30000}, async t => {
+  const f = await fixture(t, {mode, model: 'gpt-6.1-terra', serviceTier: 'fast', singleReply: true, chatgpt: true, window: 272000});
+  try {assert.equal(await f.requestSingleWord(), 'ok');}
+  catch (error) {t.diagnostic((await f.diagnostics()).slice(-2500)); throw error;}
+  const stats = await f.stats();
+  assert.equal(stats.generations, 1);
+  assert.equal(stats.turns, 1);
+  assert.equal(stats.reads, 0);
+  assert.equal(stats.authorizations, 1);
+  assert.equal(stats.compacts, 0);
+  assert.ok(stats.upgrades > 0, 'the real client attempts WebSocket before any HTTP fallback');
+  const actual = f.requests.filter(r => r.body.generate !== false);
+  assert.equal(actual[0].transport, mode === 'websocket' ? 'websocket' : 'http');
+  assert.equal(actual[0].body.model, 'gpt-6.1-terra');
+  assert.equal(actual[0].body.service_tier, 'priority', 'Fast survives native catalog resolution and serialization');
+  assert.ok(JSON.stringify(actual[0].body.input).includes('Reply with the single word ok.'));
+  assert.ok(!JSON.stringify(actual[0].body).includes('budgetCoverage'), 'a short request needs no reduction');
+  const events = await f.events();
+  const started = events.find(event => event.result?.thread);
+  assert.equal(started.result.model, 'gpt-6.1-terra');
+  assert.equal(started.result.serviceTier, 'priority');
+});
+
+for (const {model, window} of [
+  {model: 'gpt-6.1-terra', window: 128000},
+  {model: 'gpt-6.1-terra-unverified', window: 272000},
+]) test(`native Fast blocks a short request before send without a verified full output reserve: ${model}/${window}`, {timeout: 30000}, async t => {
+  const f = await fixture(t, {model, window, serviceTier: 'fast', singleReply: true, chatgpt: true});
+  await assert.rejects(f.requestSingleWord(), error => error instanceof AgentProviderError && error.details.code === 'processing_limit');
+  assert.equal(f.requests.length, 0, 'neither warmup nor generation may bypass the gate');
+  const stats = await f.stats();
+  assert.equal(stats.generations, 0);
+  assert.equal(stats.turns, 1);
+  assert.equal(stats.reads, 0);
+  assert.equal(stats.compacts, 0);
+});
+
 for (const mode of ['websocket', 'http-fallback']) {
-  test(`native ${mode} prevents oversized tool continuation and sends one disclosed reduction`, {timeout: 30000}, async t => {
-    const f = await fixture(t, {mode});
+  for (const selection of [{model: 'gpt-5.4'}, {model: 'gpt-6.1-terra', serviceTier: 'fast', chatgpt: true}]) test(`native ${mode} prevents oversized tool continuation and sends one disclosed reduction: ${selection.model}`, {timeout: 30000}, async t => {
+    const f = await fixture(t, {mode, ...selection});
     try {
       const answer = await f.agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline']});
       assert.deepEqual(answer.citations.map(c => c.id), [record.id]);
@@ -242,8 +290,8 @@ test('native ChatGPT HTTP authentication retry keeps the prior reduction and doe
   assert.ok(f.requests.slice(-2).every(r => JSON.stringify(r.body).includes('budgetCoverage')));
 });
 
-test('native model capacity constrains a larger owner window before any send', {timeout: 30000}, async t => {
-  const f = await fixture(t, {chatgpt: true, window: 400000, nativeWindow: 132000});
+for (const selection of [{model: 'gpt-5.4'}, {model: 'gpt-6.1-terra', serviceTier: 'fast'}]) test(`native model capacity constrains a larger owner window before any send: ${selection.model}`, {timeout: 30000}, async t => {
+  const f = await fixture(t, {...selection, chatgpt: true, window: 400000, nativeWindow: 132000});
   await assert.rejects(f.agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline']}), error =>
     error instanceof AgentProviderError && error.details.code === 'processing_limit');
   const stats = await f.stats();
