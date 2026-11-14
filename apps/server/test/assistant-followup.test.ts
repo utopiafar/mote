@@ -14,7 +14,7 @@ import {semanticProcessor} from '../src/semantic-extraction.js';
 import {UsageLedger} from '../src/usage.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {StoreError,sha256} from '../src/store.js';
-import {materialId} from '../src/materials.js';
+import {materialId,MaterialStore} from '../src/materials.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
@@ -80,6 +80,35 @@ async function fixture(t:TestContext){
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,grants,add,produce,start,wait,run,admission};
 }
+
+test('preparing an assistant preview of many small blocks batches original checks and lets unrelated work run',async t=>{
+ const f=await fixture(t),parts=Array.from({length:80},(_,n)=>'Generated block '+n+'. '),note=await f.add(parts.join(''));
+ const blocks=parts.map((text,n)=>({id:'generated-block-'+n,kind:'text' as const,format:'plain',text,memberIds:['original']}));
+ const material=f.node.materials.publish({id:note.material.id,kind:'mote.note',schemaVersion:1,title:'Generated segmented note',origin:note.material.origin,
+  blocks,members:[{id:'original',kind:'capture',ref:'capture:'+note.id}],artifacts:[{key:'source-body',state:'ready',blockIds:blocks.map(block=>block.id)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}},{expectedRevision:note.material.revision});
+ const expected=new Map(f.node.materials.evidenceIds(material.ref).map((id,index)=>[id,parts[index]]));
+ f.programs.push(context=>{
+  assert.equal(context.materials[0].body?.complete,false,'the bounded preview must not claim the whole source');
+  assert.ok(context.originals.length>30);for(const original of context.originals)assert.equal(original.quote,expected.get(original.id)?.slice(original.offset,original.offset+original.quote.length));
+  assert.equal(context.originals[0].quote,parts[0]);return answer();
+ });
+ let fullReads=0;const evidenceIds=MaterialStore.prototype.evidenceIds;
+ const spy=t.mock.method(MaterialStore.prototype,'evidenceIds',function(this:MaterialStore,...args:Parameters<typeof evidenceIds>){if(args[0]===material.ref)fullReads++;return evidenceIds.apply(this,args);});
+ let yielded=false;const turn=new Promise<void>(resolve=>setImmediate(()=>{yielded=true;resolve();}));
+ const task=await f.start([material.ref]);spy.mock.restore();
+ t.diagnostic(`preview preparation checked the full Material ${fullReads} times`);
+ assert.ok(fullReads<=8,`the whole Material must not be checked again for each preview quote (${fullReads} reads)`);
+ assert.equal(yielded,true,'unrelated event-loop work must run before preview preparation completes');
+ await turn;await f.wait(task);const result=await f.service.finish(task.id);assert.deepEqual(result.cardIds,[]);assert.deepEqual(result.commitmentIds,[]);
+});
+
+test('deletion during assistant preview preparation prevents model admission after its event-loop yield',async t=>{
+ const f=await fixture(t),note=await f.add('Generated original withdrawn during preview preparation.');
+ f.programs.push(()=>answer());let deleted=false;
+ const withdrawal=new Promise<void>(resolve=>setImmediate(()=>{f.node.store.delete(note.id);deleted=true;resolve();}));
+ await assert.rejects(f.start([note.material.ref]),error=>error instanceof StoreError&&[404,409].includes(error.statusCode));
+ await withdrawal;assert.equal(deleted,true);assert.equal(f.seen.length,0,'withdrawn originals must not reach the interpreter');
+});
 
 function versionedMaterial(f:Awaited<ReturnType<typeof fixture>>){
  const sourceId='generated-revision-source',externalId='generated-document';

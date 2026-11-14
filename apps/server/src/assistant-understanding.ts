@@ -140,7 +140,8 @@ export class AssistantUnderstandingReader {
     const records=[...this.reader.evidence(otherIds.map(id=>formatEvidenceRef('capture',id)),scope),
       ...this.reader.evidence(materialIds.map(id=>formatEvidenceRef('capture',id)),{...scope,after:undefined,before:undefined})];
     const byId=new Map(records.map(record=>[record.id,record]));
-    if(ids.some(id=>!byId.has(id)||!this.reader.memories.isCurrentEvidence(id)))throw unavailable();
+    const current=new Set(this.reader.memories.readCurrentEvidence(ids).map(record=>record.id));
+    if(ids.some(id=>!byId.has(id)||!current.has(id)))throw unavailable();
     return byId;
   }
   private product(ref:string,scope:QueryScope,context:ReturnType<AssistantUnderstandingReader['material']>):AssistantUnderstandingProduct|undefined {
@@ -235,6 +236,11 @@ export class AssistantUnderstandingReader {
     if(!parsed||!this.candidates(context.material,context.members).some(item=>item.id===parsed.id&&item.revision===parsed.revision))throw unavailable();
     return this.product(input.artifactRef,scope,context)??null;
   }
+  private originalWindow(id:string,offset:number,length:number,record:CaptureRecord):Original {
+    if(record.provenance?.document?.contentRole==='summary'||record.provenance?.layer==='reference')throw unavailable();
+    if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(length)||length<1||length>12000||!Number.isSafeInteger(offset+length)||offset+length>record.ocrText.length||splitPair(record.ocrText,offset)||splitPair(record.ocrText,offset+length))throw new StoreError('Original reference range is invalid',416);
+    return {id,deviceId:record.deviceId,capturedAt:record.capturedAt,receivedAt:record.receivedAt,provenance:record.provenance,attributionContext:record.attributionContext,offset,length,quote:record.ocrText.slice(offset,offset+length)};
+  }
   /** Re-read one exact original window under the current scope; a product or
    * Material locator alone never authorizes a different original. */
   readOriginal(input:{ref:string;scope:QueryScope;id:string;offset:number;length:number}):Original & {disclosureDependencies:EvidenceDependencies;sourceContextDependencies:SourceContextDeclaration[]} {
@@ -242,11 +248,25 @@ export class AssistantUnderstandingReader {
     if(originalBodyUnavailable(context.material))throw unavailable();
     if(!context.members.includes(id)&&!context.anchors.includes(id)||!this.originalAllowed(context,id))throw unavailable();
     const record=this.records([id],scope,context).get(id)!;
-    if(record.provenance?.document?.contentRole==='summary'||record.provenance?.layer==='reference')throw unavailable();
     const {offset,length}=input;
-    if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(length)||length<1||length>12000||!Number.isSafeInteger(offset+length)||offset+length>record.ocrText.length||splitPair(record.ocrText,offset)||splitPair(record.ocrText,offset+length))throw new StoreError('Original reference range is invalid',416);
-    return {id,deviceId:record.deviceId,capturedAt:record.capturedAt,receivedAt:record.receivedAt,provenance:record.provenance,attributionContext:record.attributionContext,offset,length,quote:record.ocrText.slice(offset,offset+length),
+    return {...this.originalWindow(id,offset,length,record),
       disclosureDependencies:{version:1,complete:context.complete,ids:[...new Set([...context.members,...context.anchors,id])]},
       sourceContextDependencies:this.contextPins([...context.members,...context.anchors,id],context.material)};
+  }
+  /** One synchronous preview batch keeps the same exact-window checks without
+   * revalidating the full Material for every span. Unavailable/invalid windows
+   * are omitted in place, as the follow-up preview's individual reads were. */
+  readOriginals(input:{ref:string;scope:QueryScope;ranges:readonly Range[]}):Array<ReturnType<AssistantUnderstandingReader['readOriginal']>|undefined> {
+    const scope=queryScopeSchema.parse(input.scope),context=this.material(input.ref,scope);
+    if(originalBodyUnavailable(context.material))throw unavailable();
+    const ranges=input.ranges.map(range=>({...range,id:z.string().uuid().parse(range.id)}));
+    const ids=[...new Set(ranges.map(range=>range.id))].filter(id=>(context.members.includes(id)||context.anchors.includes(id))&&this.originalAllowed(context,id));
+    if(!ids.length)return ranges.map(()=>undefined);
+    const records=this.records(ids,scope,context),dependencies={version:1 as const,complete:context.complete,ids:[...new Set([...context.members,...context.anchors])]},pins=this.contextPins(dependencies.ids,context.material);
+    return ranges.map(range=>{
+      const record=records.get(range.id);if(!record)return;
+      try{return {...this.originalWindow(range.id,range.offset,range.length,record),disclosureDependencies:dependencies,sourceContextDependencies:pins};}
+      catch(error){if(!(error instanceof StoreError&&(error.statusCode===404||error.statusCode===416)))throw error;}
+    });
   }
 }
