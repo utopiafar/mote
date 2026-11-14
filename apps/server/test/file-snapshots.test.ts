@@ -18,6 +18,7 @@ import {EvidenceReader} from '../src/evidence-reader.js';
 import {Indexer} from '../src/indexer.js';
 import {browseSourceCatalog} from '../src/source-catalog.js';
 import {fileViewSchema} from '@mote/shared';
+import {serveGeneratedFunasr} from './fixtures/funasr.js';
 function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-snapshot-fixture-')),store=new Store(dir,{maxStorageBytes:100*1024*1024}),sources=new SourceStore(store),files=new FileStore(store,sources);const cleanup:Array<()=>Promise<void>>=[];sources.register({id:'fixture',name:'Generated',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'snapshot'});t.after(async()=>{for(const close of cleanup.reverse())await close();store.close();rmSync(dir,{recursive:true,force:true});});return {store,sources,files,cleanup};}
 async function upload(files:FileStore,bytes:Buffer,allowRead=false,mimeType='text/plain'){
  const hash=sha256(bytes),m:FileRevision={sourceId:'fixture',previousRevision:null,sizeBytes:bytes.length,sha256:hash,relativePath:'generated.txt',item:{externalId:'generated-file',revision:hash,observedAt:'2026-10-01T00:00:00Z',title:'Generated',kind:'file',layer:'snapshot',text:'',mimeType,deleted:false,document:{fileIndex:{version:1,fileId:'generated-file',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead}}}};
@@ -94,10 +95,13 @@ test('snapshot runs the actual custom recipe and its output stage before destroy
 });
 
 test('snapshot dialogue executes diarization, alignment and semantic turns with truthful stage pins',async t=>{
- const {files,store,cleanup}=fixture(t),ack=await upload(files,Buffer.from('Generated dialogue bytes'),false,'audio/wav');let asr=0,diarize=0,turns=0;
- const processing=new FileProcessing(files,{transcribe:async()=>{asr++;return {durationMs:2000,segments:[{startMs:0,endMs:1000,text:'Generated speaker one'},{startMs:1000,endMs:2000,text:'Generated speaker two'}]};}},undefined,{analyze:async records=>{turns++;return {answer:JSON.stringify({groups:[[0],[1]]}),citations:records.map(record=>({id:record.id}))};}});cleanup.push(()=>processing.close());await processing.runtime.ready;
- processing.runtime.registry.register({id:'generated.snapshot-diarize',name:'Generated diarization',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){diarize++;return {durationMs:2000,engine:'generated',expectedSpeakers:2,observedSpeakers:2,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'},{startMs:1000,endMs:2000,speaker:'SPEAKER_1'}],samples:[]};}});
- const settings={...processing.view().settings,audioProcessor:'audio.local-dialogue',diarizationProcessor:'generated.snapshot-diarize',speakerCount:2,semanticTurns:true};processing.update({revision:processing.view().revision,settings,policy:fixtureFilePolicy(settings,processing.runtime.registry)});
+ const {files,store,cleanup}=fixture(t),audio=Buffer.from('Generated dialogue bytes'),ack=await upload(files,audio,false,'audio/wav');let asr=0,diarize=0,turns=0;
+ const native=await serveGeneratedFunasr(t,{audio,durationMs:2000,segments:[{startMs:0,endMs:1000,text:'Generated speaker one',speaker:0},{startMs:1000,endMs:2000,text:'Generated speaker two',speaker:1}],speakers:{mode:'exact',count:2}},()=>asr++);
+ const processing=new FileProcessing(files,undefined,undefined,{analyze:async records=>{turns++;return {answer:JSON.stringify({groups:[[0],[1]]}),citations:records.map(record=>({id:record.id}))};}});cleanup.push(()=>processing.close());await processing.runtime.ready;
+ processing.runtime.registry.register({id:'generated.snapshot-diarize',name:'Generated diarization',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(input){diarize++;assert.deepEqual(input.recognition,native.recognition.checkpoint);return native.diarization;}});
+ const settings={...processing.view().settings,audioProcessor:'audio.local-dialogue',diarizationProcessor:'generated.snapshot-diarize',localEndpoint:native.endpoint,localWorkerApiKey:native.token,speakerCount:2,semanticTurns:true};
+ const policy=fixtureFilePolicy(settings,processing.runtime.registry);policy.profiles.find(profile=>profile.processorId==='audio.local-dialogue')!.parameters.deduplicate=false;
+ processing.update({revision:processing.view().revision,settings,policy});
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'succeeded',JSON.stringify(files.detail(ack.id).job));assert.deepEqual([asr,diarize,turns],[1,1,1]);assert.deepEqual(files.chunks(ack.id).map(chunk=>chunk.fileEvidence?.speaker),['SPEAKER_0','SPEAKER_1']);
  const receipt=processing.explain(ack.id).snapshots[0] as any;assert.deepEqual(receipt.stagePins.map((pin:any)=>pin.name),['extract','diarize','align','turns']);assert.equal(store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(ack.id),undefined);assert.equal(files.detail(ack.id).hasOriginal,false);
 });

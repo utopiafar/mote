@@ -8,16 +8,19 @@ import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {generatedFunasr,readFunasrRequest} from './fixtures/funasr.js';
 
 for(const protocol of ['http','https'] as const)test(`${protocol} local ASR, diarization, image extraction and health stay direct under startup environment proxies`,async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-worker-proxy-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const audio=Buffer.from([0,255,1,2,3,10,13,0]),native=generatedFunasr({audio,durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated speech',speaker:0}]});
   const received:{path:string;authorization:string|undefined;offline:string|undefined;timeout:string|undefined;body:Buffer}[]=[],proxied:{path:string;authorization:string|undefined;body:Buffer}[]=[],tunnels:string[]=[];
   const handler=async(req:IncomingMessage,res:ServerResponse)=>{
     if(req.url==='/proxy-control'){req.resume();res.end(JSON.stringify({proxyControl:true}));return;}
-    const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(chunk);
-    received.push({path:req.url!,authorization:req.headers.authorization,offline:req.headers['x-mote-offline'] as string|undefined,timeout:req.headers['x-mote-processing-timeout-ms'] as string|undefined,body:Buffer.concat(chunks)});
+    const nativeInput=req.url==='/diarize'?await readFunasrRequest(req,audio):undefined,nativeRequest=nativeInput?.request;
+    const chunks:Buffer[]=[];if(!nativeRequest)for await(const chunk of req)chunks.push(chunk);
+    received.push({path:req.url!,authorization:req.headers.authorization,offline:req.headers['x-mote-offline'] as string|undefined,timeout:req.headers['x-mote-processing-timeout-ms'] as string|undefined,body:nativeInput?nativeInput.audio:Buffer.concat(chunks)});
     res.setHeader('X-Mote-Execution','local');res.setHeader('Content-Type','application/json');
-    const result=req.url==='/diarize'?{durationMs:1000,engine:'generated',expectedSpeakers:null,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[]}:req.url==='/health'?{version:1,execution:'local',asr:true,diarization:true,ocr:true}:req.url==='/ocr'?{durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image'}]}:{durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated speech'}]};
+    const result=nativeRequest?JSON.parse(native.response(nativeRequest)):req.url==='/health'?{version:1,execution:'local',asr:true,diarization:true,ocr:true}:req.url==='/ocr'?{durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image'}]}:{durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated speech'}]};
     res.end(JSON.stringify(result));
   };
   let tls:{key:Buffer;cert:Buffer}|undefined;

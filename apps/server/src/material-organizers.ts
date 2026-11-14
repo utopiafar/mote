@@ -642,8 +642,9 @@ const authored:MaterialOrganizer={
       artifacts.push(...imageBlocks(body,attached,processed.image,`attachment/${attached.id}`));
     }
     if((file.attachedFiles?.length??0)!==(r.metadata?.attachments?.length??0))body.limitations.add('attachment_unavailable');
+    const partial=artifacts.some(item=>item.state!=='ready')||body.limitations.has('attachment_processing_incomplete')||body.limitations.has('attachment_unavailable');
     return {id:materialId(sourceId,r.id),kind:`mote.${r.source}`,schemaVersion:2,title:r.windowTitle||r.metadata?.notification?.title?.slice(0,500)||r.appName||r.source,
-      origin:origin(sourceId,r.id,[r]),blocks:body.blocks,members:body.members,coverage:body.coverage(artifacts.some(item=>item.state!=='ready')?'partial':'complete'),artifacts,fidelity:body.fidelity('derived',['metadata_projected']),retention:{original:'retained',policy:'keep'}};
+      origin:origin(sourceId,r.id,[r]),blocks:body.blocks,members:body.members,coverage:body.coverage(partial?'partial':'complete'),artifacts,fidelity:body.fidelity('derived',['metadata_projected']),retention:{original:'retained',policy:'keep'}};
   },
 };
 
