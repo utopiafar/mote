@@ -644,7 +644,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   resources.defer(()=>memoryTopics.close());
   await configurationPlatform.start();
   diagnostics.record('server.started');
-  installServerLifecycleHooks(app,{lifecycle:serverLifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,resources,diagnostics});
+  installServerLifecycleHooks(app,{lifecycle:serverLifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,memoryPhasePipeline,resources,diagnostics});
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
