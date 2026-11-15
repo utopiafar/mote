@@ -297,7 +297,9 @@ export class ServerDiagnostics {
   /** Prepare file ownership without enabling detailed traces before the transaction publishes. */
   async prepareConfiguration(value:{enabled:boolean;debug:boolean;traceEnabled:boolean;level:LogLevel;traceExpiresAt?:number}):Promise<PreparedConfigChange>{
     if(this.closed)throw new Error('Diagnostics are closed');
-    await this.init();await this.flush();
+    // Queued lines already contain their admitted channel and serialized data.
+    // Publishing capture flags does not require those bytes to reach disk.
+    await this.init();
     if(this.closed)throw new Error('Diagnostics are closed');
     const level=value.level==='silent'?'silent':value.debug?'debug':value.level;
     // An isolated writer can read history and acquire the directory lock while
@@ -420,7 +422,9 @@ export class ServerDiagnostics {
     catch{this.writeFailures++;this.dropped+=this.queue.length+this.writingCount;this.writingCount=0;this.queue=[];this.nextAttempt=Date.now()+30000;this.settleWrites(this.acceptedWrites);}
   }
   private refreshRetainedMemory(){const retained=this.disk.snapshot(),ids=new Set(retained.files.map(f=>f.name.split('.')[4])),now=this.now().getTime();this.entries=this.entries.filter(event=>{const key=event.instanceId+':'+event.seq,file=this.entryFiles.get(key),channel=event.event==='agent.trace'?'trace':event.level,days=retained.channels.find(c=>c.channel===channel)!.days;const keep=Date.parse(event.at)>now-days*86400000&&(!file||ids.has(file));if(!keep)this.entryFiles.delete(key);return keep;});this.traceEvents=this.entries.filter(event=>event.event==='agent.trace').length;const keys=new Set(this.entries.map(e=>e.instanceId+':'+e.seq));for(const key of this.entryFiles.keys())if(!keys.has(key))this.entryFiles.delete(key);}
-  async retention(){await this.flush();try{await stat(this.options.directory);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return this.disk.snapshot();throw e;}await this.disk.refresh();this.refreshRetainedMemory();return this.disk.snapshot();}
+  /** Refresh persisted-file accounting independently of the admitted backlog;
+   * the status snapshot reports queued records separately as pendingWrites. */
+  async retention(){try{await stat(this.options.directory);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return this.disk.snapshot();throw e;}await this.disk.refresh();this.refreshRetainedMemory();return this.disk.snapshot();}
   async cleanupPreview(kind:'trace'|'all'){await this.flush();return this.disk.preview(kind);}
   async cleanup(plan:CleanupPlan){await this.flush();const before=this.seq,result=await this.disk.clear(plan);this.refreshRetainedMemory();this.entries=this.entries.filter(e=>this.entryFiles.has(e.instanceId+':'+e.seq)||e.seq>before||plan.kind==='trace'&&e.event!=='agent.trace');this.traceEvents=this.entries.filter(e=>e.event==='agent.trace').length;return result;}
   snapshot() {this.refreshRetainedMemory();return {enabled:!this.closed&&this.enabled&&this.level!=='silent',level:this.level,instanceId:this.instanceId,retainedEvents:this.entries.length,lastSeq:this.seq,pendingWrites:this.queue.length+this.writingCount,droppedEvents:this.dropped+this.disk.snapshot().droppedEvents,writeFailures:this.writeFailures,readFailures:this.readFailures,agentTrace:{enabled:!this.closed&&this.traceEnabled&&this.now().getTime()<this.traceExpiresAt,expiresAt:this.traceExpiresAt,retainedEvents:this.traceEvents},retention:this.disk.snapshot(),limits:{maxFileBytes:this.maxBytes,maxEvents:this.maxEntries},runtime:{uptimeMs:Math.round(process.uptime()*1000),rssBytes:process.memoryUsage().rss,cpuUserMicros:process.cpuUsage().user,cpuSystemMicros:process.cpuUsage().system}};}
