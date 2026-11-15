@@ -6,7 +6,7 @@ import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
 import {AssistantMatters} from './assistant-matters.js';
 import {AssistantUnderstandingReader} from './assistant-understanding.js';
-import {BatchProcessing,type BatchAdmission,type BatchRequest} from './batch-processing.js';
+import {BATCH_CONTEXT_MAX_BYTES,BatchProcessing,type BatchAdmission,type BatchRequest} from './batch-processing.js';
 import {AssistantChangeFeed} from './assistant-change-feed.js';
 import {BackgroundModelAuthorization} from './background-model-authorization.js';
 import {FileObservationReader,type FileObservation} from './file-observations.js';
@@ -19,6 +19,14 @@ import {assertSourceContextDependencies,combineSourceContextDependencies} from '
 import {sha256,StoreError,type Store} from './store.js';
 import {TaskRecords,type AssertTaskCurrent,type TaskRecord} from './task-records.js';
 import {addTaskEvidence,taskEvidenceIds} from './task-evidence.js';
+import type {ServerDiagnostics} from './diagnostics.js';
+
+// The transport ceiling is not a packing target. Leave room for small context
+// changes while the complete provider request keeps its own budget gate.
+const automaticContextBytes=Math.floor(BATCH_CONTEXT_MAX_BYTES*0.8);
+class AssistantContextLimit extends StoreError {
+ constructor(readonly bytes:number){super('Assistant context exceeds the bounded review; narrow the scope',413);}
+}
 
 const uuid=z.string().uuid();
 const text=z.string().trim().min(1).max(8000);
@@ -73,7 +81,7 @@ export class AssistantFollowup {
  constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly reader:EvidenceReader,
   private readonly cards:AssistantCards,private readonly commitments:AssistantCommitments,private readonly matters:AssistantMatters,
   private readonly batch:BatchProcessing,private readonly assertCurrent:AssertTaskCurrent,private readonly now=()=>new Date().toISOString(),private readonly control?:BackgroundModelAuthorization,
-  private readonly allowsAutomatic:(ids:readonly string[])=>boolean=()=>false){
+  private readonly allowsAutomatic:(ids:readonly string[])=>boolean=()=>false,private readonly diagnostics?:Pick<ServerDiagnostics,'record'>){
   this.tasks=new TaskRecords(store);this.understanding=new AssistantUnderstandingReader(store,materials,reader);this.files=new FileObservationReader(reader);
  }
  private transaction<T>(run:()=>T):T{
@@ -171,6 +179,8 @@ export class AssistantFollowup {
   // context. Coding products and their exact tail citations are not user text;
   // the batch context bound and complete provider budget still apply to them.
   const question=PROMPT;
+  const bytes=Buffer.byteLength(JSON.stringify(context));
+  if(bytes>(selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES))throw new AssistantContextLimit(bytes);
   await yieldTurn();assertActive();
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
   this.assertSnapshot({input,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
@@ -285,7 +295,7 @@ export class AssistantFollowup {
   * original receipts and recovery remain owned by A4 and BatchProcessing. */
  tick(changes:AssistantChangeFeed):Promise<void>{
   if(this.closed)return Promise.resolve();
-  return this.polling??=this.consume(changes).finally(()=>{this.polling=undefined;});
+  return this.polling??=this.consume(changes).catch(error=>{if(!this.closed)this.reportFailure(undefined,error);throw error;}).finally(()=>{this.polling=undefined;});
  }
  private async consume(changes:AssistantChangeFeed){
   const active=()=>{if(this.closed)throw new StoreError('Assistant consumer is closed',409);};
@@ -293,27 +303,52 @@ export class AssistantFollowup {
   // saved result completes A4 without another model request or publication.
   const pending=this.store.db.prepare(`SELECT DISTINCT f.id,b.id batch_id FROM assistant_change_work w JOIN task_records c ON c.id=w.task_id
    JOIN task_records b ON b.id=w.started_batch JOIN task_records f ON f.operation_id=b.operation_id
-   WHERE c.state='running' AND f.kind='assistant.followup'`).all();
+   WHERE c.state IN ('running','blocked') AND f.kind='assistant.followup'`).all();
+  let running=false;
   for(const row of pending){
    const task=this.tasks.get(String(row.id)),batchId=String(row.batch_id);
    if(task.state==='stale'||task.state==='cancelled'){changes.settle(batchId,task.state);continue;}
    const progress=this.batch.progress(batchId);
    if(['cancelled','stale'].includes(progress.task.state)||progress.items.some(step=>['failed','blocked','cancelled','stale'].includes(step.state))){
     const state=progress.task.state==='cancelled'?'cancelled':progress.task.state==='stale'||progress.items.some(step=>step.state==='stale')?'stale':'blocked';
-    this.transaction(()=>{this.tasks.setState(task.id,task.revision,state);changes.settle(batchId,state);});continue;
+    this.transaction(()=>{if(task.state!==state)this.tasks.setState(task.id,task.revision,state);changes.settle(batchId,state);});continue;
    }
-   if(progress.task.state!=='succeeded')return;
-   const result=await this.finish(task.id,active);active();changes.complete(batchId,result);
+   if(progress.task.state!=='succeeded'){running=true;continue;}
+   try{const result=await this.finish(task.id,active);active();changes.complete(batchId,result);}
+   catch(error){active();this.reportFailure(task.id,error);
+    this.transaction(()=>{const current=this.tasks.get(task.id);if(!['stale','cancelled','succeeded','blocked'].includes(current.state))this.tasks.setState(current.id,current.revision,'blocked');changes.settle(batchId,'blocked');});
+   }
   }
-  if(!this.control||this.control.view().state!=='on')return;
+  if(running||!this.control||this.control.view().state!=='on')return;
   const excluded=new Set(this.control.view().excludedSourceIds),all:QueryScope={kind:'all'};
   const ready=changes.ready().filter(candidate=>candidate.input.material&&!excluded.has(candidate.input.sourceId)&&this.allowsAutomatic(candidate.input.evidenceIds)).slice(0,5);
   if(!ready.length)return;
+  let selected=ready,includeCatalog=true;
+  while(selected.length){
+   try{await this.consumeGroup(changes,selected,excluded,all,active,includeCatalog);return;}
+   catch(error){active();
+    if(includeCatalog){includeCatalog=false;continue;}
+    if(error instanceof StoreError&&error.statusCode===413){
+     if(selected.length>1){selected=selected.slice(0,Math.ceil(selected.length/2));continue;}
+    }else if(selected.length>1){selected=selected.slice(0,1);includeCatalog=false;continue;}
+    this.reportFailure(selected[0].task.id,error);changes.defer(selected[0].task.id);
+    selected=ready.slice(ready.indexOf(selected[0])+1);includeCatalog=false;
+   }
+  }
+ }
+ private reportFailure(taskId:string|undefined,error:unknown){
+  const status=error instanceof StoreError?error.statusCode:500;
+  this.diagnostics?.record('agent.failed',{operation:'query',jobId:taskId,statusCode:status,
+   category:status===413?'too_large':status===409?'input_changed':status===404?'unavailable':status===507?'storage_full':'internal',
+   reason:status===413?'processing_limit':status===409?'input_changed':status===507?'storage_full':'host_validation',
+   ...(error instanceof AssistantContextLimit?{bytes:error.bytes}:{})},'warn');
+ }
+ private async consumeGroup(changes:AssistantChangeFeed,ready:ReturnType<AssistantChangeFeed['ready']>,excluded:Set<string>,all:QueryScope,active:()=>void,includeCatalog:boolean){
   const refs=unique(ready.map(candidate=>candidate.input.material!.ref));
   // Background context is a bounded page from the same authorized catalog.
   // Relevance and issue identity are left to the interpreter.
   let cursor:string|undefined;
-  do{
+  if(includeCatalog)do{
    const page=this.materials.list({limit:30,cursor});
    for(const material of page.items){
     if(refs.length===5)break;

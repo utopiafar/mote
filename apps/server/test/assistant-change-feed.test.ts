@@ -370,3 +370,15 @@ test('source exclusion withholds its original and re-inclusion makes it eligible
  exclude([]);assert.deepEqual(new Set(f.feed.ready().map(item=>item.input.captureId)),new Set([excluded,allowed]));
  assert.equal(Number(f.node.store.db.prepare('SELECT count(*) n FROM background_model_receipts').get()!.n),receipts);
 });
+
+test('a blocked unclaimed original refreshes after its Material arrives and remains recoverable across restart',async t=>{
+ const f=await fixture(t);await f.createSource();f.command('on');const id=await f.upsert('blocked-preparation','1');
+ f.feed.tick();f.advance(11);const ready=f.feed.ready()[0];assert.equal(ready.input.material,undefined);
+ f.feed.defer(ready.task.id);assert.equal(new TaskRecords(f.node.store).get(ready.task.id).state,'blocked');
+ await f.node.materialOrganizer.tick(100);f.feed.tick();
+ const refreshed=f.feed.ready().find(value=>value.input.captureId===id);assert.ok(refreshed?.input.material);
+ assert.equal(refreshed.task.id,ready.task.id);assert.equal(refreshed.task.state,'waiting');
+ await f.restart();f.feed.tick();f.advance(11);
+ assert.equal(f.feed.ready().find(value=>value.input.captureId===id)?.task.id,ready.task.id);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,0);
+});
