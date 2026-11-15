@@ -10,9 +10,9 @@ test('Retry-After accepts bounded seconds or HTTP date and rejects malformed val
  const now=Date.UTC(2026,8,22);assert.equal(retryAfterMilliseconds('Tue, 22 Sep 2026 00:00:08 GMT',now),8000);assert.equal(retryAfterMilliseconds('Mon, 21 Sep 2026 00:00:00 GMT',now),0);assert.equal(retryAfterMilliseconds('999999999'),7*86400000);
  for(const value of ['-1','0.5','2026-09-22','private-secret', 'x'.repeat(200)])assert.equal(retryAfterMilliseconds(value,now),undefined);
 });
-test('native budget capability failures retain their fixed startup code without provider prose',()=>{
- const diagnostic={source:'runtime',stage:'startup',code:'native_budget_unavailable',body:'Generated private response',stderr:'Generated credential'};
- const expected={source:'runtime',code:'native_budget_unavailable',stage:'startup'};
+for(const code of ['native_budget_unavailable','service_tier_mismatch'])test(`${code} retains its fixed startup code without provider prose`,()=>{
+ const diagnostic={source:'runtime',stage:'startup',code,body:'Generated private response',stderr:'Generated credential'};
+ const expected={source:'runtime',code,stage:'startup'};
  assert.deepEqual(sanitizeFailureDiagnostics(diagnostic),expected);
  assert.deepEqual(errorDiagnostics({name:'AgentProviderError',diagnostic}),{...expected,errorType:'AgentProviderError'});
  assert.equal(sanitizeFailureDiagnostics({...diagnostic,code:'Generated arbitrary private code'}).code,undefined);

@@ -261,7 +261,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       const accounting=runViolation();
       if(accounting)throw accounting;
       retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,
-        ...(error instanceof ProviderFailure&&error.details.code==='processing_limit'?{causeCode:errorDiagnostics(error).code}:{})});
+        ...(error instanceof ProviderFailure?{causeCode:errorDiagnostics(error).code}:{})});
       trace(wait?{type:'query.waiting',status:'waiting',payload:wait}:{type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;
     }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
