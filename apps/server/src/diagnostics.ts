@@ -81,7 +81,7 @@ const eventStage=(event:string):DiagnosticStage=>{
 const validStage=(value:unknown):value is DiagnosticStage=>typeof value==='string'&&value!=='all'&&diagnosticStageFilters.includes(value as DiagnosticStageFilter);
 const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
-type QueuedLine = {line:string;at:string;eventKey?:string;channel:'debug'|'info'|'warn'|'error'|'trace'};
+type QueuedLine = {line:string;at:string;eventKey?:string;channel:'debug'|'info'|'warn'|'error'|'trace';writeNumber:number};
 type LogLineRange={position:number;length:number;terminated:boolean;chunk?:Buffer;offset?:number};
 
 /** Scan byte offsets so readers do not split or retain an entire diagnostic file. */
@@ -223,6 +223,9 @@ export class ServerDiagnostics {
   private entries:DiagnosticEvent[]=[];
   private entryFiles=new Map<string,string>();
   private queue:QueuedLine[]=[];
+  private acceptedWrites=0;
+  private settledWrites=0;
+  private flushWaiters:{through:number;resolve:()=>void}[]=[];
   private seq=0;
   private pending?:Promise<void>;
   private initialization?:Promise<void>;
@@ -333,11 +336,11 @@ export class ServerDiagnostics {
   requestId():string|undefined {return this.context.getStore();}
   /** Admission is read-only; an observer never enables diagnostics or trace payloads. */
   accepts(level:DiagnosticEvent['level']){return !this.closed&&this.enabled&&this.level!=='silent'&&['debug','info','warn','error'].includes(level)&&levels.indexOf(level)>=levels.indexOf(this.level);}
-  private enqueue(item:QueuedLine){
+  private enqueue(item:Omit<QueuedLine,'writeNumber'>){
     const limit=Math.min(this.maxEntries,1024);
     if(!this.writable||Date.now()<this.nextAttempt){this.dropped++;return;}
     if(this.queue.length>=limit){const rank=(channel:QueuedLine['channel'])=>channel==='trace'?-1:levels.indexOf(channel);const index=this.queue.findIndex(queued=>rank(queued.channel)<rank(item.channel));if(index<0){this.dropped++;return;}this.queue.splice(index,1);this.dropped++;}
-    this.queue.push(item);this.startWrite();
+    this.queue.push({...item,writeNumber:++this.acceptedWrites});this.startWrite();
   }
   record(event:string,value:EventFields={},level:DiagnosticEvent['level']='info') {
     if(event==='agent.trace'||this.closed||!this.enabled||this.level==='silent'||!events.has(event)||!['debug','info','warn','error'].includes(level)||levels.indexOf(level)<levels.indexOf(this.level))return;
@@ -391,11 +394,30 @@ export class ServerDiagnostics {
   }
   private startWrite() {
     if(this.pending)return;
-    this.pending=this.drain().finally(()=>{this.pending=undefined;if(this.queue.length&&!this.closed)this.startWrite();});
+    // close stops admission, but an accepted suffix can arrive between drain's
+    // last batch and this continuation and must still be persisted.
+    this.pending=this.drain().finally(()=>{this.pending=undefined;if(this.queue.length)this.startWrite();});
+  }
+  private settleWrites(through:number) {
+    this.settledWrites=through;
+    while(this.flushWaiters.length&&this.flushWaiters[0].through<=through)this.flushWaiters.shift()!.resolve();
   }
   private async drain(){
-    try{while(this.queue.length){const lines=this.queue.splice(0,64);this.writingCount=lines.length;const files=await this.disk.append(lines);for(let i=0;i<lines.length;i++)if(files[i]&&lines[i].eventKey)this.entryFiles.set(lines[i].eventKey!,files[i]!);this.refreshRetainedMemory();this.writingCount=0;}}
-    catch{this.writeFailures++;this.dropped+=this.queue.length+this.writingCount;this.writingCount=0;this.queue=[];this.nextAttempt=Date.now()+30000;}
+    try{
+      while(this.queue.length){
+        // Do not combine a waiting prefix with records admitted after it.
+        // Priority eviction may already have removed the prefix's last record.
+        const through=this.flushWaiters[0]?.through??Infinity;let count=0;
+        while(count<64&&count<this.queue.length&&this.queue[count].writeNumber<=through)count++;
+        if(!count){this.settleWrites(this.queue[0].writeNumber-1);continue;}
+        const lines=this.queue.splice(0,count);this.writingCount=lines.length;
+        const files=await this.disk.append(lines);
+        for(let i=0;i<lines.length;i++)if(files[i]&&lines[i].eventKey)this.entryFiles.set(lines[i].eventKey!,files[i]!);
+        this.refreshRetainedMemory();this.writingCount=0;this.settleWrites(lines.at(-1)!.writeNumber);
+      }
+      this.settleWrites(this.acceptedWrites);
+    }
+    catch{this.writeFailures++;this.dropped+=this.queue.length+this.writingCount;this.writingCount=0;this.queue=[];this.nextAttempt=Date.now()+30000;this.settleWrites(this.acceptedWrites);}
   }
   private refreshRetainedMemory(){const retained=this.disk.snapshot(),ids=new Set(retained.files.map(f=>f.name.split('.')[4])),now=this.now().getTime();this.entries=this.entries.filter(event=>{const key=event.instanceId+':'+event.seq,file=this.entryFiles.get(key),channel=event.event==='agent.trace'?'trace':event.level,days=retained.channels.find(c=>c.channel===channel)!.days;const keep=Date.parse(event.at)>now-days*86400000&&(!file||ids.has(file));if(!keep)this.entryFiles.delete(key);return keep;});this.traceEvents=this.entries.filter(event=>event.event==='agent.trace').length;const keys=new Set(this.entries.map(e=>e.instanceId+':'+e.seq));for(const key of this.entryFiles.keys())if(!keys.has(key))this.entryFiles.delete(key);}
   async retention(){await this.flush();try{await stat(this.options.directory);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return this.disk.snapshot();throw e;}await this.disk.refresh();this.refreshRetainedMemory();return this.disk.snapshot();}
@@ -450,7 +472,13 @@ export class ServerDiagnostics {
     records.sort((a,b)=>a.at.localeCompare(b.at)||a.seq-b.seq);
     return {after,before,oldestRetainedAt:retained.oldestAt,retentionLimited:retained.oldestAt===null||retained.oldestAt>after,invalidLines,events:records};
   }
-  async flush() {while(this.pending)await this.pending;}
+  /** Wait for the accepted prefix, including existing eviction/failure handling;
+   * later producers must not postpone a read or configuration transaction. */
+  flush():Promise<void> {
+    const through=this.acceptedWrites;
+    if(this.settledWrites>=through)return Promise.resolve();
+    return new Promise(resolve=>{this.flushWaiters.push({through,resolve});});
+  }
   close():Promise<void> {if(this.closingPromise)return this.closingPromise;this.closed=true;this.closingPromise=this.finishClose();return this.closingPromise;}
   private async finishClose() {
     await this.initialization;if(this.maintenance)clearInterval(this.maintenance);
