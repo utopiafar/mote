@@ -64,6 +64,7 @@ import {sourceScopedReader} from './query-source-scope.js';
 import type {QueryScope as ReaderQueryScope} from './query-scope.js';
 import {withinEvidenceScope} from './evidence-reader.js';
 import { ExecutionFailure } from './execution-engine.js';
+import {retainFailureContext} from './execution-failures.js';
 import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
 import {FeatureRoutes,installFeatureRoutes,type FeatureRoute} from './features/index.js';
 import type { TranscriptionProvider } from './file-processing.js';
@@ -493,7 +494,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     finally{signal.removeEventListener('abort',abort);}
     const step=executor.get(jobs.conversation)!;
     if(step.state==='waiting'||step.state==='running')throw new ExecutionFailure('waiting',step.error??'semantic_processing_pending',step.availableAt>Date.now()?Math.max(1000,step.availableAt-Date.now()):5000);
-    if(step.state!=='succeeded')throw new ExecutionFailure(step.state==='stale'?'stale':step.state==='failed'?'permanent':'blocked',step.state==='blocked'?'semantic_processing_blocked':step.error??'semantic_processing_failed');
+    if(step.state!=='succeeded'){
+      const receipt=executor.failure(step.id);
+      throw retainFailureContext(new ExecutionFailure(step.state==='stale'?'stale':step.state==='failed'?'permanent':'blocked',step.state==='blocked'?'semantic_processing_blocked':step.error??'semantic_processing_failed'),
+        {...receipt,jobId:input.job.id,batchId:input.parentGrant.stepId,phase:'understanding',causeStepId:step.id,causeCode:receipt?.causeCode??step.error??'semantic_processing_failed',causeState:step.state});
+    }
     const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });

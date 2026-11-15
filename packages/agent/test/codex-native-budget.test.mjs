@@ -495,7 +495,7 @@ test('production startup rejects an unpatched executable before linking credenti
   const agent = createAgent({protocol: 'codex-app-server', model: 'gpt-5.4', codex: {home: root, executable}, reader: {}});
   t.after(() => agent.close());
   await assert.rejects(agent.query({question: 'Generated question'}), error =>
-    error instanceof AgentProviderError && error.details.code === 'processing_limit' && error.diagnostic.code === 'native_budget_unavailable');
+    error instanceof AgentProviderError && error.details.code === 'processing_limit' && error.details.executionStarted === false && error.diagnostic.code === 'native_budget_unavailable');
 });
 
 test('default production startup selects the bundled native dependency before asking for login', {timeout: 10000}, async t => {
