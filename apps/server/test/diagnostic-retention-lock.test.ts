@@ -102,6 +102,30 @@ test('simultaneous first starts publish one protocol and preserve every generate
   assert.ok((await readdir(f.directory)).every(name=>!name.endsWith('.tmp')));
 });
 
+test('a waiting supervisor process persists during a buffered Central append',async t=>{
+  const f=await fixture(t);await f.store.init();
+  const other=f.writer('contend-append','supervisor');await other.wait('ready');
+  type LockStore=DiagnosticLogStore&{exclusive:<T>(task:()=>Promise<T>,waitMs?:number)=>Promise<T>};
+  const central=f.store as LockStore,exclusive=central.exclusive.bind(central),entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();
+  let first=true,supervisorFinished=false,finishedBeforeCentral=false;
+  other.child.on('message',message=>{if((message as Message).event==='done')supervisorFinished=true;});
+  t.mock.method(central,'exclusive',async(task,waitMs)=>exclusive(async()=>{
+    const result=await task();if(first){first=false;entered.resolve();await release.promise;}return result;
+  },waitMs));
+  const records=Array.from({length:64},(_,index)=>({channel:'info' as const,at:new Date().toISOString(),line:JSON.stringify({writer:process.pid,index})+'\n'}));
+  const writing=central.append(records).then(result=>{finishedBeforeCentral=supervisorFinished;return result;});
+  try{
+    await entered.promise;other.child.send('append');await other.wait('contended');release.resolve();
+    const saved=await writing;await other.wait('done');assert.equal((await other.closed).code,0);
+    assert.equal(saved.length,64);assert.ok(saved.every(Boolean));
+    assert.equal(finishedBeforeCentral,true,'the real waiting process must run before the entire Central buffer completes');
+    await central.refresh();
+    const rows=(await Promise.all(central.files.map(async file=>(await readFile(join(f.directory,file.name),'utf8')).trim().split('\n').map(line=>JSON.parse(line) as {writer:number;index:number})))).flat();
+    assert.deepEqual(rows.filter(row=>row.writer===process.pid).map(row=>row.index),Array.from({length:64},(_,index)=>index));
+    assert.equal(rows.filter(row=>row.writer===other.child.pid).length,1);
+  }finally{release.resolve();await writing;}
+});
+
 test('a live legacy writer paused with an empty file cannot be reclaimed before it finishes creation',async t=>{
   const f=await fixture(t),owner=f.writer('legacy');await owner.wait('entered');
   const path=join(f.directory,'retention.lock'),identity=await lstat(path);assert.equal(identity.size,0);

@@ -44,6 +44,37 @@ function continuousWrites(t:import('node:test').TestContext,logger:ServerDiagnos
  return {stop:()=>{active=false;},get produced(){return produced;}};
 }
 
+test('sustained debug arrivals and a bounded burst persist in order without filling the diagnostic queue',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-arrivals-')),now=Date.now();
+ // Real metadata work across both writers' ordinary channels, using generated
+ // records only. The producer never waits for a disk append or a flush.
+ for(const [family,channel,count] of [['central','debug',2],['central','info',2],['central','warn',2],['central','error',2],['supervisor','info',2],['supervisor','debug',1],['supervisor','error',2]] as const)for(let index=0;index<count;index++){
+  const at=now-index-1,row={seq:0,instanceId:randomUUID(),at:new Date(at).toISOString(),event:'server.started',level:channel,stage:'system'};
+  await writeFile(join(directory,`${family}.${channel}.${at}.${at}.${randomUUID()}.ndjson`),JSON.stringify(row)+'\n',{mode:0o600});
+ }
+ const logger=new ServerDiagnostics({directory,debug:true,now:()=>new Date(now)});await logger.init();
+ t.after(async()=>{await logger.close();await rm(directory,{recursive:true,force:true});});
+ let produced=0,peakPending=0;
+ const produce=()=>logger.record('source.completed',{count:++produced},'debug');
+ for(let index=0;index<256;index++)produce();
+ const start=performance.now();
+ // 180 events/s for 15 s plus the initial 256-event burst. On the regression,
+ // per-record lock handoffs cap drain below arrival rate and overflow 1024.
+ for(let tick=0;tick<450;tick++){
+  await delay(Math.max(0,start+tick*1000/30-performance.now()));
+  for(let index=0;index<6;index++)produce();
+  peakPending=Math.max(peakPending,logger.snapshot().pendingWrites);
+ }
+ await logger.close();
+ const status=logger.snapshot();
+ assert.equal(status.writeFailures,0);assert.equal(status.pendingWrites,0);
+ assert.equal(status.droppedEvents,0,'sustained arrivals must not overflow the existing bounded queue');
+ assert.ok(peakPending<=1088,'the existing 1024 queued + 64 in-flight bound remains in force');
+ const rows=(await allRaw(directory)).trim().split('\n').map(line=>JSON.parse(line)).filter(row=>row.instanceId===logger.instanceId);
+ assert.equal(produced,2956);
+ assert.deepEqual(rows.map(row=>row.count),Array.from({length:produced},(_,index)=>index+1),'every generated event survives once in sequence, including the suffix drained at close');
+});
+
 test('flush finishes its accepted prefix while generated diagnostic writes continue, and close persists the suffix',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-prefix-')),logger=new ServerDiagnostics({directory,debug:true});
  await logger.init();const producer=continuousWrites(t,logger);

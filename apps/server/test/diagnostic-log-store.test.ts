@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,readFile,writeFile,symlink} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm,readFile,writeFile,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -30,6 +30,48 @@ test('a failed append suffix never replays the already persisted diagnostic pref
  await f.store.refresh();
  const lines=(await Promise.all(f.store.files.map(file=>readFile(join(f.directory,file.name),'utf8')))).flatMap(text=>text.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line) as {body:string}));
  assert.deepEqual(lines.map(line=>line.body).sort(),['Generated persisted prefix','Generated recovered suffix']);
+});
+
+test('state publication failure after a buffered append never replays its uncertain disk result',async t=>{
+ const f=await fixture(t,{maxBytes:8192}),obstacle=join(f.directory,'retention-state.json.tmp');
+ await mkdir(obstacle);
+ await assert.rejects(f.store.append([f.record('info','Generated uncertain first'),f.record('info','Generated uncertain second')]));
+ await rm(obstacle,{recursive:true});
+ await f.store.append([f.record('info','Generated recovered write')]);await f.store.refresh();
+ const lines=(await Promise.all(f.store.files.map(file=>readFile(join(f.directory,file.name),'utf8')))).flatMap(text=>text.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line) as {body:string}));
+ assert.deepEqual(lines.map(line=>line.body),['Generated uncertain first','Generated uncertain second','Generated recovered write'],'an IO error after bytes reach disk must not retry an uncertain group');
+});
+
+test('a rename failure midway through a group preserves uncertain bytes without replaying its prefix or suffix',async t=>{
+ const f=await fixture(t,{maxBytes:8192});await f.store.append([f.record('info','Generated seed')]);
+ const current=f.store.files[0]!,start=Date.parse(current.lastAt),id=current.name.split('.')[4];
+ const record=(offset:number,body:string)=>({...f.record('info',body),at:new Date(start+offset).toISOString()});
+ const obstacle=join(f.directory,`central.info.${Date.parse(current.firstAt)}.${start+2}.${id}.ndjson`);await mkdir(obstacle);
+ await assert.rejects(f.store.append([record(1,'Generated saved prefix'),record(2,'Generated uncertain rename'),record(3,'Generated unattempted suffix')]));
+ await rm(obstacle,{recursive:true});
+ const restarted=new DiagnosticLogStore(f.directory,{maxBytes:8192,maxTotalBytes:32768,retention:f.retention,minFreeBytes:0,now:()=>new Date(start+4)});await restarted.init();
+ await restarted.append([record(4,'Generated recovered write')]);
+ const lines=(await Promise.all(restarted.files.map(file=>readFile(join(f.directory,file.name),'utf8')))).flatMap(text=>text.trim().split('\n').map(line=>JSON.parse(line).body));
+ assert.deepEqual(lines,['Generated seed','Generated saved prefix','Generated uncertain rename','Generated recovered write']);
+});
+
+test('a slow buffered record hands off to a waiting cleanup before starting its suffix',async t=>{
+ const f=await fixture(t,{maxBytes:8192});
+ type PruningStore=DiagnosticLogStore&{prune:(incoming?:{channel:string;bytes:number})=>Promise<boolean>};
+ const store=f.store as PruningStore,prune=store.prune.bind(store),entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();let first=true;
+ t.mock.method(store,'prune',async incoming=>{
+  const result=await prune(incoming);if(incoming&&first){first=false;entered.resolve();await release.promise;}return result;
+ });
+ const records=Array.from({length:3},(_,index)=>f.record('info','Generated slow record '+index)),writing=store.append(records);
+ try{
+  await entered.promise;const preview=store.preview('all');
+  // Explicitly hold actual work beyond its slice while a cleanup is queued.
+  await new Promise(resolve=>setTimeout(resolve,25));release.resolve();
+  assert.equal((await preview).bytes,Buffer.byteLength(records[0].line),'cleanup must see the completed prefix before another slow record starts');
+  assert.equal((await writing).length,3);
+  await store.refresh();const lines=(await Promise.all(store.files.map(file=>readFile(join(f.directory,file.name),'utf8')))).flatMap(text=>text.trim().split('\n').map(line=>JSON.parse(line).body));
+  assert.deepEqual(lines,records.map(record=>JSON.parse(record.line).body));
+ }finally{release.resolve();await writing;}
 });
 
 test('a buffered Central log append lets a waiting supervisor persist stderr before the whole buffer finishes',async t=>{
