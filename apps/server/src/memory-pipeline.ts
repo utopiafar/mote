@@ -918,6 +918,11 @@ export class MemoryPipeline {
     else if(['waiting','running'].includes(step.state)&&job.status==='waiting_for_model'&&this.active.has(id)){job.status='queued';delete job.errorCode;this.saveJob(job);}
     this.refreshJob(id);this.wake();
   }
+  private ownerInputPending(id:string){
+    // Stopping a provider withdraws reply admission, not its durable questions.
+    // Startup/shutdown projections must retain the wait until validation returns.
+    return this.ownerQuestions?.pending(id)??Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='owner_questions'").get()&&this.store.db.prepare("SELECT 1 FROM owner_questions WHERE json_extract(json,'$.operationId')=? AND json_extract(json,'$.state') IN ('open','deferred') LIMIT 1").get('memory:'+id));
+  }
   private refreshJob(id:string){
     const job=this.schedulingJob(id),counts=this.counts(id);
     // saveBatch may run inside a larger SQLite transaction, so a recorded marker
@@ -933,7 +938,7 @@ export class MemoryPipeline {
     if(job.status==='pausing'&&Number(counts.running)===0)job.status='paused';
     {
       const steps=this.store.db.prepare("SELECT state,error,available_at FROM execution_steps WHERE operation_id=? AND kind='memory.input'").all('memory:'+id),inputWaiting=steps.some(step=>['waiting','running'].includes(String(step.state))),inputFailure=steps.some(step=>['blocked','failed','stale','cancelled'].includes(String(step.state)));
-      const contextError=this.store.db.prepare("SELECT error FROM execution_steps WHERE operation_id=? AND kind='memory.batch' AND state='blocked' AND error IN ('memory_context_required','memory_owner_material_required','image_disclosure_disabled') ORDER BY error LIMIT 1").get('memory:'+id)?.error,contextWaiting=Boolean(contextError),ownerWaiting=this.ownerQuestions?.pending(id)??false;
+      const contextError=this.store.db.prepare("SELECT error FROM execution_steps WHERE operation_id=? AND kind='memory.batch' AND state='blocked' AND error IN ('memory_context_required','memory_owner_material_required','image_disclosure_disabled') ORDER BY error LIMIT 1").get('memory:'+id)?.error,contextWaiting=Boolean(contextError),ownerWaiting=this.ownerInputPending(id);
       const runnable=Number(counts.pending)>0&&this.store.db.prepare("SELECT 1 FROM memory_batches b LEFT JOIN execution_steps e ON e.id=b.id WHERE b.job_id=? AND json_extract(b.json,'$.status')='pending' AND (e.id IS NULL OR e.state IN ('waiting','running') OR (e.state='blocked' AND e.error='awaiting_activation')) LIMIT 1").get(id);
       if(!['cancelled','paused','pausing'].includes(job.status))job.status=Number(counts.running)>0?'running':runnable?'queued':inputWaiting||contextWaiting||ownerWaiting?'waiting_for_input':job.status==='waiting_for_model'&&Number(counts.pending)>0?'waiting_for_model':Number(counts.failed)+Number(counts.invalidated)>0||inputFailure?'failed':'completed';
       if(job.status==='waiting_for_input'){job.errorCode=ownerWaiting?'memory_owner_input_required':contextWaiting?String(contextError):'memory_input_pending';job.availableAt=contextWaiting||ownerWaiting?undefined:Math.min(...steps.filter(step=>step.state==='waiting').map(step=>Number(step.available_at)||0));}
