@@ -22,7 +22,7 @@ const recordedAt='2001-01-01T10:00:00Z';
 const scope={kind:'all' as const};
 function result(id:string,answer:unknown):QueryResult{return {answer:JSON.stringify(answer),citations:[{id,capturedAt:recordedAt,appName:'Generated',excerpt:''}],trace:[],runId:'generated-understanding'};}
 
-async function fixture(t:TestContext,coverage:MaterialDraft['coverage']={state:'complete'}){
+async function fixture(t:TestContext,coverage:MaterialDraft['coverage']={state:'complete'},sourceTime=(time:string)=>time){
   const directory=mkdtempSync(join(tmpdir(),'mote-assistant-understanding-'));
   const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
   const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);
@@ -47,7 +47,7 @@ async function fixture(t:TestContext,coverage:MaterialDraft['coverage']={state:'
   };
   runtime.registry.register(conversationUnderstandingProcessor({memories,usage:new UsageLedger(store),resolveEvidence,selection:()=>model,query:async input=>{
     const range=input.evidenceRanges![0],quote=body.slice(range.offset,range.offset+range.length),isAssistant=range.offset>=pieces[0].length+pieces[1].length;
-    const evidence=[{id:anchor,quote,offset:range.offset}],claim={statement:isAssistant?'Assistant reports checks passed, with device checks pending':'Owner requests a written plan',actor:isAssistant?'assistant':'user',status:isAssistant?'reported_outcome':'request',basis:isAssistant?'assistant_reported':'direct_expression',sourceTime:range.offset===0?recordedAt:null,uncertainty:isAssistant?'Assistant report only':'Generated request',evidence};
+    const evidence=[{id:anchor,quote,offset:range.offset}],claim={statement:isAssistant?'Assistant reports checks passed, with device checks pending':'Owner requests a written plan',actor:isAssistant?'assistant':'user',status:isAssistant?'reported_outcome':'request',basis:isAssistant?'assistant_reported':'direct_expression',sourceTime:range.offset===0?sourceTime(recordedAt):null,uncertainty:isAssistant?'Assistant report only':'Generated request',evidence};
     return result(anchor,{summary:isAssistant?'Generated report':'Generated request',evidence,workRecords:[{title:'Generated work',requirements:isAssistant?[]:[claim],constraints:[],decisions:[],results:isAssistant?[claim]:[],validation:[],openItems:[],artifactRefs:[]}],events:[claim],memoryCandidates:[],actionCues:[]});
   }}));
   async function produce(offset:number,length:number){
@@ -90,6 +90,17 @@ test('real persisted conversation products retain original role, reported status
   assert.equal(complete.coverage.semanticRanges.length,3);
   const page=f.adapter.read({ref:f.material.ref,scope,limit:1});assert.equal(page.products.length,1);assert.ok(page.nextCursor);assert.equal(page.coverage.semantic.status,'partial');
   const next=f.adapter.read({ref:f.material.ref,scope,limit:1,cursor:page.nextCursor!});assert.notEqual(next.products[0].ref,page.products[0].ref);assert.equal(next.coverage.semantic.status,'partial');
+});
+
+test('equivalent source-time offsets survive real product publication and assistant revalidation while altered instants remain rejected',async t=>{
+ const reported='2001-01-01T18:00:00.000+08:00',f=await fixture(t,{state:'complete'},()=>reported),product=await f.produce(0,pieces[0].length);
+ const read=f.adapter.readProduct({ref:f.material.ref,scope,artifactRef:product.ref});
+ assert.equal(read.events[0].sourceTime,reported);assert.equal(read.workRecords[0].requirements[0].sourceTime,reported);
+ assert.deepEqual(read.sourceEvidence.map(item=>item.quote),[pieces[0]]);assert.equal(f.memories.list().length,0);
+ const saved=f.store.db.prepare('SELECT json FROM context_artifacts WHERE id=?').get(product.artifact.id)!,data=JSON.parse(String(saved.json));
+ data.metadata.events[0].sourceTime='2001-01-01T10:00:00.000000001Z';
+ f.store.db.prepare('UPDATE context_artifacts SET json=? WHERE id=?').run(JSON.stringify(data),product.artifact.id);
+ assert.throws(()=>f.adapter.readProduct({ref:f.material.ref,scope,artifactRef:product.ref}),{statusCode:409});
 });
 
 test('pending and partial extraction are independent of semantic coverage, and a late body is readable only at its new revision',async t=>{

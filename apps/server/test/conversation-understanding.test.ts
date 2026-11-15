@@ -48,6 +48,12 @@ function products(id:string,memory=true){
   events:[claim(id,user,{statement:'Owner requested independent client releases'})],
   memoryCandidates:memory?[{domain:'personal',title:'Generated release requirement',statement:`The owner requested independent client releases in the generated project [${id}]`,uncertainty:'Project only',admission:{layer:'memory',reason:'Explicit project constraint for later work',scope:'Generated project only',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:user}]}]:[],actionCues:[]};
 }
+function timedProducts(id:string,quote:string,sourceTime:string){
+ const output=products(id,false),entry=claim(id,quote,{sourceTime});
+ output.evidence=[{id,quote}];output.events=[entry];
+ output.workRecords=[{...output.workRecords[0],requirements:[entry],results:[],validation:[],artifactRefs:[]}];
+ return output;
+}
 function result(id:string,output:unknown):QueryResult{return {answer:JSON.stringify(output),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:user}],trace:[],runId:'generated-understanding'};}
 function processor(f:Awaited<ReturnType<typeof fixture>>,query:(input:QueryInput)=>Promise<QueryResult>,overrides:Partial<ConversationUnderstandingOptions>={}){
  return conversationUnderstandingProcessor({memories:f.memories,usage:new UsageLedger(f.store),resolveEvidence:f.resolveEvidence,selection:()=>config,query,...overrides});
@@ -74,6 +80,37 @@ test('one restricted interpretation supplies grounded work, source-timed events 
 test('no candidates is valid and still preserves full bounded input coverage for downstream reuse',async t=>{
  const f=await fixture(t),outputs=await processor(f,async()=>result(f.anchor,products(f.anchor,false))).process(input(f.page()));
  assert.deepEqual(outputs[0].metadata.memoryCandidates,[]);assert.deepEqual(outputs[0].metadata.evidenceRanges,[{id:f.anchor,offset:0,length:body.length}]);assert.equal(f.memories.list().length,0);
+});
+
+test('source times accept equivalent ISO instants in exact quoted support without changing the reported representation',async t=>{
+ for(const fraction of ['123','123000000001']){
+ const originalTime=`2099-01-01T10:00:00.${fraction}Z`,original=`## user · Recorded: ${originalTime}\n\nGenerated owner requests independent client releases.\n`,f=await fixture(t,original);
+ for(const time of [`2099-01-01T10:00:00.${fraction}+00:00`,`2099-01-01T18:00:00.${fraction}+08:00`,`2099-01-01T10:00:00.${fraction}000000Z`]){
+  const response=result(f.anchor,timedProducts(f.anchor,original,time));
+  const output=await processor(f,async request=>{assert.equal(await request.validateOutput!(response),undefined);return response;}).process(input(f.page()));
+  assert.equal((output[0].metadata.events as {sourceTime:string}[])[0].sourceTime,time);
+  assert.equal((output[0].metadata.workRecords as {requirements:{sourceTime:string}[]}[])[0].requirements[0].sourceTime,time);
+ }
+ }
+});
+
+test('source times accept an equivalent explicit recordedAt but never observation, receipt or occurrence metadata',async t=>{
+ const original='Generated owner requests independent client releases.',f=await fixture(t,original),record=f.records[0];
+ const recorded='2099-01-01T18:00:00.123+08:00',reported='2099-01-01T10:00:00.123Z';
+ record.provenance!.document={...record.provenance!.document,recordedAt:recorded};
+ const response=result(f.anchor,timedProducts(f.anchor,original,reported)),outputs=await processor(f,async()=>response).process(input(f.page()));
+ assert.equal((outputs[0].metadata.events as {sourceTime:string}[])[0].sourceTime,reported);
+ delete record.provenance!.document.recordedAt;
+ record.capturedAt=recorded;record.receivedAt=recorded;record.provenance!.document.occurredAt=recorded;
+ await assert.rejects(processor(f,async()=>response).process(input(f.page())),{category:'permanent',message:'invalid_model_output'});
+});
+
+test('source-time normalization rejects any different instant and does not borrow unquoted message headers',async t=>{
+ const originalTime='2099-01-01T10:00:00.123Z',body='Generated owner requests independent client releases.',original=`## user · Recorded: ${originalTime}\n\n${body}\n`,f=await fixture(t,original);
+ for(const time of ['2099-01-01T10:00:00.123000001Z','2099-01-01T10:00:00.123000000001Z','2099-01-01T10:00:00.124Z','2099-01-01T10:00:00.123+08:00']){
+  await assert.rejects(processor(f,async()=>result(f.anchor,timedProducts(f.anchor,original,time))).process(input(f.page())),{category:'permanent',message:'invalid_model_output'});
+ }
+ await assert.rejects(processor(f,async()=>result(f.anchor,timedProducts(f.anchor,body,originalTime))).process(input(f.page())),{category:'permanent',message:'invalid_model_output'});
 });
 
 test('assistant reports cannot be promoted to confirmed outcomes or owner confirmation in work or events',async t=>{
