@@ -58,7 +58,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);
  if(m.method==='initialize')send({id:m.id,result:{}});
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
- else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread',model:m.params.model},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread',model:m.params.model},model:m.params.model,serviceTier:mode==='tier-mismatch'?null:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
  else if(m.method==='turn/start'){
   event({type:'turn'});
   send({id:m.id,result:{turn:{id:'generated-turn'}}});
@@ -136,6 +136,24 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   const receipts = () => (node.store.db.prepare('SELECT json FROM model_usage ORDER BY created_at,id').all() as {json:string}[]).map(row => JSON.parse(row.json) as {id:string;status:string;operation:string});
   return {node, headers, setMode, start, wait, released, completedTurns, receipts, events};
 }
+
+test('a refused Codex speed acknowledgement retains a fixed startup cause without inference or a paid receipt', async t => {
+  const f = await fixture(t);
+  f.setMode('tier-mismatch');
+  const id = await f.start();
+  const run = await f.wait(id, 'failed');
+  assert.equal(run.error.diagnostic.source, 'runtime');
+  assert.equal(run.error.diagnostic.stage, 'startup');
+  assert.equal(run.error.diagnostic.code, 'service_tier_mismatch');
+  const failures = f.node.store.db.prepare('SELECT f.json FROM execution_failures f JOIN execution_steps e ON e.id=f.step_id WHERE e.operation_id=?').all('query:'+id).map(row=>JSON.parse(String(row.json)));
+  assert.ok(failures.some(receipt=>receipt.causeCode==='service_tier_mismatch'&&receipt.executionStarted===false));
+  // Keep the durable query's existing three startup attempts; none starts inference.
+  assert.deepEqual(f.events().map(event=>event.type), ['started', 'started', 'started']);
+  assert.equal(Math.max(...failures.map(receipt=>receipt.attempt)), 3);
+  assert.equal(f.completedTurns(), 0);
+  assert.equal(f.receipts().length, 0);
+  await f.released();
+});
 
 test('authenticated HTTP selects Codex, reads generated evidence, and saves the cited answer', async t => {
   const f = await fixture(t);
