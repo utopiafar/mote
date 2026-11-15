@@ -105,10 +105,12 @@ test('the consumer passes entry fields through without dropping action permissio
 });
 
 test('hiding Home stops every read and resuming validates each current key exactly once',async t=>{
+  await (await import('../src/features/bootstrap.js')).featuresReady;
   const dom=new JSDOM('<!doctype html>',{url:'http://localhost/#/today',pretendToBeVisual:true}),prior=new Map<string,PropertyDescriptor|undefined>();
   for(const [key,value]of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement})){prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
   t.after(()=>{for(const [key,value]of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
-  const calls:string[]=[],inventory={schemaVersion:1,revision:1,features:[],capabilities:[]};
+  const calls:string[]=[],capabilities=['/api/work-activity','/api/assistant/matters','/api/assistant/onboarding/:id','/api/model-authorization'],inventory={schemaVersion:1,revision:1,features:[],capabilities:capabilities.map(path=>({id:'http:GET:'+path,version:'1',state:'active',surface:'data',featureId:'generated.home'}))};
+  dom.window.localStorage.setItem('mote.assistant.onboarding.'+dom.window.location.origin,JSON.stringify({id:'generated-visibility-run',scope:{kind:'selection',sourceIds:['generated-home']}}));
   const api={request:async(path:string)=>{
     calls.push(path);
     if(path==='/api/features')return inventory;
@@ -120,7 +122,7 @@ test('hiding Home stops every read and resuming validates each current key exact
   const controller=createHomeController({api});
   controller.start();
   t.after(()=>controller.dispose());
-  const paths=['/api/features','/api/sources','/api/connections','/api/library/browse?limit=3','/api/devices/first-data'];
+  const paths=['/api/features','/api/sources','/api/connections','/api/library/browse?limit=3','/api/devices/first-data','/api/work-activity?limit=3','/api/assistant/matters?'+new URLSearchParams({scope:JSON.stringify({kind:'all'}),limit:'3'}),'/api/model-authorization','/api/assistant/onboarding/generated-visibility-run?'+new URLSearchParams({scope:JSON.stringify({kind:'selection',sourceIds:['generated-home']})})];
   await until(()=>paths.every(path=>calls.some(value=>value===path)),'initial reads');
   await until(()=>calls.some(value=>value.startsWith('/api/operations/changes')),'change feed');
   const before=new Map(paths.map(path=>[path,calls.filter(value=>value===path).length])),feedBefore=calls.filter(value=>value.startsWith('/api/operations/changes')).length;

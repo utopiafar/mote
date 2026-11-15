@@ -10754,5 +10754,10 @@
   "模型只提出建议，确认后生成单独的校正版；未校正原文始终保留。复核使用所选模型。": "El modelo solo propone cambios. Al confirmarlos se crea una versión corregida independiente y se conserva el original sin corregir. La revisión usa el modelo seleccionado.",
   "原文对照": "Comparar con el original",
   "转写结果为空。": "La transcripción está vacía.",
-  "当前稿": "Transcripción actual"
+  "当前稿": "Transcripción actual",
+  "在主对话交代工作，核对草稿后开始。": "Encarga el trabajo en la conversación principal, revisa el borrador e inicia la tarea.",
+  "此浏览器还没有可恢复的初次认识记录。": "Este navegador no tiene un registro de primer acercamiento que puedas reanudar.",
+  "最近后台活动；更多任务和结果可进入查看。": "Actividad reciente en segundo plano; abre para ver más tareas y resultados.",
+  "本页建议关联的任务": "Tareas vinculadas a las sugerencias de esta página",
+  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Las sugerencias de esta página no tienen tareas vinculadas. Consulta la conversación principal o los asuntos para ver otras tareas."
 }

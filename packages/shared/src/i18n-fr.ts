@@ -10755,5 +10755,10 @@ export const french: Readonly<Record<string, string>> = {
   "模型只提出建议，确认后生成单独的校正版；未校正原文始终保留。复核使用所选模型。": "Le modèle ne fait que proposer des modifications. La confirmation crée une version corrigée distincte et conserve l’original non corrigé. La révision utilise le modèle sélectionné.",
   "原文对照": "Comparer avec l’original",
   "转写结果为空。": "La transcription est vide.",
-  "当前稿": "Transcription actuelle"
+  "当前稿": "Transcription actuelle",
+  "在主对话交代工作，核对草稿后开始。": "Confiez un travail dans la conversation principale, vérifiez le brouillon, puis lancez-le.",
+  "此浏览器还没有可恢复的初次认识记录。": "Ce navigateur ne contient aucune prise de connaissance à reprendre.",
+  "最近后台活动；更多任务和结果可进入查看。": "Activités récentes en arrière-plan ; ouvrez pour voir les autres tâches et résultats.",
+  "本页建议关联的任务": "Tâches liées aux suggestions de cette page",
+  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Aucune suggestion de cette page ne comporte de tâche liée. Consultez la conversation principale ou les sujets pour les autres tâches."
 };
