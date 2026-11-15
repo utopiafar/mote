@@ -78,7 +78,9 @@ export async function launchCodexAppServer(options: CodexLaunchOptions = {}): Pr
       const {stdout} = await execFileAsync(command, [...prefix, '--mote-context-budget-version'], {env, cwd, timeout: 5000, maxBuffer: 1024});
       if (stdout.trim() !== CODEX_BUDGET_VERSION) throw new Error('Unsupported native budget');
     } catch {
-      throw new AgentProviderError({category: 'permanent', code: 'processing_limit'}, {source: 'runtime', stage: 'startup', code: 'native_budget_unavailable', modelId: options.model});
+      // The probe runs before credentials are linked or App Server starts;
+      // this failure cannot represent an issued model request.
+      throw new AgentProviderError({category: 'permanent', code: 'processing_limit', executionStarted: false}, {source: 'runtime', stage: 'startup', code: 'native_budget_unavailable', modelId: options.model});
     }
     const authHome = resolve(options.home ?? process.env.MOTE_CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'));
     try {
