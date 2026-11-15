@@ -294,3 +294,16 @@ test('real A3 HTTP pages, feedback and history reach Home; real A2 acceptance re
  assert.equal((await node.app.inject({method:'POST',url:'/api/assistant/tasks',headers,payload:forbidden})).statusCode,404);
  assert.equal(node.store.db.prepare("SELECT count(*) AS n FROM task_records WHERE kind='assistant.task'").get()!.n,1);
 });
+
+test('Home distinguishes an open owner question from background processing and links its partial acquaintance result',async t=>{
+ const {d,render}=await domFixture(t),id=randomUUID(),questionId=randomUUID(),scope={kind:'selection',sourceIds:['generated-source']};
+ d.defaultView!.localStorage.setItem('mote.assistant.onboarding.'+d.defaultView!.location.origin,JSON.stringify({id,scope}));
+ const calls:{path:string;method:string}[]=[];
+ const api=client((path,init)=>{calls.push({path,method:init?.method??'GET'});if(path.includes('/onboarding/'))return {id,revision:2,state:'pending',completed:0,pending:1,failed:0,cancelled:0,
+  coverage:{sync:{completed:1,total:1},extraction:{completed:1,total:1},semantic:{completed:0,total:1,partial:1,pending:0,failed:0}},
+  items:[{material:{ref:'material:generated@current',title:'Generated diary',sourceId:'generated-source'},state:'pending',reason:'memory_owner_input_required',coverage:{sync:{status:'ready'},extraction:{status:'ready'},semantic:{status:'partial'}},result:{reason:'Generated independent result',cardIds:[],commitmentIds:[]},ownerQuestions:[{id:questionId,revision:1,state:'open',prompt:'Generated question: are you the named participant?'}]}]};return {items:[],nextCursor:null};},entryCapabilities);
+ await render(api);const summary=assistant(d).querySelector('[data-onboarding-summary]')!;
+ assert.match(summary.textContent!,/需要你补充/);assert.match(summary.textContent!,/已有部分结果；需要你补充的问题只影响相关结论。/);assert.match(summary.textContent!,/语义理解.*0 \/ 1/);
+ assert.equal(summary.querySelector('a[href="#/ask?question='+questionId+'"]')?.textContent,'Generated question: are you the named participant?');
+ assert.doesNotMatch(summary.textContent!,/本次选择的资料已完成/);assert.equal(calls.some(call=>call.method!=='GET'),false);
+});

@@ -10759,5 +10759,6 @@
   "此浏览器还没有可恢复的初次认识记录。": "This browser has no first acquaintance record to resume.",
   "最近后台活动；更多任务和结果可进入查看。": "Recent background activity; open to see more tasks and results.",
   "本页建议关联的任务": "Tasks linked to suggestions on this page",
-  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "No suggestions on this page have linked tasks. See the main conversation or matters for other tasks."
+  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "No suggestions on this page have linked tasks. See the main conversation or matters for other tasks.",
+  "已有部分结果；需要你补充的问题只影响相关结论。": "Partial results are available. Questions needing your input affect only the related conclusions."
 }

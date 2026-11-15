@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {estimateSerializedTokens,type QueryInput} from '@mote/agent';
-import type {QueryResult,QueryScope} from '@mote/shared';
+import type {AttributionContext,QueryResult,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {TaskRecords} from '../src/task-records.js';
@@ -15,13 +15,14 @@ import {UsageLedger} from '../src/usage.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {StoreError,sha256} from '../src/store.js';
 import {materialId,MaterialStore} from '../src/materials.js';
+import {ImportAttributionStore} from '../src/import-attribution.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 const all:QueryScope={kind:'all'};
 const at='2026-10-01T10:00:00.000Z';
 const headers={authorization:'Bearer generated-followup-owner'};
-type Context={materials:{ref:string;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean}}[];originals:{id:string;offset:number;quote:string}[];
+type Context={materials:{ref:string;attributionContext?:AttributionContext;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean}}[];originals:{id:string;offset:number;quote:string}[];
  cards:{id:string;revision:number;state:string;title:string;body?:string;suppressionOnly?:boolean;feedback:{action:string;note?:string}[]}[];memories:{id:string;statement:string}[];commitments:{id:string;status:string}[];mode:{kind:string}};
 type Program=(context:Context)=>unknown|Promise<unknown>;
 const evidence=(context:Context,needle:string)=>{
@@ -80,6 +81,43 @@ async function fixture(t:TestContext){
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,grants,add,produce,start,wait,run,admission};
 }
+
+test('assistant analysis retains exact scoped import authorship and source dates without Memory, and a changed declaration fences its saved result',async t=>{
+ const f=await fixture(t),sourceId='generated-authored-journal',otherSource='generated-unrelated-dialogue';
+ for(const id of [sourceId,otherSource])f.node.sources.register({id,name:id,kind:'custom',deviceId:'generated-device',platform:'import'});
+ f.node.sources.update(sourceId,{ownerRelation:'owner'});
+ const instruction='  I authored the journal narrator. The visitor and quoted AI remain separate actors.\nOriginal dates use +08:00.  ';
+ const description='  Generated journal dates are authored dates, not import times.\nOnly the narrator is me; other participants remain distinct.  ';
+ f.node.sources.updateContext(sourceId,{expectedVersion:0,description});
+ const attribution=new ImportAttributionStore(f.node.store),pin=attribution.freeze({id:randomUUID(),version:1,sourceId,instruction})!;
+ const text='2026-09-30T19:30:00+08:00 Narrator: I plan a walk. Visitor: I prefer staying home. AI: I can explain the route.';
+ const capture=await f.node.sources.upsert(sourceId,{externalId:'journal',revision:'1',observedAt:at,kind:'message',layer:'original',text},undefined,ack=>{if(!ack.duplicate)attribution.bind(ack.id,pin);});
+ const other=await f.node.sources.upsert(otherSource,{externalId:'dialogue',revision:'1',observedAt:at,kind:'message',layer:'original',text:'Narrator: I prefer cycling.'});
+ const publish=(id:string,originalId:string,body:string)=>f.node.materials.publish({id:materialId(id,'entry'),kind:'mote.message',schemaVersion:1,title:'Generated participant dialogue',origin:{sourceId:id,externalId:'entry'},
+  members:[{id:'original',kind:'capture',ref:'capture:'+originalId}],blocks:[{id:'body',kind:'text',format:'plain',text:body,memberIds:['original']}],
+  artifacts:[{key:'body',state:'ready',blockIds:['body']}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
+ const material=publish(sourceId,capture.id,text),unrelated=publish(otherSource,other.id,'Narrator: I prefer cycling.');
+ const inspect=(context:Context,expectedDescription:string,version:number)=>{
+  assert.deepEqual(context.memories,[],'original declarations must not depend on a generated Memory to reach the interpreter');
+  const selected=context.materials.find(value=>value.ref.includes(material.id))!,current=selected.attributionContext;
+  assert.ok(current,'the interpreter receives the current authorized attribution context');assert.equal(current.ownerRelation,'owner');assert.equal(current.ownerStatements,undefined);
+  assert.deepEqual(current.importStatements,[{id:pin.id,version:1,instruction,captureIds:[capture.id]}]);
+  assert.deepEqual(current.sourceContextStatements,[{sourceId,version,description:expectedDescription}]);
+  assert.deepEqual(selected.products,[]);assert.ok(selected.body?.text.includes('2026-09-30T19:30:00+08:00'));
+  const separate=context.materials.find(value=>value.ref===unrelated.ref)!.attributionContext!;
+  assert.equal(separate.ownerRelation,'unknown');assert.equal(separate.importStatements,undefined);assert.equal(separate.sourceContextStatements,undefined,'a shared participant label cannot inherit another original’s declaration');
+  return evidence(context,'Narrator: I plan a walk.');
+ };
+ f.programs.push(context=>answer([card(inspect(context,description,1))]));
+ const task=await f.start([material.ref,unrelated.ref]);await f.wait(task);
+ const changed='Generated revised source declaration: retain the original +08:00 dates and keep the visitor and AI separate.';
+ f.node.sources.updateContext(sourceId,{expectedVersion:1,description:changed});
+ await assert.rejects(f.service.finish(task.id),error=>error instanceof StoreError&&[404,409].includes(error.statusCode));
+ assert.deepEqual(f.node.featureServices.assistantCards.page({scope:all}).items,[],'an old saved interpretation cannot publish after its owner declaration changed');
+ const current=f.node.materials.get(material.id)!;assert.notEqual(current.ref,material.ref);
+ const result=await f.run([current.ref,unrelated.ref],context=>answer([card(inspect(context,changed,2))]));
+ assert.equal(result.cardIds.length,1);assert.ok(f.node.featureServices.assistantCards.get(result.cardIds[0],all).sourceContextDependencies.some(value=>value.sourceId===sourceId&&value.version===2));
+});
 
 test('preparing an assistant preview of many small blocks batches original checks and lets unrelated work run',async t=>{
  const f=await fixture(t),parts=Array.from({length:80},(_,n)=>'Generated block '+n+'. '),note=await f.add(parts.join(''));

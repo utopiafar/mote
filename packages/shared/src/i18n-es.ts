@@ -10760,5 +10760,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "此浏览器还没有可恢复的初次认识记录。": "Este navegador no tiene un registro de primer acercamiento que puedas reanudar.",
   "最近后台活动；更多任务和结果可进入查看。": "Actividad reciente en segundo plano; abre para ver más tareas y resultados.",
   "本页建议关联的任务": "Tareas vinculadas a las sugerencias de esta página",
-  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Las sugerencias de esta página no tienen tareas vinculadas. Consulta la conversación principal o los asuntos para ver otras tareas."
+  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Las sugerencias de esta página no tienen tareas vinculadas. Consulta la conversación principal o los asuntos para ver otras tareas.",
+  "已有部分结果；需要你补充的问题只影响相关结论。": "Ya hay resultados parciales. Las preguntas que necesitan tu respuesta solo afectan a las conclusiones relacionadas."
 };

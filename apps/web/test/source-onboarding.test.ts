@@ -134,3 +134,23 @@ test('a failed start keeps the chosen material and shows a recovery path',async 
  assert.equal(panel.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked,true);
  assert.equal(button(d,'开始初次认识')!.disabled,false);
 });
+
+test('partial acquaintance shows available results and a concrete owner question without completing or answering it',async t=>{
+ const {root,d}=await fixture(t),calls:Call[]=[],questionId='22222222-2222-4222-8222-222222222222';
+ const partial={...item('pending','partial'),reason:'memory_owner_input_required',memory:{id:runId,status:'waiting_for_input',completedBatches:1,totalBatches:1},
+  result:{reason:'Generated release checklist is available; participant identity is unknown.',cardIds:[runId],commitmentIds:[]},
+  ownerQuestions:[{id:questionId,revision:1,state:'open',prompt:'Generated question: are you the participant describing work pressure?',reason:'Generated source does not establish the participant identity.'}]};
+ const state:State={sources:[source()],materials:[material()],authority:'off',view:view('pending',{items:[partial],coverage:{sync:{completed:1,total:1},extraction:{completed:1,total:1},semantic:{completed:0,total:1,partial:1,pending:0,failed:0}}})};
+ const api=owner(state,calls);await render(root,api);await act(async()=>d.querySelector<HTMLInputElement>('.source-onboarding-material input')!.click());await act(async()=>button(d,'开始初次认识')!.click());await flush();
+ const panel=d.querySelector('.source-onboarding')!;
+ assert.match(panel.textContent!,/需要你补充/);assert.match(panel.textContent!,/已有部分结果；需要你补充的问题只影响相关结论。/);
+ assert.match(panel.querySelector('[data-onboarding-result]')!.textContent!,/release checklist is available/);
+ assert.equal(panel.querySelector('a[href="#/today"]')?.textContent,'查看结果与依据 →');
+ const question=panel.querySelector<HTMLAnchorElement>('[data-onboarding-question] a')!;assert.ok(question);assert.equal(question.getAttribute('href'),'#/ask?question='+questionId);
+ assert.match(question.textContent!,/are you the participant/);assert.match(panel.querySelector('[data-onboarding-question]')!.textContent!,/does not establish/);
+ assert.equal(panel.querySelector('[data-stage="semantic"]')?.getAttribute('data-state'),'partial');assert.match(panel.querySelector('[data-stage="semantic"]')!.textContent!,/0 \/ 1/);
+ assert.doesNotMatch(panel.textContent!,/本次选择的资料已完成/);assert.equal(panel.querySelector('a[href="#/system/models"]'),null);
+ assert.ok(button(d,'取消初次认识'));assert.equal(button(d,'继续初次认识'),undefined);
+ await act(async()=>question.click());await flush();assert.equal(d.defaultView!.location.hash,'#/ask?question='+questionId);
+ assert.equal(calls.some(call=>call.method==='POST'&&(call.path.includes('/reply')||call.path.includes('/cancel'))),false);
+});
