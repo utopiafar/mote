@@ -15,6 +15,8 @@ import {claimSchema,MemoryOutputValidationError,type MemoryStore,type EvidenceRa
 import {memoryProfile} from './memory-profiles.js';
 import type {MemoryWorkContract} from './memory-strategy-contract.js';
 import {conversationClaimContext,parseSemanticProducts,semanticProductsSchema} from './semantic-extraction.js';
+import {failureContext,retainErrorIdentity,retainFailureContext,type FailureContext} from './execution-failures.js';
+import {validationLocation,validationProblem} from './memory-validation.js';
 
 export type ConversationEvidenceScope={records:CaptureRecord[];ranges:EvidenceRange[]};
 export type ConversationUnderstandingOptions={
@@ -41,6 +43,26 @@ const candidatePolicySchema=z.object({prompt:z.string().min(1).max(32000),profil
  * Translate only host-owned instructions back to the producer's candidate field;
  * their standalone Memory envelope is never a valid conversation response. */
 function conversationMemoryInstruction(instruction:string){return instruction.replace(/\bmemories\b/g,'memoryCandidates');}
+
+/** Keep schema-owned coordinates and measurements, never rejected values or
+ * provider feedback. StoreError prose is retained only at its constant host
+ * construction site, not by inspecting arbitrary exception messages here. */
+function conversationValidationContext(error:unknown,result:QueryResult):FailureContext{
+ const context:FailureContext={...failureContext(error),runId:result.runId};
+ let detail=context.errorDetail;
+ if(error instanceof MemoryOutputValidationError){
+  context.causeCode=error.code;context.errorName='MemoryOutputValidationError';
+  const d=error.details;
+  detail=[d.fieldPath&&'fieldPath='+conversationMemoryInstruction(d.fieldPath),d.problem&&'problem='+d.problem,
+   ...(['candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches'] as const).flatMap(key=>typeof d[key]==='number'&&Number.isFinite(d[key])?[key+'='+d[key]]:[])].filter(Boolean).join('; ');
+ }else if(error instanceof z.ZodError){
+  context.causeCode='schema';context.errorName='ZodError';const issue=error.issues[0];
+  detail=issue?'fieldPath='+validationLocation(issue.path)+'; problem='+validationProblem(issue):undefined;
+ }else if(error instanceof SyntaxError){context.causeCode='json';context.errorName='SyntaxError';}
+ else if(error instanceof StoreError){context.causeCode='conversation_products';context.errorName='StoreError';}
+ context.errorDetail=[detail,'responseBytes='+Buffer.byteLength(result.answer),'responseCharacters='+result.answer.length].filter(Boolean).join('; ');
+ return context;
+}
 
 /** The caller supplies complete bounded pages, never an arbitrary slice of raw tool logs. */
 function originalScope(pages:MaterialReadPage[],resolve:ConversationUnderstandingOptions['resolveEvidence']){
@@ -80,11 +102,11 @@ function originalScope(pages:MaterialReadPage[],resolve:ConversationUnderstandin
 }
 
 function parseConversationProducts(answer:string,scope:ConversationEvidenceScope,citationIds:string[],workContract?:MemoryWorkContract){
- if(Buffer.byteLength(answer)>64000)throw new StoreError('Semantic output exceeds the 64 KB response budget',502);
+ if(Buffer.byteLength(answer)>64000)throw retainErrorIdentity(new StoreError('Semantic output exceeds the 64 KB response budget',502));
  conversationProductsSchema.extend({memoryCandidates:workContract?z.array(claimSchema):conversationProductsSchema.shape.memoryCandidates}).parse(JSON.parse(answer));
  const output=parseSemanticProducts(answer,scope.records,citationIds,scope.ranges,workContract);
  validateConversationClaims(output,scope.records);
- if(conversationProductText(output).length>12000)throw new StoreError('Readable conversation products exceed 12000 characters; shorten the summary and claims while preserving their evidence',502);
+ if(conversationProductText(output).length>12000)throw retainErrorIdentity(new StoreError('Readable conversation products exceed 12000 characters; shorten the summary and claims while preserving their evidence',502));
  return output;
 }
 
@@ -93,10 +115,10 @@ function parseConversationProducts(answer:string,scope:ConversationEvidenceScope
 export function validateConversationClaims(output:Pick<ReturnType<typeof parseSemanticProducts>,'events'|'workRecords'>,records:CaptureRecord[]){
  const claims=[...output.events,...(output.workRecords??[]).flatMap(record=>[...record.requirements,...record.constraints,...record.decisions,...record.results,...record.validation,...record.openItems,...record.artifactRefs])];
  for(const claim of claims){
-  if(!claim.actor||!claim.status||!claim.basis||claim.sourceTime===undefined)throw new StoreError('Coding claims require attribution, status, basis and sourceTime',502);
-  if((claim.actor==='assistant'||claim.basis==='assistant_reported')&&(claim.status==='confirmed_outcome'||claim.basis==='user_confirmed'))throw new StoreError('Assistant reports cannot be independent confirmation or owner confirmation; preserve assistant_reported attribution and reported_outcome or the applicable non-confirmed status',502);
-  if(claim.sourceTime&&!claim.evidence.some(evidence=>evidence.quote.includes(claim.sourceTime!)||records.find(record=>record.id===evidence.id)?.provenance?.document?.recordedAt===claim.sourceTime))throw new StoreError('A source time must appear in its exact original support or source metadata',502);
-  if('ref' in claim&&(typeof claim.ref!=='string'||!claim.evidence.some(evidence=>evidence.quote.includes(claim.ref as string))))throw new StoreError('An artifact reference must appear in its exact original support',502);
+  if(!claim.actor||!claim.status||!claim.basis||claim.sourceTime===undefined)throw retainErrorIdentity(new StoreError('Coding claims require attribution, status, basis and sourceTime',502));
+  if((claim.actor==='assistant'||claim.basis==='assistant_reported')&&(claim.status==='confirmed_outcome'||claim.basis==='user_confirmed'))throw retainErrorIdentity(new StoreError('Assistant reports cannot be independent confirmation or owner confirmation; preserve assistant_reported attribution and reported_outcome or the applicable non-confirmed status',502));
+  if(claim.sourceTime&&!claim.evidence.some(evidence=>evidence.quote.includes(claim.sourceTime!)||records.find(record=>record.id===evidence.id)?.provenance?.document?.recordedAt===claim.sourceTime))throw retainErrorIdentity(new StoreError('A source time must appear in its exact original support or source metadata',502));
+  if('ref' in claim&&(typeof claim.ref!=='string'||!claim.evidence.some(evidence=>evidence.quote.includes(claim.ref as string))))throw retainErrorIdentity(new StoreError('An artifact reference must appear in its exact original support',502));
  }
 }
 
@@ -136,18 +158,20 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
   const responsePrompt=(work?CONVERSATION_UNDERSTANDING_PROMPT.replace('memoryCandidates (0–8 matching the supplied memory admission contract)','memoryCandidates (a variable selected set matching the memory contract below)'):CONVERSATION_UNDERSTANDING_PROMPT)
    .replace('actionCues (always [])','actionCues (always [])'+(work?', coverage':''));
   const parse=(result:QueryResult)=>{
+   try{
    const value=JSON.parse(result.answer),{coverage,capacity,...products}=value;
    if(work&&capacity!==undefined)throw new MemoryOutputValidationError('schema','Range evaluation does not accept legacy capacity',{workContract:work.workContract});
    const output=parseConversationProducts(JSON.stringify(products),scope,result.citations.map(citation=>citation.id),work?.workContract);
    if(work){const accounting=readMemoryWorkCoverage({...result,answer:JSON.stringify({memories:output.memoryCandidates,coverage})},work.members,id=>scope.records.find(record=>record.id===id)?.ocrText);if(accounting.missing.length||accounting.notAssessed.length)throw new MemoryOutputValidationError('coverage','Every supplied conversation target requires completed evaluation',{workContract:work.workContract});}
-   else if(coverage!==undefined||capacity!==undefined)throw new StoreError('Conversation products without a work contract must not invent coverage',502);
+   else if(coverage!==undefined||capacity!==undefined)throw retainErrorIdentity(new StoreError('Conversation products without a work contract must not invent coverage',502));
    options.memories.extract({...result,answer:JSON.stringify({memories:output.memoryCandidates,...(work?{coverage}:{})})},selected.model,{workContract:work?.workContract,profile:candidateProfile,requireAdmission:true,evidenceRanges:scope.ranges,validateOnly:true});
    return output;
+   }catch(error){throw retainFailureContext(error,conversationValidationContext(error,result));}
   };
   const host={operationId:input.execution?.operationId??'conversation:'+material.id,jobId:input.execution?.jobId,requestId:randomUUID()};
   const preferredLanguage=languagePreference(input.config.language);
   const meter=options.usage.start(selected.provider,selected.model,'coding-conversation-understanding',{moduleId:'memories',agentId:'coding-conversation-understanding',skillId:null,...host});
-  let sampled=false,started=false;
+  let sampled=false,started=false,lastValidation:FailureContext|undefined;
   try{
    const result=await options.query({executionLane:'background',responseMode:'memory-extraction',processingMaterialInputs:materialInputs,modelProfileId:selected.profileId,modelOverride:selected.model,traceContext:host,
     contextTime:typeof input.config.contextTime==='string'?input.config.contextTime:undefined,
@@ -156,7 +180,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     taskContext:work?{turns:[],memoryWork:{...work,instruction:conversationMemoryInstruction(work.instruction)}}:undefined,
     evidenceIds:scope.records.map(record=>record.id),evidenceRanges:scope.ranges,
     question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+responsePrompt+(work?'\nThe host memoryWork contract governs memoryCandidates. '+conversationMemoryInstruction(memoryWorkInstruction(work.members)):''),
-    validateOutput:result=>{try{parse(result);}catch(error){const detail=error instanceof MemoryOutputValidationError?conversationMemoryInstruction(error.repairInstruction):error instanceof z.ZodError?error.issues.slice(0,3).map(issue=>issue.path.join('.')+': '+issue.message).join('; '):error instanceof StoreError?error.message:'Invalid JSON object';return {code:'conversation_products',feedback:detail+' Return the complete unified object: summary, evidence, workRecords, events, memoryCandidates and actionCues.'+coverageInstruction+' Absent products use empty arrays; actionCues must be empty. Every claim must preserve attribution, status, basis, sourceTime and uncertainty, with exact cited original quotes inside the supplied ranges.'};}},
+    validateOutput:result=>{lastValidation=undefined;try{parse(result);}catch(error){lastValidation=failureContext(error);const detail=error instanceof MemoryOutputValidationError?conversationMemoryInstruction(error.repairInstruction):error instanceof z.ZodError?error.issues.slice(0,3).map(issue=>issue.path.join('.')+': '+issue.message).join('; '):error instanceof StoreError?error.message:'Invalid JSON object';return {code:'conversation_products',feedback:detail+' Return the complete unified object: summary, evidence, workRecords, events, memoryCandidates and actionCues.'+coverageInstruction+' Absent products use empty arrays; actionCues must be empty. Every claim must preserve attribution, status, basis, sourceTime and uncertainty, with exact cited original quotes inside the supplied ranges.'};}},
     signal:input.signal,onUsage:usage=>{sampled=true;meter.update(usage);},onTrace:event=>{if(event.type==='model.admitted')started=true;}});
    input.signal.throwIfAborted();const output=parse(result);
    if(options.selection(input.config).fingerprint!==selected.fingerprint)throw new StoreError('Model settings changed during conversation understanding',409);
@@ -173,7 +197,10 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
    // owner decision is pending.
    if(!started&&!sampled&&error instanceof ProviderFailure&&error.details.admissionWaiting===true&&error.details.executionStarted===false)meter.discard();
    else meter.finish('failed');
-   if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502)throw new ProcessingFailure('permanent','invalid_model_output');throw error;}
+   if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502){
+    const context=error instanceof AgentResponseError?{...failureContext(error),...(error.reason==='host_validation'&&lastValidation?lastValidation:{causeCode:error.reason,errorName:'AgentResponseError'})}:failureContext(error);
+    throw retainFailureContext(new ProcessingFailure('permanent','invalid_model_output'),context);
+   }throw error;}
  }};
 }
 
