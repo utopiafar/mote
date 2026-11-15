@@ -321,7 +321,7 @@ export class AssistantFollowup {
   }
   if(running||!this.control||this.control.view().state!=='on')return;
   const excluded=new Set(this.control.view().excludedSourceIds),all:QueryScope={kind:'all'};
-  const ready=changes.ready().filter(candidate=>candidate.input.material&&!excluded.has(candidate.input.sourceId)&&this.allowsAutomatic(candidate.input.evidenceIds)).slice(0,5);
+  const ready=await changes.selectReady(5,input=>Boolean(input.material)&&!excluded.has(input.sourceId)&&this.allowsAutomatic(input.evidenceIds),active);
   if(!ready.length)return;
   let selected=ready,includeCatalog=true;
   while(selected.length){

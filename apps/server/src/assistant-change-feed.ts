@@ -1,15 +1,19 @@
 import type {QueryScope,SourceDocument} from '@mote/shared';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {sourceModelIdentity} from './model-authorization-host.js';
 import {materialId,type MaterialRecord,type MaterialStore} from './materials.js';
 import {BackgroundModelAuthorization} from './background-model-authorization.js';
 import {BatchProcessing,type BatchRequest} from './batch-processing.js';
-import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
+import {TaskRecords,type AssertTaskCurrent,type TaskRecord} from './task-records.js';
 import {retireTaskRecordsSql} from './task-evidence.js';
 import {sha256,StoreError,type Store} from './store.js';
 
 type ChangeRow={seq:number;kind:'original'|'material'|'feedback';identity:string;source_id:string|null;object_id:string|null;previous_revision:string|null;at:number};
 type WorkRow={key:string;root:string;source_id:string;capture_id:string|null;material_id:string|null;previous_revision:string|null;task_id:string;first_at:number;last_at:number;started_batch:string|null;needs_review:number};
+type ReadyChange={task:TaskRecord;input:AssistantChangeInput};
+type ReadyRow=WorkRow&{blocked:number;retry_at:string};
+const readyOrder="t.state='blocked',CASE WHEN t.state='blocked' THEN t.updated_at ELSE '' END,w.first_at,w.key";
 type MaterialState=Pick<MaterialRecord,'ref'|'coverage'>&{artifacts:Pick<NonNullable<MaterialRecord['artifacts']>[number],'key'|'state'|'reason'>[]};
 export type AssistantChangeInput={root:string;sourceId:string;captureId?:string;observedAt?:string;sourceRevision?:string;document?:SourceDocument;
   material?:MaterialState;readiness:'pending'|'ready'|'partial';evidenceIds:string[]};
@@ -34,6 +38,7 @@ export class AssistantChangeFeed {
     first_at INTEGER NOT NULL,last_at INTEGER NOT NULL,started_batch TEXT,needs_review INTEGER NOT NULL DEFAULT 0);
    CREATE INDEX IF NOT EXISTS assistant_change_work_material ON assistant_change_work(material_id);
    CREATE INDEX IF NOT EXISTS assistant_change_work_capture ON assistant_change_work(capture_id);
+   CREATE INDEX IF NOT EXISTS assistant_change_work_task ON assistant_change_work(task_id);
    CREATE TABLE IF NOT EXISTS assistant_change_feedback_tasks(
     feedback_seq INTEGER PRIMARY KEY REFERENCES assistant_card_feedback(seq) ON DELETE CASCADE,task_id TEXT NOT NULL REFERENCES task_records(id));
    CREATE TABLE IF NOT EXISTS assistant_change_deferred(
@@ -275,14 +280,40 @@ export class AssistantChangeFeed {
  });}
  /** No handler means no model request. A later consumer can use this list after it has
   * built its actual scoped request; unready roots remain here across restart. */
- ready(){
+ ready(taskIds?:readonly string[]):ReadyChange[]{
   const at=this.now();return (this.store.db.prepare(`SELECT w.* FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id
    WHERE started_batch IS NULL AND needs_review=0
-   ORDER BY t.state='blocked',CASE WHEN t.state='blocked' THEN t.updated_at ELSE '' END,first_at,key`).all() as WorkRow[]).flatMap(row=>{
-   if(at<Math.min(row.last_at+this.settleMs,row.first_at+this.maximumWaitMs)||!this.control.freshTriggers([row.root],'assistant').length)return [];
-   try{const task=this.tasks.get(row.task_id),input=this.tasks.input<AssistantChangeInput>(task.id,task.revision,this.assertCurrent),current=this.snapshot(row.root,row.source_id,row.capture_id,row.material_id,row.previous_revision);
-    return input.readiness==='pending'||!input.evidenceIds.length||!current||JSON.stringify(current)!==JSON.stringify(input)?[]:[{task,input}];}catch{return [];}
-  });
+   ${taskIds?'AND w.task_id IN (SELECT value FROM json_each(?))':''}
+   ORDER BY ${readyOrder}`).all(...(taskIds?[JSON.stringify(taskIds)]:[])) as WorkRow[]).flatMap(row=>{const ready=this.readyInput(row,at);return ready?[ready]:[];});
+ }
+ private readyInput(row:WorkRow,at:number):ReadyChange|undefined{
+  if(at<Math.min(row.last_at+this.settleMs,row.first_at+this.maximumWaitMs)||!this.control.freshTriggers([row.root],'assistant').length)return;
+  try{const task=this.tasks.get(row.task_id),input=this.tasks.input<AssistantChangeInput>(task.id,task.revision,this.assertCurrent),current=this.snapshot(row.root,row.source_id,row.capture_id,row.material_id,row.previous_revision);
+   if(input.readiness!=='pending'&&input.evidenceIds.length&&current&&JSON.stringify(current)===JSON.stringify(input))return {task,input};}catch{}
+ }
+ /** The background consumer needs only its next group. Page metadata in the
+  * same retry order, validate each complete input and yield outside any read
+  * transaction. Rejected/unready rows stay durable for later polls; submission
+  * revalidates the selected IDs under its existing writer transaction. */
+ async selectReady(limit:number,accept:(input:AssistantChangeInput)=>boolean,assertActive:()=>void=()=>{}):Promise<ReadyChange[]>{
+  if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw Error('Invalid assistant ready group');
+  const selected:ReadyChange[]=[];let cursor:ReadyRow|undefined;
+  do{
+   assertActive();
+   const page=this.store.db.prepare(`SELECT w.*,t.state='blocked' blocked,CASE WHEN t.state='blocked' THEN t.updated_at ELSE '' END retry_at
+    FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE started_batch IS NULL AND needs_review=0
+    ${cursor?`AND (${readyOrder})>(?,?,?,?)`:''} ORDER BY ${readyOrder} LIMIT 32`)
+    .all(...(cursor?[cursor.blocked,cursor.retry_at,cursor.first_at,cursor.key]:[])) as ReadyRow[];
+   if(!page.length)break;
+   for(const row of page){
+    assertActive();const ready=this.readyInput(row,this.now());
+    if(ready&&accept(ready.input))selected.push(ready);
+    await yieldTurn();assertActive();
+    if(selected.length===limit)return selected;
+   }
+   cursor=page.at(-1);
+  }while(cursor);
+  return selected;
  }
  /** A preparation failure consumes no original receipt. Keep the frozen input
   * retryable, behind untouched work, rather than blocking the whole catalog. */
@@ -306,7 +337,7 @@ export class AssistantChangeFeed {
     if(prior.id!==row.started_batch)throw new StoreError('Assistant change was already submitted',409);
     return prior;
    }
-   const ready=this.ready(),selected=[...new Set([taskId,...context.taskIds])].map(id=>ready.find(candidate=>candidate.task.id===id));
+   const taskIds=[...new Set([taskId,...context.taskIds])],ready=this.ready(taskIds),selected=taskIds.map(id=>ready.find(candidate=>candidate.task.id===id));
    if(selected.some(candidate=>!candidate))throw new StoreError('Assistant change is not ready',409);
    this.assertCurrent(context.evidenceIds);
    const allowed=new Set([...selected.flatMap(candidate=>candidate!.input.evidenceIds),...context.evidenceIds]);
