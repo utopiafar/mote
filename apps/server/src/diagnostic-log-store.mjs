@@ -9,6 +9,8 @@ const priority = ['trace', 'debug', 'info', 'warn', 'error'];
 const lockProtocol = JSON.stringify({protocol:'mote-retention-sqlite'}) + '\n';
 const offlineRecovery = 'Diagnostic retention lock unavailable; existing retention.lock requires offline recovery after all log writers are stopped';
 const lockPollMs = 10;
+const appendGroupRecords = 16;
+const appendGroupMs = 20;
 // A live Central section was measured at 11.55 s under import load. Appends
 // keep their bounded buffers through temporary contention, with room for that
 // work and ordinary scheduling/IO variation. Other operations retain 5 s.
@@ -243,12 +245,12 @@ export class DiagnosticLogStore {
   }
   async append(records) {
     const result = [];
-    // Central and its supervisor share this directory. A buffered append must
-    // release the mutex between records: asynchronous file operations can
-    // otherwise keep a waiting supervisor out for its entire acquisition budget
-    // while the Central event loop is also admitting a source backlog.
-    for (let offset = 0; offset < Math.max(1, records.length); offset++) {
-      result.push(...await this.appendGroup(records.slice(offset, offset + 1)));
+    // Amortize inventory/state publication and the fairness gap over a bounded
+    // group. One gap per record capped drain below sustained debug arrivals.
+    for (let offset = 0; offset < Math.max(1, records.length);) {
+      const written = await this.appendGroup(records.slice(offset, offset + appendGroupRecords));
+      result.push(...written);
+      offset += Math.max(1, written.length);
       // SQLite's nonblocking mutex has no waiter queue. Give a contending
       // process a whole polling interval before this writer can take it again,
       // including when its next append is a separate one-record call.
@@ -257,14 +259,19 @@ export class DiagnosticLogStore {
     return result;
   }
   async appendGroup(records) {
-    // Only acquisition is retried, before any IO for this record starts. Never
+    // Only acquisition is retried, before any IO for this group starts. Never
     // replay an append batch: earlier records may already be durable, and a
     // write/rename/state error may occur after this record's bytes were saved.
     return this.exclusive(async () => {
-      const written = [];
+      const written = [], started = performance.now();
       await this.inventory();
       await this.prune();
       for (const record of records) {
+        // Close every append handle before handing off. A slow inventory or
+        // record can consume the time slice; finish at least one record, then
+        // release rather than starting another. No partially written group is
+        // retried if writing, renaming or publishing its state fails.
+        if (written.length && performance.now() - started >= appendGroupMs) break;
         const {
           channel,
           line,
