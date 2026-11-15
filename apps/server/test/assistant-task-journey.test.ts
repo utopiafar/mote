@@ -13,6 +13,7 @@ import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {assistantTaskRecordSchema} from '@mote/shared';
 import {TaskRecords} from '../src/task-records.js';
 import type {MatterAuthority} from '../src/assistant-matters.js';
+import {materialId} from '../src/materials.js';
 
 const token='generated-task-journey-owner',headers={authorization:'Bearer '+token};
 const text='GENERATED BLUE ORCHID FILE EVIDENCE';
@@ -20,7 +21,7 @@ async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.no
 
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-task-journey-'));
- let evidenceId='',wire='',taskCalls=0,hold=false,release!:()=>void,entered!:()=>void;
+ let evidenceId='',wire='',taskCalls=0,hold=false,readIds:string[]|undefined,citationIds:string[]|undefined,release!:()=>void,entered!:()=>void;
  const held=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
  const provider=createServer(async(req,res)=>{
   let body='';for await(const part of req)body+=part;
@@ -29,10 +30,10 @@ async function fixture(t:TestContext){
   let delta:unknown,finish='stop';
   if(!isTask)delta={role:'assistant',content:JSON.stringify({answer:'Generated initial answer',citationIds:[],draft:{goal:'Generated task goal'}})};
   else if(!messages.some(message=>message.role==='tool')){
-   taskCalls++;delta={role:'assistant',tool_calls:[{index:0,id:'generated-file-read',type:'function',function:{name:'evidence',arguments:JSON.stringify({ids:[evidenceId]})}}]};finish='tool_calls';
+   taskCalls++;delta={role:'assistant',tool_calls:[{index:0,id:'generated-file-read',type:'function',function:{name:'evidence',arguments:JSON.stringify({ids:readIds??[evidenceId]})}}]};finish='tool_calls';
   }else{
    wire=body;if(hold){entered();await held;}
-   delta={role:'assistant',content:JSON.stringify({answer:JSON.stringify({answer:'Generated grounded answer',actions:[]}),citationIds:[evidenceId]})};
+   delta={role:'assistant',content:JSON.stringify({answer:JSON.stringify({answer:'Generated grounded answer',actions:[]}),citationIds:citationIds??[evidenceId]})};
   }
   if(res.destroyed)return;res.writeHead(200,{'Content-Type':'text/event-stream'});
   const send=(value:unknown)=>res.write('data: '+JSON.stringify(value)+'\n\n');
@@ -73,7 +74,7 @@ async function fixture(t:TestContext){
  const command=(value:any)=>({conversationId:value.conversationId,turnId:value.turnId,requestId:value.draft.requestId,expectedRevision:value.draft.revision,capability:'assistant.task.start',goal:value.draft.goal,scope:value.draft.scope});
  const start=async(value:any)=>{const result=await node.app.inject({method:'POST',url:'/api/assistant/commands',headers,payload:command(value)});assert.equal(result.statusCode,200,result.body);return result.json();};
  const read=async(value:any)=>{const params=new URLSearchParams({scope:JSON.stringify(value.draft.scope)}),response=await node.app.inject({url:`/api/conversations/${value.conversationId}/messages/${value.turnId}/assistant-tasks?${params}`,headers});assert.equal(response.statusCode,200,response.body);return response.json().items;};
- return {get node(){return node;},get wire(){return wire;},get evidenceId(){return evidenceId;},get taskCalls(){return taskCalls;},note,upload,draft,start,read,started,release,setHold(value:boolean){hold=value;},setEvidence(id:string){evidenceId=id;},async restart(){await node.app.close();node=await build();}};
+ return {get node(){return node;},get wire(){return wire;},get evidenceId(){return evidenceId;},get taskCalls(){return taskCalls;},note,upload,draft,start,read,started,release,setHold(value:boolean){hold=value;},setEvidence(id:string){evidenceId=id;},setReads(ids:string[],citations=ids){readIds=ids;citationIds=citations;},async restart(){await node.app.close();node=await build();}};
 }
 
 test('an uploaded file is read through the real draft command and its result survives restart; new all-scope data retires it',async t=>{
@@ -205,7 +206,7 @@ test('an accepted suggestion links its real result to its matter, and withdrawal
  const cardId=randomUUID(),cards=f.node.featureServices.assistantCards;
  const card=cards.publish({id:cardId,kind:'suggestion',matterId:matter.id,version:'v1',state:'open',title:'Generated suggestion',body:'Generated suggestion',
   evidence:[{id:original,quote:'Generated matter evidence'}],evidenceDependencies:{version:1,complete:true,ids:[original]}},undefined,scope,()=>{});
- const request={requestId:randomUUID(),goal:'Generated task goal',scope},ref={cardId,expectedRevision:card.revision};
+ const request={requestId:randomUUID(),goal:'Generated task goal',scope:card.taskScope!},ref={cardId,expectedRevision:card.revision};
  const started=f.node.assistantTasks.acceptSuggestion(request,ref,authority);
  assert.equal(f.node.assistantTasks.acceptSuggestion(request,ref,authority).id,started.id);
  assert.deepEqual(f.node.featureServices.assistantMatters.get(matter.id).taskIds,[started.id]);
@@ -219,4 +220,93 @@ test('an accepted suggestion links its real result to its matter, and withdrawal
  assert.equal(f.node.store.db.prepare('SELECT snapshot_json FROM assistant_task_scopes WHERE task_id=?').get(started.id)!.snapshot_json,null);
  const record=f.node.store.db.prepare('SELECT input_json,result_json FROM task_records WHERE id=?').get(started.id)!;assert.equal(record.input_json,null);assert.equal(record.result_json,null);
  assert.equal(f.node.featureServices.assistantMatters.detail(matter.id,authority).linkedTasks[0].state,'stale');
+});
+
+test('a mixed-source suggestion starts beside a Material over 1000 blocks, limits actual tool reads and survives retry and restart',async t=>{
+ const f=await fixture(t),all={kind:'all' as const};
+ const source=async(id:string,text:string)=>{
+  f.node.sources.register({id,name:'Generated '+id,kind:'custom',deviceId:'generated-device',platform:'import'});
+  return f.node.sources.upsert(id,{externalId:'selected',revision:'1',observedAt:'2026-10-01T00:00:00Z',title:'Generated document',kind:'message',layer:'original',text});
+ };
+ const a=await source('generated-a','GENERATED ALLOWED A ORIGINAL'),b=await source('generated-b','GENERATED ALLOWED B ORIGINAL'),outside=await source('generated-outside','Generated unrelated document. '.repeat(10)+'GENERATED_FORBIDDEN_BODY');
+ const wide=f.node.materials.publish({id:materialId('generated-outside','selected'),kind:'mote.file',schemaVersion:1,title:'Generated oversized unrelated Material',origin:{sourceId:'generated-outside',externalId:'selected',deviceId:'generated-device',firstAt:'2026-10-01T00:00:00Z',lastAt:'2026-10-01T00:00:00Z'},members:[{id:'original',kind:'capture',ref:'capture:'+outside.id}],blocks:Array.from({length:1002},(_,index)=>({id:'body-'+index,kind:'text' as const,format:'plain' as const,text:'Generated unrelated block '+index,memberIds:['original']})),artifacts:[{key:'source-body',state:'ready',blockIds:Array.from({length:1002},(_,index)=>'body-'+index)}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}},{expectedRevision:null});
+ assert.equal(f.node.materials.evidenceIds(wide.ref,undefined,1003).length,1002);
+ const matterScope={kind:'selection' as const,sourceIds:['generated-a','generated-b']},matters=f.node.featureServices.assistantMatters;
+ const matter=matters.command({type:'create',requestId:randomUUID(),goal:'Generated mixed-source matter',scope:matterScope},{currentEvidence:()=>[],currentTask:()=>undefined});
+ const cards=f.node.featureServices.assistantCards,card=cards.publish({id:randomUUID(),kind:'suggestion',matterId:matter.id,version:'mixed-v1',state:'open',title:'Generated mixed-source suggestion',body:'Generated task uses both originals; ownership remains unknown.',evidence:[{id:a.id,quote:'GENERATED ALLOWED A ORIGINAL'},{id:b.id,quote:'GENERATED ALLOWED B ORIGINAL'}],evidenceDependencies:{version:1,complete:true,ids:[a.id,b.id]}},undefined,all,()=>{});
+ const scope=card.taskScope!;assert.deepEqual(scope,{kind:'selection',evidenceIds:[a.id,b.id].sort()});assert.deepEqual(card.taskEvidence.map(item=>item.sourceId).sort(),['generated-a','generated-b']);
+ const submit=(command:unknown)=>f.node.app.inject({method:'POST',url:'/api/assistant/tasks',headers,payload:command as any});
+ const request={requestId:randomUUID(),goal:'Generated task goal with the owner edit',scope,cardId:card.id,expectedRevision:card.revision};
+ assert.equal((await submit({...request,scope:all})).statusCode,409,'the feed scope cannot stand in for the reviewed task selection');
+ assert.equal((await submit({...request,scope:{kind:'selection',evidenceIds:[a.id,b.id,outside.id].sort()}})).statusCode,409);
+ assert.equal((await submit({...request,scope:{kind:'selection',sourceIds:['generated-a']}})).statusCode,404,'mixed-source content is not projected into a partial source view');
+ assert.deepEqual(cards.page({scope:{kind:'selection',sourceIds:['generated-a']}}).items,[]);
+ f.setReads([a.id,b.id,outside.id],[a.id,b.id]);
+ const started=await submit(request);assert.equal(started.statusCode,200,started.body);const taskId=started.json().taskId;
+ assert.equal((await submit(request)).json().taskId,taskId,'a lost receipt retries the same task');
+ await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(taskId)?.state==='succeeded');
+ assert.match(f.wire,/GENERATED ALLOWED A ORIGINAL/);assert.match(f.wire,/GENERATED ALLOWED B ORIGINAL/);assert.doesNotMatch(f.wire,/GENERATED_FORBIDDEN_BODY|Generated unrelated block/);
+ const read=async(selected:unknown=all)=>f.node.app.inject({url:'/api/assistant/tasks/'+taskId+'?'+new URLSearchParams({scope:JSON.stringify(selected)}),headers});
+ const result=await read();assert.equal(result.statusCode,200,result.body);assert.deepEqual(result.json().result.citations.map((item:any)=>item.id).sort(),[a.id,b.id].sort());assert.deepEqual(result.json().task.scope,scope);
+ assert.equal((await read({kind:'selection',sourceIds:['generated-a']})).statusCode,404);
+ const detail=await f.node.app.inject({url:'/api/assistant/matters/'+matter.id+'?'+new URLSearchParams({scope:JSON.stringify(all)}),headers});assert.equal(detail.statusCode,200,detail.body);assert.equal(detail.json().linkedTasks[0].id,taskId);
+ await f.note('Generated unrelated new evidence');assert.equal((await read()).json().task.state,'completed','unrelated arrivals cannot retire a fixed suggestion read set');
+ await f.restart();assert.equal((await read()).json().result.answer,'Generated grounded answer');assert.equal((await submit(request)).json().taskId,taskId);assert.equal(f.taskCalls,1);
+ const latest=f.node.featureServices.assistantMatters.get(matter.id);
+ f.node.featureServices.assistantMatters.command({type:'edit',matterId:matter.id,expectedRevision:latest.revision,scope:{kind:'selection',sourceIds:['generated-a']}},{currentEvidence:()=>[],currentTask:id=>{const record=new TaskRecords(f.node.store).get(id);return {id,state:record.state,revision:record.revision,updatedAt:record.updatedAt};}});
+ const invalidated=await read(scope);assert.equal(invalidated.statusCode,200,invalidated.body);assert.equal(invalidated.json().task.state,'stale');assert.equal(invalidated.json().result,undefined);
+ assert.equal((await submit(request)).statusCode,409);
+});
+
+test('a fixed suggestion rejects stale card revisions and discards a provider answer after source withdrawal',async t=>{
+ const f=await fixture(t),a=await f.note('Generated withdrawal original'),cards=f.node.featureServices.assistantCards,all={kind:'all' as const};
+ f.setEvidence(a);f.setHold(true);
+ const publication={id:randomUUID(),kind:'suggestion' as const,matterId:null,version:'v1',state:'open' as const,title:'Generated initial suggestion',body:'Generated initial suggestion',evidence:[{id:a,quote:'Generated withdrawal original'}],evidenceDependencies:{version:1 as const,complete:true as const,ids:[a]}};
+ const first=cards.publish(publication,undefined,all,()=>{}),current=cards.publish({...publication,version:'v2'},first.revision,all,()=>{});
+ const request={requestId:randomUUID(),goal:'Generated task goal',scope:current.taskScope!,cardId:current.id,expectedRevision:current.revision};
+ const post=(payload:unknown)=>f.node.app.inject({method:'POST',url:'/api/assistant/tasks',headers,payload:payload as any});
+ assert.equal((await post({...request,expectedRevision:first.revision})).statusCode,409);
+ const accepted=await post(request);assert.equal(accepted.statusCode,200,accepted.body);const taskId=accepted.json().taskId;
+ await f.started;
+ const deleted=await f.node.app.inject({method:'DELETE',url:'/api/captures/'+a,headers});assert.equal(deleted.statusCode,200,deleted.body);f.release();
+ const step=f.node.store.db.prepare("SELECT id FROM execution_steps WHERE operation_id=? AND kind='batch.item'").get('assistant.task:'+request.requestId)!;
+ await until(()=>!f.node.executor.isActiveStep(String(step.id)));
+ const saved=f.node.store.db.prepare('SELECT state,input_json,result_json FROM task_records WHERE id=?').get(taskId)!;
+ assert.equal(saved.state,'stale');assert.equal(saved.input_json,null);assert.equal(saved.result_json,null);
+ assert.equal((await post(request)).statusCode,409);
+});
+
+test('an explicit conversation selection prepares indexed file descendants without scanning unrelated catalogs',async t=>{
+ const f=await fixture(t),fileId=await f.upload();
+ f.node.sources.register({id:'generated-selection-outside',name:'Generated outside',kind:'custom',deviceId:'generated-device',platform:'import'});
+ const outside=await f.node.sources.upsert('generated-selection-outside',{externalId:'wide',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated outside selection'});
+ f.node.materials.publish({id:materialId('generated-selection-outside','wide'),kind:'mote.file',schemaVersion:1,title:'Generated unrelated oversized Material',origin:{sourceId:'generated-selection-outside',externalId:'wide',deviceId:'generated-device'},members:[{id:'original',kind:'capture',ref:'capture:'+outside.id}],blocks:Array.from({length:1002},(_,index)=>({id:'body-'+index,kind:'text' as const,format:'plain' as const,text:'Generated unrelated block '+index,memberIds:['original']})),artifacts:[{key:'source-body',state:'ready',blockIds:Array.from({length:1002},(_,index)=>'body-'+index)}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}},{expectedRevision:null});
+ const evidenceIds=[fileId];
+ for(let index=0;index<5;index++)evidenceIds.push((await f.node.sources.upsert('generated-files',{externalId:'selected-'+index,revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',text:'Generated selected original '+index})).id);
+ const scope={kind:'selection' as const,sourceIds:['generated-files'],evidenceIds},main=await f.node.app.inject({url:'/api/conversations/main',headers});assert.equal(main.statusCode,200,main.body);
+ const conversationId=main.json().id,accepted=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId,clientRequestId:randomUUID(),question:'Generated initial question',scope}});assert.equal(accepted.statusCode,202,accepted.body);
+ const turnId=accepted.json().id;await until(()=>f.node.conversations.message(turnId).status==='completed');
+ const conversation=await f.node.app.inject({url:'/api/conversations/'+conversationId,headers});assert.equal(conversation.statusCode,200,conversation.body);
+ const turn={conversationId,turnId,draft:conversation.json().turns.find((item:any)=>item.id===turnId).result.draft};assert.deepEqual(turn.draft.scope,scope);
+ const reader=f.node.featureServices.evidenceReader,queryPage=reader.queryPage.bind(reader);let catalogReads=0;
+ t.mock.method(reader,'queryPage',(...args:Parameters<typeof reader.queryPage>)=>{catalogReads++;return queryPage(...args);});
+ const began=performance.now(),first=await f.start(turn),admissionMs=performance.now()-began;
+ await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(first.taskId)?.state==='succeeded');
+ const [result]=await f.read(turn);assert.equal(result.result.answer,'Generated grounded answer');assert.equal(result.result.citations[0].id,f.evidenceId);
+ const taskRecords=new TaskRecords(f.node.store),item=f.node.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch.item'").get('assistant.task:'+turn.draft.requestId)!;
+ const frozen=taskRecords.input<{evidenceIds:string[]}>(String(item.id),taskRecords.get(String(item.id)).revision,()=>{});
+ const chunks=f.node.files.chunks(fileId).filter(record=>record.ocrText.trim());assert.ok(chunks.length>0);for(const chunk of chunks)assert.ok(frozen.evidenceIds.includes(chunk.id),'every selected extracted chunk remains in the read set');
+ assert.equal(frozen.evidenceIds.includes(outside.id),false);assert.equal((await f.start(turn)).taskId,first.taskId);assert.equal(catalogReads,0,'admission, currentness and idempotent retry never browse the unrelated library');
+ t.diagnostic(JSON.stringify({generatedOnly:true,unrelatedMaterialBlocks:1002,selectedOriginals:evidenceIds.length,selectedFileChunks:chunks.length,catalogReads,admissionMs:Math.round(admissionMs)}));
+});
+
+test('a reference-only suggestion reports missing usable content instead of reading other library records',async t=>{
+ const f=await fixture(t),all={kind:'all' as const};await f.note('Generated unrelated readable original');
+ f.node.sources.register({id:'generated-suggestion-reference',name:'Generated reference source',kind:'custom',deviceId:'generated-device',platform:'import'});
+ const reference=await f.node.sources.upsert('generated-suggestion-reference',{externalId:'reference',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'reference',text:''});
+ const card=f.node.featureServices.assistantCards.publish({id:randomUUID(),kind:'suggestion',matterId:null,version:'v1',state:'open',title:'Generated reference suggestion',body:'Generated reference metadata only; content coverage is unknown.',evidence:[],evidenceDependencies:{version:1,complete:true,ids:[reference.id]}},undefined,all,()=>{});
+ assert.deepEqual(card.taskScope,{kind:'selection',evidenceIds:[reference.id]});
+ const start=await f.node.app.inject({method:'POST',url:'/api/assistant/tasks',headers,payload:{requestId:randomUUID(),goal:'Generated task goal',scope:card.taskScope,cardId:card.id,expectedRevision:card.revision}});assert.equal(start.statusCode,200,start.body);
+ const result=await f.node.app.inject({url:'/api/assistant/tasks/'+start.json().taskId+'?'+new URLSearchParams({scope:JSON.stringify(all)}),headers});assert.equal(result.statusCode,200,result.body);
+ assert.equal(result.json().task.state,'needs_input');assert.equal(result.json().error,'no_usable_evidence');assert.equal(result.json().result,undefined);assert.equal(f.taskCalls,0);
 });

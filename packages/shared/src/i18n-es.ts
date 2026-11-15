@@ -10761,5 +10761,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "最近后台活动；更多任务和结果可进入查看。": "Actividad reciente en segundo plano; abre para ver más tareas y resultados.",
   "本页建议关联的任务": "Tareas vinculadas a las sugerencias de esta página",
   "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Las sugerencias de esta página no tienen tareas vinculadas. Consulta la conversación principal o los asuntos para ver otras tareas.",
-  "已有部分结果；需要你补充的问题只影响相关结论。": "Ya hay resultados parciales. Las preguntas que necesitan tu respuesta solo afectan a las conclusiones relacionadas."
+  "已有部分结果；需要你补充的问题只影响相关结论。": "Ya hay resultados parciales. Las preguntas que necesitan tu respuesta solo afectan a las conclusiones relacionadas.",
+  "任务资料范围": "Materiales de la tarea",
+  "仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。": "Solo se usan las pruebas completas y las fuentes originales de esta sugerencia. Los demás materiales quedan fuera de esta tarea. Se indicará si falta contenido o la cobertura es incompleta.",
+  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Los materiales completos de esta sugerencia no están disponibles. Actualiza y vuelve a revisarlos."
 };

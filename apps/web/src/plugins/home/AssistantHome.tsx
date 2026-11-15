@@ -105,7 +105,7 @@ function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskSta
  const path=assistantCardPath(card.id,scope),feedbackAvailable=supports('http:POST:/api/assistant-cards/:id/feedback');
  const startAvailable=supports('http:POST:/api/assistant/tasks')&&supports('http:GET:/api/assistant/tasks/:id');
  const changed=reviewedVersion!==card.version;
- const canStart=startAvailable&&!changed&&card.state==='open'&&!card.evidenceStale&&!card.acceptedTaskId;
+ const canStart=startAvailable&&!changed&&card.state==='open'&&!card.evidenceStale&&!card.acceptedTaskId&&Boolean(card.taskScope);
  const taskPath=card.acceptedTaskId&&supports('http:GET:/api/assistant/tasks/:id')?'/api/assistant/tasks/'+encodeURIComponent(card.acceptedTaskId)+'?'+assistantScopeQuery(scope):null;
  const taskRead=useResource<AssistantTaskResultItem>(api,taskPath,5000);
  useForegroundResources(api,[taskPath]);
@@ -119,7 +119,7 @@ function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskSta
   try{
    if(action==='start'){
     if(!canStart||!goal.trim())return;
-    command.current??={requestId:crypto.randomUUID(),goal:goal.trim(),scope,cardId:card.id,expectedRevision:card.revision};
+    command.current??={requestId:crypto.randomUUID(),goal:goal.trim(),scope:card.taskScope!,cardId:card.id,expectedRevision:card.revision};
     const receipt=await api.request<{requestId:string;taskId:string}>('/api/assistant/tasks',{method:'POST',body:JSON.stringify(command.current)});
     if(receipt.requestId!==command.current.requestId||!receipt.taskId)throw Error('Invalid assistant task receipt');
     if(alive.current)onTask(receipt.taskId);
@@ -146,6 +146,12 @@ function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskSta
   <p className="home-assistant-meta">{moteText('发现时间')} · <time dateTime={card.createdAt}>{dateTime(card.createdAt)}</time>{card.updatedAt!==card.createdAt&&<> · {moteText('最近更新')} · <time dateTime={card.updatedAt}>{dateTime(card.updatedAt)}</time></>}{sources.length>0&&<> · {moteText('来源')} · {sources.join(' · ')}</>}</p>
   {card.kind==='briefing'&&<p className="fine-print">{moteText('简报仅代表下列依据及正文注明的覆盖范围。')}</p>}
   <CardBody value={card} onEvidence={id=>void open(id)}/>
+  {card.kind==='suggestion'&&<div data-task-scope>
+   <p className="fine-print">{card.taskScope?moteText('仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。'):moteText('当前建议的完整资料范围不可用，请刷新后重新核对。')}</p>
+   <details className="home-assistant-proof"><summary>{moteText('任务资料范围')} · {card.taskEvidence.length}</summary>
+    <ul>{card.taskEvidence.map((record,index)=><li key={record.id}>{record.title||moteText('来源资料 {0}',index+1)} · {state.sources.error===undefined?state.sources.data?.items.find(source=>source.id===record.sourceId)?.name??record.sourceId??record.deviceId:record.sourceId??record.deviceId} · {dateTime(record.at)}</li>)}</ul>
+   </details>
+  </div>}
   {taskState&&<div role="status"><WorkStateBadge state={taskState}/>{taskState==='needs_input'&&<span> · {moteText('需要你补充')}</span>}</div>}
   {taskRead.error!==undefined&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}<button type="button" className="text-button" onClick={taskRead.refresh}>{moteText('刷新状态')}</button></p>}
   {latestDecision&&<p role="status">{latestDecision.action==='later'?moteText('已稍后'):moteText('已忽略')}{latestDecision.until&&<> · <time dateTime={latestDecision.until}>{dateTime(latestDecision.until)}</time></>}</p>}

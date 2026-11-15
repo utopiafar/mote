@@ -18,7 +18,7 @@ const at='2026-11-12T08:00:00.000Z',evidenceId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa
 const capabilityIds=['GET:/api/assistant-cards','GET:/api/assistant-cards/:id','GET:/api/assistant-cards/:id/history','POST:/api/assistant-cards/:id/feedback','POST:/api/assistant/tasks','GET:/api/assistant/tasks/:id','GET:/api/owner-questions'];
 const inventory=(ids=capabilityIds)=>({schemaVersion:1,revision:1,features:[],capabilities:ids.map(id=>({id:'http:'+id,version:'1',state:'active',surface:'data',featureId:'generated.home'}))});
 const card=(title='Generated work suggestion'):AssistantCard=>({id:randomUUID(),kind:'suggestion',matterId:null,version:'v1',state:'open',revision:1,title,body:'Generated finding. Relevant to the current plan. Help: prepare a checklist. Uncertain until confirmed.',
- evidence:[{id:evidenceId,quote:'Generated original evidence'}],evidenceDependencies:{version:1,complete:true,ids:[evidenceId]},readAt:null,acceptedTaskId:null,feedback:[],createdAt:at,updatedAt:at});
+ taskScope:{kind:'selection',evidenceIds:[evidenceId]},taskEvidence:[{id:evidenceId,title:'Generated original evidence',deviceId:'generated-device',at}],evidence:[{id:evidenceId,quote:'Generated original evidence'}],evidenceDependencies:{version:1,complete:true,ids:[evidenceId]},readAt:null,acceptedTaskId:null,feedback:[],createdAt:at,updatedAt:at});
 
 async function domFixture(t:TestContext){
  await featuresReady;
@@ -160,7 +160,7 @@ test('a lost start response and a double click reuse one frozen edited command',
  await act(async()=>{reject(new ApiError('Generated lost response',503));await settle();});held=false;
  assert.match(row(d,suggestion.id).textContent!,/重复开始会回到同一任务/);
  await act(async()=>button(row(d,suggestion.id),'开始').click());
- assert.equal(calls.length,2);assert.deepEqual(calls[0],calls[1]);assert.deepEqual(calls[1].scope,{kind:'all'});
+ assert.equal(calls.length,2);assert.deepEqual(calls[0],calls[1]);assert.deepEqual(calls[1].scope,suggestion.taskScope);
  assert.ok(home(d).querySelector(`[data-task-id="${taskId}"]`));assert.match(home(d).textContent!,/等待开始/);assert.ok(button(row(d,suggestion.id),'查看任务'));
 });
 
@@ -306,4 +306,39 @@ test('Home distinguishes an open owner question from background processing and l
  assert.match(summary.textContent!,/需要你补充/);assert.match(summary.textContent!,/已有部分结果；需要你补充的问题只影响相关结论。/);assert.match(summary.textContent!,/语义理解.*0 \/ 1/);
  assert.equal(summary.querySelector('a[href="#/ask?question='+questionId+'"]')?.textContent,'Generated question: are you the named participant?');
  assert.doesNotMatch(summary.textContent!,/本次选择的资料已完成/);assert.equal(calls.some(call=>call.method!=='GET'),false);
+});
+
+test('starting a small Home suggestion in a library over 1000 records uses its complete fixed evidence selection',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-home-large-suggestion-')),token='generated-large-home-owner',headers={authorization:'Bearer '+token};
+ const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:80_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'},{backgroundWorker:false});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const ids:string[]=[];
+ for(let index=0;index<1003;index++){
+  const id=randomUUID(),response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-large-home',deviceName:'Generated',platform:'android',capturedAt:at,text:'Generated library record '+index}});
+  assert.equal(response.statusCode,201,response.body);ids.push(id);
+ }
+ const all={kind:'all' as const},suggestion=node.featureServices.assistantCards.publish({id:randomUUID(),kind:'suggestion',matterId:null,version:'v1',state:'open',title:'Generated small suggestion',body:'Generated suggestion needs only the first original.',evidence:[{id:ids[0],quote:'Generated library record 0'}],evidenceDependencies:{version:1,complete:true,ids:[ids[0]]}},undefined,all,()=>{});
+ const {d,render}=await domFixture(t),starts:{command:any;status:number}[]=[];
+ const api={request:async(path:string,init?:RequestInit)=>{
+  const response=await node.app.inject({method:(init?.method??'GET') as 'GET'|'POST',url:path,headers,...(init?.body?{payload:JSON.parse(String(init.body))}:{})});
+  if(path==='/api/assistant/tasks'&&init?.method==='POST')starts.push({command:JSON.parse(String(init.body)),status:response.statusCode});
+  if(response.statusCode>=400)throw new ApiError(response.body,response.statusCode);return response.json();
+ },setAgentTimeout:()=>{}} as Api;
+ await render(api);await act(async()=>until(()=>Boolean(row(d,suggestion.id))));
+ await act(async()=>button(row(d,suggestion.id),'开始').click());await act(async()=>until(()=>starts.length===1));
+ assert.equal(starts[0].status,200,'a bounded suggestion must start from the real Home button even when the library exceeds 1000');
+ assert.deepEqual(starts[0].command.scope,{kind:'selection',evidenceIds:[ids[0]]});
+ assert.match(row(d,suggestion.id).textContent!,/任务资料范围/);
+ const accepted=node.featureServices.assistantCards.get(suggestion.id,all).acceptedTaskId!;
+ assert.ok(accepted);assert.ok(home(d).querySelector(`[data-task-id="${accepted}"]`));
+ const frozen=new (await import('../../server/src/task-records')).TaskRecords(node.store);
+ const item=node.store.db.prepare("SELECT id FROM task_records WHERE kind='batch.item' AND operation_id=?").get('assistant.task:'+starts[0].command.requestId)!;
+ assert.deepEqual(frozen.input<{evidenceIds:string[]}>(String(item.id),frozen.get(String(item.id)).revision,()=>{}).evidenceIds,[ids[0]],'the execution submission uses the reviewed fixed selection');
+});
+
+test('Home cannot start a suggestion whose complete task evidence scope is unavailable',async t=>{
+ const {d,render}=await domFixture(t),suggestion={...card(),taskScope:null,taskEvidence:[]};let starts=0;
+ const api=client((path,init)=>{if(path==='/api/assistant/tasks'&&init?.method==='POST')starts++;return {items:[suggestion],nextCursor:null};});
+ await render(api);assert.match(row(d,suggestion.id).textContent!,/完整资料范围不可用/);assert.equal(button(row(d,suggestion.id),'开始').disabled,true);
+ await act(async()=>button(row(d,suggestion.id),'开始').click());assert.equal(starts,0,'an unavailable evidence scope never falls back to the all-library feed');
 });
