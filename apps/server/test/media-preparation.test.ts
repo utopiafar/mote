@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createServer} from 'node:net';
+import {createServer,Socket} from 'node:net';
 import {once} from 'node:events';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -75,6 +75,30 @@ test('cancelling startup waits for its owned unready worker to exit before repor
 test('custom native endpoints remain explicit and are never installed over or claimed managed',async t=>{
  const f=await fixture(t),preparation=new MediaPreparation({runtime:'native',...f,media:{...f.media,ocrEndpoint:'https://example.invalid/ocr'}});t.after(()=>preparation.close());
  assert.equal((await preparation.status('ocr')).error,'external_worker');assert.throws(()=>preparation.start('ocr'),/external_worker/);assert.equal(f.assets.installs,0);
+});
+
+for(const failure of ['timeout','EACCES','EMFILE','ECONNRESET'] as const)test(`native ${failure} port probes report uncertainty without spawning, and explicit preparation can recover`,async t=>{
+ const {readFile}=await import('node:fs/promises'),f=await fixture(t),marker=join(f.directory,'worker-started');
+ await writeFile(join(f.directory,'scripts','transcription-server.py'),`const http=require('node:http'),fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'generated');http.createServer((req,res)=>{if(req.headers.authorization!=='Bearer '+process.env.MOTE_MEDIA_WORKER_TOKEN){res.writeHead(401);res.end();return;}res.setHeader('content-type','application/json');res.end(${JSON.stringify(JSON.stringify(asrHealth))});}).listen(Number(process.argv[process.argv.indexOf('--port')+1]),'127.0.0.1');`);
+ const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>({python:process.execPath}),startupTimeoutMs:2000});t.after(()=>preparation.close());
+ // Only the unavailable OS socket result is controlled. Keep the real
+ // preparation, assets, process owner, HTTP worker and retry entrypoint.
+ const original=Socket.prototype.connect;let probes=0;
+ const socketBoundary=t.mock.method(Socket.prototype,'connect',function(this:Socket,...args:any[]){
+  const options=Array.isArray(args[0])?args[0][0]:args[0];
+  if(options&&options.host==='127.0.0.1'&&Number(options.port)===f.media.asrPort){
+   probes++;queueMicrotask(()=>{if(failure==='timeout')this.emit('timeout');else this.emit('error',Object.assign(Error('Generated private probe detail'),{code:failure}));});return this;
+  }
+  return Reflect.apply(original,this,args);
+ });
+ await preparation.start('dialogue');const failed=await settled(preparation,'dialogue');
+ assert.equal(failed.state,'failed');assert.equal(failed.runtimeReady,false);
+ assert.equal(failed.error,failure==='timeout'?'worker_port_probe_timeout':'worker_port_probe_failed');
+ assert.ok(probes>0);assert.doesNotMatch(JSON.stringify(failed),/Generated private probe detail|generated-worker-token/);
+ await assert.rejects(readFile(marker),{code:'ENOENT'},'an uncertain probe cannot authorize a worker spawn');
+ socketBoundary.mock.restore();await preparation.start('dialogue');const recovered=await settled(preparation,'dialogue');
+ assert.equal(recovered.state,'ready');assert.equal(recovered.runtimeReady,true);assert.equal(await readFile(marker,'utf8'),'generated');
+ await preparation.close();await assert.rejects(fetch(f.media.asrEndpoint),'owned recovery must free its listener');
 });
 
 
