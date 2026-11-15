@@ -86,12 +86,15 @@ export class AssistantTaskAcceptance {
    const card=this.cards.get(cardRef.cardId,request.scope);
    if(card.kind!=='suggestion'||card.state!=='open'||card.revision!==cardRef.expectedRevision||card.acceptedTaskId)
     throw new StoreError('Suggestion changed; reload before continuing',409);
+   if(!card.taskScope||!isDeepStrictEqual(card.taskScope,request.scope))throw new StoreError('Suggestion evidence scope changed; reload before continuing',409);
    const frozen:FrozenAcceptance={request,card:cardRef,cardVersion:card.version,matterId:card.matterId};
    const task=this.tasks.create({operationId:'assistant.task:'+request.requestId,kind:'assistant.task',requestId:request.requestId,
     input:frozen,evidenceDependencies:{version:1,complete:true,ids:[...new Set([...card.evidenceDependencies.ids,...(request.scope.evidenceIds??[])])]}},assertCurrent);
    if(card.matterId){
     const matter=this.matters.get(card.matterId);
-    if(!isDeepStrictEqual(matter.scope,request.scope))throw new StoreError('Suggestion and matter scopes differ',409);
+    // The task selects the suggestion's evidence within the saved matter. It
+    // never changes the matter's broader scope or admits evidence outside it.
+    this.cards.get(card.id,matter.scope);
     this.matters.attachTask(matter.id,matter.revision,task.id,authority);
    }
    if(options?.noUsableEvidence){

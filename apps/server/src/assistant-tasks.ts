@@ -31,15 +31,15 @@ export class AssistantTasks implements BatchProductProjection {
  private readonly tasks:TaskRecords;
  private readonly acceptance:AssistantTaskAcceptance;
  private readonly questions:AssistantTaskQuestions;
- constructor(private readonly store:Store,private readonly cards:AssistantCards,matters:AssistantMatters,
+ constructor(private readonly store:Store,private readonly cards:AssistantCards,private readonly matters:AssistantMatters,
   private readonly reader:EvidenceReader,private readonly materials:MaterialStore,private readonly conversations:Pick<ConversationRepository,'get'>,
   private readonly contexts:SourceContextStore,private readonly batch:()=>BatchProcessing,
   private readonly connections:()=>ModelConnection[],questions:OwnerQuestionsPort,
   private readonly routines?:{input(ref:RoutineRef):RoutineInput;current(ref:RoutineRef):boolean;allows(ids:readonly string[]):boolean;control:BackgroundModelAuthorization}){
   this.tasks=new TaskRecords(store);
   this.acceptance=new AssistantTaskAcceptance(store,cards,matters,{
-   validate:(request,ids)=>{if(!isDeepStrictEqual(this.discover(request.scope).ids,ids))throw new StoreError('Task execution is outside the owner scope',409);},
-   accepted:(task,request,ids)=>{this.saveScope(task,request.scope,this.discover(request.scope).snapshot);
+   validate:(request,ids)=>{if(!isDeepStrictEqual(this.discover(request.scope,false,true).ids,ids))throw new StoreError('Task execution is outside the owner scope',409);},
+   accepted:(task,request,ids)=>{this.saveScope(task,request.scope,this.discover(request.scope,false,true).snapshot);
     const dependencies=taskEvidenceIds(store,{version:1,complete:true,ids});this.assertCurrent(dependencies);addTaskEvidence(store,task.id,dependencies);store.reserveMetadata(0);},
   });
   store.db.exec(`CREATE TABLE IF NOT EXISTS assistant_task_scopes(
@@ -73,8 +73,8 @@ export class AssistantTasks implements BatchProductProjection {
   // A routine task was discovered with automatic admission, so its continuation
   // must keep the same source-exclusion and evidence-eligibility checks. Treating
   // the owner reply as an unrestricted manual read would add excluded sources.
-  const input=this.draft(task) as FrozenDraftTask&{routine?:RoutineRef};
-  const ids=this.discover(input.request.scope,Boolean(input.routine)).ids;
+  const input=this.draft(task) as FrozenDraftTask&{routine?:RoutineRef;card?:{cardId:string}};
+  const ids=this.discover(input.request.scope,Boolean(input.routine),Boolean(input.card)).ids;
   return {task,goal:input.request.goal,evidence:this.reader.evidence(ids.map(id=>formatEvidenceRef('capture',id)),input.request.scope),
    dependencies:this.tasks.evidenceDependencies(task.id,task.revision,this.assertCurrent).ids};
  }
@@ -103,7 +103,7 @@ export class AssistantTasks implements BatchProductProjection {
  /** Enumerate the current authorized read catalog, not a semantic ranking.
   * The model still chooses which of these candidates to read. A bounded request
   * fails explicitly instead of presenting a truncated scope as complete. */
- private discover(scope:QueryScope,automatic=false):{ids:string[];snapshot:string[]}{
+ private discover(scope:QueryScope,automatic=false,fixed=false):{ids:string[];snapshot:string[]}{
   if(scope.evidenceIds?.length===0||scope.kind==='selection'&&scope.sourceIds?.length===0)return {ids:[],snapshot:[]};
   const sources=scope.kind==='selection'&&scope.sourceIds!==undefined?new Set(scope.sourceIds):undefined;
   const restriction=sources?new EvidenceExposurePolicy([],value=>sources.has(value.sourceId??'')):undefined;
@@ -121,8 +121,32 @@ export class AssistantTasks implements BatchProductProjection {
    found.add(record.id);
    if(found.size>1000)throw new StoreError('Choose a smaller scope for this assistant task',413);
   };
+  const result=()=>({ids:[...found].sort(),snapshot:[...this.snapshot([...seen]).map(id=>'observed:'+id),
+   ...this.snapshot([...found]).map(id=>'readable:'+id)].sort()});
+  if(fixed&&scope.evidenceIds===undefined)throw new StoreError('Suggestion requires a fixed evidence selection',409);
+  if(scope.evidenceIds!==undefined){
+   const read=(ids:string[])=>{for(let offset=0;offset<ids.length;offset+=100)
+    for(const record of this.reader.evidence(ids.slice(offset,offset+100).map(id=>formatEvidenceRef('capture',id)),scope))add(record);};
+   read(scope.evidenceIds);
+   if(!fixed){
+    // An explicit original in a conversation also selects its existing file
+    // chunks and derived Material blocks. Follow the indexed dependency graph
+    // instead of browsing every source, retaining the same root-scope checks.
+    const inputs=new Set(scope.evidenceIds),pending=[...inputs];
+    for(const id of scope.evidenceIds)if(this.reader.files&&this.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(id)){
+     for(let offset=0;;offset+=200){const chunks=this.reader.files.chunks(id,offset,200);for(const chunk of chunks){add(chunk);if(!inputs.has(chunk.id)){inputs.add(chunk.id);pending.push(chunk.id);}}if(chunks.length<200)break;}
+    }
+    const children=this.store.db.prepare('SELECT DISTINCT anchor_id FROM material_evidence_dependencies WHERE evidence_id IN (SELECT value FROM json_each(?))');
+    for(let offset=0;offset<pending.length;){
+     const page=pending.slice(offset,offset+100);offset+=page.length;const discovered:string[]=[];
+     for(const row of children.all(JSON.stringify(page))){const id=String(row.anchor_id);if(!inputs.has(id)){inputs.add(id);pending.push(id);discovered.push(id);}}
+     read(discovered);
+    }
+   }
+   return result();
+  }
   do{
-   const page=this.reader.queryPage({after:scope.after,before:scope.before,deviceId:scope.deviceId,cursor,limit:100},'browse');
+   const page=this.reader.queryPage({...scope,cursor,limit:100},'browse');
    for(const record of page.items){
     add(record);
     const ref=record.provenance?.uri?.split('#')[0];
@@ -138,8 +162,7 @@ export class AssistantTasks implements BatchProductProjection {
    }
    cursor=page.nextCursor??undefined;
   }while(cursor);
-  return {ids:[...found].sort(),snapshot:[...this.snapshot([...seen]).map(id=>'observed:'+id),
-   ...this.snapshot([...found]).map(id=>'readable:'+id)].sort()};
+  return result();
  }
  private taskForOperation(operationId:string):TaskRecord|undefined{
   const row=this.store.db.prepare("SELECT t.id FROM task_records t JOIN assistant_task_scopes s ON s.task_id=t.id WHERE t.operation_id=? AND t.kind='assistant.task'").get(operationId);
@@ -161,15 +184,16 @@ export class AssistantTasks implements BatchProductProjection {
   const scopeRow=this.store.db.prepare('SELECT snapshot_json FROM assistant_task_scopes WHERE task_id=?').get(task.id);
   if(!scopeRow)return false;
   try{
-   const frozen=this.tasks.input<FrozenDraftTask&{card?:{cardId:string};cardVersion?:string;routine?:RoutineRef}>(task.id,task.revision,this.assertCurrent);
+   const frozen=this.tasks.input<FrozenDraftTask&{card?:{cardId:string};cardVersion?:string;matterId?:string|null;routine?:RoutineRef}>(task.id,task.revision,this.assertCurrent);
    if(frozen.routine){if(!this.routines?.current(frozen.routine))return false;}
-   else if(frozen.card){const card=this.cards.get(frozen.card.cardId,frozen.request.scope);if(card.state==='stale'||card.version!==frozen.cardVersion||card.acceptedTaskId!==task.id)return false;}
+   else if(frozen.card){const card=this.cards.get(frozen.card.cardId,frozen.request.scope);if(card.state==='stale'||card.version!==frozen.cardVersion||card.acceptedTaskId!==task.id)return false;
+    if(frozen.matterId)this.cards.get(frozen.card.cardId,this.matters.get(frozen.matterId).scope);}
    else{
     const turn=this.conversations.get(frozen.conversationId).turns.find(item=>item.id===frozen.turnId);
     if(!turn||turn.status!=='completed'||!turn.result?.draft||turn.evidenceDeleted||turn.evidenceUnavailable||turn.evidenceStale)return false;
     assertSourceContextDependencies(this.contexts,turn.result.sourceContextDependencies??[]);
    }
-   if(typeof scopeRow.snapshot_json!=='string'||!isDeepStrictEqual(this.discover(frozen.request.scope,Boolean(frozen.routine)).snapshot,decodeMemoryPrivate<string[]>(this.store,scopeRow.snapshot_json)))return false;
+   if(typeof scopeRow.snapshot_json!=='string'||!isDeepStrictEqual(this.discover(frozen.request.scope,Boolean(frozen.routine),Boolean(frozen.card)).snapshot,decodeMemoryPrivate<string[]>(this.store,scopeRow.snapshot_json)))return false;
    const result=this.tasks.result<QueryResult>(task.id,task.revision,this.assertCurrent);
    if(result)assertSourceContextDependencies(this.contexts,result.sourceContextDependencies??[]);
    return true;
@@ -227,7 +251,9 @@ export class AssistantTasks implements BatchProductProjection {
   const prior=this.store.db.prepare('SELECT id FROM task_records WHERE request_id=?').get(request.requestId);
   if(prior){const task=this.tasks.get(String(prior.id));if(task.kind!=='assistant.task')throw new StoreError('Task request ID was reused with different content',409);
    if(!this.current(task)){this.retire(task);throw new StoreError('Assistant task input is no longer current',409);}}
-  const ids=this.discover(request.scope).ids;
+  const selected=this.cards.get(card.cardId,request.scope);
+  if(!selected.taskScope||!isDeepStrictEqual(selected.taskScope,request.scope))throw new StoreError('Suggestion evidence scope changed; reload before continuing',409);
+  const ids=this.discover(request.scope,false,true).ids;
   return this.acceptance.acceptSuggestion(request,card,authority,this.assertCurrent,(task,input)=>{
    this.batch().submit({operationId:task.operationId,requestId:input.requestId,items:[{question:input.goal,evidenceIds:ids}]},
     {kind:'manual',identities:[],connections:this.connections()});
@@ -324,8 +350,20 @@ export class AssistantTasks implements BatchProductProjection {
  }
  get(id:string,scope:QueryScope){
   const row=this.store.db.prepare('SELECT scope_hash FROM assistant_task_scopes WHERE task_id=?').get(id);
-  if(!row||row.scope_hash!==this.scopeHash(scope))throw new StoreError('Assistant task not found',404);
+  if(!row)throw new StoreError('Assistant task not found',404);
   const task=this.tasks.get(id);if(task.kind!=='assistant.task')throw new StoreError('Assistant task not found',404);
+  if(row.scope_hash!==this.scopeHash(scope)){
+   // Home and matter pages may disclose a suggestion task from a broader
+   // current view. Every dependency must still be visible in that view; draft
+   // tasks retain their original exact-scope read contract.
+   const unrestricted=scope.kind==='all'&&Object.keys(scope).length===1;
+   if(task.state==='stale'||task.state==='cancelled'){
+    if(!unrestricted||this.store.db.prepare('SELECT 1 FROM assistant_task_turns WHERE task_id=?').get(id))throw new StoreError('Assistant task not found',404);
+   }else{
+    const frozen=this.tasks.input<{card?:{cardId:string}}>(id,task.revision,this.assertCurrent);
+    if(!frozen.card||this.cards.get(frozen.card.cardId,scope).acceptedTaskId!==id)throw new StoreError('Assistant task not found',404);
+   }
+  }
   const origin=this.store.db.prepare('SELECT draft_revision FROM assistant_task_turns WHERE task_id=?').get(id);
   return this.view(task,origin?Number(origin.draft_revision):undefined);
  }

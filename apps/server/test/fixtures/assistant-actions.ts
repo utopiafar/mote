@@ -51,14 +51,14 @@ export async function assistantActionFixture(t:TestContext){
  drafts=[{kind:'todo.create',todo:{title:'Generated preparation Todo',description:'Generated private brief',dueAt:null},evidence:proof},
   {kind:'calendar.create',event:actionEvent,uncertainty:'Review the next appointment',evidence:proof},
   {kind:'message.send',message:{conversationId:'generated-conversation',conversationName:'Generated teammate',text:'Generated private follow-up message'},evidence:proof}];
- const scope:QueryScope={kind:'selection',sourceIds:[sourceId]};
+ const scope:QueryScope={kind:'selection',evidenceIds:[record.id]};
  const tasks=new TaskRecords(node.store),matters=node.featureServices.assistantMatters;
  const authority={currentEvidence:(ids:readonly string[])=>node.store.evidence([...ids]).map(item=>({id:item.id,title:item.windowTitle??'',deviceId:item.deviceId,sourceId:item.provenance?.sourceId,at:item.capturedAt})),
   currentTask:(id:string)=>{try{return tasks.get(id);}catch{return undefined;}}};
- const matter=matters.command({type:'create',requestId:randomUUID(),goal:'Generated meeting follow-up',scope,evidenceIds:[record.id]},authority);
+ const matter=matters.command({type:'create',requestId:randomUUID(),goal:'Generated meeting follow-up',scope:{kind:'selection',sourceIds:[sourceId]},evidenceIds:[record.id]},authority);
  const start=async()=>{
   const card=node.featureServices.assistantCards.publish({id:randomUUID(),kind:'suggestion',matterId:matter.id,version:randomUUID(),state:'open',title:'Generated preparation',body:'Generated follow-up',evidence:proof,evidenceDependencies:{version:1,complete:true,ids:[record.id]}},undefined,scope,()=>{});
-  const task=node.assistantTasks.acceptSuggestion({requestId:randomUUID(),goal:'Prepare for the generated meeting',scope},{cardId:card.id,expectedRevision:card.revision},authority);
+  const task=node.assistantTasks.acceptSuggestion({requestId:randomUUID(),goal:'Prepare for the generated meeting',scope:card.taskScope!},{cardId:card.id,expectedRevision:card.revision},authority);
   await until(()=>['succeeded','failed','blocked','stale'].includes(tasks.get(task.id).state));
   assert.equal(tasks.get(task.id).state,'succeeded',JSON.stringify(node.assistantTasks.get(task.id,scope)));
   return task.id;
