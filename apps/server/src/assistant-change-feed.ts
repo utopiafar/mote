@@ -200,8 +200,9 @@ export class AssistantChangeFeed {
     const task=this.tasks.create({operationId:'assistant-change:'+item.key,kind:'assistant.change',requestId:'assistant-change-refresh:'+row.seq+':'+item.key,input,
      evidenceDependencies:{version:1,complete:true,ids:input.evidenceIds}},this.assertCurrent);
     this.store.db.prepare('UPDATE assistant_change_work SET material_id=?,task_id=? WHERE key=?').run(material.id,task.id,item.key);
-   }else if(old.state==='waiting'){
-    this.tasks.replaceWaitingInput(old.id,old.revision,input,{version:1,complete:true,ids:input.evidenceIds},this.assertCurrent);
+   }else if(old.state==='waiting'||old.state==='blocked'){
+    const task=old.state==='blocked'?this.tasks.setState(old.id,old.revision,'waiting'):old;
+    this.tasks.replaceWaitingInput(task.id,task.revision,input,{version:1,complete:true,ids:input.evidenceIds},this.assertCurrent);
     this.store.db.prepare('UPDATE assistant_change_work SET material_id=? WHERE key=?').run(material.id,item.key);
    }
   }
@@ -275,10 +276,22 @@ export class AssistantChangeFeed {
  /** No handler means no model request. A later consumer can use this list after it has
   * built its actual scoped request; unready roots remain here across restart. */
  ready(){
-  const at=this.now();return (this.store.db.prepare('SELECT * FROM assistant_change_work WHERE started_batch IS NULL AND needs_review=0 ORDER BY first_at,key').all() as WorkRow[]).flatMap(row=>{
+  const at=this.now();return (this.store.db.prepare(`SELECT w.* FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id
+   WHERE started_batch IS NULL AND needs_review=0
+   ORDER BY t.state='blocked',CASE WHEN t.state='blocked' THEN t.updated_at ELSE '' END,first_at,key`).all() as WorkRow[]).flatMap(row=>{
    if(at<Math.min(row.last_at+this.settleMs,row.first_at+this.maximumWaitMs)||!this.control.freshTriggers([row.root],'assistant').length)return [];
    try{const task=this.tasks.get(row.task_id),input=this.tasks.input<AssistantChangeInput>(task.id,task.revision,this.assertCurrent),current=this.snapshot(row.root,row.source_id,row.capture_id,row.material_id,row.previous_revision);
     return input.readiness==='pending'||!input.evidenceIds.length||!current||JSON.stringify(current)!==JSON.stringify(input)?[]:[{task,input}];}catch{return [];}
+  });
+ }
+ /** A preparation failure consumes no original receipt. Keep the frozen input
+  * retryable, behind untouched work, rather than blocking the whole catalog. */
+ defer(taskId:string){
+  return this.transaction(()=>{
+   const row=this.store.db.prepare('SELECT started_batch FROM assistant_change_work WHERE task_id=?').get(taskId);
+   if(!row||row.started_batch)return;
+   const task=this.tasks.get(taskId);if(!['waiting','blocked'].includes(task.state))return;
+   this.tasks.setState(task.id,task.revision,'blocked');
   });
  }
  /** Submit the actual consumer's request through batch processing. Receipt claim, batch task,

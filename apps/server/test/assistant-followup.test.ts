@@ -58,11 +58,11 @@ async function fixture(t:TestContext){
   assert.equal(response.statusCode,201,response.body);await node.materialOrganizer.tick(100);
   const material=node.materials.list({kind:'mote.note',limit:100}).items.find(value=>value.origin.externalId===id);assert.ok(material);return {id,text,material};
  };
- const produce=async(note:Awaited<ReturnType<typeof add>>)=>{
+ const produce=async(note:Awaited<ReturnType<typeof add>>,summary="Generated requirement product",largeEvents=false)=>{
   node.store.archive.aggregate();const segment=node.store.archive.page({kind:'segment'}).items.find(item=>item.members.includes(note.id));assert.ok(segment);
   const model={owner:'models' as const,fingerprint:'a'.repeat(64),revision:1,profileId:'fixture',provider:'openai',model:'generated',configured:true};
   runtime.registry.register(semanticProcessor({store:node.store,memories:node.memories,records:ids=>node.store.evidence(ids),selection:()=>model,usage:new UsageLedger(node.store),query:async()=>({
-   answer:JSON.stringify({summary:'Generated requirement product',evidence:[{id:note.id,quote:note.text}],events:[{statement:'Owner asks for a named owner',uncertainty:'Generated requirement',evidence:[{id:note.id,quote:note.text}]}],memoryCandidates:[],actionCues:[]}),
+   answer:JSON.stringify({summary,evidence:[{id:note.id,quote:note.text}],events:largeEvents?Array.from({length:12},(_,index)=>({statement:'生成事件'+index+'。'+'丁'.repeat(1190),uncertainty:'Generated requirement',evidence:[{id:note.id,quote:note.text}]})):[{statement:'Owner asks for a named owner',uncertainty:'Generated requirement',evidence:[{id:note.id,quote:note.text}]}],memoryCandidates:[],actionCues:[]}),
    citations:[{id:note.id,capturedAt:at,appName:'Generated',excerpt:note.text}],trace:[],runId:randomUUID(),
   })}));
   const job=runtime.enqueue([{name:'semantic',processor:'mote.segment-understanding',artifactInputs:[{id:segment.id,revision:segment.revision}],config:{artifactId:segment.id,modelFingerprint:model.fingerprint}}]).semantic;
@@ -490,4 +490,65 @@ test('a new file version lets A14 resolve the existing suggestion instead of los
  assert.throws(()=>cards.get(cardId,all),{statusCode:404},'deleting a historical dependency clears the revised derived body too');
  for(const eventId of [commitment.timeline[0].eventId,correctionId])assert.equal(f.node.store.db.prepare('SELECT private_json FROM assistant_commitment_events WHERE event_id=?').get(eventId)!.private_json,null);
  assert.equal(f.node.sources.getItem('generated-followup-files','draft.txt')?.captureId,later.captureId,'the independently retained current file survives');
+});
+
+
+test('an oversized automatic group is split with headroom and every original reaches a completed analysis',async t=>{
+ const f=await fixture(t);let now=Date.now()+60001;
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const notes=[await f.add('生成首份资料。'+'甲'.repeat(990),'generated-first')];
+ await f.produce(notes[0],'生成理解。'+'乙'.repeat(5990));
+ for(let n=1;n<6;n++)notes.push(await f.add('生成资料'+n+'。'+'丙'.repeat(990),'generated-'+n));
+ f.node.assistantChanges.tick(100);now+=60001;
+ for(let n=0;n<12;n++)f.programs.push(()=>answer([],[],'Generated reviewed input; no supported new help.'));
+ for(let n=0;n<12;n++){
+  await f.service.tick(f.node.assistantChanges);
+  const pending=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup' AND state='waiting'").all();
+  for(const task of pending)await f.wait(f.tasks.get(String(task.id)));
+  await f.service.tick(f.node.assistantChanges);
+  if(notes.every(note=>f.node.store.db.prepare('SELECT t.state FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(note.id)?.state==='succeeded'))break;
+ }
+ for(const note of notes){
+  assert.equal(f.node.store.db.prepare('SELECT t.state FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(note.id)?.state,'succeeded');
+  assert.ok(f.seen.some(context=>context.originals.some(original=>original.quote.includes(note.text.slice(0,30)))),'the original is supplied without dropping later queued work');
+ }
+ assert.ok(f.seen.length>=2,'the oversized group must be processed in smaller batches');
+ assert.ok(f.seen.every(context=>Buffer.byteLength(JSON.stringify(context))<=38400),'automatic contexts retain twenty percent transport headroom');
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,notes.length);
+ assert.equal(f.node.featureServices.assistantCards.page({scope:all}).items.length,0,'a supported empty result is completed honestly');
+});
+
+
+test('one oversized original stays visibly blocked and unclaimed while later work completes, then recovers without reimport',async t=>{
+ const f=await fixture(t);let now=Date.now()+60001;
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const oversized=await f.add('Generated oversized source with intact original.','generated-oversized');
+ const artifact=await f.produce(oversized,'生成理解。'+'乙'.repeat(5990),true);
+ const later=await f.add('Generated later source must still be reviewed.','generated-later');
+ f.node.assistantChanges.tick(100);now+=60001;
+ const diagnostics=t.mock.method(f.node.diagnostics,'record');
+ for(let n=0;n<6;n++)f.programs.push(()=>answer([],[],'Generated current input was reviewed.'));
+ for(let n=0;n<4;n++){
+  await f.service.tick(f.node.assistantChanges);
+  for(const row of f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup' AND state='waiting'").all())await f.wait(f.tasks.get(String(row.id)));
+ }
+ await f.service.tick(f.node.assistantChanges);
+ const state=(id:string)=>f.node.store.db.prepare('SELECT t.state,w.started_batch FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(id)!;
+ assert.equal(state(oversized.id).state,'blocked');assert.equal(state(oversized.id).started_batch,null);
+ assert.equal(state(later.id).state,'succeeded');
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE original=? AND purpose='assistant'").get('capture:'+oversized.id)!.n,0);
+ const failure=diagnostics.mock.calls.find(call=>call.arguments[0]==='agent.failed'&&call.arguments[1]?.category==='too_large');
+ assert.ok(failure);assert.ok(failure.arguments[1]!.bytes!>48000);
+ assert.doesNotMatch(JSON.stringify(failure.arguments),/Generated oversized|生成理解|丁/,'diagnostics contain fixed fields and sizes, never source/model prose');
+ // Simulate retirement of an oversized derived product, retaining the original
+ // and its unconsumed receipt. This is generated storage, not a real profile.
+ f.node.store.db.prepare('DELETE FROM context_artifacts WHERE id=?').run(artifact);
+ await f.service.tick(f.node.assistantChanges);
+ const analysis=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup' AND state='waiting'").get();assert.ok(analysis);
+ await f.wait(f.tasks.get(String(analysis.id)));await f.service.tick(f.node.assistantChanges);
+ assert.equal(state(oversized.id).state,'succeeded');
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE original=? AND purpose='assistant'").get('capture:'+oversized.id)!.n,1);
+ assert.ok(f.seen.some(context=>context.originals.some(original=>original.quote.includes(oversized.text))));
 });

@@ -571,7 +571,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
   assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
-  },undefined,modelAuthorization,automaticEvidenceAllowed);
+  },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics);
   const followup=assistantFollowup;
   tickAssistantFollowup=()=>{void followup.tick(assistantChanges).catch(()=>{});};
   resources.beforeClose(async()=>{tickAssistantFollowup=()=>{};await followup.close();});
