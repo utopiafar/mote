@@ -176,6 +176,44 @@ test('coalesced ready originals claim one batch atomically and replay both work 
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='batch'").get()!.n,1);
 });
 
+test('submitting one prepared group revalidates only its selected original tasks',async t=>{
+ const f=await fixture(t);await f.createSource();f.command('on');
+ for(let n=0;n<6;n++)await f.upsert('selected-submit-'+n,'1');f.feed.tick();f.advance(11);
+ const ready=f.feed.ready();assert.equal(ready.length,6);const selected=ready.slice(0,2),ids=new Set(ready.map(item=>item.task.id));
+ const read:string[]=[],input=TaskRecords.prototype.input;
+ const spy=t.mock.method(TaskRecords.prototype,'input',function(this:TaskRecords,...args:Parameters<typeof input>){if(ids.has(args[0]))read.push(args[0]);return input.apply(this,args);});
+ const batch=f.feed.submit(selected[0].task.id,{operationId:'generated-selected-group',requestId:'generated-selected-group',items:[{question:'Review the selected generated originals',evidenceIds:selected.flatMap(item=>item.input.evidenceIds)}]},f.node.batchProcessing,{evidenceIds:[],taskIds:[selected[1].task.id]});
+ spy.mock.restore();
+ assert.deepEqual(new Set(read),new Set(selected.map(item=>item.task.id)),'unrelated frozen inputs must not be reopened under the submit writer lock');
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM assistant_change_work WHERE started_batch=?').get(batch.id)!.n,2);
+ assert.equal(f.feed.ready().length,4);assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,2);
+});
+
+test('background selection crosses metadata pages in retry order while leaving the writer available',async t=>{
+ const f=await fixture(t);await f.createSource();f.command('on');
+ for(let n=0;n<37;n++)await f.upsert('paged-selection-'+n,'1');f.feed.tick();f.advance(11);
+ const initial=f.feed.ready();f.feed.defer(initial[0].task.id);f.feed.defer(initial[1].task.id);
+ const ordered=f.feed.ready(),allowed=new Set(ordered.slice(-5).map(item=>item.input.captureId));let yielded=false;
+ const turn=new Promise<void>((resolve,reject)=>setImmediate(()=>{try{
+  assert.equal(f.node.store.db.isTransaction,false);
+  assert.equal(competingSqliteWrite(f.node.store.directory,'during-ready-selection'),'committed');yielded=true;resolve();
+ }catch(error){reject(error);}}));
+ const selected=await f.feed.selectReady(5,input=>allowed.has(input.captureId));await turn;
+ assert.equal(yielded,true);assert.deepEqual(selected.map(item=>item.task.id),ordered.slice(-5).map(item=>item.task.id));
+ assert.equal(f.feed.ready().length,37,'selection consumes no receipt or work pointer');
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,0);
+});
+
+test('withdrawal during background selection rejects submission without consuming its original',async t=>{
+ const f=await fixture(t);await f.createSource();f.command('on');
+ const id=await f.upsert('withdraw-during-selection','1');f.feed.tick();f.advance(11);
+ const turn=new Promise<void>(resolve=>setImmediate(()=>{f.node.store.delete(id);resolve();}));
+ const selected=await f.feed.selectReady(1,()=>true);await turn;assert.equal(selected.length,1);
+ assert.throws(()=>f.feed.submit(selected[0].task.id,{operationId:'generated-withdrawn-selection',requestId:'generated-withdrawn-selection',items:[{question:'Read withdrawn generated original',evidenceIds:[id]}]},f.node.batchProcessing),{statusCode:409});
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,0);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='batch'").get()!.n,0);
+});
+
 test('a real uploaded file waits for extraction and resumes the original receipt after a lost wakeup',async t=>{
  const f=await fixture(t);f.command('on');
  f.node.sources.register({id:'generated-files',name:'Generated files',kind:'local-files',deviceId:'generated-device',platform:'import',retention:'archive'});
