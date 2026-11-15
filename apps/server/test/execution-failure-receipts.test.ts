@@ -46,3 +46,28 @@ test('an arbitrary error cannot impersonate the trusted not-started or admission
  engine.register({kind:'fixture',pool:'fixture',policy:EXECUTION_POLICIES.localProcessing,concurrency:()=>1,validate:()=>true,execute:async()=>{throw Object.assign(Error('Generated private evidence'),{details:{executionStarted:false,admissionWaiting:true},executionStarted:false,admissionWaiting:true});},commit:()=>{}});
  const id=engine.enqueue('generated:untrusted','fixture',{});await engine.drain([id]);const receipt=engine.failure(id)!;assert.equal(receipt.executionStarted,undefined);assert.equal(receipt.admissionWaiting,undefined);assert.equal(receipt.availableAt,undefined);assert.equal(receipt.category,'permanent');
 });
+
+test('an exhausted local retry retains its last fixed cause across restart without issuing a fourth call',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-exhausted-cause-')),store=new Store(directory);let now=10000,calls=0,engine=new ExecutionEngine(store,()=>now);
+ t.after(async()=>{await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ const handler={kind:'fixture',pool:'fixture',policy:EXECUTION_POLICIES.localProcessing,concurrency:()=>1,validate:()=>true,execute:async()=>{calls++;throw new ProviderFailure({category:'transient' as const,code:'provider_unavailable',executionStarted:false as const},'Generated private provider prose');},commit:()=>{}};
+ engine.register(handler);const id=engine.enqueue('generated:exhausted','fixture',{});
+ for(let cycle=0;cycle<3;cycle++){await engine.drain([id]);now+=5000;}
+ assert.equal(engine.get(id)!.state,'failed');assert.equal(engine.get(id)!.error,'provider_unavailable');assert.equal(calls,3);
+ engine.retry(id,false);await engine.close();engine=new ExecutionEngine(store,()=>now);engine.register(handler);
+ for(let cycle=0;cycle<2;cycle++){
+  await engine.drain([id]);const receipt=engine.failure(id)!;
+  assert.equal(engine.get(id)!.error,'retry_budget_exhausted');assert.equal(receipt.causeCode,'provider_unavailable');
+  assert.equal(receipt.attempt,3);assert.equal(calls,3);assert.doesNotMatch(JSON.stringify(receipt),/private|provider prose/);
+  if(cycle===0)engine.retry(id,false);
+ }
+});
+
+test('a seeded exhausted step reports an unavailable cause instead of inventing prior provider failures',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-exhausted-unknown-')),store=new Store(directory),engine=new ExecutionEngine(store);
+ t.after(async()=>{await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});let calls=0;
+ engine.register({kind:'fixture',pool:'fixture',policy:EXECUTION_POLICIES.localProcessing,concurrency:()=>1,validate:()=>true,execute:async()=>{calls++;},commit:()=>{}});
+ const id=engine.enqueue('generated:unknown-cause','fixture',{}, {initial:{state:'waiting',attempts:3,availableAt:0}});await engine.drain([id]);
+ assert.equal(engine.get(id)!.state,'failed');assert.equal(engine.failure(id)!.code,'retry_budget_exhausted');
+ assert.equal(engine.failure(id)!.causeCode,'retry_cause_unavailable');assert.equal(calls,0);
+});

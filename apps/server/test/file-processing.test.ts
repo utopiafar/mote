@@ -1048,7 +1048,7 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
  MEDIA_CATALOG.dialogue={version:'generated-funasr-v1',files,models:Object.fromEntries(Object.entries(previous.models!).map(([role,model])=>[role,{...model,revision:sha256('generated revision '+role)}]))};
  const identity={sdkVersion:'1.4.25',sdkWheelSha256:'11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75',...FUNASR_PINS,settingsFingerprint:sha256('generated inference settings'),models:mediaModelIdentities('dialogue'),dependencies:{torch:'2.10.0',numpy:'2.2.0'},backend:'cpu',threads:1};
  const requests:FunasrRequest[]=[],wires:string[]=[],errors:unknown[]=[],modelCalls:{model:string;question:string}[]=[];
- let central:Awaited<ReturnType<typeof buildApp>>|undefined,fail:string|undefined,serial=0,cleanupCalls=0,health:Record<string,unknown>|'disconnect'|undefined;
+ let central:Awaited<ReturnType<typeof buildApp>>|undefined,fail:string|undefined,serial=0,cleanupCalls=0,healthChecks=0,health:Record<string,unknown>|'disconnect'|undefined;
  let preparationInput:Parameters<NonNullable<HostDependencies['prepareMediaRuntime']>>[0]|undefined,releasePreparation!:()=>void,failPreparation!:(error:Error)=>void;
  let preparationGate:Promise<void>;
  const holdPreparation=()=>{preparationInput=undefined;preparationGate=new Promise<void>((resolve,reject)=>{releasePreparation=resolve;failPreparation=reject;});};holdPreparation();
@@ -1058,7 +1058,7 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
  const worker=createServer((req,res)=>{void(async()=>{
   assert.equal(req.headers.authorization,'Bearer '+token);
   res.setHeader('Content-Type','application/json');res.setHeader('X-Mote-Execution','local');
-  if(req.url==='/health'){if(health==='disconnect'){req.socket.destroy();return;}res.end(JSON.stringify(health??{protocol:FUNASR_PROTOCOL,execution:'local',asr:true,diarization:true,identity}));return;}
+  if(req.url==='/health'){healthChecks++;if(health==='disconnect'){req.socket.destroy();return;}res.end(JSON.stringify(health??{protocol:FUNASR_PROTOCOL,execution:'local',asr:true,diarization:true,identity}));return;}
   if(req.url?.startsWith('/executions/')){res.writeHead(404).end('{}');return;}
   assert.ok(req.url==='/transcribe'||req.url==='/diarize');
   const buffers:Buffer[]=[];for await(const part of req)buffers.push(Buffer.from(part));const body=Buffer.concat(buffers);
@@ -1126,7 +1126,7 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
   async startPreparation(){const response=await node.app.inject({method:'POST',url:'/api/media-preparation/dialogue',headers,payload:{}});assert.equal(response.statusCode,202,response.body);await waitPreparation('dependencies');},
   preparationStage(stage:'dependencies'|'verifying_dependencies'){assert.ok(preparationInput);preparationInput.onStage?.(stage);},holdPreparation,releasePreparation:()=>releasePreparation(),releaseModels,failPreparation:()=>failPreparation(Error('media.runtime.generated_dependency_failure')),
   externalEndpoint:`http://127.0.0.1:${upstreamPort}/transcribe`,async disconnectWorker(){worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));},
-  counts:()=>({recognize:requests.filter(r=>r.operation==='recognize').length,diarize:requests.filter(r=>r.operation==='diarize').length,cleanup:cleanupCalls}),health(value?:typeof health){health=value;},failure(code?:string){fail=code;},async restart(){await node.app.close();node=await start();},hold(path='/diarize'){
+  counts:()=>({recognize:requests.filter(r=>r.operation==='recognize').length,diarize:requests.filter(r=>r.operation==='diarize').length,cleanup:cleanupCalls}),healthChecks:()=>healthChecks,health(value?:typeof health){health=value;},failure(code?:string){fail=code;},async restart(){await node.app.close();node=await start();},hold(path='/diarize'){
   let started!:()=>void,release!:()=>void;const began=new Promise<void>(resolve=>started=resolve),gate=new Promise<void>(resolve=>release=resolve);held={path,started,gate,release};t.after(release);return {started:began,release};
  }};
 }
@@ -1149,9 +1149,10 @@ test('public upload uses the current FunASR recipe, persists raw bytes before CA
  const materials=new MaterialStore(f.node.store),organizers=new MaterialOrganizerRuntime(f.node.store,materials);try{while(await organizers.tick(100));const result=materials.get(materialId('generated-native-audio','generated-1.wav'))!;assert.ok(result);assert.match(materials.read(result.ref).text,/一百零一/);}finally{await organizers.close();}
 });
 
-test('CAM failure leaves the committed transcript readable and scoped range retry after restart never repeats recognition',async t=>{
- const f=await nativeFunasrFixture(t),id=await f.upload();f.failure('inference_failed');await f.node.processing.tick();
+for(const code of ['inference_failed','inference_timeout','output_limit'] as const)test(`CAM ${code} leaves the committed transcript readable and scoped range retry after restart never repeats recognition`,async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();f.failure(code);await f.node.processing.tick();
  const before=await f.details(id),raw=before.artifacts.find((a:any)=>a.kind==='transcript');assert.ok(raw);assert.equal(before.job.state,'failed');assert.equal(f.node.processing.cancellation(id).wait,null);assert.equal(f.node.files.chunks(id).length,5);
+ assert.equal(before.job.error,code);assert.equal(before.steps.find((step:any)=>step.step==='diarize').attempts,1,'a terminated real failure still spends an attempt');
  const checkpoint=f.node.processing.artifact(raw.id).output.payload.checkpoint,global=f.node.processing.view().policy;
  await f.restart();f.failure();await f.retry(id,{stage:'diarize',diarization:{artifactId:raw.id,options:{processor:'audio.diarize',speakerCount:null,range:{min:2,max:4}}}});await f.settle(id);
  assert.equal((await f.details(id)).job.state,'succeeded',JSON.stringify({detail:(await f.details(id)).job,steps:f.node.processing.engine.list({operationId:'file:'+id}).items}));assert.equal(f.counts().recognize,1);assert.equal(f.counts().diarize,2);
@@ -1294,6 +1295,35 @@ for(const unavailable of ['loading','disconnect'] as const)test(`a local audio j
  await f.settle(id);
  assert.equal((await f.details(id)).job.state,'succeeded');
  assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:0});
+});
+
+for(const reason of ['model_missing','component_missing','worker_not_ready','identity_unavailable'] as const)test(`rechecking unstarted audio ${reason} preserves prior real failures and resumes after restart`,async t=>{
+ t.mock.timers.enable({apis:['Date'],now:Date.now()});
+ const f=await nativeFunasrFixture(t),id=await f.upload();
+ // A genuine failed connection keeps its finite retry cost. Later admission
+ // blocks must neither add to that cost nor erase the existing failure.
+ f.health('disconnect');await f.node.processing.tick();
+ assert.equal((await f.details(id)).steps.find((step:any)=>step.step==='extract').attempts,1);
+ f.health(reason==='identity_unavailable'?{protocol:FUNASR_PROTOCOL,execution:'local',asr:true,identity:{}}:
+  {protocol:FUNASR_PROTOCOL,execution:'local',asr:false,loading:false,reason});
+ const recheck=()=>{for(const step of f.node.executor.list({operationId:'file:'+id}).items)if(step.kind==='files.pipeline'&&step.state==='blocked')f.node.executor.retry(step.id,false);f.wake(id);};
+ for(let cycle=0;cycle<6;cycle++){
+  if(cycle===3)await f.restart();
+  const before=f.healthChecks();recheck();await f.node.processing.tick();
+  await f.node.executor.drain(f.node.executor.list({operationId:'file:'+id}).items.map(step=>step.id));
+  const detail=await f.details(id),extract=detail.steps.find((step:any)=>step.step==='extract');
+  assert.ok(f.healthChecks()>before,'each controlled replay reaches the actual health transport');
+  assert.equal(detail.job.state,'blocked',JSON.stringify(detail.job));
+  assert.equal(detail.job.error,reason==='identity_unavailable'?'processor_not_configured':reason);
+  assert.equal(extract.attempts,1,'an explicit unstarted admission block cannot spend an inference retry');
+  assert.equal(detail.job.attempts,0,'the coordinator does not spend its own budget while a child prerequisite is blocked');
+  assert.equal(f.requests.length,0,'no original audio was sent');assert.equal(f.node.files.chunks(id).length,0);
+  assert.equal(f.node.processing.cancellation(id).wait,null,'an unstarted block has no unknown physical call');assert.equal(detail.hasOriginal,true);
+ }
+ f.health();recheck();await f.node.processing.tick();
+ await f.node.executor.drain(f.node.executor.list({operationId:'file:'+id}).items.map(step=>step.id));const detail=await f.details(id);
+ assert.equal(detail.job.state,'succeeded',JSON.stringify(detail.job));assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:0});
+ assert.equal(detail.steps.find((step:any)=>step.step==='extract').attempts,2,'one real connection failure and one successful recognition are retained');
 });
 
 test('native grouping and summary keep the chosen file model while Memory and Ask retain their own selections',async t=>{

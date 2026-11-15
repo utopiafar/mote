@@ -301,8 +301,14 @@ export class ExecutionEngine {
     return;
    }
    if(this.get(row.id)!.attempts>=policy.maxAttempts){
+    // Reconstructing a child after restart must not replace the last actual
+    // failure with an opaque budget error. Optional diagnostics cannot decide
+    // whether another execution is allowed, including when no receipt remains.
+    let causeCode='retry_cause_unavailable';
+    try{const previous=this.failure(row.id);causeCode=(previous?.code==='retry_budget_exhausted'?previous.causeCode:previous?.code)??causeCode;}catch{/* Keep the fixed unavailable cause. */}
     db.prepare("UPDATE execution_steps SET state='failed',error='retry_budget_exhausted',updated_at=? WHERE id=? AND state='waiting'").run(now,row.id);
-    this.retainFailure(this.get(row.id)!,'failed',new ExecutionFailure('permanent','retry_budget_exhausted'));this.project(row.id);db.exec('COMMIT');return;
+    const failure=retainFailureContext(new ExecutionFailure('permanent','retry_budget_exhausted'),{causeCode});
+    this.retainFailure(this.get(row.id)!,'failed',failure,failure);this.project(row.id);db.exec('COMMIT');return;
    }
    const claimed=db.prepare("UPDATE execution_steps SET state='running',attempts=attempts+1,fence=?,lease_until=?,error=NULL,updated_at=? WHERE id=? AND state='waiting'").run(fence,now+(timeout===null?30000:Math.min(timeout+10000,30000)),now,row.id).changes;
    if(!claimed){db.exec('COMMIT');return;}
@@ -378,7 +384,12 @@ export class ExecutionEngine {
    const admissionWait=error instanceof ProviderFailure&&error.details.admissionWaiting===true;
    const failure=admissionWait||classified.code==='rate_limited'&&classified.category==='transient'?new ExecutionFailure('waiting',classified.code,classified.retryAfterMs):classified;
    const stopping=this.stopping||signal.reason===interrupted;
-   const capacityWait=failure.category==='waiting',attempts=Math.max(0,step.attempts-Number(capacityWait||stopping));
+   // Prerequisite checks and coordinators observing a blocked child spend no
+   // failure budget. Keep that block and refund only this claim; genuine prior
+   // transport failures and unstarted permanent rejections retain their cost.
+   const cause=failureContext(error),blockedChild=failure.category==='blocked'&&cause.causeState==='blocked'&&cause.causeStepId&&this.get(cause.causeStepId)?.state==='blocked';
+   const unstartedBlock=(failure.category==='blocked'&&error instanceof ProviderFailure&&error.details.executionStarted===false)||Boolean(blockedChild);
+   const capacityWait=failure.category==='waiting',attempts=Math.max(0,step.attempts-Number(capacityWait||unstartedBlock||stopping));
    let state:ExecutionState=stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':capacityWait?'waiting':failure.category==='permanent'||attempts>=policy.maxAttempts?'failed':'waiting';
    const at=this.now(),availableAt=stopping?0:at+Math.max(capacityWait?1:0,failure.retryAfterMs??(capacityWait?1000:Math.min(3600000,1000*2**(attempts-1))));
    const recoveryDeadline=capacityWait||policy.maxRecoveryWindowMs===null?0:failure.category==='transient'&&!stopping?(Number(row.recovery_deadline)||at+Math.max(1,policy.maxRecoveryWindowMs)):Number(row.recovery_deadline)||0;
@@ -424,7 +435,7 @@ export class ExecutionEngine {
    if(step.state==='waiting')throw retainFailureContext(new ExecutionFailure('waiting',step.error??'step_pending',Math.max(1,step.availableAt-this.now())),{causeStepId:step.id,causeCode:step.error??'step_pending',causeState:step.state});
    if(step.state==='stale')throw new ExecutionFailure('stale','input_changed');
    if(step.state==='cancelled')throw new ExecutionFailure('permanent','cancelled');
-   if(step.state==='blocked')throw new ExecutionFailure('blocked',step.error??'step_blocked');
+   if(step.state==='blocked')throw retainFailureContext(new ExecutionFailure('blocked',step.error??'step_blocked'),{causeStepId:step.id,causeCode:step.error??'step_blocked',causeState:step.state});
    if(step.state==='failed')throw retainFailureContext(new ExecutionFailure('permanent',step.error??'step_failed',options.requireDurableResult?Math.max(0,step.availableAt-this.now()):undefined),{...failureContext(failure),causeStepId:step.id,causeCode:step.error??'step_failed',causeState:step.state});
    if(failure)throw failure;
    throw new ExecutionFailure('waiting','step_pending',Math.max(1000,step.availableAt-this.now()));
