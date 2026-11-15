@@ -201,7 +201,7 @@ export function SourceOnboarding({api,sources,onAdd,loading=false}:{api:Api;sour
     {item.reason&&<p>{reasonText(item.reason)}{modelReasons.has(item.reason)&&<> · <a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a></>}</p>}
     {item.result&&<div data-onboarding-result><p>{item.result.reason}</p>{item.result.cardIds.length>0&&<a className="text-button" href="#/today">{moteText('查看结果与依据 →')}</a>}</div>}
     {item.result&&Boolean(item.ownerQuestions?.length)&&<p role="status">{moteText('已有部分结果；需要你补充的问题只影响相关结论。')}</p>}
-    {item.ownerQuestions?.map(question=><div key={question.id} data-onboarding-question><a className="text-button" href={ownerQuestionRoute(question.id)}>{question.prompt}</a>{question.reason&&<p>{question.reason}</p>}</div>)}
+    {item.ownerQuestions?.map(question=><div key={question.id} data-onboarding-question><a className="text-button multiline" href={ownerQuestionRoute(question.id)}>{question.prompt}</a>{question.reason&&<p>{question.reason}</p>}</div>)}
     {item.memory&&item.memory.status!=='completed'&&<small>{moteText(item.reason==='memory_owner_input_required'?'处理进度':'处理中')} · {item.memory.completedBatches} / {item.memory.totalBatches}</small>}
    </li>)}</ul>}
    {visibleError&&<div className="source-onboarding-error"><p role="alert">{visibleError}</p>{technicalError&&<details><summary>{moteText('技术详情')}</summary><pre>{technicalError}</pre></details>}{error&&<a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a>}</div>}
