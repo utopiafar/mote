@@ -42,10 +42,69 @@ function client(handler:(path:string,init?:RequestInit)=>unknown,ids=capabilityI
   if(path==='/api/features')return inventory(ids);
   if(path==='/api/devices/first-data')return {state:'ready',originalAvailable:false,checkedDevices:1,checkedRecords:1,windowLimited:false};
   if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:1,hasMore:false,reset:false};
-  if(path.startsWith('/api/assistant'))return handler(path,init);
+  if(path.startsWith('/api/assistant')||path.startsWith('/api/work-activity')||path==='/api/model-authorization')return handler(path,init);
   return {items:[],nextCursor:null};
  },setAgentTimeout:()=>{}} as Api;
 }
+
+const entryCapabilities=[...capabilityIds,'GET:/api/conversations','POST:/api/assistant/onboarding','GET:/api/assistant/onboarding/:id','POST:/api/assistant/onboarding/:id/cancel','GET:/api/model-authorization','GET:/api/work-activity','GET:/api/assistant/matters','GET:/api/memories','GET:/api/context-trees','GET:/api/assistant/commitments','GET:/api/assistant/workbench'];
+const assistant=(d:Document)=>{const panel=d.querySelector<HTMLElement>('[aria-label="个人助理"]');assert.ok(panel,'Home always exposes the assistant before its first result');return panel;};
+
+test('an empty first Home exposes acquaintance, the main conversation, tasks and follow-up without starting any work',async t=>{
+ const {d,render}=await domFixture(t),calls:{path:string;method:string}[]=[];
+ const base=client((path,init)=>{calls.push({path,method:init?.method??'GET'});if(path==='/api/model-authorization')return {authorization:{state:'off',excludedSourceIds:[]}};return {items:[],nextCursor:null};},entryCapabilities);
+ const api={...base,request:async(path:string,init?:RequestInit)=>path==='/api/devices/first-data'?{state:'waiting',originalAvailable:false,checkedDevices:0,checkedRecords:0,windowLimited:false}:base.request(path,init)} as Api;
+ await render(api);
+ const panel=assistant(d);
+ assert.ok(d.querySelector('.central-first-use'),'the same entry is visible during the actual first-use Home');
+ assert.equal(panel.closest('details'),null,'the entry is visible without expanding a directory');
+ assert.equal(d.querySelector('.home-page')!.firstElementChild!.nextElementSibling,panel,'the assistant is the first Home section');
+ for(const href of ['#/ask','#/connections','#/activity','#/assistant/matters','#/assistant/memory','#/assistant/workbench'])assert.ok(panel.querySelector('a[href="'+href+'"]'),href);
+ assert.match(panel.textContent!,/此浏览器还没有可恢复的初次认识记录/);assert.match(panel.textContent!,/后台模型已关闭/);assert.match(panel.textContent!,/暂无记录/);
+ assert.match(home(d).textContent!,/当前页暂无动态或建议/);
+ assert.equal(calls.some(call=>call.method!=='GET'),false,'viewing Home never authorizes onboarding or a task');
+ const work=calls.find(call=>call.path.startsWith('/api/work-activity?'));assert.ok(work);
+ assert.ok(calls.some(call=>call.path.startsWith('/api/assistant/matters?')&&JSON.parse(new URL('http://fixture'+call.path).searchParams.get('scope')!).kind==='all'));
+});
+
+test('Home resumes the selected acquaintance scope and shows pending, failed, permission and needs-input states accurately',async t=>{
+ const {d,render}=await domFixture(t),scope={kind:'selection',sourceIds:['generated-source']},id=randomUUID();
+ d.defaultView!.localStorage.setItem('mote.assistant.onboarding.'+d.defaultView!.location.origin,JSON.stringify({id,scope}));
+ let runState='pending',readFails=false,taskState='needs_input';
+ const calls:string[]=[];
+ const base=client(path=>{
+  calls.push(path);
+  if(path.includes('/onboarding/')){assert.deepEqual(JSON.parse(new URL('http://fixture'+path).searchParams.get('scope')!),scope);if(readFails)throw new ApiError('Generated onboarding permission denied',403);return {id,revision:1,state:runState,coverage:{sync:{completed:2,total:2},extraction:{completed:2,total:2},semantic:{completed:runState==='completed'?2:1,total:2,pending:runState==='pending'?1:0,failed:runState==='failed'?1:0}},completed:runState==='completed'?2:1,pending:runState==='pending'?1:0,failed:runState==='failed'?1:0,cancelled:0,items:[]};}
+  if(path==='/api/model-authorization')return {authorization:{state:'on',excludedSourceIds:[]}};
+  if(path.startsWith('/api/work-activity?'))return {items:[{id:'generated-work',goal:'Generated current task',state:taskState,updatedAt:at}],nextCursor:3};
+  return {items:[],nextCursor:null};
+ },entryCapabilities);
+ const api={...base,request:(path:string,init?:RequestInit)=>path==='/api/sources'?Promise.resolve({items:[{id:'generated-source',name:'Generated source',status:{state:'permission_required'}}]}):base.request(path,init)} as Api;
+ await render(api);let panel=assistant(d);
+ assert.match(panel.textContent!,/处理中/);assert.match(panel.textContent!,/语义理解.*1 \/ 2/);assert.match(panel.textContent!,/需要重新授权/);assert.match(panel.textContent!,/需要处理/);assert.match(panel.textContent!,/Generated current task/);
+ assert.ok(panel.querySelector('a[href="#/activity?work=generated-work"]'));
+ runState='failed';taskState='failed';await act(async()=>button(panel,'刷新状态').click());
+ assert.match(panel.textContent!,/处理失败/);assert.match(panel.textContent!,/未能完成/);assert.doesNotMatch(panel.querySelector('[data-onboarding-summary] [role=status]')!.textContent!,/全库已经理解|正在学习/);
+ for(const [next,label]of [['cancelled','已取消'],['completed','本次选择的资料已完成；其他资料未包含。'],['empty','所选资料当前不可读取']]){
+  runState=next;await act(async()=>button(panel,'刷新状态').click());assert.ok(panel.querySelector('[data-onboarding-summary] [role=status]')!.textContent!.includes(label));
+ }
+ runState='unknown-receipt-state';await act(async()=>button(panel,'刷新状态').click());
+ assert.match(panel.querySelector('[data-onboarding-summary] [role=alert]')!.textContent!,/中央响应格式无效/);
+ assert.doesNotMatch(panel.querySelector('[data-onboarding-summary]')!.textContent!,/本次选择的资料已完成/,'an unknown receipt state is never treated as completion');
+ readFails=true;await act(async()=>button(panel,'刷新状态').click());
+ assert.match(panel.textContent!,/请求被拒绝（403）/);assert.doesNotMatch(panel.textContent!,/语义理解.*1 \/ 2/,'a denied run cannot disclose its old progress');
+ assert.equal(calls.some(path=>path.includes('/onboarding/')&&!path.includes('scope=')),false);
+});
+
+test('Home distinguishes a missing assistant capability from an inventory failure and never links an unsupported command',async t=>{
+ const {d,render}=await domFixture(t);let denied=false;
+ const base=client(()=>({items:[],nextCursor:null}),[]);
+ const api={...base,request:async(path:string,init?:RequestInit)=>{if(path==='/api/features'&&denied)throw new ApiError('Generated inventory unavailable',503);return base.request(path,init);}} as Api;
+ await render(api);const panel=assistant(d);
+ assert.match(panel.textContent!,/当前服务未提供此入口/);assert.equal(panel.querySelector('a[href="#/connections"]'),null);
+ denied=true;await act(async()=>button(panel,'刷新状态').click());
+ assert.match(panel.textContent!,/当前支持情况暂无法确认/);assert.doesNotMatch(panel.textContent!,/暂无记录|尚未开始/,'unknown availability is not a successful empty read');
+});
 
 test('Home distinguishes loading, genuine empty data, read failure and a briefing with partial coverage',async t=>{
  const {d,render}=await domFixture(t);let resolve!:(value:unknown)=>void,fail=false;
@@ -125,12 +184,14 @@ test('task results preserve completed, cancelled and needs-input states instead 
   return {items:[suggestion],nextCursor:null};
  });
  await render(api);await act(async()=>button(row(d,suggestion.id),'查看任务').click());assert.match(home(d).textContent!,/Generated saved outcome/);assert.match(home(d).textContent!,/已完成/);
+ assert.match(assistant(d).querySelector('[data-home-task-id]')!.textContent!,/已完成/,'the fixed task entry reads the same completed task receipt');
  withdrawn=true;await act(async()=>home(d).querySelector<HTMLButtonElement>('.citation')!.click());assert.deepEqual(opened,[],'withdrawn result cannot open its old evidence');
  for(const next of ['cancelled','needs_input']){
   await act(async()=>{d.defaultView!.location.hash='#/today';d.defaultView!.dispatchEvent(new d.defaultView!.HashChangeEvent('hashchange'));});state=next;
   await act(async()=>button(row(d,suggestion.id),'查看任务').click());
   await act(async()=>button(home(d).querySelector('.home-assistant-task')!,'刷新状态').click());
   assert.match(home(d).textContent!,next==='cancelled'?/已取消/:/需要你补充/);assert.doesNotMatch(home(d).textContent!,/Generated saved outcome/);
+  assert.match(assistant(d).querySelector('[data-home-task-id]')!.textContent!,next==='cancelled'?/已停止/:/需要处理/);
  }
  assert.match(home(d).textContent!,/当前范围没有可用正文/);
 });
@@ -143,6 +204,15 @@ test('a withdrawn card stops disclosing cached body, feedback and evidence on re
  });await render(api);withdrawn=true;
  await act(async()=>button(row(d,suggestion.id),'来源资料 1').click());assert.deepEqual(opened,[]);
  assert.equal(home(d).querySelectorAll('[data-card-id]').length,0);assert.doesNotMatch(home(d).textContent!,/Generated finding|Generated original evidence/);
+});
+
+test('a task blocked by unavailable context budget keeps its distinct budget explanation',async t=>{
+ const {d,render}=await domFixture(t),suggestion={...card(),acceptedTaskId:randomUUID()};
+ const api=client(path=>path.startsWith('/api/assistant/tasks/')?{task:{id:suggestion.acceptedTaskId,state:'needs_input'},error:'model_context_budget_unavailable'}:{items:[suggestion],nextCursor:null});
+ await render(api);await act(async()=>button(row(d,suggestion.id),'查看任务').click());
+ assert.match(home(d).querySelector('.home-assistant-task')!.textContent!,/模型上下文预算尚未就绪，任务未执行。/);
+ assert.doesNotMatch(home(d).querySelector('.home-assistant-task')!.textContent!,/Agent 未配置|已完成/);
+ assert.match(assistant(d).querySelector('[data-home-task-id]')!.textContent!,/需要处理/);
 });
 
 test('a source removal hint clears the visible card before the next scheduled feed-page poll',async t=>{
@@ -209,8 +279,9 @@ test('real A3 HTTP pages, feedback and history reach Home; real A2 acceptance re
  assert.deepEqual(starts[0],starts[1]);assert.equal(node.store.db.prepare("SELECT count(*) AS n FROM task_records WHERE kind='assistant.task'").get()!.n,1);
  const accepted=cards.get(work.id,scope).acceptedTaskId!;assert.ok(home(d).querySelector(`[data-task-id="${accepted}"]`));assert.deepEqual(node.featureServices.assistantMatters.get(matter.id).taskIds,[accepted]);
  await until(()=>node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(accepted)?.state==='blocked');
- const task=await node.app.inject({url:'/api/assistant/tasks/'+accepted+'?'+new URLSearchParams({scope:JSON.stringify(scope)}),headers});assert.equal(task.json().task.state,'needs_input');assert.equal(task.json().error,'model_context_budget_unavailable');
- await act(async()=>button(home(d).querySelector('.home-assistant-task')!,'刷新状态').click());await act(async()=>until(()=>home(d).querySelector('.home-assistant-task')?.textContent?.includes('模型上下文预算尚未就绪')??false));
+ const task=await node.app.inject({url:'/api/assistant/tasks/'+accepted+'?'+new URLSearchParams({scope:JSON.stringify(scope)}),headers});assert.equal(task.json().task.state,'needs_input');assert.equal(task.json().error,'model_not_configured');
+ await act(async()=>button(home(d).querySelector('.home-assistant-task')!,'刷新状态').click());await act(async()=>until(()=>home(d).querySelector('.home-assistant-task')?.textContent?.includes('Agent 未配置')??false));
+ assert.ok(home(d).querySelector('.home-assistant-task a[href="#/system/models"]'),'the actual missing-model state has a configuration entry');
  await act(async()=>button(row(d,life.id),'稍后').click());await act(async()=>until(()=>row(d,life.id)?.textContent?.includes('已稍后')??false));
  await act(async()=>button(row(d,life.id),'忽略').click());await act(async()=>until(()=>row(d,life.id)?.textContent?.includes('已忽略')??false));assert.equal(cards.get(life.id,scope).evidence[0].quote,'Generated family trip has an unconfirmed date.');
  assert.ok(reads.some(path=>path.includes('/history?')&&path.includes('cursor=')),'the actual history cursor reaches its consumer');

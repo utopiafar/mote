@@ -3,6 +3,7 @@ import {featureRequirementsAvailable,formatEvidenceRef,type QueryScope,type Work
 import {moteText} from '@mote/shared/i18n';
 import {ApiError,dateTime,errorMessage,type Api} from '../../api';
 import {discoveryAvailabilityText} from '../../DiscoveryLink';
+import {failureMessage} from '../../failure-message';
 import {Loading} from '../../Loading';
 import {resources} from '../../resource-cache';
 import {useResource} from '../../useResource';
@@ -86,7 +87,8 @@ function HomeTask({api,id,scope,supports,onOpen}:{api:Api;id:string;scope:QueryS
    {item.task.state==='stale'&&<p>{moteText('资料已变化，这项任务的结果已失效。')}</p>}
    {item.error==='no_usable_evidence'&&<p>{moteText('当前范围没有可用正文，任务尚未执行。')}</p>}
    {item.error==='model_context_budget_unavailable'&&<p>{moteText('模型上下文预算尚未就绪，任务未执行。')}</p>}
-   {(item.task.state==='failed'||item.task.state==='needs_input'&&item.error&&item.error!=='no_usable_evidence'&&item.error!=='model_context_budget_unavailable')&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
+   {item.error==='model_not_configured'&&<p>{failureMessage(item.error)} <a href="#/system/models">{moteText('检查模型连接 →')}</a></p>}
+   {(item.task.state==='failed'||item.task.state==='needs_input'&&item.error&&!['no_usable_evidence','model_context_budget_unavailable','model_not_configured'].includes(item.error))&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
    {item.task.state==='needs_input'&&supports('http:GET:/api/owner-questions')&&<button type="button" className="text-button" onClick={()=>openOwnerQuestionList(api)}>{moteText('需要你补充')} →</button>}
    {item.task.state==='completed'&&item.result&&<AnswerView answer={item.result} onOpen={ref=>void open(ref)} compact/>}
   </>}
@@ -184,10 +186,13 @@ export function AssistantHome({api,state,onOpen}:{api:Api;state:HomeSnapshot;onO
  const read=state.cards,items=read.error===undefined?read.data?.items:undefined;
  const decision=(card:AssistantCard)=>card.feedback.filter(entry=>['later','ignore','never_remind'].includes(entry.action)).at(-1);
  const deferred=(card:AssistantCard)=>{const last=decision(card);return Boolean(last&&(last.action!=='later'||!last.until||Date.parse(last.until)>Date.now()));};
- const settled=(card:AssistantCard)=>Boolean(card.acceptedTaskId&&known.api===api&&['completed','cancelled','stale','excluded'].includes(known.states.get(card.acceptedTaskId)??''));
+ const taskStatus=(card:AssistantCard)=>card.acceptedTaskId&&known.api===api?known.states.get(card.acceptedTaskId):undefined;
+ const settled=(card:AssistantCard)=>['completed','cancelled','excluded'].includes(taskStatus(card)??'');
  const sections=[
   {title:moteText('今天要关注'),items:items?.filter(card=>!card.acceptedTaskId&&card.kind!=='suggestion'&&!deferred(card))},
-  {title:moteText('正在推进'),items:items?.filter(card=>Boolean(card.acceptedTaskId)&&!settled(card))},
+  {title:moteText('正在推进'),items:items?.filter(card=>['waiting','running'].includes(taskStatus(card)??''))},
+  {title:moteText('需要处理'),items:items?.filter(card=>['needs_input','failed','stale'].includes(taskStatus(card)??''))},
+  {title:moteText('任务状态'),items:items?.filter(card=>Boolean(card.acceptedTaskId)&&taskStatus(card)===undefined)},
   {title:moteText('可以开始的工作'),items:items?.filter(card=>!card.acceptedTaskId&&card.kind==='suggestion'&&card.state==='open'&&!deferred(card))},
   {title:moteText('稍后与已处理'),items:items?.filter(card=>settled(card)||!card.acceptedTaskId&&(deferred(card)||card.kind==='suggestion'&&card.state==='resolved'))},
  ];

@@ -6,6 +6,26 @@ import {JSDOM} from 'jsdom';
 import {isSettingsContext,primaryDestination,parentDestination,WorkspaceNavigation,SettingsLanding} from '../src/WorkspaceNavigation.js';
 import {webFeatures} from '../src/features/registry.js';
 import {configureLocale} from '@mote/shared/i18n';
+import {assistantEntrypoints} from '../src/assistant-entrypoints';
+
+test('assistant pages return to Home and never appear in Settings even before any cards exist',async t=>{
+ configureLocale(()=> 'zh-CN');
+ const featureId='generated.assistant-navigation';
+ const fiber=await webFeatures.install({id:featureId,version:'1',components:[]},[
+  {surface:'page',entry:{id:'overview',route:'today',label:'首页',featureId,render:()=>null}},
+  ...assistantEntrypoints.map(entry=>({surface:'page' as const,entry:{id:entry.pageId,route:entry.href.slice(2),label:entry.title,featureId,render:()=>null}})),
+ ]);
+ t.after(()=>fiber.dispose());
+ for(const entry of assistantEntrypoints){
+  assert.equal(primaryDestination(entry.pageId),'overview',entry.title);
+  assert.equal(parentDestination(entry.pageId),'overview',entry.title);
+  assert.equal(isSettingsContext(entry.pageId),false,entry.title);
+  const d=new JSDOM(renderToStaticMarkup(React.createElement(WorkspaceNavigation,{page:entry.pageId,onPage:()=>{}}))).window.document;
+  assert.equal(d.querySelector('button[aria-label="返回首页"]')?.textContent,'返回上级');
+ }
+ const settings=renderToStaticMarkup(React.createElement(SettingsLanding,{onPage:()=>{}}));
+ for(const entry of assistantEntrypoints)assert.equal(settings.includes(entry.title),false,entry.title+' belongs to Home');
+});
 
 test('the complete directory belongs to Home while installed settings keep their own task context',async t=>{
  configureLocale(()=> 'zh-CN');

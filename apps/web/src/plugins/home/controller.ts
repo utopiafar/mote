@@ -1,4 +1,4 @@
-import {featureRequirementsAvailable,type FeatureInventory} from '@mote/shared';
+import {featureRequirementsAvailable,type FeatureInventory,type Matter,type WorkActivityPage} from '@mote/shared';
 import {ViewLifetime} from '@mote/shared/plugin-view-lifetime';
 import type {Answer,Capture} from '../../api';
 import type {Api} from '../../api';
@@ -10,6 +10,7 @@ import {operationFeed,type OperationFeed} from '../work/operation-feed';
 import {ownerQuestionListPath} from '../../owner-question-route';
 import {resources,type Resource,type ResourceSnapshot} from '../../resource-cache';
 import {assistantScopeQuery,homeAssistantScope,type AssistantCardPage} from './assistant-cards';
+import {readStoredOnboardingRun} from '../sources/onboarding';
 
 export type FirstDeviceData={state:'waiting'|'unverified'|'received_unavailable'|'ready';originalAvailable:boolean;checkedDevices:number;checkedRecords:number;windowLimited:boolean;candidate?:{id:string;deviceId:string;deviceName:string;source:string;capturedAt:string;receivedAt:string}};
 export type HomeSource={id:string;name?:string;status?:{state:string}};
@@ -28,7 +29,7 @@ export interface HomeRead<T> extends ResourceSnapshot<T>{refresh:()=>void;}
 const idle:HomeRead<never>={loading:false,refresh:()=>{}};
 const read=<T>(resource:Resource<unknown>|undefined):HomeRead<T>=>resource?{...resource.getSnapshot(),refresh:resource.refresh} as HomeRead<T>:idle as HomeRead<T>;
 
-export type HomeReadName='features'|'sources'|'connections'|'catalog'|'conversations'|'questions'|'insightRuns'|'actions'|'todos'|'firstData'|'firstPreview'|'cards';
+export type HomeReadName='features'|'sources'|'connections'|'catalog'|'conversations'|'questions'|'insightRuns'|'actions'|'todos'|'firstData'|'firstPreview'|'cards'|'work'|'matters'|'onboarding'|'modelAuthorization';
 
 export interface HomeSnapshot {
   readonly api:Api;
@@ -48,6 +49,10 @@ export interface HomeSnapshot {
   readonly firstData:HomeRead<FirstDeviceData>;
   readonly firstPreview:HomeRead<Capture>;
   readonly cards:HomeRead<AssistantCardPage>;
+  readonly work:HomeRead<WorkActivityPage>;
+  readonly matters:HomeRead<{items:Matter[];nextCursor:string|null}>;
+  readonly onboarding:HomeRead<unknown>;
+  readonly modelAuthorization:HomeRead<{authorization:{state:'on'|'off';excludedSourceIds:string[]}}>;
   readonly cardPaging:{page:number;previous:()=>void;next:(cursor:string)=>void;reset:()=>void};
 }
 
@@ -59,7 +64,7 @@ export interface HomeControllerOptions {
 
 interface Slot { name:HomeReadName; path:string; resource:Resource<unknown>; unsubscribe?:()=>void }
 
-const names:readonly HomeReadName[]=['features','sources','connections','catalog','conversations','questions','insightRuns','actions','todos','firstData','firstPreview','cards'];
+const names:readonly HomeReadName[]=['features','sources','connections','catalog','conversations','questions','insightRuns','actions','todos','firstData','firstPreview','cards','work','matters','onboarding','modelAuthorization'];
 
 /** Owns Home's reads and pollers: registry/inventory projection, first-use
  * receipt and preview, catalog/sources/connections, optional Ask/Action reads,
@@ -229,6 +234,14 @@ export class HomeController {
     if(canInsightRuns)plan.set('insightRuns','/api/insight-runs');
     if(canActions)plan.set('actions','/api/actions?cursor=0');
     if(canTodos)plan.set('todos','/api/todos?status=open');
+    if(this.#hasPage('activity')&&this.#supports('/api/work-activity'))plan.set('work','/api/work-activity?limit=3');
+    if(this.#hasPage('assistantMatters')&&this.#supports('/api/assistant/matters')){
+      const query=assistantScopeQuery(homeAssistantScope);query.set('limit','3');
+      plan.set('matters','/api/assistant/matters?'+query);
+    }
+    if(this.#supports('/api/model-authorization'))plan.set('modelAuthorization','/api/model-authorization');
+    const onboarding=readStoredOnboardingRun();
+    if(onboarding&&this.#supports('/api/assistant/onboarding/:id'))plan.set('onboarding','/api/assistant/onboarding/'+encodeURIComponent(onboarding.id)+'?'+assistantScopeQuery(onboarding.scope));
     if(this.#hasPage('insights')&&this.#supports('/api/assistant-cards')){
       const query=assistantScopeQuery(homeAssistantScope);query.set('limit','6');
       const cursor=this.#cardCursors.at(-1);if(cursor)query.set('cursor',cursor);
@@ -271,6 +284,7 @@ export class HomeController {
     const running=Boolean(read<{items:HomeInsightRun[]}>(this.#slots.get('insightRuns')?.resource).data?.items.some(run=>run.status==='running'));
     const wanted=new Map<HomeReadName,number>([['features',5000]]);
     if(this.#slots.has('cards'))wanted.set('cards',5000);
+    for(const name of ['work','matters','onboarding','modelAuthorization'] as const)if(this.#slots.has(name))wanted.set(name,5000);
     if(running)wanted.set('insightRuns',5000);
     for(const [name,poller]of this.#pollers)if(wanted.get(name)!==poller.interval){poller.off();this.#pollers.delete(name);}
     for(const [name,interval]of wanted){
@@ -308,6 +322,10 @@ export class HomeController {
       firstData:read(this.#slots.get('firstData')?.resource),
       firstPreview:read(this.#slots.get('firstPreview')?.resource),
       cards:read(this.#slots.get('cards')?.resource),
+      work:read(this.#slots.get('work')?.resource),
+      matters:read(this.#slots.get('matters')?.resource),
+      onboarding:read(this.#slots.get('onboarding')?.resource),
+      modelAuthorization:read(this.#slots.get('modelAuthorization')?.resource),
       cardPaging:{page:this.#cardCursors.length,previous:this.previousCards,next:this.nextCards,reset:this.resetCards},
     };
   }

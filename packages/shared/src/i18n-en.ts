@@ -10755,5 +10755,10 @@ export const english: Readonly<Record<string, string>> = {
   "模型只提出建议，确认后生成单独的校正版；未校正原文始终保留。复核使用所选模型。": "The model only suggests changes. Confirming creates a separate corrected version while preserving the uncorrected original. Review uses the selected model.",
   "原文对照": "Compare with original",
   "转写结果为空。": "The transcription is empty.",
-  "当前稿": "Current transcript"
+  "当前稿": "Current transcript",
+  "在主对话交代工作，核对草稿后开始。": "Give work in the main conversation, review the draft, then start.",
+  "此浏览器还没有可恢复的初次认识记录。": "This browser has no first acquaintance record to resume.",
+  "最近后台活动；更多任务和结果可进入查看。": "Recent background activity; open to see more tasks and results.",
+  "本页建议关联的任务": "Tasks linked to suggestions on this page",
+  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "No suggestions on this page have linked tasks. See the main conversation or matters for other tasks."
 };
