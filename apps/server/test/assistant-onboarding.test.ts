@@ -79,7 +79,8 @@ async function fixture(t:TestContext){
   await app.ready();
  };
  const close=async()=>{await onboarding.close();await app.close();await batch.close();await memory.close();await engine.close();control.close();reader.dispose();store.close();};
- await start();t.after(async()=>{await close();rmSync(directory,{recursive:true,force:true});});
+ const releaseHeldModels:Array<()=>void>=[];
+ await start();t.after(async()=>{for(const release of releaseHeldModels)release();await close();rmSync(directory,{recursive:true,force:true});});
  const publish=(sourceId:string,captureId:string,text:string,state:'ready'|'pending'|'failed'='ready')=>{
   const id=materialId(sourceId,'selected'),previous=materials.get(id);
   return materials.publish({id,kind:'mote.message',schemaVersion:1,title:'Generated '+sourceId,origin:{sourceId,externalId:'selected',deviceId:'generated',firstAt:at,lastAt:at},
@@ -103,11 +104,14 @@ async function fixture(t:TestContext){
  };
  const until=async(check:()=>boolean|Promise<boolean>)=>{
   const end=Date.now()+10000;
-  while(Date.now()<end){await onboarding.tick();await engine.tick();if(modelFailure)throw modelFailure;if(await check())return;await new Promise(done=>setTimeout(done,10));}
+  // tick() waits for work it starts. A deliberately held provider must remain
+  // in flight while this test issues cancellation, rather than deadlocking the
+  // polling helper before it can observe that the provider was entered.
+  while(Date.now()<end){await onboarding.tick();void engine.tick().catch(error=>{modelFailure=error;});if(modelFailure)throw modelFailure;if(await check())return;await new Promise(done=>setTimeout(done,10));}
   throw Error('Generated onboarding did not reach the expected state: '+JSON.stringify(store.db.prepare('SELECT * FROM assistant_onboarding_items').all()));
  };
  return {get store(){return store;},get sources(){return sources;},get materials(){return materials;},get cards(){return cards;},get onboarding(){return onboarding;},get reader(){return reader;},get followup(){return followup;},get memory(){return memory;},get app(){return app;},get control(){return control;},
-  calls,contexts,add,publish,post,read,until,async restart(){await close();await start();},hold(kind:'memory'|'assistant'){const hold={kind,entered:gate(),release:gate()};modelHold=hold;t.after(()=>hold.release.release());return hold;}};
+  calls,contexts,add,publish,post,read,until,async restart(){await close();await start();},hold(kind:'memory'|'assistant'){const hold={kind,entered:gate(),release:gate()};modelHold=hold;releaseHeldModels.push(()=>hold.release.release());return hold;}};
 }
 
 test('two selected historical sources give a useful partial result, then resume only the late original after restart without notifications',async t=>{

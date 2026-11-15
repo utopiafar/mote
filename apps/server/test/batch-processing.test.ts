@@ -197,9 +197,18 @@ for(const change of ['last-segment','source-disabled'] as const)test(`retrying a
   await until(()=>f.batch.progress(batch.id).items[0].state==='stale');
   const step=f.batch.progress(batch.id).items[0];
   assert.equal(step.error,'input_changed');assert.equal(step.attempts,0);assert.equal(calls,0);
+  assert.equal(f.batch.progress(batch.id).task.state,'stale');
+  const itemId=String(step.input.itemId);assert.equal(new TaskRecords(f.node.store).get(itemId).state,'stale');
   assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(batch.id)!.result_json,null);
   assert.equal(f.node.store.evidence([original.id])[0].capturedAt,'2026-10-01T00:00:00.000Z');
   assert.deepEqual(f.node.files.chunks(original.id,0,31),chunks.slice(0,31),'unrelated original segments retain their text, attribution and timing');
+  if(change==='last-segment'){
+    // Model the old persisted mismatch using only generated state metadata.
+    f.node.store.db.prepare("UPDATE task_records SET state='waiting' WHERE id IN (?,?)").run(batch.id,itemId);
+    await f.restart();
+    assert.equal(f.batch.progress(batch.id).task.state,'stale');assert.equal(new TaskRecords(f.node.store).get(itemId).state,'stale');
+    assert.equal(calls,0,'startup reconciles existing terminal steps without a provider request');
+  }
 });
 
 
@@ -283,4 +292,16 @@ test('an owner request with an empty selection can answer without opening archiv
   assert.deepEqual(observed!.evidenceIds,[]);assert.equal(observed!.hostRetrieval,'none');
   assert.deepEqual(observed!.contextEvidenceDependencies,{version:1,complete:true,ids:[]});
   assert.equal(f.batch.result(batch.id)?.answer,'Generated answer: Generated owner-only question');
+});
+
+
+test('a failed batch projects its failure and an explicit retry resumes the same immutable input',async t=>{
+ let attempts=0;
+ const f=await fixture(t,async input=>{if(++attempts===1)throw new ExecutionFailure('blocked','model_not_configured');return answer(input);});
+ const id=await f.note('retry'),batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated retry',evidenceIds:[id]}]},manual(f.node));
+ await until(()=>f.batch.progress(batch.id).items[0].state==='blocked');
+ const itemId=String(f.batch.progress(batch.id).items[0].input.itemId),tasks=new TaskRecords(f.node.store);
+ assert.equal(f.batch.progress(batch.id).task.state,'blocked');assert.equal(tasks.get(itemId).state,'blocked');
+ f.batch.retry(batch.id);await until(()=>f.batch.progress(batch.id).task.state==='succeeded');
+ assert.equal(tasks.get(itemId).state,'succeeded');assert.equal(attempts,2);assert.equal(f.batch.result(batch.id)?.answer,'Generated answer: Generated retry');
 });
