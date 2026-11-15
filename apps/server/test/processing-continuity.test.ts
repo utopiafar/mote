@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Store} from '../src/store.js';
-import {ProcessingRuntime,type ProcessingLane} from '../src/processing-runtime.js';
+import {ProcessingFailure,ProcessingRuntime,type ProcessingLane} from '../src/processing-runtime.js';
 import {MaterialConsumerRegistry} from '../src/material-consumers.js';
 import {SourcePipelineRegistry} from '../src/source-pipelines.js';
 import {PluginHost} from '@mote/plugin-host';
@@ -17,6 +17,7 @@ import {linkOperationParent} from '../src/operation-projection.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
+import {retainFailureContext} from '../src/execution-failures.js';
 
 const lanes:ProcessingLane[]=['extract','aggregate','semantic','memory'];
 const observation=(text='Generated evidence')=>({id:randomUUID(),deviceId:'generated',deviceName:'Generated',platform:'import',capturedAt:'2026-10-05T00:00:00Z',durationMs:0,source:'note',appName:'Fixture',ocrText:text,privacy:{excluded:false,redacted:false,mode:'none'}});
@@ -61,6 +62,41 @@ test('parent re-entry preserves a failed semantic child until an explicit retry'
  }
  fail=false;runtime.retry(id);await runtime.tick();assert.equal(calls,2);assert.equal(runtime.engine.get(id)?.state,'succeeded');
  runtime.enqueue(steps,{stepId:parent,fence:'generated-next-grant'});await runtime.tick();assert.equal(calls,2,'completed semantic output is reused');
+});
+
+test('processor failure receipts preserve fixed causes and context without persisting arbitrary messages',async t=>{
+ const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());
+ const record=observation();await store.ingest(record);
+ runtime.registry.register({id:'fixture.failure-code',version:'1',lane:'semantic',async process(input){
+  const error=new ProcessingFailure('permanent',String(input.config.code));
+  if(input.config.code==='invalid_model_output')error.message='Generated private model output and credential';
+  throw retainFailureContext(error,{runId:'generated-run',causeCode:'schema',errorDetail:'fieldPath=workRecords[0].results[0].sourceTime; problem=missing_required_field'});
+ }});
+ for(const [code,expected] of [['invalid_model_output','invalid_model_output'],['Generated private plugin failure','processor_failed']]){
+  const id=runtime.enqueue([{name:'failed',processor:'fixture.failure-code',inputs:[record.id],config:{code}}]).failed;
+  await runtime.engine.drain([id]);
+  assert.equal(runtime.engine.get(id)?.state,'failed');assert.equal(runtime.engine.get(id)?.error,expected);
+  const receipt=runtime.engine.failure(id)!;
+  assert.equal(receipt.code,expected);assert.equal(receipt.category,'permanent');assert.equal(receipt.runId,'generated-run');assert.equal(receipt.causeCode,'schema');
+  assert.doesNotMatch(JSON.stringify(receipt),/private|credential|plugin failure/);
+ }
+});
+
+test('processor output boundary accepts the full allowance and retains a distinct output_limit above it',async t=>{
+ const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());
+ const record=observation();await store.ingest(record);let calls=0;
+ runtime.registry.register({id:'fixture.output-boundary',version:'1',lane:'semantic',async process(input){
+  calls++;const output={kind:'generated',text:'Generated output',metadata:{padding:''}};
+  output.metadata.padding='x'.repeat(Number(input.config.size)-JSON.stringify([output]).length);
+  return [output];
+ }});
+ const accepted=runtime.enqueue([{name:'bounded',processor:'fixture.output-boundary',inputs:[record.id],config:{size:200000}}]).bounded;
+ await runtime.engine.drain([accepted]);assert.equal(runtime.engine.get(accepted)?.state,'succeeded');
+ assert.equal(store.db.prepare('SELECT count(*) n FROM context_artifacts').get()!.n,1);
+ const rejected=runtime.enqueue([{name:'oversized',processor:'fixture.output-boundary',inputs:[record.id],config:{size:200001}}]).oversized;
+ await runtime.engine.drain([rejected]);assert.equal(runtime.engine.get(rejected)?.state,'failed');
+ assert.equal(runtime.engine.failure(rejected)?.code,'output_limit');assert.equal(runtime.engine.failure(rejected)?.attempt,1);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM context_artifacts').get()!.n,1,'oversized output is never partially committed');assert.equal(calls,2);
 });
 
 
