@@ -1,6 +1,8 @@
 import {createHash} from 'node:crypto';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
+import type {QueryInput} from '@mote/agent';
+import {assistantQueryInput,assistantRequestUsage,type AssistantRequestCapacity} from './assistant-request-budget.js';
 import {parseArtifactRef,parseEvidenceId,queryScopeSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js';
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
@@ -84,7 +86,7 @@ export class AssistantFollowup {
   private readonly cards:AssistantCards,private readonly commitments:AssistantCommitments,private readonly matters:AssistantMatters,
   private readonly batch:BatchProcessing,private readonly assertCurrent:AssertTaskCurrent,private readonly now=()=>new Date().toISOString(),private readonly control?:BackgroundModelAuthorization,
   private readonly allowsAutomatic:(ids:readonly string[])=>boolean=()=>false,private readonly diagnostics?:Pick<ServerDiagnostics,'record'>,
-  private readonly questions?:Pick<OwnerQuestionsPort,'get'|'page'>){
+  private readonly questions?:Pick<OwnerQuestionsPort,'get'|'page'>,private readonly requestCapacity?:()=>AssistantRequestCapacity|undefined){
   this.tasks=new TaskRecords(store);this.understanding=new AssistantUnderstandingReader(store,materials,reader);this.files=new FileObservationReader(reader);
  }
  private transaction<T>(run:()=>T):T{
@@ -199,6 +201,7 @@ export class AssistantFollowup {
   const question=PROMPT;
   const bytes=Buffer.byteLength(JSON.stringify(context));
   if(bytes>(selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES))throw new AssistantContextLimit(bytes);
+  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals);
   await yieldTurn();assertActive();
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
   this.assertSnapshot({input,questionPins,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
@@ -343,6 +346,23 @@ export class AssistantFollowup {
   if(ids.some(id=>!snapshot.dependencies.includes(id)))throw new StoreError('Assistant batch context changed',409);
   return true;
  }
+ /** Only a saved follow-up can select its initial original spans. Other batch
+  * products retain their existing query contract. No saved input is rewritten. */
+ prepareQuery(input:QueryInput):QueryInput{
+  if(!this.requestCapacity?.())return input;
+  const batchId=input.traceContext?.jobId;if(!batchId)return input;
+  const row=this.store.db.prepare("SELECT f.id FROM task_records b JOIN task_records f ON f.operation_id=b.operation_id WHERE b.id=? AND b.kind='batch' AND f.kind='assistant.followup'").get(batchId);
+  if(!row)return input;
+  const snapshot=this.snapshot(this.tasks.get(String(row.id)));
+  if(snapshot.batchId!==batchId||canonicalRecipeJson(unique(input.evidenceIds??[]))!==canonicalRecipeJson(unique(snapshot.evidenceIds)))throw new StoreError('Assistant batch context changed',409);
+  return this.prepareRequest(input,snapshot.originals);
+ }
+ private prepareRequest(input:QueryInput,originals:Snapshot['originals']){
+  const capacity=this.requestCapacity?.();if(!capacity)return input;
+  const records=this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryInput(input,originals,records);
+  if(!assistantRequestUsage(prepared,records,capacity).fits)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
+  return prepared;
+ }
  /** Called by the existing Material poll and batch completion. The queue,
   * original receipts and recovery remain owned by A4 and BatchProcessing. */
  tick(changes:AssistantChangeFeed):Promise<void>{
@@ -411,6 +431,8 @@ export class AssistantFollowup {
    }
    cursor=page.nextCursor??undefined;
   }while(cursor&&refs.length<5);
+  const group=[...ready];
+  for(const candidate of changes.covered(refs))if(!group.some(value=>value.task.id===candidate.task.id))group.push(candidate);
   // Native notes are authorized as device originals; their Material catalog
   // source is a projection. Select exact dependency IDs through the existing
   // disclosure resolver instead of guessing source identities from that label.
@@ -421,10 +443,10 @@ export class AssistantFollowup {
   const evidenceIds=taskEvidenceIds(this.store,deps(selected));
   if(!this.allowsAutomatic(evidenceIds))throw new StoreError('Assistant automatic context is no longer permitted',409);
   const scope:QueryScope={kind:'selection',evidenceIds};
-  const requestId='assistant-change:'+ready.map(candidate=>candidate.task.id).sort().join(':');
+  const requestId='assistant-change:'+group.map(candidate=>candidate.task.id).sort().join(':');
   await this.analyze({operationId:requestId,requestId,scope,materialRefs:refs,mode:{kind:'change'}},
-   {kind:'automatic',purpose:'assistant',roots:ready.map(candidate=>candidate.input.root)},active,()=>{},
-   request=>changes.submit(ready[0].task.id,request,this.batch,{evidenceIds:request.items.flatMap(item=>item.evidenceIds),taskIds:ready.slice(1).map(candidate=>candidate.task.id)}));
+   {kind:'automatic',purpose:'assistant',roots:group.map(candidate=>candidate.input.root)},active,()=>{},
+   request=>changes.submit(group[0].task.id,request,this.batch,{evidenceIds:request.items.flatMap(item=>item.evidenceIds),taskIds:group.slice(1).map(candidate=>candidate.task.id)}));
  }
  async close(){this.closed=true;await this.polling?.catch(()=>{});}
  private assertSnapshot(snapshot:Snapshot){
@@ -508,6 +530,34 @@ export class AssistantFollowup {
   if(task.state==='cancelled'||task.state==='stale')return {task};
   const snapshot=this.snapshot(task);
   return {task,batch:this.batch.progress(snapshot.batchId)};
+ }
+ private assertRetryable(task:TaskRecord,snapshot:Snapshot){
+  this.assertSnapshot(snapshot);
+  const progress=this.batch.progress(snapshot.batchId);
+  if(!['waiting','blocked','failed'].includes(task.state)||!['blocked','failed'].includes(progress.task.state)||progress.items.some(item=>item.state==='running')||
+   !progress.items.some(item=>['failed','blocked'].includes(item.state))||this.control&&this.control.workState('batch:'+snapshot.batchId)!=='current'||
+   snapshot.admission.kind==='automatic'&&this.control?.view().state!=='on')throw new StoreError('Assistant analysis is not retryable',409);
+ }
+ retryView(taskId:string,scope:QueryScope){
+  const task=this.tasks.get(taskId);if(task.kind!=='assistant.followup'||['stale','cancelled'].includes(task.state))throw new StoreError('Assistant analysis not found',404);
+  const snapshot=this.snapshot(task);
+  if(!scopeContains(queryScopeSchema.parse(scope),snapshot.input.scope))throw new StoreError('Assistant analysis not found',404);
+  const allowedActions:('retry')[]=[];
+  try{this.assertRetryable(task,snapshot);allowedActions.push('retry');}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;}
+  return {task,batch:this.batch.progress(snapshot.batchId),scope:snapshot.input.scope,allowedActions};
+ }
+ /** Owner command only. The existing batch executor and automatic work keep
+  * their saved identity and authorization; model tools cannot call this. */
+ retry(taskId:string,expectedRevision:number,scope:QueryScope,changes:AssistantChangeFeed){
+  return this.transaction(()=>{
+   const task=this.tasks.get(taskId);if(task.kind!=='assistant.followup'||task.revision!==expectedRevision)throw new StoreError('Assistant analysis changed; reload before continuing',409);
+   const snapshot=this.snapshot(task);
+   if(canonicalRecipeJson(queryScopeSchema.parse(scope))!==canonicalRecipeJson(snapshot.input.scope))throw new StoreError('Assistant batch context changed',409);
+   this.assertRetryable(task,snapshot);
+   this.batch.retry(snapshot.batchId);changes.resume(snapshot.batchId);
+   this.tasks.setState(task.id,task.revision,'waiting');
+   return this.retryView(taskId,scope);
+  });
  }
  result(taskId:string,scope:QueryScope){
   const task=this.tasks.get(taskId);if(task.kind!=='assistant.followup'||task.state!=='succeeded')return;

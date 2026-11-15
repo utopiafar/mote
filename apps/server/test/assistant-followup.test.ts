@@ -531,6 +531,26 @@ test('a new file version lets A14 resolve the existing suggestion instead of los
 });
 
 
+test('a current catalog original already reviewed with a due group is claimed once while its own quiet timer is settling',async t=>{
+ const f=await fixture(t);let now=Date.now();
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ const paused=t.mock.method(f.service,'tick',async()=>{});
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const due=await f.add('Generated due original requires an owner.'),later=()=>f.add('Generated current catalog context is already included in this review.','generated-later');
+ f.node.assistantChanges.tick(100);now+=60001;
+ const context=await later();f.node.assistantChanges.tick(100);
+ assert.deepEqual(f.node.assistantChanges.ready().map(item=>item.input.captureId),[due.id],'the second original has deliberately not reached its own quiet deadline');
+ paused.mock.restore();f.programs.push(()=>answer([],[],'Generated current inputs were reviewed.'));
+ await f.service.tick(f.node.assistantChanges);
+ const task=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();assert.ok(task);await f.wait(f.tasks.get(String(task.id)));await f.service.tick(f.node.assistantChanges);
+ const rows=f.node.store.db.prepare('SELECT capture_id,started_batch,t.state FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE capture_id IN (?,?)').all(due.id,context.id);
+ assert.equal(rows.length,2);assert.ok(rows.every(row=>row.state==='succeeded'));assert.equal(rows[0].started_batch,rows[1].started_batch);
+ assert.ok(f.seen[0].originals.some(original=>original.quote.includes(context.text)),'the covered original was actually supplied in the existing review');
+ now+=60001;await f.service.tick(f.node.assistantChanges);
+ assert.equal(f.node.assistantChanges.ready().length,0);assert.equal(f.seen.length,1);assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.followup'").get()!.n,1);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,2);
+});
+
 test('an oversized automatic group is split with headroom and every original reaches a completed analysis',async t=>{
  const f=await fixture(t);let now=Date.now()+60001;
  (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;

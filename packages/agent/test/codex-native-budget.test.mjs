@@ -47,6 +47,9 @@ async function fixture(t, {mode = 'websocket', reject = 0, window = 144_000, mod
     tokens: {id_token: jwt, access_token: jwt, refresh_token: 'generated-unused-refresh', account_id: 'generated-account'}, last_refresh: new Date().toISOString()}
     : {OPENAI_API_KEY: 'generated-unused-key'}), {mode: 0o600});
   const rpcPath = join(root, 'rpc.jsonl'), stderrPath = join(root, 'stderr.log'), eventPath = join(root, 'events.jsonl');
+  // Complete-request admission can now reject before native startup. Empty
+  // transcripts still prove zero turns/sends rather than hiding that boundary.
+  await Promise.all([rpcPath,stderrPath,eventPath].map(path=>writeFile(path,'')));
   const requests = [], contexts = new Map();
   const probeRecord = {...record, ocrText: 'This generated test record confirms a read-only model tool round trip. No personal archive is connected.'};
   const probeReads = [];
@@ -427,15 +430,16 @@ for (const selection of [{model: 'gpt-5.4'}, {model: 'gpt-6.1-terra', serviceTie
   assert.equal(stats.reads, 0);
 });
 
-test('the saved per-query model budget reaches the native gate instead of the shared model default', {timeout: 30000}, async t => {
+test('the saved per-query model budget rejects an oversized full request before native startup', {timeout: 30000}, async t => {
   const f = await fixture(t, {window: 400000});
   await assert.rejects(f.agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline'],
     modelBudget: {contextWindow: 132000, maxTokens: 512, historyRatio: 0.5, lowWatermarkRatio: 0.5,
       tokenCounting: 'estimated', contextWindowSource: 'configured'}}), error =>
-    error instanceof AgentProviderError && error.details.code === 'processing_limit');
+    error instanceof AgentProviderError && error.details.code === 'processing_limit' && error.details.executionStarted === false);
   const stats = await f.stats();
   assert.equal(stats.generations, 0);
   assert.equal(stats.reads, 0);
+  assert.equal(stats.turns, 0);
 });
 
 test('conservative conversation budget uses the labeled native window instead of the HTTP fallback', {timeout: 30000}, async t => {
@@ -448,6 +452,14 @@ test('conservative conversation budget uses the labeled native window instead of
   assert.equal(stats.generations, 2);
   assert.equal(stats.reads, 1);
   assert.equal(stats.turns, 1);
+});
+
+test('an explicit larger owner window remains pinned while the native catalog and full output reserve constrain every send', {timeout: 30000}, async t => {
+  const f=await fixture(t,{model:'gpt-6.1-terra',serviceTier:'fast',chatgpt:true,window:400000,nativeWindow:500000});
+  const answer=await f.agent.query({question:'Read the generated timeline.',hostToolSelection:['timeline'],taskContext:{turns:[],generatedOriginal:'证'.repeat(105000)}});
+  assert.deepEqual(answer.citations.map(c=>c.id),[record.id]);
+  assert.ok(f.requests.some(({body,fullInput})=>estimateCodexRequestTokens({...body,input:fullInput})+reserve>272000),'the fallback cannot replace an explicit owner window');
+  const stats=await f.stats();assert.equal(stats.generations,2);assert.equal(stats.reads,1);assert.equal(stats.turns,1);assert.equal(stats.compacts,0);
 });
 
 test('native import recovery preserves a real workspace tool result without executing its command again', {timeout: 30000}, async t => {
@@ -484,7 +496,7 @@ for (const model of ['gpt-5.4', 'generated-unknown-model']) test(`native irreduc
   const stats = await f.stats();
   assert.equal(stats.generations, 0);
   assert.equal(stats.reads, 0);
-  assert.equal(stats.turns, 1);
+  assert.equal(stats.turns, model === 'gpt-5.4' ? 0 : 1);
 });
 
 test('production startup rejects an unpatched executable before linking credentials', {timeout: 10000}, async t => {
