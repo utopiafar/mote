@@ -66,10 +66,21 @@ import type {MemoryFeedbackRequest} from '../src/memory-feedback.js';
 async function httpFixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-questions-'));
  const config:Config={dataDir:directory,token:'generated-owner-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ let heldAnalysis:{entered:boolean;promise:Promise<void>;release:()=>void}|undefined;
  const calls:QueryInput[]=[],anchors=new Map<string,string[]>(),control={replyDisposition:'resolved' as 'resolved'|'followup'|'unknown',ownerObservation:false,contextUnresolved:false};
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;
-  calls.push(input);if(input.taskContext?.ownerClarificationReply)return {runId:'generated-answer-interpretation',answer:JSON.stringify({disposition:control.replyDisposition,...(control.replyDisposition==='followup'?{prompt:'Which utterance in this generated conversation belongs to you?'}:{})}),citations:[],trace:[]};if(input.traceContext?.phase==='feedback-planning'){const request=(input.taskContext!.memoryWork as {feedback:MemoryFeedbackRequest}).feedback,background=request.authorized.find(target=>node.memories.readEvidence([target.id])[0].ocrText.includes('Wholly generated independent record'))!;assert.ok(background);await input.hostControlChannel!.execute('delegation_submit',{units:[{id:'generated-context-only',capabilityId:'memory.feedback-group',title:'Inspect the generated missing background',goal:'Resolve only the actual evidence gap',input:{memberKeys:request.targets.map(target=>target.key),contextKeys:[background.key],instruction:'Use the specifically authorized background for this generated dependent range.'}}]});return {runId:'generated-context-plan',answer:'Generated scoped context plan submitted.',citations:[],trace:[]};}const plan=await fixtureMemoryPlan(input);if(plan)return plan;
+  calls.push(input);
+  if(input.taskContext?.materials){
+   if(heldAnalysis&&!heldAnalysis.entered){const held=heldAnalysis;held.entered=true;await held.promise;}
+   const context=input.taskContext as {originals:{id:string;offset:number;quote:string}[];pendingOwnerQuestions?:{id:string;revision:number;prompt:string}[];cards:{id:string}[];memories:{statement:string}[]};
+   const needle='Generated plan: deliver the release checklist.',original=context.originals.find(span=>span.quote.includes(needle));assert.ok(original,'follow-up reads the actual independent original');
+   const confirmed=context.memories.some(memory=>memory.statement.includes('The owner felt pressured at work'));
+   if(!confirmed)assert.ok(context.pendingOwnerQuestions?.length,'the unanswered identity is explicit model context');
+   const existing=context.cards[0];
+   return {runId:randomUUID(),answer:JSON.stringify({reason:confirmed?'Generated owner answer is now independently reviewed.':'Generated independent help is available while identity stays unknown.',cards:[{action:existing?'update':'new',cardId:existing?.id??null,relatedCardIds:existing?[existing.id]:[],title:'Generated release checklist',body:confirmed?'The owner confirmed the reported pressure; the release checklist remains actionable.':'The release checklist can be prepared. Participant identity remains unknown.',reason:'The generated original names the release checklist.',evidence:[{id:original.id,offset:original.offset+original.quote.indexOf(needle),quote:needle}],matterId:null}],commitments:[]}),citations:[],trace:[],evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};
+  }
+  if(input.taskContext?.ownerClarificationReply)return {runId:'generated-answer-interpretation',answer:JSON.stringify({disposition:control.replyDisposition,...(control.replyDisposition==='followup'?{prompt:'Which utterance in this generated conversation belongs to you?'}:{})}),citations:[],trace:[]};if(input.traceContext?.phase==='feedback-planning'){const request=(input.taskContext!.memoryWork as {feedback:MemoryFeedbackRequest}).feedback,background=request.authorized.find(target=>node.memories.readEvidence([target.id])[0].ocrText.includes('Wholly generated independent record'))!;assert.ok(background);await input.hostControlChannel!.execute('delegation_submit',{units:[{id:'generated-context-only',capabilityId:'memory.feedback-group',title:'Inspect the generated missing background',goal:'Resolve only the actual evidence gap',input:{memberKeys:request.targets.map(target=>target.key),contextKeys:[background.key],instruction:'Use the specifically authorized background for this generated dependent range.'}}]});return {runId:'generated-context-plan',answer:'Generated scoped context plan submitted.',citations:[],trace:[]};}const plan=await fixtureMemoryPlan(input);if(plan)return plan;
   const members=(input.taskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members;assert.ok(members,'production Memory must apply reviewed coverage to ordinary recipe jobs');
   const memories:any[]=[],coverage:any[]=[];
   for(const target of members){
@@ -87,13 +98,13 @@ async function httpFixture(t:TestContext){
  let node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
  const disable=async()=>{const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});};await disable();
  const api=(method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
- t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ t.after(async()=>{heldAnalysis?.release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const add=async(externalId:string,text=original)=>{
   if(!node.sources.listSources().some(source=>source.id==='generated-dialogues')){const response=await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});assert.equal(response.statusCode,200,response.body);}
   const response=await api('PUT','/api/sources/generated-dialogues/items',{externalId,revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text,document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});assert.equal(response.statusCode,200,response.body);await node.materialOrganizer.tick();await node.sourcePipelines.tick();const id=response.json().id as string,material=node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId===externalId)!;assert.ok(material);anchors.set(id,node.materials.evidenceIds(material.ref));return id;
  };
  const start=async(ids:string[],recipe={id:'mote.personal-memory',version:'5'})=>{const response=await api('POST','/api/memory-jobs',{evidenceIds:ids.flatMap(id=>anchors.get(id)??[id]),recipes:[recipe]});assert.equal(response.statusCode,202,response.body);return node.memoryPipeline.run(response.json().id);};
- return {get node(){return node;},api,add,start,calls,control,async questions(workId?:string){const response=await api('GET','/api/owner-questions'+(workId?'?operationId='+encodeURIComponent('memory:'+workId):''));assert.equal(response.statusCode,200,response.body);return response.json().items as any[];},async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();await disable();}};
+ return {get node(){return node;},api,add,start,calls,control,holdAnalysis(){const gate=Promise.withResolvers<void>();heldAnalysis={entered:false,promise:gate.promise,release:()=>gate.resolve()};return heldAnalysis;},async questions(workId?:string){const response=await api('GET','/api/owner-questions'+(workId?'?operationId='+encodeURIComponent('memory:'+workId):''));assert.equal(response.statusCode,200,response.body);return response.json().items as any[];},async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();await disable();}};
 }
 
 test('ordinary recipe work asks the owner directly and remains dormant across retry and restart',{timeout:30000},async t=>{
@@ -236,4 +247,52 @@ test('a resolved free-text declaration preserves the exact owner reply including
  const f=await httpFixture(t),id=await f.add('anonymous'),job=await f.start([id]),[pending]=await f.questions(job.id),answer='  I am the person describing the pressure.\n  ';
  const response=await f.api('POST','/api/owner-questions/'+pending.id+'/reply',{requestId:randomUUID(),expectedRevision:pending.revision,action:'answer',answer});assert.equal(response.statusCode,200,response.body);const continuation=await f.node.memoryPipeline.run(response.json().continuationId.replace(/^memory:/,''));assert.equal(continuation.status,'completed');assert.equal(response.json().messages.at(-1).text,answer);
  const records=f.node.memories.readEvidence(continuation.evidenceIds);assert.ok(records.every(record=>record.attributionContext?.ownerStatements?.at(-1)?.answer===answer));assert.equal(f.calls.filter(input=>Boolean(input.taskContext?.ownerClarificationReply)).length,1);
+});
+
+
+for(const replyAction of ['answer','unknown'] as const)test(`onboarding publishes independent help while identity stays open, then completes after owner ${replyAction}`,async t=>{
+ const f=await httpFixture(t),id=await f.add('onboarding-partial',original+' Generated plan: deliver the release checklist.');
+ const material=()=>f.node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId==='onboarding-partial')!;
+ const scope={kind:'selection',sourceIds:['generated-dialogues']};
+ const started=await f.api('POST','/api/assistant/onboarding',{requestId:randomUUID(),scope,materialRefs:[material().ref]});assert.equal(started.statusCode,202,started.body);
+ const runId=started.json().id;
+ const read=async()=>{const response=await f.api('GET','/api/assistant/onboarding/'+runId+'?'+new URLSearchParams({scope:JSON.stringify(scope)}));assert.equal(response.statusCode,200,response.body);return response.json();};
+ const until=async(check:(value:any)=>boolean)=>{const end=Date.now()+10000;let value;while(Date.now()<end){await f.node.featureServices.assistantOnboarding.tick();void f.node.executor.tick().catch(()=>{});value=await read();if(check(value))return value;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated onboarding did not progress: '+JSON.stringify(value));};
+ const partial=await until(value=>Boolean(value.items[0]?.result));
+ assert.equal(partial.state,'pending');assert.equal(partial.completed,0);assert.equal(partial.coverage.semantic.partial,1);assert.equal(partial.coverage.semantic.completed,0);
+ const item=partial.items[0];assert.equal(item.reason,'memory_owner_input_required');assert.equal(item.memory.status,'waiting_for_input');assert.equal(item.memory.completedBatches,item.memory.totalBatches);
+ assert.equal(item.result.cardIds.length,1);assert.ok(item.ownerQuestions.length);
+ const [pending]=await f.questions(item.memory.id);assert.equal(pending.state,'open');assert.equal(item.ownerQuestions[0].id,pending.id);
+ const card=f.node.featureServices.assistantCards.get(item.result.cardIds[0],scope);assert.match(card.body,/Participant identity remains unknown/);
+ assert.equal(f.node.memories.list().some(memory=>memory.statement.includes('The owner felt pressured at work')),false);
+ const calls=f.calls.filter(input=>input.taskContext?.materials).length;await f.node.featureServices.assistantOnboarding.tick();await f.node.featureServices.assistantOnboarding.tick();assert.equal(f.calls.filter(input=>input.taskContext?.materials).length,calls,'polling keeps the partial result without repeating it');
+ await f.restart();const restored=await read();assert.equal(restored.items[0].result.cardIds[0],card.id);assert.equal((await f.questions(item.memory.id))[0].state,'open');
+ const reply=await f.api('POST','/api/owner-questions/'+pending.id+'/reply',{requestId:randomUUID(),expectedRevision:pending.revision,action:replyAction,...(replyAction==='answer'?{choiceId:'describing'}:{})});assert.equal(reply.statusCode,200,reply.body);
+ const answered=reply.json();assert.equal(answered.state,replyAction==='answer'?'answered':'closed');
+ if(replyAction==='answer'){const continuation=await f.node.memoryPipeline.run(answered.continuationId.replace(/^memory:/,''));assert.equal(continuation.status,'completed');}else await f.node.memoryPipeline.run(item.memory.id);
+ const complete=await until(value=>value.state==='completed');assert.equal(complete.completed,1);assert.equal(complete.coverage.semantic.completed,1);assert.equal(complete.items[0].ownerQuestions.length,0);
+ assert.equal(f.node.memoryPipeline.get(item.memory.id).cancellationCause,undefined,'onboarding must preserve the answered question and its continuation');
+ const final=f.node.featureServices.assistantCards.get(complete.items[0].result.cardIds[0],scope);assert.equal(final.id,card.id);assert.match(final.body,replyAction==='answer'?/owner confirmed/:/Participant identity remains unknown/);
+ if(replyAction==='answer')assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE id IN (SELECT selection_id FROM assistant_onboarding_items WHERE onboarding_id=?) AND input_json IS NULL").get(runId)!.n,1,'the owner reply does not restore a retired private selection body');
+ else assert.equal(f.node.memories.list().some(memory=>memory.statement.includes('The owner felt pressured at work')),false);
+ assert.equal((await f.questions(item.memory.id))[0].state,replyAction==='answer'?'answered':'closed');
+ f.node.store.delete(id);assert.equal((await read()).items.length,0,'a saved owner reply never grants a deleted original');
+ assert.throws(()=>f.node.featureServices.assistantCards.get(final.id,scope),{statusCode:404});
+});
+
+
+test('an owner answer during partial onboarding rejects the held earlier interpretation and continues with the answered current original',async t=>{
+ const f=await httpFixture(t),id=await f.add('onboarding-held',original+' Generated plan: deliver the release checklist.');
+ const material=f.node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId==='onboarding-held')!;
+ const scope={kind:'selection',sourceIds:['generated-dialogues']},held=f.holdAnalysis();
+ const started=await f.api('POST','/api/assistant/onboarding',{requestId:randomUUID(),scope,materialRefs:[material.ref]});assert.equal(started.statusCode,202,started.body);const runId=started.json().id;
+ const read=async()=>{const response=await f.api('GET','/api/assistant/onboarding/'+runId+'?'+new URLSearchParams({scope:JSON.stringify(scope)}));assert.equal(response.statusCode,200,response.body);return response.json();};
+ const until=async(check:()=>Promise<boolean>)=>{const end=Date.now()+10000;while(Date.now()<end){await f.node.featureServices.assistantOnboarding.tick();void f.node.executor.tick().catch(()=>{});if(await check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated held onboarding did not reach its controlled state');};
+ await until(async()=>held.entered);const progress=await read(),memoryId=progress.items[0].memory.id,[pending]=await f.questions(memoryId);assert.equal(pending.state,'open');
+ const reply=await f.api('POST','/api/owner-questions/'+pending.id+'/reply',{requestId:randomUUID(),expectedRevision:pending.revision,action:'answer',choiceId:'describing'});assert.equal(reply.statusCode,200,reply.body);
+ await f.node.memoryPipeline.run(reply.json().continuationId.replace(/^memory:/,''));held.release();
+ await until(async()=>(await read()).state==='completed');
+ const finished=await read(),card=f.node.featureServices.assistantCards.get(finished.items[0].result.cardIds[0],scope);
+ assert.match(card.body,/owner confirmed/);assert.equal(f.node.featureServices.assistantCards.page({scope}).items.length,1,'the held unknown interpretation never publishes a second card');
+ assert.equal((await f.questions(memoryId))[0].state,'answered');assert.equal(f.node.memoryPipeline.get(memoryId).cancellationCause,undefined);
 });

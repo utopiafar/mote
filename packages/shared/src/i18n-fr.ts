@@ -10760,5 +10760,6 @@ export const french: Readonly<Record<string, string>> = {
   "此浏览器还没有可恢复的初次认识记录。": "Ce navigateur ne contient aucune prise de connaissance à reprendre.",
   "最近后台活动；更多任务和结果可进入查看。": "Activités récentes en arrière-plan ; ouvrez pour voir les autres tâches et résultats.",
   "本页建议关联的任务": "Tâches liées aux suggestions de cette page",
-  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Aucune suggestion de cette page ne comporte de tâche liée. Consultez la conversation principale ou les sujets pour les autres tâches."
+  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Aucune suggestion de cette page ne comporte de tâche liée. Consultez la conversation principale ou les sujets pour les autres tâches.",
+  "已有部分结果；需要你补充的问题只影响相关结论。": "Des résultats partiels sont disponibles. Les questions en attente de votre réponse ne concernent que les conclusions associées."
 };

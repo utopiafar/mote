@@ -4,6 +4,7 @@ import {moteText} from '@mote/shared/i18n';
 export type CoverageCounts={completed:number;total:number;partial?:number;pending?:number;failed?:number;unsupported?:number;reason?:string};
 export type OnboardingItem={material:{ref:string;title:string;sourceId:string};state:'completed'|'cancelled'|'failed'|'pending';
  coverage:{sync:FileCoverage;extraction:FileCoverage;semantic:FileCoverage};reason?:string;
+ result?:{reason:string;cardIds:string[];commitmentIds:string[]};ownerQuestions?:{id:string;revision:number;prompt:string;reason?:string;state:'open'|'deferred'}[];
  memory?:{id:string;status:string;completedBatches:number;totalBatches:number}};
 export type OnboardingView={id:string;revision:number;state:'cancelled'|'empty'|'completed'|'failed'|'pending';
  coverage:{sync:CoverageCounts;extraction:CoverageCounts;semantic:CoverageCounts};
@@ -30,5 +31,9 @@ export function parseOnboarding(value:unknown):OnboardingView{
  for(const stage of Object.values(view.coverage))if(!Number.isSafeInteger(stage.completed)||!Number.isSafeInteger(stage.total)||stage.completed<0||stage.total<stage.completed)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
  if(!view.items.every(item=>item&&typeof item==='object'&&typeof (item as OnboardingItem).material?.ref==='string'&&typeof (item as OnboardingItem).material?.title==='string'&&typeof (item as OnboardingItem).material?.sourceId==='string'&&
   typeof (item as OnboardingItem).coverage?.sync?.status==='string'&&typeof (item as OnboardingItem).coverage?.extraction?.status==='string'&&typeof (item as OnboardingItem).coverage?.semantic?.status==='string'))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+ for(const item of view.items){
+  if(item.result!==undefined&&(typeof item.result?.reason!=='string'||!Array.isArray(item.result.cardIds)||!item.result.cardIds.every(id=>typeof id==='string')||!Array.isArray(item.result.commitmentIds)||!item.result.commitmentIds.every(id=>typeof id==='string')))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+  if(item.ownerQuestions!==undefined&&(!Array.isArray(item.ownerQuestions)||!item.ownerQuestions.every(question=>typeof question?.id==='string'&&typeof question.prompt==='string'&&Number.isSafeInteger(question.revision)&&question.revision>0&&['open','deferred'].includes(question.state)&&(question.reason===undefined||typeof question.reason==='string'))))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+ }
  return view as OnboardingView;
 }

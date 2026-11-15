@@ -571,14 +571,14 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
   assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
-  },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics);
+  },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics,ownerQuestionServices.port);
   const followup=assistantFollowup;
   tickAssistantFollowup=()=>{void followup.tick(assistantChanges).catch(()=>{});};
   resources.beforeClose(async()=>{tickAssistantFollowup=()=>{};await followup.close();});
   app.addHook('onReady',async()=>{tickAssistantFollowup();});
   assistantOnboarding=new AssistantOnboarding(store,materials,evidenceReader,modelAuthorization,memoryPipeline,assistantFollowup,availableModelConnections,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Onboarding evidence is no longer permitted',409);
-  },ref=>materialMemoryWork.sourceRequirements(ref),sourcePipelines.archive);
+  },ref=>materialMemoryWork.sourceRequirements(ref),sourcePipelines.archive,ownerQuestionServices.port,diagnostics);
   resources.beforeClose(()=>assistantOnboarding!.close());
   app.addHook('onReady',async()=>{void assistantOnboarding!.tick().catch(()=>{});});
   const featureServices=Object.freeze({

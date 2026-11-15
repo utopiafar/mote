@@ -13,6 +13,7 @@ import {assistantDiscoveryTarget,assistantEntrypoints} from '../../assistant-ent
 import type {AssistantTaskResultItem} from '../ask/AssistantTaskResults';
 import {matterLabel} from '../assistant/common';
 import {onboardingCapabilities,parseOnboarding,readStoredOnboardingRun} from '../sources/onboarding';
+import {ownerQuestionRoute} from '../../owner-question-route';
 import {WorkStateBadge} from '../work/WorkProgress';
 import type {HomeRead,HomeSnapshot} from './controller';
 import {assistantScopeQuery,homeAssistantScope,type AssistantCard} from './assistant-cards';
@@ -36,6 +37,7 @@ export function AssistantEntry({state}:{state:HomeSnapshot}){
  const stored=readStoredOnboardingRun(),read=state.onboarding;
  const parsed=useMemo(()=>{if(read.data===undefined||read.error!==undefined)return;try{return parseOnboarding(read.data);}catch(error){return error instanceof Error?error:new Error(moteText('中央响应格式无效，请刷新后重试。'));}},[read.data,read.error]);
  const run=parsed instanceof Error?undefined:parsed;
+ const ownerQuestions=run?.items.flatMap(item=>item.ownerQuestions??[])??[];
  const canOnboarding=supports('/api/assistant/onboarding/:id');
  const canWork=supports('/api/work-activity')&&state.availability.pages.some(page=>page.id==='activity');
  const canMatters=supports('/api/assistant/matters')&&state.availability.pages.some(page=>page.id==='assistantMatters');
@@ -56,7 +58,10 @@ export function AssistantEntry({state}:{state:HomeSnapshot}){
     <DiscoveryLink className="home-assistant-destination-link" disabledAs="div" target={{pageId:'sources',href:'#/connections',requires:[...onboardingCapabilities]}}><strong>{moteText('初次认识')}</strong><ArrowRight size={15}/></DiscoveryLink>
     {canOnboarding&&<>
      {!stored?<p>{moteText('此浏览器还没有可恢复的初次认识记录。')}</p>:<><ReadState read={read}/>{parsed instanceof Error&&<FirstDataFailure error={parsed}/>}</>}
-     {run&&<div role="status"><strong>{moteText(run.state==='pending'?'处理中':run.state==='failed'?'处理失败':run.state==='cancelled'?'已取消':run.state==='empty'?'所选资料当前不可读取，请检查来源授权后重新选择。':'本次选择的资料已完成；其他资料未包含。')}</strong><p>{moteText('正文提取')} {run.coverage.extraction.completed} / {run.coverage.extraction.total}<br/>{moteText('语义理解')} {run.coverage.semantic.completed} / {run.coverage.semantic.total}</p></div>}
+     {run&&<div role="status"><strong>{moteText(run.state==='pending'?(ownerQuestions.length?'需要你补充':'处理中'):run.state==='failed'?'处理失败':run.state==='cancelled'?'已取消':run.state==='empty'?'所选资料当前不可读取，请检查来源授权后重新选择。':'本次选择的资料已完成；其他资料未包含。')}</strong><p>{moteText('正文提取')} {run.coverage.extraction.completed} / {run.coverage.extraction.total}<br/>{moteText('语义理解')} {run.coverage.semantic.completed} / {run.coverage.semantic.total}</p>
+      {ownerQuestions.length>0&&run.items.some(item=>item.result)&&<p>{moteText('已有部分结果；需要你补充的问题只影响相关结论。')}</p>}
+      {ownerQuestions.map(question=><a key={question.id} className="text-button" href={ownerQuestionRoute(question.id)}>{question.prompt}</a>)}
+     </div>}
      <small>{moteText('连接成功只表示可以同步，不代表全库已经理解。')}</small>
     </>}
     {Boolean(revoked)&&<p className="notice">{moteText('需要重新授权')} · {revoked}</p>}

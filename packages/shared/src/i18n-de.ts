@@ -10760,5 +10760,6 @@ export const german: Readonly<Record<string, string>> = {
   "此浏览器还没有可恢复的初次认识记录。": "In diesem Browser gibt es keine erste Erkundung zum Fortsetzen.",
   "最近后台活动；更多任务和结果可进入查看。": "Letzte Hintergrundaktivitäten; öffne die Ansicht für weitere Aufgaben und Ergebnisse.",
   "本页建议关联的任务": "Mit Vorschlägen dieser Seite verknüpfte Aufgaben",
-  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Die Vorschläge auf dieser Seite haben keine verknüpften Aufgaben. Weitere Aufgaben findest du im Hauptgespräch oder unter Angelegenheiten."
+  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Die Vorschläge auf dieser Seite haben keine verknüpften Aufgaben. Weitere Aufgaben findest du im Hauptgespräch oder unter Angelegenheiten.",
+  "已有部分结果；需要你补充的问题只影响相关结论。": "Teilergebnisse sind verfügbar. Fragen, die deine Antwort benötigen, betreffen nur die zugehörigen Schlussfolgerungen."
 };

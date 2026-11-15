@@ -9,6 +9,7 @@ import {useResource} from '../../useResource';
 import type {Material} from '../../Materials';
 import {FileRetentionNote,fileRetentionLabel} from '../reader/FileStatus';
 import {onboardingCapabilities,parseOnboarding,readStoredOnboardingRun as readStoredRun,writeStoredOnboardingRun as writeStoredRun,type CoverageCounts,type OnboardingItem,type StoredRun} from './onboarding';
+import {ownerQuestionRoute} from '../../owner-question-route';
 
 type MaterialPage={items:Material[];nextCursor:string|null};
 
@@ -18,7 +19,7 @@ const reasonLabels:Record<string,string>={extraction_failed:moteText('原文提�
  memory_processing_unavailable:moteText('理解没有完成，请检查模型与服务后重试。'),memory_processing_failed:moteText('理解没有完成，请检查模型与服务后重试。'),
  assistant_analysis_changed:moteText('理解没有完成，请检查模型与服务后重试。'),assistant_analysis_failed:moteText('理解没有完成，请检查模型与服务后重试。'),
  understanding_input_changed:moteText('理解没有完成，请检查模型与服务后重试。'),understanding_input_limit:moteText('这次选择的资料超过单次处理上限，请减少选择后重试。'),
- understanding_unavailable:moteText('理解没有完成，请检查模型与服务后重试。')};
+ understanding_unavailable:moteText('理解没有完成，请检查模型与服务后重试。'),memory_owner_input_required:moteText('需要你补充')};
 const modelReasons=new Set(['model_unconfigured','model_not_configured','provider_not_configured','provider_authentication','provider_quota','provider_endpoint','provider_unavailable','model_profile_missing']);
 
 function selectedScope(values:readonly {origin:{sourceId:string}}[]):QueryScope{
@@ -194,7 +195,15 @@ export function SourceOnboarding({api,sources,onAdd,loading=false}:{api:Api;sour
    {!active&&resumable.length>0&&<p className="fine-print">{moteText('取消后已完成的结果会保留；继续只会处理未完成的资料。')}</p>}
    {run?.state==='empty'&&<p className="source-onboarding-unavailable" role="status">{moteText('所选资料当前不可读取，请检查来源授权后重新选择。')}</p>}
    {run?.state==='completed'&&<p className="source-onboarding-complete" role="status">{moteText('本次选择的资料已完成；其他资料未包含。')}</p>}
-   {run&&run.items.length>0&&<ul className="source-onboarding-items" aria-label={moteText('本次资料')}>{run.items.map(item=><li key={item.material.ref} data-item-state={item.state}><div><strong>{item.material.title}</strong><span>{itemStateLabel(item.state)}</span></div><small>{moteText('正文提取')} · {statusLabels[item.coverage.extraction.status]} · {moteText('语义理解')} · {statusLabels[item.coverage.semantic.status]}</small>{item.reason&&<p>{reasonText(item.reason)}{modelReasons.has(item.reason)&&<> · <a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a></>}</p>}{item.memory&&item.memory.status!=='completed'&&<small>{moteText('处理中')} · {item.memory.completedBatches} / {item.memory.totalBatches}</small>}</li>)}</ul>}
+   {run&&run.items.length>0&&<ul className="source-onboarding-items" aria-label={moteText('本次资料')}>{run.items.map(item=><li key={item.material.ref} data-item-state={item.state}>
+    <div><strong>{item.material.title}</strong><span>{item.reason==='memory_owner_input_required'?moteText('需要你补充'):itemStateLabel(item.state)}</span></div>
+    <small>{moteText('正文提取')} · {statusLabels[item.coverage.extraction.status]} · {moteText('语义理解')} · {statusLabels[item.coverage.semantic.status]}</small>
+    {item.reason&&<p>{reasonText(item.reason)}{modelReasons.has(item.reason)&&<> · <a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a></>}</p>}
+    {item.result&&<div data-onboarding-result><p>{item.result.reason}</p>{item.result.cardIds.length>0&&<a className="text-button" href="#/today">{moteText('查看结果与依据 →')}</a>}</div>}
+    {item.result&&Boolean(item.ownerQuestions?.length)&&<p role="status">{moteText('已有部分结果；需要你补充的问题只影响相关结论。')}</p>}
+    {item.ownerQuestions?.map(question=><div key={question.id} data-onboarding-question><a className="text-button" href={ownerQuestionRoute(question.id)}>{question.prompt}</a>{question.reason&&<p>{question.reason}</p>}</div>)}
+    {item.memory&&item.memory.status!=='completed'&&<small>{moteText(item.reason==='memory_owner_input_required'?'处理进度':'处理中')} · {item.memory.completedBatches} / {item.memory.totalBatches}</small>}
+   </li>)}</ul>}
    {visibleError&&<div className="source-onboarding-error"><p role="alert">{visibleError}</p>{technicalError&&<details><summary>{moteText('技术详情')}</summary><pre>{technicalError}</pre></details>}{error&&<a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a>}</div>}
   </>}
  </section>;
