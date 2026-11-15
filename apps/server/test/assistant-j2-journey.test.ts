@@ -26,7 +26,7 @@ async function until<T>(read:()=>T|Promise<T>,label:string,timeout=8000):Promise
  throw Error(`Timed out waiting for ${label}: ${JSON.stringify(value)}`);
 }
 
-async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclude'|'budget'){
+async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclude'|'budget',documentMetadata=false){
  const directory=mkdtempSync(join(tmpdir(),'mote-j2-'));
  const held=Promise.withResolvers<void>();let entered=false;
  const requests:string[]=[],providerErrors:unknown[]=[],observations:ReturnType<FileObservationReader['read']>[]=[];
@@ -76,7 +76,7 @@ async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclu
  t.after(async()=>{held.resolve();await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
  const call=async(method:string,url:string,payload?:unknown)=>{const response=await fetch(base+url,{method,headers:{...headers,...(payload===undefined?{}:{'content-type':'application/json'})},...(payload===undefined?{}:{body:JSON.stringify(payload)})});const value=await response.json();assert.ok(response.ok,`${url}: ${response.status} ${JSON.stringify(value)}`);return value as any;};
  const upload=async(revision:string,previousRevision:string|null,text:string)=>{
-  const bytes=Buffer.from(text),item={externalId:'plan.txt',revision,observedAt:new Date().toISOString(),title:'Generated plan',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false};
+  const bytes=Buffer.from(text),item={externalId:'plan.txt',revision,observedAt:new Date().toISOString(),title:'Generated plan',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false,...(documentMetadata?{document:{recordedAt:new Date().toISOString(),timeBasis:'recorded',contentRole:'authored',path:'generated-plan.txt'}}:{})};
   const manifest={sourceId:'j2-files',relativePath:'plan.txt',previousRevision,item,sizeBytes:bytes.length,sha256:sha256(bytes)};
   const started=await call('POST','/api/file-sync/v1/uploads',manifest);
   const part=await fetch(base+`/api/file-sync/v1/uploads/${started.uploadId}/parts/0`,{method:'PUT',headers:{...headers,'content-type':'application/octet-stream'},body:bytes});assert.equal(part.status,200,await part.text());
@@ -183,3 +183,6 @@ test('a queued automatic file review resumes after restart with the same analysi
 test('off drains the admitted file review and withholds the next review until on',t=>journey(t,'off'));
 test('stop rejects a held automatic file response without re-admitting its original',t=>journey(t,'stop'));
 test('excluding a note used by the file review fences its held response and retains the admitted analysis identity',t=>journey(t,'exclude'));
+
+
+test('an uploaded document with an unknown event time survives frozen JSON and updates the same suggestion',t=>journey(t,undefined,true));
