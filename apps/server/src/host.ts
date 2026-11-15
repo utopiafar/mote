@@ -3,6 +3,10 @@ import {AssistantWorkbench} from './assistant-workbench.js';
 import {registerAssistantMatterRoutes} from './assistant-matter-routes.js';
 import {AssistantCards} from './assistant-cards.js';
 import {AssistantFollowup} from './assistant-followup.js';
+import {registerAssistantFollowupRoutes} from './assistant-followup-routes.js';
+import {queryModelBudget} from './query-model-budget.js';
+import {codexContextCapacity} from '@mote/agent';
+import type {ConversationSettings} from '@mote/shared';
 import {AssistantOnboarding} from './assistant-onboarding.js';
 import {AssistantCommitments} from './assistant-commitments.js';
 import {assertSourceContextDependencies} from './source-context-lineage.js';
@@ -303,7 +307,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   let assistantTasks:AssistantTasks|undefined;
   let assistantFollowup:AssistantFollowup|undefined;
   let tickAssistantFollowup=()=>{};
-  const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
+  const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>{
+    const prepared=assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input;
+    return query.queryAgent(assistantFollowup?assistantFollowup.prepareQuery(prepared):prepared,'query','conversations');
+  },ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
     ()=>agent.configured?undefined:new ExecutionFailure('blocked','model_not_configured'),()=>1,true,evidenceReader.memories,{
@@ -329,8 +336,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     if(!record||!withinEvidenceScope(record,scope)||!evidenceReader.contextDependenciesAllowed([record.id],new EvidenceExposurePolicy())||!automaticEvidenceAllowed([record.id]))return;
     return {revision:item.revision,calendar:item.calendar};
   },(id,scope)=>{try{const matter=assistantMatters.get(id);return matter.state==='active'&&isDeepStrictEqual(matter.scope,scope);}catch{return false;}});
-  contributeDomainRoutes(backendContext,{'mote.ask':{mount:app=>registerAssistantMatterRoutes(app,{store,matters:assistantMatters,routines:assistantRoutines,
-    commitments:assistantCommitments,tasks:assistantTasks!,reader:evidenceReader,owner:req=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);}})}});
+  contributeDomainRoutes(backendContext,{'mote.ask':{mount:app=>{
+    const owner=(req:FastifyRequest)=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);};
+    registerAssistantMatterRoutes(app,{store,matters:assistantMatters,routines:assistantRoutines,commitments:assistantCommitments,tasks:assistantTasks!,reader:evidenceReader,owner});
+    registerAssistantFollowupRoutes(app,()=>assistantFollowup!,()=>assistantChanges,owner);
+  }}});
   assistantDrafts.setVersionValidator(context=>assistantTasks!.validateDraftVersion(context));
   assistantDrafts.register('assistant.task.start',context=>assistantTasks!.start(context));
   resources.defer(()=>batchProcessing.close());
@@ -576,7 +586,12 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
   assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
-  },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics,ownerQuestionServices.port);
+  },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics,ownerQuestionServices.port,()=>{
+    const settings=modelSettings.select('chat').settings;if(settings.protocol!=='codex-app-server')return;
+    const budget=queryModelBudget(settings.maxTokens,configService.current<ConversationSettings>('conversations').context);
+    const capacity=codexContextCapacity(settings.model,budget.contextWindowSource==='configured'?budget.contextWindow:undefined);
+    return capacity?{...capacity,draftTokens:settings.maxTokens,language:requestLocale.getStore()??'zh-CN'}:undefined;
+  });
   const followup=assistantFollowup;
   tickAssistantFollowup=()=>{void followup.tick(assistantChanges).catch(()=>{});};
   resources.beforeClose(async()=>{tickAssistantFollowup=()=>{};await followup.close();});

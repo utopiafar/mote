@@ -145,9 +145,12 @@ export class BatchProcessing {
       if(Buffer.byteLength(summaries)>48000)throw new ExecutionFailure('blocked','batch_reduce_input_too_large');
       taskContext={turns:[],untrustedInterpretations:summaries};
     }
-    const assert=()=>{signal.throwIfAborted();assertGrant();const current=this.parent(step);
+    // Context-only originals remain in the authority fence even when they are
+    // unread catalog entries. Exclusion is an authorization wait, before the
+    // generic current-input check can classify that same revocation as stale.
+    const assert=()=>{signal.throwIfAborted();this.assertDisclosure(frozen.evidenceIds);assertGrant();const current=this.parent(step);
       this.tasks.evidenceDependencies(current.id,current.revision,this.current(current.id));
-      this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);for(const result of inputs)this.assertResultCurrent(result);};
+      this.pins(frozen);for(const result of inputs)this.assertResultCurrent(result);};
     assert();
     const result=await this.query({...frozen,executionLane:'background',...(frozen.evidenceIds.length?{}:{hostRetrieval:'none' as const}),
       contextTime:plan.contextTime,contextEvidenceDependencies:deps(frozen.evidenceIds),...(sourceContexts?.length?{contextSourceContextDependencies:sourceContexts}:{}),assertContextAuthority:assert,signal,...(taskContext?{taskContext}:{}),

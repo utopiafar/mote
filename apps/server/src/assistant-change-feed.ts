@@ -315,6 +315,14 @@ export class AssistantChangeFeed {
   }while(cursor);
   return selected;
  }
+ /** A due review can already include another current Material as context.
+  * Coalesce its exact ready input too, even while its quiet timer is settling;
+  * that timer must not create a second review of the same inspected version. */
+ covered(refs:readonly string[]):ReadyChange[]{
+  const selected=new Map(refs.map(ref=>{const material=this.materials.get(ref);if(!material)throw new StoreError('Assistant material changed',409);return [material.id,ref];}));
+  return (this.store.db.prepare('SELECT * FROM assistant_change_work WHERE material_id IN (SELECT value FROM json_each(?)) AND started_batch IS NULL AND needs_review=0').all(JSON.stringify([...selected.keys()])) as WorkRow[])
+   .flatMap(row=>{const ready=this.readyInput(row,Number.MAX_SAFE_INTEGER);return ready&&ready.input.material?.ref===selected.get(row.material_id!)?[ready]:[];});
+ }
  /** A preparation failure consumes no original receipt. Keep the frozen input
   * retryable, behind untouched work, rather than blocking the whole catalog. */
  defer(taskId:string){
@@ -337,7 +345,17 @@ export class AssistantChangeFeed {
     if(prior.id!==row.started_batch)throw new StoreError('Assistant change was already submitted',409);
     return prior;
    }
-   const taskIds=[...new Set([taskId,...context.taskIds])],ready=this.ready(taskIds),selected=taskIds.map(id=>ready.find(candidate=>candidate.task.id===id));
+   const taskIds=[...new Set([taskId,...context.taskIds])],ready=this.ready([taskId]);
+   const coveredIds=new Set([...context.evidenceIds,...request.items.flatMap(item=>item.evidenceIds)]);
+   // The first input must be due. Additional inputs are already included in
+   // the host's frozen context; validate their current version and full lineage
+   // without waiting to analyze that same context again after its quiet timer.
+   for(const id of taskIds.slice(1)){
+    const row=this.store.db.prepare('SELECT * FROM assistant_change_work WHERE task_id=? AND started_batch IS NULL AND needs_review=0').get(id) as WorkRow|undefined;
+    const covered=row&&this.readyInput(row,Number.MAX_SAFE_INTEGER);
+    if(covered&&covered.input.evidenceIds.every(id=>coveredIds.has(id)))ready.push(covered);
+   }
+   const selected=taskIds.map(id=>ready.find(candidate=>candidate.task.id===id));
    if(selected.some(candidate=>!candidate))throw new StoreError('Assistant change is not ready',409);
    this.assertCurrent(context.evidenceIds);
    const allowed=new Set([...selected.flatMap(candidate=>candidate!.input.evidenceIds),...context.evidenceIds]);
@@ -357,6 +375,18 @@ export class AssistantChangeFeed {
     const input=this.tasks.input<AssistantChangeInput>(task.id,task.revision,this.assertCurrent);
     this.tasks.saveResult(task.id,task.revision,result,{version:1,complete:true,ids:input.evidenceIds},this.assertCurrent);
     this.store.db.prepare('UPDATE assistant_change_work SET needs_review=0 WHERE task_id=?').run(task.id);
+   }
+  });
+ }
+ /** Explicit owner retry resumes the already claimed work. It creates no new
+  * receipt, trigger or batch, and rechecks the frozen input before projection. */
+ resume(batchId:string){
+  this.transaction(()=>{
+   for(const row of this.store.db.prepare('SELECT task_id FROM assistant_change_work WHERE started_batch=?').all(batchId)){
+    const task=this.tasks.get(String(row.task_id));
+    if(task.state!=='blocked'&&task.state!=='running')throw new StoreError('Assistant change is not retryable',409);
+    this.tasks.input<AssistantChangeInput>(task.id,task.revision,this.assertCurrent);
+    if(task.state==='blocked')this.tasks.setState(task.id,task.revision,'running');
    }
   });
  }

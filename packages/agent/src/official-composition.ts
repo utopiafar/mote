@@ -21,7 +21,7 @@ import {ContextToolError} from './tool-errors.js';
 import {codexImageMetadata, type ImagePayload} from './tools/image-result.js';
 import {startBridge} from './bridge.js';
 import {displayTime} from './time.js';
-import {CODEX_CONSERVATIVE_CONTEXT_WINDOW} from './runtime/codex/launch.js';
+import {CODEX_CONSERVATIVE_CONTEXT_WINDOW,codexContextCapacity} from './runtime/codex/launch.js';
 import {harnessPrivacyEntries, resolveModelCapabilities, validateModelOptions} from './models/provider-registry.js';
 import {estimateSerializedTokens} from './models/context-budget.js';
 import {estimateToolPayloadTokens} from './models/image-budget.js';
@@ -324,10 +324,12 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       // configured per-run and model windows remain pinned.
       const codexConservative=selectedRuntime.id===CODEX_RUNTIME_ID&&(input.modelBudget?.contextWindowSource==='conservative'||!input.modelBudget&&options.contextWindow===undefined);
       const capacity=input.modelBudget??resolveModelCapabilities(options);
-      const window=codexConservative?CODEX_CONSERVATIVE_CONTEXT_WINDOW:capacity.contextWindow,outputReserve='maxOutputTokens' in capacity?capacity.maxOutputTokens:capacity.maxTokens;
+      const requestedWindow=codexConservative?CODEX_CONSERVATIVE_CONTEXT_WINDOW:capacity.contextWindow;
+      const nativeOutputReserve=selectedRuntime.id===CODEX_RUNTIME_ID?codexContextCapacity(options.model??'')?.maxOutputTokens:undefined;
+      const window=requestedWindow,outputReserve=nativeOutputReserve??('maxOutputTokens' in capacity?capacity.maxOutputTokens:capacity.maxTokens);
       // This is a conservative pre-delivery allowance. The HTTP adapter checks
       // its complete, actual serialized body again for every provider turn.
-      const initialEstimate=estimateSerializedTokens({system,tools:definitions,prompt}).tokens;
+      const initialEstimate=estimateSerializedTokens({system,tools:definitions,prompt,outputSchema}).tokens;
       // Early Host allowance only. The required Mote native dependency checks
       // each complete provider request again, including internal continuations,
       // using its documented model output ceiling rather than Host maxTokens.
