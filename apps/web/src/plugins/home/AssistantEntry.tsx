@@ -60,7 +60,7 @@ export function AssistantEntry({state}:{state:HomeSnapshot}){
      {!stored?<p>{moteText('此浏览器还没有可恢复的初次认识记录。')}</p>:<><ReadState read={read}/>{parsed instanceof Error&&<FirstDataFailure error={parsed}/>}</>}
      {run&&<div role="status"><strong>{moteText(run.state==='pending'?(ownerQuestions.length?'需要你补充':'处理中'):run.state==='failed'?'处理失败':run.state==='cancelled'?'已取消':run.state==='empty'?'所选资料当前不可读取，请检查来源授权后重新选择。':'本次选择的资料已完成；其他资料未包含。')}</strong><p>{moteText('正文提取')} {run.coverage.extraction.completed} / {run.coverage.extraction.total}<br/>{moteText('语义理解')} {run.coverage.semantic.completed} / {run.coverage.semantic.total}</p>
       {ownerQuestions.length>0&&run.items.some(item=>item.result)&&<p>{moteText('已有部分结果；需要你补充的问题只影响相关结论。')}</p>}
-      {ownerQuestions.map(question=><a key={question.id} className="text-button" href={ownerQuestionRoute(question.id)}>{question.prompt}</a>)}
+      {ownerQuestions.map(question=><a key={question.id} className="text-button multiline" href={ownerQuestionRoute(question.id)}>{question.prompt}</a>)}
      </div>}
      <small>{moteText('连接成功只表示可以同步，不代表全库已经理解。')}</small>
     </>}

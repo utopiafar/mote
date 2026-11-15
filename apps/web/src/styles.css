@@ -235,6 +235,13 @@ strong {
   color: var(--mote-accent);
   white-space: nowrap;
 }
+.text-button.multiline {
+  display: block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
 .text-button:hover:not(:disabled) {
   color: var(--mote-accent-hover);
 }
