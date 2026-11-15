@@ -86,7 +86,12 @@ export class FileObservationReader {
       const extraction:FileCoverage=p.deleted?{status:'unsupported',reason:'deletion_revision_has_no_body'}:reference?{status:'unsupported',reason:'original_body_not_collected'}:inline?{status:'ready'}:{status:'pending',reason:'body_coverage_unknown'};
       coverage={extraction,semantic:{status:noBody?'unsupported':'pending'},embedding:{status:noBody?'unsupported':'pending'}};
     }
-    const document=p.document&&{recordedAt:p.document.recordedAt,occurredAt:p.document.occurredAt,timeBasis:p.document.timeBasis,contentRole:p.document.contentRole,path:p.document.path,
+    // These observations are frozen as JSON in assistant task inputs. Omit
+    // unknown optional fields now so their live identity survives that round
+    // trip; every defined date, role and locator still participates in checks.
+    const document=p.document&&{...(p.document.recordedAt!==undefined?{recordedAt:p.document.recordedAt}:{}),
+      ...(p.document.occurredAt!==undefined?{occurredAt:p.document.occurredAt}:{}),...(p.document.timeBasis!==undefined?{timeBasis:p.document.timeBasis}:{}),
+      ...(p.document.contentRole!==undefined?{contentRole:p.document.contentRole}:{}),...(p.document.path!==undefined?{path:p.document.path}:{}),
       ...(source.retention!=='reference'&&p.layer!=='reference'&&!p.deleted&&p.document.fileIndex?{fileIndex:p.document.fileIndex}:{})};
     return {record,manifest,version:{captureId:record.id,revision:p.revision,observedAt:record.capturedAt,title:record.windowTitle,
       ...(p.modifiedAt?{modifiedAt:p.modifiedAt}:{}),...(p.uri?{uri:p.uri}:{}),...(manifest?.relativePath?{relativePath:manifest.relativePath}:{}),
