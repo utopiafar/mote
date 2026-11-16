@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdtemp,readFile,rm,mkdir,writeFile,readdir} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,mkdir,writeFile,readdir,cp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -106,6 +106,56 @@ test('parallel roles publish independent verified environments and an audio depe
  const changed=await prepareNativeMediaRuntime({...f,role:'dialogue',sourcePython:'/generated/python'});assert.notEqual(changed.version,audio.version);
  assert.equal(await readFile(join(f.directory,'ocr/current.json'),'utf8'),ocrMarker);
  assert.equal((await prepareNativeMediaRuntime({...f,role:'ocr',allowInstall:false})).created,false);
+});
+
+test('audio runtime survives release relocation, probes the current scripts and still rejects changed dependencies',async t=>{
+ const f=await isolatedInstaller(t);
+ await writeFile(join(f.repository,'scripts/requirements-audio.txt'),'-r audio-dependencies.txt\n# Generated audio entry\n');
+ await writeFile(join(f.repository,'scripts/audio-dependencies.txt'),'# Generated audio dependency v1\n');
+ const probeSource=join(f.directory,'probe-source');
+ await writeFile(join(f.repository,'scripts/mote_asr_contract.py'),`SDK_VERSION='generated-sdk'\nfrom pathlib import Path\nPath(${JSON.stringify(probeSource)}).write_text(__file__)\n`);
+ // Execute the actual probe and generated contract module with only unavailable
+ // managed Python/package dependencies substituted at the subprocess boundary.
+ const probeRuntime=[
+  'import sys,types,importlib.metadata,pathlib',
+  'probe=sys.argv.pop(1); ffmpeg=sys.argv.pop(); sys.version_info=(3,11)',
+  "for name in ('funasr','torch','numpy','imageio_ffmpeg'): sys.modules[name]=types.ModuleType(name)",
+  "importlib.metadata.version=lambda name:'generated-sdk'",
+  "sys.modules['imageio_ffmpeg'].get_ffmpeg_exe=lambda:ffmpeg",
+  'exec(probe)',
+ ].join('\n');
+ const run=async(command:string,args:string[])=>{
+  const result=await f.run(command,args);if(args[0]!=='-c')return result;
+  return runMediaCommand('python3',['-c',probeRuntime,args[1],...args.slice(2),join(command.replace(/\/bin\/python$/,''),'lib/ffmpeg')],{timeoutMs:5000});
+ };
+ const first=await prepareNativeMediaRuntime({...f,run,role:'dialogue',sourcePython:'/generated/python'});
+ assert.equal(await readFile(probeSource,'utf8'),join(f.repository,'scripts/mote_asr_contract.py'));
+ const firstProbe=f.calls.find(call=>call.command===first.python&&call.args[0]==='-c')!;
+ const markerPath=join(f.directory,'dialogue/current.json'),saved=await readFile(markerPath,'utf8');
+ const repository=join(f.repository,'..','relocated release');await cp(f.repository,repository,{recursive:true});
+ f.calls.length=0;
+ const reused=await prepareNativeMediaRuntime({...f,repository,run,role:'dialogue',allowInstall:false});
+ assert.equal(await readFile(probeSource,'utf8'),join(repository,'scripts/mote_asr_contract.py'));
+ assert.equal(reused.version,first.version);assert.equal(reused.python,first.python);assert.equal(reused.generation,first.generation);assert.equal(reused.created,false);
+ assert.equal(f.targets.size,1);assert.equal(await readFile(markerPath,'utf8'),saved);
+ assert.deepEqual(f.calls.map(call=>call.command),[first.python,join(f.directory,'dialogue',first.generation,'bin/ffmpeg')],'restart only probes the existing Python and ffmpeg');
+ const currentProbe=f.calls[0];
+ assert.equal(currentProbe.args[1],firstProbe.args[1],'probe source is independent of the release directory');
+ assert.equal(currentProbe.args[1].includes(f.repository),false);assert.equal(currentProbe.args[1].includes(repository),false);
+ assert.deepEqual(firstProbe.args.slice(2),[join(f.repository,'scripts')]);assert.deepEqual(currentProbe.args.slice(2),[join(repository,'scripts')]);
+ for(const name of ['requirements-audio.txt','audio-dependencies.txt']){
+  const path=join(repository,'scripts',name),bytes=await readFile(path);await writeFile(path,Buffer.concat([bytes,Buffer.from('# Generated dependency change\n')]));
+  f.calls.length=0;
+  await assert.rejects(prepareNativeMediaRuntime({...f,repository,run,role:'dialogue',allowInstall:false}),/not_prepared/);
+  assert.equal(f.calls.length,0,'changed dependencies cannot probe or install the prior environment on restart');
+  assert.equal(await readFile(markerPath,'utf8'),saved);await writeFile(path,bytes);
+ }
+ await writeFile(join(repository,'scripts/audio-dependencies.txt'),'# Generated audio dependency v2\n');
+ const changed=await prepareNativeMediaRuntime({...f,repository,run,role:'dialogue',sourcePython:'/generated/python'});
+ assert.notEqual(changed.version,first.version);assert.notEqual(changed.generation,first.generation);assert.notEqual(changed.python,first.python);
+ assert.equal(f.targets.size,2);
+ assert.equal(f.calls.find(call=>call.args[0]==='pip')!.args.at(-1),join(repository,'scripts/requirements-audio.txt'));
+ assert.deepEqual(f.calls.find(call=>call.command===changed.python&&call.args[0]==='-c')!.args.slice(2),[join(repository,'scripts')]);
 });
 
 test('missing packages, a corrupt Python and cancellation during dependency verification preserve the last successful marker',async t=>{
