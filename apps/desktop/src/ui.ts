@@ -381,7 +381,6 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   const values: Record<string, string | number> = {
     'diagnostic-interval': config.diagnosticIntervalSeconds, 'image-dedupe': config.imageDedupeMode ?? 'off', 'jpeg-quality': config.jpegQuality, 'capture-max-side': config.captureMaxSide, 'battery-pause-below': config.batteryPauseBelowPct,
     'server-url': config.serverUrl, 'device-name': config.deviceName, interval: config.intervalMs / 1000,
-    'queue-mb': config.maxQueueBytes / 1024 / 1024, 'queue-events': config.maxQueueEvents,
     idle: config.idlePauseSeconds,
     'sync-interval': config.syncIntervalMinutes, 'sync-batch': config.syncBatchSize,
     masks: JSON.stringify(config.masks, null, 2),
@@ -519,7 +518,7 @@ function render(status: import('./contracts').Status): void {
     byId('diagnostics-detail').textContent = rows.join('\n');
   }
   const statistics = [
-    moteText("待上传 {0} / {1} 条 · 队列 {2} / {3} MiB（{4}%）", status.queueDepth.toLocaleString(getLocale()), status.config.maxQueueEvents.toLocaleString(getLocale()), (status.queueBytes / 1048576).toFixed(2), (status.config.maxQueueBytes / 1048576).toFixed(0), (100 * status.queueBytes / status.config.maxQueueBytes).toFixed(1)),
+    moteText("待上传 {0} 条",status.queueDepth.toLocaleString(getLocale()))+' · '+moteText("本机")+' '+(status.queueBytes/1048576).toFixed(2)+' MiB',
     moteText("采样间隔 {0} 秒 · 图像最大边 {1} px · JPEG 质量 {2}", status.config.intervalMs / 1000, status.config.captureMaxSide, status.config.jpegQuality),
   ];
   if (status.diagnostics?.enabled) { const c = status.diagnostics.counters; statistics.push(moteText("诊断累计：保存 {0} · 过滤 {1} · 失败 {2} · 截图文字隐私审查 {3} s", c.saved, c.blocked, c.failed, (c.ocrMs / 1000).toFixed(1)), moteText("累计上传请求体约 {0} MiB；不代表远端存储量。", (c.uploadedBytes / 1048576).toFixed(2))); }
@@ -575,7 +574,6 @@ byId('settings').addEventListener('submit', event => {
       syncMode: selectedSyncMode(), syncIntervalMinutes: numberInput('sync-interval'), syncBatchSize: numberInput('sync-batch'),
       ...(byId<HTMLInputElement>('confirm-local-backlog').checked ? { confirmLocalBacklog: true } : {}),
       serverUrl: readInput('server-url'), deviceName: readInput('device-name'), intervalMs: numberInput('interval') * 1000,
-      maxQueueBytes: numberInput('queue-mb') * 1024 * 1024, maxQueueEvents: numberInput('queue-events'),
       masks,
       idlePauseSeconds: numberInput('idle'),
       uploadGate: {enabled:byId<HTMLInputElement>('gate-enabled').checked,blockedText:readInput('gate-text').split('\n').map(s=>s.trim()).filter(Boolean),failureAction:readInput('gate-failure') as 'drop'|'hold'|'allow'},
@@ -949,20 +947,21 @@ function renderMeeting(value: import('./contracts/sources').MeetingRecordingStat
     ? moteText('已于 {0} 开始。仅在你点击结束后生成并上传一场会议的音频。', meetingTime(value.startedAt))
     : value.error ?? moteText('只有点击开始后才会录音；不会按日历或日程自动开始。');
   byId('meeting-message').textContent = message;
+  const receivedHere=Boolean(session?.uploadOrigin&&session.uploadOrigin===currentStatus?.config.serverUrl);
   byId('meeting-summary').textContent = value.pendingUploads
-    ? moteText('{0} 场会议录音保存在本机，连接中央后自动上传。', String(value.pendingUploads))
-    : moteText('一场会议对应一份音频；结束后进入中央已有转写。');
+    ? moteText('待上传 {0} 条',String(value.pendingUploads))+' · '+moteText('保存在本机，等待上传')
+    : moteText('本机采集内容长期保留，上传确认后不自动删除。');
   byId<HTMLButtonElement>('meeting-start').disabled = meetingBusy || value.recording;
   byId<HTMLButtonElement>('meeting-stop').disabled = meetingBusy || !value.recording;
   byId('source-meeting-summary').textContent = value.recording ? moteText('正在录音 · 点击结束') : session
-    ? session.state === 'uploaded' ? moteText('最近一场已入库') : session.state === 'completed' ? moteText('最近一场待上传') : moteText('最近一场未完成')
+    ? session.state === 'uploaded' ? receivedHere?moteText('最近一场已入库'):moteText('原件已保留') : session.state === 'completed' ? moteText('最近一场待上传') : moteText('最近一场未完成')
     : moteText('开始一场会议录音');
   byId('source-meeting-state').textContent = value.recording ? moteText('录音中') : moteText('已停止');
   byId('source-meeting-state').dataset.state = value.recording ? 'syncing' : 'paused';
   byId('meeting-last').textContent = !session ? moteText('尚无会议录音。') : [
     meetingTime(session.startedAt),
     session.durationMs ? moteText('{0} 分钟', String(Math.max(1, Math.round(session.durationMs / 60000)))) : '',
-    session.state === 'uploaded' ? moteText('已进入中央转写') : session.state === 'completed' ? moteText('保存在本机，等待上传') : session.state === 'failed' ? moteText('未完成') : moteText('正在录音'),
+    session.state === 'uploaded' ? receivedHere?moteText('中心已接收'):moteText('原件已保留') : session.state === 'completed' ? moteText('保存在本机，等待上传') : session.state === 'failed' ? moteText('未完成') : moteText('正在录音'),
     !session.microphone && session.state !== 'recording' ? moteText('仅系统音频') : !session.systemAudio && session.state !== 'recording' ? moteText('仅麦克风') : '',
     session.error ?? '',
   ].filter(Boolean).join(' · ');

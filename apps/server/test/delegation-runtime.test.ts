@@ -126,6 +126,20 @@ test('query workers receive no controls and independent scoped contexts',async t
  runtime.start({id:'query-work',profileId:'query',goal:'Generated task',input:{question:'Generated question',conversation:{turns:[],omittedTurns:0},taskContext:{turns:[]}},scope:{deviceId:'selected'},allowedCapabilities:['context.research']});await settle(runtime,'query-work');assert.equal(seen.length,3);assert.equal(seen[1].hostControlChannel,undefined);assert.equal(seen[1].conversation,undefined);assert.equal(seen[1].taskContext,undefined);assert.equal(seen[1].deviceId,'selected');assert.equal(seen[1].question,'Generated subquestion');
 });
 
+test('an already stopped external product retires its unit without issuing another product cancellation',async t=>{
+ const {runtime,store,engine}=fixture(t);let cancels=0;
+ runtime.register({id:'fixture',version:'1',proposal:true,description:'Generated external product',cancel:()=>{cancels++;},execute:async()=>{throw Error('The product owns execution');}});
+ runtime.registerCoordinator({id:'coordinator',awaitExternal:true,execute:async({controls})=>{await controls.execute('delegation_submit',{units:[proposal('withdrawn'),proposal('owner-cancelled')]});return 'Generated complete plan';}});
+ runtime.start({id:'stopped-external',profileId:'coordinator',goal:'Generated product plan',input:{},allowedCapabilities:['fixture']});
+ const planned=await runtime.waitForPlan('stopped-external'),withdrawn=planned.units[0],ownerCancelled=planned.units[1];
+ store.db.exec("CREATE TEMP TRIGGER generated_withdrawal_write BEFORE INSERT ON execution_operation_steps BEGIN SELECT RAISE(ABORT,'generated withdrawal projection failure'); END");
+ assert.throws(()=>runtime.cancelUnit(withdrawn.id,{productStopped:true}),/generated withdrawal projection failure/);assert.equal(runtime.unit(withdrawn.id).status,'waiting');assert.equal(engine.get(withdrawn.id),undefined);assert.equal(cancels,0);store.db.exec('DROP TRIGGER generated_withdrawal_write');
+ runtime.cancelUnit(withdrawn.id,{productStopped:true});runtime.cancelUnit(withdrawn.id,{productStopped:true});
+ assert.equal(runtime.unit(withdrawn.id).status,'cancelled');assert.equal(engine.get(withdrawn.id)!.state,'cancelled');assert.equal(engine.get(withdrawn.id)!.attempts,0);assert.equal(cancels,0,'product withdrawal cannot become a new owner cancellation');
+ runtime.cancelUnit(ownerCancelled.id);assert.equal(cancels,1,'ordinary owner cancellation retains its product hook');
+ await runtime.tick();assert.equal(runtime.get(planned.id).status,'failed');assert.equal(runtime.artifactMetadata(planned.id).length,0);
+});
+
 test('external product handoff remains waiting until its own fenced job writes a private artifact',async t=>{
  const {runtime,engine}=fixture(t);runtime.register({id:'fixture',version:'1',proposal:true,description:'Generated product proposal',execute:async()=>{throw Error('must not create duplicate executor');}});
  runtime.registerCoordinator({id:'coordinator',awaitExternal:true,execute:async({controls})=>{await controls.execute('delegation_submit',{units:[proposal('a')]});return 'plan ready';}});
@@ -138,8 +152,8 @@ for(const cancelAfterPlan of [false,true])test(`accepted external plans ${cancel
  const {runtime,engine}=fixture(t);runtime.register({id:'fixture',version:'1',proposal:true,description:'Generated product',execute:async()=>{throw Error('Product owns execution');}});
  runtime.registerCoordinator({id:'coordinator',awaitExternal:true,execute:async({controls})=>{if(!cancelAfterPlan){await controls.execute('delegation_submit',{units:[proposal('obsolete')]});await controls.execute('delegation_cancel',{unitId:'accepted-work:unit:obsolete'});}await controls.execute('delegation_submit',{units:[proposal('accepted')]});return 'Validated complete plan';},commit:owner=>({acceptedUnitIds:owner.units.filter(unit=>unit.status!=='cancelled').map(unit=>unit.id)})});
  runtime.start({id:'accepted-work',profileId:'coordinator',goal:'Generated task',input:{},allowedCapabilities:['fixture']});const planned=await runtime.waitForPlan('accepted-work');assert.equal(planned.status,'waiting');assert.deepEqual(planned.plannedUnitIds,['accepted-work:unit:accepted']);
- if(cancelAfterPlan){runtime.cancelUnit('accepted-work:unit:accepted');await runtime.tick();assert.equal(runtime.get('accepted-work').status,'failed');assert.equal(runtime.artifactMetadata('accepted-work').length,0);}
- else {engine.register({kind:'accepted-product',pool:'accepted-product',concurrency:()=>1,validate:()=>true,execute:async()=>({value:'Generated committed product'}),commit:(_step,product)=>runtime.recordExternalArtifact(planned.id,'accepted-work:unit:accepted',product as any)});const step=engine.enqueue('accepted-product','accepted-product',{});runtime.linkExternalUnit(planned.id,'accepted-work:unit:accepted',step);await engine.drain([step]);assert.equal((await settle(runtime,planned.id)).status,'succeeded');assert.equal(runtime.unit('accepted-work:unit:obsolete').status,'cancelled');assert.equal(runtime.artifactMetadata(planned.id).length,1);}
+ if(cancelAfterPlan){runtime.cancelUnit('accepted-work:unit:accepted');await runtime.tick();assert.equal(runtime.get('accepted-work').status,'failed');assert.equal(runtime.artifactMetadata('accepted-work').length,0);assert.equal(engine.get('accepted-work:unit:accepted')!.state,'cancelled');}
+ else {engine.register({kind:'accepted-product',pool:'accepted-product',concurrency:()=>1,validate:()=>true,execute:async()=>({value:'Generated committed product'}),commit:(_step,product)=>runtime.recordExternalArtifact(planned.id,'accepted-work:unit:accepted',product as any)});const step=engine.enqueue('accepted-product','accepted-product',{});runtime.linkExternalUnit(planned.id,'accepted-work:unit:accepted',step);await engine.drain([step]);assert.equal((await settle(runtime,planned.id)).status,'succeeded');assert.equal(runtime.unit('accepted-work:unit:obsolete').status,'cancelled');assert.equal(engine.get('accepted-work:unit:obsolete'),undefined,'discarded draft proposals create no parent cancellation obligation');assert.equal(runtime.artifactMetadata(planned.id).length,1);}
 });
 
 test('a product already failed before plan acceptance cannot be reported as a completed goal',async t=>{

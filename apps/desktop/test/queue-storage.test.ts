@@ -108,7 +108,7 @@ it('keeps the new pointer authoritative when old-copy cleanup fails, even after 
   internal.removeOwned = async (path, id) => { if (path === f.source) throw new Error('synthetic unavailable old disk'); await remove(path, id); };
   await f.queue.relocate(f.target, f.storage, f.commit, f.selected);
   expect(f.storage.cleanupPending).toBe(true); expect(f.queue.directory).toBe(f.target);
-  await f.queue.acknowledge(event().id); expect(f.queue.stats().depth).toBe(0);
+  await f.queue.acknowledge(event().id,undefined,'https://central.example'); expect(f.queue.stats().depth).toBe(0);
   const storage = new QueueStorage(f.profile, 'test', f.config.deviceId), queue = new DurableQueue(await storage.open(f.target), f.config);
   await queue.initialize(); await storage.recover(queue.directory);
   expect(queue.stats().depth).toBe(0); await expect(stat(f.source)).rejects.toMatchObject({ code: 'ENOENT' });

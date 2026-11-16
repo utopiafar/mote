@@ -11,6 +11,6 @@ export function createSourceFilePolicyDraft(history: HTMLSelectElement, retentio
       }
       history.disabled=value;
     },
-    reset() { oneTime=false;savedHistory='all';history.disabled=false;history.value='all';retention.value='snapshot'; },
+    reset() { oneTime=false;savedHistory='all';history.disabled=false;history.value='all';retention.value='archive'; },
   };
 }

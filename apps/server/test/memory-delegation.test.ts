@@ -6,6 +6,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {QueryInput} from '@mote/agent';
 import {AgentYieldError} from '@mote/agent';
+import {Operations} from '../src/operations.js';
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import type {QueryResult} from '@mote/shared';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
@@ -80,6 +82,33 @@ for(const historicalAuthority of ['stale','revoked'] as const)test(`resumed Memo
  assert.deepEqual(f.counts(),{planning:2,extraction:2,reviews:2});
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2);
  f.adapter.reconcile();await f.runtime.tick();assert.deepEqual(f.counts(),{planning:2,extraction:2,reviews:2});
+});
+
+test('Memory plan operation retains its actual product work instead of acknowledging only the finished planner',async t=>{
+ const f=await fixture(t,2),pipeline=f.pipeline,operations=new Operations(f.store);
+ const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),state:(id:string)=>pipeline.state(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
+ await f.work.drainPlanned(held,true,f.adapter.plan,64,()=>true,f.adapter.onCreated);
+ const job=f.pipeline.get(f.pipeline.list()[0].id),owner=f.runtime.list()[0];
+ assert.equal(owner.planningComplete,true);assert.equal(job.status,'queued');
+ assert.equal(operations.detail(owner.operationId).operation.state,'waiting','a completed plan is not a completed Memory product');
+ await f.pipeline.run(job.id);await f.finish();
+ const detail=operations.detail(owner.operationId);assert.equal(detail.operation.state,'succeeded');
+ assert.ok(detail.steps.some(step=>step.kind==='memory.batch'),'the shared operation consumes the actual product steps');
+ assert.equal(detail.steps.filter(step=>step.kind==='memory.extract').length,1);assert.equal(detail.steps.filter(step=>step.kind==='memory.review').length,1);
+});
+
+test('failed product attribution rolls back its execution link and replays the already claimed job once',async t=>{
+ const f=await fixture(t,2),pipeline=f.pipeline;
+ const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),state:(id:string)=>pipeline.state(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
+ await f.work.drainPlanned(held,true,f.adapter.plan,64);
+ const job=f.pipeline.get(f.pipeline.list()[0].id),owner=f.runtime.list()[0],before=f.store.db.prepare('SELECT json FROM delegation_units WHERE work_id=?').all(owner.id);
+ const restore=rejectSqliteWrites(f.store,'operation_parents');
+ assert.throws(()=>f.adapter.reconcile(),/Generated SQLite write failure/);restore();
+ assert.deepEqual(f.store.db.prepare('SELECT json FROM delegation_units WHERE work_id=?').all(owner.id),before);
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='memory.package-status'").get()!.n,0);
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id=?').get(job.id)!.n,2,'the original atomic queue claim remains intact');
+ f.adapter.reconcile();f.adapter.reconcile();assert.equal(f.store.db.prepare('SELECT count(*) n FROM operation_parents WHERE parent_id=? AND child_id=?').get(owner.operationId,'memory:'+job.id)!.n,1);
+ await f.pipeline.run(job.id);await f.finish();assert.equal(f.runtime.get(owner.id).status,'succeeded');assert.deepEqual(f.counts(),{planning:1,extraction:1,reviews:1});
 });
 
 test('ordinary production queue directly packs independently reviewed members without a planning call',async t=>{

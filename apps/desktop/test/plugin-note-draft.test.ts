@@ -125,7 +125,7 @@ it('consumes a real Central save receipt and reads the saved note through the de
     // queue acknowledges the exact event.
     const receipts = await uploadCaptureBatch(config, notes.map(item => ({event: item.record.event, image: item.image})));
     expect(receipts.get(initial.id)).toBe(201);
-    await queue.acknowledge(initial.id, 0);
+    await queue.acknowledge(initial.id, 0,'https://central.example');
 
     const item = {...captureHistoryItem(notes[0].record.event), outcome: 'received', firstReceipt: true} as SyncHistoryItem;
     const content = await readCentralContent(config, item);

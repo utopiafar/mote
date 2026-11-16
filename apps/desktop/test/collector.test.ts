@@ -655,7 +655,7 @@ it.each([{packed:true,enabled:true},{packed:true,enabled:false},{packed:false,en
     expect(sent).toEqual(events.map(item=>({...item,imageBase64:originalToString.call(image,'base64')})));
     const d=new Date(),day=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     expect(syncHistory.page(config,{day}).items[0].bytes).toBe(payloads.reduce((sum,raw)=>sum+Buffer.byteLength(raw),0));
-    expect(queue.stats().depth).toBe(0);expect(await readdir(join(directory,'blobs'))).toEqual([]);
+    expect(queue.stats().depth).toBe(0);expect(await readdir(join(directory,'blobs'))).toHaveLength(1);expect(queue.contentRecords().every(record=>record.archiveAcknowledgment)).toBe(true);
   }finally{encoding.mockRestore();reads.mockRestore();hashes.mockRestore();next.mockRestore();}
 });
 
@@ -683,7 +683,7 @@ it('E retains missing receipts and held conflicts with shared blobs until explic
   await collector!.upload(true);expect(queue.stats()).toMatchObject({depth:3,blocked:2,eligibleDepth:1});
   expect(queue.recordForHistory(records[3].id)?.attempts).toBe(1);expect(await readdir(join(directory,'blobs'))).toHaveLength(1);
   vi.mocked(fetch).mockImplementation(async(_url,init)=>{const body=JSON.parse(await new Response(init!.body).text());return new Response(JSON.stringify({results:body.captures.map((item:any)=>({...captureAck(item.id),status:200}))}));});
-  await collector!.retry();expect(queue.stats().depth).toBe(0);expect(await readdir(join(directory,'blobs'))).toEqual([]);
+  await collector!.retry();expect(queue.stats().depth).toBe(0);expect(await readdir(join(directory,'blobs'))).toHaveLength(1);expect(queue.contentRecords().every(record=>record.archiveAcknowledgment)).toBe(true);
 });
 
 it.each([false,true])('E yields the 15-second slice with eligible work still waiting (%s)',async packed=>{
