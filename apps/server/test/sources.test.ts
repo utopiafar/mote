@@ -110,11 +110,21 @@ test('source coverage remains independent of execution, validates completion and
 });
 
 test('host-only sync scope versions fence ABA status writes and advance only for effective range changes',t=>{
- const {sources}=fixture(t),original=sources.getSource('fixture'),version=original.syncScopeVersion??0;
+ const {store,sources}=fixture(t),original=sources.getSource('fixture'),version=original.syncScopeVersion??0,policy=original.syncPolicyVersion??0;
+ assert.equal(policy,0);
  assert.throws(()=>sources.register({id:'forged-version',name:'Generated',kind:'custom',deviceId:'synthetic',platform:'import',syncScopeVersion:500}),{statusCode:403});
+ assert.throws(()=>sources.register({id:'forged-policy',name:'Generated',kind:'custom',deviceId:'synthetic',platform:'import',syncPolicyVersion:500}),{statusCode:403});
  assert.throws(()=>sources.update('fixture',{syncScopeVersion:500} as any),{statusCode:403});
+ assert.throws(()=>sources.update('fixture',{syncPolicyVersion:500} as any),{statusCode:403});
  sources.reportStatus('fixture',{state:'syncing'},version);sources.reportStatus('fixture',{state:'idle'},version);assert.equal(sources.getSource('fixture').syncScopeVersion,version);
+ sources.update('fixture',{enabled:false});sources.update('fixture',{enabled:true});sources.update('fixture',{initialSync:'all'});assert.equal(sources.getSource('fixture').syncPolicyVersion,policy);
  sources.update('fixture',{initialSync:'new_only'});sources.update('fixture',{initialSync:'all'});assert.equal(sources.getSource('fixture').initialSync,'all');assert.equal(sources.getSource('fixture').syncScopeVersion,version+2);
+ assert.equal(sources.getSource('fixture').syncPolicyVersion,policy+2,'mode ABA has its own durable owner policy identity');
  assert.throws(()=>sources.reportStatus('fixture',{state:'idle',coverage:{state:'complete',window:{to:'2026-11-16T00:00:00.000Z'},processed:1,remaining:0,failed:0,limitations:[],updatedAt:'2026-11-16T00:00:00.000Z'}},version),{statusCode:409});assert.equal(sources.getSource('fixture').status?.coverage,undefined);
  sources.resetCoverage('fixture');assert.equal(sources.getSource('fixture').syncScopeVersion,version+3,'an explicit authorization/range reset fences work even when coverage is already unknown');
+ assert.equal(sources.getSource('fixture').syncPolicyVersion,policy+2,'reauthorization withdraws the read generation without changing the approved history policy');
+ const restored=new SourceStore(store);assert.equal(restored.getSource('fixture').syncPolicyVersion,policy+2);assert.equal(restored.getSource('fixture').syncScopeVersion,version+3);
+ // A failed owner policy write cannot commit just one of the two versions.
+ store.db.exec("CREATE TRIGGER generated_policy_failure BEFORE UPDATE ON source_connections WHEN new.id='fixture' BEGIN SELECT RAISE(ABORT,'generated owner policy failure'); END");
+ assert.throws(()=>sources.update('fixture',{initialSync:'new_only'}),/generated owner policy failure/);store.db.exec('DROP TRIGGER generated_policy_failure');assert.equal(restored.getSource('fixture').syncScopeVersion,version+3);assert.equal(restored.getSource('fixture').syncPolicyVersion,policy+2);
 });
