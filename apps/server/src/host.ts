@@ -1,4 +1,5 @@
 import {AssistantMatters} from './assistant-matters.js';
+import {createProcessingPluginHost} from './plugins/processing-plugin-host.js';
 import {AssistantWorkbench} from './assistant-workbench.js';
 import {registerAssistantMatterRoutes} from './assistant-matter-routes.js';
 import {AssistantCards} from './assistant-cards.js';
@@ -356,6 +357,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   const {insightRuns,insightServices}=assembleInsightRuns({store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics});
   const {workflows,processing,resolveFileModel,mediaModelAuthority,processingServices}=await assembleProcessing({bootstrap,store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,archivedFiles,evidenceReader,indexer,plugins:dependencies?.processingPlugins,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider,withMediaOwnerBatch,withMediaOwnerIntent});
+  pluginCenter.processingHost=createProcessingPluginHost(workflows,processing.runtime,()=>processingServices.port.phase==='active');
   const localImages=assembleLocalImages({plugins:pluginCenter,mediaAssets,processing,config,usage:usageLedger});
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));

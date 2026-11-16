@@ -100,6 +100,10 @@ export const documentActivitySchema=z.object({
 export type DocumentActivity=z.infer<typeof documentActivitySchema>;
 export const documentSchema=z.object({
   fileIndex:fileIndexSchema.optional(),
+  /** Provider body traversal coverage; an unknown full length is not a file index. */
+  bodyCoverage:z.object({state:z.enum(['partial','complete']),reason:z.enum(['pagination_pending','unsupported_content','source_changed']).optional()}).strict().superRefine((value,ctx)=>{
+    if(value.state==='partial'&&!value.reason||value.state==='complete'&&value.reason)ctx.addIssue({code:'custom',message:'Body coverage requires a reason only while partial'});
+  }).optional(),
   coding:codingEvidenceSchema.optional(),
   activity:documentActivitySchema.optional(),
   fileId:z.string().min(1).max(200).optional(),path:z.string().max(4000).optional(),
