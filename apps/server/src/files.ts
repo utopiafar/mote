@@ -49,9 +49,16 @@ export class FileStore {
   async serialize<T>(key:string,action:()=>Promise<T>):Promise<T>{const prior=this.pending.get(key)??Promise.resolve();const next=prior.catch(()=>{}).then(action);this.pending.set(key,next);try{return await next;}finally{if(this.pending.get(key)===next)this.pending.delete(key);}}
   /** A removed capture still has an immutable synchronization predecessor.
    * This pointer grants no read access to the deleted evidence. */
-  private syncRevision(sourceId:string,externalId:string):string|null {
-    const head=this.store.db.prepare('SELECT v.revision FROM source_heads h JOIN source_versions v ON v.source_id=h.source_id AND v.external_id=h.external_id AND v.capture_id=h.capture_id WHERE h.source_id=? AND h.external_id=?').get(sourceId,externalId);
-    return head?String(head.revision):null;
+  private syncPointer(sourceId:string,externalId:string){
+    return this.store.db.prepare('SELECT v.revision,v.capture_id,c.id AS archived_id FROM source_heads h JOIN source_versions v ON v.source_id=h.source_id AND v.external_id=h.external_id AND v.capture_id=h.capture_id LEFT JOIN captures c ON c.id=v.capture_id WHERE h.source_id=? AND h.external_id=?').get(sourceId,externalId) as {revision:string;capture_id:string;archived_id:string|null}|undefined;
+  }
+  private syncRevision(sourceId:string,externalId:string):string|null {return this.syncPointer(sourceId,externalId)?.revision??null;}
+  /** A producer with no readable prior file may start after deleted history.
+   * Its null manifest stays immutable; the actual predecessor is still fenced. */
+  private predecessor(input:FileRevision){
+    const selected=this.syncPointer(input.sourceId,input.item.externalId);
+    if((selected?.revision??null)!==input.previousRevision&&!(input.previousRevision===null&&selected&&!selected.archived_id))throw new StoreError('Revision predecessor mismatch; upload previous revision first',409);
+    return ()=>{const current=this.syncPointer(input.sourceId,input.item.externalId);if(current?.capture_id!==selected?.capture_id||(current?.archived_id??null)!==(selected?.archived_id??null))throw new StoreError('Revision predecessor changed',409);};
   }
   private allowed(input:FileRevision){
     const source=this.sources.getSource(input.sourceId);
@@ -85,8 +92,9 @@ export class FileStore {
       const commit=async()=>{
         const fresh=normalized.every(input=>!this.store.db.prepare('SELECT 1 FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision));
         if(!fresh)return null;
-        const validate=()=>{for(const input of normalized){current(input.sourceId);this.allowed(input);if(this.syncRevision(input.sourceId,input.item.externalId)!==input.previousRevision)throw new StoreError('Revision predecessor mismatch',409);}};
         try{
+          const predecessors=normalized.map(input=>{current(input.sourceId);this.allowed(input);return this.predecessor(input);});
+          const validate=()=>{for(const [index,input] of normalized.entries()){current(input.sourceId);this.allowed(input);predecessors[index]();}};
           validate();
           const result=await this.sources.upsertBatch(normalized[0].sourceId,normalized.map(input=>input.item),validate,(ack,index)=>this.commitMetadata(normalized[index],ack.id));
           return {results:result.receipts.map(ack=>({externalId:ack.externalId,revision:ack.revision,state:'accepted',ack}))};
@@ -296,10 +304,10 @@ export class FileStore {
         return {id:prior.capture_id,captureId:prior.capture_id,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:prior.object_hash,sha256:input.sha256,sizeBytes:input.sizeBytes,duplicate:true};
       }
       if(this.store.db.prepare('SELECT 1 FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision))throw new StoreError('Revision belongs to a different ingestion protocol',409);
-      if(this.syncRevision(input.sourceId,input.item.externalId)!==input.previousRevision)throw new StoreError('Revision predecessor mismatch; upload previous revision first',409);
+      const predecessor=this.predecessor(input);
       if(input.sha256&&!onCommit)throw new StoreError('Original bytes require an upload commit');
       let ack:unknown;
-      await this.sources.upsert(input.sourceId,input.item,validate,({id:captureId})=>{
+      await this.sources.upsert(input.sourceId,input.item,()=>{validate();predecessor();},({id:captureId})=>{
         this.commitMetadata(input,captureId);
         ack=onCommit?.(captureId)??{id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,duplicate:false};
       });return ack;
