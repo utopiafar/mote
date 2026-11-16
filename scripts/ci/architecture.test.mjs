@@ -122,6 +122,51 @@ test('server app.ts stays a host launcher and cannot import business modules',t=
   assert.deepEqual(rule(f.check()),['server-app-no-business-import']);
 });
 
+test('server host allows infrastructure but rejects new domain imports through every module syntax',async t=>{
+  const sources=[
+    "import './domain.js';",
+    "import {domainSql} from '@host/domain';",
+    "export * from './domain.js';",
+    "export type {Domain} from '@host/domain';",
+    "type Domain=import('./domain.js').Domain;",
+    "const target='./domain.js'; await import(target);",
+    "require('./domain.js');",
+    "import './assembly/new-domain.js';",
+    "import './features/new-domain.js';",
+  ];
+  for(const source of sources)await t.test(source,t=>{
+    const f=fixture(t);
+    f.write('apps/server/src/domain.ts','export const domainSql=1;export interface Domain {}');
+    f.write('apps/server/src/assembly/new-domain.ts','export const domain=1;');
+    f.write('apps/server/src/features/new-domain.ts','export const feature=1;');
+    f.write('apps/server/src/host.ts',source);
+    assert.deepEqual(rule(f.check()),['server-host-allowlist']);
+  });
+});
+
+test('host exceptions pin existing edges, reject additions and become stale when removed',t=>{
+  const f=fixture(t);
+  f.write('apps/server/src/config.ts','export interface Config {}');
+  f.write('apps/server/src/bootstrap.ts','export const bootstrap=()=>{};');
+  f.write('apps/server/src/server-resources.ts','export class ServerResources {}');
+  f.write('apps/server/src/host.ts',"import 'node:fs';import Fastify from 'fastify';import type {Config} from './config.js';import {bootstrap} from './bootstrap.js';import {ServerResources} from './server-resources.js';");
+  assert.deepEqual(f.check().violations,[]);
+  const infrastructure=readFileSync(join(f.root,'apps/server/src/host.ts'),'utf8');
+  f.write('apps/server/src/host.ts',infrastructure+"import './domain.js';");
+  const [{rule:issueRule,from,to,kind}]=f.check().violations;
+  const baseline=[{rule:issueRule,from,to,kind,reason:'Existing domain awaits its owned activation.'}];
+  assert.deepEqual(f.check(baseline).violations,[]);
+  f.write('apps/server/src/new-business.ts','export const value=1;');
+  f.write('apps/server/src/host.ts',infrastructure+"import './domain.js';import './new-business.js';");
+  assert.deepEqual(f.check(baseline).violations.map(issue=>issue.to),['apps/server/src/new-business.ts']);
+  f.write('scripts/ci/architecture-baseline.json',JSON.stringify(baseline));
+  const rejected=f.run();
+  assert.equal(rejected.status,1);
+  assert.match(rejected.stderr,/server-host-allowlist: apps\/server\/src\/host.ts:\d+ -> apps\/server\/src\/new-business.ts/);
+  f.write('apps/server/src/host.ts',infrastructure);
+  assert.deepEqual(f.check(baseline).stale,baseline,'a removed host dependency must shrink the baseline');
+});
+
 test('Desktop contracts allow domain leaves and external DTOs, but reject implementation types and runtime imports',t=>{
   const f=fixture(t);
   f.write('apps/desktop/src/contracts/ask.ts',"import type {DiagnosticsStatus} from '@mote/diagnostics'; export type AskCommand='start';");

@@ -35,9 +35,9 @@ test('default loader preserves the complete product, owner checks and original n
     'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
     'mote.imports','mote.ask','mote.insights','mote.agent-view','mote.features',
   ]);
-  // 3 foundations + observability + source integration + 11 domain activations
-  // (including the readiness and image-processing owners).
-  assert.equal(node.bootstrap.snapshot().contributions.length,16);
+  // Foundations/platforms plus the domain activations, including insights and
+  // its private input adapter, all execute in the same host.
+  assert.equal(node.bootstrap.snapshot().contributions.length,18);
   assert.equal(node.bootstrap.snapshot().contributions.filter(value=>value.identity.contributionId==='mote.plugin-control').length,1,'the live control uses the same host exactly once');
   assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'},{id:'source-integration',version:'1.0.0'}]);
   assert.equal(node.configurationPlatform,node.bootstrap.configurationPlatform);
