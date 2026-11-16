@@ -196,7 +196,7 @@ class LibraryOfflineEmptyInstrumentedTest {
 
                 val id = UUID.randomUUID().toString()
                 val queue = context.queue()
-                queue.enqueue(generated.note(id, Instant.now().minusSeconds(2)), null, 16_000_000)
+                queue.enqueue(generated.note(id, Instant.now().minusSeconds(2)), null)
                 LocalStateChanges.changed(records = true, immediate = true)
                 waitFor("local record survives signed-out Central") {
                     var found = false
@@ -262,7 +262,7 @@ class LibraryOfflineEmptyInstrumentedTest {
                 screenshot(scenario, "impl-library-offline-central-dark")
 
                 val id = UUID.randomUUID().toString()
-                context.queue().enqueue(generated.note(id, Instant.now().minusSeconds(2)), null, 16_000_000)
+                context.queue().enqueue(generated.note(id, Instant.now().minusSeconds(2)), null)
                 LocalStateChanges.changed(records = true, immediate = true)
                 waitFor("local record remains visible while Central is unreachable") {
                     var found = false

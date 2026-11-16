@@ -33,7 +33,7 @@ class SystemEventRulesTest {
                 getJSONObject("privacy").put("collection", "activity")
                 getJSONObject("metadata").getJSONObject("notification").remove("title")
             }
-            DurableQueue(dir, cipher).enqueue(input, null, 1_000_000)
+            DurableQueue(dir, cipher).enqueue(input, null)
             val restored = DurableQueue(dir, cipher)
             assertEquals(input.getString("id"), restored.peek()!!.getString("id"))
             assertEquals(1, restored.inventory().records)
@@ -49,12 +49,12 @@ class SystemEventRulesTest {
         }
         try {
             val queue = DurableQueue(dir, cipher); val record = event(); val id = record.getString("id")
-            queue.enqueue(record, null, 1_000_000); queue.enqueue(record, null, 1_000_000)
+            queue.enqueue(record, null); queue.enqueue(record, null)
             assertEquals(1, queue.depth()); queue.verifyIntegrity()
             assertFalse(dir.listFiles()!!.any { it.readText().contains("Generated 2048") })
             val page = queue.capturePage("2026-09-15T00:00:00Z", "2026-09-16T00:00:00Z", source = "notification")
             assertEquals(1, page.getInt("totalCount")); assertFalse(page.getJSONArray("items").getJSONObject(0).getBoolean("hasImage"))
-            assertEquals(id, queue.peek()!!.getString("id")); queue.acknowledge(id); assertEquals(0, queue.depth())
+            assertEquals(id, queue.peek()!!.getString("id")); queue.acknowledge(id); assertEquals(1, queue.depth()); assertEquals(0, queue.pendingSync().count)
         } finally { dir.deleteRecursively() }
     }
 }

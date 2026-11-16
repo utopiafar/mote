@@ -59,14 +59,14 @@ class AppPolicyInstrumentedTest {
             val windows = WindowSnapshot(setOf("com.example.generated"), "com.example.generated", true)
             pipeline = CapturePipeline(context) { }
             assertFalse(pipeline.canCapture(config, windows)); assertTrue(pipeline.canCollect(config, windows, AppCollectionMode.ACTIVITY))
-            pipeline.submitActivity(windows, config); waitUntil { context.queue().depth() == 1 && pipeline?.isBusy() == false }
+            pipeline.submitActivity(windows, config); waitUntil { context.queue().pendingSync().count == 1 && pipeline?.isBusy() == false }
             val first = context.queue().peek()!!; val preserved = first.toString()
             assertEquals("activity", first.getString("source")); assertFalse(first.has("ocrText")); assertFalse(first.has("imageBase64"))
             assertEquals(setOf("intervalMs"), first.getJSONObject("metadata").getJSONObject("capture").keys().asSequence().toSet())
             settings.enabled = false; pipeline.close(); pipeline = null
             val without = config.copy(metadataEnabled = false); settings.save(without); settings.enabled = true
             pipeline = CapturePipeline(context) { }; pipeline.submitActivity(windows, without)
-            waitUntil { context.queue().depth() == 2 && pipeline?.isBusy() == false }
+            waitUntil { context.queue().pendingSync().count == 2 && pipeline?.isBusy() == false }
             assertEquals(preserved, context.queue().peek()!!.toString())
             context.queue().acknowledge(first.getString("id"))
             val second = context.queue().peek()!!; assertFalse(second.has("metadata")); assertEquals("activity", second.getString("source"))
@@ -133,7 +133,7 @@ class AppPolicyInstrumentedTest {
             shell("settings put secure accessibility_enabled 1")
             waitUntil { CaptureAccessibilityService.connected }
             openFixture()
-            val config = settings.read().copy(server = server, token = token, deviceName = "合成 Android 分级采集", intervalSeconds = 5, wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0,
+            val config = settings.read().copy(server = server, token = token, deviceName = "合成 Android 分级采集", intervalSeconds = 5, wifiOnly = false, debugHttp = true, syncMode = "realtime",
                 mode = "projection", uiPageMode = "screen_only", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config)
             assertEquals("accessibility", config.effectiveMode())
@@ -159,7 +159,7 @@ class AppPolicyInstrumentedTest {
             assertEquals(saved, count("ACTIVITY_QUEUED")); assertEquals(0, count("CAPTURE_REQUESTED"))
             // Explicit fixture setting disables image review only for generated screen/OCR transport validation.
             val content = config.copy(mode = "accessibility", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=content\ncom.android.systemui=content").json())
-            settings.save(content); settings.enabled = true; waitUntil { count("SCREEN_ACK") >= 1 }; stop(); waitUntil { context.queue().depth() == 0 }
+            settings.save(content); settings.enabled = true; waitUntil { count("SCREEN_ACK") >= 1 }; stop(); waitUntil { context.queue().pendingSync().count == 0 }
             val screen = records("screen").getJSONObject(0); assertEquals("content", screen.getJSONObject("privacy").getString("collection"))
             assertEquals("", screen.getString("ocrText")); assertTrue(screen.getJSONObject("metadata").getJSONObject("capture").getInt("width") > 0)
             val authority = context.packageName + ".source-fixtures"
@@ -205,7 +205,7 @@ class AppPolicyInstrumentedTest {
             val firstSample=CaptureObservation(at="2026-09-14T00:00:00Z",elapsed=0)
             pipeline.recordDuration(windows,c,firstSample)
             pipeline.submit(generated(),windows,c,firstSample.at,firstSample.elapsed,firstSample)
-            waitUntil {context.queue().depth()==2&&pipeline?.isBusy()==false}
+            waitUntil {context.queue().pendingSync().count==2&&pipeline?.isBusy()==false}
             val first=context.queue().syncIds(limit=10).mapNotNull {context.queue().capture(it)}
             assertTrue(first.all {it.getLong("durationMs")==0L})
             first.forEach {context.queue().acknowledge(it.getString("id"))}
@@ -213,7 +213,7 @@ class AppPolicyInstrumentedTest {
             val nextSample=CaptureObservation(at="2026-09-14T00:00:15Z",elapsed=15000)
             pipeline.recordDuration(windows,c,nextSample)
             pipeline.submit(generated(),windows,c,nextSample.at,nextSample.elapsed,nextSample)
-            waitUntil {context.queue().depth()==2&&pipeline?.isBusy()==false}
+            waitUntil {context.queue().pendingSync().count==2&&pipeline?.isBusy()==false}
             val next=context.queue().syncIds(limit=10).mapNotNull {context.queue().capture(it)}
             val activity=next.single {it.getString("source")=="activity"};val screen=next.single {it.getString("source")=="screen"}
             assertEquals(15000,activity.getLong("durationMs"));assertEquals(0,screen.getLong("durationMs"))
@@ -241,7 +241,7 @@ class AppPolicyInstrumentedTest {
             shell("settings put secure enabled_accessibility_services ${context.packageName}/dev.mote.collector.CaptureAccessibilityService")
             shell("settings put secure accessibility_enabled 1"); waitUntil { CaptureAccessibilityService.connected }
             val base = settings.read().copy(server = fixture.getString("serverUrl"), token = fixture.getString("token"), deviceName = "合成 Android 投屏分级", intervalSeconds = 5,
-                wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0, mode = "projection", uiPageMode = "screen_only", excludedPackages = "")
+                wifiOnly = false, debugHttp = true, syncMode = "realtime", mode = "projection", uiPageMode = "screen_only", excludedPackages = "")
             var activityRequests = -1L; var contentRequests = -1L
             for (mode in listOf(AppCollectionMode.ACTIVITY, AppCollectionMode.CONTENT)) {
                 val c = base.copy(appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=${mode.wire}\ncom.android.systemui=content").json())
@@ -262,7 +262,7 @@ class AppPolicyInstrumentedTest {
                     waitUntil { ProjectionService.running }
                     openFixture()
                     waitUntil { delta(if (mode == AppCollectionMode.ACTIVITY) "ACTIVITY_ACK" else "SCREEN_ACK") >= 2 }
-                    stop(); waitUntil { context.queue().depth() == 0 }
+                    stop(); waitUntil { context.queue().pendingSync().count == 0 }
                     if (mode == AppCollectionMode.ACTIVITY) {
                         activityRequests = delta("CAPTURE_REQUESTED"); assertEquals(0, activityRequests); assertEquals(0, delta("FRAME_RECEIVED")); assertEquals(0, delta("SCREEN_QUEUED"))
                     } else { contentRequests = delta("CAPTURE_REQUESTED"); assertTrue(contentRequests >= 2); assertTrue(delta("FRAME_RECEIVED") >= 2) }
@@ -286,6 +286,8 @@ class AppPolicyInstrumentedTest {
     }
     private fun waitUntil(condition: () -> Boolean) { val deadline = android.os.SystemClock.elapsedRealtime() + 45000; while (!condition()) { check(android.os.SystemClock.elapsedRealtime() < deadline) { "Generated fixture deadline" }; Thread.sleep(100) } }
     private fun restore(prefs: android.content.SharedPreferences, original: Map<String, *>) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.queue().dedupeIds().forEach { context.queue().removeGeneratedRecord(it) }
         val editor = prefs.edit().clear()
         original.forEach { (key, value) -> when (value) { is String -> editor.putString(key, value); is Boolean -> editor.putBoolean(key, value); is Int -> editor.putInt(key, value); is Long -> editor.putLong(key, value); is Float -> editor.putFloat(key, value) } }; editor.commit()
     }

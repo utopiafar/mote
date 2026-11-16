@@ -79,7 +79,7 @@ class DurableTransportIngressContractTest {
         val directory = Files.createTempDirectory("mote-durable-transport-").toFile()
         try {
             val queue = DurableQueue(directory, cipher).apply { archiveOrigin = origin }
-            val event = event(); queue.enqueue(event, null, 1_000_000)
+            val event = event(); queue.enqueue(event, null)
             val store = Store()
             val transport = DurableCaptureTransport(queue, store, store, CaptureUploadReceipt.scope(origin, device),
                 origin, device, UUID.randomUUID().toString(), process = "generated-contract")

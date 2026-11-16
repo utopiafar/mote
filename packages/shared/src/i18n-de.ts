@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
+  "本机采集内容长期保留，上传确认后不自动删除。": "Lokal erfasste Inhalte werden langfristig aufbewahrt und nach der Upload-Bestätigung nicht automatisch gelöscht.",
+  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "Der lokale Quellenbereich wurde geändert. Ältere ausstehende Versionen sind isoliert; ihre ursprünglichen Eingaben bleiben erhalten.",
+  "ZIP 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件、附件和会议录音需另行备份。": "ZIP-Sicherungen enthalten lokal erfasste Datensätze, ihren Upload-Status und verknüpfte Bilder. Der Upload-Status bleibt nach der Wiederherstellung erhalten. Quelldateien, Anhänge und Besprechungsaufnahmen müssen separat gesichert werden.",
   "单文件上限（MiB，0 为不限）": "Dateigrößenlimit (MiB, 0 = kein zusätzliches Limit)",
   "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "Zentrale Inhalte bleiben unbegrenzt erhalten, ohne Gesamtspeicherquote oder automatische Löschung nach Alter.",
   "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Originaldateien werden standardmäßig archiviert. Bestehende Quellen behalten ihre Aufbewahrungseinstellungen, die Sie unter Quellen ändern können.",

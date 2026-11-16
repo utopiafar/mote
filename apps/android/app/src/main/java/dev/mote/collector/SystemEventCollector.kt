@@ -115,7 +115,7 @@ internal class SystemEventCollector(private val context: Context, private val wo
                     val before = LinkedHashMap(seen); val previousState = lastState
                     if (!accept()) return@sync
                     try {
-                        context.queue().enqueue(event, null, c.maxQueueMiB * 1024L * 1024L, reviewHeld = reviewHeld)
+                        context.queue().enqueue(event, null, reviewHeld = reviewHeld)
                     } catch (error: Exception) { seen.clear(); seen.putAll(before); lastState = previousState; throw error }
                     UploadWorker.schedule(context, c)
                 }

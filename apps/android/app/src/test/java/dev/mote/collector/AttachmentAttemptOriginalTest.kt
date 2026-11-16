@@ -13,7 +13,7 @@ class AttachmentAttemptOriginalTest {
         val cipher=object:ByteCipher { override fun seal(bytes:ByteArray)=bytes; override fun open(bytes:ByteArray)=bytes }
         val queue=DurableQueue(folder.newFolder(),cipher).apply { archiveOrigin="https://generated.example" }
         val original=JSONObject().put("id",UUID.randomUUID().toString()).put("source","note").put("deviceId","generated-device").put("capturedAt","2026-10-26T00:00:00Z").put("durationMs",0).put("ocrText","Generated retained note").put("privacy",JSONObject().put("excluded",false))
-        queue.enqueue(original,null,100000)
+        queue.enqueue(original,null)
         val outgoing=JSONObject(original.toString()).put("metadata",JSONObject().put("attachments",org.json.JSONArray().put(UUID.randomUUID().toString())))
         assertNotEquals(CaptureUploadVersion.of(original),CaptureUploadVersion.of(outgoing))
         val attempts=mutableListOf<CaptureUploadAttempt>()

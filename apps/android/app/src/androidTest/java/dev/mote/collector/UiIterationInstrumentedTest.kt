@@ -97,7 +97,7 @@ class UiIterationInstrumentedTest {
                 scenario.onActivity { assertTrue(it.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0) }
             }
         } finally {
-            context.queue().acknowledge(id)
+            context.queue().removeGeneratedRecord(id)
             MoteI18n.select(context, previous)
         }
     }
@@ -702,7 +702,7 @@ class UiIterationInstrumentedTest {
                     }
                     assertTrue("Header Back resumes the originating Home with its selected navigation and the exact same generated note", homeRecord)
                 } finally { instrumentation.removeMonitor(monitor) }
-                context.queue().acknowledge(savedId)
+                context.queue().removeGeneratedRecord(savedId)
                 scenario.onActivity { assertTrue(QuickNotes.draft(it).read().text.isEmpty()) }
                 tab("TODAY")
                 scenario.onActivity { activity -> activity.openGeneratedAdd(MoteAddAction.SCREEN) }

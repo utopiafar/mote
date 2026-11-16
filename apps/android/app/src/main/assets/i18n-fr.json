@@ -1,4 +1,7 @@
 {
+  "本机采集内容长期保留，上传确认后不自动删除。": "Le contenu capturé localement est conservé à long terme et n’est pas supprimé automatiquement après confirmation de l’envoi.",
+  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "Le périmètre de la source locale a changé. Les anciennes versions en attente sont isolées et leurs données d’origine sont conservées.",
+  "ZIP 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件、附件和会议录音需另行备份。": "Les sauvegardes ZIP contiennent les enregistrements capturés localement, leur état d’envoi et les images associées. Cet état est conservé à la restauration. Les fichiers sources, pièces jointes et enregistrements de réunion doivent être sauvegardés séparément.",
   "单文件上限（MiB，0 为不限）": "Limite par fichier (Mio, 0 = sans limite supplémentaire)",
   "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "Les contenus centraux sont conservés indéfiniment, sans quota global de stockage ni suppression automatique selon leur ancienneté.",
   "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Les fichiers originaux sont archivés par défaut. Les sources existantes conservent leurs paramètres de rétention, modifiables dans Sources.",

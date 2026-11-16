@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "本机采集内容长期保留，上传确认后不自动删除。": "Locally captured content is retained long term and is not automatically deleted after upload acknowledgment.",
+  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "The local source scope has changed. Older pending versions are isolated and their original inputs are retained.",
+  "ZIP 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件、附件和会议录音需另行备份。": "ZIP backups contain locally captured records, upload status and linked images. Upload status is preserved on restore. Source files, attachments and meeting recordings need separate backups.",
   "单文件上限（MiB，0 为不限）": "File size limit (MiB, 0 = no additional limit)",
   "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "Central content is retained indefinitely, without a total storage quota or automatic deletion by age.",
   "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Original files are archived by default. Existing sources keep their retention settings, which you can adjust in Sources.",

@@ -12,8 +12,8 @@ internal data class FileSyncEntry(
     fun phase(now: Long, active: FileSyncTransfer? = null): FileSyncPhase = when {
         received -> FileSyncPhase.RECEIVED
         baseline -> FileSyncPhase.BASELINE
-        active?.key == key -> active.phase
         blocked -> FileSyncPhase.BLOCKED
+        active?.key == key -> active.phase
         retry -> FileSyncPhase.RETRY
         !saved && now < stableAt -> FileSyncPhase.STABILITY
         else -> FileSyncPhase.QUEUED
@@ -25,7 +25,7 @@ internal data class FileSyncEntry(
             val received = !saved && !row.optBoolean("recheck") && row.optString("revision").isNotBlank() && row.optString("signature") == SourceRules.fileSignature(item)
             return FileSyncEntry(SourceRules.hash(item.getString("externalId")), item.optString("observedAt"), received, row.optBoolean("baseline"), saved,
                 if (immediate || item.optString("layer") == "reference" || item.optBoolean("deleted")) 0 else row.optLong("stableSince", System.currentTimeMillis()) + 60_000,
-                row.has("syncFailure") || row.has("nextPrepareAt"), row.optJSONObject("syncFailure")?.optBoolean("blocked") == true)
+                row.has("syncFailure") || row.has("nextPrepareAt"), row.has("quarantine") || row.optJSONObject("syncFailure")?.optBoolean("blocked") == true)
         }
     }
 }

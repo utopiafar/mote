@@ -81,11 +81,7 @@ object NotesPlugin {
         val app = context.applicationContext
         val directory = File(app.noBackupFilesDir, "record-draft")
         return recordStores.computeIfAbsent(directory.absolutePath) {
-            RecordDraftStore(directory, app.localContentCipher()) {
-                app.getSharedPreferences("mote", Context.MODE_PRIVATE).getInt("maxQueue", 256) * 1024L * 1024L -
-                    app.queue().stats().bytes -
-                    File(app.filesDir, "record-pending").listFiles().orEmpty().sumOf { file -> file.length() }
-            }
+            RecordDraftStore(directory, app.localContentCipher())
         }
     }
 
@@ -166,7 +162,7 @@ internal class NotesOwner internal constructor(
             val event = draft.prepare(settings.dataOrigin()) { current ->
                 recordEvent(current.getString("text"), current.getJSONObject("origin"), current.optString("description"), settings, config)
             }
-            app.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+            app.queue().enqueue(event, null)
             // The draft is retained with its prepared identity: only explicit Clear or an
             // edit ends it, and a repeated save reuses the same queued record.
             runCatching { UploadWorker.schedule(app, config) }
@@ -185,7 +181,7 @@ internal class NotesOwner internal constructor(
             validateConversation(origin, presentation, settings)
             val event = recordEvent(text, origin, description, settings, config)
             draft.prepareSubmission(settings.dataOrigin(), event, attachments, presentation)
-            app.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+            app.queue().enqueue(event, null)
             runCatching { UploadWorker.schedule(app, config) }
             event.getString("id")
         } ?: error(MoteI18n.text("请稍后重试"))
@@ -214,7 +210,7 @@ internal class NotesOwner internal constructor(
             event
         }
         val event = prepared.prepared!!
-        app.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+        app.queue().enqueue(event, null)
         SupportEvents.record(app, EventStage.NOTE, EventCode.OK)
         try { scheduleUpload(config) } catch (_: Exception) {
             SupportEvents.record(app, EventStage.NOTE, EventCode.SCHEDULER)

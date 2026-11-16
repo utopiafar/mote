@@ -61,13 +61,13 @@ class CaptureRecordsInstrumentedTest {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
-            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", uploadedRetentionDays = 0, excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT))
+            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT))
             test(context, settings, ids)
         } finally {
             settings.enabled = false; cancel(); shell("dumpsys battery reset")
             ids.forEach { id ->
                 context.queue().capture(id)?.let { record ->
-                    context.queue().acknowledge(id)
+                    context.queue().removeGeneratedRecord(id)
                     if (record.optJSONObject("ocr")?.optString("status") == "pending" || context.queue().capture(id) != null) {
                     }
                 }
@@ -94,7 +94,7 @@ class CaptureRecordsInstrumentedTest {
             val id = UUID.randomUUID().toString(); ids += id
             context.queue().enqueue(JSONObject().put("id", id).put("source", "screen").put("appId", "dev.mote.generated").put("appName", "合成应用").put("capturedAt", start.plusSeconds(i + 1L).toString())
                 .put("imageMime", "image/jpeg").put("ocrText", "Generated OCR $i").put("ocr", JSONObject().put("status", "completed"))
-                .put("privacy", JSONObject().put("excluded", false)), bytes, 1000000)
+                .put("privacy", JSONObject().put("excluded", false)), bytes)
         }
         ActivityScenario.launch(CaptureRecordsActivity::class.java).use { scenario ->
             fun shown(value: String): Boolean { var found = false; scenario.onActivity { found = views(it.window.decorView).filterIsInstance<TextView>().any { view -> view.isShown && view.text.toString().contains(value) } }; return found }

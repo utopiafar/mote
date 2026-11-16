@@ -6,6 +6,7 @@ import org.json.JSONObject
 /** Local receipts describe transport; central processing facts are separately reported. */
 internal object LocalContentPresentation {
     fun fileStatus(row: JSONObject, now: Long = System.currentTimeMillis()): String {
+        if (row.has("quarantine")) return MoteI18n.text("当前本机来源范围已变更，旧待传版本已隔离，原输入保留。")
         val entry = FileSyncEntry.from(row, row.optBoolean("syncImmediately"))
         val active = row.optString("syncPhase").takeIf { it in setOf("PREPARING", "UPLOADING") }?.let { FileSyncTransfer(entry.key, FileSyncPhase.valueOf(it)) }
         val failure = row.optJSONObject("syncFailure")
@@ -49,6 +50,7 @@ internal object LocalContentPresentation {
         !row.has("pending") && !row.optBoolean("recheck") && row.optJSONObject("candidate")?.let { candidate -> row.optString("signature") == SourceRules.fileSignature(candidate) } == true
     }?.takeIf { it.isNotBlank() }
     fun sourceStatus(source: LocalSource, state: JSONObject): String = when {
+        (state.optJSONArray("quarantine")?.length() ?: 0) > 0 -> MoteI18n.text("当前本机来源范围已变更，旧待传版本已隔离，原输入保留。")
         !source.enabled -> MoteI18n.text("此来源已暂停")
         state.optBoolean("fileTransferring") -> MoteI18n.text("正在同步来源记录")
         state.optString("status") == "permission" -> MoteI18n.text("需要重新授权 · 点击修复这个来源")

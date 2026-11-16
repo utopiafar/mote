@@ -35,7 +35,7 @@ class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(cont
                             }
                             if (!emission.complete) SourceWork.continueScan(applicationContext, source.id, inputData.getBoolean("syncExplicit", false))
                         }
-                        is SourceEmission.Indexed -> store.scan(source, emission.scan, minOf(64L, settings.read().maxQueueMiB.toLong()) * 1024 * 1024, lease)
+                        is SourceEmission.Indexed -> store.scan(source, emission.scan, lease)
                     }
                     SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.OK, sourceId = source.id)
                 } catch (_: SecurityException) { store.status(source.id, "permission", lease = lease); SourceWork.cancel(applicationContext, source.id); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.PERMISSION, sourceId = source.id) }
@@ -61,6 +61,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
         }
         return try {
             val config = settings.read(); val explicit = inputData.getBoolean("manual", false)
+            val connectionLease = ConnectionLease(applicationContext, config)
             if (!config.hasSyncConnection() || config.syncPaused || (config.syncMode == "manual" && !explicit)) return Result.success()
             if (inputData.getString("syncStamp") != SyncSchedule.stamp(config)) return Result.success()
             config.validate(); config.validateConnection(); val target = SourceRules.target(config.server, config.token)
@@ -74,6 +75,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
             val dispatch = UploadSlice(maxBytes = 8L * 1024 * 1024, maxRequests = 128)
             for (selectedSource in rotateUploadSources(store.sources().filter { it.enabled }, after) { it.id }) {
                 var source = selectedSource
+                var sourceLease = store.lease(source)
                 if (dispatch.exhausted) { more = true; readyMore = true; break }
                 val slice = UploadSlice(); var submitted = 0
                 rotation.edit().putString("target", target).putString("after", source.id).apply()
@@ -81,35 +83,37 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
                 if (source.kind == "local-files" && source.retention == "snapshot" && !source.centralProcessingConsent) { store.status(source.id, "consent"); blocked = true; continue }
                 if (!SourceWork.runnable(applicationContext, source)) { store.status(source.id, "permission"); SourceWork.cancel(applicationContext, source.id); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
+                fun stillSelected(): Boolean = !isStopped && connectionLease.current() && sourceLease?.let(store::current) == true && SourceWork.runnable(applicationContext, source)
+                fun http() = CollectorHttp(applicationContext) { check(stillSelected()); connectionLease.requireCurrent() }
                 try {
-                    fun stillSelected(): Boolean = !isStopped && !ConnectionGuard.reconfiguring() && store.sources().any { it == source && it.enabled } && SourceWork.runnable(applicationContext, source) && settings.read().let { SourceRules.target(it.server, it.token) == target }
                     if (!stillSelected()) return Result.retry()
                     store.selectTarget(source.id, target)
                     if (!store.state(source.id).optBoolean("registered")) {
                         val registrationBody = source.registration(settings.deviceId)
                         slice.record(registrationBody.toString().toByteArray(Charsets.UTF_8).size.toLong())
                         SyncSchedule.requireConditions(applicationContext, config)
-                        val (code, registration) = CollectorHttp(applicationContext).post("${config.server}/api/sources", registrationBody, config.connectionToken())
+                        val (code, registration) = http().post("${config.server}/api/sources", registrationBody, config.connectionToken())
                         if (code !in 200..299 || registration?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(code), httpStatus = code); store.status(source.id, "http"); failed = true; continue }
                         if (!registration.optBoolean("enabled", true)) { store.status(source.id, "paused"); continue }
                         if (!stillSelected()) return Result.retry()
                         val patch = org.json.JSONObject().put("name", source.name).put("initialSync", source.initialSync).put("retention", source.retention)
                         slice.record(patch.toString().toByteArray(Charsets.UTF_8).size.toLong())
                         SyncSchedule.requireConditions(applicationContext, config)
-                        val (patchCode, updated) = CollectorHttp(applicationContext).request("PATCH", "${config.server}/api/sources/${source.id}", patch, config.connectionToken())
+                        val (patchCode, updated) = http().request("PATCH", "${config.server}/api/sources/${source.id}", patch, config.connectionToken())
                         if (patchCode !in 200..299 || updated?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(patchCode), httpStatus = patchCode); store.status(source.id, "http"); failed = true; continue }
                         store.registered(source.id, target)
                     }
-                    val confirmed = SourceContextSync.sync(applicationContext, store, source, config, target, slice, ::stillSelected)
+                    val confirmed = TransferRequestGuard.within({ check(stillSelected()); connectionLease.requireCurrent() }) { SourceContextSync.sync(applicationContext, store, source, config, target, slice, ::stillSelected) }
                     if (confirmed == null) {
                         if (store.state(source.id).optString("status") == "context-conflict") blocked = true else failed = true
                         continue
                     }
                     source = confirmed
+                    sourceLease = store.lease(source)
                     if (SourceAdapters.default.forKind(source.kind).queueKind == SourceQueueKind.FILE_ARCHIVE) {
                         if (explicit && source.retention == "snapshot" && source.syncContinuously) {
                             SyncSchedule.requireConditions(applicationContext, config)
-                            val (recoveryCode, recovery) = CollectorHttp(applicationContext).get("${config.server}/api/file-sync/v1/recovery?sourceId=${android.net.Uri.encode(source.id)}", config.connectionToken())
+                            val (recoveryCode, recovery) = http().get("${config.server}/api/file-sync/v1/recovery?sourceId=${android.net.Uri.encode(source.id)}", config.connectionToken())
                             slice.record(0)
                             if (recoveryCode == 200 && recovery?.optJSONArray("items") != null) {
                                 if (!stillSelected()) return Result.retry()
@@ -124,7 +128,6 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         if (!finished) { more = true; if (applicationContext.fileArchives().transportReady(source.id)) readyMore = true }
                         val scanComplete = applicationContext.fileArchives().state(source.id).optBoolean("scanComplete")
                         store.status(source.id, if (!scanComplete) "partial" else if (finished) "synced" else "scanned")
-                        if (finished && scanComplete) settings.syncStatus("uploading", if (source.retention == "archive") MoteI18n.text("文件原件已归档；手机原文件保留") else MoteI18n.text("文件已接收；中央处理与可搜索状态请在资料库查看"), uploaded = true)
                         continue
                     }
                     while (submitted < 20 && !slice.exhausted) {
@@ -135,13 +138,13 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         SyncSchedule.requireConditions(applicationContext, config)
                         val identity = itemHistory.identity("source-item", source.id, body)
                         val (code, ack) = itemHistory.send(identity, "item", body.toString().toByteArray(Charsets.UTF_8).size.toLong(), { code, ack -> if (code in 200..299 && SourceRules.validAck(source.id, body, ack)) "received" else "unknown" }) {
-                            CollectorHttp(applicationContext).request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.connectionToken())
+                            http().request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.connectionToken())
                         }
                         if (code == 409 || code == 410) {
                             Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = code)
                             val paused = code == 409 && runCatching {
                                 SyncSchedule.requireConditions(applicationContext, config)
-                                val (lookupCode, listing) = CollectorHttp(applicationContext).get("${config.server}/api/sources", config.connectionToken())
+                                val (lookupCode, listing) = http().get("${config.server}/api/sources", config.connectionToken())
                                 lookupCode == 200 && IngressV2Protocol.sourcePaused(source.id, listing)
                             }.getOrElse { if (it is SyncConditionsUnavailable) throw it else false }
                             store.status(source.id, if (paused) "paused" else "ack")
@@ -151,8 +154,8 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         if (code !in 200..299 || !SourceRules.validAck(source.id, body, ack)) {
                             store.status(source.id, "ack"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(code), httpStatus = code); SupportEvents.record(applicationContext, EventStage.SOURCE, EventJournal.httpFailure(code), httpStatus = code); failed = true; break
                         }
+                        check(stillSelected())
                         itemHistory.received(identity, ack!!.getString("id")); submitted++
-                        settings.syncStatus("uploading", MoteI18n.text("正在同步来源记录"), uploaded = true)
                         Operations.record(applicationContext, OperationKind.SOURCE_ACK, httpStatus = code)
                         SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.OK, httpStatus = code, sourceId = source.id)
                     }
@@ -165,7 +168,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = error.httpStatus)
                     val paused = error.httpStatus == 409 && runCatching {
                         SyncSchedule.requireConditions(applicationContext, config)
-                        val (lookupCode, listing) = CollectorHttp(applicationContext).get("${config.server}/api/sources", config.connectionToken())
+                        val (lookupCode, listing) = http().get("${config.server}/api/sources", config.connectionToken())
                         lookupCode == 200 && IngressV2Protocol.sourcePaused(source.id, listing)
                     }.getOrElse { if (it is SyncConditionsUnavailable) throw it else false }
                     store.status(source.id, if (paused) "paused" else "ack")

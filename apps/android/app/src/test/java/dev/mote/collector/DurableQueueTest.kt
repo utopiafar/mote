@@ -21,15 +21,15 @@ class DurableQueueTest {
     @Test fun `new captures can pass a 400 day history without losing the historical queue`() {
         val queue = DurableQueue(folder.newFolder(), cipher)
         val historicalIds = (0 until 400).map { i ->
-            queue.enqueue(event().put("source", "note").put("ocrText", "Generated history $i").put("capturedAt", java.time.Instant.parse("2024-01-01T00:00:00Z").plusSeconds(i * 86400L).toString()), null, 16L * 1024 * 1024)
+            queue.enqueue(event().put("source", "note").put("ocrText", "Generated history $i").put("capturedAt", java.time.Instant.parse("2024-01-01T00:00:00Z").plusSeconds(i * 86400L).toString()), null)
         }.toSet()
         val since = System.currentTimeMillis() + 1
         while (System.currentTimeMillis() < since) Thread.yield()
         val fresh = event().put("source", "note").put("ocrText", "Generated fresh note")
-        queue.enqueue(fresh, null, 16L * 1024 * 1024)
+        queue.enqueue(fresh, null)
         val first = queue.peekBatch(maxCount = 25, preferSince = since)
         assertEquals(fresh.getString("id"), first.first().getString("id"))
-        queue.acknowledge(fresh.getString("id")); assertEquals(400, queue.depth())
+        queue.acknowledge(fresh.getString("id")); assertEquals(401, queue.depth()); assertEquals(400, queue.pendingSync().count)
         val historical = queue.peekBatch(maxCount = 25)
         assertTrue(historical.isNotEmpty())
         assertTrue(historical.all { it.getString("ocrText").startsWith("Generated history ") })
@@ -41,11 +41,11 @@ class DurableQueueTest {
             retainedIds.addAll(page)
             after = page.lastOrNull()
         } while (page.size == 100)
-        assertEquals(historicalIds, retainedIds)
+        assertEquals(historicalIds + fresh.getString("id"), retainedIds)
     }
     @Test fun `batch selection is bounded and partial acknowledgement survives restart`() {
         val dir = folder.newFolder(); val queue = DurableQueue(dir, cipher)
-        repeat(4) { queue.enqueue(event(), ByteArray(500) { it.toByte() }, 100000) }
+        repeat(4) { queue.enqueue(event(), ByteArray(500) { it.toByte() }) }
         assertEquals(2, queue.peekBatch(2).size)
         assertEquals(1, queue.peekBatch(25, 10).size)
         val selected = queue.peekBatch()
@@ -61,7 +61,7 @@ class DurableQueueTest {
         val queue = DurableQueue(dir, cipher)
         val event = event()
         val fixture = "generated-image-only".toByteArray()
-        queue.enqueue(event, fixture, 100000)
+        queue.enqueue(event, fixture)
         val first = queue.peek()!!.toString()
         val restarted = DurableQueue(dir, cipher)
         restarted.recoverOrphans()
@@ -69,39 +69,39 @@ class DurableQueueTest {
         assertEquals(1, restarted.depth())
         assertArrayEquals(fixture, Base64.getDecoder().decode(restarted.peek()!!.getString("imageBase64")))
         restarted.acknowledge(event.getString("id"))
-        assertEquals(0, restarted.depth())
-        assertEquals(0, restarted.bytes())
+        assertEquals(1, restarted.depth())
+        assertTrue(restarted.capture(event.getString("id"))!!.getBoolean("uploaded")); assertTrue(restarted.bytes() > 0); assertNull(restarted.peek())
     }
-    @Test fun `identical images share one blob until last acknowledgement`() {
+    @Test fun `identical images keep their shared blob after both acknowledgements`() {
         val dir = folder.newFolder()
         val queue = DurableQueue(dir, cipher)
         val first = event(); val second = event()
-        queue.enqueue(first, byteArrayOf(1, 2, 3), 100000)
-        queue.enqueue(second, byteArrayOf(1, 2, 3), 100000)
+        queue.enqueue(first, byteArrayOf(1, 2, 3))
+        queue.enqueue(second, byteArrayOf(1, 2, 3))
         assertEquals(1, dir.listFiles()!!.count { it.extension == "blob" })
         queue.acknowledge(first.getString("id"))
         assertEquals(1, dir.listFiles()!!.count { it.extension == "blob" })
         assertEquals(second.getString("id"), queue.peek()!!.getString("id"))
         queue.acknowledge(second.getString("id"))
-        assertEquals(0, dir.listFiles()!!.count { it.extension == "blob" })
+        assertEquals(1, dir.listFiles()!!.count { it.extension == "blob" }); assertEquals(2, queue.depth()); assertNull(queue.peek())
     }
-    @Test fun `full queue preserves older events without silent deletion`() {
+    @Test fun `former queue quota does not block new inputs or remove old originals`() {
         val queue = DurableQueue(folder.newFolder(), cipher)
-        queue.enqueue(event(), ByteArray(100), 100000)
+        queue.enqueue(event(), ByteArray(100))
         val before = queue.peek()!!.toString()
-        assertThrows(QueueFull::class.java) { queue.enqueue(event(), ByteArray(1000), queue.bytes() + 20) }
+        queue.enqueue(event(), ByteArray(1000))
         assertEquals(before, queue.peek()!!.toString())
-        assertEquals(1, queue.depth())
+        assertEquals(2, queue.depth())
     }
     @Test fun `excluded frame cannot enter storage`() {
         val queue = DurableQueue(folder.newFolder(), cipher)
-        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event(true), byteArrayOf(1), 10000) }
+        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event(true), byteArrayOf(1)) }
         assertEquals(0, queue.bytes())
     }
     @Test fun `crash leftovers removed without losing valid observations`() {
         val dir = folder.newFolder()
         val queue = DurableQueue(dir, cipher)
-        queue.enqueue(event(), byteArrayOf(1, 2), 100000)
+        queue.enqueue(event(), byteArrayOf(1, 2))
         File(dir, "interrupted.tmp").writeText("fixture")
         File(dir, "orphan.blob").writeText("fixture")
         queue.recoverOrphans()
@@ -121,19 +121,19 @@ class DurableQueueTest {
     @Test fun `manual notes persist without fabricated image across restart and acknowledgement`() {
         val dir = folder.newFolder(); val queue = DurableQueue(dir, cipher)
         val note = event().put("source", "note").put("ocrText", "合成记录：今天心情不错").put("mood", "平静")
-        queue.enqueue(note, null, 100000)
+        queue.enqueue(note, null)
         assertEquals(0, dir.listFiles()!!.count { it.extension == "blob" })
         val restarted = DurableQueue(dir, cipher); restarted.recoverOrphans()
         val actual = restarted.peek()!!
         assertFalse(actual.has("imageBase64")); assertFalse(actual.has("imageMime")); assertFalse(actual.has("_blob"))
         assertEquals(note.toString(), actual.toString())
-        restarted.acknowledge(note.getString("id")); assertEquals(0, restarted.depth()); assertEquals(0L, restarted.bytes())
+        restarted.acknowledge(note.getString("id")); assertEquals(1, restarted.depth()); assertTrue(restarted.bytes() > 0); assertNull(restarted.peek()); assertEquals(note.getString("ocrText"), restarted.capture(note.getString("id"))!!.getString("ocrText"))
     }
 
     @Test fun `library version callback does not hold the queue lock`() {
         val queue = DurableQueue(folder.newFolder(), cipher).apply { archiveOrigin = "https://generated.example" }
         val note = event().put("source", "note").put("ocrText", "Generated note")
-        queue.enqueue(note, null, 100000)
+        queue.enqueue(note, null)
         val lockProbe = Thread { DurableQueue.exclusive { } }.apply { isDaemon = true }
         try {
             val page = queue.capturePage("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", source = "note",
@@ -167,10 +167,10 @@ class DurableQueueTest {
             .put("metadata", JSONObject().put("noteOrigin", JSONObject().put("kind", "share").put("text", "Generated quoted source")))
         val image = byteArrayOf(1, 2, 3)
         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(image).joinToString("") { "%02x".format(it) }
-        queue.enqueue(older, null, 100000); queue.enqueue(note, image, 100000)
+        queue.enqueue(older, null); queue.enqueue(note, image)
         queue.acknowledge(note.getString("id"), retentionDays = 7)
         queue.cacheCentralDerived(JSONObject().put("id", note.getString("id")).put("textPreview", "Generated central preview")
-            .put("ocr", JSONObject().put("status", "completed")), 100000)
+            .put("ocr", JSONObject().put("status", "completed")))
         queue.archiveOrigin = "https://other.example"
 
         val page = queue.capturePage("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", limit = 1, source = "note", libraryBindings = true)
@@ -196,8 +196,8 @@ class DurableQueueTest {
         val older = event().put("source", "note").put("deviceId", "generated-device").put("ocrText", "Generated older")
         val newer = event().put("source", "note").put("deviceId", "generated-device").put("ocrText", "Generated newer")
             .put("capturedAt", "2027-01-01T00:00:00Z")
-        queue.enqueue(older, null, 100000)
-        queue.enqueue(newer, null, 100000)
+        queue.enqueue(older, null)
+        queue.enqueue(newer, null)
         queue.acknowledge(newer.getString("id"), retentionDays = 7)
         queue.archiveOrigin = "https://other.example"
 

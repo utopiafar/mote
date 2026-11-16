@@ -88,7 +88,7 @@ class Ua15AcceptanceCaptureInstrumentedTest {
             note("低温慢烤牛肋排的时间表", base.minusSeconds(360), "seriouseats.com"),
             notification,
             note("租房合同 2026.pdf", base.minusSeconds(86_500)))
-        rows.forEach { event -> queue.enqueue(event, if (event.optString("source") == "screen") image else null, 1_000_000) }
+        rows.forEach { event -> queue.enqueue(event, if (event.optString("source") == "screen") image else null) }
         LocalStatusProducer.get(context).refresh()
         until("seeded local records") { LocalStatusProducer.get(context).state.value.active?.records == rows.size }
     }
