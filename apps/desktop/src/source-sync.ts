@@ -579,7 +579,17 @@ export class SourceSync {
   private async sendBatch(source: SourceDefinition, batch: SourceItem[], request: SourceRequest, signal?: AbortSignal, observer?: SourceUploadObserver): Promise<BatchResult> {
     const first = batch[0]!;
     if (first.kind === 'file' && first.document?.fileIndex) {
-      if(first.localOriginalBase64||first.localOriginal)return {acks:[await this.sendFile(source,first,request,signal)]};
+      if(first.localOriginalBase64||first.localOriginal){
+        try{return {acks:[await this.sendFile(source,first,request,signal)]};}
+        catch(error){
+          signal?.throwIfAborted();
+          // A deleted immutable revision cannot be repaired by retransmission.
+          // Keep its original in the existing per-version quarantine and let
+          // a future revision reach the current Central head.
+          if((error as {httpStatus?:unknown})?.httpStatus===410)return {acks:[],rejected:[{item:first,status:410}]};
+          throw error;
+        }
+      }
       if(this.manifestBatch===undefined){const cap=await request('/api/file-sync/v1/capabilities',undefined,'GET',signal) as {manifestBatch?:number};this.manifestBatch=typeof cap.manifestBatch==='number'&&cap.manifestBatch>=this.limits.batchSize;}
       if (!this.manifestBatch) {
         const acks = [];

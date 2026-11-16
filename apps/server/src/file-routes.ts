@@ -88,7 +88,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.addHook('onClose',async()=>{thumbnails.clear();if(ownsGrants)grants.retire();});
   // Owner-only routes are excluded from the collector route allowlist.
   app.post('/api/records/:id/attachments/:attachmentId/processing',{bodyLimit:1024},async req=>attachments.prepare(id(req),(req.params as {attachmentId:string}).attachmentId,req.body,check(req)));
-  app.delete('/api/files/:id',async req=>files.forget(fileId(req)));
+  app.delete('/api/files/:id',async req=>files.deleteArchive(fileId(req)));
   app.post('/api/files/:id/allow-again',async req=>{const q=z.object({sourceId:z.string(),externalId:z.string()}).strict().parse(req.body);return files.allowAgain(q.sourceId,q.externalId);});
   app.post('/api/files/:id/cancel',async req=>{if(device(req))throw new StoreError('Owner access required',403);z.object({}).strict().parse(req.body??{});file(req);return processing.cancel(fileId(req));});
   app.post('/api/files/:id/retry',async req=>{if(device(req))throw new StoreError('Owner access required',403);const q=z.object({stage:z.enum(['transcribe','diarize','summary']).default('transcribe'),confirmUnknown:z.boolean().default(false),diarization:z.object({artifactId:z.string().uuid(),options:fileDiarizationOptionsSchema.nullable()}).strict().optional()}).strict().parse(req.body??{});file(req);return withOwnerIntent(fileId(req),()=>processing.retry(fileId(req),q.stage,false,q.confirmUnknown,q.diarization));});

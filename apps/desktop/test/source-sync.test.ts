@@ -61,6 +61,20 @@ const fileIndex = { version: 1 as const, fileId: 'file:' + 'b'.repeat(64), conte
 const fileItem: ScannedItem = { ...item, document: { fileIndex } };
 
 describe('source revisions and durable acknowledgments', () => {
+  it('quarantines only a confirmed binary archive history deletion and retains its original without an ACK',async()=>{
+    const engine=await create(),bytes=Buffer.from('Generated deleted archive'),binary:ScannedItem={...fileItem,layer:'original',text:'',localOriginalBase64:bytes.toString('base64')};
+    await engine.stage(scan([binary]),false,'2026-11-17T00:00:00Z');
+    const request:SourceRequest=async(path)=>{if(path==='/api/sources')return {...source,enabled:true};if(path.startsWith('/api/file-sync/v1/head'))return {revision:'deleted-version'};throw Object.assign(Error('Generated deleted revision'),{httpStatus:410});};
+    await engine.flush(source,request);expect(engine.status().pending).toBe(0);expect(engine.status().blocked).toBe(1);expect(engine.status().lastAcknowledgedAt).toBeUndefined();expect(engine.status().failures[0].status).toBe(410);
+    expect(Object.values((sourceState(join(directory,'state.json')) as any).quarantined)[0]).toMatchObject({status:410,item:{localOriginalBase64:bytes.toString('base64')}});
+  });
+  it('does not classify binary archive permission, conflict, transport or cancelled replies as deleted history',async()=>{
+    for(const status of [403,409,503,'cancelled'] as const){
+      const path=join(directory,String(status)+'.json'),engine=new SourceSync(path);await engine.initialize();await engine.stage(scan([{...fileItem,layer:'original',text:'',localOriginalBase64:Buffer.from('Generated retained input').toString('base64')}]),false,'2026-11-17T00:00:00Z');const controller=new AbortController();
+      const request:SourceRequest=async(path)=>{if(path==='/api/sources')return {...source,enabled:true};if(path.startsWith('/api/file-sync/v1/head'))return {revision:null};if(status==='cancelled')controller.abort();throw Object.assign(Error('Generated refused input'),{httpStatus:status==='cancelled'?410:status});};
+      await expect(engine.flush(source,request,controller.signal)).rejects.toBeDefined();expect(engine.status().pending).toBe(1);expect(engine.status().blocked).toBe(0);expect(engine.status().lastAcknowledgedAt).toBeUndefined();
+    }
+  });
   it('accepts a known 17MiB snapshot recovery and rejects unknown versions or over-limit bytes',async()=>{
     const engine=await create(),sent:SourceItem[]=[],large={...item,metadata:{version:1 as const,file:{sizeBytes:17*1024*1024+19}}};
     await engine.stage(scan([large]),false,'2026-10-05T00:00:00Z');await engine.flush(source,transport(sent));
