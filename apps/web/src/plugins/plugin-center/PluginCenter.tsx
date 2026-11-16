@@ -96,7 +96,7 @@ export function PluginCenter({api,onPage,viewScope,mode='plugins'}:{api:Api;onPa
  const latestInstance=dialog?.kind==='configure'&&dialog.instance?view?.instances.find(instance=>instance.id===dialog.instance!.id):undefined;
  function open(next:Dialog,event?:HTMLElement){if(!confirmNavigation())return;opener.current=event??document.activeElement as HTMLElement;setDialog(next);setScope('default');setFee(false);setError('');setNotice('');setRetry(undefined);}
  function close(){if(!busy&&confirmNavigation())setDialog(undefined);}
- function refresh(){resources(api).invalidate(key=>key===pluginsPath||key===buildsPath||key.startsWith('/api/plugin-builds')||key.startsWith('/api/plugin-instances')||key.startsWith('/api/memory-spaces')||key.startsWith('/api/operations'));}
+ function refresh(){resources(api).invalidate(key=>key===pluginsPath||key==='/api/plugins/presentation'||key===buildsPath||key.startsWith('/api/plugin-builds')||key.startsWith('/api/plugin-instances')||key.startsWith('/api/memory-spaces')||key.startsWith('/api/operations'));}
  async function execute(intent:Intent){
   if(busyRef.current)return;const owner=api,signal=new AbortController();controller.current?.abort();controller.current=signal;busyRef.current=true;setBusy(true);setError('');setNotice('');setRetry(undefined);
   try{const value=await owner.request(intent.path,{method:intent.method,body:JSON.stringify(intent.body),signal:signal.signal});if(identity.current!==owner||signal.signal.aborted)return;refresh();setNotice(moteText('请求已登记，运行状态以中央返回为准。'));intent.after?.(value);}

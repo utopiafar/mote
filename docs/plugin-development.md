@@ -91,10 +91,10 @@ Running on a real host:
   `@mote/plugin-sdk/node`) and exercises the typed port through a lease.
   Its optional source/seed files require an explicitly declared ingress adapter
   for `plugin-dev dev`; the explicitly selected data-only release omits ingress.
-  The default build preserves the separate page declaration and HTML. That full
-  artifact stays blocked with `collection.page` unknown until its presentation
-  host actually supports installed-page loading; it is not a production-ready
-  whole-template claim.
+  The default build includes the isolated page and its declared `state/add`
+  bridge. The complete release installs, checks and enables through the same
+  production path; the authenticated Web startup registers its navigation.
+  `--data-only` remains an explicit artifact choice for a service-only package.
 - `worker` artifacts install through the plugin-center release path: the
   host resolves a pinned release, verifies the archive digest, expands the
   payload, creates an instance with the declared `dataFile` configuration
@@ -208,6 +208,65 @@ Self-contained `runtime: "service"` releases with a processing contribution and 
 Pure data service releases use the [domain template](../examples/domain-plugin). The entry exports `manifest` (`apiVersion: 1`, matching package ID/version, data contributions, capability IDs, `required` and `optional` dependency declarations) and `createPlugin(context, {configuration, required, optional})`. Data declarations match the verified package, use its entry, and provide distinct `kind: "service"`, `cardinality: "single"` ports with one exact API version per contribution. The factory receives host-bound `scope`, `state`, `services` and `provide`, plus configuration and exact resolved dependency bindings. Construct the domain in the factory, load in `prepare`, publish every declared port in `start`, and release resources in the remaining lifecycle phases. A capability summary may be empty; the actual typed declaration still needs a successful check for the current configuration.
 
 Check uses the real PluginHost lifecycle with staged port publication and read-only instance state. Enable alone publishes actual typed services; missing ports, undeclared ports/APIs, module claims beyond the verified Manifest and lifecycle failures block readiness and release partial publications. `context.services.acquire(contract, binding)` accepts only the resolved required/optional pins. Required service/package/contribution/host dependencies must resolve to exact live providers, multiple matching providers are an explicit ambiguity, and dependencies are never enabled automatically. Normal restart restores already-enabled providers before consumers; dependency withdrawal aborts the pinned consumer and projects it blocked, while a new explicit check/enable can acquire a fresh binding. Stop fences old leases and state writes, including asynchronous startup and late results. State stays in the same instance namespace across disable and restart. Installed page/theme/layout activation remains a separate host boundary.
+
+## Installed Web presentation
+
+The current Web contract supports `runtime: "service"` packages with these
+`runtime: "host"`, contribution-version `"1"` declarations. The package Manifest
+stays the authority; the installer never runs build or package-manager scripts.
+
+| Surface | Package-relative entry | Actual consumer |
+| --- | --- | --- |
+| `page` | Self-contained `.html`/`.htm`, at most 1 MiB | Host-owned `CustomPluginPage` in an opaque-origin, script-only sandbox. |
+| `theme` | `.json`, at most 128 KiB, containing `UiThemePack` | Complete validated role values, optionally both color schemes, applied by the existing presentation host. No CSS files, URLs or executable fields. |
+| `layout` | `.json`, at most 128 KiB, containing `UiLayoutProfile` | Compiled `WorkspaceShell`: `sidebar/adaptive/top` navigation, `split/stack` detail, the desktop primary destinations in any order and the existing secondary destinations. No downloaded renderer. |
+
+The JSON pack has its own exact `id/version`; the Web host qualifies its ID by
+instance so two instances coexist. Enable registers choices; it does not choose
+a provider by install order. The owner selects a theme/layout in appearance
+preferences. Selection is saved under the current login's non-secret view scope
+when browser storage is available, restored on refresh, and falls back to the
+built-in pack when the selected provider is unavailable. The stable content
+portal preserves mounted fields and work while presentation changes.
+
+A render-only page needs no bridge. A page that uses a domain port declares one
+same-instance data contribution and only the methods it needs, for example:
+
+```json
+{
+  "bridge": {
+    "contributionId": "template-collection.port",
+    "service": {"id": "template.collection.log", "apiVersion": "1"},
+    "methods": ["state", "add"]
+  }
+}
+```
+
+The page must also require that contribution at its exact version. Check validates
+the actual staged port's methods without calling them. The bridge carries the
+existing nonce/documentKey/instance/generation envelope over a document-bound
+MessagePort. The trusted parent dispatches only declared methods to an owner-only
+API using the exact live instance/activation; no owner token or Host API enters
+the frame. Requests and results stay within the 64 KiB bridge resource bound.
+Instance commands do not grant model work or external effects; those still use
+their existing authorization and Actions. The example uses button/keyboard
+events because native form submission is deliberately absent from the sandbox.
+
+`GET /api/plugins/presentation` is the authenticated startup inventory, separate
+from the package/instance control view. A document URL reads only enabled static
+package HTML, under a server CSP that denies network/subresource loads, nested
+frames, forms and origin privileges. Assets must be inline (data images are
+allowed). A declaration cannot supply an arbitrary remote React component.
+
+Required local references must match checked sibling declarations; remote
+service/package/contribution/host references need active exact typed providers.
+The built-in `host: mote.web.presentation@1` fact identifies this compiled
+contract. Missing, incompatible or ambiguous providers and unsupported
+declarations block readiness. Normal restart restores selected providers first
+and issues fresh activation identities. Disable, uninstall, dependency loss and
+sign-out withdraw the Web scope and fence old documents and late replies. Page
+navigation closes its channel without cancelling separately authorized server
+work; stopping a plugin remains a distinct owner action.
 
 Installing or upgrading a consumer does not scan history or grant model work. Versioned outputs, source scope, runtime removal and current installation identity control reuse and publication. Disabling presentation does not revoke or enable processing. A native application can keep internal workflows while connecting authorized Mote context, visible state and artifacts. See [material and consumer contracts](plugin-surfaces.md#material-and-processing-contracts), [materials](materials.md), [processing](processing.md) and [Memory](memory.md).
 

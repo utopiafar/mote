@@ -3,6 +3,7 @@ import {z} from 'zod';
 import type {PluginCenter} from '../plugin-center.js';
 import type {MemoryBindings} from '../memory-bindings.js';
 import type {MemoryAutomation} from '../memory-automation.js';
+import {PLUGIN_PAGE_CSP} from './presentation-plugin-loader.js';
 
 export interface PluginControlHttpDeps {
   plugins: PluginCenter;
@@ -19,6 +20,15 @@ export function registerPluginControlHttp(app: FastifyInstance, {plugins, bindin
   const id = (request: FastifyRequest) => z.object({id: z.string().min(1)}).parse(request.params).id;
   app.get('/api/plugins', async request => { owner(request); return plugins.view(); });
   app.get('/api/plugins/host-capabilities', async request => { owner(request); return plugins.hostCapabilities(); });
+  app.get('/api/plugins/presentation', async request => { owner(request); return plugins.presentationInventory(); });
+  app.post('/api/plugin-instances/:id/pages/:pageId/invoke',async request=>{
+    owner(request);const {pageId}=z.object({pageId:z.string().min(1)}).passthrough().parse(request.params);
+    return plugins.invokePresentation(id(request),pageId,request.body);
+  });
+  app.get('/plugin-pages/:id/:activationId/:pageId',async(request,reply)=>{
+    const {id,activationId,pageId}=z.object({id:z.string().min(1),activationId:z.string().uuid(),pageId:z.string().min(1)}).parse(request.params);
+    return reply.header('Content-Security-Policy',PLUGIN_PAGE_CSP).header('Cache-Control','no-store').header('Referrer-Policy','no-referrer').type('text/html; charset=utf-8').send(plugins.presentationDocument(id,activationId,pageId));
+  });
   app.post('/api/plugins/resolve', async request => { owner(request); return plugins.resolve(request.body); });
   app.post('/api/plugins/install', async request => { owner(request); return plugins.install(request.body); });
   app.post('/api/plugins/:id/uninstall', async request => { owner(request); return plugins.uninstall(id(request), request.body); });

@@ -3,7 +3,7 @@ import {EXECUTION_POLICIES} from './execution-policy.js';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {z} from 'zod';
-import type {PluginBuildView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginCapability} from '@mote/shared';
+import type {PluginBuildView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginCapability,PluginPresentationInventory} from '@mote/shared';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {GitHubPluginReleases,type PluginManifest,type ResolvedPluginRelease} from './plugin-release.js';
 import {HostedPluginRuntime,WorkerPluginRuntime,type PluginRuntime} from './plugin-runtime.js';
@@ -11,7 +11,7 @@ import {memoryControlCommandSchema} from './memory-automation.js';
 import {sha256,StoreError,type Store} from './store.js';
 import {PluginControlStore,type BuildInstance,type BuildInstanceRecord,type BuildPackageRecord,type BuildSelection} from './plugins/plugin-control-store.js';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,ServiceBinding,ScopeIdentity} from '@mote/plugin-api/contracts';
+import {serviceContract,type PluginLifecycle,type ServiceBinding,type ScopeIdentity} from '@mote/plugin-api/contracts';
 import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext} from '@mote/plugin-host';
 import {centralServices} from './plugins/central-contracts.js';
 import {officialPluginCatalog} from './official-plugin-catalog.js';
@@ -23,6 +23,7 @@ import type {ConnectorActivation} from './connectors/types.js';
 import type {ConnectorManifest} from './connectors/registry.js';
 import type {OutboundExportStatus} from './plugins/outbound-export-host.js';
 import {bundledConnector,bundledConnectorSelection} from './bundled-connectors.js';
+import {loadPresentationPackage,presentationContributions,presentationDependencies,type LoadedPresentation} from './plugins/presentation-plugin-loader.js';
 
 /** Hot connector host used by service-runtime ingress packages. */
 export type PluginConnectorHost={
@@ -94,6 +95,7 @@ export class PluginCenter {
   processingHost?:ProcessingPluginHost;
   private readonly processingInstances=new Map<string,{controller:AbortController;handle?:PluginHandle}>();
   private readonly domainInstances=new Map<string,{controller:AbortController;handle?:PluginHandle;bindings:ServiceBinding[]}>();
+  private readonly presentationInstances=new Map<string,{handle:PluginHandle;loaded:LoadedPresentation}>();
   private readonly serviceEpochs=new Map<string,number>();
   /** Bound after built-in connectors start. Selecting or authorizing one never
    * executes; the same host dispatcher revalidates it on every action. */
@@ -119,12 +121,19 @@ export class PluginCenter {
         const health=pkg.manifest.runtime==='service'
           ?await this.probeServicePackage(pkg,id,signal)
           :pkg.manifest.capabilities.every(value=>value==='calendar.manage')?{capabilities:[],issues:[]}:healthSchema.parse(this.probe?await this.probe(id,signal):await this.runtime(id).call('health',{namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}},signal));
+        if(pkg.manifest.runtime==='worker'&&presentationContributions(pkg.manifest).length){
+          health.issues.push('presentation_requires_service_package');
+          const ids=presentationContributions(pkg.manifest).flatMap(value=>value.capabilities??[]);
+          health.capabilities=health.capabilities.filter(value=>!ids.includes(value.id));
+          health.capabilities.push(...ids.map(id=>({id,state:'unsupported' as const,reason:'Installed Web presentation currently requires a service package'})));
+        }
         signal.throwIfAborted();const actionIds=new Set<string>(actions.map(value=>value.id));return {...health,capabilities:[...health.capabilities.filter(value=>!actionIds.has(value.id)),...actions]};
       },
       commit:(step,result)=>{const instance=this.instance(String(step.input.instanceId)),health=healthSchema.parse(result),pkg=this.package(instance.view.packageId);
         instance.view.capabilities=pkg.manifest.capabilities.map(id=>health.capabilities.find(capability=>capability.id===id)??{id,state:'unknown',reason:'The runtime did not verify this capability'});
-        instance.domainChecked=pkg.manifest.runtime==='service'&&servicePackageSurfaces(pkg.manifest).data&&!health.issues.length?this.configurationIdentity(instance.view.id):undefined;
-        instance.view.issues=health.issues;instance.view.observed=health.issues.length||instance.view.capabilities.some(value=>value.state==='unknown')?'blocked':'ready';instance.view.revision++;delete instance.stepId;this.saveInstance(instance);this.bump();},
+        const surfaces=servicePackageSurfaces(pkg.manifest);
+        instance.domainChecked=pkg.manifest.runtime==='service'&&(surfaces.data||surfaces.presentation)&&!health.issues.length?this.configurationIdentity(instance.view.id):undefined;
+        instance.view.issues=health.issues;instance.view.observed=health.issues.length||instance.view.capabilities.some(value=>value.state!=='verified')?'blocked':'ready';instance.view.revision++;delete instance.stepId;this.saveInstance(instance);this.bump();},
       project:step=>{if(['failed','blocked','stale','cancelled'].includes(step.state)){const instance=this.instance(String(step.input.instanceId));if(instance.stepId!==step.id)return;delete instance.domainChecked;instance.view.observed='blocked';instance.view.issues=[step.error??'plugin_check_failed'];instance.view.capabilities=instance.view.capabilities.map(value=>({...value,state:'unknown',reason:'Capability check did not complete'}));this.saveInstance(instance);}},
       classify:()=>new ExecutionFailure('blocked','plugin_check_requires_attention'),
     }));
@@ -173,6 +182,7 @@ export class PluginCenter {
     connectorService:{runtime:'service',factoryExports:['connector','default'],surfaces:['ingress'],supportedCapabilities:['source.connector']},
     processingService:{runtime:'service',factoryExports:['backendPlugin','outboundExport','default'],surfaces:['processing'],supportedCapabilities:['processing.pack','outbound.export']},
     domainService:{runtime:'service',factoryExports:['manifest','createPlugin'],surfaces:['data'],dependencies:'active-exact-typed-bindings'},
+    webPresentation:{packageRuntime:'service',runtime:'host',apiVersion:'1',surfaces:['page','theme','layout'],pages:'self-contained-html-opaque-origin',bridge:'declared-same-instance-service-methods',themes:'role-values-json',layouts:'compiled-workspace-shell-json',navigation:['sidebar','adaptive','top'],detail:['split','stack']},
   };}
   private sourceContributions(packages:StoredPackage[],instances:PluginInstanceView[]):PluginSourceContribution[]{
     const result:PluginSourceContribution[]=[];
@@ -191,7 +201,7 @@ export class PluginCenter {
     }
     return result;
   }
-  private instanceChecked(instance:StoredInstance){return instance.view.capabilities.every(value=>value.state!=='unknown')&&(instance.view.capabilities.some(value=>value.state==='verified')||instance.domainChecked!==undefined&&instance.domainChecked===(instance.configurationId??sha256(JSON.stringify(instance.view.configuration))));}
+  private instanceChecked(instance:StoredInstance){return instance.view.capabilities.every(value=>value.state==='verified')&&(instance.view.capabilities.some(value=>value.state==='verified')||instance.domainChecked!==undefined&&instance.domainChecked===(instance.configurationId??sha256(JSON.stringify(instance.view.configuration))));}
   instanceView(id:string):PluginInstanceView{const record=this.instanceBuild(id),instance=this.instance(id),{view,stepId}=instance,references=this.references(id),pending=stepId&&['waiting','running'].includes(this.executor.get(stepId)?.state??'');
     if(!record||record.retired)return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};
     return {...view,issues:[...view.issues,...references],allowedActions:pending?[]:[...(!view.desired&&!references.length?['configure' as const,'check' as const]:[]),...(view.desired?['disable' as const]:!view.issues.length&&this.instanceChecked(instance)?['enable' as const]:[])]};
@@ -347,9 +357,9 @@ export class PluginCenter {
   private async probeServicePackage(pkg:StoredPackage,instanceId:string,signal:AbortSignal){
     assertServicePackageSupported(pkg.manifest);
     const directory=pkg.directory!;this.releases.verifyInstalled(directory,pkg.view.source.digest,pkg.manifest);
-    const module=await loadServicePackageModule(directory,pkg.manifest) as Record<string,unknown>;
-    signal.throwIfAborted();
     const surfaces=servicePackageSurfaces(pkg.manifest);
+    const module=surfaces.ingress||surfaces.processing||surfaces.data?await loadServicePackageModule(directory,pkg.manifest) as Record<string,unknown>:{};
+    signal.throwIfAborted();
     const capabilities:PluginCapability[]=[];
     const issues:string[]=[];
     if(surfaces.ingress){
@@ -386,9 +396,19 @@ export class PluginCenter {
       try{await this.installDomain(instanceId,module,false,signal);capabilities.push(...pkg.manifest.capabilities.filter(id=>domainContributions(pkg.manifest).some(value=>value.capabilities?.includes(id))).map(id=>({id,state:'verified' as const,reason:'Domain lifecycle and declared ports verified without live publication; enablement is required'})));}
       catch(error){signal.throwIfAborted();issues.push(error instanceof PluginHostError?error.code:error instanceof Error?error.message:'domain_export_invalid');}
     }
+    if(surfaces.presentation){
+      try{
+        loadPresentationPackage(directory,pkg.manifest);
+        this.resolvePresentationDependencies(instanceId,false);
+        capabilities.push(...pkg.manifest.capabilities.filter(id=>presentationContributions(pkg.manifest).some(value=>value.capabilities?.includes(id))).map(id=>({id,state:'verified' as const,reason:'Web presentation data and exact dependencies verified; enablement and the Web mount remain separate'})));
+      }catch(error){signal.throwIfAborted();issues.push(error instanceof PluginHostError?error.code:error instanceof Error?error.message:'presentation_invalid');}
+    }
+    for(const declaration of pkg.manifest.contributions??[])if(!['ingress','processing','data','page','theme','layout'].includes(declaration.surface)||['ingress','processing','data'].includes(declaration.surface)&&declaration.runtime!=='service'){
+      issues.push('unsupported_contribution:'+declaration.id);
+      for(const id of declaration.capabilities??[])if(!capabilities.some(value=>value.id===id))capabilities.push({id,state:'unsupported',reason:'Unsupported contribution surface: '+declaration.surface});
+    }
     for(const id of pkg.manifest.capabilities)if(!capabilities.some(value=>value.id===id)&&!issues.length){
-      const presentation=pkg.manifest.contributions?.find(value=>['page','theme','layout'].includes(value.surface)&&value.capabilities?.includes(id));
-      capabilities.push({id,state:'unknown',reason:presentation?'Installed '+presentation.surface+' contributions are not loaded by this host':'Requires a capability check'});
+      capabilities.push({id,state:'unknown',reason:'Requires a capability check'});
     }
     return {capabilities,issues};
   }
@@ -414,7 +434,7 @@ export class PluginCenter {
       await this.startServiceInstance(instanceId,epoch);
     });
   }
-  private fenceProcessing(instanceId:string){const epoch=(this.serviceEpochs.get(instanceId)??0)+1;this.serviceEpochs.set(instanceId,epoch);this.processingInstances.get(instanceId)?.controller.abort();const domain=this.domainInstances.get(instanceId);domain?.controller.abort();void domain?.handle?.close('disabled').catch(()=>{});return epoch;}
+  private fenceProcessing(instanceId:string){const epoch=(this.serviceEpochs.get(instanceId)??0)+1;this.serviceEpochs.set(instanceId,epoch);const presentation=this.presentationInstances.get(instanceId);this.presentationInstances.delete(instanceId);void presentation?.handle.close('disabled').catch(()=>{});this.processingInstances.get(instanceId)?.controller.abort();const domain=this.domainInstances.get(instanceId);domain?.controller.abort();void domain?.handle?.close('disabled').catch(()=>{});return epoch;}
   private async installProcessing(instanceId:string,module:Record<string,unknown>,publish:boolean,signal:AbortSignal,epoch?:number){
     if(!this.hostOwner||!this.processingHost)throw new StoreError('Processing host is unavailable',503);
     const plugin=processingPluginFromModule(module),configuration=this.configurationIdentity(instanceId),pkg=this.packageForInstance(instanceId),host=this.hostOwner.host;
@@ -429,12 +449,12 @@ export class PluginCenter {
       current();if(publish)owned.handle=handle;else await handle.close('disabled');
     }catch(error){if(handle)await handle.close('disabled');if(publish&&this.processingInstances.get(instanceId)===owned)this.processingInstances.delete(instanceId);throw error;}
   }
-  private resolveDomainDependencies(instanceId:string){
+  private resolveDomainDependencies(instanceId:string,dependencies=domainDependencies(this.packageForInstance(instanceId).manifest),includeSelf=false){
     if(!this.hostOwner)throw new StoreError('Domain host is unavailable',503);
     const host=this.hostOwner.host,snapshot=host.snapshot(),active=(binding:ServiceBinding)=>snapshot.contributions.some(value=>sameScope(value.identity.scope,binding.provider.scope)&&value.identity.contributionId===binding.provider.contributionId&&value.apiVersion===binding.service.apiVersion&&value.availability.state==='active');
     const providers:{binding:ServiceBinding;packageId:string;version?:string;contributionId:string;contributionVersion?:string;hostId?:string;hostVersion?:string}[]=[];
     for(const [id,owned] of this.domainInstances){
-      if(id===instanceId||!owned.handle||owned.handle.signal.aborted||!this.instance(id).view.desired)continue;
+      if(id===instanceId&&!includeSelf||!owned.handle||owned.handle.signal.aborted||!this.instance(id).view.desired)continue;
       const pkg=this.packageForInstance(id);
       for(const binding of owned.bindings)if(active(binding))providers.push({binding,packageId:pkg.manifest.id,version:pkg.manifest.version,contributionId:binding.provider.contributionId,contributionVersion:domainContributions(pkg.manifest).find(value=>value.id===binding.provider.contributionId)?.version});
     }
@@ -444,7 +464,7 @@ export class PluginCenter {
     }
     for(const fact of this.hostOwner.hostDependencies??[])if(active(fact.binding))providers.push({binding:fact.binding,packageId:fact.binding.provider.scope.packageId,contributionId:fact.binding.provider.contributionId,hostId:fact.id,hostVersion:fact.version});
     const required=new Map<string,ServiceBinding>(),optional=new Map<string,ServiceBinding>();
-    for(const dependency of domainDependencies(this.packageForInstance(instanceId).manifest)){
+    for(const dependency of dependencies){
       const matches=providers.filter(value=>dependency.kind==='service'?value.binding.service.id===dependency.id&&value.binding.service.apiVersion===dependency.version:dependency.kind==='package'?value.packageId===dependency.id&&value.version===dependency.version:dependency.kind==='contribution'?value.contributionId===dependency.id&&value.contributionVersion===dependency.version:value.hostId===dependency.id&&value.hostVersion===dependency.version);
       const owners=new Set(matches.map(value=>JSON.stringify([value.binding.provider.scope,...(dependency.kind==='service'||dependency.kind==='contribution'?[value.contributionId]:[])])));
       if(owners.size>1)throw new StoreError('Ambiguous domain dependency: '+dependency.id+'@'+dependency.version,409);
@@ -455,6 +475,79 @@ export class PluginCenter {
     return {required:[...required.values()],optional:[...optional.values()]};
   }
   private activeDomainHandle(handle:PluginHandle|undefined){return Boolean(handle&&!handle.signal.aborted&&this.hostOwner?.host.snapshot().contributions.some(value=>sameScope(value.identity.scope,handle.identity)&&value.availability.state==='active'));}
+  /** Local presentation references bind to this instance's checked declarations;
+   * every remote reference still needs an actual active typed provider. */
+  private resolvePresentationDependencies(instanceId:string,publish:boolean){
+    const manifest=this.packageForInstance(instanceId).manifest,local=[...domainContributions(manifest),...presentationContributions(manifest)];
+    const dependencies=presentationDependencies(manifest).filter(dependency=>{
+      if(dependency.kind==='host'&&dependency.id==='mote.web.presentation'&&dependency.version==='1')return false;
+      if(dependency.kind==='package'&&dependency.id===manifest.id&&dependency.version===manifest.version)return false;
+      const contribution=dependency.kind==='contribution'?local.find(value=>value.id===dependency.id&&value.version===dependency.version)
+        :dependency.kind==='service'?domainContributions(manifest).find(value=>value.provides?.some(port=>port.id===dependency.id&&port.apiVersion===dependency.version)):undefined;
+      if(!contribution)return true;
+      return publish&&contribution.surface==='data';
+    });
+    return this.resolveDomainDependencies(instanceId,dependencies,true);
+  }
+  private async installPresentation(instanceId:string,epoch:number){
+    if(!this.hostOwner)throw new StoreError('Presentation host is unavailable',503);
+    const host=this.hostOwner.host,pkg=this.packageForInstance(instanceId),configuration=this.configurationIdentity(instanceId),loaded=loadPresentationPackage(pkg.directory!,pkg.manifest),dependencies=this.resolvePresentationDependencies(instanceId,true);
+    const current=()=>{if(!this.accepting||!this.instance(instanceId).view.desired||this.instanceBuild(instanceId)?.retired||this.configurationIdentity(instanceId)!==configuration||this.serviceEpochs.get(instanceId)!==epoch)throw new PluginHostError('stale_scope');};
+    let handle:PluginHandle|undefined;
+    try{
+      current();handle=await host.install({identity:{...this.instanceIdentity(instanceId),host:host.identity,activationId:randomUUID()},contributions:loaded.declarations.map(value=>({id:value.id,apiVersion:'1'})),requires:[this.hostOwner.binding(),...dependencies.required],optional:dependencies.optional,
+        factory:()=>({prepare(){current();},start(){current();},quiesce(){},stop(){},dispose(){}})});
+      current();if(!this.activeDomainHandle(handle))throw new PluginHostError('dependency_unavailable');
+      const owned={handle,loaded};this.presentationInstances.set(instanceId,owned);
+      handle.signal.addEventListener('abort',()=>{
+        if(this.presentationInstances.get(instanceId)!==owned)return;
+        this.presentationInstances.delete(instanceId);
+        if(this.admit()||!this.instance(instanceId).view.desired||this.serviceEpochs.get(instanceId)!==epoch)return;
+        const instance=this.instance(instanceId);instance.view.desired=false;instance.view.observed='blocked';instance.view.issues=['dependency_unavailable'];instance.view.revision++;this.saveInstance(instance);this.bump();this.admissionChanged?.(instanceId,false);
+        void this.deactivateServiceInstance(instanceId).catch(()=>{});
+      },{once:true});
+      // As with domain installation, revocation may precede the receipt.
+      if(!this.activeDomainHandle(handle))throw new PluginHostError('dependency_unavailable');
+    }catch(error){if(handle)await handle.close('disabled');this.presentationInstances.delete(instanceId);throw error;}
+  }
+  presentationInventory():PluginPresentationInventory {
+    if(!this.accepting)return {instances:[]};
+    return {instances:[...this.presentationInstances].flatMap(([instanceId,owned])=>{
+      const instance=this.instance(instanceId).view;
+      if(!instance.desired||instance.observed!=='ready'||instance.issues.length||this.instanceBuild(instanceId)?.retired||!this.activeDomainHandle(owned.handle))return [];
+      const pkg=this.packageForInstance(instanceId),activationId=owned.handle.identity.activationId;
+      return [{...this.instanceIdentity(instanceId),packageId:pkg.manifest.id,packageVersion:pkg.manifest.version,releaseDigest:pkg.view.source.digest,activationId,name:instance.name,
+        pages:owned.loaded.pages.map(({declaration})=>({id:declaration.id,version:declaration.version,title:instance.name+' · '+declaration.id,entryUrl:`/plugin-pages/${encodeURIComponent(instanceId)}/${encodeURIComponent(activationId)}/${encodeURIComponent(declaration.id)}`,methods:[...(declaration.bridge?.methods??[])]})),
+        themes:owned.loaded.themes,layouts:owned.loaded.layouts}];
+    })};
+  }
+  private activePresentation(instanceId:string,activationId:string){
+    this.assertCurrent();const owned=this.presentationInstances.get(instanceId),instance=this.instance(instanceId).view;
+    if(!owned||owned.handle.identity.activationId!==activationId||!instance.desired||instance.observed!=='ready'||instance.issues.length||this.instanceBuild(instanceId)?.retired||!this.activeDomainHandle(owned.handle))throw new StoreError('Plugin presentation is unavailable',409);
+    return owned;
+  }
+  /** Static package HTML has no owner data or API authority. The unguessable
+   * activation URL can read only this enabled document, under its own CSP. */
+  presentationDocument(instanceId:string,activationId:string,pageId:string){
+    const page=this.activePresentation(instanceId,activationId).loaded.pages.find(value=>value.declaration.id===pageId);
+    if(!page)throw new StoreError('Plugin page not found',404);return page.html;
+  }
+  async invokePresentation(instanceId:string,pageId:string,raw:unknown){
+    const input=z.object({activationId:z.string().uuid(),method:z.string().min(1).max(64),payload:z.unknown().optional()}).strict().parse(raw);
+    if(Buffer.byteLength(JSON.stringify(input))>65536)throw new StoreError('Page request exceeds the bridge resource budget',413);
+    const owned=this.activePresentation(instanceId,input.activationId),bridge=owned.loaded.pages.find(value=>value.declaration.id===pageId)?.declaration.bridge;
+    if(!bridge?.methods.includes(input.method))throw new StoreError('Page method is not declared',403);
+    const binding=this.domainInstances.get(instanceId)?.bindings.find(value=>value.provider.contributionId===bridge.contributionId&&value.service.id===bridge.service.id&&value.service.apiVersion===bridge.service.apiVersion);
+    if(!binding||!this.hostOwner)throw new PluginHostError('dependency_unavailable');
+    const lease=await this.hostOwner.host.acquire(serviceContract<Record<string,(payload?:unknown)=>unknown>>(bridge.service.id,bridge.service.apiVersion),binding,owned.handle.signal);
+    try{
+      this.activePresentation(instanceId,input.activationId);
+      const port=lease.value,result=await Reflect.apply(port[input.method]!,port,input.payload===undefined?[]:[input.payload]);
+      this.activePresentation(instanceId,input.activationId);
+      const wire=JSON.stringify(result??null);if(Buffer.byteLength(wire)>65536)throw new StoreError('Page result exceeds the bridge resource budget',413);
+      return JSON.parse(wire) as unknown;
+    }finally{await lease.release();}
+  }
   private async installDomain(instanceId:string,module:Record<string,unknown>,publish:boolean,signal:AbortSignal,epoch?:number){
     if(!this.hostOwner)throw new StoreError('Domain host is unavailable',503);
     const pkg=this.packageForInstance(instanceId),factory=domainPluginFromModule(module,pkg.manifest),configuration=this.configurationIdentity(instanceId),host=this.hostOwner.host;
@@ -478,7 +571,7 @@ export class PluginCenter {
   }
   private async startServiceInstance(instanceId:string,epoch:number){
     const pkg=this.packageForInstance(instanceId),surfaces=servicePackageSurfaces(pkg.manifest);
-    if(!surfaces.ingress&&!surfaces.processing&&!surfaces.data)return;
+    if(!surfaces.ingress&&!surfaces.processing&&!surfaces.data&&!surfaces.presentation)return;
     let connectorId:string|undefined;
     try{
       this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
@@ -501,6 +594,7 @@ export class PluginCenter {
         await this.installProcessing(instanceId,module,true,new AbortController().signal,epoch);
       }
       if(surfaces.data){const module=await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>;await this.installDomain(instanceId,module,true,new AbortController().signal,epoch);}
+      if(surfaces.presentation)await this.installPresentation(instanceId,epoch);
       if(this.admit())throw new PluginHostError('stale_scope');
       if(surfaces.data&&!this.activeDomainHandle(this.domainInstances.get(instanceId)?.handle))throw new PluginHostError('dependency_unavailable');
       const instance=this.instance(instanceId);if(instance.view.desired&&this.serviceEpochs.get(instanceId)===epoch){instance.view.observed='ready';instance.view.issues=[];instance.view.revision++;this.saveInstance(instance);this.bump();}
@@ -510,6 +604,7 @@ export class PluginCenter {
       if(this.outboundHost)try{await this.outboundHost.deactivate(instanceId);}catch{/* The blocked state below remains the visible fact. */}
       const processing=this.processingInstances.get(instanceId);this.processingInstances.delete(instanceId);processing?.controller.abort();if(processing?.handle)await processing.handle.close('disabled');
       const domain=this.domainInstances.get(instanceId);this.domainInstances.delete(instanceId);domain?.controller.abort();if(domain?.handle)await domain.handle.close('disabled');
+      const presentation=this.presentationInstances.get(instanceId);this.presentationInstances.delete(instanceId);if(presentation)await presentation.handle.close('disabled');
       const instance=this.instance(instanceId);
       // Quiesce/shutdown revokes work, not the persisted owner selection.
       // A still-admitting host records genuine startup/dependency failures.
@@ -525,6 +620,7 @@ export class PluginCenter {
     const tasks:Promise<unknown>[]=[];
     if(owned&&this.connectorHost)tasks.push(this.connectorHost.stop(owned.connectorId));
     if(this.outboundHost)tasks.push(this.outboundHost.deactivate(instanceId));
+    const presentation=this.presentationInstances.get(instanceId);this.presentationInstances.delete(instanceId);if(presentation)tasks.push(presentation.handle.close('disabled'));
     const processing=this.processingInstances.get(instanceId);this.processingInstances.delete(instanceId);if(processing?.handle)tasks.push(processing.handle.close('disabled'));
     const domain=this.domainInstances.get(instanceId);this.domainInstances.delete(instanceId);domain?.controller.abort();if(domain?.handle)tasks.push(domain.handle.close('disabled'));
     const results=await Promise.allSettled(tasks),errors=results.flatMap(value=>value.status==='rejected'?[value.reason]:[]);
@@ -690,7 +786,7 @@ export class PluginCenter {
         const ready=record.instance&&this.instanceChecked(record.instance);
         const service=record.instance&&this.package(record.instance.view.packageId).manifest.runtime==='service';
         record.observed=ready?(service?'starting':'active'):'blocked';record.blockers=ready?[]:['capability_unverified'];if(service&&record.instance){record.instance.view.observed=ready?'checking':'blocked';record.activeSelection=null;}this.control.saveBuild(record);
-        if(record.instance&&service&&ready){if(servicePackageSurfaces(this.package(record.instance.view.packageId).manifest).data)domains.push(record.instance.view.id);else void this.activateServiceInstance(record.instance.view.id).catch(()=>{});}
+        if(record.instance&&service&&ready){const surfaces=servicePackageSurfaces(this.package(record.instance.view.packageId).manifest);if(surfaces.data||surfaces.presentation)domains.push(record.instance.view.id);else void this.activateServiceInstance(record.instance.view.id).catch(()=>{});}
         continue;
       }
       if(!record.desired){if(record.observed==='restart_required'){record.observed='stopped';record.blockers=[];this.control.saveBuild(record);}continue;}
@@ -705,12 +801,12 @@ export class PluginCenter {
     while(domains.length){
       let progress=false;
       for(const id of [...domains]){
-        const dependencies=domainDependencies(this.packageForInstance(id).manifest);
+        const manifest=this.packageForInstance(id).manifest,dependencies=[...domainDependencies(manifest),...presentationDependencies(manifest)];
         // Restore all already-selected candidate providers before resolving a
         // consumer. Otherwise startup iteration order could hide ambiguity or
         // turn an optional declared dependency into an accidental absence.
         if(domains.some(other=>other!==id&&dependencies.some(dependency=>{const pkg=this.packageForInstance(other).manifest;return dependency.kind==='package'?pkg.id===dependency.id&&pkg.version===dependency.version:dependency.kind==='contribution'?domainContributions(pkg).some(value=>value.id===dependency.id&&value.version===dependency.version):dependency.kind==='service'?domainContributions(pkg).some(value=>value.provides?.some(port=>port.id===dependency.id&&port.apiVersion===dependency.version)):false;})))continue;
-        try{this.resolveDomainDependencies(id);}catch(error){if(error instanceof PluginHostError&&error.code==='dependency_unavailable')continue;}
+        try{this.resolveDomainDependencies(id);if(servicePackageSurfaces(manifest).presentation)this.resolvePresentationDependencies(id,false);}catch(error){if(error instanceof PluginHostError&&error.code==='dependency_unavailable')continue;}
         domains.splice(domains.indexOf(id),1);await this.activateServiceInstance(id);progress=true;
       }
       if(!progress){for(const id of domains)await this.activateServiceInstance(id);break;}
@@ -794,17 +890,18 @@ export class PluginCenter {
       // Data deletion is a separate domain command. Installation identity stays.
     });return this.buildView(id);
   }
-  quiesce(){this.accepting=false;}
+  quiesce(){this.accepting=false;for(const owned of this.presentationInstances.values())void owned.handle.close('shutdown').catch(()=>{});}
   close(){if(this.closing)return this.closing;this.closed=true;this.quiesce();
     // Removing handlers aborts local calls before resources are released. Never
     // interpret this as rollback of an already submitted provider mutation.
     const tasks=[...this.disposeHandlers.map(dispose=>dispose()),...[...this.runtimes.values()].map(runtime=>runtime.close())];
     if(this.outboundHost)tasks.push(this.outboundHost.close());
+    for(const owned of this.presentationInstances.values())tasks.push(owned.handle.close('shutdown'));
     for(const owned of this.processingInstances.values()){owned.controller.abort();if(owned.handle)tasks.push(owned.handle.close('shutdown'));}
     for(const owned of this.domainInstances.values()){owned.controller.abort();if(owned.handle)tasks.push(owned.handle.close('shutdown'));}
     for(const owned of this.buildHandles.values())tasks.push(owned.handle.close('shutdown'));
     return this.closing=Promise.allSettled([...tasks,...this.applying.values()]).then(results=>{
-      this.runtimes.clear();this.buildHandles.clear();this.processingInstances.clear();this.domainInstances.clear();const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
+      this.runtimes.clear();this.buildHandles.clear();this.processingInstances.clear();this.domainInstances.clear();this.presentationInstances.clear();const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
       if(errors.length)throw new AggregateError(errors,'Plugin control disposal failed');
     });
   }
