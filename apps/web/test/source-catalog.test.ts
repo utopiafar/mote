@@ -225,13 +225,13 @@ test('recording discovery shows a saved binding and disabled sync with known run
 });
 
 
-test('the default catalog is nine compact entries with recording providers one explicit level below and More folded',async t=>{
+test('the default catalog includes the three official source setup entries with recording providers one explicit level below and More folded',async t=>{
  const f=await fixture(t,{capabilities:[capability(activityId),capability(providerDetailId)]});await f.render();
  const entries=()=>[...f.d.querySelectorAll('.source-catalog-final>.discovery-source-grid>.source-catalog-entry h3')].map(node=>node.textContent);
- assert.deepEqual(entries(),['手机与电脑','Coding Agent 会话','文件与文件夹','飞书文档与日历','录音与转写','Gmail 邮件','Google Calendar','外部文件 / NAS 引用','MCP 资料服务']);
+ assert.deepEqual(entries(),['手机与电脑','Coding Agent 会话','文件与文件夹','飞书文档与日历','录音与转写','Gmail 邮件','Google Calendar','外部文件 / NAS 引用','MCP 资料服务','Notion','Slack','飞书会话']);
  assert.equal(f.d.querySelector<HTMLDetailsElement>('.source-catalog-more')!.open,false);assert.equal(f.d.querySelector('a[href*="provider="]'),null);
  await f.openRecorders();assert.ok(f.d.querySelector('a[href*="provider=generated-recorder"]'));
- await act(async()=>f.d.querySelector<HTMLButtonElement>('.source-catalog-back')!.click());assert.equal(entries().length,9);assert.equal(f.d.querySelector('a[href*="provider="]'),null);
+ await act(async()=>f.d.querySelector<HTMLButtonElement>('.source-catalog-back')!.click());assert.equal(entries().length,12);assert.equal(f.d.querySelector('a[href*="provider="]'),null);
 });
 
 test('installed connector packages declare 添加来源 cards without hardcoded registry entries',async t=>{
@@ -247,5 +247,5 @@ test('installed connector packages declare 添加来源 cards without hardcoded 
  const cardTitle=card(f.d,'官方连接器夹具');
  assert.match(cardTitle.textContent!,/已安装，待配置/);
  assert.equal((cardTitle as HTMLAnchorElement).getAttribute('href'),'#/connections?setup=official-fixture-connector');
- assert.equal(f.d.querySelectorAll('.source-catalog-final>.discovery-source-grid>.source-catalog-entry h3').length,10);
+ assert.equal(f.d.querySelectorAll('.source-catalog-final>.discovery-source-grid>.source-catalog-entry h3').length,13);
 });

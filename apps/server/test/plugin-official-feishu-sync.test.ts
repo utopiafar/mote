@@ -233,6 +233,22 @@ test('Feishu queued SourceStore intake rechecks the same observed binding lease 
  }finally{release();await blocker;await running?.catch(()=>{});}
 });
 
+test('Feishu failed deselection restores read observation and retains its approved new-only range through reauthorization',async t=>{
+ const f=await fixture(t);f.transport.state.messages=[message(0)];await f.sync();const source=f.source(),id=source.id;
+ const patched=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+id,headers:f.headers,payload:{initialSync:'new_only'}});assert.equal(patched.statusCode,200,patched.body);await f.sync();const checkpoint=f.scan(),policy=f.node.sources.getSource(id).syncPolicyVersion;
+ f.node.store.db.exec(`CREATE TRIGGER generated_removed_pause_failure BEFORE UPDATE ON source_connections WHEN new.id='${id}' AND json_extract(new.json,'$.enabled')=0 BEGIN SELECT RAISE(ABORT,'generated removed source pause failure');END;`);
+ await f.request('/api/connectors/feishu-session/select',{selected:[]},502);
+ const failed=f.node.sources.getSource(id),status=await f.request('/api/connectors/feishu-session');assert.equal(failed.enabled,true);assert.equal(failed.initialSync,'new_only');assert.equal(status.selected.length,1);assert.equal(status.selected[0].sourceId,id);assert.equal(status.archiveAuthorized,true);assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.history(id,'om_generated_0').length,1);
+ f.node.store.db.exec('DROP TRIGGER generated_removed_pause_failure');
+ // Observe the existing shared binding directly, without a plugin check/sync
+ // that could independently reinstall its watches and hide the failure path.
+ const scopes=[...f.transport.state.scopes];f.transport.state.scopes=scopes.filter(scope=>scope!=='im:message:readonly');await f.binding.status();
+ const withdrawn=f.node.sources.getSource(id);assert.equal(withdrawn.enabled,false,'the retained durable selection still observes grant withdrawal after a failed pause');assert.equal(withdrawn.syncScopeVersion,(failed.syncScopeVersion??0)+1);assert.equal(withdrawn.syncPolicyVersion,policy);assert.equal(withdrawn.status?.coverage,undefined);assert.equal(f.scan().baselineAt,checkpoint.baselineAt);assert.equal(f.scan().range,checkpoint.range);
+ await f.sync(403);assert.equal(f.node.sources.history(id,'om_generated_0').length,1);
+ f.transport.state.scopes=scopes;await f.binding.status();assert.equal(f.node.sources.getSource(id).enabled,false,'grant observation alone does not enable the paused source');await f.authorize();await f.sync();
+ const restored=f.node.sources.getSource(id);assert.equal(restored.enabled,true);assert.equal(restored.initialSync,'new_only');assert.equal(restored.syncPolicyVersion,policy);assert.equal(f.scan().baselineAt,checkpoint.baselineAt);assert.equal(f.scan().range,checkpoint.range);assert.equal(f.scan().complete,true);assert.equal(f.node.sources.history(id,'om_generated_0').length,1);
+});
+
 test('Feishu confirmed read withdrawal fences already-admitted real CAS independently of owner policy',async t=>{
  const f=await fixture(t);f.transport.state.messages=[message(0)];const source=f.source(),originalScopes=[...f.transport.state.scopes];
  const probe=createInstanceState(f.node.store,{identity:{packageId:'generated-probe',installationId:'generated',instanceId:'generated'}} as never),prototype=Object.getPrototypeOf(probe),cas=prototype.compareAndSet;

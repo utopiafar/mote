@@ -295,9 +295,9 @@ test('official Slack install, read-only archive, separated send authorization an
   const selected=await node.app.inject({method:'POST',url:'/api/connectors/slack/select',headers,payload:{selected:[{id:'C1',type:'channel'}]}});
   assert.equal(selected.statusCode,200);
   const selectedStatus=selected.json() as {status:{selected:{id:string;type:string}[]}};
-  assert.deepEqual(selectedStatus.status.selected,[{id:'C1',type:'channel',name:'general'}]);
   const slackSources=()=>node.sources.listSources().filter(source=>source.kind==='mote.official.slack');
   assert.equal(slackSources().length,1,'only the explicitly checked channel enters the scope');
+  assert.deepEqual(selectedStatus.status.selected,[{id:'C1',type:'channel',name:'general',sourceId:slackSources()[0]!.id,initialSync:'all'}]);
   assert.equal(slackSources()[0]!.enabled,true);
   assert.equal(transport.calls.some(call=>call.pathname==='/api/conversations.history'),false,'selection alone reads no message body');
 

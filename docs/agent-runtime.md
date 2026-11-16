@@ -6,9 +6,46 @@ Mote keeps formal context, conversation and task state independently of a select
 
 The shared Agent package adapts DSH and Codex. Current query providers receive read-only Mote context tools. Import is a different role with a private writable analysis workspace and bounded output validation. Product Actions authorize external effects; adding a runtime or reading a document does not grant them.
 
-DSH compatibility aims to run native packages unchanged, then through general configuration/composition adapters. Native applications can retain internal sessions and workflows. The current official DSH provider declares query tasks only; full native agents, pages and persistent applications need real integration evidence. See the [architecture map](architecture.md).
+The official DSH query composition can load installed original ESM packages, Hooks and a Factory selected for a model profile. It keeps Mote's existing context, model, output and Action authorization. Native applications with persistent internal sessions, pages and workflows remain a separate integration step. See the [architecture map](architecture.md).
 
 Runtime startup builds the prompt from current owner instructions, selected tools, effective preferences and task context. Keep tool availability and capabilities consistent with the actual provider. Do not replace semantic decisions with keyword routing or treat a source's first-person text as the current user. Use [model configuration](model-providers.md) for credentials, selection and approved fallback scope.
+
+## Installed native DSH packs
+
+Install a trusted package through Plugin Center, configure an instance, check it and enable it. Its package descriptor uses `runtime: service` and declares each native entry as a contribution with `surface: agent`, `runtime: native` and a relative `entry`. The original `package.json` must declare ESM, its name/version and public exports. Installation and checking verify immutable bytes and export metadata without importing native code into Central. An enabled instance supplies an actual Host activation and exact dependency pins; it still needs an explicit owner selection and grant before a query loads it.
+
+The owner-only `GET /api/agent-runtime/native-modules` directory returns checked instances' exact references, original package name/version, requested native capabilities and current activation state. It contains no filesystem or launch paths. Copy these references into the `dsh` configuration domain through the existing owner configuration editor/API or the same YAML file. `PUT /api/configuration/dsh` uses the ordinary configuration revision and validates this selection's installed references and declared capabilities. Saving does not reserve an activation or grant a future query access to a disabled instance.
+
+For example, a package whose original native manifest declares `hooks` can be selected with a document shaped as follows. Replace the generated example identity/digest with the exact directory values:
+
+```yaml
+dsh:
+  profiles:
+    - modelProfileId: env:deployment
+      assembly:
+        packages:
+          - contribution:
+              instance: &nativeInstance
+                packageId: example.native
+                installationId: generated-install-0001
+                instanceId: generated-instance-0001
+              contributionId: example.native-package
+            revision: 0
+            artifactDigest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            exportName: default
+        hooks: []
+      grants:
+        - instance: *nativeInstance
+          capabilities: [hooks]
+```
+
+`assembly.hooks` takes the same reference shape; the optional `assembly.factory` holds one reference. `exportName: default` denotes the existing module namespace loader protocol, including an original Cordis `apply` export. It does not select an arbitrary JavaScript named export. The Host maps the declared entry to a valid public subpath, preferring the root and then stable lexical order when the original package exposes aliases. Selecting the same real entry more than once is rejected. Reference revision `0` describes the immutable installed contribution pinned by installation identity and artifact digest; live activation identity is separate.
+
+Each selected instance needs exactly one grant, including an explicit empty capability list for a package with no native declarations. The grant must match all original `dsh.native.capabilities`; missing or extra capabilities are rejected rather than intersected silently. Same-process native code is trusted code, so these package-level declarations are not a fine-grained sandbox. Host tools, evidence disclosure, model admission and Actions keep their own authorization, and native delegation stays disabled.
+
+This domain applies after a Central restart. The configuration view shows saved and effective values separately; ordinary model edits do not apply pending DSH changes. Selection belongs to one exact model profile, with no inheritance by another profile, connection probes or file-service adapters. Non-DSH model transports cannot receive native selections. Every query resolves fresh installed metadata and pins the actual Host scope through SDK startup, tools and output. Disabling, replacing or stopping that scope cancels the run and rejects late delivery. Re-enabling the same immutable installation supplies a fresh activation to subsequent queries without requiring a new model adapter.
+
+Current native-only packages use their original default configuration; Central configuration fields on such packages are rejected until a real native configuration consumer exists. Original peer contribution requirements must also be selected, and external typed Host requirements must resolve to actual unambiguous providers. Original package, Hook and Factory registrations live for the query SDK child and are disposed when that child stops. This does not preserve an application's internal sessions or artifacts across queries, and the import/probe/file-service roles do not install these query extensions. Generated installation/SDK tests establish this bounded production chain, not arbitrary third-party package compatibility or live-model quality.
 
 ## Context and delivered evidence
 
