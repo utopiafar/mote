@@ -160,7 +160,10 @@ test('a real Central receipt stays unchanged while the manual button rereads a d
  const {buildApp}=await import('../../server/src/app.js'),{memoryEvidenceFingerprint}=await import('../../server/src/memory.js');
  const directory=mkdtempSync(join(tmpdir(),'mote-activity-refresh-')),token='generated-refresh-contract';
  const node=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
- t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ t.after(async()=>{
+  // Only the Web refresh clock is virtual; Host cleanup needs real timers.
+  t.mock.timers.reset();await node.app.close();rmSync(directory,{recursive:true,force:true});
+ });
  const at='2026-11-01T00:00:00Z',captureId=randomUUID(),text='Generated Activity refresh original.';
  const note=await node.app.inject({method:'POST',url:'/api/notes',headers:{authorization:'Bearer '+token},payload:{id:captureId,deviceId:'generated-activity',deviceName:'Generated fixture',platform:'import',capturedAt:at,text}});
  assert.equal(note.statusCode,201,note.body);
