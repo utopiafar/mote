@@ -98,7 +98,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const derivation=this.materials?.derivation(material.ref);if(!derivation)return true;
     if(this.derivedChecks.has(material.ref))return false;
     this.derivedChecks.add(material.ref);
-    try{return materialDerivationAllowed({store:this.store,sourceContexts:this.sourceContexts,sourceId:material.origin.sourceId,externalId:material.origin.externalId,derivation,evidenceAllowed:ids=>this.contextDependenciesAllowed([...ids],policy)});}
+    try{return materialDerivationAllowed({store:this.store,sourceContexts:this.sourceContexts,sourceId:material.origin.sourceId,externalId:material.origin.externalId,derivation,evidenceAllowed:ids=>this.contextDependencyGroups(ids).every(group=>this.contextDependenciesAllowed(group,policy))});}
     finally{this.derivedChecks.delete(material.ref);}
   }
   imageReference(ref:string,scope:Range={}){

@@ -34,7 +34,7 @@ export function materialDerivationAllowed(input:{store:Store;sourceContexts:Sour
         const row=store.db.prepare('SELECT json FROM memories WHERE id=?').get(pin.id);if(!row)return false;const memory=JSON.parse(String(row.json));
         if(memory.status!=='published'||memory.fingerprint!==pin.fingerprint||pin.version!==undefined&&memory.version!==pin.version)return false;
       }
-      if(!evidenceAllowed(group.evidenceDependencies.ids)||!evidenceAllowed(group.originalEvidenceIds))return false;
+      if(!evidenceAllowed(group.evidenceDependencies.ids)||group.originalEvidenceIds.some(id=>!evidenceAllowed([id])))return false;
     }
     return true;
   }catch{return false;}

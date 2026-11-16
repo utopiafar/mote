@@ -20,6 +20,8 @@ import {resolveDependencies} from '../src/conversation-lineage.js';
 import {readNativeFile} from '../src/dsh-application.js';
 import {materialId} from '../src/materials.js';
 import {Store} from '../src/store.js';
+import sharp from 'sharp';
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 async function waitFor(check: () => boolean | Promise<boolean>, label: string) {
   const until = Date.now() + 8000;
@@ -165,6 +167,61 @@ async function parentInput(f:Awaited<ReturnType<typeof applicationFixture>>){
   const item=await f.node.app.inject({method:'PUT',url:'/api/sources/'+sourceId+'/items',headers:f.headers,payload:{externalId:'private-parent',revision:'1',observedAt:new Date().toISOString(),title:'Generated input',text,kind:'file',layer:'original'}});assert.equal(item.statusCode,200,item.body);
   return {sourceId,id:item.json().id as string,text};
 }
+
+async function memoryFileInput(f:Awaited<ReturnType<typeof applicationFixture>>){
+  const sourceId='generated.app-memory-input',text='GENERATED PRIVATE ORIGINAL: the owner prefers quiet mornings.',statement='GENERATED SCOPED MEMORY: quiet mornings suit careful work.';
+  const registration=await f.node.app.inject({method:'POST',url:'/api/sources',headers:f.headers,payload:{id:sourceId,name:'Generated Memory file input',kind:'local-files',deviceId:'generated-memory-device',platform:'import',retention:'archive'}});assert.equal(registration.statusCode,200,registration.body);
+  const bytes=await sharp({create:{width:2,height:2,channels:3,background:'#224466'}}).png().toBuffer(),request=(url:string,method:'POST'|'PUT',payload:unknown)=>f.node.app.inject({url,method,headers:{...f.headers,'x-mote-ingress-version':'2',...(Buffer.isBuffer(payload)?{'content-type':'application/octet-stream'}:{})},payload});
+  const begun=await request('/api/file-sync/v1/uploads','POST',{sourceId,previousRevision:null,relativePath:'generated.png',sizeBytes:bytes.length,sha256:sha256(bytes),item:{externalId:'generated-original',revision:'1',observedAt:new Date().toISOString(),title:'Generated original image',kind:'file',layer:'original',text:'',mimeType:'image/png'}});assert.equal(begun.statusCode,200,begun.body);
+  assert.equal((await request('/api/file-sync/v1/uploads/'+begun.json().uploadId+'/parts/0','PUT',bytes)).statusCode,200);
+  const committed=await request('/api/file-sync/v1/uploads/'+begun.json().uploadId+'/commit','POST',{});assert.equal(committed.statusCode,200,committed.body);const fileId=committed.json().id as string,artifactId=randomUUID(),chunkId=randomUUID();
+  // Generated processing output, consumed by the real Memory extraction and
+  // owner publication path; neither a real OCR model nor a hand-made card DTO.
+  f.node.store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifactId,fileId,'text',new Date().toISOString(),'generated',JSON.stringify({complete:true}));
+  f.node.store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,text,metadata) VALUES(?,?,?,?,?)').run(chunkId,artifactId,fileId,text,'{}');
+  const memories=f.node.evidenceContext.assembly.reader.memories,original=memories.readEvidence([chunkId])[0]!;assert.ok(original);
+  const extracted=memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated scoped preference',statement,uncertainty:'Generated fixture, revisable by its owner.',evidenceIds:[chunkId]}]}),citations:[{id:chunkId,capturedAt:original.capturedAt,appName:original.appName,excerpt:original.ocrText}],trace:[],runId:randomUUID()}),'generated').items[0]!;
+  const published=await f.node.app.inject({method:'POST',url:'/api/memories/'+extracted.id+'/publish',headers:f.headers,payload:{version:extracted.version}});assert.equal(published.statusCode,200,published.body);
+  return {sourceId,fileId,chunkId,text,statement,memory:published.json(),async release(){const response=await f.node.app.inject({method:'DELETE',url:'/api/files/'+fileId,headers:f.headers});assert.equal(response.statusCode,200,response.body);const retained=await f.node.app.inject({url:'/api/memories/'+extracted.id,headers:f.headers});assert.equal(retained.statusCode,200,retained.body);assert.equal(retained.json().status,'published');assert.equal(retained.json().evidence[0].originalAvailable,false);}};
+}
+
+test('installed APP Memory-only SDK history and independent Materials survive ordinary original release, but forgetting rejects late products and restoration',{timeout:30000},async t=>{
+  const entered=gate(),release=gate();let input:Awaited<ReturnType<typeof memoryFileInput>>;
+  const f=await applicationFixture(t,{respond:async(request,response,index)=>{
+    if(index===1){writeMessagesResponse(response,{stage:0,model:'generated-native-model',tool:{name:'memories',args:{id:input.memory.id}}});return;}
+    if(index===2){assert.match(JSON.stringify(request),new RegExp(input.statement));assert.doesNotMatch(JSON.stringify(request),new RegExp(input.text));}
+    if(index===4){entered.release();await release.promise;}
+    terminalResponse(response,index);
+  }});t.after(()=>release.release());input=await memoryFileInput(f);
+  const first=await f.interact('GENERATED-APP-MEMORY-ONLY');assert.equal(first.status,'completed',JSON.stringify(first));assert.deepEqual(f.node.conversations.get(f.conversationId).turns.find(turn=>turn.id===first.id)!.result!.originalEvidenceDependencies,{version:1,complete:true,ids:[]});
+  const source=f.node.sources.listSources().find(source=>source.id.startsWith('dsh-app:'))!,report=f.node.materials.get(materialId(source.id,'report.txt'))!;
+  const groups=f.node.materials.derivation(report.ref)!.groups;assert.ok(groups.some(group=>group.memoryPins.some(pin=>pin.id===input.memory.id)));assert.ok(groups.every(group=>!group.originalEvidenceIds.length));
+  await input.release();assert.equal((await f.node.app.inject({url:'/api/files/'+input.fileId+'/content',headers:f.headers})).statusCode,404);
+  assert.equal(outputText(f,source.id),'GENERATED-APPLICATION-REPORT-2\n');assert.deepEqual(f.node.evidenceContext.assembly.reader.evidence(['capture:'+input.chunkId]),[]);
+  const readAfterRelease=await f.node.app.inject({url:'/api/materials/'+report.id+'/read',headers:f.headers});assert.equal(readAfterRelease.statusCode,200,readAfterRelease.body);assert.match(readAfterRelease.body,/GENERATED-APPLICATION-REPORT-2/);
+  const anchors=f.node.materials.evidenceIds(report.ref);assert.ok(f.node.materials.evidence(anchors).length);await f.node.materials.index!.tick();const searchable=await f.node.app.inject({url:'/api/library/catalog?query=GENERATED-APPLICATION-REPORT',headers:f.headers});assert.equal(searchable.statusCode,200,searchable.body);assert.ok(searchable.json().items.some((item:any)=>item.id===report.id));
+  await f.restart();const second=await f.interact('GENERATED-APP-RETAINED-MEMORY-FOLLOWUP');assert.equal(second.status,'completed',JSON.stringify({second,run:f.node.queryRuns.get(second.runId)}));assert.equal(f.requests.length,3);assert.match(JSON.stringify(f.requests[2]),/GENERATED-APP-MEMORY-ONLY/);assert.match(JSON.stringify(f.requests[2]),new RegExp(input.statement));
+  assert.equal(outputText(f,source.id),'GENERATED-APPLICATION-REPORT-3\n');const accepted=control(f).accepted,revision=f.node.materials.get(report.id)!.revision;
+  const late=await f.enqueue('GENERATED-APP-MEMORY-FORGOTTEN-WHILE-RUNNING');await entered.promise;
+  const forgotten=await f.node.app.inject({method:'DELETE',url:'/api/memories/'+input.memory.id,headers:f.headers});assert.equal(forgotten.statusCode,200,forgotten.body);release.release();assert.equal((await f.settled(late)).status,'failed');assert.equal(control(f).accepted,accepted);assert.equal(f.node.materials.get(report.id)!.revision,revision);
+  assert.equal((await f.node.app.inject({url:'/api/materials/'+report.id+'/read',headers:f.headers})).statusCode,409);assert.throws(()=>f.node.materials.block(report.ref,0),{statusCode:409});assert.deepEqual(f.node.materials.evidence(anchors),[]);const found=await f.node.app.inject({url:'/api/library/catalog?query=GENERATED-APPLICATION-REPORT',headers:f.headers});assert.equal(found.statusCode,200,found.body);assert.ok(!found.json().items.some((item:any)=>item.id===report.id));
+  await f.restart();let bodies=0;const read=f.node.store.contentEncryption.read.bind(f.node.store.contentEncryption);t.mock.method(f.node.store.contentEncryption,'read',(path:string)=>{if(path.includes('native-applications')&&!path.endsWith('manifest'))bodies++;return read(path);});
+  const denied=await f.interact('GENERATED-APP-CANNOT-RESTORE-FORGOTTEN-MEMORY');assert.equal(denied.status,'failed',JSON.stringify(denied));assert.equal(f.requests.length,4);assert.equal(bodies,0);assert.equal(control(f).accepted,accepted);
+});
+
+for(const role of ['raw','pixels'] as const)test(`installed APP ${role} disclosure cannot borrow Memory permission after original release or publish late output`,{timeout:30000},async t=>{
+  const entered=gate(),release=gate();let input:Awaited<ReturnType<typeof memoryFileInput>>;
+  const f=await applicationFixture(t,{respond:async(request,response,index)=>{
+    if(index===1){writeMessagesResponse(response,{stage:0,model:'generated-native-model',tool:{name:'memories',args:{id:input.memory.id}}});return;}
+    if(index===2){assert.match(JSON.stringify(request),new RegExp(input.statement));writeMessagesResponse(response,{stage:1,model:'generated-native-model',tool:role==='raw'?{name:'evidence',args:{ids:[input.chunkId]}}:{name:'read_image',args:{id:input.fileId}}});return;}
+    if(role==='raw')assert.match(JSON.stringify(request),new RegExp(input.text));else assert.ok(request.messages.flatMap((message:any)=>message.content).flatMap((part:any)=>part.type==='tool_result'?part.content:[part]).some((part:any)=>part.type==='image'&&part.source?.type==='base64'&&part.source.data.length>0),'the real SDK sender must receive pixels, not metadata alone');
+    entered.release();await release.promise;terminalResponse(response,index);
+  }});t.after(()=>release.release());input=await memoryFileInput(f);if(role==='pixels')await f.node.perception.save({revision:f.node.configService.revision,settings:{...f.node.perception.settings(),allowQueryImages:true}});
+  const message=await f.enqueue('GENERATED-APP-MEMORY-AND-'+role,role==='pixels'?{attachmentIds:[input.fileId]}:{});await entered.promise;
+  const receipts=f.node.store.db.prepare("SELECT json FROM plugin_instance_state WHERE key LIKE 'dsh-app/%/exposure/%'").all().map(row=>JSON.parse(String(row.json)));assert.ok(receipts.some(receipt=>receipt.originalEvidenceIds.includes(role==='raw'?input.chunkId:input.fileId)));
+  await input.release();release.release();const failed=await f.settled(message);assert.equal(failed.status,'failed',JSON.stringify(failed));assert.equal(control(f).accepted,undefined);assert.equal(f.node.sources.listSources().filter(source=>source.id.startsWith('dsh-app:')).length,0);
+  await f.restart();const denied=await f.interact('GENERATED-APP-CANNOT-RESTORE-'+role);assert.equal(denied.status,'failed',JSON.stringify(denied));assert.equal(f.requests.length,3);assert.equal(control(f).accepted,undefined);assert.equal(existsSync(join(f.root,'vault','native-applications',control(f).identity,'working')),false);
+});
 
 test('real APP Material outputs retain parent lineage and current source withdrawal blocks SDK restoration before decryption',{timeout:30000},async t=>{
   const f=await applicationFixture(t),parent=await parentInput(f);
