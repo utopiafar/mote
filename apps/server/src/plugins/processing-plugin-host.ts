@@ -22,20 +22,40 @@ export function createProcessingPluginHost(workflows:Pick<ProcessingRuntime,'reg
   let sealed=false,fiber:ReturnType<Context['plugin']>|undefined,closing:Promise<void>|undefined;
   const current=()=>{scope.assertCurrent();options.signal.throwIfAborted();options.assertCurrent();if(!available())throw new StoreError('Processing host is unavailable',503);};
   const revoke=()=>{for(const declaration of [...declarations].reverse()){declaration.live?.();declaration.live=undefined;}};
-  const guarded=(value:Record<string,unknown>)=>Object.fromEntries(Object.entries(value).map(([key,entry])=>[key,typeof entry!=='function'?entry:function(this:unknown,...args:unknown[]){
-   current();const first=args[0];
-   if(first&&typeof first==='object'&&(first as {signal?:unknown}).signal instanceof AbortSignal)args[0]={...first,signal:AbortSignal.any([(first as {signal:AbortSignal}).signal,scope.signal,options.signal])};
-   const result=Reflect.apply(entry,value,args);
-   if(result&&typeof result.then==='function')return scope.run(()=>Promise.resolve(result)).then(output=>{current();return output;});
-   current();return result;
-  }]));
+  const guarded=(value:Record<string,unknown>,functions:readonly string[])=>{
+   const callbacks=new Map<PropertyKey,{entry:Function;callback:Function}>();
+   const read=(key:PropertyKey)=>{
+    // Resolve inherited methods and accessors against the original instance,
+    // including private fields. The facade is a separate target so frozen own
+    // methods can also be wrapped without violating Proxy get invariants.
+    if(typeof key==='string'&&functions.includes(key))current();
+    const entry=Reflect.get(value,key,value);if(typeof entry!=='function')return entry;
+    const previous=callbacks.get(key);if(previous&&previous.entry===entry)return previous.callback;
+    const callback=function(this:unknown,...args:unknown[]){
+     current();const first=args[0];
+     if(first&&typeof first==='object'&&(first as {signal?:unknown}).signal instanceof AbortSignal)args[0]={...first,signal:AbortSignal.any([(first as {signal:AbortSignal}).signal,scope.signal,options.signal])};
+     const result:unknown=Reflect.apply(entry,value,args);
+     if(result&&typeof (result as {then?:unknown}).then==='function')return scope.run(()=>Promise.resolve(result)).then(output=>{current();return output;});
+     current();return result;
+    };
+    callbacks.set(key,{entry,callback});return callback;
+   };
+   return new Proxy({}, {
+    get:(_target,key)=>read(key),
+    set:(_target,key,next)=>{current();return Reflect.set(value,key,next,value);},
+    has:(_target,key)=>Reflect.has(value,key),ownKeys:()=>Reflect.ownKeys(value),
+    getOwnPropertyDescriptor:(_target,key)=>{const descriptor=Reflect.getOwnPropertyDescriptor(value,key);return descriptor?{configurable:true,enumerable:descriptor.enumerable,get:()=>{current();return read(key);}}:undefined;},
+   });
+  };
   const ports:Record<string,unknown>={};
   const registry=(name:string,validation:object,live:object,methods:Record<string,readonly string[]>)=>{
    ports[name]=Object.freeze(Object.fromEntries(Object.entries(methods).map(([method,functions])=>[method,(value:Record<string,unknown>)=>{
     current();if(sealed)throw new StoreError('Processing declarations are sealed',409);
-    if(!value||typeof value!=='object'||functions.some(key=>typeof value[key]!=='function'))throw new StoreError('Invalid processing declaration',422);
+    if(!value||typeof value!=='object'&&typeof value!=='function'||functions.some(key=>typeof value[key]!=='function'))throw new StoreError('Invalid processing declaration',422);
     // Check and enable consume exactly the same real registry validators.
-    const definition=guarded({...value}),remove=(validation as Registry)[method](definition);
+    // Callback-free recipe/configuration records keep their native clone
+    // semantics; callback-bearing declarations retain their original receiver.
+    const definition=functions.length?guarded(value,functions):value,remove=(validation as Registry)[method](definition);
     const declaration:Declaration={active:true,remove,publish:()=>{current();return (live as Registry)[method](definition);}};declarations.push(declaration);
     return ()=>{declaration.active=false;declaration.live?.();declaration.live=undefined;remove();};
    }])));

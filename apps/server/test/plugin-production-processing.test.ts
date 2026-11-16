@@ -116,3 +116,53 @@ test('a packaged file extension publishes its format, typed output and recipe in
  const text=detail.artifacts.filter(value=>value.kind==='text').map(value=>JSON.stringify(f.node.processing.artifact(value.id).transcript)).join('\n');assert.match(text,/Generated\\nrecipe/);
  await f.action(instance.id,'disable');assert.ok(!f.node.processing.runtime.intake.list().formats.some(value=>value.id==='community.text-format'));assert.ok(!f.node.processing.runtime.recipes.list().recipes.some(value=>value.id==='community.text-pipeline'));
 });
+
+const classDeclarations={
+ prototype:String.raw`export class GeneratedProcessor {
+  constructor(config){this.id=config.processorId;this.version='1';this.lane='extract';this.deterministic=true;this.label=config.label;}
+  async process({observations}){return observations.map(row=>({kind:'normalized-text',text:this.label+':'+row.ocrText,metadata:{}}));}
+ }`,
+ privateReceiver:String.raw`export class GeneratedProcessor {
+  #label;#calls=0;#reads=0;
+  constructor(config){this.id=config.processorId;this.version='1';this.lane='extract';this.deterministic=true;this.#label=config.label;
+   Object.defineProperty(this,'process',{value:async function({observations,signal}){signal.throwIfAborted();this.#calls++;return observations.map(row=>this.format(row));}});Object.freeze(this);
+  }
+  get label(){return this.#label;}
+  get calls(){return this.#calls;}
+  format(row){return {kind:'normalized-text',text:this.label+':'+row.ocrText,metadata:{}};}
+ }`,
+ getterCallback:String.raw`export class GeneratedProcessor {
+  #label;#calls=0;#reads=0;
+  constructor(config){this.id=config.processorId;this.version='1';this.lane='extract';this.deterministic=true;this.#label=config.label;}
+  get calls(){return this.#calls;}
+  get reads(){return this.#reads;}
+  get process(){this.#reads++;return async function({observations,signal}){signal.throwIfAborted();this.#calls++;return observations.map(row=>this.#format(row));};}
+  #format(row){return {kind:'normalized-text',text:this.#label+':'+row.ocrText,metadata:{}};}
+ }`,
+ callableDeclaration:String.raw`export class GeneratedProcessor {
+  constructor(config){const value=Object.assign(function(){},{id:config.processorId,version:'1',lane:'extract',deterministic:true,label:config.label,calls:0});
+   Object.defineProperty(value,'process',{value:async function({observations,signal}){signal.throwIfAborted();this.calls++;return observations.map(row=>({kind:'normalized-text',text:this.label+':'+row.ocrText,metadata:{}}));}});return value;
+  }
+ }`,
+};
+for(const [kind,declaration] of Object.entries(classDeclarations))test('a registry-valid '+kind+' class declaration survives formal installation and its retained callback is fenced after disable',async t=>{
+ const entry=declaration+String.raw`
+ export const backendPlugin={inject:['moteContextProcessors'],apply(ctx,config){ctx.effect(()=>ctx.moteContextProcessors.register(new GeneratedProcessor(config)));}};
+ `;
+ const {ContextProcessorRegistry}=await import('../src/processing-runtime.js'),exported=await import('data:text/javascript;base64,'+Buffer.from(entry).toString('base64'));
+ const definition=new exported.GeneratedProcessor({processorId:'generated.prototype',label:kind}),direct=new ContextProcessorRegistry();
+ assert.equal(typeof definition.process,'function');assert.equal(Object.keys(definition).includes('process'),false,'the valid callback is not an enumerable own field');
+ const remove=direct.register(definition);assert.ok(direct.get('generated.prototype'),'the exact production registry accepts the class declaration');remove();
+ const f=await fixture(t,entry),instance=await f.configure(undefined,'generated.prototype','normal',kind),checked=await f.check(instance.id);
+ assert.equal(checked.observed,'ready','the installed declaration adapter must accept the same registry-valid instance shape');
+ assert.equal((await f.enable(instance.id)).observed,'ready');const job=await f.submit('generated.prototype');await f.node.processingServices.tick();assert.equal(f.node.workflows.engine.get(job)?.state,'succeeded');
+ const output=f.node.workflows.view().jobs.find(value=>value.id===job)!.outputs[0]!;assert.equal(f.node.store.archive.get(output)?.text,kind+':Generated\r\noriginal');
+ const installed=f.node.workflows.registry.get('generated.prototype')!,callback=installed.process,calls=(installed as unknown as {calls?:number}).calls;
+ if(kind!=='prototype')assert.equal(calls,1,'the original receiver state and its getters remain available');
+ const reads=(installed as unknown as {reads?:number}).reads,build=f.node.pluginCenter.buildView(instance.id);assert.equal((await f.request('PATCH','/api/plugin-builds/'+instance.id,{...command(build.revision),selection:null})).observed,'stopped');
+ assert.throws(()=>installed.process,{code:'stale_scope'},'callback lookup is fenced before an original getter can execute');
+ if(kind==='getterCallback')assert.equal((installed as unknown as {reads:number}).reads,reads,'the revoked getter never runs');
+ await assert.rejects(async()=>callback({observations:[],materials:[],artifacts:[],config:{},signal:new AbortController().signal}),{code:'stale_scope'},'a retained prototype or getter callback must still check the withdrawn scope');
+ if(kind!=='prototype')assert.equal((installed as unknown as {calls:number}).calls,calls,'revocation rejects before the original callback changes private state');
+ assert.equal(f.node.workflows.registry.get('generated.prototype'),undefined);
+});
