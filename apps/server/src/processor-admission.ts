@@ -34,7 +34,6 @@ export class ProcessorAdmission {
    let deadline=until;
    try{
     db.prepare('DELETE FROM processor_cooldowns WHERE until<=?').run(now);
-    if(!db.prepare('SELECT 1 FROM processor_cooldowns WHERE scope=?').get(scope))this.store.reserveMetadata(Buffer.byteLength(scope)+128);
     db.prepare('INSERT INTO processor_cooldowns VALUES(?,?) ON CONFLICT(scope) DO UPDATE SET until=max(until,excluded.until)').run(scope,until);
     deadline=Number(db.prepare('SELECT until FROM processor_cooldowns WHERE scope=?').get(scope)!.until);
     if(own)db.exec('COMMIT');

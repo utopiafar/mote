@@ -10,7 +10,7 @@ import {ContentStorage} from '../src/plugins/maintenance/ContentStorage';
 import {Diagnostics} from '../src/Diagnostics';
 import {ApiError,type Api,type Status} from '../src/api';
 configureLocale(()=> 'zh-CN');
-const state={storage:{captures:2,blobs:0,imageBytes:0,indexing:[],bytes:0},index:{mode:'text'},agent:{},retentionDays:0} as unknown as Status;
+const state={storage:{captures:2,blobs:0,imageBytes:0,indexing:[],bytes:0},index:{mode:'text'},agent:{},} as unknown as Status;
 async function fixture(t:any){const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost',pretendToBeVisual:true}),old=new Map();for(const [key,value]of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){old.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true});}const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const[key,value]of old)value?Object.defineProperty(globalThis,key,value):Reflect.deleteProperty(globalThis,key);dom.window.close();});return{root,d:dom.window.document};}
 const click=(d:Document,label:string)=>{const button=Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(x=>x.textContent===label)!;assert.ok(button,label);button.click();};
 const api=(raw:Api['raw']=async()=>new Response('{}'))=>({raw,request:async()=>storageStatistics([])}) as unknown as Api;

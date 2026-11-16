@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -50,12 +51,12 @@ test('capture erasure removes the receipt grant and rollback cannot leave a paid
   assert.equal(grants.available('source',received.id),false);
 });
 
-test('receipt authorization metadata obeys the shared vault quota',t=>{
-  const directory=mkdtempSync(join(tmpdir(),'mote-memory-grant-quota-')),options={maxStorageBytes:1_000_000},store=new Store(directory,options);
+test('receipt authorization writes roll back on a real SQLite failure',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-memory-grant-quota-')),options={},store=new Store(directory,options);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   new SourceStore(store).register({id:'source',name:'Generated',kind:'custom',deviceId:'fixture',platform:'import'});
   const grants=new MemoryInputAuthorization(store,()=>true);
-  options.maxStorageBytes=store.logicalBytes();store.db.exec('BEGIN IMMEDIATE');
-  assert.throws(()=>grants.receive({sourceId:'source',inputKey:'over-quota'}),/Vault storage limit/);
-  store.db.exec('ROLLBACK');assert.equal(grants.available('source','over-quota'),false);
+  const recover=rejectSqliteWrites(store,'memory_input_authorizations');store.db.exec('BEGIN IMMEDIATE');
+  assert.throws(()=>grants.receive({sourceId:'source',inputKey:'over-quota'}),/Generated SQLite write failure/);
+  store.db.exec('ROLLBACK');assert.equal(grants.available('source','over-quota'),false);recover();
 });

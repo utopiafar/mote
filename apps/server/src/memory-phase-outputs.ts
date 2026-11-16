@@ -39,7 +39,7 @@ export class MemoryPhaseOutputs {
   const {batchId,jobId,phase,inputHash}=options,id=this.id(batchId,phase,inputHash);
   return this.engine.runStep({id,operationId:'memory:'+jobId,kind:'memory.phase',pool:'memory.phase',input:{batchId,jobId,phase,inputHash,generation:options.generation},signal:options.signal,
    policy:EXECUTION_POLICIES.modelCall,requireDurableResult:true,validate:options.validate,
-   execute:options.execute,commit:output=>{options.assertCommit();const plain=JSON.stringify(output),json=JSON.stringify({private:encodeMemoryPrivate(this.store,output)});this.store.reserveMetadata(Buffer.byteLength(json)+256);this.store.db.prepare('INSERT INTO memory_phase_outputs VALUES(?,?,?,?,?,?)').run(id,batchId,phase,inputHash,sha256(plain),json);},
+   execute:options.execute,commit:output=>{options.assertCommit();const plain=JSON.stringify(output),json=JSON.stringify({private:encodeMemoryPrivate(this.store,output)});this.store.db.prepare('INSERT INTO memory_phase_outputs VALUES(?,?,?,?,?,?)').run(id,batchId,phase,inputHash,sha256(plain),json);},
    read:()=>{if(!options.validate())throw new ExecutionFailure('stale','input_changed');return this.read<T>(id,inputHash);},project:()=>{},classify:error=>error instanceof StoreError&&error.statusCode===507?new ExecutionFailure('blocked','storage_full'):new ExecutionFailure('permanent','memory_phase_failed')});
  }
  retryFailed(batchId:string,ownerAction:boolean,generation:string){

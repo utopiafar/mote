@@ -85,9 +85,8 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
       const assertDelivered=(receipt:typeof delivery|undefined)=>{if(!receipt||receipt.version!==1||receipt.inputsHash!==inputsHash||receipt.memoryIds.some(id=>!candidates.some(card=>card.id===id))||receipt.evidenceIds.some(id=>!evidence.includes(id))||!receipt.memoryIds.length&&!receipt.evidenceIds.length)throw new ExecutionFailure('blocked','memory_integration_no_delivery');};
       const deliveryOperationId=`${execution?.operationId??window.id}:integration:${profile}`,deliveryStepId=execution?'lifecycle:'+window.id:null;
       const persistDelivery=()=>{
-        assertInputs();const db=memories.store.db,json=JSON.stringify(delivery),prior=db.prepare('SELECT json,step_id FROM memory_integration_deliveries WHERE operation_id=? AND inputs_hash=?').get(deliveryOperationId,inputsHash) as {json:string;step_id:string|null}|undefined;
-        const bytes=(value:string,stepId:string|null)=>Buffer.byteLength(value)+Buffer.byteLength(deliveryOperationId)+Buffer.byteLength(inputsHash)+Buffer.byteLength(stepId??'')+128;
-        memories.store.reserveMetadata(Math.max(0,bytes(json,deliveryStepId)-(prior?bytes(prior.json,prior.step_id):0)));
+        assertInputs();const db=memories.store.db,json=JSON.stringify(delivery);
+
         db.prepare('INSERT INTO memory_integration_deliveries VALUES(?,?,?,?) ON CONFLICT(operation_id,inputs_hash) DO UPDATE SET step_id=excluded.step_id,json=excluded.json').run(deliveryOperationId,inputsHash,deliveryStepId,json);
       };
 

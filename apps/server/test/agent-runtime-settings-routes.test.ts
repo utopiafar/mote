@@ -13,7 +13,7 @@ const owner='synthetic-agent-runtime-owner';
 const headers={authorization:`Bearer ${owner}`};
 const answer=(model:string)=>({answer:model,citations:[],trace:[],runId:'synthetic-runtime-run'});
 const config=(dataDir:string):Config=>({dataDir,token:owner,tokenPath:'fixture-only',host:'127.0.0.1',port:47832,
-  maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
   model:'original-fixture',modelBaseUrl:'https://fixture.invalid/v1',apiKey:'synthetic-original-key',modelProvider:'custom',
   modelProtocol:'openai-completions',modelReasoningEffort:'auto',allowUnauthenticatedLocal:false,embeddingModel:'',
   embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true});

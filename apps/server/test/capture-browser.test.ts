@@ -17,7 +17,7 @@ const auth=(token=owner)=>({authorization:`Bearer ${token}`,'x-mote-ingress-vers
 async function fixture(t:TestContext){
   const dir=await mkdtemp(join(tmpdir(),'mote-capture-browser-'));
   const config:Config={dataDir:dir,token:owner,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,
-    dataKey:'31'.repeat(32),maxStorageBytes:20_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,
+    dataKey:'31'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,
     allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const value=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model calls in fixtures');},close:async()=>{}}});
   t.after(async()=>{await value.app.close();await rm(dir,{recursive:true,force:true});});

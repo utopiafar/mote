@@ -56,7 +56,7 @@ test('conversation writes quiesce, routes survive a fresh activation, and histor
 
 test('a failed prepare publishes no usable repository and close remains idempotent',async()=>{
   const failure=new Error('Generated conversation DDL failure');
-  const broken={db:{exec(){throw failure;},prepare(){throw failure;},get isTransaction(){return false;}},reserveMetadata(){}} as unknown as Store;
+  const broken={db:{exec(){throw failure;},prepare(){throw failure;},get isTransaction(){return false;}}} as unknown as Store;
   const platform=createConversations(broken,authorization);
   await assert.rejects(platform.prepare(),failure);
   const conversations:ConversationRepository=platform.conversations;

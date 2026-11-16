@@ -53,7 +53,7 @@ async function verifyFreeze(directory:string,expected:string){
   return {freezeSha256:expected,fileHashes:hashes};
 }
 async function lines(path:string){const text=await readFile(path,'utf8');check(text.endsWith('\n'),'ndjson_missing_final_lf');return text.slice(0,-1).split('\n').map(line=>({bytes:line+'\n',value:JSON.parse(line)}));}
-function config(vault:string):Config{return {dataDir:vault,dataKey:undefined,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:400_000_000,maxExportBytes:40_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+function config(vault:string):Config{return {dataDir:vault,dataKey:undefined,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:40_000_000,insightIntervalHours:0,allowedOrigins:[],
   model:'heldout-preparation-no-provider',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,agentTraceEnabled:false,agentTimeoutMs:300000,memoryConcurrency:1,codexBin:'/nonexistent-heldout-no-provider',codexHome:join(output,'DO_NOT_OPEN','unused-codex-home')};}
 async function open(vault:string,stub?:(reader:ContextReader,input:QueryInput)=>Promise<QueryResult>,semanticContextTime?:()=>string){
   check(!node,'node_already_open');

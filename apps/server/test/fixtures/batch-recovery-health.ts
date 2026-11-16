@@ -10,7 +10,7 @@ const directory=process.argv[2],total=4097,sourceId='generated-batch-recording';
 const transcript={durationMs:total*2000,coverage:'full' as const,engine:'generated',segments:Array.from({length:total},(_,index)=>({
   startMs:index*2000,endMs:(index+1)*2000,speaker:'Generated speaker',text:'Generated exact recording segment '+index+' with original provenance and timing.',
 }))};
-const config={dataDir:directory,token:'generated-batch-recovery-owner-only',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:200e6,maxExportBytes:1e6,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+const config={dataDir:directory,token:'generated-batch-recovery-owner-only',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1e6,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
 const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>assert.fail('An unconfigured model must never execute'),close:async()=>{}}});
 let node=await build(),batchId:string,ids:string[],captureId:string;
 try{

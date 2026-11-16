@@ -230,7 +230,7 @@ test('owner browse real note producer reaches the current original reader and ig
  const {buildApp}=await import('../../server/src/app.js');
  const {mkdtempSync,rmSync}=await import('node:fs'),{join}=await import('node:path'),{tmpdir}=await import('node:os');
  const directory=mkdtempSync(join(tmpdir(),'mote-web-owner-browse-')),token='generated-web-owner-browse-token-123456';
- const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:3_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
+ const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+token};
  const intake=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-web',deviceName:'Generated Web',platform:'import',capturedAt:when,text:'Actual generated original note, without invented publication.'}});assert.equal(intake.statusCode,201,intake.body);

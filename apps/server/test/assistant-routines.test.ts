@@ -24,7 +24,7 @@ const processScript=String.raw`
  import {writeFileSync} from 'node:fs';
  import {join} from 'node:path';
  const config={dataDir:process.env.MOTE_TEST_DIRECTORY,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,token:'generated-routine-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-  maxStorageBytes:20000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',
+  maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call in admission-only process');},close:async()=>{}}});let clock=Date.parse('2026-11-01T08:00:00Z');node.assistantRoutines.now=()=>clock;
  await node.app.ready();process.send({type:'ready'});
@@ -37,7 +37,7 @@ const processScript=String.raw`
 async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<QueryResult>=async input=>answer(input),configured=true){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-routine-'));
  const config:Config={dataDir,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,token:'generated-routine-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-  maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',
+  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  let clock=Date.parse('2026-11-01T08:00:00Z');
  const build=async()=>{

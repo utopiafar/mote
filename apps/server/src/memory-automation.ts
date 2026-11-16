@@ -6,7 +6,6 @@ import {sha256,StoreError} from './store.js';
  * metadata accounting. It never needs the complete Store backdoor. */
 export interface MemoryAutomationStore {
   readonly db:Pick<DatabaseSync,'exec'|'prepare'|'isTransaction'>;
-  reserveMetadata(bytes:number):void;
   registerStorage(plugin:string,meters:Readonly<Record<string,string>>):void;
 }
 
@@ -52,7 +51,7 @@ export class MemoryAutomation {
         if(state.desired){state.desired=false;state.cutoff=this.now();}
         if(kind==='stop'){afterCommit=this.onStop?.();state.stopRequested=true;}
       }
-      state.revision++;this.save(state);this.store.reserveMetadata(256);
+      state.revision++;this.save(state);
       db.prepare('INSERT INTO memory_control_commands VALUES(?,?,?)').run(input.operationId,fingerprint,this.now());db.exec('COMMIT');
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
     try{afterCommit?.();}catch(error){throw new Error('Memory command committed; local cleanup failed',{cause:error});}
@@ -76,7 +75,6 @@ export class MemoryAutomation {
         if(state.barrier!==operationId)throw new StoreError('Memory switch fence changed',409);
         delete state.barrier;state.generation++;state.revision++;this.save(state);
       }
-      this.store.reserveMetadata(Buffer.byteLength(operationId)+128);
       db.prepare('INSERT INTO memory_automation_fences VALUES(?,?,?)').run(operationId,kind,this.now());
       if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}

@@ -15,7 +15,7 @@ import {ConnectionError} from '../../desktop/src/connection.js';
 const owner='generated-runtime-status-owner';
 const secret='generated-runtime-status-secret-do-not-echo';
 const config=(dataDir:string):Config=>({dataDir,token:owner,tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-  maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
   model:'generated-runtime-model',modelBaseUrl:'https://fixture.invalid/v1',apiKey:secret,modelProvider:'custom',
   modelProtocol:'openai-completions',modelReasoningEffort:'auto',allowUnauthenticatedLocal:false,embeddingModel:'',
   embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true});

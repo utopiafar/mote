@@ -9,7 +9,7 @@ import type { Config } from '../src/config.js';
 const inactive: QueryAgent = { configured: false, query: async () => { throw new Error('No model calls in synthetic heartbeat fixtures'); }, close: async () => {} };
 async function fixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'mote-sync-heartbeat-'));
-  const config: Config = { dataDir: directory, token: 'synthetic-owner-sync-heartbeat-token', tokenPath: 'fixture-only', host: '127.0.0.1', port: 0, profile: 'test', maxStorageBytes: 10_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '' };
+  const config: Config = { dataDir: directory, token: 'synthetic-owner-sync-heartbeat-token', tokenPath: 'fixture-only', host: '127.0.0.1', port: 0, profile: 'test',  maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '' };
   let value = await buildApp(config, { agent: inactive });
   t.after(async () => { await value.app.close(); await rm(directory, { recursive: true, force: true }); });
   return { headers: { authorization: `Bearer ${config.token}` }, get app() { return value.app; }, restart: async () => { await value.app.close(); value = await buildApp(config, { agent: inactive }); } };

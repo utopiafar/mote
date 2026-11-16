@@ -20,7 +20,7 @@ const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{
 if(mode==='seed'){
  await writeFile(configFile,serializeConfigDocument({version:1,revision:0,
   server:{profile:'test',runtime:'native',host:'127.0.0.1',port:Number(port),token:'generated-startup-backlog-owner-only'},
-  storage:{dataDir:directory,maxStorageBytes:1024**3,maxExportBytes:1024**2,retentionDays:0},
+  storage:{dataDir:directory,maxExportBytes:1024**2,},
   models:{deployment:{provider:'custom',protocol:'openai-completions',model:'generated-startup-model',baseUrl:'https://generated.invalid/v1',apiKey:'generated-model-fixture-only'}},
   diagnostics:{enabled:false,level:'silent'},
  }),{mode:0o600});

@@ -9,8 +9,7 @@ import type {Config} from '../../server/src/config.js';
 // Generated-only loopback fault proxy: Central commits the first request, but its ACK is lost.
 const dataDir = await mkdtemp(join(tmpdir(), 'mote-upload-replay-'));
 const token = 'generated-upload-history-fixture-token';
-const config: Config = {dataDir, token, tokenPath:'generated-only', host:'127.0.0.1', port:0,
- maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,
+const config: Config = {dataDir, token, tokenPath:'generated-only', host:'127.0.0.1', port:0,maxExportBytes:1_000_000,insightIntervalHours:0,
  allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,
  embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
 const node = await buildApp(config, {backgroundWorker:false, agent:{configured:false,

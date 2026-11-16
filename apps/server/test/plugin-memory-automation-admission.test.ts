@@ -67,7 +67,6 @@ test('a prepare failure leaves no acquirable admission object and close remains 
   const failure=new Error('Generated Memory automation DDL failure');
   const broken:MemoryAutomationStore={
     db:{exec(){throw failure;},prepare(){throw failure;},get isTransaction(){return false;}} as unknown as MemoryAutomationStore['db'],
-    reserveMetadata(){},
   };
   const platform=createMemoryAutomationAdmission(broken);
   assert.throws(()=>platform.automationForAssembly,{statusCode:503});

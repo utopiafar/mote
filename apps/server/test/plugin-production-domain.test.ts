@@ -60,7 +60,7 @@ const consumer=String.raw`
 
 async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-production-domain-')),controlFile=join(directory,'control.json');await writeFile(controlFile,'{}');
- const releases=new Map<string,Release>(),config:Config={dataDir:join(directory,'data'),token:'generated-domain-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const releases=new Map<string,Release>(),config:Config={dataDir:join(directory,'data'),token:'generated-domain-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const transport:PluginReleaseTransport=async url=>{
   const item=[...releases.values()].find(value=>url.includes('/generated/'+value.manifest.id+'/'));assert.ok(item,'only generated release transport is used');
   const base='https://github.com/generated/'+item.manifest.id+'/releases/download/v1/';

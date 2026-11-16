@@ -40,7 +40,7 @@ test('legacy action receipts migrate without replay and settings changes cannot 
 
 test('application action analysis usage and semantic children resolve to the admitted parent operation',async t=>{
  const {buildApp}=await import('../src/app.js'),directory=mkdtempSync(join(tmpdir(),'mote-action-operation-api-'));let node:Awaited<ReturnType<typeof buildApp>>;
- node=await buildApp({dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+ node=await buildApp({dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
   lease?.onFinalizer?.('host');
   if(node.executor.get(input.traceContext!.jobId!)?.kind==='context-dag.semantic'){const id=input.evidenceIds![0];hostRun(input);return {...empty(),answer:JSON.stringify({summary:'Generated appointment',evidence:[{id,quote:text}],events:[],memoryCandidates:[],actionCues:[{kind:'calendar.create',event,uncertainty:'proposed',evidence:[{id,quote:text}]}]}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}]};}
   assert.equal(input.skill,'calendar-extraction');assert.equal(node.executor.get('actions:'+input.traceContext!.jobId)?.operationId,input.traceContext!.operationId);hostRun(input);return answer(input.evidenceIds![0]);
@@ -68,7 +68,7 @@ test('deleted and superseded action inputs do not leave global failure alerts or
 for(const outcome of ['ready','changed','blocked'] as const)test(`action dependency ${outcome} preserves waiting, original validity and blocked retry boundaries`,async t=>{
  const {buildApp}=await import('../src/app.js'),directory=mkdtempSync(join(tmpdir(),'mote-action-semantic-wait-')),entered=deferred(),release=deferred();
  let semanticCalls=0,actionCalls=0,node:Awaited<ReturnType<typeof buildApp>>;
- node=await buildApp({dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+ node=await buildApp({dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
   lease?.onFinalizer?.('host');
   if(node.executor.get(input.traceContext!.jobId!)?.kind==='context-dag.semantic'){
    semanticCalls++;entered.resolve();await release.promise;

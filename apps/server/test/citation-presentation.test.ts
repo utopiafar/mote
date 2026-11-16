@@ -10,7 +10,7 @@ import {materialId} from '../src/materials.js';
 
 test('only built-in source-item Material serialization receives citation display metadata; originals stay literal',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-citation-presentation-'));
-  const config:Config={dataDir:directory,token:'generated-citation-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir:directory,token:'generated-citation-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in this fixture');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   node.sources.register({id:'generated-citation',name:'Generated citation source',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});

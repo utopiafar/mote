@@ -37,7 +37,7 @@ test('every declared Web HTTP requirement resolves against the real feature inve
   assert.ok(requirements.includes('http:GET:/api/materials/:id/read'));
   assert.ok(requirements.includes('http:POST:/api/owner-questions/:id/reply'));
   const directory=await mkdtemp(join(tmpdir(),'mote-web-feature-requirements-'));
-  const config:Config={dataDir:directory,token:'generated-web-feature-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:Config={dataDir:directory,token:'generated-web-feature-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
   const node=await buildApp(config,{backgroundWorker:false});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   await node.app.ready();

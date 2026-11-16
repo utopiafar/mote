@@ -14,7 +14,7 @@ import {WorkingMemory} from '../src/working-memory.js';
 import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';
 
 const token='generated-source-context-conversation-token',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 const answer=(text:string,pins:SourceContextDeclaration[]=[])=>({answer:text,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]},...(pins.length?{sourceContextDependencies:pins}:{})});
 const agent=(query:QueryAgent['query']):QueryAgent=>({configured:true,query,close:async()=>{}});
 

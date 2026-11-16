@@ -221,7 +221,7 @@ test('HTTP source upload, material search and actual agent bridge cite assembled
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js');
   const {parseAnswer}=await import('@mote/agent');
   const directory=mkdtempSync(join(tmpdir(),'mote-source-http-'));
-  const config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture',host:'127.0.0.1',port:47832,dataKey:undefined,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture',host:'127.0.0.1',port:47832,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No online model');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:'Bearer '+config.token};
@@ -241,7 +241,7 @@ test('HTTP source upload, material search and actual agent bridge cite assembled
 test('source batch accepts more than 500 items and long bodies/titles under the 32 MiB HTTP limit',async t=>{
   const {buildApp}=await import('../src/app.js');
   const directory=mkdtempSync(join(tmpdir(),'mote-source-batch-limit-'));
-  const config={dataDir:directory,token:'generated-batch-token',tokenPath:'fixture',host:'127.0.0.1',port:0,dataKey:undefined,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config={dataDir:directory,token:'generated-batch-token',tokenPath:'fixture',host:'127.0.0.1',port:0,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:'Bearer '+config.token};

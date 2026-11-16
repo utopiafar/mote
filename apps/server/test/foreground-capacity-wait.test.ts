@@ -12,7 +12,7 @@ import type {Config} from '../src/config.js';
 import {hostRun} from './fixtures/host-run.js';
 
 const answer=(insight:boolean):QueryResult=>({answer:insight?JSON.stringify({title:'Generated review',markdown:'Generated review.',html:'<p>Generated review.</p>'}):'Generated answer.',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}});
-const configuration=(dataDir:string):Config=>({dataDir,token:'generated-capacity-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-not-live',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const configuration=(dataDir:string):Config=>({dataDir,token:'generated-capacity-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-not-live',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
 async function until<T>(read:()=>T,ready:(value:T)=>boolean){const deadline=Date.now()+4000;for(;;){const value=read();if(ready(value))return value;if(Date.now()>=deadline)assert.fail('Generated capacity fixture did not reach its expected state');await delay(10);}}
 

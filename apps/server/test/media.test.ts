@@ -115,7 +115,7 @@ test('media evidence references are bounded without truncating interval totals o
 
 test('media API allows full client reads and writes with explicit device filters and exposes a read-only agent reader',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-media-api-')),token='generated-media-owner-token';
-  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   let reader:ContextReader|undefined;
   const node=await buildApp(config,{createModelAgent:async(_settings,value)=>{reader=value;return {configured:false,query:async()=>{throw new Error('No live model');},close:async()=>{}};}});
   const {app}=node;

@@ -133,8 +133,8 @@ for(const revoke of ['source','credential','stop','quiesce'] as const)test(`actu
 
 
 test('scope loss inside a source registration transaction rolls back metadata without deleting prior sources',async t=>{
-  const f=await fixture(t);await f.register('retained');const reserve=f.store.reserveMetadata.bind(f.store);let armed=true,closing:Promise<void>|undefined;
-  t.mock.method(f.store,'reserveMetadata',(bytes:number)=>{if(armed){armed=false;closing=f.owner.close('revoked');}return reserve(bytes);});
+  const f=await fixture(t);await f.register('retained');const register=f.sources.register.bind(f.sources);let closing:Promise<void>|undefined;
+  t.mock.method(f.sources,'register',(raw,authorize)=>{let checks=0;return register(raw,input=>{if(++checks===2)closing=f.owner.close('revoked');authorize?.(input);});});
   const response=await f.http('/api/sources','POST',{id:'late-registration',name:'Generated late source',kind:'custom',deviceId:'generated-phone-a',platform:'android'});
   assert.equal(response.status,503);await closing;assert.equal(f.sources.listSources().length,1);assert.equal(f.sources.getSource('retained').id,'retained');assert.equal(f.store.db.isOpen,true);
 });
@@ -212,7 +212,7 @@ test('an interrupted source upload body releases its real C04 pin and scope list
 
 async function defaultFixture(t:TestContext){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-c10-default-'));
-  const node=await buildApp({dataDir,token:ownerToken,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{
+  const node=await buildApp({dataDir,token:ownerToken,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{
     backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in C10 default fixture');},close:async()=>{}},
   });
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});

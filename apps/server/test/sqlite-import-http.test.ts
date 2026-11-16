@@ -9,7 +9,7 @@ import type {Config} from '../src/config.js';
 
 test('HTTP import survives FTS cleanup, records parser failure, retries, confirms and restarts',{timeout:30_000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-sqlite-import-http-'));
- const config:Config={dataDir:directory,token:'generated-sqlite-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-sqlite-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let calls=0;
  const dependencies={backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('Fixture must not call a model');}},prepareImport:async(input:import('../src/imports.js').ImportPreparation)=>{
   if(++calls===1){

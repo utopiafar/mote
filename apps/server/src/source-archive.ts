@@ -155,7 +155,6 @@ export class SourceArchive {
       return {item,index,group,groupHash,versionKey,contentHash,duplicate:Boolean(existing)};
     });
     const bytes=Buffer.from(JSON.stringify(items)),hasNew=versions.some(version=>!version.duplicate);
-    this.store.reserveMetadata(hasNew?bytes.length+items.length*512:0);
     const directory=this.directory(sourceId),batch=archiveHash(items);
     if(hasNew){
       this.store.contentEncryption.write(join(directory,batch),bytes);

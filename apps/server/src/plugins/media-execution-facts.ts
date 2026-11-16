@@ -33,7 +33,6 @@ export class MediaExecutionCalls {
   const {requestId,captureId,step,generation,configuration,stage}=input;
   if(step.state!=='running'||!Number.isSafeInteger(step.attempts)||step.attempts<1)throw new StoreError('Media request needs a current execution attempt',409);
   const scope=this.scope(step.id,generation,requestId),canonical=JSON.stringify(step.input),db=this.store.db;
-  this.store.reserveMetadata(Buffer.byteLength(canonical)+1024);
   db.prepare('INSERT INTO media_execution_calls(request_id,scope,capture_id,step_id,input,generation,configuration,stage,issued_attempt) VALUES(?,?,?,?,?,?,?,?,?)').run(requestId,scope,captureId,step.id,canonical,generation,configuration,stage,step.attempts);
   return this.get(requestId)!;
  }
@@ -51,7 +50,7 @@ export class MediaExecutionCalls {
   if(['succeeded','failed'].includes(fact.state)&&(!fact.finishedAt||fact.state==='succeeded'&&!fact.startedAt||fact.state==='failed'&&!fact.failureCode))return false;
   // A terminal observation is monotonic, even when a subsequent read fails.
   if(call.fact&&['succeeded','failed'].includes(call.fact.state))return JSON.stringify(call.fact)===JSON.stringify(fact);
-  const json=JSON.stringify(fact);this.store.reserveMetadata(Buffer.byteLength(json)+256);
+  const json=JSON.stringify(fact);
   this.store.db.prepare('UPDATE media_execution_calls SET fact=?,supported=1 WHERE request_id=?').run(json,id);return true;
  }
  settle(id:string){this.store.db.prepare("UPDATE media_execution_calls SET state='settled' WHERE request_id=? AND state='issued'").run(id);}

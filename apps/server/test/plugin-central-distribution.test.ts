@@ -24,7 +24,7 @@ function fixture(t:{after(fn:()=>void):void}){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-central-distribution-'));
   t.after(()=>rmSync(dataDir,{recursive:true,force:true}));
   const config:Config={dataDir,token:'generated-central-distribution-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-    maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
     model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
   return {config,headers:{authorization:`Bearer ${config.token}`}};
 }

@@ -33,7 +33,7 @@ export class SourceStore {
     if(input.sourceContext)throw new StoreError('Source context is owner control plane metadata; use the source context API',403);
     if(!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
-    const now=new Date().toISOString(),value={...input,syncScopeVersion:0,syncPolicyVersion:0,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
+    const now=new Date().toISOString(),value={...input,syncScopeVersion:0,syncPolicyVersion:0,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.save(value);return this.present(value);
     },()=>authorize?.(input));
   }
   updateContext(id:string,patch:{expectedVersion:number;description:string},authorize?:()=>void){
@@ -52,8 +52,6 @@ export class SourceStore {
     // A new owner-selected history policy has no coverage until its producer
     // starts the new range; ordinary pause/resume keeps the current checkpoint.
     if((existing.initialSync??'all')!==(input.initialSync??'all')){value.syncScopeVersion=(existing.syncScopeVersion??0)+1;value.syncPolicyVersion=(existing.syncPolicyVersion??0)+1;if(value.status){const {coverage,...status}=value.status;value.status=status;}}
-    const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
-    if(growth>0)this.store.reserveMetadata(growth);
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{authorize?.(existing);this.save(value);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
       (this.pipelines?.materials??new MaterialStore(this.store)).refreshSourceContext(id);
@@ -70,8 +68,8 @@ export class SourceStore {
   reportStatus(id:string,status:NonNullable<SourceConnection['status']>,expectedScopeVersion?:number){
     this.control(()=>{
       const value=expectedScopeVersion===undefined?this.getSource(id):this.assertSyncScope(id,expectedScopeVersion),input=sourceStatusSchema.parse(status),coverage=input.coverage??value.status?.coverage;
-      const next={...value,status:{...input,...(coverage?{coverage}:{})},updatedAt:new Date().toISOString()},growth=Buffer.byteLength(JSON.stringify(next))-Buffer.byteLength(JSON.stringify(value));
-      if(growth>0)this.store.reserveMetadata(growth);this.save(next);
+      const next={...value,status:{...input,...(coverage?{coverage}:{})},updatedAt:new Date().toISOString()};
+      this.save(next);
     });
   }
   /** Explicit range/authorization changes withdraw coverage and advance the
@@ -80,7 +78,7 @@ export class SourceStore {
     this.control(()=>{
       const value=this.getSource(id),next={...value,syncScopeVersion:(value.syncScopeVersion??0)+1,updatedAt:new Date().toISOString()};
       if(value.status){const {coverage,...status}=value.status;next.status=status;}
-      const growth=Buffer.byteLength(JSON.stringify(next))-Buffer.byteLength(JSON.stringify(value));if(growth>0)this.store.reserveMetadata(growth);this.save(next);
+      this.save(next);
     });
   }
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {

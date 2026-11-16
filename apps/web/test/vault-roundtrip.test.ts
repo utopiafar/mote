@@ -23,7 +23,7 @@ async function fixture(t:any){
  return {root,d:dom.window.document};
 }
 const button=(d:Document,text:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent===text)!;
-const status=(store:Store)=>({storage:store.stats(),agent:{configured:false,provider:'fixture',model:null},index:{mode:'text',model:null},retentionDays:0,insightIntervalHours:0,serverTime:'2026-10-05T00:00:00Z'}) as unknown as Status;
+const status=(store:Store)=>({storage:store.stats(),agent:{configured:false,provider:'fixture',model:null},index:{mode:'text',model:null},insightIntervalHours:0,serverTime:'2026-10-05T00:00:00Z'}) as unknown as Status;
 async function select(d:Document,file:File){const input=d.querySelector<HTMLInputElement>('[aria-label="导入 Mote 归档"]')!;Object.defineProperty(input,'files',{value:[file],configurable:true});await act(async()=>input.dispatchEvent(new window.Event('change',{bubbles:true})));}
 
 test('the actual Vault component imports its current v2 JSON download with original bytes, links and idempotency intact',async t=>{

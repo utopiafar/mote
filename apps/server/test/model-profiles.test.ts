@@ -21,7 +21,7 @@ function configServiceFor(directory:string,deployment:ModelSettings){
 }
 test('profiles route each request and feature independently; credentials, restarts and deletes are scoped',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-profiles-'));
-  const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const seen:ModelSettings[]=[],calls:{model:string;skill?:string}[]=[];
   const factory=async (s:ModelSettings)=>{seen.push(s);return {configured:!!s.model,query:async(input:QueryInput)=>{calls.push({model:s.model,skill:input.skill});return {answer:input.responseMode==='memory-extraction'?generatedMemoryOutput(input):input.skill==='personal-insight'?JSON.stringify({title:'Generated model profile report',markdown:s.model,html:`<p>${s.model}</p>`}):s.model,citations:[],trace:[],runId:'fixture'};},close:async()=>{}};};
   let node=await buildApp(cfg,{createModelAgent:factory});
@@ -131,7 +131,7 @@ test('deployment is read-only; copies retain secrets server-side, stay independe
 
 test('module model overrides reach chat, insights, immediate memory and persisted memory batches',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-module-models-'));
-  const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const called:string[]=[];
   const node=await buildApp(cfg,{createModelAgent:async s=>({configured:true,query:async input=>{called.push(s.model);return {answer:input.responseMode==='memory-extraction'?generatedMemoryOutput(input):input.skill==='personal-insight'?JSON.stringify({title:'Generated module model report',markdown:s.model,html:`<p>${s.model}</p>`}):s.model,citations:[],trace:[],runId:'generated'};},close:async()=>{}})});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});

@@ -14,7 +14,7 @@ const note=(deviceId='generated-notes-device')=>({id:randomUUID(),deviceId,devic
 
 test('real buildApp Notes journey uses one C10A ingress and C04 pin, then closes',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-notes-'));
-  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots notes fixture');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   assert.equal(node.featureServices.ingress,node.captureIntake.ingress);
@@ -38,7 +38,7 @@ test('real buildApp Notes journey uses one C10A ingress and C04 pin, then closes
 
 test('authorization startup failure clears the started FilesSource sweep timer',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-notes-fail-')),connectors=join(dataDir,'connectors');mkdirSync(connectors,{recursive:true});writeFileSync(join(connectors,'client-connections.json'),'generated malformed json');
-  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const set=globalThis.setInterval,clear=globalThis.clearInterval,active=new Set<ReturnType<typeof setInterval>>();
   globalThis.setInterval=((fn:TimerHandler,ms?:number,...args:unknown[])=>{const timer=set(fn,ms,...args);active.add(timer);return timer;}) as typeof setInterval;
   globalThis.clearInterval=((timer?:ReturnType<typeof setInterval>)=>{if(timer)active.delete(timer);clear(timer);}) as typeof clearInterval;
@@ -50,7 +50,7 @@ test('authorization startup failure clears the started FilesSource sweep timer',
 
 test('an authenticated request aborted over a real socket releases its C04 pin',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-notes-abort-'));
-  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots abort fixture');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   await node.app.listen({host:'127.0.0.1',port:0});

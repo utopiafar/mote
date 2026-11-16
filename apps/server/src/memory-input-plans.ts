@@ -16,5 +16,5 @@ export class MemoryInputPlans {
   CREATE INDEX IF NOT EXISTS memory_input_plans_material ON memory_input_plans(material_id);`);}
  list(jobId:string):ManualMemoryInputPlan[]{return this.store.db.prepare('SELECT json FROM memory_input_plans WHERE job_id=? ORDER BY rowid').all(jobId).map(row=>JSON.parse(String(row.json)));}
  get(id:string):ManualMemoryInputPlan|undefined{const row=this.store.db.prepare('SELECT json FROM memory_input_plans WHERE id=?').get(id);return row?JSON.parse(String(row.json)):undefined;}
- put(plan:ManualMemoryInputPlan){const json=JSON.stringify(plan),prior=this.store.db.prepare('SELECT json FROM memory_input_plans WHERE id=?').get(plan.id);this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(prior?.json??''))));this.store.db.prepare('INSERT INTO memory_input_plans VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(plan.id,plan.jobId,plan.materialId,json);}
+ put(plan:ManualMemoryInputPlan){const json=JSON.stringify(plan);this.store.db.prepare('INSERT INTO memory_input_plans VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(plan.id,plan.jobId,plan.materialId,json);}
 }

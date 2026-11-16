@@ -12,7 +12,7 @@ if(!readyPath)throw Error('Provide a private readiness JSON path');
 const dataDir=await mkdtemp(join(tmpdir(),'mote-library-native-'));
 const token='generated-library-recovery-owner-123456';
 const config:Config={dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:process.argv[3]?z.coerce.number().int().min(1024).max(65535).parse(process.argv[3]):0,profile:'test',tokenFromEnvironment:true,
-  dataKey:'31'.repeat(32),maxStorageBytes:20_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,
+  dataKey:'31'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,
   allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
 const value=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model calls in library fixture');},close:async()=>{}}});
 // Hold automatic organization so the explicit generated Material revision stays pinned.

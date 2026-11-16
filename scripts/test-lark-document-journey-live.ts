@@ -35,7 +35,7 @@ const report:Record<string,any>=previous??{status:'running',startedAt:new Date()
   head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),cases:[],calls:[],semanticQualityAccepted:false};
 if(previous){report.resumes=[...(report.resumes??[]),{at:new Date().toISOString(),priorStatus:report.status,priorFailure:report.failure}];delete report.failure;delete report.finishedAt;report.status='running';upstream.advance();}
 const config:Config={dataDir:join(output,'vault'),token,tokenPath:join(output,'token'),host:'127.0.0.1',port:0,
-  maxStorageBytes:200_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+  maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
   model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'high',modelBaseUrl:'',apiKey:'',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentTimeoutMs:300000,
   diagnosticsEnabled:true,agentTraceEnabled:true,logLevel:'warn',memoryConcurrency:2,

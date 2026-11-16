@@ -11,7 +11,7 @@ import {seedSourceMemoryBacklog} from './fixtures/source-memory-backlog.js';
 
 test('source-owned Memory drain and resumed claims observe state without repeatedly opening frozen job details',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-memory-background-state-'));
- const config:Config={dataDir:directory,token:'generated-memory-background-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:1024**3,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-memory-background-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>assert.fail('Queued metadata must not dispatch a model')}});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  await node.app.ready();await authorizeFixtureModels(node);
@@ -35,7 +35,7 @@ test('source-owned Memory drain and resumed claims observe state without repeate
 
 test('Memory waiting for its existing semantic preparation keeps frozen batches unchanged across executor polls',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-memory-preparation-state-'));
- const config:Config={dataDir:directory,token:'generated-memory-preparation-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:1024**3,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-memory-preparation-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let calls=0;
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   calls++;assert.ok(input.signal);input.signal.throwIfAborted();

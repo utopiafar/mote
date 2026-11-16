@@ -9,7 +9,7 @@ import type {Config} from '../src/config.js';
 
 test('owner Agent inspector reads long segments page by page through the scoped Agent guard',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-agent-pagination-'));
- const config:Config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const captureId=randomUUID(),deviceId='generated-device',at='2026-10-12T00:00:00.000Z';
  await node.store.ingest({id:captureId,deviceId,deviceName:'Generated device',platform:'import',source:'note',capturedAt:at,durationMs:0,appId:'generated.note',appName:'Generated note',ocrText:'Generated original evidence'});

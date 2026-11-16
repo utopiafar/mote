@@ -22,7 +22,7 @@ const caption='I saved a generated engineering discussion because I wanted to re
 const words='Generated participant described testing idempotent writes; implementation by the owner is unknown.';
 const location={width:8,height:8,polygon:[[1,1],[7,1],[7,5],[1,5]]};
 async function fixture(t:import('node:test').TestContext){
- const directory=mkdtempSync(join(tmpdir(),'mote-attachment-composition-')),config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const directory=mkdtempSync(join(tmpdir(),'mote-attachment-composition-')),config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let node:Awaited<ReturnType<typeof buildApp>>,ocrCalls=0;const modelCalls:QueryInput[]=[],failed=new Set<string>();
  const start=async()=>{
   node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{

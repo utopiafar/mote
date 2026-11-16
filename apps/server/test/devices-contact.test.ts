@@ -10,7 +10,7 @@ import type {Config} from '../src/config.js';
 const agent:QueryAgent={configured:false,query:async()=>{throw Error('No model calls in generated device tests');},close:async()=>{}};
 async function fixture(t:TestContext){
   const directory=await mkdtemp(join(tmpdir(),'mote-device-contact-'));
-  const config:Config={dataDir:directory,token:'generated-device-contact-owner-token',tokenPath:'generated-only',host:'127.0.0.1',port:0,profile:'test',maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:Config={dataDir:directory,token:'generated-device-contact-owner-token',tokenPath:'generated-only',host:'127.0.0.1',port:0,profile:'test',maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
   const node=await buildApp(config,{agent,backgroundWorker:false});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${config.token}`};

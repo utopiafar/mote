@@ -9,7 +9,7 @@ import type {Config} from '../../server/src/config.js';
 // The model alone is replaced; no provider or personal archive is contacted.
 const ready=process.argv[2];if(!ready)throw Error('Private ready file required');
 const dataDir=await mkdtemp(join(tmpdir(),'mote-desktop-conversation-service-')),token=randomUUID()+randomUUID();
-const config:Config={dataDir,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:Config={dataDir,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
 const result=(answer:string)=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]}});
 const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async()=>result('Generated continued response'),close:async()=>{}}});
 let failNextPage=false;

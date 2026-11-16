@@ -21,7 +21,6 @@ export class SourceContextStore {
       try{
         for(const row of store.db.prepare("SELECT source_id,version,json FROM source_context_declarations WHERE json LIKE 'json:%'").all()){
           const json=encodeMemoryPrivate(store,decodeMemoryPrivate(store,String(row.json)));
-          store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(row.json))));
           store.db.prepare('UPDATE source_context_declarations SET json=? WHERE source_id=? AND version=?').run(json,row.source_id,row.version);
         }
         if(own)store.db.exec('COMMIT');
@@ -72,7 +71,6 @@ export class SourceContextStore {
     if(patch.description===current.description)return {snapshot:current,changed:false};
     const value={sourceId,version:current.version+1,description:patch.description,updatedAt:new Date().toISOString()},pin={version:value.version,fingerprint:fingerprint(value)};
     const json=encodeMemoryPrivate(this.store,{description:value.description}),source={...this.source(sourceId),sourceContext:pin,updatedAt:value.updatedAt};
-    this.store.reserveMetadata(Buffer.byteLength(json)+Buffer.byteLength(JSON.stringify(source))+512);
     this.store.db.prepare('INSERT INTO source_context_declarations VALUES(?,?,?,?,?)').run(sourceId,value.version,pin.fingerprint,json,value.updatedAt);
     this.store.db.prepare('UPDATE source_connections SET json=? WHERE id=?').run(JSON.stringify(source),sourceId);
     return {snapshot:{...value,fingerprint:pin.fingerprint},changed:true};
@@ -89,7 +87,7 @@ export class SourceContextStore {
       seen.add(key);this.source(declaration.sourceId);
       const prior=this.getAtVersion(declaration.sourceId,declaration.version);
       if(prior){if(prior.fingerprint!==declaration.fingerprint||prior.updatedAt!==declaration.updatedAt)throw new StoreError('Portable source context conflicts with an existing declaration',409);continue;}
-      const json=encodeMemoryPrivate(this.store,{description:declaration.description});this.store.reserveMetadata(Buffer.byteLength(json)+512);
+      const json=encodeMemoryPrivate(this.store,{description:declaration.description});
       this.store.db.prepare('INSERT INTO source_context_declarations VALUES(?,?,?,?,?)').run(declaration.sourceId,declaration.version,declaration.fingerprint,json,declaration.updatedAt);
     }
     for(const row of this.store.db.prepare("SELECT id FROM source_connections WHERE json_type(json,'$.sourceContext')='object'").all())this.identity(String(row.id));

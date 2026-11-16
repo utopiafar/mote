@@ -12,7 +12,7 @@ const [directory,report]=process.argv.slice(2),closed:string[]=[];
 test('a generated assertion failure still closes the restarted app and its held query',async t=>{
   const cleanup=appCleanup(t,directory);
   const config:Config={dataDir:directory,token:'generated-cleanup-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-    maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
     model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://fixture.invalid/v1',apiKey:'generated-key',
     allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
   let release!:()=>void,started!:()=>void;

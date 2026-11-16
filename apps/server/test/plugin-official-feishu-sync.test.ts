@@ -53,7 +53,7 @@ function fakeLark(){
 }
 async function fixture(t:TestContext,transport=fakeLark()){
  const root=mkdtempSync(join(tmpdir(),'mote-feishu-sync-')),owner='generated-owner-'+randomUUID(),headers={authorization:'Bearer '+owner};
- const config:Config={dataDir:root,token:owner,tokenPath:join(root,'owner'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:128*1024*1024,maxExportBytes:1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(root,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+ const config:Config={dataDir:root,token:owner,tokenPath:join(root,'owner'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(root,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
  let binding=createLarkBinding({runner:transport.runner});
  const boot=()=>buildApp(config,{backgroundWorker:false,connectorTesting:{lark:transport.runner,larkBinding:binding,fetch:async()=>{throw Error('No external network in Feishu sync fixture');}},agent:{configured:false,async query(){throw Error('No model in Feishu sync fixture');},async close(){}}});
  let node=await boot();
