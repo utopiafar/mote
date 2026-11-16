@@ -9317,6 +9317,7 @@
   "此运行方式暂不支持自动安装，可在高级连接中使用已准备的服务。": "Automatic installation is not supported for this runtime. Use a prepared service in advanced connections.",
   "准备未完成，请检查网络和可用空间后重试。": "Preparation is incomplete. Check the network and available space, then retry.",
   "安装中…": "Installing…",
+  "验证并修复": "Verify and repair",
   "一键安装": "Install",
   "安装进度": "Installation progress",
   "图片文字识别": "Image text recognition",

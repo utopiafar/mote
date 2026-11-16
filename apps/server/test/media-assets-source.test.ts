@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import {syncBuiltinESMExports} from 'node:module';
 import {execFileSync} from 'node:child_process';
-import {mkdtemp,rm,mkdir,writeFile,readFile,symlink,readdir,link,utimes} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,writeFile,readFile,symlink,readdir,link,utimes,chmod,rename} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -60,7 +60,8 @@ test('an imported generated bundle is read by the actual engine and rejects a di
  const identity=mediaModelIdentities('dialogue');assert.deepEqual(inspect(),{models:identity});
  const asr=join(assets.path('dialogue'),'asr/model.pt'),original=await readFile(asr);
  for(const bytes of [Buffer.alloc(original.length+1),Buffer.alloc(original.length)]){
-  await writeFile(asr,bytes);assert.deepEqual(inspect(),{error:'model_missing'});assert.equal(assets.ready('dialogue'),false);
+  await writeFile(asr,bytes);assert.deepEqual(inspect(),{error:'model_missing'},'the actual worker rejects both wrong-size and same-size corrupt weights');
+  assert.equal(assets.ready('dialogue'),bytes.length===original.length,'host readiness is a fast file/size check; the worker owns full hashing');
  }
  await assets.importBundle('dialogue',bundle);
  models.asr.revision='0'.repeat(40);await writeFile(description,JSON.stringify(models));
@@ -153,13 +154,66 @@ test('an import rejects symlinked component directories instead of reading files
  assert.deepEqual(await readFile(join(outside,'campplus_cn_common.bin')),f.data);
 });
 
-test('published content changes and stale old-model markers cannot claim the current bundle is ready',async t=>{
+test('the real worker rejects published content changes while the host rejects stale old-model markers',async t=>{
  const f=await nestedBundle(t);await f.assets.importBundle('dialogue',f.bundle);
  await writeFile(join(f.assets.path('dialogue'),f.names[0]),Buffer.alloc(f.data.length,1));
- assert.equal(f.assets.ready('dialogue'),false,'same-size corruption invalidates verified file identity');
+ const models=Object.fromEntries(Object.keys(FUNASR_MODEL_IDS).map(role=>[role,{revision:'generated-nested-revision',license:'generated',files:f.names.filter(name=>name.startsWith(role+'/')).map(name=>({name:name.slice(role.length+1),size:f.data.length,sha256:createHash('sha256').update(f.data).digest('hex')}))}]));
+ const inspected=JSON.parse(execFileSync('python3',['-c',[
+  'import json,sys;sys.path.insert(0,sys.argv[1]);import mote_funasr as engine',
+  'engine.BUNDLE=json.loads(sys.argv[2])',
+  'try: engine.verify_models(sys.argv[3]);print(json.dumps({"verified":True}))',
+  'except engine.EngineError as error: print(json.dumps({"error":error.code}))',
+ ].join('\n'),scripts,JSON.stringify(models),f.assets.path('dialogue')],{encoding:'utf8',timeout:30000}));
+ assert.deepEqual(inspected,{error:'model_missing'},'same-size corruption still invalidates the actual worker verified identity');
+ assert.equal(f.assets.ready('dialogue'),true,'routine host readiness does not repeatedly hash large weights');
  await f.assets.importBundle('dialogue',f.bundle);assert.equal(new MediaAssets(f.root).ready('dialogue'),true,'the published verification survives a fresh reader');
  await writeFile(join(f.assets.path('dialogue'),'complete.json'),JSON.stringify({version:MEDIA_CATALOG.dialogue.version}));
  assert.equal(f.assets.ready('dialogue'),false,'a version label alone does not prove verified assets');
+});
+
+test('correct assets survive URL, upstream, timestamp, permissions, link and inode changes without reinstalling',async t=>{
+ for(const role of ['ocr','speaker-wespeaker','dialogue','local-image'] as const)await t.test(role,async child=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-asset-content-')),bundle=join(directory,'bundle'),prior=MEDIA_CATALOG[role],data=Buffer.from('Generated immutable model bytes.');
+  const file={name:'model.bin',size:data.length,sha256:createHash('sha256').update(data).digest('hex'),official:'https://official.fixture.invalid/model'};
+  MEDIA_CATALOG[role]={version:'generated-content-'+role,files:[file],...(role==='local-image'?{models:{image:{id:'InternVL3-14B-4bit',revision:'generated-revision',license:'generated-license',directory:'.',repository:'original-repository',upstream:'https://upstream.fixture.invalid/original'}}}:{})};
+  await mkdir(bundle);await writeFile(join(bundle,file.name),data);const root=join(directory,'models'),assets=new MediaAssets(root);
+  child.after(async()=>{await assets.close();MEDIA_CATALOG[role]=prior;await rm(directory,{recursive:true,force:true});});
+  await assets.importBundle(role,bundle);const installed=join(assets.path(role),file.name),marker=await readFile(join(assets.path(role),'complete.json'));
+  const identity=mediaModelIdentities(role);
+  MEDIA_CATALOG[role].files[0]={...file,official:'https://new.fixture.invalid/model',mirror:'https://mirror.fixture.invalid/model'};
+  if(role==='local-image'){
+   Object.assign(MEDIA_CATALOG[role].models!.image,{repository:'relocated-repository',upstream:'https://upstream.fixture.invalid/relocated'});
+   const manifest={files:[{name:file.name,sha256:file.sha256,size:file.size}],id:'InternVL3-14B-4bit',license:'generated-license',revision:'generated-revision'};
+   assert.equal(identity.image.manifestSha256,createHash('sha256').update(JSON.stringify(manifest)).digest('hex'),'image identity uses the same content-only manifest as dialogue');
+  }
+  assert.deepEqual(mediaModelIdentities(role),identity);assert.equal(assets.ready(role),true);
+  for(const change of [
+   async()=>utimes(installed,0,0),async()=>chmod(installed,0o640),
+   async()=>{await link(installed,join(directory,'snapshot'));await rm(join(directory,'snapshot'));},
+   async()=>{await writeFile(installed+'.replacement',data);await rename(installed+'.replacement',installed);},
+  ]){
+   await change();assert.equal(assets.ready(role),true);assert.equal(assets.status(role).state,'ready');
+   const reader=new MediaAssets(root);try{assert.equal(reader.ready(role),true,'metadata changes also survive a new reader');}finally{await reader.close();}
+  }
+  assert.deepEqual(await readFile(join(assets.path(role),'complete.json')),marker,'readiness never rewrites the published receipt');
+  await writeFile(installed,Buffer.alloc(data.length,1));
+  assert.equal(assets.ready(role),role==='dialogue'||role==='local-image','small roles rehash changed metadata; large roles defer to strict workers');
+ });
+});
+
+test('small-role metadata changes rehash content once while later status polls reuse that verified signature',async t=>{
+ for(const role of ['ocr','speaker-wespeaker'] as const)await t.test(role,async child=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-small-rehash-')),bundle=join(directory,'bundle'),prior=MEDIA_CATALOG[role],data=Buffer.alloc(64*1024,41);
+  MEDIA_CATALOG[role]={version:'generated-small-'+role,files:[{name:'model.bin',size:data.length,sha256:createHash('sha256').update(data).digest('hex'),official:'https://fixture.invalid/model'}]};
+  await mkdir(bundle);await writeFile(join(bundle,'model.bin'),data);const assets=new MediaAssets(join(directory,'models'));await assets.importBundle(role,bundle);
+  const installed=join(assets.path(role),'model.bin'),inode=fs.lstatSync(installed).ino,read=fs.readSync;let reads=0;
+  child.mock.method(fs,'readSync',((...args:Parameters<typeof fs.readSync>)=>{if(fs.fstatSync(args[0]).ino===inode)reads++;return Reflect.apply(read,fs,args);}) as typeof fs.readSync);syncBuiltinESMExports();
+  child.after(async()=>{await assets.close();child.mock.restoreAll();syncBuiltinESMExports();MEDIA_CATALOG[role]=prior;await rm(directory,{recursive:true,force:true});});
+  assert.equal(assets.ready(role),true);assert.equal(reads,0);
+  await utimes(installed,0,0);assert.equal(assets.ready(role),true);assert.ok(reads>0,'a metadata change must be certified by reading actual bytes');
+  const checked=reads;assets.status(role);assets.status(role);assert.equal(reads,checked,'unchanged verified small assets are not rehashed on every poll');
+  await chmod(installed,0o640);assert.equal(assets.ready(role),true);assert.ok(reads>checked,'changed permissions trigger another content check');
+ });
 });
 
 test('local image startup accepts unchanged weights after snapshot links and timestamp changes; the real loader still rejects changed bytes',async t=>{
@@ -220,11 +274,19 @@ test('OCR tar imports verify and publish both extracted model/config pairs throu
   const folder=`generated-${kind}`;await mkdir(join(tree,folder),{recursive:true});await mkdir(bundle,{recursive:true});
   for(const name of ['inference.onnx','inference.yml'])await writeFile(join(tree,folder,name),data);
   execFileSync('tar',['-cf',join(bundle,kind+'.tar'),'-C',tree,folder]);const bytes=await readFile(join(bundle,kind+'.tar'));
-  files.push({name:kind+'.tar',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://fixture.invalid/'+kind+'.tar',extract:{kind:'tar' as const,entry:folder+'/inference.onnx',destination:kind+'/inference.onnx'}});
+  files.push({name:kind+'.tar',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://fixture.invalid/'+kind+'.tar',extract:{kind:'tar' as const,entry:folder+'/inference.onnx',destination:kind+'/inference.onnx',output:{size:data.length,sha256:createHash('sha256').update(data).digest('hex')},config:{size:data.length,sha256:createHash('sha256').update(data).digest('hex')}}});
  }
  MEDIA_CATALOG.ocr={version:'generated-ocr-tar',files};const assets=new MediaAssets(join(directory,'models'));
  t.after(async()=>{await assets.close();MEDIA_CATALOG.ocr=prior;await rm(directory,{recursive:true,force:true});});
  const receipt=mediaAssetStatusSchema.parse(await assets.importBundle('ocr',bundle));assert.equal(receipt.state,'ready');assert.equal(assets.ready('ocr'),true);
  assert.deepEqual(await readFile(join(assets.path('ocr'),'rec/inference.yml')),data);
+ const member=join(assets.path('ocr'),'rec/inference.yml');await utimes(member,0,0);assert.equal(assets.ready('ocr'),true);
+ await writeFile(member,Buffer.alloc(data.length,1));assert.equal(assets.ready('ocr'),false,'same-size corruption of an extracted config is rejected');
+ await assets.installAsync('ocr');assert.equal(assets.ready('ocr'),true);assert.deepEqual(await readFile(member),data);
+ const expected=MEDIA_CATALOG.ocr.files[0].extract!.output.sha256;
+ MEDIA_CATALOG.ocr.files[0].extract!.output.sha256='0'.repeat(64);
+ assert.equal(assets.ready('ocr'),false,'an extracted file receipt cannot substitute for the catalog content pin');
+ await assert.rejects(assets.importBundle('ocr',bundle),/Invalid model asset/);
+ MEDIA_CATALOG.ocr.files[0].extract!.output.sha256=expected;
  await rm(join(assets.path('ocr'),'det/inference.yml'));assert.equal(assets.ready('ocr'),false);
 });

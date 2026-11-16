@@ -20,9 +20,10 @@ async function installGeneratedOcr(t:TestContext,directory:string,modelDirectory
  await mkdir(bundle);
  for(const kind of ['det','rec']){
   const folder=`generated-${kind}`;await mkdir(join(tree,folder),{recursive:true});
+  const content=(name:string)=>{const data=Buffer.from(`Generated OCR ${kind} ${name}`);return {size:data.length,sha256:createHash('sha256').update(data).digest('hex')};};
   for(const name of ['inference.onnx','inference.yml'])await writeFile(join(tree,folder,name),`Generated OCR ${kind} ${name}`);
   execFileSync('tar',['-cf',join(bundle,kind+'.tar'),'-C',tree,folder]);const bytes=await readFile(join(bundle,kind+'.tar'));
-  files.push({name:kind+'.tar',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://fixture.invalid/'+kind+'.tar',extract:{kind:'tar' as const,entry:folder+'/inference.onnx',destination:kind+'/inference.onnx'}});
+  files.push({name:kind+'.tar',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://fixture.invalid/'+kind+'.tar',extract:{kind:'tar' as const,entry:folder+'/inference.onnx',destination:kind+'/inference.onnx',output:content('inference.onnx'),config:content('inference.yml')}});
  }
  MEDIA_CATALOG.ocr={version:'generated-ocr-http',files};
  // The installer produces the receipt consumed by a fresh Central instance.

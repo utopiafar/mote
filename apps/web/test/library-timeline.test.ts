@@ -4,7 +4,7 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import type {CaptureTimelineGroup,CaptureTimelineMember,CaptureTimelinePage} from '@mote/shared';
+import type {CaptureTimelineGroup,CaptureTimelineMember,CaptureTimelinePage,CaptureTimelineMembers} from '@mote/shared';
 import {LibraryTimeline} from '../src/plugins/library/LibraryTimeline.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
@@ -74,6 +74,36 @@ test('wrong group identity or revision never publishes members; denied top-level
  wrong=false;wrongRevision=true;await act(async()=>resources(api).get(paths.find(path=>path.includes('/members?'))!).refresh());assert.equal(d.querySelector('.library-time-observation'),null,'exact group with stale revision still cannot display members');wrongRevision=false;await act(async()=>resources(api).get(paths.find(path=>path.includes('/members?'))!).refresh());assert.ok(d.querySelector('.library-time-observation'));
  denied=true;const first=paths[0]!;await act(async()=>resources(api).get(first).refresh());assert.equal(d.querySelector('.library-time-group'),null);
  denied=false;slow=true;await act(async()=>resources(api).get(first).refresh());assert.equal(d.querySelector('.library-time-group'),null,'a retry cannot redisplay withdrawn evidence before its response');await act(async()=>pending.resolve(page()));assert.ok(d.querySelector('.library-time-group'));
+});
+
+test('real OCR previews refresh an expanded group and its original detail while the server revision stays unchanged',async t=>{
+ const {root,d,w}=await fixture(t);
+ const {buildApp}=await import('../../server/src/app.js'),{Archive}=await import('../src/plugins/library/Archive.js'),{featuresReady}=await import('../src/features/bootstrap.js');await featuresReady;
+ const {mkdtempSync,rmSync}=await import('node:fs'),{join}=await import('node:path'),{tmpdir}=await import('node:os');
+ const directory=mkdtempSync(join(tmpdir(),'mote-timeline-ocr-consumer-')),token='generated-timeline-ocr-owner-123456789';
+ const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:3_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No models in timeline OCR consumer regression');},close:async()=>{}}});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const previous=new Map<string,PropertyDescriptor|undefined>();
+ // Screenshot frames stay lazy in JSDOM; the selected original still uses its
+ // real image endpoint. OCR text belongs to the existing detail, not the frame.
+ for(const [key,value]of Object.entries({location:w.location,localStorage:w.localStorage,IntersectionObserver:class{observe(){}unobserve(){}disconnect(){}}})){previous.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true});}
+ t.after(()=>{for(const [key,value]of previous)if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);});
+ const headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'},sharp=(await import('sharp')).default,image=(await sharp({create:{width:8,height:8,channels:3,background:'#718493'}}).png().toBuffer()).toString('base64');
+ for(let index=0;index<2;index++){const at=new Date();at.setHours(10,0,index,0);const response=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id:crypto.randomUUID(),deviceId:'generated-ocr',deviceName:'Generated OCR device',platform:'macos',capturedAt:at.toISOString(),durationMs:0,appId:'generated.app',appName:'Generated app',windowTitle:'Generated screenshot',source:'screen',imageMime:'image/png',imageBase64:image,ocrText:'',ocr:{status:'disabled'},privacy:{collection:'content',mode:'none'}}});assert.equal(response.statusCode,201,response.body);}
+ const paths:string[]=[],pages:CaptureTimelinePage[]=[],memberPages:CaptureTimelineMembers[]=[];
+ const api=Object.assign(apiWith(async path=>{paths.push(path);const response=await node.app.inject({url:path,headers});assert.equal(response.statusCode,200,response.body);const value=response.json();if(path.startsWith('/api/capture-browser/timeline?'))pages.push(value);if(path.startsWith('/api/capture-browser/timeline/members?'))memberPages.push(value);return value;}),{raw:async(path:string)=>{const response=await node.app.inject({url:path,headers});assert.equal(response.statusCode,200,response.body);return new Response(response.rawPayload,{headers:{'content-type':String(response.headers['content-type'])}});}}) as Api;
+ const props={api,devices:[],range:{},activity:{apps:[],devices:[],totalDurationMs:0,captures:0},revision:0,onOpen:()=>{},tab:'records',setTab:()=>{}};
+ await act(async()=>root.render(React.createElement(Archive,props)));await open(d,w);
+ const expanded=d.querySelector<HTMLDetailsElement>('.library-time-group')!,frame=expanded.querySelector<HTMLButtonElement>('.library-time-frame')!,before=memberPages.at(-1)!,id=before.items[0].record.id;
+ assert.equal(before.items[0].record.textPreview,'');assert.equal(before.items[0].record.ocr?.status,'pending');assert.equal(frame.getAttribute('data-reference'),'capture:'+id);
+ const memberPath=paths.find(path=>path.startsWith('/api/capture-browser/timeline/members?'))!,pageReads=pages.length,memberReads=memberPages.length;
+ node.store.savePerception(id,'ocr',{id:crypto.randomUUID(),fingerprint:'generated-refreshed-ocr',text:'Generated refreshed OCR visible in the original',generatedAt:new Date().toISOString()});
+ await act(async()=>root.render(React.createElement(Archive,{...props,revision:1})));
+ assert.equal(pages.length,pageReads+1);assert.equal(memberPages.length,memberReads+1,'the numeric view revision rereads expanded members independently of the server digest');
+ const fresh=memberPages.at(-1)!;assert.equal(pages.at(-1)!.revision,pages[pageReads-1]!.revision);assert.equal(fresh.revision,before.revision);assert.equal(fresh.group.id,before.group.id);
+ assert.equal(fresh.items[0].record.textPreview,'Generated refreshed OCR visible in the original');assert.equal(fresh.items[0].record.ocr?.status,'completed');assert.ok(resources(api).get(memberPath).getSnapshot().data===fresh,'the real producer response reaches the mounted consumer shared resource');
+ assert.ok(d.querySelector('.library-time-group')===expanded);assert.equal(expanded.open,true);assert.ok(expanded.querySelector('.library-time-frame')===frame);assert.equal(d.querySelector('[role="alert"]'),null);
+ await act(async()=>frame.click());assert.ok(paths.includes('/api/capture-browser/'+id));assert.match(d.querySelector('.library-detail')!.textContent!,/Generated refreshed OCR visible in the original/);
 });
 
 test('real Central grouping reaches the exact original and returning keeps the opened member page',async t=>{

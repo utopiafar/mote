@@ -46,7 +46,7 @@ export function MediaPreparation({api,role,title}:{api:Api;role:MediaRole;title:
  const installing=running(value?.state),ready=assetsOnly?asset?.state==='ready':value?.state==='ready'&&value.runtimeReady;
  return <section className="media-preparation" aria-label={title}>
   <div className="media-preparation-row"><div><strong>{title}</strong><p role="status">{value?assetsOnly&&ready?moteText('模型已安装'):stateText(value):<LoadingText/>}</p></div>
-   {ready?<button type="button" className="button" disabled={read.loading} onClick={()=>read.refresh()}>{moteText('检查状态')}</button>:<button type="button" className="button primary" disabled={busy||installing||!value||Boolean(read.error)||value.state==='unsupported'} onClick={()=>void action()}>{installing?moteText('安装中…'):value?.state==='failed'||value?.state==='cancelled'||value?.model.state==='ready'?moteText('重试'):moteText('一键安装')}</button>}
+   {ready?<button type="button" className="button" disabled={busy||read.loading||Boolean(read.error)} onClick={()=>void action()}>{busy?moteText('正在验证模型…'):moteText('验证并修复')}</button>:<button type="button" className="button primary" disabled={busy||installing||!value||Boolean(read.error)||value.state==='unsupported'} onClick={()=>void action()}>{installing?moteText('安装中…'):value?.state==='failed'||value?.state==='cancelled'||value?.model.state==='ready'?moteText('重试'):moteText('一键安装')}</button>}
   </div>
   {assetsOnly&&<p>{moteText('安装模型不会启用本地识图或改变处理设置。')}</p>}
   {installing&&<><progress aria-label={moteText('安装进度')} {...(value?.state==='models'&&value.model.totalBytes>0?{value:value.model.bytes,max:value.model.totalBytes}:{})}/><button type="button" className="text-button" disabled={busy} onClick={()=>void action(true)}>{moteText('取消')}</button></>}

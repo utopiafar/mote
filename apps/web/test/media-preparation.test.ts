@@ -5,8 +5,8 @@ import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {MediaPreparation} from '../src/MediaPreparation.js';
 import {ApiError,type Api} from '../src/api.js';
-import {resources} from '../src/resource-cache.js';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {readResource,resources} from '../src/resource-cache.js';
+import {mkdtemp,rm,readFile,writeFile,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -38,11 +38,11 @@ test('missing permission withdraws stale installation controls and a changed nod
  await act(async()=>f.root.render(React.createElement(MediaPreparation,{api:next,role:'ocr',title:'图片文字识别'})));await act(async()=>release());assert.equal(nextReads,1);assert.equal(f.button('一键安装').disabled,true);assert.match(f.dom.window.document.body.textContent!,/暂不支持自动安装/);
  denied=true;await act(async()=>f.root.render(React.createElement(MediaPreparation,{api:old,role:'ocr',title:'图片文字识别'})));assert.match(f.dom.window.document.body.textContent!,/generated revoked/);assert.equal(f.button('一键安装').disabled,true);
 });
-test('checking a ready service refreshes actual health without another install and exposes a stopped worker',async t=>{
- const f=await fixture(t);let ready=true,reads=0;
- const api={request:async(path:string,init?:RequestInit)=>{assert.equal(path,'/api/media-preparation');assert.equal(init?.method,undefined);reads++;return {ocr:{state:ready?'ready':'idle',runtimeReady:ready,model:{state:'ready',bytes:100,totalBytes:100}}};}} as Api;
+test('a ready service exposes explicit verification through preparation while ordinary status reads remain read-only',async t=>{
+ const f=await fixture(t);let ready=true,reads=0;const writes:string[]=[];
+ const api={request:async(path:string,init?:RequestInit)=>{if(init?.method==='POST'){assert.equal(path,'/api/media-preparation/ocr');assert.equal(init.body,'{}');writes.push(path);return {};}assert.equal(path,'/api/media-preparation');reads++;return {ocr:{state:ready?'ready':'idle',runtimeReady:ready,model:{state:'ready',bytes:100,totalBytes:100}}};}} as Api;
  await act(async()=>f.root.render(React.createElement(MediaPreparation,{api,role:'ocr',title:'图片文字识别'})));assert.match(f.dom.window.document.body.textContent!,/可使用/);
- ready=false;await act(async()=>f.button('检查状态').click());assert.equal(reads,2);assert.match(f.dom.window.document.body.textContent!,/服务尚未就绪/);assert.ok(f.button('重试'));
+ assert.deepEqual(writes,[]);ready=false;await act(async()=>f.button('验证并修复').click());assert.equal(reads,2);assert.deepEqual(writes,['/api/media-preparation/ocr']);assert.match(f.dom.window.document.body.textContent!,/服务尚未就绪/);assert.ok(f.button('重试'));
 });
 
 test('local-image preparation consumes real model HTTP and installs verified assets without enabling a plugin or starting inference',async t=>{
@@ -67,7 +67,13 @@ test('local-image preparation consumes real model HTTP and installs verified ass
  });
  await act(async()=>resources(api).invalidate(path=>path==='/api/media-models'));
  assert.match(f.dom.window.document.body.textContent!,/模型已安装/);assert.doesNotMatch(f.dom.window.document.body.textContent!,/可使用/);assert.match(f.dom.window.document.body.textContent!,/安装模型不会启用本地识图/);
- await act(async()=>f.button('检查状态').click());assert.deepEqual(writes,['/api/media-models/local-image/install']);
+ const installed=join(node.featureServices.mediaAssets.path('local-image'),'component/model.bin');await writeFile(installed,Buffer.alloc(bytes.length,1));
+ assert.equal(node.featureServices.mediaAssets.ready('local-image'),true,'normal image status delegates same-size corruption to the strict worker');
+ await act(async()=>{
+  f.button('验证并修复').click();
+  const until=Date.now()+5000;while(!(await readFile(installed)).equals(bytes)||node.featureServices.mediaAssets.status('local-image').state!=='ready'){assert.ok(Date.now()<until,'explicit asset repair completes');await new Promise(resolve=>setTimeout(resolve,5));}
+ });
+ assert.deepEqual(writes,['/api/media-models/local-image/install','/api/media-models/local-image/install']);assert.deepEqual(await readFile(installed),bytes);
  assert.deepEqual(await node.featureServices.mediaAssets.status('local-image').state,'ready');
  assert.deepEqual({authorization:node.modelAuthorization.view(),models:node.modelSettings.view(),perception:node.perception.settings(),processing:node.processing.currentSettings()},before);
  assert.equal((await node.featureServices.mediaPreparation.status('local-image')).runtimeReady,false);
@@ -82,5 +88,35 @@ test('switching media roles withdraws a late install error even on the same Cent
  }} as Api;
  await act(async()=>f.root.render(React.createElement(MediaPreparation,{api,role:'ocr',title:'OCR'})));await act(async()=>f.button('一键安装').click());
  await act(async()=>f.root.render(React.createElement(MediaPreparation,{api,role:'local-image',title:'Generated local image'})));
- await act(async()=>reject(Error('Generated stale OCR error')));assert.doesNotMatch(f.dom.window.document.body.textContent!,/stale OCR/);assert.equal(f.button('检查状态').disabled,false);
+ await act(async()=>reject(Error('Generated stale OCR error')));assert.doesNotMatch(f.dom.window.document.body.textContent!,/stale OCR/);assert.equal(f.button('验证并修复').disabled,false);
+});
+
+test('the ready OCR verification button consumes real preparation HTTP and restores corrupted files and worker health',async t=>{
+ const f=await fixture(t),directory=await mkdtemp(join(tmpdir(),'mote-ready-repair-ui-')),prior=MEDIA_CATALOG.ocr,bytes=Buffer.from('Generated OCR repair bytes'),modelDirectory=join(directory,'models'),bundle=join(directory,'bundle');
+ MEDIA_CATALOG.ocr={version:'generated-ocr-repair-ui',files:[{name:'model.bin',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://fixture.invalid/ocr'}]};
+ await mkdir(bundle);await writeFile(join(bundle,'model.bin'),bytes);
+ let node:Awaited<ReturnType<typeof buildApp>>|undefined;
+ const worker=createServer(async(req,response)=>{
+  assert.equal(req.headers.authorization,'Bearer generated-ready-ocr-worker');
+  const current=await readFile(join(modelDirectory,'ocr/model.bin'));response.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({version:1,execution:'local',ocr:current.equals(bytes)}));
+ });worker.listen(0,'127.0.0.1');await once(worker,'listening');const port=(worker.address() as {port:number}).port,token='generated-ready-ocr-owner';
+ t.after(async()=>{await node?.app.close();worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));MEDIA_CATALOG.ocr=prior;await rm(directory,{recursive:true,force:true});});
+ node=await buildApp({dataDir:join(directory,'archive'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',configuration:{runtime:'docker'},media:{modelDirectory,python:'python3',workerToken:'generated-ready-ocr-worker',ocrEndpoint:`http://127.0.0.1:${port}/ocr`,asrEndpoint:`http://127.0.0.1:${port}/transcribe`,ocrPort:port,asrPort:port}},{backgroundWorker:false});
+ const central=node;await central.featureServices.mediaAssets.importBundle('ocr',bundle);
+ const before={authorization:central.modelAuthorization.view(),perception:central.perception.settings(),processing:central.processing.currentSettings()},writes:string[]=[];
+ const api={request:async(path:string,init?:RequestInit)=>{
+  if(init?.method)writes.push(path);
+  const response=await central.app.inject({url:path,method:(init?.method??'GET') as 'GET'|'POST',headers:{authorization:'Bearer '+token},...(init?.body?{payload:JSON.parse(String(init.body))}:{})});
+  assert.equal(response.statusCode,init?.method?202:200,response.body);return response.json();
+ }} as Api;
+ await act(async()=>f.root.render(React.createElement(MediaPreparation,{api,role:'ocr',title:'Generated OCR'})));
+ await act(async()=>{await readResource(api,'/api/media-preparation',new AbortController().signal);});assert.match(f.dom.window.document.body.textContent!,/可使用/);assert.deepEqual(writes,[]);
+ await writeFile(join(modelDirectory,'ocr/model.bin'),Buffer.alloc(bytes.length,1));
+ await act(async()=>{
+  f.button('验证并修复').click();const until=Date.now()+5000;
+  for(;;){const status=await central.featureServices.mediaPreparation.status('ocr');if(status.state==='ready'&&status.runtimeReady)break;assert.ok(Date.now()<until,'actual preparation repairs files before worker health becomes ready');await new Promise(resolve=>setTimeout(resolve,5));}
+ });
+ await act(async()=>{resources(api).invalidate(path=>path==='/api/media-preparation');await readResource(api,'/api/media-preparation',new AbortController().signal);});
+ assert.deepEqual(writes,['/api/media-preparation/ocr']);assert.deepEqual(await readFile(join(modelDirectory,'ocr/model.bin')),bytes);assert.match(f.dom.window.document.body.textContent!,/可使用/);
+ assert.deepEqual({authorization:central.modelAuthorization.view(),perception:central.perception.settings(),processing:central.processing.currentSettings()},before);
 });

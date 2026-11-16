@@ -43,11 +43,12 @@ export class CaptureTimeline {
   const {cursor,limit,timeZone,...raw}=input,range={...raw,after:new Date(raw.after).toISOString(),before:new Date(raw.before).toISOString()};
   const scope=createHash('sha256').update(JSON.stringify(['capture-timeline-v1',ownerIdentity,range,timeZone])).digest('hex');
   const filter=this.store.captureBrowseScope(range),digest=createHash('sha256').update(scope);
-  // Complete membership and effective OCR inputs, including records after the
-  // current page. A processing/filter or visibility change invalidates locators.
-  const metadata=this.store.db.prepare(`SELECT id,fingerprint,json_extract(json,'$.stateSeries') series,
+  // Complete membership and original inputs, including records after the
+  // current page. Derived OCR participates only when its status filters members.
+  const ocrInputs=range.ocrStatus?`,
    (SELECT fingerprint FROM perception_results p WHERE p.capture_id=captures.id AND p.kind='ocr' AND p.current=1) ocr_result,
-   (SELECT json_array(state,error) FROM perception_jobs p WHERE p.capture_id=captures.id AND p.kind='ocr') ocr_job
+   (SELECT json_array(state,error) FROM perception_jobs p WHERE p.capture_id=captures.id AND p.kind='ocr') ocr_job`:'';
+  const metadata=this.store.db.prepare(`SELECT id,fingerprint,json_extract(json,'$.stateSeries') series${ocrInputs}
    FROM captures${filter.where} ORDER BY id`);
   for(const row of metadata.iterate(...filter.values))digest.update(JSON.stringify(row));
   digest.update(String(this.store.db.prepare("SELECT json_extract(value,'$.enabled') enabled FROM settings WHERE key='perception-effective'").get()?.enabled??''));
