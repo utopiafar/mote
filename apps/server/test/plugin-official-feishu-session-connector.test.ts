@@ -152,6 +152,10 @@ test('official Feishu session manifest, IM command guard and binding allowlist',
   assert.deepEqual(messageArgs.slice(0,3),['api','GET','/open-apis/im/v1/messages']);
   assert.match(messageArgs[4]??'',/"container_id":"oc_generated_group"/);
   assert.equal(messageArgs.includes('user'),true);
+  const threadArgs=larkArguments({kind:'im-thread-messages',threadId:'omt_generated_thread',pageToken:'generated-next',pageSize:50});
+  assert.deepEqual(threadArgs.slice(0,3),['api','GET','/open-apis/im/v1/messages']);
+  assert.deepEqual(JSON.parse(threadArgs[4]!),{container_id_type:'thread',container_id:'omt_generated_thread',sort_type:'ByCreateTimeAsc',page_size:50,page_token:'generated-next'});
+  assert.throws(()=>larkArguments({kind:'im-thread-messages',threadId:'--help'}),/lark_command_invalid/);
   const sendArgs=larkArguments({kind:'im-send',chatId:'oc_generated_group',text:'Generated reply',uuid:'generated-operation'});
   assert.deepEqual(sendArgs.slice(0,3),['api','POST','/open-apis/im/v1/messages']);
   const body=JSON.parse(sendArgs[sendArgs.indexOf('--data')+1]??'{}');
@@ -181,6 +185,8 @@ test('official Feishu session manifest, IM command guard and binding allowlist',
     ['DELETE','/open-apis/im/v1/messages/om_1'],['GET','/open-apis/im/v1/chats/oc_1'],
   ] as const)await assert.rejects(fake.binding.request({method,path}),/lark_im_path_blocked/);
   await assert.rejects(fake.binding.request({method:'GET',path:'/open-apis/im/v1/messages',query:{container_id_type:'chat',container_id:'oc_generated_group',unexpected:'x'}}),/lark_im_path_blocked/);
+  await assert.rejects(fake.binding.request({method:'GET',path:'/open-apis/im/v1/messages',query:{container_id_type:'thread',container_id:'omt_generated_thread',start_time:'1780000000'}}),/lark_im_input_invalid/);
+  await assert.rejects(fake.binding.request({method:'GET',path:'/open-apis/im/v1/messages',query:{container_id_type:'thread',container_id:'omt_generated_thread',sort_type:'ByCreateTimeDesc'}}),/lark_im_input_invalid/);
   await assert.rejects(fake.binding.listChats({pageSize:101}),/lark_im_input_invalid/);
   assert.equal(fake.calls.length,beforeBlocked,'blocked paths never reach the CLI');
 
@@ -382,7 +388,7 @@ test('official Feishu session installs on the existing Lark account, archives se
   assert.equal(historyCalls.length,1,'only the checked group is read');
   assert.equal(historyCalls[0]!.kind==='im-messages'?historyCalls[0]!.chatId:undefined,'oc_generated_group');
   const firstStart=Number(historyCalls[0]!.kind==='im-messages'?historyCalls[0]!.startTime:0);
-  assert.equal(Math.abs(firstStart-(Math.floor(Date.now()/1000)-30*86400))<180,true,'the first sync window defaults to about 30 days');
+  assert.equal(firstStart,0,'all reads the full authorized history instead of an implicit thirty-day window');
   assert.equal(fake.calls.some(call=>call.kind==='im-messages'&&call.chatId==='oc_generated_p2p'),false,'unchecked direct messages are never read');
   const firstItem=node.sources.getItem(sourceId,'om_generated_group_1');
   assert.equal(firstItem?.title.includes('Generated group'),true);
@@ -391,12 +397,12 @@ test('official Feishu session installs on the existing Lark account, archives se
   assert.equal(node.sources.getItem(sourceId,'om_generated_p2p_1'),undefined);
 
   fake.editMessage('om_generated_group_2','Generated group follow-up edited');
-  fake.addMessage('oc_generated_group',{message_id:'om_generated_group_3',msg_type:'text',create_time:String(Date.now()+1000),chat_id:'oc_generated_group',sender:{id:'ou_dave',id_type:'open_id',sender_type:'user'},body:{content:JSON.stringify({text:'Generated new group message'})}});
+  fake.addMessage('oc_generated_group',{message_id:'om_generated_group_3',msg_type:'text',create_time:String(Date.now()-1),chat_id:'oc_generated_group',sender:{id:'ou_dave',id_type:'open_id',sender_type:'user'},body:{content:JSON.stringify({text:'Generated new group message'})}});
   const secondSync=await node.app.inject({method:'POST',url:'/api/connectors/feishu-session/sync',headers,payload:{}});
   assert.equal(secondSync.statusCode,200,secondSync.body);
   const secondHistory=fake.calls.filter(call=>call.kind==='im-messages').at(-1)!;
   assert.equal(secondHistory.kind==='im-messages'?secondHistory.chatId:undefined,'oc_generated_group');
-  assert.equal(secondHistory.kind==='im-messages'?secondHistory.startTime:undefined,String(Math.floor(Number(groupMessageTwo.create_time)/1000)),'later syncs resume from the last archived message');
+  assert.equal(secondHistory.kind==='im-messages'?secondHistory.startTime:undefined,'0','later fixed-window sweeps also discover edits and new replies to old roots');
   const followUpHistory=node.sources.history(sourceId,'om_generated_group_2');
   assert.equal(followUpHistory.length,2,'an edited message enters the version chain');
   assert.match(followUpHistory[0]!.text,/follow-up edited/);
@@ -459,6 +465,7 @@ test('official Feishu session installs on the existing Lark account, archives se
   for(const scope of LARK_IM_READ_SCOPES)assert.equal(sendLogin.includes(scope),true,'send authorization preserves the read scope '+scope);
   for(const scope of LARK_SCOPES)assert.equal(sendLogin.includes(scope),true,'send authorization preserves the document scope '+scope);
   assert.equal(readFileSync(join(directory,'connectors','lark.json'),'utf8'),storedLark,'send authorization never rewrites lark.json');
+  const scanBeforeSend=node.store.db.prepare("SELECT json FROM plugin_instance_state WHERE key='feishu-session.scan.0'").get()!.json;
 
   actionsView=(await node.app.inject({url:'/api/actions',headers})).json() as {messageRevision:number};
   const approvedProposalResponse=await node.app.inject({method:'POST',url:'/api/actions/messages',headers,payload:{operationId:randomUUID(),expectedRevision:actionsView.messageRevision,target:currentChoice.target,message:{conversationId:'oc_generated_group',conversationName:'Generated group',text:'Generated owner approved feishu message'}}});
@@ -480,6 +487,7 @@ test('official Feishu session installs on the existing Lark account, archives se
   const archivedSent=node.sources.getItem(sourceId,sentMessageId);
   assert.equal(archivedSent?.text.includes('Generated owner approved feishu message'),true,'the sent message is archived again');
   assert.equal(node.sources.history(sourceId,sentMessageId).length,1);
+  assert.equal(node.store.db.prepare("SELECT json FROM plugin_instance_state WHERE key='feishu-session.scan.0'").get()!.json,scanBeforeSend,'sending archives evidence without advancing history, fixed window or completion watermarks');
 
   actionsView=(await node.app.inject({url:'/api/actions',headers})).json() as {messageRevision:number};
   const unselectedProposalResponse=await node.app.inject({method:'POST',url:'/api/actions/messages',headers,payload:{operationId:randomUUID(),expectedRevision:actionsView.messageRevision,target:currentChoice.target,message:{conversationId:'oc_generated_p2p',conversationName:'Unselected direct message',text:'Generated message outside the selected scope'}}});

@@ -29,11 +29,11 @@ export class SourceStore {
   register(raw:unknown,authorize?:(source:SourceRegistration)=>void):SourceConnection {
     const input=sourceConnectionSchema.parse(raw),row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.id) as {json:string}|undefined,existing=row?this.present(JSON.parse(row.json)):undefined;
     return this.control(()=>{
-    if(input.syncScopeVersion!==undefined)throw new StoreError('Source synchronization version is read-only',403);
+    if(input.syncScopeVersion!==undefined||input.syncPolicyVersion!==undefined)throw new StoreError('Source synchronization version is read-only',403);
     if(input.sourceContext)throw new StoreError('Source context is owner control plane metadata; use the source context API',403);
     if(!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
-    const now=new Date().toISOString(),value={...input,syncScopeVersion:0,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.save(value);return this.present(value);
+    const now=new Date().toISOString(),value={...input,syncScopeVersion:0,syncPolicyVersion:0,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.save(value);return this.present(value);
     },()=>authorize?.(input));
   }
   updateContext(id:string,patch:{expectedVersion:number;description:string},authorize?:()=>void){
@@ -45,14 +45,13 @@ export class SourceStore {
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only';ownerRelation?:OwnerRelation|null},authorize?:(source:SourceConnection)=>void):SourceConnection {
-    if('syncScopeVersion' in patch)throw new StoreError('Source synchronization version is read-only',403);
+    if('syncScopeVersion' in patch||'syncPolicyVersion' in patch)throw new StoreError('Source synchronization version is read-only',403);
     const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch,...('ownerRelation' in patch?{ownerRelation:patch.ownerRelation??undefined,ownerRelationVersion:(existing.ownerRelationVersion??0)+(patch.ownerRelation!==(existing.ownerRelation??null)?1:0)||undefined}:{})});
     if(input.enabled&&!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     const value={...existing,...input,updatedAt:new Date().toISOString()};
     // A new owner-selected history policy has no coverage until its producer
     // starts the new range; ordinary pause/resume keeps the current checkpoint.
-    if((existing.initialSync??'all')!==(input.initialSync??'all')){value.syncScopeVersion=(existing.syncScopeVersion??0)+1;if(value.status){const {coverage,...status}=value.status;value.status=status;}}
-
+    if((existing.initialSync??'all')!==(input.initialSync??'all')){value.syncScopeVersion=(existing.syncScopeVersion??0)+1;value.syncPolicyVersion=(existing.syncPolicyVersion??0)+1;if(value.status){const {coverage,...status}=value.status;value.status=status;}}
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{authorize?.(existing);this.save(value);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
       (this.pipelines?.materials??new MaterialStore(this.store)).refreshSourceContext(id);

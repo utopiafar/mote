@@ -26,6 +26,7 @@ export type LarkCommand =
   | {kind:'minutes-media';id:string;output:string}
   | {kind:'im-chats';pageToken?:string;pageSize?:number}
   | {kind:'im-messages';chatId:string;startTime?:string;endTime?:string;pageToken?:string;pageSize?:number}
+  | {kind:'im-thread-messages';threadId:string;pageToken?:string;pageSize?:number}
   | {kind:'im-send';chatId:string;text:string;uuid?:string};
 export type LarkRunner=(command:LarkCommand,options?:{signal?:AbortSignal;onOutput?:(chunk:string)=>void})=>Promise<string>;
 
@@ -61,6 +62,7 @@ export function larkArguments(command:LarkCommand):string[]{
     // body shapes. No caller supplies a path, method or arbitrary argument.
     case 'im-chats':return ['api','GET','/open-apis/im/v1/chats','--params',JSON.stringify({user_id_type:'open_id',sort_type:'ByActiveTimeDesc',page_size:command.pageSize??100,types:'group,p2p',...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
     case 'im-messages':return ['api','GET','/open-apis/im/v1/messages','--params',JSON.stringify({container_id_type:'chat',container_id:imId(command.chatId),...(command.startTime?{start_time:command.startTime}:{}),...(command.endTime?{end_time:command.endTime}:{}),sort_type:'ByCreateTimeAsc',page_size:command.pageSize??50,...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
+    case 'im-thread-messages':return ['api','GET','/open-apis/im/v1/messages','--params',JSON.stringify({container_id_type:'thread',container_id:imId(command.threadId),sort_type:'ByCreateTimeAsc',page_size:command.pageSize??50,...(command.pageToken?{page_token:command.pageToken}:{})}),'--as','user','--format','json'];
     case 'im-send':return ['api','POST','/open-apis/im/v1/messages','--params',JSON.stringify({receive_id_type:'chat_id'}),'--data',JSON.stringify({receive_id:imId(command.chatId),msg_type:'text',content:JSON.stringify({text:command.text}),...(command.uuid?{uuid:command.uuid}:{})}),'--as','user','--format','json'];
     case 'install':throw new ConnectorError('lark_command_invalid');
   }
