@@ -52,6 +52,19 @@ test('local image startup settings round-trip through the same YAML schema and r
   for(const localImagePort of [0,65536,1.5])assert.equal(mediaConfigSchema.safeParse({localImagePort}).success,false);
 });
 
+test('Docker media resource selection round-trips without inferring enablement or changing processing authorization',async t=>{
+  const {file,write}=fixture(t,'docker-media-config');
+  write({server:{runtime:'docker'},media:{modelDirectory:'/models',workerToken:'generated-worker-token',ocrPort:19010,asrPort:19009}});
+  let loaded=configFromFile(file,{initializeCredentials:false});assert.deepEqual(loaded.media.dockerWorkers,[]);
+  const service=new ConfigService({path:file,watch:false,initialDocument:loaded.configuration.document});registerBuiltinDomains(service,loaded);await service.initialize();t.after(()=>service.close());
+  const processing=structuredClone(service.current('processing')),plugins=structuredClone(service.current('plugins')),models=structuredClone(service.current('models'));
+  await service.update('media',{...service.current<Record<string,unknown>>('media'),dockerWorkers:['asr']},service.revision);
+  loaded=configFromFile(file,{initializeCredentials:false});assert.deepEqual(loaded.media.dockerWorkers,['asr']);assert.deepEqual((documentFromConfig(loaded).media as Record<string,unknown>).dockerWorkers,['asr']);
+  assert.deepEqual(service.current('processing'),processing);assert.deepEqual(service.current('plugins'),plugins);assert.deepEqual(service.current('models'),models);
+  const fields=configDocumentDomains(loaded).find(domain=>domain.id==='media')!.fields!;assert.equal(fields.find(field=>field.path==='dockerWorkers')?.effect,'restart');
+  for(const dockerWorkers of [['ocr','ocr'],['local-image'],['asr','unknown'],null,'ocr'])assert.equal(mediaConfigSchema.safeParse({dockerWorkers}).success,false);
+});
+
 test('YAML profiles isolate paths and private generated credentials across restarts', t => {
   const { root } = fixture(t);
   const configs = ['dev', 'test'].map((profile, index) => {

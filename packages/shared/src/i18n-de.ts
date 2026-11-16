@@ -1,5 +1,6 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
+  "单文件上限（MiB，0 为不限）": "Dateigrößenlimit (MiB, 0 = kein zusätzliches Limit)",
   "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "Zentrale Inhalte bleiben unbegrenzt erhalten, ohne Gesamtspeicherquote oder automatische Löschung nach Alter.",
   "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Originaldateien werden standardmäßig archiviert. Bestehende Quellen behalten ihre Aufbewahrungseinstellungen, die Sie unter Quellen ändern können.",
   "存储设备无法继续写入，请检查可用空间后重试；已有资料和待传内容不会因此自动删除。": "Das Speichergerät kann keine weiteren Daten schreiben. Prüfen Sie den freien Speicher und versuchen Sie es erneut. Vorhandene Inhalte und ausstehende Uploads werden dadurch nicht automatisch gelöscht.",

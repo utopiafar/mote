@@ -27,7 +27,7 @@ export function freezeSemanticContextTime(clock:()=>string=()=>new Date().toISOS
   return z.string().max(64).datetime({offset:true}).refine(value=>Number.isFinite(Date.parse(value)),'Invalid semantic context time').parse(clock());
 }
 export type LifecycleWindow={manual?:boolean;id:string;version:string;from:number;through:number;ids:string[];startedAt:number;contextTime:string;settings:LifecycleSettings;checkpoint?:string};
-type State={cancelled?:boolean;cancellationCause?:'owner'|'authority';manualRetryRequired?:boolean;stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;countedFailure?:string;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
+type State={cancelled?:boolean;cancellationCause?:'owner'|'authority';manualRetryRequired?:boolean;stream?:LifecycleExtension['stream'];drainThrough?:number;resumeAfter?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;countedFailure?:string;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
 export type LifecycleExecution={operationId:string;jobId:string;signal:AbortSignal;interrupted:()=>boolean;commit:<T>(write:()=>T)=>T;recovery?:'transient'};
 export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'consolidation'|'insights'|'working'>;version:string;stream:'evidence'|'artifact'|'memory'|'conversation';maxAttempts?:number;
   cancel?:(window:LifecycleWindow,cause:'owner'|'authority')=>void;
@@ -121,7 +121,7 @@ export class MemoryLifecycle {
     const state=this.state(id);if(state.cursor>=through||state.active&&state.active.through>through)return;
     if(state.active?.manual)return;
     if(state.active)this.executor?.cancel('lifecycle:'+state.active.id);
-    state.cursor=through;delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.retryAt;delete state.error;delete state.drainThrough;state.failures=0;delete state.countedFailure;this.saveState(id,state);
+    state.cursor=through;delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.retryAt;delete state.error;delete state.drainThrough;delete state.resumeAfter;state.failures=0;delete state.countedFailure;this.saveState(id,state);
   }
   private applySettings(settings:LifecycleSettings){this.policy=lifecycleSettingsSchema.parse(settings);projectMemoryLifecycleSettings(this.store,this.policy);}
   /** Standalone tests can configure their in-memory runtime; the app always uses a revisioned transaction. */
@@ -131,15 +131,34 @@ export class MemoryLifecycle {
     if(!this.configService)return this.configure(parsed.settings);
     await this.configService.update('memory',parsed.settings,parsed.revision);return this.view();
   }
-  /** Resume does not authorize the paused gap. Preserve an already admitted
-   * window, while retiring unregistered automatic rounds at today's watermark. */
+  /** Binding activation retires pending rounds at today's watermark. Ordinary
+   * resume preserves their prior authority through resumeAutomaticBacklog(). */
   skipAutomaticBacklog(){
     for(const id of ['extraction','consolidation'] as const){const extension=this.extensions.get(id);if(!extension)continue;const state=this.state(id);
       const row=extension.stream==='artifact'?this.store.db.prepare('SELECT max(seq) n FROM artifact_events').get():extension.stream==='evidence'?this.store.db.prepare('SELECT max(seq) n FROM changes').get():this.store.db.prepare('SELECT max(seq) n FROM memory_events WHERE stream=?').get(extension.stream);
-      state.cursor=Math.max(state.cursor,Number(row?.n??0));delete state.drainThrough;
+      state.cursor=Math.max(state.cursor,Number(row?.n??0));delete state.drainThrough;delete state.resumeAfter;
       if(state.cancelled&&!state.active?.manual){delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;}
       this.saveState(id,state);
     }
+  }
+  /** Resume retains only admissions already persisted before the pause. The
+   * unregistered gap is retired after that finite round, never mixed into it. */
+  resumeAutomaticBacklog(){
+    for(const id of ['extraction','consolidation'] as const){const extension=this.extensions.get(id);if(!extension)continue;const state=this.state(id);
+      const row=extension.stream==='artifact'?this.store.db.prepare('SELECT max(seq) n FROM artifact_events').get():extension.stream==='evidence'?this.store.db.prepare('SELECT max(seq) n FROM changes').get():this.store.db.prepare('SELECT max(seq) n FROM memory_events WHERE stream=?').get(extension.stream);
+      const current=Number(row?.n??0),approved=Math.max(state.cursor,state.drainThrough??0,state.active&&!state.active.manual?state.active.through:0);
+      if(!state.cancelled&&approved>state.cursor)state.resumeAfter=Math.max(state.resumeAfter??0,current);
+      else{
+        state.cursor=Math.max(state.cursor,current);delete state.drainThrough;delete state.resumeAfter;
+        if(state.cancelled&&!state.active?.manual){delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;}
+      }
+      this.saveState(id,state);
+    }
+  }
+  /** Immediate stop revokes future windows in an admitted round as well as
+   * active work. Keep active checkpoint identities for cancellation/restart. */
+  revokeAutomaticRounds(){
+    for(const id of ['extraction','consolidation'] as const){if(!this.extensions.has(id))continue;const state=this.state(id);delete state.drainThrough;delete state.resumeAfter;this.saveState(id,state);}
   }
   private state(id:string):State{const state=JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_lifecycle_state WHERE id=?').get(id)!.json)) as State;if(state.active&&(!Array.isArray(state.active.ids)||typeof state.active.contextTime!=='string'||!Number.isFinite(Date.parse(state.active.contextTime))))throw new StoreError('Unsupported lifecycle window structure',409);return state;}
   private saveState(id:string,state:State){this.store.db.prepare('INSERT INTO memory_lifecycle_state VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(state));}
@@ -153,10 +172,10 @@ export class MemoryLifecycle {
   private dueAt(id:LifecycleExtension['id'],p:LifecycleSettings['insights'],state:State){return state.lastSuccess+(id==='insights'?p.intervalHours:(p.maxWaitHours??Math.min(p.intervalHours,1)))*3600000;}
   private ready(id:LifecycleExtension['id'],p:LifecycleSettings['insights'],state:State,pending:number,now:number){return pending>0&&(id==='insights'?pending>=p.minChanges&&now>=this.dueAt(id,p,state):pending>=p.minChanges||now>=this.dueAt(id,p,state));}
   view(){const settings=this.settings();return {...(this.configService?{revision:this.configService.revision}:{}),settings,trigger:'insights: interval AND increment threshold; memory: increment threshold OR maximum wait',storage:'text',extensions:[...this.extensions.values()].map(e=>{
-    const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():this.dueAt(e.id,p,state);
+    const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),admitted=state.drainThrough!==undefined&&state.drainThrough>state.cursor,dueAt=admitted?this.now():this.dueAt(e.id,p,state);
     return {id:e.id,version:e.version,stream:e.stream,pendingChanges,dueAt,retryAt:state.retryAt,cursor:state.cursor,failures:state.failures,maxAttempts:e.maxAttempts,error:state.error,manualRetryRequired:state.manualRetryRequired??false,
       trigger:e.id==='insights'?'interval AND increment threshold':'increment threshold OR maximum wait',
-      drainThrough:state.drainThrough,status:state.cancelled||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':!state.active&&(!p.enabled||this.automaticAdmission?.(e.id)===false)||state.active&&!state.active.manual&&!p.enabled&&!['extraction','consolidation'].includes(e.id)?'disabled':this.running.has(e.id)?'running':state.manualRetryRequired||e.maxAttempts&&state.failures>=e.maxAttempts?'failed':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':this.ready(e.id,p,state,pendingChanges,this.now())?'ready':e.id==='insights'&&pendingChanges<p.minChanges?'waiting_for_increment':'waiting_for_interval',
+      drainThrough:state.drainThrough,status:state.cancelled||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':!state.active&&!admitted&&(!p.enabled||this.automaticAdmission?.(e.id)===false)||state.active&&!state.active.manual&&!p.enabled&&!['extraction','consolidation'].includes(e.id)?'disabled':this.running.has(e.id)?'running':state.manualRetryRequired||e.maxAttempts&&state.failures>=e.maxAttempts?'failed':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':admitted||this.ready(e.id,p,state,pendingChanges,this.now())?'ready':e.id==='insights'&&pendingChanges<p.minChanges?'waiting_for_increment':'waiting_for_interval',
       active:state.active?{id:state.active.id,manual:state.active.manual===true,operationId:this.executor?'workflow:lifecycle:'+state.active.id:undefined,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){
     if(this.closed||this.quiescing)return Promise.resolve();
@@ -178,8 +197,9 @@ export class MemoryLifecycle {
   }
   private async execute(extension:LifecycleExtension){
       if(this.closed||this.quiescing||!this.configured())return;
-      const settings=this.settings(),p=settings[extension.id],state=this.state(extension.id),now=this.now();
-      if(!state.active&&(!p.enabled||this.automaticAdmission?.(extension.id)===false)||state.active&&!state.active.manual&&!p.enabled&&!['extraction','consolidation'].includes(extension.id)||state.cancelled||state.manualRetryRequired||extension.maxAttempts&&state.failures>=extension.maxAttempts||(state.retryAt??0)>now||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled')return;
+      const settings=this.settings(),p=settings[extension.id],now=this.now();let state=this.state(extension.id);
+      const admitted=state.drainThrough!==undefined&&state.drainThrough>state.cursor;
+      if(!state.active&&!admitted&&(!p.enabled||this.automaticAdmission?.(extension.id)===false)||state.active&&!state.active.manual&&!p.enabled&&!['extraction','consolidation'].includes(extension.id)||state.cancelled||state.manualRetryRequired||extension.maxAttempts&&state.failures>=extension.maxAttempts||(state.retryAt??0)>now||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled')return;
       if(!state.active){
         if(!state.drainThrough){
           const pending=this.count(extension,state.cursor);
@@ -199,7 +219,7 @@ export class MemoryLifecycle {
         const pendingFailure=this.invocationFailure(state);
         if(pendingFailure&&pendingFailure.key!==state.countedFailure)throw new ExecutionFailure('waiting',pendingFailure.receipt.code);
         if(state.active.version!==extension.version)throw new StoreError('Active window requires its original extension version',409);
-        const window=structuredClone(state.active),checkpoint=(id:string)=>{state.active!.checkpoint=id;this.saveState(extension.id,state);};
+        const window=structuredClone(state.active),checkpoint=(id:string)=>{const current=this.state(extension.id);if(current.active?.id!==window.id||current.cancelled)throw new StoreError('Lifecycle checkpoint authority changed',409);current.active.checkpoint=id;state=current;this.saveState(extension.id,state);};
         if(this.executor){
           const executor=this.executor,id='lifecycle:'+window.id,operationId='workflow:lifecycle:'+window.id;
           // Only this window's finite, typed recovery decision can reopen a
@@ -218,15 +238,20 @@ export class MemoryLifecycle {
             },commit:()=>{},read:()=>executor.get(id)?.state==='succeeded'?true:undefined,project:()=>{},
           });
         }else await extension.run(window,checkpoint);
-        if(this.closed||this.state(extension.id).active?.id!==state.active.id)return;
+        const latest=this.state(extension.id);if(this.closed||latest.active?.id!==window.id||latest.cancelled)return;state=latest;
         // An explicitly retired historical prefix can be ahead of a retained
         // authorized window. Completing that window never undoes the cutoff.
-        state.cursor=Math.max(state.cursor,this.state(extension.id).cursor,state.active.through);if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;if(!state.active.manual)state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;delete state.countedFailure;
+        state.cursor=Math.max(state.cursor,window.through);
+        if(!state.drainThrough||state.cursor>=state.drainThrough){
+          delete state.drainThrough;if(!window.manual)state.lastSuccess=this.now();
+          if(state.resumeAfter!==undefined){state.cursor=Math.max(state.cursor,state.resumeAfter);delete state.resumeAfter;}
+        }
+        state.lastRun={id:window.id,through:window.through,completedAt:this.now()};delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;delete state.countedFailure;
       }catch(error){
         if(this.closed||this.quiescing)return;
         if(state.active){
           if(this.executor?.get('lifecycle:'+state.active.id)?.state==='running')return;
-          const latest=this.state(extension.id);if(latest.active?.id!==state.active.id)return;Object.assign(state,latest);
+          const latest=this.state(extension.id);if(latest.active?.id!==state.active.id)return;state=latest;
         }
         const receipt=state.active&&this.executor?.failure('lifecycle:'+state.active.id),invocation=state.active&&this.executor?.get('lifecycle:'+state.active.id);
         const actualFailure=this.invocationFailure(state),completedFailure=actualFailure&&actualFailure.key!==state.countedFailure;

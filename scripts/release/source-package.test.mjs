@@ -17,12 +17,22 @@ test('Central container includes every production workspace dependency before in
     for (const dependency of Object.keys(manifest.dependencies ?? {})) visit(dependency);
   };
   visit('@mote/server');
-  const docker = readFileSync('Dockerfile', 'utf8'), [build, runtime] = docker.split(/^FROM .* AS runtime$/m);
+  const docker = readFileSync('Dockerfile', 'utf8'), stages=new Map(docker.split(/^FROM /m).slice(1).map(stage=>{
+    const [header,...body]=stage.split('\n'),match=/^(\S+) AS (\S+)$/.exec(header);assert.ok(match,header);return [match[2],{base:match[1],body:body.join('\n')}];
+  }));
+  const inherited=name=>{const stage=stages.get(name);assert.ok(stage,name);return (stages.has(stage.base)?inherited(stage.base):'')+stage.body;};
+  const build=inherited('build'),production=inherited('production-deps'),runtime=inherited('core');
   for (const {path} of required.values()) {
     const copy = `COPY ${path}/package.json ./${path}/package.json`;
-    for (const stage of [build, runtime]) assert.ok(stage.indexOf(copy) >= 0 && stage.indexOf(copy) < stage.indexOf('RUN npm ci'), path);
+    for (const stage of [build, production]) assert.ok(stage.indexOf(copy) >= 0 && stage.indexOf(copy) < stage.indexOf('RUN npm ci'), path);
+    assert.ok(runtime.includes(copy),path);
     assert.ok(runtime.includes(`COPY --from=build /app/${path}/dist ./${path}/dist`), path);
   }
+  assert.ok(runtime.includes('COPY --from=production-deps /app/node_modules ./node_modules'));
+  for(const {path} of required.values())if(Object.entries(lock).some(([key,value])=>key.startsWith(path+'/node_modules/')&&!value.dev))assert.ok(runtime.includes(`COPY --from=production-deps /app/${path}/node_modules ./${path}/node_modules`),'Non-hoisted production dependencies: '+path);
+  assert.equal(stages.get('runtime').base,'core','unqualified builds retain the lean runtime');
+  assert.equal(stages.get('full').base,'core','media inherits the same actual Central runtime');
+  assert.ok(!/apt-get|pip install|RUN node scripts\/connector-runtime/.test(runtime),'core must not install optional Python environments or connector CLIs');
 });
 
 test('central packaging archives the committed monorepo with the central version and grouped URL', t => {

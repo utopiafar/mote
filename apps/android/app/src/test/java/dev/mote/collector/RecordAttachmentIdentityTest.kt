@@ -22,7 +22,7 @@ class RecordAttachmentIdentityTest {
                     url.endsWith("/api/sources") -> 200 to JSONObject()
                     url.endsWith("/uploads") -> {
                         manifest=JSONObject(String(bytes!!)); val ack=fileAck(manifest,UUID.randomUUID().toString()).put("captureId",UUID.randomUUID().toString())
-                        200 to if(begin) JSONObject().put("ack",ack) else JSONObject().put("uploadId",UUID.randomUUID().toString()).put("parts",org.json.JSONArray())
+                        200 to if(begin) JSONObject().put("ack",ack) else JSONObject().put("uploadId",UUID.randomUUID().toString()).put("partBytes",FileTransfer.PART_BYTES).put("parts",org.json.JSONArray())
                     }
                     url.contains("/parts/") -> 200 to JSONObject().put("part",0).put("bytes",3).put("hash",FileSnapshotMetadata.hash(bytes!!))
                     else -> { commits++; 200 to fileAck(manifest,UUID.randomUUID().toString()).put("captureId",UUID.randomUUID().toString()) }
@@ -37,7 +37,7 @@ class RecordAttachmentIdentityTest {
         val client=CentralClient("https://fixture.example","generated-token",transport={ _,url,_,_,_ ->
             when {
                 url.endsWith("/api/sources") -> 200 to JSONObject()
-                url.endsWith("/uploads") -> 200 to JSONObject().put("uploadId",UUID.randomUUID().toString()).put("parts",org.json.JSONArray().put(JSONObject().put("part",0).put("bytes",3).put("hash","bad")))
+                url.endsWith("/uploads") -> 200 to JSONObject().put("uploadId",UUID.randomUUID().toString()).put("partBytes",FileTransfer.PART_BYTES).put("parts",org.json.JSONArray().put(JSONObject().put("part",0).put("bytes",3).put("hash","bad")))
                 else -> { writes++; 200 to JSONObject() }
             }
         })

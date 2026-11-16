@@ -98,7 +98,9 @@ class LocalSourcesTest {
     @Test fun `file size limits survive serialization and reject invalid values`() {
         val value = source().copy(maxFileMiB = 17)
         assertEquals(17, LocalSource.from(value.json()).maxFileMiB)
-        for (limit in listOf(0, 513)) assertThrows(IllegalArgumentException::class.java) { value.copy(maxFileMiB = limit).validate() }
+        for (limit in listOf(0, 513, Int.MAX_VALUE)) assertEquals(limit, LocalSource.from(value.copy(maxFileMiB = limit).json()).maxFileMiB)
+        assertThrows(IllegalArgumentException::class.java) { value.copy(maxFileMiB = -1).validate() }
+        for (raw in listOf("1", 1.5, Int.MAX_VALUE.toLong() + 1, Long.MAX_VALUE, JSONObject.NULL)) assertThrows(Exception::class.java) { LocalSource.from(value.json().put("maxFileMiB", raw)) }
     }
     @Test fun `metadata only changes have durable deadlines without counting a content record`() {
         val dir = folder.newFolder(); val store = LocalSourceStore(dir, cipher); val source = source(); store.save(source)

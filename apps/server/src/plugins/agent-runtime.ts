@@ -22,6 +22,7 @@ import {centralServices} from './central-contracts.js';
 import {registerAgentRuntimeSettingsRoutes} from './agent-runtime-settings-routes.js';
 import {registerExecutionSettingsRoutes} from './execution-settings-routes.js';
 import {registerModelSettingsRoutes} from './model-settings-routes.js';
+import type {PluginCenter} from '../plugin-center.js';
 
 /** A09's model runtime registry owns model-agent factories, prepared/retired
  * model generations and the mote.models configuration/model settings route
@@ -52,6 +53,8 @@ export interface AgentRuntimeRouteDependencies {
   readonly maintenanceSnapshot:()=>ReturnType<MaintenanceWorker['snapshot']>|null;
   readonly delegatedSnapshot:()=>ReturnType<ExecutionEngine['poolSnapshot']>;
   readonly wakeMemory:()=>void;
+  readonly nativeDshModules?:PluginCenter['nativeDshModules'];
+  readonly validateNativeDshConfiguration?:PluginCenter['validateNativeDshConfiguration'];
 }
 
 export interface AgentRuntimeServicesDependencies {
@@ -158,9 +161,10 @@ export function createAgentRuntimeServices(dependencies:AgentRuntimeServicesDepe
         });
         registerModelSettingsRoutes(child,modelSettings,codex);
         registerAgentRuntimeSettingsRoutes(child,{agent:opened(),modelSettings,configService:routes.configService});
+        if(routes.nativeDshModules)child.get('/api/agent-runtime/native-modules',async()=>({items:await routes.nativeDshModules!()}));
         const configurationView=()=>{const d=routes.runtimeSettings.diagnostics(),view=serverConfiguration({...config,...routes.runtimeSettings.execution(),diagnosticsEnabled:d.enabled,diagnosticsDebug:d.debug,agentTraceEnabled:d.traceEnabled,logLevel:d.level},{modelSource:modelSettings.view().source,service:routes.configService.view()}),policy=routes.insightSettings(),field=view.groups.flatMap(g=>g.fields).find(f=>f.key==='insightIntervalHours');if(field){field.value=policy.enabled?policy.intervalHours:0;field.source='derived';field.description=moteText("已保存的洞察策略：周期到达并且至少 {0} 次增量变化时运行。在记忆设置中直接修改。", policy.minChanges);delete field.envVar;}return view;};
         child.get('/api/configuration',async()=>configurationView());
-        child.put('/api/configuration/:id',{bodyLimit:1048576},async req=>{const {id}=z.object({id:z.string().min(1).max(128)}).parse(req.params),body=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),value:z.record(z.unknown()),allowCredentialReuse:z.boolean().optional()}).strict().parse(req.body);if(id==='models')checkModelCredentialReuse(routes.configService.saved<ModelDomain>('models'),body.value,body.allowCredentialReuse===true);await routes.configService.update(id,body.value,body.revision);return configurationView();});
+        child.put('/api/configuration/:id',{bodyLimit:1048576},async req=>{const {id}=z.object({id:z.string().min(1).max(128)}).parse(req.params),body=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),value:z.record(z.unknown()),allowCredentialReuse:z.boolean().optional()}).strict().parse(req.body);if(id==='models')checkModelCredentialReuse(routes.configService.saved<ModelDomain>('models'),body.value,body.allowCredentialReuse===true);if(id==='dsh'&&routes.validateNativeDshConfiguration)await routes.validateNativeDshConfiguration({...routes.configService.saved<object>('dsh'),...body.value});await routes.configService.update(id,body.value,body.revision);return configurationView();});
         registerExecutionSettingsRoutes(child,{runtimeSettings:routes.runtimeSettings,agentGate:dependencies.agentGate,llmGate:dependencies.llmGate,interactiveGate:dependencies.interactiveGate,interactiveModelGate:dependencies.interactiveModelGate,diagnostics:dependencies.diagnostics,providerAdmission:routes.providerAdmission,maintenanceSnapshot:routes.maintenanceSnapshot,delegatedSnapshot:routes.delegatedSnapshot,wakeMemory:routes.wakeMemory});
       });
     },

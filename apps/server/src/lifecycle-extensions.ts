@@ -19,7 +19,7 @@ export function registerMemoryExtensions({integrationSettings,lifecycle,store,fi
   integrationSettings?:MemoryIntegrationSettings;
   semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
   providerCooldownCheck?:()=>void;
-  insights?:InsightRuns;insightTimeout?:()=>number|null;
+  insights?:InsightRuns|false;insightTimeout?:()=>number|null;
   lifecycle:MemoryLifecycle;store:Store;files:FileStore;memories:MemoryStore;pipeline:MemoryPipeline;working:WorkingMemory;
   query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;model:()=>string;
 }){
@@ -55,7 +55,7 @@ export function registerMemoryExtensions({integrationSettings,lifecycle,store,fi
   lifecycle.register({id:'working',version:'1.0.0',stream:'conversation',async run(window,_checkpoint,execution){
     for(const id of window.ids)await working.compact(id,window.settings,input=>query({...input,...(execution?{signal:execution.signal,traceContext:{operationId:execution.operationId,jobId:execution.jobId}}:{})},'conversations'),undefined,execution);
   }});
-  lifecycle.register({id:'insights',version:'2.0.0',stream:'artifact',async run(window,checkpoint,execution){
+  if(insights!==false)lifecycle.register({id:'insights',version:'2.0.0',stream:'artifact',async run(window,checkpoint,execution){
     if(store.db.prepare('SELECT id FROM insights WHERE id=?').get(window.id))return;
     const current=window.ids.filter(id=>store.archive.get(id)?.kind==='semantic');
     if(!current.length)return;

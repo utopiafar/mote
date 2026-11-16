@@ -10,6 +10,7 @@ import type { LocalFileCheckpoint, SourceCheckpoint, SourceDefinition, SourceIte
 import { PriorityScheduler } from './priority-scheduler';
 import {UploadSlice,UploadSliceYield,requestBytes} from './upload-slice';
 import {requireIngressReceipt} from './ingress-protocol';
+import {FILE_MAX_BYTES,FILE_PART_BYTES,filePartReceipts,type FilePartPage} from '@mote/shared';
 
 export const sourceHash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
@@ -142,7 +143,7 @@ export class SourceSync {
   async requestSnapshotRecovery(items:SnapshotRecovery[],targeted=false):Promise<SnapshotRecovery[]>{
     return this.mutate(async()=>{
       const pending=new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].map(item=>item.externalId));
-      const matches=items.filter(item=>receiptId.test(item.captureId)&&/^[a-f0-9]{64}$/.test(item.sha256)&&Number.isSafeInteger(item.sizeBytes)&&item.sizeBytes>=0&&item.sizeBytes<=512*1024*1024&&Number.isFinite(Date.parse(item.observedAt))&&!pending.has(item.externalId)&&this.data.known[sourceHash(item.externalId)]?.revision===item.revision&&this.data.known[sourceHash(item.externalId)]?.policy===this.data.policy);
+      const matches=items.filter(item=>receiptId.test(item.captureId)&&/^[a-f0-9]{64}$/.test(item.sha256)&&Number.isSafeInteger(item.sizeBytes)&&item.sizeBytes>=0&&item.sizeBytes<=FILE_MAX_BYTES&&Number.isFinite(Date.parse(item.observedAt))&&!pending.has(item.externalId)&&this.data.known[sourceHash(item.externalId)]?.revision===item.revision&&this.data.known[sourceHash(item.externalId)]?.policy===this.data.policy);
       if(!matches.length)return [];
       const known={...this.data.known};for(const item of matches){const key=sourceHash(item.externalId);known[key]={...known[key],contentHash:'',discoveryHash:undefined};}
       // Continuous sources re-enumerate authorized files instead of trusting a
@@ -330,7 +331,6 @@ export class SourceSync {
     if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试"));
     if (scan.catalogChanges && !isFileCheckpoint(scan.checkpoint)) throw new Error('File catalog changes require a file checkpoint');
     if (scan.checkpoint) { next.checkpoint = scan.catalogChanges&&isFileCheckpoint(scan.checkpoint)?{...scan.checkpoint,catalog:isFileCheckpoint(this.data.checkpoint)?this.data.checkpoint.catalog:{}}:scan.checkpoint; next.collectedItems = (next.collectedItems ?? 0) + changes; }
-    if([...next.pendingRealtime,...next.pendingHistory].reduce((n,item)=>n+(item.localOriginal?.sizeBytes??(item.localOriginalBase64?Math.floor(item.localOriginalBase64.length*3/4):0)),0)>512*1024*1024)throw Error('Original outbox exceeds 512 MiB; upload pending files before scanning more');
     await this.commit(next, this.limits.maxBytes,[...sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>),...Array.from(knownChanges,([key,value])=>({section:'known',key,value})),...(scan.catalogChanges??[]).map(change=>({section:'catalog',...change}))]);
     for(const [key,value] of knownChanges){const previous=this.data.known[key];this.knownItems+=Number(!value.item.deleted)-Number(Boolean(previous&&!previous.item.deleted));this.data.known[key]=value;}
     if(scan.catalogChanges&&isFileCheckpoint(this.data.checkpoint))for(const {key,value} of scan.catalogChanges){if(value)this.data.checkpoint.catalog[key]=value;else delete this.data.checkpoint.catalog[key];}
@@ -642,18 +642,22 @@ export class SourceSync {
     const original = localOriginalBase64 ? Buffer.from(localOriginalBase64, 'base64') : undefined, manifest = { sourceId: source.id, previousRevision: previousRevision || null, item: wire, sizeBytes: localOriginal?.sizeBytes??original?.length??item.metadata?.file?.sizeBytes??0, ...(localOriginal?{sha256:localOriginal.sha256}:original ? { sha256: sourceHash(original) } : {}) };
     let ack: Record<string, unknown>;
     if (original||localOriginal) {
-      const upload = await request(snapshotRecovery?'/api/file-sync/v1/recovery/'+encodeURIComponent(snapshotRecovery.captureId)+'/uploads':'/api/file-sync/v1/uploads', snapshotRecovery?{}:manifest, 'POST', signal) as { uploadId: string; ack?: Record<string, unknown>; partBytes: number; parts: { part: number; hash: string; bytes: number }[] };
+      type Upload=FilePartPage&{uploadId:string;ack?:Record<string,unknown>;partBytes:number};
+      const upload = await request(snapshotRecovery?'/api/file-sync/v1/recovery/'+encodeURIComponent(snapshotRecovery.captureId)+'/uploads':'/api/file-sync/v1/uploads', snapshotRecovery?{}:manifest, 'POST', signal) as Upload;
       if (upload.ack) ack = upload.ack;
       else {
-        if (upload.partBytes !== 4194304 || !Array.isArray(upload.parts) || typeof upload.uploadId !== 'string' || !upload.uploadId) throw Error('Unsupported file upload session');
+        if (upload.partBytes !== FILE_PART_BYTES || !Array.isArray(upload.parts) || typeof upload.uploadId !== 'string' || !upload.uploadId) throw Error('Unsupported file upload session');
+        const receipts=filePartReceipts(upload,async after=>{const page=await request('/api/file-sync/v1/uploads/'+encodeURIComponent(upload.uploadId)+'?afterPart='+after,undefined,'GET',signal) as Upload;if(page.uploadId!==upload.uploadId||page.partBytes!==FILE_PART_BYTES)throw Error('Upload receipt identity changed');return page;},manifest.sizeBytes);let receipt=await receipts.next();
         for (let offset = 0; offset < (localOriginal?.sizeBytes??original!.length); offset += upload.partBytes) {
           const part = offset / upload.partBytes, bytes = localOriginal?Buffer.from(await sourceWork.run<Uint8Array>({kind:'original-part',spool:localOriginal,part})):original!.subarray(offset, offset + upload.partBytes), hash = sourceHash(bytes);
-          const existing = upload.parts.find(value=>value.part===part);
+          const existing = !receipt.done&&receipt.value.part===part?receipt.value:undefined;
+          if(existing)receipt=await receipts.next();
           if (existing?.hash === hash && existing.bytes === bytes.length) continue;
-          const receipt = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/parts/' + part, bytes, 'PUT', signal) as {part?:number;hash?:string;bytes?:number};
-          if (receipt?.part !== part || receipt.hash !== hash || receipt.bytes !== bytes.length) throw Error('File part acknowledgement does not match the queued original');
+          const partAck = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/parts/' + part, bytes, 'PUT', signal) as {part?:number;hash?:string;bytes?:number};
+          if (partAck?.part !== part || partAck.hash !== hash || partAck.bytes !== bytes.length) throw Error('File part acknowledgement does not match the queued original');
           this.uploadProgress++;
         }
+        if(!receipt.done)throw Error('Incomplete upload receipt traversal');
         ack = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/commit', {}, 'POST', signal) as Record<string, unknown>;
       }
       if (ack.sha256 !== manifest.sha256 || ack.sizeBytes !== (localOriginal?.sizeBytes??original!.length)) throw Error('File archive acknowledgement does not match the queued original');

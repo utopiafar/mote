@@ -150,6 +150,25 @@ node scripts/mote.mjs token --profile prod --home /srv/mote/profiles
 node scripts/mote.mjs stop --profile prod --home /srv/mote/profiles
 ```
 
+默认 Docker profile 选择 `core`，本地镜像标签为 `mote-central:<Central版本>-core`。`core` 包含 Central/Web、SQLite、Agent/DSH SDK、插件宿主和导入运行时；构建所用的 Python/C++ 工具链不会进入该运行镜像。OCR/ASR Python 环境、FFmpeg 和固定版本 Lark/DingTalk CLI 是可选资源，只安装在 `full`。两个目标共享同一 Central 层，均不包含模型权重。直接使用 `docker build` 时也默认 core；明确构建目标可用：
+
+```sh
+docker build --target core --tag mote-central:local-core .
+docker build --target full --tag mote-central:local-full .
+```
+
+需要官方录音 CLI 或受管 OCR/ASR 环境时，初始化时显式选择 full；只选择 full 仍不启动媒体 worker：
+
+```sh
+node scripts/mote.mjs init --profile prod --home /srv/mote/profiles --runtime docker --image-variant full --media-workers ocr,asr
+node scripts/mote.mjs compose --profile prod --home /srv/mote/profiles -- build
+node scripts/mote.mjs start --profile prod --home /srv/mote/profiles
+```
+
+`--media-workers` 接受 `none`（默认）、`ocr`、`asr` 或 `ocr,asr`，写入主 YAML 的 `media.dockerWorkers`。已有 profile 可直接编辑该数组，再执行 `start` 应用所选资源；取消的角色会先停止，`stop` 也会停止此前已选择的角色。Compose 使用独立的 `media-ocr` / `media-asr` [profiles](https://docs.docker.com/compose/how-tos/profiles/)，只有显式选择的角色参与普通启动。`profile.json` 的 `imageVariant` 记录构建目标，镜像标签不用于推断变体；`core` 选择受管媒体会在启动前拒绝，选择 full 但镜像缺少所需解释器/FFmpeg 也会明确拒绝。配置中的端口、endpoint 或 token 不启用角色。
+
+部署媒体资源、准备模型、启用插件和授予处理权限是独立步骤。full 的 worker 即使 listener 和容器 health 正常，空模型卷仍报告模型未就绪；权重继续由现有媒体准备或离线导入流程管理。Linux 镜像不提供只适用于 Native macOS Apple Silicon 的 MLX 本地识图环境。core 保留第三方连接器代码和部署安装器，但调用缺少的 Lark/DingTalk CLI 会报告现有的依赖未就绪状态；普通启动不会自动下载 CLI 或进行账号登录。
+
 如果系统用户不能写 `/srv/mote`，先由管理员创建并交给部署用户，不要用宽泛的全盘权限修改。中央与媒体容器使用配置文件所属用户的 UID/GID 运行，保留 YAML 的 0600 权限；一个无网络的初始化服务只初始化空卷根目录的所有权。已有非空卷的 UID/GID 不匹配时明确拒绝，不自动递归修改旧资料。支持本地 Unix Docker Engine；远程 Engine 与 userns-remap 会明确拒绝，rootless Engine 使用映射后的 0:0。数据与结构化日志分别在 `/data`、`/data/logs`，来自该环境独立命名卷。服务端口只发布到宿主机 loopback。`start` 使用现成镜像；升级前必须显式构建或拉取指定镜像。
 
 CLI 将 profile 的父目录挂到中央容器 `/config`，主文件是 `/config/mote.yaml`。目录挂载使设置页的原子保存和外部替换持续可见；不会生成另一份运行配置。媒体 sidecar 只读同一个目录。YAML 的 `server.port` 同时决定容器监听与 loopback 发布端口；数据与日志路径是 `/data`、`/data/logs`；模型卷的挂载目标由 YAML 的 `media.modelDirectory` 决定，初始化默认 `/models`，CLI 导入与媒体 worker 使用同一路径。该绝对容器路径不能遮蔽根目录、`/config`、`/data` 或 `/app`；更改模型路径需重启。健康检查读取同目录的私有运行 locator（只记录当前 PID、监听地址、端口和实例身份），因此保存待重启的 `server.port` 不会误判当前容器为不健康；进程退出仅清理自己的 locator。该文件是瞬时进程状态，不是第二份配置来源。每次生成的私有 `generated/secrets.env` 仅传递 YAML 中声明的环境密钥引用，普通参数不通过环境注入。根 `.env` 不参与 Compose 插值。不要公开 `compose config`、`docker inspect` 的完整输出，其中可含声明的环境密钥。Docker stdout 日志另设每份 10 MiB、最多 3 份。
@@ -190,7 +209,8 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 ```sh
 node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --release /srv/mote/releases/next
-# Docker先准备明确的本地镜像，再选择--image mote-central:next
+# Docker先准备明确的本地镜像，再选择--image；切换变体也显式声明
+node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --image mote-central:next-full --image-variant full
 node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restore-data
 ```
 
@@ -228,4 +248,4 @@ node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 
 ## 验证
 
-部署测试使用临时profile、生成数据和独立loopback进程验证健康、身份隔离、备份/恢复与切换。`test:profiles`、`test:profiles:container`和更新测试是按需入口；Docker/NAS权限、公网证书、系统服务和实际目标机器必须各自验证。已有历史通过数量不代表当前部署已验收，见[测试规范](testing.zh-CN.md)。
+部署测试使用临时profile、生成数据和独立loopback进程验证健康、身份隔离、备份/恢复与切换。`test:profiles`、`test:profiles:container`和更新测试是按需入口。已构建的core/full可分别用`node scripts/test-docker-images.mjs --variant core --image LOCAL_CORE_TAG`和`--variant full --image LOCAL_FULL_TAG`验证真实消费：Agent/导入依赖、SQLite/HTTP、默认资源选择与full的角色切换。该入口不构建镜像、不安装权重或执行模型推理，仅清理本次生成的profile、容器和卷。Docker/NAS权限、公网证书、系统服务和实际目标机器必须各自验证。已有历史通过数量不代表当前部署已验收，见[测试规范](testing.zh-CN.md)。

@@ -27,6 +27,8 @@ Archive recipes compose trusted readers, grouping, organization, publication and
 
 Material publication uses immutable revisions and exact input checkpoints. Replacing a revision invalidates dependent evidence and in-flight grants. Long documents remain complete logical documents with bounded physical blocks and paged reads; partial collection or interpretation stays explicit. Current-document indexing is separate from publication: index failure must not turn successful intake into data loss. `POST /api/materials/:id/index/retry` retries only indexing, without reorganizing the source or invoking a model.
 
+Material read offsets and lengths count UTF-16 units. A page may stop before its requested limit to retain a complete character; continue from `textRange.nextOffset`, using the delivered spans and ranges. A complete prefix remains readable when the remaining page budget cannot fit the next block’s first character. An offset inside a surrogate pair, or a window too small to deliver even its first character, is rejected. Named products likewise retain the undelivered suffix and expose only the ranges actually delivered.
+
 ## Processing authority
 
 Automatic model permission is recorded in the receiving transaction for the exact new source input, independently of later processing readiness. Repeated delivery, publication, restart, a new default or deterministic rebuild cannot convert a denied receipt into a grant. Launch and publication also check current policy. Claiming a grant and assigning its job are atomic, and recovery retains that job identity.

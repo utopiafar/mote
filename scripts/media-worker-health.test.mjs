@@ -107,11 +107,12 @@ function workerHealthProblems(compose) {
 }
 
 test('Compose probes each worker itself and waits for a healthy Central', async () => {
-  const compose = parse(await readFile(composeFile, 'utf8'));
+  const compose = parse(await readFile(composeFile, 'utf8'),{merge:true});
   assert.deepEqual(workerHealthProblems(compose), []);
   const stale = structuredClone(compose);
   stale.services['ocr-worker'].healthcheck.test = ['CMD', 'node', 'apps/server/dist/healthcheck.js', '--shared-network'];
   stale.services['ocr-worker'].depends_on.mote.condition = 'service_started';
+  stale.services['asr-worker'].depends_on.mote.condition = 'service_started';
   assert.deepEqual(workerHealthProblems(stale), [
     'ocr-worker must probe its own ocr port',
     'ocr-worker must wait for a healthy Central',

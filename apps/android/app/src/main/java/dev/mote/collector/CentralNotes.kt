@@ -61,21 +61,19 @@ internal object CentralAttachments {
         val upload = client.post("/api/file-sync/v1/uploads", manifest)
         upload.optJSONObject("ack")?.let { return FileUploadConfirmation.canonicalId(sourceId, manifest, it) }
         val id = upload.getString("uploadId"); UUID.fromString(id)
-        val parts = upload.optJSONArray("parts") ?: JSONArray()
-        val received = (0 until parts.length()).associate { parts.getJSONObject(it).getInt("part") to parts.getJSONObject(it) }
-        check(received.size == parts.length())
+        val received = FilePartReceipts(upload, file.length(), "uploadId", id) { after -> client.bytes("GET", "/api/file-sync/v1/uploads/$id?afterPart=$after", null, "application/json") }
         val total = ((file.length() + 4 * 1024 * 1024 - 1) / (4 * 1024 * 1024)).toInt()
-        check(received.keys.all { it in 0 until total })
         file.inputStream().use { input ->
             repeat(total) { part ->
                 val bytes = ByteArray(minOf(4 * 1024 * 1024L, file.length() - part * 4 * 1024 * 1024L).toInt())
                 var offset = 0
                 while (offset < bytes.size) { val n = input.read(bytes, offset, bytes.size - offset); check(n > 0); offset += n }
-                val ack = received[part] ?: client.bytes("PUT", "/api/file-sync/v1/uploads/$id/parts/$part", bytes, "application/octet-stream")
+                val ack = received.receipt(part.toLong()) ?: client.bytes("PUT", "/api/file-sync/v1/uploads/$id/parts/$part", bytes, "application/octet-stream")
                 FileUploadConfirmation.part(ack, part, bytes)
                 progress(part + 1, total)
             }
         }
+        received.finish()
         return FileUploadConfirmation.canonicalId(sourceId, manifest, client.post("/api/file-sync/v1/uploads/$id/commit"))
     }
 }
