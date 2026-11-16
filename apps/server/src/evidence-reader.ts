@@ -1,3 +1,4 @@
+import {openingMemoryLead} from './opening-memory.js';
 import {retiredConversationRoot} from './conversation-retention.js';
 import {z} from 'zod';
 import {materialDependencyStatus,type MaterialInputPin} from './material-readiness.js';
@@ -228,11 +229,11 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const page=this.memoryPage({id:formatEvidenceRef('memory',lead.id),status:'published',asOf,limit:1});
       if(!page.items.length)return false;
       const memory=this.memories.get(lead.id);
-      const admission=memory.admission?.scope.trim()?{scope:memory.admission.scope.slice(0,600),attribution:memory.admission.attribution}:undefined;
-      return memory.title.slice(0,160)===lead.title&&memory.statement.slice(0,700)===lead.statement&&
-        memory.uncertainty.slice(0,300)===lead.uncertainty&&memory.status===lead.status&&
-        memory.tier===lead.tier&&memory.createdAt===lead.createdAt&&memory.validFrom===lead.validFrom&&memory.validUntil===lead.validUntil&&
-        JSON.stringify(admission)===JSON.stringify(lead.admission)&&
+      const current=openingMemoryLead(memory);
+      return current!==undefined&&current.title===lead.title&&current.statement===lead.statement&&
+        current.uncertainty===lead.uncertainty&&current.status===lead.status&&current.contextPriority===lead.contextPriority&&
+        current.tier===lead.tier&&current.createdAt===lead.createdAt&&current.validFrom===lead.validFrom&&current.validUntil===lead.validUntil&&
+        JSON.stringify(current.admission)===JSON.stringify(lead.admission)&&
         (!memory.supersededBy||Date.parse(memory.supersededAt??'')>Date.now());
     });
   }
