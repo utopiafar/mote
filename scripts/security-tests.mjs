@@ -161,3 +161,18 @@ test('restore only accepts canonical bounded file part paths before touching the
     await assert.rejects(restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(directory,'none')},out),/Unsafe backup manifest entry/);assert.equal(await readFile(join(target,'sentinel'),'utf8'),'keep');
   }
 }));
+
+
+test('verified restore requires exactly the database-declared referenced parts',async()=>fixture(async directory=>{
+  const {source,hash}=await vault(directory),out=join(directory,'snapshot');await backup(source,out);
+  const path=`files/objects/${hash}/0.plain`,manifestPath=join(out,'backup-manifest.json'),manifest=JSON.parse(await readFile(manifestPath,'utf8'));
+  const missing={...manifest,checksums:{...manifest.checksums}};delete missing.checksums[path];
+  await writeFile(manifestPath,JSON.stringify(missing));await assert.rejects(verifiedBackup(out),/does not match referenced asset parts/);
+  const extra=`files/objects/${hash}/1.plain`;await writeFile(join(out,extra),'generated extra');
+  await writeFile(manifestPath,JSON.stringify({...manifest,checksums:{...manifest.checksums,[extra]:createHash('sha256').update('generated extra').digest('hex')}}));
+  await assert.rejects(verifiedBackup(out),/undeclared asset part/);
+  const encrypted=`files/objects/${hash}/0.aes`;await writeFile(join(out,encrypted),'generated duplicate format');
+  await writeFile(manifestPath,JSON.stringify({...manifest,checksums:{...manifest.checksums,[encrypted]:createHash('sha256').update('generated duplicate format').digest('hex')}}));
+  await assert.rejects(verifiedBackup(out),/does not match referenced asset parts/);
+  await writeFile(manifestPath,JSON.stringify(manifest));assert.ok((await verifiedBackup(out)).names.includes(path));
+}));

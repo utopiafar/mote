@@ -14,6 +14,9 @@ import { redactSourceText } from './source-types';
 import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
 import { localVolumeIdentity } from './local-volume';
+// Literal masking decodes text in memory; this processing budget does not cap
+// streaming original archives or permit uploading unmasked private content.
+const MASKED_TEXT_MAX_BYTES=512*1024*1024;
 export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = [], incrementalCheckpoint=false, recoveryIds: readonly string[] = []): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   if(previous && (previous.version!==1 || previous.identityVersion!==1))throw Error('Unsupported local file identity registry; existing source state was preserved');
@@ -130,7 +133,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         if (stable.mtimeMs !== before.mtimeMs || stable.ctimeMs !== before.ctimeMs || stable.size !== before.size) throw new Error('file is still changing');
       }
       let original: Buffer | undefined; let inputState: {parser:string;status:'ready'|'pending'|'blocked';warnings?:string[]} = { parser: 'none', status: 'ready' };
-      if(options.retention==='snapshot'&&options.redactLiterals.length&&!mime.startsWith('text/')){
+      if(options.retention==='snapshot'&&options.redactLiterals.length&&(!mime.startsWith('text/')||before.size>MASKED_TEXT_MAX_BYTES)){
         inputState={parser:'privacy-blocked',status:'blocked',warnings:['Source literal masks cannot be safely applied to this format; input was not uploaded.']};
       }else if(options.retention!=='reference'){
         if(options.retention==='snapshot'&&options.redactLiterals.length){
