@@ -12,7 +12,7 @@ object PerceptionSync {
   if(code!=200||body==null)return
   val next=body.getLong("nextCursor");require(next>=cursor)
   val items=body.getJSONArray("items");require(items.length()<=20)
-  for(i in 0 until items.length())queue.cacheCentralDerived(items.getJSONObject(i),config.maxQueueMiB*1024L*1024L)
+  for(i in 0 until items.length())queue.cacheCentralDerived(items.getJSONObject(i))
   check(prefs.edit().putLong(key,next).commit())
  }
 }

@@ -134,11 +134,10 @@ internal object CaptureOverview {
         val screenLive = c.screenCollectionEnabled && (if (projection) ProjectionService.running else CaptureAccessibilityService.connected)
         val pausedAt = settings.screenPausedAt()
         if (pausedAt != null && c.screenCollectionEnabled) settings.screenPaused(null)
-        val bytes = local.active?.quotaBytes?.div(1024.0 * 1024)
         return Facts(settings.enabled, settings.state(), settings.message(), settings.capturePreviewSeen() || settings.lastCapture() != null,
             c.screenCollectionEnabled, screenLive, projection, pausedAt?.takeIf { !c.screenCollectionEnabled },
             c.notificationCollectionEnabled, c.deviceEventCollectionEnabled, c.mediaCollectionEnabled && c.metadataEnabled, c.observesSystem() && MediaCollectionService.connected,
-            bytes != null && bytes >= c.maxQueueMiB, runCatching { context.localSources().sources().count { it.tree && it.enabled } }.getOrDefault(0),
+            false, runCatching { context.localSources().sources().count { it.tree && it.enabled } }.getOrDefault(0),
             c.hasSyncConnection(), c.syncPaused,
             when { UploadHistoryRecovery.unavailable -> "error"; local.error != null || (local.active?.blocked ?: 0) > 0 -> "blocked"; else -> settings.syncState() },
             local.pending, settings.lastAcknowledgedAt() != null)

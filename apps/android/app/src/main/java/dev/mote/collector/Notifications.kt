@@ -145,7 +145,6 @@ internal class Notifications(
             captureLive = live,
             screenPausedAt = pausedAt?.let { Instant.ofEpochMilli(it).toString() },
             permission = if (permissionMissing || partial) CapturePermission.MISSING else null,
-            storageFull = queueFull(config, state) && settings.enabled,
             interrupted = interrupted,
             syncState = syncState(config, settings, state),
             pending = state?.pending,
@@ -179,9 +178,6 @@ internal class Notifications(
         settings.syncState() == "paused" -> CaptureSyncState.PAUSED
         else -> CaptureSyncState.IDLE
     }
-
-    private fun queueFull(config: CollectorConfig, state: LocalStateSnapshot?): Boolean =
-        state?.active?.quotaBytes?.let { it >= config.maxQueueMiB.toLong() * 1024 * 1024 } ?: false
 
     private fun accessibilityGranted(): Boolean = runCatching {
         AndroidSettings.Secure.getString(app.contentResolver, AndroidSettings.Secure.ENABLED_ACCESSIBILITY_SERVICES)

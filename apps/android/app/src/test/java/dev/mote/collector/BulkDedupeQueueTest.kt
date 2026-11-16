@@ -12,7 +12,7 @@ class BulkDedupeQueueTest {
         override fun open(bytes: ByteArray) = seal(bytes)
     }
 
-    @Test fun insufficientSpaceOrBrokenInterruptedDestinationNeverRemovesSource() {
+    @Test fun actualBrokenStorageOrInterruptedDestinationNeverRemovesSource() {
         val dir = Files.createTempDirectory("bulk-failure").toFile()
         try {
             val queue = DurableQueue(java.io.File(dir, "queue"), cipher)
@@ -21,11 +21,13 @@ class BulkDedupeQueueTest {
             val id = UUID.randomUUID().toString()
             val event = JSONObject().put("id", id).put("source", "screen").put("capturedAt", "2026-01-01T00:00:00Z")
                 .put("privacy", JSONObject().put("excluded", false))
-            queue.enqueue(event, byteArrayOf(4, 5), 10000000)
+            queue.enqueue(event, byteArrayOf(4, 5))
             val hash = queue.dedupeRow(id)!!.getString("blob")
-            try { queue.resolveDedupe(id, hash, null, null, pending, 1); fail("capacity must reject") } catch (_: QueueFull) { }
+            val blocked = java.io.File(targetDir, "$hash.blob").apply { check(mkdir()) }
+            try { queue.resolveDedupe(id, hash, null, null, pending); fail("Broken destination must reject") } catch (_: java.io.IOException) { }
             assertNotNull(queue.image(id)); assertEquals(0, pending.depth())
-            pending.enqueue(event, byteArrayOf(4, 5), 10000000)
+            check(blocked.delete())
+            pending.enqueue(event, byteArrayOf(4, 5))
             assertTrue(java.io.File(targetDir, "$hash.blob").delete())
             try { queue.resolveDedupe(id, hash, null, null, pending); fail("missing destination image must reject") } catch (_: java.io.IOException) { }
             assertArrayEquals(byteArrayOf(4, 5), queue.image(id))
@@ -41,7 +43,7 @@ class BulkDedupeQueueTest {
             fun add(): String {
                 val id = UUID.randomUUID().toString()
                 queue.enqueue(JSONObject().put("id", id).put("source", "screen").put("capturedAt", "2026-01-01T00:00:00Z")
-                    .put("privacy", JSONObject().put("excluded", false)).put("ocrText", "generated OCR").put("ocr", JSONObject().put("status", "completed")), byteArrayOf(1, 2, 3), 10000000)
+                    .put("privacy", JSONObject().put("excluded", false)).put("ocrText", "generated OCR").put("ocr", JSONObject().put("status", "completed")), byteArrayOf(1, 2, 3))
                 return id
             }
             val reference = add(); val candidate = add()

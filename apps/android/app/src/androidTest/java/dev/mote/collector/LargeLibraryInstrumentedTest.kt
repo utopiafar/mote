@@ -52,7 +52,7 @@ class LargeLibraryInstrumentedTest {
                     .put("capturedAt", start.plusSeconds(index.toLong()).toString()).put("appId", "generated.performance")
                     .put("appName", "Generated performance fixture").put("ocrText", "Generated fixture ".repeat(100))
                     .put("privacy", JSONObject().put("excluded", false)).put("ocr", JSONObject().put("status", "completed")),
-                    images[index % images.size], 100_000_000)
+                    images[index % images.size])
             } }
             measurements.put("seedMs", SystemClock.elapsedRealtime() - seedStarted)
             // A fresh path avoids process caches and preserves the exact persisted metadata index.
@@ -95,7 +95,7 @@ class LargeLibraryInstrumentedTest {
             began = SystemClock.elapsedRealtime()
             restarted.withDeferredIndexWrites { pending.withDeferredIndexWrites {
                 moving.forEach { row -> assertTrue(restarted.resolveDedupe(row.getString("id"), row.getString("blob"),
-                    reference.getString("id"), reference.getString("blob"), pending, 100_000_000)) }
+                    reference.getString("id"), reference.getString("blob"), pending)) }
             } }
             val moveMs = SystemClock.elapsedRealtime() - began
             measurements.put("move500Ms", moveMs)

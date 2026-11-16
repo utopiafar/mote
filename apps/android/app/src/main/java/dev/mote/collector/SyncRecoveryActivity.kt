@@ -83,7 +83,7 @@ class SyncRecoveryActivity : MoteActivity() {
                             executor.execute {
                                 val retried = runCatching { ConnectionGuard.sync {
                                     val config = Settings(this@SyncRecoveryActivity).read(); config.validateConnection()
-                                    if (queue().retryConflict(item.getString("id"), config.maxQueueMiB * 1024L * 1024L)) UploadWorker.schedule(this@SyncRecoveryActivity, config, true)
+                                    if (queue().retryConflict(item.getString("id"))) UploadWorker.schedule(this@SyncRecoveryActivity, config, true)
                                 } ?: error(MoteI18n.text("正在调整连接，请稍后重试")) }
                                 runOnUiThread { if (!isDestroyed) { result.text = if (retried.isSuccess) MoteI18n.text("已请求核验；相同内容会确认，不同内容仍保留冲突") else MoteI18n.text("核验未启动，请检查连接"); refreshStatus() } }
                             }

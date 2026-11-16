@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -23,6 +23,100 @@ function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){
  const run=node.queryRuns.get(id),work=node.delegation.get('query:'+id);
  return {run:{status:run.status,error:run.error,execution:run.execution},work:{status:work.status,revision:work.revision,units:work.units.map(unit=>({status:unit.status,attempts:unit.attempts,error:unit.error}))},pool:node.executor.poolSnapshot('delegated-agents'),gate:node.featureServices.agentGate.snapshot(),steps:node.store.db.prepare('SELECT e.id,e.state,e.error,a.work_id FROM execution_steps e LEFT JOIN background_model_step_authority a ON a.step_id=e.id WHERE e.operation_id=?').all('query:'+id)};
 }
+
+// Semantic choices are generated; owner intake, the model tool bridge, private
+// research products, shared execution and final conversation writes are real.
+async function researchFixture(t:TestContext,mode:'parallel'|'restart'|'cancel'|'revoke'){
+ const directory=mkdtempSync(join(tmpdir(),'mote-research-consumer-')),sourceId='generated-research-source',concurrency=mode==='restart'?1:2,clientRequestId=randomUUID();
+ const cfg:Config={...config(directory),dataKey:'65'.repeat(32),contentEncryptionEnabled:true,diagnosticsEnabled:false,interactiveConcurrency:concurrency,agentConcurrency:concurrency,llmConcurrency:concurrency};
+ const questions=['Inspect the generated decision','Inspect the generated constraint','Inspect the generated outcome'],texts=['Generated decision: keep the prototype archive local.','Generated constraint: retain the agreed project boundary.','Generated outcome: the prototype passed its scoped review.'];
+ const originals:{id:string;text:string}[]=[],gates=questions.map(()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>release=resolve);return {promise,release};});
+ let node:Awaited<ReturnType<typeof buildApp>>,id='',conversationId='',generation=0,fragments=0,active=0,maxActive=0;
+ const calls=[0,0,0],started:{index:number;generation:number;signal:AbortSignal}[]=[],errors:string[]=[];
+ const build=()=>{const currentGeneration=++generation;return buildApp(cfg,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
+  active++;maxActive=Math.max(maxActive,active);
+  const bridge=await startBridge(node.featureServices.archiveReader,input,16);
+  const tool=async(name:string,args:Record<string,unknown>)=>{const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)});const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));return result;};
+  try{
+   if(input.question==='Generated independent query after research cancellation')return plain('Generated independent answer');
+   if(input.hostControlChannel){
+    fragments++;const work=input.taskContext!.delegation as {units:{id:string;status:string;artifactId?:string}[]};
+    if(!work.units.length){
+     const available=await tool('delegation_capabilities',{});assert.ok(available.data.capabilities.some((entry:{id:string})=>entry.id==='context.research'));
+     const submitted=await tool('delegation_submit',{units:questions.map((question,index)=>({id:'point-'+index,capabilityId:'context.research',title:question,goal:question,input:{question},scope:{evidenceIds:[originals[index].id]}}))});
+     assert.equal(submitted.data.units.length,3);
+     await tool('delegation_yield',{mode:'all',workspaceJson:JSON.stringify({unresolved:questions,workerIds:submitted.data.units.map((unit:{id:string})=>unit.id)})});throw new AgentYieldError();
+    }
+    assert.equal(work.units.length,3);assert.ok(work.units.every(unit=>unit.status==='succeeded'));
+    assert.throws(()=>parseAnswer(JSON.stringify({answer:'Generated unsupported shortcut',citationIds:originals.map(record=>record.id)}),bridge.records),/not retrieved/,'private handles do not grant original citations');
+    for(const [index,unit] of work.units.entries()){
+     const opened=await tool('delegation_read',{artifactId:unit.artifactId,evidenceIds:[originals[index].id]});
+     assert.equal(opened.evidence.length,1);assert.equal(opened.evidence[0].id,originals[index].id);assert.equal(opened.evidence[0].ocrText,originals[index].text);
+     assert.deepEqual(opened.evidence[0].textRange,{start:0,end:originals[index].text.length,total:originals[index].text.length,nextOffset:null});
+    }
+    return {...parseAnswer(JSON.stringify({answer:'Generated combined research answer '+originals.map(record=>'['+record.id+']').join(' '),citationIds:originals.map(record=>record.id)}),bridge.records),trace:bridge.trace,runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies,sourceContextDependencies:bridge.sourceContextDependencies};
+   }
+   const index=questions.indexOf(input.question);assert.ok(index>=0);calls[index]++;
+   assert.deepEqual(input.evidenceIds,[originals[index].id]);assert.equal(input.deviceId,scope.deviceId);assert.equal(input.after,scope.after);assert.equal(input.before,scope.before);assert.equal(input.timeZone,scope.timeZone);
+   assert.equal(input.conversation,undefined);assert.equal(input.taskContext,undefined);assert.equal(input.openingMemories,undefined);assert.equal(input.directImages,undefined);
+   const opened=await tool('evidence',{ids:[originals[index].id]});assert.equal(opened.data.length,1);assert.equal(opened.data[0].ocrText,originals[index].text);
+   started.push({index,generation:currentGeneration,signal:input.signal!});
+   if(mode==='restart'&&currentGeneration===1){
+    await new Promise<void>((resolve,reject)=>{const abort=()=>{input.signal!.removeEventListener('abort',abort);reject(input.signal!.reason);};input.signal!.addEventListener('abort',abort,{once:true});gates[index].promise.then(()=>{input.signal!.removeEventListener('abort',abort);resolve();});if(input.signal!.aborted)abort();});
+   }else if(mode!=='restart')await gates[index].promise;
+   return {...parseAnswer(JSON.stringify({answer:`Generated worker ${index} inspected the original [${originals[index].id}]`,citationIds:[originals[index].id]}),bridge.records),trace:bridge.trace,runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies,sourceContextDependencies:bridge.sourceContextDependencies};
+  }catch(error){if(!(error instanceof AgentYieldError)&&!input.signal?.aborted)errors.push(error instanceof Error?error.stack??error.message:String(error));throw error;}
+  finally{await bridge.close();active--;}
+ }}});};
+ node=await build();
+ t.after(async()=>{for(const gate of gates)gate.release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const registered=await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:sourceId,name:'Generated research originals',kind:'custom',deviceId:scope.deviceId,platform:'import',retention:'archive'}});assert.equal(registered.statusCode,200,registered.body);
+ for(const [index,text] of texts.entries()){
+  const uploaded=await node.app.inject({method:'PUT',url:'/api/sources/'+sourceId+'/items',headers,payload:{externalId:'point-'+index,revision:'1',observedAt:original.capturedAt,kind:'message',layer:'original',text}});assert.equal(uploaded.statusCode,200,uploaded.body);originals.push({id:uploaded.json().id,text});
+ }
+ const main=await node.app.inject({url:'/api/conversations/main',headers});assert.equal(main.statusCode,200,main.body);conversationId=main.json().id;
+ const request={conversationId,clientRequestId,question:'Research the generated decision, constraint and outcome',scope:{kind:'selection',sourceIds:[sourceId],...scope}};
+ return {get id(){return id;},conversationId,sourceId,originals,calls,started,errors,gates,get node(){return node;},get fragments(){return fragments;},get maxActive(){return maxActive;},
+  describe:()=>({...snapshot(node,id),calls,started:started.map(({index,generation})=>({index,generation})),errors}),
+  async admit(){const response=await node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:request});assert.equal(response.statusCode,202,response.body);id=response.json().id;await until(()=>node.store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(id),this.describe);return response.json();},
+  async restart(){await node.app.close();node=await build();},
+  async completed(){return until(()=>{const run=node.queryRuns.get(id);return run.status==='completed'?run:undefined;},this.describe);},
+ };
+}
+
+for(const restart of [false,true])test(`owner HTTP research ${restart?'resumes an interrupted worker while retaining a completed private product':'runs multiple model-selected questions within the actual two-slot limit'}`,async t=>{
+ const f=await researchFixture(t,restart?'restart':'parallel');await f.admit();
+ if(restart){
+  await until(()=>f.started.some(call=>call.index===0)?true:undefined,f.describe);f.gates[0].release();
+  await until(()=>f.started.some(call=>call.index===1)?true:undefined,f.describe);assert.deepEqual(f.calls,[1,1,0]);
+  const first=f.node.delegation.get('query:'+f.id).units[0];assert.equal(first.status,'succeeded');const product=f.node.store.db.prepare('SELECT * FROM delegation_artifacts WHERE unit_id=?').get(first.id);assert.ok(product);
+  await f.restart();const run=await f.completed();assert.equal(run.status,'completed');assert.deepEqual(f.calls,[1,2,1]);assert.deepEqual(f.node.store.db.prepare('SELECT * FROM delegation_artifacts WHERE unit_id=?').get(first.id),product,'the completed encrypted product is reused byte for byte');
+ }else{
+  await until(()=>f.started.length===2?true:undefined,f.describe);assert.deepEqual(f.calls,[1,1,0]);assert.equal(f.node.delegation.get('query:'+f.id).units[2].status,'waiting');for(const gate of f.gates)gate.release();await f.completed();assert.deepEqual(f.calls,[1,1,1]);
+ }
+ assert.equal(f.maxActive,restart?1:2);assert.equal(f.fragments,2);assert.deepEqual(f.errors,[]);
+ const work=f.node.delegation.get('query:'+f.id),run=f.node.queryRuns.get(f.id);assert.equal(work.status,'succeeded');assert.equal(work.units.length,3);assert.ok(work.units.every(unit=>unit.status==='succeeded'&&unit.attempts===1));assert.equal(f.node.delegation.artifactMetadata(work.id).length,3);
+ assert.equal(work.events.filter(event=>event.type==='branch.completed').length,3);for(const unit of work.units)assert.equal(f.node.modelAuthorization.stepAuthority(unit.stepId),'owner-query:'+f.id);
+ const saved=(await f.node.app.inject({url:'/api/conversations/'+run.conversationId,headers})).json();assert.equal(saved.turnCount,1);const result=saved.turns[0].result;
+ assert.deepEqual(new Set(result.citations.map((citation:{id:string})=>citation.id)),new Set(f.originals.map(record=>record.id)));for(const record of f.originals)assert.equal(result.citations.find((citation:{id:string})=>citation.id===record.id).excerpt,record.text);
+ assert.equal(result.originalEvidenceDependencies.complete,true);assert.deepEqual(new Set(result.originalEvidenceDependencies.ids),new Set(f.originals.map(record=>record.id)));
+ const members=f.node.store.db.prepare('SELECT * FROM execution_operation_steps WHERE operation_id=? ORDER BY step_id').all(work.operationId);await f.admit();for(let replay=0;replay<3;replay++)await f.node.delegation.tick();assert.deepEqual(f.node.store.db.prepare('SELECT * FROM execution_operation_steps WHERE operation_id=? ORDER BY step_id').all(work.operationId),members);assert.equal(f.node.conversations.get(run.conversationId!).turns.length,1);
+});
+
+for(const revoke of [false,true])test(`owner HTTP ${revoke?'source read withdrawal':'research cancellation'} fences two active workers, queued research and late products across restart`,async t=>{
+ const f=await researchFixture(t,revoke?'revoke':'cancel');await f.admit();await until(()=>f.started.length===2?true:undefined,f.describe);assert.deepEqual(f.calls,[1,1,0]);
+ const action=await f.node.app.inject({method:revoke?'PATCH':'POST',url:revoke?'/api/sources/'+f.sourceId:'/api/conversations/'+f.conversationId+'/messages/'+f.id+'/cancel',headers,payload:revoke?{enabled:false}:{}});assert.equal(action.statusCode,200,action.body);
+ if(!revoke){assert.equal(action.json().status,'cancelled');assert.ok(f.started.every(call=>call.signal.aborted));}
+ for(const gate of f.gates)gate.release();
+ const run=await until(()=>{const current=f.node.queryRuns.get(f.id);return current.status!=='running'?current:undefined;},f.describe);assert.equal(run.status,revoke?'failed':'cancelled');
+ await until(()=>f.node.featureServices.agentGate.snapshot().active===0?true:undefined,f.describe);await f.node.delegation.tick();assert.deepEqual(f.calls,[1,1,0]);assert.equal(f.fragments,1);
+ const work=f.node.delegation.get('query:'+f.id);assert.ok(work.units.every(unit=>['cancelled','failed','stale'].includes(unit.status)));if(!revoke)assert.ok(work.units.every(unit=>unit.status==='cancelled'));assert.equal(f.node.delegation.artifactMetadata(work.id).length,0);assert.equal(f.node.delegation.result(work.id),undefined);
+ const saved=(await f.node.app.inject({url:'/api/conversations/'+f.conversationId,headers})).json(),message=saved.turns.find((turn:{id:string})=>turn.id===f.id);assert.ok(message);assert.equal(message.status,revoke?'failed':'cancelled');assert.equal(message.result,undefined);assert.ok(!JSON.stringify(saved).includes('Generated worker'));
+ const progress=(await f.node.app.inject({url:'/api/operations/'+encodeURIComponent(work.operationId)+'?limit=100',headers})).json();assert.equal(progress.operation.state,revoke?'failed':'cancelled');if(!revoke)assert.equal(progress.operation.counts.cancelled,3);
+ for(const record of f.originals)assert.equal((await f.node.app.inject({url:'/api/captures/'+record.id,headers})).statusCode,200,'owner archive remains available after cancellation or read withdrawal');
+ await f.restart();await f.admit();for(let replay=0;replay<3;replay++)await f.node.delegation.tick();assert.equal(f.node.queryRuns.get(f.id).status,run.status);assert.deepEqual(f.calls,[1,1,0]);assert.equal(f.node.delegation.artifactMetadata(work.id).length,0);
+ if(!revoke){const next=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated independent query after research cancellation'}});assert.equal(next.statusCode,200,next.body);assert.equal(next.json().answer,'Generated independent answer');assert.equal(f.node.queryRuns.get(f.id).status,'cancelled');}
+});
 
 
 for(const restart of [false,true])test(`full app delegation ${restart?'resumes after restart without repeating a successful child':'yields its only slot and saves an answer citing the original receipt'}`,async t=>{

@@ -93,7 +93,7 @@ class MediaObservationTest {
             assertFalse(dir.resolve(".capture-stages.inbox").exists())
             assertEquals("activity", restored.peek()!!.getJSONObject("privacy").getString("collection"))
             assertEquals("media", restored.peek()!!.getString("source"))
-            restored.enqueue(event(listOf(session())), null, 1_000_000)
+            restored.enqueue(event(listOf(session())), null)
             assertEquals(2, DurableQueue(dir, cipher).depth())
         } finally { dir.deleteRecursively() }
     }
@@ -119,7 +119,7 @@ class MediaObservationTest {
         try {
             val queue = DurableQueue(directory, cipher)
             val media = event(listOf(session()), 30_000).put("ocrText", "").put("windowTitle", "")
-            queue.enqueue(media, null, 100_000)
+            queue.enqueue(media, null)
             val after = "2026-09-15T00:00:00Z"; val before = "2026-09-16T00:00:00Z"
             assertEquals(0, queue.screenPage(after, before).getInt("totalCount"))
             val page = queue.capturePage(after, before, source = "media")
@@ -144,26 +144,26 @@ class MediaObservationTest {
             val changes = mutableListOf<OperationKind>()
             val queue = DurableQueue(directory, cipher) { kind, _, _ -> changes += kind }
             val first = event(listOf(session()), 30_000)
-            queue.enqueue(first, null, 100_000); queue.enqueue(first, null, 100_000)
+            queue.enqueue(first, null); queue.enqueue(first, null)
             val restored = DurableQueue(directory, cipher)
             assertEquals(first.toString(), restored.peek()!!.toString())
             assertEquals(1, restored.summary().getInt("media"))
             assertEquals(0, directory.listFiles()!!.count { it.extension == "blob" })
             restored.verifyIntegrity(); restored.recoverOrphans()
             assertEquals(0L, restored.reservedOcrBytes())
-            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(first, byteArrayOf(1), 100_000) }
+            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(first, byteArrayOf(1)) }
             for (key in listOf("imageBase64", "imageMime", "ocrText", "windowTitle", "mood", "provenance", "ocr")) {
-                assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event(listOf(session())).put(key, "fixture"), null, 100_000) }
+                assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event(listOf(session())).put(key, "fixture"), null) }
             }
-            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event(listOf(session()), collection = "activity"), null, 100_000) }
+            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event(listOf(session()), collection = "activity"), null) }
             for (invalid in listOf(event(emptyList(), 30_000), event(listOf(session(), session("second")), 30_000),
                 event(listOf(session(state = "paused")), 30_000), event(listOf(session()), 60_001), event(listOf(session()), 30_000).put("appName", "Other"))) {
-                assertThrows(IllegalArgumentException::class.java) { queue.enqueue(invalid, null, 100_000) }
+                assertThrows(IllegalArgumentException::class.java) { queue.enqueue(invalid, null) }
             }
             queue.acknowledge(first.getString("id"), 123); queue.acknowledge(first.getString("id"), 123)
             assertEquals(listOf(OperationKind.MEDIA_QUEUED, OperationKind.MEDIA_ACK), changes)
-            assertEquals(0, queue.depth())
-            queue.enqueue(event(emptyList(), status = "permission_required"), null, 100_000)
+            assertEquals(1, queue.depth()); assertEquals(0, queue.pendingSync().count)
+            queue.enqueue(event(emptyList(), status = "permission_required"), null)
             assertEquals(0, queue.peek()!!.getJSONObject("metadata").getJSONObject("media").getJSONArray("sessions").length())
         } finally { directory.deleteRecursively() }
     }

@@ -28,12 +28,13 @@ class FixtureInstrumentedTest {
         try {
             val event = JSONObject().put("id", UUID.randomUUID().toString()).put("privacy", JSONObject().put("excluded", false))
                 .put("ocrText", "GENERATED FIXTURE ONLY").put("capturedAt", "2026-09-21T00:00:00Z").put("source", "note")
-            DurableQueue(dir, context.secretBox()).enqueue(event, "synthetic pixels".toByteArray(), 10000)
+            DurableQueue(dir, context.secretBox()).enqueue(event, "synthetic pixels".toByteArray())
             val reopened = DurableQueue(dir, context.secretBox())
             assertEquals("GENERATED FIXTURE ONLY", reopened.peek()!!.getString("ocrText"))
             assertFalse(dir.listFiles()!!.any { String(it.readBytes()).contains("GENERATED FIXTURE ONLY") })
             reopened.acknowledge(event.getString("id"))
-            assertEquals(0, reopened.depth())
+            assertEquals(1, reopened.depth()); assertNull(reopened.peek()); assertTrue(reopened.capture(event.getString("id"))!!.getBoolean("uploaded"))
+            assertEquals("GENERATED FIXTURE ONLY", reopened.capture(event.getString("id"))!!.getString("ocrText"))
         } finally { dir.deleteRecursively() }
     }
     @Test fun bundledOcrReadsOnlyUnmaskedSyntheticText() {

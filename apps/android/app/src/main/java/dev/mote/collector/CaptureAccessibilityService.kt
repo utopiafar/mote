@@ -349,7 +349,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                         .put("metadata",org.json.JSONObject().put("version",1).put("observedAt",sampledAt).put("collector",org.json.JSONObject().put("method","accessibility")).put("captureObservation",sample.metadata(config,snapshot)).put("uiPage",page))
                     UiPageRules.validateEvent(event)
                     if(!valid()) { outcome=UiPageOutcome.STATE_CHANGED; return@execute }
-                    queue().enqueue(event,null,config.maxQueueMiB*1024L*1024L)
+                    queue().enqueue(event,null)
                     queued++
                     if(valid())pageMerge.accepted(page,context)
                 }

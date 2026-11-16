@@ -43,7 +43,7 @@ object SupportEvents {
     internal fun supportConfiguration(config: CollectorConfig?): JSONObject = JSONObject().apply {
         config?.let {
             put("configured", it.server.isNotBlank() && it.token.isNotBlank()).put("diagnosticsEnabled", it.diagnosticsEnabled)
-                .put("intervalSeconds", it.intervalSeconds).put("maxQueueMiB", it.maxQueueMiB).put("wifiOnly", it.wifiOnly)
+                .put("intervalSeconds", it.intervalSeconds).put("wifiOnly", it.wifiOnly)
                 .put("projectionMode", it.mode == "projection").put("jpegQuality", it.jpegQuality).put("captureMaxSide", it.captureMaxSide)
                 .put("chargingOnly", it.chargingOnly).put("batteryPauseBelowPct", it.batteryPauseBelowPct)
                 .put("uploadGateEnabled", it.uploadGate.enabled)

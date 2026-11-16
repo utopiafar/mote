@@ -887,7 +887,7 @@ export class MaterialOrganizerRuntime {
   private selectedFor(captureId:string){
     const record=capture(this.store,captureId);
     if(!record||!current(this.store,record.id)||!fileAttachmentAvailable(this.store,record.id))return [];
-    return this.registry.select(record).map(({organizer,group})=>{
+    return this.registry.select(record).filter(({organizer,group})=>organizer!==sourceItem||!this.materials.isHostDerived(group.sourceId!,group.externalId!)).map(({organizer,group})=>{
       if(organizer===screenGroup){const row=this.store.db.prepare('SELECT group_key FROM context_observations WHERE id=?').get(record.id) as {group_key:string}|undefined;group.groupKey=row?.group_key??'';}
       if(organizer===sourceItem){const parent=fileAttachmentParent(this.store,record.id)?.record.provenance;if(parent)group={sourceId:parent.sourceId,externalId:parent.externalId};}
       return {organizer,group:canonicalGroup(group)};

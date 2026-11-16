@@ -459,7 +459,7 @@ class RecordEditorInstrumentedTest {
                 it.optString("ocrText") == "My separate generated comment" && it.optJSONObject("metadata")?.optJSONObject("noteOrigin")?.optString("text") == "Generated third-party original"
             } ?: error("Run the offline save journey first; exactly one retained generated note required")
         }
-        ConnectionGuard.change(context, server, bindLocal = true) { settings.save(settings.read().copy(server = server, token = token, syncMode = "manual", uploadedRetentionDays = 7), confirmCentralEndpoint = true) }
+        ConnectionGuard.change(context, server, bindLocal = true) { settings.save(settings.read().copy(server = server, token = token, syncMode = "manual"), confirmCentralEndpoint = true) }
         UploadWorker.schedule(context, settings.read(), true)
         val deadline = SystemClock.elapsedRealtime() + 120000
         while (context.queue().pendingSync().count > 0 && SystemClock.elapsedRealtime() < deadline) Thread.sleep(100)

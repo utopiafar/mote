@@ -197,7 +197,9 @@ internal class SourceOwner internal constructor(
         else store.state(source.id)
 
     internal fun pending(source: LocalSource): Int =
-        if (source.binaryFiles()) queue.pendingCount(source.id) else store.state(source.id).optJSONArray("pending")?.length() ?: 0
+        if (source.binaryFiles()) queue.pendingCount(source.id) else store.state(source.id).let {
+            (it.optJSONArray("pending")?.length() ?: 0) + (it.optJSONArray("quarantine")?.length() ?: 0)
+        }
 
     /** One bounded page of the exact source projection consumed by the sources page. */
     internal fun snapshots(detailSourceId: String?, offset: Int, pageSize: Int): List<SourceSnapshot> =

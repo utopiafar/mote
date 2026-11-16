@@ -21,29 +21,29 @@ class CaptureJourneyTest {
     }
     @Test fun backupRestoreAndRestartKeepReviewHoldUntilExplicitRelease() = fixture { directory ->
         val source = DurableQueue(File(directory, "source"), plain); val capture = event(); val id = capture.getString("id")
-        source.enqueue(capture, byteArrayOf(1, 2, 3), 3_000_000, reviewHeld = true)
+        source.enqueue(capture, byteArrayOf(1, 2, 3), reviewHeld = true)
         val bytes = ByteArrayOutputStream().also { QueueArchive.export(source, "https://fixture.example", it) }.toByteArray()
-        val prepared = QueueArchive.prepare(bytes.inputStream(), File(directory, "staged"), 3_000_000)
+        val prepared = QueueArchive.prepare(bytes.inputStream(), File(directory, "staged"))
         val target = DurableQueue(File(directory, "target"), plain)
-        assertEquals(1, QueueArchive.restore(prepared, target, "https://fixture.example", 3_000_000))
+        assertEquals(1, QueueArchive.restore(prepared, target, "https://fixture.example"))
         val restarted = DurableQueue(File(directory, "target"), plain)
         assertTrue(restarted.peekBatch().isEmpty()); restarted.requeueRetained(); assertTrue(restarted.peekBatch().isEmpty())
         assertTrue(restarted.syncIssues().single().getBoolean("reviewHeld"))
-        assertTrue(restarted.retryConflict(id, 3_000_000))
+        assertTrue(restarted.retryConflict(id))
         assertEquals(id, restarted.peekBatch().single().getString("id"))
     }
     @Test fun duplicateArchiveMergesAuthorizationConservatively() = fixture { directory ->
         val source = DurableQueue(File(directory, "source"), plain); val target = DurableQueue(File(directory, "target"), plain); val capture = event()
-        source.enqueue(capture, byteArrayOf(1), 3_000_000, reviewHeld = true)
-        target.enqueue(capture, byteArrayOf(1), 3_000_000)
+        source.enqueue(capture, byteArrayOf(1), reviewHeld = true)
+        target.enqueue(capture, byteArrayOf(1))
         val bytes = ByteArrayOutputStream().also { QueueArchive.export(source, "https://fixture.example", it) }.toByteArray()
-        val prepared = QueueArchive.prepare(bytes.inputStream(), File(directory, "staged"), 3_000_000)
-        assertEquals(0, QueueArchive.restore(prepared, target, "https://fixture.example", 3_000_000))
+        val prepared = QueueArchive.prepare(bytes.inputStream(), File(directory, "staged"))
+        assertEquals(0, QueueArchive.restore(prepared, target, "https://fixture.example"))
         assertTrue(target.peekBatch().isEmpty())
-        val unheld = DurableQueue(File(directory, "unheld"), plain); unheld.enqueue(capture, byteArrayOf(1), 3_000_000)
+        val unheld = DurableQueue(File(directory, "unheld"), plain); unheld.enqueue(capture, byteArrayOf(1))
         val other = ByteArrayOutputStream().also { QueueArchive.export(unheld, "https://fixture.example", it) }.toByteArray()
-        val allowed = QueueArchive.prepare(other.inputStream(), File(directory, "allowed"), 3_000_000)
-        QueueArchive.restore(allowed, target, "https://fixture.example", 3_000_000)
+        val allowed = QueueArchive.prepare(other.inputStream(), File(directory, "allowed"))
+        QueueArchive.restore(allowed, target, "https://fixture.example")
         assertTrue(target.peekBatch().isEmpty())
     }
     @Test fun malformedReviewAuthorizationRejectsBackupBeforeRestore() = fixture { directory ->
@@ -53,7 +53,7 @@ class CaptureJourneyTest {
             entry("archive.json", JSONObject().put("format", "mote-android-records").put("version", LocalDataFormat.VERSION).put("origin", "https://fixture.example").toString())
             entry("records/${capture.getString("id")}.json", capture.toString())
         } }.toByteArray()
-        assertThrows(IllegalArgumentException::class.java) { QueueArchive.prepare(bytes.inputStream(), File(directory, "staged"), 3_000_000) }
+        assertThrows(IllegalArgumentException::class.java) { QueueArchive.prepare(bytes.inputStream(), File(directory, "staged")) }
         assertFalse(File(directory, "staged").exists())
     }
     @Test fun notificationRulesReviewEveryCapturedTextFieldWithoutSemanticDispatch() {

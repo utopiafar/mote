@@ -56,7 +56,7 @@ class DurableTransportPluginTest {
         val queue = DurableQueue(folder.newFolder(), cipher, onChange = { kind, _, _ ->
             if (kind == OperationKind.NOTE_ACK) acknowledgements++
         }).apply { archiveOrigin = origin }
-        val event = note(); queue.enqueue(event, null, 100000)
+        val event = note(); queue.enqueue(event, null)
         val store = Store()
         val transport = DurableCaptureTransport(queue, store, store, CaptureUploadReceipt.scope(origin, device),
             origin, device, UUID.randomUUID().toString(), process = "generated", now = { 1000 }, retentionDays = 0)
