@@ -10813,5 +10813,8 @@ export const french: Readonly<Record<string, string>> = {
   "停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。": "Arrêter la lecture des conversations Feishu et suspendre les discussions sélectionnées. Les archives et les autres connexions du compte Feishu sont conservées.",
   "删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。": "Supprimer cet enregistrement original et les images qui ne sont plus référencées. Les souvenirs encore valides sont conservés ; l’original ne pourra plus être consulté ni cité.",
   "删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。": "Supprimer le fichier original et le texte analysé dans Central. Les souvenirs encore valides sont conservés ; l’original ne pourra plus être consulté ni cité. Le fichier original sur l’appareil source est conservé.",
-  "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "L’original a été libéré et ne peut plus être consulté ni cité. Ce souvenir reste utilisable dans son périmètre de validité."
+  "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "L’original a été libéré et ne peut plus être consulté ni cité. Ce souvenir reste utilisable dans son périmètre de validité.",
+  "本机采集内容长期保留，上传确认后不自动删除。": "Le contenu capturé localement est conservé à long terme et n’est pas supprimé automatiquement après confirmation de l’envoi.",
+  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "Le périmètre de la source locale a changé. Les anciennes versions en attente sont isolées et leurs données d’origine sont conservées.",
+  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "Les sauvegardes JSON incluent les enregistrements capturés localement, leur état d’envoi et les images associées. La restauration conserve cet état. Les fichiers sources et les enregistrements de réunion doivent être sauvegardés séparément."
 };

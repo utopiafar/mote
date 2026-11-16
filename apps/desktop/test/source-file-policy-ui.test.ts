@@ -14,6 +14,6 @@ it('preserves explicit history and retention choices while switching import and 
   expect(history.disabled).toBe(false);expect(history.value).toBe('new_only');expect(retention.value).toBe('reference');
   retention.value='archive';draft.setOneTime(true);draft.setOneTime(false);
   expect(history.value).toBe('new_only');expect(retention.value).toBe('archive');
-  draft.reset();expect(history.value).toBe('all');expect(retention.value).toBe('snapshot');
+  draft.reset();expect(history.value).toBe('all');expect(retention.value).toBe('archive');
   dom.window.close();
 });

@@ -38,7 +38,7 @@ export interface LocalSource extends SourceDefinition, Omit<SourceOptions, 'name
 export interface SourceStatus {
   context?: SourceContextState;
   blocked?: number;
-  failures?: {externalId:string;title:string;status:number}[];
+  failures?: {externalId:string;title:string;status:number;localPolicy?:true}[];
   facts?: import('@mote/shared/native-status').NativeStatusView;
   scanComplete?: boolean;
   /** Present while the last scan could not safely publish absence. */
@@ -57,7 +57,7 @@ export interface MeetingRecordingPermissions {microphone:MeetingPermissionValue;
 export interface MeetingSessionView {
   id:string;startedAt:string;endedAt?:string;state:'recording'|'completed'|'uploaded'|'failed';
   durationMs:number;microphone:boolean;systemAudio:boolean;noticeAcknowledgedAt:string;
-  platform:'macos'|'android';warnings:string[];uploadedAt?:string;captureId?:string;error?:string;
+  platform:'macos'|'android';warnings:string[];uploadedAt?:string;captureId?:string;uploadOrigin?:string;error?:string;
 }
 export interface MeetingRecordingStatus {
   noticeAcknowledged:boolean;recording:boolean;startedAt?:string;permissions:MeetingRecordingPermissions;

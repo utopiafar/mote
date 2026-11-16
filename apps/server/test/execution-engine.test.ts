@@ -6,12 +6,32 @@ import {tmpdir} from 'node:os';
 import {Store} from '../src/store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionHandler} from '../src/execution-engine.js';
 import {EXECUTION_POLICIES} from '../src/execution-policy.js';
-async function fixture(t:any){
- const dir=mkdtempSync(join(tmpdir(),'mote-execution-engine-')),store=new Store(dir);let now=Date.now();
+import {Operations} from '../src/operations.js';
+async function fixture(t:any,options:ConstructorParameters<typeof Store>[1]={}){
+ const dir=mkdtempSync(join(tmpdir(),'mote-execution-engine-')),store=new Store(dir,options);let now=Date.now();
  const engine=new ExecutionEngine(store,()=>now);t.after(async()=>{await engine.close();store.close();rmSync(dir,{recursive:true,force:true});});
  return {dir,store,engine,advance:(ms:number)=>{now+=ms;}};
 }
 const base:ExecutionHandler={kind:'fixture',pool:'fixture',policy:EXECUTION_POLICIES.localProcessing,concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{}};
+
+test('cancellation facts project an unexecuted obligation once without acquiring model authority',async t=>{
+ const {engine,store}=await fixture(t,{contentEncryptionEnabled:true,dataKey:'7'.repeat(64)}),operations=new Operations(store);let captures=0,executions=0;
+ engine.bindModelAuthority({captureStep:()=>{captures++;},assertStep:()=>{},commitStep:(_step,task)=>task(),runStep:(_step,task,signal)=>task(signal)});
+ const input={id:'generated-withdrawn-unit',operationId:'generated-parent',kind:'delegation.unit.generated',pool:'delegated-agents',input:{unitId:'generated-withdrawn-unit'}};
+ const cancelled=engine.recordCancellation(input);assert.equal(cancelled.state,'cancelled');assert.equal(cancelled.attempts,0);assert.equal(captures,0);
+ assert.deepEqual(engine.recordCancellation(input),cancelled);await engine.tick();assert.equal(captures,0);
+ const progress=operations.detail(input.operationId);assert.equal(progress.operation.state,'cancelled');assert.equal(progress.operation.total,1);assert.equal(progress.operation.counts.cancelled,1);assert.equal(progress.steps[0].current,true);assert.equal(progress.steps[0].optional,undefined);
+ assert.throws(()=>engine.recordCancellation({...input,input:{unitId:'another-unit'}}),/Execution identity conflict/);
+ engine.register({...base,execute:async()=>{executions++;return null;}});const succeeded=engine.enqueue('generated-completed','fixture',{});await engine.drain([succeeded]);const completed=engine.get(succeeded)!;
+ assert.throws(()=>engine.recordCancellation(completed),/Execution identity conflict/);assert.deepEqual(engine.get(succeeded),completed);assert.equal(completed.state,'succeeded');assert.equal(completed.attempts,1);assert.equal(captures,1);assert.equal(executions,1);
+});
+
+test('cancellation facts propagate projection write errors and roll back their execution record',async t=>{
+ const {engine,store}=await fixture(t,{contentEncryptionEnabled:true,dataKey:'7'.repeat(64)}),input={id:'generated-cancellation-write',operationId:'generated-parent',kind:'delegation.unit.generated',pool:'delegated-agents',input:{unitId:'generated-cancellation-write'}};
+ store.db.exec("CREATE TEMP TRIGGER generated_cancellation_write BEFORE INSERT ON execution_operation_steps BEGIN SELECT RAISE(ABORT,'generated cancellation projection failure'); END");
+ assert.throws(()=>engine.recordCancellation(input),/generated cancellation projection failure/);assert.equal(store.db.isTransaction,false);assert.equal(engine.get(input.id),undefined);assert.equal(store.db.prepare('SELECT count(*) n FROM operation_progress WHERE id=?').get(input.operationId)!.n,0);
+ store.db.exec('DROP TRIGGER generated_cancellation_write');engine.recordCancellation(input);assert.equal(new Operations(store).detail(input.operationId).operation.state,'cancelled');
+});
 
 test('a full execution-sequence RETURNING write keeps its cause, blocks admission and resumes the same queued input',async t=>{
  const {store,engine}=await fixture(t),input={body:'Generated queued execution input'};let calls=0;

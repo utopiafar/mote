@@ -130,6 +130,19 @@ export class ExecutionEngine {
    linkOperation(this.store,operationId,id,options);handler.project?.(this.get(id)!);if(own)db.exec('COMMIT');return id;
   }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
  }
+ /** Record an admitted obligation withdrawn before it acquired an executable
+  * step. This terminal fact never admits work or captures model authority. */
+ recordCancellation(input:Pick<ExecutionStep,'id'|'operationId'|'kind'|'pool'|'input'>){
+  const json=JSON.stringify(canonical(input.input)),db=this.store.db,own=!db.isTransaction,now=this.now();
+  if(own)db.exec('BEGIN IMMEDIATE');
+  try{
+   const prior=this.get(input.id);
+   if(prior&&(prior.operationId!==input.operationId||prior.kind!==input.kind||prior.pool!==input.pool||JSON.stringify(prior.input)!==json||prior.state!=='cancelled'))throw new StoreError('Execution identity conflict',409);
+   if(!prior)db.prepare("INSERT INTO execution_steps(id,operation_id,kind,pool,input,state,error,created_at,updated_at) VALUES(?,?,?,?,?,'cancelled','cancelled',?,?)").run(input.id,input.operationId,input.kind,input.pool,json,now,now);
+   linkOperation(this.store,input.operationId,input.id);
+   if(own)db.exec('COMMIT');return this.get(input.id)!;
+  }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+ }
  get(id:string){const row=this.store.db.prepare('SELECT * FROM execution_steps WHERE id=?').get(id) as Row|undefined;return row?view(row):undefined;}
  failure(id:string):ExecutionFailureReceipt|undefined {const row=this.store.db.prepare('SELECT json FROM execution_failures WHERE step_id=?').get(id);return row?JSON.parse(String(row.json)):undefined;}
  failureDiagnostics(){return {writeFailures:this.failureReceiptWriteFailures};}

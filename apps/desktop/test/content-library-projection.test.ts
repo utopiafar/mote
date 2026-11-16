@@ -85,7 +85,7 @@ it('keeps every page and search identical for 1,000 queue records and 200 origin
   expect(localContentPage(queue,app,9999)).toEqual({items:[],total:1204});
 },120000);
 
-it('hands out detached scalar projections while detail readers keep originals and queue ACKs retire rows',async()=>{
+it('hands out detached scalar projections while detail readers keep originals and queue ACKs retain readable originals',async()=>{
   const id=randomUUID();await queue.enqueue({...event(id),source:'note',durationMs:0,imageMime:undefined,privacy:{excluded:false,redacted:false,mode:'none'},ocrText:'Generated immutable note'});
   const first=queue.contentSummaries()[0];Object.assign(first,{ocrText:'tampered body',extra:{private:true}});
   expect(queue.contentSummaries()[0].ocrText).toBe('Generated immutable note');expect(queue.recordForHistory(id)?.event.ocrText).toBe('Generated immutable note');
@@ -101,14 +101,14 @@ it('hands out detached scalar projections while detail readers keep originals an
   expect(app.pendingContent()[0].item.localOriginalBase64).toBe(original.localOriginalBase64);
   const detail=await localContentDetail(queue,app,key);expect(detail.text).toBe(Buffer.from(original.localOriginalBase64!,'base64').toString());expect(detail.retainsOriginal).toBe(true);
   expect((await localContentDetail(queue,app,`queue:${id}`)).text).toBe('Generated immutable note');
-  await queue.acknowledge(id);expect(localContentPage(queue,app).items.some(item=>item.key===`queue:${id}`)).toBe(false);
-  await expect(localContentDetail(queue,app,`queue:${id}`)).rejects.toThrow('该记录已完成同步');
+  await queue.acknowledge(id,undefined,'https://central.example');expect(localContentPage(queue,app).items.find(item=>item.key===`queue:${id}`)?.archiveAcknowledgment?.origin).toBe('https://central.example');expect(localContentPage(queue,app,0,undefined,undefined,true).items.some(item=>item.key===`queue:${id}`)).toBe(false);
+  expect((await localContentDetail(queue,app,`queue:${id}`)).text).toBe('Generated immutable note');
   await app.close();
   await app.changeConnection({serverUrl:'http://127.0.0.1:9999',token:'generated-other-node-token',deviceId:defaultConfig().deviceId});
-  expect(app.pendingContentSummaries()).toEqual([]);expect(localContentPage(queue,app).items).toEqual([]);
+  expect(app.pendingContentSummaries()).toEqual([]);expect(localContentPage(queue,app).items).toHaveLength(1);expect(localContentPage(queue,app).items[0].archiveAcknowledgment?.origin).toBe('https://central.example');expect(localContentPage(queue,app,0,undefined,undefined,true).items).toEqual([]);
 });
 
-it('projects quarantined revisions with the same keys and bodies, and policy withdrawal removes them',async()=>{
+it('projects quarantined revisions with the same keys and bodies, and policy withdrawal retains isolated inputs',async()=>{
   const engine=new SourceSync(join(directory,'quarantine.json'));await engine.initialize();
   const source:SourceDefinition={id:'generated-source',name:'Generated rejected files',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'snapshot',enabled:true};
   const items:ScannedItem[]=Array.from({length:2},(_,index)=>({externalId:`generated-rejected-${index}`,title:`Generated rejected ${index}`,text:`Generated text ${index}`,kind:'file',layer:'snapshot',document:{kind:'file',fileIndex:true}}));
@@ -120,8 +120,8 @@ it('projects quarantined revisions with the same keys and bodies, and policy wit
     throw Error(`Unexpected generated request ${path}`);
   };
   await engine.flush(source,request);expect(engine.status()).toMatchObject({pending:0,blocked:2});
-  const expected=engine.pendingContent().map(({title,text,observedAt,externalId,revision})=>({title,text,observedAt,externalId,revision}));
+  const expected=engine.pendingContent().map(({title,text,observedAt,externalId,revision})=>({title,text,observedAt,externalId,revision,blockedStatus:410}));
   expect(engine.pendingSummaries()).toEqual(expected);
   Object.assign(engine.pendingSummaries()[0],{text:'tampered quarantine'});expect(engine.pendingContent()[0].text).toBe(items[0].text);
-  await engine.ensurePolicy('generated-withdrawn-policy');expect(engine.pendingSummaries()).toEqual([]);
+  await engine.ensurePolicy('generated-withdrawn-policy');expect(engine.pendingSummaries()).toEqual(expected);expect(engine.status()).toMatchObject({pending:0,blocked:2});
 });

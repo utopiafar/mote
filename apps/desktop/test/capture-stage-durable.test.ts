@@ -98,7 +98,7 @@ describe('durable capture stage pipeline',()=>{
   it('starts a new state series after the prior head has been ACKed',async()=>temporary(async directory=>{
     const {ocrText:_text,imageMime:_mime,...base}=note();
     const first={...base,source:'activity' as const,privacy:{excluded:false as const,redacted:false,mode:'none' as const,collection:'activity' as const}};
-    const queue=new DurableQueue(directory,limits);await queue.initialize();await queue.enqueue(first);await queue.acknowledge(first.id);
+    const queue=new DurableQueue(directory,limits);await queue.initialize();await queue.enqueue(first);await queue.acknowledge(first.id,undefined,'https://central.example');
     const reopened=new DurableQueue(directory,limits);await reopened.initialize();
     const second={...first,id:randomUUID(),capturedAt:'2026-09-24T00:00:05Z'};await reopened.enqueue(second);
     expect((await reopened.next())?.record.event.id).toBe(second.id);

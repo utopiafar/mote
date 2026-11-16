@@ -10813,5 +10813,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。": "Detener la lectura de las conversaciones de Feishu y pausar los chats seleccionados. Se conservan el contenido archivado y las demás conexiones de la cuenta de Feishu.",
   "删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。": "Eliminar este registro original y las imágenes que ya no se referencian. Se conservan los recuerdos que siguen siendo válidos; el original ya no podrá consultarse ni citarse.",
   "删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。": "Eliminar el archivo original y el texto analizado en Central. Se conservan los recuerdos que siguen siendo válidos; el original ya no podrá consultarse ni citarse. Se conserva el archivo original del dispositivo de origen.",
-  "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "El original se ha liberado y ya no puede consultarse ni citarse. Este recuerdo sigue siendo utilizable dentro de su ámbito de validez."
+  "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "El original se ha liberado y ya no puede consultarse ni citarse. Este recuerdo sigue siendo utilizable dentro de su ámbito de validez.",
+  "本机采集内容长期保留，上传确认后不自动删除。": "El contenido capturado localmente se conserva a largo plazo y no se elimina automáticamente tras confirmar la carga.",
+  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "El alcance de la fuente local ha cambiado. Las versiones pendientes anteriores están aisladas y sus entradas originales se conservan.",
+  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "Las copias JSON incluyen registros capturados localmente, su estado de carga e imágenes asociadas; al restaurarlas se conserva el estado de carga. Los archivos de origen y las grabaciones de reuniones requieren copias de seguridad separadas."
 };

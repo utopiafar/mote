@@ -30,7 +30,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
         time.textContent=(today?moteText('今天')+' ':'')+observed.toLocaleString(getLocale(),{...(!today?{month:'short',day:'numeric'} as const:{}),hour:'2-digit',minute:'2-digit',hour12:false});
         source.textContent=item.source==='note'?sourceName(item.source):item.sourceName??sourceName(item.source);meta.replaceChildren(source,document.createTextNode(' · '),time);copy.append(title,meta);
       }
-      const state=document.createElement('span');state.className=item.error&&!item.key.startsWith('capture:')?'content-state needs-attention':'content-state';state.classList.toggle('received',item.key.startsWith('capture:'));state.textContent=item.key.startsWith('capture:')?moteText('中心已接收'):item.error?moteText('需要处理'):moteText('本机待发送');
+      const state=document.createElement('span');state.className=item.error&&!item.key.startsWith('capture:')?'content-state needs-attention':'content-state';state.classList.toggle('received',item.key.startsWith('capture:')||Boolean(item.archiveAcknowledgment));state.title=item.archiveAcknowledgment?.origin??'';state.textContent=item.archiveAcknowledgment?moteText('中心已接收'):item.key.startsWith('capture:')?moteText('中心已接收'):item.error?moteText('需要处理'):moteText('本机待发送');
       {
         button.classList.add('home-content-row');icon.className='home-content-symbol';icon.setAttribute('aria-hidden','true');icon.textContent=({note:'✎',screen:'▧',ui_page:'▤',activity:'◷',notification:'◌',media:'♫',file:'▤',calendar:'▦',coding:'⌘'} as Partial<Record<ContentItem['source'],string>>)[item.source]??'▤';
         const arrow=document.createElement('span');arrow.className='chevron';arrow.setAttribute('aria-hidden','true');arrow.textContent='›';button.append(icon,copy,state,arrow);
@@ -162,7 +162,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
       if(remote&&(archiveAuthorizationDenied||archiveVersion!==archiveGeneration)){close();return;}
       if(remote)observeArchive({status:'fulfilled',value:{items:[]}},request,archiveVersion);
       detailIsCentral=remote;
-      const bytes='sizeBytes'in result?result.sizeBytes:undefined;el('content-detail-source').textContent=[sourceName(item.source),remote?moteText('中央已收到'):moteText('本机待传副本'),typeof bytes==='number'?bytes<1024?bytes+' B':bytes<1024*1024?(bytes/1024).toFixed(1)+' KiB':(bytes/1024/1024).toFixed(1)+' MiB':''].filter(Boolean).join(' · ');
+      const bytes='sizeBytes'in result?result.sizeBytes:undefined;el('content-detail-source').textContent=[sourceName(item.source),remote?moteText('中央已收到'):item.archiveAcknowledgment?moteText('原件已保留'):moteText('本机待传副本'),typeof bytes==='number'?bytes<1024?bytes+' B':bytes<1024*1024?(bytes/1024).toFixed(1)+' KiB':(bytes/1024/1024).toFixed(1)+' MiB':''].filter(Boolean).join(' · ');
       stages(remote,readiness);centralId='captureId'in result?result.captureId:undefined;
       el('content-detail-body').textContent=result.text||(result.metadataOnly?moteText('此记录仅同步目录信息，未上传正文或原件。'):remote?moteText('正文尚未就绪，原件与来源信息仍可核对。'):moteText('原件已保存在本机，解析或识别会在中央进行。'));
       el('content-detail-range').hidden=!result.truncated;el('content-detail-range').textContent=result.truncated?moteText('当前显示正文前 100000 个字符；完整内容请在中央打开。'):'';
