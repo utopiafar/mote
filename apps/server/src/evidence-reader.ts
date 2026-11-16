@@ -14,6 +14,7 @@ import type {Indexer} from './indexer.js';
 import type {FileEvidence} from './file-evidence.js';
 import type {ServerDiagnostics} from './diagnostics.js';
 import {materialId,parseMaterialRef,type MaterialStore,type MaterialMember,type MaterialRecord} from './materials.js';
+import {materialDerivationAllowed} from './material-derivation.js';
 import {contextIndex,contextIndexAsync} from './context-index.js';
 import {browseSourceContexts,parseSourceContextRef} from './source-context-catalog.js';
 import {SourceContextStore} from './source-context.js';
@@ -76,6 +77,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   private readonly retainedSnapshots=new Set<MemoryReadSnapshot>();
   private readonly archivedFiles:ArchivedFileStore;
   private lifecycleDisposed=false;
+  private readonly derivedChecks=new Set<string>();
+  private releaseDerivedRead?:()=>void;
   constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Pick<Indexer,'search'>,private readonly fileEvidence?:FileEvidence,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean,private readonly sourceContexts:SourceContextStore=new SourceContextStore(store)){
     this.archivedFiles=new ArchivedFileStore(store);
     // Memory dependencies must use the canonical Material anchor. The query
@@ -88,6 +91,15 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       };
       return materials?materials.withReadMetadata(read):read();
     },id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||files?.readableFile(id)===id||store.isCurrentEvidence(id)));
+  }
+  /** The production Evidence owner binds this once, alongside its real ports. */
+  bindDerivedMaterials(){this.releaseDerivedRead??=this.materials?.bindDerivedReadPolicy(material=>this.derivedMaterialAllowed(material,defaultEvidenceExposurePolicy));}
+  private derivedMaterialAllowed(material:MaterialRecord,policy:EvidenceExposurePolicy):boolean {
+    const derivation=this.materials?.derivation(material.ref);if(!derivation)return true;
+    if(this.derivedChecks.has(material.ref))return false;
+    this.derivedChecks.add(material.ref);
+    try{return materialDerivationAllowed({store:this.store,sourceContexts:this.sourceContexts,sourceId:material.origin.sourceId,externalId:material.origin.externalId,derivation,evidenceAllowed:ids=>this.contextDependencyGroups(ids).every(group=>this.contextDependenciesAllowed(group,policy))});}
+    finally{this.derivedChecks.delete(material.ref);}
   }
   imageReference(ref:string,scope:Range={}){
     const id=evidenceRefId(ref,'capture');if(!id)return;
@@ -164,6 +176,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   dispose(){
     if(this.lifecycleDisposed)return;
     this.lifecycleDisposed=true;
+    this.releaseDerivedRead?.();this.releaseDerivedRead=undefined;
     for(const snapshot of this.retainedSnapshots){try{snapshot.release();}catch{}}
     this.retainedSnapshots.clear();
   }
@@ -920,6 +933,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     return original;
   }
   private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[],planning=false,selectionReady?:boolean,metadataOnly=false){
+    if(!this.derivedMaterialAllowed(material,policy))return false;
     // Reject a Coding projection that does not declare the current clean
     // dialogue contract before any model exposure.
     if(material.kind==='mote.coding-session'&&material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)return false;
