@@ -24,9 +24,12 @@ export function mediaPreparationFeature(dependencies:MediaPreparationFeatureDepe
   const {connections,credential,mediaRange,store}=dependencies;
   return Object.freeze({id:'mote.media',mount(app:FastifyInstance){
     app.addHook('onRequest',async()=>{dependencies.mediaPreparation().assertCurrent();});
-    const roleOf=(params:unknown)=>z.object({role:z.enum(['ocr','dialogue','speaker-wespeaker'])}).strict().parse(params).role;
+    const roleOf=(params:unknown)=>z.object({role:z.enum(['ocr','dialogue','local-image'])}).strict().parse(params).role;
     app.get('/api/media-preparation',async()=>dependencies.mediaPreparation().statuses());
-    app.post('/api/media-preparation/:role',async(req,reply)=>{z.object({}).strict().parse(req.body??{});return reply.code(202).send(await dependencies.mediaPreparation().start(roleOf(req.params)));});
+    app.post('/api/media-preparation/:role',async(req,reply)=>{
+      z.object({}).strict().parse(req.body??{});const role=roleOf(req.params),preparation=dependencies.mediaPreparation();
+      return reply.code(202).send(await(role==='local-image'?preparation.prepare(role):preparation.start(role)));
+    });
     app.post('/api/media-preparation/:role/cancel',async(req)=>{z.object({}).strict().parse(req.body??{});return dependencies.mediaPreparation().cancel(roleOf(req.params));});
     app.get('/api/media-activity',async req=>{
       const query=mediaRange.parse(req.query),c=credential(req);

@@ -8,7 +8,7 @@ Central has separate installation roles for `ocr`, `dialogue`, `speaker-wespeake
 | --- | --- |
 | OCR | Managed OCR worker and pinned asset catalog. |
 | Dialogue | Fun-ASR-Nano-2512, FSMN VAD, CAM++ and CT-Punc under one dialogue installation. |
-| Speaker WeSpeaker | Separate role for its declared consumers; the current FunASR pipeline does not borrow these assets. |
+| Speaker WeSpeaker | Retained asset role for explicit bundles; no current built-in processing consumer or managed preparation entry. FunASR uses CAM++ from the dialogue installation. |
 | Local image | InternVL3-14B-4bit, first targeting Native macOS Apple Silicon with MLX; optional plugin, default off. |
 
 Exact required files, revisions, sizes, hashes and licenses live in [media-assets.ts](../apps/server/src/media-assets.ts) and [funasr-models.json](../scripts/funasr-models.json). Installation validates the complete catalog before atomically publishing a receipt. Old markers, mixed weights or a directory's existence do not establish readiness. Installation never grants background processing, starts historical scans or enables the image plugin.
@@ -16,6 +16,10 @@ Exact required files, revisions, sizes, hashes and licenses live in [media-asset
 Local image processing does not silently fall back to cloud. Memory, review and Ask retain their selected models and image-disclosure controls. Native and Linux/container audio paths need their own installation and inference evidence; module or generated-fixture success does not establish all-platform quality.
 
 ## Native preparation and offline import
+
+On Native macOS Apple Silicon, the local image settings page prepares its isolated Python/MLX dependencies and pinned model assets together. This uses the same managed preparation lifecycle as OCR/audio, with one cancellable job per role. A completed image setup reports `prepared`; it does not start a worker, select the optional plugin or grant background processing authority. Use the existing plugin enable or retry control to start inference. Default audio settings prepare the complete FunASR/CAM++ dialogue installation and do not offer the unused WeSpeaker installer.
+
+`POST /api/media-preparation/local-image` prepares or verifies and repairs dependencies and assets; its `/cancel` endpoint cancels that job. `/api/media-models` continues to describe installed assets and actual worker health independently. `prepared`, `runtimeReady: true` and a selected plugin are separate facts. After Central restarts, installed assets remain visible; dependency validation is unconfirmed until the existing environment is probed again. A stopped, unselected image worker is normal. Unsupported platforms report their limitation before attempting installation.
 
 Stop the selected Native profile before explicitly preparing its dependencies:
 
@@ -27,7 +31,7 @@ node scripts/mote.mjs media-runtime --profile dev --role local-image
 
 This prepares an isolated Python 3.11 environment for one role. `--python` selects its preparation interpreter. It does not install weights, start a worker or prove inference. Normal startup does not implicitly download new dependencies. Successful prepared environments can be reused after restart; failure preserves the last successful preparation record.
 
-On a clean Mac, the current local-image page installs weights only; prepare its dependencies with the CLI above before enabling the plugin. Completing that preparation from the page remains an implementation gap. Current default audio pages also retain a WeSpeaker installation entry that the managed preparation service does not support; FunASR uses CAM++ from its dialogue installation.
+The CLI remains useful for preparing dependencies without downloading weights. Page setup and explicit verify/repair reuse the same role environment receipt when its dependency identity and import probes still pass. Merely reading status does not install dependencies or hash all model bytes. Installation and repair leave plugin selection unchanged, including a previously failed selection; use its existing explicit retry after preparation. Stopping the plugin or changing runtime configuration fences late setup and health results from reviving its worker.
 
 Offline bundles use the same verifier without downloading missing files:
 

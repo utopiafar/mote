@@ -10,8 +10,8 @@ import {prepareNativeMediaRuntime,mediaRoleSupported,mediaWorkerLaunch,mediaWork
 import {mediaModelHealth,mediaRoleEndpoint,type MediaConfiguration} from './media-configuration.js';
 import {StoreError} from './store.js';
 
-type State='idle'|'queued'|'dependencies'|'verifying_dependencies'|'models'|'starting'|'ready'|'failed'|'cancelled'|'unsupported';
-type Job={id:string;role:MediaRole;state:State;error?:string;startedAt:string;controller:AbortController;done:Promise<void>};
+type State='idle'|'queued'|'dependencies'|'verifying_dependencies'|'models'|'prepared'|'starting'|'ready'|'failed'|'cancelled'|'unsupported';
+type Job={id:string;role:MediaRole;state:State;startWorker:boolean;error?:string;startedAt:string;controller:AbortController;done:Promise<void>};
 /** Structural asset port consumes CORE-00's role contract. CORE-01 owns its
  * implementation, including installation verification and catalog readiness. */
 export interface MediaPreparationAssets {
@@ -103,14 +103,24 @@ export class MediaPreparation {
     // Read job and ownership AFTER health: cancellation/stop/configuration may
     // have completed while an authenticated response was still in flight.
     const unsupported=this.unsupported(role),model=this.model(role),job=this.jobs.get(role),runtimeReady=!this.closing&&!unsupported&&model.state==='ready'&&model.version===before.version&&!this.stopping.has(role)&&health.ready&&(this.options.runtime==='docker'||Boolean(this.owned(role)));
-    return {role,state:unsupported?'unsupported':job?.state==='ready'&&!runtimeReady?'failed':job?.state??(runtimeReady?'ready':'idle'),id:job?.id,startedAt:job?.startedAt,error:unsupported??(job?.state==='ready'&&!runtimeReady?'worker_unavailable':job?.error),runtime:this.options.runtime,runtimeReady,model,...(health.missingDependencies?{missingDependencies:health.missingDependencies}:{})};
+    const preparationLost=job?.state==='prepared'&&model.state!=='ready',workerLost=job?.state==='ready'&&!runtimeReady;
+    return {role,state:unsupported?'unsupported':preparationLost||workerLost?'failed':job?.state??(runtimeReady?'ready':'idle'),id:job?.id,startedAt:job?.startedAt,error:unsupported??(preparationLost?'model_install_failed':workerLost?'worker_unavailable':job?.error),runtime:this.options.runtime,runtimeReady,model,...(health.missingDependencies?{missingDependencies:health.missingDependencies}:{})};
   }
   async statuses(){return Object.fromEntries(await Promise.all(roles.map(async role=>[role,await this.status(role)])));}
-  start(role:MediaRole,allowInstall=true){
+  /** Explicit image setup verifies dependencies and assets without selecting a
+   * plugin or starting optional inference. Only start() may request a worker. */
+  prepare(role:'local-image'){return this.enqueue(role,true,false);}
+  start(role:MediaRole,allowInstall=true){return this.enqueue(role,allowInstall,true);}
+  private enqueue(role:MediaRole,allowInstall:boolean,startWorker:boolean){
     if(this.closing)throw new StoreError('Media preparation is closing',503);
     const unsupported=this.unsupported(role);if(unsupported)throw new StoreError(unsupported,409);
-    const previous=this.jobs.get(role);if(previous&&active(previous.state))return this.status(role);
-    const job:Job={id:randomUUID(),role,state:'queued',startedAt:new Date().toISOString(),controller:new AbortController(),done:Promise.resolve()};
+    const previous=this.jobs.get(role);if(previous&&active(previous.state)){
+      // An explicit plugin activation may join an in-flight setup. Setup alone
+      // never requests a worker, and stop/cancel still abort the same job.
+      if(startWorker)previous.startWorker=true;
+      return this.status(role);
+    }
+    const job:Job={id:randomUUID(),role,state:'queued',startWorker,startedAt:new Date().toISOString(),controller:new AbortController(),done:Promise.resolve()};
     this.jobs.set(role,job);
     job.done=(this.stopping.get(role)??Promise.resolve()).then(()=>this.perform(job,allowInstall)).catch(error=>{
       const code=typeof error?.message==='string'&&/^media\.runtime\./.test(error.message)?error.message.replace('media.runtime.',''):error instanceof StoreError?'model_busy':'preparation_failed';
@@ -140,7 +150,7 @@ export class MediaPreparation {
     // Startup/resume and the optional image plugin pass allowInstall=false.
     let verified=false;
     if(allowInstall&&assets.ready(role)){job.state='models';await assets.installAsync(role,'auto',job.controller.signal);this.check(job);verified=true;}
-    if(assets.ready(role)&&assets.status(role).state==='ready'&&(runtime==='docker'||this.owned(role))&&(await this.health(role,job.controller.signal)).ready){this.check(job);if(!assets.ready(role)||assets.status(role).state!=='ready')throw Error('media.runtime.model_install_failed');job.state='ready';return;}
+    if(job.startWorker&&assets.ready(role)&&assets.status(role).state==='ready'&&(runtime==='docker'||this.owned(role))&&(await this.health(role,job.controller.signal)).ready){this.check(job);if(!assets.ready(role)||assets.status(role).state!=='ready')throw Error('media.runtime.model_install_failed');job.state='ready';return;}
     let prepared:Prepared|undefined;
     if(runtime==='native'){
       job.state='dependencies';
@@ -151,6 +161,7 @@ export class MediaPreparation {
     if(!allowInstall&&!assets.ready(role))throw Error('media.runtime.not_prepared');
     if(allowInstall&&(!verified||!assets.ready(role)))await assets.installAsync(role,'auto',job.controller.signal);
     this.check(job);if(!assets.ready(role)||assets.status(role).state!=='ready')throw Error('media.runtime.model_install_failed');
+    if(!job.startWorker){job.state='prepared';return;}
     job.state='starting';let started:MediaProcess|undefined;
     try{
       if(runtime==='native'&&prepared){
