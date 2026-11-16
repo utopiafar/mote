@@ -17,6 +17,7 @@ export function larkManifest(runner?:LarkRunner):ConnectorManifest {
     const lark=new LarkConnector(larkContext(ctx),runner);
     return {
       init:()=>lark.init(),configureSyncInterval:interval=>lark.configureSyncInterval(interval),
+      actionProviders:()=>lark.calendarActionProviders(),executeAction:request=>lark.executeAction(request),
       configure:host=>{
         const route=(method:'GET'|'POST'|'PUT'|'DELETE',path:`/api/connectors/${string}`,handler:OwnerRoute['handler'])=>host.ownerRoute({method,path,bodyLimit:16384,handler});
         route('GET','/api/connectors/lark',()=>lark.status());
