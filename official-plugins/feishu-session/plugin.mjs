@@ -673,12 +673,22 @@ const connector = {
           }
           releaseReadWatches();
           const keep = new Set(chosen.map(item => item.id));
-          for (const previous of doc.selected) {
-            if (keep.has(previous.id)) continue;
-            try {
-              ctx.sources.resetCoverage(sourceId(previous.id));
-              ctx.sources.update(sourceId(previous.id), {enabled: false});
-            } catch { /* A removed historical source is already stopped. */ }
+          try {
+            for (const previous of doc.selected) {
+              if (keep.has(previous.id)) continue;
+              try {
+                ctx.sources.resetCoverage(sourceId(previous.id));
+                ctx.sources.update(sourceId(previous.id), {enabled: false});
+              } catch (error) {
+                // Only an actually missing source is already stopped.
+                if (error?.statusCode !== 404) throw error;
+              }
+            }
+          } catch (error) {
+            // The durable selection/grant did not change. Keep observing its
+            // read authority even when a prerequisite pause could not commit.
+            restoreReadWatches();
+            throw error;
           }
           const previous = doc;
           doc = {...doc, selected: chosen};

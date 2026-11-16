@@ -753,7 +753,10 @@ const connector = {
             if (keep.has(prior.id)) continue;
             try {
               ctx.sources.update(sourceId(prior.id), {enabled: false});
-            } catch { /* A removed historical source is already stopped. */ }
+            } catch (error) {
+              // Only an actually missing source is already stopped.
+              if (error?.statusCode !== 404) throw error;
+            }
           }
           const previous = doc;
           doc = {...doc, selected: chosen};
