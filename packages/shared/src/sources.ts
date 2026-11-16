@@ -131,9 +131,30 @@ export const sourceConnectionSchema=z.object({
   ownerRelation:ownerRelationSchema.optional(),ownerRelationVersion:z.number().int().positive().optional(),
   /** Owner API only. Source manifests and collectors cannot set this identity. */
   sourceContext:sourceDescriptionDeclarationSchema.omit({sourceId:true}).optional(),
+  /** Read-only host generation for the effective synchronization range. */
+  syncScopeVersion:z.number().int().nonnegative().safe().optional(),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();
-export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{capabilities?:SourceCapabilities;createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};
+/** Coverage is independent of whether a connector is running. Processed/remaining count
+ * source entries in this scan window, not attempts or document characters.
+ * Failed counts unresolved read failures; a failed page is one failure, never
+ * a guessed number of source entries.
+ * Bounds include their endpoints so providers may safely replay boundary entries;
+ * they describe actual query/observation bounds, never a provider history snapshot.
+ * Missing coverage means unknown. Unknown remaining work must stay null. */
+export const sourceCoverageSchema=z.object({
+  state:z.enum(['partial','complete']),
+  window:z.object({from:timestamp.optional(),to:timestamp}).strict().refine(value=>!value.from||Date.parse(value.from)<=Date.parse(value.to),{message:'Invalid source coverage window'}),
+  processed:z.number().int().nonnegative().safe(),remaining:z.number().int().nonnegative().safe().nullable(),failed:z.number().int().nonnegative().safe(),
+  limitations:z.array(z.enum(['pagination_pending','content_partial'])).max(2),updatedAt:timestamp,
+}).strict().superRefine((value,ctx)=>{
+  if(new Set(value.limitations).size!==value.limitations.length)ctx.addIssue({code:'custom',message:'Duplicate source coverage limitation'});
+  if(value.state==='complete'&&(value.remaining!==0||value.failed!==0||value.limitations.length!==0))ctx.addIssue({code:'custom',message:'Complete source coverage requires no remaining, failed or partial work'});
+});
+export type SourceCoverage=z.infer<typeof sourceCoverageSchema>;
+export const sourceStatusSchema=z.object({state:z.enum(['idle','syncing','error','permission_required']),code:z.string().max(2000).optional(),lastSyncAt:timestamp.optional(),coverage:sourceCoverageSchema.optional()}).strict();
+export type SourceStatus=z.infer<typeof sourceStatusSchema>;
+export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{capabilities?:SourceCapabilities;createdAt:string;updatedAt:string;status?:SourceStatus};
 export const calendarSchema=z.object({start:timestamp,end:timestamp,allDay:z.boolean(),timeZone:z.string().max(100).optional(),status:z.enum(['confirmed','tentative','cancelled']).default('confirmed')}).strict().refine(v=>Date.parse(v.end)>=Date.parse(v.start),{message:'Calendar end must not precede start'});
 export const sourceItemKinds=['calendar','file','event','message','metric','memory'] as const;
 export const sourceItemSchema=z.object({

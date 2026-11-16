@@ -81,9 +81,9 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
     pluginStates:()=>Object.fromEntries(control.builds().flatMap(record=>{const connector=bundledConnector(record.id);return connector?[[connector.id,{enabled:Boolean(record.desired)}]]:[];})),
     required:additionalManifests.map(manifest=>manifest.id),
     scopeFor:(manifest,instanceId)=>connectorScope(manifest.id,instanceId,`Connector ${instanceId} scope disposal failed`),
-    stateFor:scope=>{
+    stateFor:(scope,sourceKinds)=>{
       let state=states.get(scope);
-      if(!state){state=createInstanceState(ctx.store,scope);states.set(scope,state);}
+      if(!state){state=createInstanceState(ctx.store,scope,undefined,sourceKinds);states.set(scope,state);}
       return state;
     },
     transport:instance=>instance.mountTransport?.(app),

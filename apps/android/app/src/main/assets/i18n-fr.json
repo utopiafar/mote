@@ -10766,5 +10766,19 @@
   "已有部分结果；需要你补充的问题只影响相关结论。": "Des résultats partiels sont disponibles. Les questions en attente de votre réponse ne concernent que les conclusions associées.",
   "任务资料范围": "Documents de la tâche",
   "仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。": "Seules les preuves complètes et les sources dont dépend cette suggestion sont utilisées. Les autres documents sont exclus de cette tâche. Tout contenu manquant ou toute couverture incomplète sera signalé.",
-  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Les documents complets de cette suggestion sont indisponibles. Actualisez et vérifiez à nouveau."
+  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Les documents complets de cette suggestion sont indisponibles. Actualisez et vérifiez à nouveau.",
+  "覆盖未知": "Couverture inconnue",
+  "部分覆盖": "Couverture partielle",
+  "所选范围已完成": "Plage sélectionnée couverte",
+  "同步覆盖": "Couverture de la synchronisation",
+  "已处理 {0} 条来源记录": "{0} éléments source traités",
+  "剩余条目数未知": "Nombre d’éléments restants inconnu",
+  "剩余 {0} 条来源记录": "{0} éléments source restants",
+  "待处理的失败 {0} 项": "Échecs de lecture non résolus : {0}",
+  "仍有分页待继续": "Il reste des pages à lire",
+  "部分正文尚未读取": "Une partie du corps du contenu n’a pas encore été lue",
+  "覆盖窗口": "Période couverte",
+  "从 {0} 到 {1}": "De {0} à {1}",
+  "截至 {0}": "Jusqu’au {0}",
+  "首次同步建立基线，之后接入新增内容并跟踪已接入资料的修订。": "La première synchronisation établit une référence. Les suivantes recueillent le nouveau contenu et suivent les révisions des documents déjà collectés."
 }
