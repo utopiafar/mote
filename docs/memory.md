@@ -2,7 +2,7 @@
 
 Memory is selected, model-derived context with a subject, scope, time, provenance and uncertainty. It may describe a preference, subjective experience, provisional interpretation or engineering decision. Automatic publication does not make it independently verified fact. Originals remain retrievable whether or not they produce Memory.
 
-The [product principles](product.md) define the direction; the [architecture gaps](architecture.md#product-direction-and-implementation-gaps) distinguish it from current code. In particular, the model may use valid Memory directly and decide when to verify it. Extra review should be chosen by the model or selected Memory implementation; the current pipeline still requires independent review for its new range-evaluation work.
+The [product principles](product.md) define the direction; the [architecture gaps](architecture.md#product-direction-and-implementation-gaps) distinguish it from current code. In particular, the model may use valid Memory directly and decide when to verify it. Extra semantic review follows the selected Memory recipe: a pinned reviewer requests an independent pass, while explicit `review: null` uses host-validated extraction directly. No keyword routing chooses between these paths.
 
 ## Classification and attribution
 
@@ -16,7 +16,7 @@ Source project identity is structured metadata: workspace, session fallback or u
 
 1. A durable manual request or automatic receipt authorizes exact inputs and pins the recipe, strategy versions and source state.
 2. Extraction reads bounded targets and may request relevant interpretation context within that grant. Models select useful candidates; zero candidates is valid.
-3. Current range-evaluation recipes independently review the candidate set and coverage, including empty results. Integration and native drafts use the shared admission boundary.
+3. A recipe with a reviewer independently reviews the candidate set and coverage, including empty results. A recipe with `review: null` validates extraction directly and still checks applicable deletion intent. A native implementation using this path must already return the canonical Mote output contract. Integration recipes retain their selected reviewer.
 4. The host checks current permissions, original versions, exact quotes/ranges, dependency validity and deletion state, then commits publication and checkpoints atomically.
 
 Coverage names the target ranges actually assessed. `checked` and `no_candidates` mean complete assessment of those targets, not of an entire file or session. Unread, truncated or unavailable content remains incomplete. No candidate-count quota or keyword semantic classifier substitutes for model judgment. Interpretation context does not itself authorize candidates or count as target coverage.
@@ -27,7 +27,9 @@ New accepted results become effective without owner approval of every card. The 
 
 ## Jobs, recipes and recovery
 
-Strategies and recipes are replaceable through [memory-strategy-contract.ts](../apps/server/src/memory-strategy-contract.ts). Definitions, fingerprints, input requirements and receipts are pinned. A changed reviewer can reuse an extraction draft but needs a new matching review. New defaults do not rewrite an existing task or retrospectively authorize old inputs.
+Strategies and recipes are replaceable through [memory-strategy-contract.ts](../apps/server/src/memory-strategy-contract.ts). Definitions, fingerprints, input requirements and receipts are pinned. The review decision is part of the recipe and binding fingerprints. A changed reviewer can reuse an extraction draft but needs a new matching review; changing the decision cannot change an already pinned task or authorize its late result. New defaults do not rewrite an existing task or retrospectively authorize old inputs.
+
+The existing personal, Coding and daily-event recipes retain their independent reviewers and remain the defaults. `mote.personal-memory-direct@1` is a separately selectable personal recipe without an extra semantic review. It is listed by `/api/memory-recipes` and selected through the existing `/api/memory-recipe-settings` owner command, including source overrides. Direct publication records `decision: not_required`, the selected recipe pin and `validation: host-evidence@1`, with no reviewer run ID. It remains model-derived context, not independently verified fact. Provenance-matched deletion intents may still require a semantic comparison to prevent regeneration of a deleted conclusion; this is not a fixed per-batch review.
 
 Manual input plans separate an original source pin from derived readiness. Each material/recipe pair uses a durable `memory.input` execution step. Pending OCR/transcription waits before claiming a model attempt; failed inputs need explicit retry, and retrying Memory does not start media processing. Completed independent batches remain reusable. Cancellation, pause, source replacement or revoked permission prevent unfinished work and late publication. Metadata binding and step creation share one fenced transaction.
 

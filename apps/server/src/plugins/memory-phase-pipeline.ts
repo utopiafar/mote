@@ -8,7 +8,7 @@ import {MemoryPipeline,type MemoryPhasePorts,type MemoryPipelineOptions} from '.
 import {reviewMemory,type MemoryDraftOrigin} from '../memory-review.js';
 import {MemoryReviewCache} from '../memory-review-cache.js';
 import type {MemoryDeletions} from './memory-deletions.js';
-import type {MemoryReviewStrategy} from '../memory-strategy-contract.js';
+import type {MemoryRecipeBinding,MemoryReviewStrategy} from '../memory-strategy-contract.js';
 import type {MaterialStore} from '../materials.js';
 import {installMemoryOwnerQuestions} from '../memory-owner-questions.js';
 import {registerMemoryDelegation,type MemoryDelegationOptions} from '../memory-delegation.js';
@@ -17,10 +17,9 @@ import {registerMemoryRuntimeRoutes,type MemoryRuntimeRouteDependencies} from '.
 import {StoreError} from '../store.js';
 import {centralServices,type OwnerQuestionsPort} from './central-contracts.js';
 
-/** C22A owns the durable extraction/review phases and the bounded independent
- * review cache. The pipeline is the only writer of phase checkpoints; review
- * is a separate read-only model pass whose verdict the pipeline passes to
- * publication with the exact range, required pins and configuration. */
+/** Owns durable extraction and selected review phases plus the bounded review
+ * cache. Both recipe decisions reach publication with current host validation,
+ * exact ranges, required pins and configuration. */
 export const memoryPhasePipelineContribution={
   id:'memory-phase-pipeline',version:'1.0.0',surface:'data',runtime:'host',
   requires:[
@@ -56,7 +55,7 @@ export interface MemoryPhasePipelineDependencies {
    * admission poll and stops it on quiesce. */
   readonly scheduling?:{readonly automatic:boolean;readonly drain:()=>Promise<void>;readonly intervalMs?:number};
 }
-export type MemoryPhaseReview=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:MemoryDraftOrigin)=>Promise<QueryResult>;
+export type MemoryPhaseReview=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy|null,draftOrigin?:MemoryDraftOrigin,recipe?:MemoryRecipeBinding)=>Promise<QueryResult>;
 export type MemoryPhaseDelegationDependencies=Omit<MemoryDelegationOptions,'pipeline'>;
 export interface MemoryPhasePipelineBindings { readonly phase:ServiceBinding }
 export interface MemoryPhasePipelinePort {
@@ -137,18 +136,18 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
     if(phase!=='active')throw unavailable();
     return readable();
   };
-  const runReview:MemoryPhaseReview=(input,result,strategy,draftOrigin)=>{
+  const runReview:MemoryPhaseReview=(input,result,strategy,draftOrigin,recipe)=>{
     const {reviews:pipelineReviews}=readable();
     return reviewMemory(input,result,dependencies.review.query,{
-      draftOrigin,strategy,deletions:dependencies.review.deletions,
+      draftOrigin,strategy,recipe,deletions:dependencies.review.deletions,
       authorizeDeletionEvidence:ids=>dependencies.review.authorizeDeletionEvidence?.(input,ids),
       cache:pipelineReviews,snapshot:dependencies.review.snapshot?()=>dependencies.review.snapshot!(input,result):undefined,
       taskInstructions:dependencies.review.taskInstructions,
     });
   };
-  const review:MemoryPhasePipelinePort['review']=async(input,result,strategy,draftOrigin)=>{
+  const review:MemoryPhasePipelinePort['review']=async(input,result,strategy,draftOrigin,recipe)=>{
     active();
-    return runReview(input,result,strategy,draftOrigin);
+    return runReview(input,result,strategy,draftOrigin,recipe);
   };
   const registerDelegation=()=>{
     if(delegation||!delegationDependencies||phase!=='active'||!pipeline)return;
