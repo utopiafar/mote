@@ -70,7 +70,8 @@ test('a 12000-unit Material read returns its complete prefix before a new block 
  let offset=0,joined='';
  while(offset<f.expected.length){
   const page=await f.consumer.materialRead!({ref:f.material.ref,offset,length:12000});mappedUnicodePage(f,page);joined+=page.text;
-  const originals=await f.consumer.evidence({ids:page.spans.map(span=>span.evidenceId!)});assert.ok(originals.length);
+  const originals=await f.consumer.evidence({ids:page.spans.map(span=>span.evidenceId!)});assert.deepEqual(new Set(originals.map(record=>record.id)),new Set(page.spans.map(span=>span.evidenceId)));
+  assert.equal(page.sourceSpans?.length,page.spans.length);
   for(const source of page.sourceSpans??[])assert.equal(source.record.ocrText.slice(source.offset,source.offset+source.length),page.text.slice(page.spans.find(span=>span.evidenceId===source.record.id)!.pageRange.start,page.spans.find(span=>span.evidenceId===source.record.id)!.pageRange.start+source.length));
   offset=page.textRange.nextOffset??f.expected.length;
  }
