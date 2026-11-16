@@ -15,7 +15,7 @@ export interface MemoryControl {
 export interface MemoryControlDependencies {
  store:Pick<Store,'db'>;
  pipeline:Pick<MemoryPipeline,'cancel'>;
- lifecycle:Pick<MemoryLifecycle,'view'|'cancel'|'skipAutomaticBacklog'>;
+ lifecycle:Pick<MemoryLifecycle,'view'|'cancel'|'resumeAutomaticBacklog'|'revokeAutomaticRounds'>;
  executor:Pick<ExecutionEngine,'isActiveStep'|'deferLocalEffects'>;
  publication:Pick<MemoryPublication,'pending'>;
  now?:()=>number;
@@ -37,12 +37,13 @@ export function createMemoryControl({store,pipeline,lifecycle,executor,publicati
  return {
   pendingTail:()=>{
    const jobs=Number(db.prepare("SELECT count(*) n FROM memory_jobs WHERE json_extract(json,'$.status') NOT IN ('completed','cancelled')").get()!.n);
-   const windows=lifecycle.view().extensions.filter(extension=>['extraction','consolidation'].includes(extension.id)&&extension.active&&extension.status!=='cancelled').length;
+   const windows=lifecycle.view().extensions.filter(extension=>['extraction','consolidation'].includes(extension.id)&&(extension.active||(extension.drainThrough??0)>extension.cursor)&&extension.status!=='cancelled').length;
    return jobs+windows+publication.pending()+cancelledWork();
   },
-  resume:()=>{lifecycle.skipAutomaticBacklog();},
+  resume:()=>{lifecycle.resumeAutomaticBacklog();},
   stop:()=>executor.deferLocalEffects(()=>{
    db.prepare('UPDATE memory_input_authorizations SET revoked_at=? WHERE authorized=1 AND revoked_at IS NULL').run(now());
+   lifecycle.revokeAutomaticRounds();
    for(const row of db.prepare("SELECT id FROM memory_jobs WHERE (json_extract(json,'$.automaticGrant') IS NOT NULL OR json_array_length(json_extract(json,'$.automaticGrants'))>0) AND json_extract(json,'$.status') NOT IN ('completed','cancelled')").all())pipeline.cancel(String(row.id),{cause:'authority'});
    for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual)lifecycle.cancel(extension.id,extension.active.id,{cause:'authority'});
   }),
@@ -64,8 +65,11 @@ export function createMemoryControl({store,pipeline,lifecycle,executor,publicati
     if(['completed','cancelled'].includes(String(job.status)))continue;
     if(job.status==='running')counts.running++;else if(Number(job.completed)>0)counts.checkpointed++;else counts.queued++;
    }
-   for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual&&extension.status!=='cancelled'){
-    if(extension.status==='running')counts.running++;else if(extension.active.checkpoint)counts.checkpointed++;else counts.queued++;
+   for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)){
+    const admitted=(extension.drainThrough??0)>extension.cursor;
+    if(extension.active?.manual){if(admitted)counts.queued++;continue;}
+    if(extension.status==='cancelled'||!extension.active&&!admitted)continue;
+    if(extension.status==='running')counts.running++;else if(extension.active?.checkpoint)counts.checkpointed++;else counts.queued++;
    }
    counts.running+=cancelledWork(true);counts.resultUnknown=publication.pending(true);return counts;
   },
