@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer, connect} from 'node:net';
 import {DatabaseSync} from 'node:sqlite';
+import {getEventListeners} from 'node:events';
 import {Context} from '@deepseek-ai/cordis';
 import {serviceContract, pluginSnapshotSchema} from '@mote/plugin-api/contracts';
 import {PluginHost, PluginResourceScope} from '@mote/plugin-host';
@@ -361,4 +362,81 @@ test('self-returned service references stay guarded after release and keep async
   await new Promise(resolve => setImmediate(resolve)); assert.equal(disposed, 0);
   assert.throws(() => self.read(), {code: 'stale_scope'});
   held.resolve(); await rejected; await closing; assert.equal(disposed, 1);
+});
+
+test('a failed consumer releases its cancelled call before provider stop settles the owned work', {timeout: 5000}, async t => {
+  const host = new PluginHost(hostId), entered = gate(), held = gate(), events = [];
+  const startupFailure = new Error('generated consumer start failure'), cleanupFailure = new Error('generated consumer release failure');
+  let binding, result, disposed = false;
+  t.after(async () => { held.resolve(); await host.close(); });
+  const provider = await host.install({identity: identity('owned-work'), contributions: [reader], factory: context => {
+    const db = new DatabaseSync(':memory:'); db.exec("CREATE TABLE fixture(value TEXT); INSERT INTO fixture VALUES ('generated')");
+    context.scope.defer(() => { db.close(); disposed = true; events.push('provider-release'); });
+    binding = context.provide(reader.id, reader, {async read() {
+      entered.resolve(); await held.promise;
+      assert.equal(disposed, false); assert.equal(db.prepare('SELECT value FROM fixture').get().value, 'generated');
+      events.push('owned-work'); return 'late';
+    }});
+    return lifecycle({stop() { events.push('provider-stop'); held.resolve(); }});
+  }});
+  const installing = host.install({identity: identity('failed-caller'), contributions: [], requires: [binding], factory: async context => {
+    const lease = await context.services.acquire(reader, binding);
+    context.scope.defer(() => { events.push('consumer-release'); throw cleanupFailure; });
+    return lifecycle({async start() {
+      result = lease.value.read().then(value => ({value}), error => ({error}));
+      await entered.promise; throw startupFailure;
+    }});
+  }});
+  await assert.rejects(installing, error => hasFailure(error, startupFailure) && hasFailure(error, cleanupFailure));
+  assert.equal((await result).error.code, 'stale_scope');
+  assert.deepEqual(events, ['consumer-release']);
+  assert.equal(disposed, false, 'consumer withdrawal must not dispose a borrowed provider');
+  await provider.close();
+  assert.deepEqual(events, ['consumer-release', 'provider-stop', 'owned-work', 'provider-release']);
+  await provider.close();assert.equal(events.filter(event=>event==='provider-release').length,1);
+});
+
+for (const cancellation of ['release', 'signal']) test(`${cancellation} cancels the leased result while the owner joins and reports the actual asynchronous failure`, {timeout: 5000}, async t => {
+  const observed = [], host = new PluginHost(hostId, undefined, error => observed.push(error)), entered = gate(), held = gate();
+  const failure = new Error('generated asynchronous provider failure'), ordinaryFailure = new Error('generated ordinary call failure'), caller = new AbortController();
+  let binding, completed = false, disposed = false;
+  t.after(async () => { held.resolve(); await host.close(); });
+  const provider = await host.install({identity: identity('cancelled-call-' + cancellation), contributions: [reader], factory: context => {
+    context.scope.defer(() => { assert.equal(completed, true); disposed = true; });
+    binding = context.provide(reader.id, reader, {status() { return 'active'; }, async fail() { throw ordinaryFailure; }, async read() {
+      entered.resolve(); await held.promise; assert.equal(disposed, false); completed = true; throw failure;
+    }});
+    return lifecycle({stop() { held.resolve(); }});
+  }});
+  const lease = await host.acquire(reader, binding, caller.signal), sibling = await host.acquire(reader, binding);
+  const listeners=getEventListeners(lease.signal,'abort').length;
+  const reading = lease.value.read(), rejected = assert.rejects(reading, {code: cancellation === 'release' ? 'stale_scope' : 'cancelled'});
+  assert.equal(getEventListeners(lease.signal,'abort').length,listeners+1);
+  await entered.promise;
+  if (cancellation === 'release') await lease.release(); else caller.abort();
+  await rejected;
+  assert.equal(getEventListeners(lease.signal,'abort').length,listeners,'withdrawal releases the call listener before provider completion');
+  assert.equal(provider.signal.aborted, false); assert.equal(completed, false); assert.equal(disposed, false);
+  assert.equal(sibling.value.status(), 'active');
+  await assert.rejects(sibling.value.fail(),error=>error===ordinaryFailure);
+  await provider.close();
+  assert.equal(completed, true); assert.equal(disposed, true);
+  assert.ok(observed.includes(failure), 'provider-side observation must retain the actual error after caller cancellation');
+});
+
+test('ordinary quiesce keeps an accepted asynchronous lease read alive and releases its listener on completion', {timeout: 5000}, async t => {
+  const host=new PluginHost(hostId),entered=gate(),held=gate();let binding;
+  t.after(async()=>{held.resolve();await host.close();});
+  const provider=await host.install({identity:identity('async-quiesce'),contributions:[reader],factory:context=>{
+    binding=context.provide(reader.id,reader,{async read(){entered.resolve();await held.promise;context.scope.assertCurrent();return 'accepted';}});
+    return lifecycle();
+  }});
+  const lease=await host.acquire(reader,binding),listeners=getEventListeners(lease.signal,'abort').length,reading=lease.value.read();
+  await entered.promise;await provider.quiesce();
+  assert.equal(lease.signal.aborted,false);lease.assertCurrent();
+  assert.equal(getEventListeners(lease.signal,'abort').length,listeners+1);
+  await assert.rejects(host.acquire(reader,binding),{code:'dependency_unavailable'});
+  held.resolve();assert.equal(await reading,'accepted');
+  assert.equal(getEventListeners(lease.signal,'abort').length,listeners);
+  await provider.close();
 });
