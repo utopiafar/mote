@@ -134,6 +134,10 @@ export class MaterialStore {
   private currentEvidenceStatement?:StatementSync;
   private rebuildStatement?:StatementSync;
   private indexStatusStatement?:StatementSync;
+  private contextAnchorStatement?:StatementSync;
+  private contextDependenciesStatement?:StatementSync;
+  private contextChunkStatement?:StatementSync;
+  private contextMembersStatement?:StatementSync;
   index?:MaterialIndexRuntime;
   onContextChanged?:(materialId:string,cause?:'attribution'|'derived')=>void;
   onSourceContextChanged?:(sourceId:string)=>void;
@@ -293,16 +297,16 @@ export class MaterialStore {
     return records.map(record=>this.contextForEvidenceWithin(record,contexts));
   }
   private contextForEvidenceWithin(record:CaptureRecord,contexts?:EvidenceContexts):AttributionContext {
-    const anchor=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(record.id);
+    const anchor=(this.contextAnchorStatement??=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?')).get(record.id);
     if(anchor){
       const id=String(anchor.material_id);
       if(contexts&&!contexts.materials.has(id))contexts.materials.set(id,this.get(id)?.attributionContext);
       const context=(contexts?contexts.materials.get(id):this.get(id)?.attributionContext)??unknownAttributionContext();
       if(!contexts){const inputs=this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(record.id).map(row=>String(row.evidence_id));return this.withImportContext(context,inputs,true);}
-      const inputs=this.store.db.prepare(`SELECT d.evidence_id,f.capture_id chunk_capture_id,
+      const inputs=(this.contextDependenciesStatement??=this.store.db.prepare(`SELECT d.evidence_id,f.capture_id chunk_capture_id,
         EXISTS(SELECT 1 FROM captures c WHERE c.id=d.evidence_id) OR
         EXISTS(SELECT 1 FROM file_evidence_links l WHERE l.capture_id=d.evidence_id) declaration_seed
-        FROM material_evidence_dependencies d LEFT JOIN file_chunks f ON f.id=d.evidence_id WHERE d.anchor_id=?`).all(record.id);
+        FROM material_evidence_dependencies d LEFT JOIN file_chunks f ON f.id=d.evidence_id WHERE d.anchor_id=?`)).all(record.id);
       // Sibling transcript anchors have different chunk IDs but the same exact
       // original declarations. Resolve those once in this synchronous read.
       // Keep declaration/link seeds separate from the chunk parents used by
@@ -312,8 +316,14 @@ export class MaterialStore {
       const scoped=this.withImportContext(context,inputs.map(row=>String(row.evidence_id)),true);
       contexts.originals.set(key,scoped);return scoped;
     }
-    const file=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(record.id);
+    const file=(this.contextChunkStatement??=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?')).get(record.id);
     const captureId=String(file?.capture_id??record.id);
+    // Raw transcript chunks also share one exact original. Their lineage is
+    // used by disclosure/assistant guards alongside formal anchors; resolving
+    // the same parent's declarations per chunk makes those guards quadratic.
+    const key=JSON.stringify(['original',captureId,record.provenance?.sourceId??null]),cached=contexts?.originals.get(key);
+    if(cached)return cached;
+    const remember=(value:AttributionContext)=>{contexts?.originals.set(key,value);return value;};
     // Keep the selected ancestor set outside the member join. Without CROSS
     // JOIN, SQLite may use only the kind prefix and scan every capture member
     // for each image fingerprint, delaying worker probes during bulk imports.
@@ -334,10 +344,10 @@ export class MaterialStore {
       total++;digest.update(JSON.stringify([parent.id,parent.revision,contextJson])+'\n');
       if(items.length<32)items.push({materialId:String(parent.id),revision:String(parent.revision),ownerRelation:context.ownerRelation});
     }
-    if(first)return conflict?this.withImportContext({...unknownAttributionContext(),materialDeclarations:{items,total,digest:digest.digest('hex')},...(sourceContexts.size?{sourceContextDeclarations:[...sourceContexts.values()]}:{})},[captureId],true):first;
+    if(first)return remember(conflict?this.withImportContext({...unknownAttributionContext(),materialDeclarations:{items,total,digest:digest.digest('hex')},...(sourceContexts.size?{sourceContextDeclarations:[...sourceContexts.values()]}:{})},[captureId],true):first);
     const imageSource=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_inputs'").get()?this.store.db.prepare('SELECT source_id FROM image_inputs WHERE capture_id=?').get(captureId):undefined;
     const sourceId=record.provenance?.sourceId??(imageSource?String(imageSource.source_id):undefined);
-    return this.withImportContext(sourceId?this.resolveContext('',sourceId):unknownAttributionContext(),[captureId],true);
+    return remember(this.withImportContext(sourceId?this.resolveContext('',sourceId):unknownAttributionContext(),[captureId],true));
   }
   private withImportContext(context:AttributionContext,captureIds:string[],open=false):AttributionContext {
     const {importDeclarations:_,importStatements:__,sourceContextStatements:___,recordContextDeclarations:____,recordContextStatements:_____,sourceContextDeclarations:______,...base}=context,importDeclarations=this.importAttribution.identities(captureIds);
@@ -435,7 +445,7 @@ export class MaterialStore {
   }
   private openContext(id:string,context:AttributionContext):AttributionContext {
     const ownerStatements=(context.declarations??[]).flatMap(value=>{const row=this.store.db.prepare('SELECT json FROM material_owner_declarations WHERE material_id=? AND id=? AND version=?').get(id,value.id,value.version);if(!row)return [];const body=decodeMemoryPrivate<{question:string;answer:string}>(this.store,JSON.parse(String(row.json)).private);return [{id:value.id,...body}];});
-    const members=this.store.db.prepare("SELECT m.ref FROM material_members m JOIN material_heads h ON h.id=m.material_id AND h.revision=m.revision WHERE h.id=? AND m.kind='capture'").all(id).map(row=>String(row.ref).slice('capture:'.length));
+    const members=(this.contextMembersStatement??=this.store.db.prepare("SELECT m.ref FROM material_members m JOIN material_heads h ON h.id=m.material_id AND h.revision=m.revision WHERE h.id=? AND m.kind='capture'")).all(id).map(row=>String(row.ref).slice('capture:'.length));
     const {importStatements:_,sourceContextStatements:__,recordContextStatements:___,...base}=context,recordContextStatements=this.recordContexts.open(context.recordContextDeclarations??[]),importStatements=this.importAttribution.open(context.importDeclarations??[]),sourceContextStatements=this.scopedSourceStatements(context.sourceContextDeclarations??[],captureContextMembers(this.store,members));
     return {...base,...(recordContextStatements.length?{recordContextStatements}:{}),...(ownerStatements.length?{ownerStatements}:{}),...(importStatements.length?{importStatements}:{}),...(sourceContextStatements.length?{sourceContextStatements}:{})};
   }
@@ -572,14 +582,16 @@ export class MaterialStore {
   /** A named output pins its declared blocks, not unrelated processing state.
    * Older organizers without block mappings retain whole-revision semantics. */
   input(ref:string,rawRequired:readonly string[]):(MaterialInputPin&ReturnType<typeof materialDependencyStatus>)|undefined {
-    const required=materialRequirementsSchema.parse([...rawRequired]),material=this.get(ref);
-    if(!material||this.get(material.id)?.ref!==material.ref)return;
-    const status=materialDependencyStatus(material,required),artifacts=required.map(key=>material.artifacts?.find(a=>a.key===key));
-    const mapped=required.every((key,i)=>key!=='material'&&artifacts[i]?.blockIds!==undefined);
-    const evidenceIds=this.evidenceIds(ref,mapped?[...new Set(artifacts.flatMap(a=>a!.blockIds!))]:undefined);
-    const current=this.currentEvidenceIds(evidenceIds);
-    return {...status,ready:status.ready&&evidenceIds.length>0&&evidenceIds.every(id=>current.has(id)),materialId:material.id,required,evidenceIds,
-      fingerprint:hash(JSON.stringify([material.id,material.attributionContext,required,mapped?artifacts.map(a=>[a!.key,a!.revision??null,a!.blockIds]):material.ref,evidenceIds]))};
+    return this.withReadMetadata(()=>{
+      const required=materialRequirementsSchema.parse([...rawRequired]),material=this.get(ref);
+      if(!material||this.get(material.id)?.ref!==material.ref)return;
+      const status=materialDependencyStatus(material,required),artifacts=required.map(key=>material.artifacts?.find(a=>a.key===key));
+      const mapped=required.every((key,i)=>key!=='material'&&artifacts[i]?.blockIds!==undefined);
+      const evidenceIds=this.evidenceIds(ref,mapped?[...new Set(artifacts.flatMap(a=>a!.blockIds!))]:undefined);
+      const current=this.currentEvidenceIds(evidenceIds);
+      return {...status,ready:status.ready&&evidenceIds.length>0&&evidenceIds.every(id=>current.has(id)),materialId:material.id,required,evidenceIds,
+        fingerprint:hash(JSON.stringify([material.id,material.attributionContext,required,mapped?artifacts.map(a=>[a!.key,a!.revision??null,a!.blockIds]):material.ref,evidenceIds]))};
+    });
   }
   /** includeRetired is only for host archive proof validation; product readers
    * always use the default visibility and retirement fences. */
@@ -655,6 +667,7 @@ export class MaterialStore {
     const {id,revision}=parseMaterialRef(ref),head=this.head(id);
     const row=head&&!head.retired?this.version(id,revision??head.revision):undefined;
     const result=head&&row&&row.sequence>=head.min_visible_sequence?this.record(head,row):undefined;
+    if(result&&row?.revision===head?.revision){this.readMetadata?.set(id,result);this.readMetadata?.set(result.ref,result);}
     this.readMetadata?.set(ref,result);return result;
   }
   /** Private permission checks need current representation metadata, not owner

@@ -3,6 +3,10 @@ import {AssistantWorkbench} from './assistant-workbench.js';
 import {registerAssistantMatterRoutes} from './assistant-matter-routes.js';
 import {AssistantCards} from './assistant-cards.js';
 import {AssistantFollowup} from './assistant-followup.js';
+import {registerAssistantFollowupRoutes} from './assistant-followup-routes.js';
+import {queryModelBudget} from './query-model-budget.js';
+import {codexContextCapacity} from '@mote/agent';
+import type {ConversationSettings} from '@mote/shared';
 import {AssistantOnboarding} from './assistant-onboarding.js';
 import {AssistantCommitments} from './assistant-commitments.js';
 import {assertSourceContextDependencies} from './source-context-lineage.js';
@@ -20,7 +24,7 @@ import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {assemblePlatform} from './assembly/platform.js';
 import {assembleSources} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
-import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages} from './assembly/processing.js';
+import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages,type MediaAssemblyDependencies} from './assembly/processing.js';
 import {memoryInputs,memoryRuntime} from './assembly/memory.js';
 import {assembleAgent} from './assembly/agent.js';
 import {prepareConversations,prepareQueryRuntime,prepareQueryRuns} from './assembly/query.js';
@@ -64,6 +68,7 @@ import {sourceScopedReader} from './query-source-scope.js';
 import type {QueryScope as ReaderQueryScope} from './query-scope.js';
 import {withinEvidenceScope} from './evidence-reader.js';
 import { ExecutionFailure } from './execution-engine.js';
+import {retainFailureContext} from './execution-failures.js';
 import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
 import {FeatureRoutes,installFeatureRoutes,type FeatureRoute} from './features/index.js';
 import type { TranscriptionProvider } from './file-processing.js';
@@ -108,7 +113,7 @@ import { UsageLedger } from './usage.js';
 
 export type {QueryAgent} from './query-agent.js';
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export type HostDependencies={distribution?:CentralDistribution;configService?:ConfigService;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;connectorManifests?:readonly ConnectorManifest[];processingPlugins?:readonly Plugin[];semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void};
+export type HostDependencies={distribution?:CentralDistribution;configService?:ConfigService;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;connectorManifests?:readonly ConnectorManifest[];processingPlugins?:readonly Plugin[];semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareMediaRuntime?:MediaAssemblyDependencies['prepareMediaRuntime'];prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void};
 export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const resources=new ServerResources();
   let startupApp:FastifyInstance|undefined;
@@ -133,7 +138,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   backendContext.provide('moteExecution',executor);
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
   const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback,codingFeature}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
-  const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker});
+  const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker,prepareMediaRuntime:dependencies?.prepareMediaRuntime});
   const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
     const start=()=>meter??=observabilityAssembly.admittedUsage(...args);
@@ -302,7 +307,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   let assistantTasks:AssistantTasks|undefined;
   let assistantFollowup:AssistantFollowup|undefined;
   let tickAssistantFollowup=()=>{};
-  const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>query.queryAgent(assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input,'query','conversations'),ids=>{
+  const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>{
+    const prepared=assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input;
+    return query.queryAgent(assistantFollowup?assistantFollowup.prepareQuery(prepared):prepared,'query','conversations');
+  },ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
     ()=>agent.configured?undefined:new ExecutionFailure('blocked','model_not_configured'),()=>1,true,evidenceReader.memories,{
@@ -328,8 +336,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     if(!record||!withinEvidenceScope(record,scope)||!evidenceReader.contextDependenciesAllowed([record.id],new EvidenceExposurePolicy())||!automaticEvidenceAllowed([record.id]))return;
     return {revision:item.revision,calendar:item.calendar};
   },(id,scope)=>{try{const matter=assistantMatters.get(id);return matter.state==='active'&&isDeepStrictEqual(matter.scope,scope);}catch{return false;}});
-  contributeDomainRoutes(backendContext,{'mote.ask':{mount:app=>registerAssistantMatterRoutes(app,{store,matters:assistantMatters,routines:assistantRoutines,
-    commitments:assistantCommitments,tasks:assistantTasks!,reader:evidenceReader,owner:req=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);}})}});
+  contributeDomainRoutes(backendContext,{'mote.ask':{mount:app=>{
+    const owner=(req:FastifyRequest)=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);};
+    registerAssistantMatterRoutes(app,{store,matters:assistantMatters,routines:assistantRoutines,commitments:assistantCommitments,tasks:assistantTasks!,reader:evidenceReader,owner});
+    registerAssistantFollowupRoutes(app,()=>assistantFollowup!,()=>assistantChanges,owner);
+  }}});
   assistantDrafts.setVersionValidator(context=>assistantTasks!.validateDraftVersion(context));
   assistantDrafts.register('assistant.task.start',context=>assistantTasks!.start(context));
   resources.defer(()=>batchProcessing.close());
@@ -493,7 +504,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     finally{signal.removeEventListener('abort',abort);}
     const step=executor.get(jobs.conversation)!;
     if(step.state==='waiting'||step.state==='running')throw new ExecutionFailure('waiting',step.error??'semantic_processing_pending',step.availableAt>Date.now()?Math.max(1000,step.availableAt-Date.now()):5000);
-    if(step.state!=='succeeded')throw new ExecutionFailure(step.state==='stale'?'stale':step.state==='failed'?'permanent':'blocked',step.state==='blocked'?'semantic_processing_blocked':step.error??'semantic_processing_failed');
+    if(step.state!=='succeeded'){
+      const receipt=executor.failure(step.id);
+      throw retainFailureContext(new ExecutionFailure(step.state==='stale'?'stale':step.state==='failed'?'permanent':'blocked',step.state==='blocked'?'semantic_processing_blocked':step.error??'semantic_processing_failed'),
+        {...receipt,jobId:input.job.id,batchId:input.parentGrant.stepId,phase:'understanding',causeStepId:step.id,causeCode:receipt?.causeCode??step.error??'semantic_processing_failed',causeState:step.state});
+    }
     const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });
@@ -571,14 +586,19 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
   assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
-  },undefined,modelAuthorization,automaticEvidenceAllowed);
+  },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics,ownerQuestionServices.port,()=>{
+    const settings=modelSettings.select('chat').settings;if(settings.protocol!=='codex-app-server')return;
+    const budget=queryModelBudget(settings.maxTokens,configService.current<ConversationSettings>('conversations').context);
+    const capacity=codexContextCapacity(settings.model,budget.contextWindowSource==='configured'?budget.contextWindow:undefined);
+    return capacity?{...capacity,draftTokens:settings.maxTokens,language:requestLocale.getStore()??'zh-CN'}:undefined;
+  });
   const followup=assistantFollowup;
   tickAssistantFollowup=()=>{void followup.tick(assistantChanges).catch(()=>{});};
   resources.beforeClose(async()=>{tickAssistantFollowup=()=>{};await followup.close();});
   app.addHook('onReady',async()=>{tickAssistantFollowup();});
   assistantOnboarding=new AssistantOnboarding(store,materials,evidenceReader,modelAuthorization,memoryPipeline,assistantFollowup,availableModelConnections,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Onboarding evidence is no longer permitted',409);
-  },ref=>materialMemoryWork.sourceRequirements(ref),sourcePipelines.archive);
+  },ref=>materialMemoryWork.sourceRequirements(ref),sourcePipelines.archive,ownerQuestionServices.port,diagnostics);
   resources.beforeClose(()=>assistantOnboarding!.close());
   app.addHook('onReady',async()=>{void assistantOnboarding!.tick().catch(()=>{});});
   const featureServices=Object.freeze({
@@ -639,7 +659,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   resources.defer(()=>memoryTopics.close());
   await configurationPlatform.start();
   diagnostics.record('server.started');
-  installServerLifecycleHooks(app,{lifecycle:serverLifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,resources,diagnostics});
+  installServerLifecycleHooks(app,{lifecycle:serverLifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,memoryPhasePipeline,resources,diagnostics});
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;

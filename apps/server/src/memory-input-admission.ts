@@ -6,6 +6,8 @@ import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
 import type {AutomaticMemoryGrant} from './memory-input-authorization.js';
 import {formatMaterialRef} from './materials.js';
 import {StoreError,type Store} from './store.js';
+import {memoryEvidenceFingerprint} from './memory.js';
+import type {StatementSync} from 'node:sqlite';
 
 export type MemoryAutomaticAuthority={id:string;automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[]};
 export type MemoryInputAdmissionOptions={
@@ -28,8 +30,10 @@ export interface MemoryInputAdmissionPort {
 /** Host input selection and currentness guards. This does not grant disclosure
  * through any model, HTTP or MCP reader; those retain their exposure policy. */
 export class MemoryInputAdmission implements MemoryInputAdmissionPort {
+  private materialTableStatement?:StatementSync;
+  private materialRefStatement?:StatementSync;
   constructor(private store:Store,private evidence:MemoryEvidenceLineage,private options:MemoryInputAdmissionOptions={},private resolveStrategy:(strategy:MemoryRecipeBinding)=>unknown=()=>{}){}
-  private formalMaterialsEnabled(){return Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_evidence'").get());}
+  private formalMaterialsEnabled(){return Boolean((this.materialTableStatement??=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_evidence'")).get());}
   rawSourceItem(id:string):boolean {
     if(!this.formalMaterialsEnabled())return false;
     const record=this.evidence.readEvidence([id])[0],sourceId=record?.provenance?.sourceId,externalId=record?.provenance?.externalId;
@@ -38,7 +42,7 @@ export class MemoryInputAdmission implements MemoryInputAdmissionPort {
   }
   currentMaterialRef(id:string):string|undefined {
     if(!this.formalMaterialsEnabled())return;
-    const row=this.store.db.prepare(`SELECT h.id,h.revision,h.retired FROM material_evidence e JOIN material_heads h ON h.id=e.material_id WHERE e.id=?`).get(id) as {id:string;revision:string;retired:number}|undefined;
+    const row=(this.materialRefStatement??=this.store.db.prepare(`SELECT h.id,h.revision,h.retired FROM material_evidence e JOIN material_heads h ON h.id=e.material_id WHERE e.id=?`)).get(id) as {id:string;revision:string;retired:number}|undefined;
     return row&&!row.retired?formatMaterialRef(row.id,row.revision):undefined;
   }
   sourceCurrent(pin:MaterialSourcePin,materialId:string){return Boolean(this.options.materialSourceCurrent?.(pin,materialId));}
@@ -48,8 +52,13 @@ export class MemoryInputAdmission implements MemoryInputAdmissionPort {
   get hasSelection(){return Boolean(this.options.materialInput);}
   selection(ref:string,required:readonly string[]){return this.options.materialInput?.(ref,required);}
   requirements(ref:string){return this.options.materialRequirements?.(ref);}
-  admit(ids:readonly string[],pinned?:Readonly<Record<string,string>>,profileId?:string,inputs:readonly MaterialInputPin[]=[]):Record<string,string> {
-    const refs:Record<string,string>={},currentEvidence=new Set(this.evidence.readCurrentEvidence(ids).map(record=>record.id));
+  admit(ids:readonly string[],pinned?:Readonly<Record<string,string>>,profileId?:string,inputs:readonly MaterialInputPin[]=[],expected:readonly {id:string;fingerprint:string}[]=[]):Record<string,string> {
+    const refs:Record<string,string>={},currentEvidence=new Map(this.evidence.readCurrentEvidence(ids).map(record=>[record.id,record])),fingerprints=new Map<string,string>();
+    for(const pin of expected){
+      const record=currentEvidence.get(pin.id);if(!record)throw new StoreError('Memory evidence changed',409);
+      const current=fingerprints.get(pin.id)??memoryEvidenceFingerprint(record);fingerprints.set(pin.id,current);
+      if(current!==pin.fingerprint)throw new StoreError('Memory evidence changed',409);
+    }
     const byEvidence=new Map<string,MaterialInputPin[]>(),checked=new Map<MaterialInputPin,{ref:string;allowed:boolean}>();
     for(const input of inputs)for(const id of input.evidenceIds){const selected=byEvidence.get(id)??[];selected.push(input);byEvidence.set(id,selected);}
     for(const id of ids){

@@ -222,6 +222,11 @@ test('disabled archive image disclosure removes image tools and guides OCR-only 
  assert.equal(envelope.authorizedImages,undefined);
  assert.match(envelope.imageEvidenceInstruction,/disabled/);
  assert.match(envelope.imageEvidenceInstruction,/incomplete/);
+ assert.match(envelope.imageEvidenceInstruction,/imageTarget/,'pixel completeness applies to explicit original-image targets');
+ assert.match(envelope.imageEvidenceInstruction,/text targets.*supplied text/,'disabled pixels cannot expand a text target into its attachments');
+ const enabled=buildContextEnvelope({...input,archiveImagesEnabled:true},[]);
+ assert.match(enabled.imageEvidenceInstruction,/imageTarget/);
+ assert.match(enabled.imageEvidenceInstruction,/text targets.*supplied text/);
  assert.ok(!taskTools({question:'Generated archive question',archiveImagesEnabled:false}).includes('read_image'));
  assert.ok(taskTools({...input,archiveImagesEnabled:true}).includes('read_image'));
  assert.ok(taskTools({question:'Generated attachment',archiveImagesEnabled:false,directImages:[{id:'generated-dialogue'}]}).includes('read_image'));

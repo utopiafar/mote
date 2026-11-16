@@ -133,6 +133,7 @@ test('the Codex adapter supplies the host delivery receipt before validation and
  const root=await mkdtemp(join(tmpdir(),'mote-context-read-codex-')),executable=join(root,'generated-codex.mjs');t.after(()=>rm(root,{recursive:true,force:true}));
  await writeFile(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused-key'}),{mode:0o600});
  await writeFile(executable,`#!${process.execPath}
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);

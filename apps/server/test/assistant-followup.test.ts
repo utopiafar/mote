@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {estimateSerializedTokens,type QueryInput} from '@mote/agent';
-import type {QueryResult,QueryScope} from '@mote/shared';
+import type {AttributionContext,QueryResult,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {TaskRecords} from '../src/task-records.js';
@@ -15,13 +15,14 @@ import {UsageLedger} from '../src/usage.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {StoreError,sha256} from '../src/store.js';
 import {materialId,MaterialStore} from '../src/materials.js';
+import {ImportAttributionStore} from '../src/import-attribution.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 const all:QueryScope={kind:'all'};
 const at='2026-10-01T10:00:00.000Z';
 const headers={authorization:'Bearer generated-followup-owner'};
-type Context={materials:{ref:string;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean}}[];originals:{id:string;offset:number;quote:string}[];
+type Context={materials:{ref:string;attributionContext?:AttributionContext;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean}}[];originals:{id:string;offset:number;quote:string}[];
  cards:{id:string;revision:number;state:string;title:string;body?:string;suppressionOnly?:boolean;feedback:{action:string;note?:string}[]}[];memories:{id:string;statement:string}[];commitments:{id:string;status:string}[];mode:{kind:string}};
 type Program=(context:Context)=>unknown|Promise<unknown>;
 const evidence=(context:Context,needle:string)=>{
@@ -58,11 +59,11 @@ async function fixture(t:TestContext){
   assert.equal(response.statusCode,201,response.body);await node.materialOrganizer.tick(100);
   const material=node.materials.list({kind:'mote.note',limit:100}).items.find(value=>value.origin.externalId===id);assert.ok(material);return {id,text,material};
  };
- const produce=async(note:Awaited<ReturnType<typeof add>>)=>{
+ const produce=async(note:Awaited<ReturnType<typeof add>>,summary="Generated requirement product",largeEvents=false)=>{
   node.store.archive.aggregate();const segment=node.store.archive.page({kind:'segment'}).items.find(item=>item.members.includes(note.id));assert.ok(segment);
   const model={owner:'models' as const,fingerprint:'a'.repeat(64),revision:1,profileId:'fixture',provider:'openai',model:'generated',configured:true};
   runtime.registry.register(semanticProcessor({store:node.store,memories:node.memories,records:ids=>node.store.evidence(ids),selection:()=>model,usage:new UsageLedger(node.store),query:async()=>({
-   answer:JSON.stringify({summary:'Generated requirement product',evidence:[{id:note.id,quote:note.text}],events:[{statement:'Owner asks for a named owner',uncertainty:'Generated requirement',evidence:[{id:note.id,quote:note.text}]}],memoryCandidates:[],actionCues:[]}),
+   answer:JSON.stringify({summary,evidence:[{id:note.id,quote:note.text}],events:largeEvents?Array.from({length:12},(_,index)=>({statement:'生成事件'+index+'。'+'丁'.repeat(1190),uncertainty:'Generated requirement',evidence:[{id:note.id,quote:note.text}]})):[{statement:'Owner asks for a named owner',uncertainty:'Generated requirement',evidence:[{id:note.id,quote:note.text}]}],memoryCandidates:[],actionCues:[]}),
    citations:[{id:note.id,capturedAt:at,appName:'Generated',excerpt:note.text}],trace:[],runId:randomUUID(),
   })}));
   const job=runtime.enqueue([{name:'semantic',processor:'mote.segment-understanding',artifactInputs:[{id:segment.id,revision:segment.revision}],config:{artifactId:segment.id,modelFingerprint:model.fingerprint}}]).semantic;
@@ -80,6 +81,43 @@ async function fixture(t:TestContext){
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,grants,add,produce,start,wait,run,admission};
 }
+
+test('assistant analysis retains exact scoped import authorship and source dates without Memory, and a changed declaration fences its saved result',async t=>{
+ const f=await fixture(t),sourceId='generated-authored-journal',otherSource='generated-unrelated-dialogue';
+ for(const id of [sourceId,otherSource])f.node.sources.register({id,name:id,kind:'custom',deviceId:'generated-device',platform:'import'});
+ f.node.sources.update(sourceId,{ownerRelation:'owner'});
+ const instruction='  I authored the journal narrator. The visitor and quoted AI remain separate actors.\nOriginal dates use +08:00.  ';
+ const description='  Generated journal dates are authored dates, not import times.\nOnly the narrator is me; other participants remain distinct.  ';
+ f.node.sources.updateContext(sourceId,{expectedVersion:0,description});
+ const attribution=new ImportAttributionStore(f.node.store),pin=attribution.freeze({id:randomUUID(),version:1,sourceId,instruction})!;
+ const text='2026-09-30T19:30:00+08:00 Narrator: I plan a walk. Visitor: I prefer staying home. AI: I can explain the route.';
+ const capture=await f.node.sources.upsert(sourceId,{externalId:'journal',revision:'1',observedAt:at,kind:'message',layer:'original',text},undefined,ack=>{if(!ack.duplicate)attribution.bind(ack.id,pin);});
+ const other=await f.node.sources.upsert(otherSource,{externalId:'dialogue',revision:'1',observedAt:at,kind:'message',layer:'original',text:'Narrator: I prefer cycling.'});
+ const publish=(id:string,originalId:string,body:string)=>f.node.materials.publish({id:materialId(id,'entry'),kind:'mote.message',schemaVersion:1,title:'Generated participant dialogue',origin:{sourceId:id,externalId:'entry'},
+  members:[{id:'original',kind:'capture',ref:'capture:'+originalId}],blocks:[{id:'body',kind:'text',format:'plain',text:body,memberIds:['original']}],
+  artifacts:[{key:'body',state:'ready',blockIds:['body']}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
+ const material=publish(sourceId,capture.id,text),unrelated=publish(otherSource,other.id,'Narrator: I prefer cycling.');
+ const inspect=(context:Context,expectedDescription:string,version:number)=>{
+  assert.deepEqual(context.memories,[],'original declarations must not depend on a generated Memory to reach the interpreter');
+  const selected=context.materials.find(value=>value.ref.includes(material.id))!,current=selected.attributionContext;
+  assert.ok(current,'the interpreter receives the current authorized attribution context');assert.equal(current.ownerRelation,'owner');assert.equal(current.ownerStatements,undefined);
+  assert.deepEqual(current.importStatements,[{id:pin.id,version:1,instruction,captureIds:[capture.id]}]);
+  assert.deepEqual(current.sourceContextStatements,[{sourceId,version,description:expectedDescription}]);
+  assert.deepEqual(selected.products,[]);assert.ok(selected.body?.text.includes('2026-09-30T19:30:00+08:00'));
+  const separate=context.materials.find(value=>value.ref===unrelated.ref)!.attributionContext!;
+  assert.equal(separate.ownerRelation,'unknown');assert.equal(separate.importStatements,undefined);assert.equal(separate.sourceContextStatements,undefined,'a shared participant label cannot inherit another original’s declaration');
+  return evidence(context,'Narrator: I plan a walk.');
+ };
+ f.programs.push(context=>answer([card(inspect(context,description,1))]));
+ const task=await f.start([material.ref,unrelated.ref]);await f.wait(task);
+ const changed='Generated revised source declaration: retain the original +08:00 dates and keep the visitor and AI separate.';
+ f.node.sources.updateContext(sourceId,{expectedVersion:1,description:changed});
+ await assert.rejects(f.service.finish(task.id),error=>error instanceof StoreError&&[404,409].includes(error.statusCode));
+ assert.deepEqual(f.node.featureServices.assistantCards.page({scope:all}).items,[],'an old saved interpretation cannot publish after its owner declaration changed');
+ const current=f.node.materials.get(material.id)!;assert.notEqual(current.ref,material.ref);
+ const result=await f.run([current.ref,unrelated.ref],context=>answer([card(inspect(context,changed,2))]));
+ assert.equal(result.cardIds.length,1);assert.ok(f.node.featureServices.assistantCards.get(result.cardIds[0],all).sourceContextDependencies.some(value=>value.sourceId===sourceId&&value.version===2));
+});
 
 test('preparing an assistant preview of many small blocks batches original checks and lets unrelated work run',async t=>{
  const f=await fixture(t),parts=Array.from({length:80},(_,n)=>'Generated block '+n+'. '),note=await f.add(parts.join(''));
@@ -490,4 +528,85 @@ test('a new file version lets A14 resolve the existing suggestion instead of los
  assert.throws(()=>cards.get(cardId,all),{statusCode:404},'deleting a historical dependency clears the revised derived body too');
  for(const eventId of [commitment.timeline[0].eventId,correctionId])assert.equal(f.node.store.db.prepare('SELECT private_json FROM assistant_commitment_events WHERE event_id=?').get(eventId)!.private_json,null);
  assert.equal(f.node.sources.getItem('generated-followup-files','draft.txt')?.captureId,later.captureId,'the independently retained current file survives');
+});
+
+
+test('a current catalog original already reviewed with a due group is claimed once while its own quiet timer is settling',async t=>{
+ const f=await fixture(t);let now=Date.now();
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ const paused=t.mock.method(f.service,'tick',async()=>{});
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const due=await f.add('Generated due original requires an owner.'),later=()=>f.add('Generated current catalog context is already included in this review.','generated-later');
+ f.node.assistantChanges.tick(100);now+=60001;
+ const context=await later();f.node.assistantChanges.tick(100);
+ assert.deepEqual(f.node.assistantChanges.ready().map(item=>item.input.captureId),[due.id],'the second original has deliberately not reached its own quiet deadline');
+ paused.mock.restore();f.programs.push(()=>answer([],[],'Generated current inputs were reviewed.'));
+ await f.service.tick(f.node.assistantChanges);
+ const task=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();assert.ok(task);await f.wait(f.tasks.get(String(task.id)));await f.service.tick(f.node.assistantChanges);
+ const rows=f.node.store.db.prepare('SELECT capture_id,started_batch,t.state FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE capture_id IN (?,?)').all(due.id,context.id);
+ assert.equal(rows.length,2);assert.ok(rows.every(row=>row.state==='succeeded'));assert.equal(rows[0].started_batch,rows[1].started_batch);
+ assert.ok(f.seen[0].originals.some(original=>original.quote.includes(context.text)),'the covered original was actually supplied in the existing review');
+ now+=60001;await f.service.tick(f.node.assistantChanges);
+ assert.equal(f.node.assistantChanges.ready().length,0);assert.equal(f.seen.length,1);assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.followup'").get()!.n,1);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,2);
+});
+
+test('an oversized automatic group is split with headroom and every original reaches a completed analysis',async t=>{
+ const f=await fixture(t);let now=Date.now()+60001;
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const notes=[await f.add('生成首份资料。'+'甲'.repeat(990),'generated-first')];
+ await f.produce(notes[0],'生成理解。'+'乙'.repeat(5990));
+ for(let n=1;n<6;n++)notes.push(await f.add('生成资料'+n+'。'+'丙'.repeat(990),'generated-'+n));
+ f.node.assistantChanges.tick(100);now+=60001;
+ for(let n=0;n<12;n++)f.programs.push(()=>answer([],[],'Generated reviewed input; no supported new help.'));
+ for(let n=0;n<12;n++){
+  await f.service.tick(f.node.assistantChanges);
+  const pending=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup' AND state='waiting'").all();
+  for(const task of pending)await f.wait(f.tasks.get(String(task.id)));
+  await f.service.tick(f.node.assistantChanges);
+  if(notes.every(note=>f.node.store.db.prepare('SELECT t.state FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(note.id)?.state==='succeeded'))break;
+ }
+ for(const note of notes){
+  assert.equal(f.node.store.db.prepare('SELECT t.state FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(note.id)?.state,'succeeded');
+  assert.ok(f.seen.some(context=>context.originals.some(original=>original.quote.includes(note.text.slice(0,30)))),'the original is supplied without dropping later queued work');
+ }
+ assert.ok(f.seen.length>=2,'the oversized group must be processed in smaller batches');
+ assert.ok(f.seen.every(context=>Buffer.byteLength(JSON.stringify(context))<=38400),'automatic contexts retain twenty percent transport headroom');
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,notes.length);
+ assert.equal(f.node.featureServices.assistantCards.page({scope:all}).items.length,0,'a supported empty result is completed honestly');
+});
+
+
+test('one oversized original stays visibly blocked and unclaimed while later work completes, then recovers without reimport',async t=>{
+ const f=await fixture(t);let now=Date.now()+60001;
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const oversized=await f.add('Generated oversized source with intact original.','generated-oversized');
+ const artifact=await f.produce(oversized,'生成理解。'+'乙'.repeat(5990),true);
+ const later=await f.add('Generated later source must still be reviewed.','generated-later');
+ f.node.assistantChanges.tick(100);now+=60001;
+ const diagnostics=t.mock.method(f.node.diagnostics,'record');
+ for(let n=0;n<6;n++)f.programs.push(()=>answer([],[],'Generated current input was reviewed.'));
+ for(let n=0;n<4;n++){
+  await f.service.tick(f.node.assistantChanges);
+  for(const row of f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup' AND state='waiting'").all())await f.wait(f.tasks.get(String(row.id)));
+ }
+ await f.service.tick(f.node.assistantChanges);
+ const state=(id:string)=>f.node.store.db.prepare('SELECT t.state,w.started_batch FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(id)!;
+ assert.equal(state(oversized.id).state,'blocked');assert.equal(state(oversized.id).started_batch,null);
+ assert.equal(state(later.id).state,'succeeded');
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE original=? AND purpose='assistant'").get('capture:'+oversized.id)!.n,0);
+ const failure=diagnostics.mock.calls.find(call=>call.arguments[0]==='agent.failed'&&call.arguments[1]?.category==='too_large');
+ assert.ok(failure);assert.ok(failure.arguments[1]!.bytes!>48000);
+ assert.doesNotMatch(JSON.stringify(failure.arguments),/Generated oversized|生成理解|丁/,'diagnostics contain fixed fields and sizes, never source/model prose');
+ // Simulate retirement of an oversized derived product, retaining the original
+ // and its unconsumed receipt. This is generated storage, not a real profile.
+ f.node.store.db.prepare('DELETE FROM context_artifacts WHERE id=?').run(artifact);
+ await f.service.tick(f.node.assistantChanges);
+ const analysis=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup' AND state='waiting'").get();assert.ok(analysis);
+ await f.wait(f.tasks.get(String(analysis.id)));await f.service.tick(f.node.assistantChanges);
+ assert.equal(state(oversized.id).state,'succeeded');
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE original=? AND purpose='assistant'").get('capture:'+oversized.id)!.n,1);
+ assert.ok(f.seen.some(context=>context.originals.some(original=>original.quote.includes(oversized.text))));
 });

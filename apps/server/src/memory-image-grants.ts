@@ -16,26 +16,32 @@ export function memoryImageInterpretation(store:Store,id:string):boolean {
   JOIN material_evidence e ON e.id=b.anchor_id WHERE b.anchor_id=? AND e.invalidated=0 AND h.retired=0`).get(id);
  const locator=row?.locator&&JSON.parse(String(row.locator));return Boolean(locator&&locator.imageEvidence&&typeof locator.productVersion==='string');
 }
-export function memoryImageLocator(store:Store,id:string):{captureId:string;sha256:string}|undefined {
- if(!hasImageAnchors(store))return;
- const row=store.db.prepare(`SELECT b.locator,b.member_ids,b.material_id,b.revision FROM material_blocks b JOIN material_heads h ON h.id=b.material_id AND h.revision=b.revision
-  JOIN material_evidence e ON e.id=b.anchor_id WHERE b.anchor_id=? AND e.invalidated=0 AND h.retired=0`).get(id);
- const locator=row?.locator&&JSON.parse(String(row.locator)).memoryImageOriginal;
- if(!locator||typeof locator.captureId!=='string'||typeof locator.sha256!=='string'||!/^[a-f0-9]{64}$/.test(locator.sha256)||!JSON.parse(String(row!.member_ids)).includes(locator.captureId))return;
- if(!store.db.prepare("SELECT 1 FROM material_members WHERE material_id=? AND revision=? AND id=? AND kind='capture' AND ref=?").get(row!.material_id,row!.revision,locator.captureId,'capture:'+locator.captureId))return;
- return {captureId:locator.captureId,sha256:locator.sha256};
+export type MemoryImageLocator={captureId:string;sha256:string};
+/** Resolve each distinct original once per read. Every call reads current
+ * state; returned identities are a planning snapshot, not an authority grant. */
+export function memoryImageLocators(store:Store,ids:readonly string[]):Map<string,MemoryImageLocator> {
+ const result=new Map<string,MemoryImageLocator>();if(!ids.length||!hasImageAnchors(store))return result;
+ const read=store.db.prepare(`SELECT b.locator,b.member_ids,b.material_id,b.revision FROM material_evidence e JOIN material_heads h ON h.id=e.material_id
+  JOIN material_blocks b ON b.material_id=h.id AND b.revision=h.revision AND b.anchor_id=e.id WHERE e.id=? AND e.invalidated=0 AND h.retired=0`);
+ const member=store.db.prepare("SELECT 1 FROM material_members WHERE material_id=? AND revision=? AND id=? AND kind='capture' AND ref=?");
+ for(const id of new Set(ids)){
+  const row=read.get(id),locator=row?.locator&&JSON.parse(String(row.locator)).memoryImageOriginal;
+  if(!locator||typeof locator.captureId!=='string'||typeof locator.sha256!=='string'||!/^[a-f0-9]{64}$/.test(locator.sha256)||!JSON.parse(String(row!.member_ids)).includes(locator.captureId))continue;
+  if(member.get(row!.material_id,row!.revision,locator.captureId,'capture:'+locator.captureId))result.set(id,{captureId:locator.captureId,sha256:locator.sha256});
+ }
+ return result;
+}
+export function memoryImageLocator(store:Store,id:string):MemoryImageLocator|undefined {
+ return memoryImageLocators(store,[id]).get(id);
 }
 /** Only organizer-owned locators in the frozen selected output can mint an
  * image grant. Model text, a same-source UUID and interpretation regions cannot. */
 export function memoryImageGrants(store:Store,pins:readonly MaterialInputPin[]):MemoryImageGrant[]{
  if(!hasImageAnchors(store))return [];
- const result:MemoryImageGrant[]=[];
+ const result:MemoryImageGrant[]=[],locators=memoryImageLocators(store,pins.flatMap(pin=>pin.evidenceIds));
+ const read=store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?');
  for(const pin of pins)for(const id of pin.evidenceIds){
-  const row=store.db.prepare(`SELECT b.locator FROM material_blocks b JOIN material_heads h ON h.id=b.material_id AND h.revision=b.revision
-   JOIN material_evidence e ON e.id=b.anchor_id WHERE b.material_id=? AND b.anchor_id=? AND e.invalidated=0 AND h.retired=0`).get(pin.materialId,id);
-  if(!row?.locator)continue;
-  const locator=memoryImageLocator(store,id);
-  if(!locator||typeof locator.captureId!=='string'||typeof locator.sha256!=='string'||!/^[a-f0-9]{64}$/.test(locator.sha256))continue;
+  const locator=locators.get(id);if(!locator||read.get(id)?.material_id!==pin.materialId)continue;
   result.push({id,materialId:pin.materialId,required:[...pin.required],fingerprint:pin.fingerprint,originalSha256:locator.sha256});
  }
  return [...new Map(result.map(grant=>[JSON.stringify(grant),grant])).values()];
@@ -57,6 +63,7 @@ export function memoryImageOriginal(store:Store,grant:MemoryImageGrant):string|u
  return locator.captureId;
 }
 export function assertMemoryImageGrants(store:Store,pins:readonly MaterialInputPin[],grants:readonly MemoryImageGrant[]){
+ if(!grants.length)return;
  const current=memoryImageGrants(store,pins);
  if(grants.some(grant=>!current.some(value=>JSON.stringify(value)===JSON.stringify(grant))||!memoryImageOriginal(store,grant)))throw new StoreError('Memory original image changed or is unavailable',409);
 }
@@ -78,26 +85,16 @@ export function memoryIntegrationImageInputs(store:Store,materials:MaterialStore
  return {processingMaterialInputs:inputs,processingImages:images,processingEvidence:fingerprints};
 }
 
-/** A pure-image target cannot be assessed from its locator. Nonempty OCR from
- * this exact original may be sufficient, at the model's choice; another image's
- * OCR, ready-state metadata and derived interpretation never satisfy delivery. */
-export function uninspectedMemoryImageTargets(store:Store,pins:readonly MaterialInputPin[],grants:readonly MemoryImageGrant[],result:QueryResult,delivered:readonly {id:string;offset:number;length:number}[],targets:readonly {id:string;key:string}[]=[]):string[]{
+/** Selected original-image targets account for pixels, while OCR targets
+ * account for their exact text. OCR from this or any other original cannot
+ * certify unseen visual contents. Context-only image grants add no target. */
+export function uninspectedMemoryImageTargets(grants:readonly MemoryImageGrant[],result:QueryResult,delivered:readonly {id:string;offset:number;length:number}[],targets:readonly {id:string;key:string}[]=[]):string[]{
  let value:any;try{value=JSON.parse(result.answer);}catch{return [];}
  const coverage=Array.isArray(value.coverage)?value.coverage:[];
  return grants.filter(grant=>{
   const keys=new Set(targets.filter(member=>member.id===grant.id).map(member=>member.key));
-  const target=coverage.length?coverage.find((row:any)=>keys.has(row.key)&&['checked','no_candidates'].includes(row.state)):delivered.some(range=>range.id===grant.id);
-  if(!target||result.imageReadReceipts?.some(receipt=>receipt.id===grant.id&&receipt.imageView.original.sha256===grant.originalSha256&&receipt.imageView.output&&receipt.imageView.transform!=='metadata@1'))return false;
-  const original=memoryImageLocator(store,grant.id);if(!original)return true;
-  const pin=pins.find(pin=>pin.materialId===grant.materialId&&pin.fingerprint===grant.fingerprint);if(!pin)return true;
-  const manifest=store.db.prepare('SELECT r.manifest FROM material_revisions r JOIN material_heads h ON h.id=r.material_id AND h.revision=r.revision WHERE r.material_id=?').get(grant.materialId);
-  const outputs=manifest?JSON.parse(String(manifest.manifest)).artifacts??[]:[];
-  const ocrBlocks=new Set<string>(outputs.filter((artifact:any)=>pin.required.includes(artifact.key)&&(artifact.key==='extracted-text'||artifact.key==='image-ocr'||artifact.key.startsWith('attachment/')&&artifact.key.endsWith('/text'))).flatMap((artifact:any)=>artifact.blockIds??[]));
-  return !pin.evidenceIds.some(id=>{
-   if(!delivered.some(range=>range.id===id&&range.length>0))return false;
-   const block=store.db.prepare(`SELECT b.block_id,b.member_ids,p.text FROM material_blocks b JOIN material_heads h ON h.id=b.material_id AND h.revision=b.revision JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.anchor_id=? AND b.material_id=?`).get(id,grant.materialId);
-   if(!block||!ocrBlocks.has(String(block.block_id))||!JSON.parse(String(block.member_ids)).includes(original.captureId))return false;
-   return delivered.some(range=>range.id===id&&String(block.text).slice(range.offset,range.offset+range.length).trim().length>0);
-  });
+  const assessed=coverage.length?coverage.some((row:any)=>keys.has(row.key)&&['checked','no_candidates'].includes(row.state)):delivered.some(range=>range.id===grant.id);
+  return assessed&&!result.imageReadReceipts?.some(receipt=>receipt.id===grant.id&&receipt.imageView.original.sha256===grant.originalSha256&&receipt.imageView.output&&receipt.imageView.transform!=='metadata@1'&&
+   (receipt.imageView.region===null||receipt.imageView.region.x===0&&receipt.imageView.region.y===0&&receipt.imageView.region.width===receipt.imageView.original.width&&receipt.imageView.region.height===receipt.imageView.original.height));
  }).map(grant=>grant.id);
 }

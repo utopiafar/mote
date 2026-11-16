@@ -132,7 +132,7 @@ export class CodexSession {
       // silently substituted, including for an external engine's inference.
       this.emit({type:'codex.model.selected',stage:'model',payload:{model:thread.model,threadModel:thread.thread?.model}});
       if(this.options.model&&(thread.model!==this.options.model||typeof thread.thread?.model==='string'&&thread.thread.model!==this.options.model))throw this.providerError(undefined,{source:'runtime',code:'model_mismatch',stage:'startup'});
-      if(this.options.serviceTier&&(typeof thread.serviceTier!=='string'||normalizeCodexServiceTier(thread.serviceTier)!==this.options.serviceTier))throw this.providerError();
+      if(this.options.serviceTier&&(typeof thread.serviceTier!=='string'||normalizeCodexServiceTier(thread.serviceTier)!==this.options.serviceTier))throw this.providerError({category:'transient',code:'provider_failed',executionStarted:false},{source:'runtime',code:'service_tier_mismatch',stage:'startup'});
       this.threadId=thread.thread.id;
       clearTimeout(this.timer);this.timer=undefined;
     }catch(error){throw error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentProviderError?error:this.providerError(undefined,{...errorDiagnostics(error),stage:'startup'});}

@@ -150,7 +150,12 @@ test('Codex accepts the official priority acknowledgement for Fast',async t=>{
 test('Codex refuses unacknowledged or different speed tiers instead of silently switching',async t=>{
   for(const [mode,serviceTier] of [['tier-mismatch','fast'],['tier-default','fast'],['tier-unknown','fast'],['tier-priority','default']])await t.test(`${serviceTier}/${mode}`,async t=>{
     const root=await fake(t,mode),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',serviceTier,agentTimeoutMs:5000});t.after(()=>agent.close());
-    await assert.rejects(agent.query({question:'Generated speed mismatch'}),AgentProviderError);
+    await assert.rejects(agent.query({question:'Generated speed mismatch'}),error=>{
+      assert.ok(error instanceof AgentProviderError);
+      assert.deepEqual(error.details,{category:'transient',code:'provider_failed',executionStarted:false});
+      assert.deepEqual(error.diagnostic,{source:'runtime',stage:'startup',code:'service_tier_mismatch',modelId:'fixture'});
+      return true;
+    });
     const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
     assert.equal(rpc.some(m=>m.method==='turn/start'),false);
   });

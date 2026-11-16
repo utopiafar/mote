@@ -44,7 +44,7 @@ async function fixture(t:TestContext,count=4){
 
 for(const historicalAuthority of ['stale','revoked'] as const)test(`resumed Memory rejoins its plan behind a full page of ${historicalAuthority} historical status units`,async t=>{
  const f=await fixture(t,2),catalog=f.work.catalog(),history=catalog.find(candidate=>candidate.inputKey==='raw-0')!,current=catalog.find(candidate=>candidate.inputKey==='raw-1')!,pipeline=f.pipeline;
- const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),get:(id:string)=>pipeline.get(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
+ const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),state:(id:string)=>pipeline.state(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
  const oldProposals=await f.adapter.plan([history]);f.work.acceptPackages(held,[history],oldProposals,()=>true,f.adapter.onCreated);
  const oldJob=f.pipeline.get(f.pipeline.list()[0].id);await f.pipeline.run(oldJob.id);
  for(let n=0;n<30&&f.runtime.get(oldJob.workPackage!.id!.split(':unit:')[0]).status!=='succeeded';n++){await f.runtime.tick();await new Promise(resolve=>setTimeout(resolve,100));}
@@ -100,7 +100,7 @@ test('recovery links a claimed package after planning without rerunning either m
  const f=await fixture(t,2),pipeline=f.pipeline;
  // Persist precisely the interruption window after atomic queue+claims and
  // before the host attaches the external execution handle.
- const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),get:(id:string)=>pipeline.get(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
+ const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),state:(id:string)=>pipeline.state(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
  assert.equal(await f.work.drainPlanned(held,true,f.adapter.plan,64),1);
  const job=f.pipeline.get(f.pipeline.list()[0].id),unit=f.runtime.list()[0].units[0];
  assert.equal(unit.stepId,unit.id);assert.equal(f.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='memory.package-status'").get()!.n,0);
@@ -112,7 +112,7 @@ test('recovery links a claimed package after planning without rerunning either m
 
 test('cancelling the delegated branch revokes the actual queued product before it can execute',async t=>{
  const f=await fixture(t,2),pipeline=f.pipeline;
- const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),get:(id:string)=>pipeline.get(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
+ const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),state:(id:string)=>pipeline.state(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
  await f.work.drainPlanned(held,true,f.adapter.plan,64,()=>true,f.adapter.onCreated);
  const job=f.pipeline.get(f.pipeline.list()[0].id),unit=f.runtime.list()[0].units[0];f.runtime.cancelUnit(unit.id);
  assert.equal(f.pipeline.get(job.id).status,'cancelled');assert.equal((await f.pipeline.run(job.id)).status,'cancelled');assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);assert.deepEqual(f.counts(),{planning:1,extraction:0,reviews:0});
@@ -138,7 +138,7 @@ test('private catalog members are postponed before metadata dispatch without con
 test('partial proposal handoff recovers remaining groups from the journal before planning a new catalog',async t=>{
  const f=await fixture(t,2);f.setPlanning(async(input,catalog)=>{await input.hostControlChannel!.execute('delegation_submit',{units:catalog.map((candidate,index)=>({id:'part-'+index,capabilityId:'memory.package',title:'Separate original',goal:'Inspect independently',input:{members:[candidate.key],instruction:'Preserve separate source identity'}}))});});
  const catalog=f.work.catalog(),proposals=await f.adapter.plan(catalog),pipeline=f.pipeline;
- const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),get:(id:string)=>pipeline.get(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
+ const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),state:(id:string)=>pipeline.state(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
  assert.equal(f.work.acceptPackages(held,catalog,[proposals[0]],()=>true,f.adapter.onCreated),1);assert.equal(f.pipeline.list().length,1);
  f.adapter.reconcile();f.adapter.reconcile();assert.equal(f.pipeline.list().length,2);assert.equal(f.counts().planning,1);
  // A planner fragment returning at the same handoff window reuses the product.

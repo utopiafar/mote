@@ -89,15 +89,29 @@ test('media execution facts reject incompatible storage before worker readiness 
 // Reuse the current generated FunASR engine boundary and production multipart,
 // normalization, process owner and serializers. Missing dependencies must fail
 // this ordinary entrypoint instead of silently skipping its regression cases.
-const asrHttpRegressions = async names => {
+const audioRegressions = async names => {
   const {execFileSync}=await import('node:child_process');
   execFileSync('python3',['-c',`import sys, unittest
 sys.path.insert(0, sys.argv[1])
 suite = unittest.defaultTestLoader.loadTestsFromNames(sys.argv[2:])
 result = unittest.TextTestRunner(verbosity=2).run(suite)
 sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
-`,fileURLToPath(new URL('.',import.meta.url)),...names.map(name=>'test_transcription_server.TranscriptionHTTP.'+name)],{stdio:'pipe'});
+`,fileURLToPath(new URL('.',import.meta.url)),...names],{stdio:'pipe'});
 };
+const asrHttpRegressions = names => audioRegressions(names.map(name=>'test_transcription_server.TranscriptionHTTP.'+name));
+test('local audio keeps every PCM sample through VAD rounding, final padding and long-speech splitting',()=>audioRegressions([
+  'test_mote_funasr.FunasrEngine.test_vad_frame_rounding_and_long_speech_keep_every_pcm_sample_without_failing_the_recording',
+  'test_mote_funasr.FunasrEngine.test_vad_final_frame_padding_and_subsample_jitter_use_the_original_pcm_boundary',
+]));
+test('local audio recovers decoder capacity with bounded complete PCM coverage and keeps failures and cancellation truthful',()=>audioRegressions([
+  'test_mote_funasr.FunasrEngine.test_decoder_capacity_recovery_reuses_completed_regions_and_keeps_all_speech_pcm',
+  'test_mote_funasr.FunasrEngine.test_decoder_capacity_recovery_refines_only_the_still_capped_child_and_keeps_fractional_tail',
+  'test_mote_funasr.FunasrEngine.test_decoder_capacity_recovery_exhaustion_and_short_inputs_stay_failed_without_partial_success',
+  'test_mote_funasr.FunasrEngine.test_decoder_capacity_recovery_completes_the_full_bounded_tree_without_losing_a_leaf',
+  'test_mote_funasr.FunasrEngine.test_decoder_capacity_recovery_does_not_retry_other_failures_or_oversize_text',
+  'test_mote_funasr.FunasrEngine.test_cancellation_during_decoder_capacity_recovery_stops_before_the_next_child',
+  'test_mote_funasr.FunasrEngine.test_decoder_capacity_recovery_cannot_exceed_the_checkpoint_vad_budget',
+]));
 test('audio HTTP worker enforces the authenticated request budget, preserves its host cap and releases timed-out work',()=>asrHttpRegressions([
   'test_directory_only_partial_install_and_failed_load_never_report_ready_and_control_recovers',
   'test_ffmpeg_disappearance_blocks_execution_without_claiming_funasr_packages_are_missing',

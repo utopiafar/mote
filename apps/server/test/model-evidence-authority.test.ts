@@ -35,6 +35,16 @@ test('async authority rechecks permissions after yielding between dependency pag
  node.store.delete(ids.at(-1)!);await assert.rejects(checking,{code:'context_evidence_restricted'});
 });
 
+test('original-only model preparation yields before reading a withdrawn exact selection',async t=>{
+ const {node,authority,add}=await fixture(t),id=await add();
+ const input:QueryInput={question:'Generated original-only selection',executionLane:'interactive',evidenceIds:[id]};
+ assert.equal(authority.selectedQueryEvidence(input).length,1);
+ let transactionDuring:boolean|undefined;
+ const withdrawn=new Promise<void>(resolve=>setImmediate(()=>{transactionDuring=node.store.db.isTransaction;node.store.delete(id);resolve();}));
+ await assert.rejects(authority.assertAsync(input),{code:'context_evidence_restricted'}).finally(()=>withdrawn);
+ assert.equal(transactionDuring,false,'preparation must yield outside a SQLite transaction');
+});
+
 test('a source-list model grant rejects another source and rechecks withdrawal before the next disclosure',async t=>{
  const {node,authority}=await fixture(t),ids:string[]=[];
  for(const sourceId of ['generated-selected','generated-hidden']){

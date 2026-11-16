@@ -2,11 +2,11 @@ import {authorizeFixtureModels,withFixtureOwnerModelWork,fixtureTopicResult} fro
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {ContextReader,QueryInput} from '@mote/agent';
+import {createAgent,type ContextReader,type QueryInput} from '@mote/agent';
 import type {CodingEvidence,QueryResult,SourceItem,TokenUsage,UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
@@ -28,20 +28,21 @@ const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
 function event(id:string,role:CodingEvidence['role'],text:string):SourceItem{return {externalId:id,revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text,
  document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
-async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false,options:Pick<Config,'modelMaxTokens'>={}){
+async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false,options:Partial<Config>={}){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
- const node=await buildApp({...config(directory),...options},{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
+ const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
   lease?.onFinalizer?.('host');
   let usage:TokenUsage|undefined;
   const observed={...input,onUsage:(sample:TokenUsage)=>{usage=sample;input.onUsage?.(sample);}};
   try{const result=fixtureTopicResult(observed)??fixtureMemoryWorkResult(observed,await query(observed,reader));hostRun(observed,{usage});return result;}
   catch(error){hostRun(observed,{usage,terminal:'failed'});throw error;}
- }})});
+ }})};
+ let node=await buildApp({...config(directory),...options},dependencies);
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const settings=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...settings,consolidation:{...settings.consolidation,enabled:false},insights:{...settings.insights,enabled:false},working:{...settings.working,enabled:false}}});
  node.sources.register({id:'coding',kind:'coding-agent',name:'Generated coding',deviceId:'fixture',platform:'macos'});
  node.sourcePipelines.configure('coding',{settleSeconds:0});await node.app.ready();await authorizeFixtureModels(node);
- return node;
+ return Object.assign(node,{restartFixture:async()=>{await node.app.close();node=await buildApp({...config(directory),...options},dependencies);await node.app.ready();return node;}});
 }
 async function receive(node:Node){
  await node.sources.upsertBatch('coding',[event('owner','user',owner),event('call','tool_call',toolSecret),event('result','tool_result',toolSecret),event('assistant','assistant',report)]);
@@ -138,6 +139,54 @@ test('an explicit Memory HTTP retry reopens its failed Coding preparation while 
  assert.equal(completed.status,'completed');assert.equal(understanding,2);assert.equal(review,1);
  assert.equal(node.executor.get(String(child.id))?.state,'succeeded');assert.equal(node.store.db.prepare('SELECT count(*) n FROM processing_jobs').get()!.n,1);
  await node.workflows.tick();assert.equal(understanding,2,'the successful preparation remains reusable');
+});
+
+test('a failed native startup in a saved Coding tail retains its cause and retries only that original range',async t=>{
+ const root=mkdtempSync(join(tmpdir(),'mote-coding-native-startup-')),executable=join(root,'generated-unpatched'),probes=join(root,'probes.ndjson');
+ t.after(()=>rmSync(root,{recursive:true,force:true}));
+ writeFileSync(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused-credential'}),{mode:0o600});
+ writeFileSync(executable,`#!${process.execPath}\nimport {appendFileSync,existsSync} from 'node:fs';\nappendFileSync(${JSON.stringify(probes)},JSON.stringify({capabilityProbe:process.argv[2]==='--mote-context-budget-version',credentialsLinked:existsSync(process.env.CODEX_HOME+'/auth.json')})+'\\n');\nprocess.stdout.write('generated-unpatched');\n`,{mode:0o700});
+ let fail=true,tailKey='',nativeRunId:string|undefined;
+ const attempts=new Map<string,number>(),reviews:string[]=[];
+ const node=await appFixture(t,async(input,reader)=>{
+  const records=await supplied(input,reader),key=JSON.stringify(input.evidenceRanges);
+  if(!isUnderstanding(input)){reviews.push(key);return response(records[0].id,'',input.taskContext!.untrustedMemoryDraft);}
+  attempts.set(key,(attempts.get(key)??0)+1);
+  if(fail&&key===tailKey){
+   // Only the unavailable executable boundary is generated. Use the real
+   // composition, bridge, full request assembly and native startup probe.
+   const agent=createAgent({reader,protocol:'codex-app-server',model:'gpt-6.1-terra',reasoningEffort:'auto',serviceTier:'fast',maxTokens:65536,requestTimeoutMs:null,agentTimeoutMs:null,codex:{home:root,executable}});
+   try{return await agent.query({...input,onHostRunEvent:undefined,onTrace:event=>{if(event.runId)nativeRunId=event.runId;input.onTrace?.(event);}});}finally{await agent.close();}
+  }
+  const range=input.evidenceRanges![0],quote=records.find(record=>record.id===range.id)!.ocrText.slice(range.offset,range.offset+100);
+  return response(range.id,quote,{summary:'Generated bounded conversation',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]});
+ },false,{model:'gpt-6.1-terra',modelProvider:'codex',modelProtocol:'codex-app-server',modelMaxTokens:65536,modelRequestTimeoutMs:null,agentTimeoutMs:null});
+ await node.sources.upsertBatch('coding',[event('owner','user','Generated complete original. '.repeat(525))]);
+ await node.sourcePipelines.tick();
+ const material=node.materials.list({kind:'mote.coding-session'}).items[0],created=manualJob(node,node.materials.evidenceIds(material.ref));
+ assert.equal(created.batches.length,2);assert.equal(created.batches[0].evidenceRanges.reduce((n,range)=>n+range.length,0),12000);
+ const frozen=created.batches.map(batch=>batch.evidenceRanges);tailKey=JSON.stringify(frozen[1]);
+ const failed=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
+ assert.equal(failed.status,'failed');assert.equal(failed.completedBatches,1);assert.equal(failed.batches[1].errorCode,'processing_limit');
+ assert.equal(failed.batches[1].stage,'understanding');
+ const child=String(node.store.db.prepare("SELECT id FROM processing_jobs WHERE json_extract(json,'$.parentGrant.stepId')=?").get(failed.batches[1].id)!.id),receipt=node.executor.failure(child)!;
+ assert.equal(receipt.code,'processing_limit');assert.equal(receipt.causeCode,'native_budget_unavailable');assert.equal(receipt.executionStarted,false);
+ assert.ok(nativeRunId);assert.equal(receipt.runId,nativeRunId);
+ assert.equal(failed.failureReceipt!.runId,nativeRunId);assert.equal(failed.failureReceipt!.causeStepId,child);assert.equal(failed.failureReceipt!.causeCode,'native_budget_unavailable');assert.equal(failed.failureReceipt!.causeState,'failed');assert.equal(failed.failureReceipt!.phase,'understanding');
+ assert.doesNotMatch(JSON.stringify([receipt,failed.failureReceipt]),/generated-unused-credential|generated-unpatched|Generated complete original/);
+ assert.deepEqual(readFileSync(probes,'utf8').trim().split('\n').map(line=>JSON.parse(line)),[{capabilityProbe:true,credentialsLinked:false}]);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);
+ await node.workflows.tick();await node.memoryPipeline.run(created.id);
+ assert.equal(attempts.get(tailKey),1,'ordinary reentry cannot reopen failed native startup');
+ const resumed=await node.restartFixture(),saved=resumed.memoryPipeline.get(created.id);
+ assert.deepEqual(saved.failureReceipt,failed.failureReceipt);assert.deepEqual(resumed.executor.failure(child),receipt);
+ assert.deepEqual(saved.batches.map(batch=>batch.evidenceRanges),frozen);
+ await resumed.memoryPipeline.run(created.id);assert.equal(attempts.get(tailKey),1,'restart only observes the terminal preparation');
+ fail=false;
+ const accepted=await resumed.app.inject({method:'POST',url:`/api/memory-jobs/${created.id}/retry`,headers:{authorization:'Bearer '+token}});assert.equal(accepted.statusCode,202,accepted.body);
+ const done=await resumed.memoryPipeline.run(created.id);
+ assert.equal(done.status,'completed');assert.deepEqual(done.batches.map(batch=>batch.evidenceRanges),frozen);assert.equal(attempts.get(JSON.stringify(frozen[0])),1);assert.equal(attempts.get(tailKey),2);assert.equal(reviews.length,2);
+ assert.equal(resumed.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2);assert.equal(resumed.memories.list().length,0);
 });
 
 test('empty Coding candidates publish work/events and receive independent review without a second extraction',{timeout:15000},async t=>{

@@ -10755,5 +10755,14 @@ export const spanish: Readonly<Record<string, string>> = {
   "模型只提出建议，确认后生成单独的校正版；未校正原文始终保留。复核使用所选模型。": "El modelo solo propone cambios. Al confirmarlos se crea una versión corregida independiente y se conserva el original sin corregir. La revisión usa el modelo seleccionado.",
   "原文对照": "Comparar con el original",
   "转写结果为空。": "La transcripción está vacía.",
-  "当前稿": "Transcripción actual"
+  "当前稿": "Transcripción actual",
+  "在主对话交代工作，核对草稿后开始。": "Encarga el trabajo en la conversación principal, revisa el borrador e inicia la tarea.",
+  "此浏览器还没有可恢复的初次认识记录。": "Este navegador no tiene un registro de primer acercamiento que puedas reanudar.",
+  "最近后台活动；更多任务和结果可进入查看。": "Actividad reciente en segundo plano; abre para ver más tareas y resultados.",
+  "本页建议关联的任务": "Tareas vinculadas a las sugerencias de esta página",
+  "当前页没有建议关联的任务，可在主对话或事项中查看其他任务。": "Las sugerencias de esta página no tienen tareas vinculadas. Consulta la conversación principal o los asuntos para ver otras tareas.",
+  "已有部分结果；需要你补充的问题只影响相关结论。": "Ya hay resultados parciales. Las preguntas que necesitan tu respuesta solo afectan a las conclusiones relacionadas.",
+  "任务资料范围": "Materiales de la tarea",
+  "仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。": "Solo se usan las pruebas completas y las fuentes originales de esta sugerencia. Los demás materiales quedan fuera de esta tarea. Se indicará si falta contenido o la cobertura es incompleta.",
+  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Los materiales completos de esta sugerencia no están disponibles. Actualiza y vuelve a revisarlos."
 };

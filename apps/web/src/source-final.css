@@ -83,6 +83,7 @@
 .source-onboarding-items span{font-size:11px;color:var(--mote-muted)}
 .source-onboarding-items small{display:block;margin-top:5px;font-size:11px;line-height:1.7;color:var(--mote-muted)}
 .source-onboarding-items p{margin:6px 0 0;font-size:12px;line-height:1.75}
+.source-onboarding-items [data-onboarding-question]{display:block}
 .source-onboarding-items li[data-item-state=failed] p{color:var(--mote-warning)}
 .source-onboarding-error{display:grid;justify-items:start;gap:8px;margin-top:16px}
 .source-onboarding-error p{margin:0;font-size:12px;line-height:1.8}

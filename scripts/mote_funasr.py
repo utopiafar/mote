@@ -13,6 +13,7 @@ import copy
 import gc
 import hashlib
 import importlib.metadata
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -29,11 +30,17 @@ from mote_audio import (file_sha256, frame_interval, normalize, offline_process,
 # Full, untrimmed PCM; independent VAD regions are never concatenated. Nano's
 # token timings are deliberately not exported: the truthful common basis here
 # is VAD precision, not interpolated words. CT-Punc is local, with no hotwords.
-SETTINGS = {'sampleRate': 16000, 'maxSegmentMs': 30000, 'maxNewTokens': 512, 'batchSize': 1,
+SETTINGS = {'sampleRate': 16000, 'maxSegmentMs': 30000, 'segmentBufferMs': 100, 'vadFrameMs': 10,
+            'maxNewTokens': 512, 'batchSize': 1,
             'mergeVad': False, 'llmDtype': 'fp32', 'hotwords': False,
             'punctuation': 'per-vad', 'speakerWindowFrames': 24000,
             'speakerShiftFrames': 12000, 'speakerSmoothing': False}
 SETTINGS_FINGERPRINT = hashlib.sha256(contract.serialize(SETTINGS).encode()).hexdigest()
+# Recovery only retries a decoder that could not produce a complete result.
+# Model parameters and successful checkpoints stay unchanged. Smaller inputs
+# remain on the same original PCM/VAD basis; at most 15 calls per initial region.
+DECODER_RECOVERY_MAX_DEPTH = 3
+DECODER_RECOVERY_MIN_FRAMES = 16000
 SDK_SOURCES = {
     'auto/auto_model.py': '6e3aadc33b014452ca31c06e8261054fd94a26038caa60e669a6bfb70aa9abe1',
     'models/campplus/cluster_backend.py': '5bdea46a947e78be3c8501ab3ac4392a6d1107c8c9d727902c986264277c9140',
@@ -55,6 +62,12 @@ class EngineError(RuntimeError):
             raise ValueError('Unknown engine failure')
         super().__init__(code)
         self.code = code
+
+
+class DecoderOutputLimit(EngineError):
+    """Only a decoder cap may request PCM refinement, not other output limits."""
+    def __init__(self):
+        super().__init__('output_limit')
 
 
 def component_manifest(role):
@@ -247,7 +260,7 @@ def validate_generation(sequences, limit, eos):
     if not sequences or any(not row for row in sequences):
         raise EngineError('inference_failed')
     if any(len(row) >= limit and row[-1] not in eos for row in sequences):
-        raise EngineError('output_limit')
+        raise DecoderOutputLimit()
 
 
 def model_text(value, byte_limit, units=None):
@@ -262,6 +275,71 @@ def check_cancelled(cancelled):
         raise EngineError('cancelled')
 
 
+def recognition_regions(value, frames):
+    """Map SDK frame precision to PCM, then bound model inputs without clipping.
+
+    FSMN ends a segment after its duration threshold, in 10 ms frames. Keep a
+    small decoder buffer for ordinary rounding; partition longer valid speech
+    instead of rejecting the recording. A final padded VAD frame has no audio
+    beyond the original PCM. Incomplete markers and invalid timelines still fail.
+    """
+    duration, previous_end, regions = frames/16, 0, []
+    target = SETTINGS['maxSegmentMs']*16
+    for region in value:
+        if type(region) not in (tuple, list) or len(region) != 2:
+            raise EngineError('inference_failed')
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in region):
+            raise EngineError('inference_failed')
+        # Subsample floating-point jitter cannot describe a different PCM frame.
+        start, end = (round(v*16)/16 for v in region)
+        if start < previous_end and previous_end-start <= 1/16:
+            start = previous_end
+        if duration < end <= duration + SETTINGS['vadFrameMs']:
+            end = duration
+        first, last = frame_interval(start, end, frames)
+        if start < previous_end:
+            raise EngineError('inference_failed')
+        if end-start <= SETTINGS['maxSegmentMs'] + SETTINGS['segmentBufferMs']:
+            regions.append([start, end])
+        else:
+            regions.extend([offset/16, min(last, offset+target)/16] for offset in range(first, last, target))
+        if len(regions) > contract.LIMITS['vad']:
+            raise EngineError('output_limit')
+        previous_end = end
+    return regions
+
+
+def recognize_intervals(model, pcm, intervals, runtime, cancelled):
+    """Retry only capped intervals, preserving completed siblings verbatim.
+
+    Binary subdivision uses integer sample boundaries, without overlap, gaps or
+    discarded tails. A pending child never turns into a complete checkpoint.
+    The worker still owns the overall deadline and child termination boundary.
+    """
+    pending = [(first, last, 0) for first, last in reversed(intervals)]
+    region_count = len(intervals)
+    while pending:
+        first, last, depth = pending.pop()
+        check_cancelled(cancelled)
+        try:
+            result = one_result(model.generate(input=runtime.waveform(pcm[first*2:last*2]),
+                                               batch_size=1, fs=16000))
+        except DecoderOutputLimit:
+            check_cancelled(cancelled)
+            middle = (first+last)//2
+            if (depth >= DECODER_RECOVERY_MAX_DEPTH or middle-first < DECODER_RECOVERY_MIN_FRAMES
+                    or region_count >= contract.LIMITS['vad']):
+                raise
+            region_count += 1
+            pending.extend(((middle, last, depth+1), (first, middle, depth+1)))
+            # Leave the except block before decoding again, releasing the failed
+            # generation's traceback/tensors rather than retaining a model tree.
+            continue
+        check_cancelled(cancelled)
+        model_text(result.get('text'), contract.LIMITS['textBytes'])
+        yield first, last, {'text': result['text']}
+
+
 def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
     frames = len(pcm) // 2
     if frames == 0:
@@ -274,28 +352,15 @@ def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
         raise EngineError('inference_failed')
     if len(vad['value']) > contract.LIMITS['vad']:
         raise EngineError('output_limit')
-    previous_end = 0
-    intervals = []
-    for region in vad['value']:
-        if type(region) not in (tuple, list) or len(region) != 2:
-            raise EngineError('inference_failed')
-        start, end = region
-        # Reject incomplete final markers (-1), overlap or oversized chunks;
-        # don't clamp, reorder, concatenate or silently drop a tail.
-        first, last = frame_interval(start, end, frames)
-        if start < previous_end or end - start > SETTINGS['maxSegmentMs']:
-            raise EngineError('inference_failed')
-        intervals.append((first, last))
-        previous_end = end
-    chunks = []
+    vad = {**vad, 'value': recognition_regions(vad['value'], frames)}
+    intervals = [frame_interval(start, end, frames) for start, end in vad['value']]
+    chunks, completed_regions = [], []
     if intervals:
         with runtime.component('asr', root / 'asr') as model:
-            for first, last in intervals:
-                check_cancelled(cancelled)
-                result = one_result(model.generate(input=runtime.waveform(pcm[first*2:last*2]),
-                                                   batch_size=1, fs=16000))
-                model_text(result.get('text'), contract.LIMITS['textBytes'])
-                chunks.append({'text': result['text']})
+            for first, last, chunk in recognize_intervals(model, pcm, intervals, runtime, cancelled):
+                completed_regions.append([first/16, last/16])
+                chunks.append(chunk)
+    vad = {**vad, 'value': completed_regions}
     # Keep the Nano text verbatim in recognitionChunks. Punctuation is a local
     # model stage, not deduplication or correction. No forced token timestamps.
     sentences = []

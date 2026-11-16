@@ -13,6 +13,7 @@ import {resolveDependencies} from './conversation-lineage.js';
 // task DTO. The owner supplies the exact originals after applying its scope.
 export type BatchQuery=Pick<QueryInput,'question'|'taskContext'|'contextSourceContextDependencies'> & {evidenceIds:string[]};
 export type BatchRequest={operationId:string;requestId:string;items:BatchQuery[];reduce?:string};
+export const BATCH_CONTEXT_MAX_BYTES=48000;
 type FrozenQuery=BatchQuery & {processingEvidence:Record<string,string>};
 type Plan={items:string[];contextTime:string;reduce?:string};
 type StepInput={batchId:string;itemId?:string;index?:number;revision:number};
@@ -58,6 +59,11 @@ export class BatchProcessing {
       project:step=>this.project(step),
     }));
     this.unbindStop=this.control.bindBatchStop(()=>this.stopAutomatic());
+    // Reconcile persisted steps too: an invalidated admission may never have
+    // entered execute(), including across a process restart.
+    this.transaction(()=>{
+      for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('batch.item','batch.reduce') AND state IN ('failed','blocked','cancelled','stale')").all())this.project(this.engine.get(String(row.id))!);
+    });
   }
   private transaction<T>(write:()=>T):T{
     const db=this.store.db;db.exec('SAVEPOINT batch_write');
@@ -75,7 +81,7 @@ export class BatchProcessing {
     if(records.length!==ids.length)throw new StoreError('Batch evidence is unavailable',409);
     this.assertCurrent(ids);
     let context:string;try{context=JSON.stringify(input.taskContext??null);}catch{throw new StoreError('Invalid batch context',400);}
-    if(Buffer.byteLength(context)>48000)throw new StoreError('Batch context exceeds the bounded model input',413);
+    if(Buffer.byteLength(context)>BATCH_CONTEXT_MAX_BYTES)throw new StoreError('Batch context exceeds the bounded model input',413);
     const sourceContexts=combineSourceContextDependencies([input.contextSourceContextDependencies]);
     return {question:input.question,evidenceIds:ids,processingEvidence:Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)])),
       ...(input.taskContext?{taskContext:JSON.parse(context)}:{}),...(sourceContexts.length?{contextSourceContextDependencies:sourceContexts}:{})};
@@ -92,7 +98,9 @@ export class BatchProcessing {
   private batch(id:string){const task=this.tasks.get(id);if(task.kind!=='batch')throw new StoreError('Batch not found',404);return task;}
   private parent(step:ExecutionStep){
     const input=step.input as StepInput,task=this.batch(input.batchId);
-    if(!((task.state==='waiting'&&task.revision===input.revision)||(task.state==='running'&&task.revision===input.revision+1)))
+    // Batch inputs are immutable. State projections and explicit retries move
+    // the task revision; withdrawal/cancellation still retire the whole input.
+    if(!['waiting','running','blocked','failed'].includes(task.state)||task.revision<input.revision)
       throw new ExecutionFailure('stale','batch_changed');
     return task;
   }
@@ -107,11 +115,15 @@ export class BatchProcessing {
     }catch{return false;}
   }
   private project(step:ExecutionStep){
-    if(step.state==='running'){
-      const input=step.input as StepInput,parent=this.batch(input.batchId);
-      if(parent.state==='waiting'&&parent.revision===input.revision)this.tasks.setState(parent.id,parent.revision,'running');
-      if(input.itemId){const item=this.tasks.get(input.itemId);if(item.state==='waiting')this.tasks.setState(item.id,item.revision,'running');}
-    }
+    const input=step.input as StepInput;
+    const update=(id:string,state:'waiting'|'running'|'blocked'|'failed'|'stale'|'cancelled')=>{
+      const task=this.tasks.get(id);if(!terminal(task.state)&&task.state!==state)this.tasks.setState(id,task.revision,state);
+    };
+    if(input.itemId&&step.state!=='succeeded')update(input.itemId,step.state);
+    const steps=this.steps(input.batchId);
+    const state=steps.some(value=>value.state==='stale')?'stale':steps.some(value=>value.state==='cancelled')?'cancelled':
+      steps.some(value=>value.state==='failed')?'failed':steps.some(value=>value.state==='blocked')?'blocked':steps.some(value=>value.state==='running')?'running':'waiting';
+    update(input.batchId,state);
     this.product?.project(step);
   }
   private async execute(step:ExecutionStep,signal:AbortSignal,assertGrant:()=>void):Promise<QueryResult>{
@@ -133,9 +145,12 @@ export class BatchProcessing {
       if(Buffer.byteLength(summaries)>48000)throw new ExecutionFailure('blocked','batch_reduce_input_too_large');
       taskContext={turns:[],untrustedInterpretations:summaries};
     }
-    const assert=()=>{signal.throwIfAborted();assertGrant();const current=this.parent(step);
+    // Context-only originals remain in the authority fence even when they are
+    // unread catalog entries. Exclusion is an authorization wait, before the
+    // generic current-input check can classify that same revocation as stale.
+    const assert=()=>{signal.throwIfAborted();this.assertDisclosure(frozen.evidenceIds);assertGrant();const current=this.parent(step);
       this.tasks.evidenceDependencies(current.id,current.revision,this.current(current.id));
-      this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);for(const result of inputs)this.assertResultCurrent(result);};
+      this.pins(frozen);for(const result of inputs)this.assertResultCurrent(result);};
     assert();
     const result=await this.query({...frozen,executionLane:'background',...(frozen.evidenceIds.length?{}:{hostRetrieval:'none' as const}),
       contextTime:plan.contextTime,contextEvidenceDependencies:deps(frozen.evidenceIds),...(sourceContexts?.length?{contextSourceContextDependencies:sourceContexts}:{}),assertContextAuthority:assert,signal,...(taskContext?{taskContext}:{}),

@@ -17,6 +17,6 @@ export const assistant:BuiltinWebPlugin={id:'mote.assistant',pages:[{
   requires:[{id:'http:GET:/api/assistant/workbench',version:'1',host:'server'}],
   render:props=>createElement(AssistantWorkbenchPage,props),
 },{
- id:'assistantMatters',route:'assistant/matters',label:moteText('事项与规则'),featureId:'mote.assistant',section:'library',order:35,
+ id:'assistantMatters',route:'assistant/matters',label:moteText('事项与规则'),featureId:'mote.assistant',
  requires:['http:GET:/api/assistant/matters'],render:({api,onOpen})=>React.createElement(AssistantMatters,{api,onOpen}),
 }]};

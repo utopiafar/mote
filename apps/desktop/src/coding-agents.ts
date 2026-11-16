@@ -37,12 +37,14 @@ export type CodingOpenCodeCursor={lastSeq:number;lastUpdated:number;incomplete:s
 export type CodingOpenCodeState={database:{fileId:string};sessions:Record<string,CodingOpenCodeCursor>};
 export type CodingCheckpoint={version:3;files:Record<string,Cursor>;initialized:boolean;catalog:Record<string,CodingCatalogEntry>;scanNumber:number;scanStartedAt:string;nextFile?:string;opencode?:CodingOpenCodeState};
 type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;nativeId?:string;attribution?:CodingEvidence['attribution']};
-const time=(v:unknown)=>{const ms=typeof v==='number'?(v>1e11?v:v*1000):typeof v==='string'?Date.parse(v):NaN;return Number.isFinite(ms)?new Date(ms).toISOString():undefined;};
+const time=(v:unknown)=>{const ms=typeof v==='number'?(v>1e11?v:v*1000):typeof v==='string'?Date.parse(v):NaN,date=new Date(ms);return Number.isFinite(date.getTime())?date.toISOString():undefined;};
 const textParts=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.flatMap(p=>p?.type==='text'||p?.type==='input_text'||p?.type==='output_text'?[String(p.text??'')]:p?.type==='image'||p?.type==='input_image'||p?.type==='image_url'?['[image attachment omitted]']:[]).join('\n'):'';
 /** Decode syntax only; no keywords select topics, intent or memory value. Reasoning and host instructions are not conversation evidence. */
 export function decodeCodingEvent(provider:CodingProvider,row:any,context:Context,wire=false):Event[] {
   if(!row||typeof row!=='object')throw Error('Invalid transcript event');
-  const at=time(row.timestamp??row.time),events:Event[]=[];
+  // OpenCode's message creation time is a database column, independent of
+  // its update cursor and the time when this importer observes the message.
+  const at=time(provider==='opencode'?row.time_created:row.timestamp??row.time),events:Event[]=[];
   const add=(role:Event['role'],text:string,callId?:string,channel?:unknown)=>{if(text)events.push({role,text,callId,at,
     ...(typeof channel==='string'&&channel.length&&channel.length<=64?{channel}:{}),
     ...(['user','assistant','assistant_delta'].includes(role)?{attribution:context.hostSession?'host':role==='user'?(codingHostEnvelope(provider,text)?'host':'human'):'agent'}:{})});};
@@ -112,7 +114,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
             const output=textParts(state.content)||(typeof state.error?.message==='string'?state.error.message:state.error?JSON.stringify(state.error):'');
             if(output){
               add('tool_result',output,callId);
-              events.at(-1)!.at=time(state.time?.completed??part.time?.completed??part.time?.created)??at;events.at(-1)!.nativeId=native(`${index}:result`);
+              events.at(-1)!.at=time(state.time?.completed)??time(part.time?.completed)??time(part.time?.created)??at;events.at(-1)!.nativeId=native(`${index}:result`);
             }
           }
         }

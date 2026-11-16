@@ -9,6 +9,7 @@ import {StoreError,type Store} from './store.js';
 import {claimSchema,MemoryStore,MemoryOutputValidationError} from './memory.js';
 import {memoryProfile} from './memory-profiles.js';
 import type {MemoryWorkContract} from './memory-strategy-contract.js';
+import {retainErrorIdentity} from './execution-failures.js';
 
 const quote=z.object({id:z.string().uuid(),quote:z.string().min(1).max(2000),offset:z.number().int().min(0).max(100000).optional()}).strict();
 /** Attribution and occurrence are separate from the time at which the source was written. */
@@ -37,12 +38,12 @@ export const semanticProductsSchema=z.object({
 export type SemanticProducts=z.infer<typeof semanticProductsSchema>;
 /** Every consumer reuses these exact L1 ranges. Products never become original evidence. */
 export function parseSemanticProducts(answer:string,records:CaptureRecord[],citationIds?:string[],authorizedRanges?:{id:string;offset:number;length:number}[],workContract?:MemoryWorkContract){
- if(Buffer.byteLength(answer)>64000)throw new StoreError('Semantic output exceeds the 64 KB response budget',502);
+ if(Buffer.byteLength(answer)>64000)throw retainErrorIdentity(new StoreError('Semantic output exceeds the 64 KB response budget',502));
  const output=semanticProductsSchema.extend({memoryCandidates:workContract?z.array(claimSchema):semanticProductsSchema.shape.memoryCandidates}).parse(JSON.parse(answer));
- if(new Set(output.actionCues.flatMap(c=>c.evidence.map(e=>e.id))).size>30)throw new StoreError('At most 30 distinct originals may support the bounded action cues',502);
+ if(new Set(output.actionCues.flatMap(c=>c.evidence.map(e=>e.id))).size>30)throw retainErrorIdentity(new StoreError('At most 30 distinct originals may support the bounded action cues',502));
  const workClaims=(output.workRecords??[]).flatMap(record=>[...record.requirements,...record.constraints,...record.decisions,...record.results,...record.validation,...record.openItems,...record.artifactRefs]);
  const memorySpans=output.memoryCandidates.flatMap(candidate=>candidate.evidence??[]).map(span=>{
-  if(span.image||typeof span.quote!=='string')throw new StoreError('Text-only semantic extraction cannot authorize image evidence',502);
+  if(span.image||typeof span.quote!=='string')throw retainErrorIdentity(new StoreError('Text-only semantic extraction cannot authorize image evidence',502));
   return {...span,quote:span.quote};
  });
  const spans:{id:string;quote:string;offset?:number}[]=[...output.evidence,...output.events.flatMap(e=>e.evidence),...workClaims.flatMap(e=>e.evidence),...output.actionCues.flatMap(e=>e.evidence),...memorySpans];
@@ -50,7 +51,7 @@ export function parseSemanticProducts(answer:string,records:CaptureRecord[],cita
   const record=records.find(r=>r.id===span.id),text=record?.ocrText??'',scope=authorizedRanges?.filter(range=>range.id===span.id)??[{offset:0,length:text.length}];
   let offset=span.offset;
   if(offset===undefined){const matches=new Set<number>();for(const range of scope){for(let at=text.indexOf(span.quote,range.offset);at>=0&&at+span.quote.length<=range.offset+range.length;at=text.indexOf(span.quote,at+1)){matches.add(at);if(matches.size>1)break;}if(matches.size>1)break;}if(matches.size===1)offset=[...matches][0];}
-  if(!record||offset===undefined||text.slice(offset,offset+span.quote.length)!==span.quote||!scope.some(range=>range.offset<=offset!&&offset!+span.quote.length<=range.offset+range.length)||citationIds&&!citationIds.includes(span.id))throw new StoreError('Every semantic quote must exactly match a uniquely located, cited original within its authorized range',502);
+  if(!record||offset===undefined||text.slice(offset,offset+span.quote.length)!==span.quote||!scope.some(range=>range.offset<=offset!&&offset!+span.quote.length<=range.offset+range.length)||citationIds&&!citationIds.includes(span.id))throw retainErrorIdentity(new StoreError('Every semantic quote must exactly match a uniquely located, cited original within its authorized range',502));
   // Preserve the resolved original offset for downstream batches, which may have a different window.
   span.offset=offset;return {id:span.id,offset,length:span.quote.length};
  });

@@ -216,8 +216,13 @@ export class ExecutionEngine {
   this.scheduled=setImmediate(()=>{this.scheduled=undefined;if(!this.stopping)void this.tick().catch(()=>{});});
  }
  async drain(ids:string[]){
-  void this.tick().catch(()=>{});
-  for(;;){const tasks=ids.flatMap(id=>{const task=this.active.get(id)?.task;return task?[task]:[];});if(!tasks.length)return;await Promise.all(tasks);void this.tick().catch(()=>{});}
+  for(;;){void this.tick().catch(()=>{});const tasks=ids.flatMap(id=>{const task=this.active.get(id)?.task;return task?[task]:[];});
+   if(!tasks.length){
+    if((this.pumping||this.scheduled)&&ids.some(id=>this.get(id)?.state==='waiting')){await yieldTurn();continue;}
+    return;
+   }
+   await Promise.all(tasks);
+  }
  }
  private recover(){
   const db=this.store.db,now=this.now();
@@ -251,15 +256,17 @@ export class ExecutionEngine {
    for(const pool of pools){
     const handlers=[...this.handlers.values()].filter(h=>h.pool===pool),lanes:ExecutionLane[]=this.admissions.has(pool)?['background','interactive']:['background'];
     for(const lane of lanes){const limit=this.limit(pool,lane);
-    while([...this.active.values()].filter(a=>a.pool===pool&&a.lane===lane).length<limit){
-     if(this.running(pool,lane)>=limit)break;
+    // Fill a lane across event-loop turns. Each admission can synchronously
+    // validate a complete recording and prepare its model input; filling every
+    // slot in one pass compounds those guards before HTTP can run.
+     if([...this.active.values()].filter(a=>a.pool===pool&&a.lane===lane).length>=limit||this.running(pool,lane)>=limit)continue;
      const candidates=this.store.db.prepare(`SELECT e.* FROM execution_steps e LEFT JOIN execution_fairness f ON f.pool=e.pool AND f.operation_id=e.operation_id WHERE e.pool=? AND e.state='waiting' AND e.available_at<=? AND e.kind IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM execution_dependencies d JOIN execution_steps parent ON parent.id=d.dependency_id WHERE d.step_id=e.id AND parent.state!='succeeded') AND NOT EXISTS(SELECT 1 FROM execution_resources requested JOIN execution_resources held ON held.resource_key=requested.resource_key JOIN execution_steps owner ON owner.id=held.step_id WHERE requested.step_id=e.id AND owner.id!=e.id AND owner.state='running' AND owner.lease_until>?) ORDER BY coalesce(f.last_started,0),e.created_at,e.rowid`).iterate(pool,this.now(),JSON.stringify(handlers.map(h=>h.kind)),this.now());
      let row:Row|undefined;for(const candidate of candidates){if(!this.active.has(String(candidate.id))&&this.lane(view(candidate as Row))===lane){row=candidate as Row;break;}}
-     if(!row)break;
+     if(!row)continue;
      const handler=this.handlers.get(row.kind)!;
      const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{if(this.active.get(row.id)?.controller===controller)this.active.delete(row.id);if(completed)this.scheduleTick();});
      this.active.set(row.id,{controller,task,pool,kind:row.kind,lane});started.push(task);
-    }
+     this.scheduleTick();
     }
    }
   }finally{this.pumping=false;if(this.pumpAgain){this.pumpAgain=false;this.scheduleTick();}}
@@ -294,8 +301,14 @@ export class ExecutionEngine {
     return;
    }
    if(this.get(row.id)!.attempts>=policy.maxAttempts){
+    // Reconstructing a child after restart must not replace the last actual
+    // failure with an opaque budget error. Optional diagnostics cannot decide
+    // whether another execution is allowed, including when no receipt remains.
+    let causeCode='retry_cause_unavailable';
+    try{const previous=this.failure(row.id);causeCode=(previous?.code==='retry_budget_exhausted'?previous.causeCode:previous?.code)??causeCode;}catch{/* Keep the fixed unavailable cause. */}
     db.prepare("UPDATE execution_steps SET state='failed',error='retry_budget_exhausted',updated_at=? WHERE id=? AND state='waiting'").run(now,row.id);
-    this.retainFailure(this.get(row.id)!,'failed',new ExecutionFailure('permanent','retry_budget_exhausted'));this.project(row.id);db.exec('COMMIT');return;
+    const failure=retainFailureContext(new ExecutionFailure('permanent','retry_budget_exhausted'),{causeCode});
+    this.retainFailure(this.get(row.id)!,'failed',failure,failure);this.project(row.id);db.exec('COMMIT');return;
    }
    const claimed=db.prepare("UPDATE execution_steps SET state='running',attempts=attempts+1,fence=?,lease_until=?,error=NULL,updated_at=? WHERE id=? AND state='waiting'").run(fence,now+(timeout===null?30000:Math.min(timeout+10000,30000)),now,row.id).changes;
    if(!claimed){db.exec('COMMIT');return;}
@@ -371,7 +384,12 @@ export class ExecutionEngine {
    const admissionWait=error instanceof ProviderFailure&&error.details.admissionWaiting===true;
    const failure=admissionWait||classified.code==='rate_limited'&&classified.category==='transient'?new ExecutionFailure('waiting',classified.code,classified.retryAfterMs):classified;
    const stopping=this.stopping||signal.reason===interrupted;
-   const capacityWait=failure.category==='waiting',attempts=Math.max(0,step.attempts-Number(capacityWait||stopping));
+   // Prerequisite checks and coordinators observing a blocked child spend no
+   // failure budget. Keep that block and refund only this claim; genuine prior
+   // transport failures and unstarted permanent rejections retain their cost.
+   const cause=failureContext(error),blockedChild=failure.category==='blocked'&&cause.causeState==='blocked'&&cause.causeStepId&&this.get(cause.causeStepId)?.state==='blocked';
+   const unstartedBlock=(failure.category==='blocked'&&error instanceof ProviderFailure&&error.details.executionStarted===false)||Boolean(blockedChild);
+   const capacityWait=failure.category==='waiting',attempts=Math.max(0,step.attempts-Number(capacityWait||unstartedBlock||stopping));
    let state:ExecutionState=stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':capacityWait?'waiting':failure.category==='permanent'||attempts>=policy.maxAttempts?'failed':'waiting';
    const at=this.now(),availableAt=stopping?0:at+Math.max(capacityWait?1:0,failure.retryAfterMs??(capacityWait?1000:Math.min(3600000,1000*2**(attempts-1))));
    const recoveryDeadline=capacityWait||policy.maxRecoveryWindowMs===null?0:failure.category==='transient'&&!stopping?(Number(row.recovery_deadline)||at+Math.max(1,policy.maxRecoveryWindowMs)):Number(row.recovery_deadline)||0;
@@ -417,7 +435,7 @@ export class ExecutionEngine {
    if(step.state==='waiting')throw retainFailureContext(new ExecutionFailure('waiting',step.error??'step_pending',Math.max(1,step.availableAt-this.now())),{causeStepId:step.id,causeCode:step.error??'step_pending',causeState:step.state});
    if(step.state==='stale')throw new ExecutionFailure('stale','input_changed');
    if(step.state==='cancelled')throw new ExecutionFailure('permanent','cancelled');
-   if(step.state==='blocked')throw new ExecutionFailure('blocked',step.error??'step_blocked');
+   if(step.state==='blocked')throw retainFailureContext(new ExecutionFailure('blocked',step.error??'step_blocked'),{causeStepId:step.id,causeCode:step.error??'step_blocked',causeState:step.state});
    if(step.state==='failed')throw retainFailureContext(new ExecutionFailure('permanent',step.error??'step_failed',options.requireDurableResult?Math.max(0,step.availableAt-this.now()):undefined),{...failureContext(failure),causeStepId:step.id,causeCode:step.error??'step_failed',causeState:step.state});
    if(failure)throw failure;
    throw new ExecutionFailure('waiting','step_pending',Math.max(1000,step.availableAt-this.now()));

@@ -45,4 +45,11 @@ export class MemoryPhaseOutputs {
  retryFailed(batchId:string,ownerAction:boolean,generation:string){
   for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'memory.phase.%' AND json_extract(input,'$.batchId')=? AND json_extract(input,'$.generation')=? AND state IN ('failed','blocked')").all(batchId,generation))this.engine.retry(String(row.id),ownerAction);
  }
+ /** A successful model transport can explicitly report incomplete evaluation.
+  * An owner retry must re-review it, never replay that saved verdict forever. */
+ retryReview(batchId:string,ownerAction:boolean){
+  for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'memory.phase.%' AND json_extract(input,'$.batchId')=? AND json_extract(input,'$.phase')='review' AND state IN ('succeeded','failed','blocked')").all(batchId)){
+   this.store.db.prepare('DELETE FROM memory_phase_outputs WHERE step_id=?').run(row.id);this.engine.retry(String(row.id),ownerAction);
+  }
+ }
 }

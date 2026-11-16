@@ -13,6 +13,7 @@ import type {ModelAgentFactory} from '../src/model-agent.js';
 import {StoreError,sha256} from '../src/store.js';
 import {memoryImageGrants,uninspectedMemoryImageTargets} from '../src/memory-image-grants.js';
 import {materialId} from '../src/materials.js';
+import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {generatedMemoryOutput,planGeneratedMemory} from './fixtures/memory-planning.js';
 import type {MemoryEngine} from '../src/memory-native-stage-contract.js';
 import {MemoryProviderError} from '../src/memory-provider-contract.js';
@@ -25,7 +26,7 @@ function reviewGate(){
  const started=new Promise<void>(resolve=>entered=resolve),waiting=new Promise<void>(resolve=>release=resolve);
  return {started,release,async wait(){entered();await waiting;}};
 }
-type Scenario={intake?:'local'|'configured'|'waiting';zeroMemory?:boolean;discardVisual?:boolean;holdReview?:ReturnType<typeof reviewGate>;historical?:boolean;authorizationOff?:boolean;deferJob?:boolean;revokeImagesDuringExtract?:boolean;rewriteReview?:'uncovered'|'covering';deletionReview?:boolean;integration?:boolean;pendingUnderstanding?:boolean;ocr:'text'|'empty'|'failed';automatic?:boolean;denied?:boolean;skipReviewPixels?:boolean;deleteDuringReview?:boolean;replaceDuringReview?:boolean;attributionDuringReview?:boolean;metadataOnly?:boolean;unreadEmpty?:boolean;failFirstReview?:boolean};
+type Scenario={ocrOnly?:boolean;ocrBody?:string;incompleteImage?:boolean;skipOriginalPixels?:boolean;intake?:'local'|'configured'|'waiting';zeroMemory?:boolean;discardVisual?:boolean;holdReview?:ReturnType<typeof reviewGate>;historical?:boolean;authorizationOff?:boolean;deferJob?:boolean;revokeImagesDuringExtract?:boolean;rewriteReview?:'uncovered'|'covering';deletionReview?:boolean;integration?:boolean;pendingUnderstanding?:boolean;ocr:'text'|'empty'|'failed';automatic?:boolean;denied?:boolean;skipReviewPixels?:boolean;deleteDuringReview?:boolean;replaceDuringReview?:boolean;attributionDuringReview?:boolean;metadataOnly?:boolean;unreadEmpty?:boolean;failFirstReview?:boolean};
 async function fixture(t:import('node:test').TestContext,scenario:Scenario){
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-image-journey-')),token='generated-memory-image-owner';
  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-vision',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
@@ -49,9 +50,15 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
   try{
    assert.deepEqual(bridge.imageReadReceipts,[],'every model session begins with no inherited pixel delivery');
    const call=async(tool:string,args:unknown)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)});return {status:response.status,body:await response.json() as any};};
-   const grant=input.processingImages?.[0];assert.ok(grant,'new formal image task must carry a precise original grant');
+   const grant=input.processingImages?.[0];
+   const members=(input.taskContext?.memoryWork as {members?:MemoryWorkMember[]}|undefined)?.members??[];
+   const wireMembers=(buildContextEnvelope(input,bridge.seedEvidence).untrustedTaskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members??[];
+   for(const member of members)if(member.imageTarget){
+    assert.ok(input.processingImages?.some(image=>image.id===member.id&&image.originalSha256===member.imageTarget!.originalSha256),'each image target carries its precise frozen read grant');
+    assert.deepEqual(wireMembers.find(value=>value.id===member.id)?.imageTarget,member.imageTarget,'the actual model envelope preserves original-image target identity through compaction');
+   }
    if(scenario.deletionReview&&input.responseMode==='answer'){
-    const pixels=await call('read_image',{id:grant.id});assert.equal(pixels.status,200,JSON.stringify(pixels.body));
+    const pixels=await call('read_image',{id:grant!.id});assert.equal(pixels.status,200,JSON.stringify(pixels.body));
     bridge.imageDelivery(pixels.body.imageDelivery,true);
     receipts.push({phase:'deletion',ids:bridge.imageReadReceipts.map(receipt=>receipt.id),views:bridge.imageReadReceipts.map(receipt=>receipt.imageView.viewId)});
     return {answer:JSON.stringify({sameConclusion:true,newSupportEvidenceIds:[]}),citations:[],trace:bridge.trace,runId:randomUUID(),imageReadReceipts:bridge.imageReadReceipts,evidenceDependencies:bridge.evidenceDependencies};
@@ -62,22 +69,26 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
     assert.equal(input.processingImages!.length,1);
     const memory=await call('memories',{id:ids[0]});assert.equal(memory.status,200,JSON.stringify(memory.body));assert.equal(memory.body.data.items.length,1);
     const denied=await call('read_image',{id:randomUUID(),view:'metadata'});assert.equal(denied.status,400,'a selected image proof cannot authorize another image UUID');
-    const metadata=await call('read_image',{id:grant.id,view:'metadata'});assert.equal(metadata.status,200,JSON.stringify(metadata.body));
-    const pixels=await call('read_image',{id:grant.id,expectedImageSha256:metadata.body.imageView.original.sha256,region:{x:0,y:0,width:8,height:8}});assert.equal(pixels.status,200,JSON.stringify(pixels.body));
+    const metadata=await call('read_image',{id:grant!.id,view:'metadata'});assert.equal(metadata.status,200,JSON.stringify(metadata.body));
+    const pixels=await call('read_image',{id:grant!.id,expectedImageSha256:metadata.body.imageView.original.sha256,region:{x:0,y:0,width:8,height:8}});assert.equal(pixels.status,200,JSON.stringify(pixels.body));
     bridge.imageDelivery(pixels.body.imageDelivery,true);assert.equal(bridge.imageReadReceipts.length,1);
     receipts.push({phase:'integration',ids:bridge.imageReadReceipts.map(receipt=>receipt.id),views:bridge.imageReadReceipts.map(receipt=>receipt.imageView.viewId)});
     return {answer:'{"memories":[]}',citations:[],trace:bridge.trace,runId:randomUUID(),imageReadReceipts:bridge.imageReadReceipts,evidenceDependencies:bridge.evidenceDependencies};
    }
 
-   const text=bridge.seedEvidence.find(record=>record.ocrText.includes('GENERATED_OCR_TEXT'));
+   const text=bridge.seedEvidence.find(record=>record.ocrText===(scenario.ocrBody??'GENERATED_OCR_TEXT: the article author resigned.'));
+   if(grant&&text&&!scenario.skipOriginalPixels&&!scenario.incompleteImage&&!scenario.denied&&(!scenario.discardVisual||phase==='review')){
+    const full=await call('read_image',{id:grant!.id});assert.equal(full.status,200,JSON.stringify(full.body));bridge.imageDelivery(full.body.imageDelivery,true);
+   }
    let memories:any[]=[],incomplete=false;
    if(phase==='review'&&scenario.discardVisual){assert.ok(text,'same-original OCR lets review assess the target while discarding the visual proposal');}
-   else if(text&&scenario.ocr==='text'&&!scenario.discardVisual)memories=[{title:'Generated article',statement:`The displayed third-party article says its author resigned. [${text.id}]`,uncertainty:'The author is not identified as the owner.',admission:{layer:'observation',reason:'Generated visible article',scope:'This generated image only',attribution:'third_party'},evidenceIds:[text.id],evidence:[{id:text.id,quote:'GENERATED_OCR_TEXT: the article author resigned.'}]}];
+   else if(text&&scenario.ocr==='text'&&!scenario.discardVisual)memories=[{title:'Generated article',statement:`The displayed third-party article says its author resigned. [${text.id}]`,uncertainty:'The author is not identified as the owner.',admission:{layer:'observation',reason:'Generated visible article',scope:'This generated image only',attribution:'third_party'},evidenceIds:[text.id],evidence:[{id:text.id,quote:scenario.ocrBody??'GENERATED_OCR_TEXT: the article author resigned.'}]}];
    else if(scenario.denied)incomplete=true;
    else if(scenario.skipReviewPixels&&phase==='review')memories=(input.taskContext!.untrustedMemoryDraft as any).memories;
+   else if(scenario.incompleteImage)incomplete=true;
    else if(scenario.unreadEmpty){/* Deliberately invalid model response: no OCR/pixels were inspected. */}
    else {
-    const metadata=await call('read_image',{id:grant.id,view:'metadata'});
+    const metadata=await call('read_image',{id:grant!.id,view:'metadata'});
     if(scenario.revokeImagesDuringExtract)await bridge.failure;
     if(!scenario.denied&&metadata.status!==200)t.diagnostic(JSON.stringify(metadata.body));
     if(!scenario.denied)assert.equal(metadata.status,200,JSON.stringify(metadata.body));
@@ -87,25 +98,26 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
      if(scenario.metadataOnly)incomplete=true;
      else {
       const rewriting=phase==='review'&&scenario.rewriteReview;
-      const pixels=await call('read_image',{id:grant.id,expectedImageSha256:metadata.body.imageView.original.sha256,...(rewriting==='covering'?{}:{region:{x:rewriting==='uncovered'?8:0,y:rewriting==='uncovered'?8:0,width:8,height:8}})});
+      const pixels=await call('read_image',{id:grant!.id,expectedImageSha256:metadata.body.imageView.original.sha256,...(rewriting==='covering'?{}:{region:{x:rewriting==='uncovered'?8:0,y:rewriting==='uncovered'?8:0,width:rewriting==='uncovered'?8:(intake?.image.width??16),height:rewriting==='uncovered'?8:(intake?.image.height??16)}})});
       assert.equal(pixels.status,200,JSON.stringify(pixels.body));assert.ok(pixels.body.image.data);assert.equal(bridge.imageReadReceipts.length,0,'prepared bytes alone are not a delivery receipt');
-      const expected=await sharp(bytes).extract({left:rewriting==='uncovered'?8:0,top:rewriting==='uncovered'?8:0,width:rewriting==='covering'?(intake?.image.width??16):8,height:rewriting==='covering'?(intake?.image.height??16):8}).raw().toBuffer();
+      const expected=await sharp(bytes).extract({left:rewriting==='uncovered'?8:0,top:rewriting==='uncovered'?8:0,width:rewriting==='uncovered'?8:(intake?.image.width??16),height:rewriting==='uncovered'?8:(intake?.image.height??16)}).raw().toBuffer();
       assert.deepEqual(await sharp(Buffer.from(pixels.body.image.data,'base64')).raw().toBuffer(),expected,'the model receives archived pixels, never a description');
       bridge.imageDelivery(pixels.body.imageDelivery,true);
       const view=pixels.body.imageView;
-      memories=[{title:'Generated visible shape',statement:`The retained image depicts a red rectangle. [${grant.id}]`,uncertainty:'The creator and event date are unknown; this does not identify an owner preference.',admission:{layer:scenario.integration?'memory':'observation',reason:scenario.integration?'Retain the exact generated reference for the fixture redraw task':'Generated original visual fact',scope:'This generated image only',attribution:'observed'},evidenceIds:[grant.id],evidence:[{id:grant.id,image:{originalSha256:view.original.sha256,viewId:view.viewId}}]}];
-      if(rewriting){memories[0].title='Edited generated shape';memories[0].statement=`A red rectangle is visible in the retained image. [${grant.id}]`;}
+      memories=[{title:'Generated visible shape',statement:`The retained image depicts a red rectangle. [${grant!.id}]`,uncertainty:'The creator and event date are unknown; this does not identify an owner preference.',admission:{layer:scenario.integration?'memory':'observation',reason:scenario.integration?'Retain the exact generated reference for the fixture redraw task':'Generated original visual fact',scope:'This generated image only',attribution:'observed'},evidenceIds:[grant!.id],evidence:[{id:grant!.id,image:{originalSha256:view.original.sha256,viewId:view.viewId}}]}];
+      if(rewriting){memories[0].title='Edited generated shape';memories[0].statement=`A red rectangle is visible in the retained image. [${grant!.id}]`;}
       if(phase==='review'&&scenario.deleteDuringReview&&!mutated){mutated=true;node.store.delete(rawId);}
-      if(phase==='review'&&scenario.attributionDuringReview&&!mutated){mutated=true;const material=node.materials.get(grant.materialId)!;node.materials.correctContext(material.id,material.revision,'third_party');}
+      if(phase==='review'&&scenario.attributionDuringReview&&!mutated){mutated=true;const material=node.materials.get(grant!.materialId)!;node.materials.correctContext(material.id,material.revision,'third_party');}
       if(phase==='review'&&scenario.replaceDuringReview&&!mutated){mutated=true;const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#0000ff'}}).png().toBuffer();const upload=node.files.begin({sourceId:'generated-memory-image',previousRevision:'1',item:{externalId:'generated.png',revision:'2',observedAt:'2026-10-02T00:00:00Z',kind:'file',layer:'original',mimeType:'image/png',title:'Generated replacement',text:''},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});node.files.part(upload.uploadId,0,bytes,()=>{});await node.files.commit(upload.uploadId,()=>{});}
      }
     }
    }
    if(scenario.zeroMemory)memories=[];
+   if(scenario.incompleteImage)incomplete=true;
    if(phase==='review')await scenario.holdReview?.wait();
    let answer=generatedMemoryOutput(input,memories);
-   if(incomplete){const value=JSON.parse(answer);value.coverage=value.coverage.map((row:any)=>({...row,state:'incomplete',reason:'Necessary original pixels were not delivered.',candidateIndexes:[]}));answer=JSON.stringify(value);}
-   const parsed=parseAnswer(JSON.stringify({answer,citationIds:memories.flatMap(memory=>memory.evidenceIds),imageReadReceipts:[{id:grant.id,imageView:{forged:true}}]}),bridge.records);
+   if(incomplete){const value=JSON.parse(answer);value.coverage=value.coverage.map((row:any)=>members.some(member=>member.key===row.key&&member.imageTarget)?{...row,state:'incomplete',reason:'Necessary original pixels were not delivered.',candidateIndexes:[]}:row);answer=JSON.stringify(value);}
+   const parsed=parseAnswer(JSON.stringify({answer,citationIds:memories.flatMap(memory=>memory.evidenceIds),imageReadReceipts:grant?[{id:grant.id,imageView:{forged:true}}]:[]}),bridge.records);
    const result={...parsed,trace:bridge.trace,runId:randomUUID(),imageReadReceipts:bridge.imageReadReceipts,evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};
    receipts.push({phase,ids:result.imageReadReceipts.map(receipt=>receipt.id),views:result.imageReadReceipts.map(receipt=>receipt.imageView.viewId),runId:result.runId});
    return result;
@@ -114,7 +126,7 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
  node=await buildApp(config,{backgroundWorker:false,createModelAgent});
  if(intake){const models=node.modelSettings.view();await node.modelSettings.updateDefaults({revision:models.revision,defaults:models.defaults,defaultModels:{file:'generated-file-vision',memory:'generated-memory-vision',chat:'generated-chat-model'}});}
  await node.processing.saveImageDefault({endpoint:'http://127.0.0.1:9011/generated-ocr'});
- node.processing.runtime.registry.get('image.http').process=async()=>{if(scenario.ocr==='failed')throw new StoreError('Generated unsupported OCR response',422);return {durationMs:0,segments:scenario.ocr==='empty'?[]:[{startMs:0,endMs:0,text:'GENERATED_OCR_TEXT: the article author resigned.'}]};};
+ node.processing.runtime.registry.get('image.http').process=async()=>{if(scenario.ocr==='failed')throw new StoreError('Generated unsupported OCR response',422);return {durationMs:0,segments:scenario.ocr==='empty'?[]:[{startMs:0,endMs:0,text:scenario.ocrBody??'GENERATED_OCR_TEXT: the article author resigned.'}]};};
  await node.perception.save({revision:node.configService.revision,settings:{...node.perception.settings(),allowQueryImages:!scenario.denied}});
  const authorization=(await node.app.inject({url:'/api/model-authorization',headers:{authorization:'Bearer '+token}})).json();
  if(!scenario.authorizationOff){const consent=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:{authorization:'Bearer '+token},payload:{revision:authorization.authorization.revision,operationId:randomUUID(),action:'on'}});assert.equal(consent.statusCode,200,consent.body);}
@@ -125,8 +137,8 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
  rawId=await uploadMemoryImage(node,bytes);
  if(!scenario.pendingUnderstanding)await node.perception.tick();for(let i=0;i<30;i++)if(await node.materialOrganizer.tick(100)===0)break;
  const material=node.materials.list({sourceId:'generated-memory-image'}).items[0];assert.ok(material);
- const required=['image-original',...(scenario.ocr==='text'&&!scenario.authorizationOff?['extracted-text']:[])],pin=node.materials.input(material.ref,required)!;assert.equal(pin.ready,true);
- const grants=memoryImageGrants(node.store,[pin]);assert.equal(grants.length,1);assert.equal(grants[0].originalSha256,sha256(bytes));
+ const required=scenario.ocrOnly?['extracted-text']:['image-original',...(scenario.ocr==='text'&&!scenario.authorizationOff?['extracted-text']:[])],pin=node.materials.input(material.ref,required)!;assert.equal(pin.ready,true);
+ const grants=memoryImageGrants(node.store,[pin]);assert.equal(grants.length,scenario.ocrOnly?0:1);if(grants.length)assert.equal(grants[0].originalSha256,sha256(bytes));
  const startMemory=async()=>{const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+token},payload:{evidenceIds:pin.evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]}});assert.equal(response.statusCode,202,response.body);return String(response.json().id);};
  let jobId='';
  if(!scenario.deferJob){
@@ -137,10 +149,10 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
 }
 
 for(const ocr of ['text','empty','failed'] as const)test(`formal generated image intake supports independent Memory proof with ${ocr} OCR`,async t=>{
- const f=await fixture(t,{ocr}),done=await f.node.memoryPipeline.run(f.jobId);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
+ const f=await fixture(t,{ocr,ocrOnly:ocr==='text'}),done=await f.node.memoryPipeline.run(f.jobId);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
  const saved=f.node.memories.get(done.memoryIds[0]);assert.notEqual(saved.admission.attribution,'user');assert.ok(saved.uncertainty.includes('unknown')||saved.uncertainty.includes('not identified'));
  if(ocr==='text'){assert.equal(f.receipts.flatMap(receipt=>receipt.ids).length,0,'sufficient OCR does not force any visual call');assert.ok(saved.evidence[0].quote);}
- else {assert.ok(saved.evidence[0].image);assert.deepEqual(f.receipts.map(receipt=>receipt.phase),['extract','review']);assert.ok(f.receipts.every(receipt=>receipt.ids.length===1),'each independent session must actually receive pixels');assert.equal(saved.evidence[0].image!.region!.width,8);}
+ else {assert.ok(saved.evidence[0].image);assert.deepEqual(f.receipts.map(receipt=>receipt.phase),['extract','review']);assert.ok(f.receipts.every(receipt=>receipt.ids.length===1),'each independent session must actually receive pixels');assert.equal(saved.evidence[0].image!.region!.width,16);}
 });
 
 test('fresh image intake automatically selects original proof rather than interpretation and runs independent visual review once',async t=>{
@@ -173,16 +185,16 @@ test('a saved visual extraction resumes only independent review after restart wi
  assert.equal(f.receipts.filter(receipt=>receipt.phase==='review').length,1);assert.equal(f.node.memories.get(done.memoryIds[0]).evidence[0].image!.original.sha256,f.grants[0].originalSha256);
 });
 
-test('an OCR read from another image in the same frozen Material pin never assesses an unread image target',async t=>{
+test('OCR from this or another image never assesses unseen original pixels',async t=>{
  const f=await fixture(t,{ocr:'empty',deferJob:true}),other=randomUUID();await f.node.store.ingest({id:other,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated OCR from a different original.'});
  const draft={id:materialId('generated-memory-image','generated-mixed-proof'),kind:'mote.file',schemaVersion:2,title:'Generated two-original proof',origin:{sourceId:'generated-memory-image',externalId:'generated-mixed-proof'},members:[{id:f.rawId,kind:'capture' as const,ref:'capture:'+f.rawId},{id:other,kind:'capture' as const,ref:'capture:'+other}],blocks:[{id:'original',kind:'text' as const,format:'json',text:'Generated original image locator',memberIds:[f.rawId],locator:{memoryImageOriginal:{captureId:f.rawId,sha256:f.grants[0].originalSha256}}},{id:'ocr',kind:'text' as const,format:'plain',text:'Generated OCR from a different original.',memberIds:[other]}],artifacts:[{key:'image-original',state:'ready' as const,blockIds:['original']},{key:'extracted-text',state:'ready' as const,blockIds:['ocr']}],coverage:{state:'complete' as const},fidelity:{state:'lossless' as const},retention:{original:'retained' as const,policy:'keep'}};
  const material=f.node.materials.publish(draft),pin=f.node.materials.input(material.ref,['image-original','extracted-text'])!,grants=memoryImageGrants(f.node.store,[pin]);assert.equal(grants.length,1);
  const delivered=pin.evidenceIds.map(id=>({id,offset:0,length:f.node.memories.readEvidence([id])[0].ocrText.length})),result={answer:JSON.stringify({memories:[],coverage:[{key:'target',state:'no_candidates',candidateIndexes:[]}]}),citations:[],trace:[],runId:randomUUID()},targets=[{id:grants[0].id,key:'target'}];
- assert.deepEqual(uninspectedMemoryImageTargets(f.node.store,[pin],grants,result,delivered,targets),[grants[0].id]);
+ assert.deepEqual(uninspectedMemoryImageTargets(grants,result,delivered,targets),[grants[0].id]);
  const next=f.node.materials.publish({...draft,blocks:[draft.blocks[0],{...draft.blocks[1],memberIds:[f.rawId]}]},{expectedRevision:material.revision}),same=f.node.materials.input(next.ref,['image-original','extracted-text'])!,sameGrants=memoryImageGrants(f.node.store,[same]);
  const sameReads=same.evidenceIds.map(id=>({id,offset:0,length:f.node.memories.readEvidence([id])[0].ocrText.length}));
- assert.deepEqual(uninspectedMemoryImageTargets(f.node.store,[same],sameGrants,result,sameReads,[{id:sameGrants[0].id,key:'target'}]),[],'actual same-original OCR allows the model to choose whether pixels are needed');
- assert.deepEqual(uninspectedMemoryImageTargets(f.node.store,[same],sameGrants,result,sameReads.filter(range=>range.id===sameGrants[0].id),[{id:sameGrants[0].id,key:'target'}]),[sameGrants[0].id],'OCR readiness without an actual delivered range grants no assessment');
+ assert.deepEqual(uninspectedMemoryImageTargets(sameGrants,result,sameReads,[{id:sameGrants[0].id,key:'target'}]),[sameGrants[0].id],'same-original OCR certifies text only, never the unobserved image');
+ assert.deepEqual(uninspectedMemoryImageTargets(sameGrants,result,sameReads.filter(range=>range.id===sameGrants[0].id),[{id:sameGrants[0].id,key:'target'}]),[sameGrants[0].id],'OCR readiness without an actual delivered range grants no assessment');
 });
 
 for(const intake of [undefined,'local'] as const)test(`${intake??'configured'} image-understanding input cannot turn an exact quotation of interpretation JSON into original proof`,async t=>{
@@ -233,30 +245,125 @@ test('actual app native visual preflight retains an empty integration delivery r
 
 
 test('disabled archive pixels still allow OCR-backed Memory extraction and independent review through Central startup',async t=>{
- const f=await fixture(t,{ocr:'text',denied:true}),done=await f.node.memoryPipeline.run(f.jobId);
+ const f=await fixture(t,{ocr:'text',ocrOnly:true,denied:true}),done=await f.node.memoryPipeline.run(f.jobId);
  assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
  assert.deepEqual(f.receipts.map(receipt=>receipt.phase),['extract','review']);assert.ok(f.receipts.every(receipt=>receipt.ids.length===0));
  const saved=f.node.memories.get(done.memoryIds[0]);assert.equal(saved.evidence[0].quote,'GENERATED_OCR_TEXT: the article author resigned.');
  assert.equal(f.node.perception.settings().allowQueryImages,false);
 });
 
-test('explicit current OCR selection recovers an incomplete image evaluation without changing its frozen failed job',async t=>{
+test('selected OCR plus an original locator waits for image permission without spending model calls',async t=>{
+ const f=await fixture(t,{ocr:'text',denied:true}),done=await f.node.memoryPipeline.run(f.jobId);
+ assert.equal(done.status,'waiting_for_input',JSON.stringify(done));assert.equal(done.errorCode,'image_disclosure_disabled');
+ assert.deepEqual(done.memoryIds,[]);assert.equal(f.inputs.length,0,'a known unavailable visual target is blocked before extraction/review');
+ assert.deepEqual(done.evidenceIds.sort(),[...f.pin.evidenceIds].sort(),'every selected OCR and image target remains frozen');
+});
+
+test('an OCR target with a context-only original locator completes without disclosing pixels',async t=>{
+ const f=await fixture(t,{ocr:'text',denied:true,deferJob:true}),text=f.node.materials.input(f.material.ref,['extracted-text'])!,original=f.node.materials.input(f.material.ref,['image-original'])!;
+ const range=(id:string)=>({id,offset:0,length:f.node.memories.readEvidence([id])[0].ocrText.length});
+ const selected=f.node.memoryPipeline.create({evidenceIds:f.pin.evidenceIds,evidenceRanges:text.evidenceIds.map(range),contextEvidenceRanges:original.evidenceIds.map(range),recipes:[{id:'mote.personal-memory',version:'5'}]});
+ const done=await f.node.memoryPipeline.run(selected.id);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
+ assert.deepEqual(done.batches.flatMap(batch=>batch.evidenceRanges).map(range=>range.id),text.evidenceIds);
+ assert.ok(f.inputs.every(input=>input.processingImages?.length===1),'the frozen optional locator remains in authorized context');
+ assert.ok(f.receipts.every(receipt=>receipt.ids.length===0));assert.equal(f.node.perception.settings().allowQueryImages,false);
+});
+
+for(const denied of [false,true])test(`mixed authored text, OCR and original-image targets ${denied?'wait for image permission':'retain every reviewed range'}`,async t=>{
+ const f=await fixture(t,{ocr:'text',denied,deferJob:true}),headers={authorization:'Bearer generated-memory-image-owner'};
+ const raw=await f.node.sources.upsert('generated-memory-image',{externalId:'generated-message',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated author reports a project milestone; its visual attachment has separate scope.'});
+ for(let i=0;i<30;i++)if(await f.node.materialOrganizer.tick(100)===0)break;
+ const material=f.node.materials.list({sourceId:'generated-memory-image'}).items.find(item=>item.origin.externalId==='generated-message');assert.ok(material);
+ const text=f.node.materials.input(material.ref,['source-body'])!,evidenceIds=[...text.evidenceIds,...f.pin.evidenceIds];
+ const response=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]}});assert.equal(response.statusCode,202,response.body);
+ const done=await f.node.memoryPipeline.run(response.json().id);assert.equal(done.status,denied?'waiting_for_input':'completed',JSON.stringify(done));
+ assert.deepEqual(done.evidenceIds.sort(),[...evidenceIds].sort());assert.deepEqual(done.batches.flatMap(batch=>batch.evidenceRanges).map(range=>range.id).sort(),[...evidenceIds].sort());
+ assert.equal(f.inputs.length,denied?0:2);assert.equal(f.node.store.isCurrentEvidence(raw.id),true);
+ if(denied){assert.equal(done.errorCode,'image_disclosure_disabled');assert.deepEqual(done.memoryIds,[]);}
+ else {assert.equal(done.memoryIds.length,1);assert.ok(done.batches.every(batch=>batch.coverage?.every(member=>['checked','no_candidates'].includes(member.state))));assert.ok(f.receipts.every(receipt=>receipt.ids.includes(f.grants[0].id)));}
+});
+
+test('a legacy locator-only checkpoint cannot silently complete a newly selected original-image target',async t=>{
+ const f=await fixture(t,{ocr:'empty',denied:true,deferJob:true}),recipes=[{id:'mote.personal-memory',version:'5'}];
+ const probe=f.node.memoryPipeline.create({evidenceIds:f.pin.evidenceIds,recipes}),chunk=probe.authorizedChunks[0];assert.ok(chunk.strategy);
+ // Generated persisted receipt from the old locator-as-text checkpoint contract.
+ const legacyKey=sha256(JSON.stringify([chunk.id,chunk.fingerprint,chunk.offset,chunk.length,chunk.strategy,[probe.contextTime,probe.timeZone??'UTC',probe.language]]));
+ f.node.store.db.prepare('INSERT INTO memory_checkpoints VALUES(?,?,?)').run(legacyKey,chunk.id,probe.createdAt);f.node.memoryPipeline.cancel(probe.id);
+ const response=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer generated-memory-image-owner'},payload:{evidenceIds:f.pin.evidenceIds,contextTime:probe.contextTime,recipes}});assert.equal(response.statusCode,202,response.body);
+ const done=await f.node.memoryPipeline.run(response.json().id);assert.equal(done.status,'waiting_for_input');assert.equal(done.errorCode,'image_disclosure_disabled');
+ assert.equal(done.totalBatches,1);assert.equal(done.skippedChunks,0);assert.deepEqual(done.batches.flatMap(batch=>batch.evidenceRanges).map(range=>range.id),f.pin.evidenceIds);assert.equal(f.inputs.length,0);
+});
+
+test('an old incomplete image job retries to permission waiting across restart without replaying either model phase',async t=>{
+ const scenario:Scenario={ocr:'text',incompleteImage:true},f=await fixture(t,scenario),headers={authorization:'Bearer generated-memory-image-owner'};
+ const failed=await f.node.memoryPipeline.run(f.jobId);assert.equal(failed.status,'failed');assert.equal(failed.errorCode,'memory_evaluation_incomplete');assert.deepEqual(failed.memoryIds,[]);
+ const frozen=failed.batches.flatMap(batch=>batch.evidenceRanges),calls=f.inputs.length;assert.equal(calls,2,'the original incomplete verdict was independently reviewed once');
+ await f.node.perception.save({revision:f.node.configService.revision,settings:{...f.node.perception.settings(),allowQueryImages:false}});
+ await f.restart();
+ for(let attempt=0;attempt<2;attempt++){
+  const response=await f.node.app.inject({method:'POST',url:`/api/memory-jobs/${f.jobId}/retry`,headers});assert.equal(response.statusCode,202,response.body);
+  const waiting=await f.node.memoryPipeline.run(f.jobId);assert.equal(waiting.status,'waiting_for_input');assert.equal(waiting.errorCode,'image_disclosure_disabled');
+  assert.deepEqual(waiting.batches.flatMap(batch=>batch.evidenceRanges),frozen);assert.deepEqual(waiting.materialInputs,failed.materialInputs);assert.deepEqual(waiting.memoryIds,[]);
+  assert.equal(f.inputs.length,calls,'rechecking a disabled original never spends another model call');
+  await f.restart();assert.equal(f.node.memoryPipeline.get(f.jobId).status,'waiting_for_input');
+ }
+ await f.node.perception.save({revision:f.node.configService.revision,settings:{...f.node.perception.settings(),allowQueryImages:true}});scenario.incompleteImage=false;
+ assert.equal(f.node.perception.settings().allowQueryImages,true);assert.equal(f.node.configService.current<{allowQueryImages:boolean}>('perception').allowQueryImages,true);
+ const response=await f.node.app.inject({method:'POST',url:`/api/memory-jobs/${f.jobId}/retry`,headers});assert.equal(response.statusCode,202,response.body);
+ const done=await f.node.memoryPipeline.run(f.jobId);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
+ assert.deepEqual(done.batches.flatMap(batch=>batch.evidenceRanges),frozen);assert.ok(f.receipts.at(-1)!.ids.includes(f.grants[0].id),'independent review receives original pixels after explicit enablement');
+});
+
+test('nonempty same-original OCR cannot certify an unread image target even when pixels are allowed',async t=>{
+ const f=await fixture(t,{ocr:'text',skipOriginalPixels:true}),done=await f.node.memoryPipeline.run(f.jobId);
+ assert.equal(done.status,'failed');assert.deepEqual(done.memoryIds,[]);assert.equal(f.node.memories.list().length,0);
+ assert.ok(done.batches.some(batch=>batch.validationFailures?.some(failure=>failure.code==='image_evidence')));
+ assert.ok(f.receipts.every(receipt=>receipt.ids.length===0));
+});
+
+for(const ocrOnly of [false,true])test(`eight isolated OCR glyphs with ${ocrOnly?'text-only':'original-image'} selection preserve their exact assessment scope`,async t=>{
+ const f=await fixture(t,{ocr:'text',ocrBody:'7\nx\n2\nA\n9\n.\n0\nQ',ocrOnly,denied:true,zeroMemory:true}),done=await f.node.memoryPipeline.run(f.jobId);
+ assert.equal(done.status,ocrOnly?'completed':'waiting_for_input');assert.deepEqual(done.memoryIds,[]);assert.equal(f.inputs.length,ocrOnly?2:0);
+ assert.equal(f.node.perception.settings().allowQueryImages,false);assert.deepEqual(done.evidenceIds.sort(),[...f.pin.evidenceIds].sort());
+ if(ocrOnly)assert.ok(done.batches.every(batch=>batch.coverage?.every(member=>member.state==='no_candidates')));
+ else assert.equal(done.errorCode,'image_disclosure_disabled');
+});
+
+test('eight separately archived images with isolated OCR retain all sixteen frozen targets while disclosure is disabled',async t=>{
+ const f=await fixture(t,{ocr:'text',ocrBody:'7',denied:true,deferJob:true}),headers={authorization:'Bearer generated-memory-image-owner'};
+ for(let index=1;index<8;index++){
+  const bytes=await sharp({create:{width:16,height:16,channels:3,background:{r:20*index,g:0,b:200}}}).png().toBuffer();
+  await uploadMemoryImage(f.node,bytes,'1',undefined,`generated-${index}.png`);
+ }
+ await f.node.perception.tick();for(let i=0;i<30;i++)if(await f.node.materialOrganizer.tick(100)===0)break;
+ const materials=f.node.materials.list({sourceId:'generated-memory-image'}).items;assert.equal(materials.length,8);
+ const pins=materials.map(material=>f.node.materials.input(material.ref,['extracted-text','image-original'])!);assert.ok(pins.every(pin=>pin.ready));
+ const evidenceIds=pins.flatMap(pin=>pin.evidenceIds);assert.equal(evidenceIds.length,16);assert.equal(memoryImageGrants(f.node.store,pins).length,8);
+ const response=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]}});assert.equal(response.statusCode,202,response.body);
+ const done=await f.node.memoryPipeline.run(response.json().id);assert.equal(done.status,'waiting_for_input');assert.equal(done.errorCode,'image_disclosure_disabled');assert.equal(done.totalBatches,1);
+ assert.deepEqual(done.batches.flatMap(batch=>batch.evidenceRanges).map(range=>range.id).sort(),[...evidenceIds].sort());assert.equal(done.batches.flatMap(batch=>batch.coverage??[]).filter(member=>member.imageTarget).length,8);
+ assert.equal(f.inputs.length,0);assert.deepEqual(done.memoryIds,[]);assert.equal(f.node.perception.settings().allowQueryImages,false);
+ await f.restart();assert.equal(f.node.memoryPipeline.get(done.id).status,'waiting_for_input');
+ const cancelled=await f.node.app.inject({method:'POST',url:`/api/memory-jobs/${done.id}/cancel`,headers});assert.equal(cancelled.statusCode,200,cancelled.body);assert.equal(f.node.memoryPipeline.get(done.id).status,'cancelled');assert.equal(f.inputs.length,0);
+});
+
+test('explicit OCR-only reselection leaves the waiting image job and its frozen scope intact',async t=>{
  const f=await fixture(t,{ocr:'text',denied:true,deferJob:true}),headers={authorization:'Bearer generated-memory-image-owner'};
  const original=f.node.materials.input(f.material.ref,['image-original'])!;
  const first=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:original.evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]}});
  assert.equal(first.statusCode,202,first.body);const failedId=String(first.json().id),failed=await f.node.memoryPipeline.run(failedId);
- assert.equal(failed.status,'failed');assert.equal(failed.errorCode,'memory_evaluation_incomplete');assert.deepEqual(failed.memoryIds,[]);
+ assert.equal(failed.status,'waiting_for_input');assert.equal(failed.errorCode,'image_disclosure_disabled');assert.deepEqual(failed.memoryIds,[]);
  const before=f.inputs.length,retry=await f.node.app.inject({method:'POST',url:`/api/memory-jobs/${failedId}/retry`,headers});
  assert.equal(retry.statusCode,202,retry.body);const retried=await f.node.memoryPipeline.run(failedId);
- assert.equal(retried.status,'failed');assert.equal(retried.errorCode,'memory_evaluation_incomplete');assert.deepEqual(retried.materialInputs,failed.materialInputs,'retry cannot add OCR to a frozen original-only input');
+ assert.equal(retried.status,'waiting_for_input');assert.equal(retried.errorCode,'image_disclosure_disabled');assert.deepEqual(retried.materialInputs,failed.materialInputs,'retry cannot add OCR to a frozen original-only input');
  assert.ok(f.inputs.slice(before).every(input=>input.processingMaterialInputs?.every(pin=>!pin.required.includes('extracted-text'))));const afterRetry=f.inputs.length;
  const frozen=f.node.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(failedId)!.json;
  const phases=f.node.store.db.prepare('SELECT * FROM memory_phase_outputs WHERE batch_id=? ORDER BY phase').all(retried.batches[0].id);
- const selected=f.node.materials.input(f.material.id,['image-original','extracted-text'])!;assert.equal(selected.ready,true);
+ const selected=f.node.materials.input(f.material.id,['extracted-text'])!;assert.equal(selected.ready,true);
  const recovery=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:selected.evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]}});
  assert.equal(recovery.statusCode,202,recovery.body);const recoveryId=String(recovery.json().id);assert.notEqual(recoveryId,failedId);
  const done=await f.node.memoryPipeline.run(recoveryId);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
- assert.deepEqual(done.materialInputs?.map(input=>input.required),[['extracted-text','image-original']]);
+ assert.deepEqual(done.materialInputs?.map(input=>input.required),[['extracted-text']]);
  assert.deepEqual(done.evidenceIds.sort(),[...selected.evidenceIds].sort());
  assert.equal(f.node.memories.get(done.memoryIds[0]).evidence[0].quote,'GENERATED_OCR_TEXT: the article author resigned.');
  assert.equal(f.node.perception.settings().allowQueryImages,false);assert.equal(f.inputs.length,afterRetry+2,'the new current selection gets a fresh extraction and independent review');
@@ -273,9 +380,9 @@ test('revoking image disclosure during extraction blocks the official task witho
 });
 
 
-test('disabled pixels without sufficient OCR retain an incomplete Memory outcome and no publication',async t=>{
+test('disabled pixels preserve the original target as waiting with no publication',async t=>{
  const f=await fixture(t,{ocr:'empty',denied:true}),done=await f.node.memoryPipeline.run(f.jobId);
- assert.notEqual(done.status,'completed');assert.equal(done.errorCode,'memory_evaluation_incomplete');
+ assert.equal(done.status,'waiting_for_input');assert.equal(done.errorCode,'image_disclosure_disabled');
  assert.equal(done.memoryIds.length,0);assert.equal(f.node.memories.list().length,0);assert.ok(f.receipts.every(receipt=>receipt.ids.length===0));
 });
 
@@ -285,7 +392,7 @@ for(const intake of ['local','configured'] as const)test(`${intake} intake keeps
  assert.deepEqual(f.intake!.counts(),intake==='local'?{local:1,configured:0}:{local:0,configured:1});
  assert.deepEqual(f.receipts.map(receipt=>[receipt.phase,receipt.ids]),[['extract',[f.grants[0].id]],['review',[f.grants[0].id]]]);
  assert.notEqual(f.receipts[0].runId,f.receipts[1].runId,'two independently controlled bridge sessions deliver their own pixels');
- const saved=f.node.memories.get(done.memoryIds[0]);assert.equal(saved.evidence[0].image!.original.sha256,sha256(f.intake!.image.bytes));assert.deepEqual(saved.evidence[0].image!.region,{x:0,y:0,width:8,height:8});
+ const saved=f.node.memories.get(done.memoryIds[0]);assert.equal(saved.evidence[0].image!.original.sha256,sha256(f.intake!.image.bytes));assert.deepEqual(saved.evidence[0].image!.region,{x:0,y:0,width:f.intake!.image.width,height:f.intake!.image.height});
  const stored=JSON.parse(String(f.node.store.db.prepare("SELECT json FROM image_products WHERE capture_id=? AND kind='understanding' AND current=1").get(f.rawId)!.json));
  assert.equal(stored.payload.text,f.intake!.image.interpretation.text);
  assert.equal(stored.evidence.original.sha256,saved.evidence[0].image!.original.sha256,'the real intake serializer and Memory consumer refer to the same archived original');
@@ -297,7 +404,7 @@ for(const intake of ['local','configured'] as const)test(`${intake} intake keeps
 });
 
 test('a local text-only image supports quoted Memory through the same-original OCR without either session reading pixels',async t=>{
- const f=await fixture(t,{ocr:'text',intake:'local'}),done=await f.node.memoryPipeline.run(f.jobId);
+ const f=await fixture(t,{ocr:'text',intake:'local',ocrOnly:true}),done=await f.node.memoryPipeline.run(f.jobId);
  assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
  assert.equal(f.intake!.counts().local,1);assert.deepEqual(f.receipts.map(receipt=>[receipt.phase,receipt.ids.length]),[['extract',0],['review',0]]);
  const saved=f.node.memories.get(done.memoryIds[0]);assert.equal(saved.evidence[0].quote,f.intake!.image.ocr.segments[0].text);assert.equal(saved.evidence[0].image,undefined);assert.equal(saved.admission.attribution,'third_party');
@@ -319,10 +426,10 @@ for(const variant of ['skipReviewPixels','unreadEmpty'] as const)test(`local int
  else assert.ok(f.receipts.every(receipt=>receipt.ids.length===0));
 });
 
-test('review may discard a local image visual proposal using its same-original OCR without an extra pixel delivery',async t=>{
+test('review retains the full selected image assessment when discarding its visual proposal',async t=>{
  const f=await fixture(t,{ocr:'text',intake:'local',discardVisual:true}),done=await f.node.memoryPipeline.run(f.jobId);
  assert.equal(done.status,'completed',JSON.stringify(done));assert.deepEqual(done.memoryIds,[]);assert.equal(f.node.memories.list().length,0);
- assert.deepEqual(f.receipts.map(receipt=>[receipt.phase,receipt.ids.length]),[['extract',1],['review',0]]);
+ assert.deepEqual(f.receipts.map(receipt=>[receipt.phase,receipt.ids.length]),[['extract',1],['review',1]]);
 });
 
 for(const change of ['delete','replace','exclude-source'] as const)test(`local image ${change} during independent review invalidates its late result`,async t=>{
@@ -356,6 +463,19 @@ for(const change of ['delete','replace','exclude-source'] as const)test(`local i
   assert.notEqual(done.status,'completed',JSON.stringify(done));assert.deepEqual(done.memoryIds,[]);assert.equal(f.node.memories.list().length,0);
  }
  assert.ok(f.receipts.some(receipt=>receipt.phase==='review'&&receipt.ids.length===1),'even a delivered review cannot commit after input authority changes');
+});
+
+for(const action of ['cancel','revoke-images'] as const)test(`${action} while a complete image review is held fences its late result`,async t=>{
+ const held=reviewGate(),f=await fixture(t,{ocr:'empty',holdReview:held}),running=f.node.memoryPipeline.run(f.jobId);
+ try{
+  await Promise.race([held.started,running.then(()=>assert.fail('Independent review did not reach the held state'))]);
+  if(action==='cancel'){
+   const response=await f.node.app.inject({method:'POST',url:`/api/memory-jobs/${f.jobId}/cancel`,headers:{authorization:'Bearer generated-memory-image-owner'}});assert.equal(response.statusCode,200,response.body);
+  }else await f.node.perception.save({revision:f.node.configService.revision,settings:{...f.node.perception.settings(),allowQueryImages:false}});
+ }finally{held.release();}
+ const done=await running;assert.equal(done.status,action==='cancel'?'cancelled':'waiting_for_input');assert.deepEqual(done.memoryIds,[]);assert.equal(f.node.memories.list().length,0);
+ if(action==='revoke-images')assert.equal(done.errorCode,'image_disclosure_disabled');
+ await f.restart();const restored=f.node.memoryPipeline.get(f.jobId);assert.equal(restored.status,done.status);assert.deepEqual(restored.memoryIds,[]);
 });
 
 test('local model waiting leaves original-backed automatic Memory available and recovery spends no new historical grant',async t=>{

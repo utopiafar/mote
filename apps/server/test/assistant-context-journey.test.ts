@@ -107,7 +107,8 @@ test('file deletion retires frozen work and privacy forget erases answers reache
  const published=await followup.finish(analysis.id);assert.equal(published.cardIds.length,1);
  assert.deepEqual((await call('GET','/api/assistant-notifications?'+scoped)).items.map((item:{id:string})=>item.id),published.cardIds);
  const card=node.featureServices.assistantCards.get(published.cardIds[0],scope);
- const command={requestId:randomUUID(),cardId:card.id,expectedRevision:card.revision,goal:'Generated decide the release owner',scope};
+ assert.ok(card.taskScope,'the saved suggestion supplies its exact authorized task scope');
+ const command={requestId:randomUUID(),cardId:card.id,expectedRevision:card.revision,goal:'Generated decide the release owner',scope:card.taskScope};
  const started=await call('POST','/api/assistant/tasks',command),repeated=await call('POST','/api/assistant/tasks',command);assert.equal(started.taskId,repeated.taskId);
  await until(()=>Boolean(node.store.db.prepare("SELECT 1 FROM owner_questions WHERE json_extract(json,'$.state')='open'").get())||Boolean(providerFailure)||['failed','stale'].includes(String(node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(started.taskId)?.state)));
  if(providerFailure)throw providerFailure;

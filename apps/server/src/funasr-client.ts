@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
-import {ProviderFailure} from '@mote/shared';
+import {ProviderFailure,errorDiagnostics} from '@mote/shared';
 import {StoreError} from './store.js';
 import {isLoopback,requestLocalJson} from './local-http.js';
 import {mediaModelIdentities} from './media-assets.js';
@@ -23,16 +23,31 @@ function endpoint(input:ProcessorInput,path:string){
   url.pathname=url.pathname.replace(/\/transcribe\/?$/,path);return url;
 }
 const headers=(input:ProcessorInput):Record<string,string>=>input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{ };
+const unavailableIdentity=()=>new ProviderFailure({category:'blocked',code:'processor_not_configured',executionStarted:false});
 
 async function identity(input:ProcessorInput):Promise<FunasrIdentity>{
   input.signal.throwIfAborted();input.authorizeModel?.();
-  const raw=await requestLocalJson(endpoint(input,'/health'),{headers:headers(input),signal:input.signal,limit:64*1024,requireOfflineExecution:true});
-  const health=raw as Record<string,unknown>|null,loaded=funasrIdentitySchema.safeParse(health?.identity);
-  if(health?.protocol!==FUNASR_PROTOCOL||health.execution!=='local'||!loaded.success)throw new StoreError('Current FunASR worker identity is unavailable',409);
+  let raw:unknown;
+  try{raw=await requestLocalJson(endpoint(input,'/health'),{headers:headers(input),signal:input.signal,limit:64*1024,requireOfflineExecution:true});}
+  catch(error){
+    input.signal.throwIfAborted();
+    // This GET cannot issue inference. A transient listener failure is safely
+    // retryable; do not turn a restart into a permanent failure of the audio.
+    const diagnostic=errorDiagnostics(error);
+    if(['ECONNREFUSED','ECONNRESET','EPIPE','ETIMEDOUT'].includes(diagnostic.code??''))throw new ProviderFailure({category:'transient',code:'provider_unavailable',executionStarted:false},undefined,diagnostic);
+    throw error;
+  }
+  const health=raw as Record<string,unknown>|null;
+  if(health?.protocol!==FUNASR_PROTOCOL||health.execution!=='local')throw unavailableIdentity();
+  // A current worker has no loaded identity while its readiness probe runs.
+  // This is an admission wait, so a long cold load consumes no inference retry.
+  if(health.asr!==true&&health.loading===true)throw new ProviderFailure({category:'transient',code:'worker_not_ready',executionStarted:false,admissionWaiting:true,retryAfterMs:1000});
+  if(health.asr!==true)throw new ProviderFailure({category:'blocked',code:health.reason==='component_missing'||health.reason==='model_missing'?health.reason:'worker_not_ready',executionStarted:false});
+  const loaded=funasrIdentitySchema.safeParse(health.identity);
+  if(!loaded.success)throw unavailableIdentity();
   // CORE-01 owns the catalog. Never substitute a generated revision or accept
   // the request's identity as proof of which installed models the worker uses.
-  if(!isDeepStrictEqual(loaded.data.models,mediaModelIdentities('dialogue')))throw new StoreError('FunASR worker does not match the installed model catalog',409);
-  if(health.asr!==true)throw new ProviderFailure({category:'blocked',code:'worker_not_ready',executionStarted:false});
+  if(!isDeepStrictEqual(loaded.data.models,mediaModelIdentities('dialogue')))throw unavailableIdentity();
   // This fingerprint describes the worker's inference settings. Host connection
   // settings are already bound by file-step inputs and model authorization;
   // replacing loaded facts with that host digest would falsify provenance.

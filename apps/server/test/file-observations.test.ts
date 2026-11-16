@@ -11,6 +11,7 @@ import {FileProcessing} from '../src/file-processing.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {FileObservationReader} from '../src/file-observations.js';
+import {canonicalRecipeJson} from '../src/recipe-contract.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 
 const all={kind:'all' as const};
@@ -146,4 +147,17 @@ test('scope, current version, exposure policy and forgetting are rechecked for e
  assert.equal(newerOnly.previous,null);assert.equal(newerOnly.comparison.status,'unavailable');assert.deepEqual(newerOnly.changes,[],'a time-excluded predecessor cannot disclose its title or differences');
  f.sources.update('archive',{enabled:false});assert.throws(()=>f.reader.read({captureId:two.id,scope:all}),{statusCode:404});f.sources.update('archive',{enabled:true});
  f.files.forget(two.id);assert.throws(()=>f.reader.read({captureId:two.id,scope:all}),{statusCode:404});assert.throws(()=>f.reader.readBody({captureId:two.id,scope:all}),{statusCode:404});
+});
+
+
+test('a current file observation retains the same identity after its optional document times are persisted as JSON',async t=>{
+ const f=fixture(t),bytes=Buffer.from('Generated document with known authorship date and unknown event date.');
+ const input=manifest('archive','json-snapshot','1',null,bytes,'original');
+ input.item.document={recordedAt:'2026-10-01T00:00:00.000Z',timeBasis:'recorded',contentRole:'authored',path:'generated-json.txt'};
+ const received=await upload(f.files,input,bytes),current=f.reader.read({captureId:received.id,scope:all});
+ const saved=JSON.parse(JSON.stringify(current));
+ assert.equal(Object.hasOwn(current.current.document!,'occurredAt'),false,'an unknown event date is absent in both the live and durable observation');
+ assert.equal(current.current.document?.recordedAt,'2026-10-01T00:00:00.000Z');
+ assert.equal(canonicalRecipeJson(current),canonicalRecipeJson(saved));
+ assert.deepEqual(f.reader.read({captureId:received.id,scope:all}),saved);
 });

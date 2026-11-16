@@ -69,6 +69,16 @@ try{
       await first;const error=await second;if(error)throw error;
       if(overlapped)throw Error('A second module stole a live lock');
     }finally{release();DatabaseSync.prototype.exec=execute;}
+  }else if(mode==='contend-append'){
+    await store.init();
+    const execute=DatabaseSync.prototype.exec;let observed=false;
+    DatabaseSync.prototype.exec=function(sql){
+      try{return execute.call(this,sql);}
+      catch(error){if(!observed&&sql==='BEGIN IMMEDIATE'&&error.errcode===5){observed=true;send('contended');}throw error;}
+    };
+    send('ready');await command('append');
+    const at=new Date().toISOString();
+    await store.append([{channel:'warn',at,line:JSON.stringify({writer:process.pid,index:0})+'\n'}]);
   }else if(mode==='append'){
     await store.init();send('ready');await command('append');
     for(let index=0;index<24;index++){

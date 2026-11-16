@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import type {QueryInput} from '@mote/agent';
+import {AgentResponseError,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Store} from '../src/store.js';
 import {MaterialStore,materialId,type MaterialReadPage} from '../src/materials.js';
@@ -12,6 +12,8 @@ import {MemoryStore} from '../src/memory.js';
 import {UsageLedger} from '../src/usage.js';
 import {parseSemanticProducts} from '../src/semantic-extraction.js';
 import {conversationUnderstandingProcessor,type ConversationUnderstandingOptions} from '../src/conversation-understanding.js';
+import {ProcessingRuntime} from '../src/processing-runtime.js';
+import {failureContext} from '../src/execution-failures.js';
 
 const userTime='2099-01-01T10:00:00Z',assistantTime='2099-01-01T10:06:00Z';
 const user=`## user · Recorded: ${userTime}\n\nGenerated fixture: Keep the monorepo and release each client independently.\n\n`;
@@ -46,6 +48,12 @@ function products(id:string,memory=true){
   events:[claim(id,user,{statement:'Owner requested independent client releases'})],
   memoryCandidates:memory?[{domain:'personal',title:'Generated release requirement',statement:`The owner requested independent client releases in the generated project [${id}]`,uncertainty:'Project only',admission:{layer:'memory',reason:'Explicit project constraint for later work',scope:'Generated project only',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:user}]}]:[],actionCues:[]};
 }
+function timedProducts(id:string,quote:string,sourceTime:string){
+ const output=products(id,false),entry=claim(id,quote,{sourceTime});
+ output.evidence=[{id,quote}];output.events=[entry];
+ output.workRecords=[{...output.workRecords[0],requirements:[entry],results:[],validation:[],artifactRefs:[]}];
+ return output;
+}
 function result(id:string,output:unknown):QueryResult{return {answer:JSON.stringify(output),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:user}],trace:[],runId:'generated-understanding'};}
 function processor(f:Awaited<ReturnType<typeof fixture>>,query:(input:QueryInput)=>Promise<QueryResult>,overrides:Partial<ConversationUnderstandingOptions>={}){
  return conversationUnderstandingProcessor({memories:f.memories,usage:new UsageLedger(f.store),resolveEvidence:f.resolveEvidence,selection:()=>config,query,...overrides});
@@ -72,6 +80,37 @@ test('one restricted interpretation supplies grounded work, source-timed events 
 test('no candidates is valid and still preserves full bounded input coverage for downstream reuse',async t=>{
  const f=await fixture(t),outputs=await processor(f,async()=>result(f.anchor,products(f.anchor,false))).process(input(f.page()));
  assert.deepEqual(outputs[0].metadata.memoryCandidates,[]);assert.deepEqual(outputs[0].metadata.evidenceRanges,[{id:f.anchor,offset:0,length:body.length}]);assert.equal(f.memories.list().length,0);
+});
+
+test('source times accept equivalent ISO instants in exact quoted support without changing the reported representation',async t=>{
+ for(const fraction of ['123','123000000001']){
+ const originalTime=`2099-01-01T10:00:00.${fraction}Z`,original=`## user · Recorded: ${originalTime}\n\nGenerated owner requests independent client releases.\n`,f=await fixture(t,original);
+ for(const time of [`2099-01-01T10:00:00.${fraction}+00:00`,`2099-01-01T18:00:00.${fraction}+08:00`,`2099-01-01T10:00:00.${fraction}000000Z`]){
+  const response=result(f.anchor,timedProducts(f.anchor,original,time));
+  const output=await processor(f,async request=>{assert.equal(await request.validateOutput!(response),undefined);return response;}).process(input(f.page()));
+  assert.equal((output[0].metadata.events as {sourceTime:string}[])[0].sourceTime,time);
+  assert.equal((output[0].metadata.workRecords as {requirements:{sourceTime:string}[]}[])[0].requirements[0].sourceTime,time);
+ }
+ }
+});
+
+test('source times accept an equivalent explicit recordedAt but never observation, receipt or occurrence metadata',async t=>{
+ const original='Generated owner requests independent client releases.',f=await fixture(t,original),record=f.records[0];
+ const recorded='2099-01-01T18:00:00.123+08:00',reported='2099-01-01T10:00:00.123Z';
+ record.provenance!.document={...record.provenance!.document,recordedAt:recorded};
+ const response=result(f.anchor,timedProducts(f.anchor,original,reported)),outputs=await processor(f,async()=>response).process(input(f.page()));
+ assert.equal((outputs[0].metadata.events as {sourceTime:string}[])[0].sourceTime,reported);
+ delete record.provenance!.document.recordedAt;
+ record.capturedAt=recorded;record.receivedAt=recorded;record.provenance!.document.occurredAt=recorded;
+ await assert.rejects(processor(f,async()=>response).process(input(f.page())),{category:'permanent',message:'invalid_model_output'});
+});
+
+test('source-time normalization rejects any different instant and does not borrow unquoted message headers',async t=>{
+ const originalTime='2099-01-01T10:00:00.123Z',body='Generated owner requests independent client releases.',original=`## user · Recorded: ${originalTime}\n\n${body}\n`,f=await fixture(t,original);
+ for(const time of ['2099-01-01T10:00:00.123000001Z','2099-01-01T10:00:00.123000000001Z','2099-01-01T10:00:00.124Z','2099-01-01T10:00:00.123+08:00']){
+  await assert.rejects(processor(f,async()=>result(f.anchor,timedProducts(f.anchor,original,time))).process(input(f.page())),{category:'permanent',message:'invalid_model_output'});
+ }
+ await assert.rejects(processor(f,async()=>result(f.anchor,timedProducts(f.anchor,body,originalTime))).process(input(f.page())),{category:'permanent',message:'invalid_model_output'});
 });
 
 test('assistant reports cannot be promoted to confirmed outcomes or owner confirmation in work or events',async t=>{
@@ -107,6 +146,50 @@ test('fabricated times, artifact references and uncited or incomplete claims are
   (value:ReturnType<typeof products>)=>{delete (value.events[0] as Partial<typeof value.events[0]>).actor;},
  ]){const value=products(f.anchor);mutate(value);await assert.rejects(processor(f,async()=>result(f.anchor,value)).process(input(f.page())));}
  await assert.rejects(processor(f,async()=>({...result(f.anchor,products(f.anchor)),citations:[]})).process(input(f.page())),{category:'permanent',message:'invalid_model_output'});
+ assert.equal(f.memories.list().length,0);
+});
+
+test('failed conversation validation retains the final safe field and run through the real processing commit boundary',async t=>{
+ const f=await fixture(t),runtime=new ProcessingRuntime(f.store,[],{},Date.now,undefined,f.materials);t.after(()=>runtime.close());
+ const generated=processor(f,async request=>{
+  const output=products(f.anchor,false);
+  output.summary='Generated private summary must never be retained in a failure receipt';
+  delete (output.workRecords[0].results[0] as Partial<typeof output.workRecords[0]['results'][0]>).sourceTime;
+  const response=result(f.anchor,output),issue=await request.validateOutput!(response);
+  assert.equal(issue?.code,'conversation_products');
+  throw new AgentResponseError('Generated private provider feedback and bearer credential','host_validation');
+ });
+ runtime.registry.register(generated);
+ const id=runtime.enqueue([{name:'understand',processor:generated.id,materialInputs:[{ref:f.page().material.ref,offset:0,length:body.length}],config:input(f.page()).config}]).understand;
+ await runtime.engine.drain([id]);
+ const receipt=runtime.engine.failure(id)!;
+ assert.equal(runtime.engine.get(id)?.state,'failed');assert.equal(receipt.code,'invalid_model_output');assert.equal(receipt.causeCode,'schema');assert.equal(receipt.runId,'generated-understanding');
+ assert.equal(receipt.errorName,'ZodError');assert.match(receipt.errorDetail!,/workRecords\[0\]\.results\[0\]\.sourceTime/);assert.match(receipt.errorDetail!,/missing_required_field/);
+ assert.doesNotMatch(JSON.stringify(receipt),/private|provider feedback|bearer|credential/);
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM context_artifacts').get()!.n,0);assert.equal(f.memories.list().length,0);
+});
+
+test('conversation failure context keeps the final rejection and excludes model-authored keys, quotes and provider prose',async t=>{
+ const f=await fixture(t);
+ for(const final of ['schema','quote','transport'] as const){
+  await assert.rejects(processor(f,async request=>{
+   const first=products(f.anchor,false);delete (first.events[0] as Partial<typeof first.events[0]>).sourceTime;
+   assert.equal((await request.validateOutput!(result(f.anchor,first)))?.code,'conversation_products');
+   const last=products(f.anchor,false);
+   if(final==='schema')Object.assign(last.workRecords[0].results[0],{generated_private_key:'Generated private value'});
+   if(final==='quote')last.workRecords[0].results[0].evidence=[{id:f.anchor,quote:'Generated private fabricated quote'}];
+   if(final!=='transport')assert.equal((await request.validateOutput!(result(f.anchor,last)))?.code,'conversation_products');
+   throw new AgentResponseError('Generated private provider feedback',final==='transport'?'invalid_shape':'host_validation');
+  }).process(input(f.page())),error=>{
+   const context=failureContext(error);
+   assert.equal(context.causeCode,final==='schema'?'schema':final==='quote'?'conversation_products':'invalid_shape');
+   if(final==='schema')assert.match(context.errorDetail!,/unrecognized_keys/);
+   if(final==='quote')assert.match(context.errorDetail!,/Every semantic quote must exactly match/);
+   if(final==='transport')assert.equal(context.errorDetail,undefined);
+   assert.doesNotMatch(JSON.stringify(context),/private|sourceTime|provider feedback/);
+   return true;
+  });
+ }
  assert.equal(f.memories.list().length,0);
 });
 

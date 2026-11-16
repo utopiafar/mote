@@ -41,6 +41,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {buildApp} from '../src/app.js';
+import type {HostDependencies} from '../src/host.js';
 import {configFromDocument} from '../src/config.js';
 import {MEDIA_CATALOG,mediaModelIdentities} from '../src/media-assets.js';
 import {FUNASR_PINS,FUNASR_PROTOCOL,parseFunasrRequest,parseFunasrResponse,parseFunasrArchive,funasrDialogueOutput,type FunasrRequest} from '../src/funasr-contract.js';
@@ -1040,20 +1041,24 @@ else:
  result=json.loads(b['diarizeResponse'])['diarization'];result['speakers']=r['speakers']
  print(c.diarize_from_checkpoint(r,source,actual,lambda cp,options:result))
 `;
-async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:boolean}={}){
+async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:boolean;managed?:boolean;deferModels?:boolean}={}){
  const directory=mkdtempSync(join(tmpdir(),'mote-native-funasr-')),bundle=join(directory,'bundle'),previous=MEDIA_CATALOG.dialogue;
  const modelBytes=Buffer.from('Generated ASR component; no model weights.');
  const files=Object.keys(previous.models!).map(role=>({name:role+'/model.bin',size:modelBytes.length,sha256:sha256(modelBytes),official:'https://example.invalid/'+role}));
  MEDIA_CATALOG.dialogue={version:'generated-funasr-v1',files,models:Object.fromEntries(Object.entries(previous.models!).map(([role,model])=>[role,{...model,revision:sha256('generated revision '+role)}]))};
  const identity={sdkVersion:'1.4.25',sdkWheelSha256:'11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75',...FUNASR_PINS,settingsFingerprint:sha256('generated inference settings'),models:mediaModelIdentities('dialogue'),dependencies:{torch:'2.10.0',numpy:'2.2.0'},backend:'cpu',threads:1};
  const requests:FunasrRequest[]=[],wires:string[]=[],errors:unknown[]=[],modelCalls:{model:string;question:string}[]=[];
- let central:Awaited<ReturnType<typeof buildApp>>|undefined,fail:string|undefined,serial=0,cleanupCalls=0;
+ let central:Awaited<ReturnType<typeof buildApp>>|undefined,fail:string|undefined,serial=0,cleanupCalls=0,healthChecks=0,health:Record<string,unknown>|'disconnect'|undefined;
+ let preparationInput:Parameters<NonNullable<HostDependencies['prepareMediaRuntime']>>[0]|undefined,releasePreparation!:()=>void,failPreparation!:(error:Error)=>void;
+ let preparationGate:Promise<void>;
+ const holdPreparation=()=>{preparationInput=undefined;preparationGate=new Promise<void>((resolve,reject)=>{releasePreparation=resolve;failPreparation=reject;});};holdPreparation();
+ let releaseModels!:()=>void;const modelGate=new Promise<void>(resolve=>releaseModels=resolve);
  let held:{path:string;started:()=>void;gate:Promise<void>;release:()=>void}|undefined;
  const token='generated-funasr-worker-token-00001';
  const worker=createServer((req,res)=>{void(async()=>{
   assert.equal(req.headers.authorization,'Bearer '+token);
   res.setHeader('Content-Type','application/json');res.setHeader('X-Mote-Execution','local');
-  if(req.url==='/health'){res.end(JSON.stringify({protocol:FUNASR_PROTOCOL,execution:'local',asr:true,diarization:true,identity}));return;}
+  if(req.url==='/health'){healthChecks++;if(health==='disconnect'){req.socket.destroy();return;}res.end(JSON.stringify(health??{protocol:FUNASR_PROTOCOL,execution:'local',asr:true,diarization:true,identity}));return;}
   if(req.url?.startsWith('/executions/')){res.writeHead(404).end('{}');return;}
   assert.ok(req.url==='/transcribe'||req.url==='/diarize');
   const buffers:Buffer[]=[];for await(const part of req)buffers.push(Buffer.from(part));const body=Buffer.concat(buffers);
@@ -1070,8 +1075,18 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
   const wire=execFileSync('python3',['-c',generatedFunasrProducer,fileURLToPath(new URL('../../../scripts',import.meta.url))],{input:JSON.stringify({request,loaded:identity,audioSha256:sha256(audio),...(request.operation==='diarize'&&fail?{failure:fail}:{})}),encoding:'utf8',maxBuffer:4*1024*1024,timeout:30000}).trim();
   parseFunasrResponse(wire,request);wires.push(wire);res.end(wire);
  })().catch(error=>{errors.push(error);res.writeHead(500).end();});});
- await new Promise<void>(resolve=>worker.listen(0,'127.0.0.1',resolve));const port=(worker.address() as {port:number}).port,endpoint=`http://127.0.0.1:${port}/transcribe`;
- const configuration=configFromDocument({version:1,revision:0,storage:{dataDir:join(directory,'data')},media:{modelDirectory:join(directory,'models'),asrEndpoint:endpoint,asrPort:port,workerToken:token}},join(directory,'mote.yaml'),{token:'generated-funasr-owner',tokenPath:join(directory,'owner-token')});
+ await new Promise<void>(resolve=>worker.listen(0,'127.0.0.1',resolve));const upstreamPort=(worker.address() as {port:number}).port;
+ let port=upstreamPort;
+ const python=join(directory,'generated-python.cjs');
+ if(options.managed){
+  const reservation=createServer();await new Promise<void>(resolve=>reservation.listen(0,'127.0.0.1',resolve));port=(reservation.address() as {port:number}).port;await new Promise<void>(resolve=>reservation.close(()=>resolve()));
+  // Only the unavailable Python runtime is replaced. MediaPreparation still
+  // launches and reaps its own process, and the real HTTP transport reaches
+  // the controlled FunASR producer through this process-owned listener.
+  writeFileSync(python,`#!${process.execPath}\nconst http=require('node:http');http.createServer((req,res)=>{const outgoing=http.request({hostname:'127.0.0.1',port:${upstreamPort},path:req.url,method:req.method,headers:req.headers},incoming=>{res.writeHead(incoming.statusCode,incoming.headers);incoming.pipe(res);});outgoing.on('error',()=>{res.writeHead(503);res.end('{}');});req.pipe(outgoing);}).listen(Number(process.argv.at(-1)),'127.0.0.1');\n`,{mode:0o700});
+ }
+ const endpoint=`http://127.0.0.1:${port}/transcribe`;
+ const configuration=configFromDocument({version:1,revision:0,...(options.managed?{server:{runtime:'native'}}:{}),storage:{dataDir:join(directory,'data')},media:{modelDirectory:join(directory,'models'),asrEndpoint:endpoint,asrPort:port,workerToken:token}},join(directory,'mote.yaml'),{token:'generated-funasr-owner',tokenPath:join(directory,'owner-token')});
  const factory:import('../src/model-agent.js').ModelAgentFactory=async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   modelCalls.push({model:settings.model,question:input.question});const records=(await reader.timeline({limit:100})).items;
   return {answer:input.question===importedTurnPrompt?JSON.stringify({groups:records.map((_,i)=>[i])}):'Generated chosen-model summary',citations:records.slice(0,1).map(record=>({id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText})),trace:[],runId:randomUUID()};
@@ -1080,11 +1095,15 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
   cleanupCalls++;input.signal.throwIfAborted();return {transcript:input.transcript,version:'generated-only',mapping:input.checkpoint.sentences.map((_,index)=>({source:index,output:index}))};
  }};
  const installCleanup=(node:Awaited<ReturnType<typeof buildApp>>)=>{node.processing.uninstallContributions();node.processing.installContributions([],{imageRecipes:false,dialogueCleanup:cleanup});};
- const start=async()=>{const node=await buildApp(configuration,{backgroundWorker:false,createModelAgent:factory});central=node;if(options.cleanup)installCleanup(node);return node;};
+ const start=async()=>{const node=await buildApp(configuration,{backgroundWorker:false,createModelAgent:factory,...(options.managed?{prepareMediaRuntime:async(input:NonNullable<typeof preparationInput>)=>{preparationInput=input;await preparationGate;input.signal.throwIfAborted();return {python};}}:{})});central=node;if(options.cleanup)installCleanup(node);return node;};
  let node=await start();
- t.after(async()=>{held?.release();try{await node.app.close();}finally{worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));MEDIA_CATALOG.dialogue=previous;rmSync(directory,{recursive:true,force:true});}assert.deepEqual(errors,[],'worker boundary assertions must surface');});
+ t.after(async()=>{held?.release();releasePreparation();releaseModels();try{await node.app.close();}finally{worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));MEDIA_CATALOG.dialogue=previous;rmSync(directory,{recursive:true,force:true});}assert.deepEqual(errors,[],'worker boundary assertions must surface');});
  for(const file of files){mkdirSync(join(bundle,file.name.split('/')[0]),{recursive:true});writeFileSync(join(bundle,file.name),modelBytes);}
- await node.featureServices.mediaAssets.importBundle('dialogue',bundle);
+ if(options.deferModels){
+  // Replace the external download while retaining real bundle verification
+  // and publication in the temporary profile's MediaAssets owner.
+  node.featureServices.mediaAssets.installAsync=async(role,_source,signal)=>{await modelGate;signal?.throwIfAborted();await node.featureServices.mediaAssets.importBundle(role,bundle,signal);};
+ }else await node.featureServices.mediaAssets.importBundle('dialogue',bundle);
  if(options.authorize!==false)await authorizeFixtureModels(node);
  node.sources.register({id:'generated-native-audio',name:'Generated native audio',kind:'upload',deviceId:'generated-native',platform:'import',retention:'archive'});
  const headers={authorization:'Bearer '+configuration.token};
@@ -1100,7 +1119,14 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
  const retry=async(id:string,payload:unknown={stage:'transcribe'})=>{const response=await node.app.inject({method:'POST',url:'/api/files/'+id+'/retry',headers,payload});assert.equal(response.statusCode,200,response.body);};
  const reprocess=async(id:string)=>{const preview=await node.app.inject({method:'POST',url:'/api/file-processing/preview',headers,payload:{revision:node.processing.view().revision,scope:{kind:'selection',evidenceIds:[id]}}});assert.equal(preview.statusCode,200,preview.body);assert.equal(preview.json().count,1);const response=await node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers,payload:{token:preview.json().token}});assert.equal(response.statusCode,200,response.body);};
  const settle=async(id:string)=>{for(const until=Date.now()+5000;Date.now()<until;){await node.processing.tick();await new Promise<void>(resolve=>setImmediate(resolve));const job=node.files.detail(id).job;if(!['running','waiting'].includes(job.state)&&(job.state!=='succeeded'||!['running','waiting'].includes(job.summary_state))||job.state==='waiting'&&job.error)return;}assert.fail('Generated native file work did not settle: '+JSON.stringify(node.files.detail(id).job));};
- return {get node(){return node;},headers,identity,requests,wires,cleanup,installCleanup,modelCalls,save,upload,details,retry,reprocess,settle,counts:()=>({recognize:requests.filter(r=>r.operation==='recognize').length,diarize:requests.filter(r=>r.operation==='diarize').length,cleanup:cleanupCalls}),failure(code?:string){fail=code;},async restart(){await node.app.close();node=await start();},hold(path='/diarize'){
+ const preparation=async()=>{const response=await node.app.inject({url:'/api/media-preparation',headers});assert.equal(response.statusCode,200,response.body);return response.json().dialogue as {state:string;runtimeReady:boolean;error?:string};};
+ const waitPreparation=async(state:string)=>{for(const until=Date.now()+5000;Date.now()<until;){const value=await preparation();if(value.state===state)return value;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail('Generated preparation did not reach '+state+': '+JSON.stringify(await preparation()));};
+ return {get node(){return node;},headers,identity,requests,wires,cleanup,installCleanup,modelCalls,save,upload,details,retry,reprocess,settle,preparation,waitPreparation,
+  wake(id:string){node.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE operation_id=? AND state='waiting'").run('file:'+id);for(const step of node.executor.list({operationId:'file:'+id}).items)if(step.state==='waiting')node.executor.project(step.id);},
+  async startPreparation(){const response=await node.app.inject({method:'POST',url:'/api/media-preparation/dialogue',headers,payload:{}});assert.equal(response.statusCode,202,response.body);await waitPreparation('dependencies');},
+  preparationStage(stage:'dependencies'|'verifying_dependencies'){assert.ok(preparationInput);preparationInput.onStage?.(stage);},holdPreparation,releasePreparation:()=>releasePreparation(),releaseModels,failPreparation:()=>failPreparation(Error('media.runtime.generated_dependency_failure')),
+  externalEndpoint:`http://127.0.0.1:${upstreamPort}/transcribe`,async disconnectWorker(){worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));},
+  counts:()=>({recognize:requests.filter(r=>r.operation==='recognize').length,diarize:requests.filter(r=>r.operation==='diarize').length,cleanup:cleanupCalls}),healthChecks:()=>healthChecks,health(value?:typeof health){health=value;},failure(code?:string){fail=code;},async restart(){await node.app.close();node=await start();},hold(path='/diarize'){
   let started!:()=>void,release!:()=>void;const began=new Promise<void>(resolve=>started=resolve),gate=new Promise<void>(resolve=>release=resolve);held={path,started,gate,release};t.after(release);return {started:began,release};
  }};
 }
@@ -1123,9 +1149,10 @@ test('public upload uses the current FunASR recipe, persists raw bytes before CA
  const materials=new MaterialStore(f.node.store),organizers=new MaterialOrganizerRuntime(f.node.store,materials);try{while(await organizers.tick(100));const result=materials.get(materialId('generated-native-audio','generated-1.wav'))!;assert.ok(result);assert.match(materials.read(result.ref).text,/一百零一/);}finally{await organizers.close();}
 });
 
-test('CAM failure leaves the committed transcript readable and scoped range retry after restart never repeats recognition',async t=>{
- const f=await nativeFunasrFixture(t),id=await f.upload();f.failure('inference_failed');await f.node.processing.tick();
+for(const code of ['inference_failed','inference_timeout','output_limit'] as const)test(`CAM ${code} leaves the committed transcript readable and scoped range retry after restart never repeats recognition`,async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();f.failure(code);await f.node.processing.tick();
  const before=await f.details(id),raw=before.artifacts.find((a:any)=>a.kind==='transcript');assert.ok(raw);assert.equal(before.job.state,'failed');assert.equal(f.node.processing.cancellation(id).wait,null);assert.equal(f.node.files.chunks(id).length,5);
+ assert.equal(before.job.error,code);assert.equal(before.steps.find((step:any)=>step.step==='diarize').attempts,1,'a terminated real failure still spends an attempt');
  const checkpoint=f.node.processing.artifact(raw.id).output.payload.checkpoint,global=f.node.processing.view().policy;
  await f.restart();f.failure();await f.retry(id,{stage:'diarize',diarization:{artifactId:raw.id,options:{processor:'audio.diarize',speakerCount:null,range:{min:2,max:4}}}});await f.settle(id);
  assert.equal((await f.details(id)).job.state,'succeeded',JSON.stringify({detail:(await f.details(id)).job,steps:f.node.processing.engine.list({operationId:'file:'+id}).items}));assert.equal(f.counts().recognize,1);assert.equal(f.counts().diarize,2);
@@ -1186,6 +1213,117 @@ for(const code of ['resource_busy','component_missing','response_unknown'] as co
 test('an unrelated or retired worker health identity is rejected before transmitting original audio',async t=>{
  const f=await nativeFunasrFixture(t),id=await f.upload();f.identity.models.asr.revision=sha256('different loaded model');await f.node.processing.tick();
  assert.equal(f.requests.length,0);assert.equal((await f.details(id)).job.state,'blocked');assert.equal(f.node.files.chunks(id).length,0);assert.equal(f.modelCalls.length,0);
+});
+
+test('public audio uploads retain their retry budget through managed ASR preparation and resume automatically while cancelled files stay cancelled',async t=>{
+ const f=await nativeFunasrFixture(t,{managed:true,deferModels:true});await f.startPreparation();
+ const id=await f.upload(),cancelled=await f.upload('cancel-during-preparation.wav');
+ const assertWaiting=async()=>{
+  const before=Date.now();await f.node.processing.tick();const detail=await f.details(id);
+  assert.equal(detail.job.state,'waiting',JSON.stringify(detail.job));assert.equal(detail.job.error,'worker_not_ready');assert.equal(detail.job.attempts,0);
+  assert.ok(detail.job.availableAt>=before+5000,'preparation waits use a bounded recheck interval');
+  assert.equal(detail.hasOriginal,true);assert.equal(f.requests.length,0,'no original audio is transmitted during preparation');assert.equal(f.node.processing.cancellation(id).wait,null);
+  assert.ok(f.node.executor.list({operationId:'file:'+id}).items.every(step=>step.attempts===0),'preparation never consumes an inference attempt');
+ };
+ // Advance only generated scheduling deadlines, past the ordinary three-call
+ // failure budget. Keep the real lifecycle state held instead of shortening
+ // any production timeout or requiring a slow dependency/model installation.
+ for(const stage of ['dependencies','verifying_dependencies'] as const){
+  f.preparationStage(stage);assert.equal((await f.preparation()).state,stage);
+  for(let cycle=0;cycle<5;cycle++){f.wake(id);await assertWaiting();}
+ }
+ const response=await f.node.app.inject({method:'POST',url:'/api/files/'+cancelled+'/cancel',headers:f.headers,payload:{}});assert.equal(response.statusCode,200,response.body);
+ f.releasePreparation();await f.waitPreparation('models');assert.equal(f.node.featureServices.mediaAssets.ready('dialogue'),false);
+ for(let cycle=0;cycle<5;cycle++){f.wake(id);await assertWaiting();}
+ f.health({protocol:FUNASR_PROTOCOL,execution:'local',asr:false,diarization:false,loading:true});f.releaseModels();await f.waitPreparation('starting');
+ for(let cycle=0;cycle<5;cycle++){f.wake(id);await assertWaiting();}
+ f.health();assert.equal((await f.waitPreparation('ready')).runtimeReady,true);f.wake(id);await f.settle(id);
+ assert.equal((await f.details(id)).job.state,'succeeded');assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:0});
+ assert.equal((await f.details(cancelled)).job.state,'cancelled');assert.equal((await f.details(cancelled)).hasOriginal,true);
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM file_artifacts WHERE capture_id=?').get(cancelled)!.n,0);
+});
+
+for(const mode of ['failed-preparation','external-endpoint'] as const)test(`audio ${mode} retains finite connection-failure retries`,async t=>{
+ const f=await nativeFunasrFixture(t,{managed:true});await f.startPreparation();
+ if(mode==='external-endpoint'){
+  await f.disconnectWorker();await f.save(policy=>{policy.services.find((service:any)=>service.id==='asr-local').endpoint=f.externalEndpoint;});
+ }
+ const id=await f.upload();
+ if(mode==='failed-preparation'){
+  await f.node.processing.tick();assert.equal((await f.details(id)).job.error,'worker_not_ready');f.failPreparation();await f.waitPreparation('failed');
+ }
+ for(let cycle=0;cycle<3;cycle++){f.wake(id);await f.node.processing.tick();}
+ const detail=await f.details(id);assert.equal(detail.job.state,'failed',JSON.stringify(detail.job));assert.equal(detail.job.error,'provider_unavailable');
+ assert.equal(detail.steps.find((step:any)=>step.step==='extract').attempts,3);assert.equal(detail.hasOriginal,true);assert.equal(f.requests.length,0);assert.equal(f.node.processing.cancellation(id).wait,null);
+ if(mode==='external-endpoint')assert.equal((await f.preparation()).state,'dependencies','an unrelated managed preparation must not hide a custom endpoint failure');
+});
+
+test('managed ASR readiness never bypasses the loaded model identity check before uploading audio',async t=>{
+ const f=await nativeFunasrFixture(t,{managed:true});await f.startPreparation();const id=await f.upload();await f.node.processing.tick();
+ assert.equal((await f.details(id)).job.error,'worker_not_ready');f.identity.models.asr.revision=sha256('generated unexpected managed revision');f.releasePreparation();await f.waitPreparation('ready');
+ f.wake(id);await f.node.processing.tick();const detail=await f.details(id);
+ assert.equal(detail.job.state,'blocked');assert.equal(detail.job.error,'processor_not_configured');assert.equal(detail.hasOriginal,true);assert.equal(f.requests.length,0);assert.equal(f.node.files.chunks(id).length,0);
+});
+
+test('managed preparation cannot clear an unknown inference outcome or replay its audio',async t=>{
+ const f=await nativeFunasrFixture(t,{managed:true});await f.startPreparation();f.releasePreparation();await f.waitPreparation('ready');
+ const unknown=await f.upload();f.failure('response_unknown');await f.node.processing.tick();assert.equal(f.node.processing.cancellation(unknown).wait,'unknown');
+ const before=f.counts();await f.node.featureServices.mediaPreparation.stop('dialogue');f.holdPreparation();await f.startPreparation();
+ const next=await f.upload('waiting-behind-unknown.wav');await f.node.processing.tick();
+ assert.equal((await f.details(next)).job.state,'blocked');assert.equal((await f.details(next)).job.error,'processor_response_unknown');
+ const retried=await f.node.app.inject({method:'POST',url:'/api/files/'+unknown+'/retry',headers:f.headers,payload:{stage:'diarize'}});assert.equal(retried.statusCode,409);
+ f.releasePreparation();await f.waitPreparation('ready');await f.node.processing.tick();
+ assert.deepEqual(f.counts(),before);assert.equal(f.node.processing.cancellation(unknown).wait,'unknown');assert.equal((await f.details(unknown)).job.state,'blocked');
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM file_artifacts WHERE capture_id=?').get(next)!.n,0);assert.equal((await f.details(next)).hasOriginal,true);
+});
+
+for(const unavailable of ['loading','disconnect'] as const)test(`a local audio job waits through worker ${unavailable} and resumes without an owner retry`,async t=>{
+ const f=await nativeFunasrFixture(t),id=await f.upload();
+ f.health(unavailable==='loading'?{protocol:FUNASR_PROTOCOL,execution:'local',asr:false,diarization:false,loading:true,busy:false}:unavailable);
+ await f.node.processing.tick();
+ const detail=await f.details(id),extract=detail.steps.find((step:any)=>step.step==='extract');
+ assert.equal(detail.job.state,'waiting',JSON.stringify(detail.job));
+ assert.equal(detail.job.error,unavailable==='loading'?'worker_not_ready':'provider_unavailable');
+ assert.equal(extract.attempts,unavailable==='loading'?0:1);
+ assert.equal(f.requests.length,0,'health failure must not transmit original audio');
+ assert.equal(f.node.files.chunks(id).length,0);
+ assert.equal(f.node.processing.cancellation(id).wait,null,'no inference was issued');
+ f.health();
+ // Advance the persisted retry deadline explicitly, without sleeping or
+ // issuing an owner retry that could hide a terminal classification.
+ f.node.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE operation_id=? AND state='waiting'").run('file:'+id);
+ await f.settle(id);
+ assert.equal((await f.details(id)).job.state,'succeeded');
+ assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:0});
+});
+
+for(const reason of ['model_missing','component_missing','worker_not_ready','identity_unavailable'] as const)test(`rechecking unstarted audio ${reason} preserves prior real failures and resumes after restart`,async t=>{
+ t.mock.timers.enable({apis:['Date'],now:Date.now()});
+ const f=await nativeFunasrFixture(t),id=await f.upload();
+ // A genuine failed connection keeps its finite retry cost. Later admission
+ // blocks must neither add to that cost nor erase the existing failure.
+ f.health('disconnect');await f.node.processing.tick();
+ assert.equal((await f.details(id)).steps.find((step:any)=>step.step==='extract').attempts,1);
+ f.health(reason==='identity_unavailable'?{protocol:FUNASR_PROTOCOL,execution:'local',asr:true,identity:{}}:
+  {protocol:FUNASR_PROTOCOL,execution:'local',asr:false,loading:false,reason});
+ const recheck=()=>{for(const step of f.node.executor.list({operationId:'file:'+id}).items)if(step.kind==='files.pipeline'&&step.state==='blocked')f.node.executor.retry(step.id,false);f.wake(id);};
+ for(let cycle=0;cycle<6;cycle++){
+  if(cycle===3)await f.restart();
+  const before=f.healthChecks();recheck();await f.node.processing.tick();
+  await f.node.executor.drain(f.node.executor.list({operationId:'file:'+id}).items.map(step=>step.id));
+  const detail=await f.details(id),extract=detail.steps.find((step:any)=>step.step==='extract');
+  assert.ok(f.healthChecks()>before,'each controlled replay reaches the actual health transport');
+  assert.equal(detail.job.state,'blocked',JSON.stringify(detail.job));
+  assert.equal(detail.job.error,reason==='identity_unavailable'?'processor_not_configured':reason);
+  assert.equal(extract.attempts,1,'an explicit unstarted admission block cannot spend an inference retry');
+  assert.equal(detail.job.attempts,0,'the coordinator does not spend its own budget while a child prerequisite is blocked');
+  assert.equal(f.requests.length,0,'no original audio was sent');assert.equal(f.node.files.chunks(id).length,0);
+  assert.equal(f.node.processing.cancellation(id).wait,null,'an unstarted block has no unknown physical call');assert.equal(detail.hasOriginal,true);
+ }
+ f.health();recheck();await f.node.processing.tick();
+ await f.node.executor.drain(f.node.executor.list({operationId:'file:'+id}).items.map(step=>step.id));const detail=await f.details(id);
+ assert.equal(detail.job.state,'succeeded',JSON.stringify(detail.job));assert.deepEqual(f.counts(),{recognize:1,diarize:1,cleanup:0});
+ assert.equal(detail.steps.find((step:any)=>step.step==='extract').attempts,2,'one real connection failure and one successful recognition are retained');
 });
 
 test('native grouping and summary keep the chosen file model while Memory and Ask retain their own selections',async t=>{

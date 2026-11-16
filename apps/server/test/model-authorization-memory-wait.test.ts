@@ -50,7 +50,9 @@ test('A1-30: an excluded source Memory waits durably without invoking a model an
  await authorizeFixtureModels(node,{excludedSourceIds:[]});
  node.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE operation_id=? OR json_extract(input,'$.jobId')=?").run('memory:'+job.id,job.id);
  const memorySteps=node.store.db.prepare("SELECT id FROM execution_steps WHERE operation_id=? OR json_extract(input,'$.jobId')=?").all('memory:'+job.id,job.id);
- node.executor.retry(String(step!.id),true);await node.executor.drain(memorySteps.map(row=>String(row.id)));const done=await node.memoryPipeline.run(job.id);assert.equal(done.status,'completed');assert.ok(calls>0);assert.equal(node.memories.list().length,0,'the generated fixture submits no memory candidate');
+ // Re-inclusion can already admit this batch while the owner command yields.
+ // Join that work without issuing another retry against its active attempt.
+ await node.executor.drain(memorySteps.map(row=>String(row.id)));const done=await node.memoryPipeline.run(job.id);assert.equal(done.status,'completed');assert.equal(calls,2,'extraction and independent review each run once');assert.equal(node.memories.list().length,0,'the generated fixture submits no memory candidate');
 });
 
 test('an owner retry admits only the selected formerly excluded Memory job with the current model',async t=>{

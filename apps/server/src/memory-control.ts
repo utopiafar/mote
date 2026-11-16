@@ -1,4 +1,4 @@
-import type {Store} from './store.js';
+import {StoreError,type Store} from './store.js';
 import type {MemoryPipeline,MemoryJob} from './memory-pipeline.js';
 import type {MemoryLifecycle} from './memory-lifecycle.js';
 import type {ExecutionEngine} from './execution-engine.js';
@@ -14,7 +14,7 @@ export interface MemoryControl {
 }
 export interface MemoryControlDependencies {
  store:Pick<Store,'db'>;
- pipeline:Pick<MemoryPipeline,'get'|'cancel'>;
+ pipeline:Pick<MemoryPipeline,'cancel'>;
  lifecycle:Pick<MemoryLifecycle,'view'|'cancel'|'skipAutomaticBacklog'>;
  executor:Pick<ExecutionEngine,'isActiveStep'|'deferLocalEffects'>;
  publication:Pick<MemoryPublication,'pending'>;
@@ -47,12 +47,22 @@ export function createMemoryControl({store,pipeline,lifecycle,executor,publicati
    for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual)lifecycle.cancel(extension.id,extension.active.id,{cause:'authority'});
   }),
   counts:()=>{
-   const counts:MemoryAutomaticWorkCounts={queued:0,running:0,checkpointed:0,resultUnknown:0},jobs=new Set<string>();
-   for(const row of db.prepare('SELECT job_id FROM memory_input_authorizations WHERE authorized=1 AND revoked_at IS NULL').all()){
-    if(!row.job_id){counts.queued++;continue;}jobs.add(String(row.job_id));
-   }
-   for(const id of jobs){const job=pipeline.get(id);if(['completed','cancelled'].includes(job.status))continue;
-    if(job.status==='running')counts.running++;else if(job.batches.some(batch=>batch.status==='completed'))counts.checkpointed++;else counts.queued++;
+   const authorizations=db.prepare("SELECT count(*) total,count(nullif(job_id,'')) claimed FROM memory_input_authorizations WHERE authorized=1 AND revoked_at IS NULL").get()!;
+   const counts:MemoryAutomaticWorkCounts={queued:Number(authorizations.total)-Number(authorizations.claimed),running:0,checkpointed:0,resultUnknown:0};
+   // This projection is also read while admitting model work during startup.
+   // Full job details decrypt every batch and compute each queue position by
+   // scanning all jobs. The transaction-maintained counters retain the same
+   // effective status without opening private bodies or rebuilding that queue.
+   const jobs=Number(authorizations.claimed)===0?[]:db.prepare(`SELECT j.id,c.completed,
+     CASE WHEN json_extract(j.json,'$.status')='completed' AND c.failed+c.invalidated>0 THEN 'failed'
+       WHEN json_extract(j.json,'$.status')='queued' AND c.running>0 THEN 'running'
+       ELSE json_extract(j.json,'$.status') END status
+     FROM (SELECT DISTINCT job_id FROM memory_input_authorizations WHERE authorized=1 AND revoked_at IS NULL AND job_id IS NOT NULL AND job_id!='') a
+     LEFT JOIN memory_jobs j ON j.id=a.job_id LEFT JOIN memory_job_counts c ON c.job_id=j.id`).all();
+   for(const job of jobs){
+    if(!job.id)throw new StoreError('Memory job not found',404);
+    if(['completed','cancelled'].includes(String(job.status)))continue;
+    if(job.status==='running')counts.running++;else if(Number(job.completed)>0)counts.checkpointed++;else counts.queued++;
    }
    for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual&&extension.status!=='cancelled'){
     if(extension.status==='running')counts.running++;else if(extension.active.checkpoint)counts.checkpointed++;else counts.queued++;

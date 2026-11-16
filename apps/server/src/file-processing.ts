@@ -10,7 +10,7 @@ import {fileExtractionInput,readFileExtractionCache} from './file-extraction-cac
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES,type ExecutionPolicy} from './execution-policy.js';
-import {ProcessorAdmission} from './processor-admission.js';
+import {ProcessorAdmission,PROCESSOR_BUSY_RECHECK_MS} from './processor-admission.js';
 import { moteText } from './i18n.js';
 import {ServerDiagnostics,type Operation,type EventFields} from './diagnostics.js';
 import {randomUUID} from 'node:crypto';
@@ -23,6 +23,7 @@ import {StoreError,sha256} from './store.js';
 import {FileProcessorRuntime,isLoopback,mediaModelConnection,type FileProcessor,type TranscriptionProvider,type ProcessorInput,type MediaRequestIdentity} from './file-processors.js';
 import {MediaExecutionCalls,readMediaExecutionFact,eraseMediaExecutionFact,type MediaExecutionCall,type MediaStage} from './plugins/media-execution-facts.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
+import type {MediaPreparation} from './media-preparation.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
 import {withinEvidenceScope} from './evidence-reader.js';
 import {TaskRecords} from './task-records.js';
@@ -68,7 +69,7 @@ export class FileProcessing {
   private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
   readonly runtime:FileProcessorRuntime;
   private unregister:Array<()=>Promise<void>>=[];
-  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginScope?:import('@mote/plugin-host').HostScope;plugins?:Plugin[];modules?:string[];builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup;analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
+  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginScope?:import('@mote/plugin-host').HostScope;plugins?:Plugin[];modules?:string[];builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup;analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;mediaPreparation?:Pick<MediaPreparation,'preparing'>;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
     this.media=mediaRuntimeSettings(options.media);
     files.store.db.exec('CREATE TABLE IF NOT EXISTS media_model_intents(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,phase TEXT NOT NULL,intent_id TEXT NOT NULL,PRIMARY KEY(capture_id,phase))');
     this.processorAdmission=new ProcessorAdmission(files.store);
@@ -805,8 +806,10 @@ export class FileProcessing {
     const endpoint=descriptor&&(descriptor.serviceKind==='asr'||descriptor.stage==='diarize')&&isLoopback(settings.endpoint)?settings.endpoint:undefined;
     const stepId=sha256(JSON.stringify(['file-step',id,name,fingerprint,...(this.modelIntent(id,'pipeline')?[this.modelIntent(id,'pipeline')]:[])])),started=performance.now(),requestId=this.options.diagnostics?.requestId()??randomUUID(),timeoutMs=callPolicy===EXECUTION_POLICIES.modelCall?null:this.saved.settings.timeoutMs;
     db.prepare("INSERT INTO file_steps(capture_id,step,processor,version,fingerprint,state,attempts,updated_at) VALUES(?,?,?,?,?,'waiting',0,?) ON CONFLICT(capture_id,step) DO UPDATE SET processor=excluded.processor,version=excluded.version,fingerprint=excluded.fingerprint,artifact_id=CASE WHEN file_steps.fingerprint=excluded.fingerprint THEN file_steps.artifact_id ELSE NULL END").run(id,name,processor,version,fingerprint,new Date().toISOString());
-    return this.engine.runStep({id:stepId,operationId:'file:'+id,kind:'file-step',pool:'file-work',input:{captureId:id,name,fingerprint,...(this.modelIntent(id,'pipeline')?{ownerIntentId:this.modelIntent(id,'pipeline')}:{})},generation:{slot:'file-pipeline',version:this.modelGeneration(id,'pipeline',revision)},signal:active.signal,policy:issuedCall?callPolicy:EXECUTION_POLICIES.deterministic,...(endpoint?{resourceKeys:[this.processorAdmission.resourceKey(endpoint)],admit:()=>{try{this.processorAdmission.check(endpoint);}catch(error){if(error instanceof ProviderFailure)return new ExecutionFailure('waiting',error.details.code,error.details.retryAfterMs);throw error;}}}:{}),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):error instanceof StoreError&&error.statusCode===422?new ExecutionFailure('permanent','unsupported_format'):new ExecutionFailure('permanent','step_failed'),timeoutMs,cached:Boolean(cached),initialAttempts:old?.fingerprint===fingerprint?old.attempts:0,validate:()=>this.exists(id,revision)&&extractionCurrent(),
-      execute:async signal=>{
+    return this.engine.runStep({id:stepId,operationId:'file:'+id,kind:'file-step',pool:'file-work',input:{captureId:id,name,fingerprint,...(this.modelIntent(id,'pipeline')?{ownerIntentId:this.modelIntent(id,'pipeline')}:{})},generation:{slot:'file-pipeline',version:this.modelGeneration(id,'pipeline',revision)},signal:active.signal,policy:issuedCall?callPolicy:EXECUTION_POLICIES.deterministic,...(endpoint?{resourceKeys:[this.processorAdmission.resourceKey(endpoint)],admit:()=>{const preparing=this.preparationWait(descriptor!,endpoint);if(preparing)return preparing;try{this.processorAdmission.check(endpoint);}catch(error){if(error instanceof ProviderFailure)return new ExecutionFailure('waiting',error.details.code,error.details.retryAfterMs);throw error;}}}:{}),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):error instanceof StoreError&&error.statusCode===422?new ExecutionFailure('permanent','unsupported_format'):new ExecutionFailure('permanent','step_failed'),timeoutMs,cached:Boolean(cached),initialAttempts:old?.fingerprint===fingerprint?old.attempts:0,validate:()=>this.exists(id,revision)&&extractionCurrent(),
+      // A queued stage can be dispatched by another job's completion. Retain
+      // this file program's scope, including its own cancellation signal.
+      execute:async signal=>this.execution.run(active,async()=>{
         // Lookup stays inside the existing authorized execution. The engine
         // validates again before publishing the new origin's own artifact.
         const cachedOutput=reuseByContent&&name==='extract'?readFileExtractionCache(this.files,id,fingerprint,processor,version,defaultFileOutput(descriptor!),this.runtime.outputs,Boolean(descriptor?.output)):undefined;
@@ -817,7 +820,7 @@ export class FileProcessing {
         const url=managed?new URL(stage==='ocr'?settings.imageEndpoint||this.media.ocrEndpoint:settings.endpoint||this.media.asrEndpoint):undefined;if(stage==='diarize'&&url)url.pathname=url.pathname.replace(/\/transcribe\/?$/,'/diarize');
         const media=url?{step:current,generation:revision,endpoint:url.toString(),apiKey:settings.apiKey??'',stage,assert:()=>{signal.throwIfAborted();if(!this.exists(id,revision)||!this.engine.isCurrentGrant(stepId,fence))throw new ExecutionFailure('stale','input_changed');}}:undefined;
         const run=()=>issuedCall?this.waitForProcessor(id,execute,descriptor?.awaitResponseOnCancel!==true,timeoutMs,media):this.trackPhysical(execute(signal));return endpoint?this.processorAdmission.run(endpoint,run):run();
-      },
+      }),
       commit:value=>{
         if(!extractionCurrent())throw new ExecutionFailure('stale','input_changed');
         if(stageEpoch&&!this.runtime.recipes.epochs.matches(stageKey,stageEpoch))throw new ExecutionFailure('blocked','processor_instance_unavailable');
@@ -850,6 +853,9 @@ export class FileProcessing {
       }catch(error){if(error instanceof ExecutionFailure)throw error;this.log('file.blocked',id,{category:'not_configured'},'warn');throw new ExecutionFailure('blocked','processor_not_configured');}
     return {db,base,revision,job,file,mime,applied,settings,parameters,processorId:processorId!,effective};
   }
+  private preparationWait(processor:Pick<FileProcessor,'managedModel'>,endpoint:string){
+    if(processor.managedModel&&this.options.mediaPreparation?.preparing(processor.managedModel,endpoint))return new ExecutionFailure('waiting','worker_not_ready',PROCESSOR_BUSY_RECHECK_MS);
+  }
   private admit(id:string,phase:'pipeline'|'summary'){
     if(this.processorWaits(id).length)return new ExecutionFailure('blocked',this.cancellation(id).wait==='running'?'processor_still_running':'processor_response_unknown');
     // A prior model-bound execution already established the reason for this
@@ -871,6 +877,7 @@ export class FileProcessing {
         try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns,deduplicate:this.executionSettings(id,'pipeline').parameters.deduplicate!==false});this.runtime.outputs.get(defaultFileOutput(processor));}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
         if(processor.stage!=='extract'||!processor.mediaTypes.some(t=>t.endsWith('/')?mime.startsWith(t):t===mime||t.endsWith('/*')&&mime.startsWith(t.slice(0,-1))))return new ExecutionFailure('blocked','unsupported_format');
         const stages=[processor,...(processor.dialogue?[this.runtime.registry.get(settings.diarizationProcessor)]:[])];
+        for(const stage of stages){const preparing=this.preparationWait(stage,effective.endpoint);if(preparing)return preparing;}
         if(stages.some(stage=>stage.managedModel&&effective.endpoint===this.media.asrEndpoint&&this.options.mediaAssets&&!this.options.mediaAssets.ready(stage.managedModel)))return new ExecutionFailure('blocked','model_missing');
       }
     }catch(error){return error instanceof ExecutionFailure?error:new ExecutionFailure('blocked','processor_not_configured');}

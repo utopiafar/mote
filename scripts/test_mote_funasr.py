@@ -73,6 +73,31 @@ class GeneratedRuntime:
         self.closed += 1
 
 
+class CappedRuntime(GeneratedRuntime):
+    """Generated neural outputs pass through the real decoder-limit boundary."""
+    def __init__(self, *args, capped_calls=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.capped_calls, self.asr_attempts = set(capped_calls), 0
+
+    @contextmanager
+    def component(self, role, directory):
+        with super().component(role, directory) as model:
+            if role != 'asr':
+                yield model
+                return
+            def generate(**kwargs):
+                self.asr_attempts += 1
+                if self.asr_attempts in self.capped_calls:
+                    self.calls.append(('generate', role, kwargs))
+                    self.after_generate(role)
+                    engine.validate_generation([[0]*engine.SETTINGS['maxNewTokens']],
+                                               engine.SETTINGS['maxNewTokens'], 1)
+                    raise AssertionError('A capped decoder without EOS must fail')
+                engine.validate_generation([[0, 1]], engine.SETTINGS['maxNewTokens'], 1)
+                return model.generate(**kwargs)
+            yield SimpleNamespace(generate=generate)
+
+
 @contextmanager
 def generated_engine(frames=64000):
     with tempfile.TemporaryDirectory(prefix='mote-funasr-test-') as temporary:
@@ -108,9 +133,10 @@ def diarize_request(request, response, speakers=None):
             'speakers': speakers or {'mode': 'unknown'}}
 
 
-def generated_bundle():
+def generated_bundle(recover=False):
     with generated_engine() as f:
-        recognizer = GeneratedRuntime([[1000, 1500], [3000, 4000]], [' 合成原文 ', '尾段'], ['合成原文。', '尾段。'])
+        recognizer = (CappedRuntime([[1000, 4000]], [' 合成原文 ', '尾段'], ['合成原文。', '尾段。'], capped_calls=[1])
+                      if recover else GeneratedRuntime([[1000, 1500], [3000, 4000]], [' 合成原文 ', '尾段'], ['合成原文。', '尾段。']))
         response = f.run(recognizer)
         request = diarize_request(f.request, response)
         diarization = f.run(GeneratedRuntime([], [], [], [0, 7]), request)
@@ -154,7 +180,7 @@ class FunasrEngine(unittest.TestCase):
                 self.assertEqual(cam.closed, 1)
 
     def test_invalid_overlapping_nonfinite_and_incomplete_vad_never_start_asr(self):
-        for vad in ([[0, 4001]], [[0, 2000], [1900, 3000]], [[-1, 100]], [[10, -1]],
+        for vad in ([[0, 4100]], [[0, 2000], [1900, 3000]], [[-1, 100]], [[10, -1]],
                     [[0, float('inf')]], [[float('nan'), 100]], [[100, 100]]):
             with self.subTest(vad=vad), generated_engine() as f:
                 runtime = GeneratedRuntime(vad, ['must not run'], [])
@@ -163,18 +189,152 @@ class FunasrEngine(unittest.TestCase):
                 self.assertEqual(runtime.released, ['vad'])
                 self.assertEqual(runtime.closed, 1)
 
-    def test_clip_over_decoder_capacity_fails_even_inside_original_duration(self):
-        with generated_engine(640000) as f:
-            runtime = GeneratedRuntime([[0, 30000.0625]], [], [])
-            with self.assertRaises(engine.EngineError):
-                f.run(runtime)
-            self.assertEqual(runtime.released, ['vad'])
+    def test_vad_frame_rounding_and_long_speech_keep_every_pcm_sample_without_failing_the_recording(self):
+        for duration, intervals in (
+                (30000, [(0, 30000)]),
+                (30010, [(0, 30010)]),
+                (30100, [(0, 30100)]),
+                (30100.0625, [(0, 30000), (30000, 30100.0625)]),
+                (64000.0625, [(0, 30000), (30000, 60000), (60000, 64000.0625)])):
+            with self.subTest(duration=duration), generated_engine(int(duration*16)) as f:
+                count = len(intervals)
+                runtime = GeneratedRuntime([[0, duration]], ['generated speech']*count, ['合成语音。']*count)
+                response = contract.parse_response(f.run(runtime), f.request)
+                cp = contract.read_checkpoint(response['checkpoint'])
+                inputs = [call[2]['input'] for call in runtime.calls if call[:2] == ('generate', 'asr')]
+                self.assertEqual(len(inputs), count)
+                self.assertEqual(b''.join(inputs), f.pcm)
+                self.assertTrue(all(len(pcm)/32 <= 30100 for pcm in inputs))
+                self.assertEqual(cp['source']['durationMs'], duration)
+                self.assertEqual(cp['vad'], [{'startMs': start, 'endMs': end} for start, end in intervals])
+                self.assertEqual(len(cp['recognitionChunks']), count)
+                self.assertEqual(runtime.released, ['vad', 'asr', 'punctuation'])
+                self.assertEqual(runtime.closed, 1)
+
+    def test_vad_final_frame_padding_and_subsample_jitter_use_the_original_pcm_boundary(self):
+        with generated_engine(64001) as f:
+            runtime = GeneratedRuntime([[-1e-9, 1000.000000001], [1000, 4010]], ['first', 'tail'], ['首段。', '尾段。'])
+            cp = contract.read_checkpoint(json.loads(f.run(runtime))['checkpoint'])
+            inputs = [call[2]['input'] for call in runtime.calls if call[:2] == ('generate', 'asr')]
+            self.assertEqual(b''.join(inputs), f.pcm)
+            self.assertEqual(cp['vad'], [{'startMs': 0, 'endMs': 1000}, {'startMs': 1000, 'endMs': 4000.0625}])
+            self.assertEqual(cp['sentences'][-1]['endMs'], 4000.0625)
+            self.assertEqual(cp['source']['sampleCount'], 64001)
 
     def test_missing_final_asr_result_cannot_become_complete_success(self):
         with generated_engine() as f:
             runtime = GeneratedRuntime([[0, 1000], [3000, 4000]], ['first only'], [])
             with self.assertRaisesRegex(engine.EngineError, 'inference_failed'):
                 f.run(runtime)
+            self.assertEqual(runtime.released, ['vad', 'asr'])
+            self.assertEqual(runtime.closed, 1)
+
+    def test_decoder_capacity_recovery_reuses_completed_regions_and_keeps_all_speech_pcm(self):
+        with generated_engine(1024001) as f:
+            runtime = CappedRuntime([[0, 2000], [3000, 33010], [34000, 64000.0625]],
+                ['first', ' repeated speech ', ' repeated speech ', 'last sample'],
+                ['First.', 'Repeated speech.', 'Repeated speech.', 'Last sample.'], capped_calls=[2])
+            response = f.run(runtime)
+            cp = contract.read_checkpoint(contract.loads(response)['checkpoint'])
+            intervals = [(0, 2000), (3000, 18005), (18005, 33010), (34000, 64000.0625)]
+            self.assertEqual(cp['vad'], [{'startMs': start, 'endMs': end} for start, end in intervals])
+            inputs = [c[2]['input'] for c in runtime.calls if c[:2] == ('generate', 'asr')]
+            self.assertEqual(inputs, [f.pcm[:64000], f.pcm[96000:1056320],
+                                     f.pcm[96000:576160], f.pcm[576160:1056320], f.pcm[1088000:]])
+            self.assertEqual(b''.join(inputs[i] for i in (0, 2, 3, 4)),
+                             f.pcm[:64000]+f.pcm[96000:1056320]+f.pcm[1088000:])
+            self.assertEqual([chunk['text'] for chunk in cp['recognitionChunks']],
+                             ['first', ' repeated speech ', ' repeated speech ', 'last sample'])
+            self.assertEqual([(s['startMs'], s['endMs']) for s in cp['sentences']], intervals)
+            self.assertEqual(cp['source']['sampleCount'], 1024001)
+            self.assertEqual(cp['identity'], f.request['identity'])
+            self.assertEqual(hashlib.sha256(f.original.read_bytes()).hexdigest(), f.request['audioSha256'])
+            # A saved complete checkpoint still drives CAM-only retry, with the
+            # refined VAD and original PCM rather than another recognition run.
+            request = diarize_request(f.request, response)
+            archive = copy.deepcopy(request['checkpoint'])
+            speaker = GeneratedRuntime([], [], [], [0]*len(engine.speaker_windows(cp['vad'], f.pcm)))
+            diarized = contract.parse_response(f.run(speaker, request), request)
+            self.assertEqual(diarized['checkpoint'], archive)
+            self.assertEqual(speaker.released, ['speaker'])
+            self.assertEqual(runtime.released, ['vad', 'asr', 'punctuation'])
+            self.assertEqual(runtime.closed, 1)
+
+    def test_decoder_capacity_recovery_refines_only_the_still_capped_child_and_keeps_fractional_tail(self):
+        with generated_engine(480001) as f:
+            runtime = CappedRuntime([[0, 30000.0625]], ['left', 'right left', 'right tail'],
+                                   ['Left.', 'Right left.', 'Right tail.'], capped_calls=[1, 3])
+            cp = contract.read_checkpoint(contract.loads(f.run(runtime))['checkpoint'])
+            inputs = [c[2]['input'] for c in runtime.calls if c[:2] == ('generate', 'asr')]
+            self.assertEqual(inputs, [f.pcm, f.pcm[:480000], f.pcm[480000:],
+                                     f.pcm[480000:720000], f.pcm[720000:]])
+            self.assertEqual(inputs[1]+inputs[3]+inputs[4], f.pcm)
+            self.assertEqual(cp['vad'], [{'startMs': 0, 'endMs': 15000},
+                {'startMs': 15000, 'endMs': 22500}, {'startMs': 22500, 'endMs': 30000.0625}])
+            self.assertEqual(cp['recognitionChunks'], [{'vadIndex': i, 'text': text}
+                for i, text in enumerate(['left', 'right left', 'right tail'])])
+
+    def test_decoder_capacity_recovery_exhaustion_and_short_inputs_stay_failed_without_partial_success(self):
+        for frames, attempts in ((480001, 4), (31999, 1)):
+            with self.subTest(frames=frames), generated_engine(frames) as f:
+                runtime = CappedRuntime([[0, frames/16]], [], [], capped_calls=range(1, 16))
+                with self.assertRaisesRegex(engine.EngineError, 'output_limit'):
+                    f.run(runtime)
+                self.assertEqual(runtime.asr_attempts, attempts)
+                self.assertEqual(runtime.released, ['vad', 'asr'])
+                self.assertEqual(runtime.closed, 1)
+                self.assertEqual(hashlib.sha256(f.original.read_bytes()).hexdigest(), f.request['audioSha256'])
+
+    def test_decoder_capacity_recovery_completes_the_full_bounded_tree_without_losing_a_leaf(self):
+        with generated_engine(480001) as f:
+            runtime = CappedRuntime([[0, 30000.0625]], [str(i) for i in range(8)],
+                                   [str(i)+'.' for i in range(8)], capped_calls=[1, 2, 3, 6, 9, 10, 13])
+            cp = contract.read_checkpoint(contract.loads(f.run(runtime))['checkpoint'])
+            inputs = [c[2]['input'] for c in runtime.calls if c[:2] == ('generate', 'asr')]
+            self.assertEqual(runtime.asr_attempts, 15)
+            self.assertEqual(b''.join(inputs[i-1] for i in (4, 5, 7, 8, 11, 12, 14, 15)), f.pcm)
+            self.assertEqual(cp['vad'], [{'startMs': i*3750, 'endMs': (i+1)*3750 if i < 7 else 30000.0625}
+                                         for i in range(8)])
+            self.assertEqual(cp['recognitionChunks'], [{'vadIndex': i, 'text': str(i)} for i in range(8)])
+
+    def test_decoder_capacity_recovery_does_not_retry_other_failures_or_oversize_text(self):
+        for failure, code in (('asr', 'inference_failed'), (None, 'output_limit'), ('other_limit', 'output_limit')):
+            with self.subTest(failure=failure), generated_engine() as f:
+                runtime = GeneratedRuntime([[0, 4000]], ['x'*(contract.LIMITS['textBytes']+1)], [])
+                runtime.failure = failure
+                def other_limit(role):
+                    if role == 'asr' and failure == 'other_limit':
+                        raise engine.EngineError('output_limit')
+                runtime.after_generate = other_limit
+                with self.assertRaisesRegex(engine.EngineError, code):
+                    f.run(runtime)
+                self.assertEqual(len([c for c in runtime.calls if c[:2] == ('generate', 'asr')]), 1)
+                self.assertEqual(runtime.released, ['vad', 'asr'])
+                self.assertEqual(runtime.closed, 1)
+
+    def test_cancellation_during_decoder_capacity_recovery_stops_before_the_next_child(self):
+        for cancel_at in (1, 2):
+            with self.subTest(cancel_at=cancel_at), generated_engine(480000) as f:
+                runtime = CappedRuntime([[0, 30000]], ['left'], [], capped_calls=[1])
+                cancelled = []
+                def after_generate(role):
+                    if role == 'asr' and runtime.asr_attempts == cancel_at:
+                        cancelled.append(True)
+                runtime.after_generate = after_generate
+                with self.assertRaisesRegex(engine.EngineError, 'cancelled'):
+                    f.run(runtime, cancelled=lambda: bool(cancelled))
+                self.assertEqual(runtime.asr_attempts, cancel_at)
+                self.assertEqual(runtime.released, ['vad', 'asr'])
+                self.assertEqual(runtime.closed, 1)
+
+    def test_decoder_capacity_recovery_cannot_exceed_the_checkpoint_vad_budget(self):
+        with generated_engine(81999) as f:
+            vad = [[0, 2000]]+[[2000+i/16, 2000+(i+1)/16] for i in range(49999)]
+            self.assertEqual(len(vad), contract.LIMITS['vad'])
+            runtime = CappedRuntime(vad, [], [], capped_calls=[1])
+            with self.assertRaisesRegex(engine.EngineError, 'output_limit'):
+                f.run(runtime)
+            self.assertEqual(runtime.asr_attempts, 1)
             self.assertEqual(runtime.released, ['vad', 'asr'])
             self.assertEqual(runtime.closed, 1)
 
@@ -356,7 +516,6 @@ class FunasrEngine(unittest.TestCase):
     def test_real_engine_serialization_reaches_typescript_file_output_registry(self):
         # Cross-language consumer uses the actual run_audio bytes above, never a
         # separately handwritten TS success fixture or a fake Store/HTTP stack.
-        bundle = generated_bundle()
         code = """
 import {FileOutputRegistry} from './apps/server/src/file-recipes.ts';
 import {parseFunasrRequest,parseFunasrResponse,parseFunasrArchive,projectFunasrDiarization,funasrTranscriptOutput,funasrDialogueOutput} from './apps/server/src/funasr-contract.ts';
@@ -370,20 +529,79 @@ const registry=new FileOutputRegistry();registry.register(funasrTranscriptOutput
 const transcript=transcriptSchema.parse(registry.decode(funasrTranscriptOutput,JSON.parse(b.response)).transcript);
 const dialogue=transcriptSchema.parse(registry.decode(funasrDialogueOutput,JSON.parse(b.diarizeResponse)).transcript);
 const acoustic=diarizationSchema.parse(projectFunasrDiarization(parseFunasrArchive(raw.checkpoint),speakers.diarization));
-assert.deepEqual(transcript.segments.map(s=>[s.startMs,s.endMs,s.text]),[[1000,1500,'合成原文。'],[3000,4000,'尾段。']]);
+assert.deepEqual(transcript.segments.map(s=>[s.startMs,s.endMs,s.text]),b.expectedSegments);
 assert.deepEqual(dialogue.segments.map(s=>s.speaker),['SPEAKER_0','SPEAKER_7']);
 assert.equal(acoustic.observedSpeakers,2); assert.equal(acoustic.samples.length,2);
 assert.equal(speakers.checkpoint.json,raw.checkpoint.json);
 console.log('actual engine bytes -> FileOutputRegistry / Transcript / Diarization: passed');
 """
-        result = subprocess.run(['node', '--import', 'tsx', '--input-type=module', '-e', code],
-                                cwd=Path(__file__).resolve().parents[1], input=contract.serialize(bundle),
-                                capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('passed', result.stdout)
+        for recover in (False, True):
+            with self.subTest(recover=recover):
+                bundle = generated_bundle(recover)
+                bundle['expectedSegments'] = ([[1000, 2500, '合成原文。'], [2500, 4000, '尾段。']]
+                                              if recover else [[1000, 1500, '合成原文。'], [3000, 4000, '尾段。']])
+                result = subprocess.run(['node', '--import', 'tsx', '--input-type=module', '-e', code],
+                                        cwd=Path(__file__).resolve().parents[1], input=contract.serialize(bundle),
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('passed', result.stdout)
 
 
 class MappingAndRuntime(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec('funasr'), 'requires pinned audio dependencies; no model weights')
+    def test_pinned_fsmn_frame_boundaries_reach_recognition_with_the_rounding_buffer(self):
+        import torch
+        from funasr.models.fsmn_vad_streaming.model import FsmnVADStreaming, FrameState, VADXOptions
+
+        native_regions = []
+        def vad_factory(**options):
+            # Only acoustic classification is generated. Use the installed
+            # SDK's actual window detector, frame state machine and finalizer.
+            model = FsmnVADStreaming.__new__(FsmnVADStreaming)
+            torch.nn.Module.__init__(model)
+            model.vad_opts = VADXOptions(max_single_segment_time=options['max_single_segment_time'])
+            def generate(input, **_kwargs):
+                count = len(input)//320
+                cache = model.init_cache({})
+                stats = cache['stats']
+                stats.frm_cnt, stats.decibel = count, [0]*count
+                stats.scores = torch.zeros((1, count, 2))
+                stats.data_buf_all = torch.zeros(len(input)//2)
+                stats.data_buf = stats.data_buf_all
+                for index in range(count):
+                    model.DetectOneFrame(FrameState.kFrameStateSpeech, index, index == count-1, cache=cache)
+                rows = [[row.start_ms, row.end_ms] for row in stats.output_data_buf]
+                self.assertTrue(all(row.contain_seg_start_point and row.contain_seg_end_point for row in stats.output_data_buf))
+                native_regions.extend(rows)
+                return [{'value': rows}]
+            return SimpleNamespace(kwargs=options, model=model, generate=generate)
+
+        class PinnedVadRuntime(GeneratedRuntime):
+            backend, threads, active = 'cpu', 1, None
+            auto_model = staticmethod(vad_factory)
+            release = engine.SdkRuntime.release
+
+            @contextmanager
+            def component(self, role, directory):
+                if role == 'vad':
+                    with engine.SdkRuntime.component(self, role, directory) as model:
+                        yield model
+                else:
+                    with super().component(role, directory) as model:
+                        yield model
+
+        with generated_engine(688000) as f:
+            runtime = PinnedVadRuntime([], ['first', 'tail'], ['首段。', '尾段。'])
+            cp = contract.read_checkpoint(json.loads(f.run(runtime))['checkpoint'])
+            self.assertEqual(native_regions, [[0, 30010], [30010, 43000]])
+            self.assertEqual(cp['vad'], [{'startMs': start, 'endMs': end} for start, end in native_regions])
+            inputs = [call[2]['input'] for call in runtime.calls if call[:2] == ('generate', 'asr')]
+            self.assertEqual(b''.join(inputs), f.pcm)
+            self.assertEqual(cp['source']['durationMs'], 43000)
+            self.assertEqual(cp['recognitionChunks'], [{'vadIndex': 0, 'text': 'first'}, {'vadIndex': 1, 'text': 'tail'}])
+            self.assertEqual(runtime.closed, 1)
+            self.assertIsNone(runtime.active)
+
     @unittest.skipUnless(importlib.util.find_spec('funasr'), 'requires pinned audio dependencies; no model weights')
     def test_generated_pcm_reaches_pinned_nano_chat_template_without_losing_vad_samples(self):
         # Exercise the installed SDK's AutoModel -> Nano.inference -> chat

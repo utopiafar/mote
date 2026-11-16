@@ -78,10 +78,46 @@ it('imports OpenCode SQLite sessions without reading credentials and keeps host 
  expect(scan.items.find(item=>item.document?.coding?.role==='tool_call')).toMatchObject({text:expect.stringContaining('generated command'),document:{coding:{callId:'call-1'}}});
  expect(scan.items.find(item=>item.document?.coding?.role==='tool_result')?.text).toBe('Generated output');
  expect(scan.items.find(item=>item.text==='Final answer')?.document?.recordedAt).toBe(new Date(at+1500).toISOString());
+ expect(scan.items.map(item=>[item.document?.timeBasis,item.document?.recordedAt])).toEqual(
+  [at,at+1500,at+3100,at+3200,at+3200,at+4100,at+4200].map(value=>['recorded',new Date(value).toISOString()]),
+ );
  expect(scan.items.every(item=>item.document?.coding?.sessionId==='ses_generated'&&item.document?.coding?.cwd==='/generated/opencode-project'&&item.document?.coding?.projectName==='opencode-project')).toBe(true);
  expect(JSON.stringify(scan.items)).not.toContain('Private reasoning');
  expect(JSON.stringify(scan.items)).not.toContain('Delegated internal instruction');
  expect(JSON.stringify(scan.items)).not.toContain('fixture-secret-that-must-not-be-read');
+});
+it.each([
+ {name:'database creation time',created:1790000000000,expected:'2026-09-21T14:13:20.000Z'},
+ {name:'seconds',created:1790000000,expected:'2026-09-21T14:13:20.000Z'},
+ {name:'offset timestamp',created:'2026-09-21T22:13:20+08:00',expected:'2026-09-21T14:13:20.000Z'},
+ {name:'missing creation time',created:undefined,expected:undefined},
+ {name:'invalid creation time',created:'not a timestamp',expected:undefined},
+ {name:'out-of-range creation time',created:1e20,expected:undefined},
+])('OpenCode uses $name without substituting update or observation time',({created,expected})=>{
+ const context={sessionId:'generated-time'},updated=1790000090000;
+ const user=decodeCodingEvent('opencode',{id:'user',type:'user',time_created:created,time_updated:updated,timestamp:updated,time:updated,data:{text:'Generated prompt',time:{created:updated}}},context);
+ expect(user.map(event=>[event.at,event.role,event.attribution,event.nativeId])).toEqual([[expected,'user','human','user:text']]);
+ const assistant=decodeCodingEvent('opencode',{id:'assistant',type:'assistant',time_created:created,time_updated:updated,data:{finish:'stop',content:[{type:'text',text:'Generated answer',time:{created:'invalid'}}]}},context);
+ expect(assistant.map(event=>[event.at,event.role,event.attribution,event.nativeId])).toEqual([[expected,'assistant','agent','assistant:0:text']]);
+ const tools=decodeCodingEvent('opencode',{id:'tools',type:'assistant',time_created:created,time_updated:updated,data:{content:[{type:'tool',id:'call',name:'generated',state:{status:'completed',content:[{type:'text',text:'Generated output'}]}}]}},context);
+ expect(tools.map(event=>[event.at,event.role,event.callId,event.nativeId])).toEqual([[expected,'tool_call','call','tools:0:call'],[expected,'tool_result','call','tools:0:result']]);
+});
+it('OpenCode preserves explicit part creation and completion times before the database creation time',()=>{
+ const at=Date.parse('2026-09-21T14:13:20Z');
+ const events=decodeCodingEvent('opencode',{id:'generated-parts',type:'assistant',time_created:at,time_updated:at+9000,data:{content:[
+  {type:'text',text:'Generated progress',time:{created:'2026-09-21T22:13:21+08:00'}},
+  {type:'tool',id:'generated-call',name:'generated',time:{created:at+2000,completed:at+3000},state:{status:'completed',time:{completed:at+4000},content:[{type:'text',text:'Generated result'}]}},
+ ]}},{sessionId:'generated-time'});
+ expect(events.map(event=>[event.role,event.at])).toEqual([
+  ['assistant',new Date(at+1000).toISOString()],['tool_call',new Date(at+2000).toISOString()],['tool_result',new Date(at+4000).toISOString()],
+ ]);
+});
+it('OpenCode skips invalid completion timestamps before using a valid part time',()=>{
+ const at=Date.parse('2026-09-21T14:13:20Z'),context={sessionId:'generated-time'};
+ for(const [completed,partCompleted,expected] of [['invalid',at+3000,at+3000],[1e20,'invalid',at+2000]] as const){
+  const events=decodeCodingEvent('opencode',{type:'assistant',time_created:at,data:{content:[{type:'tool',name:'generated',time:{created:at+2000,completed:partCompleted},state:{status:'completed',time:{completed},content:[{type:'text',text:'Generated result'}]}}]}},context);
+  expect(events.find(event=>event.role==='tool_result')?.at).toBe(new Date(expected).toISOString());
+ }
 });
 it('incrementally completes a running OpenCode message and appends later messages without duplicates',async()=>{
  const at=Date.parse('2026-09-10T02:00:00Z'),db=join(root,'opencode.db');

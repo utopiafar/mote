@@ -34,6 +34,7 @@ export {
 export {SYSTEM_PROMPT, SOURCE_TIME_INSTRUCTIONS, ATTRIBUTION_CONTEXT_INSTRUCTIONS, systemInstructions} from './instructions.js';
 export {createRuntimePatch} from './runtime/dsh/profile-compiler.js';
 export {CodexSession} from './codex-session.js';
+export {codexContextCapacity} from './runtime/codex/launch.js';
 
 /** The public Agent facade and import capability are exported only through the
  * official composition. It owns runtime/model/output/import selection and

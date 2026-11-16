@@ -15,7 +15,13 @@ let buffered=[],logFailed=false,pending,writingCount=0,dropped=0;
 const instanceId=marker.slice('--mote-instance='.length);let seq=0;
 function flush(){
  if(pending||!buffered.length||logFailed)return;
- pending=(async()=>{while(buffered.length){const lines=buffered.splice(0,64);writingCount=lines.length;await store.append(lines);writingCount=0;}})().catch(()=>{logFailed=true;buffered=[];child?.kill('SIGTERM');process.exitCode=1;}).finally(()=>{pending=undefined;if(buffered.length&&!logFailed)flush();});
+ pending=(async()=>{while(buffered.length){const lines=buffered.splice(0,64);writingCount=lines.length;await store.append(lines);writingCount=0;}})().catch(error=>{
+  logFailed=true;buffered=[];
+  // The failing store cannot record its own failure. Emit fixed facts through
+  // the supervisor's stderr; exception messages, paths and child output stay private.
+  process.stderr.write(JSON.stringify({event:'process.log_failed',category:error?.code==='MOTE_LOG_RETENTION_BUSY'?'retention_lock':'storage',diagnostic:errorDiagnostics(error)})+'\n');
+  child?.kill('SIGTERM');process.exitCode=1;
+ }).finally(()=>{pending=undefined;if(buffered.length&&!logFailed)flush();});
 }
 function safeWrite(line){
  if(logFailed)return;

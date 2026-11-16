@@ -43,6 +43,38 @@ test('set traversal preserves cross-graph file, Memory and Material ancestors th
  const resolved=resolveDependencies(store,{version:1,complete:true,ids:[graph]})!;
  assert.deepEqual(new Set(resolved.ids),new Set([graph,file,artifact,memory.id,anchor,raw]));assert.equal(resolved.complete,true);
 });
+test('resolving selected disclosure lineage does not read unrelated graph branches',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-lineage-selected-')),store=new Store(directory);
+ t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+ const originals=[randomUUID(),randomUUID()],artifacts=originals.map(()=>randomUUID());
+ for(const [index,id] of originals.entries()){
+  await store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated original '+index});
+  store.archive.save(artifacts[index],artifacts[index],'1',{kind:'generated',text:'Generated interpretation',metadata:{}},[{id,fingerprint:store.archive.fingerprint(id)!}],'generated','1','generated');
+ }
+ installEvidenceDependencies(store);
+ // Observe actual graph-row evaluation, with the real artifact inputs and
+ // other graph branches intact. A full graph materialization reads both rows
+ // even when the selected original has no parents.
+ const read:string[]=[];store.db.function('generated_lineage_read',id=>{read.push(String(id));return id;});
+ const view=String(store.db.prepare("SELECT sql FROM sqlite_master WHERE name='evidence_dependency_edges'").get()!.sql);
+ store.db.exec('DROP VIEW evidence_dependency_edges;'+view.replace('observation_id parent_id','generated_lineage_read(observation_id) parent_id'));
+ assert.deepEqual(resolveDependencies(store,{version:1,complete:true,ids:[originals[0]]})!.ids,[originals[0]]);
+ assert.deepEqual(read,[],'a leaf original must not evaluate unrelated artifact inputs');
+ const resolved=resolveDependencies(store,{version:1,complete:true,ids:[artifacts[0]]})!;
+ assert.deepEqual(new Set(resolved.ids),new Set([artifacts[0],originals[0]]));
+ assert.deepEqual(new Set(read),new Set([originals[0]]),'derived input retains its exact original without reading the other artifact');
+});
+test('bounded dependency reads retain every ancestor beyond one page and terminate a shared cycle',t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-lineage-pages-')),store=new Store(directory);
+ t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+ const roots=Array.from({length:257},()=>randomUUID()),parents=roots.map(()=>randomUUID()),shared=randomUUID();
+ const insert=store.db.prepare('INSERT INTO file_evidence_links(parent_id,capture_id) VALUES(?,?)');
+ for(const [index,id] of roots.entries()){insert.run(parents[index],id);insert.run(shared,parents[index]);}
+ insert.run(roots[0],shared);
+ const resolved=resolveDependencies(store,{version:1,complete:true,ids:roots})!;
+ assert.equal(resolved.complete,true);assert.equal(resolved.ids.length,515);
+ assert.deepEqual(new Set(resolved.ids),new Set([...roots,...parents,shared]));
+});
 for(const operation of ['delete','prune','revise'] as const)test(`${operation} invalidates uncited reads and summaries in A while independent B survives`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-lineage-')),store=new Store(directory),conversations=new Conversations(store),working=new WorkingMemory(store,conversations);
  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});

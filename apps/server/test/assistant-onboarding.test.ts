@@ -36,7 +36,7 @@ const empty=(input:QueryInput,answer:string):QueryResult=>({answer,citations:[],
 
 /** Real SQLite, owner HTTP command, Memory executor, follow-up parser and card store.
  * Only the two model boundaries are controlled. No real profile is opened. */
-async function fixture(t:TestContext){
+async function fixture(t:TestContext,options:{noSuggestions?:boolean}={}){
  const directory=mkdtempSync(join(tmpdir(),'mote-onboarding-'));
  const calls:{kind:'memory'|'assistant';ids:string[];sourceIds:string[]}[]=[],contexts:Context[]=[];
  const connection=modelConnection('generated-32k-model',{window:32000});
@@ -57,6 +57,7 @@ async function fixture(t:TestContext){
    return fixtureMemoryResult(reader.memories,result,input.evidenceRanges,input);
   }
   const context=input.taskContext as unknown as Context;assert.ok(context?.materials);contexts.push(context);
+  if(options.noSuggestions)return empty(input,JSON.stringify({reason:'Generated current original was reviewed; no supported new help.',cards:[],commitments:[]}));
   const original=context.originals[0];assert.ok(original,'A14 receives an actual original');
   return empty(input,JSON.stringify({reason:'Generated historical review with original time preserved.',cards:[{action:'new',cardId:null,relatedCardIds:[],title:context.materials[0].title,
    body:'Generated useful follow-up based on the selected original.',reason:'Generated explicit fixture interpretation.',evidence:[original],matterId:null}],commitments:[]}));
@@ -79,7 +80,8 @@ async function fixture(t:TestContext){
   await app.ready();
  };
  const close=async()=>{await onboarding.close();await app.close();await batch.close();await memory.close();await engine.close();control.close();reader.dispose();store.close();};
- await start();t.after(async()=>{await close();rmSync(directory,{recursive:true,force:true});});
+ const releaseHeldModels:Array<()=>void>=[];
+ await start();t.after(async()=>{for(const release of releaseHeldModels)release();await close();rmSync(directory,{recursive:true,force:true});});
  const publish=(sourceId:string,captureId:string,text:string,state:'ready'|'pending'|'failed'='ready')=>{
   const id=materialId(sourceId,'selected'),previous=materials.get(id);
   return materials.publish({id,kind:'mote.message',schemaVersion:1,title:'Generated '+sourceId,origin:{sourceId,externalId:'selected',deviceId:'generated',firstAt:at,lastAt:at},
@@ -102,12 +104,15 @@ async function fixture(t:TestContext){
   assert.equal(response.statusCode,200,response.body);return response.json() as ReturnType<AssistantOnboarding['get']>;
  };
  const until=async(check:()=>boolean|Promise<boolean>)=>{
-  const end=Date.now()+10000;
-  while(Date.now()<end){await onboarding.tick();await engine.tick();if(modelFailure)throw modelFailure;if(await check())return;await new Promise(done=>setTimeout(done,10));}
+  const end=performance.now()+10000;
+  // tick() waits for work it starts. A deliberately held provider must remain
+  // in flight while this test issues cancellation, rather than deadlocking the
+  // polling helper before it can observe that the provider was entered.
+  while(performance.now()<end){await onboarding.tick();void engine.tick().catch(error=>{modelFailure=error;});if(modelFailure)throw modelFailure;if(await check())return;await new Promise(done=>setTimeout(done,10));}
   throw Error('Generated onboarding did not reach the expected state: '+JSON.stringify(store.db.prepare('SELECT * FROM assistant_onboarding_items').all()));
  };
  return {get store(){return store;},get sources(){return sources;},get materials(){return materials;},get cards(){return cards;},get onboarding(){return onboarding;},get reader(){return reader;},get followup(){return followup;},get memory(){return memory;},get app(){return app;},get control(){return control;},
-  calls,contexts,add,publish,post,read,until,async restart(){await close();await start();},hold(kind:'memory'|'assistant'){const hold={kind,entered:gate(),release:gate()};modelHold=hold;t.after(()=>hold.release.release());return hold;}};
+  calls,contexts,add,publish,post,read,until,async restart(){await close();await start();},hold(kind:'memory'|'assistant'){const hold={kind,entered:gate(),release:gate()};modelHold=hold;releaseHeldModels.push(()=>hold.release.release());return hold;}};
 }
 
 test('two selected historical sources give a useful partial result, then resume only the late original after restart without notifications',async t=>{
@@ -131,7 +136,7 @@ test('two selected historical sources give a useful partial result, then resume 
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM background_model_receipts WHERE eligible=1').get()!.n,0,'historical permission creates no automatic receipts');
  assert.ok(f.contexts.every(context=>context.materials.every(material=>material.origin.sourceId==='work'||material.origin.sourceId==='life')));
  assert.equal(f.contexts[0].memories.length,1);assert.equal(f.contexts[1].memories.length,2,'both domains share the same current Memory reader');
- const narrow=await f.read(run.id,{kind:'selection',sourceIds:['work']});assert.equal(narrow.coverage.sync.total,1);assert.doesNotMatch(JSON.stringify(narrow),/Generated life|confirm the trip/);
+ const narrow=await f.read(run.id,{kind:'selection',sourceIds:['work']});assert.equal(narrow.coverage.sync.total,1);assert.equal(narrow.coverage.semantic.completed,1);assert.equal(narrow.items[0].result,undefined,'mixed-context result stays hidden without misreporting selected processing coverage');assert.doesNotMatch(JSON.stringify(narrow),/Generated life|confirm the trip/);
  const lifeOnly=await f.read(run.id,{kind:'selection',sourceIds:['life']});assert.equal(lifeOnly.items.length,1);assert.equal(lifeOnly.items[0].result,undefined,'a mixed-source analysis is withheld in a narrow read');
  assert.equal('position' in lifeOnly.items[0],false,'the original item index must not reveal hidden selection counts');
  assert.equal((await f.read(run.id,{kind:'selection',sourceIds:[]})).coverage.sync.total,0);
@@ -232,4 +237,19 @@ test('assembled server mounts owner-only onboarding commands without enabling au
  const response=await node.app.inject({method:'POST',url:'/api/assistant/onboarding',headers,payload:{requestId:randomUUID(),scope:all,materialRefs:[material.ref]}});
  assert.equal(response.statusCode,202,response.body);assert.equal(response.json().coverage.sync.total,1);
  assert.equal(node.modelAuthorization.view().state,'off','manual onboarding never opens background processing');
+});
+
+
+test('a completed zero-batch Memory job recovers its valid saved empty follow-up after a transient result write failure without a new model call',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:new Date(at)});
+ const f=await fixture(t,{noSuggestions:true}),note=await f.add('save-recovery','Generated current original with no supported suggestion.');
+ const first=await f.post([note.material.ref]);await f.until(async()=>(await f.read(first.id)).state==='completed');
+ f.store.db.exec("CREATE TEMP TRIGGER generated_followup_save_failure BEFORE UPDATE OF state ON task_records WHEN old.kind='assistant.followup' AND new.state='succeeded' BEGIN SELECT RAISE(ABORT,'generated transient result write failure'); END");
+ const second=await f.post([note.material.ref]);await f.until(async()=>(await f.read(second.id)).failed===1);
+ const failed=await f.read(second.id),item=failed.items[0];assert.equal(item.reason,'understanding_unavailable');assert.equal(item.memory?.status,'completed');assert.equal(item.memory?.totalBatches,0);
+ const batch=f.store.db.prepare("SELECT b.state FROM task_records f JOIN task_records b ON b.operation_id=f.operation_id WHERE f.id=? AND b.kind='batch'").get(item.taskId!);assert.equal(batch?.state,'succeeded');
+ const before=f.calls.length;f.store.db.exec('DROP TRIGGER generated_followup_save_failure');
+ await f.until(async()=>(await f.read(second.id)).state==='completed');
+ const recovered=await f.read(second.id);assert.equal(recovered.failed,0);assert.equal(recovered.items[0].reason,undefined);assert.deepEqual(recovered.items[0].result?.cardIds,[]);
+ assert.equal(f.calls.length,before,'recovery validates and saves the existing model result instead of repeating processing');
 });

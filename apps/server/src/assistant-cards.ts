@@ -117,6 +117,17 @@ export class AssistantCards {
   const ids=this.store.db.prepare('SELECT evidence_id FROM task_evidence WHERE task_id=? ORDER BY evidence_id').all(row.accepted_task_id).map(value=>String(value.evidence_id));
   return this.valid(ids,scope)?row.accepted_task_id:null;
  }
+ /** A suggestion lends only its complete retained lineage to a new task. The
+  * feed scope is a disclosure filter, never a request to read the whole feed.
+  * Resolve canonical originals/anchors without browsing unrelated Materials. */
+ private taskInput(row:CardRow,snapshot:VersionRow,ids:string[]){
+  if(row.kind!=='suggestion'||row.state==='stale'||snapshot.stale)return {taskScope:null,taskEvidence:[]};
+  const records=this.reader.memories.readCurrentEvidence(ids).sort((a,b)=>a.id.localeCompare(b.id));
+  const taskScope:QueryScope={kind:'selection',evidenceIds:records.map(record=>record.id)};
+  if(!records.length||!this.valid(ids,taskScope))return {taskScope:null,taskEvidence:[]};
+  return {taskScope,taskEvidence:records.map(record=>({id:record.id,title:record.windowTitle||record.appName||'',
+   ...(record.provenance?.sourceId?{sourceId:record.provenance.sourceId}:{}),deviceId:record.deviceId,at:record.capturedAt}))};
+ }
  private view(row:CardRow,scope:QueryScope){
   const snapshot=this.current(row,scope),body=this.publicBody(snapshot),ids=this.ids(row.id,row.current_version);
   const feedback=(this.store.db.prepare('SELECT seq,version,action,stale,private_json,created_at FROM assistant_card_feedback WHERE card_id=? ORDER BY seq').all(row.id) as FeedbackRow[]).flatMap(entry=>{
@@ -128,7 +139,7 @@ export class AssistantCards {
    return [{version:entry.version,action:entry.action,...detail,...(entry.stale?{evidenceStale:true}:{}),createdAt:entry.created_at}];
   });
   return {id:row.id,kind:row.kind,matterId:row.matter_id,version:row.current_version,state:row.state,revision:row.revision,...(snapshot.stale?{evidenceStale:true}:{}),
-   ...body,evidenceDependencies:{version:1 as const,complete:true as const,ids:ids.filter(id=>Boolean(parseEvidenceId(id)))},readAt:row.read_at,acceptedTaskId:this.acceptedTask(row,scope),
+   ...body,...this.taskInput(row,snapshot,ids),evidenceDependencies:{version:1 as const,complete:true as const,ids:ids.filter(id=>Boolean(parseEvidenceId(id)))},readAt:row.read_at,acceptedTaskId:this.acceptedTask(row,scope),
    feedback,createdAt:row.created_at,updatedAt:row.updated_at};
  }
  private expect(row:CardRow,expectedRevision:number){if(row.revision!==revision.parse(expectedRevision))throw new StoreError('Assistant card changed; reload before continuing',409);}

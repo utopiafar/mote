@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createServer} from 'node:net';
+import {createServer,Socket} from 'node:net';
 import {once} from 'node:events';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -30,14 +30,25 @@ async function settled(preparation:MediaPreparation,role:MediaRole){for(let inde
 test('one preparation owns repeated clicks; cancel fences late dependency completion and retry remains possible',async t=>{
  const f=await fixture(t);let release!:()=>void,calls=0;const prepared=new Promise<void>(resolve=>release=resolve);
  const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>{calls++;await prepared;return {python:process.execPath};},fetch:async()=>new Response('{}')});t.after(()=>preparation.close());
- const first=await preparation.start('ocr'),second=await preparation.start('ocr');assert.equal(first.id,second.id);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);
- const cancel=preparation.cancel('ocr');release();await cancel;assert.equal((await preparation.status('ocr')).state,'cancelled');assert.equal(f.assets.installs,0);
+ assert.equal(preparation.preparing('ocr',f.media.ocrEndpoint),false);
+ const pending=preparation.start('ocr');assert.equal(preparation.preparing('ocr',f.media.ocrEndpoint),true,'queued native work is already owned');
+ const first=await pending,second=await preparation.start('ocr');assert.equal(first.id,second.id);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);
+ assert.equal(preparation.preparing('ocr',f.media.ocrEndpoint+'/custom'),false);assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),false);
+ const cancel=preparation.cancel('ocr');assert.equal(preparation.preparing('ocr',f.media.ocrEndpoint),false,'cancel takes effect before dependency completion');release();await cancel;assert.equal((await preparation.status('ocr')).state,'cancelled');assert.equal(f.assets.installs,0);
  const retry=await preparation.start('ocr');assert.notEqual(retry.id,first.id);await preparation.cancel('ocr');assert.equal(f.assets.installs,0);
 });
 test('configuration change cancels queued dependency work before any model installation or worker spawn',async t=>{
  const f=await fixture(t);let release!:()=>void;const prepared=new Promise<void>(resolve=>release=resolve);
  const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>{await prepared;return {python:process.execPath};}});t.after(()=>preparation.close());
- await preparation.start('ocr');await preparation.start('dialogue');preparation.invalidate();release();await preparation.close();assert.equal(f.assets.installs,0);assert.equal((await preparation.status('ocr')).error,'configuration_changed');
+ await preparation.start('ocr');await preparation.start('dialogue');assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),true);preparation.invalidate();assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),false);release();await preparation.close();assert.equal(f.assets.installs,0);assert.equal((await preparation.status('ocr')).error,'configuration_changed');
+});
+test('native model installation remains a preparation wait until cancellation fences the late installer',async t=>{
+ const f=await fixture(t);let entered!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve),install=f.assets.installAsync.bind(f.assets);
+ f.assets.installAsync=async(role,source,signal)=>{entered();await held;return install(role,source,signal);};
+ const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>({python:process.execPath})});t.after(async()=>{release();await preparation.close();});
+ await preparation.start('dialogue');await started;assert.equal((await preparation.status('dialogue')).state,'models');assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),true);
+ const cancelled=preparation.cancel('dialogue');assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),false);release();await cancelled;assert.equal(f.assets.installs,0);assert.equal((await preparation.status('dialogue')).state,'cancelled');
 });
 test('native start failure is not ready, retry runs an owned authenticated HTTP worker, and close frees its port',async t=>{
  const f=await fixture(t),script=join(f.directory,'scripts','ocr-server.py');await writeFile(script,'process.exit(1)');
@@ -49,7 +60,7 @@ test('native start failure is not ready, retry runs an owned authenticated HTTP 
 });
 test('Docker prepares model files and checks its existing sidecar without invoking native dependency installation',async t=>{
  const f=await fixture(t);let native=0;const preparation=new MediaPreparation({runtime:'docker',...f,prepare:async()=>{native++;throw Error('must not run');},fetch:async()=>Response.json(asrHealth)});t.after(()=>preparation.close());
- await preparation.start('dialogue');assert.equal((await settled(preparation,'dialogue')).state,'ready');assert.equal(native,0);assert.equal(f.assets.installs,1);
+ const pending=preparation.start('dialogue');assert.equal(preparation.preparing('dialogue',f.media.asrEndpoint),false,'deployment-owned sidecars are not Central-owned native listeners');await pending;assert.equal((await settled(preparation,'dialogue')).state,'ready');assert.equal(native,0);assert.equal(f.assets.installs,1);
 });
 test('preparation uses the automatic model source so an unreachable official host can fall back to the mirror',async t=>{
  const f=await fixture(t),preparation=new MediaPreparation({runtime:'docker',...f,fetch:async()=>Response.json(asrHealth)});t.after(()=>preparation.close());
@@ -64,6 +75,30 @@ test('cancelling startup waits for its owned unready worker to exit before repor
 test('custom native endpoints remain explicit and are never installed over or claimed managed',async t=>{
  const f=await fixture(t),preparation=new MediaPreparation({runtime:'native',...f,media:{...f.media,ocrEndpoint:'https://example.invalid/ocr'}});t.after(()=>preparation.close());
  assert.equal((await preparation.status('ocr')).error,'external_worker');assert.throws(()=>preparation.start('ocr'),/external_worker/);assert.equal(f.assets.installs,0);
+});
+
+for(const failure of ['timeout','EACCES','EMFILE','ECONNRESET'] as const)test(`native ${failure} port probes report uncertainty without spawning, and explicit preparation can recover`,async t=>{
+ const {readFile}=await import('node:fs/promises'),f=await fixture(t),marker=join(f.directory,'worker-started');
+ await writeFile(join(f.directory,'scripts','transcription-server.py'),`const http=require('node:http'),fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'generated');http.createServer((req,res)=>{if(req.headers.authorization!=='Bearer '+process.env.MOTE_MEDIA_WORKER_TOKEN){res.writeHead(401);res.end();return;}res.setHeader('content-type','application/json');res.end(${JSON.stringify(JSON.stringify(asrHealth))});}).listen(Number(process.argv[process.argv.indexOf('--port')+1]),'127.0.0.1');`);
+ const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>({python:process.execPath}),startupTimeoutMs:2000});t.after(()=>preparation.close());
+ // Only the unavailable OS socket result is controlled. Keep the real
+ // preparation, assets, process owner, HTTP worker and retry entrypoint.
+ const original=Socket.prototype.connect;let probes=0;
+ const socketBoundary=t.mock.method(Socket.prototype,'connect',function(this:Socket,...args:any[]){
+  const options=Array.isArray(args[0])?args[0][0]:args[0];
+  if(options&&options.host==='127.0.0.1'&&Number(options.port)===f.media.asrPort){
+   probes++;queueMicrotask(()=>{if(failure==='timeout')this.emit('timeout');else this.emit('error',Object.assign(Error('Generated private probe detail'),{code:failure}));});return this;
+  }
+  return Reflect.apply(original,this,args);
+ });
+ await preparation.start('dialogue');const failed=await settled(preparation,'dialogue');
+ assert.equal(failed.state,'failed');assert.equal(failed.runtimeReady,false);
+ assert.equal(failed.error,failure==='timeout'?'worker_port_probe_timeout':'worker_port_probe_failed');
+ assert.ok(probes>0);assert.doesNotMatch(JSON.stringify(failed),/Generated private probe detail|generated-worker-token/);
+ await assert.rejects(readFile(marker),{code:'ENOENT'},'an uncertain probe cannot authorize a worker spawn');
+ socketBoundary.mock.restore();await preparation.start('dialogue');const recovered=await settled(preparation,'dialogue');
+ assert.equal(recovered.state,'ready');assert.equal(recovered.runtimeReady,true);assert.equal(await readFile(marker,'utf8'),'generated');
+ await preparation.close();await assert.rejects(fetch(f.media.asrEndpoint),'owned recovery must free its listener');
 });
 
 

@@ -37,7 +37,7 @@ export class ContextProcessorRegistry {
   list(){return [...this.processors.values()].map(({process,...metadata})=>metadata);}
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteContextProcessors:ContextProcessorRegistry;}}
-export class ProcessingFailure extends Error {constructor(readonly category:'transient'|'permanent'|'blocked',message:string=category){super(message);}}
+export class ProcessingFailure extends Error {constructor(readonly category:'transient'|'permanent'|'blocked',readonly code:string=category){super(code);}}
 const materialInputSchema=z.object({ref:z.string().regex(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/),offset:z.number().int().min(0).default(0),length:z.number().int().min(1).max(12000).default(4000)}).strict();
 const productInputSchema=z.discriminatedUnion('authority',[
   z.object({authority:z.literal('material'),ref:materialInputSchema.shape.ref,key:z.string().regex(/^[a-z0-9][a-z0-9._/-]{0,127}$/),offset:z.number().int().nonnegative().default(0),length:z.number().int().min(1).max(12000).default(4000)}).strict(),
@@ -70,12 +70,13 @@ export class ProcessingRuntime {
     provide('moteContextProcessors',this.registry);provide('moteMaterialConsumers',this.consumers);
     store.db.exec(`CREATE TABLE IF NOT EXISTS processing_jobs(id TEXT PRIMARY KEY,lane TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,fence TEXT,error TEXT,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS processing_ready ON processing_jobs(lane,state,available_at);
+      CREATE INDEX IF NOT EXISTS processing_parent_grant ON processing_jobs(json_extract(json,'$.parentGrant.stepId'),json_extract(json,'$.config.generationContract'),coalesce(json_extract(json,'$.config.modelFingerprint'),''),id);
       CREATE TABLE IF NOT EXISTS processing_dependencies(job_id TEXT NOT NULL REFERENCES processing_jobs(id) ON DELETE CASCADE,dependency_id TEXT NOT NULL REFERENCES processing_jobs(id),PRIMARY KEY(job_id,dependency_id));`);
     if(materials)store.archive.enableMaterialLineage();
     this.engine=engine??new ExecutionEngine(store,now);this.owned=!engine;
     for(const lane of lanes)this.unregister.push(this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,
       policy:lane==='semantic'?EXECUTION_POLICIES.modelCall:EXECUTION_POLICIES.deterministic,timeoutMs:lane==='semantic'?null:900000,validate:step=>this.valid(this.job(step.id)),admit:step=>this.admit(this.job(step.id)),execute:(step,signal)=>{const task=this.process(this.job(step.id),signal,step);this.tasks.add(task);void task.finally(()=>this.tasks.delete(task)).catch(()=>{});return task;},commit:(step,result)=>this.commit(this.job(step.id),result),project:step=>this.project(step),
-      classify:error=>{const category=error instanceof ProcessingFailure?error.category:error instanceof z.ZodError?'permanent':error instanceof StoreError?(error.statusCode===409?'blocked':'permanent'):'permanent';return new ExecutionFailure(category,category);},
+      classify:error=>{const category=error instanceof ProcessingFailure?error.category:error instanceof z.ZodError?'permanent':error instanceof StoreError?(error.statusCode===409?'blocked':'permanent'):'permanent';return new ExecutionFailure(category,error instanceof ProcessingFailure?(/^[a-z][a-z0-9_.:-]{0,99}$/.test(error.code)?error.code:'processor_failed'):category);},
     }));
     this.unregister.push(this.engine.register({kind:'material-consumer.plan',pool:'material-consumer.plan',concurrency:()=>2,policy:EXECUTION_POLICIES.deterministic,timeoutMs:300000,
       validate:step=>{const material=this.materials?.get(String(step.input.ref));return Boolean(material&&this.materials?.get(material.id)?.ref===material.ref&&this.consumerAllowed(material.origin.sourceId,String(step.input.bindingId)));},

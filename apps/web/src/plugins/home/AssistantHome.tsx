@@ -3,6 +3,7 @@ import {featureRequirementsAvailable,formatEvidenceRef,type QueryScope,type Work
 import {moteText} from '@mote/shared/i18n';
 import {ApiError,dateTime,errorMessage,type Api} from '../../api';
 import {discoveryAvailabilityText} from '../../DiscoveryLink';
+import {failureMessage} from '../../failure-message';
 import {Loading} from '../../Loading';
 import {resources} from '../../resource-cache';
 import {useResource} from '../../useResource';
@@ -86,7 +87,8 @@ function HomeTask({api,id,scope,supports,onOpen}:{api:Api;id:string;scope:QueryS
    {item.task.state==='stale'&&<p>{moteText('资料已变化，这项任务的结果已失效。')}</p>}
    {item.error==='no_usable_evidence'&&<p>{moteText('当前范围没有可用正文，任务尚未执行。')}</p>}
    {item.error==='model_context_budget_unavailable'&&<p>{moteText('模型上下文预算尚未就绪，任务未执行。')}</p>}
-   {(item.task.state==='failed'||item.task.state==='needs_input'&&item.error&&item.error!=='no_usable_evidence'&&item.error!=='model_context_budget_unavailable')&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
+   {item.error==='model_not_configured'&&<p>{failureMessage(item.error)} <a href="#/system/models">{moteText('检查模型连接 →')}</a></p>}
+   {(item.task.state==='failed'||item.task.state==='needs_input'&&item.error&&!['no_usable_evidence','model_context_budget_unavailable','model_not_configured'].includes(item.error))&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
    {item.task.state==='needs_input'&&supports('http:GET:/api/owner-questions')&&<button type="button" className="text-button" onClick={()=>openOwnerQuestionList(api)}>{moteText('需要你补充')} →</button>}
    {item.task.state==='completed'&&item.result&&<AnswerView answer={item.result} onOpen={ref=>void open(ref)} compact/>}
   </>}
@@ -103,7 +105,7 @@ function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskSta
  const path=assistantCardPath(card.id,scope),feedbackAvailable=supports('http:POST:/api/assistant-cards/:id/feedback');
  const startAvailable=supports('http:POST:/api/assistant/tasks')&&supports('http:GET:/api/assistant/tasks/:id');
  const changed=reviewedVersion!==card.version;
- const canStart=startAvailable&&!changed&&card.state==='open'&&!card.evidenceStale&&!card.acceptedTaskId;
+ const canStart=startAvailable&&!changed&&card.state==='open'&&!card.evidenceStale&&!card.acceptedTaskId&&Boolean(card.taskScope);
  const taskPath=card.acceptedTaskId&&supports('http:GET:/api/assistant/tasks/:id')?'/api/assistant/tasks/'+encodeURIComponent(card.acceptedTaskId)+'?'+assistantScopeQuery(scope):null;
  const taskRead=useResource<AssistantTaskResultItem>(api,taskPath,5000);
  useForegroundResources(api,[taskPath]);
@@ -117,7 +119,7 @@ function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskSta
   try{
    if(action==='start'){
     if(!canStart||!goal.trim())return;
-    command.current??={requestId:crypto.randomUUID(),goal:goal.trim(),scope,cardId:card.id,expectedRevision:card.revision};
+    command.current??={requestId:crypto.randomUUID(),goal:goal.trim(),scope:card.taskScope!,cardId:card.id,expectedRevision:card.revision};
     const receipt=await api.request<{requestId:string;taskId:string}>('/api/assistant/tasks',{method:'POST',body:JSON.stringify(command.current)});
     if(receipt.requestId!==command.current.requestId||!receipt.taskId)throw Error('Invalid assistant task receipt');
     if(alive.current)onTask(receipt.taskId);
@@ -144,6 +146,12 @@ function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskSta
   <p className="home-assistant-meta">{moteText('发现时间')} · <time dateTime={card.createdAt}>{dateTime(card.createdAt)}</time>{card.updatedAt!==card.createdAt&&<> · {moteText('最近更新')} · <time dateTime={card.updatedAt}>{dateTime(card.updatedAt)}</time></>}{sources.length>0&&<> · {moteText('来源')} · {sources.join(' · ')}</>}</p>
   {card.kind==='briefing'&&<p className="fine-print">{moteText('简报仅代表下列依据及正文注明的覆盖范围。')}</p>}
   <CardBody value={card} onEvidence={id=>void open(id)}/>
+  {card.kind==='suggestion'&&<div data-task-scope>
+   <p className="fine-print">{card.taskScope?moteText('仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。'):moteText('当前建议的完整资料范围不可用，请刷新后重新核对。')}</p>
+   <details className="home-assistant-proof"><summary>{moteText('任务资料范围')} · {card.taskEvidence.length}</summary>
+    <ul>{card.taskEvidence.map((record,index)=><li key={record.id}>{record.title||moteText('来源资料 {0}',index+1)} · {state.sources.error===undefined?state.sources.data?.items.find(source=>source.id===record.sourceId)?.name??record.sourceId??record.deviceId:record.sourceId??record.deviceId} · {dateTime(record.at)}</li>)}</ul>
+   </details>
+  </div>}
   {taskState&&<div role="status"><WorkStateBadge state={taskState}/>{taskState==='needs_input'&&<span> · {moteText('需要你补充')}</span>}</div>}
   {taskRead.error!==undefined&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}<button type="button" className="text-button" onClick={taskRead.refresh}>{moteText('刷新状态')}</button></p>}
   {latestDecision&&<p role="status">{latestDecision.action==='later'?moteText('已稍后'):moteText('已忽略')}{latestDecision.until&&<> · <time dateTime={latestDecision.until}>{dateTime(latestDecision.until)}</time></>}</p>}
@@ -184,10 +192,13 @@ export function AssistantHome({api,state,onOpen}:{api:Api;state:HomeSnapshot;onO
  const read=state.cards,items=read.error===undefined?read.data?.items:undefined;
  const decision=(card:AssistantCard)=>card.feedback.filter(entry=>['later','ignore','never_remind'].includes(entry.action)).at(-1);
  const deferred=(card:AssistantCard)=>{const last=decision(card);return Boolean(last&&(last.action!=='later'||!last.until||Date.parse(last.until)>Date.now()));};
- const settled=(card:AssistantCard)=>Boolean(card.acceptedTaskId&&known.api===api&&['completed','cancelled','stale','excluded'].includes(known.states.get(card.acceptedTaskId)??''));
+ const taskStatus=(card:AssistantCard)=>card.acceptedTaskId&&known.api===api?known.states.get(card.acceptedTaskId):undefined;
+ const settled=(card:AssistantCard)=>['completed','cancelled','excluded'].includes(taskStatus(card)??'');
  const sections=[
   {title:moteText('今天要关注'),items:items?.filter(card=>!card.acceptedTaskId&&card.kind!=='suggestion'&&!deferred(card))},
-  {title:moteText('正在推进'),items:items?.filter(card=>Boolean(card.acceptedTaskId)&&!settled(card))},
+  {title:moteText('正在推进'),items:items?.filter(card=>['waiting','running'].includes(taskStatus(card)??''))},
+  {title:moteText('需要处理'),items:items?.filter(card=>['needs_input','failed','stale'].includes(taskStatus(card)??''))},
+  {title:moteText('任务状态'),items:items?.filter(card=>Boolean(card.acceptedTaskId)&&taskStatus(card)===undefined)},
   {title:moteText('可以开始的工作'),items:items?.filter(card=>!card.acceptedTaskId&&card.kind==='suggestion'&&card.state==='open'&&!deferred(card))},
   {title:moteText('稍后与已处理'),items:items?.filter(card=>settled(card)||!card.acceptedTaskId&&(deferred(card)||card.kind==='suggestion'&&card.state==='resolved'))},
  ];

@@ -51,9 +51,10 @@ test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity
  await flush();
  const snapshot=()=>node.store.db.prepare('SELECT j.id,j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id ORDER BY j.id').all().map(row=>({...row}));
  const before=snapshot();assert.equal(before.length,20);assert.ok(before.every(row=>typeof JSON.parse(String(row.json)).private==='string'),'exercise encrypted work packages as well as logical job state');
- const updated:string[]=[],prepare=node.store.db.prepare.bind(node.store.db);
+ const updated:string[]=[],prepare=node.store.db.prepare.bind(node.store.db);let fullReads=0;
  const spy=t.mock.method(node.store.db,'prepare',(sql:string)=>{
   const statement=prepare(sql);
+  if(sql==='SELECT json FROM memory_jobs WHERE id=?'||sql==='SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx')fullReads++;
   if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
    const run=statement.run.bind(statement);
    statement.run=((...args:unknown[])=>{updated.push(String(args[1]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
@@ -63,6 +64,7 @@ test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity
  for(let i=0;i<10;i++){node.memoryPipeline.wake();await flush();}
  t.diagnostic(`20 authorization-wait jobs, 10 unchanged wakes: ${updated.length} job UPDATEs`);
  assert.equal(updated.length,0,'unchanged wakes must not write any Memory job');assert.deepEqual(snapshot(),before);assert.equal(calls,0);
+ assert.equal(fullReads,0,'unchanged active-job settlement must not open encrypted/frozen job or batch bodies');
  const selected=jobs[0].id,completion=node.memoryPipeline.run(selected);
  node.memoryPipeline.cancel(selected);assert.equal((await completion).status,'cancelled');await flush();
  assert.deepEqual([...new Set(updated)],[selected],'cancellation must write only the selected job');
@@ -345,7 +347,7 @@ test('late progress and validation from a failed attempt cannot overwrite its re
  try{const job=pipeline.create({evidenceIds:ids});await pipeline.run(job.id);const retry=pipeline.retry(job.id);await started;
  const before=store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(job.batches[0].id)!.json;
  oldInput.onProgress?.({stage:'model',message:'Generated late callback'});oldInput.onTrace?.({type:'generated.late'});
- assert.throws(()=>oldInput.validateOutput!(empty()));
+ await assert.rejects(async()=>oldInput.validateOutput!(empty()));
  assert.equal(store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(job.batches[0].id)!.json,before);
  release();assert.equal((await retry).status,'completed');
  }finally{release?.();await pipeline.close();}
@@ -539,9 +541,9 @@ test('review quote failure persists run and attempt locations and emits an ordin
 
 test('independent memory batches overlap; same evidence is serialized and pause finishes only in-flight work',async t=>{
  const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('parallel-a','a'.repeat(600))),b=await sources.upsert('generated',item('parallel-b','b'.repeat(300)));
- const running=new Set<string>(),releases:(()=>void)[]=[];let peak=0;
- const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>3,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async input=>{const id=input.evidenceIds[0];assert.ok(!running.has(id));running.add(id);peak=Math.max(peak,running.size);await new Promise<void>(r=>releases.push(r));running.delete(id);return empty();}}});t.after(()=>pipeline.close());
- const job=pipeline.create({evidenceIds:[a.id,b.id]}),done=pipeline.run(job.id);await new Promise(r=>setImmediate(r));assert.equal(peak,2);assert.equal(pipeline.get(job.id).runningBatches,2);
+ const running=new Set<string>(),releases:(()=>void)[]=[];let peak=0,entered!:()=>void;const bothEntered=new Promise<void>(resolve=>entered=resolve);
+ const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>3,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async input=>{const id=input.evidenceIds[0];assert.ok(!running.has(id));running.add(id);peak=Math.max(peak,running.size);await new Promise<void>(r=>{releases.push(r);if(running.size===2)entered();});running.delete(id);return empty();}}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id,b.id]}),done=pipeline.run(job.id);await bothEntered;assert.equal(peak,2);assert.equal(pipeline.get(job.id).runningBatches,2);
  assert.equal(pipeline.pause(job.id).status,'pausing');for(const release of releases.splice(0))release();const paused=await done;assert.equal(paused.status,'paused');assert.equal(paused.completedBatches,2);assert.ok(paused.pendingBatches!>0);
  pipeline.resume(job.id);await new Promise(r=>setImmediate(r));pipeline.cancel(job.id);for(const release of releases.splice(0))release();await pipeline.run(job.id);assert.equal(pipeline.get(job.id).status,'cancelled');
 });
@@ -644,6 +646,32 @@ test('typed provider authentication failures remain actionable without hanging o
  }finally{await pipeline.close();}
 });
 
+test('an owner retry observes a saved wait before asynchronous settlement without duplicating a live model',async t=>{
+ const {store,sources,memories}=fixture(t),capture=await sources.upsert('generated',item('immediate-retry'));
+ let calls=0,repaired=false,retried=false,id='',hold=false,entered!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+ const pipeline=fixtureMemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'fixture'},phases:{query:async()=>{
+  calls++;if(!repaired)throw new ProviderFailure({category:'blocked',code:'provider_authentication'});
+  if(hold){entered();await held;}return empty();
+ }}});t.after(()=>pipeline.close());
+ let accepted:ReturnType<MemoryPipeline['acceptRetry']>|undefined;
+ const wake=pipeline.wake.bind(pipeline);
+ t.mock.method(pipeline,'wake',()=>{
+  // The persisted failure is visible before the next setImmediate observer
+  // releases its old completion handle. Issue the real owner command exactly
+  // in that gap instead of hoping an HTTP request wins a timer race.
+  if(id&&!retried&&pipeline.state(id).status==='waiting_for_model'){retried=true;repaired=true;accepted=pipeline.acceptRetry(id,true);}
+  wake();
+ });
+ id=pipeline.create({evidenceIds:[capture.id]}).id;
+ assert.equal((await pipeline.run(id)).status,'waiting_for_model');assert.ok(accepted);
+ assert.equal((await accepted.completion).status,'completed','owner retry must start from the saved wait rather than return its obsolete completion');assert.equal(calls,2);
+ hold=true;const activeCapture=await sources.upsert('generated',item('live-retry','Generated still-running original'));
+ const active=pipeline.create({evidenceIds:[activeCapture.id]}),running=pipeline.run(active.id);await started;
+ const existing=pipeline.acceptRetry(active.id,true);assert.equal(existing.completion,running,'a genuinely active model retains its single completion');assert.equal(calls,3);
+ release();assert.equal((await running).status,'completed');assert.equal(calls,3);
+});
+
 test('memory keeps provider retry deadlines and refuses premature manual retry',async t=>{
  const {ProviderFailure}=await import('@mote/shared');const {store,sources,memories}=fixture(t),capture=await sources.upsert('generated',item());let calls=0;
  const pipeline=fixtureMemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'fixture'},phases:{query:async()=>{calls++;throw new ProviderFailure({category:'permanent',code:'rate_limited',retryAfterMs:12000});}}});
@@ -670,7 +698,13 @@ test('Memory count triggers stay singular across restarts and match batch transi
  const singleTriggers=()=>{for(const name of triggerNames)assert.equal(Number(store.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger' AND name=?").get(name)?.n),1,`${name} must be installed once`);};
  const aggregate=()=>store.db.prepare(`SELECT count(*) total,coalesce(sum(json_extract(json,'$.status')='completed'),0) completed,coalesce(sum(json_extract(json,'$.status')='failed'),0) failed,coalesce(sum(json_extract(json,'$.status')='invalidated'),0) invalidated,coalesce(sum(json_extract(json,'$.status')='running'),0) running,coalesce(sum(json_extract(json,'$.status')='pending'),0) pending,coalesce(sum(coalesce(json_extract(json,'$.attempts'),0)),0) attempts FROM memory_batches WHERE job_id=?`).get(job.id);
  const stored=()=>store.db.prepare('SELECT total,completed,failed,invalidated,running,pending,attempts FROM memory_job_counts WHERE job_id=?').get(job.id)??{total:0,completed:0,failed:0,invalidated:0,running:0,pending:0,attempts:0};
- const countsMatch=()=>assert.deepEqual({...stored()},{...aggregate()});
+ const countsMatch=()=>{
+  assert.deepEqual({...stored()},{...aggregate()});
+  if(store.db.prepare('SELECT 1 FROM memory_jobs WHERE id=?').get(job.id)){
+   const {id,status,errorCode,availableAt}=pipeline.get(job.id);
+   assert.deepEqual(pipeline.state(job.id),{id,status,errorCode,availableAt},'internal scheduling must observe the same mixed/invalidated/paused state as owner details');
+  }
+ };
  const requiredFields=(jobId:string)=>{const raw=JSON.parse(String(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(jobId)!.json));for(const key of ['authorizedChunks','materialInputs','materialRefs','batchCharacters','language'])assert.ok(key in raw,`${key} is persisted for current jobs`);const restored=pipeline.get(jobId);assert.ok(restored.authorizedChunks.length>0);assert.ok(Array.isArray(restored.materialInputs));assert.equal(typeof restored.materialRefs,'object');assert.equal(restored.batchCharacters,12000);assert.equal(restored.language,'zh-CN');};
  singleTriggers();countsMatch();requiredFields(job.id);
  for(let open=2;open<=3;open++){await pipeline.close();store.close();store=new Store(f.directory);memories=new MemoryStore(store);pipeline=fixtureMemoryPipeline(options());singleTriggers();countsMatch();requiredFields(job.id);}
@@ -686,4 +720,5 @@ test('Memory count triggers stay singular across restarts and match batch transi
  for(const status of ['paused','cancelled']){store.db.prepare("UPDATE memory_jobs SET json=json_set(json,'$.status',?) WHERE id=?").run(status,job.id);assert.equal(pipeline.get(job.id).status,status);assert.equal(pipeline.get(job.id).outcome,undefined);countsMatch();}
  // Deleting the job removes its batches and count row without leaving a stale aggregate.
  store.db.prepare('DELETE FROM memory_jobs WHERE id=?').run(job.id);assert.equal(store.db.prepare('SELECT 1 FROM memory_job_counts WHERE job_id=?').get(job.id),undefined);countsMatch();
+ assert.throws(()=>pipeline.state(job.id),error=>error instanceof Error&&'statusCode' in error&&error.statusCode===404);
 });

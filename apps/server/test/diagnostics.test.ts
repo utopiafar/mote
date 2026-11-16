@@ -1,7 +1,7 @@
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp,open,readFile,readdir,rm,writeFile,stat } from 'node:fs/promises';
+import { mkdtemp,mkdir,open,readFile,readdir,rm,writeFile,stat } from 'node:fs/promises';
 import {readdirSync} from 'node:fs';
 import {DEFAULT_LOG_RETENTION} from '../src/log-retention-config.mjs';
 import { tmpdir } from 'node:os';
@@ -12,6 +12,7 @@ import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AgentNotConfiguredError,AgentResponseError,AgentTimeoutError,AgentProviderError } from '@mote/agent';
 import { ServerDiagnostics,safeError,serializeDiagnosticEvent } from '../src/diagnostics.js';
+import { DiagnosticLogStore } from '../src/diagnostic-log-store.mjs';
 import { buildApp,type QueryAgent } from '../src/app.js';
 import type { Config } from '../src/config.js';
 
@@ -24,6 +25,195 @@ const filePath=(directory:string,index=0)=>join(directory,currentFiles(directory
 const seedPath=(directory:string,index=0,at=new Date().toISOString())=>join(directory,`central.info.${Date.parse(at)-index}.${Date.parse(at)-index}.${randomUUID()}.ndjson`);
 const allRaw=async(directory:string)=>(await Promise.all(currentFiles(directory).map(name=>readFile(join(directory,name),'utf8')))).join('');
 const fixtureRetention=(maxBytes:number)=>Object.fromEntries(Object.entries(DEFAULT_LOG_RETENTION).map(([key,value])=>[key,{...value,maxBytes}])) as typeof DEFAULT_LOG_RETENTION;
+
+async function within<T>(task:Promise<T>,message:string):Promise<T> {
+ const controller=new AbortController();
+ try{return await Promise.race([task,delay(2000,undefined,{signal:controller.signal}).then(()=>{throw new Error(message);})]);}
+ finally{controller.abort();}
+}
+
+// Keep real filesystem IO and the retention mutex. Only control when the next
+// generated public record arrives, so every completed append has a successor.
+function continuousWrites(t:import('node:test').TestContext,logger:ServerDiagnostics) {
+ let active=true,produced=0;const append=DiagnosticLogStore.prototype.append;
+ t.mock.method(DiagnosticLogStore.prototype,'append',async function(this:DiagnosticLogStore,records:Parameters<typeof append>[0]) {
+  const files=await append.call(this,records);
+  if(active&&logger.accepts('debug')&&records.some(record=>JSON.parse(record.line).instanceId===logger.instanceId))logger.record('source.completed',{count:++produced},'debug');
+  return files;
+ });
+ return {stop:()=>{active=false;},get produced(){return produced;}};
+}
+
+test('sustained debug arrivals and a bounded burst persist in order without filling the diagnostic queue',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-arrivals-')),now=Date.now();
+ // Real metadata work across both writers' ordinary channels, using generated
+ // records only. The producer never waits for a disk append or a flush.
+ for(const [family,channel,count] of [['central','debug',2],['central','info',2],['central','warn',2],['central','error',2],['supervisor','info',2],['supervisor','debug',1],['supervisor','error',2]] as const)for(let index=0;index<count;index++){
+  const at=now-index-1,row={seq:0,instanceId:randomUUID(),at:new Date(at).toISOString(),event:'server.started',level:channel,stage:'system'};
+  await writeFile(join(directory,`${family}.${channel}.${at}.${at}.${randomUUID()}.ndjson`),JSON.stringify(row)+'\n',{mode:0o600});
+ }
+ const logger=new ServerDiagnostics({directory,debug:true,now:()=>new Date(now)});await logger.init();
+ t.after(async()=>{await logger.close();await rm(directory,{recursive:true,force:true});});
+ let produced=0,peakPending=0;
+ const produce=()=>logger.record('source.completed',{count:++produced},'debug');
+ for(let index=0;index<256;index++)produce();
+ const start=performance.now();
+ // 180 events/s for 15 s plus the initial 256-event burst. On the regression,
+ // per-record lock handoffs cap drain below arrival rate and overflow 1024.
+ for(let tick=0;tick<450;tick++){
+  await delay(Math.max(0,start+tick*1000/30-performance.now()));
+  for(let index=0;index<6;index++)produce();
+  peakPending=Math.max(peakPending,logger.snapshot().pendingWrites);
+ }
+ await logger.close();
+ const status=logger.snapshot();
+ assert.equal(status.writeFailures,0);assert.equal(status.pendingWrites,0);
+ assert.equal(status.droppedEvents,0,'sustained arrivals must not overflow the existing bounded queue');
+ assert.ok(peakPending<=1088,'the existing 1024 queued + 64 in-flight bound remains in force');
+ const rows=(await allRaw(directory)).trim().split('\n').map(line=>JSON.parse(line)).filter(row=>row.instanceId===logger.instanceId);
+ assert.equal(produced,2956);
+ assert.deepEqual(rows.map(row=>row.count),Array.from({length:produced},(_,index)=>index+1),'every generated event survives once in sequence, including the suffix drained at close');
+});
+
+test('flush finishes its accepted prefix while generated diagnostic writes continue, and close persists the suffix',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-prefix-')),logger=new ServerDiagnostics({directory,debug:true});
+ await logger.init();const producer=continuousWrites(t,logger);
+ t.after(async()=>{producer.stop();await logger.close();await rm(directory,{recursive:true,force:true});});
+ logger.record('source.completed',{count:0},'debug');
+ await within(logger.flush(),'flush waited for future diagnostic writes instead of its accepted prefix');
+ assert.ok(producer.produced>0);assert.ok(logger.snapshot().pendingWrites>0,'a later write is still pending when the prefix completes');
+ await logger.close();producer.stop();
+ const rows=(await allRaw(directory)).trim().split('\n').map(line=>JSON.parse(line));
+ assert.deepEqual(rows.map(row=>row.count),Array.from({length:producer.produced+1},(_,index)=>index),'every accepted record is persisted once in order, including the suffix at close');
+ assert.equal(logger.snapshot().pendingWrites,0);assert.equal(logger.snapshot().droppedEvents,0);assert.equal(logger.snapshot().writeFailures,0);
+});
+
+test('diagnostic settings and disk-backed reads complete while debug producers remain active',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-busy-api-')),cfg=config(directory);
+ const {app,diagnostics}=await buildApp(cfg,{agent:inactive,backgroundWorker:false});await diagnostics.flush();
+ const producer=continuousWrites(t,diagnostics),headers={authorization:'Bearer '+cfg.token};
+ t.after(async()=>{producer.stop();await app.close();await rm(directory,{recursive:true,force:true});});
+ const before=(await app.inject({url:'/api/diagnostics-settings',headers})).json();
+ diagnostics.record('source.completed',{count:0},'debug');
+ const unchanged=diagnostics.snapshot().lastSeq;diagnostics.agentTrace({type:'fixture.before-publication'});assert.equal(diagnostics.snapshot().lastSeq,unchanged);
+ const saved=await within(app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{...before,traceEnabled:true}}).then(response=>response),'settings save was starved by later debug records');
+ assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().revision,before.revision+1);assert.equal(saved.json().traceEnabled,true);
+ diagnostics.agentTrace({type:'fixture.after-publication',payload:{prompt:'Generated trace after committed opt-in'}});
+ const status=await within(app.inject({url:'/api/diagnostics',headers}).then(response=>response),'diagnostic retention waited for the debug producer to stop');
+ assert.equal(status.statusCode,200,status.body);assert.equal(status.json().agentTrace.enabled,true);assert.ok(producer.produced>0);assert.ok(diagnostics.snapshot().pendingWrites>0);
+ const page=await within(app.inject({url:'/api/diagnostics/log-pages',headers}).then(response=>response),'disk-backed diagnostic pagination was starved by later debug records');
+ assert.equal(page.statusCode,200,page.body);assert.ok(page.json().totalLines>0);
+ producer.stop();await app.close();
+ const rows=(await allRaw(join(directory,'logs'))).trim().split('\n').map(line=>JSON.parse(line));
+ const generated=rows.filter(row=>row.event==='source.completed');
+ assert.deepEqual(generated.map(row=>row.count),Array.from({length:producer.produced+1},(_,index)=>index));
+ assert.equal(rows.filter(row=>row.trace?.type==='fixture.before-publication').length,0);assert.equal(rows.filter(row=>row.trace?.type==='fixture.after-publication').length,1);
+ assert.equal(diagnostics.snapshot().pendingWrites,0);assert.equal(diagnostics.snapshot().droppedEvents,0);assert.equal(diagnostics.snapshot().writeFailures,0);
+});
+
+test('diagnostic status and live settings remain available with a finite 1000-record disk backlog',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-finite-backlog-')),logDirectory=join(directory,'logs'),cfg=config(directory);
+ await mkdir(logDirectory,{mode:0o700});const instanceId=randomUUID(),now=Date.now();let seq=0;
+ // Generated representatives of every retained Central/supervisor channel;
+ // metadata inventory is real, and no production file contents are reused.
+ for(const [family,channel,count] of [['central','debug',2],['central','info',2],['central','warn',2],['central','error',2],['supervisor','info',2],['supervisor','debug',1],['supervisor','error',2]] as const)for(let index=0;index<count;index++){
+  const at=now-index-1,event={seq:++seq,instanceId,at:new Date(at).toISOString(),event:'server.started',level:channel,stage:'system'};
+  await writeFile(join(logDirectory,`${family}.${channel}.${at}.${at}.${randomUUID()}.ndjson`),JSON.stringify(event)+'\n',{mode:0o600});
+ }
+ const {app,diagnostics}=await buildApp(cfg,{agent:inactive,backgroundWorker:false}),headers={authorization:'Bearer '+cfg.token};
+ const before=(await app.inject({url:'/api/diagnostics-settings',headers})).json();await diagnostics.flush();
+ const written=Promise.withResolvers<void>(),release=Promise.withResolvers<void>(),append=DiagnosticLogStore.prototype.append;let first=true;
+ t.mock.method(DiagnosticLogStore.prototype,'append',async function(this:DiagnosticLogStore,records:Parameters<typeof append>[0]) {
+  const files=await append.call(this,records);if(first){first=false;written.resolve();await release.promise;}return files;
+ });
+ t.after(async()=>{release.resolve();await app.close();await rm(directory,{recursive:true,force:true});});
+ for(let count=0;count<1000;count++)diagnostics.record('source.completed',{count},'debug');
+ await within(written.promise,'the first generated backlog record did not reach disk');assert.equal(diagnostics.snapshot().pendingWrites,1000);
+ const supervisor=new DiagnosticLogStore(logDirectory,{family:'supervisor'});
+ await supervisor.append([{channel:'warn',at:new Date().toISOString(),line:JSON.stringify({event:'server.started'})+'\n'}]);
+ const unchanged=diagnostics.snapshot().lastSeq;diagnostics.agentTrace({type:'fixture.before-backlog-opt-in'});assert.equal(diagnostics.snapshot().lastSeq,unchanged);
+ const [status,saved]=await Promise.all([
+  within(app.inject({url:'/api/diagnostics',headers}).then(response=>response),'diagnostic status unnecessarily waited for the finite disk backlog'),
+  within(app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{...before,traceEnabled:true}}).then(response=>response),'live settings unnecessarily waited for the finite disk backlog'),
+ ]);
+ assert.equal(status.statusCode,200,status.body);assert.ok(status.json().pendingWrites>=1000);assert.ok(status.json().retention.totalBytes>0);
+ assert.ok(status.json().retention.files.some((file:{family:string;channel:string})=>file.family==='supervisor'&&file.channel==='warn'),'status refreshes another writer\'s new persisted file without draining Central');
+ assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().revision,before.revision+1);assert.equal(saved.json().traceEnabled,true);
+ diagnostics.agentTrace({type:'fixture.committed-backlog-opt-in',payload:{prompt:'Generated accepted trace'}});
+ const disabled=await within(app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{...saved.json(),traceEnabled:false}}).then(response=>response),'trace opt-out unnecessarily waited for old diagnostic records');
+ assert.equal(disabled.statusCode,200,disabled.body);assert.equal(disabled.json().traceEnabled,false);
+ const stopped=diagnostics.snapshot().lastSeq;diagnostics.agentTrace({type:'fixture.after-backlog-opt-out'});assert.equal(diagnostics.snapshot().lastSeq,stopped);
+ let readCompleted=false;const raw=diagnostics.readRaw().then(value=>{readCompleted=true;return value;});
+ await Promise.resolve();assert.equal(readCompleted,false,'raw file reads retain their accepted-prefix barrier');
+ release.resolve();await Promise.all([raw,app.close()]);
+ const rows=(await allRaw(logDirectory)).trim().split('\n').map(line=>JSON.parse(line));
+ assert.deepEqual(rows.filter(row=>row.instanceId===diagnostics.instanceId&&row.event==='source.completed').map(row=>row.count),Array.from({length:1000},(_,index)=>index));
+ assert.equal(rows.filter(row=>row.trace?.type==='fixture.committed-backlog-opt-in').length,1);
+ assert.equal(rows.filter(row=>['fixture.before-backlog-opt-in','fixture.after-backlog-opt-out'].includes(row.trace?.type)).length,0);
+ assert.equal(diagnostics.snapshot().pendingWrites,0);assert.equal(diagnostics.snapshot().droppedEvents,0);assert.equal(diagnostics.snapshot().writeFailures,0);
+});
+
+test('an evicted flush prefix finishes before a later error suffix, while close still waits for that suffix',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-evicted-prefix-')),logger=new ServerDiagnostics({directory,debug:true,maxEntries:2});await logger.init();
+ const prefixWritten=Promise.withResolvers<void>(),releasePrefix=Promise.withResolvers<void>(),releaseSuffix=Promise.withResolvers<void>();
+ const append=DiagnosticLogStore.prototype.append;let first=true;
+ t.mock.method(DiagnosticLogStore.prototype,'append',async function(this:DiagnosticLogStore,records:Parameters<typeof append>[0]) {
+  if(first){first=false;const files=await append.call(this,records);prefixWritten.resolve();await releasePrefix.promise;return files;}
+  await releaseSuffix.promise;return append.call(this,records);
+ });
+ t.after(async()=>{releasePrefix.resolve();releaseSuffix.resolve();await logger.close();await rm(directory,{recursive:true,force:true});});
+ logger.record('source.completed',{count:0});await within(prefixWritten.promise,'the generated prefix did not reach disk');
+ logger.record('source.completed',{count:1},'debug');logger.record('source.completed',{count:2},'debug');const prefix=logger.flush();
+ logger.record('source.failed',{count:3},'error');logger.record('source.failed',{count:4},'error');
+ let suffixSettled=false;const suffix=logger.flush().then(()=>{suffixSettled=true;});releasePrefix.resolve();
+ await within(prefix,'a prefix already removed by priority eviction stranded its waiter');assert.equal(suffixSettled,false);
+ let closed=false;const closing=logger.close().then(()=>{closed=true;});assert.equal(closed,false);releaseSuffix.resolve();
+ await within(Promise.all([suffix,closing]),'close stranded an accepted error suffix');
+ const rows=(await allRaw(directory)).trim().split('\n').map(line=>JSON.parse(line));
+ assert.deepEqual(rows.map(row=>row.count).sort(),[0,3,4]);assert.equal(logger.snapshot().droppedEvents,2);assert.equal(logger.snapshot().pendingWrites,0);assert.equal(logger.snapshot().writeFailures,0);
+});
+
+test('flush settles a real append failure without replaying its already persisted bytes',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-failed-prefix-')),logger=new ServerDiagnostics({directory});await logger.init();
+ t.after(async()=>{await logger.close();await rm(directory,{recursive:true,force:true});});
+ // Fail state publication after the record bytes are appended, using only a
+ // generated filesystem obstacle rather than replacing the append result.
+ await mkdir(join(directory,'retention-state.json.tmp'));logger.record('source.completed',{count:1});
+ await within(logger.flush(),'a failed append stranded its prefix waiter');await logger.close();
+ assert.equal(logger.snapshot().writeFailures,1);assert.equal(logger.snapshot().pendingWrites,0);assert.equal(logger.snapshot().droppedEvents,1);
+ const rows=(await allRaw(directory)).trim().split('\n').map(line=>JSON.parse(line));assert.deepEqual(rows.map(row=>row.count),[1]);
+});
+
+test('close persists a record accepted immediately after a completed flush',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-flush-close-')),logger=new ServerDiagnostics({directory});await logger.init();
+ t.after(async()=>{await logger.close();await rm(directory,{recursive:true,force:true});});
+ logger.record('source.completed',{count:1});await logger.flush();logger.record('source.completed',{count:2});
+ await within(logger.close(),'close missed a record admitted before the drain continuation');
+ assert.deepEqual((await allRaw(directory)).trim().split('\n').map(line=>JSON.parse(line).count),[1,2]);assert.equal(logger.snapshot().pendingWrites,0);
+});
+
+test('an aborted diagnostic settings client can commit later, and its stale revision cannot overwrite that commit',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-aborted-save-')),cfg=config(directory);
+ const {app,diagnostics,configService}=await buildApp(cfg,{agent:inactive,backgroundWorker:false}),headers={authorization:'Bearer '+cfg.token};
+ const before=(await app.inject({url:'/api/diagnostics-settings',headers})).json();await diagnostics.flush();
+ const releasePreparation=Promise.withResolvers<void>(),preparing=Promise.withResolvers<void>(),committed=Promise.withResolvers<void>();
+ const unsubscribe=configService.onChange(()=>{if(configService.revision>before.revision)committed.resolve();});
+ const prepare=diagnostics.prepareConfiguration.bind(diagnostics);
+ // Control a real prepared candidate's handoff to the transaction. Live capture
+ // flags no longer wait for unrelated log IO, but another participant may wait.
+ t.mock.method(diagnostics,'prepareConfiguration',async value=>{const candidate=await prepare(value);preparing.resolve();await releasePreparation.promise;return candidate;});
+ const controller=new AbortController();
+ t.after(async()=>{controller.abort();releasePreparation.resolve();unsubscribe();await app.close();await rm(directory,{recursive:true,force:true});});
+ const address=await app.listen({host:'127.0.0.1',port:0});
+ const payload={...before,traceEnabled:true};
+ const request=fetch(address+'/api/diagnostics-settings',{method:'PUT',headers:{...headers,'content-type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});
+ await within(preparing.promise,'the settings request did not enter preparation');controller.abort();await assert.rejects(request,{name:'AbortError'});
+ const pending=(await app.inject({url:'/api/diagnostics-settings',headers})).json();assert.equal(pending.revision,before.revision);assert.equal(pending.traceEnabled,false);
+ releasePreparation.resolve();await within(committed.promise,'the accepted transaction did not commit after its client disconnected');
+ const after=(await app.inject({url:'/api/diagnostics-settings',headers})).json();assert.equal(after.revision,before.revision+1);assert.equal(after.traceEnabled,true);
+ const stale=await app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{...before,traceEnabled:false}});assert.equal(stale.statusCode,409);assert.equal(configService.revision,after.revision);
+ const restored=await app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{...after,traceEnabled:false}});assert.equal(restored.statusCode,200,restored.body);assert.equal(restored.json().traceEnabled,false);assert.equal(restored.json().revision,after.revision+1);
+});
 
 test('mixed ordinary and trace eviction reports the actual ring across toggles and restart',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-trace-count-'));

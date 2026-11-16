@@ -1,0 +1,185 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {assembleHostContext,estimateSerializedTokens,type QueryInput} from '@mote/agent';
+import {ProviderFailure} from '@mote/shared';
+import {startBridge} from '../../../packages/agent/dist/bridge.js';
+import {buildApp} from '../src/app.js';
+import type {Config} from '../src/config.js';
+import {materialId} from '../src/materials.js';
+import type {MemoryWorkMember} from '../src/memory-work-contract.js';
+import {memoryWorkInstruction} from '../src/memory-work-contract.js';
+import {assertMemoryRequestFits,memoryRequestUsage,memoryRequestSizer,type MemoryRequestCapacity} from '../src/memory-request-budget.js';
+import {Store} from '../src/store.js';
+import {SourceStore} from '../src/sources.js';
+import {MemoryStore} from '../src/memory.js';
+import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
+import {reviewMemory} from '../src/memory-review.js';
+
+const at='2026-11-01T08:00:00Z';
+
+test('the serialized request fits exactly at its buffered boundary and fails before dispatch just above it',async t=>{
+ const id=randomUUID(),record={id,capturedAt:at,appName:'Generated audio',deviceId:'generated',ocrText:'合成的原始录音🧪'.repeat(600),provenance:{sourceId:'generated-budget',externalId:'generated-original',layer:'original',document:{recordedAt:at,contentRole:'transcript',timeBasis:'recorded'}}};
+ const member:MemoryWorkMember={key:'a'.repeat(64),id,offset:0,length:record.ocrText.length,fingerprint:'b'.repeat(64),contextTime:at,state:'pending',memoryIds:[]};
+ const input:QueryInput={question:'Independently inspect the complete generated recording.',skill:'memory-strategy',responseMode:'memory-extraction',contextTime:at,evidenceIds:[id],evidenceRanges:[{id,offset:0,length:record.ocrText.length}],evidenceReadRanges:[{id,offset:0,length:record.ocrText.length}],taskContext:{turns:[],memoryWork:{members:[member],contextMembers:[],authorizedMembers:[member],history:[],workContract:'range-evaluation@1',instruction:memoryWorkInstruction([member])}}};
+ const bridge=await startBridge({search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]},input);t.after(()=>bridge.close());
+ const assembled=assembleHostContext(input,bridge.seedEvidence,65536);
+ const serialized=estimateSerializedTokens({system:assembled.system,tools:assembled.tools,prompt:assembled.prompt,outputSchema:assembled.outputSchema}).tokens;
+ const base=serialized+128000,window=Math.ceil(base*10/9),capacity={contextWindow:window,maxOutputTokens:128000,draftTokens:65536};
+ const usage=memoryRequestUsage(input,[record],capacity);
+ assert.equal(usage.inputTokens,serialized,'the planner measures the real producer envelope, including Unicode, exact ranges, metadata, tools and schema');
+ assert.equal(usage.totalTokens,window);assert.equal(usage.fits,true);assert.doesNotThrow(()=>assertMemoryRequestFits(input,[record],capacity));
+ for(const deficit of [1,50000]){
+  const smaller={...capacity,contextWindow:window-deficit};assert.equal(memoryRequestUsage(input,[record],smaller).fits,false);
+  assert.throws(()=>assertMemoryRequestFits(input,[record],smaller),(error:unknown)=>error instanceof ProviderFailure&&error.details.code==='processing_limit'&&error.details.executionStarted===false);
+ }
+ const withDraft=memoryRequestUsage(input,[record],capacity,65536);assert.equal(withDraft.totalTokens-usage.totalTokens,65536,'planning reserves review draft space separately from the native output ceiling');assert.equal(withDraft.fits,false);
+ const reviewed={...input,taskContext:{...input.taskContext!,untrustedMemoryDraft:{memories:[],coverage:[],generatedDetail:'x'.repeat(100000)}}};
+ assert.throws(()=>assertMemoryRequestFits(reviewed,[record],capacity),ProviderFailure,'an unexpectedly large real review draft is rejected before calling the provider');
+ assert.equal(bridge.deliveredRanges[0].length,record.ocrText.length,'budget rejection does not shorten the original or certify its coverage');
+ const measure=memoryRequestSizer([record],capacity);
+ for(const timeZone of ['UTC','Asia/Shanghai','UTC']){
+  const request={...input,timeZone},consumer=await startBridge({search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]},request);
+  try{const actual=assembleHostContext(request,consumer.seedEvidence,capacity.draftTokens);assert.equal(measure(request).inputTokens,estimateSerializedTokens({system:actual.system,tools:actual.tools,prompt:actual.prompt,outputSchema:actual.outputSchema}).tokens,'repeated sizing preserves the real consumer envelope and each requested time zone');}finally{await consumer.close();}
+ }
+});
+
+test('owner retry repartitions a saved overflow using current budgets without certifying or losing any old target',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-budget-retry-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ const capacity:MemoryRequestCapacity={contextWindow:200000,maxOutputTokens:128000,draftTokens:16000};let budgetEnabled=false;
+ const calls:{phase:string;ids:string[]}[]=[];
+ const query=async(input:MemoryPipelineQuery)=>{
+  assertMemoryRequestFits(input,memories.readEvidence(input.evidenceIds),capacity);
+  const members=(input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members;
+  calls.push({phase:input.traceContext!.phase!,ids:members.map(member=>member.id)});
+  return {answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID()};
+ };
+ const pipeline=new MemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'gpt-6.1-terra',capacity:()=>budgetEnabled?capacity:undefined},phases:{query,review:(input,draft,strategy)=>reviewMemory(input,draft,query,{strategy})}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-retry',name:'Generated retry recording',kind:'custom',deviceId:'generated',platform:'import'});
+ const ids:string[]=[];
+ for(let index=0;index<160;index++){const recordedAt=new Date(Date.parse(at)+index*1000).toISOString();ids.push((await sources.upsert('generated-retry',{externalId:String(index),revision:'1',title:`Generated recording segment ${index} `+'generated metadata '.repeat(40),text:`Generated recording segment ${String(index).padStart(3,'0')}.`,observedAt:recordedAt,kind:'file',layer:'original',document:{contentRole:'transcript',recordedAt,timeBasis:'recorded'}})).id);}
+ const job=pipeline.create({evidenceIds:ids});assert.equal(job.totalBatches,1);
+ const failed=await pipeline.run(job.id);assert.equal(failed.status,'failed');assert.equal(failed.batches[0].errorCode,'processing_limit');assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ budgetEnabled=true;
+ const done=await pipeline.retry(job.id),parent=done.batches.find(batch=>batch.id===job.batches[0].id)!,leaves=done.batches.filter(batch=>!batch.supersededBy?.length);
+ assert.equal(done.status,'completed');assert.ok(parent.supersededBy!.length>1);assert.deepEqual(parent.evidenceRanges,job.batches[0].evidenceRanges,'the failed parent retains its exact historical target vector');
+ assert.deepEqual(leaves.flatMap(batch=>batch.evidenceRanges),job.batches[0].evidenceRanges,'all replacement batches preserve the complete original range vector in order');
+ for(const phase of ['extract','review']){const evaluated=calls.filter(call=>call.phase===phase).flatMap(call=>call.ids);assert.equal(evaluated.length,160);assert.deepEqual(new Set(evaluated),new Set(ids));}
+ assert.ok(leaves.every(batch=>batch.reviewReceipt?.decision==='independent'));assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,160);
+});
+
+for(const withdrawal of ['cancel','replace-original','change-model'] as const)test(`recovered native-budget planning yields to ${withdrawal} before dispatch and preserves its frozen targets`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-budget-withdrawal-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ let enabled=false,capacityReads=0,calls=0,entered!:()=>void,fingerprint='a'.repeat(64);
+ const measuring=new Promise<void>(resolve=>entered=resolve),capacity={contextWindow:200000,maxOutputTokens:128000,draftTokens:16000};
+ const pipeline=new MemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'gpt-6.1-terra',configuration:()=>({owner:'models',fingerprint,revision:0,profileId:'generated',provider:'codex',model:'gpt-6.1-terra'}),capacity:()=>{if(!enabled)return;if(++capacityReads===2)entered();return capacity;}},phases:{query:async()=>{calls++;throw Error('Withdrawn originals must not reach the provider');},review:async()=>{throw Error('Withdrawn originals must not reach review');}}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-budget-withdrawal',name:'Generated recovery originals',kind:'custom',deviceId:'generated',platform:'import'});
+ const originals=[];
+ for(let index=0;index<160;index++)originals.push(await sources.upsert('generated-budget-withdrawal',{externalId:String(index),revision:'1',title:'Generated recorded metadata '.repeat(40),text:'Generated original segment '+index,observedAt:at,kind:'file',layer:'original'}));
+ const job=pipeline.create({evidenceIds:originals.map(original=>original.id)}),ranges=job.batches.map(batch=>batch.evidenceRanges);assert.equal(job.totalBatches,1);
+ enabled=true;const done=pipeline.run(job.id);await measuring;
+ // The capacity has been sampled inside the real planning pass. The owner
+ // mutation runs at its next yielded boundary, before any model dispatch.
+ if(withdrawal==='cancel')pipeline.cancel(job.id);
+ else if(withdrawal==='replace-original')await sources.upsert('generated-budget-withdrawal',{externalId:'0',revision:'2',text:'Generated replacement invalidates the old exact proof.',observedAt:at,kind:'file',layer:'original'});
+ else fingerprint='b'.repeat(64);
+ const stopped=await done;
+ assert.equal(calls,0);assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ assert.deepEqual(stopped.batches.map(batch=>batch.evidenceRanges),ranges,'withdrawal cannot erase the original target vector or publish planned replacement batches');
+ assert.equal(stopped.status,withdrawal==='cancel'?'cancelled':withdrawal==='change-model'?'waiting_for_model':'failed');
+ if(withdrawal==='replace-original')assert.equal(stopped.outcome,'input_invalidated');
+ if(withdrawal==='change-model')assert.equal(stopped.errorCode,'configuration_changed');
+});
+
+test('owner retry of an explicit incomplete evaluation performs a fresh review and never reuses it as completed coverage',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-incomplete-retry-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ let incomplete=true,extracts=0,reviews=0;
+ const empty=(input:MemoryPipelineQuery)=>({answer:JSON.stringify({memories:[],coverage:(input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID()});
+ const pipeline=new MemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'gpt-6.1-terra',capacity:()=>({contextWindow:272000,maxOutputTokens:128000,draftTokens:65536})},phases:{query:async input=>{extracts++;return empty(input);},review:(input,draft,strategy)=>reviewMemory(input,draft,async request=>{reviews++;const value=empty(request as MemoryPipelineQuery);if(incomplete){const output=JSON.parse(value.answer);output.coverage[0]={...output.coverage[0],state:'incomplete',reason:'Generated reviewer explicitly did not assess this target'};value.answer=JSON.stringify(output);}return value;},{strategy})}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-incomplete',name:'Generated incomplete original',kind:'custom',deviceId:'generated',platform:'import'});
+ const original=await sources.upsert('generated-incomplete',{externalId:'one',revision:'1',text:'A complete generated original for an explicit retry.',observedAt:at,kind:'file',layer:'original'});
+ const job=pipeline.create({evidenceIds:[original.id]}),failed=await pipeline.run(job.id);
+ assert.equal(failed.status,'failed');assert.equal(failed.batches[0].errorCode,'memory_evaluation_incomplete');assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ assert.equal(reviews,2,'an unresolved text assessment uses only the existing two-attempt review budget');await pipeline.run(job.id);assert.equal(reviews,2,'ordinary reentry cannot reopen the failed assessment');
+ assert.equal((await pipeline.retry(job.id)).status,'failed','another independently reported incomplete outcome stays failed');assert.equal(reviews,4);assert.equal(extracts,2,'the first owner retry includes the saved exact incomplete inspection history in its new generation');
+ incomplete=false;const done=await pipeline.retry(job.id);
+ assert.equal(done.status,'completed');assert.equal(reviews,5);assert.equal(extracts,2,'the unchanged generation retains its valid extraction while review runs again');assert.equal(done.batches[0].coverage![0].state,'no_candidates');assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);
+});
+
+test('owner retry reopens a timed-out review against its saved bounded scope before recalculating the allowance',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-budget-timeout-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ let timeout=true,extracts=0,reviews=0;
+ const empty=(input:MemoryPipelineQuery)=>({answer:JSON.stringify({memories:[],coverage:(input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID()});
+ const pipeline=new MemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'gpt-6.1-terra',capacity:()=>({contextWindow:272000,maxOutputTokens:128000,draftTokens:65536})},phases:{query:async input=>{extracts++;return empty(input);},review:(input,draft,strategy)=>reviewMemory(input,draft,async request=>{reviews++;if(timeout)throw new ProviderFailure({category:'permanent',code:'provider_timeout',retryAfterMs:0});return empty(request as MemoryPipelineQuery);},{strategy})}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-timeout',name:'Generated retry original',kind:'custom',deviceId:'generated',platform:'import'});
+ const original=await sources.upsert('generated-timeout',{externalId:'one',revision:'1',text:'Generated whole original for a bounded independent review.',observedAt:at,kind:'file',layer:'original'});
+ const job=pipeline.create({evidenceIds:[original.id]}),failed=await pipeline.run(job.id);assert.equal(failed.status,'failed');assert.equal(failed.batches[0].errorCode,'provider_timeout');
+ timeout=false;const done=await pipeline.retry(job.id);assert.equal(done.status,'completed');assert.equal(reviews,2);assert.equal(extracts,1);assert.equal(done.totalBatches,1);assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);
+});
+
+test('808 generated recording segments retain every exact range and bounded read grant across independent review and restart',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-request-budget-'));
+ const config:Config={dataDir:directory,token:'generated-budget-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6.1-terra',modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'auto',modelMaxTokens:65536,modelRequestTimeoutMs:null,agentTimeoutMs:null,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const calls:{phase:string;targets:string[];readIds:string[];tokens:number}[]=[];
+ const failures:unknown[]=[];
+ let holdReview=true,enteredReview!:()=>void;
+ const reviewEntered=new Promise<void>(resolve=>enteredReview=resolve);
+ const overrides:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+  const bridge=await startBridge(reader,input);
+  try{
+   const {system,tools,prompt,outputSchema}=assembleHostContext(input,bridge.seedEvidence,65536);
+   const tokens=estimateSerializedTokens({system,tools,prompt,outputSchema}).tokens;
+   // This fixture is the native send boundary, independent of the planner.
+   // Its documented output ceiling is not the Host's requested maxTokens.
+   if(tokens+128000>272000)throw new ProviderFailure({category:'permanent',code:'processing_limit',executionStarted:false});
+   const members=(input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members;
+   const allowedIds=new Set(input.evidenceReadRanges!.map(range=>range.id));
+   for(const pin of input.processingMaterialInputs??[])assert.ok(pin.evidenceIds.every(id=>allowedIds.has(id)),'the frozen Material identity grants only this call\'s bounded original IDs, including any optional image locators');
+   if(holdReview&&input.traceContext!.phase==='review'){enteredReview();return await new Promise<never>((_,reject)=>input.signal!.addEventListener('abort',()=>reject(input.signal!.reason),{once:true}));}
+   const omitted=selected.find(id=>!input.evidenceReadRanges!.some(range=>range.id===id));
+   if(omitted){const denied=await fetch(bridge.url+'/context_evidence',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({id:omitted,offset:0,length:1})});assert.equal(denied.status,400,'an omitted optional context range acquires no read authority in this call');assert.equal(bridge.records.has(omitted),false);}
+   calls.push({phase:input.traceContext!.phase!,targets:members.map(member=>member.id),readIds:input.evidenceReadRanges!.map(range=>range.id),tokens});
+   assert.equal(bridge.seedEvidence.length,members.length);
+   for(const member of members){const record=bridge.seedEvidence.find(record=>record.id===member.id)!;assert.equal(record.ocrText.length,member.length);assert.equal(record.ocrText,texts[selected.indexOf(member.id)]);}
+   return {answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID(),evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};
+  }catch(error){if(!input.signal?.aborted)failures.push(error);throw error;}finally{await bridge.close();}
+ }})};
+ let node=await buildApp(config,overrides);
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ await node.app.ready();
+ const sourceId='generated-recording-budget';
+ node.sources.register({id:sourceId,name:'Generated recording',kind:'custom',deviceId:'generated',platform:'import'});
+ node.sources.updateContext(sourceId,{expectedVersion:0,description:'这是虚构的合成录音资料；说话人标签只在当前文件内有效，各段保持自己的录音时间和原始出处。'});
+ const texts=Array.from({length:808},(_,index)=>`第${String(index).padStart(4,'0')}段合成录音：虚构的设备检查记录，已逐项阅读；本段无须保存长期记忆。`);
+ const original=await node.sources.upsert(sourceId,{externalId:'generated-recording',revision:'1',text:texts.join('\n'),observedAt:at,kind:'file',layer:'original',document:{contentRole:'transcript',recordedAt:at,timeBasis:'recorded'}});
+ const material=node.materials.publish({id:materialId(sourceId,'generated-segments'),kind:'mote.note',schemaVersion:1,title:'Generated segmented recording',origin:{sourceId,externalId:'generated-segments',deviceId:'generated',firstAt:at,lastAt:at},members:[{id:original.id,kind:'capture',ref:'capture:'+original.id}],blocks:texts.map((text,index)=>{const recordedAt=new Date(Date.parse(at)+index*1000).toISOString();return {id:'segment-'+index,kind:'text' as const,format:'plain',text,memberIds:[original.id],evidenceContext:{observedAt:recordedAt,document:{contentRole:'transcript' as const,recordedAt,timeBasis:'recorded' as const}}};}),artifacts:[{key:'transcript',state:'ready',blockIds:texts.map((_,index)=>'segment-'+index)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
+ const selected=node.materials.input(material.ref,['transcript'])!.evidenceIds;
+ assert.equal(selected.length,808);
+ const headers={authorization:'Bearer '+config.token};
+ const accepted=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:selected,recipes:[{id:'mote.personal-memory',version:'5'}]}});
+ assert.equal(accepted.statusCode,202,accepted.body);
+ assert.equal(accepted.json().inputPlans.total,1,'the original Material retains one real input plan across transport partitions');
+ const first=node.memoryPipeline.run(accepted.json().id);await reviewEntered;
+ const frozen=node.memoryPipeline.get(accepted.json().id).batches.map(batch=>batch.evidenceRanges);
+ holdReview=false;await node.app.close();await first;
+ node=await buildApp(config,overrides);await node.app.ready();
+ const done=await node.memoryPipeline.run(accepted.json().id);
+ assert.equal(done.status,'completed',JSON.stringify({status:done.status,batches:done.batches.map(batch=>({status:batch.status,errorCode:batch.errorCode}))}));
+ assert.equal(done.inputPlans.completed,1);assert.equal(done.inputPlans.waiting,0);assert.equal(done.inputPlans.blocked,0);
+ assert.deepEqual(failures,[]);
+ const extracts=calls.filter(call=>call.phase==='extract'),reviews=calls.filter(call=>call.phase==='review');
+ assert.ok(extracts.some(call=>call.readIds.length<808),'the full job catalog is retained by the job while each call receives a bounded legal read scope');
+ assert.deepEqual(done.batches.map(batch=>batch.evidenceRanges),frozen,'restart reuses the frozen exact target partitions');
+ assert.equal(extracts.length,done.totalBatches);assert.equal(reviews.length,done.totalBatches,'every extraction, including empty candidate selection, has its own independent review');
+ for(const phase of [extracts,reviews]){assert.equal(phase.flatMap(call=>call.targets).length,808);assert.deepEqual(new Set(phase.flatMap(call=>call.targets)),new Set(selected),'the complete target vector is read exactly once per phase');for(const call of phase)assert.ok(frozen.some(ranges=>JSON.stringify(ranges.map(range=>range.id))===JSON.stringify(call.targets)),'each call preserves its frozen target order independently of completion order');}
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,808);
+ assert.equal(done.batches.flatMap(batch=>batch.coverage??[]).length,808);
+ assert.ok(done.batches.every(batch=>batch.reviewReceipt?.decision==='independent'&&batch.coverage!.every(member=>member.state==='no_candidates')));
+});

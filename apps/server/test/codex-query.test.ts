@@ -43,15 +43,33 @@ import {appendFileSync,readFileSync} from 'node:fs';
 const mode=readFileSync(${JSON.stringify(modePath)},'utf8').trim();
 const event=value=>appendFileSync(${JSON.stringify(eventsPath)},JSON.stringify({...value,mode,pid:process.pid,home:process.env.CODEX_HOME})+'\\n');
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+// Enforce the external strict response-format contract at the serialized RPC
+// boundary, rather than replacing the Host task assembly in this fixture.
+const strictSchema=schema=>{
+ if(!schema||typeof schema!=='object')return;
+ if(schema.properties){
+  if(schema.additionalProperties!==false||Object.keys(schema.properties).some(key=>!schema.required?.includes(key)))throw Error('invalid_json_schema');
+  for(const value of Object.values(schema.properties))strictSchema(value);
+ }
+ if(schema.items)strictSchema(schema.items);
+};
 event({type:'started'});
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);
  if(m.method==='initialize')send({id:m.id,result:{}});
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
- else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread',model:m.params.model},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread',model:m.params.model},model:m.params.model,serviceTier:mode==='tier-mismatch'?null:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
  else if(m.method==='turn/start'){
   event({type:'turn'});
   send({id:m.id,result:{turn:{id:'generated-turn'}}});
+  if(mode.startsWith('strict-')){
+   try{strictSchema(m.params.outputSchema);}catch{
+    event({type:'schema-rejected'});
+    send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'failed',error:{codexErrorInfo:'other'}}}});return;
+   }
+   const envelope=JSON.parse(m.params.input[0].text);
+   send({id:1000,method:'item/tool/call',params:{threadId:'generated-thread',turnId:'generated-turn',tool:'evidence',namespace:null,arguments:{ids:envelope.untrustedEvidence.map(item=>item.id)}}});return;
+  }
   if(mode==='crash'){event({type:'crash'});process.exit(9);}
   if(mode==='cancel')return;
   send({id:999,method:'item/tool/call',params:{threadId:'generated-thread',turnId:'generated-turn',tool:'timeline',namespace:null,arguments:{}}});
@@ -63,7 +81,10 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(m.result?.success!==true)process.exit(3);
   const items=JSON.parse(m.result.contentItems[0].text).data,id=items[0].id;
   event({type:'answer',id});
-  send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify({answer:'Generated Codex HTTP answer ['+id+']',citationIds:[id]})}}});
+  const answer=mode.startsWith('strict-')
+   ?{answer:'Generated selected metadata '+items.map(item=>'['+item.id+']').join(' '),citationIds:items.map(item=>item.id),draft:mode==='strict-draft'?{goal:'Generated metadata follow-up'}:null}
+   :{answer:'Generated Codex HTTP answer ['+id+']',citationIds:[id]};
+  send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify(answer)}}});
   send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'completed'}}});
  }
 });
@@ -88,9 +109,9 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   const setMode = (mode: string) => writeFileSync(modePath, mode);
   const post = (url: string, payload: unknown) => node.app.inject({method: 'POST', url, headers, payload});
   const get = (url: string) => node.app.inject({url, headers});
-  const start = async () => {
+  const start = async (input: Record<string,unknown> = {question: 'Which generated evidence does the Codex query read?'}) => {
     const id = randomUUID();
-    const response = await post('/api/query-runs', {id, input: {question: 'Which generated evidence does the Codex query read?'}});
+    const response = await post('/api/query-runs', {id, input});
     assert.equal(response.statusCode, 202, response.body);
     return id;
   };
@@ -116,6 +137,24 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   return {node, headers, setMode, start, wait, released, completedTurns, receipts, events};
 }
 
+test('a refused Codex speed acknowledgement retains a fixed startup cause without inference or a paid receipt', async t => {
+  const f = await fixture(t);
+  f.setMode('tier-mismatch');
+  const id = await f.start();
+  const run = await f.wait(id, 'failed');
+  assert.equal(run.error.diagnostic.source, 'runtime');
+  assert.equal(run.error.diagnostic.stage, 'startup');
+  assert.equal(run.error.diagnostic.code, 'service_tier_mismatch');
+  const failures = f.node.store.db.prepare('SELECT f.json FROM execution_failures f JOIN execution_steps e ON e.id=f.step_id WHERE e.operation_id=?').all('query:'+id).map(row=>JSON.parse(String(row.json)));
+  assert.ok(failures.some(receipt=>receipt.causeCode==='service_tier_mismatch'&&receipt.executionStarted===false));
+  // Keep the durable query's existing three startup attempts; none starts inference.
+  assert.deepEqual(f.events().map(event=>event.type), ['started', 'started', 'started']);
+  assert.equal(Math.max(...failures.map(receipt=>receipt.attempt)), 3);
+  assert.equal(f.completedTurns(), 0);
+  assert.equal(f.receipts().length, 0);
+  await f.released();
+});
+
 test('authenticated HTTP selects Codex, reads generated evidence, and saves the cited answer', async t => {
   const f = await fixture(t);
   f.setMode('success');
@@ -137,6 +176,37 @@ test('authenticated HTTP selects Codex, reads generated evidence, and saves the 
   assert.equal(receipts[0].status, 'completed');
   assert.equal(receipts[0].operation, 'query');
   await f.released();
+});
+
+test('selected HTTP queries satisfy Codex strict output schemas with or without a follow-up proposal', async t => {
+  for (const mode of ['strict-no-draft','strict-draft']) await t.test(mode, async t => {
+    const f = await fixture(t);
+    f.setMode(mode);
+    const evidenceIds: string[] = [];
+    for (const label of ['recorder diary','Memex','Obsidian']) {
+      const id = randomUUID();
+      const response = await f.node.app.inject({method:'POST',url:'/api/notes',headers:{...f.headers,'X-Mote-Ingress-Version':'2'},payload:{
+        id,deviceId:'generated-metadata-device',deviceName:'Generated fixture',platform:'import',capturedAt:'2026-01-01T00:00:00Z',
+        text:'Generated '+label+' evidence for a metadata-only query.',
+      }});
+      assert.equal(response.statusCode,201,response.body);
+      evidenceIds.push(id);
+    }
+    const id = await f.start({question:'Inspect only the selected source metadata; do not create tasks.',evidenceIds,after:null,before:null,deviceId:null,timeZone:'Asia/Shanghai'});
+    const run = await f.wait(id,'completed');
+    const conversation = (await f.node.app.inject({url:'/api/conversations/'+run.conversationId,headers:f.headers})).json() as any;
+    const turn = conversation.turns.find((item:any)=>item.id===run.turnId);
+    assert.deepEqual(new Set(turn.result.citations.map((item:any)=>item.id)),new Set(evidenceIds));
+    assert.deepEqual(new Set(turn.result.evidenceDependencies.ids),new Set(evidenceIds),'the nullable proposal does not widen selected evidence');
+    if (mode==='strict-no-draft') assert.equal(turn.result.draft,undefined,'null means no offered follow-up');
+    else {
+      assert.equal(turn.result.draft.goal,'Generated metadata follow-up');
+      assert.deepEqual(turn.result.draft.scope,{kind:'selection',evidenceIds,timeZone:'Asia/Shanghai'});
+    }
+    assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.task'").get()!.n,0,'a model response never starts an assistant task');
+    assert.equal(f.receipts().length,1,'a schema-valid response needs no repair or replay');
+    await f.released();
+  });
 });
 
 test('authenticated Codex cancellation commits no half answer and releases the child and private runtime', async t => {

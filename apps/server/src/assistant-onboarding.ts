@@ -12,6 +12,8 @@ import {canonicalRecipeJson} from './recipe-contract.js';
 import {retireTaskRecordsSql} from './task-evidence.js';
 import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
 import {sha256,StoreError,type Store} from './store.js';
+import type {OwnerQuestionsPort} from './plugins/central-contracts.js';
+import {safeError,type ServerDiagnostics} from './diagnostics.js';
 
 const startSchema=z.object({requestId:z.string().uuid(),scope:queryScopeSchema,
  materialRefs:z.array(z.string().regex(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/)).min(1).max(100),
@@ -23,6 +25,9 @@ type Item={onboarding_id:string;position:number;material_id:string;selection_id:
  followup_id:string|null;completed_ref:string|null;error_code:string|null};
 const deps=(ids:readonly string[])=>({version:1 as const,complete:true as const,ids:[...new Set(ids)].sort()});
 const finishedMemory=(job:MemoryJobDetail)=>job.status==='completed'&&job.outcome!=='input_invalidated'&&!job.invalidatedBatches&&!job.failedBatches&&
+ !job.inputPlans.waiting&&!job.inputPlans.blocked&&!job.inputPlans.stale;
+const reviewedOwnerWait=(job:MemoryJobDetail)=>job.status==='waiting_for_input'&&job.errorCode==='memory_owner_input_required'&&
+ job.totalBatches>0&&job.completedBatches===job.totalBatches&&job.outcome!=='input_invalidated'&&!job.invalidatedBatches&&!job.failedBatches&&
  !job.inputPlans.waiting&&!job.inputPlans.blocked&&!job.inputPlans.stale;
 
 /** Owner-selected historical intake. Only selection metadata and child IDs live
@@ -36,7 +41,8 @@ export class AssistantOnboarding {
  constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly reader:EvidenceReader,
   private readonly control:BackgroundModelAuthorization,private readonly memory:MemoryPipeline,private readonly followup:AssistantFollowup,
   private readonly connections:()=>ModelConnection[],private readonly assertCurrent:AssertTaskCurrent,
-  private readonly requirements:(ref:string)=>readonly string[]|undefined=()=>undefined,private readonly archive?:SourceArchive){
+  private readonly requirements:(ref:string)=>readonly string[]|undefined=()=>undefined,private readonly archive?:SourceArchive,
+  private readonly questions?:Pick<OwnerQuestionsPort,'page'>,private readonly diagnostics?:Pick<ServerDiagnostics,'record'>){
   this.tasks=new TaskRecords(store);this.understanding=new AssistantUnderstandingReader(store,materials,reader);
   store.db.exec(`CREATE TABLE IF NOT EXISTS assistant_onboarding_items(
    onboarding_id TEXT NOT NULL REFERENCES task_records(id) ON DELETE CASCADE,position INTEGER NOT NULL,
@@ -60,10 +66,44 @@ export class AssistantOnboarding {
  private memoryJob(id:string){
   try{return this.memory.get(id);}catch(error){if(error instanceof StoreError&&(error.statusCode===404||error.statusCode===409))return;throw error;}
  }
+ /** Follow only the existing explicit owner-answer lineage. A continuation is
+  * not a new selection or permission to cancel/reprocess the original job. */
+ private memoryState(item:Item){
+  const ids=item.memory_job_id?this.store.db.prepare(`WITH RECURSIVE family(id) AS (
+   SELECT id FROM memory_jobs WHERE id=? UNION SELECT m.id FROM memory_jobs m JOIN family f ON json_extract(m.json,'$.continuationOf')=f.id
+  ) SELECT id FROM family`).all(item.memory_job_id).map(row=>String(row.id)):[];
+  const jobs=ids.flatMap(id=>{const job=this.memoryJob(id);return job?[job]:[];});
+  const contextQuestions=[];
+  for(const job of jobs){let cursor:string|undefined;
+   if(this.questions)do{
+    const page=this.questions.page({operationId:'memory:'+job.id,materialId:item.material_id,state:['open','deferred','closed'],limit:100,cursor});
+    contextQuestions.push(...page.items);cursor=page.nextCursor??undefined;
+   }while(cursor);
+  }
+  if(contextQuestions.length>100)throw new StoreError('Onboarding owner questions exceed the bounded review',413);
+  contextQuestions.sort((a,b)=>a.id.localeCompare(b.id));
+  const ownerQuestions=contextQuestions.filter(question=>question.state!=='closed');
+  const complete=jobs.length>0&&jobs.length===ids.length&&jobs.every(finishedMemory)&&!ownerQuestions.length;
+  const reviewed=complete||jobs.length>0&&jobs.length===ids.length&&jobs.every(job=>finishedMemory(job)||reviewedOwnerWait(job))&&ownerQuestions.length>0;
+  return {jobs,job:jobs.at(-1),ownerQuestions,contextQuestions,complete,reviewed};
+ }
  private assertActive(id:string){if(this.closed||!['waiting','running'].includes(this.task(id).state))throw new StoreError('Onboarding is no longer active',409);}
  private view(item:Item,scope:QueryScope){
-  const task=this.tasks.get(item.selection_id),selection=this.tasks.input<Selection>(task.id,task.revision,this.assertCurrent);
   const material=this.materials.get(item.material_id);
+  const task=this.tasks.get(item.selection_id);let selection:Selection;
+  try{selection=this.tasks.input<Selection>(task.id,task.revision,this.assertCurrent);}
+  catch(error){
+   // An explicit owner declaration retires semantic task inputs, including the
+   // old selection marker. Its retained dependency identities still pin the
+   // original capture. Reconstruct only that pin under a linked continuation;
+   // never restore retired prose or accept a replacement original/revision.
+   if(!(error instanceof StoreError&&error.statusCode===409)||task.state!=='stale'||!material||
+    !this.memoryState(item).jobs.some(job=>job.continuationOf&&Object.values(job.materialRefs).includes(material.ref)))throw error;
+   const plan=this.plan(item.onboarding_id),pin=materialSourcePin(this.store,this.materials,material,this.archive);
+   if(pin.kind!=='source-item'||!this.store.db.prepare('SELECT 1 FROM task_evidence WHERE task_id=? AND evidence_id=?').get(task.id,pin.captureId)||
+    !this.reader.materialSourceCurrent(pin,item.material_id))throw error;
+   selection={ref:plan.input.materialRefs[item.position],pin,scope:plan.input.scope};
+  }
   if(!material||!this.reader.materialSourceCurrent(selection.pin,material.id))throw new StoreError('Selected original changed',409);
   this.understanding.read({ref:material.ref,scope:selection.scope,limit:1});
   return this.understanding.read({ref:material.ref,scope,limit:1});
@@ -113,16 +153,24 @@ export class AssistantOnboarding {
   const items=this.items(id).flatMap(item=>{
    let view:ReturnType<AssistantUnderstandingReader['read']>;
    try{view=this.view(item,scope);}catch(error){if(error instanceof StoreError&&(error.statusCode===404||error.statusCode===409))return [];throw error;}
-   const job=item.memory_job_id?this.memoryJob(item.memory_job_id):undefined;
+   const memory=this.memoryState(item),job=memory.job;
    const analysisChanged=item.followup_id&&['stale','cancelled'].includes(this.tasks.get(item.followup_id).state);
-   const completed=item.completed_ref===view.material.ref&&!analysisChanged;
+   const analyzed=item.completed_ref===view.material.ref&&!analysisChanged;
+   let analysisCurrent=Boolean(analyzed);
+   if(analyzed&&item.followup_id)try{analysisCurrent=!this.followup.ownerContextChanged(item.followup_id,memory.contextQuestions.map(({id,revision})=>({id,revision})));}
+   catch(error){if(!(error instanceof StoreError&&(error.statusCode===404||error.statusCode===409)))throw error;analysisCurrent=false;}
+   let result:ReturnType<AssistantFollowup['result']>;
+   if(analyzed&&item.followup_id)try{result=this.followup.result(item.followup_id,scope);}catch(error){if(!(error instanceof StoreError&&(error.statusCode===404||error.statusCode===409)))throw error;}
+   const completed=analysisCurrent&&memory.complete;
    const error=item.error_code??(item.memory_job_id&&!job?'memory_processing_unavailable':analysisChanged?'assistant_analysis_changed':view.coverage.extraction.status==='failed'?'extraction_failed':view.coverage.extraction.status==='unsupported'?'original_body_unavailable':undefined);
-   const semantic:FileCoverage={status:error?'failed':completed&&view.coverage.extraction.status==='ready'?'ready':completed?'partial':job?.completedBatches?'partial':'pending',
-    reason:error??(completed?'available_material_text_only':'understanding_incomplete')};
+   const reason=error??(memory.ownerQuestions.length?'memory_owner_input_required':undefined);
+   const semantic:FileCoverage={status:error?'failed':completed&&view.coverage.extraction.status==='ready'?'ready':analyzed||job?.completedBatches?'partial':'pending',
+    reason:reason??(completed?'available_material_text_only':'understanding_incomplete')};
    return [{material:{ref:view.material.ref,title:view.material.title,sourceId:view.material.origin.sourceId},
     state:completed&&view.coverage.extraction.status==='ready'?'completed' as const:task.state==='cancelled'?'cancelled' as const:error?'failed' as const:'pending' as const,
     coverage:{sync:{status:'ready' as const,reason:'selected_synced_material_only'},extraction:view.coverage.extraction,semantic},
-    ...(error?{reason:error}:{}),...(item.followup_id?{taskId:item.followup_id,...(completed?{result:this.followup.result(item.followup_id,scope)}:{})}:{}),
+    ...(reason?{reason}:{}),...(item.followup_id?{taskId:item.followup_id,...(result?{result}:{})}:{}),
+    ownerQuestions:memory.ownerQuestions.map(question=>({id:question.id,revision:question.revision,prompt:question.prompt,reason:question.reason,state:question.state})),
     ...(job?{memory:{id:job.id,status:job.status,completedBatches:job.completedBatches,totalBatches:job.totalBatches}}:{})}];
   });
   const coverage=(kind:'extraction'|'semantic')=>({total:items.length,completed:items.filter(item=>item.coverage[kind].status==='ready').length,
@@ -149,11 +197,20 @@ export class AssistantOnboarding {
   const id=item.onboarding_id,view=this.view(item,plan.input.scope),ref=view.material.ref;
   const current=()=>{this.assertActive(id);if(this.view(item,plan.input.scope).material.ref!==ref)throw new StoreError('Onboarding input changed',409);};
   if(item.processing_ref&&item.processing_ref!==ref){
-   if(item.memory_job_id)this.memory.cancel(item.memory_job_id);
+   const continued=this.memoryState(item).jobs.some(job=>job.continuationOf&&Object.values(job.materialRefs).includes(ref));
+   if(item.memory_job_id&&!continued)this.memory.cancel(item.memory_job_id);
    if(item.followup_id)this.followup.cancel(item.followup_id);
-   this.update(item,{memory_job_id:null,processing_ref:null,followup_id:null,completed_ref:null,error_code:null});
+   this.update(item,{...(!continued?{memory_job_id:null}:{}),processing_ref:continued?ref:null,followup_id:null,completed_ref:null,error_code:null});
   }
-  if(item.completed_ref===ref||item.error_code)return false;
+  if(item.error_code){
+   // A valid model result can outlive a transient read/write failure during
+   // final publication. Revalidate it through the same guarded consumer; this
+   // neither repeats model work nor revives a stale/cancelled execution.
+   if(item.error_code!=='understanding_unavailable'||!item.followup_id)return false;
+   const progress=this.followup.progress(item.followup_id);
+   if(['stale','cancelled'].includes(progress.task.state)||progress.batch?.task.state!=='succeeded')return false;
+   await this.followup.finish(item.followup_id,current);current();this.update(item,{completed_ref:ref,error_code:null});return false;
+  }
   if(view.coverage.extraction.status==='failed'||view.coverage.extraction.status==='unsupported'){
    this.update(item,{processing_ref:ref,error_code:view.coverage.extraction.status==='failed'?'extraction_failed':'original_body_unavailable'});return false;
   }
@@ -167,16 +224,24 @@ export class AssistantOnboarding {
     this.update(item,{memory_job_id:job.id,processing_ref:ref});void this.memory.run(job.id).catch(()=>{});
    }));return true;
   }
-  const job=this.memory.get(item.memory_job_id);
-  if(!finishedMemory(job)){
+  const memory=this.memoryState(item),job=memory.job!;
+  if(!memory.reviewed){
    if(['failed','cancelled'].includes(job.status)||job.outcome==='input_invalidated'){
     this.update(item,{error_code:job.outcome==='input_invalidated'?'understanding_input_changed':job.status==='cancelled'?'understanding_cancelled':job.errorCode??'memory_processing_failed'});return false;
    }
-   return true;
+   return job.status==='waiting_for_input'&&job.errorCode==='memory_owner_input_required'?false:true;
+  }
+  const scope=this.effectiveScope(id,plan),ownerQuestions=memory.contextQuestions.map(({id,revision})=>({id,revision}));
+  if(item.followup_id&&this.followup.ownerContextChanged(item.followup_id,ownerQuestions)){
+   this.followup.cancel(item.followup_id);this.update(item,{followup_id:null,completed_ref:null});
+  }
+  if(item.completed_ref===ref&&item.followup_id){
+   try{if(this.followup.result(item.followup_id,scope))return false;}catch(error){if(!(error instanceof StoreError&&(error.statusCode===404||error.statusCode===409)))throw error;}
+   this.update(item,{followup_id:null,completed_ref:null});
   }
   if(!item.followup_id){
-   await this.followup.start({operationId:'onboarding:'+id,requestId:'onboarding:'+item.selection_id+':'+view.material.revision,
-    materialRefs:[ref],scope:this.effectiveScope(id,plan),mode:{kind:'change'}},
+   await this.followup.start({operationId:'onboarding:'+id,requestId:'onboarding:'+sha256(JSON.stringify([item.selection_id,view.material.revision,ownerQuestions])),
+    materialRefs:[ref],scope,ownerQuestions,mode:{kind:'change'}},
     {identities:plan.input.materialRefs,connections:plan.connections},current,task=>this.update(item,{followup_id:task.id}));
    return true;
   }
@@ -198,14 +263,17 @@ export class AssistantOnboarding {
      try{this.assertActive(id);if(await this.advance(item,plan))break;}
      catch(error){
       if(this.closed||this.task(id).state==='cancelled')break;
+      const failure=safeError(error);this.diagnostics?.record('agent.failed',{operation:'query',jobId:item.followup_id??item.memory_job_id??id,
+       statusCode:failure.status,category:failure.category,...(failure.reason?{reason:failure.reason}:{})},'warn');
       // Persist a bounded product reason, never provider text or source bodies.
       this.update(item,{error_code:error instanceof StoreError&&error.statusCode===413?'understanding_input_limit':'understanding_unavailable'});
      }
     }
     const items=this.items(id);
-    if(!this.closed&&this.task(id).state==='running'&&items.length&&items.every(item=>{
-     try{const view=this.view(item,plan.input.scope);return item.completed_ref===view.material.ref&&view.coverage.extraction.status==='ready';}catch{return false;}
-    })){const task=this.task(id);this.tasks.saveResult(id,task.revision,{completed:items.length},deps([]),this.assertCurrent);}
+    const progress=this.get(id,plan.input.scope);
+    if(!this.closed&&this.task(id).state==='running'&&items.length&&progress.items.length===items.length&&progress.items.every(item=>item.state==='completed')){
+     const task=this.task(id);this.tasks.saveResult(id,task.revision,{completed:items.length},deps([]),this.assertCurrent);
+    }
    }
   })().finally(()=>{this.ticking=undefined;});
  }

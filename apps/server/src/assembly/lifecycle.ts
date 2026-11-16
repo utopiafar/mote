@@ -9,6 +9,7 @@ import type {ExecutionEngine} from '../execution-engine.js';
 import type {DelegatedQueryRuns} from '../delegated-query-runs.js';
 import type {ActivityServices} from '../plugins/activity-services.js';
 import type {MemoryPublication} from '../plugins/memory-publication.js';
+import type {MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
 
 /** Shared shutdown latch. Admission paths poll it while handlers still run;
  * the close-order hooks set it before interrupting transports. */
@@ -33,6 +34,7 @@ export interface ServerLifecycleHookDependencies {
   readonly queryRuns:DelegatedQueryRuns;
   readonly activityServices:ActivityServices;
   readonly memoryPublication:MemoryPublication;
+  readonly memoryPhasePipeline:Pick<MemoryPhasePipelinePlatform,'quiesce'>;
   readonly resources:ServerResources;
   readonly diagnostics:ServerDiagnostics;
 }
@@ -41,9 +43,12 @@ export interface ServerLifecycleHookDependencies {
  * quiesce platforms, interrupt polling and transports while handlers and
  * stores are still live, then release every registered resource. */
 export function installServerLifecycleHooks(app:FastifyInstance,dependencies:ServerLifecycleHookDependencies){
-  const {lifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,resources,diagnostics}=dependencies;
+  const {lifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,memoryPhasePipeline,resources,diagnostics}=dependencies;
   app.addHook('preClose',async()=>{
     lifecycle.markClosing();
+    // Withdraw reply admission before source/model dependencies drain. An
+    // accepted read must see a temporarily absent provider, not obsolete work.
+    memoryPhasePipeline.quiesce('shutdown');
     // Stop watcher/subscriptions and join accepted configuration transactions
     // while execution/model consumers are still alive; a config-service failure
     // must not abort the remaining cleanup. Bootstrap retains final close.

@@ -24,10 +24,15 @@ type Prepared={python:string};
 type Options={runtime:'native'|'docker'|'unknown';media:MediaConfiguration;assets:MediaPreparationAssets;repository?:string;prepare?:(options:MediaRuntimeOptions&{signal:AbortSignal})=>Promise<Prepared>;fetch?:typeof fetch;startupTimeoutMs?:number};
 const roles=['ocr','dialogue','speaker-wespeaker','local-image'] as const;
 const active=(state:State)=>['queued','dependencies','verifying_dependencies','models','starting'].includes(state);
-const portOccupied=(port:number)=>new Promise<boolean>(resolve=>{
+const assertWorkerPortAvailable=(port:number)=>new Promise<void>((resolve,reject)=>{
   const socket=connect({host:'127.0.0.1',port});
-  const finish=(value:boolean)=>{socket.destroy();resolve(value);};
-  socket.setTimeout(1000,()=>finish(true));socket.once('connect',()=>finish(true));socket.once('error',error=>finish((error as NodeJS.ErrnoException).code!=='ECONNREFUSED'));
+  let settled=false;
+  const finish=(error?:Error)=>{if(settled)return;settled=true;socket.destroy();if(error)reject(error);else resolve();};
+  // Only a completed connection proves a listener exists. An inconclusive
+  // probe still prevents spawning, without claiming another process owns it.
+  socket.setTimeout(1000,()=>finish(Error('media.runtime.worker_port_probe_timeout')));
+  socket.once('connect',()=>finish(Error('media.runtime.worker_port_in_use')));
+  socket.once('error',error=>finish((error as NodeJS.ErrnoException).code==='ECONNREFUSED'?undefined:Error('media.runtime.worker_port_probe_failed')));
 });
 /** One Central lifecycle owns Native process groups; sidecars stay deployment
  * owned. Role directories are resources, not new PluginHost runtimes. */
@@ -86,6 +91,13 @@ export class MediaPreparation {
     const worker=this.workers.get(role as NativeMediaRole);
     return worker&&worker.child.exitCode===null&&worker.child.signalCode===null&&!worker.error;
   }
+  /** A listener can be absent while this Central installs or starts its own
+   * native runtime. Loopback alone never establishes that ownership. */
+  preparing(role:MediaRole,endpoint:string){
+    const job=this.jobs.get(role);
+    return this.options.runtime==='native'&&!this.closing&&!this.stopping.has(role)&&!this.unsupported(role)&&
+      endpoint===mediaRoleEndpoint(role,this.options.media)&&Boolean(job&&active(job.state)&&!job.controller.signal.aborted);
+  }
   async status(role:MediaRole){
     const before=this.model(role),health:ReturnType<typeof mediaModelHealth>=before.state==='ready'&&!this.unsupported(role)?await this.health(role):{ready:false};
     // Read job and ownership AFTER health: cancellation/stop/configuration may
@@ -140,7 +152,7 @@ export class MediaPreparation {
       if(runtime==='native'&&prepared){
         await this.stopWorker(role);this.check(job);
         const args=mediaWorkerLaunch(role,{repository:this.repository,...media,localImagePort:media.localImagePort??9011});
-        if(await portOccupied(Number(args.at(-1))))throw Error('media.runtime.worker_port_in_use');
+        await assertWorkerPortAvailable(Number(args.at(-1)));
         this.check(job);const home=join(this.directory,role,'worker');await mkdir(home,{recursive:true,mode:0o700});this.check(job);
         started=spawnMediaProcess(prepared.python,args,{cwd:this.repository,env:mediaWorkerEnvironment(home,prepared.python,media.workerToken)});
         this.workers.set(role,started);const owned=started;

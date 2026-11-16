@@ -2,6 +2,43 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 
+test('filling available model slots lets callbacks cancel queued work before its first attempt',async t=>{
+ const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const {Store}=await import('../src/store.js'),{ExecutionEngine}=await import('../src/execution-engine.js');
+ const directory=mkdtempSync(join(tmpdir(),'mote-slot-admission-turn-')),store=new Store(directory),engine=new ExecutionEngine(store);
+ let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve),started:string[]=[];
+ t.after(async()=>{release();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ engine.register({kind:'generated',pool:'generated',concurrency:()=>32,validate:()=>true,
+  execute:async step=>{started.push(step.id);await held;},commit:()=>{}});
+ const ids=Array.from({length:64},(_,index)=>engine.enqueue('generated-'+index,'generated',{index}));
+ const callback=new Promise<{started:number;transaction:boolean}>(resolve=>setImmediate(()=>{
+  const observed={started:started.length,transaction:store.db.isTransaction};engine.cancel(ids[1]);release();resolve(observed);
+ }));
+ const running=engine.tick(),observed=await callback;
+ assert.ok(observed.started>0&&observed.started<32,`callback saw ${observed.started}/32 slots filled`);
+ assert.equal(observed.transaction,false,'slot admission must commit before yielding to owner callbacks');
+ await running;await engine.drain(ids);
+ assert.equal(engine.get(ids[1])!.state,'cancelled');assert.equal(engine.get(ids[1])!.attempts,0);
+ assert.equal(started.length,63);assert.equal(new Set(started).size,63);
+ for(const id of ids.filter(id=>id!==ids[1])){const step=engine.get(id)!;assert.equal(step.state,'succeeded');assert.equal(step.attempts,1);}
+});
+
+test('draining work in a full pool does not join an unrelated completion backlog',async t=>{
+ const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const {Store}=await import('../src/store.js'),{ExecutionEngine}=await import('../src/execution-engine.js');
+ const directory=mkdtempSync(join(tmpdir(),'mote-independent-drain-')),store=new Store(directory),engine=new ExecutionEngine(store);
+ let release!:()=>void,enter!:()=>void,completed=0;const held=new Promise<void>(resolve=>release=resolve),entered=new Promise<void>(resolve=>enter=resolve),backlog:string[]=[];
+ t.after(async()=>{release();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ engine.register({kind:'held',pool:'held',concurrency:()=>1,validate:()=>true,execute:async()=>{enter();await held;},commit:()=>{}});
+ engine.register({kind:'unrelated',pool:'unrelated',concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{if(++completed<64)backlog.push(engine.enqueue('unrelated-'+completed,'unrelated',{}));}});
+ const first=engine.enqueue('first','held',{}),waiting=engine.enqueue('waiting','held',{});backlog.push(engine.enqueue('unrelated-0','unrelated',{}));
+ const running=engine.tick();await entered;await engine.drain([waiting]);
+ assert.ok(completed<64,`drain joined ${completed}/64 unrelated completions despite its own pool being full`);
+ assert.equal(engine.get(waiting)!.state,'waiting');assert.equal(engine.get(waiting)!.attempts,0);
+ release();await running;await engine.drain([first,waiting]);await engine.drain(backlog);
+ assert.equal(engine.get(waiting)!.state,'succeeded');assert.equal(engine.get(waiting)!.attempts,1);assert.equal(completed,64);
+});
+
 for(const mode of ['background','drain','mixed-lanes'])test(`a large admission-wait backlog yields to provider callbacks and timers (${mode})`,async()=>{
  // Isolate the historical microtask starvation: its own timeout cannot run
  // when the child never returns to the event loop. No private inputs are used.

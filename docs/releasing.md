@@ -21,6 +21,8 @@ gh workflow run release-desktop.yml --ref main -f profile=dev
 gh workflow run release-android.yml --ref main -f profile=dev
 ```
 
+Desktop手动构建只验证候选、暂不分发时，可加`-f publish=false`：仍执行组件检查、签名和打包后smoke并保留Artifact，跳过公开发布；验收后从同一提交发布。
+
 标签为`desktop-dev-<run>-<短SHA>`或`android-dev-<run>-<短SHA>`。其他允许分支保留Artifact；Dev不设置全仓库Latest。公开附件不随7天Artifact过期。失败草稿仅原提交可修复，已发布或已有更新构建时拒绝覆盖。
 
 Mac Dev的Bundle ID为`dev.mote.collector.dev`，Android Dev包名同为`dev.mote.collector.dev`。Android CI的versionName带`-dev.<run>`，versionCode为`1000000000 + run`；本地Development可显式设置更大的`MOTE_ANDROID_DEV_RUN`并使用同一证书。Prod版本码独立递增。Mac本地出包可用`MOTE_BUILD_PROFILE=dev node scripts/release/mac-package.mjs`。

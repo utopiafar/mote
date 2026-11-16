@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {featureRequirementsAvailable,queryScopeSchema,type FeatureInventory,type FileCoverage,type QueryScope,type SourceConnection} from '@mote/shared';
+import {featureRequirementsAvailable,type FeatureInventory,type FileCoverage,type QueryScope,type SourceConnection} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {ApiError,errorMessage,type Api} from '../../api';
 import {failureMessage} from '../../failure-message';
@@ -8,37 +8,20 @@ import {resources} from '../../resource-cache';
 import {useResource} from '../../useResource';
 import type {Material} from '../../Materials';
 import {FileRetentionNote,fileRetentionLabel} from '../reader/FileStatus';
+import {onboardingCapabilities,parseOnboarding,readStoredOnboardingRun as readStoredRun,writeStoredOnboardingRun as writeStoredRun,type CoverageCounts,type OnboardingItem,type StoredRun} from './onboarding';
+import {ownerQuestionRoute} from '../../owner-question-route';
 
-type CoverageCounts={completed:number;total:number;partial?:number;pending?:number;failed?:number;unsupported?:number;reason?:string};
-type OnboardingItem={material:{ref:string;title:string;sourceId:string};state:'completed'|'cancelled'|'failed'|'pending';
- coverage:{sync:FileCoverage;extraction:FileCoverage;semantic:FileCoverage};reason?:string;
- memory?:{id:string;status:string;completedBatches:number;totalBatches:number}};
-type OnboardingView={id:string;revision:number;state:'cancelled'|'empty'|'completed'|'failed'|'pending';
- coverage:{sync:CoverageCounts;extraction:CoverageCounts;semantic:CoverageCounts};
- completed:number;pending:number;failed:number;cancelled:number;items:OnboardingItem[]};
-type StoredRun={id:string;scope:QueryScope};
 type MaterialPage={items:Material[];nextCursor:string|null};
 
-const onboardingCapabilities=['http:POST:/api/assistant/onboarding','http:GET:/api/assistant/onboarding/:id','http:POST:/api/assistant/onboarding/:id/cancel'];
 const maxSelection=100;
 const statusLabels:Record<FileCoverage['status'],string>={pending:moteText('等待处理'),partial:moteText('部分内容'),ready:moteText('处理完成'),failed:moteText('处理失败'),unsupported:moteText('不可用')};
 const reasonLabels:Record<string,string>={extraction_failed:moteText('原文提取未完成，请查看来源与处理状态。'),original_body_unavailable:moteText('原文提取未完成，请查看来源与处理状态。'),
  memory_processing_unavailable:moteText('理解没有完成，请检查模型与服务后重试。'),memory_processing_failed:moteText('理解没有完成，请检查模型与服务后重试。'),
  assistant_analysis_changed:moteText('理解没有完成，请检查模型与服务后重试。'),assistant_analysis_failed:moteText('理解没有完成，请检查模型与服务后重试。'),
  understanding_input_changed:moteText('理解没有完成，请检查模型与服务后重试。'),understanding_input_limit:moteText('这次选择的资料超过单次处理上限，请减少选择后重试。'),
- understanding_unavailable:moteText('理解没有完成，请检查模型与服务后重试。')};
+ understanding_unavailable:moteText('理解没有完成，请检查模型与服务后重试。'),memory_owner_input_required:moteText('需要你补充')};
 const modelReasons=new Set(['model_unconfigured','model_not_configured','provider_not_configured','provider_authentication','provider_quota','provider_endpoint','provider_unavailable','model_profile_missing']);
 
-function readStoredRun():StoredRun|undefined{
- try{const value=JSON.parse(window.localStorage.getItem(storageKey())??'null') as {id?:unknown;scope?:unknown}|null;
-  if(!value||typeof value.id!=='string')return;
-  const scope=queryScopeSchema.safeParse(value.scope);return scope.success?{id:value.id,scope:scope.data}:undefined;
- }catch{return}
-}
-function writeStoredRun(run:StoredRun|undefined){
- try{if(run)window.localStorage.setItem(storageKey(),JSON.stringify(run));else window.localStorage.removeItem(storageKey());}catch{/* local storage is optional */}
-}
-function storageKey(){return 'mote.assistant.onboarding.'+window.location.origin;}
 function selectedScope(values:readonly {origin:{sourceId:string}}[]):QueryScope{
  return {kind:'selection',sourceIds:[...new Set(values.map(value=>value.origin.sourceId))].sort()};
 }
@@ -81,16 +64,6 @@ function itemStateLabel(state:OnboardingItem['state']){
 function sourceCanProvideBody(source:SourceConnection|undefined){
  return !source||source.retention!=='reference';
 }
-function parseOnboarding(value:unknown):OnboardingView{
- if(!value||typeof value!=='object')throw Error(moteText('中央响应格式无效，请刷新后重试。'));
- const view=value as Partial<OnboardingView>;
- if(typeof view.id!=='string'||typeof view.revision!=='number'||!view.coverage||!Array.isArray(view.items))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
- if(!view.coverage.sync||!view.coverage.extraction||!view.coverage.semantic)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
- if(!view.items.every(item=>item&&typeof item==='object'&&typeof (item as OnboardingItem).material?.ref==='string'&&typeof (item as OnboardingItem).material?.title==='string'&&typeof (item as OnboardingItem).material?.sourceId==='string'&&
-  typeof (item as OnboardingItem).coverage?.sync?.status==='string'&&typeof (item as OnboardingItem).coverage?.extraction?.status==='string'&&typeof (item as OnboardingItem).coverage?.semantic?.status==='string'))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
- return view as OnboardingView;
-}
-
 /** The connection's value comes first; the concrete material selection and
  * retention facts follow. This panel never grants model access: starting an
  * onboarding is an explicit owner command through A6's existing route. */
@@ -222,7 +195,15 @@ export function SourceOnboarding({api,sources,onAdd,loading=false}:{api:Api;sour
    {!active&&resumable.length>0&&<p className="fine-print">{moteText('取消后已完成的结果会保留；继续只会处理未完成的资料。')}</p>}
    {run?.state==='empty'&&<p className="source-onboarding-unavailable" role="status">{moteText('所选资料当前不可读取，请检查来源授权后重新选择。')}</p>}
    {run?.state==='completed'&&<p className="source-onboarding-complete" role="status">{moteText('本次选择的资料已完成；其他资料未包含。')}</p>}
-   {run&&run.items.length>0&&<ul className="source-onboarding-items" aria-label={moteText('本次资料')}>{run.items.map(item=><li key={item.material.ref} data-item-state={item.state}><div><strong>{item.material.title}</strong><span>{itemStateLabel(item.state)}</span></div><small>{moteText('正文提取')} · {statusLabels[item.coverage.extraction.status]} · {moteText('语义理解')} · {statusLabels[item.coverage.semantic.status]}</small>{item.reason&&<p>{reasonText(item.reason)}{modelReasons.has(item.reason)&&<> · <a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a></>}</p>}{item.memory&&item.memory.status!=='completed'&&<small>{moteText('处理中')} · {item.memory.completedBatches} / {item.memory.totalBatches}</small>}</li>)}</ul>}
+   {run&&run.items.length>0&&<ul className="source-onboarding-items" aria-label={moteText('本次资料')}>{run.items.map(item=><li key={item.material.ref} data-item-state={item.state}>
+    <div><strong>{item.material.title}</strong><span>{item.reason==='memory_owner_input_required'?moteText('需要你补充'):itemStateLabel(item.state)}</span></div>
+    <small>{moteText('正文提取')} · {statusLabels[item.coverage.extraction.status]} · {moteText('语义理解')} · {statusLabels[item.coverage.semantic.status]}</small>
+    {item.reason&&<p>{reasonText(item.reason)}{modelReasons.has(item.reason)&&<> · <a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a></>}</p>}
+    {item.result&&<div data-onboarding-result><p>{item.result.reason}</p>{item.result.cardIds.length>0&&<a className="text-button" href="#/today">{moteText('查看结果与依据 →')}</a>}</div>}
+    {item.result&&Boolean(item.ownerQuestions?.length)&&<p role="status">{moteText('已有部分结果；需要你补充的问题只影响相关结论。')}</p>}
+    {item.ownerQuestions?.map(question=><div key={question.id} data-onboarding-question><a className="text-button multiline" href={ownerQuestionRoute(question.id)}>{question.prompt}</a>{question.reason&&<p>{question.reason}</p>}</div>)}
+    {item.memory&&item.memory.status!=='completed'&&<small>{moteText(item.reason==='memory_owner_input_required'?'处理进度':'处理中')} · {item.memory.completedBatches} / {item.memory.totalBatches}</small>}
+   </li>)}</ul>}
    {visibleError&&<div className="source-onboarding-error"><p role="alert">{visibleError}</p>{technicalError&&<details><summary>{moteText('技术详情')}</summary><pre>{technicalError}</pre></details>}{error&&<a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a>}</div>}
   </>}
  </section>;
