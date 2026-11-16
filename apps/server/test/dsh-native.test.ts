@@ -10,8 +10,12 @@ import {serviceContract, type ServiceBinding} from '@mote/plugin-api/contracts';
 import {ConfigService} from '../src/config-service.js';
 import {configFromDocument, registerBuiltinDomains} from '../src/config.js';
 import {dshConfigurationSchema} from '../src/dsh-configuration.js';
-import {nativeDshSource, type InstalledDshAuthority} from '../src/dsh-native.js';
+import {dshSelectionBoundary, nativeDshSource, type InstalledDshAuthority} from '../src/dsh-native.js';
 import {activateInstalledDsh, installedDshModule, nativeDshCatalog, projectInstalledDshModules} from '../src/dsh-installed-modules.js';
+import {StoreError} from '../src/store.js';
+import {safeError} from '../src/diagnostics.js';
+import {AgentProviderError} from '@mote/agent';
+import {DshProfileError} from '@mote/agent/runtime/dsh';
 
 const instance = {packageId: 'generated.native', installationId: 'generated-install', instanceId: 'generated-instance'};
 const reference: RuntimeModuleReference = {contribution: {instance, contributionId: 'generated.root'}, revision: 0, artifactDigest: 'a'.repeat(64), exportName: 'default'};
@@ -99,6 +103,7 @@ test('installed native metadata accepts public aliases without executing the ori
   assert.equal(installedDshModule(projection, {...reference, artifactDigest: 'b'.repeat(64)}), undefined);
   const catalog = JSON.stringify(nativeDshCatalog(projection));
   assert.ok(catalog.includes('requestedCapabilities')); assert.ok(!catalog.includes(root)); assert.ok(!catalog.includes('grantedCapabilities'));
+  await assert.rejects(projectInstalledDshModules({manifest: {...manifest, runtime: 'worker'}, directory: root, artifactDigest: 'a'.repeat(64), instance}), {code: 'dsh_module_unavailable'});
   await assert.rejects(projectInstalledDshModules({manifest: {...manifest, contributions: [{...manifest.contributions[0]!, entry: 'private.mjs'}]}, directory: root, artifactDigest: 'a'.repeat(64), instance}), {code: 'dsh_module_unavailable'});
 });
 
@@ -120,4 +125,14 @@ test('native installation metadata borrows actual Host dependency and activation
   assert.throws(() => authority.assertCurrent());
   assert.throws(() => activation.module(reference));
   await activation.close();
+});
+
+test('expired native selections report a conflict while unknown, provider and existing HTTP failures stay primary', async () => {
+  const missing = nativeDshSource({profiles: [selected()]}, DEPLOYMENT_MODEL_PROFILE_ID, 1, async () => undefined)!;
+  const rejected = await dshSelectionBoundary(missing).then(() => assert.fail('The expired selection must reject'), error => error);
+  assert.equal(safeError(rejected).status, 409); assert.equal(rejected.cause.code, 'dsh_module_unavailable');
+  for (const [error, status] of [[new Error('Generated unknown native exception'), 500], [Object.assign(new DshProfileError('dsh_profile_invalid'), {code: 'unknown_native_failure'}), 500], [new AgentProviderError(), 502], [new StoreError('Generated existing credential failure', 401), 401], [new StoreError('Generated existing authorization failure', 403), 403], [new StoreError('Generated existing disk failure', 507), 507]] as const) {
+    await assert.rejects(dshSelectionBoundary(async () => {throw error;}), caught => caught === error);
+    assert.equal(safeError(error).status, status);
+  }
 });

@@ -25,7 +25,7 @@ export interface DshInstalledProjection {
 
 export async function projectInstalledDshModules(pkg: DshInstalledPackage): Promise<DshInstalledProjection> {
   try {
-    if (pkg.instance.packageId !== pkg.manifest.id) throw new DshProfileError('dsh_module_unavailable');
+    if (pkg.manifest.runtime !== 'service' || pkg.instance.packageId !== pkg.manifest.id) throw new DshProfileError('dsh_module_unavailable');
     const contributions = (pkg.manifest.contributions ?? []).filter(contribution => contribution.surface === 'agent' && contribution.runtime === 'native');
     if (!contributions.length) throw new DshProfileError('dsh_module_unavailable');
     const native = await readNativeDshManifest(pkg.directory);
@@ -34,7 +34,7 @@ export async function projectInstalledDshModules(pkg: DshInstalledPackage): Prom
       const target = nativeDshEntrySpecifier(pkg.directory, './' + contribution.entry);
       // Public aliases are valid. Prefer the root, then stable lexical order;
       // equality is checked on the real file rather than path spelling.
-      const subpath = Object.keys(native.exports).sort((left, right) => left === '.' ? -1 : right === '.' ? 1 : left < right ? -1 : left > right ? 1 : 0).find(subpath => {
+      const subpath = Object.keys(native.exports).sort((left, right) => left === right ? 0 : left === '.' ? -1 : right === '.' ? 1 : left < right ? -1 : 1).find(subpath => {
         try { return nativeDshEntrySpecifier(pkg.directory, native.exports[subpath]!) === target; }
         catch { return false; }
       });
@@ -111,6 +111,8 @@ export async function activateInstalledDsh(input: {
       return module ? {module, signal, assertCurrent: current} : undefined;
     }});
   } catch (error) {
-    await handle?.close('disabled'); throw error;
+    try {await handle?.close('disabled');}
+    catch (cleanup) {throw new AggregateError([error, cleanup], 'Native installation admission and cleanup failed', {cause: error});}
+    throw error;
   }
 }

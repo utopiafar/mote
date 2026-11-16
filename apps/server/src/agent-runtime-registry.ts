@@ -14,6 +14,7 @@ import type {PreparedModelSettings} from './model-settings.js';
 import type {ProviderAdmission} from './provider-admission.js';
 import type {QueryAgent,QueryRunLease} from './query-agent.js';
 import {StoreError} from './store.js';
+import {dshSelectionBoundary} from './dsh-native.js';
 
 export interface AgentRuntimeRegistryDependencies {
   readonly codex:AgentOptions['codex'];
@@ -203,10 +204,10 @@ export class AgentRuntimeRegistry extends ReloadableAgent {
       try{await inner.close();}catch(cleanup){this.lateCleanupErrors.push(cleanup);throw new AggregateError([primary,cleanup],'Agent startup was stopped and cleanup failed',{cause:primary});}
       throw primary;
     }
-    return this.wrap(inner,settings,identity);
+    return this.wrap(inner,settings,identity,Boolean(host.nativeDsh));
   }
 
-  wrap(inner:QueryAgent,settings:ModelSettings,identity:ModelAgentIdentity):QueryAgent {
+  wrap(inner:QueryAgent,settings:ModelSettings,identity:ModelAgentIdentity,nativeDsh=false):QueryAgent {
     this.assertOpen();
     const d=this.dependencies,thisRegistry=this;
     let closing:Promise<void>|undefined;
@@ -248,7 +249,7 @@ export class AgentRuntimeRegistry extends ReloadableAgent {
             d.retainSnapshot(input);
             const result=await d.modelOperation.run(operationId,()=>d.admission.run(settings,()=>{
               assertOpen();d.authorization.assertCurrent(connection);d.assertEvidence(input);d.agentStarted();
-              return d.modelContext.run(input,()=>inner.query(input,lease));
+              return d.modelContext.run(input,()=>nativeDsh?dshSelectionBoundary(()=>inner.query(input,lease)):inner.query(input,lease));
             }));
             assertOpen();d.authorization.assertCurrent(connection);status='completed';return result;
           }catch(error){if(error instanceof AgentYieldError)status='yielded';throw error;}
