@@ -29,7 +29,11 @@ Notification and device-event sources need their corresponding access. Provenanc
 
 Native content uses paged projections and lazy images rather than decoding the entire queue. Local and Central records retain actual state; connection/device/record identity avoids duplicate navigation rows. Central requests use the unified owner session; a device filter is a view, not an account boundary.
 
-Common audio reading, playback and text correction are native. The MVP direction is contextual entries to the same Central's Web for advanced speaker review, original comparison and model preparation; those entries are not implemented yet. Dedicated automatic photo-library collection is planned for later; manual photo/file intake does not establish that capability. Existing source files and photos remain outside Central archive deletion.
+Common audio reading, playback and text correction are native. A Central recording's detail opens the same recording in Web speaker audition/naming, original comparison or raw transcription. Processing settings open the corresponding audio, OCR or local-image preparation panel at `system/models`; opening preparation also works with an archive-only or remote processing plan and does not change that plan, model authorization or plugin enablement.
+
+These entries use the selected Central and its current owner session to request a short-lived, single-use login ticket. Only that ticket appears in the fragment; the native bearer stays out of the URL. Without an owner session, Web keeps the public destination through its existing login. A ticket request's 401 still invalidates the native session and clears private state; the current public destination remains available on the native login screen or resumes after login. Explicit logout, node/object changes and expired or late results cannot launch the old destination. A collector credential grants no owner access. Web opens a recording tool only after reading that exact file and confirming it is a recording.
+
+Dedicated automatic photo-library collection is planned for later; manual photo/file intake does not establish that capability. Existing source files and photos remain outside Central archive deletion.
 
 Folders use the Storage Access Framework with stable versions, one-time/continuous scope, resume checkpoints and matched receipts. Lost permission or provider failure does not prove deletion. Progress separates stability waiting, queueing, saving/uploading, retry and actionable conflict. See [files](files.md).
 
@@ -47,4 +51,4 @@ For a validation-only signed build, `Release Android` accepts `profile=dev`, `pu
 
 ## Verification
 
-Focused JVM and Central/Kotlin commands are in [Android AGENTS](../apps/android/AGENTS.md); dedicated hidden emulators are in the [runbook](testing-runbook.md#android-emulator). Unit results cannot establish OS permissions, OEM scheduling, battery behavior or physical capture. Heavy journeys and live models need their own explicit request under [testing](testing.md).
+Focused JVM and Central/Kotlin commands are in [Android AGENTS](../apps/android/AGENTS.md); the [advanced Web contract](testing-runbook.md#android-advanced-web-contract) follows real tickets through Kotlin into Web panels, and dedicated hidden emulators are in the [runbook](testing-runbook.md#android-emulator). These generated fixtures cannot establish external browser launch, physical audio playback, OS permissions, OEM scheduling, battery behavior or physical capture. Heavy journeys and live models need their own explicit request under [testing](testing.md).

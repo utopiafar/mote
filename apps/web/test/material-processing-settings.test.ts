@@ -54,6 +54,17 @@ test('ordinary and advanced audio settings keep dialogue preparation without the
  assert.deepEqual(f.writes,[]);assert.deepEqual(f.node.modelAuthorization.view(),authority);assert.deepEqual(f.node.processing.view(),policy);
 });
 
+test('an explicit preparation route remains available for archive-only profiles without changing model or processing authority',async t=>{
+ const f=await fixture(t),before=await f.call('/api/file-processing'),archive=before.policy.profiles.find((value:any)=>value.processorId==='archive');assert.ok(archive);
+ before.policy.rules=[{type:'audio/*',profileId:archive.id},{type:'image/*',profileId:archive.id},...before.policy.rules.filter((value:any)=>value.sourceId||!['audio/*','image/*'].includes(value.type))];await f.call('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:before.revision,settings:before.settings,policy:before.policy})});f.writes.length=0;
+ const authority=structuredClone(f.node.modelAuthorization.view()),policy=structuredClone(f.node.processing.view()),selected=f.node.pluginCenter.buildView('local-image').desired;
+ for(const [kind,role]of [['audio','dialogue'],['images','ocr'],['images','local-image']] as const){
+  window.history.replaceState(null,'','#/system/models?category='+kind+'&prepare='+role);await act(async()=>{f.root.render(view(f.api,kind));window.dispatchEvent(new window.HashChangeEvent('hashchange'));});
+  await until(()=>!!f.d.querySelector('[data-advanced-preparation="'+role+'"] .media-preparation'),'explicit '+role+' preparation');assert.equal(f.d.activeElement?.getAttribute('data-advanced-preparation'),role);
+ }
+ assert.deepEqual(f.writes,[]);assert.deepEqual(f.node.modelAuthorization.view(),authority);assert.deepEqual(f.node.processing.view(),policy);assert.deepEqual(f.node.pluginCenter.buildView('local-image').desired,selected);
+});
+
 test('ordinary image settings reach the default optional build without granting background models or changing processing policy',async t=>{
  const f=await fixture(t),authority=structuredClone(f.node.modelAuthorization.view()),policy=structuredClone(f.node.processing.view());
  await act(async()=>f.root.render(view(f.api)));
