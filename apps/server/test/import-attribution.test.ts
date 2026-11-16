@@ -198,7 +198,7 @@ test('media intake and excerpt lineage preserve exact capture statements without
 
 test('HTTP import publishes a fully declared prefix before completion; restart does not grant it again',{timeout:60000},async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-import-context-http-'));
-  const config:Config={dataDir:directory,token:'generated-import-context-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:2_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir:directory,token:'generated-import-context-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   let node:Awaited<ReturnType<typeof buildApp>>,importId='',calls=0,reviewedPrefix=false,release!:()=>void;
   const paused=new Promise<void>(resolve=>release=resolve),prefix='  Generated exact owner context\n',instruction=prefix+'甲'.repeat(12000-prefix.length-2)+'  ',upsert=SourceStore.prototype.upsert;
   assert.equal(instruction.length,12000);

@@ -36,7 +36,7 @@ const adapter=registerMemoryDelegation({runtime,pipeline,work,sourcePipelines,qu
 }});
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const token=randomBytes(32).toString('hex');
-const config:Config={dataKey:undefined,dataDir:join(directory,'http'),token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'high',agentTimeoutMs:300000,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:2};
+const config:Config={dataKey:undefined,dataDir:join(directory,'http'),token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'high',agentTimeoutMs:300000,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:2};
 let url='';
 async function openHttp(){
  node=await buildApp(config,{backgroundWorker:false});

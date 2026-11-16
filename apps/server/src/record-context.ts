@@ -30,7 +30,6 @@ export class RecordContextStore {
       try{
         for(const row of store.db.prepare("SELECT capture_id,json FROM record_context_declarations WHERE json LIKE 'json:%'").all()){
           const json=encodeMemoryPrivate(store,decodeMemoryPrivate(store,String(row.json)));
-          store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(row.json))));
           store.db.prepare('UPDATE record_context_declarations SET json=? WHERE capture_id=?').run(json,row.capture_id);
         }
         if(own)store.db.exec('COMMIT');
@@ -54,7 +53,6 @@ export class RecordContextStore {
   }
   private insert(value:Declaration){
     const json=encodeMemoryPrivate(this.store,{description:value.description});
-    this.store.reserveMetadata(Buffer.byteLength(json)+Buffer.byteLength(value.captureId)+256);
     this.store.db.prepare('INSERT INTO record_context_declarations VALUES(?,?,?,?,?)').run(value.captureId,value.version,value.captureFingerprint,fingerprint(value),json);
   }
   /** Only exact parent links inherit context, never another capture sharing a file. */

@@ -17,7 +17,6 @@ export interface VaultPlatformOptions {
   readonly dataDir:string;
   readonly dataKey?:string;
   readonly contentEncryptionEnabled?:boolean;
-  readonly maxStorageBytes?:number;
   readonly embeddingEnabled?:boolean;
   readonly maintenance?:boolean;
 }
@@ -62,7 +61,7 @@ export interface VaultPlatform extends PluginLifecycle {
  * composition until domain factories replace it. Caller-supplied Store is borrowed. */
 export function createVaultPlatformAssembly(options:VaultPlatformOptions,dependencies:{store?:Store;configService?:ConfigService;onContentEncryptionApplied?:(enabled:boolean)=>void}={}){
   const config={...options},borrowed=dependencies.store;
-  if(!config.dataDir||config.maxStorageBytes!==undefined&&(!Number.isSafeInteger(config.maxStorageBytes)||config.maxStorageBytes<0))throw new StoreError('Invalid vault configuration');
+  if(!config.dataDir)throw new StoreError('Invalid vault configuration');
   let store:Store|undefined,archivedFiles:ArchivedFileStore|undefined,content:ContentStorageService|undefined,maintenance:MaintenanceWorker|undefined;
   let phase:'created'|'prepared'|'closing'|'closed'='created',closing:Promise<void>|undefined,accessorsClosing:Promise<void>|undefined;
   const assertPrepared=()=>{if(phase!=='prepared')throw new StoreError('Vault assembly is unavailable',503);};
@@ -82,7 +81,7 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
     async prepare(){
       if(phase!=='created')throw new StoreError('Vault assembly is unavailable',503);
       try{
-        store=borrowed??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:config.embeddingEnabled,maintenance:config.maintenance});
+        store=borrowed??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,embeddingEnabled:config.embeddingEnabled,maintenance:config.maintenance});
         archivedFiles=new ArchivedFileStore(store);
         // Content conversion walks only the two fixed managed object roots; the
         // vault owns the service, so no feature adapter constructs it later.

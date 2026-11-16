@@ -15,7 +15,7 @@ const detailFixture=process.env.MOTE_ANDROID_UI_DETAIL_FIXTURE==='1';
 const firstDataFixture=process.env.MOTE_ANDROID_FIRST_DATA_FIXTURE==='1';
 const fixturePort=firstDataFixture?47889:detailFixture?47884:47883;
 const config:Config={dataDir,dataKey:undefined,token,tokenPath:join(dataDir,'owner-token'),host:'127.0.0.1',port:fixturePort,profile:'test',
- tokenFromEnvironment:true,maxStorageBytes:64*1024*1024,maxExportBytes:16*1024*1024,retentionDays:0,insightIntervalHours:0,
+ tokenFromEnvironment:true,maxExportBytes:16*1024*1024,insightIntervalHours:0,
  allowedOrigins:[],model:'generated-fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'generated-fixture-key',
  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
 const relatedId=randomUUID();

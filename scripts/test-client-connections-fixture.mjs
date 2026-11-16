@@ -8,7 +8,7 @@ const index=process.argv.indexOf('--connection-file');
 if(index<0||!process.argv[index+1])throw Error('Pass --connection-file /absolute/private-fixture.json');
 const output=resolve(process.argv[index+1]),directory=await mkdtemp(join(tmpdir(),'mote-native-connect-fixture-'));
 const token=randomBytes(32).toString('hex');
-const config={dataDir:join(directory,'data'),token,tokenPath:'unused',profile:'test',host:'127.0.0.1',port:0,maxStorageBytes:64*1024*1024,maxExportBytes:16*1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{mcpEnabled:true,mcpReadToken:randomBytes(32).toString('hex')}};
+const config={dataDir:join(directory,'data'),token,tokenPath:'unused',profile:'test',host:'127.0.0.1',port:0,maxExportBytes:16*1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{mcpEnabled:true,mcpReadToken:randomBytes(32).toString('hex')}};
 let app,ownsOutput=false;
 async function close(){if(app)await app.close();if(ownsOutput)await rm(output,{force:true});await rm(directory,{recursive:true,force:true});}
 try{

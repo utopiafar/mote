@@ -12,7 +12,7 @@ import type {Config} from '../src/config.js';
 const headers={authorization:'Bearer generated-insight-runs-owner-token'};
 async function fixture(t:TestContext,agent:QueryAgent){
   const dir=await mkdtemp(join(tmpdir(),'mote-insight-runs-'));
-  const config:Config={dataDir:dir,token:headers.authorization.slice(7),tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'31'.repeat(32),maxStorageBytes:20_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir:dir,token:headers.authorization.slice(7),tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'31'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const value=await buildApp(config,{agent});t.after(async()=>{await agent.close();await value.app.close();await rm(dir,{recursive:true,force:true});});return value;
 }
 test('review launch acknowledges immediately, survives reconnect, reports real tools, and is idempotent',async t=>{

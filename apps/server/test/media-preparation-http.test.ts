@@ -36,7 +36,7 @@ async function installGeneratedOcr(t:TestContext,directory:string,modelDirectory
 
 test('preparation HTTP requires owner authority and cannot turn installation into automatic processing consent',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-prepare-http-'));
- const config:Config={dataDir:directory,token:'generated-media-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://fixture.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-media-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://fixture.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:false,close:async()=>{},query:async()=>{throw Error('No model call expected');}})});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+config.token},before=node.modelAuthorization.view(),initialPerception=node.perception.settings();
@@ -86,7 +86,7 @@ for(const mode of ['ready','missing','unreachable','marker-only','modified'] as 
   }
  }
  worker.listen(0,'127.0.0.1');await once(worker,'listening');const port=(worker.address() as {port:number}).port,endpoint=`http://127.0.0.1:${port}/ocr`;
- const config:Config={dataDir:join(directory,'archive'),token:'generated-'+mode+'-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://fixture.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',configuration:{runtime:'docker'},media:{modelDirectory,python:'python3',ocrPort:port,asrPort:port,ocrEndpoint:endpoint,asrEndpoint:`http://127.0.0.1:${port}/transcribe`,workerToken:secret}};
+ const config:Config={dataDir:join(directory,'archive'),token:'generated-'+mode+'-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://fixture.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',configuration:{runtime:'docker'},media:{modelDirectory,python:'python3',ocrPort:port,asrPort:port,ocrEndpoint:endpoint,asrEndpoint:`http://127.0.0.1:${port}/transcribe`,workerToken:secret}};
  node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model call expected');}}});
  const headers={authorization:'Bearer '+config.token},status=await node.app.inject({url:'/api/media-preparation',headers});assert.equal(status.statusCode,200,status.body);
  const ocr=status.json().ocr;

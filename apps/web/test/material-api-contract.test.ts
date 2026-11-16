@@ -32,7 +32,7 @@ async function fixture(t: TestContext) {
   await featuresReady;
   const directory = await mkdtemp(join(tmpdir(), 'mote-web-material-contract-'));
   const token = 'generated-material-contract-owner';
-  const config: Config = {dataDir: directory, token, tokenPath: 'fixture', host: '127.0.0.1', port: 0, maxStorageBytes: 20_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent'};
+  const config: Config = {dataDir: directory, token, tokenPath: 'fixture', host: '127.0.0.1', port: 0,  maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent'};
   let node: Awaited<ReturnType<typeof buildApp>> | undefined;
   let root: ReturnType<typeof createRoot> | undefined;
   let dom: JSDOM | undefined;

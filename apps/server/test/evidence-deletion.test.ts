@@ -65,7 +65,7 @@ test('forgetting all file revisions rolls back its tombstone, descendants and ou
 
 test('capture deletion HTTP delegates file chunks and captures without changing repeat or missing-file responses',async t=>{
  const f=await fixture(t),{buildApp}=await import('../src/app.js');
- const config={dataDir:f.directory,token:'generated-deletion-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:2_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config={dataDir:f.directory,token:'generated-deletion-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const node=await buildApp(config,{store:f.store,backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in generated fixture');},close:async()=>{}}});f.beforeClose(()=>node.app.close());
  const headers={authorization:'Bearer '+config.token},artifactId=randomUUID(),chunkId=randomUUID();
  f.store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifactId,f.first.id,'text','2026-10-01T00:00:00Z','generated',JSON.stringify({complete:true}));

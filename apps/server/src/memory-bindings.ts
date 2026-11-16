@@ -53,7 +53,7 @@ export class MemoryBindings {
   binding():Binding{return JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_plan_binding WHERE id=1').get()!.json));}
   private saveBinding(value:Binding){this.store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify(value));publishOperationChange(this.store,'context-trees:provider');}
   private preparation():Preparation|undefined{const row=this.store.db.prepare('SELECT json FROM memory_preparation WHERE id=1').get();return row?JSON.parse(String(row.json)):undefined;}
-  private savePreparation(value:Preparation){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO memory_preparation VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(json);}
+  private savePreparation(value:Preparation){const json=JSON.stringify(value);this.store.db.prepare('INSERT INTO memory_preparation VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(json);}
   private currentRecords(){return this.store.db.prepare('SELECT json FROM memories ORDER BY id').all().map(row=>memorySchema.parse(JSON.parse(String(row.json))));}
   private snapshot(){return sha256(JSON.stringify({binding:this.binding(),memories:this.currentRecords(),deletions:this.memories.deletions.snapshot()}));}
   provider(instanceId:string,namespace?:MemoryProviderNamespace){return this.providerFactory?.(instanceId,namespace)??new WorkerMemoryProvider(this.plugins.runtime(instanceId));}
@@ -69,7 +69,7 @@ export class MemoryBindings {
   assertNewManualWork(){if(this.automation.state().barrier)throw new StoreError('Finish or cancel the Memory preparation before starting another write',409);}
   private command(kind:string,input:{operationId:string;expectedRevision:number},apply:()=>void){const fingerprint=sha256(JSON.stringify({kind,...input})),db=this.store.db;db.exec('BEGIN IMMEDIATE');try{
     const prior=db.prepare('SELECT fingerprint FROM memory_binding_commands WHERE id=?').get(input.operationId);if(prior){if(prior.fingerprint!==fingerprint)throw new StoreError('Memory command identity conflict',409);db.exec('COMMIT');return;}
-    if(input.expectedRevision!==this.automation.state().revision)throw new StoreError('Memory binding changed; refresh before applying',409);apply();this.automation.touch();this.store.reserveMetadata(256);db.prepare('INSERT INTO memory_binding_commands VALUES(?,?)').run(input.operationId,fingerprint);db.exec('COMMIT');
+    if(input.expectedRevision!==this.automation.state().revision)throw new StoreError('Memory binding changed; refresh before applying',409);apply();this.automation.touch();db.prepare('INSERT INTO memory_binding_commands VALUES(?,?)').run(input.operationId,fingerprint);db.exec('COMMIT');
   }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}void this.executor.tick().catch(()=>{});}
   prepare(raw:unknown){const input=preparationSchema.parse(raw);this.command('prepare',input,()=>{const prior=this.preparation();if(prior&&!['applied','cancelled'].includes(prior.view.state))throw new StoreError('Finish or cancel the existing Memory preparation',409);
     const plan=this.plans().find(plan=>plan.id===input.targetPlanId);if(!plan?.available||plan.id===this.binding().planId)throw new StoreError('This Memory plan is unavailable',409);
@@ -87,7 +87,7 @@ export class MemoryBindings {
       const assertAuthority=()=>{signal.throwIfAborted();const current=this.preparation();if(current?.stepId!==preparation.stepId||['cancelled','applied'].includes(current.view.state)||JSON.stringify(this.binding())!==JSON.stringify(preparation.source)||memoryBodyDigest(this.memories.get(memory.id))!==memoryBodyDigest(memory))throw new StoreError('Memory migration input or authority changed',409);};
       assertAuthority();const prior=await provider.read({namespace,key});assertAuthority();
       const receipt=prior&&memoryBodyDigest(prior)===memoryBodyDigest(memory)?{opId,namespace,key,payloadDigest:sha256(JSON.stringify({namespace,key,memory:prior})),state:'applied' as const,eraseVerified:false,recordedAt:new Date().toISOString()}:this.stageMigrationRecord?await this.stageMigrationRecord(namespace,memory,opId,assertAuthority):await provider.put({namespace,key,memory,opId});
-      assertAuthority();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(receipt)));this.store.db.prepare('INSERT OR REPLACE INTO memory_provider_receipts VALUES(?,?)').run(opId,JSON.stringify(receipt));
+      assertAuthority();this.store.db.prepare('INSERT OR REPLACE INTO memory_provider_receipts VALUES(?,?)').run(opId,JSON.stringify(receipt));
     }
     const exported=await provider.export({namespace}),actual=new Map(exported.map(record=>[JSON.stringify(record.key),memoryBodyDigest(record.memory)]));
     if(actual.size!==memories.length||exported.length!==memories.length||memories.some(memory=>actual.get(JSON.stringify(memoryProviderKey(memory)))!==memoryBodyDigest(memory)))throw new StoreError('The target provider did not preserve the complete Memory history',502);

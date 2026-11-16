@@ -17,9 +17,9 @@ import {SourceStore} from '../src/sources.js';
 const inactive:QueryAgent={configured:false,query:async()=>{throw Error('No model calls belong in connection tests');},close:async()=>{}};
 const owner='synthetic-owner-for-connection-tests';
 const headers=(token=owner)=>({authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'});
-function config(directory:string):Config{return {dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:4*1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:['https://synthetic.invalid'],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};}
-async function fixture(t:TestContext,options:{clock?:()=>number;mcp?:boolean;mcpWriteEnabled?:boolean;maxStorageBytes?:number}={}){
-  const directory=await mkdtemp(join(tmpdir(),'mote-connections-')),cfg=config(directory),storageOptions={maxStorageBytes:options.maxStorageBytes},store=new Store(directory,storageOptions),sources=new SourceStore(store);
+function config(directory:string):Config{return {dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:4*1024*1024,insightIntervalHours:0,allowedOrigins:['https://synthetic.invalid'],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};}
+async function fixture(t:TestContext,options:{clock?:()=>number;mcp?:boolean;mcpWriteEnabled?:boolean}={}){
+  const directory=await mkdtemp(join(tmpdir(),'mote-connections-')),cfg=config(directory),storageOptions={},store=new Store(directory,storageOptions),sources=new SourceStore(store);
   if(options.mcp)cfg.connectors={directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'synthetic-static-read-mcp-token-123456789',mcpWriteEnabled:options.mcpWriteEnabled??true,mcpWriteToken:'synthetic-static-write-mcp-token-123456789',mcpWriteSourceIds:['allowed']};
   const connections=new Connections(store,sources,{clock:options.clock});
   let value=await buildApp(cfg,{store,agent:inactive,connections});
@@ -278,17 +278,20 @@ test('capture batches isolate per-item failure, retry idempotently and validate 
   assert.equal((await post([capture()],'invalid')).statusCode,401);
 });
 
-test('batch quota failures preserve accepted receipts and permit idempotent replay',async t=>{
-  const {app,store,storageOptions}=await fixture(t);
-  // Boot with normal room for installed metadata, then leave a measured intake
-  // budget. The batch must exercise real quota rejection after some receipts.
-  storageOptions.maxStorageBytes=store.logicalBytes()+4096;
+test('batch SQLite write failures preserve accepted receipts and permit idempotent replay',async t=>{
+  const {app,store}=await fixture(t);
+  // The first three records commit; later SQLite writes fail while accepted
+  // receipts remain readable and can be safely replayed.
+  store.db.exec("CREATE TRIGGER generated_batch_failure BEFORE INSERT ON captures WHEN (SELECT count(*) FROM captures WHERE device_id='quota-fixture')>=3 BEGIN SELECT RAISE(ABORT,'Generated SQLite batch write failure'); END");
   const captures=Array.from({length:25},()=>({id:randomUUID(),deviceId:'quota-fixture',deviceName:'Synthetic quota fixture',platform:'android',capturedAt:new Date().toISOString(),durationMs:0,source:'activity',appId:'fixture.reader',appName:'Generated reader',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}}));
   const send=()=>app.inject({method:'POST',url:'/api/captures/batch',headers:headers(),payload:{captures}});
   const first=await send();assert.equal(first.statusCode,200);
   const statuses=first.json().results.map((r:{status:number})=>r.status);
-  assert.ok(statuses.includes(201));assert.ok(statuses.includes(507));
+  assert.ok(statuses.includes(201));assert.ok(statuses.includes(500));
   assert.deepEqual((await send()).json().results.map((r:{status:number})=>r.status),statuses.map((s:number)=>s===201?200:s));
+  store.db.exec('DROP TRIGGER generated_batch_failure');
+  assert.deepEqual((await send()).json().results.map((r:{status:number})=>r.status),statuses.map((s:number)=>s===201?200:201));
+  assert.deepEqual((await send()).json().results.map((r:{status:number})=>r.status),Array(25).fill(200));
 });
 
 test('gzip JSONL capture bundles are unpacked, scoped and acknowledged per record',async t=>{

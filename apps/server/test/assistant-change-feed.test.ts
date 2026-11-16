@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import type {QueryInput} from '@mote/agent';
-import type {QueryResult} from '@mote/shared';
+import type {QueryResult,SourceDocument} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {AssistantChangeFeed} from '../src/assistant-change-feed.js';
@@ -20,11 +20,11 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {competingSqliteWrite} from './fixtures/sqlite-writer.js';
 
-async function fixture(t:TestContext,limits?:{maxStorageBytes:number}){
+async function fixture(t:TestContext,fault?:(store:Store)=>void){
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-changes-'));
- const config:Config={dataDir:directory,dataKey:'42'.repeat(32),contentEncryptionEnabled:true,token:'generated-change-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,dataKey:'42'.repeat(32),contentEncryptionEnabled:true,token:'generated-change-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  let fixtureStore:Store|undefined;
- const build=()=>{fixtureStore=limits?new Store(directory,limits):undefined;return buildApp(config,{store:fixtureStore,backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model request');},close:async()=>{}}});};
+ const build=()=>{fixtureStore=fault?new Store(directory):undefined;if(fixtureStore)fault?.(fixtureStore);return buildApp(config,{store:fixtureStore,backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model request');},close:async()=>{}}});};
  let node=await build(),now=1000;
  const open=()=>new AssistantChangeFeed(node.store,node.materials,node.modelAuthorization,ids=>{
   if(!node.featureServices.evidenceReader.contextDependenciesAllowed(ids))throw new StoreError('Evidence unavailable',409);
@@ -32,7 +32,7 @@ async function fixture(t:TestContext,limits?:{maxStorageBytes:number}){
  let feed=open();await node.app.ready();
  const headers={authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'};
  const createSource=async(id='generated-source')=>{const result=await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id,name:'Generated source',kind:'custom',deviceId:'generated-device',platform:'import',retention:'archive'}});assert.equal(result.statusCode,200,result.body);};
- const upsert=async(externalId:string,revision:string,deleted=false)=>{const result=await node.app.inject({method:'PUT',url:'/api/sources/generated-source/items',headers,payload:{externalId,revision,observedAt:`2026-10-0${revision}T00:00:00Z`,kind:'message',layer:'original',text:deleted?'':`Generated version ${revision}`,deleted}});assert.equal(result.statusCode,200,result.body);return result.json().id as string;};
+ const upsert=async(externalId:string,revision:string,deleted=false,document?:SourceDocument)=>{const result=await node.app.inject({method:'PUT',url:'/api/sources/generated-source/items',headers,payload:{externalId,revision,observedAt:`2026-10-0${revision}T00:00:00Z`,kind:'message',layer:'original',text:deleted?'':`Generated version ${revision}`,deleted,...(document?{document}:{})}});assert.equal(result.statusCode,200,result.body);return result.json().id as string;};
  const command=(action:'on'|'off'|'stop')=>node.modelAuthorization.command({action,revision:node.modelAuthorization.view().revision,operationId:randomUUID()});
  t.after(async()=>{await node.app.close();fixtureStore?.close();rmSync(directory,{recursive:true,force:true});});
  return {get node(){return node;},get feed(){return feed;},headers,createSource,upsert,command,advance(ms:number){now+=ms;},async restart(){await node.app.close();fixtureStore?.close();node=await build();feed=open();await node.app.ready();}};
@@ -68,19 +68,17 @@ test('a competing process cannot invalidate the encrypted change input snapshot 
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.change'").get()!.n,1);
 });
 
-test('quota exhaustion preserves pending input through restart and resumes when capacity returns',async t=>{
- const limits={maxStorageBytes:30_000_000},f=await fixture(t,limits);
- await f.createSource();f.command('on');const id=await f.upsert('quota','1');
- const cursor=Number(f.feed.coverage().cursor),bytes=f.node.store.logicalBytes();
- limits.maxStorageBytes=bytes+64;
+test('actual SQLite FULL preserves pending input through restart and resumes after recovery',async t=>{
+ let pageLimit:number|undefined;const f=await fixture(t,store=>{if(pageLimit!==undefined)store.db.exec('PRAGMA max_page_count='+pageLimit);});
+ await f.createSource();f.command('on');const id=await f.upsert('quota','1',false,{originalMetadata:{generated:'x'.repeat(16000)}});
+ const cursor=Number(f.feed.coverage().cursor),bytes=f.node.store.logicalBytes();pageLimit=Number(f.node.store.db.prepare('PRAGMA page_count').get()!.page_count);f.node.store.db.exec('PRAGMA max_page_count='+pageLimit);
  assert.equal(f.feed.tick(),0);assert.equal(Number(f.feed.coverage().cursor),cursor);
  assert.equal(f.node.store.logicalBytes(),bytes,'a failed task and cursor update leave no charged bytes');
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.change'").get()!.n,0);
- await f.restart();
- assert.equal(Number(f.feed.coverage().cursor),cursor,'startup leaves the unconsumed original pending');
+ pageLimit=undefined;f.node.store.db.exec('PRAGMA max_page_count=1073741823');await f.restart();
+ assert.ok(Number(f.feed.coverage().cursor)>=cursor,'recovery never moves the source cursor backwards');
  assert.equal(f.node.store.evidence([id])[0]!.ocrText,'Generated version 1');
- assert.equal(f.node.store.logicalBytes(),bytes);
- limits.maxStorageBytes=30_000_000;f.feed.tick();f.advance(11);
+ f.feed.tick();const first=Number(f.node.store.db.prepare('SELECT min(first_at) n FROM assistant_change_work').get()!.n);f.advance(first+11-1000);
  assert.equal(f.feed.ready().length,1);assert.equal(f.feed.ready()[0]!.input.captureId,id);
  f.feed.tick();assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.change'").get()!.n,1);
 });

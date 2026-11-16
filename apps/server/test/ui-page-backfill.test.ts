@@ -15,7 +15,7 @@ const at=(second:number)=>new Date(Date.parse('2026-10-10T00:00:00Z')+second*100
 const token='generated-backfill-owner-token-000000';
 const headers={authorization:`Bearer ${token}`};
 const agent={configured:false,query:async()=>{throw Error('No live model in generated fixtures');},close:async()=>{}};
-function config(dataDir:string):Config{return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,dataKey:'32'.repeat(32),maxStorageBytes:30_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};}
+function config(dataDir:string):Config{return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,dataKey:'32'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};}
 function record(source:'screen'|'ui_page',second:number){
   const page:UiPageV3={version:3,scope:'visible_window',adapterId:'generated.fields',adapterVersion:'1',appVersion:'1',activity:'fixture.ArticleActivity',status:'ok',truncated:false,
     observations:{firstAt:at(second),lastAt:at(second),count:1},objects:[structuredObject({kind:'article',title:'Generated article',body:[{text:'Generated retained paragraph'}],
@@ -108,7 +108,7 @@ test('retired selected-node pages are rejected while current Desktop and Android
 
 test('a long repeated article group keeps every original and chunks the full text without a total-text cap',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-field-text-budget-'));
-  const runtime=await buildApp({...config(directory),maxStorageBytes:100_000_000},{agent,backgroundWorker:false});
+  const runtime=await buildApp({...config(directory),},{agent,backgroundWorker:false});
   t.after(async()=>{await runtime.app.close();rmSync(directory,{recursive:true,force:true});});
   const originals:ReturnType<typeof record>[]=[];
   for(let index=0;index<80;index++){

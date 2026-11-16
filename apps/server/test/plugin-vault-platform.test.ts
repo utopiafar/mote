@@ -95,7 +95,7 @@ const draft=(text='Generated material text'):MaterialDraft=>({
 
 test('scoped real FileStore and MaterialStore retain IDs, revisions, encrypted bytes and accounting across restart',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-vault-restart-')),auth=boundary();
-  const config={dataDir:directory,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true,maxStorageBytes:2_000_000};
+  const config={dataDir:directory,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true,};
   let platform=createVaultPlatform(config,auth.authorization);const owner=consumer();
   t.after(async()=>{owner.close();await platform.close();rmSync(directory,{recursive:true,force:true});});
   await platform.prepare();await platform.start();let access=platform.repositoriesForAssembly(owner.scope);
@@ -122,7 +122,7 @@ test('scoped real FileStore and MaterialStore retain IDs, revisions, encrypted b
   assert.equal(access.materials.get(first.ref)?.revision,first.revision);assert.equal(access.materials.get(second.id)?.revision,second.revision);
   assert.equal(access.materials.read(second.ref).text,'Generated revised text\n');
   const after=access.stats();
-  for(const key of ['captures','blobs','imageBytes','fileBytes','assetBytes','logicalBytes','maxBytes','imagesEncrypted'] as const)assert.equal(after[key],before[key],key);
+  for(const key of ['captures','blobs','imageBytes','fileBytes','assetBytes','logicalBytes','imagesEncrypted'] as const)assert.equal(after[key],before[key],key);
   assert.ok(auth.checks>0,'write methods must invoke the fixed external verifier');
 });
 
@@ -136,11 +136,11 @@ test('release, scope revocation and quiesce isolate consumers while stop revokes
   assert.ok(existsSync(join(directory,'mote.sqlite')),'business disable must preserve the vault');assert.equal(contender(directory).stdout,'acquired');
 });
 
-test('fixed verifier rejection rolls back the actual Material write and quota failures do not publish an original',async t=>{
-  const directory=mkdtempSync(join(tmpdir(),'mote-vault-fences-')),auth=boundary(),platform=createVaultPlatform({dataDir:directory,maxStorageBytes:100_000},auth.authorization),owner=consumer();
+test('fixed verifier rejection rolls back the actual Material write while accepted originals remain retained',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-vault-fences-')),auth=boundary(),platform=createVaultPlatform({dataDir:directory,},auth.authorization),owner=consumer();
   t.after(async()=>{owner.close();await platform.close();rmSync(directory,{recursive:true,force:true});});
   await platform.prepare();await platform.start();const access=platform.repositoriesForAssembly(owner.scope);
-  assert.throws(()=>access.originals.put({name:'too-large.bin',bytes:Buffer.alloc(100_001)},auth.token),{statusCode:507});
+  const accepted=access.originals.put({name:'retained.bin',bytes:Buffer.alloc(100_001)},auth.token);assert.equal(accepted.sizeBytes,100_001);
   const before=access.stats().logicalBytes;
   assert.throws(()=>access.transactions.transaction(auth.token,()=>{access.materials.publish(draft(),{},auth.token);auth.revoke();}),/fixture grant revoked/);
   assert.equal(access.materials.get(draft().id),undefined);assert.equal(access.stats().logicalBytes,before);

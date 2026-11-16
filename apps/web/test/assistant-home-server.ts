@@ -8,7 +8,7 @@ import {materialId} from '../../server/src/materials.js';
 const directory=process.argv[2];if(!directory)throw Error('Generated fixture directory required');
 const token=randomBytes(32).toString('hex'),at='2026-11-01T08:00:00.000Z',headers={authorization:'Bearer '+token};
 let modelCalls=0;
-const runtime=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},
+const runtime=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},
  {backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model in generated Home fixture');},close:async()=>{}}});
 const fault=()=>existsSync(join(directory,'fault.json'))?JSON.parse(readFileSync(join(directory,'fault.json'),'utf8')) as {features?:'missing'|'failed';onboarding?:'denied';cards?:'failed';work?:'failed'}:{};
 runtime.app.addHook('onRequest',async(request,reply)=>{

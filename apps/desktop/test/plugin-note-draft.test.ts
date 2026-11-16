@@ -94,8 +94,7 @@ it('consumes a real Central save receipt and reads the saved note through the de
   directories.push(serverDirectory);
   const token = 'generated-plugin-note-' + randomUUID();
   const node = await buildApp({
-    dataDir: join(serverDirectory, 'data'), token, tokenPath: 'generated', host: '127.0.0.1', port: 0,
-    maxStorageBytes: 20_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0,
+    dataDir: join(serverDirectory, 'data'), token, tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0,
     allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
     embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
   }, {

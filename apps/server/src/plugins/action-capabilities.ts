@@ -25,7 +25,7 @@ export class ActionCapabilities {
   try{const prior=db.prepare('SELECT fingerprint,receipt FROM action_capability_commands WHERE id=?').get(input.operationId);
    if(prior){if(prior.fingerprint!==fingerprint)throw new StoreError('Capability operation identity conflicts with its original request',409);db.exec('COMMIT');return JSON.parse(String(prior.receipt));}
    if(input.expectedRevision===Number.MAX_SAFE_INTEGER)throw new StoreError('Capability revision is exhausted',503);
-   const result=work(),receipt=JSON.stringify(result);this.store.reserveMetadata(Buffer.byteLength(receipt)+fingerprint.length+input.operationId.length+128);
+   const result=work(),receipt=JSON.stringify(result);
    db.prepare('INSERT INTO action_capability_commands VALUES(?,?,?)').run(input.operationId,fingerprint,receipt);db.exec('COMMIT');return result;
   }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
  }
@@ -34,7 +34,7 @@ export class ActionCapabilities {
   return this.command('declare:'+credential.id,input,()=>{this.connections.assertActive(credential);const prior=this.read<ActionDeviceCapability>('action_device_capabilities',input.deviceId);
    if((prior?.revision??0)!==input.expectedRevision)throw new StoreError('Device capability declaration changed; refresh before retrying',409);
    const {operationId:_,expectedRevision:__,...fields}=input,value={...fields,revision:input.expectedRevision+1,connectionId:credential.id,declaredAt:new Date().toISOString(),connectionActive:true};
-   const json=JSON.stringify(value);this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(JSON.stringify(prior??''))));
+   const json=JSON.stringify(value);
    this.store.db.prepare('INSERT INTO action_device_capabilities VALUES(?,?) ON CONFLICT(device_id) DO UPDATE SET json=excluded.json').run(input.deviceId,json);return value;
   });
  }
@@ -90,7 +90,7 @@ export class ActionCapabilities {
   }
   for(const identity of input.inputs.sources)if(!this.inputs.valid(identity))throw new StoreError('Action input source identity changed',409);
   const {operationId:_,expectedRevision:__,...fields}=input,at=new Date().toISOString(),value:ActionCapabilityDraft={...fields,revision:input.expectedRevision+1,state:'draft',executionEnabled:false,createdAt:prior?.createdAt??at,updatedAt:at};
-  const json=JSON.stringify(value);this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(JSON.stringify(prior??''))));this.store.db.prepare('INSERT INTO action_capability_drafts VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(input.id,json);return value;
+  const json=JSON.stringify(value);this.store.db.prepare('INSERT INTO action_capability_drafts VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(input.id,json);return value;
  });}
  revokeDraft(id:string,raw:unknown){const input=actionCapabilityCommandSchema.parse(raw);return this.command('revoke:'+id,input,()=>{
   const prior=this.read<ActionCapabilityDraft>('action_capability_drafts',id);if(!prior)throw new StoreError('Capability draft not found',404);if(prior.revision!==input.expectedRevision)throw new StoreError('Capability draft changed; refresh before retrying',409);
@@ -135,7 +135,7 @@ export class ActionCapabilities {
   const at=new Date().toISOString();
   const value:ActionGrant={...draft,id:input.id,draftId:draft.id,draftRevision:draft.revision,revision:input.expectedRevision+1,plugin:input.plugin,connectionId,inputCursor:Number(this.store.db.prepare('SELECT COALESCE(MAX(seq),0) seq FROM changes').get()!.seq),state:'active',executionEnabled:true,createdAt:previous?.createdAt??at,updatedAt:at};
   if(!this.available(value))throw new StoreError('Plugin, device declaration, or source scope changed; review before authorizing',409);
-  const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json)+256);this.store.db.prepare('INSERT INTO action_capability_grants VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,json);return value;
+  const json=JSON.stringify(value);this.store.db.prepare('INSERT INTO action_capability_grants VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,json);return value;
  });}
  revokeGrant(id:string,raw:unknown){const input=actionCapabilityCommandSchema.parse(raw);return this.command('revoke-grant:'+id,input,()=>{
   const previous=this.grant(id);if(!previous)throw new StoreError('Action grant not found',404);if(previous.revision!==input.expectedRevision)throw new StoreError('Action grant changed; refresh before revoking',409);

@@ -11,7 +11,7 @@ import type {ModelAgentFactory} from '../src/model-agent.js';
 
 const owner='generated-assistant-draft-owner',headers={authorization:'Bearer '+owner};
 const config=(dataDir:string):Config=>({dataDir,token:owner,tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-  maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
   model:'generated-model',modelBaseUrl:'https://model.example.invalid/v1',apiKey:'generated-key',modelProvider:'custom',
   modelProtocol:'openai-completions',modelReasoningEffort:'auto',allowUnauthenticatedLocal:false,
   embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});

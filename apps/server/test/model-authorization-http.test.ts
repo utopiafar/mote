@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import sharp from 'sharp';
 import {createServer} from 'node:http';
@@ -12,9 +13,9 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {readAgentCredential} from './login-fixture.js';
-async function fixture(t:import('node:test').TestContext,factory:ModelAgentFactory,overrides:Partial<Config>={},limits?:{maxStorageBytes:number}){
+async function fixture(t:import('node:test').TestContext,factory:ModelAgentFactory,overrides:Partial<Config>={},limits?:ConstructorParameters<typeof Store>[1]){
  const directory=await mkdtemp(join(tmpdir(),'mote-authorization-http-'));
- const config:Config={dataDir:directory,token:'generated-owner-only',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://fixture.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',...overrides};
+ const config:Config={dataDir:directory,token:'generated-owner-only',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://fixture.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',...overrides};
  let fixtureStore=limits?new Store(directory,limits):undefined;
  let node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory,store:fixtureStore});const headers={authorization:'Bearer '+config.token};
  t.after(async()=>{await node.app.close();fixtureStore?.close();await rm(directory,{recursive:true,force:true});});
@@ -247,8 +248,8 @@ test('assembled image understanding publishes when the switch is on without conv
  assert.ok(f.node.perception.detail(id).products.some(product=>product.kind==='understanding'));
 });
 
-test('HTTP historical quota failures leave no manual admission or bytes across retry and restart',async t=>{
- const limits={maxStorageBytes:20_000_000};const f=await fixture(t,async()=>({configured:true,close:async()=>{},query:async()=>{throw Error('No model expected');}}),{},limits);
+test('HTTP historical SQLite write failures leave no manual admission or bytes across retry and restart',async t=>{
+ const limits={};const f=await fixture(t,async()=>({configured:true,close:async()=>{},query:async()=>{throw Error('No model expected');}}),{},limits);
  f.node.sources.register({id:'generated-quota',name:'Generated quota',kind:'local-files',deviceId:'generated-device',platform:'import',retention:'archive'});
  const bytes=await sharp({create:{width:4,height:4,channels:3,background:'#224466'}}).png().toBuffer(),begun=f.node.files.begin({sourceId:'generated-quota',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),kind:'file',layer:'original',text:'',mimeType:'image/png'},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});f.node.files.part(begun.uploadId,0,bytes,()=>{});await f.node.files.commit(begun.uploadId,()=>{});f.node.perception.prepare();
  const preview=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-preview',headers:f.headers,payload:{sourceId:'generated-quota'}});assert.equal(preview.statusCode,200,preview.body);
@@ -256,10 +257,9 @@ test('HTTP historical quota failures leave no manual admission or bytes across r
  // before measuring bytes attributable to the confirmed historical command.
  await f.node.materialOrganizer.tick();f.node.assistantChanges.tick();
  const before=f.node.store.logicalBytes(),count=f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n;
- const connections=f.node.featureServices.availableModelConnections(),manualBytes=Buffer.byteLength(JSON.stringify({id:'owner-media-batch:'+randomUUID(),kind:'manual',roots:['capture:'+('0'.repeat(36))],connections}))+300;
- limits.maxStorageBytes=before+manualBytes;
- for(let i=0;i<2;i++){const response=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-process',headers:f.headers,payload:{token:preview.json().token}});assert.equal(response.statusCode,507,response.body);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n,count);assert.equal(f.node.store.logicalBytes(),before);}
- limits.maxStorageBytes=20_000_000;await f.restart();assert.equal(f.node.store.logicalBytes(),before);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n,count);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM image_backfill_items').get()!.n,0);
+ const recover=rejectSqliteWrites(f.node.store,'image_backfill_items');
+ for(let i=0;i<2;i++){const response=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-process',headers:f.headers,payload:{token:preview.json().token}});assert.equal(response.statusCode,500,response.body);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n,count);assert.equal(f.node.store.logicalBytes(),before);}
+ recover();await f.restart();assert.equal(f.node.store.logicalBytes(),before);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n,count);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM image_backfill_items').get()!.n,0);
  const next=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-preview',headers:f.headers,payload:{sourceId:'generated-quota'}});const approved=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-process',headers:f.headers,payload:{token:next.json().token}});assert.equal(approved.statusCode,200,approved.body);
 });
 

@@ -30,7 +30,7 @@ async function fixture(t:any){
   for(const value of ${JSON.stringify(recipes)})dispose.push(ctx.memoryStrategies.registerIntegrationRecipe(value));
  },close(){for(const fn of dispose.reverse())fn();}};}};`);
  const connectorManifest=(await import(pathToFileURL(modulePath).href)).default;
- const config:Config={dataDir:join(directory,'vault'),token:'generated-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:join(directory,'vault'),token:'generated-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const calls:QueryInput[]=[],control:{duringQuery?:(input:QueryInput)=>Promise<void>|void;badQuote?:boolean;badRelation?:boolean;relation?:boolean;failCoding?:boolean;failPersonal?:boolean;reject?:boolean}={};
  const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
   calls.push(input);await control.duringQuery?.(input);

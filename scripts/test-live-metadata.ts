@@ -49,7 +49,7 @@ async function main(){
     apiKey=(await readFile(keyPath,'utf8')).trim();if(apiKey.length<20||apiKey.length>4096)fail('invalid_key_file');
   }
   const out=await privateOutput(opts.out),save=async(name:string,value:unknown)=>{const path=join(out,name);await writeFile(path,JSON.stringify(value,null,2),{mode:0o600,flag:'wx'});await chmod(path,0o600);};
-  const config:Config={dataDir:join(out,'data'),profile:'test',token:randomUUID()+randomUUID(),tokenPath:'unused',dataKey:undefined,host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:opts.model,modelBaseUrl:'https://api.deepseek.com',apiKey,allowUnauthenticatedLocal:false,modelReasoningEffort:'high',modelMaxTokens:8192,modelRequestTimeoutMs:opts.timeoutMs,agentTimeoutMs:opts.timeoutMs,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
+  const config:Config={dataDir:join(out,'data'),profile:'test',token:randomUUID()+randomUUID(),tokenPath:'unused',dataKey:undefined,host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:opts.model,modelBaseUrl:'https://api.deepseek.com',apiKey,allowUnauthenticatedLocal:false,modelReasoningEffort:'high',modelMaxTokens:8192,modelRequestTimeoutMs:opts.timeoutMs,agentTimeoutMs:opts.timeoutMs,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
   const inactive:QueryAgent={configured:false,query:async()=>fail('prepare_only_model_call_refused'),close:async()=>{}};
   const {app,sources,store}=await buildApp(config,opts.prepareOnly?{agent:inactive}:undefined);
   try{

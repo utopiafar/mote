@@ -12,7 +12,7 @@ import {materialId} from '../src/materials.js';
 const token='generated-material-reference-owner',headers={authorization:'Bearer '+token};
 async function fixture(t:TestContext,afterRead?:()=>Promise<void>,onClose?:()=>void){
  const directory=mkdtempSync(join(tmpdir(),'mote-material-reference-')),seen:QueryInput[]=[],readRefs:string[]=[];
- const config:Config={dataDir:directory,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:2_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const build=()=>buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{onClose?.();},query:async input=>{
   seen.push(input);let original:{id:string;capturedAt:string;appName?:string;ocrText:string}|undefined;
   if(input.anchorMaterialRef){

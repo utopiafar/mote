@@ -6,7 +6,7 @@ import {buildApp} from '../../server/src/app.js';
 import type {Config} from '../../server/src/config.js';
 const dataDir=await mkdtemp(join(tmpdir(),'mote-item-history-'));
 const token='generated-item-history-fixture-token';
-const config:Config={dataDir,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:Config={dataDir,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
 const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No fixture model')},close:async()=>{}}});
 const lost=new Set<string>();
 const proxy=createServer((req,res)=>{void(async()=>{

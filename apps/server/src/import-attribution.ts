@@ -34,7 +34,6 @@ export class ImportAttributionStore {
       try{
         for(const row of store.db.prepare("SELECT id,version,json FROM import_owner_declarations WHERE json LIKE 'json:%'").all()){
           const json=encodeMemoryPrivate(store,decodeMemoryPrivate(store,String(row.json)));
-          store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(row.json))));
           store.db.prepare('UPDATE import_owner_declarations SET json=? WHERE id=? AND version=?').run(json,row.id,row.version);
         }
         if(own)store.db.exec('COMMIT');
@@ -48,7 +47,6 @@ export class ImportAttributionStore {
     const prior=this.store.db.prepare('SELECT fingerprint FROM import_owner_declarations WHERE id=? AND version=?').get(pin.id,pin.version);
     if(prior){if(prior.fingerprint!==pin.fingerprint)throw new StoreError('Frozen import declaration changed',409);return pin;}
     const json=encodeMemoryPrivate(this.store,{instruction:value.instruction});
-    this.store.reserveMetadata(Buffer.byteLength(json)+512);
     this.store.db.prepare('INSERT INTO import_owner_declarations VALUES(?,?,?,?,?)').run(pin.id,pin.version,value.sourceId,pin.fingerprint,json);
     return pin;
   }
@@ -61,7 +59,6 @@ export class ImportAttributionStore {
     if(!declaration||declaration.fingerprint!==pin.fingerprint||capture?.provenance?.sourceId!==declaration.source_id)throw new StoreError('Import declaration capture scope changed',409);
     const prior=this.store.db.prepare('SELECT id,version FROM capture_import_declarations WHERE capture_id=?').get(captureId);
     if(prior){if(prior.id!==pin.id||prior.version!==pin.version)throw new StoreError('Original capture already has an import declaration',409);return;}
-    this.store.reserveMetadata(256);
     this.store.db.prepare('INSERT INTO capture_import_declarations VALUES(?,?,?)').run(captureId,pin.id,pin.version);
   }
   /** File excerpts/chunks retain the declaration of their exact original. */

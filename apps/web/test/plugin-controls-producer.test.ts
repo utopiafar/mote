@@ -24,7 +24,7 @@ const {sourcePluginForSetup}=await import('../src/plugins/sources/registry.js');
 
 test('the real Central response drives plugin switches, stopped-source guidance and the separate automatic-memory settings',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-plugin-web-contract-')),owner='generated-web-owner-'+randomUUID();
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false}};
+  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No models in the UI/HTTP contract');},async close(){}}});
   const writes:{path:string;body:unknown}[]=[];
   const api={request:async(path:string,init?:RequestInit)=>{

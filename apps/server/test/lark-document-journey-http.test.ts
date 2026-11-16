@@ -14,7 +14,7 @@ import {fixtureMemoryPlan,generatedMemoryOutput} from './fixtures/memory-plannin
 
 test('all nine generated document journeys use owner HTTP intake, automatic reviewed Memory, revision and restart without replay',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-lark-http-')),token='generated-lark-http-owner-token',headers={authorization:'Bearer '+token},upstream=larkJourneyRunner();
-  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const calls:QueryInput[]=[];
   // This provider is an explicit fixture: it verifies lifecycle and proof wiring,
   // not semantic interpretation or real Feishu coverage. Live quality is separate.

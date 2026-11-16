@@ -17,7 +17,7 @@ async function fixture(t:TestContext,mismatch=false){
   writeFileSync(path,content.plain);writeFileSync(path+'.br',content.br);writeFileSync(path+'.gz',content.gzip);
  }
  writeFileSync(join(web,'build-info.json'),JSON.stringify({version:mismatch?'generated-mismatch':JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version}));
- const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
  const node=await buildApp(config,{webRoot:web,backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in fixtures');},close:async()=>{}}});
  t.after(async()=>{try{await node.app.close();}finally{rmSync(dir,{recursive:true,force:true});}});
  return {node,assets,index,headers:{authorization:'Bearer '+token}};

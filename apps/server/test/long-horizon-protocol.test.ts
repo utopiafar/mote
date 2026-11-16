@@ -11,7 +11,7 @@ import type {Config} from '../src/config.js';
 /** Six months of fictional messages/files. No personal account, content or image is read. */
 test('480 long-horizon events aggregate into four conversations per source: HTTP batch and individual ingestion, replay, revision, paging, scope, deletion and restart',async t=>{
  const dir=await mkdtemp(join(tmpdir(),'mote-long-horizon-'));
- const config:Config={dataDir:dir,token:'synthetic-long-horizon-token-000000000',tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,maxStorageBytes:200_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:dir,token:'synthetic-long-horizon-token-000000000',tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  let node=await buildApp(config);t.after(async()=>{await node.app.close();await rm(dir,{recursive:true,force:true});});
  const headers={authorization:`Bearer ${config.token}`};
  async function request(method:'POST'|'PUT'|'GET'|'DELETE',url:string,payload?:unknown){const result=await node.app.inject({method,url,headers,payload:payload as any});assert.ok(result.statusCode>=200&&result.statusCode<300,`${url}: ${result.statusCode} ${result.body}`);return result.json();}

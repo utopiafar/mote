@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,mkdirSync} from 'node:fs';
@@ -194,8 +195,8 @@ test('cancellation revokes every coordinator beyond a hundred-step operation pag
 });
 
 
-test('private durable payload history consumes the vault quota and a refused start rolls back',async t=>{
- const {runtime,store}=fixture(t,1,{maxStorageBytes:80000});runtime.registerCoordinator({id:'quota',execute:async()=>null});const initial=store.logicalBytes();runtime.start({id:'quota-one',profileId:'quota',goal:'Generated task',input:{generated:'x'.repeat(24000)},allowedCapabilities:[]});assert.ok(store.logicalBytes()>=initial+24000);runtime.start({id:'quota-two',profileId:'quota',goal:'Generated task',input:{generated:'x'.repeat(24000)},allowedCapabilities:[]});assert.throws(()=>runtime.start({id:'quota-refused',profileId:'quota',goal:'Generated task',input:{generated:'x'.repeat(40000)},allowedCapabilities:[]}),/storage limit/);assert.throws(()=>runtime.get('quota-refused'),/not found/);assert.equal(store.db.prepare("SELECT count(*) n FROM delegation_payloads WHERE work_id='quota-refused'").get()?.n,0);
+test('private durable payload history is metered and a failed write rolls back a start',async t=>{
+ const {runtime,store}=fixture(t,1,{});runtime.registerCoordinator({id:'quota',execute:async()=>null});const initial=store.logicalBytes();runtime.start({id:'quota-one',profileId:'quota',goal:'Generated task',input:{generated:'x'.repeat(24000)},allowedCapabilities:[]});assert.ok(store.logicalBytes()>=initial+24000);runtime.start({id:'quota-two',profileId:'quota',goal:'Generated task',input:{generated:'x'.repeat(24000)},allowedCapabilities:[]});const recover=rejectSqliteWrites(store,'delegation_payloads');assert.throws(()=>runtime.start({id:'quota-refused',profileId:'quota',goal:'Generated task',input:{generated:'x'.repeat(40000)},allowedCapabilities:[]}),/Generated SQLite write failure/);assert.throws(()=>runtime.get('quota-refused'),/not found/);assert.equal(store.db.prepare("SELECT count(*) n FROM delegation_payloads WHERE work_id='quota-refused'").get()?.n,0);recover();
 });
 
 

@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -28,7 +29,7 @@ const missing=(error:unknown)=>error instanceof StoreError&&error.statusCode===4
 
 async function fixture(t:TestContext){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-commitments-'));
- const config:Config={dataDir,token:'generated-commitment-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir,token:'generated-commitment-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  let now='2026-10-01T12:00:00Z';
@@ -246,17 +247,17 @@ test('a failed retirement rolls back both original deletion and timeline cleanup
  assert.throws(()=>f.commitments.get(saved.id,all),missing);
 });
 
-test('quota failure leaves no partial commitment or evidence rows',async t=>{
+test('a commitment event write failure leaves no partial commitment or evidence rows',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-commitment-quota-'));let store=new Store(dir);
  const id=randomUUID(),body='Generated quota evidence';await store.ingest({id,deviceId:'generated-device',deviceName:'Generated',platform:'import',source:'note',capturedAt:at,durationMs:0,ocrText:body});
- new EvidenceReader(store,new SourceStore(store));const budget=store.logicalBytes()+1000;store.close();store=new Store(dir,{maxStorageBytes:budget});
+ new EvidenceReader(store,new SourceStore(store));store.close();store=new Store(dir,{});
  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
  const service=new AssistantCommitments(store,new EvidenceReader(store,new SourceStore(store))),commitmentId=randomUUID(),eventId=randomUUID();
  const input:CommitmentProposal={commitmentId,eventId,kind:'commitment',occurredAt:null,summary:'Generated content '.repeat(300),changes:{title:'Generated quota'},evidence:[{id,quote:body,offset:0}],evidenceDependencies:{version:1,complete:true,ids:[id]}};
- store.db.exec('BEGIN IMMEDIATE');assert.throws(()=>service.publish(input,undefined,all,()=>{}),{statusCode:507});assert.equal(store.db.isTransaction,true);store.db.exec('COMMIT');
+ const recover=rejectSqliteWrites(store,'assistant_commitment_events');store.db.exec('BEGIN IMMEDIATE');assert.throws(()=>service.publish(input,undefined,all,()=>{}),/Generated SQLite write failure/);assert.equal(store.db.isTransaction,true);store.db.exec('COMMIT');
  assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_commitments WHERE id=?').get(commitmentId)!.n,0);
  assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_commitment_events WHERE event_id=?').get(eventId)!.n,0);
- assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_commitment_evidence WHERE event_id=?').get(eventId)!.n,0);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_commitment_evidence WHERE event_id=?').get(eventId)!.n,0);recover();
 });
 
 test('the actual stored semantic producer and A5 reader provide original proof and full lineage to the commitment consumer',async t=>{

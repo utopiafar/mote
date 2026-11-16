@@ -16,7 +16,7 @@ const headers={authorization:'Bearer '+token};
 const pythonExecutable=process.platform==='darwin'?'/Library/Developer/CommandLineTools/usr/bin/python3':'/usr/bin/python3';
 const pythonSandbox=process.platform==='darwin'?existsSync(pythonExecutable):['/usr/bin/bwrap','/bin/bwrap'].some(existsSync);
 
-const config=(dataDir:string,packRoot:string,scriptSha256:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,
+const config=(dataDir:string,packRoot:string,scriptSha256:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,
   importPythonPacks:[{id:'fixture.import-pack',version:'1',packRoot,script:'main.py',scriptSha256,pythonExecutable,maxInputFiles:16}]});
 
 async function settle(node:Awaited<ReturnType<typeof buildApp>>,id:string){

@@ -61,7 +61,7 @@ test('timing and logger failures preserve synchronous values, promises and the o
 test('real app Memory reader keeps its result and original failure, leaves Ask unobserved, and closes the observer',async t=>{
  const {buildApp}=await import('../src/app.js');
  const directory=mkdtempSync(join(tmpdir(),'mote-real-reader-observation-'));
- const node=await buildApp({dataDir:directory,token:'generated-observation-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-stub',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true,logLevel:'info'},
+ const node=await buildApp({dataDir:directory,token:'generated-observation-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-stub',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true,logLevel:'info'},
   {backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
    await reader.evidence({ids:[jobId]});return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};
   }})});

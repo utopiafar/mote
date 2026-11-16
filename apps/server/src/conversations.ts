@@ -48,12 +48,11 @@ export class Conversations {
         const turn=JSON.parse(String(row.json)) as ConversationTurn,receipt=historyEvidenceDependencies(store,resolveDependencies(store,turn.result?.evidenceDependencies));
         if(!receipt)continue;
         const growth=Buffer.byteLength(JSON.stringify({...turn,historyEvidenceDependencies:receipt}))-Buffer.byteLength(String(row.json));
-        store.reserveMetadata(Math.max(0,growth));
         store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.historyEvidenceDependencies',json(?)) WHERE id=?").run(JSON.stringify(receipt),row.id);
         store.db.prepare("UPDATE conversations SET json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?) WHERE id=?").run(growth,row.conversation_id);
       }
       store.db.exec('RELEASE conversation_history_receipts');
-    }catch(error){store.db.exec('ROLLBACK TO conversation_history_receipts; RELEASE conversation_history_receipts');throw error;}
+    }catch(error){if(store.db.isTransaction){store.db.exec('ROLLBACK TO conversation_history_receipts; RELEASE conversation_history_receipts');}throw error;}
   }
 
   list({limit=50,cursor}:{limit?:number;cursor?:string}={}) {
@@ -75,7 +74,6 @@ export class Conversations {
   create():{id:string} {return this.transaction(()=>this.createEmpty());}
   private createEmpty():{id:string} {
     const id=randomUUID(),now=new Date().toISOString();
-    this.store.reserveMetadata(512);
     this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(id,'',now,now,JSON.stringify({scope:{},turnCount:0,status:'completed',bytes:0,revision:0,nextSeq:0}));
     return {id};
   }
@@ -197,7 +195,6 @@ export class Conversations {
       if(input.conversationId&&!conversation)throw new StoreError('Conversation not found',404);
       const message:ConversationTurn={id:randomUUID(),seq:this.nextSeq(conversationId),question,scope,status:'accepted',version:1,...(input.clientRequestId?{clientRequestId:input.clientRequestId}:{}),...(modelProfileId?{modelProfileId}:{}),...(modelOverride?{modelOverride}:{}),...(attachments?.length?{attachments}:{}),createdAt:now};
       const json=JSON.stringify(message),size=Buffer.byteLength(json);
-      this.store.reserveMetadata(size+512);
       if(conversation)this.store.db.prepare("UPDATE conversations SET title=CASE WHEN title='' THEN ? ELSE title END,updated_at=?,json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.status','accepted','$.nextSeq',?) WHERE id=?").run(Array.from(question).slice(0,80).join(''),now,size,message.seq+1,conversationId);
       else this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(conversationId,Array.from(question).slice(0,80).join(''),now,now,JSON.stringify({scope,turnCount:0,status:'accepted',bytes:size,revision:0,nextSeq:message.seq+1}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(conversationId,message.seq,message.id,json);
@@ -335,14 +332,12 @@ export class Conversations {
   private previousTurns(conversationId:string,exclude:string){return this.store.db.prepare(`SELECT json FROM conversation_turns WHERE conversation_id=? AND idx<(SELECT idx FROM conversation_turns WHERE id=?) AND ${terminalStatus} ORDER BY idx`).all(conversationId,exclude).map(row=>JSON.parse(String(row.json)) as ConversationTurn);}
   private rewrite(conversationId:string,message:ConversationTurn,previous:string){
     const json=JSON.stringify(message),growth=Buffer.byteLength(json)-Buffer.byteLength(previous);
-    this.store.reserveMetadata(Math.max(0,growth));
     this.store.db.prepare('UPDATE conversation_turns SET json=? WHERE id=?').run(json,message.id);
     this.store.db.prepare("UPDATE conversations SET json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.status',(SELECT coalesce(json_extract(json,'$.status'),'completed') FROM conversation_turns WHERE conversation_id=? ORDER BY idx DESC LIMIT 1)) WHERE id=?").run(growth,conversationId,conversationId);
     return message;
   }
   private rewriteTerminal(conversationId:string,message:ConversationTurn,previous:string){
     const now=new Date().toISOString(),json=JSON.stringify(message),growth=Buffer.byteLength(json)-Buffer.byteLength(previous);
-    this.store.reserveMetadata(Math.max(0,growth)+256);
     this.store.db.prepare('UPDATE conversation_turns SET json=? WHERE id=?').run(json,message.id);
     this.store.db.prepare("UPDATE conversations SET updated_at=?,json=json_set(json,'$.scope',json(?),'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.turnCount',coalesce(json_extract(json,'$.turnCount'),0)+1,'$.status',(SELECT coalesce(json_extract(json,'$.status'),'completed') FROM conversation_turns WHERE conversation_id=? ORDER BY idx DESC LIMIT 1),'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(now,JSON.stringify(message.scope),growth,conversationId,conversationId);
     inheritRetiredConversationRoots(this.store,conversationId,message);
@@ -364,7 +359,6 @@ export class Conversations {
       const meta=existing?JSON.parse(String(existing.json)) as {turnCount?:number;bytes?:number;revision?:number;workingContextStartSeq?:number;workingContextVersion?:number}:undefined;
       if(previous&&(!meta||meta.turnCount!==previous.turnCount||meta.revision!==previous.revision||existing!.updated_at!==previous.updatedAt))throw new StoreError('Conversation changed during this answer; reload and retry',409);
       const count=meta?.turnCount??0,seq=this.nextSeq(id),stored={...turn,seq} as ConversationTurn,json=JSON.stringify(stored),size=Buffer.byteLength(json);
-      this.store.reserveMetadata(size+512);
       this.store.db.prepare("INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=CASE WHEN conversations.title='' THEN excluded.title ELSE conversations.title END,updated_at=excluded.updated_at,json=excluded.json").run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:stored.scope,turnCount:count+1,status:stored.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1,nextSeq:seq+1,...(meta?.workingContextStartSeq!==undefined?{workingContextStartSeq:meta.workingContextStartSeq}:{}),...(meta?.workingContextVersion!==undefined?{workingContextVersion:meta.workingContextVersion}:{})}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(id,seq,stored.id,json);
       inheritRetiredConversationRoots(this.store,id,stored);
@@ -381,7 +375,7 @@ export class Conversations {
       const deleted=Number(db.prepare('DELETE FROM conversations WHERE id=?').run(id).changes);
       db.exec('DELETE FROM conversation_retired_roots WHERE NOT EXISTS(SELECT 1 FROM conversation_retired_turn_roots r WHERE r.evidence_id=conversation_retired_roots.id)');
       db.exec('RELEASE delete_conversation');return {deleted};
-    }catch(error){db.exec('ROLLBACK TO delete_conversation; RELEASE delete_conversation');throw error;}
+    }catch(error){if(db.isTransaction){db.exec('ROLLBACK TO delete_conversation; RELEASE delete_conversation');}throw error;}
   }
 
   historyContext(conversation:Conversation,turns:readonly ConversationTurn[]=conversation.turns):NonNullable<QueryInput['historyContext']>{

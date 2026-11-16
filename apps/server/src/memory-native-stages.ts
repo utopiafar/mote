@@ -42,7 +42,7 @@ export class MemoryNativeStages implements MemoryNativeStagePort {
       // A new invocation gets distinct cleanup authority; reused drafts keep
       // their original exact provider pin and cleanup generation.
       context.cleanupGeneration??=randomUUID();
-      const remember=()=>{if(!context.provider)return;const pin=memoryEngineDraftPin(context),id=sha256(JSON.stringify(pin)),json=JSON.stringify(pin);if(!this.store.db.prepare('SELECT 1 FROM memory_engine_stage_drafts WHERE id=?').get(id)){this.store.reserveMetadata(Buffer.byteLength(json)+256);this.store.db.prepare('INSERT INTO memory_engine_stage_drafts VALUES(?,?,?)').run(id,json,context.checkpointId??null);}};
+      const remember=()=>{if(!context.provider)return;const pin=memoryEngineDraftPin(context),id=sha256(JSON.stringify(pin)),json=JSON.stringify(pin);if(!this.store.db.prepare('SELECT 1 FROM memory_engine_stage_drafts WHERE id=?').get(id)){this.store.db.prepare('INSERT INTO memory_engine_stage_drafts VALUES(?,?,?)').run(id,json,context.checkpointId??null);}};
       try{
         const pending=this.adapter.prepare?.({...input,signal},context);
         // Adapters pin the selected configuration synchronously before I/O.
@@ -64,7 +64,7 @@ export class MemoryNativeStages implements MemoryNativeStagePort {
   }
   private recordCleanup(context:MemoryEngineDraftContext|MemoryEngineDraftPin){
     const pin=memoryEngineDraftPin(context),id=sha256(JSON.stringify(pin)),prior=this.store.db.prepare('SELECT state FROM memory_engine_stage_cleanups WHERE id=?').get(id);
-    if(!prior){const json=JSON.stringify(pin);this.store.reserveMetadata(Buffer.byteLength(json)+256);this.store.db.prepare("INSERT INTO memory_engine_stage_cleanups VALUES(?,?,'pending')").run(id,json);}return {id,prior};
+    if(!prior){const json=JSON.stringify(pin);this.store.db.prepare("INSERT INTO memory_engine_stage_cleanups VALUES(?,?,'pending')").run(id,json);}return {id,prior};
   }
   finalize(step:ExecutionStep){
     if(!['succeeded','failed','cancelled','stale'].includes(step.state))return;

@@ -20,7 +20,7 @@ export const until=async(check:()=>boolean)=>{const end=Date.now()+10000;while(!
 export async function assistantActionFixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-actions-')),token='generated-assistant-actions-owner',headers={authorization:'Bearer '+token};
  const config:Config={dataDir:directory,dataKey:'42'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'fixture',host:'127.0.0.1',port:0,
-  maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',
+  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
  let drafts:AssistantActionDraft[]=[],loseResponse=false,enabled=true;
  const calls:ConnectorActionExecution[]=[],sourceId='generated-actions-source';

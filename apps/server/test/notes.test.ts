@@ -10,7 +10,7 @@ import type { Config } from '../src/config.js';
 
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const dataDir = mkdtempSync(join(tmpdir(), 'mote-notes-test-'));
-  const config: Config = { dataDir, token: 'synthetic-notes-token-never-use-in-production', tokenPath: 'fixture-only', host: '127.0.0.1', port: 47832, maxStorageBytes: 10_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '' };
+  const config: Config = { dataDir, token: 'synthetic-notes-token-never-use-in-production', tokenPath: 'fixture-only', host: '127.0.0.1', port: 47832,  maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '' };
   const result = await buildApp(config, { agent: { configured: false, query: async () => { throw Error('No model in protocol fixture'); }, close: async () => {} } });
   t.after(async () => { await result.app.close(); rmSync(dataDir, { recursive: true, force: true }); });
   return { ...result, headers: { authorization: `Bearer ${config.token}` } };

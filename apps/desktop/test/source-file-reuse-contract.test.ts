@@ -17,7 +17,7 @@ it('sends actual Mac manifests to Central and reuses an authorized archive witho
   const bytes = Buffer.from('Generated identical archive bytes');
   await writeFile(join(selected, 'a.txt'), bytes); await writeFile(join(selected, 'b.txt'), bytes);
   const token = 'generated-mac-reuse-owner';
-  const config: Config = {dataDir:join(root, 'central'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',contentEncryptionEnabled:true,dataKey:'53'.repeat(32)};
+  const config: Config = {dataDir:join(root, 'central'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',contentEncryptionEnabled:true,dataKey:'53'.repeat(32)};
   const node = await buildApp(config, {backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
   try {
     await node.app.ready();
@@ -49,7 +49,7 @@ it('retries an attempted reference manifest before publishing a newer revision',
   root=await realpath(await mkdtemp(join(tmpdir(),'mote-reference-retry-')));
   const selected=join(root,'selected'),file=join(selected,'a.txt');await mkdir(selected);await writeFile(file,'first');
   const token='generated-reference-retry-owner';
-  const config:Config={dataDir:join(root,'central'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',contentEncryptionEnabled:true,dataKey:'53'.repeat(32)};
+  const config:Config={dataDir:join(root,'central'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',contentEncryptionEnabled:true,dataKey:'53'.repeat(32)};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
   try{
     await node.app.ready();

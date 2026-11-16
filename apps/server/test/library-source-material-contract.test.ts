@@ -11,7 +11,7 @@ import {materialId,type MaterialDraft} from '../src/materials.js';
 test('source revisions and Material revisions retain distinct identities and exact historical members',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-library-b1-contract-'));
   const token='generated-library-b1-contract-owner',headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
-  const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model calls in B1 contract preparation');},close:async()=>{}}});
   node.materialOrganizer.tick=async()=>0;
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});

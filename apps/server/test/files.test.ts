@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {scanVectors} from '../src/vector-work.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
@@ -16,7 +17,7 @@ import {buildApp} from '../src/app.js';
 import {configFromFile} from '../src/config.js';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 
-function fixture(t:any,key?:string){const dir=mkdtempSync(join(tmpdir(),'mote-files-'));const options={dataKey:key,contentEncryptionEnabled:Boolean(key),maxStorageBytes:100*1024*1024};const store=new Store(dir,options);const sources=new SourceStore(store),files=new FileStore(store,sources);sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {dir,store,sources,files,options};}
+function fixture(t:any,key?:string){const dir=mkdtempSync(join(tmpdir(),'mote-files-'));const options={dataKey:key,contentEncryptionEnabled:Boolean(key),};const store=new Store(dir,options);const sources=new SourceStore(store),files=new FileStore(store,sources);sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {dir,store,sources,files,options};}
 const owner=()=>{};
 function manifest(bytes:Buffer,revision='v1',previousRevision:string|null=null):FileRevision{return {sourceId:'phone',previousRevision,item:{externalId:'content://generated/recording',revision,observedAt:new Date().toISOString(),title:'合成录音.wav',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},relativePath:'calls/合成录音.wav',sizeBytes:bytes.length,sha256:sha256(bytes)};}
 async function upload(files:FileStore,input:FileRevision,bytes:Buffer){const session=files.begin(input,owner);for(let n=0;n<Math.ceil(bytes.length/FILE_PART_BYTES);n++)files.part(session.uploadId,n,bytes.subarray(n*FILE_PART_BYTES,(n+1)*FILE_PART_BYTES),owner);return files.commit(session.uploadId,owner);}
@@ -36,6 +37,49 @@ test('original bytes resume after reconstruction, ACK loss, encryption and range
  resumed.sweep();assert.throws(()=>resumed.upload(begun.uploadId,owner),{statusCode:404});
  const receipt=resumed.begin(m,owner);assert.equal(receipt.ack?.id,ack.id);assert.equal(receipt.ack?.duplicate,true);
  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM file_uploads').get()!.n,0);
+});
+
+test('an old incomplete upload survives sweep and a fresh Store before its completed transport is reclaimed',async t=>{
+ const {dir,store,sources,files}=fixture(t),bytes=Buffer.alloc(FILE_PART_BYTES+100123,13),input=manifest(bytes),begun=files.begin(input,owner);
+ files.part(begun.uploadId,0,bytes.subarray(0,FILE_PART_BYTES),owner);
+ store.db.prepare('UPDATE file_uploads SET created_at=? WHERE id=?').run('2000-01-01T00:00:00Z',begun.uploadId);
+ files.sweep();assert.equal(files.upload(begun.uploadId,owner).parts.length,1);
+ store.close();const reopened=new Store(dir),resumed=new FileStore(reopened,new SourceStore(reopened));
+ try{
+  resumed.sweep();assert.equal(resumed.begin(input,owner).uploadId,begun.uploadId);
+  assert.equal(resumed.upload(begun.uploadId,owner).parts.length,1);
+  resumed.part(begun.uploadId,1,bytes.subarray(FILE_PART_BYTES),owner);const ack=await resumed.commit(begun.uploadId,owner);
+  resumed.sweep();assert.throws(()=>resumed.upload(begun.uploadId,owner),{statusCode:404});
+  assert.deepEqual(Buffer.concat([...resumed.bytes(ack.id)]),bytes);
+  assert.equal(resumed.begin(input,owner).ack?.id,ack.id);
+ }finally{reopened.close();}
+});
+
+test('real configuration and owner file intake default to archive, preserve source choices and retain old content across restart',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mote-central-retention-')),configFile=join(dir,'mote.yaml');
+ writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token:'generated-central-retention-owner'},storage:{dataDir:dir},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
+ const start=()=>buildApp(configFromFile(configFile),{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No generated-fixture model calls');},close:async()=>{}}});
+ let node=await start();t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
+ const headers={authorization:'Bearer generated-central-retention-owner'},source={id:'phone',name:'Generated default source',kind:'local-files',deviceId:'phone',platform:'android'};
+ const created=await node.app.inject({method:'POST',url:'/api/sources',headers,payload:source});assert.equal(created.statusCode,200,created.body);assert.equal(created.json().retention,'archive');
+ for(const retention of ['snapshot','reference']){
+  const selected={...source,id:'selected-'+retention,retention};
+  assert.equal((await node.app.inject({method:'POST',url:'/api/sources',headers,payload:selected})).json().retention,retention);
+  assert.equal((await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{...source,id:selected.id}})).json().retention,retention,'default registration preserves an existing explicit choice');
+ }
+ const bytes=Buffer.from('Generated original retained without a Central age limit'),input=manifest(bytes);input.item.observedAt='2000-01-01T00:00:00Z';
+ const begun=await node.app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:input});assert.equal(begun.statusCode,200,begun.body);
+ const uploadId=begun.json().uploadId;
+ assert.equal((await node.app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${uploadId}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes})).statusCode,200);
+ const committed=await node.app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${uploadId}/commit`,headers,payload:{}});assert.equal(committed.statusCode,200,committed.body);const id=committed.json().id;
+ const noteId=randomUUID(),note=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id:noteId,deviceId:'phone',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2000-01-01T00:00:00Z',durationMs:0,ocrText:'Generated old original note'}});assert.equal(note.statusCode,201,note.body);
+ node.store.measurePhysicalStorage();const status=(await node.app.inject({url:'/api/status',headers})).json();
+ assert.equal('retentionDays' in status,false);assert.equal('maxBytes' in status.storage,false);assert.ok(status.storage.logicalBytes>bytes.length);assert.ok(status.storage.bytes>0);assert.ok(status.storage.asOf);assert.equal(status.storage.physicalPending,false);
+ const configuration=(await node.app.inject({url:'/api/configuration',headers})).json(),keys=configuration.groups.flatMap((group:any)=>group.fields.map((field:any)=>field.key));assert.ok(!keys.includes('maxStorageBytes'));assert.ok(!keys.includes('retentionDays'));assert.ok(keys.includes('maxExportBytes'));
+ await node.app.close();node=await start();node.files.sweep();
+ assert.equal((await node.app.inject({url:`/api/files/${id}/content`,headers})).body,bytes.toString());
+ assert.equal((await node.app.inject({url:`/api/captures/${noteId}`,headers})).json().ocrText,'Generated old original note');
+ assert.equal(node.sources.getSource('phone').retention,'archive');assert.equal(node.sources.getSource('selected-snapshot').retention,'snapshot');assert.equal(node.sources.getSource('selected-reference').retention,'reference');
 });
 
 test('two source locations share bytes, source deletion retains archive and restoring content gets a new revision',async t=>{
@@ -139,13 +183,13 @@ test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated 
  assert.equal((await app.inject({url:headUrl,headers})).json().forgotten,true);
 });
 
-test('reference manifests count towards the vault limit and quota failures do not publish a revision',async t=>{
+test('reference manifests are metered and a SQLite write failure does not publish a revision',async t=>{
  const {store,files,options}=fixture(t);const m=manifest(Buffer.alloc(0));m.item.layer='reference';delete m.sha256;
  const ack=await files.revision(m,owner),before=store.logicalBytes();
- options.maxStorageBytes=before+16;
- await assert.rejects(files.revision({...m,previousRevision:'v1',item:{...m.item,revision:'v2'}},owner),{statusCode:507});
+ const recover=rejectSqliteWrites(store,'file_versions');
+ await assert.rejects(files.revision({...m,previousRevision:'v1',item:{...m.item,revision:'v2'}},owner),/Generated SQLite write failure/);
  assert.equal(files.list().items[0].captureId,ack.id);assert.equal(store.logicalBytes(),before);
- assert.ok(Number(store.db.prepare('SELECT length(manifest) n FROM file_versions').get()!.n)>0);
+ assert.ok(Number(store.db.prepare('SELECT length(manifest) n FROM file_versions').get()!.n)>0);recover();await files.revision({...m,previousRevision:'v1',item:{...m.item,revision:'v2'}},owner);assert.equal(files.list().items[0].item.revision,'v2');
 });
 
 test('changing a processing provider during a job requeues it and rejects the old derived output; silence is valid',async t=>{

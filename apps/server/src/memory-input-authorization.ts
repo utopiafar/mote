@@ -47,7 +47,6 @@ export class MemoryInputAuthorization {
     const value=identity.parse(raw);
     if(this.store.db.prepare('SELECT 1 FROM memory_input_authorizations WHERE source_id=? AND input_key=? AND scope=?').get(value.sourceId,value.inputKey,value.scope))return;
     const json=binding?JSON.stringify(binding):null;
-    this.store.reserveMetadata(Buffer.byteLength(value.sourceId+value.inputKey+value.scope+(json??''))+256);
     this.store.db.prepare('INSERT OR IGNORE INTO memory_input_authorizations(source_id,input_key,scope,capture_id,authorized,received_at,job_id,binding_json) VALUES(?,?,?,?,?,?,NULL,?)')
       .run(value.sourceId,value.inputKey,value.scope,value.captureId??null,Number(automatic&&this.enabled()),receivedAt,json);
   }
@@ -75,7 +74,7 @@ export class MemoryInputAuthorization {
     if(selected.some(grant=>!this.available(grant.sourceId,grant.inputKey,jobId,grant.scope)))return false;
     this.store.db.exec('SAVEPOINT memory_package_claim');
     try{for(const grant of selected)if(!this.claim(grant.sourceId,grant.inputKey,jobId,grant.scope)){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');return false;}this.store.db.exec('RELEASE memory_package_claim');return true;}
-    catch(error){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');throw error;}
+    catch(error){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');}throw error;}
   }
   /** Revalidation requires an actual durable claim by this exact job, not a caller-supplied tuple alone. */
   assertClaimed(raw:AutomaticMemoryGrant,jobId:string):void {

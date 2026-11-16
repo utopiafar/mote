@@ -11,7 +11,7 @@ import {seedUtilityOracle} from './fixtures/utility-oracle.js';
 
 test('owner integration creates a reviewed actionable replacement, applies its relation atomically, and invalidates it after original deletion',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-utility-acceptance-')),token='generated-owner-utility-token',headers={authorization:'Bearer '+token};
- const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let seed:Awaited<ReturnType<typeof seedUtilityOracle>>;
  const calls:QueryInput[]=[];
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{

@@ -85,7 +85,7 @@ function connectionValues(document, baseDir) {
     MOTE_DATA_DIR: storage.dataDir ?? './data', MOTE_DATA_KEY: storage.dataKey ?? '', MOTE_CONTENT_ENCRYPTION: storage.contentEncryptionEnabled ? '1' : '0',
     MOTE_MODEL: model.model ?? '', MOTE_MODEL_API_KEY: model.apiKey ?? '', MOTE_MODEL_BASE_URL: model.baseUrl ?? '', MOTE_EMBEDDING_MODEL: embedding.model ?? '', MOTE_EMBEDDING_API_KEY: embedding.apiKey ?? '', MOTE_EMBEDDING_BASE_URL: embedding.baseUrl ?? '',
     MOTE_LOG_DIR: diagnostics.directory ?? './logs', MOTE_LOG_MAX_MB: String(limits.maxBytes / MiB), MOTE_LOG_MAX_ENTRIES: String(limits.maxEntries), MOTE_AGENT_TRACE_ENABLED: diagnostics.traceEnabled ? '1' : '0',
-    MOTE_MAX_STORAGE_MB: String((storage.maxStorageBytes ?? 10240 * 1024 * 1024) / 1024 / 1024), MOTE_MAX_EXPORT_MB: String((storage.maxExportBytes ?? 64 * 1024 * 1024) / 1024 / 1024), MOTE_RETENTION_DAYS: String(storage.retentionDays ?? 0),
+    MOTE_MAX_EXPORT_MB: String((storage.maxExportBytes ?? 64 * 1024 * 1024) / 1024 / 1024),
     MOTE_UPDATE_REPOSITORY: document.updates?.repository ?? 'utopiafar/mote', MOTE_UPDATE_CHANNEL: document.updates?.channel ?? 'stable',
     MOTE_TLS_DOMAIN: tls.domain ?? '', MOTE_TLS_HTTP_PORT: String(tls.httpPort ?? 80), MOTE_TLS_HTTPS_PORT: String(tls.httpsPort ?? 443),
     MOTE_MEDIA_MODEL_DIR: media.modelDirectory ? resolve(baseDir, media.modelDirectory) : '', MOTE_MEDIA_PYTHON: media.python ? media.python.includes('/') ? resolve(baseDir, media.python) : media.python : '',

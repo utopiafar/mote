@@ -66,8 +66,7 @@ it('keeps the saved connection until an explicit confirmation and consumes the r
   directories.push(serverDirectory, clientDirectory);
   const ownerToken = 'generated-device-settings-owner-' + randomUUID();
   const node = await buildApp({
-    dataDir: join(serverDirectory, 'data'), token: ownerToken, tokenPath: 'generated', host: '127.0.0.1', port: 0,
-    maxStorageBytes: 20_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0,
+    dataDir: join(serverDirectory, 'data'), token: ownerToken, tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0,
     allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
     embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
   }, {

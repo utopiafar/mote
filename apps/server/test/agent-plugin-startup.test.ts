@@ -82,7 +82,7 @@ test('host shutdown cancels queued runtime work without waiting for an unrelated
 
 function profile(t:TestContext,overrides:Partial<Config>={}){
   const root=mkdtempSync(join(tmpdir(),'mote-agent-startup-'));
-  const config:Config={dataDir:join(root,'data'),token:'generated-startup-owner-token',tokenPath:join(root,'owner.token'),host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',...overrides};
+  const config:Config={dataDir:join(root,'data'),token:'generated-startup-owner-token',tokenPath:join(root,'owner.token'),host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',...overrides};
   const configService=new ConfigService({path:join(root,'mote.yaml'),initialDocument:documentFromConfig(config),watch:false});registerBuiltinDomains(configService,config);
   const cleanup:Array<()=>unknown|Promise<unknown>>=[];
   t.after(async()=>{try{for(const close of cleanup)await close();}finally{await configService.close();rmSync(root,{recursive:true,force:true});}});

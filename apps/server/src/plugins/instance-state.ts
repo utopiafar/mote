@@ -25,8 +25,8 @@ export function installInstanceStateSchema(store: Store) {
     updated_at TEXT NOT NULL,
     PRIMARY KEY(package_id, installation_id, instance_id, key)
   ) WITHOUT ROWID`);
-  // Creates the StorageLedger row/triggers for this new table before the
-  // first quota check.
+  // Creates the StorageLedger row/triggers for this new table before its
+  // first write.
   store.registerStorage('plugin-control',{plugin_instance_state:"bytes+length(CAST(key AS BLOB))+length(CAST(package_id AS BLOB))+length(CAST(installation_id AS BLOB))+length(CAST(instance_id AS BLOB))+length(CAST(updated_at AS BLOB))+32"});
   store.logicalBytes();
 }
@@ -123,13 +123,6 @@ class InstanceState implements StateStore {
       if (Number(usage.bytes) + namespaceDelta > this.limits.namespaceBytes || (!existing && Number(usage.records) >= this.limits.namespaceRecords)) {
         throw new StateError('namespace_limit');
       }
-      // Match StorageLedger's plugin_instance_state expression exactly: value,
-      // key, namespace IDs, timestamp and the fixed row overhead. Reserving only
-      // key/value would let a new row commit past the vault budget.
-      const delta = this.rowCost(bytes, key, now) - (existing ? this.rowCost(Number(existing.bytes), String(existing.key), String(existing.updated_at)) : 0);
-      try { this.store.reserveMetadata(delta); }
-      catch (error) { throw new StateError('limit_exceeded', error instanceof Error ? error.message : 'Vault storage limit reached'); }
-
       let revision: number;
       if (expectedRevision === null) {
         if (existing) throw new StateError('conflict');
@@ -154,11 +147,7 @@ class InstanceState implements StateStore {
     }
   }
 
-  private rowCost(valueBytes: number, key: string, updatedAt: string) {
-    return valueBytes + Buffer.byteLength(key) + Buffer.byteLength(this.namespace.packageId) +
-      Buffer.byteLength(this.namespace.installationId) + Buffer.byteLength(this.namespace.instanceId) +
-      Buffer.byteLength(updatedAt) + 32;
-  }
+
 
   private row(key: string): Row | undefined {
     return this.store.db.prepare(`SELECT key,json,bytes,revision,updated_at FROM plugin_instance_state

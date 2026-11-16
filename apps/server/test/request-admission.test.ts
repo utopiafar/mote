@@ -11,7 +11,7 @@ import {sha256} from '../src/store.js';
 const inactive:QueryAgent={configured:false,query:async()=>{throw Error('No model call permitted');},close:async()=>{}};
 async function fixture(t:TestContext, agent=inactive){
   const dataDir=await mkdtemp(join(tmpdir(),'mote-request-admission-'));
-  const config:Config={dataDir,token:'generated-request-admission-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:200_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir,token:'generated-request-admission-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const node=await buildApp(config,{agent,backgroundWorker:false});
   t.after(async()=>{await node.app.close();await rm(dataDir,{recursive:true,force:true});});
   return {...node,config,headers:{authorization:`Bearer ${config.token}`}};

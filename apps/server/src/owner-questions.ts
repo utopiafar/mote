@@ -54,8 +54,7 @@ export class OwnerQuestions {
   return JSON.stringify({...metadata,installationEpoch,...(metadata.state==='obsolete'?{}:{private:encodeMemoryPrivate(this.store,{title,prompt,reason,evidence,choices,messages,outcome,context:record.context})})});
  }
  private save(record:OwnerQuestionRecord,installationEpoch:string){
-  const json=this.encode(record,installationEpoch),old=this.row(record.question.id);
-  this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(old.json)));
+  const json=this.encode(record,installationEpoch);
   this.store.db.prepare('UPDATE owner_questions SET json=?,updated_at=? WHERE id=?').run(json,record.question.updatedAt,record.question.id);
  }
  private current(id:string):{record:OwnerQuestionRecord;stored:StoredQuestion;provider?:OwnerQuestionProvider}{
@@ -75,7 +74,7 @@ export class OwnerQuestions {
    const {key:_key,dependencyIds:_dependencies,context,...publicInput}=parsed,at=this.now();
    const question=ownerQuestionSchema.parse({...publicInput,id:randomUUID(),provider:ref,state:'open',revision:1,createdAt:at,updatedAt:at,messages:[{role:'assistant',text:parsed.prompt,createdAt:at}]});
    const record={question,context};if(!provider.validate(record))throw new StoreError('Owner question evidence or work changed',409);
-   const json=this.encode(record,provider.installationEpoch);this.store.reserveMetadata(Buffer.byteLength(json)+dependencies.reduce((bytes,id)=>bytes+Buffer.byteLength(id)+128,0)+512);
+   const json=this.encode(record,provider.installationEpoch);
    this.store.db.prepare('INSERT INTO owner_questions VALUES(?,?,?,?,?)').run(question.id,identity,at,at,json);
    for(const dependency of dependencies)this.store.db.prepare('INSERT INTO owner_question_dependencies VALUES(?,?)').run(question.id,dependency);
    return question;
@@ -142,7 +141,6 @@ export class OwnerQuestions {
    if(afterEffect.record.question.state==='obsolete'||afterEffect.record.question.revision!==reply.expectedRevision)throw new StoreError('Owner question evidence changed during continuation',409);
    if(!provider.validate(value))throw new StoreError('Owner question continuation failed current validation',409);
    this.save(value,current.stored.installationEpoch);
-   this.store.reserveMetadata(Buffer.byteLength(id)+Buffer.byteLength(reply.requestId)+hash.length+128);
    this.store.db.prepare('INSERT INTO owner_question_replies VALUES(?,?,?)').run(id,reply.requestId,hash);
    return structuredClone(question);
   });

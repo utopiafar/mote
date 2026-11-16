@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { serializeConfigDocument } from '@mote/shared/config-file';
-import { configFromFile, configFromDocument, documentFromConfig, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, mediaConfigSchema, ConfigError } from '../src/config.js';
+import { configFromFile, configFromDocument, documentFromConfig, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, mediaConfigSchema, storageConfigSchema, ConfigError } from '../src/config.js';
 import { ConfigService } from '../src/config-service.js';
 
 const moduleUrl = new URL('../src/config.ts', import.meta.url).href;
@@ -22,6 +22,17 @@ function fixture(t: { after(fn: () => void): void }, name = 'config') {
   const write = (patch: Record<string, unknown> = {}) => writeFileSync(file, serializeConfigDocument({ version: 1, revision: 0, storage: { dataDir: './vault' }, ...patch }));
   write(); return { root, file, write, vault: join(root, 'vault') };
 }
+
+test('Central storage configuration has no total quota or age deletion and retains the export request boundary',t=>{
+ const {file,write}=fixture(t,'central-storage');
+ for(const field of ['maxStorageBytes','retentionDays']){
+  assert.equal(storageConfigSchema.safeParse({[field]:1}).success,false);
+  write({storage:{dataDir:'./vault',[field]:1}});assert.throws(()=>configFromFile(file,{initializeCredentials:false}),ConfigError);
+ }
+ write();const loaded=configFromFile(file,{initializeCredentials:false}),saved=documentFromConfig(loaded).storage as Record<string,unknown>;
+ for(const field of ['maxStorageBytes','retentionDays']){assert.equal(field in loaded,false);assert.equal(field in saved,false);}
+ assert.equal(saved.maxExportBytes,64*1024*1024);assert.equal(storageConfigSchema.safeParse({maxExportBytes:0}).success,false);assert.equal(storageConfigSchema.safeParse({maxExportBytes:257*1024*1024}).success,false);
+});
 
 test('local image startup settings round-trip through the same YAML schema and remain restart-only without changing processing policy', async t => {
   const {file,write}=fixture(t,'local-image-config');

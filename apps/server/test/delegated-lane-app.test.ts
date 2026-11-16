@@ -10,7 +10,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 
 const token='generated-lane-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-lane-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-lane-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
 async function until<T>(read:()=>T|undefined,describe?:()=>unknown):Promise<T>{for(let n=0;n<200;n++){const result=read();if(result!==undefined)return result;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated lane fixture did not settle'+(describe?': '+JSON.stringify(describe()):''));}
 
 function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){

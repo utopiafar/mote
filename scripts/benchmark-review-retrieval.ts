@@ -12,7 +12,7 @@ const directory=await mkdtemp(join(tmpdir(),'mote-review-retrieval-'));
 const token='generated-retrieval-benchmark-token';let dimensions=768;
 const provider=createServer(async(req,res)=>{for await(const _chunk of req){};res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[{embedding:Array.from({length:dimensions},(_,i)=>i===0?1:0)}]}));});
 await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
-const config:Config={dataDir:directory,token,tokenPath:'generated',dataKey:undefined,host:'127.0.0.1',port:0,maxStorageBytes:2*1024**3,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'generated',embeddingBaseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}`,embeddingApiKey:''};
+const config:Config={dataDir:directory,token,tokenPath:'generated',dataKey:undefined,host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'generated',embeddingBaseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}`,embeddingApiKey:''};
 const fixture=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No live model in this benchmark');},close:async()=>{}}});
 const {store,app,indexer}=fixture,rows=9000,reports:unknown[]=[];
 const record=(n:number)=>({id:randomUUID(),deviceId:'generated-persona',deviceName:'Generated Persona',platform:'import',source:'note',durationMs:0,capturedAt:new Date(Date.parse('2026-07-01')+Math.floor(n/200)*86400000+n%200*60000).toISOString(),ocrText:`Generated record ${n}; retrieval responsiveness fixture.`});
