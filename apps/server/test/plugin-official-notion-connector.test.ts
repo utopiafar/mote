@@ -359,19 +359,23 @@ test('installed Notion checkpoints bounded database pages after durable upserts,
  await f.request('/api/connectors/notion/sync',{},502);
  assert.equal(f.node.sources.listItems({sourceId,limit:200}).items.length,100);assert.equal(f.scan().processed,0);assert.equal(f.scan().cursor,undefined);
  const failed=f.node.sources.getSource(sourceId).status!;assert.equal(failed.coverage?.processed,0);assert.equal(failed.coverage?.remaining,null);assert.equal(failed.coverage?.failed,1);
- const window=f.scan().window;
+ const window=f.scan().window,newEdited=new Date(Date.parse(window.to)+1).toISOString();
+ f.transport.setDatabaseEntries([...Array.from({length:250},(_,index)=>databaseRow(index)),databaseRow(300,newEdited,newEdited)]);
  f.node.store.db.exec('DROP TRIGGER generated_checkpoint_failure');await f.restart();
  const replay=await f.request('/api/connectors/notion/sync',{});assert.equal(replay.duplicates,100);assert.equal(replay.imported,0);assert.equal(f.scan().processed,100);assert.deepEqual(f.scan().window,window);assert.equal(f.scan().cursor,'offset-100');
  let status=f.node.sources.getSource(sourceId).status!;assert.equal(status.state,'idle');assert.equal(status.coverage?.state,'partial');assert.equal(status.coverage?.remaining,null);assert.equal(status.coverage?.failed,0);assert.deepEqual(status.coverage?.limitations,['pagination_pending','content_partial']);
+ f.transport.setQueryFailure(true);await f.request('/api/connectors/notion/sync',{},503);assert.equal(f.scan().cursor,'offset-100');assert.equal(f.scan().processed,100);assert.equal(f.node.sources.getSource(sourceId).status?.coverage?.failed,1,'a failed page is one unresolved read, not 100 failed entries');f.transport.setQueryFailure(false);
  await f.toggle();await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().processed,200);assert.deepEqual(f.scan().window,window);assert.equal(f.scan().cursor,'offset-200');
  await f.restart();await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().processed,250);assert.equal(f.scan().complete,true);assert.equal(f.scan().cursor,undefined);
  const first=f.node.sources.listItems({sourceId,limit:200}),second=f.node.sources.listItems({sourceId,limit:200,cursor:first.nextCursor!});assert.equal(first.items.length+second.items.length,250);assert.equal(new Set([...first.items,...second.items].map(item=>item.externalId)).size,250);
  for(const entry of [...first.items,...second.items])assert.equal(f.node.sources.history(sourceId,entry.externalId).length,1);
- const queries=f.transport.calls.filter(call=>call.pathname==='/v1/databases/db-1/query');assert.deepEqual(queries.map(call=>(call.body as any).start_cursor),[undefined,undefined,'offset-100','offset-200']);assert.ok(queries.every(call=>(call.body as any).page_size===100));assert.ok(queries.every(call=>JSON.stringify((call.body as any).filter)===JSON.stringify((queries[0]!.body as any).filter)));
+ const queries=f.transport.calls.filter(call=>call.pathname==='/v1/databases/db-1/query');assert.deepEqual(queries.map(call=>(call.body as any).start_cursor),[undefined,undefined,'offset-100','offset-100','offset-200']);assert.ok(queries.every(call=>(call.body as any).page_size===100));assert.ok(queries.every(call=>JSON.stringify((call.body as any).filter)===JSON.stringify((queries[0]!.body as any).filter)));
  status=f.node.sources.getSource(sourceId).status!;assert.equal(status.state,'idle');assert.equal(status.coverage?.processed,250);assert.deepEqual(status.coverage?.limitations,['content_partial']);assert.equal(status.coverage?.remaining,null,'unread row bodies are not zero remaining work');
  const ownerSources=await f.request('/api/sources'),connectorStatus=await f.request('/api/connectors/notion');assert.deepEqual(ownerSources.items[0].status.coverage,status.coverage);assert.deepEqual(connectorStatus.selected[0].coverage,status.coverage);
  const states=f.node.store.db.prepare("SELECT key,bytes FROM plugin_instance_state WHERE key='notion' OR key LIKE 'notion.scan.%'").all();assert.equal(states.length,2);assert.ok(states.every(row=>Number(row.bytes)<64*1024));
  await assertCoverageDom(f.node,sourceId);
+ assert.equal(f.node.sources.getItem(sourceId,databaseRow(300).id),undefined,'an entry edited beyond the fixed query window cannot leak into its continuation');
+ await f.request('/api/connectors/notion/sync',{});assert.ok(f.node.sources.getItem(sourceId,databaseRow(300).id));assert.equal(f.scan().processed,1);assert.equal(f.scan().window.from,window.to,'the next fixed window collects updates beyond the previous anchor');
 });
 
 async function assertCoverageDom(node:Awaited<ReturnType<typeof buildApp>>,sourceId:string){
@@ -383,3 +387,44 @@ async function assertCoverageDom(node:Awaited<ReturnType<typeof buildApp>>,sourc
  try{await React.act(async()=>root.render(React.createElement(Sources,{api,onOpen:()=>{},onImport:()=>{}})));const d=dom.window.document;assert.equal(d.querySelector('.source-final-current')!.textContent,'等待下次同步');assert.equal(d.querySelector('.source-final-coverage')!.getAttribute('data-coverage-state'),'partial');assert.match(d.querySelector('.source-final-coverage')!.textContent!,/部分覆盖.*250.*剩余条目数未知.*部分正文尚未读取/s);}
  finally{await React.act(async()=>root.unmount());for(const [key,value]of previous)if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);dom.window.close();}
 }
+
+test('Notion selected-object slots survive reordering and never carry another range cursor or old complete coverage',async t=>{
+ const f=await installedNotion(t);f.transport.setDatabaseEntries(Array.from({length:250},(_,index)=>databaseRow(index)));
+ await f.select([{id:'db-1',type:'database'},{id:'page-1',type:'page'}]);await f.request('/api/connectors/notion/sync',{});
+ const database=f.node.sources.listSources().find(source=>source.name==='Notion · Tasks')!,pageSource=f.node.sources.listSources().find(source=>source.name==='Notion · Roadmap')!;
+ assert.equal(f.scan(0).id,'db-1');assert.equal(f.scan(0).cursor,'offset-100');assert.equal(f.scan(1).id,'page-1');assert.equal(f.node.sources.getSource(pageSource.id).status?.coverage?.state,'complete');
+ const window=f.scan(0).window;await f.select([{id:'page-1',type:'page'},{id:'db-1',type:'database'}]);await f.request('/api/connectors/notion/sync',{});
+ assert.equal(f.scan(0).processed,200);assert.deepEqual(f.scan(0).window,window);assert.equal(f.scan(0).cursor,'offset-200');assert.equal(f.scan(1).id,'page-1');
+ f.node.sources.update(database.id,{enabled:false});const queryCount=()=>f.transport.calls.filter(call=>call.pathname==='/v1/databases/db-1/query').length,beforePause=queryCount();await f.request('/api/connectors/notion/sync',{});assert.equal(queryCount(),beforePause,'polling cannot silently re-enable an owner-paused source');assert.equal(f.scan(0).processed,200);
+ await f.select([{id:'page-1',type:'page'}]);await f.select([{id:'db-1',type:'database'}]);assert.equal(f.scan(0),null);assert.equal(f.node.sources.getSource(database.id).status?.coverage,undefined);
+ await f.request('/api/connectors/notion/sync',{});assert.equal((f.transport.calls.filter(call=>call.pathname==='/v1/databases/db-1/query').at(-1)!.body as any).start_cursor,undefined);assert.equal(f.scan(0).processed,100);
+ await f.select([{id:'page-1',type:'page'}]);assert.equal(f.scan(0),null);assert.equal(f.node.sources.getSource(pageSource.id).status?.coverage,undefined,'a reselected page cannot retain its earlier complete claim');
+ await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan(0).id,'page-1');assert.equal(f.scan(0).cursor,undefined);assert.equal(f.node.sources.getSource(pageSource.id).status?.coverage?.state,'complete');
+});
+
+test('Notion new-only databases baseline old objects and retain known revisions; single pages skip only their baseline revision',async t=>{
+ const f=await installedNotion(t);f.transport.setDatabaseEntries(Array.from({length:250},(_,index)=>databaseRow(index)));await f.select([{id:'db-1',type:'database'}]);await f.request('/api/connectors/notion/sync',{});
+ const database=f.node.sources.listSources()[0]!,known=f.node.sources.getItem(database.id,databaseRow(0).id)!;assert.ok(known);assert.equal(f.node.sources.getItem(database.id,databaseRow(249).id),undefined);
+ const clock=Date.now();t.mock.timers.enable({apis:['Date'],now:clock});
+ const patch=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+database.id,headers,payload:{initialSync:'new_only'}});assert.equal(patch.statusCode,200,patch.body);assert.equal(patch.json().status.coverage,undefined);
+ await f.request('/api/connectors/notion/sync',{});const anchor=f.scan().baselineAt;assert.equal(anchor,new Date(clock).toISOString());assert.equal(f.scan().processed,0);assert.equal((f.transport.calls.filter(call=>call.pathname==='/v1/databases/db-1/query').at(-1)!.body as any).start_cursor,undefined,'new history policy starts a new cursor scope');
+ t.mock.timers.tick(1000);const edited=new Date(clock+1000).toISOString(),created=new Date(clock+500).toISOString();
+ f.transport.setDatabaseEntries([databaseRow(0,edited),databaseRow(249,edited),databaseRow(300,edited,created)]);await f.request('/api/connectors/notion/sync',{});
+ assert.equal(f.scan().processed,2);assert.equal(f.node.sources.history(database.id,databaseRow(0).id).length,2,'already collected objects retain new revisions');assert.ok(f.node.sources.getItem(database.id,databaseRow(300).id));assert.equal(f.node.sources.getItem(database.id,databaseRow(249).id),undefined,'editing an old uncollected object does not make it newly created');
+ t.mock.timers.tick(1000);f.transport.setDatabaseEntries([{...databaseRow(301,new Date(clock+2000).toISOString()),created_time:undefined}]);await f.request('/api/connectors/notion/sync',{},502);assert.equal(f.node.sources.getSource(database.id).status?.coverage?.state,'partial');assert.equal(f.node.sources.getSource(database.id).status?.coverage?.failed,1,'missing baseline metadata cannot establish completion');
+ await f.select([{id:'page-1',type:'page'}]);const pageSource=f.node.sources.listSources().find(source=>source.name==='Notion · Roadmap')!;
+ const pagePatch=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+pageSource.id,headers,payload:{initialSync:'new_only'}});assert.equal(pagePatch.statusCode,200,pagePatch.body);
+ const blocksBefore=f.transport.calls.filter(call=>call.pathname==='/v1/blocks/page-1/children').length;await f.request('/api/connectors/notion/sync',{});await f.request('/api/connectors/notion/sync',{});
+ assert.equal(f.node.sources.getItem(pageSource.id,'page-1'),undefined);assert.equal(f.transport.calls.filter(call=>call.pathname==='/v1/blocks/page-1/children').length,blocksBefore,'the baseline revision is not imported or repeatedly read');
+ t.mock.timers.tick(1000);f.transport.setPageEdited(new Date(clock+3000).toISOString());f.transport.setPageText('Generated content after the single-page baseline');await f.request('/api/connectors/notion/sync',{});
+ assert.equal(f.node.sources.history(pageSource.id,'page-1').length,1);assert.match(f.node.sources.getItem(pageSource.id,'page-1')!.text,/after the single-page baseline/);
+});
+
+test('Notion page coverage remains partial for unread child blocks, bounded pages and truncated text',async t=>{
+ const f=await installedNotion(t);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;
+ f.transport.setBlocks(Array.from({length:250},(_,index)=>({object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:'Generated bounded block '+index}]}})));await f.request('/api/connectors/notion/sync',{});
+ let coverage=f.node.sources.getSource(source.id).status?.coverage;assert.equal(coverage?.state,'partial');assert.equal(coverage?.remaining,null);assert.deepEqual(coverage?.limitations,['content_partial']);assert.equal(f.transport.calls.filter(call=>call.pathname==='/v1/blocks/page-1/children').length,2,'the existing two-page block budget is retained');assert.ok(!f.node.sources.getItem(source.id,'page-1')!.text.includes('block 200'));
+ f.transport.setBlocks([{object:'block',type:'toggle',has_children:true,toggle:{rich_text:[{plain_text:'Generated unread nested content'}]}}]);await f.request('/api/connectors/notion/sync',{});coverage=f.node.sources.getSource(source.id).status?.coverage;assert.equal(coverage?.state,'partial');assert.deepEqual(coverage?.limitations,['content_partial']);
+ f.transport.setBlocks(Array.from({length:100},()=>({object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:'x'.repeat(1200)}]}})));await f.request('/api/connectors/notion/sync',{});assert.equal(f.node.sources.getItem(source.id,'page-1')!.text.length,100000);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');
+ const item=f.node.sources.getItem(source.id,'page-1')!;assert.equal(item.document?.fileIndex,undefined,'unknown full text length is never fabricated as a file index');
+});

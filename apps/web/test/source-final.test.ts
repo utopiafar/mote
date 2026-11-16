@@ -47,3 +47,11 @@ test('recording identity read failures keep a readable default and the full fold
  await act(async()=>root.render(view(base)));await act(async()=>d.querySelector<HTMLButtonElement>('.source-select')!.click());await act(async()=>d.querySelector<HTMLButtonElement>('.source-final-tabs button:last-child')!.click());
  assert.equal(d.querySelector('.source-final-connection [role=alert]')!.textContent,'状态读取失败。');assert.equal(d.querySelector<HTMLDetailsElement>('.source-final-connection .source-final-diagnostics')!.open,false);assert.match(d.querySelector('.source-final-connection .source-final-diagnostics')!.textContent!,/generated_recording_identity_read_failure/);assert.equal(d.querySelector('.connector-recording-connection'),null);
 });
+
+
+test('source coverage is separate from idle execution and legacy sources remain unknown without invented remaining counts',async t=>{
+ const {root,d}=await fixture(t),partial={...source('generated-partial','idle'),status:{state:'idle',coverage:{state:'partial',window:{to:at},processed:100,remaining:null,failed:1,limitations:['pagination_pending','content_partial'],updatedAt:at}}};
+ const api=apiWith(path=>path==='/api/sources'?{items:[source('generated-legacy','idle'),partial]}:path.startsWith('/api/source-items?')?{items:[],nextCursor:null}:{});
+ await act(async()=>root.render(view(api)));const rows=d.querySelectorAll('.source-final-row');assert.equal(rows[0]!.querySelector('.source-coverage-summary')!.textContent,'覆盖未知');assert.equal(rows[1]!.querySelector('.source-final-status')!.textContent,'等待下次同步');assert.equal(rows[1]!.querySelector('.source-coverage-summary')!.textContent,'部分覆盖');
+ await act(async()=>rows[1]!.querySelector<HTMLButtonElement>('.source-select')!.click());assert.equal(d.querySelector('.source-final-current')!.textContent,'等待下次同步');assert.match(d.querySelector('.source-final-coverage')!.textContent!,/已处理 100 条来源记录.*剩余条目数未知.*待处理的失败 1 项.*仍有分页待继续.*部分正文尚未读取/s);assert.doesNotMatch(d.querySelector('.source-final-coverage')!.textContent!,/剩余 0/);
+});

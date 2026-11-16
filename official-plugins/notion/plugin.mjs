@@ -227,9 +227,7 @@ const connector = {
           id, name: sourceName(item), kind: SOURCE_KIND, deviceId: DEVICE_ID,
           platform: 'import', retention: 'snapshot', enabled: true,
         });
-        try {
-          ctx.sources.update(id, {name: sourceName(item), ...(enableSelected ? {enabled: true} : {})});
-        } catch { /* Registration already failed above when identity changed. */ }
+        ctx.sources.update(id, {name: sourceName(item), ...(enableSelected ? {enabled: true} : {})});
       }
     };
 
@@ -250,7 +248,7 @@ const connector = {
       const mode = source.initialSync ?? 'all';
       const scope = hash(JSON.stringify([doc.token?.workspaceId, doc.token?.botId, doc.token?.connectedAt, item.id, item.type, item.selection, mode]));
       let scan = record?.value;
-      const same = scan?.version === 1 && scan.id === item.id && scan.type === item.type && scan.scope === scope && source.status?.coverage;
+      const same = scan?.version === 1 && scan.id === item.id && scan.type === item.type && scan.mode === mode && scan.scope === scope && source.status?.coverage;
       if (same) {
         if (mode === 'new_only' && (typeof scan.baselineAt !== 'string' || !Number.isFinite(Date.parse(scan.baselineAt))) || scan.pageBaseline !== undefined && (typeof scan.pageBaseline !== 'string' || !Number.isFinite(Date.parse(scan.pageBaseline))) || !scan.window || !Number.isFinite(Date.parse(scan.window.to)) || scan.window.from && (!Number.isFinite(Date.parse(scan.window.from)) || Date.parse(scan.window.from) > Date.parse(scan.window.to)) || !Number.isSafeInteger(scan.processed) || scan.processed < 0 || !Number.isSafeInteger(scan.failed) || scan.failed < 0 || typeof scan.complete !== 'boolean' || typeof scan.contentPartial !== 'boolean' || scan.cursor !== undefined && (typeof scan.cursor !== 'string' || !scan.cursor || scan.cursor.length > 2048)) throw new NotionError('notion_state_invalid', 503);
         if (!scan.complete) return {key, revision: record.revision, scan};
@@ -460,7 +458,9 @@ const connector = {
             ...(batch.pageBaseline ? {pageBaseline: batch.pageBaseline} : {}),
           };
           if (batch.nextCursor) scan.cursor = batch.nextCursor; else delete scan.cursor;
+          if (closed) throw new NotionError('connector_closed', 503);
           active.record = await saveScan(active.record, scan);
+          if (closed) throw new NotionError('connector_closed', 503);
           ctx.sources.reportStatus(id, {state: 'idle', lastSyncAt: now(), coverage: coverage(scan)});
           active = undefined;
         }
@@ -472,7 +472,7 @@ const connector = {
         const failure = error instanceof NotionError ? error : new NotionError('notion_sync_failed', 502);
         state = [401, 403].includes(failure.statusCode) ? 'permission_required' : 'error';
         code = failure.code;
-        if (active) {
+        if (!closed && active) {
           let scan = {...active.record.scan, failed: 1};
           if (code === 'notion_cursor_invalid') {scan = {...scan, processed: 0, complete: false};delete scan.cursor;}
           try { active.record = await saveScan(active.record, scan); } catch { /* A fenced host cannot publish a late checkpoint. */ }

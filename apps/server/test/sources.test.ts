@@ -106,4 +106,5 @@ test('source coverage remains independent of execution, validates completion and
  restored.update('fixture',{enabled:false});restored.update('fixture',{enabled:true});assert.deepEqual(restored.getSource('fixture').status?.coverage,complete,'pausing does not discard coverage');
  restored.update('fixture',{initialSync:'new_only'});assert.equal(restored.getSource('fixture').status?.coverage,undefined,'a new selection policy cannot inherit old complete coverage');
  restored.reportStatus('fixture',{state:'syncing'});assert.equal(restored.getSource('fixture').status?.coverage,undefined);
+ restored.reportStatus('fixture',{state:'idle',coverage:complete});restored.resetCoverage('fixture');assert.equal(restored.getSource('fixture').status?.coverage,undefined);assert.equal(restored.getSource('fixture').status?.state,'idle','explicit range reset leaves execution state independent');
 });
