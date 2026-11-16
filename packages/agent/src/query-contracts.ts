@@ -16,8 +16,9 @@ export interface QueryRequest {
   anchorMaterialRef?: string;
   /** Host-reported archive-wide coverage, not a guarantee for the selected window. */
   memoryCoverage?:{scope:'archive';pendingBatches:number;failedBatches:number;lastSavedAt:string|null};
-  /** Small host-selected derived leads, never citation evidence or an owner-identity grant. */
-  openingMemories?:{id:string;title:string;statement:string;uncertainty:string;status:'published'|'proposed';tier:'episode'|'consolidated';createdAt:string;admission?:{scope:string;attribution:'user'|'third_party'|'observed'|'inferred'};validFrom?:string;validUntil?:string}[];
+  /** Current derived context, including complete explicitly standing items.
+   * It grants neither original citations, owner identity nor Action authority. */
+  openingMemories?:{id:string;title:string;statement:string;uncertainty:string;contextPriority?:'standing';status:'published'|'proposed';tier:'episode'|'consolidated';createdAt:string;admission?:{scope:string;attribution:'user'|'third_party'|'observed'|'inferred'};validFrom?:string;validUntil?:string}[];
   /** Host-only permission for one optional goal-only draft in the final
    * answer. Model output never chooses the draft identity, scope or capability. */
   assistantDraft?: true;

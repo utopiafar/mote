@@ -32,3 +32,28 @@ test('malformed optional metadata and legacy missing fields never manufacture a 
  for(const lead of result.leads){assert.equal(lead.admission,undefined);assert.equal(lead.validFrom,undefined);assert.equal(lead.validUntil,undefined);}
  assert.deepEqual(result.evidenceDependencies.ids,['legacy',originalId,'invalid']);
 });
+
+test('all explicitly standing cards survive pagination and newer ordinary cards without clipping their limits',async()=>{
+ const standing=Array.from({length:7},(_,index)=>card('standing-'+index,{contextPriority:'standing',title:'Generated standing title '.repeat(10)+index,
+  statement:'Generated scoped constraint. '.repeat(40)+'EXACT APPLICABILITY TAIL',uncertainty:'Generated uncertainty. '.repeat(20)+'UNCERTAINTY TAIL',
+  admission:{layer:'memory',reason:'Generated standing choice',scope:'Only this generated project',attribution:index===0?'third_party':'user'}}));
+ const ordinary=Array.from({length:12},(_,index)=>card('recent-'+index,{title:'Newer generated ordinary card',createdAt:'2026-09-19T00:00:00Z'})),details=[...standing,...ordinary],calls:any[]=[];
+ const scoped:ContextReader={...reader(details),memories:async args=>{
+  calls.push(args);
+  if(args.id)return {items:details.filter(item=>item.id===args.id)};
+  if(args.contextPriority==='standing'){const offset=Number(args.cursor??0);return {items:standing.slice(offset,offset+3),nextCursor:offset+3<standing.length?String(offset+3):null};}
+  return {items:ordinary.slice(0,args.limit)};
+ }};
+ const result=await openingMemoryContext(scoped,'Generated request',{deviceId:'generated',contextTime:'2026-09-20T00:00:00Z'});
+ assert.deepEqual(result.leads.filter(item=>item.contextPriority==='standing').map(item=>item.id),standing.map(item=>item.id));
+ assert.equal(result.leads.length,12,'all seven standing items coexist with five optional ordinary leads');
+ assert.equal(result.leads[0].title,standing[0].title);assert.equal(result.leads[0].statement,standing[0].statement);assert.equal(result.leads[0].uncertainty,standing[0].uncertainty);assert.equal(result.leads[0].admission?.attribution,'third_party');
+ assert.equal(calls.filter(call=>call.contextPriority==='standing').length,3);
+ assert.ok(calls.every(call=>call.deviceId==='generated'&&call.asOf==='2026-09-20T00:00:00Z'));
+ assert.ok(standing.every(item=>result.evidenceDependencies.ids.includes(item.id)));assert.equal(result.evidenceDependencies.complete,true);
+});
+
+test('a repeated standing cursor fails explicitly instead of returning a partial standing set',async()=>{
+ const scoped={...reader([]),memories:async()=>({items:[],nextCursor:'repeated'})};
+ await assert.rejects(openingMemoryContext(scoped,'Generated request',{}),/pagination changed/);
+});

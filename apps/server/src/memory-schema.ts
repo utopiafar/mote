@@ -45,7 +45,7 @@ export const memorySchema=z.object({
   correction:z.object({memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),noteId:z.string().uuid()}).strict().optional(),
   domain:z.enum(['personal','coding']),coding:codingMemorySchema.optional(),
   scopeRefs:z.array(memoryScopeRefSchema).max(30).optional(),
-  admission:memoryAdmissionSchema,reviewRunId:z.string().max(200).optional(),reviewReceipt:memoryReviewReceiptSchema.optional(),
+  admission:memoryAdmissionSchema,contextPriority:z.literal('standing').optional(),reviewRunId:z.string().max(200).optional(),reviewReceipt:memoryReviewReceiptSchema.optional(),
   id:z.string().uuid(),tier:z.enum(['episode','consolidated']),kind:z.enum(['episodic','semantic','procedural']),relatedMemoryIds:z.array(z.string().uuid()).max(50).optional(),validFrom:timestamp.optional(),validUntil:timestamp.optional(),title:z.string(),statement:z.string(),uncertainty:z.string(),
   evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(memoryEvidenceSchema).max(100),
   createdAt:timestamp,updatedAt:timestamp.optional(),status:z.enum(['proposed','published','stale']),
