@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
@@ -10,6 +10,7 @@ import type {Config} from '../src/config.js';
 import {GitHubPluginReleases,type PluginReleaseTransport} from '../src/plugin-release.js';
 import {OFFICIAL_PLUGIN_CATALOG,officialPluginCatalog} from '../src/official-plugin-catalog.js';
 import type {ConnectorManifest} from '../src/connectors/registry.js';
+import {materialId} from '../src/materials.js';
 
 const repoRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
 const packageRoot=join(repoRoot,'official-plugins/notion');
@@ -20,15 +21,15 @@ const secretValue='generated-notion-client-secret-'+randomUUID();
 const headers={authorization:'Bearer '+owner};
 const notionHeaders={'content-type':'application/json'};
 
-function waitFor(check:()=>boolean,description:string){
+function waitFor(check:()=>boolean|Promise<boolean>,description:string){
   const until=Date.now()+8000;
-  return (async()=>{while(Date.now()<until){if(check())return;await new Promise(resolve=>setTimeout(resolve,25));}throw new Error('Timed out waiting for '+description);})();
+  return (async()=>{while(Date.now()<until){if(await check())return;await new Promise(resolve=>setTimeout(resolve,25));}throw new Error('Timed out waiting for '+description);})();
 }
 function rejectingGitHub(calls:string[]):PluginReleaseTransport{
   return async url=>{calls.push(url);throw new Error('GitHub transport must not be used for the in-repo official Notion package: '+url);};
 }
 type Call={url:string;method:string;headers:Record<string,string>;body:unknown;pathname:string};
-type FakeNotion={calls:Call[];fetch:typeof fetch;setPageText:(value:string)=>void;setPageEdited:(value:string)=>void;setFailToken:(value:boolean)=>void;setFailPage:(value:boolean)=>void;setDatabaseEntries:(value:any[])=>void;setBlocks:(value:any[])=>void;setQueryFailure:(value:boolean)=>void};
+type FakeNotion={calls:Call[];fetch:typeof fetch;setPageText:(value:string)=>void;setPageEdited:(value:string)=>void;setFailToken:(value:boolean)=>void;setFailPage:(value:boolean)=>void;setDatabaseEntries:(value:any[])=>void;setBlocks:(value:any[])=>void;setChildren:(id:string,value:any[])=>void;setQueryFailure:(value:boolean)=>void};
 
 /** Generated Notion transport. It records every request so tests can prove the
  * adapter only reads and never creates, updates, deletes or appends. */
@@ -36,6 +37,7 @@ function fakeNotion():FakeNotion{
   const calls:Call[]=[];
   let pageText='First generated page body.',pageEdited='2026-11-01T00:00:00.000Z',failToken=false,failPage=false;
   let databaseEntries:any[]=[{object:'page',id:'entry-1',url:'https://www.notion.so/Entry-1',last_edited_time:'2026-11-02T00:00:00.000Z',properties:{Name:{type:'title',title:[{plain_text:'Row one'}]},Status:{type:'select',select:{name:'Todo'}}}}],blocks:any[]|undefined,queryFailure=false;
+  const children=new Map<string,any[]>(),identified=(id:string,values:any[])=>values.map((block,index)=>({id:id+'-block-'+index,...block}));
   const json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json'}});
   const transport:typeof fetch=async(input,init={})=>{
     const url=typeof input==='string'?input:input instanceof URL?input.toString():input.url;
@@ -55,8 +57,15 @@ function fakeNotion():FakeNotion{
     if(method==='GET'&&parsed.pathname==='/v1/pages/page-1'){
       return failPage?json({object:'error',message:'generated failure'},500):json({object:'page',id:'page-1',url:'https://www.notion.so/Roadmap-1?pvs=4',created_time:'2026-10-01T00:00:00.000Z',last_edited_time:pageEdited,properties:{Name:{type:'title',title:[{plain_text:'Roadmap'}]}}});
     }
-    if(method==='GET'&&parsed.pathname==='/v1/blocks/page-1/children'){
-      const all=blocks??[{object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:pageText}]}}],offset=Number(parsed.searchParams.get('start_cursor')??0),results=all.slice(offset,offset+100),more=offset+results.length<all.length;
+    if(method==='GET'&&parsed.pathname.startsWith('/v1/pages/')){
+      const entry=databaseEntries.find(value=>value.id===decodeURIComponent(parsed.pathname.slice('/v1/pages/'.length)));
+      if(entry)return json(entry);
+    }
+    if(method==='GET'&&/^\/v1\/blocks\/[^/]+\/children$/.test(parsed.pathname)){
+      const id=decodeURIComponent(parsed.pathname.split('/')[3]!),entry=databaseEntries.find(value=>value.id===id);
+      const all=children.get(id)??(id==='page-1'?blocks??identified(id,[{object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:pageText}]}}]):entry?identified(id,[{object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:'Generated database body '+id}]}}]):undefined);
+      if(!all)return json({object:'error',message:'Unknown generated children'},404);
+      const offset=Number(parsed.searchParams.get('start_cursor')??0),results=all.slice(offset,offset+100),more=offset+results.length<all.length;
       return json({object:'list',has_more:more,next_cursor:more?String(offset+results.length):null,results});
     }
     if(method==='POST'&&parsed.pathname==='/v1/databases/db-1/query'){
@@ -75,7 +84,7 @@ function fakeNotion():FakeNotion{
     setPageEdited:value=>{pageEdited=value;},
     setFailToken:value=>{failToken=value;},
     setFailPage:value=>{failPage=value;},
-    setDatabaseEntries:value=>{databaseEntries=value;},setBlocks:value=>{blocks=value;},setQueryFailure:value=>{queryFailure=value;},
+    setDatabaseEntries:value=>{databaseEntries=value;},setBlocks:value=>{blocks=identified('page-1',value);},setChildren:(id,value)=>children.set(id,identified(id,value)),setQueryFailure:value=>{queryFailure=value;},
   };
 }
 function writeCalls(calls:Call[]){
@@ -351,7 +360,7 @@ async function installedNotion(t:import('node:test').TestContext,transport=fakeN
 const databaseRow=(index:number,at='2026-11-01T00:00:00.000Z',created='2026-10-01T00:00:00.000Z')=>({object:'page',id:'generated-entry-'+String(index).padStart(4,'0'),url:'https://www.notion.so/generated-'+index,created_time:created,last_edited_time:at,properties:{Name:{type:'title',title:[{plain_text:'Generated row '+index}]}}});
 
 test('installed Notion checkpoints bounded database pages after durable upserts, replays safely and exposes idle partial coverage',async t=>{
- const f=await installedNotion(t);f.transport.setDatabaseEntries(Array.from({length:250},(_,index)=>databaseRow(index)));await f.select([{id:'db-1',type:'database'}]);
+ const f=await installedNotion(t);f.transport.setDatabaseEntries(Array.from({length:250},(_,index)=>databaseRow(index)));f.transport.setChildren(databaseRow(249).id,[{object:'block',type:'image',image:{}}]);await f.select([{id:'db-1',type:'database'}]);
  const source=f.node.sources.listSources()[0]!,sourceId=source.id;
  // Fail the checkpoint after all 100 upserts committed, as a process failure
  // between the archive and state transactions would. The prior cursor survives.
@@ -370,7 +379,7 @@ test('installed Notion checkpoints bounded database pages after durable upserts,
  const first=f.node.sources.listItems({sourceId,limit:200}),second=f.node.sources.listItems({sourceId,limit:200,cursor:first.nextCursor!});assert.equal(first.items.length+second.items.length,250);assert.equal(new Set([...first.items,...second.items].map(item=>item.externalId)).size,250);
  for(const entry of [...first.items,...second.items])assert.equal(f.node.sources.history(sourceId,entry.externalId).length,1);
  const queries=f.transport.calls.filter(call=>call.pathname==='/v1/databases/db-1/query');assert.deepEqual(queries.map(call=>(call.body as any).start_cursor),[undefined,undefined,'offset-100','offset-100','offset-200']);assert.ok(queries.every(call=>(call.body as any).page_size===100));assert.ok(queries.every(call=>JSON.stringify((call.body as any).filter)===JSON.stringify((queries[0]!.body as any).filter)));
- status=f.node.sources.getSource(sourceId).status!;assert.equal(status.state,'idle');assert.equal(status.coverage?.processed,250);assert.deepEqual(status.coverage?.limitations,['content_partial']);assert.equal(status.coverage?.remaining,null,'unread row bodies are not zero remaining work');
+ status=f.node.sources.getSource(sourceId).status!;assert.equal(status.state,'idle');assert.equal(status.coverage?.processed,250);assert.deepEqual(status.coverage?.limitations,['content_partial']);assert.equal(status.coverage?.remaining,null,'unsupported row content is not zero remaining work');
  const ownerSources=await f.request('/api/sources'),connectorStatus=await f.request('/api/connectors/notion');assert.deepEqual(ownerSources.items[0].status.coverage,status.coverage);assert.deepEqual(connectorStatus.selected[0].coverage,status.coverage);
  const states=f.node.store.db.prepare("SELECT key,bytes FROM plugin_instance_state WHERE key='notion' OR key LIKE 'notion.scan.%'").all();assert.equal(states.length,2);assert.ok(states.every(row=>Number(row.bytes)<64*1024));
  await assertCoverageDom(f.node,sourceId);
@@ -420,13 +429,114 @@ test('Notion new-only databases baseline old objects and retain known revisions;
  assert.equal(f.node.sources.history(pageSource.id,'page-1').length,1);assert.match(f.node.sources.getItem(pageSource.id,'page-1')!.text,/after the single-page baseline/);
 });
 
-test('Notion page coverage remains partial for unread child blocks, bounded pages and truncated text',async t=>{
+const paragraph=(value:string,id?:string)=>({...(id?{id}:{}),object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:value}]}});
+
+async function materialBody(f:Awaited<ReturnType<typeof installedNotion>>,sourceId:string,externalId='page-1'){
+ await waitFor(async()=>{await f.node.materialOrganizer.tick(1000);const record=f.node.materials.get(materialId(sourceId,externalId)),head=f.node.sources.getItem(sourceId,externalId);return Boolean(record&&record.coverage.reason!=='source_evidence_changed'&&f.node.materials.members(record.ref).items.some(member=>member.ref==='capture:'+head?.captureId));},'current Notion Material');
+ const id=materialId(sourceId,externalId),record=await f.request('/api/materials/'+id),read=await f.request('/api/materials/'+id+'/read?length=12000');
+ assert.equal(read.material.ref,record.ref);assert.deepEqual(read.material.coverage,record.coverage);
+ const model=await f.request('/api/agent-view/material-read?ref='+encodeURIComponent(record.ref)+'&length=4000');assert.deepEqual(model.material.coverage,record.coverage);
+ return {id,record,read,model};
+}
+
+test('Notion retains its new-only anchor when a crash leaves a durable scan before any status report',async t=>{
+ const f=await installedNotion(t);f.transport.setDatabaseEntries([]);await f.select([{id:'db-1',type:'database'}]);const source=f.node.sources.listSources()[0]!,clock=Date.now();t.mock.timers.enable({apis:['Date'],now:clock});const patch=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers,payload:{initialSync:'new_only'}});assert.equal(patch.statusCode,200,patch.body);
+ t.mock.method(f.node.sources,'reportStatus',()=>{throw Error('Generated stop before status acknowledgement');});await f.request('/api/connectors/notion/sync',{},502);const anchor=f.scan().baselineAt,window=f.scan().window;assert.equal(anchor,new Date(clock).toISOString());assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);
+ t.mock.timers.tick(1000);const at=new Date(clock+500).toISOString();f.transport.setDatabaseEntries([databaseRow(400,at,at)]);await f.restart();await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().baselineAt,anchor);assert.deepEqual(f.scan().window,window);assert.equal(f.scan().processed,0);await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().baselineAt,anchor);assert.equal(f.scan().processed,1);assert.ok(f.node.sources.getItem(source.id,databaseRow(400).id),'a new object between the saved anchor and restart must not fall behind a replacement baseline');
+});
+
+test('Notion page bodies resume after the 200-block and 100000-character budgets and publish truthful searchable Materials',async t=>{
  const f=await installedNotion(t);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;
- f.transport.setBlocks(Array.from({length:250},(_,index)=>({object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:'Generated bounded block '+index}]}})));await f.request('/api/connectors/notion/sync',{});
- let coverage=f.node.sources.getSource(source.id).status?.coverage;assert.equal(coverage?.state,'partial');assert.equal(coverage?.remaining,null);assert.deepEqual(coverage?.limitations,['content_partial']);assert.equal(f.transport.calls.filter(call=>call.pathname==='/v1/blocks/page-1/children').length,2,'the existing two-page block budget is retained');assert.ok(!f.node.sources.getItem(source.id,'page-1')!.text.includes('block 200'));
- f.transport.setBlocks([{object:'block',type:'toggle',has_children:true,toggle:{rich_text:[{plain_text:'Generated unread nested content'}]}}]);await f.request('/api/connectors/notion/sync',{});coverage=f.node.sources.getSource(source.id).status?.coverage;assert.equal(coverage?.state,'partial');assert.deepEqual(coverage?.limitations,['content_partial']);
- f.transport.setBlocks(Array.from({length:100},()=>({object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:'x'.repeat(1200)}]}})));await f.request('/api/connectors/notion/sync',{});assert.equal(f.node.sources.getItem(source.id,'page-1')!.text.length,100000);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');
- const item=f.node.sources.getItem(source.id,'page-1')!;assert.equal(item.document?.fileIndex,undefined,'unknown full text length is never fabricated as a file index');
+ f.transport.setBlocks(Array.from({length:250},(_,index)=>paragraph('Generated bounded block '+index)));await f.request('/api/connectors/notion/sync',{});
+ let coverage=f.node.sources.getSource(source.id).status?.coverage;assert.equal(coverage?.state,'partial');assert.equal(coverage?.remaining,null);assert.deepEqual(coverage?.limitations,['content_partial']);assert.equal(f.transport.calls.filter(call=>call.pathname==='/v1/blocks/page-1/children').length,2,'the existing two-page block budget is retained');assert.ok(!f.node.sources.getItem(source.id,'page-1')!.text.includes('block 200'));assert.equal(f.scan().processed,0,'a retained prefix is not an additional processed page');
+ const partial=await materialBody(f,source.id);assert.equal(partial.record.coverage.state,'partial');assert.equal(partial.record.coverage.reason,'source_body_pagination_pending');assert.equal(partial.record.memorySource.status,'waiting');assert.equal(f.node.materials.input(partial.record.ref,['material'])?.ready,false);assert.match(partial.read.text,/Generated bounded block 0/);
+ const prefixSearch=await f.request('/api/materials?query='+encodeURIComponent('Generated bounded block 199'));assert.equal(prefixSearch.items[0].coverage.state,'partial');assert.equal((await f.request('/api/materials?query='+encodeURIComponent('Generated bounded block 249'))).items.length,0);
+ assert.ok(JSON.stringify(f.scan()).length<60000);assert.ok(!JSON.stringify(f.scan()).includes('Generated bounded block'),'state contains positions and a prefix hash, not document text');
+ const window=f.scan().window;await f.restart();await f.request('/api/connectors/notion/sync',{});assert.deepEqual(f.scan().window,window);assert.equal(f.scan().processed,1);assert.equal(f.scan().complete,true);assert.equal(f.scan().body,undefined);
+ let item=f.node.sources.getItem(source.id,'page-1')!;assert.match(item.text,/block 199\nGenerated bounded block 200/);assert.ok(item.text.endsWith('Generated bounded block 249'));assert.deepEqual(item.document?.bodyCoverage,{state:'complete'});
+ const complete=await materialBody(f,source.id);assert.equal(complete.record.coverage.state,'complete');assert.equal(complete.record.memorySource.status,'ready');assert.equal(f.node.materials.input(complete.record.ref,['material'])?.ready,true);assert.equal((await f.request('/api/materials?query='+encodeURIComponent('Generated bounded block 249'))).items[0].id,complete.id);
+ f.transport.setPageEdited('2026-11-03T00:00:00.000Z');f.transport.setBlocks([{object:'block',type:'child_page',child_page:{title:'Generated unselected child page'}}]);await f.request('/api/connectors/notion/sync',{});coverage=f.node.sources.getSource(source.id).status?.coverage;assert.equal(coverage?.state,'partial');assert.deepEqual(coverage?.limitations,['content_partial']);assert.equal((await materialBody(f,source.id)).record.coverage.reason,'source_body_unsupported_content','unread child pages are not claimed as complete block text');
+ f.transport.setPageEdited('2026-11-04T00:00:00.000Z');f.transport.setBlocks(Array.from({length:100},()=>paragraph('x'.repeat(1200))));await f.request('/api/connectors/notion/sync',{});assert.equal(f.node.sources.getItem(source.id,'page-1')!.text.length,100000);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');assert.ok(f.scan().body.stack[0].textOffset>0,'a long block retains its exact character position');
+ await f.restart();await f.request('/api/connectors/notion/sync',{});item=f.node.sources.getItem(source.id,'page-1')!;assert.equal(item.text,'Name: Roadmap\n'+Array.from({length:100},()=> 'x'.repeat(1200)).join('\n'));assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'complete');assert.equal(item.document?.fileIndex,undefined,'unknown full text length is never fabricated as a file index');assert.equal(f.scan().processed,1);
+ const textMaterial=await materialBody(f,source.id),tail=await f.request('/api/materials/'+textMaterial.id+'/read?offset=119900&length=1000');assert.match(tail.text,/x{100}/);assert.equal(tail.material.coverage.state,'complete','the actual material reader retains text beyond the former cap');
+});
+
+test('Notion character continuation preserves a Unicode pair crossing the single-round text boundary',async t=>{
+ const f=await installedNotion(t);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!,content='z'+'😀'.repeat(60000)+' Generated Unicode tail';f.transport.setBlocks([paragraph(content)]);await f.request('/api/connectors/notion/sync',{});const prefix=f.node.sources.getItem(source.id,'page-1')!;assert.equal(prefix.text.length,99999);assert.ok(Buffer.byteLength(prefix.text)>prefix.text.length,'ingest retains the UTF-8 bytes rather than treating the character budget as a byte cap');assert.equal(/[\uD800-\uDBFF]$/.test(prefix.text),false);assert.equal(f.scan().body.prefix.hash,createHash('sha256').update(prefix.text).digest('hex'));assert.equal(f.scan().processed,0);
+ await f.restart();await f.request('/api/connectors/notion/sync',{});assert.equal(f.node.sources.getItem(source.id,'page-1')!.text,'Name: Roadmap\n'+content);assert.equal(f.scan().processed,1);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'complete');const material=await materialBody(f,source.id);assert.equal((await f.request('/api/materials?query='+encodeURIComponent('Generated Unicode tail'))).items[0].id,material.id);
+});
+
+test('Notion durable DFS keeps parent, deep child and sibling order across rounds and restarts',async t=>{
+ const f=await installedNotion(t);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;
+ f.transport.setBlocks([...Array.from({length:180},(_,index)=>paragraph('Generated prefix '+index)),{id:'deep-0',object:'block',type:'toggle',has_children:true,toggle:{rich_text:[{plain_text:'Generated parent 0'}]}},paragraph('Generated final root sibling')]);
+ for(let depth=0;depth<25;depth++)f.transport.setChildren('deep-'+depth,depth===24?[paragraph('Generated deepest tail')]:[{id:'deep-'+(depth+1),object:'block',type:'toggle',has_children:true,toggle:{rich_text:[{plain_text:'Generated parent '+(depth+1)}]}},paragraph('Generated child sibling '+depth)]);
+ await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().processed,0);assert.ok(f.scan().body.stack.length>10);assert.ok(!f.node.sources.getItem(source.id,'page-1')!.text.includes('Generated deepest tail'));
+ const position=f.scan().body,window=f.scan().window;await f.restart();assert.deepEqual(f.scan().body,position);await f.request('/api/connectors/notion/sync',{});assert.deepEqual(f.scan().window,window);
+ const body=f.node.sources.getItem(source.id,'page-1')!.text;assert.equal(f.scan().processed,1);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'complete');assert.match(body,/Generated parent 24\nGenerated deepest tail\nGenerated child sibling 23/);assert.ok(body.endsWith('Generated child sibling 0\nGenerated final root sibling'));assert.equal(body.split('Generated deepest tail').length,2,'replayed ancestors do not duplicate descendants');
+ const material=await materialBody(f,source.id);assert.equal((await f.request('/api/materials?query='+encodeURIComponent('Generated deepest tail'))).items[0].id,material.id);
+});
+
+test('Notion empty terminal pages publish a coverage-only revision and replay an archived completion after checkpoint failure',async t=>{
+ const transport=fakeNotion(),delegate=transport.fetch;
+ transport.setBlocks(Array.from({length:200},(_,index)=>paragraph('Generated empty-terminal body '+index)));
+ transport.fetch=async(input,init)=>{const url=new URL(typeof input==='string'?input:input instanceof URL?input.toString():input.url),response=await delegate(input,init);if(url.pathname==='/v1/blocks/page-1/children'&&url.searchParams.get('start_cursor')==='100'){const body=await response.json() as any;return new Response(JSON.stringify({...body,has_more:true,next_cursor:'200'}),{headers:notionHeaders});}return response;};
+ const f=await installedNotion(t,transport);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;await f.request('/api/connectors/notion/sync',{});
+ const partial=f.node.sources.getItem(source.id,'page-1')!,position=f.scan().body;assert.equal(partial.document?.bodyCoverage?.state,'partial');assert.equal(f.scan().processed,0);
+ f.node.store.db.exec("CREATE TRIGGER generated_terminal_checkpoint_failure BEFORE UPDATE ON plugin_instance_state WHEN new.key='notion.scan.0' AND json_extract(new.json,'$.processed')=1 BEGIN SELECT RAISE(ABORT,'generated terminal checkpoint failure'); END");
+ await f.request('/api/connectors/notion/sync',{},502);const complete=f.node.sources.getItem(source.id,'page-1')!;assert.equal(complete.text,partial.text);assert.notEqual(complete.revision,partial.revision);assert.deepEqual(complete.document?.bodyCoverage,{state:'complete'});assert.equal(f.node.sources.history(source.id,'page-1').length,2);assert.deepEqual(f.scan().body,position);assert.equal(f.scan().processed,0);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');
+ f.node.store.db.exec('DROP TRIGGER generated_terminal_checkpoint_failure');await f.restart();const replay=await f.request('/api/connectors/notion/sync',{});assert.equal(replay.duplicates,1);assert.equal(replay.imported,0);assert.equal(f.scan().processed,1);assert.equal(f.scan().complete,true);assert.equal(f.node.sources.history(source.id,'page-1').length,2);assert.equal(f.node.sources.getItem(source.id,'page-1')!.captureId,complete.captureId);assert.equal((await materialBody(f,source.id)).record.coverage.state,'complete');
+});
+
+test('Notion body failures preserve the prefix and cursor; an invalid cursor rebuilds without dropping or duplicating the tail',async t=>{
+ const transport=fakeNotion(),delegate=transport.fetch;let failure=0;
+ transport.setBlocks(Array.from({length:250},(_,index)=>paragraph('Generated recoverable body '+index)));
+ transport.fetch=async(input,init)=>{const url=new URL(typeof input==='string'?input:input instanceof URL?input.toString():input.url);if(failure&&url.pathname==='/v1/blocks/page-1/children'&&url.searchParams.get('start_cursor')==='100')return new Response(JSON.stringify({error:'generated body read failure'}),{status:failure,headers:notionHeaders});return delegate(input,init);};
+ const f=await installedNotion(t,transport);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;await f.request('/api/connectors/notion/sync',{});const position=f.scan().body,prefix=f.node.sources.getItem(source.id,'page-1')!;
+ failure=503;await f.request('/api/connectors/notion/sync',{},503);assert.deepEqual(f.scan().body,position);assert.equal(f.scan().processed,0);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.failed,1);assert.equal(f.node.sources.getItem(source.id,'page-1')!.captureId,prefix.captureId);assert.equal((await materialBody(f,source.id)).record.coverage.state,'partial');
+ failure=400;await f.restart();await f.request('/api/connectors/notion/sync',{},409);assert.equal(f.scan().body,undefined);assert.equal(f.scan().processed,0);assert.equal(f.scan().complete,false);assert.equal(f.node.sources.getItem(source.id,'page-1')!.captureId,prefix.captureId);
+ failure=0;const replay=await f.request('/api/connectors/notion/sync',{});assert.equal(replay.duplicates,1);assert.equal(f.scan().processed,0);await f.request('/api/connectors/notion/sync',{});const final=f.node.sources.getItem(source.id,'page-1')!;assert.ok(final.text.endsWith('Generated recoverable body 249'));assert.equal(final.text.split('Generated recoverable body 199').length,2);assert.equal(f.node.sources.history(source.id,'page-1').length,2);assert.equal(f.scan().processed,1);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'complete');
+});
+
+test('Notion changed revisions start a fresh body instead of appending an old cursor outside the fixed window',async t=>{
+ const f=await installedNotion(t);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;
+ f.transport.setBlocks(Array.from({length:250},(_,index)=>paragraph('Generated old revision '+index)));await f.request('/api/connectors/notion/sync',{});const window=f.scan().window,edited=new Date(Date.parse(window.to)+1000).toISOString();
+ f.transport.setPageEdited(edited);f.transport.setBlocks(Array.from({length:250},(_,index)=>paragraph('Generated replacement revision '+index)));await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().complete,true);assert.equal(f.scan().body,undefined);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');assert.ok(!f.node.sources.getItem(source.id,'page-1')!.text.includes('replacement'));
+ t.mock.timers.enable({apis:['Date'],now:Date.parse(edited)+1000});await f.request('/api/connectors/notion/sync',{});const prefix=f.node.sources.getItem(source.id,'page-1')!;assert.ok(prefix.text.includes('Generated replacement revision 0'));assert.ok(!prefix.text.includes('Generated old revision'));assert.equal(f.scan().body.stack[0].cursor,'100');assert.equal(f.scan().processed,0);await f.restart();await f.request('/api/connectors/notion/sync',{});const final=f.node.sources.getItem(source.id,'page-1')!;assert.ok(final.text.endsWith('Generated replacement revision 249'));assert.equal(final.text.includes('Generated old revision'),false);assert.equal(f.scan().processed,1);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'complete');
+});
+
+test('a database row revised outside a pending body window cannot turn an empty requery into full coverage',async t=>{
+ const f=await installedNotion(t);f.transport.setDatabaseEntries([databaseRow(0)]);f.transport.setChildren(databaseRow(0).id,Array.from({length:250},(_,index)=>paragraph('Generated database old body '+index)));await f.select([{id:'db-1',type:'database'}]);const source=f.node.sources.listSources()[0]!;await f.request('/api/connectors/notion/sync',{});const window=f.scan().window,edited=new Date(Date.parse(window.to)+1000).toISOString();
+ f.transport.setDatabaseEntries([databaseRow(0,edited)]);f.transport.setChildren(databaseRow(0).id,Array.from({length:250},(_,index)=>paragraph('Generated database new body '+index)));await f.request('/api/connectors/notion/sync',{},409);assert.equal(f.scan().body,undefined);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().complete,true);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial','the query bound is not an external historical snapshot');assert.equal(f.scan().processed,0);assert.ok(!f.node.sources.getItem(source.id,databaseRow(0).id)!.text.includes('new body'));
+ t.mock.timers.enable({apis:['Date'],now:Date.parse(edited)+1000});await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().processed,0);assert.ok(!f.node.sources.getItem(source.id,databaseRow(0).id)!.text.includes('old body'));await f.restart();await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().processed,1);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'complete');assert.ok(f.node.sources.getItem(source.id,databaseRow(0).id)!.text.endsWith('Generated database new body 249'));assert.equal((await materialBody(f,source.id,databaseRow(0).id)).record.coverage.state,'complete');
+});
+
+test('Notion database properties and a multi-round row body share one identity and one processed entry',async t=>{
+ const f=await installedNotion(t);f.transport.setDatabaseEntries([databaseRow(0),databaseRow(1)]);f.transport.setChildren(databaseRow(0).id,Array.from({length:250},(_,index)=>paragraph('Generated first row body '+index)));await f.select([{id:'db-1',type:'database'}]);const source=f.node.sources.listSources()[0]!;
+ await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().rowIndex,0);assert.equal(f.scan().processed,0);assert.equal(f.scan().body.id,databaseRow(0).id);assert.equal(f.node.sources.getItem(source.id,databaseRow(1).id),undefined);const prefix=f.node.sources.getItem(source.id,databaseRow(0).id)!;assert.match(prefix.text,/Name: Generated row 0/);assert.match(prefix.text,/Generated first row body 199/);assert.equal(prefix.document?.bodyCoverage?.state,'partial');
+ await f.restart();await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().processed,2);assert.equal(f.scan().complete,true);assert.equal(f.scan().rowIndex,undefined);assert.equal(f.node.sources.listItems({sourceId:source.id}).items.length,2);assert.equal(f.node.sources.history(source.id,databaseRow(0).id).length,2);assert.equal(f.node.sources.history(source.id,databaseRow(1).id).length,1);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'complete');assert.ok(f.node.sources.getItem(source.id,databaseRow(0).id)!.text.endsWith('Generated first row body 249'));const material=await materialBody(f,source.id,databaseRow(0).id);assert.equal((await f.request('/api/materials?query='+encodeURIComponent('Generated first row body 249'))).items[0].id,material.id);
+});
+
+test('Notion rejects repeated blocks, ancestor cycles and cursor cycles instead of claiming complete coverage',async t=>{
+ for(const kind of ['duplicate','ancestor','cursor'] as const)await t.test(kind,async sub=>{
+  const transport=fakeNotion(),delegate=transport.fetch;
+  if(kind==='duplicate')transport.setBlocks([paragraph('Generated duplicate one','same-block'),paragraph('Generated duplicate two','same-block')]);
+  if(kind==='ancestor'){transport.setBlocks([{id:'nested-cycle',object:'block',type:'toggle',has_children:true,toggle:{rich_text:[]}}]);transport.setChildren('nested-cycle',[{id:'page-1',object:'block',type:'toggle',has_children:true,toggle:{rich_text:[]}}]);}
+  if(kind==='cursor')transport.fetch=async(input,init)=>{const url=new URL(typeof input==='string'?input:input instanceof URL?input.toString():input.url);if(url.pathname==='/v1/blocks/page-1/children'){const cursor=url.searchParams.get('start_cursor');return new Response(JSON.stringify({results:[paragraph('Generated cursor '+cursor,'cursor-block-'+cursor)],has_more:true,next_cursor:cursor==='loop-a'?'loop-b':'loop-a'}),{headers:notionHeaders});}return delegate(input,init);};
+  const f=await installedNotion(sub,transport);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;await f.request('/api/connectors/notion/sync',{},502);assert.equal(f.node.sources.getItem(source.id,'page-1'),undefined);assert.equal(f.scan().processed,0);assert.equal(f.scan().complete,false);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.failed,1);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');
+ });
+});
+
+test('a properties-only persisted database checkpoint rebuilds unread historical bodies without replacing selection or authorization',async t=>{
+ const f=await installedNotion(t);f.transport.setDatabaseEntries(Array.from({length:250},(_,index)=>databaseRow(index)));await f.select([{id:'db-1',type:'database'}]);const source=f.node.sources.listSources()[0]!,to=new Date().toISOString();
+ // #972's persisted producer shape: all 250 properties snapshots are durable,
+ // enumeration complete, bodies explicitly partial, no body continuation.
+ for(let index=0;index<250;index++){const row=databaseRow(index),title='Generated row '+index,content='Name: '+title,uri=row.url,modifiedAt=row.last_edited_time;await f.node.sources.upsert(source.id,{externalId:row.id,revision:createHash('sha256').update(JSON.stringify({id:row.id,title,content,uri,modifiedAt})).digest('hex'),observedAt:to,modifiedAt,title,text:content,kind:'file',layer:'snapshot',mimeType:'text/markdown',uri,metadata:{version:1,provider:{updatedAt:modifiedAt}}});}
+ const stateRow=f.node.store.db.prepare("SELECT json FROM plugin_instance_state WHERE key='notion'").get()!,doc=JSON.parse(String(stateRow.json)),selected=doc.selected[0],scope=createHash('sha256').update(JSON.stringify([doc.token.workspaceId,doc.token.botId,doc.token.connectedAt,selected.id,selected.type,selected.selection,'all',source.syncScopeVersion??0])).digest('hex'),scan={version:1,id:'db-1',type:'database',scope,mode:'all',window:{to},processed:250,failed:0,complete:true,contentPartial:true},json=JSON.stringify(scan);
+ f.node.store.db.prepare("INSERT INTO plugin_instance_state(package_id,installation_id,instance_id,key,json,bytes,revision,updated_at) SELECT package_id,installation_id,instance_id,'notion.scan.0',?,?,1,? FROM plugin_instance_state WHERE key='notion'").run(json,Buffer.byteLength(json),to);f.node.sources.reportStatus(source.id,{state:'idle',coverage:{state:'partial',window:{to},processed:250,remaining:null,failed:0,limitations:['content_partial'],updatedAt:to}});
+ const authorizationCalls=f.transport.calls.filter(call=>call.pathname==='/v1/oauth/token').length;await f.restart();assert.equal(f.scan().processed,250);assert.equal(f.scan().bodyFormat,undefined);
+ await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().processed,100);assert.equal(f.scan().cursor,'offset-100');assert.deepEqual(f.scan().window,{to});assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');await f.restart();await f.request('/api/connectors/notion/sync',{});await f.request('/api/connectors/notion/sync',{});
+ assert.equal(f.scan().processed,250);assert.equal(f.scan().complete,true);assert.deepEqual(f.scan().window,{to});assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'complete');const first=f.node.sources.listItems({sourceId:source.id,limit:200}),second=f.node.sources.listItems({sourceId:source.id,limit:200,cursor:first.nextCursor!});assert.equal(first.items.length+second.items.length,250);for(const item of [...first.items,...second.items]){assert.match(item.text,/Generated database body/);assert.equal(f.node.sources.history(source.id,item.externalId).length,2,'the old properties revision remains beside one body revision');assert.deepEqual(item.document?.bodyCoverage,{state:'complete'});}
+ assert.equal(f.transport.calls.filter(call=>call.pathname==='/v1/oauth/token').length,authorizationCalls,'body backfill reuses the retained authorization');assert.equal(JSON.parse(String(f.node.store.db.prepare("SELECT json FROM plugin_instance_state WHERE key='notion'").get()!.json)).selected[0].selection,selected.selection);const material=await materialBody(f,source.id,databaseRow(249).id);assert.equal((await f.request('/api/materials?query='+encodeURIComponent('Generated database body '+databaseRow(249).id))).items[0].id,material.id);for(let index=0;index<250;index++)assert.deepEqual(f.node.materials.get(materialId(source.id,databaseRow(index).id))?.coverage,{state:'complete'},'every backfilled current Material has the new body coverage');
 });
 
 for(const mode of ['new_only','aba'] as const)for(const outcome of ['success','error'] as const)test(`owner ${mode} change fences a suspended Notion page ${outcome} without old coverage recovery`,async t=>{
@@ -461,6 +571,23 @@ test('an owner mode ABA fences Notion upserts queued behind an earlier source wr
   release();await blocker;const response=await running;assert.equal(response.statusCode,409,response.body);assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);
   assert.equal(f.node.sources.history(source.id,'page-1').length,1);assert.equal(f.node.sources.getItem(source.id,'page-1')?.captureId,prior.captureId,'history committed before the range change remains intact');
  }finally{release();await blocker;await running?.catch(()=>{});}
+});
+
+for(const outcome of ['success','error'] as const)test(`owner ABA fences a resumed Notion body ${outcome} while retaining its already archived prefix`,async t=>{
+ const transport=fakeNotion(),delegate=transport.fetch;let armed=false,enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),gate=new Promise<void>(resolve=>release=resolve);
+ transport.setBlocks(Array.from({length:250},(_,index)=>paragraph('Generated scoped continuation '+index)));
+ transport.fetch=async(input,init)=>{const url=new URL(typeof input==='string'?input:input instanceof URL?input.toString():input.url);if(armed&&url.pathname==='/v1/blocks/page-1/children'&&url.searchParams.has('start_cursor')){armed=false;enter();await gate;if(outcome==='error')return new Response(JSON.stringify({error:'generated late body failure'}),{status:500,headers:notionHeaders});}return delegate(input,init);};
+ let running:ReturnType<Awaited<ReturnType<typeof buildApp>>['app']['inject']>|undefined;
+ try{const f=await installedNotion(t,transport);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;await f.request('/api/connectors/notion/sync',{});const prefix=f.node.sources.getItem(source.id,'page-1')!,checkpoint=f.scan();armed=true;running=f.node.app.inject({method:'POST',url:'/api/connectors/notion/sync',headers,payload:{}});await entered;
+  for(const initialSync of ['new_only','all']){const response=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers,payload:{initialSync}});assert.equal(response.statusCode,200,response.body);assert.equal(response.json().status.coverage,undefined);}
+  release();const response=await running;assert.equal(response.statusCode,409,response.body);assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);assert.equal(f.node.sources.getItem(source.id,'page-1')!.captureId,prefix.captureId);assert.equal(f.node.sources.history(source.id,'page-1').length,1);assert.ok(!prefix.text.includes('Generated scoped continuation 249'));
+ }finally{release();await running?.catch(()=>{});}
+});
+
+test('the real SourceStore validates body coverage reasons before archiving provider declarations',async t=>{
+ const f=await installedNotion(t);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!,entry={externalId:'generated-contract',revision:'generated-revision',observedAt:new Date().toISOString(),kind:'file',layer:'snapshot',text:'Generated contract body'};
+ for(const bodyCoverage of [{state:'partial'},{state:'complete',reason:'pagination_pending'},{state:'partial',reason:'invented'}, {state:'complete',totalCharacters:0}])await assert.rejects(f.node.sources.upsert(source.id,{...entry,document:{bodyCoverage}}));
+ assert.equal(f.node.sources.getItem(source.id,entry.externalId),undefined);await f.node.sources.upsert(source.id,{...entry,document:{bodyCoverage:{state:'partial',reason:'pagination_pending'}}});const material=await materialBody(f,source.id,entry.externalId);assert.equal(material.record.coverage.state,'partial');assert.equal(material.model.material.coverage.reason,'source_body_pagination_pending');
 });
 
 test('a queued selection applies after a legal earlier scan rather than invalidating it before the selection takes effect',async t=>{
