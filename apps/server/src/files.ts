@@ -606,7 +606,7 @@ export class FileStore {
       const retired=!preserveDialogue&&retiredConversationRoot(this.store,id)?.file;
       const released=forgetFuture?db.prepare("SELECT source_id,external_id FROM source_versions v WHERE capture_id=? AND EXISTS(SELECT 1 FROM memory_provider_evidence_revocations r WHERE json_extract(r.json,'$.releasedOriginal.file.sourceId')=v.source_id AND json_extract(r.json,'$.releasedOriginal.file.externalId')=v.external_id)").get(id):undefined;
       const version=retired?{source_id:retired.sourceId,external_id:retired.externalId}:released?{source_id:String(released.source_id),external_id:String(released.external_id)}:this.version(id);
-      if(!preserveDialogue)forgetRetiredConversationRoots(this.store,{file:{sourceId:version.source_id,externalId:version.external_id}});
+      if(!preserveDialogue)forgetRetiredConversationRoots(this.store,{file:{sourceId:version.source_id,externalId:version.external_id}},retainPublishedMemory);
       if(!retainPublishedMemory)this.store.revokeReleasedMemory({file:{sourceId:version.source_id,externalId:version.external_id}});
       if(forgetFuture)db.prepare('INSERT OR IGNORE INTO file_forgotten VALUES(?,?)').run(version.source_id,version.external_id);
       uploads=db.prepare("SELECT id,manifest FROM file_uploads WHERE source_id=? AND json_extract(manifest,'$.item.externalId')=?").all(version.source_id,version.external_id) as {id:string;manifest:string}[];

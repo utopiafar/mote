@@ -12,7 +12,7 @@ import {isStateExtension,samples as stateSamples} from '@mote/shared/state-serie
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
 import {availableFileAttachmentSql,readableFileSql} from './file-access.js';
-import {systemEventText,sourceContentTime,resolveFileRule,type FilePolicy} from '@mote/shared';
+import {systemEventText,sourceContentTime,resolveFileRule,evidenceDependenciesSchema,type FilePolicy} from '@mote/shared';
 import {exportMemoryDeletions,restoreMemoryDeletions} from './plugins/memory-deletions.js';
 import {notificationEvidenceText} from './notification-evidence.js';
 import {exportPortableMaterials,preparePortableMaterials,restorePortableMaterials,portableMaterialEstimate} from './material-portable.js';
@@ -391,7 +391,7 @@ export class EvidenceStore {
   }
   /** Changes interpretation without retiring original bytes, text, quote anchors, or linked excerpts. */
   invalidateSemanticEvidence(id:string,deleted=false,preserveDialogue=false,releasedOriginal?:ReleasedMemoryOriginal) {
-    this.invalidateConversationAnswers([id],deleted&&preserveDialogue?'retired':deleted);
+    this.invalidateConversationAnswers([id],deleted&&preserveDialogue?'retired':deleted,releasedOriginal?.memoryFingerprints);
     // The same evidence transaction revokes host visibility and records native
     // cleanup. A separate process may perform retention; no process-local
     // callback or remote request can stand in for this durable outbox.
@@ -732,7 +732,7 @@ export class EvidenceStore {
   }
   /** Ordinary revisions preserve dialogue. Destructive deletion/revocation
    * must opt in, including previously stale generations and their summaries. */
-  invalidateConversationAnswers(evidenceIds?:string[],deleted:boolean|'retired'=false) {
+  invalidateConversationAnswers(evidenceIds?:string[],deleted:boolean|'retired'=false,retainedMemory?:Readonly<Record<string,string>>) {
     if(deleted==='retired'){
       if(!evidenceIds)throw new StoreError('Ordinary retirement requires exact evidence IDs');
       // Formal anchors of this exact original keep the same ordinary-deletion
@@ -766,14 +766,30 @@ export class EvidenceStore {
     // Recorded disclosure is broader than citations: uncited reads and derived
     // ancestors can affect prose. Legacy/aggregate reads remain conservative.
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversation_turns'").get()){
-      const condition=`coalesce(json_extract(json,'$.evidenceDeleted'),0)!=1 AND json_extract(json,'$.result') IS NOT NULL AND ${affected('$.result.evidenceDependencies','conversation_turns')}`;
-      const conversations=this.db.prepare('SELECT DISTINCT conversation_id FROM conversation_turns WHERE '+condition).all(...parameters);
-      if(deleted===true)this.db.prepare(`UPDATE conversation_turns SET json=json_set(json_remove(json,'$.evidenceStale','$.evidenceUnavailable','$.historyEvidenceDependencies'),'$.evidenceDeleted',json('true'),'$.result',json_object('answer',?,'citations',json('[]'),'trace',json('[]'),'runId',coalesce(json_extract(json,'$.result.runId'),''))) WHERE ${condition}`).run(moteText("原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。"),...parameters);
-      else if(deleted==='retired')for(const row of this.db.prepare(`SELECT id,json FROM conversation_turns WHERE ${condition}`).all(...parameters)){
+      let condition=`coalesce(json_extract(json,'$.evidenceDeleted'),0)!=1 AND json_extract(json,'$.result') IS NOT NULL AND ${affected('$.result.evidenceDependencies','conversation_turns')}`;
+      const conversationParameters=[...parameters];
+      if(deleted&&retainedMemory&&Object.keys(retainedMemory).length){
+        // Ordinary byte release does not remove an answer derived only from
+        // cards retained by that transaction. Positive Host original roles and
+        // current published identities are required; raw, image and unknown
+        // receipts keep the existing history-erasure policy. This is disposal
+        // accounting, not permission to replay prose: readers still recheck it.
+        const current=this.db.prepare("SELECT id,json_extract(json,'$.fingerprint') fingerprint FROM memories WHERE id IN (SELECT value FROM json_each(?)) AND json_extract(json,'$.status')='published' AND json_extract(json,'$.supersededBy') IS NULL"),preserved:string[]=[];
+        for(const row of this.db.prepare(`SELECT id,json_extract(json,'$.status') status,json_extract(json,'$.result.originalEvidenceDependencies') originals,json_extract(json,'$.historyEvidenceDependencies') history,coalesce(json_array_length(json,'$.result.citations'),0) citations,coalesce(json_array_length(json,'$.result.imageReadReceipts'),0) images FROM conversation_turns WHERE ${condition}`).all(...parameters)){
+          const originals=evidenceDependenciesSchema.safeParse(JSON.parse(String(row.originals??'null'))),history=evidenceDependenciesSchema.safeParse(JSON.parse(String(row.history??'null')));
+          if(row.status!=='completed'||row.citations!==0||row.images!==0||!originals.success||!originals.data.complete||originals.data.ids.length||!history.success||!history.data.complete||!history.data.ids.length)continue;
+          const ids=[...new Set(history.data.ids)],cards=current.all(JSON.stringify(ids));
+          if(cards.length===ids.length&&cards.some(card=>retainedMemory[String(card.id)]===card.fingerprint))preserved.push(String(row.id));
+        }
+        if(preserved.length){condition+=' AND id NOT IN (SELECT value FROM json_each(?))';conversationParameters.push(JSON.stringify(preserved));}
+      }
+      const conversations=this.db.prepare('SELECT DISTINCT conversation_id FROM conversation_turns WHERE '+condition).all(...conversationParameters);
+      if(deleted===true)this.db.prepare(`UPDATE conversation_turns SET json=json_set(json_remove(json,'$.evidenceStale','$.evidenceUnavailable','$.historyEvidenceDependencies'),'$.evidenceDeleted',json('true'),'$.result',json_object('answer',?,'citations',json('[]'),'trace',json('[]'),'runId',coalesce(json_extract(json,'$.result.runId'),''))) WHERE ${condition}`).run(moteText("原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。"),...conversationParameters);
+      else if(deleted==='retired')for(const row of this.db.prepare(`SELECT id,json FROM conversation_turns WHERE ${condition}`).all(...conversationParameters)){
         const turn=JSON.parse(String(row.json));turn.evidenceStale=true;turn.evidenceUnavailable=true;turn.result=retainedConversationResult(turn.result);
         this.db.prepare('UPDATE conversation_turns SET json=? WHERE id=?').run(JSON.stringify(turn),row.id);
       }
-      else this.db.prepare(`UPDATE conversation_turns SET json=json_set(json,'$.evidenceStale',json('true')) WHERE ${condition}`).run(...parameters);
+      else this.db.prepare(`UPDATE conversation_turns SET json=json_set(json,'$.evidenceStale',json('true')) WHERE ${condition}`).run(...conversationParameters);
       for(const row of conversations)this.db.prepare("UPDATE conversations SET json=json_set(json,'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(row.conversation_id);
     }
   }
