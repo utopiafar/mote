@@ -598,3 +598,58 @@ test('a queued selection applies after a legal earlier scan rather than invalida
  try{const f=await installedNotion(t,transport);await f.select([{id:'page-1',type:'page'}]);const id=f.node.sources.listSources()[0]!.id;armed=true;running=f.request('/api/connectors/notion/sync',{});await entered;selection=f.select([{id:'db-1',type:'database'}]);release();await running;await selection;assert.ok(f.node.sources.getItem(id,'page-1'),'the old scan completed while its selection was still effective');assert.equal(f.node.sources.getSource(id).enabled,false);assert.equal(f.node.sources.listSources().find(source=>source.id!==id)?.status?.coverage,undefined,'the newly effective selection has no inherited coverage');}
  finally{release();await running?.catch(()=>{});await selection?.catch(()=>{});}
 });
+
+test('Notion temporary image URL refresh cannot discard the continuation of unchanged text',async t=>{
+ const transport=fakeNotion(),delegate=transport.fetch;let reads=0;
+ transport.setBlocks([{object:'block',type:'image',image:{type:'file',file:{url:'https://generated.notion.example/image?signature=original',expiry_time:'2026-11-17T01:00:00Z'},caption:[]}},paragraph('Generated stable body '+ 'x'.repeat(120000)+' Generated signed URL tail')]);
+ transport.fetch=async(input,init)=>{
+  const response=await delegate(input,init),url=new URL(typeof input==='string'?input:input instanceof URL?input.toString():input.url);
+  if(url.pathname==='/v1/blocks/page-1/children'){
+   const body=await response.json();body.request_id='generated-observation-'+(reads+1);body.results[0].image.file.url='https://generated.notion.example/image?signature='+ ++reads;body.results[0].image.file.expiry_time=new Date(Date.UTC(2026,10,17,reads)).toISOString();
+   return new Response(JSON.stringify(body),{status:response.status,headers:response.headers});
+  }
+  return response;
+ };
+ const f=await installedNotion(t,transport);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;
+ await f.request('/api/connectors/notion/sync',{});const first=f.node.sources.getItem(source.id,'page-1')!,checkpoint=f.scan();
+ assert.equal(first.text.length,100000);assert.equal(checkpoint.processed,0);assert.equal(checkpoint.body.partial,true);assert.ok(!first.text.includes('Generated signed URL tail'));
+ await f.restart();await f.request('/api/connectors/notion/sync',{});
+ const completeText=f.node.sources.getItem(source.id,'page-1')!;assert.ok(completeText.text.endsWith('Generated signed URL tail'));
+ assert.deepEqual(completeText.document?.bodyCoverage,{state:'partial',reason:'unsupported_content'},'the image stays explicitly unread even though the text traversal is finished');assert.equal(f.scan().processed,1);assert.deepEqual(f.scan().window,checkpoint.window);assert.ok(completeText.text.startsWith(first.text));assert.equal(f.node.sources.history(source.id,'page-1').length,2);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.failed,0);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');assert.ok(transport.calls.every(call=>new URL(call.url).hostname==='api.notion.com'),'temporary media URLs are never fetched');const material=await materialBody(f,source.id);assert.equal(material.model.material.coverage.state,'partial');assert.equal(material.record.coverage.reason,'source_body_unsupported_content');assert.equal((await f.request('/api/materials?query='+encodeURIComponent('Generated signed URL tail'))).items[0].id,material.id);
+});
+
+test('Notion database cover URL refresh cannot restart an unchanged row body',async t=>{
+ const transport=fakeNotion(),delegate=transport.fetch;let reads=0;
+ transport.setDatabaseEntries([databaseRow(0),databaseRow(1)]);transport.setChildren(databaseRow(0).id,Array.from({length:250},(_,i)=>paragraph('Generated stable row body '+i)));
+ transport.fetch=async(input,init)=>{
+  const response=await delegate(input,init),url=new URL(typeof input==='string'?input:input instanceof URL?input.toString():input.url);
+  if(url.pathname==='/v1/databases/db-1/query'){
+   const body=await response.json();body.request_id='generated-query-observation-'+(reads+1);body.results[0].cover={type:'file',file:{url:'https://generated.notion.example/cover?signature='+ ++reads,expiry_time:new Date(Date.UTC(2026,10,17,reads)).toISOString()}};
+   return new Response(JSON.stringify(body),{status:response.status,headers:response.headers});
+  }
+  return response;
+ };
+ const f=await installedNotion(t,transport);await f.select([{id:'db-1',type:'database'}]);const source=f.node.sources.listSources()[0]!;
+ await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().rowIndex,0);assert.equal(f.scan().processed,0);assert.equal(f.scan().body.id,databaseRow(0).id);const checkpoint=f.scan(),prefix=f.node.sources.getItem(source.id,databaseRow(0).id)!;
+ await f.restart();await f.request('/api/connectors/notion/sync',{});
+ assert.ok(f.node.sources.getItem(source.id,databaseRow(0).id)!.text.endsWith('Generated stable row body 249'));assert.equal(f.scan().processed,2);assert.equal(f.scan().complete,true);assert.deepEqual(f.scan().window,checkpoint.window);assert.ok(f.node.sources.getItem(source.id,databaseRow(0).id)!.text.startsWith(prefix.text));assert.equal(f.node.sources.history(source.id,databaseRow(0).id).length,2);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.failed,0);const material=await materialBody(f,source.id,databaseRow(0).id);assert.equal((await f.request('/api/materials?query='+encodeURIComponent('Generated stable row body 249'))).items[0].id,material.id);
+});
+
+
+test('Notion block continuation still rejects actual content, order, structure and external URL changes',async t=>{
+ for(const change of ['text','order','structure','external URL'] as const)await t.test(change,async sub=>{
+  const transport=fakeNotion(),delegate=transport.fetch;let changed=false;
+  transport.setBlocks([{object:'block',type:'image',image:{type:'external',external:{url:'https://generated.example/original-image'},caption:[]}},paragraph('Generated stable prefix '+'x'.repeat(120000)+' Generated guarded tail'),paragraph('Generated final sibling')]);
+  transport.fetch=async(input,init)=>{const response=await delegate(input,init),url=new URL(typeof input==='string'?input:input instanceof URL?input.toString():input.url);if(changed&&url.pathname==='/v1/blocks/page-1/children'){const body=await response.json();if(change==='text')body.results[1].paragraph.rich_text[0].plain_text='Generated actual changed body';if(change==='order')body.results.reverse();if(change==='structure')body.results[1].has_children=true;if(change==='external URL')body.results[0].image.external.url='https://generated.example/replaced-image';return new Response(JSON.stringify(body),{status:response.status,headers:response.headers});}return response;};
+  const f=await installedNotion(sub,transport);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!;await f.request('/api/connectors/notion/sync',{});const prefix=f.node.sources.getItem(source.id,'page-1')!;assert.equal(prefix.text.length,100000);changed=true;await f.restart();const failure=await f.request('/api/connectors/notion/sync',{},409);assert.equal(failure.error,'notion_page_changed');assert.equal(f.node.sources.getItem(source.id,'page-1')!.captureId,prefix.captureId);assert.equal(f.node.sources.history(source.id,'page-1').length,1);assert.equal(f.scan().processed,0);assert.equal(f.scan().complete,false);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');assert.equal(f.node.sources.getSource(source.id).status?.coverage?.failed,1);
+ });
+});
+
+test('Notion database continuation still rejects actual property, revision and pagination changes',async t=>{
+ for(const change of ['properties','revision','pagination'] as const)await t.test(change,async sub=>{
+  const transport=fakeNotion(),delegate=transport.fetch;let changed=false;
+  transport.setDatabaseEntries([databaseRow(0),databaseRow(1)]);transport.setChildren(databaseRow(0).id,Array.from({length:250},(_,index)=>paragraph('Generated guarded row body '+index)));
+  transport.fetch=async(input,init)=>{const response=await delegate(input,init),url=new URL(typeof input==='string'?input:input instanceof URL?input.toString():input.url);if(changed&&url.pathname==='/v1/databases/db-1/query'){const body=await response.json();if(change==='properties')body.results[0].properties.Name.title[0].plain_text='Generated changed property';if(change==='revision')body.results[0].last_edited_time='2026-11-03T00:00:00.000Z';if(change==='pagination'){body.has_more=true;body.next_cursor='offset-2';}return new Response(JSON.stringify(body),{status:response.status,headers:response.headers});}return response;};
+  const f=await installedNotion(sub,transport);await f.select([{id:'db-1',type:'database'}]);const source=f.node.sources.listSources()[0]!;await f.request('/api/connectors/notion/sync',{});const prefix=f.node.sources.getItem(source.id,databaseRow(0).id)!;assert.equal(f.scan().rowIndex,0);changed=true;await f.restart();const failure=await f.request('/api/connectors/notion/sync',{},409);assert.equal(failure.error,'notion_page_changed');assert.equal(f.node.sources.getItem(source.id,databaseRow(0).id)!.captureId,prefix.captureId);assert.equal(f.node.sources.history(source.id,databaseRow(0).id).length,1);assert.equal(f.scan().processed,0);assert.equal(f.scan().complete,false);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');assert.equal(f.node.sources.getSource(source.id).status?.coverage?.failed,1);
+ });
+});

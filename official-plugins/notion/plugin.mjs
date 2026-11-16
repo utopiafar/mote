@@ -136,6 +136,31 @@ const snapshot = item => {
   return {...entry, observedAt: now()};
 };
 
+function stableContent(value) {
+  if (Array.isArray(value)) return value.map(stableContent);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map(key => {
+    let child = value[key];
+    // Notion-hosted file access URLs expire and refresh without an edit. Keep
+    // file names/captions/upload IDs and external URLs as content identities.
+    if (key === 'file' && value.type === 'file' && child && typeof child === 'object' && !Array.isArray(child)) {
+      const {url, expiry_time, ...content} = child;
+      child = content;
+    }
+    return [key, stableContent(child)];
+  }));
+}
+
+const continuationHash = (response, blocks) => hash(JSON.stringify(stableContent({
+  has_more: response.has_more, next_cursor: response.has_more ? response.next_cursor : null,
+  results: response.results.map(entry => ({
+    object: entry.object, id: entry.id, created_time: entry.created_time, last_edited_time: entry.last_edited_time,
+    parent: entry.parent, archived: entry.archived === true, in_trash: entry.in_trash === true,
+    ...(blocks ? {type: entry.type, has_children: entry.has_children === true, content: entry[entry.type]} :
+      {url: pageUrl(entry.url), properties: entry.properties, icon: entry.icon, cover: entry.cover}),
+  })),
+})));
+
 function parseSelection(raw) {
   const input = raw && typeof raw === 'object' ? raw : {};
   if (!Array.isArray(input.selected) || input.selected.length > MAX_SELECTED) throw new NotionError('notion_input_invalid', 400);
@@ -459,7 +484,7 @@ const connector = {
             if (!validId(block?.id) || identities.has(block.id) || block.parent?.block_id && block.parent.block_id !== frame.id || block.parent?.page_id && block.parent.page_id !== item.id) throw new NotionError('notion_response_invalid', 502);
             identities.add(block.id);
           }
-          const pageHash = hash(JSON.stringify(response));
+          const pageHash = continuationHash(response, true);
           if (frame.pageHash && frame.pageHash !== pageHash) throw new NotionError('notion_page_changed', 409);
           if (!frame.pageHash && frame.previousHash === pageHash) throw new NotionError('notion_response_invalid', 502);
           frame.pageHash = pageHash;
@@ -530,7 +555,7 @@ const connector = {
         if (entry?.object !== 'page' || !validId(entry.id) || identities.has(entry.id)) throw new NotionError('notion_response_invalid', 502);
         identities.add(entry.id);
       }
-      const pageHash = hash(JSON.stringify(response));
+      const pageHash = continuationHash(response, false);
       if (scan.pageHash && scan.pageHash !== pageHash) throw new NotionError('notion_page_changed', 409);
       const next = structuredClone(scan), entries = [];
       let index = scan.rowIndex ?? 0, processed = 0;
