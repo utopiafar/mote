@@ -8,7 +8,7 @@ import { profilePaths, initialize, loadProfile, isolatedEnvironment, inheritedPr
 import { configureTunnel, runNativeTunnel, nativeTunnelArgs, nativeTunnelIdentity, stopNativeTunnel } from './tunnel-lib.mjs';
 import { startProfile as start, stopProfile as stop, changeProfileDeployment } from './update-deploy.mjs';
 const help = `Mote central profiles (Node 24+, default: dev; prod requires --profile prod)
-  init [--profile dev|test|prod] [--home PATH] [--runtime native|docker] [--port N] [--image TAG] [--data-dir NATIVE_PATH | --volume DOCKER_VOLUME]
+  init [--profile dev|test|prod] [--home PATH] [--runtime native|docker] [--port N] [--image TAG] [--image-variant core|full] [--media-workers none|ocr|asr|ocr,asr] [--data-dir NATIVE_PATH | --volume DOCKER_VOLUME]
   start|run|stop|status|config|token|connectors-prepare [--profile NAME] [--home PATH]
   log-retention --defaults [--profile dev] [--home PATH] (adopt DEV per-file default; restart separately)
   run-all [--profile NAME] [--home PATH] (native central + configured tunnel; Ctrl+C stops both)
@@ -24,7 +24,7 @@ const help = `Mote central profiles (Node 24+, default: dev; prod requires --pro
   tunnel --disable [--profile NAME] [--home PATH]
   tunnel-run|tunnel-launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
   tls --enable|--disable [--profile NAME] [--home PATH]
-  upgrade --release BUILT_CHECKOUT | --image LOCAL_IMAGE [--profile NAME] [--home PATH]
+  upgrade --release BUILT_CHECKOUT | --image LOCAL_IMAGE [--image-variant core|full] [--profile NAME] [--home PATH]
   check-update [--profile NAME] [--home PATH] [--version VERSION]
   update [--profile NAME] [--home PATH] [--version VERSION]
   rollback --restore-data [--profile NAME] [--home PATH]
@@ -55,6 +55,7 @@ const tail = split < 0 ? [] : process.argv.slice(split + 1);
 let values, positionals;
 try { ({ values, positionals } = parseArgs({ args: raw, allowPositionals: true, options: {
   profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, runtime: { type: 'string' }, port: { type: 'string' }, image: { type: 'string' }, release: { type: 'string' }, version: { type: 'string' },
+  'image-variant':{type:'string'},'media-workers':{type:'string'},
   'data-dir': { type: 'string' }, volume: { type: 'string' }, 'token-file': { type: 'string' }, 'public-url': { type: 'string' }, protocol: { type: 'string' }, binary: { type: 'string' },
   out: { type: 'string' }, from: { type: 'string' }, role:{type:'string'}, node: { type: 'string' }, python: {type:'string'}, enable: { type: 'boolean' }, disable: { type: 'boolean' }, defaults: { type: 'boolean' }, 'restore-data': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
 } })); } catch { console.error('Mote: Invalid arguments; use --help. Credentials are never accepted as argument values.'); process.exit(1); }
@@ -107,7 +108,7 @@ async function main() {
   }
   if (command === 'media-runtime') {
     if (!['ocr','dialogue','local-image'].includes(values.role)) throw Error('media-runtime requires --role ocr|dialogue|local-image');
-    if (p.meta.runtime !== 'native') throw Error('Docker bundles the media runtime in its image');
+    if (p.meta.runtime !== 'native') throw Error('Docker media dependencies require the full image and explicitly selected media.dockerWorkers');
     const result=await withProfileLock(p,async()=>{
       if((await nativeIdentity(p)).running)throw Error('Stop this profile before installing the Native media runtime');
       const {prepareNativeMediaRuntime}=await import(pathToFileURL(join(resolve(p.meta.release),'apps/server/dist/media-native-runtime.mjs')).href);
@@ -185,7 +186,7 @@ async function main() {
   let result;
   await withProfileLock(p, async () => {
     if (command === 'connectors-prepare') {
-      if (p.meta.runtime !== 'native') throw Error('Docker prepares connector CLIs when building the image');
+      if (p.meta.runtime !== 'native') throw Error('Optional connector CLIs require the full Docker image; core retains their missing-runtime readiness');
       const environment = { ...Object.fromEntries(['PATH','HOME','TMPDIR','LANG'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]])), ...inheritedProxyEnvironment(), NODE_USE_ENV_PROXY: '1' };
       await execute(process.execPath, [join(resolve(p.meta.release), 'scripts/connector-runtime.mjs')], { cwd: resolve(p.meta.release), env: environment, capture: false, timeoutMs: 15 * 60 * 1000 });
       return;
@@ -206,7 +207,7 @@ async function main() {
         result = { ...await changeProfileDeployment(p, { prepared }), updated: true, version: checked.manifest.version };
       }
     }
-    else if (command === 'upgrade' || command === 'rollback') result = await changeProfileDeployment(p, { rollback: command === 'rollback', restoreData: values['restore-data'], release: values.release, image: values.image });
+    else if (command === 'upgrade' || command === 'rollback') result = await changeProfileDeployment(p, { rollback: command === 'rollback', restoreData: values['restore-data'], release: values.release, image: values.image, imageVariant:values['image-variant'] });
     else throw Error('Unknown command; use --help');
   });
   if (result?.wait) { const finished = await result.wait(); process.exitCode = finished.code ?? 1; }
