@@ -12,6 +12,8 @@
 
 已确认首次历史方向是分批纳入所选授权范围，也可只收新增；当前各连接器的窗口和默认仍以实际能力为准。安装/连接不授予任意历史模型重算；接收、整理、索引与Memory分别显示。
 
+Notion、Slack和飞书会话的官方包已有后端与目录卡片，账号授权/范围选择UI尚未接齐；部分有界读取尚缺续页和部分覆盖状态，不能将卡片出现或本轮idle当作完整同步。当前差距见[架构地图](architecture.zh-CN.md)。
+
 ## Google 日历
 
 在 Google Cloud 项目启用 Calendar API，创建 **Web application** OAuth 客户端，并将回调地址精确加入允许列表。在所选 profile 的私有 `mote.yaml` 设置以下片段（主文件还需 `version: 1` 和 `revision`）：
@@ -24,7 +26,7 @@ connectors:
   syncIntervalMs: 900000
 ```
 
-回调与运行中的中央节点必须一致。本机开发可以使用 `http://127.0.0.1:端口/oauth/google/callback`；远端要求 HTTPS。上述显式密钥引用从启动环境读取，普通环境变量不覆盖 YAML。OAuth 配置改变后重启该 profile，在「来源」中连接 Google，完成授权后返回 Mote，明确选择需要同步的日历；仅同步间隔改变可热应用。程序仅请求 `calendar.calendarlist.readonly` 与 `calendar.events.readonly`，没有修改日程、邀请、提醒或联系人权限。授权采用一次性 state、PKCE 和 offline access；详见 [Google 服务端 OAuth](https://developers.google.com/identity/protocols/oauth2/web-server) 与 [日历权限范围](https://developers.google.com/workspace/calendar/api/auth)。
+回调与运行中的中央节点必须一致。本机开发可以使用 `http://127.0.0.1:端口/oauth/google/callback`；远端要求 HTTPS。上述显式密钥引用从启动环境读取，普通环境变量不覆盖 YAML。OAuth 配置改变后重启该 profile，在「来源」中连接 Google，完成授权后返回 Mote，明确选择需要同步的日历；仅同步间隔改变可热应用。读取授权请求 `calendar.calendarlist.readonly` 与 `calendar.events.readonly`。另有独立云日历写授权和执行方法，但当前source manifest尚未转交行动目录；完成写授权不表示Actions已可执行。授权采用一次性 state、PKCE 和 offline access；详见 [Google 服务端 OAuth](https://developers.google.com/identity/protocols/oauth2/web-server) 与 [日历权限范围](https://developers.google.com/workspace/calendar/api/auth)。
 
 首次同步覆盖过去 90 天至未来 365 天。日内使用 `syncToken` 增量同步；每天重建这个有界窗口，使新进入范围的重复日程也可见。完整分页成功并保存条目之后才提交新游标。增量请求不会混入 `timeMin`、`timeMax` 或 `orderBy`；失效游标的 HTTP 410 会触发完整重建。失败时保留旧游标和已归档证据，下一次可幂等重试。完整结果中消失的原有窗口条目记录为取消/移除，旧版本及计划时间保留；它不证明用户实际参加过日程。参考 [同步指南](https://developers.google.com/workspace/calendar/api/guides/sync) 和 [events.list 参数约束](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)。
 
@@ -98,7 +100,7 @@ connectors:
 
 需要 stdio 的桌面客户端可运行仓库的 `scripts/mcp-stdio.mjs`：把中央生成的 `mcpServers.mote` HTTP 配置保存到私有 JSON 文件，再使用 `node scripts/mcp-stdio.mjs --connection /绝对路径/private-connection.json`。不要在命令参数里直接放 token。stdio 仅是本机到已配置 Mote HTTP 端点的桥接，不是中央任意执行外部程序的入口。
 
-某些聊天产品只接收 OAuth 发现流程，不支持自定义 Bearer；当前 `/mcp` 没有实现通用 OAuth 授权服务器，因此不保证能直接加入这类产品。使用兼容 Bearer 或 stdio 的客户端验证；不要声称已迁移其他产品不可见的私有记忆。
+Mote也提供MCP OAuth发现、客户端注册、授权码/PKCE和刷新；在已登录的「AI接入」批准连接，沿同一独立凭据与撤销边界。OAuth客户端使用节点的`/mcp`地址，Bearer JSON和stdio入口继续可用。具体聊天产品兼容性仍需实际联调，不据此声称迁移了其他产品不可见的私有记忆。发现与路由见[mcp-oauth-routes.ts](../apps/server/src/connectors/mcp-oauth-routes.ts)。
 
 ## 从远程 MCP 导入
 

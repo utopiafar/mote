@@ -26,6 +26,8 @@ Retain the existing warm graphite palette, purple accent and light, dark and sys
 
 Keep information and action meaning consistent across clients while respecting platform conventions for input, file pickers, permissions and touch. This page describes current design principles; code owns concrete layouts and values.
 
+For the MVP, Android keeps common media reading, playback and text correction native. Advanced speaker review, original comparison and model preparation use lightweight entries to the same Central's Web, retaining the selected object and authorization. This is the intended boundary; current entry coverage is in [Architecture](architecture.md).
+
 ## Presentation extensions
 
 Theme packs provide exact versioned role data; layout profiles describe supported navigation and detail preferences. Trusted platform renderers bind them through the shared presentation host. Missing providers recover the pinned built-in choice with a reason; install order does not choose a provider. New renderer code ships in the trusted platform build, without arbitrary remote UI execution.
