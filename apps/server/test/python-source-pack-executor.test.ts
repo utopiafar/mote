@@ -89,7 +89,7 @@ test('macOS sandbox permits staged input but denies files and network outside it
 test('trusted Python pack emits dispositions and an explicit automatic publication assessment',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-python-import-consumer-')),packRoot=join(directory,'pack');mkdirSync(packRoot,{mode:0o700});
   const script=`import json\nr=json.load(open('request.json'))\ntext=open(r['inputs'][0]['path']).read()\nprint(json.dumps({'summary':'Generated Python import preview','warnings':[],
- 'reviewDecision':{'confidence':'high','ambiguous':False,'reason':'Exact generated text mapping'},
+ 'reviewDecision':{'confidence':'high','ambiguous':False,'requiresConfirmation':False,'reason':'Exact generated text mapping'},
  'dispositions':[{'index':0,'status':'parsed','reason':'Exact generated source text'}],
  'records':[{'item':{'externalId':'generated-entry','revision':'1','observedAt':'2026-09-24T01:00:00Z','kind':'file','layer':'original','title':'Generated note','text':text},'evidenceIndexes':[0],'attachmentIndexes':[]}]}))\n`;
   writeFileSync(join(packRoot,'main.py'),script,{mode:0o600});

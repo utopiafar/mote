@@ -39,15 +39,14 @@ type InternalJob=ImportJob&{resourceWait?:'prepare'|'commit';excludedFiles?:{fil
 const responseSchema=z.object({summary:z.string().max(20000),recordsPath:z.string().max(4000).optional(),warnings:z.array(z.string().max(2000)).max(200).optional(),reviewDecision:importReviewDecisionSchema.optional()}).strict();
 const message=(error:unknown)=>error instanceof Error?error.message.slice(0,2000):'Import failed';
 const inside=(root:string,path:string)=>{const rel=relative(root,path);return rel===''||(!rel.startsWith(`..${sep}`)&&rel!=='..'&&!isAbsolute(rel));};
-function reviewGate(job:InternalJob,decision:ImportReviewDecision|undefined,informationalWarnings=false):ImportReviewGate {
+function reviewGate(job:InternalJob,decision:ImportReviewDecision|undefined):ImportReviewGate {
   if(job.processing!=='automatic')return {decision:'confirmation',reason:'This import was requested for manual preview.'};
-  if(!decision)return {decision:'confirmation',reason:'The parser did not provide a confidence and ambiguity assessment.'};
-  if(decision.confidence!=='high'||decision.ambiguous)return {decision:'confirmation',reason:decision.reason??'The parser reported low confidence or ambiguity.'};
-  if(!decision.reason)return {decision:'confirmation',reason:'The parser did not explain its high-confidence assessment.'};
-  if(job.warnings.length&&!informationalWarnings)return {decision:'confirmation',reason:'Processing reported warnings; review the preview before publishing.'};
+  if(!decision)return {decision:'confirmation',reason:'The parser did not provide a confirmation assessment.'};
+  if(!decision.reason?.trim())return {decision:'confirmation',reason:'The parser did not explain its confirmation assessment.'};
+  if(decision.requiresConfirmation)return {decision:'confirmation',reason:decision.reason};
   if(!job.dispositions||job.dispositions.items.length!==job.files.length)return {decision:'confirmation',reason:'The parser did not account for every original file.'};
-  if(job.dispositions.counts.unsupported||job.dispositions.counts.excluded||(!job.dispositions.counts.parsed&&!job.dispositions.counts.processing))return {decision:'confirmation',reason:'Some originals were not parsed as evidence.'};
-  return {decision:'automatic',reason:'The parsed records passed host validation with high confidence and no ambiguity.'};
+  if(job.dispositions.counts.unsupported||(!job.dispositions.counts.parsed&&!job.dispositions.counts.processing))return {decision:'confirmation',reason:'Some originals were not parsed as evidence.'};
+  return {decision:'automatic',reason:decision.reason};
 }
 
 /** Deterministic formats decode locally; models map unfamiliar structures into reviewed records. */
@@ -343,19 +342,22 @@ export class ImportStore {
       for(const input of attempt.inputs)await this.materialize(input);
       const decoded=await formatWork({kind:'plain',inputs:attempt.inputs.map(input=>({path:input.path,file:this.files.get(input.fileId)})),createdAt:job.createdAt,manifest:join(attempt.workspace,'prepared.jsonl')},signal);
       signal?.throwIfAborted();grant.assert();
-      if(!decoded.count&&!job.media?.length&&!job.excludedFiles?.length)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived; no searchable text or media work was produced.';this.save(job);return this.public(job);});
       const prepared=await this.stagePrepared(job,attempt,join(attempt.workspace,'prepared.jsonl'),signal);
       job.manifestHash=prepared.hash;job.summary='Source document text archived directly; author and original dates remain unspecified.';job.warnings=decoded.warnings;
       job.preview={count:decoded.count+(job.media?.length??0),samples:decoded.samples};job.progress.total=job.preview.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';
       job.dispositions=this.dispositions(job,{counts:{parsed:attempt.inputs.length,attachment:0,container:0,excluded:0,unsupported:0},items:attempt.inputs.map(input=>this.files.get(input.fileId)).map(file=>({fileId:file.id,path:file.relativePath,status:'parsed',reason:'Deterministic document decoder; no attribution or original date inferred'}))});
+      if(!job.preview.count){
+        job.status='unsupported';job.processingStatus='blocked';job.summary=job.error='Original files are archived; no searchable text or media work was produced.';
+        this.publishPrepared(job,grant,prepared.staged);return this.public(job);
+      }
       job.reviewDecision=decoded.partial?
-        {confidence:'low',ambiguous:false,reason:'Document decoding reported incomplete coverage; review the available text before publishing.'}:
-        {confidence:'high',ambiguous:false,reason:'Deterministic document decoding preserved original text without inferred attribution or dates.'};
+        {confidence:'low',ambiguous:false,requiresConfirmation:true,reason:'Document decoding reported incomplete coverage; review the available text before publishing.'}:
+        {confidence:'high',ambiguous:false,requiresConfirmation:false,reason:'Deterministic document decoding preserved original text without inferred attribution or dates.'};
       if(job.media?.length)job.summary=moteText('已保留 {0} 个媒体原件，确认接入后按文件处理设置提取内容；当前尚未转写。',job.media.length)+' '+job.summary;
       // Full-coverage document decoders also report known fidelity limits (for
       // example DOCX page layout or unrecalculated XLSX formulas). Keep those
       // visible, but they do not make the extracted text ambiguous.
-      job.reviewGate=reviewGate(job,job.reviewDecision,!decoded.partial);
+      job.reviewGate=reviewGate(job,job.reviewDecision);
       this.publishPrepared(job,grant,prepared.staged);return this.public(job);
     }catch(error){return this.phaseFailure(job.id,'prepare',grant,signal,error);}
     finally{if(attempt)rmSync(attempt.workspace,{recursive:true,force:true});this.running.delete(job.id);}
@@ -395,9 +397,10 @@ export class ImportStore {
       if(!existsSync(resolve(attempt.workspace,path)))return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});
       const prepared=await this.validateManifest(attempt,path,join(attempt.workspace,'prepared.jsonl'),signal,undefined,true);signal?.throwIfAborted();grant.assert();
       job.dispositions=this.dispositions(job,prepared.dispositions);job.warnings=[...job.warnings,...prepared.warnings].slice(-200);
+      job.preview={count:prepared.count+(job.media?.length??0),samples:prepared.samples};job.progress.total=job.preview.count;
       if(!prepared.count&&!job.media?.length)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});
       const canonical=await this.stagePrepared(job,attempt,join(attempt.workspace,'prepared.jsonl'),signal);
-      job.manifestHash=canonical.hash;job.preview={count:prepared.count+(job.media?.length??0),samples:prepared.samples};job.progress.total=job.preview.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';job.reviewDecision=result.reviewDecision;job.reviewGate=reviewGate(job,result.reviewDecision);
+      job.manifestHash=canonical.hash;job.status='awaiting_confirmation';job.processingStatus='preview_ready';job.reviewDecision=result.reviewDecision;job.reviewGate=reviewGate(job,result.reviewDecision);
       this.publishPrepared(job,grant,canonical.staged);return this.public(job);
     }catch(error){return this.phaseFailure(id,'prepare',grant,signal,error);}
     finally{if(attempt)rmSync(attempt.workspace,{recursive:true,force:true});this.running.delete(id);}

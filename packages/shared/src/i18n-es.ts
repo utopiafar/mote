@@ -10781,5 +10781,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "覆盖窗口": "Intervalo de cobertura",
   "从 {0} 到 {1}": "De {0} a {1}",
   "截至 {0}": "Hasta {0}",
-  "首次同步建立基线，之后接入新增内容并跟踪已接入资料的修订。": "La primera sincronización establece una base. Las siguientes incorporan contenido nuevo y siguen las revisiones del material ya recopilado."
+  "首次同步建立基线，之后接入新增内容并跟踪已接入资料的修订。": "La primera sincronización establece una base. Las siguientes incorporan contenido nuevo y siguen las revisiones del material ya recopilado.",
+  "可安全推进的解析会自动保存；关键缺口需要确认。": "Los resultados que permiten continuar de forma segura se guardan automáticamente; las carencias importantes requieren confirmación.",
+  "解析未说明是否需要确认，请核对预览。": "El análisis no indica si se necesita confirmación. Revisa la vista previa.",
+  "解析未说明继续处理的依据，请核对预览。": "El análisis no explica en qué se basa para continuar. Revisa la vista previa."
 };
