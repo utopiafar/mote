@@ -45,6 +45,15 @@ const label=(d:Document,text:string)=>[...d.querySelectorAll<HTMLLabelElement>('
 async function select(d:Document,text:string,value:string){await act(async()=>{const control=label(d,text).querySelector('select')!;control.value=value;control.dispatchEvent(new window.Event('change',{bubbles:true}));});}
 const view=(api:Api,kind:'images'|'audio'|'documents'='images')=>React.createElement(MaterialProcessing,{api,kind});
 
+test('ordinary and advanced audio settings keep dialogue preparation without the unused WeSpeaker installer',async t=>{
+ const f=await fixture(t),authority=structuredClone(f.node.modelAuthorization.view()),policy=structuredClone(f.node.processing.view());
+ await act(async()=>f.root.render(view(f.api,'audio')));await until(()=>!!f.d.querySelector('.material-processing-form'),'audio settings');
+ const preparations=[...f.d.querySelectorAll('.media-preparation')].map(section=>section.getAttribute('aria-label'));
+ assert.deepEqual(preparations,['录音转写与说话人分离','录音转写与说话人'],'both settings mounts retain the actual dialogue setup');
+ assert.doesNotMatch(f.d.body.textContent!,/WeSpeaker|中文声纹模型/);
+ assert.deepEqual(f.writes,[]);assert.deepEqual(f.node.modelAuthorization.view(),authority);assert.deepEqual(f.node.processing.view(),policy);
+});
+
 test('ordinary image settings reach the default optional build without granting background models or changing processing policy',async t=>{
  const f=await fixture(t),authority=structuredClone(f.node.modelAuthorization.view()),policy=structuredClone(f.node.processing.view());
  await act(async()=>f.root.render(view(f.api)));

@@ -26,7 +26,7 @@ async function fixture(t:Parameters<Parameters<typeof test>[1]>[0]){
  const media={modelDirectory:assets.root,python:process.execPath,workerToken:'generated-worker-token',ocrPort:port,asrPort:port,ocrEndpoint:`http://127.0.0.1:${port}/ocr`,asrEndpoint:`http://127.0.0.1:${port}/transcribe`};
  return {directory,assets,media};
 }
-async function settled(preparation:MediaPreparation,role:MediaRole){for(let index=0;index<300;index++){const status=await preparation.status(role);if(['ready','failed','cancelled','unsupported'].includes(status.state))return status;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Preparation did not settle');}
+async function settled(preparation:MediaPreparation,role:MediaRole){for(let index=0;index<300;index++){const status=await preparation.status(role);if(['prepared','ready','failed','cancelled','unsupported'].includes(status.state))return status;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Preparation did not settle');}
 test('one preparation owns repeated clicks; cancel fences late dependency completion and retry remains possible',async t=>{
  const f=await fixture(t);let release!:()=>void,calls=0;const prepared=new Promise<void>(resolve=>release=resolve);
  const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>{calls++;await prepared;return {python:process.execPath};},fetch:async()=>new Response('{}')});t.after(()=>preparation.close());
@@ -215,6 +215,33 @@ test('explicit OCR and dialogue preparation verifies a healthy installation and 
   assert.deepEqual(await readFile(installed.path),installed.bytes,'an explicit retry repairs same-size corruption from the verified cache');
   await preparation.close();await assert.rejects(fetch(role==='ocr'?f.media.ocrEndpoint:f.media.asrEndpoint));
  });
+});
+
+test('an explicit worker activation joins the same in-flight setup while duplicate setup never requests a worker itself',async t=>{
+ let entered!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
+ const f=await lifecycle(t);if(!f.supported.includes('local-image')){t.skip('local image workers require Apple Silicon');return;}
+ const installed=await installedAssets(t,f,'local-image');
+ const preparation=f.make({assets:installed.assets,prepare:async options=>{entered();await held;return f.prepare(options);}});
+ const first=await preparation.prepare('local-image');await started;
+ const repeated=await preparation.prepare('local-image');assert.equal(repeated.id,first.id);
+ await assert.rejects(import('node:fs/promises').then(fs=>fs.readFile(join(f.scripts,'local-image.pid'))),{code:'ENOENT'});
+ const activation=await preparation.start('local-image',false);assert.equal(activation.id,first.id,'only the separately authorized start joins setup with a worker request');
+ release();const ready=await settled(preparation,'local-image');assert.equal(ready.state,'ready');assert.equal(ready.runtimeReady,true);assert.equal(f.counts().pip,1);
+ const pid=Number(await f.waitFile('local-image.pid'));await preparation.stop('local-image');assert.equal(gone(pid),true);
+});
+
+for(const action of ['cancel','stop','invalidate'] as const)test(`${action} fences late setup after an explicit local-image activation joins it`,async t=>{
+ let entered!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
+ const {readFile}=await import('node:fs/promises'),f=await lifecycle(t);if(!f.supported.includes('local-image')){t.skip('local image workers require Apple Silicon');return;}
+ const installed=await installedAssets(t,f,'local-image');
+ const preparation=f.make({assets:installed.assets,prepare:async options=>{const result=await f.prepare(options);entered();await held;return result;}});
+ await preparation.prepare('local-image');await started;await preparation.start('local-image',false);
+ const stopping=action==='invalidate'?(preparation.invalidate(),preparation.close()):preparation[action]('local-image');
+ release();await stopping;const status=await preparation.status('local-image');assert.equal(status.runtimeReady,false);
+ assert.equal(status.state,action==='stop'?'idle':action==='invalidate'?'unsupported':'cancelled');
+ await assert.rejects(readFile(join(f.scripts,'local-image.pid')),{code:'ENOENT'},'late preparation cannot start a worker after withdrawal');
 });
 
 test('local-image asset repair leaves selection unchanged and the existing plugin refresh reloads verified bytes into an owned worker',async t=>{

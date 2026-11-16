@@ -68,7 +68,7 @@ test('actual authenticated model HTTP separates downloading, complete files and 
  health={...readyHealth,wespeaker:true};
  const running=await view();for(const role of ['ocr','dialogue'] as const)assert.equal(running[role]!.runtimeReady,true);
  assert.equal(running['speaker-wespeaker']!.state,'ready');assert.equal(running['speaker-wespeaker']!.runtimeReady,false,'installed retired speaker assets cannot claim a worker even when an endpoint advertises wespeaker');
- assert.equal((await post('/api/media-preparation/speaker-wespeaker')).status,409,'the retired worker cannot be started');
+ assert.equal((await post('/api/media-preparation/speaker-wespeaker')).status,400,'the retired worker has no managed preparation entry');
  health={...readyHealth,asr:'true'};assert.equal((await view()).dialogue!.runtimeReady,false,'truthy non-boolean fields cannot claim worker health');
  health={...readyHealth,identity:undefined};assert.equal((await view()).dialogue!.runtimeReady,false,'a current protocol without loaded native identity cannot claim worker health');
  health={...readyHealth,missingDependencies:['funasr']};assert.equal((await view()).dialogue!.runtimeReady,false,'missing execution code prevents readiness');
