@@ -80,6 +80,41 @@ test('deleting an unloaded member or changing OCR invalidates a previous group a
  await node.request('/api/capture-browser/timeline',{...scope,limit:1,cursor:before.nextCursor!},owner,409);
 });
 
+test('central OCR jobs and results preserve unfiltered page and member cursors while OCR-filtered locators expire',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'mote-timeline-ocr-')),store=new Store(dir,{maxStorageBytes:50_000_000,maintenance:false});
+ t.after(async()=>{store.close();await rm(dir,{recursive:true,force:true});});
+ const image=(await sharp({create:{width:8,height:8,channels:3,background:'#6e8179'}}).png().toBuffer()).toString('base64');
+ const records=Array.from({length:6},(_,index)=>({id:randomUUID(),deviceId:'generated-ocr-'+Math.floor(index/3),deviceName:'Generated OCR device',platform:'android',capturedAt:new Date(Date.parse(scope.after)+3600000*Math.floor(index/3)+(index%3)*60000).toISOString(),durationMs:0,appId:'generated.app',appName:'Generated app',windowTitle:'Generated screenshot',source:'screen',imageMime:'image/png',imageBase64:image,ocrText:'',ocr:{status:'disabled'},privacy:{collection:'content',mode:'none'}}));
+ await store.ingestBatch(records);
+ const originals=store.db.prepare('SELECT id,json,fingerprint FROM captures ORDER BY id').all();
+ const timeline=new CaptureTimeline(store),range={...scope,limit:1},first=timeline.page(range,owner),group=first.items[0] as CaptureTimelineGroup;
+ assert.equal(group.kind,'screen-session');assert.equal(group.recordCount,3);assert.ok(first.nextCursor);
+ const second=timeline.page({...range,cursor:first.nextCursor},owner),firstMembers=timeline.members(range,owner,group.id);assert.ok(firstMembers.nextCursor);
+ const secondMembers=timeline.members({...range,cursor:firstMembers.nextCursor},owner,group.id),id=secondMembers.items[0].record.id;
+ const stable=()=>{
+  assert.deepEqual(timeline.page(range,owner),first,'OCR does not replace the group locator or page cursor');
+  assert.deepEqual(timeline.page({...range,cursor:first.nextCursor!},owner),second);
+  const members=timeline.members({...range,cursor:firstMembers.nextCursor!},owner,group.id);
+  assert.equal(members.revision,first.revision);assert.equal(members.group.id,group.id);assert.deepEqual(members.items.map(item=>item.record.id),[id]);
+  return members.items[0].record;
+ };
+ const pending={...range,ocrStatus:'pending' as const},queued=timeline.page(pending,owner),pendingGroup=queued.items[0] as CaptureTimelineGroup;assert.ok(queued.nextCursor);
+ store.db.prepare("UPDATE perception_jobs SET state='running' WHERE capture_id=? AND kind='ocr'").run(id);
+ assert.equal(stable().ocr?.status,'pending');
+ assert.throws(()=>timeline.page({...pending,cursor:queued.nextCursor!},owner),{statusCode:409});assert.throws(()=>timeline.members(pending,owner,pendingGroup.id),{statusCode:409});
+ const running=timeline.page(pending,owner),runningGroup=running.items[0] as CaptureTimelineGroup;assert.ok(running.nextCursor);
+ store.savePerception(id,'ocr',{id:randomUUID(),fingerprint:'generated-ocr-v1',text:'Generated central OCR preview',generatedAt:'2026-10-29T03:00:00.000Z'});
+ assert.equal(stable().textPreview,'Generated central OCR preview');assert.equal(stable().ocr?.status,'completed');
+ assert.throws(()=>timeline.page({...pending,cursor:running.nextCursor!},owner),{statusCode:409});assert.throws(()=>timeline.members(pending,owner,runningGroup.id),{statusCode:409});
+ const completed={...range,ocrStatus:'completed' as const},recognized=timeline.page(completed,owner),recognizedGroup=recognized.items[0] as CaptureTimelineGroup;
+ store.savePerception(id,'ocr',{id:randomUUID(),fingerprint:'generated-ocr-v2',text:'Generated replacement OCR preview',generatedAt:'2026-10-29T03:01:00.000Z'});
+ assert.equal(stable().textPreview,'Generated replacement OCR preview');
+ assert.notEqual(timeline.page(completed,owner).revision,recognized.revision);assert.throws(()=>timeline.members(completed,owner,recognizedGroup.id),{statusCode:409});
+ assert.deepEqual(store.db.prepare('SELECT id,json,fingerprint FROM captures ORDER BY id').all(),originals,'Central OCR preserves original content and membership');
+ store.db.prepare("INSERT INTO settings(key,value) VALUES('perception-effective',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify({enabled:false}));
+ assert.throws(()=>timeline.page({...range,cursor:first.nextCursor!},owner),{statusCode:409});assert.throws(()=>timeline.members(range,owner,group.id),{statusCode:409},'the existing processing-switch invalidation remains intact');
+});
+
 test('existing owner and collector authority also applies to the new read projection',async t=>{
  const node=await fixture(t);await node.add(node.activity('2026-10-29T01:00:00.000Z'));
  const issue=async(path:string)=>{const invite=await node.app.inject({method:'POST',url:path,headers:headers(),payload:{serverUrl:'https://generated.invalid',label:'Generated device'}});assert.equal(invite.statusCode,200,invite.body);const redeemed=await node.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invite.json().invitation.code,deviceId:randomUUID(),deviceName:'Generated device',platform:'android'}});assert.equal(redeemed.statusCode,200,redeemed.body);return redeemed.json();};
