@@ -479,15 +479,31 @@ export class PluginCenter {
    * every remote reference still needs an actual active typed provider. */
   private resolvePresentationDependencies(instanceId:string,publish:boolean){
     const manifest=this.packageForInstance(instanceId).manifest,local=[...domainContributions(manifest),...presentationContributions(manifest)];
+    const localRequired:ServiceBinding[]=[],localOptional:ServiceBinding[]=[];
     const dependencies=presentationDependencies(manifest).filter(dependency=>{
       if(dependency.kind==='host'&&dependency.id==='mote.web.presentation'&&dependency.version==='1')return false;
       if(dependency.kind==='package'&&dependency.id===manifest.id&&dependency.version===manifest.version)return false;
       const contribution=dependency.kind==='contribution'?local.find(value=>value.id===dependency.id&&value.version===dependency.version)
         :dependency.kind==='service'?domainContributions(manifest).find(value=>value.provides?.some(port=>port.id===dependency.id&&port.apiVersion===dependency.version)):undefined;
       if(!contribution)return true;
+      if(publish&&contribution.surface==='data'&&dependency.kind==='contribution'){
+        // A package-local contribution reference names this instance's exact
+        // declaration, not every sibling instance that publishes the same ID.
+        const owned=this.domainInstances.get(instanceId),ports=contribution.provides??[],snapshot=this.hostOwner?.host.snapshot();
+        const bindings=owned?.bindings.filter(value=>owned.handle&&sameScope(value.provider.scope,owned.handle.identity)&&value.provider.contributionId===contribution.id&&ports.some(port=>port.id===value.service.id&&port.apiVersion===value.service.apiVersion))??[];
+        if(!owned?.handle||owned.handle.signal.aborted||!bindings.length||bindings.length!==ports.length||bindings.some(binding=>!snapshot?.contributions.some(value=>sameScope(value.identity.scope,binding.provider.scope)&&value.identity.contributionId===binding.provider.contributionId&&value.apiVersion===binding.service.apiVersion&&value.availability.state==='active'))){
+          if(dependency.required===false)return false;
+          throw new PluginHostError('dependency_unavailable');
+        }
+        (dependency.required===false?localOptional:localRequired).push(...bindings);
+        return false;
+      }
       return publish&&contribution.surface==='data';
     });
-    return this.resolveDomainDependencies(instanceId,dependencies,true);
+    const resolved=this.resolveDomainDependencies(instanceId,dependencies,true);
+    const required=new Map([...resolved.required,...localRequired].map(binding=>[JSON.stringify(binding),binding])),optional=new Map([...resolved.optional,...localOptional].map(binding=>[JSON.stringify(binding),binding]));
+    for(const key of required.keys())optional.delete(key);
+    return {required:[...required.values()],optional:[...optional.values()]};
   }
   private async installPresentation(instanceId:string,epoch:number){
     if(!this.hostOwner)throw new StoreError('Presentation host is unavailable',503);

@@ -34,6 +34,44 @@ test('the full packaged domain template installs, checks, opens its declared pag
   await f.request('POST','/api/plugins/'+encodeURIComponent(pkg)+'/uninstall',presentationCommand(f.node.pluginCenter.revision()));assert.deepEqual((await f.request('GET','/api/plugins/presentation')).instances,[]);
 });
 
+test('complete template instances bind local page dependencies to their own live ports while external providers stay ambiguous',async t=>{
+  const f=await pluginPresentationFixture();t.after(()=>f.close());
+  const pkg=await f.install(await packedPresentationTemplate(f.directory)),one=await f.configure(pkg),two=await f.configure(pkg);
+  for(const instance of [one,two]){
+    assert.equal((await f.check(instance.id)).observed,'ready');
+    assert.equal((await f.enable(instance.id)).observed,'ready','a sibling instance cannot make an explicit local contribution ambiguous');
+  }
+  const inventory=await f.request('GET','/api/plugins/presentation') as PluginPresentationInventory;
+  assert.equal(inventory.instances.length,2);
+  const a=inventory.instances.find(value=>value.instanceId===one.id)!,b=inventory.instances.find(value=>value.instanceId===two.id)!;
+  const invoke=(instance:typeof a,method:string,payload?:unknown)=>f.request('POST',`/api/plugin-instances/${instance.instanceId}/pages/${instance.pages[0]!.id}/invoke`,{activationId:instance.activationId,method,...(payload===undefined?{}:{payload})});
+  await invoke(a,'add',{text:'Generated instance A only'});
+  assert.equal((await invoke(b,'state')).items.length,0,'the sibling page cannot read the first instance state');
+  await invoke(b,'add',{text:'Generated instance B only'});
+  assert.deepEqual((await invoke(a,'state')).items.map((item:{text:string})=>item.text),['Generated instance A only']);
+  assert.deepEqual((await invoke(b,'state')).items.map((item:{text:string})=>item.text),['Generated instance B only']);
+  for(const dependency of [{kind:'contribution' as const,id:'template-collection.port',version:'1'},{kind:'service' as const,id:'template.collection.log',version:'1'}]){
+    const base=presentationManifest('generated.ambiguous.'+dependency.kind),manifest={...base,contributions:base.contributions!.map(value=>({...value,requires:[dependency]}))};
+    const external=await f.configure(await f.install(presentationRelease(manifest,{'page.html':'<h1>Generated external dependency</h1>'}))),checked=await f.check(external.id);
+    assert.equal(checked.observed,'blocked','a genuinely external reference cannot choose one of two matching providers');
+    assert.match(checked.issues.join(','),/Ambiguous domain dependency/);assert.ok(!checked.allowedActions.includes('enable'));
+  }
+  await f.restart();
+  const restored=(await f.request('GET','/api/plugins/presentation') as PluginPresentationInventory).instances;
+  assert.equal(restored.length,2);
+  for(const prior of [a,b]){
+    const current=restored.find(value=>value.instanceId===prior.instanceId)!;
+    assert.equal(f.node.pluginCenter.instanceView(current.instanceId).observed,'ready');assert.notEqual(current.activationId,prior.activationId);
+    assert.equal((await f.response('POST',`/api/plugin-instances/${prior.instanceId}/pages/${prior.pages[0]!.id}/invoke`,{activationId:prior.activationId,method:'state'})).statusCode,409);
+    assert.deepEqual((await invoke(current,'state')).items.map((item:{text:string})=>item.text),[prior.instanceId===one.id?'Generated instance A only':'Generated instance B only']);
+  }
+  await f.action(one.id,'disable');
+  assert.equal(f.node.pluginCenter.instanceView(two.id).observed,'ready');
+  const remaining=(await f.request('GET','/api/plugins/presentation') as PluginPresentationInventory).instances;
+  assert.deepEqual(remaining.map(value=>value.instanceId),[two.id]);
+  assert.deepEqual((await invoke(remaining[0]!,'state')).items.map((item:{text:string})=>item.text),['Generated instance B only']);
+});
+
 test('owner inventory drives actual Web registry, scoped themes/layouts, navigation rendering and removal fallback',async t=>{
   const f=await pluginPresentationFixture();t.after(()=>f.close());
   const base=presentationManifest('generated.presentation'),theme={...linearUiTheme,id:'generated.studio',schemes:undefined,tokens:{...linearUiTheme.tokens,accent:'#aabbcc'}},layout={...desktopUiLayout,id:'generated.workspace',primary:[...desktopUiLayout.primary].reverse(),navigation:'top' as const};
