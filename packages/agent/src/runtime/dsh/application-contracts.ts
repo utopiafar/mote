@@ -12,6 +12,8 @@ export interface NativeApplicationExposure {
   readonly memoryPins: readonly {id: string; fingerprint: string; version?: number}[];
   readonly interactionId?: string;
   readonly interactionFingerprint?: string;
+  /** A past Host-verified restriction, never a retained permission grant. */
+  readonly grantScope?: {kind:'all'|'selection';sourceIds?:string[];evidenceIds?:string[];after?:string;before?:string;deviceId?:string;timeZone?:string};
   readonly history?: NonNullable<QueryInput['historyContext']>;
 }
 

@@ -278,7 +278,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   };
   const {agent,factory,codex}=await assembleAgent({
     config,resources,diagnostics,backendContext,configurationPlatform,configService,runtimeSettings,reader,modelAuthorizationHost,
-    createModelAgent:dependencies?.createModelAgent,nativeDshForProfile:id=>nativeDshSource(configService.current<DshConfiguration>('dsh'),id,configService.revision,reference=>pluginCenter.resolveNativeDshModule(reference),{store,sources,archivedFiles}),nativeDshModules:()=>pluginCenter.nativeDshModules(),validateNativeDshConfiguration:value=>pluginCenter.validateNativeDshConfiguration(value),authorization:modelAuthorization,admission:providerAdmission,
+    createModelAgent:dependencies?.createModelAgent,nativeDshForProfile:id=>nativeDshSource(configService.current<DshConfiguration>('dsh'),id,configService.revision,reference=>pluginCenter.resolveNativeDshModule(reference),{store,sources,materials}),nativeDshModules:()=>pluginCenter.nativeDshModules(),validateNativeDshConfiguration:value=>pluginCenter.validateNativeDshConfiguration(value),authorization:modelAuthorization,admission:providerAdmission,
     runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
     agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,providerAdmission,
     insightSettings:()=>lifecycle.settings().insights,maintenanceSnapshot:()=>maintenanceWorker?.snapshot()??null,delegatedSnapshot:()=>executor.poolSnapshot('delegated-agents'),wakeMemory:()=>memoryPipeline.wake(),

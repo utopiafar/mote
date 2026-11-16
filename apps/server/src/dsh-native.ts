@@ -10,7 +10,7 @@ import {openNativeApplication} from './dsh-application.js';
 import type {Store} from './store.js';
 import {nativeOutputPublisher} from './dsh-native-outputs.js';
 import type {SourceStore} from './sources.js';
-import type {ArchivedFileStore} from './archived-files.js';
+import type {MaterialStore} from './materials.js';
 
 /** The installed Host scope supplies artifact paths and activation authority.
  * Installation/check supplies no native grant: that comes only from the owner. */
@@ -48,7 +48,7 @@ export async function dshSelectionBoundary<T>(work: () => Promise<T>): Promise<T
 
 /** A registry adapter can outlive an installed activation. Resolve fresh scopes
  * for every query, then pin those scopes until tool/output delivery has ended. */
-export function nativeDshSource(configuration: DshConfiguration, modelProfileId: string, revision: number, resolve: InstalledDshResolver,applicationServices?:{store:Store;sources:SourceStore;archivedFiles:ArchivedFileStore}): ((input?:QueryInput) => Promise<NativeDshAssemblyBinding>) | undefined {
+export function nativeDshSource(configuration: DshConfiguration, modelProfileId: string, revision: number, resolve: InstalledDshResolver,applicationServices?:{store:Store;sources:SourceStore;materials:MaterialStore}): ((input?:QueryInput) => Promise<NativeDshAssemblyBinding>) | undefined {
   const configured = configuration.profiles.find(profile => profile.modelProfileId === modelProfileId);
   if (!configured) return undefined;
   const profile = structuredClone(configured);
@@ -65,10 +65,10 @@ export function nativeDshSource(configuration: DshConfiguration, modelProfileId:
     }
     assertCurrent();
     const context=profile.application&&input?.nativeApplicationContext?.();
-    if(profile.application&&input&&!context&&input.executionLane==='interactive'&&!input.taskContext&&(!input.responseMode||input.responseMode==='answer'))throw new StoreError('Native application interactions require an admitted conversation message',409);
+    if(profile.application&&input&&!context&&input.executionLane==='interactive'&&!input.skill&&(!input.responseMode||input.responseMode==='answer'))throw new StoreError('Native application interactions require an admitted conversation message',409);
     const primary=profile.application&&authorities.find(authority=>dshInstanceKey(authority.module.reference.contribution.instance)===dshInstanceKey(profile.application!.instance));
     if(context&&(!applicationServices||!primary?.applicationState))throw new StoreError('Native application persistence is unavailable',409);
-    const application=context&&openNativeApplication({store:applicationServices!.store,state:primary!.applicationState!,profile,context,assertCurrent,publish:nativeOutputPublisher(applicationServices!.sources,applicationServices!.archivedFiles)});
+    const application=context&&openNativeApplication({store:applicationServices!.store,state:primary!.applicationState!,profile,context,assertCurrent,publish:nativeOutputPublisher(applicationServices!.sources,applicationServices!.materials)});
     return {revision, assembly: structuredClone(profile.assembly), installedModules, signal: AbortSignal.any(authorities.map(authority => authority.signal)), assertCurrent,...(application?{application}:{})};
   };
 }

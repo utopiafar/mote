@@ -465,7 +465,9 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
     }
     finally {
       try {
-        await settleHostCleanup([() => session?.close(), closeBridge, () => nativeAssembly?.application?.release(), () => scope.close()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
+        // A preparation that failed before returning its session still left a
+        // deferred close on this scope. Quiesce it before protecting SDK files.
+        await settleHostCleanup([() => session?.close(), closeBridge, () => scope.close(), () => nativeAssembly?.application?.release()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
       } finally { applications.delete(runId);scopes.delete(resources); }
     }
   }

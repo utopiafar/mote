@@ -9,7 +9,7 @@ import {backup} from 'node:sqlite';
 import {PluginHost} from '@mote/plugin-host';
 import {StateError, stateLimits, type ScopeIdentity, type StateLimits, type StateStore} from '@mote/plugin-api';
 import {Store} from '../src/store.js';
-import {createInstanceState} from '../src/plugins/instance-state.js';
+import {createInstanceState,bindInstanceStateCommit} from '../src/plugins/instance-state.js';
 
 const lifecycle = () => ({prepare() {}, start() {}, quiesce() {}, stop() {}, dispose() {}});
 const hostIdentity = {kind: 'central' as const, id: 'generated-state-host'};
@@ -130,6 +130,32 @@ test('an actual SQLite state write failure rolls back the value and checkpoint',
   await assert.rejects(a.state.compareAndSet('large', null, 'x'.repeat(4096)), /Generated SQLite write failure/);
   assert.equal(await a.state.get('large'), undefined);assert.equal((await a.state.checkpoint()).records, 0);
   recover();await a.state.compareAndSet('small', null, 'ok');assert.equal((await a.state.get('small'))?.value, 'ok');
+});
+
+test('the Host fixed-key state commit joins the owning transaction and retains CAS, namespace and size boundaries',async t=>{
+  const {store,host}=fixture(t),a=await install(host,'instance-a'),b=await install(host,'instance-b');
+  await a.state.compareAndSet('control',null,{step:1});await b.state.compareAndSet('control',null,{step:2});
+  const commit=bindInstanceStateCommit(a.state,'control');
+  assert.throws(()=>bindInstanceStateCommit({...a.state} as StateStore,'control'),{code:'invalid_namespace'});
+  assert.throws(()=>commit(1,{step:3}),{code:'invalid_condition'});
+  const before=await a.state.checkpoint();
+  store.db.exec('BEGIN IMMEDIATE');
+  assert.equal(commit(1,{step:3}).revision,2);assert.equal(store.db.isTransaction,true);
+  assert.throws(()=>commit(1,{step:4}),{code:'conflict'});assert.equal(store.db.isTransaction,true);
+  assert.throws(()=>commit(2,'x'.repeat(stateLimits.valueBytes)),{code:'value_too_large'});assert.equal(store.db.isTransaction,true);
+  store.db.exec('ROLLBACK');assert.deepEqual(await a.state.checkpoint(),before);assert.deepEqual((await b.state.get('control'))!.value,{step:2});
+  store.db.exec('BEGIN IMMEDIATE');commit(1,{step:5});store.db.exec('COMMIT');assert.deepEqual((await a.state.get('control'))!.value,{step:5});
+  await a.handle.close('disabled');store.db.exec('BEGIN IMMEDIATE');assert.throws(()=>commit(2,{step:6}),{code:'stale_scope'});store.db.exec('ROLLBACK');
+});
+
+test('the Host joined state commit preserves a real SQLite FULL cause and rolls back the enclosing write',async t=>{
+  const {store,host}=fixture(t),a=await install(host,'instance-a');await a.state.compareAndSet('control',null,{step:1});const before=await a.state.checkpoint(),commit=bindInstanceStateCommit(a.state,'control');
+  const pages=Number(store.db.prepare('PRAGMA page_count').get()!.page_count);store.db.exec('PRAGMA max_page_count='+pages);store.db.exec('BEGIN IMMEDIATE');
+  store.db.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('generated-app-transaction','pending');
+  assert.throws(()=>commit(1,'x'.repeat(60000)),(error:any)=>error.statusCode===507&&(error.cause?.errcode&255)===13);
+  assert.equal(store.db.isTransaction,true,'a joined statement failure leaves the enclosing transaction with its owner');store.db.exec('ROLLBACK');
+  assert.equal(store.db.prepare('SELECT 1 FROM settings WHERE key=?').get('generated-app-transaction'),undefined);assert.deepEqual(await a.state.checkpoint(),before);
+  store.db.exec('PRAGMA max_page_count=1073741823');store.db.exec('BEGIN IMMEDIATE');commit(1,{step:2});store.db.exec('COMMIT');assert.deepEqual((await a.state.get('control'))!.value,{step:2});
 });
 
 test('the logical state meter includes the full UTF-8 ledger row cost without a total quota', async t => {

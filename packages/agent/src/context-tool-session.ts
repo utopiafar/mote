@@ -142,7 +142,7 @@ export async function createContextToolSession(
   type CallbackName='onEvidence'|'onSourceContextDependencies'|'onTrace'|'onProgress'|'onMemoryBodies';
   interface Stage {
     base:State;state:State;evidence:ContextRecord[];signal:AbortSignal;replay:boolean;
-    privacyIds:Set<string>;privacySources:Map<string,SourceContextDeclaration>;
+    privacyIds:Set<string>;privacyBodies:Set<string>;privacySources:Map<string,SourceContextDeclaration>;
     callbacks:{name:CallbackName;args:unknown[]}[];delivered:(()=>void)[];
     status:'reading'|'pending'|'committed'|'discarded';fatal?:Error;cancelled?:unknown;
     reservations:Set<ImageDelivery>;checks:Set<()=>void>;discard():void;
@@ -631,6 +631,9 @@ export async function createContextToolSession(
           if(record.ocrText!==item.ocrText||record.evidenceFingerprint!==item.evidenceFingerprint)throw hostError('Tool result does not match the actual original read');
           // The Host grant, not the pack, owns restricted continuation bounds.
           if(grantedReadRange)record.textRange={...(record.textRange as object),nextOffset:(item.textRange as {nextOffset?:unknown})?.nextOffset??null};
+          // Potential persistence also includes a non-citable interpretation;
+          // it must not borrow a co-delivered Memory's original-body waiver.
+          if(record.ocrText.length)execution.getStore()?.privacyBodies.add(record.id);
           if(record.contentLayer!=='L2_model_interpretation')delivered.push(record);return record;
         };
         let data=body.data;
@@ -760,6 +763,9 @@ export async function createContextToolSession(
           };
           if(metadata){
             if(image.data!==undefined||imageView?.output)throw hostError('Metadata must not include image bytes');
+            // Native metadata is still personal context. Its private receipt
+            // tracks the original without granting a pixel or citation ACK.
+            execution.getStore()?.privacyIds.add(selection.id);
             sendImageResult({source:'untrusted_personal_context',...selection,imageView:publicView,imageBudget:imageBudget(),toolUsage:toolUsage()},{tool,arguments:selection,count:1,imageView:publicView});
             // Metadata alone cannot claim empty complete disclosure. A later
             // confirmed pixel read supplies this original's actual lineage.
@@ -898,7 +904,7 @@ export async function createContextToolSession(
       const finish=()=>{signal.removeEventListener('abort',abort);if(stage)activeStages.delete(stage);release();};
       const discard=()=>{if(settled)return;settled=true;stage!.status='discarded';clearImages();finish();};
       const abort=()=>{stage!.cancelled=signal.reason;discard();};
-      stage={base,state:working,evidence:[],privacyIds:new Set(),privacySources:new Map(),signal,replay:options?.replay===true,callbacks:[],delivered:[],reservations:new Set(),checks:new Set(),status:'reading',discard};activeStages.add(stage);
+      stage={base,state:working,evidence:[],privacyIds:new Set(),privacyBodies:new Set(),privacySources:new Map(),signal,replay:options?.replay===true,callbacks:[],delivered:[],reservations:new Set(),checks:new Set(),status:'reading',discard};activeStages.add(stage);
       signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();
       let status=200,body:string|undefined;
       const reply={get destroyed(){return signal.aborted||closing;},writeHead(code:number){status=code;return reply;},end(value:string,delivered?:()=>void){body=value;if(delivered)stage!.delivered.push(delivered);},once(){},off(){}};
@@ -914,7 +920,7 @@ export async function createContextToolSession(
       if(typeof body!=='string')throw new ContextToolError('context_tool_failed','The tool produced no deliverable response','stop');
       const value:unknown=JSON.parse(body);stage.status='pending';
       const current=stage;
-      const originals=[...new Set([...current.evidence.map(record=>record.id),...[...current.reservations].map(image=>image.selection.id)])];
+      const originals=[...new Set([...current.evidence.map(record=>record.id),...current.privacyBodies,...[...current.reservations].map(image=>image.selection.id)])];
       const nativeExposure:NativeApplicationExposure={version:1,evidenceDependencies:{version:1,complete:current.state.completeLineage,ids:[...new Set([...current.privacyIds,...originals])]},originalEvidenceIds:originals,
         sourceContextDependencies:[...current.privacySources.values()],memoryPins:current.callbacks.filter(event=>event.name==='onMemoryBodies').flatMap(event=>(event.args[0] as NativeApplicationExposure['memoryPins'])??[])};
       return {value,nativeExposure,

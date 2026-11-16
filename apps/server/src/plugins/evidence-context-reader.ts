@@ -91,6 +91,7 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
   if(deps.sourcePipelines&&deps.sourcePipelines.store!==store)throw unavailable();
   const sourceContexts=deps.sourceContexts??sources.contexts;
   const reader=new EvidenceReader(store,sources,deps.files,deps.indexer,deps.fileEvidence,deps.materials,deps.sourcePipelines,deps.sourceItemRecipes,deps.materialMemoryReady,sourceContexts);
+  reader.bindDerivedMaterials();
   if(deps.memoryBindings)reader.memoryBindings=deps.memoryBindings;
   const contextTrees=deps.contextTrees??createContextTrees();
   let disposed=false;

@@ -56,7 +56,7 @@ export interface QueryRuntimeDependencies {
   readonly store:QueryRuntimeStore;
   readonly lifecycle:ServerLifecycle;
   readonly diagnostics:ServerDiagnostics;
-  readonly modelAuthorization:Pick<BackgroundModelAuthorization,'bindCurrentStep'>;
+  readonly modelAuthorization:Pick<BackgroundModelAuthorization,'bindCurrentStep'|'assertCurrent'>;
   readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'automatic'|'evidenceTriggers'|'queryTriggers'>;
   readonly executor:Pick<ExecutionEngine,'get'>;
   readonly agentGate:Pick<ConcurrencyGate,'snapshot'>;
@@ -209,7 +209,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       assertMemoryPins();
       if(observed.conversation?.historyContext)conversations.assertHistoryContext(observed.conversation.historyContext);
     };
-    observed.nativeApplicationContext=()=>nativeApplicationContext(observed,{store,conversations,assertModelEvidence});
+    observed.nativeApplicationContext=()=>nativeApplicationContext(observed,{store,conversations,assertModelEvidence,assertCurrent:()=>modelAuthorization.assertCurrent()});
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed,runLease).then(result=>{
       taskSignal?.throwIfAborted();

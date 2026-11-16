@@ -16,6 +16,7 @@ import {SourceContextStore} from './source-context.js';
 import {captureContextMembers,captureContextOriginals,isCaptureContextSourceId} from './capture-context.js';
 import type {LibraryMaterialType} from '@mote/shared';
 import {materialTypePredicate} from './material-type-filter.js';
+import {materialDerivationSchema,type MaterialDerivation} from './material-derivation.js';
 
 const MATERIAL_PREFIX='mat_';
 const materialIdSchema=z.string().regex(/^mat_[a-f0-9]{64}$/);
@@ -59,7 +60,7 @@ const draftSchema=z.object({
 }).strict();
 
 export type MaterialDraft=z.infer<typeof draftSchema>;
-export const materialManifestSchema=draftSchema.omit({blocks:true,members:true}).extend({members:z.array(memberSchema).optional()});
+export const materialManifestSchema=draftSchema.omit({blocks:true,members:true}).extend({members:z.array(memberSchema).optional(),derivation:materialDerivationSchema.optional()});
 const appendDraftSchema=draftSchema.omit({blocks:true}).extend({mode:z.literal('append'),baseRevision:revisionSchema,
   reuseBlocks:z.number().int().nonnegative(),blocks:z.array(blockSchema)}).strict();
 export type MaterialAppendDraft=z.infer<typeof appendDraftSchema>;
@@ -146,6 +147,8 @@ export class MaterialStore {
   /** Trusted host event journal hook. It runs inside the publication
    * transaction and must never perform network I/O. */
   onPublished?:(event:MaterialPublicationEvent)=>void;
+  private pendingDerivation?:{id:string;value:MaterialDerivation};
+  private derivedRead?:(material:MaterialRecord,derivation:MaterialDerivation)=>boolean;
   readonly catalog=new MaterialCatalog(this);
   private readonly importAttribution:ImportAttributionStore;
   private readonly sourceContexts:SourceContextStore;
@@ -258,6 +261,34 @@ export class MaterialStore {
       }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
     }
   }
+
+  /** Host-only binding. The ordinary publication service accepts only the
+   * public draft schema and cannot manufacture this private manifest field. */
+  bindDerivedPublisher(sourceId:string,authorize:()=>void){
+    return (raw:MaterialDraft,disclosure:MaterialDerivation)=>{
+      authorize();if(!this.store.db.isTransaction||raw.origin.sourceId!==sourceId||this.pendingDerivation)throw new StoreError('Invalid derived Material publication scope',403);
+      const value=materialDerivationSchema.parse(disclosure),prior=this.pendingDerivation;
+      this.pendingDerivation={id:raw.id,value};
+      try{const result=this.publish(raw,{expectedRevision:this.revisionForWrite(raw.id)});authorize();this.setSearchable(result.id,true);authorize();return result;}
+      finally{this.pendingDerivation=prior;}
+    };
+  }
+  /** A fixed trusted read consumer is installed by the existing Evidence owner,
+   * not by a package, model, query argument or serialized declaration. */
+  bindDerivedReadPolicy(read:(material:MaterialRecord,derivation:MaterialDerivation)=>boolean){
+    if(this.derivedRead)throw new StoreError('Derived Material read policy is already bound',409);this.derivedRead=read;
+    return ()=>{if(this.derivedRead===read)this.derivedRead=undefined;};
+  }
+  derivation(ref:string):MaterialDerivation|undefined {
+    const {id,revision}=parseMaterialRef(ref),head=this.head(id),row=head&&this.version(id,revision??head.revision);
+    const raw=row&&JSON.parse(row.manifest).derivation;
+    return raw===undefined?undefined:materialDerivationSchema.parse(raw);
+  }
+  isHostDerived(sourceId:string,externalId:string){
+    const ref=materialId(sourceId,externalId);return Boolean(this.derivation(ref));
+  }
+  private derivedAllowed(material:MaterialRecord){const derivation=this.derivation(material.ref);return !derivation||Boolean(this.derivedRead?.(material,derivation));}
+  private assertDerivedRead(material:MaterialRecord){if(!this.derivedAllowed(material))throw new StoreError('Derived Material context is no longer available',409);}
 
   /** The current manifest owns overrides; source prose never enters this resolver. */
   private resolveContext(id:string,sourceId:string,correction?:AttributionContext['correction']):AttributionContext {
@@ -598,6 +629,7 @@ export class MaterialStore {
   evidence(ids:string[],includeRetired=false):CaptureRecord[]{
     if(!ids.length)return [];
     const materials=new Map<string,MaterialRecord|undefined>(),layouts=new Map<string,boolean>();
+    const derivedAllowed=new Map<string,boolean>();
     const anchors=this.store.db.prepare('SELECT * FROM material_evidence WHERE id=?');
     const contexts=this.store.db.prepare('SELECT json FROM material_evidence_context WHERE anchor_id=?');
     let codingBlocks:StatementSync|undefined,snapshotBlocks:StatementSync|undefined;
@@ -611,6 +643,8 @@ export class MaterialStore {
     }
     const material=materials.get(ref);
     if(!material)return [];
+    if(!derivedAllowed.has(ref))derivedAllowed.set(ref,this.derivedAllowed(material));
+    if(!derivedAllowed.get(ref))return [];
     if(!layouts.has(ref))layouts.set(ref,this.codingLayout(material.id,material.revision));
     const block=layouts.get(ref)?(codingBlocks??=this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_block_versions b
       JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.from_revision=? AND b.block_id=? AND b.anchor_id=?`))
@@ -643,7 +677,7 @@ export class MaterialStore {
   private head(id:string):HeadRow|undefined{return (this.headStatement??=this.store.db.prepare('SELECT * FROM material_heads WHERE id=?')).get(id) as HeadRow|undefined;}
   private version(id:string,revision:string):RevisionRow|undefined{return (this.versionStatement??=this.store.db.prepare('SELECT revision,sequence,manifest,created_at AS version_created_at,text_length,block_count,member_count,asset_count,draft_hash FROM material_revisions WHERE material_id=? AND revision=?')).get(id,revision) as RevisionRow|undefined;}
   private record(head:HeadRow,row:RevisionRow,open=true):MaterialRecord {
-    const manifest=JSON.parse(row.manifest) as Omit<MaterialDraft,'blocks'|'members'>;
+    const {derivation:_,...manifest}=JSON.parse(row.manifest) as Omit<MaterialDraft,'blocks'|'members'>&{derivation?:MaterialDerivation};
     const rebuilding=head.revision===row.revision&&this.needsRebuild(head.id,row.revision,row.sequence);
     const invalidBlocks=rebuilding?new Set(this.store.db.prepare(`SELECT b.block_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
       WHERE b.material_id=? AND b.revision=? AND e.invalidated=1 UNION SELECT b.block_id FROM material_block_versions b JOIN material_evidence e ON e.id=b.anchor_id
@@ -729,7 +763,7 @@ export class MaterialStore {
   /** Same draft is idempotent. A changed head requires explicit compare-and-swap. */
   publish(raw:MaterialDraft|MaterialAppendDraft,options:{expectedRevision?:string|null;codingSnapshot?:CodingArchiveSnapshot;processingStateTransition?:boolean}={}):MaterialRecord & {changed:boolean} {
     if('mode' in raw)return this.publishAppend(raw,options);
-    const draft=this.withContext(draftSchema.parse(raw)),{id}=draft;
+    const draft=this.withContext(draftSchema.parse(raw)) as MaterialDraft&{derivation?:MaterialDerivation},{id}=draft;
     if(id!==materialId(draft.origin.sourceId,draft.origin.externalId))throw new StoreError('Material ID does not match source identity',409);
     if(draft.origin.firstAt&&draft.origin.lastAt&&draft.origin.firstAt>draft.origin.lastAt)throw new StoreError('Invalid material time range');
     if(new Set(draft.blocks.map(block=>block.id)).size!==draft.blocks.length||new Set(draft.members.map(member=>member.id)).size!==draft.members.length)throw new StoreError('Duplicate material block or member ID');
@@ -738,7 +772,17 @@ export class MaterialStore {
     if(draft.blocks.some(block=>block.memberIds.some(id=>!memberIds.has(id))))throw new StoreError('Material block has an unknown member');
     const totalCharacters=draft.blocks.reduce((n,block)=>n+(block.kind==='text'?block.text.length:0),0);
     if(!Number.isSafeInteger(totalCharacters))throw new StoreError('Material text size is invalid',413);
-    const original=this.head(id),draftHash=hash(JSON.stringify(draft));
+    const original=this.head(id),pending=this.pendingDerivation?.id===id?this.pendingDerivation.value:undefined,stored=original&&this.derivation(formatMaterialRef(id,original.revision));
+    if(pending)draft.derivation=pending;
+    else if(stored){
+      // Owner attribution/context edits may republish the immutable body. A
+      // metadata organizer or ordinary publisher cannot replace its contents.
+      const body=(value:MaterialDraft)=>JSON.stringify({kind:value.kind,schemaVersion:value.schemaVersion,origin:value.origin,members:value.members,blocks:value.blocks.map(block=>{
+        const {evidenceIds:_,...plain}=block;return plain.kind==='text'?{...plain,evidenceContext:plain.evidenceContext&&{observedAt:plain.evidenceContext.observedAt,document:plain.evidenceContext.document}}:plain;
+      }),fidelity:value.fidelity,retention:value.retention});
+      const previous=this.get(id);if(!previous||body(draft)!==body(this.contextDraft(previous)))throw new StoreError('Derived Material contents require their Host producer',403);draft.derivation=stored;
+    }
+    const draftHash=hash(JSON.stringify(draft));
     const rebuilding=original&&this.needsRebuild(id,original.revision,original.sequence);
     if(original&&!original.retired&&original.sequence>=original.min_visible_sequence&&!rebuilding){
       const prior=this.version(id,original.revision)!;
@@ -804,7 +848,7 @@ export class MaterialStore {
           const payloadHash=hash(display);insertPayload.run(payloadHash,display);
           const end=offset+display.length+(block.kind==='text'&&block.format==='markdown-fragment'?0:1);
           const members=draft.members.filter(member=>block.memberIds.includes(member.id));
-          const dependencies=this.blockDependencies(block,members);
+          const dependencies=[...new Set([...this.blockDependencies(block,members),...(draft.derivation?.groups.flatMap(group=>[...group.evidenceDependencies.ids,...group.originalEvidenceIds])??[])])];
           const identity=hash(JSON.stringify([draft.kind,draft.schemaVersion,draft.title,draft.origin,draft.attributionContext,draft.fidelity,draft.retention,block,members]));
           const prior=!coding&&head?db.prepare(`SELECT b.anchor_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
             WHERE b.material_id=? AND b.revision=? AND b.block_id=? AND b.identity_hash=? AND e.invalidated=0`).get(id,head.revision,block.id,identity):undefined;
@@ -968,7 +1012,7 @@ export class MaterialStore {
       clauses.push(`(${sort}<? OR (${sort}=? AND h.id<?))`);const seek=args.order==='source'?new Date(cursor.u).toISOString():cursor.u;values.push(seek,seek,cursor.id);
     }
     const rows=this.store.db.prepare(`SELECT h.*,${sort} AS sort_at,r.manifest,r.text_length,r.block_count,r.member_count,r.asset_count,r.created_at AS version_created_at FROM material_heads h JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision WHERE ${clauses.join(' AND ')} ORDER BY ${sort} DESC,h.id DESC LIMIT ?`).all(...values,limit+1) as (HeadRow&RevisionRow&{sort_at:string})[];
-    const page=rows.slice(0,limit).map(row=>this.record(row,row,false));
+    const page=rows.slice(0,limit).map(row=>this.record(row,row,false)).filter(material=>!args.query||this.derivedAllowed(material));
     const last=rows.length>limit?rows[limit-1]:undefined;
     return {items:page,nextCursor:last?Buffer.from(JSON.stringify({u:last.sort_at,id:last.id})).toString('base64url'):null};
   }
@@ -976,6 +1020,7 @@ export class MaterialStore {
   /** Read a pinned revision through a bounded character window and at most 64 blocks. */
   read(ref:string,args:{offset?:number;length?:number}={}):MaterialReadPage {
     const material=this.get(ref);if(!material)throw new StoreError('Material not found',404);
+    this.assertDerivedRead(material);
     if(material.coverage.reason==='source_evidence_changed')throw new StoreError('Material source evidence changed; reconstruction is pending',409);
     const offset=args.offset??0,length=args.length??4000;
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(length)||length<1||length>12000)throw new StoreError('Invalid material read range');
@@ -1057,6 +1102,7 @@ export class MaterialStore {
    * assembling the whole material. Never exposed as a model tool. */
   block(ref:string,index:number):{material:MaterialRecord;block:MaterialStoredBlock}|undefined {
     const material=this.get(ref);if(!material)throw new StoreError('Material not found',404);
+    this.assertDerivedRead(material);
     if(material.coverage.reason==='source_evidence_changed')throw new StoreError('Material source evidence changed; reconstruction is pending',409);
     if(!Number.isSafeInteger(index)||index<0||index>material.blockCount)throw new StoreError('Invalid material block index');
     if(index===material.blockCount)return;
