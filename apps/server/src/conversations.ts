@@ -1,6 +1,7 @@
 import {inheritRetiredConversationRoots,unavailableHistoryEvidence} from './conversation-retention.js';
 import {createHash,randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
+import type {HostSteeringTarget} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {combineDependencies,resolveDependencies,historyEvidenceDependencies} from './conversation-lineage.js';
@@ -12,7 +13,11 @@ export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'tim
 export type ConversationStatus = 'accepted'|'queued'|'running'|'completed'|'failed'|'cancelled';
 type Attachment = {id:string;name:string;mimeType:string};
 type Failure = {code:string;message:string};
-export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;modelProfileId?:string;modelOverride?:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[]};
+export type ConversationDisposition={kind:'independent'}|{kind:'supplement';targetMessageId:string;targetRunId:string;targetVersion:number;acknowledgement:QueryResult};
+export type ConversationSteering={targetMessageId:string;targetRunId:string;state:'pending'|'accepted'|'continuation'|'unknown'|'cancelled';registrationId?:string;target?:HostSteeringTarget;receipt?:HostSteeringTarget};
+export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;modelProfileId?:string;modelOverride?:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[];disposition?:ConversationDisposition;steering?:ConversationSteering;amendedBy?:string[];supersededBy?:string[]};
+/** Mutable execution/steering receipts never alter the owner's accepted input. */
+export function conversationInputIdentity(message:ConversationMessage){return {id:message.id,conversationId:message.conversationId,seq:message.seq,clientRequestId:message.clientRequestId,question:message.question,scope:message.scope,attachments:message.attachments,modelProfileId:message.modelProfileId,modelOverride:message.modelOverride};}
 export type ConversationMessage = ConversationTurn & {conversationId:string};
 export type ConversationSummary = {id:string;title:string;createdAt:string;updatedAt:string;turnCount:number;scope:ConversationScope;status:ConversationStatus};
 export type Conversation = ConversationSummary & {turns:ConversationTurn[];revision?:number};
@@ -210,10 +215,42 @@ export class Conversations {
   }
 
   /** The earliest unfinished message in each conversation, independent of wall-clock order. */
-  pendingHeads():ConversationMessage[] {
+  pendingHeads({parallel=false}:{parallel?:boolean}={}):ConversationMessage[] {
     const rows=this.store.db.prepare(`SELECT t.conversation_id,t.json FROM conversation_turns t WHERE ${pendingStatus('t.')}
-      AND NOT EXISTS(SELECT 1 FROM conversation_turns p WHERE p.conversation_id=t.conversation_id AND p.idx<t.idx AND ${pendingStatus('p.')}) ORDER BY t.conversation_id,t.idx`).all() as {conversation_id:string;json:string}[];
+      ${parallel?'':'AND NOT EXISTS(SELECT 1 FROM conversation_turns p WHERE p.conversation_id=t.conversation_id AND p.idx<t.idx AND '+pendingStatus('p.')+')'} ORDER BY t.conversation_id,t.idx`).all() as {conversation_id:string;json:string}[];
     return rows.map(row=>({conversationId:row.conversation_id,...JSON.parse(row.json) as ConversationTurn}));
+  }
+
+  disposition(id:string,value:ConversationDisposition):ConversationMessage {
+    return this.transaction(()=>{
+      const row=this.messageRow(id),message=JSON.parse(row.json) as ConversationTurn;
+      if(message.status!=='running'||message.disposition)throw new StoreError('Conversation disposition is no longer current',409);
+      if(value.kind==='supplement'){
+        const target=this.message(value.targetMessageId);
+        if(target.conversationId!==row.conversation_id||target.seq>=message.seq||target.runId!==value.targetRunId)throw new StoreError('Conversation steering target changed',409);
+      }
+      return {conversationId:row.conversation_id,...this.rewrite(row.conversation_id,{...message,disposition:structuredClone(value),version:message.version+1},row.json)};
+    });
+  }
+  recordSteering(id:string,value:ConversationSteering):ConversationMessage {
+    return this.transaction(()=>{
+      const row=this.messageRow(id),message=JSON.parse(row.json) as ConversationTurn,decision=message.disposition;
+      if(message.status!=='running'||decision?.kind!=='supplement'||decision.targetMessageId!==value.targetMessageId||decision.targetRunId!==value.targetRunId)throw new StoreError('Conversation steering input changed',409);
+      const previous=message.steering?.state;
+      if(previous&&(!['pending','continuation'].includes(previous)||value.state==='pending'))throw new StoreError('Conversation steering receipt already settled',409);
+      const target=this.message(value.targetMessageId);
+      if(target.conversationId!==row.conversation_id||target.runId!==value.targetRunId)throw new StoreError('Conversation steering target changed',409);
+      const saved=this.rewrite(row.conversation_id,{...message,steering:structuredClone(value),version:message.version+1},row.json);
+      if(value.state==='accepted'||value.state==='continuation'){
+        const targetRow=this.messageRow(target.id),key=value.state==='accepted'?'amendedBy':'supersededBy';
+        this.rewrite(target.conversationId,{...target,[key]:[...new Set([...(target[key]??[]),id])],version:target.version+1},targetRow.json);
+      }
+      return {conversationId:row.conversation_id,...saved};
+    });
+  }
+  assertSteeringSettled(id:string){
+    const row=this.store.db.prepare("SELECT 1 FROM conversation_turns WHERE json_extract(json,'$.steering.targetMessageId')=? AND json_extract(json,'$.steering.state') IN ('pending','unknown','cancelled') LIMIT 1").get(id);
+    if(row)throw Object.assign(new StoreError('A steering delivery is unconfirmed or withdrawn',409),{code:'steering_delivery_unknown'});
   }
 
   queue(id:string,{expectedVersion}:{expectedVersion:number}):ConversationMessage {

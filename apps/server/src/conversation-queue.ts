@@ -50,10 +50,10 @@ export class ConversationQueue {
     this.scheduled=true;
     queueMicrotask(()=>{
       this.scheduled=false;if(this.closed)return;
-      for(const message of this.dependencies.conversations.pendingHeads()){
-        if(this.active.has(message.conversationId)||this.suspended.has(message.id))continue;
-        this.active.add(message.conversationId);
-        void this.run(message).finally(()=>{this.active.delete(message.conversationId);this.wake();});
+      for(const message of this.dependencies.conversations.pendingHeads({parallel:true})){
+        if(this.active.has(message.id)||this.suspended.has(message.id))continue;
+        this.active.add(message.id);
+        void this.run(message).finally(()=>{this.active.delete(message.id);this.wake();});
       }
     });
   }
@@ -101,6 +101,7 @@ export class ConversationQueue {
       scope:{kind:kind??'all',...filters,...(kind==='selection'&&sourceIds!==undefined?{sourceIds}:{})},revision:message.version,status:message.status,seq:message.seq,createdAt:message.createdAt,
       ...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(anchorMaterialRef?{anchorMaterialRef}:{}),...(attachmentIds?.length?{attachmentIds}:{}),
       ...(message.modelProfileId?{modelProfileId:message.modelProfileId}:{}),...(message.modelOverride?{modelOverride:message.modelOverride}:{}),
+      ...(message.steering?{steering:{targetMessageId:message.steering.targetMessageId,targetRunId:message.steering.targetRunId,state:message.steering.state}}:{}),...(message.amendedBy?{amendedBy:message.amendedBy}:{}),...(message.supersededBy?{supersededBy:message.supersededBy}:{}),
       ...(message.runId?{runId:message.runId}:{}),...(message.evidenceDeleted?{evidenceDeleted:true}:{}),...(message.evidenceStale?{evidenceStale:true}:{}),...(message.evidenceUnavailable?{evidenceUnavailable:true}:{}),...(message.historyEvidenceDependencies?{historyEvidenceDependencies:message.historyEvidenceDependencies}:{})});
   }
   get(conversationId:string,id:string){const message=this.dependencies.conversations.message(id);if(message.conversationId!==conversationId)throw new StoreError('Conversation message not found',404);return this.view(message);}
@@ -137,8 +138,6 @@ export class ConversationQueue {
       try{
         const current=conversations.message(initial.id);
         if(!['accepted','queued','running'].includes(current.status))return;
-        const other=store.db.prepare("SELECT id FROM query_runs WHERE id<>? AND json_extract(json,'$.conversationId')=? AND json_extract(json,'$.status')='running' LIMIT 1").get(current.runId??'',current.conversationId);
-        if(other){await this.runs.waitForSettlement(String(other.id));return;}
         const failure=safeError(error);conversations.fail(current.id,{code:failure.category,message:failure.message},{expectedVersion:current.version});
       }catch{
         // A failed terminal write (for example a full vault) must not create

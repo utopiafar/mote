@@ -37,6 +37,8 @@ import {moteText} from '../i18n.js';
 import type {UsageLedger} from '../usage.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
+import {conversationInputIdentity} from '../conversations.js';
+import {createConversationSteering} from '../conversation-steering.js';
 
 /** C27 owns the durable delegation journal and the replayable Ask receipts
  * that the admitted query runtime prepares and commits. */
@@ -125,11 +127,12 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
   };
   const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,conversationSettings:dependencies.conversationSettings,archiveReader,memoryReader:evidenceReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
     query:input=>queryRuntime.queryAgent(input,'query','conversations')});
+  const steerConversation=createConversationSteering(dependencies,runtime,queryRuntime);
   const assertMessage=(id:string,body:unknown)=>{
     const receipt=store.db.prepare("SELECT request_hash,json_extract(json,'$.turnId') turnId FROM query_runs WHERE id=?").get(id);
     if(!receipt?.turnId)return;
     const message=conversations.message(String(receipt.turnId)),request=parseQueuedQuery(body);
-    if(message.runId!==id||message.status!=='running'||message.conversationId!==request.conversationId||message.question.trim()!==request.question||receipt.request_hash!==sha256(JSON.stringify(message))||JSON.stringify(request)!==JSON.stringify(parseQueuedQuery(conversationQueryInput(dependencies,message))))throw new StoreError('Conversation message or scope changed during this answer',409);
+    if(message.runId!==id||message.status!=='running'||message.conversationId!==request.conversationId||message.question.trim()!==request.question||receipt.request_hash!==sha256(JSON.stringify(conversationInputIdentity(message)))||JSON.stringify(request)!==JSON.stringify(parseQueuedQuery(conversationQueryInput(dependencies,message))))throw new StoreError('Conversation message or scope changed during this answer',409);
     return message;
   };
   return {
@@ -138,7 +141,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
     requestIdentity:(id:string,input:unknown)=>{
       const message=conversations.messageForRun(id);
       if(message&&JSON.stringify(parseQueuedQuery(input))!==JSON.stringify(parseQueuedQuery(conversationQueryInput(dependencies,message))))throw new StoreError('Query input does not match the accepted message',409);
-      return message;
+      return message&&conversationInputIdentity(message);
     },
     resolveInput:(raw:unknown)=>{
       const input=parseQueuedQuery(raw);
@@ -154,10 +157,15 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       return selected;
     },
     prepare:(body:unknown,work:DelegationWork,signal:AbortSignal,onProgress:QueryInput['onProgress'])=>{
-      assertMessage(work.id.slice('query:'.length),body);
+      const message=assertMessage(work.id.slice('query:'.length),body);if(message)conversations.assertSteeringSettled(message.id);
       return prepareDelegatedQuery.prepare(body,work,signal,onProgress);
     },
-    query:(input:QueryInput)=>queryRuntime.queryAgent(input,'query','conversations'),
+    query:(input:QueryInput)=>steerConversation(input,value=>queryRuntime.queryAgent(value,'query','conversations'),async()=>{
+      const work=runtime.get(input.traceContext!.operationId!),saved=runtime.journal.payload<SavedQuery&{continuationPrepared?:boolean}>(work.id);
+      if(!saved.continuationPrepared){delete saved.prepared;runtime.journal.savePayload(work.id,saved);}
+      const prepared=await prepareDelegatedQuery.prepare(saved.hostRequest,work,input.signal!,input.onProgress);
+      const current=runtime.journal.payload<SavedQuery&{continuationPrepared?:boolean}>(work.id);current.continuationPrepared=true;runtime.journal.savePayload(work.id,current);return prepared;
+    }),
     operationUsage:(operationId:string,createdAt:string,finishedAt:string)=>usageLedger.operation(operationId,createdAt,finishedAt),
     pinnedConfigurationCurrent,
     assertModelWork,
@@ -173,6 +181,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       runtime.recordEvidence(work.id,[...(dependencyReceipt?.complete?dependencyReceipt.ids:result.evidenceDependencies?.ids??[]),...(result.originalEvidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
       const message=assertMessage(work.id.slice('query:'.length),body);
       if(message){
+        conversations.assertSteeringSettled(message.id);
         if(evidenceIds?.length===0&&(result.citations.length||(result.evidenceDependencies?.ids.length??0)>0||result.evidenceDependencies?.complete===false||(result.sourceContextDependencies?.length??0)>0))throw new StoreError('Query result is outside the empty selection',409);
         // Preparation suppresses archive tools for an empty selection by
         // omitting the array from the agent input. Restore the owner's actual
