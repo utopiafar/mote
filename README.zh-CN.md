@@ -62,7 +62,7 @@ node scripts/mote.mjs token --profile dev
 
 这会创建一个本机试用环境，配置、数据和日志保存在 `.mote/profiles/dev/`。请妥善保管令牌，它具有完整资料库权限。停止该环境可执行 `node scripts/mote.mjs stop --profile dev`。
 
-中央会在后台准备本地 OCR 和音频 Worker 运行时。这些 Worker 需要 **Python 3.9+**，首次安装需要联网；音频处理另需 **FFmpeg**。需要识别时，在设置中显式安装 OCR／转写模型。运行时或模型未就绪时，原件仍会归档，处理任务等待就绪。详见[媒体配置指南](docs/ocr-asr-implementation-plan.md)。
+需要本地OCR或音频处理时，在设置中明确开始准备。Native Central会把固定uv安装器、私有 **Python 3.11**、所选Worker依赖和音频 **FFmpeg**放到该profile的模型目录，无需全局安装。首次准备及模型下载需要联网；等待运行时或模型时，已接纳原件仍保留。详见[本机环境检查](docs/deployment.md#native-environment-checks)和[媒体准备](docs/media-setup.md)。
 
 日常使用建议把环境目录放在仓库外。[部署指南](docs/deployment.md)提供 Mac mini、Docker、开机服务、备份和迁移步骤；[Cloudflare Tunnel](docs/cloudflare-tunnel.md)说明如何为其他设备提供 HTTPS 地址。
 
@@ -125,11 +125,11 @@ flowchart LR
 | --- | --- |
 | 部署、备份或更新中央 | [部署](docs/deployment.md) · [更新](docs/updating.md) · [服务端设置](docs/server-configuration.md) |
 | 配置设备采集 | [macOS](docs/desktop.md) · [Android](docs/android.md) · [采集与同步](docs/collection-and-sync.md) |
-| 接入文件、日历或其他应用 | [来源与 MCP](docs/connectors.md) · [导入与记忆](docs/central-memory.md) · [编码对话](docs/coding-agent-memory.md) |
-| 了解记忆与处理 | [记忆生命周期](docs/memory-lifecycle.md) · [本地 OCR 与转写](docs/ocr-asr-implementation-plan.md) |
+| 接入文件、日历或其他应用 | [来源与 MCP](docs/connectors.md) · [导入与记忆](docs/memory.md) · [编码对话](docs/coding-agent-memory.md) |
+| 了解记忆与处理 | [记忆生命周期](docs/memory.md#jobs-recipes-and-recovery) · [本地 OCR 与转写](docs/media-setup.md) |
 | 排查问题 | [故障排查](docs/troubleshooting.md) · [文档索引](docs/README.zh-CN.md) |
 
-当前采集端支持 macOS 和 Android，尚未实现 Windows／Linux 屏幕采集。Mac DEV App 使用 ad-hoc 签名，尚未公证。Android 后台行为与耗电因机型而异；fixture、模拟器、真机和真实模型验证分别记录。
+正式支持Central、macOS和Android；iOS是实验性客户端，不进入正式支持矩阵。尚未实现Windows／Linux屏幕采集。Mac DEV App 使用 ad-hoc 签名，尚未公证。Android 后台行为与耗电因机型而异；fixture、模拟器、真机和真实模型验证分别记录。
 
 发现问题可使用 [GitHub Issues](https://github.com/utopiafar/mote/issues) 或 App 的 **设置 → 反馈**，提供组件版本、平台和复现步骤。Issue 会公开，请检查附件中的个人内容，勿附访问令牌或私人归档。
 

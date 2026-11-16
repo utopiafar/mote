@@ -64,7 +64,7 @@ node scripts/mote.mjs token --profile dev
 
 This creates a local trial environment, with configuration, data, and logs under `.mote/profiles/dev/`. Keep the token private: it grants full archive access. To stop this environment, run `node scripts/mote.mjs stop --profile dev`.
 
-When you need local OCR or audio processing, start its preparation explicitly in settings. Native Central downloads a pinned uv installer, private **Python 3.11**, the selected worker's dependencies and audio **FFmpeg** under the profile's model directory; you do not need to install those tools globally. The first preparation needs network access and model downloads. Originals remain archived while processing waits for its runtime or models. See the [local environment checks](docs/deployment.md#native-environment-checks) and [media setup guide](docs/ocr-asr-implementation-plan.md).
+When you need local OCR or audio processing, start its preparation explicitly in settings. Native Central downloads a pinned uv installer, private **Python 3.11**, the selected worker's dependencies and audio **FFmpeg** under the profile's model directory; you do not need to install those tools globally. The first preparation needs network access and model downloads. Originals remain archived while processing waits for its runtime or models. See the [local environment checks](docs/deployment.md#native-environment-checks) and [media setup guide](docs/media-setup.md).
 
 For a daily archive, use a profile outside the checkout. The [deployment guide](docs/deployment.md) covers Mac mini, Docker, startup services, backups, and migration; [Cloudflare Tunnel](docs/cloudflare-tunnel.md) covers an HTTPS address for other devices.
 
@@ -127,8 +127,8 @@ Detailed guides are currently primarily in Chinese. Both READMEs cover the same 
 | --- | --- |
 | Deploy, back up, or update Central | [Deployment](docs/deployment.md) · [Updates](docs/updating.md) · [Server settings](docs/server-configuration.md) |
 | Set up collection on my devices | [macOS](docs/desktop.md) · [Android](docs/android.md) · [Collection and sync](docs/collection-and-sync.md) |
-| Bring in files, calendars, or other apps | [Sources and MCP](docs/connectors.md) · [Import and memory](docs/central-memory.md) · [Coding conversations](docs/coding-agent-memory.md) |
-| Understand memory and processing | [Memory lifecycle](docs/memory-lifecycle.md) · [Local OCR and transcription](docs/ocr-asr-implementation-plan.md) |
+| Bring in files, calendars, or other apps | [Sources and MCP](docs/connectors.md) · [Import and memory](docs/memory.md) · [Coding conversations](docs/coding-agent-memory.md) |
+| Understand memory and processing | [Memory lifecycle](docs/memory.md#jobs-recipes-and-recovery) · [Local OCR and transcription](docs/media-setup.md) |
 | Diagnose a problem | [Troubleshooting](docs/troubleshooting.md) · [Documentation index](docs/README.md) |
 
 Formal support covers Central, macOS, and Android. iOS is an experimental collector outside the formal support matrix; Windows/Linux screen collection is not implemented. Mac DEV apps use ad-hoc signing and are not notarized. Android background behavior and battery use vary by device; fixture, emulator, physical-device, and live-model checks are documented separately.
