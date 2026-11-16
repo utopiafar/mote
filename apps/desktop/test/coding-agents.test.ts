@@ -206,7 +206,7 @@ it('imports only the main Kimi Code sessions, keeping final answers and attribut
  expect(codingConversationEvidence(next.items.find(i=>i.text==='Background instruction')!.document!.coding!,'Background instruction')).toBe(false);
  expect((await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS,next.checkpoint)).items).toEqual([]);
 });
-it('does not promote cancelled turns, tool steps, injected prompts, or skill instructions into Kimi dialogue',async()=>{
+it('retains visible Kimi tool-step text while excluding cancelled steps, injected prompts and skill instructions',async()=>{
  const main=join(root,'wd_generated','session_other','agents','main');await mkdir(main,{recursive:true});const path=join(main,'wire.jsonl');
  const event=(type:string,extra:Record<string,unknown>={})=>line({type,time:1789000000000,...extra});
  const prompt=(text:string,origin:unknown={kind:'user'})=>event('turn.prompt',{input:[{type:'text',text}],origin});
@@ -222,7 +222,7 @@ it('does not promote cancelled turns, tool steps, injected prompts, or skill ins
  ].join(''));
  const scan=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS);
  const modelVisible=scan.items.filter(i=>codingConversationEvidence(i.document!.coding!,i.text)).map(i=>i.text);
- expect(modelVisible).toEqual(['User request','Use a tool','Retry question','Next question','User correction','Successful response']);
+ expect(modelVisible).toEqual(['User request','Use a tool','Text in a tool step','Retry question','Next question','User correction','Successful response']);
  expect(JSON.stringify(scan.items)).not.toContain('Hidden skill instructions');
  expect(JSON.stringify(scan.items)).not.toContain('Hook instructions');
  expect(scan.items.every(i=>i.document?.coding?.sessionId==='session_other')).toBe(true);
@@ -276,7 +276,7 @@ it('new-only excludes existing lines and captures newly appended lines with orig
 it('Kimi prefers the uncompacted wire journal and attributes tool deltas',async()=>{
  await mkdir(join(root,'session'));await writeFile(join(root,'session','context.jsonl'),line({role:'user',content:'duplicate snapshot'}));
  await writeFile(join(root,'session','wire.jsonl'),[{type:'TurnBegin',payload:{user_input:'question'}},{type:'ContentPart',payload:{type:'text',text:'answer'}},{type:'ToolCall',payload:{id:'t1',function:{name:'Shell',arguments:''}}},{type:'ToolCallPart',payload:{arguments_part:'generated'}},{type:'ToolResult',payload:{tool_call_id:'t1',return_value:{output:'passed'}}}].map(message=>line({timestamp:1789000000,message})).join(''));
- const scan=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS);expect(scan.items).toHaveLength(5);expect(scan.items[3].document?.coding?.callId).toBe('t1');expect(scan.items.some(i=>i.text.includes('duplicate snapshot'))).toBe(false);
+ const scan=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS);expect(scan.items).toHaveLength(6);expect(scan.items[4].document?.coding?.callId).toBe('t1');expect(scan.items.some(i=>i.text.includes('duplicate snapshot'))).toBe(false);
 });
 it('Claude retains human/assistant/tool roles and applies literal privacy filters without reading symlinks',async()=>{
  await writeFile(join(root,'s.jsonl'),line({type:'user',uuid:'u1',sessionId:'s-secret',parentUuid:'parent-secret',cwd:'/private/secret',message:{content:'secret'}})+line({type:'assistant',message:{content:[{type:'thinking',thinking:'hidden'},{type:'text',text:'answer'},{type:'tool_use',id:'t1-secret',name:'Test',input:{value:'secret'}}]}})+line({type:'user',message:{content:[{type:'tool_result',tool_use_id:'t1-secret',content:'pass'}]}}));
@@ -311,13 +311,13 @@ it('streaming Kimi text and tool identity survive append and checkpoint restart 
  const row=(type:string,payload:unknown,at:number)=>line({timestamp:at,message:{type,payload}});
  await writeFile(path,row('TurnBegin',{user_input:'Generated request'},1789000000)+row('ContentPart',{type:'text',text:'Hel'},1789000001)+row('ToolCall',{id:'fixture-call',function:{name:'Shell',arguments:''}},1789000002));
  const first=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS);
- expect(first.items.map(i=>i.document?.coding?.role)).toEqual(['user','assistant_delta','tool_call']);
+ expect(first.items.map(i=>i.document?.coding?.role)).toEqual(['user','assistant_delta','assistant','tool_call']);
  await appendFile(path,row('ToolCallPart',{arguments_part:'generated only'},1789000003)+row('ToolResult',{tool_call_id:'fixture-call',return_value:{output:'synthetic output'}},1789000004)+row('ContentPart',{type:'text',text:'lo 🌱'},1789000005));
  const second=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS,JSON.parse(JSON.stringify(first.checkpoint)));
  expect(second.items.map(i=>i.document?.coding?.role)).toEqual(['tool_call_delta','tool_result','assistant_delta']);
  expect(second.items[0]?.document?.coding?.callId).toBe('fixture-call');expect(second.items.at(-1)?.document?.coding?.attribution).toBe('agent');
  expect([...first.items,...second.items].filter(i=>i.document?.coding?.role==='assistant_delta').map(i=>i.text).join('')).toBe('Hello 🌱');
- expect(new Set([...first.items,...second.items].map(i=>i.externalId)).size).toBe(6);
+ expect(new Set([...first.items,...second.items].map(i=>i.externalId)).size).toBe(7);
  expect(second.items.at(-1)?.document?.recordedAt).toBe(new Date(1789000005*1000).toISOString());
 });
 
@@ -350,22 +350,24 @@ it('rejects old or incomplete coding checkpoints while leaving the original log 
  expect(await (await import('node:fs/promises')).readFile(path,'utf8')).toBe(body);
 });
 
-it('uses native Codex phases and completion receipts without admitting process messages or duplicate finals',async()=>{
+it('uses visible Codex phases and completion receipts while preserving unknown and reasoning boundaries',async()=>{
  const message=(phase:string,text:string)=>line({type:'response_item',payload:{type:'message',role:'assistant',phase,content:[{type:'output_text',text}]}});
- await writeFile(join(root,'current.jsonl'),line({type:'event_msg',payload:{type:'task_started',turn_id:'t1'}})+message('commentary','PROCESS_ONLY')+message('analysis','PRIVATE_ANALYSIS')+message('final_answer','Formal reply')+line({type:'event_msg',payload:{type:'task_complete',turn_id:'t1',last_agent_message:'Formal reply'}}));
+ await writeFile(join(root,'current.jsonl'),line({type:'event_msg',payload:{type:'task_started',turn_id:'t1'}})+message('commentary','PROCESS_ONLY')+message('analysis','PRIVATE_ANALYSIS')+message('final','UNKNOWN_PHASE_FINAL')+message('final_answer','Formal reply')+line({type:'event_msg',payload:{type:'task_complete',turn_id:'t1',last_agent_message:'Formal reply'}}));
  await writeFile(join(root,'older.jsonl'),line({type:'event_msg',payload:{type:'task_started',turn_id:'t2'}})+message('unknown','UNKNOWN_PROCESS')+line({type:'event_msg',payload:{type:'task_complete',turn_id:'t2',last_agent_message:'Older formal reply'}}));
  const scan=await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS);
  expect(scan.items.filter(i=>i.document?.coding?.channel==='final').map(i=>i.text).sort()).toEqual(['Formal reply','Older formal reply']);
  expect(scan.items.find(i=>i.text==='PROCESS_ONLY')?.document?.coding?.channel).toBe('commentary');
+ expect(scan.items.filter(i=>codingConversationEvidence(i.document!.coding!,i.text)).map(i=>i.text).sort()).toEqual(['Formal reply','Older formal reply','PROCESS_ONLY']);
 });
 
-it('Claude accepts only completed main-session replies and never uploads compaction sidechain copies',async()=>{
+it('Claude distinguishes visible text from final answers and never uploads compaction sidechain copies',async()=>{
  const row=(uuid:string,stop_reason:string|null,text:string,extra={})=>({type:'assistant',uuid,sessionId:'main',message:{stop_reason,content:[{type:'text',text}]},...extra});
  await writeFile(join(root,'main.jsonl'),line(row('progress',null,'PROCESS_TEXT'))+line(row('truncated','max_tokens','NOT_A_FINAL'))+line(row('final','end_turn','Formal reply'))+line({type:'user',uuid:'summary',isCompactSummary:true,message:{content:'HOST_SUMMARY'}}));
  await mkdir(join(root,'subagents'));await writeFile(join(root,'subagents','copy.jsonl'),line(row('final','end_turn','Formal reply',{isSidechain:true,agentId:'compact'})));
  const scan=await scanCodingAgent(root,'claude',DEFAULT_SOURCE_OPTIONS);
  expect(scan.items.filter(i=>i.document?.coding?.channel==='final').map(i=>i.text)).toEqual(['Formal reply']);
  expect(scan.items.find(i=>i.text==='HOST_SUMMARY')?.document?.coding?.attribution).toBe('host');
+ expect(scan.items.filter(i=>codingConversationEvidence(i.document!.coding!,i.text)).map(i=>i.text)).toEqual(['PROCESS_TEXT','NOT_A_FINAL','Formal reply']);
  const first=scan.items.find(i=>i.text==='Formal reply')!;
  await writeFile(join(root,'main.jsonl'),line(row('final','end_turn','Formal reply')));
  const replaced=await scanCodingAgent(root,'claude',DEFAULT_SOURCE_OPTIONS,scan.checkpoint);
@@ -377,7 +379,7 @@ it('Codex subagent prompts and replies are process evidence, not owner dialogue'
  expect((await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS)).items).toEqual([]);
 });
 
-it('Kimi confirms only the final tool-free step after TurnEnd, including checkpoint restart',async()=>{
+it('Kimi preserves visible tool preambles and confirms the final step after TurnEnd across checkpoint restart',async()=>{
  const dir=join(root,'kimi');await mkdir(dir);const path=join(dir,'wire.jsonl');
  const row=(type:string,payload:unknown={})=>line({timestamp:1789000000,message:{type,payload}});
  await writeFile(path,row('TurnBegin',{user_input:'Owner question'})+row('StepBegin',{n:1})+row('ContentPart',{type:'text',text:'PROCESS_ONLY'})+row('ToolCall',{id:'tool',function:{name:'Shell',arguments:''}})+row('StepBegin',{n:2})+row('ContentPart',{type:'text',text:'Formal '}));
@@ -517,4 +519,28 @@ it('native event identities and part numbers are independent of scan budgets and
  await writeFile(path,Array.from({length:199},(_,index)=>line(codex(`Earlier ${index}`))).join('')+line(row));
  const late=await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS),lateRest=await remaining(DEFAULT_SOURCE_OPTIONS,late.checkpoint),target=[...late.items,...lateRest.items].filter(item=>item.document?.coding?.eventId===full.items[0].document?.coding?.eventId);
  expect(identities(target)).toEqual(identities(full.items));
+});
+
+it('Codex completion receipts do not repeat an already-visible partial answer',()=>{
+ const context={sessionId:'generated-session'};
+ decodeCodingEvent('codex',{type:'event_msg',payload:{type:'task_started',turn_id:'generated-turn'}},context);
+ const text=decodeCodingEvent('codex',{type:'response_item',payload:{type:'message',role:'assistant',phase:'partial_answer',content:[{type:'output_text',text:'Stable partial answer'}]}},context);
+ expect(text.map(event=>[event.role,event.channel,event.text])).toEqual([['assistant','partial_answer','Stable partial answer']]);
+ expect(decodeCodingEvent('codex',{type:'event_msg',payload:{type:'task_complete',turn_id:'generated-turn',last_agent_message:'Stable partial answer'}},context)).toEqual([]);
+});
+
+it.each([false,true])('Kimi new-only capture does not publish buffered historical text or infer the speaker of a baselined turn (legacy=%s)',async legacy=>{
+ const main=join(root,'generated-session',...(legacy?[]:['agents','main']));await mkdir(main,{recursive:true});const path=join(main,'wire.jsonl');
+ const event=(type:string,extra:Record<string,unknown>={})=>line({type,time:1789000000000,...extra});
+ const loop=(type:string,extra:Record<string,unknown>={})=>event('context.append_loop_event',{event:{type,...extra}});
+ const old=(type:string,payload:Record<string,unknown>={})=>line({timestamp:1789000000,message:{type,payload}});
+ const content=(text:string)=>legacy?old('ContentPart',{type:'text',text}):loop('content.part',{part:{type:'text',text}});
+ const begin=()=>legacy?old('StepBegin'):loop('step.begin');
+ const end=()=>legacy?old('TurnEnd'):event('turn.ended',{reason:'completed'});
+ const prompt=(text:string)=>legacy?old('TurnBegin',{user_input:text}):event('turn.prompt',{origin:{kind:'user'},input:[{type:'text',text}]});
+ await writeFile(path,prompt('Historical owner input')+begin()+content('Historical buffered text'));
+ const options={...DEFAULT_SOURCE_OPTIONS,initialSync:'new_only' as const},baseline=await scanCodingAgent(root,'kimi',options);expect(baseline.items).toEqual([]);
+ await appendFile(path,begin()+content('Text in a baselined turn')+end()+prompt('New owner input')+begin()+content('New visible answer')+end());
+ const next=await scanCodingAgent(root,'kimi',options,JSON.parse(JSON.stringify(baseline.checkpoint)));
+ expect(next.items.filter(item=>codingConversationEvidence(item.document!.coding!,item.text)).map(item=>item.text)).toEqual(['New owner input','New visible answer']);
 });

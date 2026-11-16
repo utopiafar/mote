@@ -1,7 +1,7 @@
 import { bootstrapPlugins, builtinInstance, teardownPlugins } from '../plugin-host/bootstrap';
 import type { PluginContributionScope } from '../plugin-host/contributions';
 import { loadDefaultWebPlugins, pluginContributions } from '../plugins/default-inventory';
-import { webFeatures } from './registry';
+import { webFeatures,installedWebPlugins } from './registry';
 
 // Only the application entrypoint installs builtins. View and registry consumers
 // can be imported without starting feature installation.
@@ -30,8 +30,9 @@ export const featuresReady=(async()=>{
 type InstanceSnapshotInput=import('../plugin-host/contributions').InstanceSnapshot;
 
 export const featuresTeardown=async()=>{
+  const installed=await installedWebPlugins.close();
   const result=await teardownPlugins(featureScopes);
   featureScopes.clear();
   await webFeatures.close();
-  return result;
+  return {errors:[...installed.errors,...result.errors]};
 };

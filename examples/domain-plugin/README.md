@@ -34,7 +34,7 @@ install the packed SDK:
 node scripts/mote.mjs plugin-dev create ./my-domain-plugin --template domain --sdk-tarball /absolute/mote-plugin-sdk-0.1.0.tgz
 cd my-domain-plugin
 npm test
-MOTE_REPOSITORY=/absolute/mote npm run build -- --data-only
+MOTE_REPOSITORY=/absolute/mote npm run build
 ```
 
 The build writes `dist/mote-plugin.json` and
@@ -44,12 +44,14 @@ instance, check it and enable it. Installation does not create an instance or
 authorize model work. The entry is self-contained ESM; the installer runs no
 npm or shell lifecycle scripts.
 
-`npm run build` without `--data-only` preserves the page declaration and HTML
-in the complete release. Current Central does not load its installed page
-capability, so that complete release stays blocked with `collection.page`
-unknown; the data-only build is an explicit example artifact choice. It does
-not add a host fallback or bypass capability checks. The page payload and its
-bridge remain available for the separate presentation-host work.
+The default build includes the isolated page and its declared `state/add`
+bridge. After explicit enablement, the authenticated Web startup adds its page
+to navigation under Settings. It reads and writes only this instance's typed
+collection port; no owner token or Host API enters the sandbox. Stop/restart
+fences old channels while retaining instance state. `npm run build -- --data-only`
+is still available to build an explicit service-only artifact. See the
+[installed Web contract](../../docs/plugin-development.md#installed-web-presentation)
+for supported presentation entries, dependencies and lifecycle boundaries.
 
 The current data entry exports `manifest` and
 `createPlugin(context, {configuration, required, optional})`. Its declaration
