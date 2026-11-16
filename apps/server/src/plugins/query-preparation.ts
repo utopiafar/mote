@@ -135,7 +135,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
       const freshImages=queryImages(directImages.map(image=>image.id));
       if(freshImages.some((image,index)=>image.hash!==directImages[index].hash||image.mimeType!==directImages[index].mimeType||image.sizeBytes!==directImages[index].sizeBytes))throw new StoreError('Query attachment changed during preparation',409);
       for(const image of directImages){const version=files.version(image.id);if(!store.evidence([image.id]).length||!fileAttachmentAvailable(store,image.id)||store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted)throw new StoreError('Query attachment is no longer available',409);}
-      delegation.recordEvidence(work.id,[...(contextDependencies(prepared)?.ids??[]),...directImages.map(image=>image.id)]);
+      delegation.recordEvidence(work.id,[...opening.leads.map(memory=>memory.id),...(conversation?.historyContext?.evidenceDependencies.ids??conversation?.evidenceDependencies?.ids??[]),...(scope.evidenceIds??[]),...(scope.anchorEvidenceIds??[]),...directImages.map(image=>image.id)]);
       delegation.journal.savePayload(work.id,{...saved,prepared,...(historyBeforeSeq===undefined?{}:{historyBeforeSeq}),configurationFingerprint:modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision).fingerprint});
     });
     return {...prepared,signal,onProgress};

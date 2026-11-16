@@ -56,14 +56,15 @@ test('host file archive identity opens processing regardless of source platform 
   const display=evidencePresentation({...capture,fileArchive:{captureId:capture.id}});
   assert.deepEqual(display.nativeFile,{captureId:capture.id});
   assert.equal(display.textLabel,'文件元信息');
-  assert.match(display.deleteDescription,/删除中央文件归档/);
+  assert.match(display.deleteDescription,/删除中央文件原件和解析正文/);
 });
 
 test('native transcript citations open their parent file at the cited offset', () => {
   const segment = evidencePresentation({id:'chunk',source:'file',platform:'android',fileEvidence:{captureId:'parent',revision:'v2',artifactId:'transcript',chunkId:'chunk',startMs:12500,endMs:16750,speaker:'S1'}});
   assert.deepEqual(segment.nativeFile, {captureId:'parent',startMs:12500});
   assert.equal(segment.textLabel, '转写片段');
-  assert.match(segment.deleteDescription, /依赖记忆/);
+  assert.match(segment.deleteDescription, /仍有效的记忆保留/);
+  assert.match(segment.deleteDescription, /原文将无法回看或引用/);
 });
 
 test('central OCR explanations do not promise collector work for cancelled or unavailable jobs',()=>{
