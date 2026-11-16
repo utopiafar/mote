@@ -454,21 +454,26 @@ export class PluginCenter {
     for(const key of required.keys())optional.delete(key);
     return {required:[...required.values()],optional:[...optional.values()]};
   }
+  private activeDomainHandle(handle:PluginHandle|undefined){return Boolean(handle&&!handle.signal.aborted&&this.hostOwner?.host.snapshot().contributions.some(value=>sameScope(value.identity.scope,handle.identity)&&value.availability.state==='active'));}
   private async installDomain(instanceId:string,module:Record<string,unknown>,publish:boolean,signal:AbortSignal,epoch?:number){
     if(!this.hostOwner)throw new StoreError('Domain host is unavailable',503);
     const pkg=this.packageForInstance(instanceId),factory=domainPluginFromModule(module,pkg.manifest),configuration=this.configurationIdentity(instanceId),host=this.hostOwner.host;
     const owned={controller:new AbortController(),handle:undefined as PluginHandle|undefined,bindings:[] as ServiceBinding[]};
     if(publish){const previous=this.domainInstances.get(instanceId);if(previous?.handle)await previous.handle.close('disabled');this.domainInstances.set(instanceId,owned);}
-    const current=()=>{signal.throwIfAborted();owned.controller.signal.throwIfAborted();if(!this.accepting||this.configurationIdentity(instanceId)!==configuration||this.instanceBuild(instanceId)?.retired||publish&&(!this.instance(instanceId).view.desired||this.serviceEpochs.get(instanceId)!==epoch))throw new PluginHostError('stale_scope');};
     let handle:PluginHandle|undefined;
+    const current=()=>{signal.throwIfAborted();owned.controller.signal.throwIfAborted();if(handle?.signal.aborted)throw new PluginHostError('dependency_unavailable');if(!this.accepting||this.configurationIdentity(instanceId)!==configuration||this.instanceBuild(instanceId)?.retired||publish&&(!this.instance(instanceId).view.desired||this.serviceEpochs.get(instanceId)!==epoch))throw new PluginHostError('stale_scope');};
     try{
       current();const dependencies=this.resolveDomainDependencies(instanceId),activation=this.connectorActivation(instanceId);
       handle=await host.install({identity:{...this.instanceIdentity(instanceId),host:host.identity,activationId:randomUUID()},contributions:domainContributions(pkg.manifest).map(value=>({id:value.id,apiVersion:value.provides![0]!.apiVersion})),requires:[this.hostOwner.binding(),...dependencies.required],optional:dependencies.optional,
         factory:context=>createDomainPlugin(context,factory,pkg.manifest,Object.freeze({configuration:Object.freeze({...activation.configuration,...activation.secrets}),required:Object.freeze(dependencies.required),optional:Object.freeze(dependencies.optional)}),{publish,signal:AbortSignal.any([signal,owned.controller.signal]),assertCurrent:current,published:binding=>owned.bindings.push(binding)})});
-      current();if(publish){owned.handle=handle;handle.signal.addEventListener('abort',()=>{
+      if(publish){owned.handle=handle;handle.signal.addEventListener('abort',()=>{
         if(this.admit()||this.domainInstances.get(instanceId)!==owned||!this.instance(instanceId).view.desired||this.serviceEpochs.get(instanceId)!==epoch)return;
         const instance=this.instance(instanceId);instance.view.desired=false;instance.view.observed='blocked';instance.view.issues=['dependency_unavailable'];instance.view.revision++;this.saveInstance(instance);this.bump();this.admissionChanged?.(instanceId,false);
-      },{once:true});}else await handle.close('disabled');
+      },{once:true});}
+      // Revocation can precede delivery of the install receipt, so subscribing
+      // alone is insufficient. Recheck the returned scope before accepting it.
+      current();if(!this.activeDomainHandle(handle))throw new PluginHostError('dependency_unavailable');
+      if(!publish)await handle.close('disabled');
     }catch(error){if(handle)await handle.close('disabled');if(publish&&this.domainInstances.get(instanceId)===owned)this.domainInstances.delete(instanceId);throw error;}
   }
   private async startServiceInstance(instanceId:string,epoch:number){
@@ -496,6 +501,8 @@ export class PluginCenter {
         await this.installProcessing(instanceId,module,true,new AbortController().signal,epoch);
       }
       if(surfaces.data){const module=await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>;await this.installDomain(instanceId,module,true,new AbortController().signal,epoch);}
+      if(this.admit())throw new PluginHostError('stale_scope');
+      if(surfaces.data&&!this.activeDomainHandle(this.domainInstances.get(instanceId)?.handle))throw new PluginHostError('dependency_unavailable');
       const instance=this.instance(instanceId);if(instance.view.desired&&this.serviceEpochs.get(instanceId)===epoch){instance.view.observed='ready';instance.view.issues=[];instance.view.revision++;this.saveInstance(instance);this.bump();}
     }catch(error){
       this.activeConnectors.delete(instanceId);
@@ -504,7 +511,9 @@ export class PluginCenter {
       const processing=this.processingInstances.get(instanceId);this.processingInstances.delete(instanceId);processing?.controller.abort();if(processing?.handle)await processing.handle.close('disabled');
       const domain=this.domainInstances.get(instanceId);this.domainInstances.delete(instanceId);domain?.controller.abort();if(domain?.handle)await domain.handle.close('disabled');
       const instance=this.instance(instanceId);
-      if(instance.view.desired&&this.serviceEpochs.get(instanceId)===epoch){instance.view.observed='blocked';instance.view.desired=false;instance.view.issues=[error instanceof Error?error.message:'service_activation_failed'];instance.view.revision++;this.saveInstance(instance);this.bump();}
+      // Quiesce/shutdown revokes work, not the persisted owner selection.
+      // A still-admitting host records genuine startup/dependency failures.
+      if(!this.admit()&&instance.view.desired&&this.serviceEpochs.get(instanceId)===epoch){instance.view.observed='blocked';instance.view.desired=false;instance.view.issues=[error instanceof PluginHostError?error.code:error instanceof Error?error.message:'service_activation_failed'];instance.view.revision++;this.saveInstance(instance);this.bump();}
     }
   }
   private deactivateServiceInstance(instanceId:string){
