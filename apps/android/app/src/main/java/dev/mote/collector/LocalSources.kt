@@ -15,7 +15,7 @@ data class LocalSource(
     val retention: String = "snapshot", val enabled: Boolean = true,
     val calendarId: Long? = null, val uri: String? = null, val tree: Boolean = false,
     val extensions: String = "md,txt,json,csv,ics", val excluded: String = "",
-    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 512, val allowRead: Boolean = false,
+    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 0, val allowRead: Boolean = false,
     val centralProcessingConsent: Boolean = false, val syncContinuously: Boolean = true,
     val description: String = "", val contextVersion: Int = 0, val contextDirty: Boolean = false, val contextTarget: String = ""
 ) {
@@ -26,7 +26,7 @@ data class LocalSource(
         SourceAdapters.default.forKind(kind).validateConfiguration(this)
         require(!tree || syncContinuously) { "Folder sources must sync continuously" }
         require(syncContinuously || initialSync == "all") { "One-time file imports require the selected file" }
-        require(maxFileMiB in 1..512)
+        require(maxFileMiB >= 0)
         require(description.length <= 12000 && contextVersion >= 0) { MoteI18n.text("资料说明最多 12000 字符") }
         SourceRules.extensions(extensions); SourceRules.patterns(excluded)
     }
@@ -37,6 +37,7 @@ data class LocalSource(
     fun registration(deviceId: String) = JSONObject().put("id", id).put("name", name).put("kind", kind).put("deviceId", deviceId)
         .put("platform", "android").put("initialSync", initialSync).put("retention", retention).put("enabled", true)
     companion object {
+        private fun fileLimit(value: JSONObject): Int { val limit = FileTransfer.number(value, "maxFileMiB"); require(limit <= Int.MAX_VALUE); return limit.toInt() }
         private fun contextVersion(value: JSONObject): Int {
             if (!value.has("contextVersion")) return 0
             val version = value.get("contextVersion") as? Number ?: error("contextVersion must be numeric")
@@ -46,7 +47,7 @@ data class LocalSource(
         fun from(v: JSONObject) = LocalSource(v.getString("id"), v.getString("name"), v.getString("kind"), v.getString("retention"), v.getBoolean("enabled"),
             if (v.has("calendarId")) v.getLong("calendarId") else null, if (v.has("uri")) v.getString("uri") else null,
             v.getBoolean("tree"), v.getString("extensions"), v.getString("excluded"),
-            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), v.getInt("maxFileMiB"), v.getBoolean("allowRead"), if (!v.has("centralProcessingConsent")) false else v.get("centralProcessingConsent") as? Boolean ?: error(MoteI18n.text("来源上传确认必须为布尔值")), if (v.has("syncContinuously")) v.get("syncContinuously") as? Boolean ?: error("syncContinuously must be boolean") else true,
+            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), fileLimit(v), v.getBoolean("allowRead"), if (!v.has("centralProcessingConsent")) false else v.get("centralProcessingConsent") as? Boolean ?: error(MoteI18n.text("来源上传确认必须为布尔值")), if (v.has("syncContinuously")) v.get("syncContinuously") as? Boolean ?: error("syncContinuously must be boolean") else true,
             if (v.has("description")) v.get("description") as? String ?: error("description must be text") else "",
             contextVersion(v),
             if (v.has("contextDirty")) v.get("contextDirty") as? Boolean ?: error("contextDirty must be boolean") else false,

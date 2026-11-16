@@ -1,10 +1,11 @@
 import {type Api} from '../../api';
 import {uploadFilePart} from '../../upload-part';
-type Upload={id:string;partBytes:number;fileId?:string;parts:{part:number;hash:string;bytes?:number}[]};
+import {filePartReceipts,type FilePartPage,type FilePartReceipt} from '@mote/shared';
+type Upload=FilePartPage&{id:string;partBytes:number;fileId?:string};
 /** One part (at most 4 MiB) per file turn. Files keep their own session, offset and hash. */
 export async function uploadImportFiles(api:Api,files:readonly File[],identities:WeakMap<File,string>,progress:(bytes:number)=>void,signal?:AbortSignal,completed:WeakMap<File,string>=new WeakMap()):Promise<string[]>{
  const request=async<T>(path:string,init:RequestInit)=>{signal?.throwIfAborted();const deadline=AbortSignal.timeout(180000);const result=await api.request<T>(path,{...init,signal:signal?AbortSignal.any([signal,deadline]):deadline});signal?.throwIfAborted();return result;};
- const pending:{file:File;index:number;id:string;offset:number;upload?:Upload}[]=[],result:string[]=[];
+ const pending:{file:File;index:number;id:string;offset:number;upload?:Upload;receipts?:AsyncGenerator<FilePartReceipt>;receipt?:IteratorResult<FilePartReceipt>}[]=[],result:string[]=[];
  let accepted=0;
  // A retry skips committed originals locally so later files can make progress
  // after a transport interruption without repeating already acknowledged work.
@@ -20,10 +21,14 @@ export async function uploadImportFiles(api:Api,files:readonly File[],identities
   }
   const upload=job.upload;
   if(job.offset<file.size){const part=job.offset/upload.partBytes;
-   const length=await uploadFilePart(file,part,upload.partBytes,upload.parts.find(item=>item.part===part),body=>request('/api/import-uploads/'+id+'/parts/'+part,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body}),signal);
+   if(!job.receipts){job.receipts=filePartReceipts(upload,async after=>{const page=await request<Upload>('/api/import-uploads/'+id+'?afterPart='+after,{method:'GET'});if(page.id!==id||page.partBytes!==upload.partBytes)throw Error('Upload receipt identity changed');return page;},file.size);job.receipt=await job.receipts.next();}
+   const existing=job.receipt&&!job.receipt.done&&job.receipt.value.part===part?job.receipt.value:undefined;
+   const length=await uploadFilePart(file,part,upload.partBytes,existing,body=>request('/api/import-uploads/'+id+'/parts/'+part,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body}),signal);
+   if(existing)job.receipt=await job.receipts.next();
    job.offset+=length;accepted+=length;progress(accepted);
   }
   if(job.offset<file.size){pending.push(job);continue;}
+  if(job.receipt&&!job.receipt.done)throw Error('Incomplete upload receipt traversal');
   const saved=await request<{id:string}>('/api/import-uploads/'+id+'/commit',{method:'POST'});if(typeof saved.id!=='string'||!saved.id||upload.fileId&&saved.id!==upload.fileId)throw Error('Invalid import archive acknowledgement');result[job.index]=saved.id;completed.set(file,saved.id);
  }
  return result;

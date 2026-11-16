@@ -14,6 +14,9 @@ import { redactSourceText } from './source-types';
 import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
 import { localVolumeIdentity } from './local-volume';
+// Literal masking decodes text in memory; this processing budget does not cap
+// streaming original archives or permit uploading unmasked private content.
+const MASKED_TEXT_MAX_BYTES=512*1024*1024;
 export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = [], incrementalCheckpoint=false, recoveryIds: readonly string[] = []): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   if(previous && (previous.version!==1 || previous.identityVersion!==1))throw Error('Unsupported local file identity registry; existing source state was preserved');
@@ -103,7 +106,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     }
     const externalId = matched?.entryId ?? 'file:' + randomUUID();
     const bind=()=>{catalog.bind(candidate.relativePath,externalId,identityRoot,matched);claimed.set(externalId,candidate.relativePath);result.seen.push(externalId);};
-    const maximumFile=accessMarkerPath?512*1024*1024:16*1024*1024;
+    const maximumFile=accessMarkerPath?Number.MAX_SAFE_INTEGER:16*1024*1024;
     if (options.retention !== 'reference' && candidate.size > maximumFile) { bind();result.skipped++; return 'ok'; }
     if (result.items.length >= 2000 || options.retention !== 'reference' && totalBytes>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
     const unchanged = matched && matched.relativePath===candidate.relativePath && matched.syncState === 'synced' && matched.contentQuickHash === candidate.quickHash && matched.fileId === candidate.fileId && matched.size === candidate.size && matched.mtimeMs === candidate.mtimeMs && matched.ctimeMs === candidate.ctimeMs && matched.quickHash === candidate.quickHash && matched.contentVersion;
@@ -130,7 +133,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         if (stable.mtimeMs !== before.mtimeMs || stable.ctimeMs !== before.ctimeMs || stable.size !== before.size) throw new Error('file is still changing');
       }
       let original: Buffer | undefined; let inputState: {parser:string;status:'ready'|'pending'|'blocked';warnings?:string[]} = { parser: 'none', status: 'ready' };
-      if(options.retention==='snapshot'&&options.redactLiterals.length&&!mime.startsWith('text/')){
+      if(options.retention==='snapshot'&&options.redactLiterals.length&&(!mime.startsWith('text/')||before.size>MASKED_TEXT_MAX_BYTES)){
         inputState={parser:'privacy-blocked',status:'blocked',warnings:['Source literal masks cannot be safely applied to this format; input was not uploaded.']};
       }else if(options.retention!=='reference'){
         if(options.retention==='snapshot'&&options.redactLiterals.length){

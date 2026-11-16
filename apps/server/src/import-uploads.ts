@@ -4,10 +4,11 @@ import {rm} from 'node:fs/promises';
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
 import {Store,StoreError,sha256} from './store.js';
-import {ArchivedFileStore,archiveRelativePath,MAX_FILE_BYTES} from './archived-files.js';
+import {ArchivedFileStore,archiveRelativePath} from './archived-files.js';
+import {FILE_MAX_BYTES,FILE_PART_RECEIPTS} from '@mote/shared';
 import {privateDirectory} from './private-storage.js';
 const PART=4*1024*1024;
-const manifestSchema=z.object({id:z.string().uuid().optional(),name:z.string().min(1).max(1000),sizeBytes:z.number().int().min(0).max(MAX_FILE_BYTES),mimeType:z.string().max(200).optional()}).strict();
+const manifestSchema=z.object({id:z.string().uuid().optional(),name:z.string().min(1).max(1000),sizeBytes:z.number().int().safe().min(0).max(FILE_MAX_BYTES),mimeType:z.string().max(200).optional()}).strict();
 type Manifest=z.infer<typeof manifestSchema>&{id:string;fileId?:string};
 /** Bounded binary upload. Each acknowledged part is durable and checksum checked on replay. */
 export class ImportUploads {
@@ -24,9 +25,10 @@ export class ImportUploads {
   const prior=this.store.db.prepare('SELECT json FROM import_uploads WHERE id=?').get(id);
   if(prior){const {fileId:_,...manifest}=JSON.parse(String(prior.json));if(manifest.name!==input.name||manifest.sizeBytes!==input.sizeBytes||manifest.mimeType!==input.mimeType)throw new StoreError('Upload identity conflict',409);}
   else{this.store.db.prepare('INSERT INTO import_uploads VALUES(?,?,?)').run(id,0,JSON.stringify({...input,id}));}
-  const value=this.load(id);return {id,partBytes:PART,fileId:value.fileId,parts:this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id)};
+  return this.status(id);
  }
- part(id:string,part:number,bytes:Buffer){this.assertOpen();const manifest=this.load(id),expected=Math.min(PART,manifest.sizeBytes-part*PART);if(!Buffer.isBuffer(bytes)||!Number.isSafeInteger(part)||part<0||part>=Math.ceil(manifest.sizeBytes/PART)||bytes.length!==expected)throw new StoreError('Invalid import part');
+ status(id:string,afterPart=-1){this.assertOpen();if(!Number.isSafeInteger(afterPart)||afterPart< -1)throw new StoreError('Invalid upload receipt cursor');const value=this.load(id),rows=this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? AND part>? ORDER BY part LIMIT ?').all(id,afterPart,FILE_PART_RECEIPTS+1),parts=rows.slice(0,FILE_PART_RECEIPTS);return {id,partBytes:PART,fileId:value.fileId,parts,nextPart:rows.length>FILE_PART_RECEIPTS?Number(parts.at(-1)!.part):null};}
+ part(id:string,part:number,bytes:Buffer){this.assertOpen();const manifest=this.load(id),expected=Math.min(PART,manifest.sizeBytes-part*PART);if(!Buffer.isBuffer(bytes)||!Number.isSafeInteger(part)||part<0||part>=Math.ceil(manifest.sizeBytes/PART)||!Number.isSafeInteger(part*PART)||bytes.length!==expected)throw new StoreError('Invalid import part');
   const hash=sha256(bytes),prior=this.store.db.prepare('SELECT hash FROM import_upload_parts WHERE upload_id=? AND part=?').get(id,part);if(prior){if(prior.hash!==hash)throw new StoreError('Import part conflicts',409);return {part,bytes:bytes.length,hash};}if(manifest.fileId)throw new StoreError('Upload already committed',409);
   const directory=join(this.directory,id);privateDirectory(directory);this.store.contentEncryption.write(join(directory,String(part)),bytes);this.store.db.prepare('INSERT INTO import_upload_parts VALUES(?,?,?,?)').run(id,part,bytes.length,hash);return {part,bytes:bytes.length,hash};
  }
@@ -34,9 +36,10 @@ export class ImportUploads {
  async commit(id:string,signal?:AbortSignal){this.assertOpen();const prior=this.pending.get(id)??Promise.resolve(),next=prior.catch(()=>{}).then(()=>this.commitOnce(id,signal));this.pending.set(id,next);try{return await next;}finally{if(this.pending.get(id)===next)this.pending.delete(id);}}
  private async releaseParts(id:string){this.store.db.prepare('DELETE FROM import_upload_parts WHERE upload_id=?').run(id);await rm(join(this.directory,id),{force:true,recursive:true});}
  private async commitOnce(id:string,signal?:AbortSignal){const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();const manifest=this.load(id);if(manifest.fileId){const file=this.files.get(manifest.fileId);await this.releaseParts(id);return file;}
-  const parts=this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id) as {part:number;bytes:number;hash:string}[];if(parts.length!==Math.ceil(manifest.sizeBytes/PART))throw new StoreError('Import upload incomplete',409);
+  const count=Number(this.store.db.prepare('SELECT count(*) n FROM import_upload_parts WHERE upload_id=?').get(id)!.n);if(count!==Math.ceil(manifest.sizeBytes/PART))throw new StoreError('Import upload incomplete',409);
+  const parts=this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').iterate(id) as Iterable<{part:number;bytes:number;hash:string}>;
   const store=this.store,directory=this.directory;
-  function* buffers(){for(const [index,part] of parts.entries()){if(Number(part.part)!==index)throw new StoreError('Missing import part',409);const bytes=store.contentEncryption.read(join(directory,id,String(index)));if(bytes.length!==part.bytes||sha256(bytes)!==part.hash)throw new StoreError('Import checksum mismatch',409);yield bytes;}}
+  function* buffers(){let index=0;for(const part of parts){if(Number(part.part)!==index)throw new StoreError('Missing import part',409);const bytes=store.contentEncryption.read(join(directory,id,String(index++)));if(bytes.length!==part.bytes||sha256(bytes)!==part.hash)throw new StoreError('Import checksum mismatch',409);yield bytes;}}
   // A single part is bounded at 4 MiB; larger originals use the shared worker.
   const file=manifest.sizeBytes<=PART?this.files.putParts({name:manifest.name,mimeType:manifest.mimeType},buffers(),manifest.sizeBytes):await this.files.putUpload({name:manifest.name,mimeType:manifest.mimeType},join(directory,id),parts,manifest.sizeBytes,cancellation,()=>{this.load(id);});
   cancellation.throwIfAborted();this.load(id);
@@ -49,7 +52,8 @@ export function registerImportUploads(app:FastifyInstance,uploads:ImportUploads)
  app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:PART},(_req,body,done)=>done(null,body));
  app.addHook('preClose',async()=>uploads.close());
  app.post('/api/import-uploads',{bodyLimit:4096},async req=>uploads.begin(req.body));
- app.put('/api/import-uploads/:id/parts/:part',{bodyLimit:PART},async req=>{const {id,part}=z.object({id:z.string().uuid(),part:z.coerce.number().int().nonnegative()}).parse(req.params);return uploads.part(id,part,req.body as Buffer);});
+ app.get('/api/import-uploads/:id',async req=>{const {id}=z.object({id:z.string().uuid()}).parse(req.params),query=z.object({afterPart:z.coerce.number().int().safe().min(-1).default(-1)}).strict().parse(req.query);return uploads.status(id,query.afterPart);});
+ app.put('/api/import-uploads/:id/parts/:part',{bodyLimit:PART},async req=>{const {id,part}=z.object({id:z.string().uuid(),part:z.coerce.number().int().safe().nonnegative()}).parse(req.params);return uploads.part(id,part,req.body as Buffer);});
  app.post('/api/import-uploads/:id/commit',async(req,reply)=>{
   const controller=new AbortController(),abort=()=>{if(!reply.raw.writableEnded)controller.abort();};req.raw.once('aborted',abort);reply.raw.once('close',abort);
   try{return await uploads.commit(z.object({id:z.string().uuid()}).parse(req.params).id,controller.signal);}finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}

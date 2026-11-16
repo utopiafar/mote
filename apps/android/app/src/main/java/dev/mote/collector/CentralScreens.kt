@@ -1337,19 +1337,23 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     fun importFile(uri: Uri) {
         val api = client; val instruction = importInstruction
         ui.work(MoteI18n.text("正在导入文件…"), { progress ->
-            importStore.stage(ui, uri, instruction)
-            importStore.send(api) { done, total -> progress.message = MoteI18n.text("正在上传附件 {0}/{1}", done, total) }
-        }) { admin.importDetail(it.getString("id")) }
+            runCatching { importStore.stage(ui, uri, instruction)
+                importStore.send(api) { done, total -> progress.message = MoteI18n.text("正在上传附件 {0}/{1}", done, total) } }
+        }) { result -> result.onSuccess { admin.importDetail(it.getString("id")) }.onFailure { refresh(); ui.requestFailure(it) } }
     }
     fun importPending(target: LinearLayout) {
         ui.work(MoteI18n.text("正在读取…"), { importStore.pending() }) { saved ->
             if (saved.has("manifest")) {
                 ui.text(saved.getJSONObject("manifest").getString("name"), parent = target)
+                saved.optString("archivedFileId").takeIf { it.matches(Regex("[a-fA-F0-9-]{36}")) }?.let { id ->
+                    ui.text(MoteI18n.text("原件已保留"), parent = target)
+                    ui.button(MoteI18n.text("保存原件"), parent = target) { ui.saveCentral("/api/archived-files/$id/content", saved.getJSONObject("manifest").getString("name"), saved.getJSONObject("manifest").optString("mimeType", "application/octet-stream")) }
+                }
                 ui.button(MoteI18n.text("重试同一请求"), parent = target) {
                     val api = client
                     ui.work(MoteI18n.text("正在导入文件…"), { progress ->
-                        importStore.send(api) { done, total -> progress.message = MoteI18n.text("正在上传附件 {0}/{1}", done, total) }
-                    }) { admin.importDetail(it.getString("id")) }
+                        runCatching { importStore.send(api) { done, total -> progress.message = MoteI18n.text("正在上传附件 {0}/{1}", done, total) } }
+                    }) { result -> result.onSuccess { admin.importDetail(it.getString("id")) }.onFailure { refresh(); ui.requestFailure(it) } }
                 }
                 ui.button(MoteI18n.text("放弃待导入文件"), parent = target) {
                     confirm(MoteI18n.text("放弃待导入文件"), MoteI18n.text("中央已接收的原件仍保留。")) {
