@@ -180,7 +180,8 @@ test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated 
  await connections.revoke(phone.credentialId);
  assert.equal((await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie:String(grant.headers['set-cookie']).split(';')[0]}})).statusCode,401);
  await app.inject({method:'DELETE',url:`/api/files/${ack.id}`,headers});assert.equal((await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie}})).statusCode,404);assert.equal((await app.inject({url:`/api/files/${ack.id}/view`,headers})).statusCode,404);
- assert.equal((await app.inject({url:headUrl,headers})).json().forgotten,true);
+ assert.deepEqual((await app.inject({url:headUrl,headers})).json(),{revision:'v1',forgotten:false});
+ assert.equal((await app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:m})).statusCode,410,'history deletion rejects old retries without suppressing every future revision');
 });
 
 test('reference manifests are metered and a SQLite write failure does not publish a revision',async t=>{

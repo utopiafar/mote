@@ -1,3 +1,4 @@
+import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -35,7 +36,7 @@ async function fixture(t:TestContext,coverage:MaterialDraft['coverage']={state:'
   const a=await sources.upsert('generated-a',{externalId:'session',revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text:'Generated source membership'});
   const b=await sources.upsert('generated-b',{externalId:'private',revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text:'PRIVATE_GENERATED_OTHER_SOURCE'});
   const body=pieces.join('');
-  const draft:MaterialDraft={id:materialId('generated-a','session'),kind:'mote.coding-session',schemaVersion:6,title:'Generated session',
+  const draft:MaterialDraft={id:materialId('generated-a','session'),kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,title:'Generated session',
     origin:{sourceId:'generated-a',externalId:'session',deviceId:'device-a',provider:'codex',projectKey:'generated-project',projectIdentity:'workspace',sessionId:'generated-session',firstAt:recordedAt,lastAt:recordedAt},
     blocks:[{id:'section-0',kind:'text',format:'markdown-fragment',text:body,memberIds:['source']}],
     members:[{id:'source',kind:'capture',ref:'capture:'+a.id}],coverage,artifacts:[{key:'conversation',state:'ready'}],

@@ -178,6 +178,10 @@ Model choice, reasoning and output limits come from the selected profile in the 
 
 相同版本重复提交安全；相同版本但内容不同返回冲突。离线客户端需持久化版本与请求正文，严格确认后再移除。参考实现使用内容与前一版本的哈希链，支持“修改→删除→恢复相同内容”，而旧重试不会移动当前指针。
 
+文件同步的`GET /api/file-sync/v1/head?sourceId=...&externalId=...`返回`{revision,forgotten}`。所有者`DELETE /api/files/:id`删除同一文件当时的中央历史和撤回在途版本，保留最后同步`revision`且不设置`forgotten`；旧版本再提交返回410，新版本沿前驱继续，采集端原件不被擦除。若没有可读旧文件，只有当前持久head确已删除且incoming revision未被撤回时才允许`previousRevision:null`；事务前复核该前驱，成功后保持原manifest，重复请求按原合同幂等。明确`forget`仍屏蔽未来版本；所有者`POST /api/files/:id/allow-again`仅解除该屏蔽，不抹除旧revision的防重放记录。
+
+上传会话的来源范围代次由Central内部持久记录，不增加公开`FileRevision`字段。来源`syncScopeVersion`变化、停用或当前保存授权不允许时，续传/提交拒绝；代次变化返回409且不自动删除唯一待传输入。旧的无pin会话不会补成当前授权，也不会在同一`uploadId`上更新授权。新的合法接纳使用新会话身份。该检查不能识别尚未传达给Central的本机文件夹选择变化。
+
 外部 Chatbot 接口另见 [MCP 与连接器](connectors.md)。内部查询 Agent 没有写入能力。
 
 ### Screenshot albums

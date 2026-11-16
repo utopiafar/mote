@@ -30,13 +30,14 @@ export function codingRoot(provider:CodingProvider,home=homedir(),env:NodeJS.Pro
 export async function discoverCodingAgents(home=homedir(),env:NodeJS.ProcessEnv=process.env): Promise<import('./contracts/sources').CodingAgentDiscovery[]> {
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>{const path=codingRoot(provider,home,env);return {provider,name:codingProviders[provider],path,available:await lstat(path).then(s=>provider==='opencode'?s.isFile()&&!s.isSymbolicLink():s.isDirectory()&&!s.isSymbolicLink(),()=>false)};}));
 }
-type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;kimiText?:string;kimiAt?:string;kimiToolStep?:boolean;kimiHostTurn?:boolean;kimiCodeTurnId?:string};
+type EventOrder=NonNullable<CodingEvidence['order']>;
+type Context={entry?:number;sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;lastAssistantHash?:string;kimiText?:string;kimiAt?:string;kimiToolStep?:boolean;kimiHostTurn?:boolean;kimiCodeTurnId?:string;kimiOrder?:EventOrder;kimiStepId?:string;kimiStepClosed?:boolean;kimiParts?:string[];kimiCompacting?:boolean};
 type Cursor={offset:number;anchor:string;ino:number;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;generation:number;context:Context;pendingEvent?:{hash:string;nextItem:number}};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
 export type CodingOpenCodeCursor={lastSeq:number;lastUpdated:number;incomplete:string[];continuation?:{id:string;hash:string;nextItem:number}};
 export type CodingOpenCodeState={database:{fileId:string};sessions:Record<string,CodingOpenCodeCursor>};
 export type CodingCheckpoint={version:3;files:Record<string,Cursor>;initialized:boolean;catalog:Record<string,CodingCatalogEntry>;scanNumber:number;scanStartedAt:string;nextFile?:string;opencode?:CodingOpenCodeState};
-type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;nativeId?:string;attribution?:CodingEvidence['attribution']};
+type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;nativeId?:string;order?:EventOrder;attribution?:CodingEvidence['attribution']};
 const time=(v:unknown)=>{const ms=typeof v==='number'?(v>1e11?v:v*1000):typeof v==='string'?Date.parse(v):NaN,date=new Date(ms);return Number.isFinite(date.getTime())?date.toISOString():undefined;};
 const textParts=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.flatMap(p=>p?.type==='text'||p?.type==='input_text'||p?.type==='output_text'?[String(p.text??'')]:p?.type==='image'||p?.type==='input_image'||p?.type==='image_url'?['[image attachment omitted]']:[]).join('\n'):'';
 /** Decode syntax only; no keywords select topics, intent or memory value. Reasoning and host instructions are not conversation evidence. */
@@ -46,24 +47,44 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
   // its update cursor and the time when this importer observes the message.
   const at=time(provider==='opencode'?row.time_created:row.timestamp??row.time),events:Event[]=[];
   const add=(role:Event['role'],text:string,callId?:string,channel?:unknown)=>{if(text)events.push({role,text,callId,at,
+    ...(context.entry!==undefined?{order:{entry:context.entry,event:events.length}}:{}),
     ...(typeof channel==='string'&&channel.length&&channel.length<=64?{channel}:{}),
     ...(['user','assistant','assistant_delta'].includes(role)?{attribution:context.hostSession?'host':role==='user'?(codingHostEnvelope(provider,text)?'host':'human'):'agent'}:{})});};
+  const clearKimiText=()=>{context.kimiText='';context.kimiAt=undefined;context.kimiOrder=undefined;};
+  const flushKimiText=(channel:'commentary'|'final')=>{
+    if(context.kimiText){
+      add('assistant',context.kimiText,undefined,channel);
+      const event=events.at(-1)!;event.at=context.kimiAt??at;event.order=context.kimiOrder;
+      if(context.kimiHostTurn)event.attribution='host';
+      if(context.kimiStepId&&context.kimiOrder)event.nativeId=`${context.kimiStepId}:text:${context.kimiOrder.entry}`;
+    }
+    clearKimiText();
+  };
+  const appendKimiText=(text:string,recordedAt=at)=>{
+    add('assistant_delta',text,undefined,'commentary');
+    if(!text)return;
+    const event=events.at(-1)!;event.at=recordedAt;
+    if(context.kimiHostTurn)event.attribution='host';
+    context.kimiAt??=recordedAt;context.kimiOrder??=event.order;context.kimiText=(context.kimiText??'')+text;
+  };
   if(provider==='codex'){
     const p=row.payload;
     if(row.type==='session_meta'&&p){context.sessionId=String(p.id??p.session_id??context.sessionId);context.cwd=typeof p.cwd==='string'?p.cwd:context.cwd;context.parentSessionId=p.parent_thread_id;context.hostSession=Boolean(p.source&&typeof p.source==='object'&&p.source.subagent);context.repositoryKey=repositoryCandidate(p.git?.repository_url);context.branch=typeof p.git?.branch==='string'?p.git.branch:undefined;}
     if(context.hostSession)return [];
-    if(row.type==='event_msg'&&p?.type==='task_started'){context.turnId=p.turn_id;context.finalEmitted=false;}
+    if(row.type==='event_msg'&&p?.type==='task_started'){context.turnId=p.turn_id;context.finalEmitted=false;context.lastAssistantHash=undefined;}
     // Older journals omit message phase but provide an explicit turn-completion
     // receipt. Use only its final answer, never the preceding message stream.
     if(row.type==='event_msg'&&p?.type==='task_complete'&&!context.finalEmitted&&typeof p.last_agent_message==='string'){
-      add('assistant',p.last_agent_message,undefined,'final');context.finalEmitted=true;
+      if(hash(p.last_agent_message)!==context.lastAssistantHash)add('assistant',p.last_agent_message,undefined,'final');
+      context.finalEmitted=true;
       for(const event of events)event.nativeId=String(p.turn_id??context.turnId??'')||undefined;
       return events;
     }
     if(row.type!=='response_item'||!p)return [];
     if(p.type==='message'&&['user','assistant'].includes(p.role)){
-      const channel=p.role==='assistant'?(p.phase==='final_answer'?'final':p.phase??p.channel??'unknown'):p.channel;
+      const channel=p.role==='assistant'?(p.phase==null?p.channel??'unknown':p.phase==='final_answer'?'final':['commentary','partial_answer'].includes(p.phase)?p.phase:'unknown'):p.channel;
       add(p.role,textParts(p.content),undefined,channel);
+      if(p.role==='assistant'&&['commentary','partial_answer','final'].includes(channel)&&events.length)context.lastAssistantHash=hash(events.at(-1)!.text);
       if(channel==='final')context.finalEmitted=true;
     }
     if(['function_call','custom_tool_call'].includes(p.type))add('tool_call',JSON.stringify({name:p.name,arguments:p.arguments??p.input}),p.call_id);
@@ -79,8 +100,8 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
     if(!['user','assistant'].includes(row.type)||!row.message)return [];
     const m=row.message,host=row.isMeta||row.isCompactSummary||row.isVisibleInTranscriptOnly||row.userType==='internal'||row.type==='user'&&Array.isArray(m.content)&&m.content.some((part:any)=>part.type==='tool_result');
     const hasTools=Array.isArray(m.content)&&m.content.some((part:any)=>['tool_use','server_tool_use'].includes(part.type));
-    const channel=!host&&!hasTools&&['end_turn','stop_sequence'].includes(m.stop_reason)?'final':'analysis';
-    add(row.type,textParts(m.content),undefined,row.type==='assistant'?channel:undefined);
+    const channel=host?'analysis':!hasTools&&['end_turn','stop_sequence'].includes(m.stop_reason)?'final':Array.isArray(m.content)?'commentary':'unknown';
+    add(row.type,textParts(row.type==='assistant'?(Array.isArray(m.content)?m.content.filter((part:any)=>part?.type==='text'&&typeof part.text==='string'):[]):m.content),undefined,row.type==='assistant'?channel:undefined);
     if(host)for(const event of events)event.attribution='host';
     if(Array.isArray(m.content))for(const part of m.content){
       if(part.type==='tool_use')add('tool_call',JSON.stringify({name:part.name,arguments:part.input}),part.id);
@@ -103,7 +124,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
       const content=Array.isArray(data.content)?data.content:[],hasTools=content.some((part:any)=>part?.type==='tool');
       for(const [index,part] of content.entries()){
         if(part?.type==='text'&&typeof part.text==='string'&&part.text){
-          add('assistant',part.text,undefined,hasTools?'commentary':data.finish==='stop'?'final':'unknown');
+          add('assistant',part.text,undefined,hasTools?'commentary':data.finish==='stop'?'final':data.time?.completed!=null?'commentary':'unknown');
           events.at(-1)!.at=time(part.time?.created)??at;events.at(-1)!.nativeId=native(`${index}:text`);
         }
         if(part?.type==='tool'){
@@ -123,7 +144,8 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
   }else if(wire&&typeof row.type==='string'){
     // Kimi Code persists prompts and loop events separately. The matching
     // context.append_message is a duplicate, and need not be imported.
-    const clearStep=()=>{context.kimiText='';context.kimiAt=undefined;};
+    if(typeof row.agentId==='string'&&row.agentId!=='main')return [];
+    context.kimiHostTurn??=true;
     if(row.type==='config.update'&&typeof row.cwd==='string')context.cwd=row.cwd;
     if(row.type==='turn.prompt'||row.type==='turn.steer'){
       // Only explicitly tagged skill and hook parts can be separated from a
@@ -132,44 +154,62 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
       const activations=Array.isArray(origin?.skillActivations)?origin.skillActivations.length:0;
       const tagged=parts.filter((part:any)=>part?.type==='text'&&part?.meta?.source==='skill activation').length;
       const ambiguous=activations>tagged,hostSteer=row.type==='turn.steer'&&context.kimiHostTurn!==false;
-      if(row.type==='turn.prompt'){clearStep();context.kimiToolStep=false;context.kimiHostTurn=origin?.kind!=='user'||ambiguous;context.kimiCodeTurnId=row.turnId==null?undefined:String(row.turnId);}
+      if(row.type==='turn.prompt'){
+        clearKimiText();context.kimiToolStep=false;context.kimiHostTurn=origin?.kind!=='user'||ambiguous;
+        context.kimiCodeTurnId=row.turnId==null?undefined:String(row.turnId);context.kimiStepId=undefined;context.kimiStepClosed=false;context.kimiParts=[];
+      }else flushKimiText('commentary');
       const userParts=parts.filter((part:any)=>!['skill activation','user prompt submit hook'].includes(part?.meta?.source));
-      add('user',textParts(userParts));
-      if(origin?.kind!=='user'||hostSteer)for(const event of events)event.attribution='host';
-      else if(ambiguous)for(const event of events)event.attribution='unknown';
+      const first=events.length;add('user',textParts(userParts));
+      if(origin?.kind!=='user'||hostSteer)for(const event of events.slice(first))event.attribution='host';
+      else if(ambiguous)for(const event of events.slice(first))event.attribution='unknown';
     }
     if(row.type==='context.append_loop_event'){
       const event=row.event;
-      if(event?.type==='step.begin'){clearStep();context.kimiToolStep=false;if(event.turnId!=null)context.kimiCodeTurnId=String(event.turnId);}
-      if(event?.type==='content.part'&&event.part?.type==='text'&&typeof event.part.text==='string'){
-        const text=event.part.text;add('assistant_delta',text,undefined,'commentary');
-        if(context.kimiHostTurn!==false)for(const output of events)output.attribution='host';
-        if(!context.kimiToolStep){context.kimiAt??=at;context.kimiText=(context.kimiText??'')+text;}
+      if(event?.type==='step.begin'){
+        flushKimiText('commentary');context.kimiToolStep=false;context.kimiStepId=event.uuid;context.kimiStepClosed=false;context.kimiParts=[];
+        if(event.turnId!=null)context.kimiCodeTurnId=String(event.turnId);
       }
-      if(event?.type==='tool.call'){clearStep();context.kimiToolStep=true;add('tool_call',JSON.stringify({name:event.name,arguments:event.args}),event.toolCallId);}
+      // The protocol binds content to a step. Late content from another step
+      // cannot enter the current speaker's text; closed steps stay closed across
+      // checkpoints, and UUID replays are idempotent.
+      const sameStep=!context.kimiStepClosed&&(!context.kimiStepId||!event?.stepUuid||context.kimiStepId===event.stepUuid);
+      if(event?.type==='content.part'&&sameStep&&event.part?.type==='text'&&typeof event.part.text==='string'){
+        if(typeof event.uuid==='string'){
+          if(context.kimiParts?.includes(event.uuid))return events;
+          (context.kimiParts??=[]).push(event.uuid);
+        }
+        appendKimiText(event.part.text,time(event.startedAt)??at);
+        if(context.kimiHostTurn!==false)for(const output of events)output.attribution='host';
+      }
+      if(event?.type==='tool.call'&&sameStep){flushKimiText('commentary');context.kimiToolStep=true;add('tool_call',JSON.stringify({name:event.name,arguments:event.args}),event.toolCallId);}
       if(event?.type==='tool.result')add('tool_result',typeof event.result==='string'?event.result:JSON.stringify(event.result??''),event.toolCallId);
-      if(event?.type==='step.end'&&['interrupted','error'].includes(event.finishReason)){clearStep();context.kimiToolStep=true;}
+      if(event?.type==='step.end'&&!context.kimiStepClosed&&(!context.kimiStepId||!event.uuid||context.kimiStepId===event.uuid)){
+        context.kimiStepClosed=true;
+        if(['interrupted','error'].includes(event.finishReason)){clearKimiText();context.kimiToolStep=true;}
+        else if(context.kimiToolStep)flushKimiText('commentary');
+      }
     }
     if(row.type==='turn.ended'){
       if(context.kimiCodeTurnId&&row.turnId!=null&&context.kimiCodeTurnId!==String(row.turnId))return events;
-      if(row.reason==='completed'&&!context.kimiToolStep&&context.kimiText){add('assistant',context.kimiText,undefined,'final');events.at(-1)!.at=context.kimiAt??at;if(context.kimiHostTurn!==false)events.at(-1)!.attribution='host';}
-      clearStep();context.kimiToolStep=false;context.kimiHostTurn=undefined;context.kimiCodeTurnId=undefined;
+      if(row.reason==='completed'){
+        if(context.kimiHostTurn!==false)context.kimiHostTurn=true;
+        flushKimiText(context.kimiToolStep?'commentary':'final');
+      }else clearKimiText();
+      context.kimiToolStep=false;context.kimiHostTurn=undefined;context.kimiCodeTurnId=undefined;context.kimiStepId=undefined;context.kimiStepClosed=true;context.kimiParts=[];
     }
   }else if(wire){
     const m=row.message,p=m?.payload;
     if(!m||!p)return [];
-    if(['TurnBegin','StepBegin','ToolCall','TurnInterrupted'].includes(m.type)){context.kimiText='';context.kimiAt=undefined;}
-    if(m.type==='TurnBegin')add('user',textParts(p.user_input));
-    if(m.type==='ContentPart'&&p.type==='text'){
-      const text=String(p.text??'');add('assistant_delta',text,undefined,'commentary');
-      context.kimiAt??=at;
-      context.kimiText=(context.kimiText??'')+text;
-    }
-    if(m.type==='TurnEnd'){
-      if(context.kimiText){add('assistant',context.kimiText,undefined,'final');events.at(-1)!.at=context.kimiAt??at;}
-      context.kimiText='';context.kimiAt=undefined;
-    }
-    if(m.type==='ToolCall'){context.callId=p.id;add('tool_call',JSON.stringify({name:p.function?.name,arguments:p.function?.arguments}),p.id);}
+    if(m.type==='TurnBegin'){clearKimiText();context.kimiToolStep=false;context.kimiCompacting=false;context.kimiHostTurn=false;add('user',textParts(p.user_input));}
+    if(m.type==='StepBegin'){flushKimiText('commentary');context.kimiToolStep=false;}
+    // A retry replaces the failed attempt's streamed text and tool-call state.
+    if(m.type==='StepRetry'){clearKimiText();context.kimiToolStep=false;context.callId=undefined;}
+    if(['StepInterrupted','TurnInterrupted'].includes(m.type)){clearKimiText();context.kimiToolStep=true;}
+    if(m.type==='CompactionBegin'){clearKimiText();context.kimiCompacting=true;}
+    if(m.type==='CompactionEnd')context.kimiCompacting=false;
+    if(m.type==='ContentPart'&&p.type==='text'&&typeof p.text==='string'&&!context.kimiCompacting)appendKimiText(p.text);
+    if(m.type==='TurnEnd')flushKimiText(context.kimiToolStep?'commentary':'final');
+    if(m.type==='ToolCall'){flushKimiText('commentary');context.kimiToolStep=true;context.callId=p.id;add('tool_call',JSON.stringify({name:p.function?.name,arguments:p.function?.arguments}),p.id);}
     if(m.type==='ToolCallPart')add('tool_call_delta',String(p.arguments_part??''),context.callId);
     if(m.type==='ToolResult')add('tool_result',typeof p.return_value==='string'?p.return_value:JSON.stringify(p.return_value??''),p.tool_call_id);
   }else {
@@ -192,7 +232,7 @@ function codingEventItems(provider:CodingProvider,context:Context,events:Event[]
     const identity=event.nativeId?`${provider}:${context.sessionId}:${event.nativeId}:${eventIndex}`:`${identityPrefix}:${eventIndex}`;
     const eventId=hash(`${identity}:${eventHash}`);
     const cwd=context.cwd?redactSourceText(context.cwd,options.redactLiterals):undefined;
-    for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectIdentity:context.cwd?'workspace':'session',projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,...(event.channel?{channel:event.channel}:{}),...(event.attribution?{attribution:event.attribution}:{}),callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
+    for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectIdentity:context.cwd?'workspace':'session',projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,...(event.order?{order:event.order}:{}),...(event.channel?{channel:event.channel}:{}),...(event.attribution?{attribution:event.attribution}:{}),callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
   }
   return items;
 }
@@ -245,6 +285,12 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
       if(!checkpoint.initialized&&!old&&options.initialSync==='new_only'){
         // Baseline only complete lines so a currently partial message is picked up later.
         const header=await read(0,Math.min(info.size,65536));for(const line of header.toString('utf8').split('\n').slice(0,-1)){try{decodeCodingEvent(provider,JSON.parse(line),cursor.context,basename(path)==='wire.jsonl');}catch{break;}}
+        // Header decoding discovers session metadata, not permission to replay
+        // a buffered historical step. Wait for a new explicit owner turn.
+        if(provider==='kimi'){
+          cursor.context.kimiText='';cursor.context.kimiAt=undefined;cursor.context.kimiOrder=undefined;
+          cursor.context.kimiHostTurn=true;cursor.context.kimiStepId=undefined;cursor.context.kimiParts=[];
+        }
         let end=info.size;cursor.offset=0;
         while(end>0){signal?.throwIfAborted();const start=Math.max(0,end-65536),tail=await read(start,end-start),newline=tail.lastIndexOf(10);if(newline>=0){cursor.offset=start+newline+1;break;}end=start;}
       }else if(cursor.offset<info.size){
@@ -265,7 +311,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
         };
         while(cursor.offset<info.size){
           const raw=await nextLine();if(raw===undefined){result.complete=false;break;}
-          const context=structuredClone(cursor.context);
+          const context={...structuredClone(cursor.context),entry:cursor.offset};
           let events:Event[];
           try{const row=raw.length?JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw)):{};events=decodeCodingEvent(provider,row,context,basename(path)==='wire.jsonl');}
           catch{result.complete=false;result.skipped++;break;}
@@ -362,7 +408,7 @@ async function scanOpenCodeDatabase(rootPath:string,options:SourceOptions,previo
         let nextItem=0;
         if(cursor.continuation?.id===messageId){nextItem=cursor.continuation.hash===rowHash?cursor.continuation.nextItem:0;delete cursor.continuation;}
         let events:Event[];
-        try{events=decodeCodingEvent('opencode',{id:messageId,type,seq,time_created:row.time_created,time_updated:row.time_updated,data},structuredClone(context));}
+        try{events=decodeCodingEvent('opencode',{id:messageId,type,seq,time_created:row.time_created,time_updated:row.time_updated,data},{...context,entry:seq});}
         catch{result.complete=false;result.skipped++;stopped=true;break;}
         const items=codingEventItems('opencode',context,events,rowHash,`${sessionId}:${messageId}`,itemQueue,options,signal);
         if(nextItem>items.length){result.complete=false;result.skipped++;stopped=true;break;}

@@ -30,6 +30,7 @@ export interface CustomPageManifest {
 
 export interface CustomPageDeclaration {
   readonly id: string;
+  readonly version?: string;
   readonly title: string;
   /** Host-resolved isolated entry document, never a raw manifest path. */
   readonly entryUrl: string;
@@ -129,12 +130,13 @@ export function customPageContributions(instance: {readonly instanceId: string; 
       surface: 'page',
       entry: {
         id: declaration.id,
+        version: declaration.version??'1',
         route: `plugin/${encodeURIComponent(instance.instanceId)}/${encodeURIComponent(declaration.id)}`,
         label: declaration.title,
         section: 'system',
         order: 1000 + index,
         featureId: instance.packageId,
-        render: () => <CustomPageView declaration={declaration} instanceId={instance.instanceId} lifetime={lifetime} mount={mount}/>,
+        render: () => <CustomPageView key={declaration.entryUrl} declaration={declaration} instanceId={instance.instanceId} lifetime={lifetime} mount={mount}/>,
       },
     };
   });
