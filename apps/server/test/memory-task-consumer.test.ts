@@ -139,11 +139,18 @@ test('owner stop after a rolled-back product link remains terminal across Host r
  await f.restart();
  for(let replay=0;replay<3;replay++)await f.tick();
  assert.equal(f.node.delegation.get(owner.id).units[0].status,'cancelled');assert.equal(f.node.delegation.get(owner.id).status,'failed');
+ const progress=await f.detail(owner.operationId),unit=f.node.delegation.get(owner.id).units[0];
+ assert.equal(progress.operation.state,'cancelled','the public parent must retain its required product cancellation');assert.equal(progress.operation.counts.cancelled,1);assert.equal(progress.operation.total,2);
+ const cancelled=progress.steps.find(step=>step.id===unit.stepId)!;assert.ok(cancelled);assert.equal(cancelled.kind,'delegation.unit.memory.package');assert.equal(cancelled.state,'cancelled');assert.equal(cancelled.attempts,0);assert.equal(cancelled.current,true);assert.equal(cancelled.optional,undefined);
+ assert.equal(f.node.modelAuthorization.stepAuthority(unit.stepId),undefined,'the cancellation fact has no model grant');
+ const members=f.membership(owner.operationId);for(let replay=0;replay<3;replay++)await f.tick();assert.deepEqual(f.membership(owner.operationId),members);
  assert.equal(f.node.memoryPipeline.get(job.id).cancellationCause,'authority','observing product withdrawal cannot escalate it to owner cancellation');
  assert.deepEqual(f.node.store.db.prepare('SELECT source_id,input_key,scope,authorized,job_id,revoked_at FROM memory_input_authorizations ORDER BY source_id,input_key,scope').all(),claims);
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='memory.package-status'").get()!.n,0);
  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM operation_parents WHERE parent_id=?').get(owner.operationId)!.n,0);
  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);assert.equal(f.node.memories.list().length,0);
  assert.equal(f.count('planning'),1);assert.equal(f.count('extract'),0);assert.equal(f.count('review'),0);
+ await f.post('/api/memory-jobs/'+job.id+'/retry',{},409);
  await f.restart();await f.tick();assert.equal(f.jobs().length,1);assert.equal(f.node.delegation.get(owner.id).units[0].status,'cancelled');assert.equal(f.count('extract'),0);
+ assert.equal((await f.detail(owner.operationId)).operation.state,'cancelled');assert.deepEqual(f.membership(owner.operationId),members);
 });

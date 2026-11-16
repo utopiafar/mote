@@ -81,7 +81,8 @@ export function registerMemoryDelegation(options:MemoryDelegationOptions){
   const links=runtime.store.db.prepare(`SELECT j.id,json_extract(j.json,'$.workPackage.id') unit_id,json_extract(j.json,'$.status') product_status
    FROM memory_jobs j JOIN delegation_units u ON u.id=json_extract(j.json,'$.workPackage.id') JOIN delegation_works w ON w.id=u.work_id
    WHERE json_extract(u.json,'$.external')=1 AND (
-    (json_extract(u.json,'$.status')='cancelled' AND json_extract(j.json,'$.status') NOT IN ('cancelled','completed')) OR
+    (json_extract(u.json,'$.status')='cancelled' AND (json_extract(j.json,'$.status') NOT IN ('cancelled','completed') OR
+     NOT EXISTS(SELECT 1 FROM execution_steps e WHERE e.id=json_extract(u.json,'$.stepId')))) OR
     (json_extract(u.json,'$.status')!='cancelled' AND (
      json_extract(u.json,'$.stepId')!=('memory-package-status:' || j.id) OR
      NOT EXISTS(SELECT 1 FROM execution_steps e WHERE e.id=('memory-package-status:' || j.id)) OR
