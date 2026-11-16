@@ -1,11 +1,17 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.ts';
 import {
   CODEX_OFFICIAL_RUNTIME,
   DSH_OFFICIAL_RUNTIME,
   OFFICIAL_AGENT_COMPOSITION_VERSION,
   OFFICIAL_AGENT_CONTRIBUTIONS,
   OfficialCompositionUnavailableError,
+  createAgent,
   createImportAgent,
   createOfficialAgent,
   resolveOfficialAgentComposition,
@@ -48,6 +54,39 @@ test('the official composition declares the complete base dependency graph', () 
     'tools.official', 'tasks.official', 'skills.official', 'import.capabilities', 'host.delegation']) {
     assert.ok(ids.includes(id), `missing official base contribution: ${id}`);
   }
+});
+
+const nativeReference = contributionId => ({contribution:{instance:{packageId:'generated.native',installationId:'generated-install',instanceId:'generated-instance'},contributionId},revision:1,artifactDigest:'a'.repeat(64),exportName:'default'});
+
+test('public Agent rejects unavailable native references and a revoked Host snapshot before model or context use',async t=>{
+ const reference=nativeReference('generated.root'),revoked=new AbortController(),reason=new Error('Generated native activation revoked');
+ const unavailable=createAgent({reader,model:'generated',protocol:'deepseek',baseUrl:'http://127.0.0.1:9/v1',apiKey:'generated',nativeDsh:{revision:1,assembly:{packages:[reference],hooks:[]},installedModules:[],signal:revoked.signal,assertCurrent(){revoked.signal.throwIfAborted();}}});t.after(()=>unavailable.close());
+ await assert.rejects(unavailable.query({question:'Generated unavailable native query'}),error=>error.code==='runtime_module_unavailable');
+ revoked.abort(reason);await assert.rejects(unavailable.query({question:'Generated revoked native query'}),error=>error===reason);
+ assert.throws(()=>createAgent({reader,protocol:'codex-app-server',nativeDsh:{revision:1,assembly:{packages:[],hooks:[]},installedModules:[],signal:new AbortController().signal,assertCurrent(){}}}),error=>error.code==='dsh_profile_invalid');
+});
+
+test('public createAgent loads native package, Hook and Factory through the actual SDK and Host tool/output lifecycle',{timeout:30000},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'mote-official-native-')),trace=join(root,'trace.jsonl'),requests=[];
+ let agent;
+ const server=createServer(async(req,res)=>{let body='';for await(const part of req)body+=part;const request=JSON.parse(body);requests.push(request);
+  const skill=request.tools.find(tool=>tool.name==='skill');
+  writeMessagesResponse(res,{stage:requests.length-1,model:'generated-native',...(requests.length===1?{tool:{name:'skill',args:{name:skill.input_schema.properties.name.enum[0]}}}:{}),text:JSON.stringify({answer:'Generated native package, Hook and Factory reached the Host output.',citationIds:[]}),reasoning:true});
+ });
+ t.after(async()=>{await agent?.close();server.closeAllConnections();if(server.listening)await new Promise(resolve=>server.close(resolve));await rm(root,{recursive:true,force:true});});
+ await writeFile(join(root,'package.json'),JSON.stringify({name:'@mote/generated-official-native',version:'0.0.0',type:'module',exports:{'.':'./index.mjs','./hook':'./hook.mjs','./factory':'./factory.mjs'},dsh:{native:{capabilities:['hooks','factory','agents']}}}));
+ const log=`const trace=event=>appendFileSync(${JSON.stringify(trace)},JSON.stringify({event,pid:process.pid})+'\\n');`;
+ await writeFile(join(root,'index.mjs'),`import {appendFileSync} from 'node:fs';${log}export const name='generated-native-package';export function apply(ctx){trace('package-loaded');ctx.effect(()=>()=>trace('package-disposed'));}`);
+ await writeFile(join(root,'hook.mjs'),`import {appendFileSync} from 'node:fs';${log}export const name='generated-native-hook';export function apply(ctx){trace('hook-loaded');ctx.on('agent/request',async(_,next)=>{trace('hook-request');return next();});ctx.effect(()=>()=>trace('hook-disposed'));}`);
+ await writeFile(join(root,'factory.mjs'),`import {appendFileSync} from 'node:fs';import AgentLoop from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-agent-loop'))};${log}export const name='generated-native-factory';export const inject=['agents','sessions','sessionProjections','systemPrompt','tools','llm','sessionPersistence'];export function apply(ctx){class GeneratedLoop extends AgentLoop{async createAgent(owner,options){trace('factory-create');return super.createAgent(owner,options);}}new GeneratedLoop(ctx,{agents:[],maxParallelToolCalls:{get:()=>10}});ctx.effect(()=>()=>trace('factory-disposed'));}`);
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const references=['package','hook','factory'].map(name=>nativeReference('generated.'+name)),activation=new AbortController();let assertions=0;
+ const nativeDsh={revision:7,assembly:{packages:[references[0]],hooks:[references[1]],factory:references[2]},installedModules:references.map((reference,index)=>({reference,packageRoot:root,packageName:'@mote/generated-official-native',packageVersion:'0.0.0',subpath:['.','./hook','./factory'][index],grantedCapabilities:['hooks','factory','agents']})),signal:activation.signal,assertCurrent(){assertions++;activation.signal.throwIfAborted();}};
+ agent=createAgent({reader,model:'generated-native',protocol:'deepseek',baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'generated-native-key',maxTokens:1024,requestTimeoutMs:10000,agentTimeoutMs:20000,nativeDsh});
+ const result=await agent.query({question:'Use the permitted bundled skill and return the generated native assembly output.'});assert.match(result.answer,/Generated native package/);assert.equal(requests.length,2);assert.ok(requests[1].messages.some(message=>Array.isArray(message.content)&&message.content.some(block=>block.type==='tool_result')));assert.ok(assertions>0);
+ await agent.close();const events=(await readFile(trace,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+ for(const name of ['package-loaded','hook-loaded','factory-create','hook-request','factory-disposed','hook-disposed','package-disposed'])assert.ok(events.some(event=>event.event===name),name);
+ for(const pid of new Set(events.map(event=>event.pid)))assert.throws(()=>process.kill(pid,0),error=>error.code==='ESRCH','the real SDK child is released');
 });
 
 test('removing any one base contribution reports unavailable without falling back', () => {

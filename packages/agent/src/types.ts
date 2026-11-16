@@ -5,6 +5,7 @@ import type {QueryInput,AgentProgress,AgentTraceEvent} from './query-contracts.j
 export type * from './context-contracts.js';
 export type * from './query-contracts.js';
 import type {ModelProtocol,ModelReasoningEffort,CodexServiceTier} from '@mote/shared/models';
+import type {NativeDshAssemblyBinding} from './runtime/dsh/profile-compiler.js';
 /** Local trusted control handoff for one query. Composites forward the same lease;
  * only the chosen leaf reports its finalizer, synchronously before execution. */
 export interface QueryRunLease {
@@ -26,6 +27,8 @@ export interface AgentOptions {
   provider?: string;
   /** Server-owned launch configuration, never accepted from profile or query APIs. */
   codex?: {executable?:string;home?:string};
+  /** Host-only DSH query assembly, never an executable query or model setting. */
+  nativeDsh?: NativeDshAssemblyBinding;
   /** Custom request headers and JSON parameters are secrets, not diagnostics. */
   headers?: Record<string, string>;
   extraBody?: Record<string, unknown>;

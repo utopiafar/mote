@@ -22,7 +22,7 @@ import {ContextToolError} from '../../tool-errors.js';
 import {DSH_RUNTIME_ID, compileNativeDshProfile, createRuntimePatch, DshProfileError, type InstalledDshModule} from './profile-compiler.js';
 
 export {DSH_RUNTIME_ID, DshProfileError, createRuntimePatch} from './profile-compiler.js';
-export type {InstalledDshModule} from './profile-compiler.js';
+export type {InstalledDshModule, NativeDshAssemblyBinding} from './profile-compiler.js';
 
 export {dshModelConfigured, type DshModelAdapter} from '../../models/dsh-adapter.js';
 export interface DshProviderOptions {

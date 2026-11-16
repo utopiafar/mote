@@ -14,7 +14,7 @@ import {createRuntimeUsageEvents} from './host/runtime-events.js';
 import {HOST_DELEGATION_CONTROL_DEFINITIONS} from './host/host-delegation.js';
 import {runtimeService, type RuntimeCapabilities, type RuntimeToolCall, type RuntimeToolDefinition} from './runtime/contracts.js';
 import {resolveRunSelection, type ResolvedRunSelection, type TrustedRuntimeLaunch} from './runtime/profile.js';
-import {DSH_RUNTIME_ID, dshRuntimePlugin, dshModelConfigured, prepareDshRun, type DshModelAdapter} from './runtime/dsh/provider.js';
+import {DSH_RUNTIME_ID, dshRuntimePlugin, dshModelConfigured, prepareDshRun, DshProfileError, type DshModelAdapter} from './runtime/dsh/provider.js';
 import {CODEX_RUNTIME_ID, codexRuntimePlugin, prepareCodexRun, type CodexModelAdapter} from './runtime/codex/provider.js';
 import {contextToolPayload} from './runtime/dsh/context-plugin.js';
 import {ContextToolError} from './tool-errors.js';
@@ -54,7 +54,7 @@ export interface OfficialAgentRuntimeDescriptor {
   readonly launch: (options: AgentOptions) => TrustedRuntimeLaunch | undefined;
   /** Codex has no child trace channel; DSH emits its own runtime events. */
   readonly emitHostToolTrace: boolean;
-  readonly plugin: (identity: ScopeIdentity, published: (binding: ServiceBinding) => void) => PluginDefinition;
+  readonly plugin: (identity: ScopeIdentity, published: (binding: ServiceBinding) => void, options?: AgentOptions) => PluginDefinition;
   readonly prepare: (selection: ResolvedRunSelection, dependencies: RuntimeDependencies, assembly: RuntimeAssembly) => Promise<HostRunSession>;
 }
 
@@ -81,7 +81,7 @@ export interface OfficialAgentContribution {
 }
 
 function dshAdapter(options: AgentOptions): DshModelAdapter {
-  const {reader: _reader, runModel: _runModel, contextToolMode: _contextToolMode, codex: _codex, ...adapter} = options;
+  const {reader: _reader, runModel: _runModel, contextToolMode: _contextToolMode, codex: _codex, nativeDsh: _nativeDsh, ...adapter} = options;
   return adapter;
 }
 
@@ -111,7 +111,7 @@ export const DSH_OFFICIAL_RUNTIME: OfficialAgentRuntimeDescriptor = Object.freez
   }),
   launch: () => undefined,
   emitHostToolTrace: false,
-  plugin: (identity, published) => dshRuntimePlugin(identity, {}, published),
+  plugin: (identity, published, options) => dshRuntimePlugin(identity, {installedModules: options?.nativeDsh?.installedModules}, published),
   prepare: (selection, dependencies, assembly) => prepareDshRun(selection, dependencies, assembly),
 });
 
@@ -236,8 +236,11 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
   if (!composition.available) throw new OfficialCompositionUnavailableError(composition.missing, composition.reason);
   const runtimes = composition.runtimes;
   validateModelOptions(original);
-  const options = {...original, headers: original.headers && {...original.headers}, extraBody: original.extraBody && structuredClone(original.extraBody)};
+  const native = original.nativeDsh;
+  if (native && (!Number.isSafeInteger(native.revision) || native.revision < 0 || !(native.signal instanceof AbortSignal) || typeof native.assertCurrent !== 'function')) throw new DshProfileError('dsh_profile_invalid');
+  const options = {...original, ...(native ? {nativeDsh: {revision: native.revision, signal: native.signal, ...structuredClone({assembly: native.assembly, installedModules: native.installedModules}), assertCurrent: () => native.assertCurrent()}} : {}), headers: original.headers && {...original.headers}, extraBody: original.extraBody && structuredClone(original.extraBody)};
   const selectedRuntime = selectOfficialRuntime(runtimes, options);
+  if (native && selectedRuntime.id !== DSH_RUNTIME_ID) throw new DshProfileError('dsh_profile_invalid');
   const modelAdapter = selectedRuntime.modelAdapter(options);
   const configured = selectedRuntime.configured(options);
   const skills = Object.freeze(bundledSkills.filter(skill => skill.availability !== 'import').map(skill => Object.freeze({...skill})));
@@ -257,7 +260,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
   const initialize = () => startup ??= (async () => {
     for (const runtime of runtimes) {
       const runtimeIdentity = runtimeIdentities.get(runtime.id)!;
-      await host.install(runtime.plugin(runtimeIdentity, binding => { runtimeBindings.set(runtime.id, binding); }));
+      await host.install(runtime.plugin(runtimeIdentity, binding => { runtimeBindings.set(runtime.id, binding); }, options));
     }
     if (!runtimeBindings.has(selectedRuntime.id)) throw new OfficialCompositionUnavailableError([selectedRuntime.id], 'The selected official runtime did not publish its service.');
     await host.install({identity: foundationIdentity, contributions: [fixedModelService, hostOutputService], factory(context) {
@@ -277,8 +280,8 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
     const runId = randomUUID(), resources = new PluginResourceScope(); scopes.add(resources);
     const scope = Object.assign(resources, {identity: identity('mote.agent.query')});
     scope.defer(()=>releaseContextTools(input));
-    const signal = AbortSignal.any([scope.signal, ...(input.signal ? [input.signal] : [])]);
-    const assertCurrent = () => { input.signal?.throwIfAborted(); if (closed) throw new AgentClosedError(); signal.throwIfAborted(); input.assertContextAuthority?.(); };
+    const signal = AbortSignal.any([scope.signal, ...(input.signal ? [input.signal] : []), ...(options.nativeDsh ? [options.nativeDsh.signal] : [])]);
+    const assertCurrent = () => { input.signal?.throwIfAborted(); if (closed) throw new AgentClosedError(); signal.throwIfAborted(); options.nativeDsh?.assertCurrent(); input.assertContextAuthority?.(); };
     const trace = (event: Parameters<typeof reportTrace>[1]) => reportTrace(input, {...event, runId});
     let session: HostRunSession | undefined, bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
     let bridgeClosing: Promise<void> | undefined;
@@ -295,9 +298,9 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       const selectedIdentity = runtimeIdentities.get(selectedRuntime.id)!;
       const allowedHostCapabilities: RuntimeHostCapability[] = ['tools', ...(selectedRuntime.capabilities.images ? ['images' as const] : []), ...(selectedRuntime.capabilities.hostDelegation ? ['hostDelegation' as const] : [])];
       const launch = selectedRuntime.launch(options);
-      const selection = resolveRunSelection({revision: 0,
-        profile: {id: selectedRuntime.profile.id, name: selectedRuntime.profile.name, revision: 0, runtimeProviderId: selectedRuntime.id, providerRef: {service: runtime.binding.service, revision: runtime.binding.revision, provider: {instance: {packageId: selectedIdentity.packageId, installationId: selectedIdentity.installationId, instanceId: selectedIdentity.instanceId}, contributionId: runtime.binding.provider.contributionId}}, assembly: {packages: [], hooks: []}, allowedHostCapabilities},
-        providers: runtimes.map(candidate => ({id: candidate.id, binding: runtimeBindings.get(candidate.id)!, capabilities: candidate.capabilities, availability: {state: 'active' as const}})), installedModules: [],
+      const selection = resolveRunSelection({revision: options.nativeDsh?.revision ?? 0,
+        profile: {id: selectedRuntime.profile.id, name: selectedRuntime.profile.name, revision: options.nativeDsh?.revision ?? 0, runtimeProviderId: selectedRuntime.id, providerRef: {service: runtime.binding.service, revision: runtime.binding.revision, provider: {instance: {packageId: selectedIdentity.packageId, installationId: selectedIdentity.installationId, instanceId: selectedIdentity.instanceId}, contributionId: runtime.binding.provider.contributionId}}, assembly: options.nativeDsh?.assembly ?? {packages: [], hooks: []}, allowedHostCapabilities},
+        providers: runtimes.map(candidate => ({id: candidate.id, binding: runtimeBindings.get(candidate.id)!, capabilities: candidate.capabilities, availability: {state: 'active' as const}})), installedModules: options.nativeDsh?.installedModules.map(module => module.reference) ?? [],
         model: {profile: {id: 'fixed-model', name: 'Fixed model', settings: selectedRuntime.modelSettings(options)}, profileRevision: 0, modelRevision: 0, connectionFingerprint: hash(modelAdapter), capabilities: {tools: true, images: true}},
         // This fixed-settings facade mirrors the existing model adapter's
         // declared tool and text/image surface. Catalogue discovery and dynamic
