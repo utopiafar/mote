@@ -37,6 +37,7 @@ export class FileStore {
   readonly objects:string;
   readonly uploads:string;
   private pending=new Map<string,Promise<unknown>>();
+  private admittedRevisions=new Set<FileRevision>();
   private readonly closing=new AbortController();
   private closed=false;
   private admitting=true;
@@ -46,6 +47,19 @@ export class FileStore {
   }
   capabilities(){return {version:1,manifestBatch:100,modes:['archive','reference','index'],partBytes:FILE_PART_BYTES,maxFileBytes:FILE_MAX_BYTES,initialSync:['all','new_only'],deletionPolicy:'retain_central'};}
   async serialize<T>(key:string,action:()=>Promise<T>):Promise<T>{const prior=this.pending.get(key)??Promise.resolve();const next=prior.catch(()=>{}).then(action);this.pending.set(key,next);try{return await next;}finally{if(this.pending.get(key)===next)this.pending.delete(key);}}
+  /** A removed capture still has an immutable synchronization predecessor.
+   * This pointer grants no read access to the deleted evidence. */
+  private syncPointer(sourceId:string,externalId:string){
+    return this.store.db.prepare('SELECT v.revision,v.capture_id,c.id AS archived_id FROM source_heads h JOIN source_versions v ON v.source_id=h.source_id AND v.external_id=h.external_id AND v.capture_id=h.capture_id LEFT JOIN captures c ON c.id=v.capture_id WHERE h.source_id=? AND h.external_id=?').get(sourceId,externalId) as {revision:string;capture_id:string;archived_id:string|null}|undefined;
+  }
+  private syncRevision(sourceId:string,externalId:string):string|null {return this.syncPointer(sourceId,externalId)?.revision??null;}
+  /** A producer with no readable prior file may start after deleted history.
+   * Its null manifest stays immutable; the actual predecessor is still fenced. */
+  private predecessor(input:FileRevision){
+    const selected=this.syncPointer(input.sourceId,input.item.externalId);
+    if((selected?.revision??null)!==input.previousRevision&&!(input.previousRevision===null&&selected&&!selected.archived_id))throw new StoreError('Revision predecessor mismatch; upload previous revision first',409);
+    return ()=>{const current=this.syncPointer(input.sourceId,input.item.externalId);if(current?.capture_id!==selected?.capture_id||(current?.archived_id??null)!==(selected?.archived_id??null))throw new StoreError('Revision predecessor changed',409);};
+  }
   private allowed(input:FileRevision){
     const source=this.sources.getSource(input.sourceId);
     if(source.retention==='reference'&&input.item.layer!=='reference')throw new StoreError('This source accepts references only',409);
@@ -63,9 +77,13 @@ export class FileStore {
       const sourceId=z.string().parse(entry.sourceId),item=z.object({externalId:z.string(),revision:z.string()}).passthrough().parse(entry.item);
       authorize(sourceId);
       const prior=this.store.db.prepare('SELECT manifest FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(sourceId,item.externalId,item.revision);
-      const previousRevision=entry.previousRevision===undefined?(prior?JSON.parse(String(prior.manifest)).previousRevision:this.sources.getItem(sourceId,item.externalId)?.revision??null):entry.previousRevision;
+      const previousRevision=entry.previousRevision===undefined?(prior?JSON.parse(String(prior.manifest)).previousRevision:this.syncRevision(sourceId,item.externalId)):entry.previousRevision;
       return fileRevisionSchema.parse({...entry,previousRevision});
     });
+    const scopes=new Map(normalized.map(input=>{try{return [input.sourceId,this.sources.getSource(input.sourceId).syncScopeVersion??0] as const;}catch(error){if(error instanceof StoreError&&error.statusCode===404)return [input.sourceId,undefined] as const;throw error;}}));
+    const current=(sourceId:string)=>{authorize(sourceId);const expected=scopes.get(sourceId);if(expected===undefined)throw new StoreError('Source not found',404);this.sources.assertSyncScope(sourceId,expected);};
+    for(const input of normalized)this.admittedRevisions.add(input);
+    try{
     // The common metadata path is one durable transaction for the whole batch.
     // Sorted item locks serialize with legacy single-file writers without a lock cycle.
     const keys=normalized.map(input=>'item:'+input.sourceId+':'+input.item.externalId);
@@ -74,8 +92,9 @@ export class FileStore {
       const commit=async()=>{
         const fresh=normalized.every(input=>!this.store.db.prepare('SELECT 1 FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision));
         if(!fresh)return null;
-        const validate=()=>{for(const input of normalized){authorize(input.sourceId);this.allowed(input);if((this.sources.getItem(input.sourceId,input.item.externalId)?.revision??null)!==input.previousRevision)throw new StoreError('Revision predecessor mismatch',409);}};
         try{
+          const predecessors=normalized.map(input=>{current(input.sourceId);this.allowed(input);return this.predecessor(input);});
+          const validate=()=>{for(const [index,input] of normalized.entries()){current(input.sourceId);this.allowed(input);predecessors[index]();}};
           validate();
           const result=await this.sources.upsertBatch(normalized[0].sourceId,normalized.map(input=>input.item),validate,(ack,index)=>this.commitMetadata(normalized[index],ack.id));
           return {results:result.receipts.map(ack=>({externalId:ack.externalId,revision:ack.revision,state:'accepted',ack}))};
@@ -86,13 +105,14 @@ export class FileStore {
     const results=[];
     for(const input of normalized){
       try{
-        let ack=input.sha256&&!input.item.deleted?this.beginAdmitted(input,authorize):await this.revisionAdmitted(input,authorize);
-        if('uploadId' in ack&&!ack.ack)ack=await this.reuse(ack.uploadId,authorize)??ack;
+        let ack=input.sha256&&!input.item.deleted?this.beginAdmitted(input,current):await this.revisionAdmitted(input,current);
+        if('uploadId' in ack&&!ack.ack)ack=await this.reuse(ack.uploadId,current)??ack;
         results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});
       }
       catch(error){if(!(error instanceof StoreError))throw error;results.push({externalId:input.item.externalId,revision:input.item.revision,state:'rejected',status:error.statusCode});}
     }
     return {results};
+    }finally{for(const input of normalized)this.admittedRevisions.delete(input);}
   }
   /** The owning factory stops new sessions before draining in-flight commits. */
   private assertOpen(){if(this.closed)throw new StoreError('File uploads are closed',503);}
@@ -109,7 +129,8 @@ export class FileStore {
     this.assertOpen();
     const input=fileRevisionSchema.parse(raw);authorize(input.sourceId);this.allowed(input);
     if(!input.sha256||!['original','snapshot'].includes(input.item.layer)||input.item.deleted)throw new StoreError('Upload sessions require an original file');
-    const manifest=JSON.stringify(input),fingerprint=sha256(manifest);
+    const scopeVersion=this.sources.getSource(input.sourceId).syncScopeVersion??0;
+    const manifest=JSON.stringify(input),fingerprint=sha256(JSON.stringify([manifest,scopeVersion]));
     const committed=this.store.db.prepare('SELECT * FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision) as Version|undefined;
     if(committed){if(committed.manifest!==manifest)throw new StoreError('Revision content conflicts',409);if(!this.needsSnapshotInput(committed))return {uploadId:committed.capture_id,partBytes:FILE_PART_BYTES,parts:[],ack:{id:committed.capture_id,captureId:committed.capture_id,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:committed.object_hash,sha256:input.sha256,sizeBytes:input.sizeBytes,duplicate:true}};}
     const old=this.store.db.prepare('SELECT * FROM file_uploads WHERE fingerprint=?').get(fingerprint) as Upload|undefined;
@@ -121,13 +142,22 @@ export class FileStore {
       }
       return this.upload(old.id,authorize);
     }
-    const id=randomUUID();privateDirectory(join(this.uploads,id));
-    this.store.db.prepare('INSERT INTO file_uploads(id,source_id,manifest,fingerprint,created_at) VALUES(?,?,?,?,?)').run(id,input.sourceId,manifest,fingerprint,timestamp());
+    const id=randomUUID(),db=this.store.db,own=!db.isTransaction;privateDirectory(join(this.uploads,id));
+    if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      authorize(input.sourceId);this.allowed(input);this.sources.assertSyncScope(input.sourceId,scopeVersion);
+      db.prepare('INSERT INTO file_uploads(id,source_id,manifest,fingerprint,created_at) VALUES(?,?,?,?,?)').run(id,input.sourceId,manifest,fingerprint,timestamp());
+      db.prepare('INSERT INTO file_upload_scopes VALUES(?,?)').run(id,scopeVersion);
+      if(own)db.exec('COMMIT');
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');rmSync(join(this.uploads,id),{recursive:true,force:true});throw error;}
     return this.upload(id,authorize);
   }
   session(id:string,authorize:(sourceId:string)=>void):Upload{
     const row=this.store.db.prepare('SELECT * FROM file_uploads WHERE id=?').get(id) as Upload|undefined;
-    if(!row)throw new StoreError('Upload session expired or missing',404);authorize(row.source_id);this.allowed(JSON.parse(row.manifest));return row;
+    if(!row)throw new StoreError('Upload session expired or missing',404);authorize(row.source_id);this.allowed(JSON.parse(row.manifest));
+    const scope=this.store.db.prepare('SELECT scope_version FROM file_upload_scopes WHERE upload_id=?').get(id);
+    if(!scope)throw new StoreError('Upload authorization is unavailable; begin a new admission under the current source scope',409);
+    this.sources.assertSyncScope(row.source_id,Number(scope.scope_version));return row;
   }
   upload(id:string,authorize:(sourceId:string)=>void){const row=this.session(id,authorize);return {uploadId:id,partBytes:FILE_PART_BYTES,parts:this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').all(id),ack:row.ack?JSON.parse(row.ack):null};}
   /** Only a currently authorized file origin can grant reuse. Asset hashes on
@@ -254,8 +284,10 @@ export class FileStore {
   /** Continue an already admitted upload/batch/revision under its original grant. */
   private async revisionAdmitted(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown):Promise<any>{
     this.assertOpen();
-    const input=fileRevisionSchema.parse(raw);return this.serialize('item:'+input.sourceId+':'+input.item.externalId,async()=>{
-      authorize(input.sourceId);this.allowed(input);
+    const input=fileRevisionSchema.parse(raw),scopeVersion=this.sources.getSource(input.sourceId).syncScopeVersion??0;
+    this.admittedRevisions.add(input);
+    try{return await this.serialize('item:'+input.sourceId+':'+input.item.externalId,async()=>{
+      const validate=()=>{authorize(input.sourceId);this.sources.assertSyncScope(input.sourceId,scopeVersion);this.allowed(input);};validate();
       const prior=this.store.db.prepare('SELECT * FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision) as Version|undefined;
       if(prior){
         if(prior.manifest!==JSON.stringify(input))throw new StoreError('Revision content conflicts',409);
@@ -272,22 +304,21 @@ export class FileStore {
         return {id:prior.capture_id,captureId:prior.capture_id,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:prior.object_hash,sha256:input.sha256,sizeBytes:input.sizeBytes,duplicate:true};
       }
       if(this.store.db.prepare('SELECT 1 FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision))throw new StoreError('Revision belongs to a different ingestion protocol',409);
-      const head=this.sources.getItem(input.sourceId,input.item.externalId);
-      if((head?.revision??null)!==input.previousRevision)throw new StoreError('Revision predecessor mismatch; upload previous revision first',409);
+      const predecessor=this.predecessor(input);
       if(input.sha256&&!onCommit)throw new StoreError('Original bytes require an upload commit');
       let ack:unknown;
-      await this.sources.upsert(input.sourceId,input.item,()=>{authorize(input.sourceId);this.allowed(input);},({id:captureId})=>{
+      await this.sources.upsert(input.sourceId,input.item,()=>{validate();predecessor();},({id:captureId})=>{
         this.commitMetadata(input,captureId);
         ack=onCommit?.(captureId)??{id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,duplicate:false};
       });return ack;
-    });
+    });}finally{this.admittedRevisions.delete(input);}
   }
   /** Owner intake reuses retained bytes and the same file revision transaction as
    * collector uploads. No transcription or semantic attribution happens here. */
   async archivedRevision(file:ArchivedFile,sourceId:string,mimeType:string,observedAt:string,authorize:()=>void,onCommit?:(id:string)=>void,processingProfileId?:string){
     this.assertAdmitting();
-    const externalId='file:'+file.relativePath,revision=sha256(JSON.stringify([file.hash,mimeType])),head=this.sources.getItem(sourceId,externalId);
-    let input:FileRevision={sourceId,relativePath:file.relativePath,...(processingProfileId?{processingProfileId}:{}),previousRevision:head?.revision===revision?null:head?.revision??null,
+    const externalId='file:'+file.relativePath,revision=sha256(JSON.stringify([file.hash,mimeType])),head=this.syncRevision(sourceId,externalId);
+    let input:FileRevision={sourceId,relativePath:file.relativePath,...(processingProfileId?{processingProfileId}:{}),previousRevision:head===revision?null:head,
       item:{externalId,revision,kind:'file',layer:'original',title:file.name,text:'',mimeType,observedAt,deleted:false,
         document:{fileId:file.id,path:file.relativePath,contentRole:'other',timeBasis:'unknown'}},sha256:file.hash,sizeBytes:file.sizeBytes};
     const prior=this.store.db.prepare('SELECT manifest FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(sourceId,externalId,revision);
@@ -553,25 +584,35 @@ export class FileStore {
     return this.captureForEvidence(id)??(this.store.db.prepare('SELECT l.parent_id FROM file_evidence_links l JOIN file_versions v ON v.capture_id=l.parent_id WHERE l.capture_id=? LIMIT 1').get(id)?.parent_id as string|undefined);
   }
   syncHead(sourceId:string,externalId:string){
-    return {revision:this.sources.getItem(sourceId,externalId)?.revision??null,forgotten:!!this.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(sourceId,externalId)};
+    return {revision:this.syncRevision(sourceId,externalId),forgotten:!!this.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(sourceId,externalId)};
   }
   allowAgain(sourceId:string,externalId:string){
     this.store.db.prepare('DELETE FROM file_forgotten WHERE source_id=? AND external_id=?').run(sourceId,externalId);return {allowed:true};
   }
-  remove(id:string){return this.removeOriginal(id,true);}
-  forget(id:string){return this.removeOriginal(id,false);}
-  private removeOriginal(id:string,preserveDialogue:boolean){
+  remove(id:string){return this.removeOriginal(id,true,false);}
+  /** Owner history deletion keeps future revisions under their existing grant. */
+  deleteArchive(id:string){return this.removeOriginal(id,false,false);}
+  /** Explicit forgetting additionally suppresses future versions until allowAgain. */
+  forget(id:string){return this.removeOriginal(id,false,true);}
+  private removeOriginal(id:string,preserveDialogue:boolean,forgetFuture:boolean){
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');
-    let ids:{capture_id:string}[];
+    let ids:{capture_id:string}[],uploads:{id:string;manifest:string}[];
     try{
       const retired=!preserveDialogue&&retiredConversationRoot(this.store,id)?.file;
       const version=retired?{source_id:retired.sourceId,external_id:retired.externalId}:this.version(id);
       if(!preserveDialogue)forgetRetiredConversationRoots(this.store,{file:{sourceId:version.source_id,externalId:version.external_id}});
-      db.prepare('INSERT OR IGNORE INTO file_forgotten VALUES(?,?)').run(version.source_id,version.external_id);
+      if(forgetFuture)db.prepare('INSERT OR IGNORE INTO file_forgotten VALUES(?,?)').run(version.source_id,version.external_id);
+      uploads=db.prepare("SELECT id,manifest FROM file_uploads WHERE source_id=? AND json_extract(manifest,'$.item.externalId')=?").all(version.source_id,version.external_id) as {id:string;manifest:string}[];
+      // Reuse the immutable version ledger's existing missing-capture guard for
+      // exactly the revisions already admitted when history was deleted.
+      const staged=[...uploads.map(row=>JSON.parse(row.manifest) as FileRevision),...this.admittedRevisions].filter(input=>input.sourceId===version.source_id&&input.item.externalId===version.external_id);
+      for(const input of staged){const {observedAt,...semantic}=input.item;db.prepare('INSERT OR IGNORE INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(input.sourceId,input.item.externalId,input.item.revision,randomUUID(),sha256(JSON.stringify(semantic)));}
       ids=db.prepare('SELECT capture_id FROM file_versions WHERE source_id=? AND external_id=?').all(version.source_id,version.external_id) as {capture_id:string}[];
       for(const row of ids)this.store.deleteInTransaction(row.capture_id,preserveDialogue);
+      for(const row of uploads)db.prepare('DELETE FROM file_uploads WHERE id=?').run(row.id);
       db.exec('COMMIT');
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+    for(const row of uploads)rmSync(join(this.uploads,row.id),{recursive:true,force:true});
     this.store.collectDeletedEvidence();this.sweep();return {deleted:ids.length};
   }
   sweep(){

@@ -16,7 +16,10 @@ import {CONSOLIDATION_RELATION_POLICY} from '../src/memory-policy.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {defaultMemoryReviewStrategy} from '../src/memory-review-policy.js';
 import {memoryStrategyPin} from '../src/memory-strategy-contract.js';
-import {memorySchema} from '../src/memory-schema.js';
+import {memorySchema,memoryReviewReceiptSchema} from '../src/memory-schema.js';
+import {MemoryStrategies} from '../src/memory-strategies.js';
+import {SINGLE_PASS_PERSONAL_RECIPE} from '../src/memory-range-selection-policy.js';
+import {decodeMemoryPrivate} from '../src/plugins/memory-private-storage.js';
 
 const id=randomUUID();
 const draft=()=>({answer:JSON.stringify({memories:[{title:'Untrusted candidate',statement:`Proposed meeting [${id}]`,uncertainty:'Outcome unknown',admission:{layer:'observation',attribution:'observed',reason:'Model says low risk',scope:'Generated'},evidenceIds:[id],evidence:[{id,quote:'Meeting proposed'}]}]}),citations:[{id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:'Meeting proposed'}],trace:[],runId:randomUUID()});
@@ -109,6 +112,55 @@ test('transaction rollback reuses the validated draft and original independent v
  store.db.exec('DROP TRIGGER fixture_commit_failure');
  const recovered=await pipeline.retry(job.id);assert.equal(recovered.status,'completed');assert.equal(extractions,1);assert.equal(reviews,1);
  const m=memories.get(recovered.memoryIds[0]);assert.equal(m.reviewReceipt?.decision,'independent');assert.equal(m.reviewReceipt?.draftRunId,'draft-1');assert.equal(m.reviewRunId,'original-independent-review');assert.equal(m.status,'published');
+});
+
+for(const changedDeletion of [false,true])test(`direct publication rollback ${changedDeletion?'rechecks a changed deletion policy':'preserves the exact durable decision'} without repeating extraction or inventing review`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-direct-recovery-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ sources.register({id:'generated-direct',name:'Generated direct source',kind:'custom',deviceId:'generated',platform:'import'});
+ const original=await sources.upsert('generated-direct',{externalId:'one',revision:'1',text:'Meeting proposed',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
+ const d=draft();d.answer=d.answer.replaceAll(id,original.id);d.citations[0].id=original.id;let extractions=0,reviews=0,deletionCalls=0;
+ const pipeline=fixtureMemoryPipeline({store,memories,requireAdmission:true,models:{configured:()=>true,model:()=> 'fixture'},phases:{query:async()=>({...d,runId:'direct-extraction-'+ ++extractions}),review:(input,draft,strategy,draftOrigin,recipe)=>reviewMemory(input,draft,async request=>{
+   if(request.question.startsWith('Host Memory deletion review.')){deletionCalls++;return {answer:'{"sameConclusion":true,"newSupportEvidenceIds":[]}',citations:[],trace:[],runId:'generated-deletion-check'};}
+   reviews++;throw Error('The selected direct recipe must not invoke an independent reviewer');
+ },{strategy,draftOrigin,recipe,deletions:memories.deletions})}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ store.db.exec("CREATE TRIGGER fixture_direct_commit_failure BEFORE INSERT ON memory_checkpoints BEGIN SELECT RAISE(ABORT,'generated direct commit failure'); END");
+ const failed=await pipeline.run(pipeline.create({evidenceIds:[original.id],recipes:[SINGLE_PASS_PERSONAL_RECIPE]}).id);
+ assert.equal(failed.status,'failed');assert.equal(memories.list().length,0);assert.equal(extractions,1);assert.equal(reviews,0);
+ const output=store.db.prepare("SELECT json FROM memory_phase_outputs WHERE batch_id=? AND phase='extract'").get(failed.batches[0].id)!;
+ const saved=decodeMemoryPrivate<{reviewReceipt:unknown}>(store,JSON.parse(String(output.json)).private),receipt=memoryReviewReceiptSchema.parse(saved.reviewReceipt);
+ assert.equal(receipt.decision,'not_required');assert.equal(receipt.validation,'host-evidence@1');assert.equal(receipt.reviewRunId,undefined);
+ assert.equal(memoryReviewReceiptSchema.safeParse({...receipt,reviewRunId:'invented-review'}).success,false);
+ assert.equal(memoryReviewReceiptSchema.safeParse({...receipt,strategy:undefined}).success,false);
+ store.db.exec('DROP TRIGGER fixture_direct_commit_failure');
+ if(changedDeletion){const prior=memories.extract(d,'fixture',{requireAdmission:true}).items[0];memories.delete(prior.id);assert.notEqual(memories.deletions.snapshot(),receipt.deletionSnapshot);}
+ const recovered=await pipeline.retry(failed.id);assert.equal(recovered.status,'completed');assert.equal(extractions,1);assert.equal(reviews,0);
+ if(changedDeletion){
+   assert.equal(deletionCalls,1);assert.equal(recovered.memoryIds.length,0);assert.equal(memories.list().length,0);assert.equal(recovered.batches[0].reviewReceipt?.deletionSnapshot,memories.deletions.snapshot());assert.notEqual(recovered.batches[0].reviewReceipt?.resultHash,receipt.resultHash);return;
+ }
+ assert.equal(deletionCalls,0);
+ const memory=memories.get(recovered.memoryIds[0]);assert.equal(memory.status,'published');assert.deepEqual(memory.reviewReceipt,receipt);assert.equal(memory.runId,'direct-extraction-1');assert.equal(memory.reviewRunId,undefined);
+ const result={...d,runId:memory.runId};
+ assert.throws(()=>memories.extract(result,'fixture',{reviewReceipt:receipt,strategy:new MemoryStrategies().resolve({id:'mote.personal-memory',version:'5'}).binding}),/does not match/,'a no-review receipt cannot publish under a reviewed recipe');
+ assert.throws(()=>memories.extract(result,'fixture',{reviewReceipt:receipt,strategy:memory.strategy,reviewRunId:'invented-review'}),/does not match/);
+});
+
+for(const canonical of [true,false])test(`native direct extraction ${canonical?'publishes the canonical contract':'rejects an upstream-only draft'} without a review fallback`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-native-direct-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ sources.register({id:'generated-native-direct',name:'Generated native direct source',kind:'custom',deviceId:'generated',platform:'import'});
+ const original=await sources.upsert('generated-native-direct',{externalId:'one',revision:'1',text:'Meeting proposed',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
+ let preparations=0,queries=0;
+ const pipeline=new MemoryPipeline({store,memories,requireAdmission:true,models:{configured:()=>true,model:()=> 'fixture'},nativeStages:{prepare:async(input,context)=>{
+   preparations++;const d=draft();d.citations[0].id=original.id;d.runId=context.opId;
+   const value=JSON.parse(d.answer.replaceAll(id,original.id));
+   const members=(input.taskContext!.memoryWork as {members:{key:string}[]}).members;
+   return {...d,answer:canonical?JSON.stringify({...value,coverage:members.map(member=>({key:member.key,state:'checked',candidateIndexes:[0]}))}):JSON.stringify({nativeFacts:['unconverted upstream fact']})};
+ }},phases:{query:async()=>{queries++;throw Error('Native direct extraction supplies the result');},review:(input,draft,strategy,draftOrigin,recipe)=>reviewMemory(input,draft,async()=>{queries++;throw Error('Native direct extraction must not silently select a reviewer');},{strategy,draftOrigin,recipe,deletions:memories.deletions})}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ const job=await pipeline.run(pipeline.create({evidenceIds:[original.id],recipes:[SINGLE_PASS_PERSONAL_RECIPE]}).id);
+ assert.equal(job.status,canonical?'completed':'failed');assert.equal(job.memoryIds.length,canonical?1:0);assert.equal(queries,0);assert.equal(preparations,canonical?1:2);
+ if(canonical){const memory=memories.get(job.memoryIds[0]);assert.equal(memory.status,'published');assert.equal(memory.reviewReceipt?.decision,'not_required');assert.equal(memory.reviewRunId,undefined);}
+ else{assert.equal(memories.list().length,0);assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);}
 });
 
 test('changed host integration instructions invalidate a bounded review cache entry',async()=>{
