@@ -374,9 +374,9 @@ test('official Feishu session installs on the existing Lark account, archives se
   const selectedGroup=await node.app.inject({method:'POST',url:'/api/connectors/feishu-session/select',headers,payload:{selected:[{id:'oc_generated_group',type:'group'}]}});
   assert.equal(selectedGroup.statusCode,200,selectedGroup.body);
   const selectedStatus=selectedGroup.json() as {selected:{id:string;type:string;name:string}[]};
-  assert.deepEqual(selectedStatus.selected,[{id:'oc_generated_group',type:'group',name:'Generated group'}]);
   const officialSources=()=>node.sources.listSources().filter(source=>source.kind===feishu.kind);
   assert.equal(officialSources().length,1,'only the explicitly checked group enters the scope');
+  assert.deepEqual(selectedStatus.selected,[{id:'oc_generated_group',type:'group',name:'Generated group',sourceId:officialSources()[0]!.id,initialSync:'all'}]);
   assert.equal(officialSources()[0]!.enabled,true);
   assert.equal(officialSources().some(source=>source.name.includes('私信')),false,'unchecked direct messages stay outside the scope');
   assert.equal(fake.calls.some(call=>call.kind==='im-messages'),false,'selection alone reads no message body');

@@ -39,7 +39,7 @@ export function SourceCatalog({ api, onPage }: {
     const plugins = useResource<PluginCenterView>(api, '/api/plugins');
     const catalog = {...(registry.data??{}),...(lark.data?{lark:lark.data}:{})};
     const recorders = Object.entries(registry.data ?? {}).filter((entry):entry is [string,RecordingStatus]=>Boolean(entry[1]&&'category'in entry[1]&&entry[1].category==='recordings'&&'provider'in entry[1]&&typeof entry[1].provider==='string'));
-    const pluginCard=(plugin:SourcePlugin)=>{const entry=plugin.catalog!;return {title:entry.title(),body:entry.body(),state:entry.state({catalog,sources:sourceList.data?.items??[]}),note:entry.note(),target:entry.target,icon:entry.icon};};
+    const pluginCard=(plugin:SourcePlugin)=>{const entry=plugin.catalog!;return {title:entry.title(),body:entry.body(),state:entry.state({catalog,sources:sourceList.data?.items??[],plugins:plugins.data}),note:entry.note(),target:entry.target,icon:entry.icon};};
     const plugin=(id:string)=>pluginCard(sourcePlugins.find(item=>item.id===id)!);
     const builtinKinds=new Set(sourcePlugins.flatMap(item=>item.kinds));
     const declared=(plugins.data?.sourceContributions??[])
@@ -61,6 +61,7 @@ export function SourceCatalog({ api, onPage }: {
         plugin('mote.connector.google-calendar'),
         { title: moteText("外部文件 / NAS 引用"), body: moteText("保存位置与元信息"),state:moteText("保存外部位置"), note: moteText("想分析正文时，在可访问原件的客户端保存快照。"), target: {pageId:'sources',href:'#/connections?setup=reference'}, icon: Link2 },
         plugin('mote.connector.mcp'),
+        ...sourcePlugins.filter(item=>item.packageId&&item.catalog).map(pluginCard),
         ...declared,
     ];
     const recorderState=registry.error||registry.loading?moteText('待确认'):recorders.length?recorders.map(([,status])=>(recorderNames[status.provider]?moteText(recorderNames[status.provider]):status.label??status.provider)+' · '+recordingBindingText(status)).join('；'):moteText('尚未绑定账号');

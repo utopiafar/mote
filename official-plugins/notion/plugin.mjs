@@ -169,7 +169,8 @@ function parseSelection(raw) {
     const id = text(value?.id), type = text(value?.type);
     if (!id || id.length > 200 || (type !== 'page' && type !== 'database') || identities.has(id)) throw new NotionError('notion_input_invalid', 400);
     identities.add(id);
-    selected.push({id, type});
+    if (value.initialSync !== undefined && !['all', 'new_only'].includes(value.initialSync)) throw new NotionError('notion_input_invalid', 400);
+    selected.push({id, type, ...(value.initialSync !== undefined ? {initialSync: value.initialSync} : {})});
   }
   return selected;
 }
@@ -215,10 +216,12 @@ const connector = {
       connected: typeof doc.token?.accessToken === 'string',
       readOnly: true,
       ...(doc.token?.workspaceName ? {workspace: doc.token.workspaceName} : {}),
+      // Upstream workspace/integration identity, never a Mote account or token.
+      ...(doc.token?.workspaceId ? {accountId: hash(JSON.stringify([doc.token.workspaceId, doc.token.botId ?? '']))} : doc.token?.connectedAt ? {connectionGeneration: hash(doc.token.connectedAt)} : {}),
       selected: doc.selected.map(item => {
-        let coverage;
-        try { coverage = ctx.sources.getSource(sourceId(item.id)).status?.coverage; } catch { /* No source exists until selection. */ }
-        return {id: item.id, type: item.type, title: item.title ?? '', ...(coverage ? {coverage} : {})};
+        let source;
+        try { source = ctx.sources.getSource(sourceId(item.id)); } catch { /* No source exists until selection. */ }
+        return {id: item.id, type: item.type, title: item.title ?? '', sourceId: sourceId(item.id), initialSync: source?.initialSync ?? 'all', ...(source?.status?.coverage ? {coverage: source.status.coverage} : {})};
       }),
       state: closed ? 'closed' : state,
       ...(code ? {code} : {}),
@@ -737,15 +740,27 @@ const connector = {
             used.add(slot);
             return {id: match.id, type: match.type, title: match.title.slice(0, 200), ...(match.uri && match.uri.length <= 500 ? {uri: match.uri} : {}), slot, selection: prior?.selection ?? randomBytes(16).toString('hex')};
           });
+          // Set every explicitly requested history policy before confirming or
+          // enabling a new selection. Each staged policy remains paused until selection is saved;
+          // an omitted policy preserves the existing caller's current strategy.
+          for (const request of selection) if (request.initialSync !== undefined) {
+            const item = chosen.find(value => value.id === request.id), id = sourceId(item.id);
+            ctx.sources.register({id, name: sourceName(item), kind: SOURCE_KIND, deviceId: DEVICE_ID, platform: 'import', retention: 'snapshot', enabled: false, initialSync: request.initialSync});
+            ctx.sources.update(id, {enabled: false, initialSync: request.initialSync});
+          }
           const keep = new Set(chosen.map(item => item.id));
           for (const prior of doc.selected) {
             if (keep.has(prior.id)) continue;
             try {
               ctx.sources.update(sourceId(prior.id), {enabled: false});
-            } catch { /* A removed historical source is already stopped. */ }
+            } catch (error) {
+              // Only an actually missing source is already stopped.
+              if (error?.statusCode !== 404) throw error;
+            }
           }
-          doc.selected = chosen;
-          await persist();
+          const previous = doc;
+          doc = {...doc, selected: chosen};
+          try { await persist(); } catch (error) { doc = previous; throw error; }
           ensureSources(true);
           for (const item of chosen) if (!retained.has(item.id)) {
             ctx.sources.resetCoverage(sourceId(item.id));
