@@ -1,3 +1,4 @@
+import {historyEvidenceDependencies} from '../conversation-lineage.js';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
@@ -168,7 +169,8 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
         const detail=files.detail(image.id),version=files.version(image.id);
         if(!detail.hasOriginal||version.object_hash!==image.hash||detail.item.mimeType!==image.mimeType||detail.sizeBytes!==image.sizeBytes||!store.isCurrentEvidence(image.id)||!fileAttachmentAvailable(store,image.id)||!evidenceReader.contextDependenciesAllowed([image.id]))throw new StoreError('Query attachment is no longer available',409);
       }
-      runtime.recordEvidence(work.id,[...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
+      const dependencyReceipt=historyEvidenceDependencies(store,result.evidenceDependencies,[],result.originalEvidenceDependencies);
+      runtime.recordEvidence(work.id,[...(dependencyReceipt?.complete?dependencyReceipt.ids:result.evidenceDependencies?.ids??[]),...(result.originalEvidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
       const message=assertMessage(work.id.slice('query:'.length),body);
       if(message){
         if(evidenceIds?.length===0&&(result.citations.length||(result.evidenceDependencies?.ids.length??0)>0||result.evidenceDependencies?.complete===false||(result.sourceContextDependencies?.length??0)>0))throw new StoreError('Query result is outside the empty selection',409);

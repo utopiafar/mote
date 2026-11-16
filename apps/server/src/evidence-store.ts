@@ -33,6 +33,7 @@ import {installTaskRecords} from './task-records.js';
 import {invalidateTaskEvidence} from './task-evidence.js';
 import {installAssistantCards,invalidateAssistantCardEvidence} from './assistant-card-storage.js';
 import {installAssistantCommitments,invalidateAssistantCommitmentEvidence} from './assistant-commitment-storage.js';
+import {prepareMemoryOriginalRelease,releasedOriginalIdsForScope,releasedMemoryOriginal,releasedMemoryOriginalsSchema,type ReleasedMemoryOriginal} from './memory-original-retention.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400, options?:ErrorOptions) {super(message,options);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
@@ -267,9 +268,9 @@ export class EvidenceStore {
     }catch(error){if(this.db.isTransaction){this.db.exec('ROLLBACK');}this.sweep();throw error;}
   }
   async importArchive(raw:unknown) {
-    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];memoryDeletions?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[];materials?:unknown};
+    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];memoryDeletions?:unknown[];memoryOriginalReleases?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[];materials?:unknown};
     if(archive?.version!==2||!Array.isArray(archive.captures)||archive.captures.length>20000)throw new StoreError('Expected Mote archive version 2 (maximum 20,000 records per import)');
-    for(const key of ['sources','sourceHeads','sourceVersions','memories','memoryDeletions','files','captureFiles','perceptionResults','todos'] as const)if(!Array.isArray(archive[key]))throw new StoreError('Archive v2 requires all canonical sections');
+    for(const key of ['sources','sourceHeads','sourceVersions','memories','memoryDeletions','memoryOriginalReleases','files','captureFiles','perceptionResults','todos'] as const)if(!Array.isArray(archive[key]))throw new StoreError('Archive v2 requires all canonical sections');
     const connections=(archive.sources??[]).map(v=>{const {createdAt,updatedAt,status,...fields}=v as Record<string,unknown>;const value=sourceConnectionSchema.parse(fields);return {...value,createdAt:z.string().datetime({offset:true}).parse(createdAt),updatedAt:z.string().datetime({offset:true}).parse(updatedAt)};});
     const prepared:Prepared[]=[];
     for(const entry of archive.captures) {
@@ -282,6 +283,8 @@ export class EvidenceStore {
     }
     const todoEntries=z.array(archivedTodoSchema).max(100000).parse(archive.todos??[]);
     const memoryEntries=z.array(memorySchema).parse(archive.memories??[]);
+    const releases=releasedMemoryOriginalsSchema.parse(archive.memoryOriginalReleases);
+    if(new Set(releases.map(value=>value.id)).size!==releases.length||releases.some(value=>value.id!==value.release.record.id))throw new StoreError('Invalid released original identity');
     const portableMaterials=preparePortableMaterials(archive.materials);
     const archivedFiles=new ArchivedFileStore(this),portableFiles=archivedFiles.preparePortable(archive.files??[]);
     const fileLinks=z.array(z.object({captureId:z.string().uuid(),fileId:z.string().uuid()}).strict()).max(100000).parse(archive.captureFiles??[]);
@@ -314,16 +317,21 @@ export class EvidenceStore {
         }
       }
       const materials=restorePortableMaterials(this,portableMaterials);
+      for(const {id,release} of releases){
+        if(this.evidence([id]).length||materials?.evidence([id]).length)throw new StoreError('Released original archive conflicts with retained original evidence',409);
+        for(const [memoryId,fingerprint] of Object.entries(release.memoryFingerprints))if(!memoryEntries.some(memory=>memory.id===memoryId&&memory.fingerprint===fingerprint))throw new StoreError('Released original archive is missing its published Memory');
+        this.db.prepare("INSERT OR IGNORE INTO memory_provider_evidence_revocations VALUES(?,1,?,'acknowledged')").run(id,JSON.stringify({evidenceId:id,deleted:true,memoryIds:[],releasedOriginal:{...release,restoredArchive:true}}));
+      }
       const readEvidence=(ids:string[])=>[...this.evidence(ids),...(materials?.evidence(ids,true)??[])];
       for(const m of memoryEntries){
-        if(m.evidenceIds.some(id=>!readEvidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');
-        for(const e of m.evidence??[]){const record=readEvidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record||(e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote)))throw new StoreError('Memory archive evidence quote mismatch');}
+        if(m.evidenceIds.some(id=>!readEvidence([id]).length&&releasedMemoryOriginal(this,id)?.memoryFingerprints[m.id]!==m.fingerprint))throw new StoreError('Memory archive is missing supporting evidence');
+        for(const e of m.evidence??[]){const record=readEvidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record&&releasedMemoryOriginal(this,e.id)?.memoryFingerprints[m.id]!==m.fingerprint||record&&e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote))throw new StoreError('Memory archive evidence quote mismatch');}
         const json=JSON.stringify({...m,status:'stale',staleReason:'restored_archive'}),prior=this.db.prepare('SELECT json FROM memories WHERE id=?').get(m.id);
         const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;
         const proof=(value:Record<string,unknown>)=>{const {status:_,staleReason:__,updatedAt:___,...fields}=value;return JSON.stringify(canonical(fields));};
         if(prior&&proof(JSON.parse(String(prior.json)))!==proof(m))throw new StoreError('Memory archive conflicts with an existing version',409);
         this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,json);
-        for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);
+        for(const id of new Set(m.evidenceIds.flatMap(id=>[id,...(releasedMemoryOriginal(this,id)?.identity.origins??[])])))this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);
       }
       if(archive.memoryDeletions!==undefined)restoreMemoryDeletions(this,{read:ids=>readEvidence([...ids])},archive.memoryDeletions);
       for(const {requestHash,...task} of todoEntries){
@@ -363,35 +371,52 @@ export class EvidenceStore {
     return Boolean(this.db.prepare('SELECT id FROM captures WHERE id=? AND (NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=captures.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=captures.id AND h.deleted=0))').get(id));
   }
   /** Called inside the evidence mutation transaction so in-flight extraction cannot revive old claims. */
-  invalidateMemoryEvidence(id:string,deleted=false,preserveDialogue=false) {
+  invalidateMemoryEvidence(id:string,deleted=false,preserveDialogue=false,retainPublishedMemory=false) {
+    const released=deleted&&retainPublishedMemory?prepareMemoryOriginalRelease(this,id):undefined;
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_evidence_dependencies'").get()){
       this.db.prepare('UPDATE material_evidence SET invalidated=1 WHERE id=?').run(id);
       const derived=this.db.prepare(`SELECT e.id FROM material_evidence_dependencies d JOIN material_evidence e ON e.id=d.anchor_id
         WHERE d.evidence_id=? AND (e.invalidated=0 OR ?)`).all(id,Number(deleted));
-      for(const anchor of derived)this.invalidateMemoryEvidence(String(anchor.id),deleted,preserveDialogue);
+      for(const anchor of derived)this.invalidateMemoryEvidence(String(anchor.id),deleted,preserveDialogue,retainPublishedMemory);
     }
+    if(deleted&&retainPublishedMemory)for(const chunk of this.db.prepare('SELECT id FROM file_chunks WHERE capture_id=?').all(id))this.invalidateMemoryEvidence(String(chunk.id),true,preserveDialogue,true);
     const excerpts=this.db.prepare('SELECT capture_id FROM file_evidence_links WHERE parent_id=?').all(id) as {capture_id:string}[];
     this.db.prepare('DELETE FROM file_evidence_links WHERE parent_id=?').run(id);
-    for(const excerpt of excerpts){this.invalidateMemoryEvidence(excerpt.capture_id,deleted,preserveDialogue);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(excerpt.capture_id);if(deleted){this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(excerpt.capture_id);this.db.prepare('DELETE FROM captures WHERE id=?').run(excerpt.capture_id);}}
+    for(const excerpt of excerpts){this.invalidateMemoryEvidence(excerpt.capture_id,deleted,preserveDialogue,retainPublishedMemory);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(excerpt.capture_id);if(deleted){this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(excerpt.capture_id);this.db.prepare('DELETE FROM captures WHERE id=?').run(excerpt.capture_id);}}
 
     // A revision preserves its previous original for as-of reports. Explicit
     // deletion removes reports conservatively because their lineage may be incomplete.
     if(deleted)this.db.exec('DELETE FROM insights');
-    this.invalidateSemanticEvidence(id,deleted,preserveDialogue);
+    this.invalidateSemanticEvidence(id,deleted,preserveDialogue,released);
   }
   /** Changes interpretation without retiring original bytes, text, quote anchors, or linked excerpts. */
-  invalidateSemanticEvidence(id:string,deleted=false,preserveDialogue=false) {
+  invalidateSemanticEvidence(id:string,deleted=false,preserveDialogue=false,releasedOriginal?:ReleasedMemoryOriginal) {
     this.invalidateConversationAnswers([id],deleted&&preserveDialogue?'retired':deleted);
     // The same evidence transaction revokes host visibility and records native
     // cleanup. A separate process may perform retention; no process-local
     // callback or remote request can stand in for this durable outbox.
     const prior=this.db.prepare('SELECT generation,json,state FROM memory_provider_evidence_revocations WHERE id=?').get(id),retained=prior?.state==='submitted'?JSON.parse(String(prior.json)):undefined;
-    const memoryIds=[...new Set([...(retained?.memoryIds??[]),...(deleted?this.db.prepare('SELECT memory_id FROM memory_dependencies WHERE evidence_id=?').all(id).map(row=>String(row.memory_id)):[])])];
-    this.db.prepare("INSERT INTO memory_provider_evidence_revocations VALUES(?,?,?,'submitted') ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,json=excluded.json,state='submitted'").run(id,Number(prior?.generation??0)+1,JSON.stringify({evidenceId:id,deleted:deleted||Boolean(retained?.deleted),memoryIds}));
-    if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
+    const previousRelease=prior?JSON.parse(String(prior.json)).releasedOriginal:undefined;
+    // A revision makes cards stale through the existing Memory state. Preserve
+    // their exact past publication identity for owner history and later forget;
+    // it never authorizes another card or survives strict privacy deletion.
+    const retainedOriginal=releasedOriginal??(!deleted?previousRelease:undefined);
+    const keep=Object.keys(releasedOriginal?.memoryFingerprints??{});
+    const memoryIds=[...new Set([...(retained?.memoryIds??[]),...(deleted?this.db.prepare('SELECT memory_id FROM memory_dependencies WHERE evidence_id=?').all(id).map(row=>String(row.memory_id)):[])])].filter(memoryId=>!keep.includes(memoryId));
+    this.db.prepare("INSERT INTO memory_provider_evidence_revocations VALUES(?,?,?,'submitted') ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,json=excluded.json,state='submitted'").run(id,Number(prior?.generation??0)+1,JSON.stringify({evidenceId:id,deleted:deleted||Boolean(retained?.deleted),memoryIds,...(retainedOriginal?{releasedOriginal:retainedOriginal}:{})}));
+    if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?) AND id NOT IN (SELECT value FROM json_each(?))').run(id,JSON.stringify(keep));
     else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);
     this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id=? OR evidence_id IN (SELECT evidence_id FROM memory_batch_dependencies WHERE batch_id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?))').run(id,id);
     this.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','invalidated','$.errorCode',?) WHERE id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?)").run(deleted?'evidence_deleted':'evidence_changed',id);
+  }
+  /** Scope revocation still resolves released originals without their bodies. */
+  revokeReleasedMemory(scope:{sourceId?:string;materialId?:string;file?:{sourceId:string;externalId:string}}){
+    const own=!this.db.isTransaction;if(own)this.db.exec('BEGIN IMMEDIATE');try{
+    for(const id of releasedOriginalIdsForScope(this,scope)){
+      if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletion_dependencies'").get())this.db.prepare('DELETE FROM memory_deletions WHERE id IN (SELECT deletion_id FROM memory_deletion_dependencies WHERE evidence_id=?)').run(id);
+      this.invalidateMemoryEvidence(id,true);
+    }
+    if(own)this.db.exec('COMMIT');}catch(error){if(own&&this.db.isTransaction)this.db.exec('ROLLBACK');throw error;}
   }
   previews(range:Range={}) {
     const page=this.list(range);
@@ -634,19 +659,20 @@ export class EvidenceStore {
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
     const memoryDeletions=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletions'").get()?exportMemoryDeletions(this,{read:ids=>this.evidence([...ids])}):[];
-    const archive={materials:exportPortableMaterials(this),memoryDeletions,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:2,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
+    const memoryOriginalReleases=releasedMemoryOriginalsSchema.parse(this.db.prepare("SELECT id,json FROM memory_provider_evidence_revocations WHERE json_type(json,'$.releasedOriginal')='object'").all().map(row=>({id:String(row.id),release:JSON.parse(String(row.json)).releasedOriginal})));
+    const archive={materials:exportPortableMaterials(this),memoryDeletions,memoryOriginalReleases,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:2,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;
   }
   /** SQL-only participant in the caller's deletion transaction. All visibility,
    * lineage and provider revocation outbox changes commit or roll back together. */
-  deleteInTransaction(id:string,preserveDialogue=false) {
+  deleteInTransaction(id:string,preserveDialogue=false,retainPublishedMemory=false) {
     if(!this.db.isTransaction)throw new StoreError('Evidence deletion requires a transaction');
     // Resolve every anchor of a Material removed by the capture cascade before
     // its original identities disappear, including other members of that Material.
-    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_members'").get())for(const anchor of this.db.prepare("SELECT DISTINCT e.id FROM material_evidence e JOIN material_members m ON m.material_id=e.material_id WHERE m.kind='capture' AND m.ref=?").all('capture:'+id))this.invalidateMemoryEvidence(String(anchor.id),true,preserveDialogue);
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_members'").get())for(const anchor of this.db.prepare("SELECT DISTINCT e.id FROM material_evidence e JOIN material_members m ON m.material_id=e.material_id WHERE m.kind='capture' AND m.ref=?").all('capture:'+id))this.invalidateMemoryEvidence(String(anchor.id),true,preserveDialogue,retainPublishedMemory);
     // Resolve lineage before capture cascades erase its formal anchors.
-    if(this.db.prepare('SELECT 1 FROM captures WHERE id=?').get(id))this.invalidateMemoryEvidence(id,true,preserveDialogue);
+    if(this.db.prepare('SELECT 1 FROM captures WHERE id=?').get(id))this.invalidateMemoryEvidence(id,true,preserveDialogue,retainPublishedMemory);
     const result=this.db.prepare('DELETE FROM captures WHERE id=?').run(id);this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(id);
     if(result.changes)this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,'delete',new Date().toISOString());
     if(result.changes)this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);
@@ -660,7 +686,7 @@ export class EvidenceStore {
   delete(id:string,assertCurrent?:()=>void) {
     this.db.exec('BEGIN IMMEDIATE');
     let result:{deleted:number};
-    try{assertCurrent?.();result=this.deleteInTransaction(id,true);this.db.exec('COMMIT');}
+    try{assertCurrent?.();result=this.deleteInTransaction(id,true,true);this.db.exec('COMMIT');}
     catch(error){if(this.db.isTransaction)this.db.exec('ROLLBACK');throw error;}
     this.collectDeletedEvidence();return result;
   }

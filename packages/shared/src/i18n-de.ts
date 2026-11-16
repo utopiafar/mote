@@ -10809,5 +10809,8 @@ export const german: Readonly<Record<string, string>> = {
   "仅接入新增内容": "Nur neue Inhalte",
   "只读归档已选择的内容，按原始身份保留版本。": "Ausgewählte Inhalte schreibgeschützt archivieren und Versionen unter ihren ursprünglichen Identitäten erhalten.",
   "安装不等于授权。请先在插件中心完成配置和启用，再连接账号并选择读取范围。": "Die Installation gewährt keinen Zugriff. Konfigurieren und aktivieren Sie das Plugin im Plugin-Center. Verbinden Sie dann das Konto und wählen Sie die lesbaren Inhalte aus.",
-  "停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。": "Das Lesen von Feishu-Unterhaltungen beenden und die ausgewählten Chats pausieren. Archivierte Inhalte und die anderen Verbindungen des Feishu-Kontos bleiben erhalten."
+  "停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。": "Das Lesen von Feishu-Unterhaltungen beenden und die ausgewählten Chats pausieren. Archivierte Inhalte und die anderen Verbindungen des Feishu-Kontos bleiben erhalten.",
+  "删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。": "Diesen Originaldatensatz und nicht mehr referenzierte Bilder löschen. Weiterhin gültige Erinnerungen bleiben erhalten; das Original kann nicht mehr angesehen oder zitiert werden.",
+  "删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。": "Die Originaldatei und den analysierten Text in Central löschen. Weiterhin gültige Erinnerungen bleiben erhalten; das Original kann nicht mehr angesehen oder zitiert werden. Die Originaldatei auf dem Quellgerät bleibt erhalten.",
+  "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "Das Original wurde freigegeben und kann nicht mehr angesehen oder zitiert werden. Diese Erinnerung bleibt innerhalb ihres Gültigkeitsbereichs nutzbar."
 };

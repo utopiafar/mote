@@ -25,6 +25,9 @@ async function fixture(t:TestContext){
  return {get store(){return store;},get memories(){return memories;},async add(text:string,date='2026-01-01T00:00:00Z',externalId=randomUUID()){return (await sources.upsert('generated',{externalId,revision:'1',observedAt:date,kind:'message',layer:'original',text})).id;},restart(options:ConstructorParameters<typeof Store>[1]={},beforeMemoryStore?:(store:Store)=>void){store.close();store=new Store(directory,options);beforeMemoryStore?.(store);memories=new MemoryStore(store);sources=new SourceStore(store);}};
 }
 type Fixture=Awaited<ReturnType<typeof fixture>>;
+// Explicit privacy erasure uses the strict SQL participant; ordinary owner
+// release keeps the remaining semantic refusal, exercised by retention tests.
+function eraseOriginal(f:Fixture,id:string){f.store.db.exec('BEGIN IMMEDIATE');try{f.store.deleteInTransaction(id);f.store.db.exec('COMMIT');}catch(error){if(f.store.db.isTransaction)f.store.db.exec('ROLLBACK');throw error;}}
 function output(f:Fixture,ids:string[],statement='Generated personal conclusion',extra:Record<string,unknown>={}):QueryResult{return {answer:JSON.stringify({memories:[{title:'Generated Memory',statement:statement+' '+ids.map(id=>`[${id}]`).join(' '),uncertainty:'Generated fixture, no real personal data.',evidenceIds:ids,evidence:ids.map(id=>({id,quote:f.store.evidence([id])[0].ocrText})),admission:{layer:'memory',scope:'fixture',reason:'Explicit owner statement in generated evidence',attribution:'user'},...extra}]}),runId:randomUUID(),trace:[],citations:ids.map(id=>({id,capturedAt:f.store.evidence([id])[0].capturedAt,appName:'Generated fixture',excerpt:''}))};}
 async function reviewed(f:Fixture,result:QueryResult,decision={sameConclusion:true,newSupportEvidenceIds:[] as string[]},options:{authorize?:(ids:string[])=>void;signal?:AbortSignal;onDeletion?:(input:QueryInput)=>Promise<void>|void;skill?:QueryInput['skill']}={}){
  let comparisons=0;
@@ -273,12 +276,12 @@ test('portable merge applies owner deletion to an existing active card and its c
  f.memories.delete(old.id);await target.store.importArchive(f.store.exportArchive(2_000_000));assert.throws(()=>target.memories.get(old.id),{statusCode:404});assert.equal(target.memories.get(child.id).staleReason,'memory_deleted');assert.equal(target.memories.list().length,0);
 });
 
-test('partial original retention keeps the independent owner rule for remaining evidence and drops proof text',async t=>{
+test('partial original retention keeps the independent owner rule until explicit privacy deletion and drops proof text',async t=>{
  const f=await fixture(t),a=await f.add('Generated source A old proof.'),b=await f.add('Generated source B old proof.','2026-03-01T00:00:00Z'),[old]=await save(f,output(f,[a,b],'Generated conclusion explicitly deleted by owner'));
  f.memories.delete(old.id);f.store.prune('2026-02-01T00:00:00Z');const [intent]=f.memories.deletions.export();assert.deepEqual(intent.dependencies,[b]);assert.deepEqual(intent.originalTexts,[]);assert.equal(intent.statement,old.statement);
  const checked=await reviewed(f,output(f,[b],'Same generated conclusion in other wording'));assert.equal(checked.comparisons,1);assert.equal(JSON.parse(checked.result.answer).memories.length,0);
  const restored=await fixture(t);await restored.store.importArchive(f.store.exportArchive(2_000_000));assert.deepEqual(restored.memories.deletions.export(),[intent]);
- f.store.delete(b);assert.deepEqual(f.memories.deletions.export(),[]);
+ eraseOriginal(f,b);assert.deepEqual(f.memories.deletions.export(),[]);
 });
 
 test('forgetting a Coding archive removes private deletion intent even without capture roots',async t=>{
@@ -332,7 +335,7 @@ test('incomplete lineage archives are refused atomically and current lineage can
  const bad=structuredClone(archive);bad.memoryDeletions[0].derivationSourceIds=[];await assert.rejects(rejected.store.importArchive(bad),/source lineage mismatch/);assert.equal(rejected.store.evidence([id]).length,0);
 });
 
-test('deletion rules and provenance dependencies have exact byte accounting and release it when originals are removed',async t=>{
+test('deletion rules and provenance dependencies have exact byte accounting and release it on explicit privacy deletion',async t=>{
  const f=await fixture(t),id=await f.add('Generated quota evidence 中文'),[memory]=await save(f,output(f,[id])),before=f.store.logicalBytes(),memoryBytes=Buffer.byteLength(String(f.store.db.prepare('SELECT json FROM memories WHERE id=?').get(memory.id)!.json));
  f.memories.delete(memory.id);
  const intent=f.memories.deletions.export()[0],jsonBytes=Buffer.byteLength(JSON.stringify(intent)),rows=f.store.db.prepare('SELECT * FROM memory_deletion_dependencies').all(),dependencyBytes=rows.reduce((total,row)=>total+['deletion_id','evidence_id','origin_keys','lineage_keys'].reduce((n,key)=>n+Buffer.byteLength(String(row[key])),0)+128,0),ruleBytes=jsonBytes+dependencyBytes;
@@ -342,11 +345,11 @@ test('deletion rules and provenance dependencies have exact byte accounting and 
  const persisted=f.store.logicalBytes(),second={...intent,id:randomUUID()};f.restart({});
  assert.equal(f.store.stats().logicalBytes,persisted);const recover=rejectSqliteWrites(f.store,'memory_deletion_dependencies');f.store.db.exec('BEGIN IMMEDIATE');assert.throws(()=>f.memories.deletions.restore([second]),/Generated SQLite write failure/);assert.equal(f.memories.deletions.export().length,1);assert.equal(f.store.logicalBytes(),persisted);assert.equal(f.store.db.isTransaction,true);f.store.db.exec('COMMIT');recover();
  f.restart({});f.memories.deletions.restore([second]);assert.equal(f.store.logicalBytes(),persisted+ruleBytes);f.memories.deletions.restore([second]);assert.equal(f.store.logicalBytes(),persisted+ruleBytes,'Idempotent restore counts no extra bytes');
- f.store.delete(id);assert.deepEqual(f.memories.deletions.export(),[]);assert.equal(f.store.db.prepare("SELECT sum(bytes) n FROM storage_ledger WHERE name IN ('memory_deletions','memory_deletion_dependencies')").get()!.n,0);
+ eraseOriginal(f,id);assert.deepEqual(f.memories.deletions.export(),[]);assert.equal(f.store.db.prepare("SELECT sum(bytes) n FROM storage_ledger WHERE name IN ('memory_deletions','memory_deletion_dependencies')").get()!.n,0);
 });
 
 test('current deletion ledgers reopen with exact accounting and dependency identities',async t=>{
  const f=await fixture(t),id=await f.add('Generated accounting evidence'),[memory]=await save(f,output(f,[id]));f.memories.delete(memory.id);const expected=f.store.logicalBytes(),intent=f.memories.deletions.export()[0];
  f.restart();assert.equal(f.store.logicalBytes(),expected);assert.deepEqual(f.memories.deletions.export(),[intent]);assert.notEqual(f.store.db.prepare('SELECT origin_keys FROM memory_deletion_dependencies').get()!.origin_keys,'[]');
- f.store.delete(id);assert.equal(f.store.db.prepare("SELECT sum(bytes) n FROM storage_ledger WHERE name IN ('memory_deletions','memory_deletion_dependencies')").get()!.n,0);
+ eraseOriginal(f,id);assert.equal(f.store.db.prepare("SELECT sum(bytes) n FROM storage_ledger WHERE name IN ('memory_deletions','memory_deletion_dependencies')").get()!.n,0);
 });

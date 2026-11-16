@@ -9,6 +9,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {createModelEvidenceAuthority} from '../src/model-evidence-authority.js';
 import {resolveDependencies} from '../src/conversation-lineage.js';
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {assertMemoryImageGrants} from '../src/memory-image-grants.js';
 import {SourceContextStore} from '../src/source-context.js';
 
@@ -33,6 +34,12 @@ test('async authority rechecks permissions after yielding between dependency pag
  const {node,authority,add}=await fixture(t),ids:string[]=[];for(let index=0;index<257;index++)ids.push(await add());
  const checking=authority.assertAsync({question:'Generated paged authority check',contextEvidenceDependencies:{version:1,complete:true,ids}});
  node.store.delete(ids.at(-1)!);await assert.rejects(checking,{code:'context_evidence_restricted'});
+ const original=node.memories.readEvidence([ids[0]])[0],result=fixtureMemoryResult(node.memories,{answer:JSON.stringify({memories:[{title:'Generated scoped Memory',statement:'Generated derived claim ['+original.id+']',uncertainty:'Generated only',evidenceIds:[original.id]}]}),citations:[{id:original.id,capturedAt:original.capturedAt,appName:original.appName,excerpt:original.ocrText}],trace:[],runId:randomUUID()}),memory=node.memories.extract(result,'generated').items[0];
+ assert.equal((await node.app.inject({method:'POST',url:'/api/memories/'+memory.id+'/publish',headers:{authorization:'Bearer generated-model-authority-owner'},payload:{version:memory.version}})).statusCode,200);node.store.delete(original.id);
+ const retained:QueryInput={question:'Generated paged retained claim',contextEvidenceDependencies:{version:1,complete:true,ids:[...ids.slice(0,-1),memory.id]}};
+ await authority.assertAsync(retained);authority.assert(retained);
+ assert.ok(node.featureServices.evidenceReader.contextDependencyGroups(retained.contextEvidenceDependencies!.ids).some(group=>group.includes(memory.id)&&group.includes(original.id)),'a 256-member yield must not separate a released original from its one authorized card');
+
 });
 
 test('original-only model preparation yields before reading a withdrawn exact selection',async t=>{

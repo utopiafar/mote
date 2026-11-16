@@ -45,7 +45,7 @@ export class Conversations {
     store.db.exec('SAVEPOINT conversation_history_receipts');
     try{
       for(const row of store.db.prepare("SELECT id,conversation_id,json FROM conversation_turns WHERE json_extract(json,'$.result') IS NOT NULL AND coalesce(json_extract(json,'$.evidenceDeleted'),0)!=1 AND json_extract(json,'$.historyEvidenceDependencies') IS NULL").all()){
-        const turn=JSON.parse(String(row.json)) as ConversationTurn,receipt=historyEvidenceDependencies(store,resolveDependencies(store,turn.result?.evidenceDependencies));
+        const turn=JSON.parse(String(row.json)) as ConversationTurn,receipt=historyEvidenceDependencies(store,resolveDependencies(store,turn.result?.evidenceDependencies),[],turn.result?.originalEvidenceDependencies);
         if(!receipt)continue;
         const growth=Buffer.byteLength(JSON.stringify({...turn,historyEvidenceDependencies:receipt}))-Buffer.byteLength(String(row.json));
         store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.historyEvidenceDependencies',json(?)) WHERE id=?").run(JSON.stringify(receipt),row.id);
@@ -137,7 +137,7 @@ export class Conversations {
       if(turn.scope.anchorMaterialRef||explicit.some(id=>!turn.result!.evidenceDependencies?.ids.includes(id))){
         const evidenceDependencies=this.messageDependencies(turn.result.evidenceDependencies,turn.scope,turn.attachments);
         if(evidenceDependencies){
-          const history=historyEvidenceDependencies(this.store,evidenceDependencies,[turn]);
+          const history=historyEvidenceDependencies(this.store,evidenceDependencies,[turn],turn.result.originalEvidenceDependencies);
           turn={...turn,result:{...turn.result,evidenceDependencies},...(history?{historyEvidenceDependencies:history}:{})};
         }
       }
@@ -290,7 +290,7 @@ export class Conversations {
       if(!['accepted','queued','running'].includes(message.status))throw new StoreError('Conversation message is not awaiting a result',409);
       if(message.version!==expectedVersion)throw new StoreError('Conversation message changed; reload and retry',409);
       const evidenceDependencies=this.messageDependencies(result.evidenceDependencies,message.scope,message.attachments);
-      const history=historyEvidenceDependencies(this.store,evidenceDependencies,this.previousTurns(row.conversation_id,id));
+      const history=historyEvidenceDependencies(this.store,evidenceDependencies,this.previousTurns(row.conversation_id,id),result.originalEvidenceDependencies);
       const completed:ConversationTurn={...message,status:'completed',version:message.version+1,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},...(history?{historyEvidenceDependencies:history}:{})};
       delete completed.error;
       return {conversationId:row.conversation_id,...this.rewriteTerminal(row.conversation_id,completed,row.json)};
@@ -316,7 +316,7 @@ export class Conversations {
     assertSourceContextDependencies(this.sourceContexts,result.sourceContextDependencies);
     const {question,attachments,...scope}=input,now=new Date().toISOString();
     const evidenceDependencies=this.messageDependencies(result.evidenceDependencies,scope,attachments);
-    const history=historyEvidenceDependencies(this.store,evidenceDependencies,previous?.turns);
+    const history=historyEvidenceDependencies(this.store,evidenceDependencies,previous?.turns,result.originalEvidenceDependencies);
     const turn:NewTurn={id:randomUUID(),question,scope,version:1,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},status:'completed',createdAt:now,...(history?{historyEvidenceDependencies:history}:{}),...(attachments?.length?{attachments}:{})};
     return this.write(previous,turn);
   }
@@ -399,6 +399,14 @@ export class Conversations {
       WHERE r.conversation_id=? AND r.turn_id IN (SELECT value FROM json_each(?)) AND r.result_run_id=json_extract(t.json,'$.result.runId')
        AND EXISTS(SELECT 1 FROM json_each(t.json,'$.historyEvidenceDependencies.ids') d WHERE d.value=r.evidence_id)`).all(snapshot.conversationId,JSON.stringify(snapshot.turns.map(turn=>turn.id))).map(value=>String(value.evidence_id)));
 
+  }
+
+  /** Raw roles remain separate when the same history also contains Memory.
+   * Unknown old receipts retain their original strict history dependency set. */
+  historyOriginalDependencies(snapshot:NonNullable<QueryInput['historyContext']>){
+    this.assertHistoryContext(snapshot);
+    const rows=this.store.db.prepare('SELECT json FROM conversation_turns WHERE conversation_id=? AND id IN (SELECT value FROM json_each(?))').all(snapshot.conversationId,JSON.stringify(snapshot.turns.map(turn=>turn.id)));
+    return combineDependencies(rows.map(row=>{const turn=JSON.parse(String(row.json)) as ConversationTurn;return turn.result?.originalEvidenceDependencies?.complete===true?turn.result.originalEvidenceDependencies:turn.historyEvidenceDependencies;}))??{version:1 as const,complete:!rows.length,ids:[]};
   }
 
   retiredSelection(snapshot:NonNullable<QueryInput['historyContext']>,ids:readonly string[]){

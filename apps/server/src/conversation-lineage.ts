@@ -39,13 +39,22 @@ export function resolveDependencies(store:Store,value:EvidenceDependencies|undef
 /** Dialogue retains its full privacy lineage, including disposable derived IDs.
  * Permission checks use the retained original roots instead of requiring an old
  * cache entry to exist. These receipts grant no original reads or citations. */
-export function historyEvidenceDependencies(store:Store,value:EvidenceDependencies|undefined,inherited:readonly {result?:{evidenceDependencies?:EvidenceDependencies};historyEvidenceDependencies?:EvidenceDependencies}[]=[]):EvidenceDependencies|undefined {
+export function historyEvidenceDependencies(store:Store,value:EvidenceDependencies|undefined,inherited:readonly {result?:{evidenceDependencies?:EvidenceDependencies};historyEvidenceDependencies?:EvidenceDependencies}[]=[],originals?:EvidenceDependencies):EvidenceDependencies|undefined {
   if(!value)return;
   const encoded=JSON.stringify(value.ids),exists=(name:string)=>Boolean(store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
   const roots=new Set(store.db.prepare(`SELECT id FROM captures WHERE id IN (SELECT value FROM json_each(?))
     ${exists('material_evidence')?'UNION SELECT id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))':''}`)
     .all(...(exists('material_evidence')?[encoded,encoded]:[encoded])).map(row=>String(row.id)));
   const known=new Set(roots),selected=new Set(value.ids);
+  // Only a positive Host delivery receipt can distinguish a derived Memory
+  // claim from original content. Unknown historical results keep raw roots.
+  if(originals?.complete===true){
+    const strict=new Set(resolveDependencies(store,originals)?.ids??[]);
+    for(const row of store.db.prepare('SELECT id FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(encoded)){
+      const id=String(row.id),lineage=resolveDependencies(store,{version:1,complete:true,ids:[id]})!.ids;
+      for(const member of lineage){known.add(member);if(!strict.has(member))roots.delete(member);}roots.add(id);
+    }
+  }
   for(const table of ['memories','context_artifacts','file_artifacts','file_chunks'])if(exists(table))for(const row of store.db.prepare(`SELECT id FROM ${table} WHERE id IN (SELECT value FROM json_each(?))`).all(encoded))known.add(String(row.id));
   let complete=value.complete;
   for(const turn of inherited){
