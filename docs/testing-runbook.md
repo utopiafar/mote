@@ -27,6 +27,18 @@ node --import tsx apps/android/test-fixtures/central-kotlin-contract.ts --all-un
 
 The runner selects `CentralProducerContractTest`, forces only the Gradle test task to execute, and rejects skipped contract cases. It verifies partial upload recovery, lost final ACK recovery, exact revision/ID and original bytes, current ingress requirements, permission failures, forgotten originals and late responses after session invalidation. A JDK HTTP adapter replaces the unavailable Android transport runtime; this establishes actual Kotlin use-case consumption, not `HttpJson`'s Android clock/meter, native permissions, background workers, physical-device behavior or model quality. Running other JVM unit selections without this runner skips the producer-dependent class.
 
+## Android advanced Web contract
+
+With the same built libraries, Node SQLite ABI, JDK and SDK prerequisites, run:
+
+```sh
+node --import tsx apps/android/test-fixtures/advanced-web.ts
+```
+
+This light contract creates its own temporary Central profile, owner sessions, collector credential and recording. It passes real HTTP ticket responses through production Kotlin navigation, then consumes the generated links with the actual Web ticket exchange, recording reader/tools and models settings page. It checks speaker sample reads, raw/original comparison, all three media preparation destinations with archive-only plans, and unchanged model authority, processing policy and plugin selection. Replay, expired and parent-revoked tickets fail through the real exchange; a collector link keeps the normal Web login in control. The same Gradle invocation runs the focused navigation/session-fencing and Central failure units, and rejects skipped contract cases.
+
+The runner substitutes a JDK HTTP adapter for Android transport, generated ASR/diarization artifacts for model output, and DOM media methods for device playback. It does not start an emulator or external browser, download models or verify physical audio. Temporary profiles are removed at completion; JVM results remain in the ordinary Android build directory. The producer-dependent `AdvancedWebCentralContractTest` skips when selected without this runner.
+
 <a id="background-testing"></a>
 
 ## Background UI

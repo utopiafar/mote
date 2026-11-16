@@ -436,6 +436,13 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 ui.button(MoteI18n.text("保存原件")) { ui.saveCentral("/api/files/" + enc(id) + "/content", item.optString("title", "mote-file"), item.optString("mimeType", "application/octet-stream")) }
             }
             ui.button(MoteI18n.text("导出")) { ui.saveCentral("/api/files/" + enc(id) + "/export", "mote-file.tar.gz", "application/gzip") }
+            val artifacts = row.optJSONArray("artifacts") ?: JSONArray()
+            if (item.optString("mimeType").startsWith("audio/") || (0 until artifacts.length()).any { artifacts.optJSONObject(it)?.let { value -> value.optString("kind") == "transcript" && value.optBoolean("providerSupplied") } == true }) {
+                listOf(AdvancedWebTarget.RecordingTool.SPEAKERS, AdvancedWebTarget.RecordingTool.COMPARE, AdvancedWebTarget.RecordingTool.RAW).forEach { tool ->
+                    val target = AdvancedWebTarget.Recording(id, tool)
+                    ui.button(ui.advancedWebLabel(target)) { ui.openAdvancedWeb(target) }
+                }
+            }
             val items = chunks.optJSONArray("items") ?: JSONArray()
             for (i in 0 until items.length()) {
                 val chunk = items.getJSONObject(i); val card = ui.card()
