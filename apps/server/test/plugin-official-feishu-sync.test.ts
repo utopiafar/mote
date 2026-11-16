@@ -283,3 +283,35 @@ test('Feishu plugin stop fences an in-flight page and restart continues the unch
   await f.request('/api/plugin-instances/'+f.instance.id+'/enable',{expectedRevision:f.node.pluginCenter.instanceView(f.instance.id).revision,operationId:randomUUID()});await f.wait(()=>f.node.pluginCenter.instanceView(f.instance.id).observed==='ready');await f.sync();assert.deepEqual(f.scan().window,checkpoint.window);assert.equal(f.scan().complete,true);assert.ok(f.node.sources.getItem(source.id,'om_generated_0'));
  }finally{release();await running?.catch(()=>{});}
 });
+
+for(const scope of ['im:message.group_msg:get_as_user','im:message:readonly'])for(const mode of ['all','new_only'])test(`Feishu cold restore withdraws ${scope} before ${mode==='all'?'check then sync':'the first direct sync'} without changing the ${mode} range`,async t=>{
+ const clock=Date.now();t.mock.timers.enable({apis:['Date'],now:clock});const f=await fixture(t),source=f.source();
+ if(mode==='new_only'){
+  const changed=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{initialSync:mode}});assert.equal(changed.statusCode,200,changed.body);await f.sync();t.mock.timers.tick(2000);
+ }
+ const original=message(0,{...(mode==='new_only'?{create_time:String(clock+1000)}:{})});f.transport.state.messages=[original];await f.sync();
+ const before=f.node.sources.getSource(source.id),checkpoint=f.scan(),selection=(await f.request('/api/connectors/feishu-session')).selected;
+ assert.equal(before.status?.coverage?.state,'complete');assert.equal(before.status?.coverage?.processed,1);
+ await f.restart();f.transport.state.scopes=f.transport.state.scopes.filter(value=>value!==scope);
+ f.transport.state.messages=[{...original,body:{content:JSON.stringify({text:'Generated forbidden cold-restore edit'})}}];
+ const pageCalls=f.transport.calls.filter(({command})=>isPage(command)).length;
+ if(mode==='all')await f.request('/api/connectors/feishu-session/check',{});
+ await f.sync(403);
+ const withdrawn=(await f.request('/api/sources')).items.find((value:any)=>value.id===source.id);
+ assert.equal(withdrawn.enabled,false,'the first confirmed observation withdraws the restored source');assert.equal(withdrawn.syncScopeVersion,(before.syncScopeVersion??0)+1);assert.equal(withdrawn.syncPolicyVersion,before.syncPolicyVersion);assert.equal(withdrawn.status?.coverage,undefined);assert.equal(withdrawn.status?.state,'permission_required');assert.deepEqual(f.scan(),checkpoint);assert.equal(f.transport.calls.filter(({command})=>isPage(command)).length,pageCalls,'a denied first sync makes no message request');assert.equal(f.node.sources.getItem(source.id,original.message_id)?.text,'Generated historical message 0');assert.equal(f.node.sources.history(source.id,original.message_id).length,1);
+ for(let check=0;check<2;check++){const checked=await f.request('/api/connectors/feishu-session/check',{});assert.deepEqual(checked.selected,selection);assert.equal(f.node.sources.getSource(source.id).syncScopeVersion,withdrawn.syncScopeVersion);assert.equal(f.node.sources.getSource(source.id).syncPolicyVersion,before.syncPolicyVersion);assert.deepEqual(f.scan(),checkpoint);}
+ await f.restart();await f.request('/api/connectors/feishu-session/check',{});assert.equal(f.node.sources.getSource(source.id).enabled,false);assert.equal(f.node.sources.getSource(source.id).syncScopeVersion,withdrawn.syncScopeVersion,'a repeated confirmed withdrawal after another restart does not fence the same stopped range again');assert.equal(f.scan().baselineAt,checkpoint.baselineAt);assert.deepEqual(f.scan(),checkpoint);
+});
+
+test('Feishu cold restore keeps an authorized source paused, then observes real withdrawal without losing its new-only baseline',async t=>{
+ const f=await fixture(t),source=f.source();let changed=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{initialSync:'new_only'}});assert.equal(changed.statusCode,200,changed.body);await f.sync();const checkpoint=f.scan();
+ changed=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{enabled:false}});assert.equal(changed.statusCode,200,changed.body);const paused=f.node.sources.getSource(source.id),pages=f.transport.calls.filter(({command})=>isPage(command)).length;
+ await f.restart();assert.deepEqual(f.node.sources.getSource(source.id),paused,'restoring observation must not register or enable the saved source');await f.request('/api/connectors/feishu-session/check',{});assert.deepEqual(f.node.sources.getSource(source.id),paused);await f.sync();const after=f.node.sources.getSource(source.id);assert.equal(after.enabled,false);assert.equal(after.syncScopeVersion,paused.syncScopeVersion);assert.equal(after.syncPolicyVersion,paused.syncPolicyVersion);assert.deepEqual(after.status?.coverage,paused.status?.coverage);assert.deepEqual(f.scan(),checkpoint);assert.equal(f.transport.calls.filter(({command})=>isPage(command)).length,pages);
+ f.transport.state.scopes=f.transport.state.scopes.filter(value=>value!=='im:message.group_msg:get_as_user');await f.request('/api/connectors/feishu-session/check',{});const withdrawn=f.node.sources.getSource(source.id);assert.equal(withdrawn.enabled,false);assert.equal(withdrawn.syncScopeVersion,(paused.syncScopeVersion??0)+1);assert.equal(withdrawn.syncPolicyVersion,paused.syncPolicyVersion);assert.equal(withdrawn.status?.coverage,undefined);assert.deepEqual(f.scan(),checkpoint);
+});
+
+test('Feishu first cold status failure keeps the restored selection, enabled source and new-only baseline',async t=>{
+ const f=await fixture(t),source=f.source();const changed=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{initialSync:'new_only'}});assert.equal(changed.statusCode,200,changed.body);await f.sync();const checkpoint=f.scan(),before=f.node.sources.getSource(source.id),selection=(await f.request('/api/connectors/feishu-session')).selected;
+ await f.restart();f.transport.state.failStatus=true;const checked=await f.request('/api/connectors/feishu-session/check',{});assert.equal(checked.connected,false);assert.deepEqual(checked.selected,selection);assert.deepEqual(f.node.sources.getSource(source.id),before);assert.deepEqual(f.scan(),checkpoint);
+ f.transport.state.failStatus=false;await f.sync();assert.equal(f.scan().baselineAt,checkpoint.baselineAt);assert.equal(f.node.sources.getSource(source.id).enabled,true);assert.equal(f.node.sources.getSource(source.id).syncScopeVersion,before.syncScopeVersion);assert.equal(f.node.sources.getSource(source.id).syncPolicyVersion,before.syncPolicyVersion);
+});

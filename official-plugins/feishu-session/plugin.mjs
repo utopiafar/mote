@@ -186,6 +186,30 @@ const connector = {
       }
     };
 
+    const watchReadSource = item => {
+      if (!doc.archiveAuthorized || !doc.accountId) return;
+      const id = sourceId(item.id);
+      if (readWatches.has(id)) return;
+      let source;
+      try { source = ctx.sources.getSource(id); } catch { return; }
+      if (source.kind !== SOURCE_KIND || source.deviceId !== DEVICE_ID || source.platform !== 'import') return;
+      // A prior confirmed withdrawal already fenced this paused source. A
+      // repeated check (including after restart) must not reset it again.
+      if (!source.enabled && source.status?.code === 'feishu_session_read_reauthorization_required' && !source.status.coverage) return;
+      const accountId = doc.accountId;
+      readWatches.set(id, binding.onReadInvalidated({accountId, type: item.type}, () => {
+        readWatches.delete(id);
+        if (closed || doc.accountId !== accountId || !doc.selected.includes(item)) return;
+        // Ordinary pause/resume deliberately preserves a source's range.
+        // Confirmed grant loss explicitly withdraws it, fencing admitted
+        // CAS and queued upserts even if the owner subsequently re-enables.
+        ctx.sources.resetCoverage(id);
+        ctx.sources.reportStatus(id, {state: 'permission_required', code: 'feishu_session_read_reauthorization_required'});
+        ctx.sources.update(id, {enabled: false});
+      }));
+    };
+    const restoreReadWatches = () => {for (const item of doc.selected) watchReadSource(item);};
+
     const ensureSources = (enable = true) => {
       for (const item of doc.selected) {
         const id = sourceId(item.id);
@@ -196,19 +220,7 @@ const connector = {
         try {
           ctx.sources.update(id, {name: sourceName(item), ...(enable ? {enabled: true} : {})});
         } catch { /* Registration already failed above when identity changed. */ }
-        if (ctx.sources.getSource(id).enabled && !readWatches.has(id)) {
-          const accountId = doc.accountId;
-          readWatches.set(id, binding.onReadInvalidated({accountId, type: item.type}, () => {
-            readWatches.delete(id);
-            if (closed || doc.accountId !== accountId || !doc.selected.includes(item)) return;
-            // Ordinary pause/resume deliberately preserves a source's range.
-            // Confirmed grant loss explicitly withdraws it, fencing admitted
-            // CAS and queued upserts even if the owner subsequently re-enables.
-            ctx.sources.resetCoverage(id);
-            ctx.sources.reportStatus(id, {state: 'permission_required', code: 'feishu_session_read_reauthorization_required'});
-            ctx.sources.update(id, {enabled: false});
-          }));
-        }
+        watchReadSource(item);
       }
     };
 
@@ -223,6 +235,7 @@ const connector = {
     };
 
     const refresh = async () => {
+      restoreReadWatches();
       const next = await binding.status();
       snapshot = next;
       if (doc.accountId && next.accountId && doc.accountId !== next.accountId) {
@@ -447,6 +460,7 @@ const connector = {
       try {
         ensureSources(false);
         for (const item of doc.selected) {
+          if (!messageScopesOk(item.type, snapshot.scopes)) throw new FeishuSessionError('feishu_session_scope_missing', 403);
           const source = ctx.sources.getSource(sourceId(item.id));
           if (!source.enabled) continue;
           current = await openScan(item, source); current.pin.current();
@@ -615,6 +629,9 @@ const connector = {
     const instance = {
       async init() {
         await load();
+        // Restore observation without registering, enabling or otherwise
+        // changing the owner's already-persisted source pause intent.
+        restoreReadWatches();
         initialized = true;
         schedule();
       },
