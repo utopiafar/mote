@@ -177,7 +177,7 @@ export function updateSchemaSnapshot(path:string,previous:SchemaSnapshot|undefin
 function fixtureConfig(directory:string):Config{
   return {
     dataDir:directory,token:'generated-schema-fingerprint-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,
-    maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
     model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',
     embeddingApiKey:'',diagnosticsEnabled:false,
   };

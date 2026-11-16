@@ -167,6 +167,7 @@ internal class CentralContent(
     private var browserVerifier: String? = null
     private var browserGeneration = -1L
     private var browserDurationMs = 2592000000L
+    private val advancedWeb = AdvancedWebIntent()
     private var screens: CentralScreens? = null
     private var restoredTopicsState = state?.getBundle("memoryTopics")
     private val restoredTopicsOrigin = state?.getString("memoryTopicsOrigin")
@@ -311,6 +312,7 @@ internal class CentralContent(
     }
     private fun applyAccess(selected: CentralAccess.Selection) {
         if (selected.generation < accessGeneration) return
+        advancedWeb.observe(webAccess(selected))
         val endpoint = selected.server
         val sessionChanged = accessGeneration != selected.generation
         accessGeneration = selected.generation
@@ -350,7 +352,7 @@ internal class CentralContent(
         pendingResult?.let { (request, result, data) -> pendingResult = null; activityResult(request, result, data) }
     }
     fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.pauseInsights(); screens?.close() }
-    fun close() { disposePluginView(); pause(); pending.clear() }
+    fun close() { cancelAdvancedWeb(); disposePluginView(); pause(); pending.clear() }
     fun saveState(state: Bundle) {
         state.putLong("browserDurationMs", browserDurationMs)
         state.putString("browserLoginId", browserLoginId); state.putString("browserVerifier", browserVerifier); state.putLong("browserGeneration", browserGeneration)
@@ -446,6 +448,7 @@ internal class CentralContent(
 
 
     internal fun navigate(next: String, remember: Boolean = true) {
+        cancelAdvancedWeb()
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
         page = next; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
@@ -506,6 +509,7 @@ internal class CentralContent(
         val titles = MoteNavigation.groups.map { MoteI18n.text(it.titleKey) } + MoteI18n.text("退出登录")
         MoteDialogBuilder(this).setTitle(MoteI18n.text("此客户端支持的中央功能")).setItems(titles.toTypedArray()) { _, index ->
             if (index == MoteNavigation.groups.size) {
+                cancelAdvancedWeb()
                 val expected = accessGeneration
                 work(MoteI18n.text("正在退出登录…"), { session.signOut(expected); CentralAccess.resolve(this) }, allowSessionChange = true) { selected -> applyAccess(selected) }
             }
@@ -567,9 +571,13 @@ internal class CentralContent(
                     .put("deviceName", config.deviceName).put("platform", "android").put("durationMs", duration))
                 session.signIn(origin, grant.getString("token"), duration, generation)
                 CentralAccess.resolve(this)
-            }, allowSessionChange = true) { selected -> applyAccess(selected) }
+            }, allowSessionChange = true) { selected -> completeLogin(selected, origin, generation) }
         }
         button(MoteI18n.text("使用浏览器登录")) { beginBrowserLogin(listOf(0L, 86400000L, 604800000L, 2592000000L)[lifetime.selectedItemPosition]) }
+        advancedWeb.login?.let { pending -> button(advancedWebLabel(pending.target)) {
+            check(advancedWeb.login === pending && webAccess() == pending.access) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            advancedWeb.cancel(); openAdvancedWeb(pending.target)
+        } }
         connectionButton()
     }
 
@@ -601,9 +609,37 @@ internal class CentralContent(
             if (result.optBoolean("ready")) CentralAccess.resolve(this)
             else { check(session.generation == expected) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }; null }
         }, allowSessionChange = true) { selected ->
-            if (selected != null) { browserLoginId = null; browserVerifier = null; applyAccess(selected) }
+            if (selected != null) { browserLoginId = null; browserVerifier = null; completeLogin(selected, origin, expected) }
             else if (resumed) handler.postDelayed({ if (resumed && browserLoginId == id) pollBrowserLogin() }, 1500)
         }
+    }
+
+    private fun cancelAdvancedWeb() = advancedWeb.cancel()
+    private fun webAccess(selected: CentralAccess.Selection = CentralAccess.resolve(this)) = AdvancedWebAccess(selected.server, selected.generation, selected.client != null, Settings(this).read().authExpiresAt)
+    private fun completeLogin(selected: CentralAccess.Selection, origin: String, generation: Long) {
+        val target = advancedWeb.consumeLogin(origin, generation)
+        applyAccess(selected)
+        if (target != null && selected.server == origin && selected.client != null) openAdvancedWeb(target)
+    }
+    internal fun advancedWebLabel(target: AdvancedWebTarget): String = when (target) {
+        is AdvancedWebTarget.Recording -> MoteI18n.text(when(target.tool) { AdvancedWebTarget.RecordingTool.SPEAKERS -> "说话人试听与命名"; AdvancedWebTarget.RecordingTool.COMPARE -> "原文对照"; AdvancedWebTarget.RecordingTool.RAW -> "查看原始转写" })
+        is AdvancedWebTarget.Models -> MoteI18n.text("中心本机处理") + " · " + MoteI18n.text(if(target.preparation == AdvancedWebTarget.Preparation.AUDIO) "录音" else "图片") + if(target.preparation == AdvancedWebTarget.Preparation.OCR) " · OCR" else if(target.preparation == AdvancedWebTarget.Preparation.IMAGE) " · InternVL" else ""
+    } + " · Web"
+    internal fun openAdvancedWeb(target: AdvancedWebTarget) {
+        val selected = CentralAccess.resolve(this); check(selected.server == server && server.isNotBlank()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+        val access = webAccess(selected); val visit = advancedWeb.begin(access, target, readVisit())
+        work(MoteI18n.text("正在连接中央…"), {
+            AdvancedWebNavigation.prepare(target, access, { webAccess() }, visit) {
+                val request = org.json.JSONObject(); if (access.expiresAt > 0) request.put("expiresAt", access.expiresAt)
+                requireNotNull(selected.client).post("/api/login/ticket", request)
+            }
+        }, allowSessionChange = true) { result -> when(result) {
+            is AdvancedWebResult.Ready -> result.launch({ webAccess() }, visit) { url -> advancedWeb.cancel(); startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+            is AdvancedWebResult.LoginRequired -> {
+                check(visit() && webAccess() == result.access) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                advancedWeb.retain(result, visit); applyAccess(CentralAccess.resolve(this))
+            }
+        } }
     }
 
     internal fun text(value: String, role: NativeFontRole = NativeFontRole.BODY, parent: LinearLayout = body): TextView = TextView(this).apply {
@@ -672,7 +708,7 @@ internal class CentralContent(
         linkNotice = MoteI18n.text(key)
         notice(linkNotice!!)
     }
-    internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); composer.removeAllViews(); composer.visibility = View.GONE }
+    internal fun enterDetail() { cancelAdvancedWeb(); backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); composer.removeAllViews(); composer.visibility = View.GONE }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
         val offline = page == "ask" && networkFailure(error)
         // The composer's own notice already says what happened; a raw transport

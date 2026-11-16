@@ -11,7 +11,7 @@ import {parseAnswer,type ContextReader} from '@mote/agent';
 
 test('an explicitly attached chat image is readable on demand and remains available to the dialogue',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-query-images-')),token='generated-image-owner-token';
-  const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const seen:string[][]=[];
   const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
     const ids=input.directImages?.map(image=>image.id)??[];seen.push(ids);
@@ -59,7 +59,7 @@ test('the Agent bridge grants only the listed direct image without a screenshot 
 
 test('direct metadata grants never survive file or source deletion before a region read',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-query-image-permission-')),token='generated-owner',bytes=await sharp({create:{width:4,height:4,channels:3,background:'#224466'}}).png().toBuffer(),hash=createHash('sha256').update(bytes).digest('hex');
- const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  let revoke=()=>{},blocked=0;
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   const id=input.directImages![0].id,meta=await reader.readImage!({id,view:'metadata'});assert.equal(meta.imageView!.original.sha256,hash);revoke();

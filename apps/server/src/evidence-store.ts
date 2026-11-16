@@ -34,7 +34,7 @@ import {invalidateTaskEvidence} from './task-evidence.js';
 import {installAssistantCards,invalidateAssistantCardEvidence} from './assistant-card-storage.js';
 import {installAssistantCommitments,invalidateAssistantCommitmentEvidence} from './assistant-commitment-storage.js';
 
-export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
+export class StoreError extends Error { constructor(message:string, public statusCode=400, options?:ErrorOptions) {super(message,options);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
 export type Range = {capturedOrder?:boolean;sources?:CaptureInput['source'][];sourceIds?:readonly string[];sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
@@ -55,7 +55,7 @@ export class EvidenceStore {
   private ledger!:StorageLedger;
   readonly contentEncryption:ContentEncryption;
   get key(){return this.contentEncryption.key;}
-  constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;maxStorageBytes?:number;embeddingEnabled?:boolean;maintenance?:boolean}={}) {
+  constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;embeddingEnabled?:boolean;maintenance?:boolean}={}) {
     privateDirectory(directory);
     privateSqliteFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
@@ -185,7 +185,7 @@ export class EvidenceStore {
     if(prior) {
       if(p.input.stateSeries){const previous=JSON.parse(prior.json) as CaptureInput;
         if(isStateExtension(previous,p.input)){
-          const json=JSON.stringify(p.input);this.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(prior.json)));
+          const json=JSON.stringify(p.input);
           this.db.prepare('UPDATE captures SET json=?,fingerprint=? WHERE id=?').run(json,p.fingerprint,p.input.id);
           return {id:p.input.id,duplicate:true,blobHash:null,indexingStatus:prior.index_status};
         }
@@ -216,9 +216,6 @@ export class EvidenceStore {
     }
     const {imageBase64:_,imageMime,...metadata}=p.input;
     const json=JSON.stringify(metadata);
-    const known=p.hash ? this.db.prepare('SELECT hash FROM assets WHERE hash=?').get(p.hash):null;
-    const estimatedNewBytes=Buffer.byteLength(json)+(known?0:p.bytes?.length??0);
-    if(this.options.maxStorageBytes && this.logicalBytes()+estimatedNewBytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached; free space or increase MOTE_MAX_STORAGE_MB',507);
     if(p.hash&&p.bytes) {
       this.writeBlob(p.hash,p.bytes);
       this.db.prepare('INSERT OR IGNORE INTO blobs(hash,bytes,mime) VALUES(?,?,?)').run(p.hash,p.bytes.length,imageMime!);
@@ -230,7 +227,6 @@ export class EvidenceStore {
     if(automatic)this.captureInputReceived?.(p.input);
     this.db.prepare('INSERT INTO captures_fts(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)').run(p.input.id,p.input.id,searchText(p.input));
     this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(p.input.id,'upsert',new Date().toISOString());
-    this.reserveMetadata(0);
     const device=this.db.prepare('SELECT json FROM devices WHERE id=?').get(p.input.deviceId) as {json:string}|undefined;
     if(!device)this.heartbeat({deviceId:p.input.deviceId,deviceName:p.input.deviceName,platform:p.input.platform,status:'offline',queueDepth:0,lastCaptureAt:p.input.capturedAt,...(p.input.metadata?{metadata:p.input.metadata}:{})});
     return {id:p.input.id,duplicate:false,blobHash:p.hash,indexingStatus:status};
@@ -250,7 +246,7 @@ export class EvidenceStore {
     if(size>CAPTURE_BATCH_MAX_BYTES)throw new StoreError('Observation batch exceeds 32 MiB',413);
     this.db.exec('BEGIN IMMEDIATE');
     try {before?.();const results=prepared.map((p,i)=>{const result=this.insert(p);transaction?.(result,i);return result;});this.db.exec('COMMIT');return results;}
-    catch(e){this.db.exec('ROLLBACK');this.sweep();throw e;}
+    catch(e){if(this.db.isTransaction){this.db.exec('ROLLBACK');}this.sweep();throw e;}
   }
   async ingestSettled(raw:CaptureInput[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
     if(!raw.length)throw new StoreError('Expected at least one observation',413);
@@ -265,10 +261,10 @@ export class EvidenceStore {
         if(p.status==='rejected')return {id:raw[i].id,error:p.reason as unknown};
         this.db.exec('SAVEPOINT capture_member');
         try{const result=this.insert(p.value);transaction?.(result,i);this.captureReceived(p.value.input.deviceId);this.db.exec('RELEASE capture_member');return {id:raw[i].id,result};}
-        catch(error){failed=true;this.db.exec('ROLLBACK TO capture_member; RELEASE capture_member');return {id:raw[i].id,error};}
+        catch(error){failed=true;if(!this.db.isTransaction)throw error;this.db.exec('ROLLBACK TO capture_member; RELEASE capture_member');return {id:raw[i].id,error};}
       });
       this.db.exec('COMMIT');if(failed)this.sweep();return results;
-    }catch(error){this.db.exec('ROLLBACK');this.sweep();throw error;}
+    }catch(error){if(this.db.isTransaction){this.db.exec('ROLLBACK');}this.sweep();throw error;}
   }
   async importArchive(raw:unknown) {
     const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];memoryDeletions?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[];materials?:unknown};
@@ -333,11 +329,10 @@ export class EvidenceStore {
       for(const {requestHash,...task} of todoEntries){
         const prior=this.db.prepare('SELECT json,request_hash FROM todos WHERE id=?').get(task.id);
         if(prior){if(prior.request_hash!==requestHash||!Object.entries(task).every(([key,value])=>JSON.stringify(JSON.parse(String(prior.json))[key])===JSON.stringify(value)))throw new StoreError('Archived task conflicts with an existing task',409);continue;}
-        const json=JSON.stringify(task);this.reserveMetadata(Buffer.byteLength(json)+1024);this.db.prepare('INSERT INTO todos VALUES(?,?,?,?,?,?)').run(task.id,task.createdAt,task.status,task.version,requestHash,json);
+        const json=JSON.stringify(task);this.db.prepare('INSERT INTO todos VALUES(?,?,?,?,?,?)').run(task.id,task.createdAt,task.status,task.version,requestHash,json);
       }
-      this.reserveMetadata(0);
       this.db.exec('COMMIT');return {imported,duplicates};
-    }catch(e){this.db.exec('ROLLBACK');this.sweep();archivedFiles.sweepOrphans();throw e;}
+    }catch(e){if(this.db.isTransaction){this.db.exec('ROLLBACK');}this.sweep();archivedFiles.sweepOrphans();throw e;}
   }
   list(range:Range={}) {
     const {cursor:_cursor,...scope}=range;const {where,values}=this.clauses(scope);const limit=Math.min(200,Math.max(1,range.limit??50));
@@ -476,7 +471,6 @@ export class EvidenceStore {
     const previousText=searchText(before)+'\n'+(before.summary??'');
     const own=!this.db.isTransaction;if(own)this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.reserveMetadata(Buffer.byteLength(JSON.stringify(result))+4096);
       this.db.prepare('UPDATE perception_results SET current=0 WHERE capture_id=? AND kind=?').run(id,kind);
       this.db.prepare('INSERT INTO perception_results(id,capture_id,kind,fingerprint,json) VALUES(?,?,?,?,?)').run(result.id,id,kind,result.fingerprint,JSON.stringify(result));
       if(projectState)this.db.prepare("UPDATE perception_jobs SET state='succeeded',error=NULL WHERE capture_id=? AND kind=?").run(id,kind);
@@ -491,7 +485,7 @@ export class EvidenceStore {
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,new Date().toISOString());
       }
       if(own)this.db.exec('COMMIT');
-    }catch(e){if(own)this.db.exec('ROLLBACK');throw e;}
+    }catch(e){if(own){if(this.db.isTransaction){this.db.exec('ROLLBACK');}}throw e;}
   }
   completeOcr(id:string,update:{status:'completed'|'failed';ocrText:string}) {
     const row=this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as (Row&{fingerprint:string})|undefined;
@@ -510,7 +504,6 @@ export class EvidenceStore {
     const fingerprint=sha256(JSON.stringify({...metadata,blobHash:row.blob_hash}));
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(row.json)));
       this.db.prepare('INSERT OR IGNORE INTO capture_ocr_receipts(id,original_fingerprint) VALUES(?,?)').run(id,row.fingerprint);
       this.db.prepare('UPDATE captures SET json=?,fingerprint=?,index_status=?,embedding=NULL,embedding_model=NULL,summary=NULL,index_error=NULL,attempts=0 WHERE id=?')
         .run(json,fingerprint,this.options.embeddingEnabled&&update.ocrText.trim()?'pending':'text_ready',id);
@@ -519,7 +512,7 @@ export class EvidenceStore {
       this.invalidateMemoryEvidence(id);
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,ocr.updatedAt);
       this.db.exec('COMMIT');return {id,ocr,duplicate:false};
-    } catch(error){this.db.exec('ROLLBACK');throw error;}
+    } catch(error){if(this.db.isTransaction){this.db.exec('ROLLBACK');}throw error;}
   }
   searchPage(range:Range&{query?:string;includeTotal?:boolean}) {
     if(!range.query?.trim()){const page=this.list(range);return {...page,retrieval:{mode:'lexical' as const,degraded:false}};}
@@ -605,7 +598,6 @@ export class EvidenceStore {
     const record=this.record.bind(this);
     return mediaActivity((function*(){for(const row of rows)yield record(row as unknown as Row);})(),range,onContributor);
   }
-  reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() { return this.ledger.bytes(); }
   /** A domain plugin declares the durable tables it owns; registrations persist
    * outside the activating process so retained rows stay counted. */
@@ -620,7 +612,7 @@ export class EvidenceStore {
     const snapshot=physical?JSON.parse(String(physical.value)):{bytes:0,asOf:null};
     const logicalBytes=this.logicalBytes();
     const fileBytes=Number(this.db.prepare("SELECT bytes FROM storage_ledger WHERE name='file_blobs'").get()?.bytes??0),assetBytes=Number(this.db.prepare("SELECT bytes FROM storage_ledger WHERE name='assets'").get()?.bytes??0);
-    return {...counts,...times,...blob,fileBytes,assetBytes,bytes:snapshot.bytes,asOf:snapshot.asOf,physicalPending:!snapshot.asOf,logicalBytes,maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:this.contentEncryption.enabled};
+    return {...counts,...times,...blob,fileBytes,assetBytes,bytes:snapshot.bytes,asOf:snapshot.asOf,physicalPending:!snapshot.asOf,logicalBytes,indexing,imagesEncrypted:this.contentEncryption.enabled};
   }
   /** Run only in the maintenance worker, never from an HTTP request. */
   measurePhysicalStorage(){
@@ -685,7 +677,7 @@ export class EvidenceStore {
       this.db.prepare('DELETE FROM captures_fts WHERE rowid IN (SELECT rowid FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
       this.db.prepare('DELETE FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
       if(removed.length)this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.db.exec('COMMIT');this.sweep();this.archive.collect();return removed.length;
-    }catch(e){this.db.exec('ROLLBACK');throw e;}
+    }catch(e){if(this.db.isTransaction){this.db.exec('ROLLBACK');}throw e;}
   }
   /** Persist the lifecycle in SQLite so offline snapshot writers need no host
    * callbacks. Schema owners refresh it after installing their optional tables. */
@@ -710,7 +702,7 @@ export class EvidenceStore {
     try{
       this.db.exec(`DROP TRIGGER IF EXISTS context_history_invalidation;${statements.length?`CREATE TRIGGER context_history_invalidation BEFORE DELETE ON context_artifacts BEGIN ${statements.join('\n')} END;`:''}`);
       this.db.exec('RELEASE context_history_lifecycle');
-    }catch(error){this.db.exec('ROLLBACK TO context_history_lifecycle; RELEASE context_history_lifecycle');throw error;}
+    }catch(error){if(this.db.isTransaction){this.db.exec('ROLLBACK TO context_history_lifecycle; RELEASE context_history_lifecycle');}throw error;}
   }
   /** Ordinary revisions preserve dialogue. Destructive deletion/revocation
    * must opt in, including previously stale generations and their summaries. */

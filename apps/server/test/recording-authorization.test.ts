@@ -13,7 +13,7 @@ import {generatedRecordingCli} from './fixtures/recording-authorization-cli.js';
 
 for(const provider of ['feishu','dingtalk'] as const)test(provider+' owner HTTP authorizes via generated real CLI and archives recording without host login',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-recording-authorization-')),cli=await generatedRecordingCli(directory,provider),token='generated-recording-auth-owner';
- const config:Config={dataDir:directory,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxStorageBytes:50000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:10000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false,connectorTesting:{recordings:[cli.provider]},agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model belongs in generated authorization transport');}}});await node.app.ready();
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  const path='/api/connectors/'+provider+'-recordings',request=async(method:'GET'|'POST'|'PUT'|'DELETE',suffix='',payload?:unknown,status=200)=>{const response=await node.app.inject({method,url:path+suffix,headers:{authorization:'Bearer '+token},...(payload?{payload}:{})});assert.equal(response.statusCode,status,response.body);return response.json();};
@@ -35,7 +35,7 @@ for(const provider of ['feishu','dingtalk'] as const)test(provider+' owner HTTP 
 
 test('revoking an in-flight recording binding is idempotent, stops staged publication and a replacement account cannot revive it',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-recording-revocation-')),token='generated-recording-revocation-owner';
- const config:Config={dataDir:directory,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxStorageBytes:50000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:10000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  let account='generated-one',transcriptStarted=false,loginCalls=0,release!:()=>void;
  const held=new Promise<void>(resolve=>release=resolve);
  const raw='Generated diary export\n\nOwner 00:00:00.000\nGenerated revocation transcript.\n';

@@ -1,5 +1,7 @@
 import {libraryMaterialTypes,type LibraryMaterialType} from '@mote/shared';
 import type {CollectionEntry,PageEntry} from './features/types';
+import {preparationTargetFromHash,recordingToolFromHash} from './advanced-web-target';
+import {parseEvidenceRef} from '@mote/shared';
 
 export const settingsCategories=['providers','model','processing','memory','audio','documents','file-processing','images','storage','embedding','connectors'] as const;
 export type SettingsCategory=typeof settingsCategories[number];
@@ -18,7 +20,7 @@ export function validatedReturnTarget(candidate:string|null|undefined,pages:read
  const page=pages.find(entry=>(entry.route??entry.id)===route||entry.aliases?.includes(route));
  if(!page)return;
  const query=new URLSearchParams(queryText);
- const allowed=new Set(['origin','view','evidence','source','sourceId','kind','type','device','after','before','search','asOf','category','setup','provider','tab','work','question','insight','query','cursor','memory','selected','memoryCursor','history','deviceId']);
+ const allowed=new Set(['origin','view','evidence','source','sourceId','kind','type','device','after','before','search','asOf','category','setup','provider','tab','work','question','insight','query','cursor','memory','selected','memoryCursor','history','deviceId','recordingTool','prepare']);
  for(const [key,value] of query){
   if(!allowed.has(key)||query.getAll(key).length!==1)return;
   if(key==='selected'&&page.id!=='archive')return;
@@ -31,6 +33,8 @@ export function validatedReturnTarget(candidate:string|null|undefined,pages:read
   if(key==='type'&&(page.id!=='archive'||!libraryMaterialTypes.includes(value as LibraryMaterialType)))return;
   if(key==='view'&&(page.id!=='archive'||!collections.some(entry=>entry.id===value)))return;
   if(key==='category'&&(page.id!=='settings'||!settingsCategories.includes(value as SettingsCategory)))return;
+  if(key==='recordingTool'){const reference=parseEvidenceRef(query.get('evidence')??'');if(page.id!=='archive'||reference?.kind!=='capture'||!recordingToolFromHash(candidate,reference.id))return;}
+  if(key==='prepare'&&(page.id!=='settings'||!preparationTargetFromHash(candidate,query.get('category') as 'images'|'audio'|'documents')))return;
   if(key==='tab'&&!((page.id==='extensions'&&['installed','discover','memory'].includes(value))||(page.id==='agentView'&&value==='input')))return;
   if(key==='setup'&&(page.id!=='sources'||!['gmail','google','mcp','reference'].includes(value)))return;
   if(key==='provider'&&page.id!=='recordings')return;

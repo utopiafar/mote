@@ -219,7 +219,7 @@ export class DelegatedQueryRuns {
     if(foreground)foreground.hostRequest=structuredClone(input);
     this.store.db.exec('BEGIN IMMEDIATE');
     try{
-      this.store.reserveMetadata(32768);this.store.db.prepare('INSERT INTO query_runs VALUES(?,?,?)').run(id,requestHash,JSON.stringify(run));
+      this.store.db.prepare('INSERT INTO query_runs VALUES(?,?,?)').run(id,requestHash,JSON.stringify(run));
       this.runtime.start({id:'query:'+id,operationId:'query:'+id,profileId:'query',goal:request.question,input:saved,scope:{...(request.anchorEvidenceIds?{anchorEvidenceIds:request.anchorEvidenceIds}:{}),...(request.evidenceIds?{evidenceIds:request.evidenceIds}:{}),...(request.after?{after:request.after}:{}),...(request.before?{before:request.before}:{}),...(request.deviceId?{deviceId:request.deviceId}:{}),...(request.timeZone?{timeZone:request.timeZone}:{}),contextTime},allowedCapabilities:request.evidenceIds?.length===0?[]:['context.research']});
       this.store.db.exec('COMMIT');
     }catch(error){if(this.store.db.isTransaction)this.store.db.exec('ROLLBACK');throw error;}

@@ -11,7 +11,7 @@ import {hostRun} from './fixtures/host-run.js';
 
 test('current application omits budget endpoints while queries and actual cost accounting continue',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-continuity-api-')),headers={authorization:'Bearer generated-owner'};
-  const config={dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions' as const,modelBaseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config={dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions' as const,modelBaseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const previous=new Store(directory),ledger=new UsageLedger(previous);
   ledger.setPrice({provider:'custom',model:'fixture',currency:'USD',input:1,output:2,cacheRead:1,cacheWrite:1});previous.close();
   let calls=0;

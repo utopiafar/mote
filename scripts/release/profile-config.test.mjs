@@ -35,6 +35,8 @@ test('init creates one private YAML without a model, preserves secret references
  const home=await fixture(t),paths=profilePaths('test',home);await initialize(paths);let p=await loadProfile(paths);
  assert.equal((await stat(paths.configFile)).mode&0o777,0o600);assert.equal(await stat(paths.legacyEnvFile).then(()=>true,()=>false),false);
  const initialized=await readFile(paths.configFile,'utf8');assert.deepEqual(p.savedDocument.models,{});assert.equal(initialized.includes('codex'),false);assert.equal(initialized.includes('gpt-6.1-sol'),false);
+ for(const key of ['maxStorageBytes','retentionDays'])assert.equal(Object.hasOwn(p.savedDocument.storage,key),false);
+ for(const key of ['MOTE_MAX_STORAGE_MB','MOTE_RETENTION_DAYS'])assert.equal(Object.hasOwn(p.env,key),false);
  const source=parseConfigDocument(initialized).savedDocument;source.server.token='${GENERATED_OWNER}';
  source.models={deployment:{provider:'deepseek',protocol:'deepseek',baseUrl:'https://generated-model.invalid/anthropic',model:'generated-model',reasoningEffort:'high',maxTokens:4096,modelRequestTimeoutMs:10000,agentTimeoutMs:20000,allowUnauthenticatedLocal:false,apiKey:'${GENERATED_OWNER}',headers:{},extraBody:{private:'${GENERATED_BODY}'}}};
  const oldOwner=process.env.GENERATED_OWNER,oldBody=process.env.GENERATED_BODY;process.env.GENERATED_OWNER='generated-owner-'.repeat(4);process.env.GENERATED_BODY='generated-body-secret';

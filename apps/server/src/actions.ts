@@ -77,7 +77,7 @@ export class Actions {
     END;`);
   }
   private meta<T>(key:string,fallback:T):T {const r=this.store.db.prepare('SELECT json FROM action_meta WHERE key=?').get(key) as {json:string}|undefined;return r?JSON.parse(r.json):fallback;}
-  private setMeta(key:string,value:unknown){this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.store.db.prepare('INSERT INTO action_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json').run(key,JSON.stringify(value));}
+  private setMeta(key:string,value:unknown){this.store.db.prepare('INSERT INTO action_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json').run(key,JSON.stringify(value));}
   private reviewAuthorization():z.infer<typeof authorizationSchema>{
     return authorizationSchema.parse(this.meta<unknown>('review-devices',{revision:0,reviewDeviceIds:[]}));
   }
@@ -91,9 +91,6 @@ export class Actions {
       if(JSON.stringify(previous.reviewDeviceIds)===JSON.stringify(reviewDeviceIds)){if(own)db.exec('COMMIT');return previous.revision;}
       if(previous.revision===Number.MAX_SAFE_INTEGER)throw new StoreError('Action review authorization is unavailable',503);
       const json=JSON.stringify(authorizationSchema.parse({revision:previous.revision+1,reviewDeviceIds}));
-      const replaced=db.prepare("SELECT json FROM action_meta WHERE key='review-devices'").get();
-      // Replacing a grant record reserves only growth; removing grants remains possible at quota.
-      const growth=Buffer.byteLength(json)-Buffer.byteLength(String(replaced?.json??''));if(growth>0)this.store.reserveMetadata(growth);
       db.prepare("INSERT INTO action_meta VALUES('review-devices',?) ON CONFLICT(key) DO UPDATE SET json=excluded.json").run(json);
       if(own)db.exec('COMMIT');return previous.revision+1;
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
@@ -134,7 +131,7 @@ export class Actions {
   configurationView(){return {...(this.options.configService?{revision:this.options.configService.revision}:{}),authorizationRevision:this.authorizationRevision()};}
   read(ids:string[]){return this.options.readEvidence?.(ids)??[...this.store.evidence(ids),...this.files.evidence(ids)];}
   current(id:string){return this.options.currentEvidence?.(id)??(this.files.isCurrentEvidence(id)||this.store.isCurrentEvidence(id));}
-  private save(a:ActionProposal){a.updatedAt=new Date().toISOString();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(a)));this.store.db.prepare('INSERT INTO action_proposals VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(a.id,JSON.stringify(a));return a;}
+  private save(a:ActionProposal){a.updatedAt=new Date().toISOString();this.store.db.prepare('INSERT INTO action_proposals VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(a.id,JSON.stringify(a));return a;}
   private original(a:ActionProposal){if(!a.related)return;const row=this.store.db.prepare('SELECT json FROM action_proposals WHERE id=?').get(a.related.actionId) as {json:string}|undefined;return row?JSON.parse(row.json) as ActionProposal:undefined;}
   private relationValid(a:ActionProposal){if(!a.related)return true;const original=this.original(a);return !!original&&original.kind==='calendar.create'&&!original.resolution&&original.version===a.related.version&&original.status===a.related.status;}
   /** Owner-created message proposals have no captured evidence; every calendar
@@ -217,7 +214,7 @@ export class Actions {
       db.exec('COMMIT');return receipt;
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
-  registerTarget(raw:unknown){const target=z.object({deviceId:z.string().min(1).max(200),deviceName:z.string().min(1).max(200),calendars:z.array(calendarChoiceSchema).max(200)}).strict().parse(raw);const value={...target,updatedAt:new Date().toISOString()};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.store.db.prepare('INSERT INTO action_targets VALUES(?,?) ON CONFLICT(device_id) DO UPDATE SET json=excluded.json').run(value.deviceId,JSON.stringify(value));return value;}
+  registerTarget(raw:unknown){const target=z.object({deviceId:z.string().min(1).max(200),deviceName:z.string().min(1).max(200),calendars:z.array(calendarChoiceSchema).max(200)}).strict().parse(raw);const value={...target,updatedAt:new Date().toISOString()};this.store.db.prepare('INSERT INTO action_targets VALUES(?,?) ON CONFLICT(device_id) DO UPDATE SET json=excluded.json').run(value.deviceId,JSON.stringify(value));return value;}
   /** Complete only missing schedule facts. Execution, semantic uncertainty and
    * destination authority remain with the existing confirmation/grant paths. */
   information(id:string,raw:unknown,authorize:(action:ActionProposal)=>void=()=>{}){
@@ -325,7 +322,7 @@ export class Actions {
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');try{
     const changes=this.store.updates(this.meta('cursor',0),200);for(const row of changes.items)if(row.operation==='upsert')this.enqueue(row.id);this.setMeta('cursor',changes.nextCursor);
     const chunks=this.store.db.prepare('SELECT seq,id FROM action_chunk_changes WHERE seq>? ORDER BY seq LIMIT 200').all(this.meta('chunkCursor',0)) as {seq:number;id:string}[];for(const r of chunks)this.enqueue(r.id);if(chunks.length){this.setMeta('chunkCursor',chunks.at(-1)!.seq);this.store.db.prepare('DELETE FROM action_chunk_changes WHERE seq<=?').run(chunks.at(-1)!.seq);}
-    db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
+    db.exec('COMMIT');}catch(error){if(db.isTransaction){db.exec('ROLLBACK');}throw error;}
   }
   private async sharedCues(jobs:Job[],operationId:string){
     const ranges:{id:string;offset:number;length:number}[]=[],cues:unknown[]=[],refs:{id:string;revision:string}[]=[];

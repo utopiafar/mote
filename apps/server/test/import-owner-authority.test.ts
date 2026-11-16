@@ -10,7 +10,7 @@ import type {ImportPreparation} from '../src/imports.js';
 
 for(const scenario of ['initial','retry-after-restart','unbound-retry'] as const)test(`owner import retains model authority on ${scenario} without background approval`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-owner-authority-'));
- const config:Config={dataDir:directory,token:'generated-import-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-import-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let node:Awaited<ReturnType<typeof buildApp>>,calls=0;
  const dependencies={backgroundWorker:false,prepareImport:async(input:ImportPreparation)=>{
   calls++;
@@ -56,7 +56,7 @@ for(const scenario of ['initial','retry-after-restart','unbound-retry'] as const
 
 test('an explicitly retried import reports queued while another import is using the worker',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-retry-queue-'));
- const config:Config={dataDir:directory,token:'generated-import-queue-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-import-queue-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let entered!:()=>void,release!:()=>void,failed=false;const blockerStarted=new Promise<void>(resolve=>entered=resolve),blocker=new Promise<void>(resolve=>release=resolve);
  const node=await buildApp(config,{backgroundWorker:false,prepareImport:async(input:ImportPreparation)=>{
   const source=readFileSync(input.inputPaths[0],'utf8');

@@ -12,7 +12,7 @@ import {Conversations} from '../src/conversations.js';
 import {WorkingMemory} from '../src/working-memory.js';
 import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';
 const token='generated-history-retention-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 const result=(answer:string,ids:string[]=[])=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids}});
 
 for(const removal of ['tombstone','capture-delete'] as const)test(`ordinary revisions preserve history across restart; ordinary ${removal} preserves dialogue while privacy erasure clears every generation`,async t=>{

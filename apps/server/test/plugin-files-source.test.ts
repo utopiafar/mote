@@ -24,7 +24,7 @@ import {createFilesSource,createFilesSourceFactory,filesSourceContribution,files
 const sourceId='generated-phone';
 function fixture(t:any,options:{sweepIntervalMs?:number;clock?:()=>number}={}){
   const directory=mkdtempSync(join(tmpdir(),'mote-files-source-'));
-  const store=new Store(directory,{maxStorageBytes:200*1024*1024}),sources=new SourceStore(store);
+  const store=new Store(directory,{}),sources=new SourceStore(store);
   sources.register({id:sourceId,name:'Generated phone',kind:'local-files',deviceId:sourceId,platform:'android',retention:'archive'});
   const archivedFiles=new ArchivedFileStore(store),allowed={value:true};
   const source=createFilesSource({store,sources,archivedFiles,registerRoutes:registerFileRoutes,rawAccess:{
@@ -198,7 +198,7 @@ test('a new files-source activation on the same profile reads the previously wri
   const directory=mkdtempSync(join(tmpdir(),'mote-files-restart-'));
   const access={mayReadFileVersion:()=>true,mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false};
   const open=()=>{
-    const store=new Store(directory,{maxStorageBytes:200*1024*1024}),sources=new SourceStore(store);
+    const store=new Store(directory,{}),sources=new SourceStore(store);
     sources.register({id:sourceId,name:'Generated phone',kind:'local-files',deviceId:sourceId,platform:'android',retention:'archive'});
     return {store,sources};
   };

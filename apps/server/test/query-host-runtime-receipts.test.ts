@@ -13,8 +13,8 @@ import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider
 
 const token='generated-dsh-receipt-owner',headers={authorization:`Bearer ${token}`};
 const config=(dataDir:string,baseUrl:string):Config=>({
-  dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,
-  retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-dsh-model',modelProvider:'custom',
+  dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
+  insightIntervalHours:0,allowedOrigins:[],model:'generated-dsh-model',modelProvider:'custom',
   modelProtocol:'deepseek',modelBaseUrl:baseUrl,apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,
   embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',agentTimeoutMs:20000,
 });

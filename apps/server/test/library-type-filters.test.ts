@@ -11,7 +11,7 @@ import {gmailItems} from '../src/connectors/gmail.js';
 
 test('owner Library types filter published original facts before paging, preserve overlapping facts and pin cursor scope',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-library-types-')),at='2026-10-20T01:00:00.000Z';
- const node=await buildApp({dataDir:directory,token:'generated-library-type-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
+ const node=await buildApp({dataDir:directory,token:'generated-library-type-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer generated-library-type-token','x-mote-ingress-version':'2'};
  node.sources.register({id:'generated-type-source',kind:'custom',name:'Generated source',deviceId:'generated-type-device',platform:'import'});

@@ -12,7 +12,7 @@ import type {Config} from '../../src/config.js';
 const [readyPath,resultPath]=process.argv.slice(2);
 if(!readyPath||!resultPath||!isAbsolute(readyPath)||!isAbsolute(resultPath))throw Error('Expected absolute ready/result JSON paths');
 const directory=mkdtempSync(join(tmpdir(),'mote-android-central-')),token=randomBytes(32).toString('hex');
-const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
 const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model calls in actual Android deterministic journey');},close:async()=>{}}});
 let succeeded=false;
 try{

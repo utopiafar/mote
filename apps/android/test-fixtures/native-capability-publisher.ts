@@ -17,8 +17,7 @@ const directory = await mkdtemp(join(tmpdir(), 'mote-native-capability-publisher
 const owner = randomBytes(32).toString('hex');
 const deviceId = 'generated-capability-device';
 const config: Config = {
-  dataDir: directory, token: owner, tokenPath: 'generated-only', host: '127.0.0.1', port: 0,
-  maxStorageBytes: 50_000_000, maxExportBytes: 10_000_000, retentionDays: 0, insightIntervalHours: 0,
+  dataDir: directory, token: owner, tokenPath: 'generated-only', host: '127.0.0.1', port: 0, maxExportBytes: 10_000_000, insightIntervalHours: 0,
   allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
   embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
 };

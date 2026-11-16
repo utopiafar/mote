@@ -62,8 +62,10 @@ try {
     assert.equal(configuration.storage.mountPath, '/data'); assert.equal(configuration.storage.dataDir, '/data');
     assert.equal(configuration.storage.sqlitePath, '/data/mote.sqlite'); assert.equal(configuration.storage.assetDir, '/data/files/objects');
     assert.equal(configuration.storage.logDir, '/data/logs'); assert.equal(fields.get('logDirectory').value, '/data/logs');
-    assert.equal(fields.get('maxStorageBytes').value, Number(p.env.MOTE_MAX_STORAGE_MB) * 1024 * 1024);
-    assert.equal(fields.get('maxStorageBytes').source, 'config-file');
+    assert.equal(fields.has('maxStorageBytes'), false);
+    assert.equal(fields.has('retentionDays'), false);
+    assert.equal(fields.get('maxExportBytes').value, Number(p.env.MOTE_MAX_EXPORT_MB) * 1024 * 1024);
+    assert.equal(fields.get('maxExportBytes').source, 'config-file');
     assert.equal(fields.get('dataKeyConfigured').value, true); assert.equal(fields.get('accessTokenConfigured').value, true);
     assert.equal(fields.get('modelApiKeyConfigured').value, Boolean(p.env.MOTE_MODEL_API_KEY));
     assert.equal(fields.get('embeddingApiKeyConfigured').value, Boolean(p.env.MOTE_EMBEDDING_API_KEY));

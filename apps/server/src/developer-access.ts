@@ -294,7 +294,6 @@ export class DeveloperAccessHost {
     const nested=db.isTransaction,name=`developer_event_${++this.savepoint}`;
     if(nested)db.exec(`SAVEPOINT ${name}`);else db.exec('BEGIN IMMEDIATE');
     try{
-      this.options.store.reserveMetadata(Buffer.byteLength(body)+deliveries.length*512+512);
       const inserted=db.prepare('INSERT INTO developer_events(id,event,source_id,material_id,revision,material_kind,device_id,occurred_at,created_at,payload) VALUES(?,?,?,?,?,?,?,?,?,?)')
         .run(payload.id,payload.type,event.sourceId,event.id,event.revision,event.kind,event.deviceId??null,event.occurredAt,new Date(now).toISOString(),body);
       const sequence=Number(inserted.lastInsertRowid),created=new Date(now).toISOString();
@@ -304,7 +303,7 @@ export class DeveloperAccessHost {
       if(deliveries.length)this.wake();
       if(++this.recorded%100===0)this.prune();
     }catch(error){
-      try{if(nested)db.exec(`ROLLBACK TO ${name}; RELEASE ${name}`);else db.exec('ROLLBACK');}catch{}
+      try{if(nested)db.exec(`ROLLBACK TO ${name}; RELEASE ${name}`);else {if(db.isTransaction){db.exec('ROLLBACK');}}}catch{}
       throw error;
     }
   }

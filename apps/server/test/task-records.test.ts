@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,realpathSync,rmSync,statSync} from 'node:fs';
@@ -19,7 +20,6 @@ import {competingSqliteWrite} from './fixtures/sqlite-writer.js';
 const dependencies=(ids:string[]=[]):EvidenceDependencies=>({version:1,complete:true,ids});
 const request=(ids:string[]=[])=>({operationId:randomUUID(),kind:'generated.task',requestId:randomUUID(),input:{instruction:'Generated private request'},evidenceDependencies:dependencies(ids)});
 const conflict=(error:unknown)=>error instanceof StoreError&&error.statusCode===409;
-const quota=(error:unknown)=>error instanceof StoreError&&error.statusCode===507;
 const ownerInputOnly:AssertTaskCurrent=ids=>assert.deepEqual(ids,[]);
 const currentOriginals=(store:Store):AssertTaskCurrent=>ids=>{if(ids.some(id=>!store.isCurrentEvidence(id)))throw new StoreError('Generated scope or version changed',409);};
 async function capture(store:Store,text='Generated original'){
@@ -79,17 +79,18 @@ test('task pages keep stable creation ordering while state changes and newer tas
   assert.throws(()=>tasks.page({limit:0}));assert.throws(()=>tasks.page({cursor:'invalid'}),/Invalid task record cursor/);
 });
 
-test('quota failures and interrupted acceptance leave neither private inputs nor idempotency receipts, even in a caller transaction',t=>{
-  const directory=mkdtempSync(join(tmpdir(),'mote-task-atomic-'));let store=new Store(directory);
-  const budget=store.logicalBytes()+2500;store.close();store=new Store(directory,{maxStorageBytes:budget});
+test('SQLite write failures and interrupted acceptance leave neither private inputs nor idempotency receipts, even in a caller transaction',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-task-atomic-')),store=new Store(directory);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   const tasks=new TaskRecords(store),before=store.logicalBytes(),tooLarge=request();
+  const accept=rejectSqliteWrites(store,'task_records');
   store.db.exec('BEGIN IMMEDIATE');
-  assert.throws(()=>tasks.create({...tooLarge,input:{body:'Generated quota body '.repeat(300)}},ownerInputOnly),quota);
+  assert.throws(()=>tasks.create({...tooLarge,input:{body:'Generated pending body '.repeat(300)}},ownerInputOnly),/Generated SQLite write failure/);
   assert.equal(store.db.isTransaction,true);store.db.exec('COMMIT');
-  assert.equal(tasks.page().items.length,0);assert.equal(store.logicalBytes(),before);
+  assert.equal(tasks.page().items.length,0);assert.equal(store.logicalBytes(),before);accept();
   const saved=tasks.create(tooLarge,ownerInputOnly);
-  assert.throws(()=>tasks.saveResult(saved.id,saved.revision,{body:'Generated quota result '.repeat(300)},dependencies(),ownerInputOnly),quota);
+  const result=rejectSqliteWrites(store,'task_records','UPDATE');
+  assert.throws(()=>tasks.saveResult(saved.id,saved.revision,{body:'Generated pending result '.repeat(300)},dependencies(),ownerInputOnly),/Generated SQLite write failure/);result();
   assert.deepEqual(tasks.get(saved.id),saved);assert.equal(tasks.result(saved.id,saved.revision,ownerInputOnly),undefined);
   const interrupted=request();
   store.db.exec(`CREATE TRIGGER generated_task_interrupt AFTER INSERT ON task_records BEGIN SELECT RAISE(ABORT,'generated interruption'); END; BEGIN IMMEDIATE;`);

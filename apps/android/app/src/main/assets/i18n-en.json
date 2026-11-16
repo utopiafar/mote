@@ -1,4 +1,7 @@
 {
+  "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "Central content is retained indefinitely, without a total storage quota or automatic deletion by age.",
+  "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Original files are archived by default. Existing sources keep their retention settings, which you can adjust in Sources.",
+  "存储设备无法继续写入，请检查可用空间后重试；已有资料和待传内容不会因此自动删除。": "The storage device cannot accept more writes. Check available space and retry. Existing content and pending uploads are not automatically deleted as a result.",
   "本地图片解析": "Local image processing",
   "启用后，入库图片由本地 InternVL3-14B-4bit 解析，失败时等待恢复。Memory 提取、独立复核和 Ask 仍使用各自选择的模型。": "When enabled, incoming images are interpreted locally by InternVL3-14B-4bit; failures wait for recovery. Memory extraction, independent review and Ask still use their selected models.",
   "关闭后，新图片沿用已配置的图片模型；原图、OCR 与已保存的理解结果继续保留。": "When disabled, new images use the configured image model. Originals, OCR and saved interpretations are retained.",

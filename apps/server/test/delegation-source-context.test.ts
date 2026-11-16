@@ -94,7 +94,7 @@ test('worker source-context changes fence a late product before it can be handed
 
 for(const correctWhileWaiting of [false,true])test(`HTTP source-only query opens real metadata tools and ${correctWhileWaiting?'fences yielded work after an owner edit':'persists declared versions across its worker and completion'}`,async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-http-delegated-source-context-')),token='generated-source-metadata-owner',headers={authorization:'Bearer '+token};
-  const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1};
+  const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1};
   let node:Awaited<ReturnType<typeof buildApp>>,fragments=0,workerStarted=false,fixtureFailure:unknown,workerEntered!:()=>void,releaseWorker!:()=>void;
   const entered=new Promise<void>(resolve=>workerEntered=resolve),held=new Promise<void>(resolve=>releaseWorker=resolve);
   const query:QueryAgent['query']=async input=>{

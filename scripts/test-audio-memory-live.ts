@@ -44,7 +44,7 @@ const copyVault=retryDirectory?join(retryDirectory,'vault'):sourceVault,copyHash
 await mkdir(directory,{mode:0o700});await cp(copyVault,join(directory,'vault'),{recursive:true,errorOnExist:true,force:false});
 await empty(join(copyVault,'logs/central.lock'));await empty(join(copyVault,'mote.sqlite-wal'));assert.equal(sha256(await readFile(join(copyVault,'mote.sqlite'))),copyHash);assert.equal(sha256(await readFile(join(directory,'vault/mote.sqlite'))),copyHash);
 const token=randomBytes(32).toString('hex');
-function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:300_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
  model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};}
 const report:Record<string,any>={status:'running',startedAt:new Date().toISOString(),sourceRun:source,sourceReportHash:sha256(sourceBytes),sourceQualityHash:sha256(qualityBytes),sourceDatabaseHash:databaseHash,

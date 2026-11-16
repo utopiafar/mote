@@ -26,7 +26,7 @@ function checkCurrent(assertCurrent:AssertTaskCurrent,ids:readonly string[]){
   }
 }
 
-/** Called by EvidenceStore after its private storage and quota ledger exist.
+/** Called by EvidenceStore after its private storage and accounting ledger exist.
  * All bodies live in the vault database, so stopped full backups include them
  * and retain the existing separate content-key recovery requirement. */
 export function installTaskRecords(store:Store){
@@ -50,13 +50,13 @@ export class TaskRecords {
 
   // Own writes reserve the writer before reading; a deferred snapshot cannot
   // upgrade after another process commits. Nested writes retain savepoints so
-  // a caller can catch quota/write failures without keeping a half task.
+  // a caller can catch write failures without keeping a half task.
   // Private reads keep a read snapshot without reserving the vault writer.
   private transaction<T>(run:()=>T,mode:'read'|'write'='write'):T{
     const db=this.store.db,own=mode==='write'&&!db.isTransaction;
     db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT task_records_write');
     try{const value=run();db.exec(own?'COMMIT':'RELEASE task_records_write');return value;}
-    catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else db.exec('ROLLBACK TO task_records_write; RELEASE task_records_write');throw error;}
+    catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else {if(db.isTransaction){db.exec('ROLLBACK TO task_records_write; RELEASE task_records_write');}}throw error;}
   }
   private row(id:string):Row{
     const row=this.store.db.prepare('SELECT * FROM task_records WHERE id=?').get(id) as Row|undefined;
@@ -90,10 +90,9 @@ export class TaskRecords {
       const encoded=encodeMemoryPrivate(this.store,payload);
       const id=randomUUID(),now=this.now();
       // Meter actual inserted rows too, so future meter changes cannot silently
-      // bypass quota. The savepoint rolls every row back on a failed reservation.
-      this.store.reserveMetadata(0);
+      // bypass atomicity. The savepoint rolls every row back on a failed write.
       this.store.db.prepare(`INSERT INTO task_records VALUES(?,?,?,'waiting',1,?,?,?,NULL,?,?)`).run(id,operationId,kind,requestId,hash,encoded,now,now);
-      addTaskEvidence(this.store,id,ids);this.store.reserveMetadata(0);
+      addTaskEvidence(this.store,id,ids);
       return metadata(this.row(id));
     });
   }
@@ -110,7 +109,7 @@ export class TaskRecords {
       const encoded=encodeMemoryPrivate(this.store,payload),hash=sha256(canonicalRecipeJson({operationId:row.operation_id,kind:row.kind,input:payload,evidenceDependencies:dependencies}));
       this.store.db.prepare('UPDATE task_records SET input_json=?,request_hash=?,revision=revision+1,updated_at=? WHERE id=?').run(encoded,hash,this.now(),id);
       this.store.db.prepare('DELETE FROM task_evidence WHERE task_id=?').run(id);addTaskEvidence(this.store,id,ids);
-      this.store.reserveMetadata(0);return this.get(id);
+      return this.get(id);
     });
   }
 
@@ -173,7 +172,7 @@ export class TaskRecords {
       checkCurrent(assertCurrent,ids);this.current(id,expectedRevision);
       const encoded=encodeMemoryPrivate(this.store,this.normalize(result));
       this.store.db.prepare("UPDATE task_records SET result_json=?,state='succeeded',revision=revision+1,updated_at=? WHERE id=?").run(encoded,this.now(),id);
-      addTaskEvidence(this.store,id,ids);this.store.reserveMetadata(0);
+      addTaskEvidence(this.store,id,ids);
       return this.get(id);
     });
   }

@@ -107,7 +107,6 @@ export class MaterialMemoryWork {
           continue;
         }
         if(prior)this.revoke(prior);
-        this.store.reserveMetadata(Buffer.byteLength(requiredJson+sourceRequiredJson+(bindingJson??''))+640);
         this.store.db.prepare(`INSERT INTO material_memory_requests VALUES(?,?,?,?,?,NULL,NULL,?,?,?,?,?,?) ON CONFLICT(material_id,scope) DO UPDATE SET
           revision=excluded.revision,required_json=excluded.required_json,ready_at=excluded.ready_at,job_id=NULL,error=NULL,input_key=excluded.input_key,auto_authorized=excluded.auto_authorized,binding_json=excluded.binding_json,context_time=excluded.context_time,source_required_json=excluded.source_required_json,input_fingerprint=excluded.input_fingerprint`)
           .run(materialId,grant.scope,material.revision,requiredJson,readyAt,inputKey,Number(authorized),bindingJson,grant.contextTime,sourceRequiredJson,fingerprint);

@@ -119,7 +119,6 @@ export class ImageProcessing {
   if(!isAppleDouble(prefix,original.sizeBytes))return false;
   const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
   try{
-   this.store.reserveMetadata(2048);
    db.prepare('INSERT OR REPLACE INTO image_exclusions VALUES(?,?,?)').run(row.capture_id,row.hash,APPLEDOUBLE_REASON);
    // Retain failed attempts. Revoke unfinished leases before recording the
    // terminal exclusion as the only current operation membership.
@@ -132,7 +131,7 @@ export class ImageProcessing {
    db.prepare("UPDATE perception_jobs SET state='skipped',error=? WHERE capture_id=?").run(APPLEDOUBLE_REASON,row.capture_id);
    db.prepare("UPDATE file_jobs SET state='skipped',stage='archive',summary_state='skipped',error=?,auto_eligible=0 WHERE capture_id=?").run(APPLEDOUBLE_REASON,row.capture_id);
    if(own)db.exec('COMMIT');return true;
-  }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+  }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
  }
  private original(row:ImageInputRow){return this.inputs.get(row.adapter)?.resolve(row);}
  private binding(row:ImageInputRow){return this.processing.imageConfiguration(row.source_id,row.mime,row.override_id??undefined,row.policy_json?JSON.parse(row.policy_json):undefined);}
@@ -404,7 +403,6 @@ export class ImageProcessing {
   // Reused products retain the computation receipt but bind to this independent
   // source observation. No context-sensitive product is shared by bytes alone.
   const json=JSON.stringify({...result,generatedAt:new Date().toISOString(),input:{captureId:row.capture_id,hash:row.hash,mimeType:row.mime,revision:row.revision}});
-  this.store.reserveMetadata(Buffer.byteLength(json)+4096);
   db.prepare('UPDATE image_products SET current=0 WHERE capture_id=? AND name=?').run(row.capture_id,String(step.input.name));
   db.prepare('INSERT INTO image_products(id,capture_id,name,kind,fingerprint,json) VALUES(?,?,?,?,?,?)').run(id,row.capture_id,String(step.input.name),result.kind,String(step.input.fingerprint),json);
   this.processing.completeMediaStep(step.id);
@@ -459,13 +457,12 @@ export class ImageProcessing {
   const captureIds=this.historicalOcrTargets(raw),{token}=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(token)!,id=randomUUID(),db=this.store.db;
   const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
   try{
-   this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(preview.query))+512);
    db.prepare('INSERT INTO image_backfills(id,query,watermark) VALUES(?,?,?)').run(id,JSON.stringify(preview.query),captureIds.length);
    const insert=db.prepare('INSERT INTO image_backfill_items VALUES(?,?,?,?)');
    for(const [position,captureId] of captureIds.entries()){
     if(!this.store.isCurrentEvidence(captureId))continue;
     this.processing.rememberModelIntent(captureId,'image',this.options.modelAuthority,Boolean(this.options.modelAuthority||this.processing.modelAuthorityEnabled()));
-    const intent=this.processing.modelIntent(captureId,'image');this.store.reserveMetadata(Buffer.byteLength(id+captureId+(intent??''))+128);
+    const intent=this.processing.modelIntent(captureId,'image');
     insert.run(id,position+1,captureId,intent??null);
    }
    if(own)db.exec('COMMIT');
@@ -478,7 +475,7 @@ export class ImageProcessing {
    db.exec('BEGIN IMMEDIATE');try{let queued=0;for(const item of rows){
     const id=String(item.capture_id);if(!this.store.isCurrentEvidence(id)||this.processing.modelIntent(id,'image')!==(item.intent_id===null?undefined:String(item.intent_id)))continue;
     try{if(this.retryImage(id,query.mode==='recompute',false,false).queued)queued++;}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;}
-   }db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
+   }db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){if(db.isTransaction){db.exec('ROLLBACK');}throw error;}
   }
  }
  close(){return this.closing??=(async()=>{this.closed=true;this.processing.imageControl=undefined;await this.attachments.close();await Promise.all(this.unregister.splice(0).map(dispose=>dispose()));this.disposeInputs();await this.probe;})();}

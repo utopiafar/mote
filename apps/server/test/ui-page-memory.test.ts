@@ -28,7 +28,7 @@ function record(kind:'article'|'product'='article',deviceId='generated-phone'):C
 }
 async function fixture(t:TestContext,history?:CaptureInput){
   const directory=mkdtempSync(join(tmpdir(),'mote-page-memory-'));
-  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   if(history){const store=new Store(directory);await store.ingest(history);store.close();}
   const calls:{input:QueryInput;records:ContextRecord[]}[]=[],control:{empty?:boolean;review?:()=>Promise<void>}={};
   const dependencies={backgroundWorker:false,createModelAgent:async(_settings:unknown,reader:import('@mote/agent').ContextReader)=>({configured:true,close:async()=>{},query:async(input:QueryInput)=>{

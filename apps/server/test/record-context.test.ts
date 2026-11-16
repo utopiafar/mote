@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -21,8 +22,8 @@ import type {Config} from '../src/config.js';
 
 const at='2026-10-01T00:00:00Z',description='  Generated description: this note concerns one record only.\nExact owner wording.  ';
 const capture=(ownerDescription:string|undefined=description)=>captureSchema.parse({id:randomUUID(),deviceId:'generated-phone',deviceName:'Generated phone',platform:'android',source:'note',durationMs:0,capturedAt:at,ocrText:'Generated original note',metadata:{version:1,observedAt:at,...(ownerDescription===undefined?{}:{ownerDescription})}});
-function fixture(t:TestContext,options:{encrypted?:boolean;maxStorageBytes?:number}={}){
-  const directory=mkdtempSync(join(tmpdir(),'mote-record-context-'));let store=new Store(directory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:options.encrypted,maxStorageBytes:options.maxStorageBytes});
+function fixture(t:TestContext,options:{encrypted?:boolean}={}){
+  const directory=mkdtempSync(join(tmpdir(),'mote-record-context-'));let store=new Store(directory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:options.encrypted,});
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   const sources=new SourceStore(store),files=new FileStore(store,sources),materials=new MaterialStore(store),contexts=new RecordContextStore(store),ingress=new IngressService(store,sources,files);
   return {directory,store,sources,files,materials,contexts,ingress,reopen(encrypted=options.encrypted){store.close();store=new Store(directory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:encrypted});return store;}};
@@ -57,7 +58,7 @@ test('absence and empty are the same declaration; later addition and direct evid
   await assert.rejects(f.store.ingest(capture()),/private ingress/);assert.equal(f.contexts.export().declarations.length,0);
 });
 
-test('authorization failure, private quota and batch conflicts roll back each original with its declaration',async t=>{
+test('authorization failure, SQLite writes and batch conflicts roll back each original with its declaration',async t=>{
   const f=fixture(t),first=capture(),second=capture('Generated second context');
   await assert.rejects(f.ingress.capture(first,()=>{throw Error('Generated revocation');}),/revocation/);
   assert.equal(f.store.evidence([first.id]).length,0);assert.equal(f.contexts.export().declarations.length,0);
@@ -65,8 +66,8 @@ test('authorization failure, private quota and batch conflicts roll back each or
   const results=await f.ingress.captureSettled([{...first,metadata:{...first.metadata!,ownerDescription:'Changed'}},second]);
   assert.ok(results[0].error);assert.equal(results[1].result?.duplicate,false);assert.equal(f.contexts.export().declarations.length,2);
   assert.equal(f.materials.contextForEvidence(f.store.evidence([first.id])[0]).recordContextStatements?.[0].description,description);
-  const quota=fixture(t,{maxStorageBytes:8000}),large=capture('x'.repeat(12000));await assert.rejects(quota.ingress.capture(large),{statusCode:507});
-  assert.equal(quota.store.evidence([large.id]).length,0);assert.equal(quota.contexts.export().declarations.length,0);
+  const quota=fixture(t,{}),large=capture('x'.repeat(12000)),recover=rejectSqliteWrites(quota.store,'record_context_declarations');await assert.rejects(quota.ingress.capture(large),/Generated SQLite write failure/);
+  assert.equal(quota.store.evidence([large.id]).length,0);assert.equal(quota.contexts.export().declarations.length,0);recover();
 });
 
 test('only exact original lineage inherits descriptions and material spans never borrow another member context',async t=>{
@@ -116,7 +117,7 @@ test('portable backup and encryption retain exact record context and reject miss
 
 test('HTTP owner note reads private context while collector description attempts preserve ordinary capture capability',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-record-context-http-')),token='generated-owner-record-context-token',headers={authorization:`Bearer ${token}`};
-  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const node=await buildApp(config,{backgroundWorker:false});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const input=capture(),{source:_,ocrText,privacy:__,durationMs:___,...identity}=input;
   const note={id:identity.id,deviceId:identity.deviceId,deviceName:identity.deviceName,platform:identity.platform,capturedAt:identity.capturedAt,text:ocrText,metadata:identity.metadata};

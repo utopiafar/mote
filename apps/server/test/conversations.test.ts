@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +14,7 @@ import type {QueryInput} from '@mote/agent';
 
 const token='generated-conversation-owner-token',headers={authorization:`Bearer ${token}`};
 const answer=(text='Generated assistant reply')=>({answer:text,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]}});
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 const agent=(query:QueryAgent['query']):QueryAgent=>({configured:true,query,close:async()=>{}});
 
 test('server conversations survive restart, preserve follow-up dialogue and allow explicit scope changes',async t=>{
@@ -173,7 +174,7 @@ test('accepted messages persist before execution and retries stay idempotent acr
   assert.equal(conversations.list().items[0].id,first.conversationId);
 });
 
-test('conversation sequence stays unique across two writers and quota failure rolls back admission',async t=>{
+test('conversation sequence stays unique across two writers and a SQLite failure rolls back admission',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-seq-'));
   const firstStore=new Store(dir),secondStore=new Store(dir),first=new Conversations(firstStore),second=new Conversations(secondStore);
   t.after(()=>{firstStore.close();secondStore.close();rmSync(dir,{recursive:true,force:true});});
@@ -185,13 +186,13 @@ test('conversation sequence stays unique across two writers and quota failure ro
   assert.deepEqual([left.seq,right.seq].sort((a,b)=>a-b),[1,2]);
   const pending=first.pending({conversationId});assert.deepEqual(pending.map(item=>item.seq),[0,1,2]);assert.equal(new Set(pending.map(item=>item.id)).size,3);
   const before=String(firstStore.db.prepare('SELECT json FROM conversations WHERE id=?').get(conversationId)!.json);
-  t.mock.method(firstStore,'reserveMetadata',()=>{throw new StoreError('Vault storage limit reached',507);});
-  assert.throws(()=>first.receive({conversationId,question:'Generated quota failure',clientRequestId:'generated-quota'}),/Vault storage limit reached/);
-  assert.equal(String(firstStore.db.prepare('SELECT json FROM conversations WHERE id=?').get(conversationId)!.json),before,'failed admission leaves conversation quota metadata untouched');
+  const recover=rejectSqliteWrites(firstStore,'conversation_turns');
+  assert.throws(()=>first.receive({conversationId,question:'Generated quota failure',clientRequestId:'generated-quota'}),/Generated SQLite write failure/);
+  assert.equal(String(firstStore.db.prepare('SELECT json FROM conversations WHERE id=?').get(conversationId)!.json),before,'failed admission leaves conversation metadata untouched');
   assert.deepEqual(first.pending({conversationId}).map(item=>item.seq),[0,1,2]);
   assert.equal(Number(firstStore.db.prepare('SELECT count(*) n FROM conversation_turns WHERE conversation_id=?').get(conversationId)!.n),3);
-  assert.throws(()=>first.receive({question:'Generated quota conversation',clientRequestId:'generated-quota-new'}),/Vault storage limit reached/);
-  assert.equal(firstStore.db.prepare('SELECT count(*) n FROM conversations').get()!.n,1,'a failed first admission does not leave an empty conversation');
+  assert.throws(()=>first.receive({question:'Generated quota conversation',clientRequestId:'generated-quota-new'}),/Generated SQLite write failure/);
+  assert.equal(firstStore.db.prepare('SELECT count(*) n FROM conversations').get()!.n,1,'a failed first admission does not leave an empty conversation');recover();
 });
 
 test('conversation history appends past the retired 200-turn cap and pages every short record',t=>{

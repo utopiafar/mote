@@ -14,7 +14,7 @@ import {Indexer} from '../src/indexer.js';
 
 async function fixture(t:any,query?:QueryAgent['query']){
  const directory=mkdtempSync(join(tmpdir(),'mote-f9-search-')),token='generated-file-search-owner',headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:Boolean(query),query:query??(async()=>{throw Error('No model expected');}),close:async()=>{}}});await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const api=(method:'GET'|'POST'|'PUT'|'PATCH',url:string,payload?:unknown)=>node.app.inject({method,url,headers,payload:payload as any});

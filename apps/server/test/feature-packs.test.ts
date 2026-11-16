@@ -45,7 +45,7 @@ test('server feature disposal revokes routes without deleting retained data',asy
 });
 test('small Coding upload flows through feature routes to pinned owner and real Agent projections',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-feature-fixture-'));
-  const config:Config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:Config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
   const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'};
   const call=(url:string,method:'GET'|'POST'|'DELETE'='GET',payload?:unknown)=>node.app.inject({url,method,headers,payload});
@@ -113,7 +113,7 @@ test('stopping a feature blocks admission but keeps resources until disposal',as
 
 test('Ask plugin stop cancels owned execution while feature disposal and Insight/Import disposal fence their own late results',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-feature-stop-'));
- const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  let release!:()=>void,entered!:()=>void,importSignal:AbortSignal|undefined;
  const held=new Promise<void>(resolve=>release=resolve),started=new Promise<void>(resolve=>entered=resolve);
  let querySignal:AbortSignal|undefined;
@@ -141,7 +141,7 @@ test('Ask plugin stop cancels owned execution while feature disposal and Insight
 
 test('Import scope cancels initial container expansion and removes late temporary output while retaining the original',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-feature-container-stop-'));
- const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
  let entered!:()=>void,release!:()=>void,settled!:()=>void,signal:AbortSignal|undefined,output='';
  const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve),finished=new Promise<void>(resolve=>settled=resolve);
@@ -160,7 +160,7 @@ test('Import scope cancels initial container expansion and removes late temporar
 
 test('Import scope disposes a running binary-upload worker and retains resumable acknowledged parts',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-feature-upload-stop-'));
- const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
  const headers={authorization:'Bearer '+config.token},body=Buffer.alloc(8*1024*1024,71);
  const begun=(await node.app.inject({url:'/api/import-uploads',method:'POST',headers,payload:{name:'generated-large.bin',sizeBytes:body.length}})).json();
@@ -192,7 +192,7 @@ test('feature close waits for work, retires capabilities last, and attempts ever
  assert.deepEqual(events,['running','second','first','settled','retired']);
 });
 
-const startupConfig=(directory:string):Config=>({dataDir:directory,token:'generated-startup-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
+const startupConfig=(directory:string):Config=>({dataDir:directory,token:'generated-startup-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
 for(const boundary of ['connections','connector','feature','watcher'] as const)test(`startup reclaims acquired SQLite, plugins, and watcher after ${boundary} initialization fails`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-startup-cleanup-')),config=startupConfig(directory),failure=Error('Generated '+boundary+' startup failure');
  t.after(()=>rmSync(directory,{recursive:true,force:true}));

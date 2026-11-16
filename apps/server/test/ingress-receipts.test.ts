@@ -10,7 +10,7 @@ import type {Config} from '../src/config.js';
 test('receipts promise recoverable input before Coding publication and remain idempotent',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-ingress-receipts-'));
   const token='generated-ingress-owner-token';
-  const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${token}`};

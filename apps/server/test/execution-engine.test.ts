@@ -13,6 +13,18 @@ async function fixture(t:any){
 }
 const base:ExecutionHandler={kind:'fixture',pool:'fixture',policy:EXECUTION_POLICIES.localProcessing,concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{}};
 
+test('a full execution-sequence RETURNING write keeps its cause, blocks admission and resumes the same queued input',async t=>{
+ const {store,engine}=await fixture(t),input={body:'Generated queued execution input'};let calls=0;
+ engine.register({...base,execute:async step=>{calls++;assert.deepEqual(step.input,input);return null;}});const id=engine.enqueue('generated-sequence-full','fixture',input);
+ store.db.exec("CREATE TABLE generated_sequence_pressure(body TEXT);CREATE TRIGGER generated_sequence_full BEFORE INSERT ON execution_sequence BEGIN INSERT INTO generated_sequence_pressure VALUES(zeroblob(1000000)); END");store.logicalBytes();
+ const pages=Number(store.db.prepare('PRAGMA page_count').get()!.page_count);store.db.exec(`PRAGMA max_page_count=${pages+8}`);
+ const sequence='INSERT INTO execution_sequence(pool,next) VALUES(?,1) ON CONFLICT(pool) DO UPDATE SET next=next+1 RETURNING next';
+ assert.throws(()=>store.db.prepare(sequence).get('generated-cause'),(error:any)=>error.statusCode===507&&(error.cause?.errcode&255)===13);assert.equal(store.db.isTransaction,false);
+ await engine.tick();const blocked=engine.get(id)!;assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'storage_full');assert.equal(blocked.attempts,0);assert.deepEqual(blocked.input,input);assert.equal(calls,0);assert.equal(store.db.prepare('SELECT count(*) n FROM execution_sequence').get()!.n,0);assert.equal(store.db.prepare('SELECT count(*) n FROM execution_fairness').get()!.n,0);
+ store.db.exec('PRAGMA max_page_count=4294967294;DROP TRIGGER generated_sequence_full');engine.retry(id,true);await engine.drain([id]);assert.equal(engine.get(id)!.state,'succeeded');assert.equal(calls,1);assert.equal(store.db.prepare('SELECT next FROM execution_sequence WHERE pool=?').get('fixture')!.next,1);
+ assert.throws(()=>store.db.prepare('INSERT INTO execution_sequence VALUES(?,1) RETURNING next').get('fixture'),(error:any)=>(error.errcode&255)===19&&error.statusCode!==507);
+});
+
 test('complete validated inputs remain durable and idempotent beyond the former metadata cap',async t=>{
  const {engine,store}=await fixture(t),input={members:Array.from({length:180},(_,n)=>({id:n,text:'Generated complete evidence 🌱 '.repeat(12)+' exact-tail-'+n}))};
  assert.ok(JSON.stringify(input).length>32768);let calls=0,received:unknown;

@@ -54,7 +54,6 @@ export class PluginControlStore {
       if(input.expectedRevision!==revision())throw new StoreError('Plugin settings changed; refresh before applying',409);
       apply();this.bump();
       const receipt:PluginCommandReceipt={operationId:input.operationId,kind,revision:this.revision()},json=JSON.stringify(receipt);
-      this.store.reserveMetadata(Buffer.byteLength(json)+Buffer.byteLength(input.operationId)*2+512);
       db.prepare('INSERT INTO plugin_commands VALUES(?,?)').run(input.operationId,fingerprint);
       db.prepare('INSERT INTO plugin_control_receipts VALUES(?,?)').run(input.operationId,json);
       db.exec('COMMIT');return true;
@@ -70,8 +69,7 @@ export class PluginControlStore {
   saveBuild(value:BuildInstance){
     const json=JSON.stringify(value),prior=this.store.db.prepare('SELECT json FROM plugin_build_instances WHERE id=?').get(value.id);
     if(prior?.json===json)return;
-    const growth=prior?Buffer.byteLength(json)-Buffer.byteLength(String(prior.json)):Buffer.byteLength(json)+Buffer.byteLength(value.id)+128;
-    if(growth>0)this.store.reserveMetadata(growth);
+
     this.store.db.prepare('INSERT INTO plugin_build_instances VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,json);
   }
 }

@@ -502,7 +502,7 @@ test('typed agent failures classify specifically instead of falling back to imag
 
 
 test('production image intake enters the existing automatic Memory pipeline once and exposes the zero-memory outcome',async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-image-memory-app-')),config:Config={dataDir:directory,token:'generated-image-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const directory=mkdtempSync(join(tmpdir(),'mote-image-memory-app-')),config:Config={dataDir:directory,token:'generated-image-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let visual=0,extractions=0;
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   if(input.directImages?.length){visual++;await reader.readImage!({id:input.directImages[0].id});return {answer:JSON.stringify({text:'Generated chart from a third-party reference; owner authorship is unknown.',regions:[]}),citations:[],trace:[],runId:randomUUID()};}
@@ -651,7 +651,7 @@ test('corrected input with missing pinned recipe remains semantically withdrawn 
 });
 
 test('owner source correction before the first image Material withdraws cached and future semantic work through the real API',async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-image-source-context-')),config:Config={dataDir:directory,token:'generated-image-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const directory=mkdtempSync(join(tmpdir(),'mote-image-source-context-')),config:Config={dataDir:directory,token:'generated-image-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let visual=0;
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{visual++;await reader.readImage!({id:input.directImages![0].id});return {answer:JSON.stringify({text:'Generated source interpretation',regions:[]}),citations:[],trace:[],runId:randomUUID()};}})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
@@ -715,7 +715,7 @@ test('AppleDouble detection requires the binary signature, version and bounded e
 });
 
 for(const withdrawal of ['delete','source-context'] as const)test(`queued image ${withdrawal} prevents a provider call and a synthetic usage receipt`,{timeout:20000},async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-image-admission-')),config:Config={dataDir:directory,token:'generated-image-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,llmConcurrency:1,agentConcurrency:2};
+ const directory=mkdtempSync(join(tmpdir(),'mote-image-admission-')),config:Config={dataDir:directory,token:'generated-image-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,llmConcurrency:1,agentConcurrency:2};
  let entered!:()=>void,release!:()=>void,queued!:()=>void,imageCalls=0;
  const occupied=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve),waiting=new Promise<void>(resolve=>queued=resolve);
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader,host)=>({configured:true,close:async()=>{},query:async input=>{

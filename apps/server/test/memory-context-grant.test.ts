@@ -16,7 +16,7 @@ import type {Config} from '../src/config.js';
 const at='2026-10-13T00:00:00Z';
 async function fixture(t:import('node:test').TestContext){
  const dataDir=await mkdtemp(join(tmpdir(),'mote-context-only-grant-'));
- const config:Config={dataDir,token:'generated-context-grant-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir,token:'generated-context-grant-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const calls:QueryInput[]=[],failures:unknown[]=[];let inspect:(input:QueryInput,reader:ContextReader)=>Promise<ReturnType<typeof response>>=async input=>response(input);
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{calls.push(input);try{return await inspect(input,reader);}catch(error){failures.push(error);throw error;}}})});await node.app.ready();t.after(async()=>{await node.app.close();await rm(dataDir,{recursive:true,force:true});});
  node.sources.register({id:'generated-context-source',name:'Generated scope',kind:'custom',deviceId:'generated',platform:'import'});

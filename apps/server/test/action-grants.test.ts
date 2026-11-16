@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -93,11 +94,10 @@ test('a plugin manifest cannot add participants, unknown execution locations or 
 });
 
 
-test('grant quota failure atomically preserves the retry identity and cannot publish a partial grant',async t=>{
- const f=await fixture(t),input=f.grant(),reserve=f.store.reserveMetadata.bind(f.store);let calls=0;
- f.store.reserveMetadata=(bytes:number)=>{if(++calls===2)throw new StoreError('Generated receipt quota failure',507);reserve(bytes);};
- assert.throws(()=>f.capabilities.authorize(input),/quota/);assert.equal(f.capabilities.grants().length,0);
- f.store.reserveMetadata=reserve;assert.equal(f.capabilities.authorize(input).id,input.id);assert.equal(f.capabilities.grants().length,1);
+test('a grant receipt write failure atomically preserves the retry identity and cannot publish a partial grant',async t=>{
+ const f=await fixture(t),input=f.grant(),recover=rejectSqliteWrites(f.store,'action_capability_commands');
+ assert.throws(()=>f.capabilities.authorize(input),/Generated SQLite write failure/);assert.equal(f.capabilities.grants().length,0);
+ recover();assert.equal(f.capabilities.authorize(input).id,input.id);assert.equal(f.capabilities.grants().length,1);
 });
 
 test('a create-only declaration, draft or grant never acquires the expanded manage authority',async t=>{

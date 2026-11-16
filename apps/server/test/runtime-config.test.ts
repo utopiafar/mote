@@ -10,7 +10,7 @@ import type {Config} from '../src/config.js';
 const token='synthetic-runtime-config-owner-token';
 const headers={authorization:`Bearer ${token}`};
 const inactive={configured:false,query:async()=>{throw Error('No model access in this fixture');},close:async()=>{}};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://fixture.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://fixture.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 const turn=()=>new Promise<void>(resolve=>setImmediate(resolve));
 
 test('execution API and external YAML edits share admission limits, global conflicts and diagnostics application',async t=>{

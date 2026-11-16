@@ -237,7 +237,7 @@ export class MemoryPipeline {
         if(job.activationRequired&&!this.active.has(job.id))return new ExecutionFailure('blocked','awaiting_activation');
         // Lifecycle recovery must still honor its saved retry window and enablement.
         if(!this.options.models.configured(job.modelProfileId))return new ExecutionFailure('blocked','model_unconfigured');
-        if(this.options.models.configuration){const current=this.options.models.configuration(job.modelProfileId,job.modelOverride);if(job.configuration&&job.configuration.fingerprint!==current.fingerprint)return new ExecutionFailure('blocked','configuration_changed');if(!job.configuration){job.configuration=structuredClone(current);this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(current)));this.saveJob(job);}}
+        if(this.options.models.configuration){const current=this.options.models.configuration(job.modelProfileId,job.modelOverride);if(job.configuration&&job.configuration.fingerprint!==current.fingerprint)return new ExecutionFailure('blocked','configuration_changed');if(!job.configuration){job.configuration=structuredClone(current);this.saveJob(job);}}
         // A parent re-entry cannot advance a queued/running semantic child.
         // Keep the engine's existing input/grant validation, but observe that
         // durable child's state before preparing all frozen ranges again.
@@ -345,7 +345,7 @@ export class MemoryPipeline {
   }
   private batches(id:string):StoredBatch[]{return (this.store.db.prepare('SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx').all(id) as {json:string}[]).map(row=>decodeMemoryBatch<StoredBatch>(this.store,row.json));}
   private batch(id:string):StoredBatch {const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(id);if(!row)throw new StoreError('Memory batch not found',404);return decodeMemoryBatch<StoredBatch>(this.store,String(row.json));}
-  private saveJob(job:MemoryJob){const {batches:_batches,inputPlans:_plans,recipeProgress:_recipes,memoryCount:_count,outcome:_outcome,invalidatedBatches:_invalidated,priorValidationFailure:_validation,...value}=job as MemoryJobDetail;value.updatedAt=new Date().toISOString();const prior=this.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id),json=encodeMemoryJob(this.store,value,Boolean(prior&&JSON.parse(String(prior.json)).privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(prior?.json??''))));this.store.db.prepare('UPDATE memory_jobs SET json=? WHERE id=?').run(json,job.id);}
+  private saveJob(job:MemoryJob){const {batches:_batches,inputPlans:_plans,recipeProgress:_recipes,memoryCount:_count,outcome:_outcome,invalidatedBatches:_invalidated,priorValidationFailure:_validation,...value}=job as MemoryJobDetail;value.updatedAt=new Date().toISOString();const prior=this.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id),json=encodeMemoryJob(this.store,value,Boolean(prior&&JSON.parse(String(prior.json)).privateRetired));this.store.db.prepare('UPDATE memory_jobs SET json=? WHERE id=?').run(json,job.id);}
   private saveBatch(batch:StoredBatch){
     const priorRow=this.store.db.prepare('SELECT job_id,json FROM memory_batches WHERE id=?').get(batch.id) as {job_id:string;json:string}|undefined,prior=priorRow?JSON.parse(String(priorRow.json)) as StoredBatch&{privateRetired?:boolean}:undefined;
     const transitioned=prior!==undefined&&prior.status!==batch.status;
@@ -353,7 +353,7 @@ export class MemoryPipeline {
     // can only match a transition whose transaction actually committed; a rollback
     // restores the previous stamp even when it restores the same status value.
     if(transitioned)batch.transitionStamp=randomUUID();
-    const json=encodeMemoryBatch(this.store,batch,Boolean(prior?.privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(priorRow?.json??''))));this.store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(json,batch.id);
+    const json=encodeMemoryBatch(this.store,batch,Boolean(prior?.privateRetired));this.store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(json,batch.id);
     if(transitioned){
       const jobId=String(priorRow!.job_id),markers=this.batchTransitions.get(jobId)??new Map<string,Set<string>>(),stamps=markers.get(batch.id)??new Set<string>();
       // A later transaction can roll back to an earlier, still-unreconciled
@@ -468,12 +468,11 @@ export class MemoryPipeline {
       this.inputAdmission.admit(evidenceIds,materialRefs,input.modelProfileId,materialInputs);
       const jobJson=encodeMemoryJob(this.store,job),batchJson=batches.map(batch=>encodeMemoryBatch(this.store,batch));
       const dependencies=[...new Set(evidenceIds.flatMap(id=>this.options.memories.dependencyIds(id)))];
-      this.store.reserveMetadata(Buffer.byteLength(jobJson)+batchJson.reduce((sum,json)=>sum+Buffer.byteLength(json),0)+dependencies.reduce((sum,id)=>sum+Buffer.byteLength(id)+Buffer.byteLength(job.id)+64,0));
       this.store.db.prepare('INSERT INTO memory_jobs(id,created_at,json) VALUES(?,?,?)').run(job.id,now,jobJson);
       for(const id of dependencies)this.store.db.prepare('INSERT OR IGNORE INTO memory_job_dependencies VALUES(?,?)').run(job.id,id);
       for(const batch of batches){this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,job.id,batch.index,batchJson[batches.indexOf(batch)]);for(const id of new Set(batch.chunks.flatMap(chunk=>this.options.memories.dependencyIds(chunk.id))))this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);}
       if(own)this.store.db.exec('COMMIT');
-    }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK');}}throw error;}
     return this.get(job.id);
   }
   private makeBatches(job:MemoryJob,plans:ReadyInputScope[],evidenceRanges?:EvidenceRange[],startIndex=0,contextEvidenceRanges?:EvidenceRange[]){
@@ -583,7 +582,6 @@ export class MemoryPipeline {
   private insertBatch(jobId:string,batch:StoredBatch){
     const json=encodeMemoryBatch(this.store,batch),dependencies=[...new Set([...batch.chunks,...(batch.contextChunks??[])].flatMap(c=>this.options.memories.dependencyIds(c.id)))];
     const newJobDependencies=dependencies.filter(id=>!this.store.db.prepare('SELECT 1 FROM memory_job_dependencies WHERE job_id=? AND evidence_id=?').get(jobId,id));
-    this.store.reserveMetadata(Buffer.byteLength(json)+newJobDependencies.reduce((sum,id)=>sum+Buffer.byteLength(jobId)+Buffer.byteLength(id)+64,0));
     for(const id of newJobDependencies)this.store.db.prepare('INSERT OR IGNORE INTO memory_job_dependencies VALUES(?,?)').run(jobId,id);
     this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,jobId,batch.index,json);
     for(const id of dependencies)this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);
@@ -592,7 +590,6 @@ export class MemoryPipeline {
     const dependencies=[...new Set(chunks.flatMap(chunk=>this.options.memories.dependencyIds(chunk.id)))];
     const additions=dependencies.filter(id=>!this.store.db.prepare('SELECT 1 FROM memory_batch_dependencies WHERE batch_id=? AND evidence_id=?').get(batchId,id));
     if(!additions.length)return;
-    this.store.reserveMetadata(additions.reduce((sum,id)=>sum+Buffer.byteLength(batchId)+Buffer.byteLength(id)+64,0));
     for(const id of additions)this.store.db.prepare('INSERT OR IGNORE INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batchId,id);
   }
   private batchScope(_job:MemoryJob,batch:StoredBatch):BatchInputScope {
@@ -752,7 +749,7 @@ export class MemoryPipeline {
       const grouped=new Map<string,ReadyInputScope[]>();for(const scope of ready){const key=JSON.stringify(scope.strategy),items=grouped.get(key)??[];items.push(scope);grouped.set(key,items);}
       const made=this.makeBatches(job,[...grouped.values()].flat()),batches=made.batches;job.skippedChunks=made.skippedChunks;job.evidenceIds=[...new Set(ready.flatMap(plan=>plan.ids))];job.totalBatches=batches.length;
       job.materialInputs=[...new Map(ready.flatMap(scope=>scope.inputs).map(pin=>[JSON.stringify(pin),pin])).values()];job.materialRefs=Object.assign({},...ready.map(scope=>scope.refs));job.authorizedChunks=made.authorizedChunks;
-      this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(job)));db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run(job.id,now,JSON.stringify(job));
+      db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run(job.id,now,JSON.stringify(job));
       for(const batch of batches)this.insertBatch(job.id,batch);
       for(const [index,plan] of plans.entries()){
         const state=states[index];if(state.state==='ready'){plan.resolvedInput=state.pin;plan.batchIds=batches.filter(batch=>batch.planIds?.includes(plan.id)).map(batch=>batch.id);}this.inputPlans.put(plan);
@@ -771,7 +768,7 @@ export class MemoryPipeline {
     if(evidenceIds.length>20000||previousChunks+made.batches.reduce((n,b)=>n+b.chunks.length,0)>10000||nextIndex+made.batches.length>10000)throw new StoreError('Memory job exceeds 10000 batches',413);
     for(const batch of made.batches)this.insertBatch(job.id,batch);
     plan.resolvedInput=state.pin;plan.batchIds=made.batches.map(batch=>batch.id);this.inputPlans.put(plan);
-    const priorBytes=Buffer.byteLength(JSON.stringify(job));job.materialInputs=[...new Map([...job.materialInputs,state.pin].map(pin=>[JSON.stringify(pin),pin])).values()];job.materialRefs={...job.materialRefs,...state.scope.refs};job.authorizedChunks=[...job.authorizedChunks,...made.authorizedChunks];job.evidenceIds=evidenceIds;job.skippedChunks+=made.skippedChunks;job.status='queued';this.store.reserveMetadata(Math.max(0,Buffer.byteLength(JSON.stringify(job))-priorBytes));this.saveJob(job);this.prepare(job.id);
+    job.materialInputs=[...new Map([...job.materialInputs,state.pin].map(pin=>[JSON.stringify(pin),pin])).values()];job.materialRefs={...job.materialRefs,...state.scope.refs};job.authorizedChunks=[...job.authorizedChunks,...made.authorizedChunks];job.evidenceIds=evidenceIds;job.skippedChunks+=made.skippedChunks;job.status='queued';this.saveJob(job);this.prepare(job.id);
   }
   private planView(jobId:string){
     const empty=():MemoryPlanSummary=>({total:0,waiting:0,blocked:0,stale:0,completed:0}),inputPlans=empty(),recipes=new Map<string,MemoryRecipeProgress>(),batchById=new Map(this.batches(jobId).map(batch=>[batch.id,batch]));
@@ -860,7 +857,7 @@ export class MemoryPipeline {
       const batches=this.batches(id);
       if(batches.some(batch=>batch.errorCode==='memory_provider_unknown_result'&&db.prepare("SELECT 1 FROM memory_provider_writes WHERE parent_id=? AND state='submitted'").get(batch.id)))throw new StoreError('Previous Memory publication outcome requires reconciliation before retry',409);
       if(batches.some(batch=>{const fence=db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(batch.id)?.fence;return typeof fence==='string'&&this.engine.isCurrentGrant(batch.id,fence);}))throw new StoreError('Memory job is already running',409);
-      if(this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(job.configuration)));}
+      if(this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
       for(const batch of batches)if(batch.status==='failed'&&batch.errorCode!=='memory_context_required'){
         try{this.admitBatch(job,batch);}catch{batch.status='invalidated';batch.errorCode='evidence_changed';this.saveBatch(batch);continue;}
         if(batch.errorCode==='memory_evaluation_incomplete')this.phaseOutputs.retryReview(batch.id,ownerAction);
@@ -884,7 +881,7 @@ export class MemoryPipeline {
         this.engine.retry(plan.id,ownerAction);
       }
       if(own)db.exec('COMMIT');
-    }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
     const completion=this.run(id);return {job:this.get(id),completion};
   }
   private validateStep(step:ExecutionStep){
@@ -949,7 +946,7 @@ export class MemoryPipeline {
     job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);
     job.runningBatches=Number(counts.running);job.pendingBatches=Number(counts.pending);
     // Actual state changes still use the one private-storage writer (including
-    // retirement/quota checks and Activity ordering). Unchanged observers never
+    // retirement checks and Activity ordering). Unchanged observers never
     // decode, clone, stringify or rewrite the frozen job.
     if(transitioned||JSON.stringify(schedulingFields.map(field=>job[field]))!==before)this.saveJob(Object.assign(this.storedJob(id),job));
     return job;
@@ -1053,7 +1050,7 @@ export class MemoryPipeline {
     const observeCurrent=(update:()=>void):boolean=>{
       const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
       try{if(!currentGrant()||this.batch(batchId).status!=='running'){if(own)db.exec('COMMIT');return false;}update();if(own)db.exec('COMMIT');return true;}
-      catch(error){if(own)db.exec('ROLLBACK');throw error;}
+      catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
     };
     const job=this.storedJob(id),batch=this.batch(batchId),currentSkill=this.options.phases.skillVersion??MEMORY_SKILL_VERSION;
     if(!batch.feedbackOnly&&batch.readRanges===undefined&&this.options.models.capacity?.(job.modelProfileId,job.modelOverride)){
@@ -1086,7 +1083,7 @@ export class MemoryPipeline {
         this.assertConfiguration(job);
         this.admitBatch(job,batch);
         this.assertStrategies(batch);
-        if(job.configuration&&!observeCurrent(()=>{batch.configuration=structuredClone(job.configuration);this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(batch.configuration)));this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
+        if(job.configuration&&!observeCurrent(()=>{batch.configuration=structuredClone(job.configuration);this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
         if(batch.feedbackOnly){
           const members=this.workMembers(job,batch,chunks),coverage:MemoryWorkCoverage=members.map(member=>{const row=batch.coverage?.find(row=>row.key===member.key);if(row?.state!=='needs_context')throw new StoreError('Reviewed context scope changed',409);return {key:member.key,state:'needs_context',candidateIndexes:[],reason:row.reason,contextRefs:row.contextRefs};});
           return await this.planReviewedContext(job,batch,chunks,coverage,signal,observeCurrent,()=>{assertGrant();this.assertStrategies(batch);this.assertConfiguration(job);this.admitBatch(job,batch);if(!this.validMany(processingChunks))throw new StoreError('Reviewed context evidence changed',409);});

@@ -94,7 +94,7 @@ test('explicit references and unread attachments remain dependencies through com
  const {createHash}=await import('node:crypto'),{default:sharp}=await import('sharp'),{buildApp}=await import('../src/app.js');
  const {withFixtureOwnerModelWork}=await import('./fixtures/model-authorization.js');
  const dir=mkdtempSync(join(tmpdir(),'mote-working-c4-lineage-')),token='generated-working-owner',headers={authorization:`Bearer ${token}`};
- const config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  let node!:Awaited<ReturnType<typeof buildApp>>,oldTurn='',observed=false;
  const agent={configured:true,close:async()=>{},query:async(input:QueryInput)=>{
    if(input.skill==='working-memory')return result('GENERATED_SUMMARY_WITH_REFERENCES',input.contextEvidenceDependencies?.ids);

@@ -15,8 +15,8 @@ function fixture(directory: string): Config {
   return {
     dataDir: join(directory, 'archive'), token: 'synthetic-configuration-access-token', tokenPath: join(directory, 'private-token'),
     host: '0.0.0.0', port: 47832, profile: 'test', tokenFromEnvironment: true,
-    dataKey: randomBytes(32).toString('hex'), maxStorageBytes: 23 * 1024 * 1024, maxExportBytes: 4 * 1024 * 1024,
-    retentionDays: 17, insightIntervalHours: 0, allowedOrigins: ['https://app.example.invalid'],
+    dataKey: randomBytes(32).toString('hex'),  maxExportBytes: 4 * 1024 * 1024,
+     insightIntervalHours: 0, allowedOrigins: ['https://app.example.invalid'],
     model: 'synthetic-model-name', modelBaseUrl: 'https://model.example.invalid/v1', apiKey: 'synthetic-agent-private-key',
     modelReasoningEffort: 'high', modelMaxTokens: 4096, modelRequestTimeoutMs: 300000, agentTimeoutMs: 300000, allowUnauthenticatedLocal: false,
     embeddingModel: 'synthetic-embedding-name', embeddingBaseUrl: 'https://embedding.example.invalid/v1', embeddingApiKey: 'synthetic-embedding-private-key',
@@ -39,11 +39,11 @@ test('configuration projection is serializable, preserves effective values and s
   assert.equal(view.baseDir, '/app/deploy'); assert.equal(view.runtime, 'docker'); assert.equal(view.readOnly, true); assert.equal(view.restartRequired, true);
   assert.equal(view.storage.sqlitePath, join(config.dataDir, 'mote.sqlite')); assert.equal(view.storage.assetDir, join(config.dataDir, 'files', 'objects'));
   assert.equal(view.storage.kind, 'docker-volume'); assert.equal(view.storage.source, 'synthetic-private-volume-name'); assert.equal(view.storage.mountPath, '/data');
-  assert.equal(all.get('maxStorageBytes')!.value, 23 * 1024 * 1024); assert.equal(all.get('maxStorageBytes')!.unit, 'bytes'); assert.match(all.get('maxStorageBytes')!.description, /逻辑字节/);
+  assert.equal(all.has('maxStorageBytes'),false);assert.equal(all.has('retentionDays'),false);assert.equal(all.get('maxExportBytes')!.value,4*1024*1024);
   assert.equal(all.get('modelRequestTimeoutMs')!.value,300000); assert.equal(all.get('modelRequestTimeoutMs')!.envVar,'MOTE_MODEL_REQUEST_TIMEOUT_MS');
   assert.equal(all.get('agentTimeoutMs')!.value,300000); assert.equal(all.get('agentTimeoutMs')!.envVar,'MOTE_AGENT_TIMEOUT_MS');
   assert.equal(all.get('agentTraceEnabled')!.value, false); assert.equal(all.get('agentTraceEnabled')!.envVar,'MOTE_AGENT_TRACE_ENABLED');
-  assert.equal(all.get('retentionDays')!.value, 17); assert.equal(all.get('modelMaxTokens')!.value, 4096);
+  assert.equal(all.get('modelMaxTokens')!.value, 4096);
   const allowedSources = new Set(['config-file', 'default', 'derived']);
   for (const field of all.values()) assert.ok(allowedSources.has(field.source), `${field.key} reports ${field.source}`);
   assert.equal(all.get('model')!.source, 'config-file'); assert.equal(all.get('listenPort')!.source, 'default'); assert.equal(all.get('sqlitePath')!.source, 'derived');

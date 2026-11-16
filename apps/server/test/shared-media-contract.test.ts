@@ -20,7 +20,7 @@ test('shared media consumers retain actual HTTP installation failures and recove
  MEDIA_CATALOG.dialogue={version:'generated-contract-v1',files:names.map(name=>({name,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:`https://example.invalid/generated/${name}`}))};
  let node:Awaited<ReturnType<typeof buildApp>>|undefined;
  t.after(async()=>{try{await node?.app.close();}finally{MEDIA_CATALOG.dialogue=prior;await rm(directory,{recursive:true,force:true});}});
- const config:Config={dataDir:join(directory,'data'),token:'generated-shared-media-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://example.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false};
+ const config:Config={dataDir:join(directory,'data'),token:'generated-shared-media-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://example.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false};
  node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:false,close:async()=>{},query:async()=>{throw Error('No model invocation belongs to this installation contract');}})});
  const central=node,assets=central.featureServices.mediaAssets,headers={authorization:`Bearer ${config.token}`},before=central.modelAuthorization.view(),perception=central.perception.settings();
  const view=async()=>{

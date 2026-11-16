@@ -29,7 +29,7 @@ async function fill(d:Document,selector:string,value:string){await act(async()=>
  * private temporary profile. No provider or user profile is consulted. */
 async function fixture(t:TestContext){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-u3-web-'));
-  const config:Config={dataDir,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:Config={dataDir,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected generated model call');},close:async()=>{}}});
   await node.app.ready();
   const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/#/assistant/memory',pretendToBeVisual:true}),d=dom.window.document;
