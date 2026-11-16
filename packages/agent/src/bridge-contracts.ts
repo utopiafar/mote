@@ -19,6 +19,8 @@ export type BridgeToolHandler=(request:BridgeToolRequest,reply:BridgeToolReply)=
  * the Host-owned sender/attempt decides whether `confirm` is ever called. */
 export interface PreparedToolDelivery {
   readonly value: unknown;
+  /** Host-only potential exposure, before sender/ACK eligibility. */
+  readonly nativeExposure?: import('./runtime/dsh/application-contracts.js').NativeApplicationExposure;
   /** One-shot: revalidate authority/signal, then publish the staged ledger. */
   confirm(): void;
   /** One-shot: drop the staged ledger and deferred callbacks. */

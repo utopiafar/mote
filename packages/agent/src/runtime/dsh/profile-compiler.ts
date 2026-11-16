@@ -9,6 +9,7 @@ import type {AgentOptions} from '../../types.js';
 import type {ResolvedRuntimeProfile} from '../contracts.js';
 import type {RuntimeProfileConfiguration} from '../profile.js';
 import {readNativeDshManifest, planNativeDshAssembly, type NativeDshAssemblyEntry} from './native-assembly.js';
+import type {NativeDshApplication} from './application-contracts.js';
 
 export const DSH_RUNTIME_ID = 'mote.runtime.dsh';
 /** Native subagent and child-workflow producers are disabled even when a profile
@@ -50,6 +51,7 @@ export interface NativeDshAssemblyBinding {
   readonly assembly: RuntimeAssembly;
   readonly installedModules: readonly InstalledDshModule[];
   readonly signal: AbortSignal;
+  readonly application?: NativeDshApplication;
   assertCurrent(): void;
 }
 
@@ -113,7 +115,7 @@ export function createRuntimePatch(
   pluginPath: string, model: string, baseUrl?: string,
   reasoningEffort?: AgentOptions['reasoningEffort'], maxTokens = DEFAULT_MODEL_MAX_TOKENS,
   connection: Pick<AgentOptions, 'protocol' | 'provider' | 'requestTimeoutMs' | 'contextWindow'> = {}, systemPrompt = SYSTEM_PROMPT,
-  native: readonly NativeDshAssemblyEntry[] = [],
+  native: readonly NativeDshAssemblyEntry[] = [], application = false,
 ): string {
   validateModelOptions({...connection, model, baseUrl, reasoningEffort, maxTokens});
   if (new Set(native.map(entry => entry.id)).size !== native.length || native.some(entry => entry.id.startsWith('mote-'))) throw new DshProfileError('dsh_profile_invalid');
@@ -124,7 +126,7 @@ export function createRuntimePatch(
     ...(native.some(entry => entry.factory) ? [{id: 'agent-loop', disabled: true}] : []),
     {id: 'system-prompt', config: {includeHarnessIdentity: false, includeRuntimeContext: false, personaPrefix: systemPrompt}},
     ...modelRuntimeEntries({...connection, model, baseUrl, reasoningEffort, maxTokens}),
-    {id: 'sdk-jsonrpc-server', inject: ['sdkAppStartup', 'loader', 'moteReady']},
+    ...(application ? [{id: 'sdk-jsonrpc-server', disabled: true}] : [{id: 'sdk-jsonrpc-server', inject: ['sdkAppStartup', 'loader', 'moteReady']}]),
     {insert: [
       // Mote admits an original by encoded bytes and decoded pixels below. The
       // attachment default of 8192 px per side would reject long screenshots
@@ -135,6 +137,7 @@ export function createRuntimePatch(
       {id: 'mote-skills', name: import.meta.resolve('@deepseek-ai/dsh-skill')},
       ...native.map(entry => ({id: entry.id, name: entry.specifier})),
       {id: 'mote-context', name: pluginPath},
+      ...(application ? [{id: 'mote-application-sdk', name: new URL('./application-sdk.js', import.meta.url).href, inject: ['sdkAppStartup', 'loader', 'moteReady', 'agents', 'sessionPersistence']}] : []),
     ]},
   ], null, 2);
 }

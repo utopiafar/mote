@@ -9,7 +9,7 @@ import {AgentResponseError} from '../../types.js';
 import {ContextToolError} from '../../tool-errors.js';
 import {AgentYieldError} from '../../host-controls.js';
 
-interface ChildConfiguration {url: string; token: string; runId: string; tools: readonly RuntimeToolDefinition[]}
+interface ChildConfiguration {url: string; token: string; runId: string; sessionId?:string; tools: readonly RuntimeToolDefinition[]}
 interface NativeCall {attempt: RuntimeAttempt; name: string; arguments: unknown; consumed: boolean}
 interface RuntimeReceipt {runId: string; attemptId: string; callId: string; payloadFingerprint: string}
 const fingerprint = (payload: RuntimeToolPayload) => createHash('sha256').update(JSON.stringify(payload)).digest('hex');
@@ -28,7 +28,7 @@ export function contextToolPayload(value: unknown): RuntimeToolPayload {
 }
 
 /** Private process transport only. This owns no reader, ledger or data grant. */
-export async function createDshHostChannel(host: HostRunPort) {
+export async function createDshHostChannel(host: HostRunPort, sessionId = host.identity.runId) {
   const token = randomBytes(32).toString('hex');
   let rejectFailure!: (error: Error) => void, closing = false;
   const failurePromise = new Promise<never>((_resolve, reject) => { rejectFailure = reject; }); void failurePromise.catch(() => {});
@@ -69,7 +69,7 @@ export async function createDshHostChannel(host: HostRunPort) {
           await ack.completed;
           res.writeHead(200).end('{}'); return;
         }
-        if (req.url !== '/call' || body.sessionId !== host.identity.runId || !Number.isSafeInteger(body.turn) || body.turn < 0 || typeof body.callId !== 'string' || typeof body.name !== 'string' || Object.keys(body).some(key => !['sessionId', 'turn', 'callId', 'name', 'arguments'].includes(key))) throw failure();
+        if (req.url !== '/call' || body.sessionId !== sessionId || !Number.isSafeInteger(body.turn) || body.turn < 0 || typeof body.callId !== 'string' || typeof body.name !== 'string' || Object.keys(body).some(key => !['sessionId', 'turn', 'callId', 'name', 'arguments'].includes(key))) throw failure();
         const key = keyFor(body.turn, body.callId);
         if (!calls.has(key)) await new Promise<void>(resolve => { const group = waiters.get(key) ?? new Set(); group.add(resolve); waiters.set(key, group); });
         host.assertCurrent(); if (closing) throw failure();
@@ -109,7 +109,7 @@ export async function createDshHostChannel(host: HostRunPort) {
   const address = server.address(); if (!address || typeof address === 'string') throw failure();
   let closed: Promise<void> | undefined;
   return {
-    configuration: {url: `http://127.0.0.1:${address.port}`, token, runId: host.identity.runId, tools: host.tools.definitions} satisfies ChildConfiguration,
+    configuration: {url: `http://127.0.0.1:${address.port}`, token, runId: host.identity.runId, ...(sessionId!==host.identity.runId?{sessionId}:{}), tools: host.tools.definitions} satisfies ChildConfiguration,
     failure: failurePromise,
     bindCall(turn: number, callId: string, name: string, attempt: RuntimeAttempt, args: unknown) {
       if (closing) return;
@@ -155,8 +155,8 @@ export async function applyContextPlugin(ctx: Context) {
       async execute(args, exec) {
         exec.signal.throwIfAborted();
         const event = [...(exec.agent?.session.snapshotEvents() ?? [])].reverse().find(event => event.type === 'tool/call' && event.data.callId === exec.callId);
-        if (!event || event.type !== 'tool/call' || exec.agent?.id !== config.runId) throw failure();
-        const delivered = await call('/call', {sessionId: config.runId, turn: event.data.turn, callId: exec.callId, name: tool.name, arguments: args}, exec.signal) as {id: string; receipt: RuntimeReceipt; payload: RuntimeToolPayload};
+        if (!event || event.type !== 'tool/call' || exec.agent?.id !== (config.sessionId??config.runId)) throw failure();
+        const delivered = await call('/call', {sessionId: config.sessionId??config.runId, turn: event.data.turn, callId: exec.callId, name: tool.name, arguments: args}, exec.signal) as {id: string; receipt: RuntimeReceipt; payload: RuntimeToolPayload};
         try {
           if (delivered.receipt.runId !== config.runId || delivered.receipt.callId !== exec.callId || delivered.receipt.payloadFingerprint !== fingerprint(delivered.payload)) throw failure();
           const attachments = [];

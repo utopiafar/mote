@@ -4,12 +4,20 @@ import {DshProfileError, readNativeDshManifest, type InstalledDshModule, type Na
 import {RuntimeSelectionError} from '@mote/agent/runtime/profile';
 import {dshAssemblyReferences, dshInstanceKey, type DshConfiguration} from './dsh-configuration.js';
 import {StoreError} from './store.js';
+import type {StateStore} from '@mote/plugin-api';
+import type {QueryInput} from '@mote/agent';
+import {openNativeApplication} from './dsh-application.js';
+import type {Store} from './store.js';
+import {nativeOutputPublisher} from './dsh-native-outputs.js';
+import type {SourceStore} from './sources.js';
+import type {ArchivedFileStore} from './archived-files.js';
 
 /** The installed Host scope supplies artifact paths and activation authority.
  * Installation/check supplies no native grant: that comes only from the owner. */
 export interface InstalledDshAuthority {
   readonly module: Omit<InstalledDshModule, 'grantedCapabilities'>;
   readonly signal: AbortSignal;
+  readonly applicationState?:StateStore;
   assertCurrent(): void;
 }
 export type InstalledDshResolver = (reference: RuntimeModuleReference) => Promise<InstalledDshAuthority | undefined>;
@@ -40,11 +48,11 @@ export async function dshSelectionBoundary<T>(work: () => Promise<T>): Promise<T
 
 /** A registry adapter can outlive an installed activation. Resolve fresh scopes
  * for every query, then pin those scopes until tool/output delivery has ended. */
-export function nativeDshSource(configuration: DshConfiguration, modelProfileId: string, revision: number, resolve: InstalledDshResolver): (() => Promise<NativeDshAssemblyBinding>) | undefined {
+export function nativeDshSource(configuration: DshConfiguration, modelProfileId: string, revision: number, resolve: InstalledDshResolver,applicationServices?:{store:Store;sources:SourceStore;archivedFiles:ArchivedFileStore}): ((input?:QueryInput) => Promise<NativeDshAssemblyBinding>) | undefined {
   const configured = configuration.profiles.find(profile => profile.modelProfileId === modelProfileId);
   if (!configured) return undefined;
   const profile = structuredClone(configured);
-  return async () => {
+  return async (input) => {
     const authorities: InstalledDshAuthority[] = [], installedModules: InstalledDshModule[] = [];
     const assertCurrent = () => { for (const authority of authorities) { authority.signal.throwIfAborted(); authority.assertCurrent(); } };
     for (const reference of dshAssemblyReferences(profile.assembly)) {
@@ -56,6 +64,11 @@ export function nativeDshSource(configuration: DshConfiguration, modelProfileId:
       installedModules.push(module);
     }
     assertCurrent();
-    return {revision, assembly: structuredClone(profile.assembly), installedModules, signal: AbortSignal.any(authorities.map(authority => authority.signal)), assertCurrent};
+    const context=profile.application&&input?.nativeApplicationContext?.();
+    if(profile.application&&input&&!context&&input.executionLane==='interactive'&&!input.taskContext&&(!input.responseMode||input.responseMode==='answer'))throw new StoreError('Native application interactions require an admitted conversation message',409);
+    const primary=profile.application&&authorities.find(authority=>dshInstanceKey(authority.module.reference.contribution.instance)===dshInstanceKey(profile.application!.instance));
+    if(context&&(!applicationServices||!primary?.applicationState))throw new StoreError('Native application persistence is unavailable',409);
+    const application=context&&openNativeApplication({store:applicationServices!.store,state:primary!.applicationState!,profile,context,assertCurrent,publish:nativeOutputPublisher(applicationServices!.sources,applicationServices!.archivedFiles)});
+    return {revision, assembly: structuredClone(profile.assembly), installedModules, signal: AbortSignal.any(authorities.map(authority => authority.signal)), assertCurrent,...(application?{application}:{})};
   };
 }

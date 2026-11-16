@@ -36,6 +36,7 @@ import type {Conversations} from '../conversations.js';
 import type {ObservabilityAssembly} from './observability-platform.js';
 import {assistantDraftScope,type AssistantDrafts} from '../assistant-drafts.js';
 import {centralServices,type QueryDomain} from './central-contracts.js';
+import {nativeApplicationContext} from '../dsh-application-context.js';
 
 /** C27 owns admitted model runs and the insight entry. Routes and preparation
  * are contributed by the same query domain activation. */
@@ -66,7 +67,7 @@ export interface QueryRuntimeDependencies {
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
   readonly sourceContexts:SourceContextStore;
-  readonly conversations:Pick<Conversations,'assertHistoryContext'>;
+  readonly conversations:Pick<Conversations,'assertHistoryContext'|'message'|'messageForRun'>;
   readonly assistantDrafts:Pick<AssistantDrafts,'capabilities'|'issue'>;
 }
 
@@ -208,6 +209,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       assertMemoryPins();
       if(observed.conversation?.historyContext)conversations.assertHistoryContext(observed.conversation.historyContext);
     };
+    observed.nativeApplicationContext=()=>nativeApplicationContext(observed,{store,conversations,assertModelEvidence});
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed,runLease).then(result=>{
       taskSignal?.throwIfAborted();
