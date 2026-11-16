@@ -44,7 +44,10 @@ function fakeLark(){
   const offset=Number(command.pageToken?.replace('offset-','')??0),items=entries.slice(offset,offset+Math.min(command.pageSize??50,state.providerPageSize));
   const next=offset+items.length<entries.length?'offset-'+(offset+items.length):undefined;
   const body={items,has_more:Boolean(next),...(next?{page_token:next}:{})};
-  return json({data:api.pageResult?.(command,body)??body});
+  // v1.0.98's generic api command decodes RawBody into a map and emits the
+  // business data in this envelope; it does not marshal ListMessageRespData.
+  // https://github.com/larksuite/cli/blob/v1.0.98/internal/client/response.go
+  return json({ok:true,identity:'user',data:api.pageResult?.(command,body)??body});
  };
  return api;
 }
@@ -172,6 +175,13 @@ for(const phase of ['chat','thread'])for(const shape of ['omitted','null','empty
  const f=await fixture(t),root=message(0,{...(phase==='thread'?{thread_id:'omt_generated_terminal'}:{})});f.transport.state.messages=[root];if(phase==='thread')f.transport.threads.set('omt_generated_terminal',[root,message(1,{thread_id:'omt_generated_terminal',root_id:root.message_id,parent_id:root.message_id})]);
  f.transport.pageResult=(command,body)=>{if((phase==='chat'?command.kind==='im-messages':command.kind==='im-thread-messages')&&body.has_more===false){if(shape==='omitted')delete body.page_token;else body.page_token=shape==='null'?null:'';}return body;};
  await f.sync();assert.equal(f.scan().complete,true);assert.equal(f.scan().processed,phase==='thread'?2:1);assert.equal(f.node.sources.getSource(f.source().id).status?.coverage?.state,'complete');
+});
+
+for(const phase of ['chat','thread'])test(`Feishu ${phase} completes an explicit false terminal page with items [] through the fixed CLI map envelope`,async t=>{
+ const f=await fixture(t);
+ if(phase==='thread'){const root=message(0,{thread_id:'omt_generated_empty'});f.transport.state.messages=[root];f.transport.threads.set('omt_generated_empty',[]);}
+ let empty=false;f.transport.pageResult=(command,body)=>{if(phase==='chat'?command.kind==='im-messages':command.kind==='im-thread-messages'){assert.deepEqual(body,{items:[],has_more:false});empty=true;}return body;};
+ await f.sync();assert.equal(empty,true);assert.equal(f.scan().complete,true);assert.equal(f.scan().processed,phase==='thread'?1:0);assert.equal(f.scan().completeThrough,f.scan().window.to);assert.equal(f.node.sources.getSource(f.source().id).status?.coverage?.state,'complete');
 });
 
 for(const failure of ['missing_items','missing_more','missing_token','bad_token','conflict','repeat','cycle'])test(`Feishu ${failure} stays partial with a bounded recovery position`,async t=>{

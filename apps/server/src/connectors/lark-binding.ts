@@ -213,8 +213,10 @@ export function createLarkBinding(options:{runner:LarkRunner}):LarkBinding {
       // No per-message CLI probes, account store or credential copy is added.
       await status();current();runOptions?.authorize?.();
     }
-    // A terminal page may omit/null/empty its token. A nonempty continuation
-    // conflicts with false; true requires a usable next token.
+    // The message/list contract returns page_token for has_more=true, otherwise
+    // no continuation. Allow absent/null/empty terminal tokens, not a nonempty
+    // token conflicting with false. The fixed CLI decodes RawBody into a map;
+    // it does not apply the SDK model's omitempty to has_more or items: [].
     const token=value?.page_token;
     if(!Array.isArray(value?.items)||value.items.some(item=>!item||typeof item!=='object'||Array.isArray(item))||typeof value.has_more!=='boolean'||token!=null&&typeof token!=='string'||value.has_more&&(!token||typeof token!=='string')||!value.has_more&&Boolean(token))throw new ConnectorError('lark_im_response_invalid',502);
     return {items:value.items as Record<string,unknown>[],hasMore:value.has_more,...(value.has_more?{pageToken:token as string}:{})};
