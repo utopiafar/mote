@@ -1,3 +1,4 @@
+import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import {memorySchema} from '../src/memory-schema.js';
 import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
 import test from 'node:test';
@@ -229,7 +230,7 @@ test('Coding append retains an active prefix anchor under the current Material s
   t.after(async()=>{await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'prefix-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'coding-device',platform:'import'});
   const id=materialId('prefix-coding','session'),member={id:'archive-member',kind:'archive',ref:'archive:prefix-coding/session'};
-  const base={id,kind:'mote.coding-session',schemaVersion:6,title:'Generated session',
+  const base={id,kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,title:'Generated session',
     origin:{sourceId:'prefix-coding',externalId:'session',deviceId:'coding-device',firstAt:'2026-09-20T00:00:00.000Z',
       lastAt:'2026-09-20T00:00:00.000Z',provider:'codex',projectKey:'generated-project',sessionId:'session'},
     members:[member],coverage:{state:'partial' as const},fidelity:{state:'derived' as const},retention:{original:'retained' as const,policy:'keep' as const}};

@@ -86,7 +86,8 @@ function parseSelection(raw) {
     const id = text(value?.id), type = text(value?.type);
     if (!id || id.length > 200 || !['channel', 'im', 'mpim'].includes(type) || identities.has(id)) throw new SlackError('slack_input_invalid', 400);
     identities.add(id);
-    selected.push({id, type});
+    if (value.initialSync !== undefined && !['all', 'new_only'].includes(value.initialSync)) throw new SlackError('slack_input_invalid', 400);
+    selected.push({id, type, ...(value.initialSync !== undefined ? {initialSync: value.initialSync} : {})});
   }
   return selected;
 }
@@ -141,9 +142,14 @@ const connector = {
       readOnly: true,
       readScopesOk: readScopesOk(),
       sendAuthorized: Boolean(sendToken()) && sendScopesOk(),
+      ...(doc.read?.teamId && doc.read?.userId ? {accountId: hash(JSON.stringify([doc.read.teamId, doc.read.userId]))} : {}),
       ...(doc.read?.userName ? {user: doc.read.userName} : {}),
       ...(doc.read?.teamName ? {team: doc.read.teamName} : {}),
-      selected: Array.isArray(doc.selected) ? doc.selected.map(item => ({id: item.id, type: item.type, name: item.name})) : [],
+      selected: Array.isArray(doc.selected) ? doc.selected.map(item => {
+        let source;
+        try { source = ctx.sources.getSource(sourceId(item.id)); } catch { /* A selection can exist before its source. */ }
+        return {id: item.id, type: item.type, name: item.name, sourceId: sourceId(item.id), initialSync: source?.initialSync ?? 'all'};
+      }) : [],
       state: closed ? 'closed' : state,
       ...(code ? {code} : {}),
       ...(doc.lastSyncAt ? {lastSyncAt: doc.lastSyncAt} : {}),
@@ -190,10 +196,9 @@ const connector = {
           id, name: sourceName(item), kind: SOURCE_KIND, deviceId: DEVICE_ID,
           platform: 'import', retention: 'snapshot', enabled: true,
         });
-        try {
-          // A paused single source stays paused; a newly selected one is enabled.
-          ctx.sources.update(id, {name: sourceName(item), ...(enable ? {enabled: true} : {})});
-        } catch { /* Registration already failed above when identity changed. */ }
+        // A paused single source stays paused; a newly selected one is enabled.
+        // A failed write must not be reported as a successfully saved scope.
+        ctx.sources.update(id, {name: sourceName(item), ...(enable ? {enabled: true} : {})});
       }
     };
 
@@ -678,15 +683,24 @@ const connector = {
               firstSyncAt: prior.get(match.id)?.firstSyncAt ?? now(),
             };
           });
+          for (const request of selection) if (request.initialSync !== undefined) {
+            const item = chosen.find(value => value.id === request.id), id = sourceId(item.id);
+            ctx.sources.register({id, name: sourceName(item), kind: SOURCE_KIND, deviceId: DEVICE_ID, platform: 'import', retention: 'snapshot', enabled: false, initialSync: request.initialSync});
+            ctx.sources.update(id, {enabled: false, initialSync: request.initialSync});
+          }
           const keep = new Set(chosen.map(item => item.id));
           for (const previous of doc.selected) {
             if (keep.has(previous.id)) continue;
             try {
               ctx.sources.update(sourceId(previous.id), {enabled: false});
-            } catch { /* A removed historical source is already stopped. */ }
+            } catch (error) {
+              // Only an actually missing source is already stopped.
+              if (error?.statusCode !== 404) throw error;
+            }
           }
-          doc.selected = chosen;
-          await persist();
+          const previous = doc;
+          doc = {...doc, selected: chosen};
+          try { await persist(); } catch (error) { doc = previous; throw error; }
           ensureSources();
           schedule();
           return {status: status(), selected: status().selected};

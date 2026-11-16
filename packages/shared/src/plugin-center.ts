@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import type {UiLayoutProfile,UiThemePack} from './ui-presentation.js';
 
 /** Owner control-plane views. Captured content and query tools never authorize
  * these commands. Runtime health is separate from installation and intent. */
@@ -30,6 +31,15 @@ export type PluginPackageView={id:string;name:string;version:string;source:Plugi
 export type PluginInstanceView={id:string;packageId:string;name:string;revision:number;scope:string;configurationSchema:PluginConfigurationField[];configuration:Record<string,string|number|boolean>;secretStatus:Record<string,boolean>;capabilities:PluginCapability[];desired:boolean;observed:string;issues:string[];allowedActions:PluginAction[]};
 export type PluginReleasePreview={id:string;name:string;version:string;source:PluginSource;runtime:'worker'|'service';restartRequired:boolean;capabilities:PluginCapability[];dependencies:string[];access:string[];issues:string[];installable:boolean};
 export type PluginCenterView={revision:number;installation:{supported:boolean;reason?:string;runtime:'worker'|'service';restartRequired:boolean};packages:PluginPackageView[];instances:PluginInstanceView[];builds?:PluginBuildView[];catalog:PluginCatalogEntry[];sourceContributions?:PluginSourceContribution[]};
+/** Owner-only, validated presentation inventory. Absence withdraws an instance;
+ * activationId changes on every restart, independently of package identity. */
+export type PluginPresentationInstance={
+  packageId:string;packageVersion:string;installationId:string;instanceId:string;activationId:string;releaseDigest:string;name:string;
+  pages:{id:string;version:string;title:string;entryUrl:string;methods:string[]}[];
+  themes:{contributionId:string;pack:UiThemePack}[];
+  layouts:{contributionId:string;pack:UiLayoutProfile}[];
+};
+export type PluginPresentationInventory={instances:PluginPresentationInstance[]};
 export type PluginBuildSelection={packageId:string;version:string;configurationRevision:number};
 export type PluginBuildObserved='queued'|'starting'|'active'|'stopped'|'blocked'|'restart_required'|'draining';
 /** One build projection shared by trusted native builds and downloaded worker

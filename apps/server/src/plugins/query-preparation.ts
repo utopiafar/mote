@@ -97,7 +97,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
         const page=await readCurrentMemoryPage(memoryReader,{
           kind:scope.evidenceIds!==undefined||sourceIds!==undefined?'selection':'all',...(sourceIds!==undefined?{sourceIds}:{}),...(scope.evidenceIds!==undefined?{evidenceIds:scope.evidenceIds}:{}),
           ...(scope.after?{after:scope.after}:{}),...(scope.before?{before:scope.before}:{}),...(scope.deviceId?{deviceId:scope.deviceId}:{}),
-        },{id:args.id,query:args.query,tier:args.tier,kind:args.kind,layer:args.layer,asOf:args.asOf,cursor:args.cursor,limit:args.limit,level:args.id?'detail':'overview'});
+        },{id:args.id,query:args.query,contextPriority:args.contextPriority,tier:args.tier,kind:args.kind,layer:args.layer,asOf:args.asOf,cursor:args.cursor,limit:args.limit,level:args.id?'detail':'overview'});
         if(!archiveReader.memories)return {...page,items:[]};
         // Retain the existing per-run disclosure policy as well as the new
         // exact-selection filter; neither an archive row nor a scope grants it.
@@ -117,7 +117,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
       systemTokens:estimateSerializedTokens(assembled.system).tokens,toolSchemaTokens:estimateSerializedTokens(assembled.tools).tokens*2+512,
       currentInputTokens:estimateSerializedTokens(assembled.prompt).tokens,toolReserveTokens:Math.min(1024,Math.floor(modelBudget.contextWindow*0.05)),historyTokens:0,
     }});
-    if(budget.request.currentInputExceedsBudget||budget.reserves.total>budget.contextWindow)throw new StoreError('Current input or required reserves exceed the context budget',413);
+    if(budget.request.currentInputExceedsBudget||budget.reserves.total>budget.contextWindow)throw Object.assign(new StoreError('Current input or required reserves exceed the context budget',413),{diagnostic:{source:'runtime',stage:'validation',code:'contextWindowExceeded'}});
     const scopedConversation=()=>{
       if(!scopedPrevious)return undefined;
       const characters=Math.max(0,Math.min(lifecycleSettings().contextCharacters-question.length,budget.history.target));
