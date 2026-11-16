@@ -472,7 +472,7 @@ export class MemoryPipeline {
       for(const id of dependencies)this.store.db.prepare('INSERT OR IGNORE INTO memory_job_dependencies VALUES(?,?)').run(job.id,id);
       for(const batch of batches){this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,job.id,batch.index,batchJson[batches.indexOf(batch)]);for(const id of new Set(batch.chunks.flatMap(chunk=>this.options.memories.dependencyIds(chunk.id))))this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);}
       if(own)this.store.db.exec('COMMIT');
-    }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK');}}throw error;}
     return this.get(job.id);
   }
   private makeBatches(job:MemoryJob,plans:ReadyInputScope[],evidenceRanges?:EvidenceRange[],startIndex=0,contextEvidenceRanges?:EvidenceRange[]){
@@ -881,7 +881,7 @@ export class MemoryPipeline {
         this.engine.retry(plan.id,ownerAction);
       }
       if(own)db.exec('COMMIT');
-    }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
     const completion=this.run(id);return {job:this.get(id),completion};
   }
   private validateStep(step:ExecutionStep){
@@ -1050,7 +1050,7 @@ export class MemoryPipeline {
     const observeCurrent=(update:()=>void):boolean=>{
       const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
       try{if(!currentGrant()||this.batch(batchId).status!=='running'){if(own)db.exec('COMMIT');return false;}update();if(own)db.exec('COMMIT');return true;}
-      catch(error){if(own)db.exec('ROLLBACK');throw error;}
+      catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
     };
     const job=this.storedJob(id),batch=this.batch(batchId),currentSkill=this.options.phases.skillVersion??MEMORY_SKILL_VERSION;
     if(!batch.feedbackOnly&&batch.readRanges===undefined&&this.options.models.capacity?.(job.modelProfileId,job.modelOverride)){

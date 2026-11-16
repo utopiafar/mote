@@ -144,7 +144,7 @@ export class ProcessingRuntime {
       const operationId='workflow:'+fingerprint(jobs.map(j=>j.id).sort());
       for(const job of jobs)this.engine.enqueue(operationId,'context-dag.'+job.lane,{jobId:job.id},{id:job.id,dependencies:job.dependencies});
       db.exec(own?'COMMIT':'RELEASE processing_enqueue');return Object.fromEntries(ids);
-    }catch(error){if(own)db.exec('ROLLBACK');else db.exec('ROLLBACK TO processing_enqueue; RELEASE processing_enqueue');throw error;}
+    }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}else {if(db.isTransaction){db.exec('ROLLBACK TO processing_enqueue; RELEASE processing_enqueue');}}throw error;}
   }
   /** Only a configured source publication creates these durable, independently recoverable requests. */
   observeProducts(ref:string,bindingIds:readonly string[]){

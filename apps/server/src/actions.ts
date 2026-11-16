@@ -322,7 +322,7 @@ export class Actions {
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');try{
     const changes=this.store.updates(this.meta('cursor',0),200);for(const row of changes.items)if(row.operation==='upsert')this.enqueue(row.id);this.setMeta('cursor',changes.nextCursor);
     const chunks=this.store.db.prepare('SELECT seq,id FROM action_chunk_changes WHERE seq>? ORDER BY seq LIMIT 200').all(this.meta('chunkCursor',0)) as {seq:number;id:string}[];for(const r of chunks)this.enqueue(r.id);if(chunks.length){this.setMeta('chunkCursor',chunks.at(-1)!.seq);this.store.db.prepare('DELETE FROM action_chunk_changes WHERE seq<=?').run(chunks.at(-1)!.seq);}
-    db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
+    db.exec('COMMIT');}catch(error){if(db.isTransaction){db.exec('ROLLBACK');}throw error;}
   }
   private async sharedCues(jobs:Job[],operationId:string){
     const ranges:{id:string;offset:number;length:number}[]=[],cues:unknown[]=[],refs:{id:string;revision:string}[]=[];

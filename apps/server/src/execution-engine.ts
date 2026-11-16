@@ -128,7 +128,7 @@ export class ExecutionEngine {
    for(const key of new Set(handler.resourceKeys?.(step)??[]))if(!db.prepare('SELECT 1 FROM execution_resources WHERE step_id=? AND resource_key=?').get(id,key)){db.prepare('INSERT INTO execution_resources VALUES(?,?)').run(id,key);}
    for(const dep of options.dependencies??[])db.prepare('INSERT OR IGNORE INTO execution_dependencies VALUES(?,?)').run(id,dep);
    linkOperation(this.store,operationId,id,options);handler.project?.(this.get(id)!);if(own)db.exec('COMMIT');return id;
-  }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+  }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
  }
  get(id:string){const row=this.store.db.prepare('SELECT * FROM execution_steps WHERE id=?').get(id) as Row|undefined;return row?view(row):undefined;}
  failure(id:string):ExecutionFailureReceipt|undefined {const row=this.store.db.prepare('SELECT json FROM execution_failures WHERE step_id=?').get(id);return row?JSON.parse(String(row.json)):undefined;}
@@ -182,7 +182,7 @@ export class ExecutionEngine {
   if(!/^[a-z][a-z0-9_]{0,80}$/.test(code))throw new StoreError('Invalid execution failure code',400);
   const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
   try{if(db.prepare("UPDATE execution_steps SET state='failed',fence=NULL,error=?,updated_at=? WHERE id=? AND state NOT IN ('succeeded','failed','cancelled','stale')").run(code,this.now(),id).changes){const step=this.get(id)!;this.retainFailure(step,'failed',new ExecutionFailure('permanent',code),context?retainFailureContext(new Error(),context):undefined);}this.project(id);if(own)db.exec('COMMIT');}
-  catch(error){if(own)db.exec('ROLLBACK');throw error;}
+  catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
   this.active.get(id)?.controller.abort();
  }
  cancelKind(kind:string){for(;;){const rows=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state NOT IN ('succeeded','cancelled','stale') LIMIT 500").all(kind);if(!rows.length)return;for(const row of rows)this.cancel(String(row.id));}}

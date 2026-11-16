@@ -267,7 +267,7 @@ export class FileStore {
             const resumed=this.store.db.prepare("UPDATE file_jobs SET state='waiting',attempts=0,available_at=0,error=NULL WHERE capture_id=? AND error='snapshot_input_expired' AND state='blocked'").run(prior.capture_id);
             if(resumed.changes)this.snapshotInputResupplied?.(prior.capture_id);
             const ack=onCommit(prior.capture_id);if(own)this.store.db.exec('COMMIT');return ack;
-          }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
+          }catch(error){if(own){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK');}}throw error;}
         }
         return {id:prior.capture_id,captureId:prior.capture_id,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:prior.object_hash,sha256:input.sha256,sizeBytes:input.sizeBytes,duplicate:true};
       }

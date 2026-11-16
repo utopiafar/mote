@@ -123,7 +123,7 @@ export class AssistantMatters {
   private transaction<T>(run:()=>T):T{
     const db=this.store.db;db.exec('SAVEPOINT assistant_matters_write');
     try{const value=run();db.exec('RELEASE assistant_matters_write');return value;}
-    catch(error){db.exec('ROLLBACK TO assistant_matters_write; RELEASE assistant_matters_write');throw error;}
+    catch(error){if(db.isTransaction){db.exec('ROLLBACK TO assistant_matters_write; RELEASE assistant_matters_write');}throw error;}
   }
   private row(id:string):MatterRow{
     const row=this.store.db.prepare('SELECT * FROM assistant_matters WHERE id=?').get(id) as MatterRow|undefined;

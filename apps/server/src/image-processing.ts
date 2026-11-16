@@ -131,7 +131,7 @@ export class ImageProcessing {
    db.prepare("UPDATE perception_jobs SET state='skipped',error=? WHERE capture_id=?").run(APPLEDOUBLE_REASON,row.capture_id);
    db.prepare("UPDATE file_jobs SET state='skipped',stage='archive',summary_state='skipped',error=?,auto_eligible=0 WHERE capture_id=?").run(APPLEDOUBLE_REASON,row.capture_id);
    if(own)db.exec('COMMIT');return true;
-  }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+  }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
  }
  private original(row:ImageInputRow){return this.inputs.get(row.adapter)?.resolve(row);}
  private binding(row:ImageInputRow){return this.processing.imageConfiguration(row.source_id,row.mime,row.override_id??undefined,row.policy_json?JSON.parse(row.policy_json):undefined);}
@@ -475,7 +475,7 @@ export class ImageProcessing {
    db.exec('BEGIN IMMEDIATE');try{let queued=0;for(const item of rows){
     const id=String(item.capture_id);if(!this.store.isCurrentEvidence(id)||this.processing.modelIntent(id,'image')!==(item.intent_id===null?undefined:String(item.intent_id)))continue;
     try{if(this.retryImage(id,query.mode==='recompute',false,false).queued)queued++;}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;}
-   }db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
+   }db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){if(db.isTransaction){db.exec('ROLLBACK');}throw error;}
   }
  }
  close(){return this.closing??=(async()=>{this.closed=true;this.processing.imageControl=undefined;await this.attachments.close();await Promise.all(this.unregister.splice(0).map(dispose=>dispose()));this.disposeInputs();await this.probe;})();}

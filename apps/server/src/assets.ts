@@ -43,7 +43,7 @@ export class AssetStore {
      CREATE TRIGGER IF NOT EXISTS asset_${table}_delete AFTER DELETE ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; END;
      CREATE TRIGGER IF NOT EXISTS asset_${table}_update AFTER UPDATE OF ${hash} ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; INSERT OR REPLACE INTO asset_references SELECT ${qualify('new')},new.${hash} WHERE new.${hash} IS NOT NULL; END;`);
     if(own)db.exec('COMMIT');
-   }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+   }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
   }
 
  }
@@ -130,7 +130,7 @@ export class AssetStore {
     db.prepare("INSERT INTO assets VALUES(?,?,?,'chunks') ON CONFLICT(hash) DO UPDATE SET parts=excluded.parts,format='chunks'").run(hash,size,part);
     for(const [index,checksum] of checksums.entries())db.prepare('INSERT INTO asset_parts VALUES(?,?,?) ON CONFLICT(hash,part) DO UPDATE SET checksum=excluded.checksum').run(hash,index,checksum);
     release=this.hold(hash);authorize?.();if(own)db.exec('COMMIT');
-   }catch(error){if(own)db.exec('ROLLBACK');release?.();if(installed)rmSync(join(this.directory,hash),{recursive:true,force:true});throw error;}
+   }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}release?.();if(installed)rmSync(join(this.directory,hash),{recursive:true,force:true});throw error;}
    return {hash,bytes:size,parts:part,format:'chunks',release:release!};
   }finally{rmSync(staging,{recursive:true,force:true});}
  }
@@ -157,6 +157,6 @@ export class AssetStore {
   }
   for(const name of readdirSync(this.directory))if(/^[a-f0-9]{64}(?:\.[a-f0-9-]+\.tmp)?$/.test(name)&&!this.store.db.prepare('SELECT 1 FROM assets WHERE hash=?').get(name)&&!this.store.db.prepare('SELECT 1 FROM asset_pins WHERE hash=?').get(name.split('.')[0])){const path=join(this.directory,name);if(/^[a-f0-9]{64}$/.test(name)||now-statSync(path).mtimeMs>3600000)rmSync(path,{recursive:true,force:true});}
   if(own)db.exec('COMMIT');return removed;
-  }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+  }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
  }
 }

@@ -74,7 +74,7 @@ export class MemoryInputAuthorization {
     if(selected.some(grant=>!this.available(grant.sourceId,grant.inputKey,jobId,grant.scope)))return false;
     this.store.db.exec('SAVEPOINT memory_package_claim');
     try{for(const grant of selected)if(!this.claim(grant.sourceId,grant.inputKey,jobId,grant.scope)){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');return false;}this.store.db.exec('RELEASE memory_package_claim');return true;}
-    catch(error){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');throw error;}
+    catch(error){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');}throw error;}
   }
   /** Revalidation requires an actual durable claim by this exact job, not a caller-supplied tuple alone. */
   assertClaimed(raw:AutomaticMemoryGrant,jobId:string):void {

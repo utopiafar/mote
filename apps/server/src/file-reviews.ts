@@ -132,7 +132,7 @@ export class FileReviews {
         this.files.store.invalidateConversationAnswers(priorChunks.filter(chunkId=>db.prepare('SELECT artifact_id FROM file_chunks WHERE id=?').get(chunkId)?.artifact_id!==artifactId));
       }
       db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(id,new Date().toISOString());db.exec('COMMIT');
-    }catch(error){db.exec('ROLLBACK');throw error;}
+    }catch(error){if(db.isTransaction){db.exec('ROLLBACK');}throw error;}
     if(transcript)this.processing.refreshSummaryReceipt(id);
     return {status:'accepted',artifactId};
   }
@@ -152,7 +152,7 @@ export class FileReviews {
       const affected=db.prepare("SELECT id FROM file_chunks WHERE artifact_id=? AND json_extract(metadata,'$.speaker') IN (SELECT value FROM json_each(?))").all(current.artifactId,JSON.stringify(changed));
       for(const chunk of affected){const chunkId=String(chunk.id);this.files.store.invalidateMemoryEvidence(chunkId);db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(chunkId,confirmedAt);}
       db.exec('COMMIT');
-    }catch(error){db.exec('ROLLBACK');throw error;}
+    }catch(error){if(db.isTransaction){db.exec('ROLLBACK');}throw error;}
     this.processing.refreshSummaryReceipt(id);
     return {saved:true};
   }

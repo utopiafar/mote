@@ -98,7 +98,7 @@ export class AssistantActions {
     db.prepare('INSERT INTO assistant_action_links VALUES(?,?,?,?,?,?)').run(input.taskId,input.index,source.matterId,draft.kind,id,hash);
    }
    const result=this.get(input.taskId,input.scope);db.exec('RELEASE assistant_action_command');return result;
-  }catch(error){db.exec('ROLLBACK TO assistant_action_command; RELEASE assistant_action_command');throw error;}
+  }catch(error){if(db.isTransaction){db.exec('ROLLBACK TO assistant_action_command; RELEASE assistant_action_command');}throw error;}
  }
 }
 

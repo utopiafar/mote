@@ -33,7 +33,7 @@ export class WorkingMemory {
       db.prepare('DELETE FROM working_memories WHERE id=?').run(id);
       db.prepare('UPDATE conversations SET json=? WHERE id=?').run(json,id);
       db.exec('RELEASE reset_working_context');return next;
-    }catch(error){db.exec('ROLLBACK TO reset_working_context; RELEASE reset_working_context');throw error;}
+    }catch(error){if(db.isTransaction){db.exec('ROLLBACK TO reset_working_context; RELEASE reset_working_context');}throw error;}
   }
   private fingerprint(conversation:Conversation,startSeq:number,coveredThroughSeq:number){
     return sha256(JSON.stringify([startSeq,coveredThroughSeq,conversation.turns.filter(turn=>turn.seq>=startSeq&&turn.seq<=coveredThroughSeq)]));
@@ -183,7 +183,7 @@ export class WorkingMemory {
         const json=JSON.stringify({text:summaryText,coveredThroughSeq,contextVersion:state.version,generatedAt:new Date().toISOString(),fingerprint,evidenceDependencies,...(sourceContextDependencies.length?{sourceContextDependencies}:{})} satisfies Summary);
         db.prepare('INSERT INTO working_memories VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(conversation.id,json);
         db.exec('RELEASE commit_working_summary');
-      }catch(error){db.exec('ROLLBACK TO commit_working_summary; RELEASE commit_working_summary');throw error;}
+      }catch(error){if(db.isTransaction){db.exec('ROLLBACK TO commit_working_summary; RELEASE commit_working_summary');}throw error;}
     };
     if(execution)execution.commit(commit);else commit();
   }

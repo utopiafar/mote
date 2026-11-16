@@ -120,14 +120,13 @@ export class AutomaticTopics {
       const json=JSON.stringify(batch);
       // Synchronous publication: no await between the final fences and commit.
       fence();this.assertInputs(memories);
-      const previousHead=this.store.db.prepare('SELECT operation_id FROM context_topic_heads WHERE snapshot_key=?').get(snapshotKey);
 
       this.store.db.exec('SAVEPOINT context_topic_publish');
       try{
         this.store.db.prepare('INSERT INTO context_topic_batches VALUES (?,?)').run(operationId,json);
         this.store.db.prepare('INSERT INTO context_topic_heads VALUES (?,?) ON CONFLICT(snapshot_key) DO UPDATE SET operation_id=excluded.operation_id').run(snapshotKey,operationId);
         this.store.db.exec('RELEASE context_topic_publish');
-      }catch(error){this.store.db.exec('ROLLBACK TO context_topic_publish; RELEASE context_topic_publish');throw error;}
+      }catch(error){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK TO context_topic_publish; RELEASE context_topic_publish');}throw error;}
       this.failed=false;return {state:'completed' as const};
     }catch(error){if(!signal.aborted)this.failed=true;throw error;}finally{this.active.delete(operationId);if(heldSnapshot)this.activeSnapshots.delete(heldSnapshot);}
   }

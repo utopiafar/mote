@@ -303,7 +303,7 @@ export class DeveloperAccessHost {
       if(deliveries.length)this.wake();
       if(++this.recorded%100===0)this.prune();
     }catch(error){
-      try{if(nested)db.exec(`ROLLBACK TO ${name}; RELEASE ${name}`);else db.exec('ROLLBACK');}catch{}
+      try{if(nested)db.exec(`ROLLBACK TO ${name}; RELEASE ${name}`);else {if(db.isTransaction){db.exec('ROLLBACK');}}}catch{}
       throw error;
     }
   }

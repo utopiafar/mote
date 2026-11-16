@@ -557,7 +557,7 @@ export class FileProcessing {
     const prior=this.engine.list({operationId:'file:'+id,kind:stage==='summary'?'files.summary':'files.pipeline',limit:100}).items.find(step=>this.validStep(step,stage==='summary'?'summary':'pipeline'));if(prior&&!intentChanged)this.engine.retry(prior.id,true);
     if(intentChanged)this.enqueue(id,stage==='summary'?'summary':'pipeline');
     if(own)db.exec('COMMIT');
-    }catch(error){if(own)db.exec('ROLLBACK');this.configurationCache.clear();throw error;}
+    }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}this.configurationCache.clear();throw error;}
     this.log('file.retry',id,{operation:stage==='transcribe'?'extract':stage});
     return {queued:true};
   }

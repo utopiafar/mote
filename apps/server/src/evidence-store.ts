@@ -55,7 +55,7 @@ export class EvidenceStore {
   private ledger!:StorageLedger;
   readonly contentEncryption:ContentEncryption;
   get key(){return this.contentEncryption.key;}
-  constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;maxStorageBytes?:number;embeddingEnabled?:boolean;maintenance?:boolean}={}) {
+  constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;embeddingEnabled?:boolean;maintenance?:boolean}={}) {
     privateDirectory(directory);
     privateSqliteFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
@@ -246,7 +246,7 @@ export class EvidenceStore {
     if(size>CAPTURE_BATCH_MAX_BYTES)throw new StoreError('Observation batch exceeds 32 MiB',413);
     this.db.exec('BEGIN IMMEDIATE');
     try {before?.();const results=prepared.map((p,i)=>{const result=this.insert(p);transaction?.(result,i);return result;});this.db.exec('COMMIT');return results;}
-    catch(e){this.db.exec('ROLLBACK');this.sweep();throw e;}
+    catch(e){if(this.db.isTransaction){this.db.exec('ROLLBACK');}this.sweep();throw e;}
   }
   async ingestSettled(raw:CaptureInput[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
     if(!raw.length)throw new StoreError('Expected at least one observation',413);
@@ -261,10 +261,10 @@ export class EvidenceStore {
         if(p.status==='rejected')return {id:raw[i].id,error:p.reason as unknown};
         this.db.exec('SAVEPOINT capture_member');
         try{const result=this.insert(p.value);transaction?.(result,i);this.captureReceived(p.value.input.deviceId);this.db.exec('RELEASE capture_member');return {id:raw[i].id,result};}
-        catch(error){failed=true;this.db.exec('ROLLBACK TO capture_member; RELEASE capture_member');return {id:raw[i].id,error};}
+        catch(error){failed=true;if(!this.db.isTransaction)throw error;this.db.exec('ROLLBACK TO capture_member; RELEASE capture_member');return {id:raw[i].id,error};}
       });
       this.db.exec('COMMIT');if(failed)this.sweep();return results;
-    }catch(error){this.db.exec('ROLLBACK');this.sweep();throw error;}
+    }catch(error){if(this.db.isTransaction){this.db.exec('ROLLBACK');}this.sweep();throw error;}
   }
   async importArchive(raw:unknown) {
     const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];memoryDeletions?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[];materials?:unknown};
@@ -332,7 +332,7 @@ export class EvidenceStore {
         const json=JSON.stringify(task);this.db.prepare('INSERT INTO todos VALUES(?,?,?,?,?,?)').run(task.id,task.createdAt,task.status,task.version,requestHash,json);
       }
       this.db.exec('COMMIT');return {imported,duplicates};
-    }catch(e){this.db.exec('ROLLBACK');this.sweep();archivedFiles.sweepOrphans();throw e;}
+    }catch(e){if(this.db.isTransaction){this.db.exec('ROLLBACK');}this.sweep();archivedFiles.sweepOrphans();throw e;}
   }
   list(range:Range={}) {
     const {cursor:_cursor,...scope}=range;const {where,values}=this.clauses(scope);const limit=Math.min(200,Math.max(1,range.limit??50));
@@ -485,7 +485,7 @@ export class EvidenceStore {
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,new Date().toISOString());
       }
       if(own)this.db.exec('COMMIT');
-    }catch(e){if(own)this.db.exec('ROLLBACK');throw e;}
+    }catch(e){if(own){if(this.db.isTransaction){this.db.exec('ROLLBACK');}}throw e;}
   }
   completeOcr(id:string,update:{status:'completed'|'failed';ocrText:string}) {
     const row=this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as (Row&{fingerprint:string})|undefined;
@@ -512,7 +512,7 @@ export class EvidenceStore {
       this.invalidateMemoryEvidence(id);
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,ocr.updatedAt);
       this.db.exec('COMMIT');return {id,ocr,duplicate:false};
-    } catch(error){this.db.exec('ROLLBACK');throw error;}
+    } catch(error){if(this.db.isTransaction){this.db.exec('ROLLBACK');}throw error;}
   }
   searchPage(range:Range&{query?:string;includeTotal?:boolean}) {
     if(!range.query?.trim()){const page=this.list(range);return {...page,retrieval:{mode:'lexical' as const,degraded:false}};}
@@ -598,7 +598,6 @@ export class EvidenceStore {
     const record=this.record.bind(this);
     return mediaActivity((function*(){for(const row of rows)yield record(row as unknown as Row);})(),range,onContributor);
   }
-  reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() { return this.ledger.bytes(); }
   /** A domain plugin declares the durable tables it owns; registrations persist
    * outside the activating process so retained rows stay counted. */
@@ -678,7 +677,7 @@ export class EvidenceStore {
       this.db.prepare('DELETE FROM captures_fts WHERE rowid IN (SELECT rowid FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
       this.db.prepare('DELETE FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
       if(removed.length)this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.db.exec('COMMIT');this.sweep();this.archive.collect();return removed.length;
-    }catch(e){this.db.exec('ROLLBACK');throw e;}
+    }catch(e){if(this.db.isTransaction){this.db.exec('ROLLBACK');}throw e;}
   }
   /** Persist the lifecycle in SQLite so offline snapshot writers need no host
    * callbacks. Schema owners refresh it after installing their optional tables. */
@@ -703,7 +702,7 @@ export class EvidenceStore {
     try{
       this.db.exec(`DROP TRIGGER IF EXISTS context_history_invalidation;${statements.length?`CREATE TRIGGER context_history_invalidation BEFORE DELETE ON context_artifacts BEGIN ${statements.join('\n')} END;`:''}`);
       this.db.exec('RELEASE context_history_lifecycle');
-    }catch(error){this.db.exec('ROLLBACK TO context_history_lifecycle; RELEASE context_history_lifecycle');throw error;}
+    }catch(error){if(this.db.isTransaction){this.db.exec('ROLLBACK TO context_history_lifecycle; RELEASE context_history_lifecycle');}throw error;}
   }
   /** Ordinary revisions preserve dialogue. Destructive deletion/revocation
    * must opt in, including previously stale generations and their summaries. */

@@ -56,7 +56,7 @@ export class TaskRecords {
     const db=this.store.db,own=mode==='write'&&!db.isTransaction;
     db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT task_records_write');
     try{const value=run();db.exec(own?'COMMIT':'RELEASE task_records_write');return value;}
-    catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else db.exec('ROLLBACK TO task_records_write; RELEASE task_records_write');throw error;}
+    catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else {if(db.isTransaction){db.exec('ROLLBACK TO task_records_write; RELEASE task_records_write');}}throw error;}
   }
   private row(id:string):Row{
     const row=this.store.db.prepare('SELECT * FROM task_records WHERE id=?').get(id) as Row|undefined;

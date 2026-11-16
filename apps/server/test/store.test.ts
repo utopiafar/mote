@@ -120,6 +120,16 @@ test('actual SQLite FULL preserves its cause, rolls back admission and permits r
   assert.equal(store.db.isTransaction,false);assert.equal(store.logicalBytes(),before);assert.equal(store.evidence([pending.id]).length,0);assert.equal(store.evidence([sample.id])[0].ocrText,sample.ocrText);
   store.db.exec('PRAGMA max_page_count=1073741823');const result=await store.ingest(pending);assert.equal(result.duplicate,false);assert.equal(store.evidence([result.id])[0].ocrText,pending.ocrText);
 });
+test('SQLite FULL after staged batch members returns no false acknowledgements and the whole pending batch can replay',async t=>{
+  const store=vault(t),sample=await fixture();await store.ingest(sample);
+  store.db.exec('CREATE TABLE generated_batch_content(capture_id TEXT PRIMARY KEY,body TEXT)');store.logicalBytes();
+  const pending=Array.from({length:25},(_,index)=>({...sample,id:randomUUID(),ocrText:'Generated pending batch '+index})),pages=Number(store.db.prepare('PRAGMA page_count').get()!.page_count);
+  store.db.exec(`PRAGMA max_page_count=${pages+8}`);let staged=0;
+  await assert.rejects(store.ingestSettled(pending,undefined,(result,index)=>{staged++;if(index===1)store.db.prepare('INSERT INTO generated_batch_content VALUES(?,?)').run(result.id,'x'.repeat(1_000_000));}),(error:any)=>error.statusCode===507&&(error.cause?.errcode&255)===13);
+  assert.equal(staged,2);assert.equal(store.db.isTransaction,false);assert.equal(store.evidence(pending.map(value=>value.id)).length,0);assert.equal(store.db.prepare('SELECT count(*) n FROM generated_batch_content').get()!.n,0);assert.equal(store.evidence([sample.id])[0].ocrText,sample.ocrText);
+  store.db.exec('PRAGMA max_page_count=4294967294');const accepted=await store.ingestSettled(pending);assert.equal(accepted.length,25);assert.ok(accepted.every(item=>item.result?.duplicate===false));assert.equal(store.evidence(pending.map(value=>value.id)).length,25);
+  assert.ok((await store.ingestSettled(pending)).every(item=>item.result?.duplicate===true));
+});
 test('encrypted image blobs round trip; export contains plaintext evidence but never secrets',async t=>{
   const key='a3'.repeat(32);const store=vault(t,{dataKey:key,contentEncryptionEnabled:true});const f=await fixture();const saved=await store.ingest(f);
   const physical=readFileSync(join(store.assets.directory,saved.blobHash!,'0.aes'));assert.notDeepEqual(physical,Buffer.from(f.imageBase64!,'base64'));

@@ -48,7 +48,7 @@ export class AssistantCommitments {
  private transaction<T>(fn:()=>T):T{
   this.store.db.exec('SAVEPOINT assistant_commitments_write');
   try{const result=fn();this.store.db.exec('RELEASE assistant_commitments_write');return result;}
-  catch(error){this.store.db.exec('ROLLBACK TO assistant_commitments_write; RELEASE assistant_commitments_write');throw error;}
+  catch(error){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK TO assistant_commitments_write; RELEASE assistant_commitments_write');}throw error;}
  }
  private row(id:string):Row{
   const row=this.store.db.prepare('SELECT * FROM assistant_commitments WHERE id=?').get(uuid.parse(id)) as Row|undefined;

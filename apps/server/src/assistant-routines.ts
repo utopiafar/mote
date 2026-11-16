@@ -41,7 +41,7 @@ export class AssistantRoutines {
   const db=this.store.db,own=!db.isTransaction;
   if(own)db.exec('BEGIN IMMEDIATE');else db.exec('SAVEPOINT assistant_routine_write');
   try{const result=write();db.exec(own?'COMMIT':'RELEASE assistant_routine_write');return result;}
-  catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else db.exec('ROLLBACK TO assistant_routine_write; RELEASE assistant_routine_write');throw error;}
+  catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else {if(db.isTransaction){db.exec('ROLLBACK TO assistant_routine_write; RELEASE assistant_routine_write');}}throw error;}
  }
  private row(id:string):Row{
   const row=this.store.db.prepare('SELECT * FROM assistant_routines WHERE id=?').get(id) as Row|undefined;

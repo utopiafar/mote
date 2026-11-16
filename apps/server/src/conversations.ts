@@ -52,7 +52,7 @@ export class Conversations {
         store.db.prepare("UPDATE conversations SET json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?) WHERE id=?").run(growth,row.conversation_id);
       }
       store.db.exec('RELEASE conversation_history_receipts');
-    }catch(error){store.db.exec('ROLLBACK TO conversation_history_receipts; RELEASE conversation_history_receipts');throw error;}
+    }catch(error){if(store.db.isTransaction){store.db.exec('ROLLBACK TO conversation_history_receipts; RELEASE conversation_history_receipts');}throw error;}
   }
 
   list({limit=50,cursor}:{limit?:number;cursor?:string}={}) {
@@ -375,7 +375,7 @@ export class Conversations {
       const deleted=Number(db.prepare('DELETE FROM conversations WHERE id=?').run(id).changes);
       db.exec('DELETE FROM conversation_retired_roots WHERE NOT EXISTS(SELECT 1 FROM conversation_retired_turn_roots r WHERE r.evidence_id=conversation_retired_roots.id)');
       db.exec('RELEASE delete_conversation');return {deleted};
-    }catch(error){db.exec('ROLLBACK TO delete_conversation; RELEASE delete_conversation');throw error;}
+    }catch(error){if(db.isTransaction){db.exec('ROLLBACK TO delete_conversation; RELEASE delete_conversation');}throw error;}
   }
 
   historyContext(conversation:Conversation,turns:readonly ConversationTurn[]=conversation.turns):NonNullable<QueryInput['historyContext']>{

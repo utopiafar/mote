@@ -50,7 +50,7 @@ export class AssistantCards {
  private transaction<T>(run:()=>T):T{
   this.store.db.exec('SAVEPOINT assistant_cards_write');
   try{const result=run();this.store.db.exec('RELEASE assistant_cards_write');return result;}
-  catch(error){this.store.db.exec('ROLLBACK TO assistant_cards_write; RELEASE assistant_cards_write');throw error;}
+  catch(error){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK TO assistant_cards_write; RELEASE assistant_cards_write');}throw error;}
  }
  /** Keep a multi-page derived read on one SQLite snapshot. */
  readSnapshot<T>(read:()=>T):T{return this.transaction(read);}

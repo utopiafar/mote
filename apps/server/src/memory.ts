@@ -325,7 +325,7 @@ export class MemoryStore {
       if(options.prepared){if(JSON.stringify(items)!==JSON.stringify(options.prepared.items)||options.prepared.changed.some(memory=>JSON.stringify(this.get(memory.id))!==JSON.stringify(memory)))throw new StoreError('The provider staged different Memory bodies than the host commit',409);}
       options.onSaved?.(items);
       if(own)this.store.db.exec('COMMIT');return {items,runId:result.runId};
-    }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK');}}throw error;}
   }
   publish(id:string,version?:number,at=new Date().toISOString()){
     const m=this.get(id);if(version!==undefined&&version!==m.version)throw new StoreError('Memory changed; refresh before activation',409);
@@ -338,7 +338,7 @@ export class MemoryStore {
         if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??m.reviewReceipt?.contextTime??at;target.version=target.version+1;target.updatedAt=at;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);this.invalidateInterpretation(target.id);}
       }
       m.status='published';m.version=m.version+1;m.updatedAt=at;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(m),id);if(own)this.store.db.exec('COMMIT');return m;
-    }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK');}}throw error;}
   }
   /** An explicit owner correction is original user evidence, never an automatic model overwrite. */
   async correct(id:string,raw:unknown,stage?: (records:Memory[],assert:()=>void)=>Promise<void>,identity?:{noteId:string;memoryId:string;at:string},committed?:()=>void){
@@ -376,6 +376,6 @@ export class MemoryStore {
       // their history, but do not keep serving that claim through a child card.
       const deleted=this.deletions.revoke(id);
       if(own)db.exec('COMMIT');return {deleted};
-    }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
   }
 }

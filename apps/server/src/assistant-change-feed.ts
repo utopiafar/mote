@@ -138,7 +138,7 @@ export class AssistantChangeFeed {
   const db=this.store.db,own=!db.isTransaction;
   db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT assistant_change_write');
   try{const result=fn();db.exec(own?'COMMIT':'RELEASE assistant_change_write');return result;}
-  catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else db.exec('ROLLBACK TO assistant_change_write; RELEASE assistant_change_write');throw error;}
+  catch(error){if(own){if(db.isTransaction)db.exec('ROLLBACK');}else {if(db.isTransaction){db.exec('ROLLBACK TO assistant_change_write; RELEASE assistant_change_write');}}throw error;}
  }
  private snapshot(root:string,sourceId:string,captureId:string|null,materialIdValue:string|null,previousRevision:string|null):AssistantChangeInput|undefined{
   if(!captureId){const checkpoint=JSON.parse(root.slice('source:'.length)) as [string,string];

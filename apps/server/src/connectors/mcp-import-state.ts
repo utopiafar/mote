@@ -10,7 +10,7 @@ export function mcpImportState(store:Pick<Store,'db'>){
   save:(sourceId:string,identity:string,members:string)=>{
    db.prepare('INSERT INTO mcp_import_manifests VALUES(?,?,?) ON CONFLICT(source_id,identity) DO UPDATE SET members=excluded.members').run(sourceId,identity,members);
   },
-  transaction:(publish:()=>void)=>{db.exec('BEGIN IMMEDIATE');try{publish();db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}},
+  transaction:(publish:()=>void)=>{db.exec('BEGIN IMMEDIATE');try{publish();db.exec('COMMIT');}catch(error){if(db.isTransaction){db.exec('ROLLBACK');}throw error;}},
  };
 }
 export type McpImportState=ReturnType<typeof mcpImportState>;

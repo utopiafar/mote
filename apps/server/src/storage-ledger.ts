@@ -1,8 +1,5 @@
 import type {DatabaseSync} from 'node:sqlite';
 
-/** Keep reservations aligned with the dependency expression below. */
-export const memoryDeletionDependencyBytes=(deletionId:string,evidenceId:string,originKeys:string,lineageKeys:string)=>Buffer.byteLength(deletionId)+Buffer.byteLength(evidenceId)+Buffer.byteLength(originKeys)+Buffer.byteLength(lineageKeys)+128;
-
 /** One registered table and the logical-byte expression its plugin declared. */
 export interface StorageMeterEntry {readonly name:string;readonly bytes:number}
 export interface StorageMeterGroup {readonly plugin:string;readonly bytes:number;readonly tables:readonly StorageMeterEntry[]}
@@ -86,6 +83,6 @@ export class StorageLedger {
         CREATE TRIGGER ledger_${name}_update AFTER UPDATE ON ${name} BEGIN UPDATE storage_ledger SET bytes=bytes+(${qualify('new')})-(${qualify('old')}) WHERE name='${name}'; END;`);
     }
     if(ownTransaction)this.db.exec('COMMIT');
-    }catch(error){if(ownTransaction)this.db.exec('ROLLBACK');throw error;}
+    }catch(error){if(ownTransaction){if(this.db.isTransaction){this.db.exec('ROLLBACK');}}throw error;}
   }
 }
