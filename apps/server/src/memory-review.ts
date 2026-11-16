@@ -6,7 +6,7 @@ import type {MemoryReviewReceipt} from './memory-schema.js';
 import type {MemoryDeletions} from './plugins/memory-deletions.js';
 import type {MemoryReviewCache} from './memory-review-cache.js';
 import {defaultMemoryReviewStrategy} from './memory-review-policy.js';
-import {memoryReviewStrategySchema,memoryStrategyPin,memoryCandidateOutputContract,type MemoryWorkContract,type MemoryReviewStrategy} from './memory-strategy-contract.js';
+import {memoryRecipeBindingSchema,memoryReviewStrategySchema,memoryStrategyPin,memoryCandidateOutputContract,type MemoryRecipeBinding,type MemoryWorkContract,type MemoryReviewStrategy} from './memory-strategy-contract.js';
 import {validationFeedback,type MemoryOutputValidationCode} from './memory-validation.js';
 import {memoryReadRanges} from './memory-read-context.js';
 import {MEMORY_VISUAL_EVIDENCE_CONTRACT,memoryImageReadReceipts,imageViewCovers} from './memory-image-proof.js';
@@ -15,7 +15,7 @@ const receipts=new WeakMap<QueryResult,MemoryReviewReceipt>();
 export function memoryReviewReceipt(result:QueryResult){return receipts.get(result);}
 /** Set only by the host that invoked the native engine, never by captured content. */
 export type MemoryDraftOrigin='mote'|'native-engine';
-type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy;taskInstructions?:string};
+type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy|null;recipe?:MemoryRecipeBinding;taskInstructions?:string};
 
 /** Shared by request planning and the actual independent review. */
 export function memoryReviewQuestion(input:QueryInput&{memoryReviewQuestion?:string;memoryReviewRepair?:string},strategy?:MemoryReviewStrategy,taskInstructions?:string){
@@ -26,7 +26,8 @@ export function memoryReviewQuestion(input:QueryInput&{memoryReviewQuestion?:str
     MEMORY_ADMISSION_PROMPT+'\n'+taskQuestion+'\n'+defaultMemoryReviewStrategy.policy.slice(MEMORY_ADMISSION_PROMPT.length+1))+(workPackage?'\nIndependently inspect every listed target range in full and verify each member coverage decision, including all no_candidates entries. Verify the quality and usefulness of the selected set; deliberate selection is permitted and is not incomplete evaluation. Do not infer completeness from candidate count. Explicit unread/truncated or unassessed target ranges require incomplete with a concrete reason. Apply the batch-local coverage contract in taskContext.memoryWork. The overall package goal does not authorize other ranges or require this call to complete the whole original. Verify owner questions and their exact source quotes as well as independently supported candidates in the same range. A named participant or conversational role does not establish owner identity, and diarization labels may mix speakers. Use needs_context only for specific useful additional authorized evidence; use needs_owner_input with a concrete minimal question when a meaningful result requires an owner fact unavailable from the evidence. Preserve completed uncertainty or useful observed context when no question is needed. Consult supplied prior inspection outcomes and never recommend unchanged reading to infer a missing owner association. An empty candidate array still requires this independent review.':'')+(repair?'\nHost review repair: '+repair:'');
 }
 
-/** A separate read-only model pass. The host still validates exact evidence after review. */
+/** Apply the pinned recipe's semantic review decision. Both paths keep host
+ * validation and current deletion intent; only an actual review gets a run ID. */
 export async function reviewMemory(input:QueryInput&{memoryReviewQuestion?:string;memoryReviewRepair?:string},draft:QueryResult,query:(input:QueryInput)=>Promise<QueryResult>,options?:ReviewOptions):Promise<QueryResult> {
   input.signal?.throwIfAborted();
   let contextPagesRequired=false;
@@ -49,6 +50,26 @@ export async function reviewMemory(input:QueryInput&{memoryReviewQuestion?:strin
     receipts.set(result,{deletionSnapshot,resultHash:sha256(result.answer),strategy:memoryStrategyPin(strategy??defaultMemoryReviewStrategy),policy:'bounded-exact-review@1',decision,draftRunId:draft.runId,reviewRunId:decision==='empty'?undefined:result.runId,checkedAt:new Date().toISOString(),contextTime:input.contextTime,inputHash,model});return result;
   };
   const workPackage=Boolean(input.taskContext?.memoryWork),contract=(input.taskContext?.memoryWork as {workContract?:MemoryWorkContract}|undefined)?.workContract;
+  if(options?.strategy===null){
+    const recipe=memoryRecipeBindingSchema.parse(options.recipe);
+    if(recipe.review!==null||!input.validateOutput)throw new StoreError('Direct Memory publication requires an explicit recipe decision and host validation',409);
+    const snapshot=options.snapshot?.();
+    const validate=async(result:QueryResult)=>{
+      input.signal?.throwIfAborted();
+      if(snapshot!==options.snapshot?.())throw new StoreError('Memory extraction inputs changed',409);
+      const failure=await input.validateOutput!({...result,trace:[]});
+      if(failure)throw new MemoryOutputValidationError(Object.hasOwn(validationFeedback,failure.code)?failure.code as MemoryOutputValidationCode:'schema','Memory extraction failed host validation',{workContract:contract});
+      input.signal?.throwIfAborted();
+      if(snapshot!==options.snapshot?.())throw new StoreError('Memory extraction inputs changed',409);
+    };
+    // Native implementations selecting this path must already produce the Mote
+    // output contract; an upstream draft does not bypass canonical validation.
+    await validate(draft);
+    const result=await finish({...draft});
+    await validate(result);
+    receipts.set(result,{strategy:recipe.recipe,policy:'recipe-selected-review@1',decision:'not_required',validation:'host-evidence@1',deletionSnapshot,resultHash:sha256(result.answer),draftRunId:draft.runId,checkedAt:new Date().toISOString(),contextTime:input.contextTime,inputHash:sha256(JSON.stringify(recipe)),model:draft.usage?.model});
+    return result;
+  }
   const native=options?.draftOrigin==='native-engine';
   if(!value.memories.length&&!workPackage&&!native)return receipt(await finish({...draft}),'empty');
   // Only fixed, bounded extraction tools may reuse a verdict. Consolidation and

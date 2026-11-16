@@ -6,7 +6,8 @@ export const memoryStrategyRefSchema=z.object({id:recipeIdentifierSchema,version
 export const memoryStrategyPinSchema=memoryStrategyRefSchema.extend({fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 export const memoryWorkContractSchema=z.literal('range-evaluation@1');
 export type MemoryWorkContract=z.infer<typeof memoryWorkContractSchema>;
-export const memoryRecipeBindingSchema=z.object({recipe:memoryStrategyPinSchema,extract:memoryStrategyPinSchema,review:memoryStrategyPinSchema,requires:materialRequirementsSchema.optional(),workContract:memoryWorkContractSchema}).strict();
+// null is an explicit trusted recipe decision, never a missing reviewer fallback.
+export const memoryRecipeBindingSchema=z.object({recipe:memoryStrategyPinSchema,extract:memoryStrategyPinSchema,review:memoryStrategyPinSchema.nullable(),requires:materialRequirementsSchema.optional(),workContract:memoryWorkContractSchema}).strict();
 export type MemoryStrategyRef=z.infer<typeof memoryStrategyRefSchema>;
 export type MemoryStrategyPin=z.infer<typeof memoryStrategyPinSchema>;
 export type MemoryRecipeBinding=z.infer<typeof memoryRecipeBindingSchema>;
@@ -17,7 +18,7 @@ export const memoryStrategyPin=(value:MemoryStrategyRef):MemoryStrategyPin=>({id
 const common=memoryStrategyRefSchema.extend({output:z.literal('memory-candidates@1'),permissions:z.tuple([z.literal('evidence.read')])});
 export const memoryExtractionStrategySchema=common.extend({input:z.literal('memory-evidence@1'),prompt:z.string().min(1).max(16000)}).strict();
 export const memoryReviewStrategySchema=common.extend({input:z.literal('memory-candidates@1'),permissions:z.union([z.tuple([z.literal('evidence.read')]),z.tuple([z.literal('memory.read'),z.literal('evidence.read')])]),policy:z.string().min(1).max(16000)}).strict();
-export const memoryRecipeSchema=memoryStrategyRefSchema.extend({extract:memoryStrategyRefSchema,review:memoryStrategyRefSchema,requires:materialRequirementsSchema.optional(),workContract:memoryWorkContractSchema}).strict();
+export const memoryRecipeSchema=memoryStrategyRefSchema.extend({extract:memoryStrategyRefSchema,review:memoryStrategyRefSchema.nullable(),requires:materialRequirementsSchema.optional(),workContract:memoryWorkContractSchema}).strict();
 export type MemoryExtractionStrategy=z.infer<typeof memoryExtractionStrategySchema>;
 export type MemoryReviewStrategy=z.infer<typeof memoryReviewStrategySchema>;
 

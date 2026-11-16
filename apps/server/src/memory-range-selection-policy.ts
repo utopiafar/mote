@@ -8,6 +8,7 @@ import type {MemoryExtractionStrategy,MemoryReviewStrategy} from './memory-strat
 export const RANGE_SELECTION_PERSONAL_RECIPE={id:'mote.personal-memory',version:'5'} as const;
 export const RANGE_SELECTION_CODING_RECIPE={id:'mote.coding-memory',version:'3'} as const;
 export const RANGE_SELECTION_DAILY_RECIPE={id:'mote.daily-event-memory',version:'2'} as const;
+export const SINGLE_PASS_PERSONAL_RECIPE={id:'mote.personal-memory-direct',version:'1'} as const;
 
 /** These are new immutable definitions. Old policy text and fingerprints stay intact. */
 const selectionPolicy=`Assess every supplied authorized target range in full, then select useful standalone Memory or observation candidates under this policy. The complete originals remain searchable. Do not enumerate every useful fact, create a candidate per paragraph, fill a quota, or manufacture a result for coverage. Preserve meaningful positive context and consequential details in coherent supported candidates; avoid repetitive cards. Deliberate selection can omit potentially useful details after full assessment. Selection is not incomplete evaluation and candidate count is not a completeness signal. Return no_candidates only after assessing the full range and selecting no additional candidate. Independently review the full ranges even when the draft has no candidates; correct unsupported claims, material omissions within selected claims, and the semantic selection. If inspection is unfinished or evidence/output is truncated, return incomplete with a concrete reason, never checked or no_candidates. Do not report semantic capacity saturation or request recursive splitting merely to enumerate more candidates. Existing resource limits, exact proof and target/context coverage remain host guarantees.`;
@@ -20,6 +21,15 @@ const personalPolicy=CONTEXT_READING_PERSONAL_POLICY.replace(
 export const rangeSelectionPersonalExtractionStrategy:MemoryExtractionStrategy={
  id:'mote.personal-extraction',version:'3',input:'memory-evidence@1',output:'memory-candidates@1',permissions:['evidence.read'],
  prompt:personalPolicy+'\n'+SOURCE_TIME_INSTRUCTIONS+'\n'+selectionPolicy,
+};
+/** A separately selectable implementation; existing immutable recipes keep
+ * their independent reviewer and saved selections are never rewritten. */
+export const singlePassPersonalExtractionStrategy:MemoryExtractionStrategy={
+ ...rangeSelectionPersonalExtractionStrategy,version:'4',
+ prompt:rangeSelectionPersonalExtractionStrategy.prompt
+  .replace('read and independently reviewed','read and assessed')
+  .replace('Independently review the full ranges even when the draft has no candidates; correct unsupported claims, material omissions within selected claims, and the semantic selection.','Assess the full ranges even when selecting no candidates; correct unsupported claims and material omissions within selected claims before returning the final selection.')
+  +'\nThis selected recipe publishes host-validated extraction directly without an additional independent semantic review. Assess admission, attribution, uncertainty and coverage in this call; do not delegate unresolved assessment to a later reviewer.',
 };
 export const rangeSelectionPersonalReviewStrategy:MemoryReviewStrategy={
  id:'mote.personal-review',version:'5',input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],
