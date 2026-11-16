@@ -66,7 +66,7 @@ let node:Awaited<ReturnType<typeof buildApp>>|undefined,authorization=0;
 const allowedDocuments=new Map(manifest.documents.map(item=>[item.documentId,item]));
 const privateIdentifiers=new Set<string>();
 const progress=(stage:string,extra:Record<string,unknown>={})=>console.log(JSON.stringify({stage,...extra}));
-async function save(){if(node)report.usage=node.featureServices.usageLedger.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(output,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
+async function save(){if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(output,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
 async function waitControl(name:string,signal?:AbortSignal){
   const path=join(output,name);
   for(;;){signal?.throwIfAborted();try{const content=await readFile(path,'utf8');await unlink(path);return content;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}await delay(500,undefined,{signal});}

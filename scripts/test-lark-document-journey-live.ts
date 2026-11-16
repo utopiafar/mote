@@ -42,7 +42,7 @@ const config:Config={dataDir:join(output,'vault'),token,tokenPath:join(output,'t
   codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const save=async()=>{
-  if(node)report.usage=node.featureServices.usageLedger.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);
+  if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);
   await writeFile(join(output,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 };
 const progress=(stage:string,extra:Record<string,unknown>={})=>console.log(JSON.stringify({stage,...extra}));

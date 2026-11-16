@@ -63,7 +63,7 @@ report.runnerHashes=Object.fromEntries(await Promise.all(['scripts/test-context-
 report.agentHashes=Object.fromEntries(await Promise.all(['apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','apps/server/src/memory-profiles.ts','apps/server/src/memory-validation.ts','packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','packages/agent/dist/skills.js','packages/agent/skills/memory-extraction/SKILL.md','packages/agent/skills/coding-memory/SKILL.md'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 const cases=report.cases as Record<string,unknown>[];
 async function save(){
-  if(node)report.usage=node.featureServices.usageLedger.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);
+  if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);
   await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 }
 function progress(stage:string,extra:Record<string,unknown>={}){console.log(JSON.stringify({stage,...extra}));}

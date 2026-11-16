@@ -165,7 +165,7 @@ try{
     }catch(error){result.status='failed';result.failure=error instanceof Error?error.message:String(error);process.exitCode=1;}
     finally{result.durationMs=Date.now()-started;await save();console.log(JSON.stringify({stage:'processed',id:file.id,status:result.status,durationMs:result.durationMs}));}
   }
-  report.modelUsage=node.featureServices.usageLedger.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200).total;
+  report.modelUsage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200).total;
   assert.equal((report.modelUsage as {runs:number}).runs,0,'Acoustic processing unexpectedly invoked an LLM');
   report.status=(report.files as {status:string}[]).every(file=>file.status==='passed')?'passed':'failed';
 }catch(error){report.status='failed';report.failure=error instanceof Error?error.message:String(error);process.exitCode=1;}
