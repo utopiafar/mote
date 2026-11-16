@@ -36,6 +36,8 @@ test('prepared bridge delivery publishes the same ledger only after confirm and 
   assert.equal(observedEvidence.length,0);
   assert.equal(observedProgress.length,0);
   assert.match(JSON.stringify(staged.value),/Generated staged evidence body/);
+  assert.deepEqual(staged.nativeExposure.originalEvidenceIds,[id],'potential persistence is recorded before ACK without granting citation eligibility');
+  assert.ok(staged.nativeExposure.evidenceDependencies.ids.includes(id));
 
   staged.confirm();
   assert.equal(bridge.records.get(id).ocrText,record.ocrText);
@@ -44,6 +46,9 @@ test('prepared bridge delivery publishes the same ledger only after confirm and 
   assert.equal(bridge.trace.some(entry=>entry.tool==='search_context'),true);
   assert.ok(observedEvidence.length>0);
   assert.ok(observedProgress.length>0);
+  const repeated=await bridge.prepareDelivery('evidence',{ids:[id]},signal());
+  assert.deepEqual(repeated.nativeExposure.originalEvidenceIds,[id],'a repeated body must keep its own strict receipt even when its ID is already known');
+  assert.ok(repeated.nativeExposure.evidenceDependencies.ids.includes(id));repeated.discard();
 
   const ranges=bridge.deliveredRanges.length,current=bridge.records.size;
   staged.confirm();
@@ -80,6 +85,15 @@ test('prepared bridge delivery rechecks authority and cancellation before publis
   assert.throws(()=>cancelled.confirm(),/aborted|cancelled/i);
   assert.equal(bridge.records.has(other),false,'cancelled confirmation must not publish');
   cancelled.discard();
+});
+
+test('native potential persistence tracks a non-citable semantic read independently of its original ledger',async t=>{
+  const semantic={...record,summary:'Generated semantic interpretation'};
+  const bridge=await startBridge({...reader,search:async()=>[semantic],evidence:async()=>[semantic]},{question:'Generated semantic privacy receipt'});t.after(()=>bridge.close());
+  const discovery=await bridge.prepareDelivery('search_context',{query:'Generated'},signal());discovery.confirm();
+  const before=structuredClone(bridge.deliveredRanges),read=await bridge.prepareDelivery('evidence',{ids:[id],layer:'semantic'},signal());
+  assert.match(JSON.stringify(read.value),/Generated semantic interpretation/);assert.deepEqual(read.nativeExposure.originalEvidenceIds,[id]);
+  assert.deepEqual(bridge.deliveredRanges,before,'potential semantic persistence creates no new original citation range');read.discard();
 });
 
 test('closing the bridge drops an unconfirmed staged read and context_evidence stages its range',async t=>{

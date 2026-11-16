@@ -106,9 +106,22 @@ class InstanceState implements StateStore {
     });
   }
 
-  private write(key: string, expectedRevision: number | null, json: string, bytes: number, condition?: StateWriteCondition): StateRecord {
+  /** Trusted owner-only binding, never part of StateStore or given to native
+   * code. The namespace comes from this real Host scope and the key is fixed. */
+  bindCommit(key:string):(expectedRevision:number,value:StateValue)=>StateRecord {
+    this.key(key);
+    return (expectedRevision,value)=>{
+      this.current();
+      if(!this.store.db.isTransaction)throw new StateError('invalid_condition');
+      if(!Number.isSafeInteger(expectedRevision)||expectedRevision<1)throw new StateError('invalid_revision');
+      const json=this.serialize(value);
+      return this.write(key,expectedRevision,json,Buffer.byteLength(json),undefined,true);
+    };
+  }
+
+  private write(key: string, expectedRevision: number | null, json: string, bytes: number, condition?: StateWriteCondition, joined=false): StateRecord {
     const db = this.store.db, now = new Date().toISOString(), keyBytes = Buffer.byteLength(key);
-    db.exec('BEGIN IMMEDIATE');
+    if(!joined)db.exec('BEGIN IMMEDIATE');
     try {
       this.current();
       if (condition) {
@@ -139,10 +152,10 @@ class InstanceState implements StateStore {
         revision = expectedRevision + 1;
       }
       this.current();
-      db.exec('COMMIT');
+      if(!joined)db.exec('COMMIT');
       return {key, value: JSON.parse(json) as StateValue, revision, bytes, updatedAt: now};
     } catch (error) {
-      if (db.isTransaction) db.exec('ROLLBACK');
+      if (!joined&&db.isTransaction) db.exec('ROLLBACK');
       throw error;
     }
   }
@@ -215,4 +228,12 @@ class InstanceState implements StateStore {
  * Public methods accept no instance identity, namespace, validator or SQL. */
 export function createInstanceState(store: Store, scope: HostScope, limits: StateLimits = stateLimits, sourceKinds: readonly string[] = []): StateStore {
   return new InstanceState(store, scope, limits, Object.freeze([...sourceKinds]));
+}
+
+/** Host-internal atomic consumer: a real bound state instance, one fixed key,
+ * an existing revision, and an already opened owning SQLite transaction. All
+ * ordinary state limits, scope and CAS checks remain in the state owner. */
+export function bindInstanceStateCommit(state:StateStore,key:string):(expectedRevision:number,value:StateValue)=>StateRecord {
+  if(!(state instanceof InstanceState))throw new StateError('invalid_namespace');
+  return state.bindCommit(key);
 }

@@ -33,6 +33,7 @@ import {defaultTaskRegistry} from './tasks/registry.js';
 import {createRegisteredReadPacks} from './tools/registry.js';
 import {AgentInputError, AgentNotConfiguredError, AgentProviderError, AgentResponseError, reportProgress, reportTrace, type AgentOptions, type AgentAnswer, type QueryInput, type QueryRunLease} from './types.js';
 import type {ImportAgentLaunch, ImportCapability} from './runtime/import-capability.js';
+import type {NativeDshApplication} from './runtime/dsh/application-contracts.js';
 
 export const OFFICIAL_AGENT_COMPOSITION_VERSION = '1.0.0' as const;
 
@@ -54,7 +55,7 @@ export interface OfficialAgentRuntimeDescriptor {
   readonly launch: (options: AgentOptions) => TrustedRuntimeLaunch | undefined;
   /** Codex has no child trace channel; DSH emits its own runtime events. */
   readonly emitHostToolTrace: boolean;
-  readonly plugin: (identity: ScopeIdentity, published: (binding: ServiceBinding) => void, options?: AgentOptions) => PluginDefinition;
+  readonly plugin: (identity: ScopeIdentity, published: (binding: ServiceBinding) => void, options?: AgentOptions, applicationForRun?: (runId:string)=>NativeDshApplication|undefined) => PluginDefinition;
   readonly prepare: (selection: ResolvedRunSelection, dependencies: RuntimeDependencies, assembly: RuntimeAssembly) => Promise<HostRunSession>;
 }
 
@@ -87,11 +88,11 @@ function dshAdapter(options: AgentOptions): DshModelAdapter {
 
 function detachedNativeDsh(binding: NativeDshAssemblyBinding): NativeDshAssemblyBinding {
   if (!binding || !Number.isSafeInteger(binding.revision) || binding.revision < 0 || !(binding.signal instanceof AbortSignal) || typeof binding.assertCurrent !== 'function') throw new DshProfileError('dsh_profile_invalid');
-  return {revision: binding.revision, signal: binding.signal, ...structuredClone({assembly: binding.assembly, installedModules: binding.installedModules}), assertCurrent: () => binding.assertCurrent()};
+  return {revision: binding.revision, signal: binding.signal, ...structuredClone({assembly: binding.assembly, installedModules: binding.installedModules}), assertCurrent: () => binding.assertCurrent(), ...(binding.application?{application:binding.application}:{})};
 }
 
-async function nativeDshSnapshot(source: AgentOptions['nativeDsh']): Promise<NativeDshAssemblyBinding | undefined> {
-  const binding = typeof source === 'function' ? await source() : source;
+async function nativeDshSnapshot(source: AgentOptions['nativeDsh'], input?:QueryInput): Promise<NativeDshAssemblyBinding | undefined> {
+  const binding = typeof source === 'function' ? await source(input) : source;
   return binding === undefined ? undefined : detachedNativeDsh(binding);
 }
 
@@ -121,7 +122,7 @@ export const DSH_OFFICIAL_RUNTIME: OfficialAgentRuntimeDescriptor = Object.freez
   }),
   launch: () => undefined,
   emitHostToolTrace: false,
-  plugin: (identity, published, options) => dshRuntimePlugin(identity, {installedModules: async () => (await nativeDshSnapshot(options?.nativeDsh))?.installedModules ?? []}, published),
+  plugin: (identity, published, options, applicationForRun) => dshRuntimePlugin(identity, {installedModules: async () => (await nativeDshSnapshot(options?.nativeDsh))?.installedModules ?? [], applicationForRun}, published),
   prepare: (selection, dependencies, assembly) => prepareDshRun(selection, dependencies, assembly),
 });
 
@@ -266,10 +267,11 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
   let closed = false, startup: Promise<void> | undefined;
   let modelBinding: ServiceBinding, outputBinding: ServiceBinding;
   const pending = new Set<Promise<AgentAnswer>>(), scopes = new Set<PluginResourceScope>();
+  const applications=new Map<string,NativeDshApplication>();
   const initialize = () => startup ??= (async () => {
     for (const runtime of runtimes) {
       const runtimeIdentity = runtimeIdentities.get(runtime.id)!;
-      await host.install(runtime.plugin(runtimeIdentity, binding => { runtimeBindings.set(runtime.id, binding); }, options));
+      await host.install(runtime.plugin(runtimeIdentity, binding => { runtimeBindings.set(runtime.id, binding); }, options, runId=>applications.get(runId)));
     }
     if (!runtimeBindings.has(selectedRuntime.id)) throw new OfficialCompositionUnavailableError([selectedRuntime.id], 'The selected official runtime did not publish its service.');
     await host.install({identity: foundationIdentity, contributions: [fixedModelService, hostOutputService], factory(context) {
@@ -291,16 +293,17 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
     scope.defer(()=>releaseContextTools(input));
     let nativeAssembly: NativeDshAssemblyBinding | undefined;
     let signal = AbortSignal.any([scope.signal, ...(input.signal ? [input.signal] : [])]);
-    const assertCurrent = () => { input.signal?.throwIfAborted(); if (closed) throw new AgentClosedError(); signal.throwIfAborted(); nativeAssembly?.assertCurrent(); input.assertContextAuthority?.(); };
+    const assertCurrent = () => { input.signal?.throwIfAborted(); if (closed) throw new AgentClosedError(); signal.throwIfAborted(); nativeAssembly?.assertCurrent(); nativeAssembly?.application?.assertCurrent(); input.assertContextAuthority?.(); };
     const trace = (event: Parameters<typeof reportTrace>[1]) => reportTrace(input, {...event, runId});
     let session: HostRunSession | undefined, bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
     let bridgeClosing: Promise<void> | undefined;
     const closeBridge = () => bridge ? bridgeClosing ??= bridge.close() : Promise.resolve();
     let primary = false;
     try {
-      nativeAssembly = await nativeDshSnapshot(options.nativeDsh);
+      nativeAssembly = await nativeDshSnapshot(options.nativeDsh,input);
       if (nativeAssembly && selectedRuntime.id !== DSH_RUNTIME_ID) throw new DshProfileError('dsh_profile_invalid');
       if (nativeAssembly) signal = AbortSignal.any([signal, nativeAssembly.signal]);
+      if(nativeAssembly?.application)applications.set(runId,nativeAssembly.application);
       assertCurrent();
       reportProgress(input, {stage: 'starting'});
       trace({type: 'run.started', stage: 'starting', payload: {model: options.model, provider: options.provider, protocol: options.protocol, skill: input.skill ?? null, responseMode: input.responseMode ?? 'answer', question: input.question, traceContext: input.traceContext ?? null}});
@@ -323,6 +326,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
         ...(launch ? {launch} : {}),
       });
       bridge = await startBridge(options.reader, {...input, signal, onTrace: trace}, options.maxToolCalls); assertCurrent();
+      await nativeAssembly?.application?.prepare(bridge.nativeExposure);assertCurrent();
       const toolSnapshot=contextToolSnapshot(input);
       const assertToolPins=()=>{assertCurrent();for(const pin of toolSnapshot.entries)try{toolSnapshot.assertActive(pin);}catch{throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}};
       const definitions: RuntimeToolDefinition[] = contextToolDefinitions(input).filter(([name]) => taskTools(input).includes(name)).map(([name, description, fields]) => {
@@ -397,6 +401,13 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
               staged.discard();
               return {payload:omitted(),confirm(){},discard(){}};
             }
+            // Retain potential persistence before handing bytes to the SDK.
+            // This is separate from the ACK that makes originals citable.
+            if(nativeAssembly?.application){
+              if(!staged.nativeExposure)throw new ContextToolError('native_receipt_missing','The native persistence receipt is missing.','stop');
+              try{await nativeAssembly.application.retainExposure(staged.nativeExposure);assertCurrent();}
+              catch(cause){const failure=new ContextToolError('native_receipt_restricted','The native application context is no longer available.','stop');Object.assign(failure,{cause,...(typeof (cause as {statusCode?:unknown})?.statusCode==='number'?{statusCode:(cause as {statusCode:number}).statusCode}:{})});throw failure;}
+            }
             // The model receives the image, but diagnostics only need its identity
             // and size. Copying base64 into traces duplicates private originals and
             // can overwhelm the log viewer even when the read itself is bounded.
@@ -439,6 +450,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       };
       session = await selectedRuntime.prepare(selection, dependencies, assembly);
       const answer = await session.execute(); assertCurrent();
+      if(nativeAssembly?.application){await session.close();assertCurrent();await nativeAssembly.application.finish();assertCurrent();}
       trace({type: 'run.completed', stage: 'validating', phase: 'completed', status: 'succeeded', payload: {citations: answer.citations.map(citation => citation.id), toolCalls: answer.trace}});
       return answer;
     } catch (error) {
@@ -453,8 +465,10 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
     }
     finally {
       try {
-        await settleHostCleanup([() => session?.close(), closeBridge, () => scope.close()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
-      } finally { scopes.delete(resources); }
+        // A preparation that failed before returning its session still left a
+        // deferred close on this scope. Quiesce it before protecting SDK files.
+        await settleHostCleanup([() => session?.close(), closeBridge, () => scope.close(), () => nativeAssembly?.application?.release()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
+      } finally { applications.delete(runId);scopes.delete(resources); }
     }
   }
   return {configured,
