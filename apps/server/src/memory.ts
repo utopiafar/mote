@@ -9,7 +9,7 @@ import {z} from 'zod';
 import {validateInlineCitations,SOURCE_TIME_INSTRUCTIONS,skillCatalog} from '@mote/agent';
 import {fileEvidenceSchema,sourceContentTime,noteCapture,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
-import {CODING_MEMORY_CONTRACT,codingMemorySchema,memorySchema,memoryAdmissionSchema,memoryRelationSchema,type Memory,type MemoryEvidence,type EvidenceRange,type MemoryReviewReceipt} from './memory-schema.js';
+import {CODING_MEMORY_CONTRACT,codingMemorySchema,memorySchema,memoryAdmissionSchema,memoryRelationSchema,memoryReviewReceiptSchema,type Memory,type MemoryEvidence,type EvidenceRange,type MemoryReviewReceipt} from './memory-schema.js';
 import {memoryImageReadReceipts,memoryImageSelectorSchema} from './memory-image-proof.js';
 import {memoryImageInterpretation,memoryImageLocator} from './memory-image-grants.js';
 export type {Memory,MemoryEvidence,EvidenceRange} from './memory-schema.js';
@@ -304,7 +304,9 @@ export class MemoryStore {
         this.validatedClaims.set(cacheKey,claims);
       }
       if(options.validateOnly){return {items:[] as Memory[],runId:result.runId};}
-      const receipt=options.reviewReceipt;
+      const receipt=options.reviewReceipt?memoryReviewReceiptSchema.parse(options.reviewReceipt):undefined;
+      if(receipt?.decision==='not_required'&&(options.strategy?.review!==null||JSON.stringify(receipt.strategy)!==JSON.stringify(options.strategy.recipe)||receipt.draftRunId!==result.runId||options.reviewRunId!==undefined))throw new StoreError('Memory direct-publication receipt does not match its selected recipe and extraction',409);
+      const publish=Boolean(receipt?.resultHash&&(receipt.reviewRunId||receipt.decision==='not_required'));
       if(!options.validateOnly&&receipt?.resultHash&&receipt.resultHash!==sha256(result.answer))throw new StoreError('Memory review result changed before commit',409);
       if(!options.validateOnly&&this.deletions.snapshot()!==(receipt?.deletionSnapshot??this.deletions.snapshot()) )throw new StoreError('Memory deletion policy changed before commit',409);
       if(!options.validateOnly&&this.store.db.prepare('SELECT 1 FROM memory_deletions LIMIT 1').get()&&!receipt?.deletionSnapshot)throw new StoreError('Memory requires current deletion review before commit',409);
@@ -316,12 +318,12 @@ export class MemoryStore {
         }
         const fingerprint=sha256(JSON.stringify([...(options.integration?[options.integration]:[]),...(options.strategy?[options.strategy]:[]),options.tier??'episode',m.admission??null,m.coding??null,...(m.relations?.length||m.validFrom||m.validUntil?[m.relations??null,m.validFrom??null,m.validUntil??null]:[]),m.statement,[...m.evidenceIds].sort(),m.evidence.map(e=>[e.id,e.contentHash,e.offset,e.length,...(e.image?[e.image]:[])])]));
         const duplicate=this.store.db.prepare("SELECT json FROM memories WHERE json_extract(json,'$.fingerprint')=? AND json_extract(json,'$.status')!='stale'").get(fingerprint) as {json:string}|undefined;
-        if(duplicate){const existing=JSON.parse(duplicate.json) as Memory;if(existing.status==='proposed'&&receipt?.reviewRunId&&receipt.resultHash){existing.reviewReceipt=receipt;existing.reviewRunId=receipt.reviewRunId;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(existing),existing.id);items.push(this.publish(existing.id,existing.version,now));}else items.push(existing);continue;}
+        if(duplicate){const existing=JSON.parse(duplicate.json) as Memory;if(existing.status==='proposed'&&publish){existing.reviewReceipt=receipt;existing.reviewRunId=receipt!.reviewRunId;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(existing),existing.id);items.push(this.publish(existing.id,existing.version,now));}else items.push(existing);continue;}
         const value:Memory={...m,integration:options.integration,strategy:options.strategy,version:1,id:options.prepared?.items.find(item=>item.fingerprint===fingerprint)?.id??randomUUID(),tier:options.tier??'episode',kind:m.kind??'episodic',relatedMemoryIds:m.relatedMemoryIds,reviewRunId:options.reviewRunId,reviewReceipt:options.reviewReceipt,createdAt:now,status:'proposed',model:options.reviewReceipt?.model??result.usage?.model??model,runId:result.runId,skillVersion:options.skillVersion??MEMORY_SKILL_VERSION,fingerprint};
         this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));
         this.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(value.id,now,JSON.stringify(value));
         for(const id of new Set(value.evidenceIds.flatMap(id=>this.dependencyIds(id))))this.store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(value.id,id);
-        items.push(receipt?.reviewRunId&&receipt.resultHash?this.publish(value.id,value.version,now):value);
+        items.push(publish?this.publish(value.id,value.version,now):value);
       }
       if(options.prepared){if(JSON.stringify(items)!==JSON.stringify(options.prepared.items)||options.prepared.changed.some(memory=>JSON.stringify(this.get(memory.id))!==JSON.stringify(memory)))throw new StoreError('The provider staged different Memory bodies than the host commit',409);}
       options.onSaved?.(items);

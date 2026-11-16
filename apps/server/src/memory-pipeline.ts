@@ -67,7 +67,7 @@ export interface MemoryModelSelection {
 export interface MemoryPhasePorts {
   understand?:(input:ConversationPreparation)=>Promise<{id:string;revision:string}[]|undefined>;
   onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;
-  review?:(input:MemoryPipelineQuery,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:MemoryDraftOrigin)=>Promise<QueryResult>;
+  review?:(input:MemoryPipelineQuery,result:QueryResult,strategy?:MemoryReviewStrategy|null,draftOrigin?:MemoryDraftOrigin,recipe?:MemoryRecipeBinding)=>Promise<QueryResult>;
   query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;
   skillVersion?:string;
 }
@@ -550,8 +550,8 @@ export class MemoryPipeline {
     const pipeline=this;
     const fits=function*(batch:StoredBatch):Generator<void,boolean,void>{
       yield;
-      const input=pipeline.modelInput(job,batch,batch.chunks,records,sizing),review=pipeline.options.phases.review;
-      const planned=review?{...input,question:memoryReviewQuestion(input,batch.strategy?pipeline.strategies.resolvePinned(batch.strategy).review:undefined),taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:{memories:[],coverage:[]}}}:input;
+      const input=pipeline.modelInput(job,batch,batch.chunks,records,sizing),strategy=batch.strategy?pipeline.strategies.resolvePinned(batch.strategy).review:undefined,review=Boolean(pipeline.options.phases.review&&strategy!==null);
+      const planned=review?{...input,question:memoryReviewQuestion(input,strategy??undefined),taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:{memories:[],coverage:[]}}}:input;
       return measure(planned,review?capacity.draftTokens:0).fits;
     };
     const bound=function*(batch:StoredBatch):Generator<void,StoredBatch[],void>{
@@ -1163,11 +1163,14 @@ export class MemoryPipeline {
           };
           const input:MemoryPipelineQuery={...this.modelInput(job,batch,chunks),signal,validateOutput,onProgress:event=>observe(event.stage),onTrace:()=>observe(),traceContext:{operationId:'memory:'+id,jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
           const draftKey=sha256(JSON.stringify(['memory-extraction-draft@2',generationContract,(batch.artifactRefs??[]).map(ref=>({...ref})).sort((a,b)=>a.id.localeCompare(b.id)),summaries.slice().sort((a,b)=>a.id.localeCompare(b.id))]));
+          // Direct extraction also contains deletion admission. A changed
+          // deletion policy must recheck the raw draft, not replay its verdict.
+          const extractionPhaseKey=selected?.review===null?sha256(JSON.stringify(['memory-direct-extraction@1',draftKey,this.options.memories.deletions.snapshot()])):draftKey;
 
-        type Extracted={result:QueryResult;draftOrigin:MemoryDraftOrigin;repair?:string;nativeDraft?:StoredBatch['nativeDraft'];engineDrafts?:MemoryEngineDraftPin[]};
+        type Extracted={result:QueryResult;reviewReceipt?:MemoryReviewReceipt;draftOrigin:MemoryDraftOrigin;repair?:string;nativeDraft?:StoredBatch['nativeDraft'];engineDrafts?:MemoryEngineDraftPin[]};
         await yieldTurn();assertGrant();
         const phaseValid=()=>this.engine.isCurrentInputAuthority(batch.id)&&this.validateStep(this.engine.get(batch.id)!);
-        const extracted=await this.phaseOutputs.run<Extracted>({batchId:batch.id,jobId:id,phase:'extract',inputHash:draftKey,generation:generationContract,signal,validate:phaseValid,
+        const extracted=await this.phaseOutputs.run<Extracted>({batchId:batch.id,jobId:id,phase:'extract',inputHash:extractionPhaseKey,generation:generationContract,signal,validate:phaseValid,
           assertCommit:()=>{validateArtifacts();},execute:async stageSignal=>{
           let feedback:MemoryOutputValidationError|undefined;
           for(let generation=0;generation<2;generation++){
@@ -1187,17 +1190,26 @@ export class MemoryPipeline {
           stageSignal.throwIfAborted();
           validateArtifacts();
           if(this.options.phases.review){
-              if(workMembers&&!native)readMemoryWorkCoverage(result,workMembers);
-              if(!native)this.options.memories.extract(result,model,{workContract:contract,profile:profile.id,requireAdmission:true,evidenceRanges:memoryReadRanges(result,ranges,readRanges),expectedFingerprints:expectedFingerprints(result),validateOnly:true});
-              if(readRanges&&!native)assertMemoryTargetSupport(result,chunks,id=>this.options.memories.readEvidence([id])[0]?.ocrText);
-              if(workMembers&&!native){const accounting=readMemoryWorkCoverage(result,workMembers,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage',{workContract:contract});}
+              const canonical=!native||selected?.review===null;
+              if(workMembers&&canonical)readMemoryWorkCoverage(result,workMembers);
+              if(canonical)this.options.memories.extract(result,model,{workContract:contract,profile:profile.id,requireAdmission:true,evidenceRanges:memoryReadRanges(result,ranges,readRanges),expectedFingerprints:expectedFingerprints(result),validateOnly:true});
+              if(readRanges&&canonical)assertMemoryTargetSupport(result,chunks,id=>this.options.memories.readEvidence([id])[0]?.ocrText);
+              if(workMembers&&canonical){const accounting=readMemoryWorkCoverage(result,workMembers,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage',{workContract:contract});}
               if(!observeCurrent(()=>{validateArtifacts();const readChunks=observedReadChunks(result);this.assertContextReadScope(job,batch,readChunks);this.retainReadDependencies(batch.id,readChunks);this.drafts.put(batch.id,draftKey,result,Boolean(selected)&&!native);} ))throw new ExecutionFailure('waiting','interrupted');
 
               }else{
                 const issue=await validateOutput({...result,trace:[]});if(issue)throw new MemoryOutputValidationError(issue.code as import('./memory-validation.js').MemoryOutputValidationCode,'Memory extraction failed host validation',{workContract:contract});
               }
+              let reviewReceipt:MemoryReviewReceipt|undefined;
+              if(this.options.phases.review&&selected?.review===null){
+                result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!(phaseInput,result,null,native?'native-engine':'mote',selected.binding));
+                reviewReceipt=memoryReviewReceipt(result);
+                if(reviewReceipt?.decision!=='not_required')throw new ExecutionFailure('permanent','memory_phase_output_invalid');
+              }
               attempted=result;
-              return {result:{...result,trace:[],...retainedMemoryReadReceipt(result)},draftOrigin:native?'native-engine':'mote',repair:feedback?.repairInstruction,nativeDraft:batch.nativeDraft,engineDrafts:batch.engineDrafts};
+              // A direct recipe's decision is part of its durable extraction
+              // output, so a rolled-back publication reuses the exact receipt.
+              return {result:{...result,trace:[],...retainedMemoryReadReceipt(result)},reviewReceipt,draftOrigin:native?'native-engine':'mote',repair:feedback?.repairInstruction,nativeDraft:batch.nativeDraft,engineDrafts:batch.engineDrafts};
             }catch(error){
               if(error instanceof MemoryOutputValidationError){observeCurrent(()=>this.drafts.clear(batch.id));if(attempted)recordFailure(error,attempted,true);if(generation===0){feedback=error;continue;}}
               throw normalizeFailure(error);
@@ -1210,7 +1222,10 @@ export class MemoryPipeline {
         input.question=reviewQuestion+(extracted.repair?'\n\nHost validation rejected the previous output. '+extracted.repair+' Generate a fresh response from the same supplied evidence. No invalid memories have been saved.':'')+(processingImages.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:'');
         let result=extracted.result,reviewReceipt:MemoryReviewReceipt|undefined;
         const native=extracted.draftOrigin==='native-engine';
-        if(this.options.phases.review){
+        if(this.options.phases.review&&selected?.review===null){
+          reviewReceipt=memoryReviewReceiptSchema.parse(extracted.reviewReceipt);
+          if(reviewReceipt.decision!=='not_required'||reviewReceipt.resultHash!==sha256(result.answer))throw new ExecutionFailure('permanent','memory_phase_output_invalid');
+        }else if(this.options.phases.review){
           phase='review';batch.phase='review';observe('model');
           const reviewed=await this.phaseOutputs.run<{result:QueryResult;reviewReceipt?:MemoryReviewReceipt}>({batchId:batch.id,jobId:id,phase:'review',inputHash:sha256(JSON.stringify(['memory-review-phase@1',draftKey,extracted,selected?.review??defaultMemoryReviewStrategy])),generation:generationContract,signal,validate:phaseValid,assertCommit:()=>{validateArtifacts();},execute:async stageSignal=>{
             try{
@@ -1218,7 +1233,7 @@ export class MemoryPipeline {
               for(let reviewAttempt=0;reviewAttempt<2;reviewAttempt++){
                 reviewAttemptNumber=reviewAttempt+1;
                 try{
-                  result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,signal:stageSignal},validDraft,selected?.review,native?'native-engine':'mote'));
+                  result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,signal:stageSignal},validDraft,selected?.review,native?'native-engine':'mote',selected?.binding));
                   const failure=await validateOutput({...result,trace:[]});if(failure)throw new MemoryOutputValidationError(failure.code as import('./memory-validation.js').MemoryOutputValidationCode,'Memory review failed host validation',{workContract:contract});
                   // An incomplete text verdict may confuse a referenced original
                   // with this exact target. Let the model reconsider once within

@@ -6,7 +6,7 @@ import type {MemoryProviderNamespace} from '../memory-provider-contract.js';
 export type MemoryPublicationDependencies={evidenceIds?:readonly string[];memoryIds?:readonly string[]};
 export type MemoryPublicationReceipt={operationId:string;binding:{planId:string;generation:number;namespace?:MemoryProviderNamespace};prepared:PreparedMemoryExtraction;payloadHash:string};
 
-/** Reviewed stages can retain and verify a publication, without owner commands
+/** Host-validated stages can retain and verify a publication, without owner commands
  * or access to provider discovery, reconciliation and lifecycle state. */
 export interface MemoryStagePublication {
   retainedOutput<T>(operationId:string):T|undefined;

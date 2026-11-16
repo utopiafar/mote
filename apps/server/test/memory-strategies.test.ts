@@ -12,7 +12,7 @@ import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryStrategies} from '../src/memory-strategies.js';
-import type {MemoryStrategyRef} from '../src/memory-strategy-contract.js';
+import {memoryRecipeSchema,memoryRecipeBindingSchema,type MemoryStrategyRef} from '../src/memory-strategy-contract.js';
 
 const ref=(id:string,version='1'):MemoryStrategyRef=>({id:'fixture.'+id,version});
 const contextTime='2026-09-01T12:00:00Z';
@@ -162,6 +162,21 @@ test('recipe contracts are immutable and removed components cannot silently fall
   assert.equal(registry.list().find(r=>r.id==='fixture.recipe')?.available,false);
   assert.throws(()=>registry.registerReview(review('review','Changed without a version')),/new version/);
   removeExtract();assert.throws(()=>registry.registerExtraction({...extraction,permissions:['evidence.read','shell']}));
+});
+
+test('a recipe must explicitly select review or null, and that decision is part of its immutable binding',()=>{
+  const registry=new MemoryStrategies([]);registry.registerExtraction(extraction);
+  const definition={...ref('direct'),workContract:'range-evaluation@1',extract:ref('extract'),review:null};
+  const remove=registry.registerRecipe(definition),direct=registry.resolve(ref('direct'));
+  assert.equal(direct.review,null);assert.equal(direct.binding.review,null);
+  assert.equal(memoryRecipeSchema.safeParse({...definition,review:undefined}).success,false);
+  assert.equal(memoryRecipeBindingSchema.safeParse({...direct.binding,review:undefined}).success,false);
+  registry.registerReview(review('review','Generated review'));
+  registry.registerRecipe({...definition,version:'2',review:ref('review')});
+  const reviewed=registry.resolve(ref('direct','2'));
+  assert.notEqual(direct.binding.recipe.fingerprint,reviewed.binding.recipe.fingerprint);
+  assert.throws(()=>registry.resolvePinned({...direct.binding,review:reviewed.binding.review}),/version changed/,'a result cannot acquire another review policy under its old pin');
+  remove();assert.throws(()=>registry.registerRecipe({...definition,review:ref('review')}),/new version/);
 });
 
 test('removed strategies stop before billing and during commit; reinstall resumes only the original pinned definition',async t=>{

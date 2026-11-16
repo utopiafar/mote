@@ -12,6 +12,9 @@ import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {memoryRecipeScope,MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
+import {SINGLE_PASS_PERSONAL_RECIPE} from '../src/memory-range-selection-policy.js';
+import {memoryReviewReceiptSchema} from '../src/memory-schema.js';
+import {prepareTaskContext} from '@mote/agent';
 
 const personal={id:'mote.personal-memory',version:'5'},coding={id:'mote.coding-memory',version:'3'};
 const body='I felt proud of finishing the prototype. For the prototype retry path I prevented duplicate writes with an idempotency key and verified the retry.';
@@ -19,21 +22,25 @@ const understanding=(input:QueryInput)=>input.question.includes('FINAL UNIFIED R
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-auto-recipes-'));
   const config:Config={dataKey:undefined,dataDir:directory,token:'generated-auto-recipes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
-  const calls:QueryInput[]=[],control:{failCoding:boolean;emptyResults?:boolean;duringReview?:(input:QueryInput)=>Promise<void>}={failCoding:false};
+  const calls:QueryInput[]=[],control:{failCoding:boolean;emptyResults?:boolean;invalidQuote?:boolean;deletionSame?:boolean;duringExtract?:(input:QueryInput)=>Promise<void>;duringReview?:(input:QueryInput)=>Promise<void>}={failCoding:false};
   let node:Awaited<ReturnType<typeof buildApp>>;
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
     const topic=fixtureTopicResult(input);if(topic)return topic;
     const plan=await fixtureMemoryPlan(input);if(plan)return plan;
-    calls.push(input);const evidence=node.memories.readEvidence(input.evidenceIds!)[0],id=evidence.id;
+    calls.push(input);
+    if(input.question.startsWith('Host Memory deletion review.'))return {answer:JSON.stringify({sameConclusion:control.deletionSame??true,newSupportEvidenceIds:[]}),citations:[],trace:[],runId:randomUUID()};
+    const evidence=node.memories.readEvidence(input.evidenceIds!)[0],id=evidence.id;
     const common={uncertainty:'Generated session only.',admission:{layer:'memory',reason:'Generated fixture personal experience or evidenced retry decision',scope:'Generated prototype',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:evidence.ocrText.trim()}]};
     const candidates=[{...common,domain:'personal',title:'Generated pride',statement:`Felt proud of finishing the prototype [${id}]`},{...common,domain:'coding',title:'Generated retry decision',statement:`For the prototype retry path, used an idempotency key and verified retry [${id}]`,coding:{kind:'decision',scope:'session',applicability:'Generated prototype retry path',validation:'tested'}}];
-    let values=candidates;
+    let values=input.question.includes('This selected recipe publishes host-validated extraction directly')?[candidates[0]]:candidates;
     if(input.traceContext?.phase==='review'){
       await control.duringReview?.(input);
       const recipe=node.memoryPipeline.get(input.traceContext!.jobId!).recipes![0];
       if(recipe.id===coding.id&&control.failCoding)throw Error('Generated independent review failure');
       values=recipe.id===coding.id?[candidates[1]]:[candidates[0]];
     }
+    if(control.invalidQuote)values=values.map(value=>({...value,evidence:[{id,quote:'This generated quote does not exist in the source.'}]}));
+    if(input.traceContext?.phase==='extract')await control.duringExtract?.(input);
     const range=input.evidenceRanges?.find(range=>range.id===id),quote=range?evidence.ocrText.slice(range.offset,range.offset+Math.min(range.length,120)):evidence.ocrText.slice(0,120);
     return fixtureMemoryWorkResult(input,{answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:control.emptyResults?[]:values,actionCues:[]}:{memories:control.emptyResults?[]:values}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()});
   }}};
@@ -52,6 +59,89 @@ async function fixture(t:import('node:test').TestContext){
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   return {get node(){return node;},jobs:()=>node.memoryPipeline.list().map(j=>node.memoryPipeline.get(j.id)),calls,control,config,configure,source,add,publish,run,queue,count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase||phase==='extract'&&understanding(c)).length,async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();}};
 }
+
+for(const selected of [personal,SINGLE_PASS_PERSONAL_RECIPE])for(const empty of [false,true])test(`owner selection runs ${selected.id} with ${empty?'empty':'selected'} output and truthful publication evidence`,async t=>{
+  const f=await fixture(t);f.source('generated-selected');f.control.emptyResults=empty;
+  const catalog=await f.node.app.inject({url:'/api/memory-recipes',headers:{authorization:'Bearer '+f.config.token}});
+  assert.equal(catalog.statusCode,200,catalog.body);
+  assert.ok(catalog.json().items.some((item:any)=>item.id===SINGLE_PASS_PERSONAL_RECIPE.id&&item.review===null&&item.available));
+  const view=await f.configure([selected],'generated-selected'),binding=view.items[0].binding;
+  const direct=selected.id===SINGLE_PASS_PERSONAL_RECIPE.id;
+  assert.equal(binding.review===null,direct);
+  assert.deepEqual(f.node.memoryRecipeSettings.selection().map(value=>value.recipe.id),[personal.id],'a source choice does not rewrite the default');
+  await f.add('generated-selected','original');await f.publish();await f.queue();
+  const queued=f.jobs();assert.equal(queued.length,1);assert.deepEqual(queued[0].recipes,[selected]);
+  assert.deepEqual(queued[0].batches[0].strategy,binding,'the owner-selected identity reaches the actual automatic pipeline');
+  await f.run();
+  const job=f.node.memoryPipeline.get(queued[0].id);assert.equal(job.status,'completed');
+  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),direct?0:1);assert.equal(f.calls.length,direct?1:2);
+  const receipt=memoryReviewReceiptSchema.parse(job.batches[0].reviewReceipt);
+  assert.equal(receipt.decision,direct?'not_required':'independent');
+  assert.equal(receipt.policy,direct?'recipe-selected-review@1':'bounded-exact-review@1');
+  assert.deepEqual(receipt.strategy,direct?binding.recipe:binding.review);
+  assert.equal(receipt.reviewRunId===undefined,direct);
+  if(direct)assert.equal(receipt.validation,'host-evidence@1');
+  const task=prepareTaskContext(f.calls[0]);assert.equal(task.id,'extraction');assert.equal(task.skill?.id,'memory-strategy');assert.equal(task.profile.retrieval,'evidence');
+  if(direct)assert.match(f.calls[0].question,/without an additional independent semantic review/);
+  const reviewPhases=f.node.store.db.prepare("SELECT count(*) n FROM memory_phase_outputs p JOIN memory_batches b ON b.id=p.batch_id WHERE b.job_id=? AND p.phase='review'").get(job.id)!.n;
+  assert.equal(reviewPhases,direct?0:1,'direct extraction does not manufacture an independent review checkpoint');
+  assert.equal(job.memoryIds.length,empty?0:1);
+  if(!empty){
+    const memory=f.node.memories.get(job.memoryIds[0]);assert.equal(memory.status,'published');assert.deepEqual(memory.strategy,binding);assert.deepEqual(memory.reviewReceipt,receipt);assert.equal(memory.reviewRunId,receipt.reviewRunId);
+    if(direct)assert.equal(receipt.draftRunId,memory.runId);
+    const reader=f.node.featureServices.evidenceReader.agent({diagnostics:f.node.featureServices.diagnostics}),read=await reader.memories!({id:memory.id,includeEvidence:true});
+    assert.equal(read.items.length,1,'the ordinary Agent reader accepts the published result without requiring a reviewer run');assert.equal(read.sourceSpans?.length,1);assert.equal(read.sourceSpans![0].record.id,memory.evidenceIds[0]);
+  }
+  const before=f.calls.length;await f.restart();await f.run();assert.equal(f.calls.length,before,'restarting preserves the selected decision and valid checkpoints');
+});
+
+for(const selected of [personal,SINGLE_PASS_PERSONAL_RECIPE])for(const mutation of ['version','revoke','recipe-change','cancel','delete'] as const)test(`${selected.id} rejects late output after ${mutation}`,async t=>{
+  const f=await fixture(t);f.source('generated-fence');await f.configure([selected],'generated-fence');
+  const original=await f.add('generated-fence','original');await f.publish();await f.queue();
+  const job=f.jobs()[0];assert.ok(job);const binding=job.batches[0].strategy;
+  let entered!:()=>void,release!:()=>void;const reached=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+  const hold=async()=>{entered();await held;};
+  if(selected.id===SINGLE_PASS_PERSONAL_RECIPE.id)f.control.duringExtract=hold;else f.control.duringReview=hold;
+  const running=f.run();await reached;
+  try{
+    if(mutation==='version'){await f.add('generated-fence','original',false,'2',body+' Generated source revision two.');await f.publish();}
+    else if(mutation==='revoke'){
+      // Model another host's committed revocation without its local cancel
+      // notification: publication must recheck the durable grant itself.
+      f.node.memoryRecipeSettings.onApplied=undefined;
+      await f.configure([selected.id===personal.id?SINGLE_PASS_PERSONAL_RECIPE:personal],'generated-fence');
+    }
+    else if(mutation==='recipe-change')await f.configure([selected.id===personal.id?SINGLE_PASS_PERSONAL_RECIPE:personal],'generated-fence');
+    else if(mutation==='cancel')f.node.memoryPipeline.cancel(job.id);
+    else f.node.store.delete(original.id);
+  }finally{f.control.duringExtract=undefined;f.control.duringReview=undefined;release();await running;}
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  const ended=f.node.memoryPipeline.get(job.id);assert.notEqual(ended.status,'completed');assert.equal(ended.memoryIds.length,0);assert.equal(f.node.memories.list().length,0);
+  if(mutation==='revoke')assert.equal(ended.batches[0].errorCode,'memory_authorization_revoked');
+  assert.deepEqual(ended.batches[0].strategy,binding,'the old result never acquires the replacement recipe decision');
+  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_publications').get()!.n,0);
+});
+
+for(const selected of [personal,SINGLE_PASS_PERSONAL_RECIPE])test(`${selected.id} rejects invalid exact quotes before publication`,async t=>{
+  const f=await fixture(t);f.source('generated-invalid');await f.configure([selected],'generated-invalid');f.control.invalidQuote=true;
+  await f.add('generated-invalid','original');await f.publish();await f.run();
+  const job=f.jobs()[0];assert.equal(job.status,'failed');assert.equal(job.memoryIds.length,0);assert.equal(f.node.memories.list().length,0);
+  assert.ok(job.batches[0].validationFailures?.some(value=>value.code==='quote_not_found'&&value.phase==='extract'));
+  assert.equal(f.count('extract'),2,'the existing bounded extraction repair budget stays intact');assert.equal(f.count('review'),0);
+  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+});
+
+test('the selected direct recipe still checks applicable deletion intent without inventing semantic reviewer approval',async t=>{
+  const f=await fixture(t);f.source('generated-deletion');await f.configure([SINGLE_PASS_PERSONAL_RECIPE],'generated-deletion');
+  await f.add('generated-deletion','original');await f.publish();await f.run();
+  const first=f.jobs()[0],memory=f.node.memories.get(first.memoryIds[0]),headers={authorization:'Bearer '+f.config.token};
+  const removed=await f.node.app.inject({method:'DELETE',url:'/api/memories/'+memory.id,headers});assert.equal(removed.statusCode,200,removed.body);
+  const before=f.calls.length,created=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:memory.evidenceIds,contextTime:'2026-09-02T00:00:00Z',recipes:[SINGLE_PASS_PERSONAL_RECIPE]}});
+  assert.equal(created.statusCode,202,created.body);const job=await f.node.memoryPipeline.run(created.json().id);assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.equal(f.node.memories.list().length,0);
+  const calls=f.calls.slice(before);assert.equal(calls.length,2);assert.equal(calls.filter(input=>input.traceContext?.phase==='extract').length,1);assert.equal(calls.filter(input=>input.question.startsWith('Host Memory deletion review.')).length,1,'a provenance-matched deletion still gets its semantic comparison');
+  assert.equal(job.batches[0].reviewReceipt?.decision,'not_required');assert.equal(job.batches[0].reviewReceipt?.reviewRunId,undefined);assert.equal(job.batches[0].reviewReceipt?.deletionSnapshot,f.node.memories.deletions.snapshot());
+});
 
 test('owner-selected automatic recipes share one generation, support source overrides and survive restart without replay',async t=>{
   const f=await fixture(t);assert.deepEqual(f.node.memoryRecipeSettings.selection().map(b=>b.recipe.id),[personal.id]);assert.equal(f.calls.length,0);
