@@ -282,6 +282,8 @@ def prepare_pixels(request):
                 # Animated/multipage originals cannot be silently reduced to frame 0.
                 require(getattr(image, 'n_frames', 1) == 1 and original['pages'] == 1, 'unsupported_image')
                 orientation = image.getexif().get(274, 1)
+                if orientation not in range(1, 9):
+                    orientation = 1
                 require(orientation == (1 if region else original['orientation']), 'unsupported_image')
                 image.load()
                 geometry = Geometry(image.width, image.height, orientation,
@@ -299,14 +301,21 @@ def prepare_pixels(request):
 
 def interpretation(raw, geometry):
     try:
+        if isinstance(raw, str):
+            # Keep the original byte bound, including any complete outer fence.
+            require(len(raw.encode()) <= MAX_MODEL_TEXT_BYTES)
+            fenced = re.fullmatch(r'```(?:json)?(.*)```', raw.strip(), re.DOTALL)
+            if fenced is not None:
+                raw = fenced.group(1)
         value = loads(raw, MAX_MODEL_TEXT_BYTES)
-        fields(value, ('text', 'regions'))
+        fields(value, ('text',), ('regions',))
         text(value['text'], 24000, True)
         require(value['text'].strip() != '')
-        require(type(value['regions']) is list and len(value['regions']) <= 32)
+        regions = value.get('regions', [])
+        require(type(regions) is list and len(regions) <= 32)
         result = {'text': value['text'].strip(), 'regions': []}
         seen = set()
-        for region in value['regions']:
+        for region in regions:
             fields(region, ('x', 'y', 'width', 'height', 'description'))
             text(region['description'], 4000)
             for key in ('x', 'y', 'width', 'height'):
