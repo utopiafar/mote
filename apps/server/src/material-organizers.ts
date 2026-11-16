@@ -344,7 +344,7 @@ function fileExtractionDependency(file:MaterialOrganizerFile):{state:NonNullable
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'15',slot:'source-item',
+  id:'mote.source-item',version:'16',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -409,6 +409,7 @@ const sourceItem:MaterialOrganizer={
       else if(artifact&&(artifact.complete===false||artifact.coverage==='partial')){state='partial';reason='processor_partial';}
     }
     if(r.provenance?.document?.fileIndex&&r.provenance.document.fileIndex.coverage!=='full'){state='partial';reason='source_index_partial';}
+    if(r.provenance?.document?.bodyCoverage?.state==='partial'){state='partial';reason=`source_body_${r.provenance.document.bodyCoverage.reason}`;}
     if(attachmentPartial||attachedArtifacts.some(a=>a.state!=='ready')){state='partial';reason='attachment_processing_incomplete';}
     const reference=r.provenance?.layer==='reference'||r.provenance?.layer==='derived';
     const hasSourceBody=Boolean(r.ocrText?.trim());

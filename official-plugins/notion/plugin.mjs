@@ -18,6 +18,8 @@ const MAX_SELECTED = 50;
 const MAX_BLOCKS = 200;
 const MAX_DATABASE_ENTRIES = 100;
 const MAX_TEXT = 100000;
+// A continuation contains positions, never provider responses or document text.
+const MAX_DEPTH = 32;
 const DEFAULT_INTERVAL = 900000;
 
 class NotionError extends Error {
@@ -98,18 +100,24 @@ function propertyValue(property) {
 
 function propertiesText(properties) {
   const lines = [];
+  let partial = Object.keys(properties ?? {}).length > 50;
   for (const [name, property] of Object.entries(properties ?? {}).slice(0, 50)) {
-    const value = propertyValue(property).trim().slice(0, 500);
+    const original = propertyValue(property).trim(), value = original.slice(0, 500);
+    if (original.length > 500 || property?.has_more === true) partial = true;
     if (value) lines.push(name + ': ' + value);
     if (lines.length >= 100) break;
   }
-  return lines.join('\n').slice(0, 20000);
+  const joined = lines.join('\n');
+  return {content: joined.slice(0, 20000), partial: partial || joined.length > 20000};
 }
 
 function blockText(block) {
   const type = text(block?.type);
   const value = block?.[type];
   if (type === 'child_page' || type === 'child_database') return text(value?.title);
+  if (type === 'table_row') return (Array.isArray(value?.cells) ? value.cells : []).map(richText).join(' | ');
+  if (type === 'equation') return text(value?.expression);
+  if (['bookmark', 'embed', 'link_preview'].includes(type)) return [text(value?.url), richText(value?.caption)].filter(Boolean).join('\n');
   const content = richText(value?.rich_text).trim();
   if (!content) return '';
   const prefix = {
@@ -118,6 +126,40 @@ function blockText(block) {
   }[type] ?? '';
   return prefix + content;
 }
+
+const supportedBlock = block => Array.isArray(block?.[block.type]?.rich_text) || ['divider', 'breadcrumb', 'table_of_contents', 'table', 'table_row', 'column_list', 'column', 'equation', 'bookmark', 'embed', 'link_preview'].includes(block.type) || block.type === 'synced_block' && block.has_children;
+const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 200;
+const validTime = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
+const prefixOf = content => ({length: content.length, hash: hash(content)});
+const snapshot = item => {
+  const {captureId, sourceId, receivedAt, current, ...entry} = item;
+  return {...entry, observedAt: now()};
+};
+
+function stableContent(value) {
+  if (Array.isArray(value)) return value.map(stableContent);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map(key => {
+    let child = value[key];
+    // Notion-hosted file access URLs expire and refresh without an edit. Keep
+    // file names/captions/upload IDs and external URLs as content identities.
+    if (key === 'file' && value.type === 'file' && child && typeof child === 'object' && !Array.isArray(child)) {
+      const {url, expiry_time, ...content} = child;
+      child = content;
+    }
+    return [key, stableContent(child)];
+  }));
+}
+
+const continuationHash = (response, blocks) => hash(JSON.stringify(stableContent({
+  has_more: response.has_more, next_cursor: response.has_more ? response.next_cursor : null,
+  results: response.results.map(entry => ({
+    object: entry.object, id: entry.id, created_time: entry.created_time, last_edited_time: entry.last_edited_time,
+    parent: entry.parent, archived: entry.archived === true, in_trash: entry.in_trash === true,
+    ...(blocks ? {type: entry.type, has_children: entry.has_children === true, content: entry[entry.type]} :
+      {url: pageUrl(entry.url), properties: entry.properties, icon: entry.icon, cover: entry.cover}),
+  })),
+})));
 
 function parseSelection(raw) {
   const input = raw && typeof raw === 'object' ? raw : {};
@@ -236,7 +278,7 @@ const connector = {
       window: scan.window, processed: scan.processed,
       remaining: scan.complete && !scan.contentPartial && scan.failed === 0 ? 0 : null,
       failed: scan.failed,
-      limitations: [...(!scan.complete && scan.type === 'database' ? ['pagination_pending'] : []), ...(scan.contentPartial ? ['content_partial'] : [])],
+      limitations: [...(!scan.complete && scan.type === 'database' ? ['pagination_pending'] : []), ...(scan.contentPartial || !scan.complete ? ['content_partial'] : [])],
       updatedAt: now(),
     });
     const scanPin = (item, source) => {
@@ -250,6 +292,7 @@ const connector = {
     };
     const saveScan = async (record, scan, pin) => {
       pin.current();
+      if (Buffer.byteLength(JSON.stringify(scan)) > 60000) throw new NotionError('notion_traversal_limit', 413);
       const saved = await ctx.state.compareAndSet(record.key, record.revision || null, scan, pin.condition);
       pin.current();
       return {key: record.key, revision: saved.revision, scan};
@@ -260,15 +303,25 @@ const connector = {
       const mode = source.initialSync ?? 'all';
       const scope = hash(JSON.stringify([doc.token?.workspaceId, doc.token?.botId, doc.token?.connectedAt, item.id, item.type, item.selection, mode, pin.condition.syncScopeVersion]));
       let scan = record?.value;
-      const same = scan?.version === 1 && scan.id === item.id && scan.type === item.type && scan.mode === mode && scan.scope === scope && source.status?.coverage;
+      const same = scan?.version === 1 && scan.id === item.id && scan.type === item.type && scan.mode === mode && scan.scope === scope;
       if (same) {
         if (mode === 'new_only' && (typeof scan.baselineAt !== 'string' || !Number.isFinite(Date.parse(scan.baselineAt))) || scan.pageBaseline !== undefined && (typeof scan.pageBaseline !== 'string' || !Number.isFinite(Date.parse(scan.pageBaseline))) || !scan.window || !Number.isFinite(Date.parse(scan.window.to)) || scan.window.from && (!Number.isFinite(Date.parse(scan.window.from)) || Date.parse(scan.window.from) > Date.parse(scan.window.to)) || !Number.isSafeInteger(scan.processed) || scan.processed < 0 || !Number.isSafeInteger(scan.failed) || scan.failed < 0 || typeof scan.complete !== 'boolean' || typeof scan.contentPartial !== 'boolean' || scan.cursor !== undefined && (typeof scan.cursor !== 'string' || !scan.cursor || scan.cursor.length > 2048)) throw new NotionError('notion_state_invalid', 503);
+        if (scan.bodyFormat !== 1) {
+          // The properties-only collector did not retain a body position. Its
+          // completed row enumeration cannot advance past unread historical
+          // bodies. Rebuild that position within the existing authorization and
+          // anchor, retaining new-only's original admission baseline.
+          scan = {...scan, bodyFormat: 1, window: {to: scan.window.to}, processed: 0, failed: 0, complete: false, contentPartial: false};
+          delete scan.cursor;
+          return saveScan({key, revision: record.revision}, scan, pin);
+        }
+        if (scan.rowIndex !== undefined && (!Number.isInteger(scan.rowIndex) || scan.rowIndex < 0 || scan.rowIndex > MAX_DATABASE_ENTRIES) || scan.body && (!validId(scan.body.id) || !validTime(scan.body.modifiedAt) || !Number.isSafeInteger(scan.body.prefix?.length) || scan.body.prefix.length < 0 || !/^[a-f0-9]{64}$/.test(scan.body.prefix.hash) || !Array.isArray(scan.body.stack) || scan.body.stack.length > MAX_DEPTH || scan.body.stack.some(frame => !validId(frame.id) || !Number.isInteger(frame.index) || frame.index < 0 || frame.index > 100 || frame.cursor !== undefined && (typeof frame.cursor !== 'string' || !frame.cursor || frame.cursor.length > 2048) || frame.textOffset !== undefined && (!Number.isSafeInteger(frame.textOffset) || frame.textOffset < 0)))) throw new NotionError('notion_state_invalid', 503);
         if (!scan.complete) return {key, revision: record.revision, scan};
       }
       const to = now();
-      scan = {version: 1, id: item.id, type: item.type, scope, mode,
+      scan = {version: 1, bodyFormat: 1, id: item.id, type: item.type, scope, mode,
         window: {...(same ? {from: scan.window.to} : mode === 'new_only' ? {from: to} : {}), to},
-        processed: 0, failed: 0, complete: false, contentPartial: true,
+        processed: 0, failed: 0, complete: false, contentPartial: false,
         ...(mode === 'new_only' ? {baselineAt: same ? scan.baselineAt : to, ...(same && scan.pageBaseline ? {pageBaseline: scan.pageBaseline} : {})} : {}),
       };
       return saveScan({key, revision: record?.revision ?? 0}, scan, pin);
@@ -330,7 +383,7 @@ const connector = {
           throw new NotionError(code, result.response.status);
         }
         if (result.response.status === 404) throw new NotionError('notion_resource_not_found', 404);
-        if (result.response.status === 400 && body?.start_cursor) throw new NotionError('notion_cursor_invalid', 409);
+        if (result.response.status === 400 && (body?.start_cursor || new URL(API_ROOT + path).searchParams.has('start_cursor'))) throw new NotionError('notion_cursor_invalid', 409);
         if (result.response.status === 429 || result.response.status === 503) throw new NotionError('notion_rate_limited', 503);
         throw new NotionError('notion_request_failed', 502);
       }
@@ -367,77 +420,170 @@ const connector = {
       return {items, truncated: Boolean(body?.has_more)};
     };
 
-    const blockLines = async pageId => {
-      const lines = [];
-      let cursor, partial = false, blocks = 0;
-      for (let page = 0; page < 2; page++) {
-        const query = new URLSearchParams({page_size: '100', ...(cursor ? {start_cursor: cursor} : {})});
-        const body = await api('GET', '/v1/blocks/' + encodeURIComponent(pageId) + '/children?' + query.toString());
-        if (!Array.isArray(body?.results) || body.results.length > 100 || typeof body.has_more !== 'boolean') throw new NotionError('notion_response_invalid', 502);
-        for (const block of body.results) {
-          blocks++;
-          const line = blockText(block);
-          if (line) lines.push(line);
-          if (block.has_children || ['child_page', 'child_database'].includes(block.type) || !Array.isArray(block?.[block.type]?.rich_text) && !['divider', 'breadcrumb', 'table_of_contents'].includes(block.type)) partial = true;
+    const pageMetadata = async id => {
+      const page = await api('GET', '/v1/pages/' + encodeURIComponent(id));
+      if (page?.object !== 'page' || page.id !== id || !validTime(page.last_edited_time)) throw new NotionError('notion_response_invalid', 502);
+      return page;
+    };
+
+    // Brent's cycle check needs constant space even for an arbitrarily long
+    // provider cursor chain. A cycle is a failed read, never completed coverage.
+    const advanceCursor = (position, cursor) => {
+      if (typeof cursor !== 'string' || !cursor || cursor.length > 2048 || cursor === position.cursor || cursor === position.anchor) throw new NotionError('notion_response_invalid', 502);
+      position.span = (position.span ?? 0) + 1;
+      position.power ??= 1;
+      if (position.span === position.power) {
+        position.anchor = cursor;
+        position.power *= 2;
+        position.span = 0;
+      }
+      position.cursor = cursor;
+    };
+
+    const pageItem = async (item, scan, source, budget) => {
+      const page = await pageMetadata(item.id), modifiedAt = page.last_edited_time;
+      if (Date.parse(modifiedAt) > Date.parse(scan.window.to)) return {done: true, partial: true};
+      const head = ctx.sources.getItem(source.id, item.id);
+      if (scan.mode === 'new_only' && !head) {
+        if (item.type === 'page') {
+          if (!scan.pageBaseline) return {done: true, pageBaseline: modifiedAt};
+          if (scan.pageBaseline === modifiedAt) return {done: true};
+        } else {
+          if (!validTime(page.created_time)) throw new NotionError('notion_response_invalid', 502);
+          if (Date.parse(page.created_time) <= Date.parse(scan.baselineAt)) return {done: true};
         }
-        cursor = body.has_more && typeof body.next_cursor === 'string' && body.next_cursor.length <= 2048 ? body.next_cursor : undefined;
-        if (body.has_more && !cursor) throw new NotionError('notion_response_invalid', 502);
-        if (!cursor) return {lines, partial};
-        if (blocks >= MAX_BLOCKS) return {lines, partial: true};
       }
-      return {lines, partial: true};
-    };
-
-    const pageItem = async (item, scan, source) => {
-      const path = '/v1/pages/' + encodeURIComponent(item.id), page = await api('GET', path);
-      if (!page || page.object !== 'page' || page.id !== item.id || typeof page.last_edited_time !== 'string' || !Number.isFinite(Date.parse(page.last_edited_time))) throw new NotionError('notion_response_invalid', 502);
-      if (Date.parse(page.last_edited_time) > Date.parse(scan.window.to)) return {entries: [], partial: true};
-      if (scan.mode === 'new_only' && !ctx.sources.getItem(source.id, item.id)) {
-        if (!scan.pageBaseline) return {entries: [], partial: false, pageBaseline: page.last_edited_time};
-        if (scan.pageBaseline === page.last_edited_time) return {entries: [], partial: false};
+      let body = scan.body?.id === item.id ? structuredClone(scan.body) : undefined;
+      if (body && body.modifiedAt !== modifiedAt) body = undefined;
+      const prior = head?.document?.originalMetadata?.notion;
+      if (!body && head?.modifiedAt === modifiedAt && prior?.finished === true && prior.bodyRevision === modifiedAt && head.document?.bodyCoverage) {
+        return {entry: snapshot(head), done: true, partial: head.document.bodyCoverage.state === 'partial'};
       }
-      const body = await blockLines(item.id), title = titleOf(page) || text(item.title) || 'Notion 页面';
-      const joined = body.lines.join('\n'), content = joined.slice(0, MAX_TEXT), uri = pageUrl(page.url) ?? item.uri, modifiedAt = page.last_edited_time;
-      // A new revision starts its own read. Never join block pages from an old
-      // revision, or publish a body assembled while the provider changed it.
-      const confirmed = await api('GET', path);
-      if (confirmed?.id !== page.id || confirmed.last_edited_time !== modifiedAt) throw new NotionError('notion_page_changed', 409);
-      const revision = hash(JSON.stringify({id: page.id, title, content, uri, modifiedAt}));
-      return {entries: [{externalId: page.id, revision, observedAt: now(), modifiedAt,
+      let content;
+      if (body) {
+        content = head?.text.slice(0, body.prefix.length);
+        if (head?.modifiedAt !== modifiedAt || content === undefined || content.length !== body.prefix.length || hash(content) !== body.prefix.hash) throw new NotionError('notion_prefix_unavailable', 409);
+      } else {
+        const properties = propertiesText(page.properties);
+        content = properties.content;
+        if (content.length > budget.text) return {done: false};
+        budget.text -= content.length;
+        body = {id: item.id, modifiedAt, prefix: prefixOf(content), stack: [{id: item.id, index: 0}],
+          partial: properties.partial};
+      }
+      const cache = new Map(), seen = new Set();
+      while (body.stack.length && budget.blocks > 0 && budget.text > 0) {
+        const frame = body.stack.at(-1), key = JSON.stringify([frame.id, frame.cursor]);
+        let response = cache.get(key);
+        if (!response) {
+          const query = new URLSearchParams({page_size: '100', ...(frame.cursor ? {start_cursor: frame.cursor} : {})});
+          response = await api('GET', '/v1/blocks/' + encodeURIComponent(frame.id) + '/children?' + query.toString());
+          if (!Array.isArray(response?.results) || response.results.length > 100 || typeof response.has_more !== 'boolean' || response.has_more && !response.results.length) throw new NotionError('notion_response_invalid', 502);
+          const identities = new Set();
+          for (const block of response.results) {
+            if (!validId(block?.id) || identities.has(block.id) || block.parent?.block_id && block.parent.block_id !== frame.id || block.parent?.page_id && block.parent.page_id !== item.id) throw new NotionError('notion_response_invalid', 502);
+            identities.add(block.id);
+          }
+          const pageHash = continuationHash(response, true);
+          if (frame.pageHash && frame.pageHash !== pageHash) throw new NotionError('notion_page_changed', 409);
+          if (!frame.pageHash && frame.previousHash === pageHash) throw new NotionError('notion_response_invalid', 502);
+          frame.pageHash = pageHash;
+          cache.set(key, response);
+          if (cache.size > 2) cache.delete(cache.keys().next().value);
+        }
+        if (frame.index >= response.results.length) {
+          if (response.has_more) {
+            advanceCursor(frame, response.next_cursor);
+            frame.previousHash = frame.pageHash;
+            delete frame.pageHash;
+            frame.index = 0;
+          } else body.stack.pop();
+          continue;
+        }
+        const block = response.results[frame.index];
+        if (body.stack.some(parent => parent.id === block.id) || !frame.textOffset && seen.has(block.id)) throw new NotionError('notion_response_invalid', 502);
+        seen.add(block.id);
+        budget.blocks--;
+        const line = blockText(block);
+        frame.separator ??= Boolean(content && line);
+        const segment = (frame.separator ? '\n' : '') + line, offset = frame.textOffset ?? 0;
+        if (offset > segment.length) throw new NotionError('notion_page_changed', 409);
+        let end = Math.min(segment.length, offset + budget.text);
+        if (end < segment.length && /[\uD800-\uDBFF]/.test(segment[end - 1]) && /[\uDC00-\uDFFF]/.test(segment[end])) end--;
+        const addition = segment.slice(offset, end);
+        content += addition;
+        budget.text -= addition.length;
+        if (end < segment.length) {frame.textOffset = end;break;}
+        frame.index++;
+        delete frame.textOffset;
+        delete frame.separator;
+        if (!supportedBlock(block)) body.partial = true;
+        if (block.has_children && !['child_page', 'child_database'].includes(block.type)) {
+          if (body.stack.length >= MAX_DEPTH) throw new NotionError('notion_traversal_limit', 413);
+          body.stack.push({id: block.id, index: 0});
+        }
+      }
+      // Pop exhausted pages without reading another block after the budget.
+      while (body.stack.length) {
+        const frame = body.stack.at(-1), response = cache.get(JSON.stringify([frame.id, frame.cursor]));
+        if (!response || frame.index < response.results.length || response.has_more) break;
+        body.stack.pop();
+      }
+      const confirmed = await pageMetadata(item.id);
+      if (confirmed.last_edited_time !== modifiedAt) throw new NotionError('notion_page_changed', 409);
+      const done = body.stack.length === 0, title = titleOf(page) || text(item.title) || 'Notion 页面', uri = pageUrl(page.url) ?? item.uri;
+      body.prefix = prefixOf(content);
+      const document = {bodyCoverage: done && !body.partial ? {state: 'complete'} : {state: 'partial', reason: done ? 'unsupported_content' : 'pagination_pending'},
+        originalMetadata: {notion: {bodyRevision: modifiedAt, finished: done}}};
+      const semantic = {id: item.id, title, content, uri, modifiedAt, document};
+      return {entry: {externalId: item.id, revision: hash(JSON.stringify(semantic)), observedAt: now(), modifiedAt,
         title: title.slice(0, 2000), text: content, kind: 'file', layer: 'snapshot', mimeType: 'text/markdown',
-        ...(uri ? {uri} : {}), metadata: {version: 1, provider: {updatedAt: modifiedAt}},
-      }], partial: body.partial || joined.length > MAX_TEXT};
+        ...(uri ? {uri} : {}), metadata: {version: 1, provider: {updatedAt: modifiedAt}}, document},
+        done, partial: body.partial, ...(!done ? {body} : {})};
     };
 
-    const databaseItems = async (item, scan, source) => {
+    const databaseItems = async (item, scan, source, budget) => {
       const filters = [{timestamp: 'last_edited_time', last_edited_time: {on_or_before: scan.window.to}}];
       if (scan.window.from) filters.push({timestamp: 'last_edited_time', last_edited_time: {on_or_after: scan.window.from}});
-      const body = await api('POST', '/v1/databases/' + encodeURIComponent(item.id) + '/query', {
+      const response = await api('POST', '/v1/databases/' + encodeURIComponent(item.id) + '/query', {
         page_size: MAX_DATABASE_ENTRIES, ...(scan.cursor ? {start_cursor: scan.cursor} : {}),
         sorts: [{timestamp: 'last_edited_time', direction: 'descending'}], filter: {and: filters},
       });
-      if (!Array.isArray(body?.results) || body.results.length > MAX_DATABASE_ENTRIES || typeof body.has_more !== 'boolean') throw new NotionError('notion_response_invalid', 502);
-      const nextCursor = body.has_more && typeof body.next_cursor === 'string' && body.next_cursor.length <= 2048 ? body.next_cursor : undefined;
-      if (body.has_more && (!nextCursor || nextCursor === scan.cursor)) throw new NotionError('notion_response_invalid', 502);
-      const entries = [], identities = new Set();
-      for (const entry of body.results) {
-        if (entry?.object !== 'page' || typeof entry.id !== 'string' || !entry.id || entry.id.length > 200 || identities.has(entry.id)) throw new NotionError('notion_response_invalid', 502);
+      if (!Array.isArray(response?.results) || response.results.length > MAX_DATABASE_ENTRIES || typeof response.has_more !== 'boolean' || response.has_more && !response.results.length) throw new NotionError('notion_response_invalid', 502);
+      const identities = new Set();
+      for (const entry of response.results) {
+        if (entry?.object !== 'page' || !validId(entry.id) || identities.has(entry.id)) throw new NotionError('notion_response_invalid', 502);
         identities.add(entry.id);
-        if (!withinWindow(entry, scan)) continue;
-        if (scan.mode === 'new_only' && !ctx.sources.getItem(source.id, entry.id)) {
-          if (typeof entry.created_time !== 'string' || !Number.isFinite(Date.parse(entry.created_time))) throw new NotionError('notion_response_invalid', 502);
-          if (Date.parse(entry.created_time) <= Date.parse(scan.baselineAt)) continue;
-        }
-        const title = titleOf(entry) || 'Notion 条目', content = propertiesText(entry.properties).slice(0, MAX_TEXT), uri = pageUrl(entry.url), modifiedAt = entry.last_edited_time;
-        const revision = hash(JSON.stringify({id: entry.id, title, content, uri, modifiedAt}));
-        entries.push({externalId: entry.id, revision, observedAt: now(), modifiedAt,
-          title: title.slice(0, 2000), text: content, kind: 'file', layer: 'snapshot', mimeType: 'text/markdown',
-          ...(uri ? {uri} : {}), metadata: {version: 1, provider: {updatedAt: modifiedAt}},
-        });
       }
-      // Database enumeration currently retains properties only. Its row cursor
-      // can finish while unread page bodies keep content coverage partial.
-      return {entries, partial: true, nextCursor};
+      const pageHash = continuationHash(response, false);
+      if (scan.pageHash && scan.pageHash !== pageHash) throw new NotionError('notion_page_changed', 409);
+      const next = structuredClone(scan), entries = [];
+      let index = scan.rowIndex ?? 0, processed = 0;
+      for (; index < response.results.length && budget.blocks > 0 && budget.text > 0; index++) {
+        const row = response.results[index];
+        if (!withinWindow(row, scan)) continue;
+        if (scan.mode === 'new_only' && !ctx.sources.getItem(source.id, row.id)) {
+          if (!validTime(row.created_time)) throw new NotionError('notion_response_invalid', 502);
+          if (Date.parse(row.created_time) <= Date.parse(scan.baselineAt)) continue;
+        }
+        const result = await pageItem({...row, type: 'database'}, next, source, budget);
+        if (result.entry) entries.push(result.entry);
+        if (!result.done) {if (result.body) next.body = result.body;break;}
+        delete next.body;
+        if (result.entry) processed++;
+        next.contentPartial ||= Boolean(result.partial);
+      }
+      next.processed += processed;
+      if (index < response.results.length) {
+        next.rowIndex = index;
+        next.pageHash = pageHash;
+      } else {
+        delete next.rowIndex;
+        delete next.pageHash;
+        if (response.has_more) advanceCursor(next, response.next_cursor);
+        else {delete next.cursor;next.complete = true;}
+      }
+      return {entries, scan: next};
     };
 
     const performSync = async () => {
@@ -457,7 +603,18 @@ const connector = {
           active.record = await scanFor(item, source, active.pin);
           active.pin.current();
           ctx.sources.reportStatus(id, {state: 'syncing', coverage: coverage(active.record.scan)}, active.pin.condition.syncScopeVersion);
-          const batch = item.type === 'database' ? await databaseItems(item, active.record.scan, source) : await pageItem(item, active.record.scan, source);
+          const budget = {blocks: MAX_BLOCKS, text: MAX_TEXT};
+          let batch;
+          if (item.type === 'database') batch = await databaseItems(item, active.record.scan, source, budget);
+          else {
+            const result = await pageItem(item, active.record.scan, source, budget), scan = {...active.record.scan,
+              processed: active.record.scan.processed + (result.done && result.entry ? 1 : 0),
+              complete: result.done, contentPartial: Boolean(result.partial),
+              ...(result.pageBaseline ? {pageBaseline: result.pageBaseline} : {}),
+            };
+            if (result.body) scan.body = result.body; else delete scan.body;
+            batch = {entries: result.entry ? [result.entry] : [], scan};
+          }
           active.pin.current();
           if (item.type === 'database') databases++; else pages++;
           for (const entry of batch.entries) {
@@ -469,11 +626,7 @@ const connector = {
           // The entire bounded page commits before its continuation advances.
           // A crash before CAS replays that page; successful replay counts it
           // once, independent of duplicate archive acknowledgements.
-          const scan = {...active.record.scan, processed: active.record.scan.processed + batch.entries.length,
-            failed: 0, complete: !batch.nextCursor, contentPartial: batch.partial,
-            ...(batch.pageBaseline ? {pageBaseline: batch.pageBaseline} : {}),
-          };
-          if (batch.nextCursor) scan.cursor = batch.nextCursor; else delete scan.cursor;
+          const scan = {...batch.scan, failed: 0};
           if (closed) throw new NotionError('connector_closed', 503);
           active.record = await saveScan(active.record, scan, active.pin);
           if (closed) throw new NotionError('connector_closed', 503);
@@ -493,7 +646,10 @@ const connector = {
         code = failure.code;
         if (!closed && active?.record) {
           let scan = {...active.record.scan, failed: 1};
-          if (code === 'notion_cursor_invalid') {scan = {...scan, processed: 0, complete: false};delete scan.cursor;}
+          if (['notion_cursor_invalid', 'notion_page_changed', 'notion_prefix_unavailable'].includes(code)) {
+            scan = {...scan, processed: 0, complete: false, contentPartial: scan.contentPartial || code === 'notion_page_changed'};
+            for (const key of ['cursor', 'rowIndex', 'pageHash', 'body', 'anchor', 'power', 'span']) delete scan[key];
+          }
           try { active.record = await saveScan(active.record, scan, active.pin); } catch { if (stale()) rejectStale(); }
           if (stale()) rejectStale();
           // The host checks the pin inside the status transaction as well. A
