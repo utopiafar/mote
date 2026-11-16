@@ -220,6 +220,6 @@ test('a real file recipe output and processor declaration bind one product name,
   const badId=(mismatched.json() as {bad:string}).bad;
   await node.processingServices.tick();
   const failed=node.workflows.engine.get(badId)!;
-  assert.equal(failed.state,'failed');assert.equal(failed.error,'permanent');
+  assert.equal(failed.state,'failed');assert.equal(failed.error,'product_contract_mismatch');
   assert.equal(node.store.db.prepare("SELECT count(*) n FROM context_artifacts WHERE json_extract(json,'$.processor')='generated.prc01-mismatch'").get()!.n,0);
 });

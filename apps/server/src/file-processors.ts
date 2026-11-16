@@ -90,7 +90,7 @@ export class ProcessorRegistry {
   readonly epochs:PluginEpochs;
   constructor(scope?:HostScope){this.epochs=new PluginEpochs(scope);}
   register(processor:FileProcessor){
-    if(!/^[a-z][a-z0-9.-]{0,99}$/.test(processor.id)||!processor.version||this.entries.has(processor.id))throw new Error('Invalid or duplicate file processor');
+    if(!/^[a-z][a-z0-9.-]{0,99}$/.test(processor.id)||typeof processor.version!=='string'||!processor.version||typeof processor.name!=='string'||!['extract','diarize'].includes(processor.stage)||!Array.isArray(processor.mediaTypes)||processor.mediaTypes.some(type=>typeof type!=='string')||typeof processor.process!=='function'||this.entries.has(processor.id))throw new Error('Invalid or duplicate file processor');
     if(processor.awaitResponseOnCancel!==undefined&&typeof processor.awaitResponseOnCancel!=='boolean')throw new Error('Invalid processor cancellation capability');
     if(processor.dialogue&&(processor.stage!=='extract'||!processor.mediaTypes.length||!processor.mediaTypes.every(type=>type.startsWith('audio/'))))throw new Error('Dialogue composition requires an audio extraction processor');
     if(processor.managedModel!==undefined&&!['dialogue','speaker-wespeaker'].includes(processor.managedModel))throw new Error('Unknown managed processing model');
