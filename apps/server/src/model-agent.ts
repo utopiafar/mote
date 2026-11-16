@@ -5,10 +5,10 @@ import type { QueryAgent } from './query-agent.js';
 import {deploymentModelSettingsSchema} from './model-settings.js';
 
 /** Trusted adapters must retain the host's admission and fresh transport fence. */
-export type ModelAgentHostHooks=Readonly<Pick<AgentOptions,'runModel'|'authorizeModelRequest'>>;
+export type ModelAgentHostHooks=Readonly<Pick<AgentOptions,'runModel'|'authorizeModelRequest'|'nativeDsh'>>;
 export type ModelAgentIdentity={kind:'profile'|'file-service'|'probe';id:string};
 export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader,host?:ModelAgentHostHooks,identity?:ModelAgentIdentity) => Promise<QueryAgent>;
-export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel'],authorizeModelRequest?:AgentOptions['authorizeModelRequest']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, authorizeModelRequest, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
+export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel'],authorizeModelRequest?:AgentOptions['authorizeModelRequest'],nativeDsh?:AgentOptions['nativeDsh']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, authorizeModelRequest, nativeDsh, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
 
 export function modelSettingsFromConfig(config: Config): ModelSettings {
   const protocol=config.modelProtocol??modelProvider(config.modelProvider??'deepseek')?.protocol;

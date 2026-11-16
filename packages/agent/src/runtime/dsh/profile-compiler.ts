@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {IMAGE_MAX_BYTES,IMAGE_MAX_PIXELS} from '@mote/shared';
-import {runtimeAssemblySchema, RUNTIME_HOST_CAPABILITIES, type RuntimeModuleReference} from '@mote/shared/agent-runtimes';
+import {runtimeAssemblySchema, RUNTIME_HOST_CAPABILITIES, type RuntimeAssembly, type RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {SYSTEM_PROMPT} from '../../instructions.js';
 import {modelRuntimeEntries, harnessPrivacyEntries, validateModelOptions} from '../../models/provider-registry.js';
@@ -41,6 +41,16 @@ export interface InstalledDshModule {
   readonly subpath: string;
   readonly grantedCapabilities: readonly string[];
   readonly requires?: readonly RuntimeModuleReference[];
+}
+
+/** A Host-owned installed/profile snapshot. Public configuration selects exact
+ * references; only the Host supplies paths, grants and the live activation fence. */
+export interface NativeDshAssemblyBinding {
+  readonly revision: number;
+  readonly assembly: RuntimeAssembly;
+  readonly installedModules: readonly InstalledDshModule[];
+  readonly signal: AbortSignal;
+  assertCurrent(): void;
 }
 
 function configurationValue(value: unknown): RuntimeProfileConfiguration {
