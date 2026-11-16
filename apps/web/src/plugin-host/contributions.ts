@@ -123,6 +123,9 @@ export class PluginContributionScope {
    * failures are returned, not swallowed. */
   async rollback(): Promise<{ errors: unknown[] }> {
     const errors: unknown[] = [];
+    // Admission closes before awaiting fiber cleanup. Invoked server work has
+    // its own authorization/lifetime and is never owned by this view scope.
+    this.#customPages?.revoke();
     for (const dispose of this.#disposers.splice(0)) {
       try { await dispose(); } catch (error) { errors.push(error); }
     }

@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 
 const repo = resolve(__dirname, '../../..');
 const temporary = mkdtempSync(join(tmpdir(), 'mote-u08b-page-'));
+app.setPath('userData', join(temporary, 'profile'));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const nonce = 'nonce-' + Math.random().toString(36).slice(2);
 const nonce2 = 'nonce-' + Math.random().toString(36).slice(2);

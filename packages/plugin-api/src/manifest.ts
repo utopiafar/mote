@@ -63,6 +63,13 @@ export interface ManifestContribution {
   readonly provides?: readonly ManifestProvider[];
   /** Package-level capability IDs this contribution actually provides. */
   readonly capabilities?: readonly string[];
+  /** A custom page may call only these methods on a typed service published
+   * by this instance. This never names a host API or grants external effects. */
+  readonly bridge?: {
+    readonly contributionId: string;
+    readonly service: {readonly id: string; readonly apiVersion: string};
+    readonly methods: readonly string[];
+  };
 }
 
 export interface ManifestConfigurationField {
@@ -140,6 +147,12 @@ const parseContribution: Parser<ManifestContribution> = (input, field) => object
   id: token, version: apiVersion, surface: oneOf(contributionSurfaces), runtime: oneOf(runtimeLocations),
   entry: optional(relativePath), requires: optional(array(parseDependency, 64)),
   provides: optional(array(parseProvider, 64)), capabilities: optional(array(token, 64)),
+  bridge: optional((value, path) => object<NonNullable<ManifestContribution['bridge']>>(value, path, {
+    contributionId: token,
+    service: (service, key) => object<{readonly id: string; readonly apiVersion: string}>(service, key, {id: token, apiVersion}),
+    methods: array((method, key) => typeof method === 'string' && /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(method)
+      && !['constructor', 'prototype', '__proto__'].includes(method) ? method : invalid(key), 32),
+  })),
 });
 const parseOption: Parser<{readonly value: string; readonly label: string}> = (input, field) =>
   object<{readonly value: string; readonly label: string}>(input, field, {value: displayText, label: displayText});
@@ -203,6 +216,8 @@ const parseManifest: Parser<PackageManifest> = (input, field) => {
     if (contributionIds.has(contribution.id)) return invalid(`${field}.contributions`);
     contributionIds.add(contribution.id);
     if (contribution.entry !== undefined) relativePath(contribution.entry, `${field}.contributions`);
+    if (contribution.bridge && (contribution.surface !== 'page' || contribution.runtime !== 'host'
+      || !contribution.bridge.methods.length || new Set(contribution.bridge.methods).size !== contribution.bridge.methods.length)) return invalid(`${field}.contributions`);
   }
   const catalogIds = new Set<string>();
   for (const entry of manifest.sourceCatalog ?? []) {

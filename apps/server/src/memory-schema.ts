@@ -28,11 +28,14 @@ export const memoryAdmissionSchema=z.object({
 }).strict();
 export const memoryReviewReceiptSchema=z.object({
   strategy:memoryStrategyPinSchema.optional(),
-  policy:z.literal('bounded-exact-review@1'),decision:z.enum(['independent','reused','empty']),
+  policy:z.enum(['bounded-exact-review@1','recipe-selected-review@1']),decision:z.enum(['independent','reused','empty','not_required']),
+  validation:z.literal('host-evidence@1').optional(),
   deletionSnapshot:z.string().regex(/^[a-f0-9]{64}$/).optional(),resultHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),
   draftRunId:z.string().max(200),reviewRunId:z.string().max(200).optional(),
   checkedAt:timestamp,contextTime:timestamp.optional(),inputHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),model:z.string().max(512).optional(),
-}).strict();
+}).strict().superRefine((value,context)=>{
+  if(value.decision==='not_required'?(value.policy!=='recipe-selected-review@1'||value.validation!=='host-evidence@1'||!value.strategy||!value.resultHash||value.reviewRunId!==undefined):value.policy!=='bounded-exact-review@1')context.addIssue({code:'custom',message:'Memory receipt must describe the selected review decision and host validation without inventing a reviewer run'});
+});
 export type MemoryReviewReceipt=z.infer<typeof memoryReviewReceiptSchema>;
 export const memoryRelationSchema=z.object({kind:z.enum(['contradicts','supersedes']),memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),version:z.number().int().positive()}).strict();
 export const memorySchema=z.object({

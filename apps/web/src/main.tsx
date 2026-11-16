@@ -47,7 +47,7 @@ import { FeaturePage } from './features/runtime';
 import { PluginCenterRescue } from './plugins/plugin-center/rescue';
 import { featuresReady, featureScopes } from './features/bootstrap';
 import { attachBootstrapLifetime } from './plugin-host/bootstrap';
-import { webFeatures } from './features/registry';
+import { webFeatures,installedWebPlugins } from './features/registry';
 import { PresentationSurface } from './presentation';
 import { GlobalRetrieval } from './plugins/search';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
@@ -255,6 +255,11 @@ function App() {
     [connection, unauthorized],
   );
   apiRef.current=api;
+  useEffect(()=>api&&verified?installedWebPlugins.connect(api,connection?.viewScope):undefined,[api,verified,connection?.viewScope]);
+  useEffect(()=>{
+    const update=()=>{const resolved=readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage);setPage(resolved.page);};
+    return webFeatures.registry.subscribe(update);
+  },[]);
   useEffect(()=>{
     if(!api)return;
     const capture=(event:MouseEvent)=>{
@@ -553,7 +558,7 @@ document.documentElement.lang = getLocale();
 document.documentElement.dir = 'ltr';
 const initialRedirect=redirectDeviceRoute(location.hash);
 if(initialRedirect)history.replaceState(history.state,'',initialRedirect);
-const bootstrapLifetime=attachBootstrapLifetime({ready:featuresReady,scopes:featureScopes,host:webFeatures,unmount:()=>root?.unmount()});
+const bootstrapLifetime=attachBootstrapLifetime({ready:featuresReady,scopes:featureScopes,host:webFeatures,unmount:async()=>{root?.unmount();await installedWebPlugins.close();}});
 // Best-effort: async teardown cannot be guaranteed before unload; the real
 // owner release path is close(), also used by controlled shutdown.
 window.addEventListener('pagehide',event=>{if(!(event as PageTransitionEvent).persisted)void bootstrapLifetime.close();});

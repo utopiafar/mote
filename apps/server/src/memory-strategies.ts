@@ -3,9 +3,10 @@ import {freezeRecipe,recipeFingerprint} from './recipe-contract.js';
 import {memoryIntegrationStrategySchema,memoryIntegrationRecipeSchema,type MemoryIntegrationStrategy,type MemoryIntegrationBinding} from './memory-strategy-contract.js';
 import {defaultMemoryIntegrationStrategy,defaultMemoryIntegrationRecipe,defaultMemoryIntegrationReview} from './memory-integration-policy.js';
 import {RANGE_SELECTION_PERSONAL_RECIPE,RANGE_SELECTION_CODING_RECIPE,RANGE_SELECTION_DAILY_RECIPE,rangeSelectionPersonalExtractionStrategy,rangeSelectionPersonalReviewStrategy,rangeSelectionContextExtractionStrategy,rangeSelectionCodingReviewStrategy,rangeSelectionDailyExtractionStrategy,rangeSelectionDailyReviewStrategy} from './memory-range-selection-policy.js';
+import {SINGLE_PASS_PERSONAL_RECIPE,singlePassPersonalExtractionStrategy} from './memory-range-selection-policy.js';
 
 const key=(ref:MemoryStrategyRef)=>`${ref.id}@${ref.version}`;
-export type ResolvedMemoryRecipe={binding:MemoryRecipeBinding;extract:MemoryExtractionStrategy;review:MemoryReviewStrategy};
+export type ResolvedMemoryRecipe={binding:MemoryRecipeBinding;extract:MemoryExtractionStrategy;review:MemoryReviewStrategy|null};
 
 /** One plugin's immutable strategy data. The plugin activation registers it and
  * removes exactly these definitions when the contribution is withdrawn. */
@@ -22,12 +23,13 @@ export interface MemoryStrategyContribution {
  * effect. An activation may install additional contributions before use. */
 export const defaultMemoryStrategyContribution:MemoryStrategyContribution=Object.freeze({
   id:'mote.builtin-memory-strategies',
-  extractions:Object.freeze([rangeSelectionPersonalExtractionStrategy,rangeSelectionContextExtractionStrategy,rangeSelectionDailyExtractionStrategy]),
+  extractions:Object.freeze([rangeSelectionPersonalExtractionStrategy,rangeSelectionContextExtractionStrategy,rangeSelectionDailyExtractionStrategy,singlePassPersonalExtractionStrategy]),
   reviews:Object.freeze([rangeSelectionPersonalReviewStrategy,rangeSelectionCodingReviewStrategy,rangeSelectionDailyReviewStrategy,defaultMemoryIntegrationReview]),
   recipes:Object.freeze([
     {...RANGE_SELECTION_PERSONAL_RECIPE,workContract:'range-evaluation@1',extract:{id:rangeSelectionPersonalExtractionStrategy.id,version:rangeSelectionPersonalExtractionStrategy.version},review:{id:rangeSelectionPersonalReviewStrategy.id,version:rangeSelectionPersonalReviewStrategy.version}},
     {...RANGE_SELECTION_CODING_RECIPE,workContract:'range-evaluation@1',extract:{id:rangeSelectionContextExtractionStrategy.id,version:rangeSelectionContextExtractionStrategy.version},review:{id:rangeSelectionCodingReviewStrategy.id,version:rangeSelectionCodingReviewStrategy.version}},
     {...RANGE_SELECTION_DAILY_RECIPE,workContract:'range-evaluation@1',requires:['daily-events'],extract:{id:rangeSelectionDailyExtractionStrategy.id,version:rangeSelectionDailyExtractionStrategy.version},review:{id:rangeSelectionDailyReviewStrategy.id,version:rangeSelectionDailyReviewStrategy.version}},
+    {...SINGLE_PASS_PERSONAL_RECIPE,workContract:'range-evaluation@1',extract:{id:singlePassPersonalExtractionStrategy.id,version:singlePassPersonalExtractionStrategy.version},review:null},
   ]),
   integrations:Object.freeze([defaultMemoryIntegrationStrategy]),
   integrationRecipes:Object.freeze([{...defaultMemoryIntegrationRecipe,integrate:{id:defaultMemoryIntegrationStrategy.id,version:defaultMemoryIntegrationStrategy.version},review:{id:defaultMemoryIntegrationReview.id,version:defaultMemoryIntegrationReview.version}}]),
@@ -101,14 +103,14 @@ export class MemoryStrategies {
     return this.install('recipe',this.recipes,parsed);
   }
   private components(recipe:ReturnType<typeof memoryRecipeSchema.parse>){
-    const extract=this.extracts.get(key(recipe.extract)),review=this.reviews.get(key(recipe.review));
-    if(!extract||!review)throw Error('Memory recipe has unavailable components');
+    const extract=this.extracts.get(key(recipe.extract)),review=recipe.review===null?null:this.reviews.get(key(recipe.review));
+    if(!extract||review===undefined)throw Error('Memory recipe has unavailable components');
     return {extract,review};
   }
   resolve(ref:MemoryStrategyRef):ResolvedMemoryRecipe {
     const recipe=this.recipes.get(key(ref));if(!recipe)throw Error('Memory recipe is not installed');
     const {extract,review}=this.components(recipe);
-    return {binding:{recipe:memoryStrategyPin(recipe),extract:memoryStrategyPin(extract),review:memoryStrategyPin(review),...(recipe.requires?{requires:recipe.requires}:{}),workContract:recipe.workContract},extract,review};
+    return {binding:{recipe:memoryStrategyPin(recipe),extract:memoryStrategyPin(extract),review:review===null?null:memoryStrategyPin(review),...(recipe.requires?{requires:recipe.requires}:{}),workContract:recipe.workContract},extract,review};
   }
   resolvePinned(binding:MemoryRecipeBinding):ResolvedMemoryRecipe {
     const current=this.resolve(binding.recipe);

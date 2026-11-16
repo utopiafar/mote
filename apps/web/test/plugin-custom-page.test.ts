@@ -151,6 +151,16 @@ test('a late failure after revocation or generation change never posts', async (
   assert.equal(posted.length, 0, 'revoked-channel failure is suppressed');
 });
 
+test('invalid or oversized service results produce only a bounded correlated failure',async()=>{
+  for(const value of ['x'.repeat(65536),{nested:()=>null},{number:Infinity}]){
+    const replies:unknown[]=[];
+    const bridge=new CustomPageBridge({...base,invoke:async()=>value,post:reply=>replies.push(reply)});
+    assert.equal(await bridge.accept(event(env())),true);
+    assert.equal(replies.length,1);assert.equal((replies[0] as {error:string}).error,'invoke_failed');
+    assert.ok(JSON.stringify(replies[0]).length<1024);
+  }
+});
+
 test('a request built solely from the channel handshake is admitted — epoch other than 1', async () => {
   calls = [];
   const epoch = 7;
