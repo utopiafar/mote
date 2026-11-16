@@ -21,7 +21,7 @@ Current local storage is format 4. Old or incomplete formats are rejected with f
 
 ## Start with a useful source
 
-The workspace offers a note, file import or source connection without requiring screen configuration first. Folders keep checking their selected scope; one-file import is one-time unless explicitly configured to track changes. Confirmation shows scope, inclusion of existing files, complete-file destination, source context and retention choice.
+The workspace offers a note, file import or source connection without requiring screen configuration first. Folders keep checking their selected scope; one-file import is one-time unless explicitly configured to track changes. Confirmation shows scope, inclusion of existing files, complete-file destination, source context and retention choice. New file sources default to archived originals; existing explicit snapshot/reference choices remain unchanged.
 
 Screen recording starts after scope review and explicit start. Per-app duration, screenshots and structured fields are independent choices. Saving settings or granting OS permissions does not start paused capture. Duration-only capture needs neither pixels nor Accessibility; screenshots need Screen Recording, and page fields need Accessibility. If macOS requests a restart, reopen and resume explicitly.
 
@@ -36,6 +36,16 @@ Import a Central invitation as JSON, a pasted link, a file or a QR image. QR dec
 Unbound records need a confirmed first destination. Same-node reauthorization preserves IDs, content, time and pending versions. A different origin cannot silently inherit another node's queue. Coordinate in-flight work before changing credentials; only matching per-item acknowledgements retire pending uploads.
 
 The four upload modes, pauses and offline behavior are in [collection and sync](collection-and-sync.md). Sleep or complete exit prevents timely execution. Central receipt, organization, OCR, index and Memory status stay separate. Files use native selection; calendars use EventKit and explicit OS access. Planned calendar time does not establish attendance. [Files](files.md) explains stable versions and archive semantics.
+
+## Local retention and source staging
+
+Formally saved screenshots, notes, structured observations, activity records and meeting audio stay on the Mac after upload acknowledgment. The existing capture queue stores a per-record acknowledgment with its original Central origin; upload selection, pending counts and work lists exclude those acknowledged records, while local browsing continues to read the same event and image bytes. Meeting recordings keep their audio, session time, original upload origin and exact archive receipt. Restart and Central history deletion do not erase those local originals or enqueue them again. Late responses after settings changes, shutdown or an A → B → A connection change cannot attribute acknowledgment to the new Central or generation.
+
+The capture queue and source outbox have no lifetime byte/count quota and do not delete formal records by age. Actual storage failures preserve old records and pending input and report failure. Per-image validation, bounded transport slices and the portable JSON codec's memory/input budgets remain resource protections. Queue statistics count stored capture-event metadata plus deduplicated screenshots; pending count is separate, and these figures do not measure the entire application's physical disk use, meeting directories or source staging.
+
+Selected existing files and folders use an index, sync state and immutable pending transport parts. Exact whole-file acknowledgment releases only those transport parts, leaving the selected source file untouched. A narrower local scope persistently isolates old pending inputs that are excluded or cannot be proven safe under the current path, retention and privacy representation. The UI identifies this as local policy isolation, keeps its original bytes and blocks their transmission. Restart or later expansion does not rearm an isolated input; a current authorized scan can create a fresh revision and admission. Selection checks and the running request's canceled lease are independent fences, checked before dispatch and before accepting a response.
+
+Queue JSON exports include local capture records, upload state and images, and restore that state without resending acknowledged history. Source-file originals and meeting recordings require separate backup. Clearing uploaded local bodies with lightweight records and permission-checked Central readback is a separate capability; this change adds no automatic cleanup operation.
 
 ## Updates and recovery
 

@@ -180,7 +180,7 @@ describe('native source lifecycle with local HTTP fixtures', () => {
   });
   it('changing to reference before retry cannot leak queued snapshot text or an explicitly masked source name', async () => {
     const server = await endpoint(true); const file = join(directory, 'private-synthetic.md'); await writeFile(file, 'private-synthetic');
-    const app = await manager(server.url); await app.addFiles(file, { ...DEFAULT_SOURCE_OPTIONS, redactLiterals: ['private-synthetic'] }); await app.sync();
+    const app = await manager(server.url); await app.addFiles(file, { ...DEFAULT_SOURCE_OPTIONS,retention:'snapshot', redactLiterals: ['private-synthetic'] }); await app.sync();
     const source = app.status()[0].source; await app.update(source.id, { ...source, retention: 'reference', enabled: true }); await app.sync();
     expect(server.items.at(-1)?.text).toBe(''); expect(JSON.stringify(server.registered)).not.toContain('private-synthetic');
     expect(server.items.at(-1)?.uri).toBeUndefined();
@@ -269,7 +269,7 @@ it('flushes durable pending source versions while watcher scans are still runnin
 
 it('an existing snapshot source with no central upload consent stays held across restart and ordinary sync',async()=>{
  const server=await endpoint(true),path=join(directory,'generated-consent.txt');await writeFile(path,'Generated private input');
- let app=await manager(server.url, undefined, undefined, true);await app.addFiles(path,DEFAULT_SOURCE_OPTIONS);await app.sync();await app.close();
+ let app=await manager(server.url, undefined, undefined, true);await app.addFiles(path,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot'});await app.sync();await app.close();
  const configPath=join(directory,'private-state','sources.json'),config=JSON.parse(await readFile(configPath,'utf8'));
  delete config.sources[0].centralProcessingConsent;await writeFile(configPath,JSON.stringify(config));
  const before=server.items.length;app=await manager(server.url, undefined, undefined, true);await app.sync();await app.flushPending(new AbortController().signal);
@@ -299,7 +299,7 @@ for (const retention of ['snapshot','archive','reference'] as const) it(`freezes
 
 it('a completed one-time snapshot import reacquires only the acknowledged version Central asks for',async()=>{
  const server=await endpoint(),file=join(directory,'once-recovery.md');await writeFile(file,'Generated immutable one-time recovery content');
- const value=await manager(server.url);await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);
+ const value=await manager(server.url);await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',syncContinuously:false});await value.sync(true);
  expect(value.status()[0].source.importCompletedAt).toBeDefined();expect(server.items).toHaveLength(1);
  // A forced check without a Central resupply request must not rescan or resend.
  await value.sync(true);expect(server.items).toHaveLength(1);
@@ -311,7 +311,7 @@ it('a completed one-time snapshot import reacquires only the acknowledged versio
 
 it('a completed one-time import keeps later local changes out of snapshot recovery',async()=>{
  const server=await endpoint(),file=join(directory,'once-recovery-changed.md');await writeFile(file,'Generated selected one-time version');
- const value=await manager(server.url);await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);
+ const value=await manager(server.url);await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',syncContinuously:false});await value.sync(true);
  expect(server.items).toHaveLength(1);
  server.recoverLast();await writeFile(file,'Changed generated content that must not be imported');
  await value.flushPending(new AbortController().signal);
@@ -324,7 +324,7 @@ it('a completed one-time import keeps later local changes out of snapshot recove
 it('explicit continuation opt-in resumes change discovery after a one-time import',async()=>{
   const server=await endpoint(),file=join(directory,'opt-in.md');await writeFile(file,'Generated first body');
   const value=new LocalSourceManager(join(directory,'opt-in-state'),{serverUrl:server.url,token:'synthetic-source-token',deviceId:'synthetic-device'},'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();
-  await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);const original=value.pendingContent()[0].item;
+  await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',syncContinuously:false});await value.sync(true);const original=value.pendingContent()[0].item;
   await writeFile(file,'Generated subsequent body');const source=value.status()[0].source;
   await value.update(source.id,{...source,syncContinuously:true,enabled:true});await value.sync(true);
   expect(value.status()[0].source.importCompletedAt).toBeUndefined();expect(value.pendingContent().some(row=>row.item.revision!==original.revision)).toBe(true);
@@ -342,7 +342,7 @@ it('pauses every source send while local scans stage changes, then resumes the s
 it('recovers one-time completion atomically from the outbox when source configuration persistence was interrupted',async()=>{
  const server=await endpoint(),file=join(directory,'atomic-once.md');await writeFile(file,'Generated selected version');
  const state=join(directory,'atomic-once'),config={serverUrl:server.url,token:'synthetic-source-token',deviceId:'synthetic-device'};
- let value=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);const staged=value.pendingContent()[0];await value.close();
+ let value=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',syncContinuously:false});await value.sync(true);const staged=value.pendingContent()[0];await value.close();
  // Simulate exit after the outbox transaction, before the separate UI/config projection was saved.
  const sourcePath=join(state,'sources.json'),saved=JSON.parse(await readFile(sourcePath,'utf8'));delete saved.sources[0].importCompletedAt;await writeFile(sourcePath,JSON.stringify(saved));
  await writeFile(file,'Generated later change that must not be imported');value=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();await value.sync(true);
@@ -369,7 +369,7 @@ for(const mode of ['full','lightweight'])it(`rejects retired ${mode} index confi
  const state=join(directory,'strict-state'),file=join(directory,'generated-private.txt'),config={serverUrl:'http://127.0.0.1:1',token:'generated-token',deviceId:'generated-device'};
  await writeFile(file,'Generated durable original fixture');
  const value=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();
- await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);
+ await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',syncContinuously:false});await value.sync(true);
  const pending=value.pendingContent();expect(pending).toHaveLength(1);await value.close();
  const source=pending[0].source,configPath=join(state,'sources.json'),saved=JSON.parse(await readFile(configPath,'utf8'));
  saved.sources[0].indexMode=mode;await writeFile(configPath,JSON.stringify(saved));
@@ -398,7 +398,7 @@ it.each(['file','default'] as const)('E preserves %s checkpoint mode through nor
     }
     return builtIn.scan(context);
   }});
-  const app=await manager(server.url,'synthetic-source-token',registry);await app.addFiles(file,DEFAULT_SOURCE_OPTIONS);await app.sync();
+  const app=await manager(server.url,'synthetic-source-token',registry);await app.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot'});await app.sync();
   (app as any).watcher.close();expect(app.pendingStats().pendingRecords).toBe(0);expect(server.items).toHaveLength(1);
   contexts.length=0;server.recoverLast();const full=vi.spyOn(SourceSync.prototype,'checkpoint');
   try{

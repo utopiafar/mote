@@ -10810,5 +10810,8 @@ export const english: Readonly<Record<string, string>> = {
   "仅接入新增内容": "New content only",
   "只读归档已选择的内容，按原始身份保留版本。": "Read-only archiving of selected content, with versions retained under their original identities.",
   "安装不等于授权。请先在插件中心完成配置和启用，再连接账号并选择读取范围。": "Installation does not grant access. Configure and enable the plugin in the plugin center, then connect the account and choose what may be read.",
-  "停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。": "Stop reading Feishu conversations and pause the selected chats. Archived content and the Feishu account’s other connections are retained."
+  "停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。": "Stop reading Feishu conversations and pause the selected chats. Archived content and the Feishu account’s other connections are retained.",
+  "本机采集内容长期保留，上传确认后不自动删除。": "Locally captured content is retained long term and is not automatically deleted after upload acknowledgment.",
+  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "The local source scope has changed. Older pending versions are isolated and their original inputs are retained.",
+  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "JSON backups include locally captured records, upload status and associated images, and preserve upload status when restored. Source files and meeting recordings must be backed up separately."
 };

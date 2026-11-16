@@ -67,7 +67,7 @@ export function createLibraryWorkspacePlugin(options: LibraryWorkspaceOptions): 
             }, Number(offset ?? 0), image === true);
           }));
         register(libraryWorkspaceChannels.contentLocal, libraryReadCapability, args => local(() =>
-          localContentPage(options.queue, sources(), args[0] as number | undefined, args[1] as string | undefined)));
+          localContentPage(options.queue, sources(), args[0] as number | undefined, args[1] as string | undefined,undefined,args[2] as boolean | undefined)));
         register(libraryWorkspaceChannels.contentLocalDetail, libraryReadCapability, args =>
           withConnection(config => {
             const key = args[0], image = args[1];

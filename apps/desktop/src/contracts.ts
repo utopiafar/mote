@@ -14,8 +14,6 @@ export interface Config {
   deviceId: string;
   deviceName: string;
   intervalMs: number;
-  maxQueueBytes: number;
-  maxQueueEvents: number;
   captureStorageDirectory: string;
   structuredOcrEnabled: boolean;
   chromeOrigins: string[];
@@ -75,6 +73,7 @@ export interface Status {
   state: 'stopped' | 'capturing' | 'paused' | 'permission_required' | 'error';
   message: string;
   queueDepth: number;
+  queueRecords:number;
   queueBytes: number;
   lastCaptureAt?: string;
   lastUploadAt?: string;
@@ -156,7 +155,7 @@ export interface DesktopApi {
   memoryTopicDetail(id:string): Promise<import('./contracts/content').TopicMemory>;
   centralContent(cursor?:string,query?:string): Promise<import('./contracts/content').CentralContentPage>;
   centralContentDetail(id:string,offset?:number,image?:boolean): Promise<import('./contracts/content').SyncContent>;
-  localContent(offset?:number,query?:string): Promise<import('./contracts/content').LocalContentPage>;
+  localContent(offset?:number,query?:string,pendingOnly?:boolean): Promise<import('./contracts/content').LocalContentPage>;
   localContentDetail(key:string, image?:boolean): Promise<import('./contracts/content').ContentDetail|import('./contracts/content').SyncContent>;
   chooseSourceFiles(mode: 'files' | 'directory', options: import('./contracts/sources').SourceOptions): Promise<{ canceled: boolean }>;
   connectActionCalendar(): Promise<{deviceId:string}>;
