@@ -445,9 +445,9 @@ export async function verifiedBackup(backup) {
   if (manifest.version !== 1 || !manifest.checksums || !Object.hasOwn(manifest.checksums, 'mote.sqlite')) throw Error('Invalid backup manifest');
   if (manifest.storageEpoch !== 7) throw Error('Unsupported backup storage epoch; restore older backups with their matching older binary');
   for (const [name, hash] of Object.entries(manifest.checksums)) {
-    const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})(?:\.plain|\.aes)$/.exec(name);
+    const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]*)(?:\.plain|\.aes)$/.exec(name);
     const sourceBatch=/^source-archive\/[a-f0-9]{64}\/[a-f0-9]{64}(?:\.plain|\.aes)$/.test(name);
-    if (!(name === 'mote.sqlite' || sourceBatch || (part && Number(part[1]) < 128) || safePluginBackupPath(name)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
+    if (!(name === 'mote.sqlite' || sourceBatch || (part && Number.isSafeInteger(Number(part[1])) && Number.isSafeInteger(Number(part[1])*4*1024*1024)) || safePluginBackupPath(name)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
     const info = await lstat(join(directory, name));
     if (!info.isFile() || info.nlink !== 1 || (await realpath(join(directory, name))) !== join(directory, name)) throw Error('Backup links are not allowed');
     if (await sha(join(directory, name)) !== hash) throw Error('Backup checksum mismatch; active data was not changed');
@@ -456,6 +456,19 @@ export async function verifiedBackup(backup) {
   try {
     const settings=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
     if (!settings || db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value !== '7') throw Error('Unsupported backup database epoch; existing destination data was not changed');
+    const referenced=db.prepare('SELECT a.hash,a.parts,a.format FROM assets a WHERE a.hash IN (SELECT hash FROM asset_references)');
+    for(const asset of referenced.iterate()){
+      if(!/^[a-f0-9]{64}$/.test(asset.hash)||asset.format!=='chunks'||!Number.isSafeInteger(asset.parts)||asset.parts<0||asset.parts>Math.ceil(Number.MAX_SAFE_INTEGER/(4*1024*1024)))throw Error('Invalid backup asset metadata');
+      for(let part=0;part<asset.parts;part++){
+        const path=`files/objects/${asset.hash}/${part}`,plain=Object.hasOwn(manifest.checksums,path+'.plain'),encrypted=Object.hasOwn(manifest.checksums,path+'.aes');
+        if(plain===encrypted)throw Error('Backup manifest does not match referenced asset parts');
+      }
+    }
+    const selected=db.prepare('SELECT a.parts FROM assets a WHERE a.hash=? AND a.hash IN (SELECT hash FROM asset_references)');
+    for(const name of Object.keys(manifest.checksums)){
+      const part=/^files\/objects\/([a-f0-9]{64})\/(0|[1-9][0-9]*)(?:\.plain|\.aes)$/.exec(name);if(!part)continue;
+      const asset=selected.get(part[1]);if(!asset||Number(part[2])>=asset.parts)throw Error('Backup contains an undeclared asset part');
+    }
   } finally { db.close(); }
   return { directory, names: Object.keys(manifest.checksums), checksums: manifest.checksums };
 }

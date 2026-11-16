@@ -11,7 +11,7 @@ import java.util.UUID
 
 /** Local per-file journal. A pending manifest and its bytes never change during retry. */
 class FileArchiveQueue(private val directory: File, private val cipher: ByteCipher, private val sourceHost: LocalSourceStore? = null) {
-    companion object { const val PART_BYTES = 4 * 1024 * 1024; const val MAX_BYTES = 512L * 1024 * 1024; private val lock = SourceRuntime.lock; private val preparations = mutableMapOf<String, String>(); private val stagingReservations = mutableMapOf<String, Long>(); private val progressEntries = mutableMapOf<String, MutableMap<String, FileSyncEntry>>() }
+    companion object { const val PART_BYTES = FileTransfer.PART_BYTES; const val MAX_BYTES = FileTransfer.MAX_BYTES; private val lock = SourceRuntime.lock; private val preparations = mutableMapOf<String, String>(); private val stagingReservations = mutableMapOf<String, Long>(); private val progressEntries = mutableMapOf<String, MutableMap<String, FileSyncEntry>>() }
     init {
         synchronized(lock) {
             directory.mkdirs()
@@ -331,13 +331,13 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             var hash: String? = null
             if (source.retention in setOf("archive", "snapshot") && !item.optBoolean("deleted")) {
                 check(unchanged(candidate)) { MoteI18n.text("文件正在变化，稍后重新扫描") }
-                val digest = MessageDigest.getInstance("SHA-256"); size = 0; var part = 0
+                val digest = MessageDigest.getInstance("SHA-256"); size = 0; var part = 0L
                 open(candidate).use { input ->
                     while (true) {
                         val buffer = ByteArray(PART_BYTES); var length = 0
                         while (length < buffer.size) { if (!current()) throw SourceLeaseRevoked(); val n = input.read(buffer, length, buffer.size - length); if (n < 0) break; if (n == 0) continue; length += n }
                         if (length == 0) break
-                        size += length; check(size <= minOf(MAX_BYTES, source.maxFileMiB * 1024L * 1024)) { MoteI18n.text("文件超过此来源的大小上限") }
+                        size += length; check(size <= MAX_BYTES && (source.maxFileMiB == 0 || size <= source.maxFileMiB * 1024L * 1024)) { MoteI18n.text("文件超过此来源的大小上限") }
                         val bytes = buffer.copyOf(length); digest.update(bytes)
                         synchronized(lock) {
                             val used = directory.walkTopDown().filter { it.isFile }.sumOf { it.length() }

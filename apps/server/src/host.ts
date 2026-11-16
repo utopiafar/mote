@@ -28,6 +28,8 @@ import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
 import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages,type MediaAssemblyDependencies} from './assembly/processing.js';
 import {memoryInputs,memoryRuntime} from './assembly/memory.js';
 import {assembleAgent} from './assembly/agent.js';
+import {nativeDshSource} from './dsh-native.js';
+import type {DshConfiguration} from './dsh-configuration.js';
 import {prepareConversations,prepareQueryRuntime,prepareQueryRuns} from './assembly/query.js';
 import {workInputs,assembleInsightRuns,assembleActions,assembleActivity} from './assembly/work.js';
 import {assembleImports} from './assembly/imports.js';
@@ -276,7 +278,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   };
   const {agent,factory,codex}=await assembleAgent({
     config,resources,diagnostics,backendContext,configurationPlatform,configService,runtimeSettings,reader,modelAuthorizationHost,
-    createModelAgent:dependencies?.createModelAgent,authorization:modelAuthorization,admission:providerAdmission,
+    createModelAgent:dependencies?.createModelAgent,nativeDshForProfile:id=>nativeDshSource(configService.current<DshConfiguration>('dsh'),id,configService.revision,reference=>pluginCenter.resolveNativeDshModule(reference)),nativeDshModules:()=>pluginCenter.nativeDshModules(),validateNativeDshConfiguration:value=>pluginCenter.validateNativeDshConfiguration(value),authorization:modelAuthorization,admission:providerAdmission,
     runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
     agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,providerAdmission,
     insightSettings:()=>lifecycle.settings().insights,maintenanceSnapshot:()=>maintenanceWorker?.snapshot()??null,delegatedSnapshot:()=>executor.poolSnapshot('delegated-agents'),wakeMemory:()=>memoryPipeline.wake(),

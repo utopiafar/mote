@@ -38,6 +38,28 @@ test('Memory control counts real receipt claims separately from manual queued jo
  const revision=automation.state().revision;automation.command('stop',stop);assert.equal(automation.state().revision,revision);assert.equal(pipeline.get(manual.id).status,'queued');
 });
 
+test('automatic lifecycle tail remains visible beside independent manual work and stop revokes only that tail',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-control-round-')),store=new Store(directory),executor=new ExecutionEngine(store),automation=new MemoryAutomation(store);
+ new MemoryInputAuthorization(store,()=>automation.accepting());
+ const lifecycle=new MemoryLifecycle(store,()=>true,Date.now,executor),seen:string[]=[];
+ lifecycle.register({id:'extraction',version:'generated-round',stream:'evidence',async run(window){seen.push(...window.ids);}});
+ lifecycle.configure({...lifecycle.settings(),drainWindows:2,extraction:{...lifecycle.settings().extraction,minChanges:1,maxItems:1}});
+ t.after(async()=>{await lifecycle.close();await executor.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ const control=createMemoryControl({store,pipeline:{cancel(){assert.fail('No pipeline job was created');}},lifecycle,executor,publication:{pending:()=>0}});
+ automation.onStop=control.stop;automation.onResume=control.resume;automation.counts=control.counts;lifecycle.automaticAdmission=()=>automation.accepting();
+ for(let index=0;index<3;index++)store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(randomUUID(),new Date().toISOString());
+ await lifecycle.tick();assert.equal(seen.length,1);assert.equal(control.pendingTail(),1);assert.equal(control.counts().queued,1);
+ const manual=lifecycle.request('extraction',[randomUUID()],'generated-manual');assert.equal(control.counts().queued,1,'manual work cannot hide the admitted automatic round');
+ const before=String(store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json);
+ automation.onStop=()=>{control.stop();throw Error('Generated stop participant failure');};
+ assert.throws(()=>automation.command('stop',{expectedRevision:automation.state().revision,operationId:randomUUID()}),/Generated stop participant failure/);
+ assert.equal(store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json,before,'a failed command cannot revoke the persisted round');assert.equal(automation.accepting(),true);
+ automation.onStop=control.stop;
+ automation.command('stop',{expectedRevision:automation.state().revision,operationId:randomUUID()});
+ assert.equal(control.counts().queued,0);assert.equal(control.pendingTail(),1,'manual work retains its independent authority');
+ assert.equal(lifecycle.view().extensions[0].active!.id,manual);assert.equal(lifecycle.view().extensions[0].drainThrough,undefined);assert.notEqual(lifecycle.view().extensions[0].status,'cancelled');
+});
+
 test('automatic control stays readable with 540 persisted jobs and keeps partial, running and terminal counts current',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-control-backlog-')),store=new Store(directory),executor=new ExecutionEngine(store);
  const grants=new MemoryInputAuthorization(store,()=>true),sources=new SourceStore(store,undefined,grants),memories=new MemoryStore(store);

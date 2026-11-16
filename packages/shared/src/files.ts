@@ -5,21 +5,45 @@ import {sourceIdSchema,sourceItemSchema} from './sources.js';
 
 export const initialSyncSchema=z.enum(['all','new_only']);
 export const FILE_PART_BYTES=4*1024*1024;
-export const FILE_MAX_BYTES=512*1024*1024;
+/** Exact JSON/JavaScript byte offsets, not a product storage quota. */
+export const FILE_MAX_BYTES=Number.MAX_SAFE_INTEGER;
+export const FILE_PART_RECEIPTS=256;
+export type FilePartReceipt={part:number;hash:string;bytes:number};
+export type FilePartPage={parts:FilePartReceipt[];nextPart?:number|null};
+export function filePartCount(size:number){if(!Number.isSafeInteger(size)||size<0)throw Error('Invalid original byte count');return Math.ceil(size/FILE_PART_BYTES);}
+export function filePartSize(size:number,part:number){
+ const count=filePartCount(size),offset=part*FILE_PART_BYTES;
+ if(!Number.isSafeInteger(part)||part<0||part>=count||!Number.isSafeInteger(offset))throw Error('Invalid original part');
+ return Math.min(FILE_PART_BYTES,size-offset);
+}
+/** A single bounded receipt page is retained while the consumer sends parts.
+ * nextPart is the exclusive afterPart cursor for the next status request. */
+export async function *filePartReceipts(initial:FilePartPage,read:(afterPart:number)=>Promise<FilePartPage>,size:number):AsyncGenerator<FilePartReceipt>{
+ filePartCount(size);let page=initial,after=-1;
+ while(true){
+  if(!page||!Array.isArray(page.parts)||page.parts.length>FILE_PART_RECEIPTS)throw Error('Invalid upload receipt page');
+  let previous=after;
+  for(const part of page.parts){if(!part||!Number.isSafeInteger(part.part)||part.part<=previous||!/^[a-f0-9]{64}$/.test(part.hash)||part.bytes!==filePartSize(size,part.part))throw Error('Invalid upload part receipt');previous=part.part;}
+  const next=page.nextPart??null;
+  if(next!==null&&(!page.parts.length||!Number.isSafeInteger(next)||next!==previous||next<=after))throw Error('Invalid upload receipt cursor');
+  for(const part of page.parts)yield part;
+  if(next===null)return;
+  page=await read(next);after=next;
+ }
+}
 export const fileRevisionSchema=z.object({
   sourceId:sourceIdSchema,
   previousRevision:z.string().min(1).max(200).nullable().default(null),
   item:sourceItemSchema,
-  sizeBytes:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  sizeBytes:z.number().int().safe().min(0),
   sha256:z.string().regex(/^[a-f0-9]{64}$/).optional(),
   relativePath:z.string().max(4000).default(''),
   /** Explicit item/batch override; omission preserves source/default inheritance. */
   processingProfileId:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).optional(),
 }).strict().superRefine((v,c)=>{
   if(v.item.kind!=='file'||(!['snapshot'].includes(v.item.layer)&&v.item.text)||!['original','reference','snapshot'].includes(v.item.layer)||v.item.layer==='snapshot'&&!v.item.document?.fileIndex)c.addIssue({code:'custom',message:'Files require empty text and original/reference layer'});
-  // Digest-addressed snapshots arrive through the multipart original path, which
-  // already bounds parts and total bytes to FILE_MAX_BYTES. A smaller inline
-  // payload limit must not reject ordinary recordings.
+  // Original transport bounds each part. Decoder/model budgets are independent
+  // from accepting a safely represented byte count.
   if(v.item.layer==='snapshot'&&v.sha256&&(v.sizeBytes>FILE_MAX_BYTES||v.item.text||v.item.document?.fileIndex?.status!=='pending'||v.item.document?.fileIndex?.contentVersion!==v.sha256))c.addIssue({code:'custom',message:'Snapshot processing input must be pending, empty and within the file limit'});
   if(v.item.layer==='reference'&&v.sha256)c.addIssue({code:'custom',message:'References cannot include a content digest'});
   if(!v.item.deleted&&v.item.layer==='original'&&(!v.sha256||v.sizeBytes>FILE_MAX_BYTES))c.addIssue({code:'custom',message:'Original file requires a digest and must fit file limit'});

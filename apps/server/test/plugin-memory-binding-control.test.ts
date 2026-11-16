@@ -70,7 +70,7 @@ function addMemory(store:Store,index=0){
 }
 
 const stubPipeline=()=>({get:()=>({status:'queued',batches:[]}),cancel:()=>{}}) as unknown as Pick<import('../src/memory-pipeline.js').MemoryPipeline,'get'|'cancel'>;
-const stubLifecycle=()=>({automaticAdmission:undefined as ((id:string)=>boolean)|undefined,view:()=>({extensions:[]}),cancel:()=>{},skipAutomaticBacklog:()=>{}}) as unknown as Pick<import('../src/memory-lifecycle.js').MemoryLifecycle,'view'|'cancel'|'skipAutomaticBacklog'|'automaticAdmission'>;
+const stubLifecycle=()=>({automaticAdmission:undefined as ((id:string)=>boolean)|undefined,view:()=>({extensions:[]}),cancel:()=>{},skipAutomaticBacklog:()=>{},resumeAutomaticBacklog:()=>{},revokeAutomaticRounds:()=>{}}) as unknown as Pick<import('../src/memory-lifecycle.js').MemoryLifecycle,'view'|'cancel'|'skipAutomaticBacklog'|'resumeAutomaticBacklog'|'revokeAutomaticRounds'|'automaticAdmission'>;
 
 function platform(options:{store:Store;memories:MemoryStore;automation:MemoryAutomation;plugins:PluginCenter;executor:ExecutionEngine;publication?:()=>Pick<MemoryPublication,'pending'>}){
   const value=createMemoryBindingControl({store:options.store,automation:options.automation});

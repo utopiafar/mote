@@ -1,4 +1,5 @@
 {
+  "单文件上限（MiB，0 为不限）": "Límite por archivo (MiB; 0 = sin límite adicional)",
   "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "El contenido central se conserva indefinidamente, sin cuota total de almacenamiento ni eliminación automática por antigüedad.",
   "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Los archivos originales se archivan por defecto. Las fuentes existentes conservan sus ajustes de retención, que puedes cambiar en Fuentes.",
   "存储设备无法继续写入，请检查可用空间后重试；已有资料和待传内容不会因此自动删除。": "El dispositivo de almacenamiento no admite más escrituras. Comprueba el espacio disponible y vuelve a intentarlo. El contenido existente y las cargas pendientes no se eliminan automáticamente por este motivo.",

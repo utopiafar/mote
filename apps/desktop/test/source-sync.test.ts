@@ -75,11 +75,11 @@ describe('source revisions and durable acknowledgments', () => {
       await expect(engine.flush(source,request,controller.signal)).rejects.toBeDefined();expect(engine.status().pending).toBe(1);expect(engine.status().blocked).toBe(0);expect(engine.status().lastAcknowledgedAt).toBeUndefined();
     }
   });
-  it('accepts a known 17MiB snapshot recovery and rejects unknown versions or over-limit bytes',async()=>{
+  it('accepts a known 17MiB snapshot recovery and rejects unknown versions or unsafe byte counts',async()=>{
     const engine=await create(),sent:SourceItem[]=[],large={...item,metadata:{version:1 as const,file:{sizeBytes:17*1024*1024+19}}};
     await engine.stage(scan([large]),false,'2026-10-05T00:00:00Z');await engine.flush(source,transport(sent));
     const recovery={externalId:item.externalId,revision:sent[0].revision,captureId:'00000000-0000-4000-8000-000000000035',sha256:'a'.repeat(64),sizeBytes:17*1024*1024+19,observedAt:sent[0].observedAt};
-    expect(await engine.requestSnapshotRecovery([{...recovery,externalId:'unknown'},{...recovery,revision:'changed'},{...recovery,sizeBytes:512*1024*1024+1}])).toHaveLength(0);
+    expect(await engine.requestSnapshotRecovery([{...recovery,externalId:'unknown'},{...recovery,revision:'changed'},{...recovery,sizeBytes:Number.MAX_SAFE_INTEGER+1}])).toHaveLength(0);
     expect(await engine.requestSnapshotRecovery([recovery])).toHaveLength(1);
     const reopened=await create();expect((sourceState(join(directory,'state.json')) as any).snapshotRecoveries).toBeDefined();expect(reopened.status().pending).toBe(0);
   });

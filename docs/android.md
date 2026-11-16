@@ -35,7 +35,7 @@ These entries use the selected Central and its current owner session to request 
 
 Dedicated automatic photo-library collection is planned for later; manual photo/file intake does not establish that capability. Existing source files and photos remain outside Central archive deletion.
 
-Folders use the Storage Access Framework with stable versions, one-time/continuous scope, resume checkpoints and matched receipts. Lost permission or provider failure does not prove deletion. Progress separates stability waiting, queueing, saving/uploading, retry and actionable conflict. See [files](files.md).
+Folders use the Storage Access Framework with stable versions, one-time/continuous scope, resume checkpoints and matched receipts. Lost permission or provider failure does not prove deletion. New folder rules use a single-file limit of 0 MiB to add no size rule; existing explicit limits are retained. Binary archives use fixed 4 MiB parts and bounded receipt pages with exact safe-integer sizes, rather than a 512 MiB per-file cap. The local aggregate queue budget remains separate. Manual imports retain the archived file receipt and original when preview rejects a processing budget. Progress separates stability waiting, queueing, saving/uploading, retry and actionable conflict. See [files](files.md).
 
 The four sending modes share [collection policy](collection-and-sync.md). WorkManager applies network, battery and charging constraints. Doze/OEM restrictions may delay execution, and force-stop cannot promise background continuation. Retry preserves UUIDs, bytes and timestamps; HTTP success without a matching ACK is not completion.
 

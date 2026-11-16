@@ -22,11 +22,12 @@ import {ContextToolError} from '../../tool-errors.js';
 import {DSH_RUNTIME_ID, compileNativeDshProfile, createRuntimePatch, DshProfileError, type InstalledDshModule} from './profile-compiler.js';
 
 export {DSH_RUNTIME_ID, DshProfileError, createRuntimePatch} from './profile-compiler.js';
-export type {InstalledDshModule} from './profile-compiler.js';
+export type {InstalledDshModule, NativeDshAssemblyBinding} from './profile-compiler.js';
+export {readNativeDshManifest, nativeDshEntrySpecifier, planNativeDshAssembly} from './native-assembly.js';
 
 export {dshModelConfigured, type DshModelAdapter} from '../../models/dsh-adapter.js';
 export interface DshProviderOptions {
-  readonly installedModules?: readonly InstalledDshModule[];
+  readonly installedModules?: readonly InstalledDshModule[] | (() => readonly InstalledDshModule[] | Promise<readonly InstalledDshModule[]>);
   /** Safe lifecycle observation for selected local integration checks. */
   readonly resourceObserver?: (event: {type: 'created' | 'closed'; runId: string; root: string}) => void;
 }
@@ -55,7 +56,8 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
         const modelAdapter = createDshModelAdapter(model, host), adapter = modelAdapter.value;
         if (adapter.model !== model.selection.modelId || (adapter.protocol ?? 'deepseek') !== model.selection.transport || !isDeepStrictEqual(model.selection, host.identity.model) ||
             host.identity.runtime.id !== profile.runtimeId || host.identity.runtime.profileId !== profile.profileId || host.identity.runtime.profileRevision !== profile.profileRevision || host.identity.runtime.assemblyFingerprint !== profile.assemblyFingerprint || !provider.capabilities.taskKinds.includes(profile.taskKind)) throw new DshProfileError('dsh_profile_invalid');
-        const native = await compileNativeDshProfile(profile, options.installedModules ?? []);
+        const installed = typeof options.installedModules === 'function' ? await options.installedModules() : options.installedModules ?? [];
+        const native = await compileNativeDshProfile(profile, installed);
         host.assertCurrent();
         const root = await mkdtemp(join(tmpdir(), 'mote-dsh-runtime-'));
         observe({type: 'created', runId: host.identity.runId, root});

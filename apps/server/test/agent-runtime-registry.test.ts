@@ -30,9 +30,9 @@ const reader:ContextReader={
 };
 type FixtureAgent=QueryAgent&{settings:ModelSettings;closes:number};
 interface FixtureOptions {fileSystem?:ConfigServiceOptions['fileSystem'];profiles?:ModelProfile[]}
-function registry(createModelAgent:ModelAgentFactory){
+function registry(createModelAgent:ModelAgentFactory,nativeDshForProfile?:AgentRuntimeRegistryDependencies['nativeDshForProfile']){
   const dependencies:AgentRuntimeRegistryDependencies={
-    codex:undefined,createModelAgent,
+    codex:undefined,createModelAgent,nativeDshForProfile,
     authorization:{assertCurrent(){}},admission:{check(){},run:async(_settings,task)=>task()},
     runModelFor:()=>async task=>task(),authorizeModelRequest(){},assertPurpose(){},assertEvidence(){},assertEvidenceAsync:async()=>{},pinEvidence:input=>input,
     agentGate:new ConcurrencyGate(1),interactiveGate:new ConcurrencyGate(1),modelContext:new AsyncLocalStorage<QueryInput>(),modelOperation:new AsyncLocalStorage<string>(),
@@ -68,6 +68,21 @@ async function fixture(t:TestContext,options:FixtureOptions={}) {
 }
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const receipt=(error:unknown)=>[String(error),(error as Error)?.message,(error as Error)?.stack,JSON.stringify(error)].join('\n');
+
+test('the registry selects native packs only for the actual model profile identity',async t=>{
+  const selections:string[]=[],received:Array<{id:string;native:boolean}>=[];
+  const source=()=>undefined;
+  const runtime=registry(async(_settings,_reader,host,identity)=>{
+    received.push({id:identity!.id,native:host?.nativeDsh===source});
+    return {configured:true,query:async()=>({answer:'Generated identity result',citations:[],trace:[]}),close:async()=>{}};
+  },id=>{selections.push(id);return source;});
+  t.after(()=>runtime.close());
+  for(const identity of [{kind:'profile',id:'selected-profile'},{kind:'probe',id:'probe-id'},{kind:'file-service',id:'file-id'}] as const){
+    await runtime.factory(environment,reader,undefined,identity);
+  }
+  assert.deepEqual(selections,['selected-profile']);
+  assert.deepEqual(received,[{id:'selected-profile',native:true},{id:'probe-id',native:false},{id:'file-id',native:false}]);
+});
 
 test('a failed prepare keeps the old runtime usable and releases its partial candidate once',async t=>{
   const f=await fixture(t,{profiles:[{id:'secondary',name:'Secondary fixture',settings:{...environment,model:'synthetic-secondary-model'}}]});

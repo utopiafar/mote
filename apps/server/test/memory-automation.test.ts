@@ -41,7 +41,7 @@ test('command retry is idempotent, stale revisions and reused intent IDs cannot 
 
 test('paused integration drains an admitted window, resume skips the gap without resetting the frozen task, independent lanes continue',async t=>{
   const store=fixture(t),control=new MemoryAutomation(store);const lifecycle=new MemoryLifecycle(store,()=>true);
-  t.after(()=>lifecycle.close());lifecycle.automaticAdmission=id=>!['extraction','consolidation'].includes(id)||control.accepting();control.onResume=()=>lifecycle.skipAutomaticBacklog();
+  t.after(()=>lifecycle.close());lifecycle.automaticAdmission=id=>!['extraction','consolidation'].includes(id)||control.accepting();control.onResume=()=>lifecycle.resumeAutomaticBacklog();
   let calls=0,working=0,release!:()=>void,entered!:()=>void;const ready=new Promise<void>(r=>entered=r);
   lifecycle.register({id:'consolidation',version:'fixture',stream:'memory',async run(){calls++;if(calls===1){entered();await new Promise<void>(r=>release=r);}}});
   lifecycle.register({id:'working',version:'fixture',stream:'conversation',async run(){working++;}});
@@ -51,6 +51,46 @@ test('paused integration drains an admitted window, resume skips the gap without
   control.command('resume',command(control));release();await draining;
   await lifecycle.tick();assert.equal(calls,1,'resume did not create integration for the paused gap');assert.equal(working,1,'independent working lane is preserved');
   event('memory');await lifecycle.tick();assert.equal(calls,2,'later authorized increment is handled');
+});
+
+test('owner resume preserves the already frozen extraction round while retiring the unadmitted gap',async t=>{
+ const store=fixture(t),control=new MemoryAutomation(store),lifecycle=new MemoryLifecycle(store,()=>true);
+ let release!:()=>void,entered!:()=>void;const held=new Promise<void>(resolve=>release=resolve),started=new Promise<void>(resolve=>entered=resolve),seen:string[]=[];
+ t.after(()=>lifecycle.close());
+ lifecycle.automaticAdmission=()=>control.accepting();control.onResume=()=>lifecycle.resumeAutomaticBacklog();
+ lifecycle.register({id:'extraction',version:'generated-admitted-round',stream:'evidence',async run(window,checkpoint){seen.push(...window.ids);if(seen.length===1){entered();await held;checkpoint('generated-first-window');}}});
+ lifecycle.configure({...lifecycle.settings(),drainWindows:2,extraction:{...lifecycle.settings().extraction,minChanges:1,maxItems:1}});
+ const emit=()=>{const id=randomUUID();store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(id,new Date().toISOString());return id;};
+ const first=emit(),second=emit();emit();emit();
+ const running=lifecycle.tick();await started;const approved=lifecycle.view().extensions[0].drainThrough!;assert.ok(approved);
+ control.command('pause',command(control));emit();
+ try{
+  control.command('resume',command(control));
+  assert.equal(lifecycle.view().extensions[0].drainThrough,approved,'resume must retain the durable bounded admission rather than ACK its unprocessed tail');
+ }finally{release();await running;}
+ await lifecycle.tick();await lifecycle.tick();
+ assert.deepEqual(seen,[first,second],'only the frozen round is recovered; neither unregistered history nor the paused gap is newly authorized');
+ assert.equal(lifecycle.view().extensions[0].lastRun!.through,approved,'the completion receipt records the processed boundary, not the retired gap');
+ const after=emit();await lifecycle.tick();await lifecycle.tick();assert.deepEqual(seen,[first,second,after]);
+});
+
+test('resume rollback retains the admitted round and a command replay never moves its deferred gap boundary',async t=>{
+ const store=fixture(t),control=new MemoryAutomation(store),lifecycle=new MemoryLifecycle(store,()=>true);
+ t.after(()=>lifecycle.close());lifecycle.automaticAdmission=()=>control.accepting();
+ lifecycle.register({id:'extraction',version:'generated',stream:'evidence',async run(){}});
+ lifecycle.configure({...lifecycle.settings(),drainWindows:2,extraction:{...lifecycle.settings().extraction,minChanges:1,maxItems:1}});
+ const emit=()=>store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(randomUUID(),new Date().toISOString());
+ emit();emit();await lifecycle.tick();control.command('pause',command(control));emit();
+ const before=String(store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json),resume=command(control);
+ control.onResume=()=>{lifecycle.resumeAutomaticBacklog();throw Error('Generated participant failure');};
+ assert.throws(()=>control.command('resume',resume),/Generated participant failure/);
+ assert.equal(control.accepting(),false);assert.equal(control.state().revision,resume.expectedRevision);
+ assert.equal(store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json,before);
+ assert.equal(store.db.prepare('SELECT 1 FROM memory_control_commands WHERE operation_id=?').get(resume.operationId),undefined);
+ control.onResume=()=>lifecycle.resumeAutomaticBacklog();control.command('resume',resume);
+ const committed=String(store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json);
+ emit();control.command('resume',resume);
+ assert.equal(store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json,committed,'replaying a command cannot retire later arrivals');
 });
 
 test('a failing post-commit cleanup preserves the command receipt and retry cannot repeat its effects',t=>{

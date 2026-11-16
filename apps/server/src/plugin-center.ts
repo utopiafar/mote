@@ -2,6 +2,7 @@ import {actionPluginCapabilitySchema,type ActionPluginProvider,type CentralConne
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
+import {isDeepStrictEqual} from 'node:util';
 import {z} from 'zod';
 import type {PluginBuildView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginCapability,PluginPresentationInventory} from '@mote/shared';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
@@ -11,6 +12,11 @@ import {memoryControlCommandSchema} from './memory-automation.js';
 import {sha256,StoreError,type Store} from './store.js';
 import {PluginControlStore,type BuildInstance,type BuildInstanceRecord,type BuildPackageRecord,type BuildSelection} from './plugins/plugin-control-store.js';
 import type {ManifestContribution} from '@mote/plugin-api';
+import type {RuntimeModuleReference} from '@mote/shared/agent-runtimes';
+import {DshProfileError} from '@mote/agent/runtime/dsh';
+import {dshAssemblyReferences,dshConfigurationSchema,dshInstanceKey} from './dsh-configuration.js';
+import {dshSelectionBoundary,validateNativeDshGrant,type InstalledDshAuthority} from './dsh-native.js';
+import {activateInstalledDsh,installedDshModule,nativeDshCatalog,projectInstalledDshModules,type InstalledDshActivation} from './dsh-installed-modules.js';
 import {serviceContract,type PluginLifecycle,type ServiceBinding,type ScopeIdentity} from '@mote/plugin-api/contracts';
 import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext} from '@mote/plugin-host';
 import {centralServices} from './plugins/central-contracts.js';
@@ -96,6 +102,7 @@ export class PluginCenter {
   private readonly processingInstances=new Map<string,{controller:AbortController;handle?:PluginHandle}>();
   private readonly domainInstances=new Map<string,{controller:AbortController;handle?:PluginHandle;bindings:ServiceBinding[]}>();
   private readonly presentationInstances=new Map<string,{handle:PluginHandle;loaded:LoadedPresentation}>();
+  private readonly nativeInstances=new Map<string,{controller:AbortController;activation?:InstalledDshActivation}>();
   private readonly serviceEpochs=new Map<string,number>();
   /** Bound after built-in connectors start. Selecting or authorizing one never
    * executes; the same host dispatcher revalidates it on every action. */
@@ -127,12 +134,18 @@ export class PluginCenter {
           health.capabilities=health.capabilities.filter(value=>!ids.includes(value.id));
           health.capabilities.push(...ids.map(id=>({id,state:'unsupported' as const,reason:'Installed Web presentation currently requires a service package'})));
         }
+        if(pkg.manifest.runtime==='worker'&&servicePackageSurfaces(pkg.manifest).native){
+          health.issues.push('native_requires_service_package');
+          const ids=pkg.manifest.contributions!.filter(value=>value.surface==='agent'&&value.runtime==='native').flatMap(value=>value.capabilities??[]);
+          health.capabilities=health.capabilities.filter(value=>!ids.includes(value.id));
+          health.capabilities.push(...ids.map(id=>({id,state:'unsupported' as const,reason:'Installed native DSH modules require a service package'})));
+        }
         signal.throwIfAborted();const actionIds=new Set<string>(actions.map(value=>value.id));return {...health,capabilities:[...health.capabilities.filter(value=>!actionIds.has(value.id)),...actions]};
       },
       commit:(step,result)=>{const instance=this.instance(String(step.input.instanceId)),health=healthSchema.parse(result),pkg=this.package(instance.view.packageId);
         instance.view.capabilities=pkg.manifest.capabilities.map(id=>health.capabilities.find(capability=>capability.id===id)??{id,state:'unknown',reason:'The runtime did not verify this capability'});
         const surfaces=servicePackageSurfaces(pkg.manifest);
-        instance.domainChecked=pkg.manifest.runtime==='service'&&(surfaces.data||surfaces.presentation)&&!health.issues.length?this.configurationIdentity(instance.view.id):undefined;
+        instance.domainChecked=pkg.manifest.runtime==='service'&&(surfaces.data||surfaces.presentation||surfaces.native)&&!health.issues.length?this.configurationIdentity(instance.view.id):undefined;
         instance.view.issues=health.issues;instance.view.observed=health.issues.length||instance.view.capabilities.some(value=>value.state==='unknown')?'blocked':'ready';instance.view.revision++;delete instance.stepId;this.saveInstance(instance);this.bump();},
       project:step=>{if(['failed','blocked','stale','cancelled'].includes(step.state)){const instance=this.instance(String(step.input.instanceId));if(instance.stepId!==step.id)return;delete instance.domainChecked;instance.view.observed='blocked';instance.view.issues=[step.error??'plugin_check_failed'];instance.view.capabilities=instance.view.capabilities.map(value=>({...value,state:'unknown',reason:'Capability check did not complete'}));this.saveInstance(instance);}},
       classify:()=>new ExecutionFailure('blocked','plugin_check_requires_attention'),
@@ -182,6 +195,7 @@ export class PluginCenter {
     connectorService:{runtime:'service',factoryExports:['connector','default'],surfaces:['ingress'],supportedCapabilities:['source.connector']},
     processingService:{runtime:'service',factoryExports:['backendPlugin','outboundExport','default'],surfaces:['processing'],supportedCapabilities:['processing.pack','outbound.export']},
     domainService:{runtime:'service',factoryExports:['manifest','createPlugin'],surfaces:['data'],dependencies:'active-exact-typed-bindings'},
+    nativeDsh:{packageRuntime:'service',runtime:'native',surfaces:['agent'],exportName:'default',configuration:'restart-only-owner-selection-and-grants',lifecycle:'query-sdk-child',nativeDelegation:false},
     webPresentation:{packageRuntime:'service',runtime:'host',apiVersion:'1',surfaces:['page','theme','layout'],pages:'self-contained-html-opaque-origin',bridge:'declared-same-instance-service-methods',themes:'role-values-json',layouts:'compiled-workspace-shell-json',navigation:['sidebar','adaptive','top'],detail:['split','stack']},
   };}
   private sourceContributions(packages:StoredPackage[],instances:PluginInstanceView[]):PluginSourceContribution[]{
@@ -354,6 +368,49 @@ export class PluginCenter {
     // Immutable code remains cached; uninstall never destroys retained Memory or archived source history.
   });if(applied)for(const retiredId of retired){const runtime=this.runtimes.get(retiredId);this.runtimes.delete(retiredId);void runtime?.close().catch(()=>{});void this.deactivateServiceInstance(retiredId).catch(()=>{});this.retired?.(retiredId);}return this.view();}
   runtime(id:string){this.assertCurrent();const existing=this.runtimes.get(id);if(existing)return existing;const runtime=this.runtimeFor(this.packageForInstance(id),this.instance(id).view);this.runtimes.set(id,runtime);return runtime;}
+  private async nativeProjection(instanceId:string){
+    this.assertCurrent();const pkg=this.packageForInstance(instanceId),instance=this.instanceIdentity(instanceId);
+    if(pkg.view.state!=='installed'||pkg.manifest.runtime!=='service'||!servicePackageSurfaces(pkg.manifest).native)throw new DshProfileError('dsh_module_unavailable');
+    if(pkg.manifest.configuration.length&&pkg.manifest.contributions?.every(value=>value.surface==='agent'&&value.runtime==='native'))throw new DshProfileError('dsh_profile_invalid');
+    this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
+    const projection=await projectInstalledDshModules({manifest:pkg.manifest,directory:pkg.directory!,artifactDigest:pkg.view.source.digest,instance});
+    this.assertCurrent();if(dshInstanceKey(instance)!==dshInstanceKey(this.instanceIdentity(instanceId)))throw new DshProfileError('dsh_module_unavailable');
+    return projection;
+  }
+  /** An owner can copy immutable selections while an instance is disabled.
+   * Checked metadata and live activation are separate facts, neither grants. */
+  async nativeDshModules(){
+    this.assertCurrent();const result=[];
+    for(const instance of this.view().instances){
+      const manifest=this.packageForInstance(instance.id).manifest;
+      if(!this.instanceChecked(this.instance(instance.id))||instance.issues.length||manifest.runtime!=='service'||!servicePackageSurfaces(manifest).native)continue;
+      const projection=await this.nativeProjection(instance.id),owned=this.nativeInstances.get(instance.id);
+      let active=false;try{owned?.activation?.assertCurrent();active=Boolean(owned?.activation&&!owned.controller.signal.aborted&&this.instance(instance.id).view.desired&&this.instance(instance.id).view.observed==='ready');}catch{}
+      result.push(...nativeDshCatalog(projection).map(module=>({...module,active})));
+    }
+    return result;
+  }
+  async validateNativeDshConfiguration(raw:unknown){
+    return dshSelectionBoundary(async()=>{
+      const configuration=dshConfigurationSchema.parse(raw);
+      for(const profile of configuration.profiles)for(const reference of dshAssemblyReferences(profile.assembly)){
+        const instance=this.view().instances.find(instance=>instance.id===reference.contribution.instance.instanceId);
+        if(!instance||instance.issues.length||!this.instanceChecked(this.instance(instance.id))||!isDeepStrictEqual(this.instanceIdentity(instance.id),reference.contribution.instance))throw new DshProfileError('dsh_module_unavailable');
+        const projection=await this.nativeProjection(reference.contribution.instance.instanceId),module=installedDshModule(projection,reference);
+        if(!module)throw new DshProfileError('dsh_module_unavailable');
+        await validateNativeDshGrant(module,profile.grants);this.assertCurrent();
+      }
+      return configuration;
+    });
+  }
+  /** Query-time authority comes from this exact live installation, not from a
+   * successful owner save, a package check or another instance of the package. */
+  async resolveNativeDshModule(reference:RuntimeModuleReference):Promise<InstalledDshAuthority|undefined>{
+    this.assertCurrent();const instance=this.view().instances.find(instance=>instance.id===reference.contribution.instance.instanceId),owned=instance&&this.nativeInstances.get(instance.id);
+    if(!instance||!owned?.activation||owned.controller.signal.aborted||!instance.desired||instance.observed!=='ready'||instance.issues.length||dshInstanceKey(this.instanceIdentity(instance.id))!==dshInstanceKey(reference.contribution.instance))return undefined;
+    const pkg=this.packageForInstance(instance.id);this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
+    return owned.activation.module(reference);
+  }
   private async probeServicePackage(pkg:StoredPackage,instanceId:string,signal:AbortSignal){
     assertServicePackageSupported(pkg.manifest);
     const directory=pkg.directory!;this.releases.verifyInstalled(directory,pkg.view.source.digest,pkg.manifest);
@@ -403,7 +460,11 @@ export class PluginCenter {
         capabilities.push(...pkg.manifest.capabilities.filter(id=>presentationContributions(pkg.manifest).some(value=>value.capabilities?.includes(id))).map(id=>({id,state:'verified' as const,reason:'Web presentation data and exact dependencies verified; enablement and the Web mount remain separate'})));
       }catch(error){signal.throwIfAborted();issues.push(error instanceof PluginHostError?error.code:error instanceof Error?error.message:'presentation_invalid');}
     }
-    for(const declaration of pkg.manifest.contributions??[])if(!['ingress','processing','data','page','theme','layout'].includes(declaration.surface)||['ingress','processing','data'].includes(declaration.surface)&&declaration.runtime!=='service'){
+    if(surfaces.native){
+      try{const projection=await this.nativeProjection(instanceId);signal.throwIfAborted();this.resolveNativeDependencies(instanceId,projection.dependencies,false);capabilities.push(...pkg.manifest.capabilities.filter(id=>projection.capabilities.includes(id)).map(id=>({id,state:'verified' as const,reason:'Original native ESM metadata verified without execution; owner selection and grants remain required'})));}
+      catch(error){signal.throwIfAborted();issues.push(error instanceof PluginHostError?error.code:error instanceof DshProfileError?error.code:'native_metadata_invalid');}
+    }
+    for(const declaration of pkg.manifest.contributions??[])if(!(declaration.surface==='agent'&&declaration.runtime==='native')&&(!['ingress','processing','data','page','theme','layout'].includes(declaration.surface)||['ingress','processing','data'].includes(declaration.surface)&&declaration.runtime!=='service')){
       issues.push('unsupported_contribution:'+declaration.id);
       for(const id of declaration.capabilities??[])if(!capabilities.some(value=>value.id===id))capabilities.push({id,state:'unsupported',reason:'Unsupported contribution surface: '+declaration.surface});
     }
@@ -434,7 +495,7 @@ export class PluginCenter {
       await this.startServiceInstance(instanceId,epoch);
     });
   }
-  private fenceProcessing(instanceId:string){const epoch=(this.serviceEpochs.get(instanceId)??0)+1;this.serviceEpochs.set(instanceId,epoch);const presentation=this.presentationInstances.get(instanceId);this.presentationInstances.delete(instanceId);void presentation?.handle.close('disabled').catch(()=>{});this.processingInstances.get(instanceId)?.controller.abort();const domain=this.domainInstances.get(instanceId);domain?.controller.abort();void domain?.handle?.close('disabled').catch(()=>{});return epoch;}
+  private fenceProcessing(instanceId:string){const epoch=(this.serviceEpochs.get(instanceId)??0)+1;this.serviceEpochs.set(instanceId,epoch);const native=this.nativeInstances.get(instanceId);native?.controller.abort();void native?.activation?.close().catch(()=>{});const presentation=this.presentationInstances.get(instanceId);this.presentationInstances.delete(instanceId);void presentation?.handle.close('disabled').catch(()=>{});this.processingInstances.get(instanceId)?.controller.abort();const domain=this.domainInstances.get(instanceId);domain?.controller.abort();void domain?.handle?.close('disabled').catch(()=>{});return epoch;}
   private async installProcessing(instanceId:string,module:Record<string,unknown>,publish:boolean,signal:AbortSignal,epoch?:number){
     if(!this.hostOwner||!this.processingHost)throw new StoreError('Processing host is unavailable',503);
     const plugin=processingPluginFromModule(module),configuration=this.configurationIdentity(instanceId),pkg=this.packageForInstance(instanceId),host=this.hostOwner.host;
@@ -478,10 +539,18 @@ export class PluginCenter {
   /** Local presentation references bind to this instance's checked declarations;
    * every remote reference still needs an actual active typed provider. */
   private resolvePresentationDependencies(instanceId:string,publish:boolean){
-    const manifest=this.packageForInstance(instanceId).manifest,local=[...domainContributions(manifest),...presentationContributions(manifest)];
+    const manifest=this.packageForInstance(instanceId).manifest;
+    return this.resolveLocalDependencies(instanceId,publish,presentationDependencies(manifest),[...domainContributions(manifest),...presentationContributions(manifest)],true);
+  }
+  private resolveNativeDependencies(instanceId:string,dependencies:readonly import('@mote/plugin-api').ManifestDependency[],publish:boolean){
+    const manifest=this.packageForInstance(instanceId).manifest;
+    return this.resolveLocalDependencies(instanceId,publish,dependencies,[...domainContributions(manifest),...(manifest.contributions??[]).filter(value=>value.surface==='agent'&&value.runtime==='native')]);
+  }
+  private resolveLocalDependencies(instanceId:string,publish:boolean,declared:readonly import('@mote/plugin-api').ManifestDependency[],local:readonly ManifestContribution[],presentation=false){
+    const manifest=this.packageForInstance(instanceId).manifest;
     const localRequired:ServiceBinding[]=[],localOptional:ServiceBinding[]=[];
-    const dependencies=presentationDependencies(manifest).filter(dependency=>{
-      if(dependency.kind==='host'&&dependency.id==='mote.web.presentation'&&dependency.version==='1')return false;
+    const dependencies=declared.filter(dependency=>{
+      if(presentation&&dependency.kind==='host'&&dependency.id==='mote.web.presentation'&&dependency.version==='1')return false;
       if(dependency.kind==='package'&&dependency.id===manifest.id&&dependency.version===manifest.version)return false;
       const contribution=dependency.kind==='contribution'?local.find(value=>value.id===dependency.id&&value.version===dependency.version)
         :dependency.kind==='service'?domainContributions(manifest).find(value=>value.provides?.some(port=>port.id===dependency.id&&port.apiVersion===dependency.version)):undefined;
@@ -585,9 +654,31 @@ export class PluginCenter {
       if(!publish)await handle.close('disabled');
     }catch(error){if(handle)await handle.close('disabled');if(publish&&this.domainInstances.get(instanceId)===owned)this.domainInstances.delete(instanceId);throw error;}
   }
+  private async installNative(instanceId:string,epoch:number){
+    if(!this.hostOwner)throw new StoreError('Native DSH host is unavailable',503);
+    const configuration=this.configurationIdentity(instanceId),owned={controller:new AbortController(),activation:undefined as InstalledDshActivation|undefined};
+    const previous=this.nativeInstances.get(instanceId);previous?.controller.abort();await previous?.activation?.close();this.nativeInstances.set(instanceId,owned);
+    const current=()=>{owned.controller.signal.throwIfAborted();if(!this.accepting||!this.instance(instanceId).view.desired||this.instanceBuild(instanceId)?.retired||this.configurationIdentity(instanceId)!==configuration||this.serviceEpochs.get(instanceId)!==epoch||this.nativeInstances.get(instanceId)!==owned)throw new PluginHostError('stale_scope');};
+    try{
+      current();const projection=await this.nativeProjection(instanceId);current();const dependencies=this.resolveNativeDependencies(instanceId,projection.dependencies,true);
+      owned.activation=await activateInstalledDsh({host:this.hostOwner.host,instance:this.instanceIdentity(instanceId),projection,required:[this.hostOwner.binding(),...dependencies.required],optional:dependencies.optional,signal:owned.controller.signal,assertCurrent:current});
+      current();owned.activation.signal.addEventListener('abort',()=>{
+        if(this.admit()||this.nativeInstances.get(instanceId)!==owned||!this.instance(instanceId).view.desired||this.serviceEpochs.get(instanceId)!==epoch)return;
+        const instance=this.instance(instanceId);instance.view.desired=false;instance.view.observed='blocked';instance.view.issues=['dependency_unavailable'];instance.view.revision++;this.saveInstance(instance);this.bump();this.admissionChanged?.(instanceId,false);
+        void this.deactivateServiceInstance(instanceId).catch(()=>{});
+      },{once:true});
+      owned.activation.assertCurrent();
+    }catch(error){
+      owned.controller.abort();
+      try{await owned.activation?.close();}
+      catch(cleanup){throw new AggregateError([error,cleanup],'Native installation and cleanup failed',{cause:error});}
+      finally{if(this.nativeInstances.get(instanceId)===owned)this.nativeInstances.delete(instanceId);}
+      throw error;
+    }
+  }
   private async startServiceInstance(instanceId:string,epoch:number){
     const pkg=this.packageForInstance(instanceId),surfaces=servicePackageSurfaces(pkg.manifest);
-    if(!surfaces.ingress&&!surfaces.processing&&!surfaces.data&&!surfaces.presentation)return;
+    if(!surfaces.ingress&&!surfaces.processing&&!surfaces.data&&!surfaces.presentation&&!surfaces.native)return;
     let connectorId:string|undefined;
     try{
       this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
@@ -611,8 +702,10 @@ export class PluginCenter {
       }
       if(surfaces.data){const module=await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>;await this.installDomain(instanceId,module,true,new AbortController().signal,epoch);}
       if(surfaces.presentation)await this.installPresentation(instanceId,epoch);
+      if(surfaces.native)await this.installNative(instanceId,epoch);
       if(this.admit())throw new PluginHostError('stale_scope');
       if(surfaces.data&&!this.activeDomainHandle(this.domainInstances.get(instanceId)?.handle))throw new PluginHostError('dependency_unavailable');
+      if(surfaces.native)this.nativeInstances.get(instanceId)?.activation?.assertCurrent();
       const instance=this.instance(instanceId);if(instance.view.desired&&this.serviceEpochs.get(instanceId)===epoch){instance.view.observed='ready';instance.view.issues=[];instance.view.revision++;this.saveInstance(instance);this.bump();}
     }catch(error){
       this.activeConnectors.delete(instanceId);
@@ -621,6 +714,7 @@ export class PluginCenter {
       const processing=this.processingInstances.get(instanceId);this.processingInstances.delete(instanceId);processing?.controller.abort();if(processing?.handle)await processing.handle.close('disabled');
       const domain=this.domainInstances.get(instanceId);this.domainInstances.delete(instanceId);domain?.controller.abort();if(domain?.handle)await domain.handle.close('disabled');
       const presentation=this.presentationInstances.get(instanceId);this.presentationInstances.delete(instanceId);if(presentation)await presentation.handle.close('disabled');
+      const native=this.nativeInstances.get(instanceId);this.nativeInstances.delete(instanceId);native?.controller.abort();await native?.activation?.close();
       const instance=this.instance(instanceId);
       // Quiesce/shutdown revokes work, not the persisted owner selection.
       // A still-admitting host records genuine startup/dependency failures.
@@ -634,6 +728,7 @@ export class PluginCenter {
   private async stopServiceInstance(instanceId:string){
     const owned=this.activeConnectors.get(instanceId);this.activeConnectors.delete(instanceId);
     const tasks:Promise<unknown>[]=[];
+    const native=this.nativeInstances.get(instanceId);this.nativeInstances.delete(instanceId);native?.controller.abort();if(native?.activation)tasks.push(native.activation.close());
     if(owned&&this.connectorHost)tasks.push(this.connectorHost.stop(owned.connectorId));
     if(this.outboundHost)tasks.push(this.outboundHost.deactivate(instanceId));
     const presentation=this.presentationInstances.get(instanceId);this.presentationInstances.delete(instanceId);if(presentation)tasks.push(presentation.handle.close('disabled'));
@@ -802,7 +897,7 @@ export class PluginCenter {
         const ready=record.instance&&this.instanceChecked(record.instance);
         const service=record.instance&&this.package(record.instance.view.packageId).manifest.runtime==='service';
         record.observed=ready?(service?'starting':'active'):'blocked';record.blockers=ready?[]:['capability_unverified'];if(service&&record.instance){record.instance.view.observed=ready?'checking':'blocked';record.activeSelection=null;}this.control.saveBuild(record);
-        if(record.instance&&service&&ready){const surfaces=servicePackageSurfaces(this.package(record.instance.view.packageId).manifest);if(surfaces.data||surfaces.presentation)domains.push(record.instance.view.id);else void this.activateServiceInstance(record.instance.view.id).catch(()=>{});}
+        if(record.instance&&service&&ready){const surfaces=servicePackageSurfaces(this.package(record.instance.view.packageId).manifest);if(surfaces.data||surfaces.presentation||surfaces.native)domains.push(record.instance.view.id);else void this.activateServiceInstance(record.instance.view.id).catch(()=>{});}
         continue;
       }
       if(!record.desired){if(record.observed==='restart_required'){record.observed='stopped';record.blockers=[];this.control.saveBuild(record);}continue;}
@@ -817,12 +912,12 @@ export class PluginCenter {
     while(domains.length){
       let progress=false;
       for(const id of [...domains]){
-        const manifest=this.packageForInstance(id).manifest,dependencies=[...domainDependencies(manifest),...presentationDependencies(manifest)];
+        const manifest=this.packageForInstance(id).manifest,surfaces=servicePackageSurfaces(manifest),dependencies=[...domainDependencies(manifest),...presentationDependencies(manifest),...(manifest.contributions??[]).filter(value=>value.surface==='agent'&&value.runtime==='native').flatMap(value=>value.requires??[])];
         // Restore all already-selected candidate providers before resolving a
         // consumer. Otherwise startup iteration order could hide ambiguity or
         // turn an optional declared dependency into an accidental absence.
         if(domains.some(other=>other!==id&&dependencies.some(dependency=>{const pkg=this.packageForInstance(other).manifest;return dependency.kind==='package'?pkg.id===dependency.id&&pkg.version===dependency.version:dependency.kind==='contribution'?domainContributions(pkg).some(value=>value.id===dependency.id&&value.version===dependency.version):dependency.kind==='service'?domainContributions(pkg).some(value=>value.provides?.some(port=>port.id===dependency.id&&port.apiVersion===dependency.version)):false;})))continue;
-        try{this.resolveDomainDependencies(id);if(servicePackageSurfaces(manifest).presentation)this.resolvePresentationDependencies(id,false);}catch(error){if(error instanceof PluginHostError&&error.code==='dependency_unavailable')continue;}
+        try{if(surfaces.data)this.resolveDomainDependencies(id);if(surfaces.presentation)this.resolvePresentationDependencies(id,false);if(surfaces.native)this.resolveNativeDependencies(id,(await this.nativeProjection(id)).dependencies,false);}catch(error){if(error instanceof PluginHostError&&error.code==='dependency_unavailable')continue;}
         domains.splice(domains.indexOf(id),1);await this.activateServiceInstance(id);progress=true;
       }
       if(!progress){for(const id of domains)await this.activateServiceInstance(id);break;}
@@ -906,18 +1001,19 @@ export class PluginCenter {
       // Data deletion is a separate domain command. Installation identity stays.
     });return this.buildView(id);
   }
-  quiesce(){this.accepting=false;for(const owned of this.presentationInstances.values())void owned.handle.close('shutdown').catch(()=>{});}
+  quiesce(){this.accepting=false;for(const owned of this.nativeInstances.values()){owned.controller.abort();void owned.activation?.close().catch(()=>{});}for(const owned of this.presentationInstances.values())void owned.handle.close('shutdown').catch(()=>{});}
   close(){if(this.closing)return this.closing;this.closed=true;this.quiesce();
     // Removing handlers aborts local calls before resources are released. Never
     // interpret this as rollback of an already submitted provider mutation.
     const tasks=[...this.disposeHandlers.map(dispose=>dispose()),...[...this.runtimes.values()].map(runtime=>runtime.close())];
     if(this.outboundHost)tasks.push(this.outboundHost.close());
+    for(const owned of this.nativeInstances.values()){owned.controller.abort();if(owned.activation)tasks.push(owned.activation.close());}
     for(const owned of this.presentationInstances.values())tasks.push(owned.handle.close('shutdown'));
     for(const owned of this.processingInstances.values()){owned.controller.abort();if(owned.handle)tasks.push(owned.handle.close('shutdown'));}
     for(const owned of this.domainInstances.values()){owned.controller.abort();if(owned.handle)tasks.push(owned.handle.close('shutdown'));}
     for(const owned of this.buildHandles.values())tasks.push(owned.handle.close('shutdown'));
     return this.closing=Promise.allSettled([...tasks,...this.applying.values()]).then(results=>{
-      this.runtimes.clear();this.buildHandles.clear();this.processingInstances.clear();this.domainInstances.clear();this.presentationInstances.clear();const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
+      this.runtimes.clear();this.buildHandles.clear();this.processingInstances.clear();this.domainInstances.clear();this.presentationInstances.clear();this.nativeInstances.clear();const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
       if(errors.length)throw new AggregateError(errors,'Plugin control disposal failed');
     });
   }
