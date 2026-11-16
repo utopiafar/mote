@@ -13,6 +13,7 @@ import {FileStore} from '../src/files.js';
 import {Connections} from '../src/connections.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {actionsServicesContribution,actionsServicesDeclaration,createActionsServices,createActionsServicesFactory} from '../src/plugins/actions-services.js';
+import {createActionsServiceInputs} from '../src/action-service-inputs.js';
 
 const text='Generated appointment is scheduled on 18 September 2099.',ownerToken='generated-actions-owner';
 const event={title:'Generated appointment',start:'2099-09-18T15:00:00Z',end:'2099-09-18T16:00:00Z',timeZone:'UTC',allDay:false,location:'Generated room',description:''};
@@ -39,11 +40,13 @@ type State=Awaited<ReturnType<typeof fixture>>['state'];
 
 function platform(state:State,providers:ActionPluginProvider[]=[provider()],connectorAction?:(input:any)=>Promise<any>){
   const connectionIdentity=(request:{headers:{authorization?:string}})=>state.connections.authenticate(String(request.headers.authorization??''));
-  return createActionsServices({store:state.store,files:state.files,sources:state.sources,connections:state.connections,executor:state.executor,
+  const adapter=createActionsServiceInputs({store:state.store,files:state.files,sources:state.sources,connections:state.connections,executor:state.executor,
     actionProviders:()=>providers,
     ...(connectorAction?{connectorAction}:{}),
     query:async input=>answer(String(input.evidenceIds![0])),configured:()=>true,
     authorization:{connectionIdentity,credential:request=>{const c=connectionIdentity(request);return c&&!state.connections.isOwner(c)?c:undefined;}}});
+  const service=createActionsServices(adapter.inputs);
+  return {...service,get available(){return service.available;},get actionsForAssembly(){return adapter.actionsForAssembly;}};
 }
 const install=(host:PluginHost,services:ReturnType<typeof platform>)=>host.install({identity:{host:host.identity,packageId:'generated.actions-services',installationId:randomUUID(),instanceId:randomUUID(),activationId:randomUUID()},contributions:[actionsServicesDeclaration],factory:createActionsServicesFactory(services)});
 const routed=(t:TestContext,services:ReturnType<typeof platform>)=>{const app=Fastify();services.routes(app);t.after(()=>app.close());return app;};
@@ -216,7 +219,45 @@ test('a prepare that fails inside a caller transaction leaves the borrowed vault
   await restored.close();
 });
 
-test('the contribution declares no service ports beyond the route and assembly bridges',()=>{
-  assert.deepEqual(actionsServicesContribution.provides,[]);
+test('the contribution declares its concrete input and lifecycle ports',()=>{
+  assert.deepEqual(actionsServicesContribution.requires,[{kind:'service',id:'mote.central.actions-inputs',version:'1.0.0'}]);
+  assert.deepEqual(actionsServicesContribution.provides,[{kind:'service',id:'mote.central.actions',apiVersion:'1',cardinality:'single'}]);
   assert.equal(actionsServicesDeclaration.id,'actions-services');
+});
+
+test('failure after handler registration releases the partial domain without closing its borrowed vault or executor',async t=>{
+  const f=await fixture(t),s=f.state,failure=Error('Generated capability preparation failure'),register=s.store.registerStorage.bind(s.store);
+  const intercepted=t.mock.method(s.store,'registerStorage',(id,...args)=>{if(id==='actions-services')throw failure;return register(id,...args);});
+  const broken=platform(s);
+  await assert.rejects(install(s.host,broken),error=>error===failure);
+  assert.equal(s.executor.closed,false);assert.equal(s.store.stats().captures,0);
+  intercepted.mock.restore();
+  const restored=platform(s),handle=await install(s.host,restored);
+  restored.actionsForAssembly.configure({enabled:true,timeZone:'UTC',reviewDeviceIds:[]});
+  assert.equal((await propose(s,restored)).status,'proposed','a second owner can register the same handler and publish normally');
+  await handle.close('disabled');
+});
+
+test('a cold input opens on prepare and one owned poll is interrupted before shutdown joins it',async t=>{
+  for(const failed of [false,true])await t.test(failed?'cleanup failure':'success',async t=>{
+    let opens=0,closes=0,starts=0,stops=0,entered!:()=>void,release!:()=>void;
+    const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve),failure=Error('Generated owned cleanup failure');
+    const timers=new Set<ReturnType<typeof setInterval>>(),interval=globalThis.setInterval,clear=globalThis.clearInterval;
+    t.mock.method(globalThis,'setInterval',(callback,delay,...args)=>{const timer=interval(callback,delay,...args);timers.add(timer);starts++;return timer;});
+    t.mock.method(globalThis,'clearInterval',timer=>{if(timers.delete(timer as ReturnType<typeof setInterval>))stops++;return clear(timer);});
+    const service=createActionsServices({async open(){opens++;return {
+      async tick(){entered();await held;},routes(){},async close(){closes++;release();if(failed)throw failure;},
+    };}});
+    t.after(async()=>{release();await service.close().catch(error=>{if(!failed)throw error;});});
+    assert.equal(opens,0);assert.equal(starts,0);
+    await service.prepare();assert.equal(opens,1);assert.equal(starts,0);
+    service.start();assert.equal(starts,1);
+    const poll=service.poll();await started;
+    const closing=service.close();assert.equal(service.close(),closing);
+    if(failed){
+      const contains=(error:unknown):boolean=>error===failure||error instanceof AggregateError&&error.errors.some(contains);
+      await assert.rejects(closing,contains);await assert.rejects(service.close(),contains);
+    }else await closing;
+    await poll;assert.equal(closes,1);assert.equal(stops,1);assert.equal(timers.size,0);assert.equal(service.available,false);
+  });
 });
