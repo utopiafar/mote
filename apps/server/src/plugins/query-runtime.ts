@@ -36,6 +36,7 @@ import type {Conversations} from '../conversations.js';
 import type {ObservabilityAssembly} from './observability-platform.js';
 import {assistantDraftScope,type AssistantDrafts} from '../assistant-drafts.js';
 import {centralServices,type QueryDomain} from './central-contracts.js';
+import {nativeApplicationContext} from '../dsh-application-context.js';
 
 /** C27 owns admitted model runs and the insight entry. Routes and preparation
  * are contributed by the same query domain activation. */
@@ -55,7 +56,7 @@ export interface QueryRuntimeDependencies {
   readonly store:QueryRuntimeStore;
   readonly lifecycle:ServerLifecycle;
   readonly diagnostics:ServerDiagnostics;
-  readonly modelAuthorization:Pick<BackgroundModelAuthorization,'bindCurrentStep'>;
+  readonly modelAuthorization:Pick<BackgroundModelAuthorization,'bindCurrentStep'|'assertCurrent'>;
   readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'automatic'|'evidenceTriggers'|'queryTriggers'>;
   readonly executor:Pick<ExecutionEngine,'get'>;
   readonly agentGate:Pick<ConcurrencyGate,'snapshot'>;
@@ -66,7 +67,7 @@ export interface QueryRuntimeDependencies {
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
   readonly sourceContexts:SourceContextStore;
-  readonly conversations:Pick<Conversations,'assertHistoryContext'>;
+  readonly conversations:Pick<Conversations,'assertHistoryContext'|'historyOriginalDependencies'|'message'|'messageForRun'>;
   readonly assistantDrafts:Pick<AssistantDrafts,'capabilities'|'issue'>;
 }
 
@@ -168,16 +169,21 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     // wall-clock deadline here would charge host resource-gate waiting again.
     const deadline=agentDeadline(input.signal,null),taskSignal=deadline.signal;
     let disclosedSourcePins=sourceContextDependencies(input);
-    const disclosedProcessingIds:string[]=[],processingIds=new Set<string>();
+    const disclosedProcessingIds:string[]=[],processingIds=new Set<string>(),originalIds=new Set([...(input.directImages?.map(image=>image.id)??[]),...(input.executionLane==='interactive'?[...(input.evidenceIds??[]),...(input.anchorEvidenceIds??[])]:[])]);let originalReceiptObserved=false;
+    // Confirmed body/image delivery is a separate role from derived Memory
+    // ancestry. It can never borrow a card's released-original allowance.
+    const assertOriginalDeliveries=()=>{if(originalIds.size)assertModelEvidence({question:'',...((input as ReaderQueryScope).sourceIds!==undefined?{sourceIds:(input as ReaderQueryScope).sourceIds}:{}),contextEvidenceDependencies:{version:1,complete:true,ids:[...originalIds]}});};
     const memoryPins=new Map<string,{version?:number;fingerprint:string}>();
     const assertMemoryPins=()=>{for(const [id,pin] of memoryPins){const row=store.db.prepare('SELECT json FROM memories WHERE id=?').get(id);if(!row)throw contextFailure('context_evidence_restricted');const current=JSON.parse(String(row.json));if(current.fingerprint!==pin.fingerprint||pin.version!==undefined&&current.version!==pin.version)throw contextFailure('context_evidence_restricted');}};
     const observed:QueryInput&{processingDisclosedEvidenceIds?:string[]}={...input,contextSourceContextDependencies:disclosedSourcePins,signal:taskSignal,traceContext,
       assertContextAuthority:()=>{input.assertContextAuthority?.();assertMemoryPins();},
       onMemoryBodies:cards=>{assertMemoryPins();for(const card of cards){const prior=memoryPins.get(card.id);if(prior&&(prior.fingerprint!==card.fingerprint||prior.version!==card.version))throw contextFailure('context_evidence_restricted');memoryPins.set(card.id,{version:card.version,fingerprint:card.fingerprint});}assertMemoryPins();input.onMemoryBodies?.(cards);},
-      ...(input.responseMode==='memory-extraction'&&input.evidenceIds!==undefined?{processingDisclosedEvidenceIds:disclosedProcessingIds,onEvidence:(records:readonly import('@mote/agent').ContextRecord[])=>{
-        for(const record of records)if(!processingIds.has(record.id)){processingIds.add(record.id);disclosedProcessingIds.push(record.id);}
+      ...(input.responseMode==='memory-extraction'&&input.evidenceIds!==undefined?{processingDisclosedEvidenceIds:disclosedProcessingIds}:{}),
+      onEvidence:(records:readonly import('@mote/agent').ContextRecord[])=>{
+        originalReceiptObserved=true;
+        for(const record of records){originalIds.add(record.id);if(!processingIds.has(record.id)){processingIds.add(record.id);disclosedProcessingIds.push(record.id);}}
         input.onEvidence?.(records);
-      }}:{}),
+      },
       onSourceContextDependencies:pins=>{
         const next=combineSourceContextDependencies([disclosedSourcePins,pins]);
         assertSourceContextDependencies(sourceContexts,next);
@@ -206,22 +212,34 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     observed.assertContextAuthority=()=>{
       input.assertContextAuthority?.();
       assertMemoryPins();
+      assertOriginalDeliveries();
       if(observed.conversation?.historyContext)conversations.assertHistoryContext(observed.conversation.historyContext);
     };
+    observed.nativeApplicationContext=()=>nativeApplicationContext(observed,{store,conversations,assertModelEvidence,assertCurrent:()=>modelAuthorization.assertCurrent()});
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed,runLease).then(result=>{
       taskSignal?.throwIfAborted();
+      for(const citation of result.citations)originalIds.add(citation.id);
+      assertOriginalDeliveries();
       assertModelEvidence(observed);
       if(observed.executionLane==='interactive'&&observed.evidenceIds&&result.citations.some(citation=>![...observed.evidenceIds!,...(observed.directImages?.map(image=>image.id)??[])].includes(citation.id)))throw contextFailure('context_evidence_restricted');
       const selectedDependencies=observed.executionLane==='interactive'&&observed.evidenceIds?{version:1 as const,complete:true,ids:[...observed.evidenceIds,...(observed.directImages?.map(image=>image.id)??[])]}:undefined;
-      const evidenceDependencies=resolveDependencies(store,combineDependencies([contextDependencies(input),result.evidenceDependencies??selectedDependencies,
-        ...(input.directImages?.length?[{version:1 as const,complete:true,ids:input.directImages.map(image=>image.id)}]:[])]));
+      const baseDependencies=combineDependencies([contextDependencies(input),result.evidenceDependencies??selectedDependencies,
+        ...(input.directImages?.length?[{version:1 as const,complete:true,ids:input.directImages.map(image=>image.id)}]:[])]);
+      const observedIds=[...originalIds,...memoryPins.keys()];
+      const evidenceDependencies=resolveDependencies(store,baseDependencies?combineDependencies([baseDependencies,{version:1,complete:true,ids:observedIds}]):observedIds.length?{version:1,complete:false,ids:observedIds}:undefined);
       // Metadata/declaration reads also pin their original Material lineage.
       // They need correction fences even when no original quote was expanded.
       if(evidenceDependencies){
         const historicalIds=new Set([...(input.conversation?.historyContext?input.conversation.evidenceDependencies?.ids??[]:[]),...(input.historyContext?input.contextEvidenceDependencies?.ids??[]:[])]);
         assertModelEvidence({question:'',...((input as ReaderQueryScope).sourceIds!==undefined?{sourceIds:(input as ReaderQueryScope).sourceIds}:{}),contextEvidenceDependencies:{...evidenceDependencies,ids:evidenceDependencies.ids.filter(id=>!historicalIds.has(id))}});
       }
+      // Overwrite any Agent-supplied role claim. Only complete, observed Host
+      // delivery plus pinned prior history can prove an empty original set.
+      const originalEvidenceDependencies=resolveDependencies(store,combineDependencies([
+        {version:1,complete:originalReceiptObserved&&evidenceDependencies?.complete===true,ids:[...originalIds]},
+        ...[input.historyContext,input.conversation?.historyContext].flatMap(snapshot=>snapshot?[conversations.historyOriginalDependencies(snapshot)]:[]),
+      ]))!;
       const sourcePins=combineSourceContextDependencies([disclosedSourcePins,result.sourceContextDependencies]);
       assertSourceContextDependencies(sourceContexts,sourcePins);
       const selectedSources=(input as ReaderQueryScope).sourceIds;
@@ -230,9 +248,9 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       // Only an original actually disclosed to this run being deleted can make
       // its answer unsafe to publish; other archive changes belong to later runs.
       if(store.deletionRevision()!==revision){
-        const used=new Set([...(input.derivedContextEvidenceIds??[]),...(contextDependencies(input)?.ids??[]),...(evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
+        const originals=resolveDependencies(store,{version:1,complete:true,ids:[...originalIds]}),unknownUsed=new Set([...(contextDependencies(input)?.ids??[]),...(evidenceDependencies?.ids??[])]);
         for(const row of store.db.prepare("SELECT id FROM changes WHERE seq>? AND operation='delete'").iterate(revision)){
-          if(!evidenceDependencies?.complete||used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
+          if(!evidenceDependencies?.complete||originals?.ids.includes(String(row.id))||!originalReceiptObserved&&unknownUsed.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
         }
       }
       // A contradiction or a Host success without its terminal latches before
@@ -246,7 +264,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       const {draftProposal,...answerResult}=result as QueryResult & {draftProposal?:{goal:string}};
       let draft:import('@mote/shared').AssistantDraft|undefined;
       if(draftProposal&&input.assistantDraft&&draftScope)try{draft=assistantDrafts.issue({goal:draftProposal.goal,scope:draftScope});}catch{/* A malformed proposal cannot fail a valid answer. */}
-      return {...answerResult,...(draft?{draft}:{}),...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
+      return {...answerResult,originalEvidenceDependencies,...(draft?{draft}:{}),...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
     }).catch(error=>{
       // The Host run session finalizes only through its observer's run terminal.
       // A latched contradiction replaces the outcome after the Host has settled.

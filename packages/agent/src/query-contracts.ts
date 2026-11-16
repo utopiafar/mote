@@ -40,6 +40,9 @@ export interface QueryRequest {
 
 /** Host-selected execution identity and admission context. */
 export interface QueryExecutionContext {
+  /** Host-prepared conversation identity and current privacy proof for an
+   * explicitly selected persistent native application. No paths or grants. */
+  nativeApplicationContext?: () => import('./runtime/dsh/application-contracts.js').NativeApplicationContext|undefined;
   /** Internal adapter selection for the trusted benchmark arm. */
   hostContextToolMode?:'all-native'|'catalog';
   /** Host-only exact runtime tool surface for one bounded task (for example an
