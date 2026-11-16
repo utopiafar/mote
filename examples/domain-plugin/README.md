@@ -1,58 +1,82 @@
-# Mote domain-package template (new domain)
+# Mote domain-package template
 
-This is a minimal domain package for Mote: one `runtime: "service"` package
-Manifest whose contributing entry runs the package's own domain under the
-SDK `PluginHost` lifecycle, plus a connector adapter that deploys the same
-domain on today's Central. See
-[plugin-development](../../docs/plugin-development.md) for the three template
-kinds and how to choose between them.
+This template contains a `runtime: "service"` data domain and a separate page
+declaration. Its explicit `--data-only` build produces a pure data release for
+the current Central host. Install that release through Plugin Center, configure
+an instance, check it and explicitly enable it. Central runs `createPlugin`
+under the existing `PluginHost` and publishes `template.collection.log` for
+typed consumers. The collection persists in the host-injected `ctx.state`.
 
-## What the package owns
+## Files and boundaries
 
 | File | Responsibility |
 | --- | --- |
-| `mote-plugin.json` | The package Manifest: `runtime: "service"`, one data contribution that `provides` the typed service port `template.collection.log`, and one host-runtime custom-page contribution that requires it. |
-| `port.mjs` | The typed port contract (`serviceContract`). Contributing entries provide it; consumers acquire it through the host lease. |
-| `domain.mjs` | The domain itself: an append-only collection with durable `ctx.state` persistence, compare-and-set writes, bounded input and fail-closed normalization. Lifecycle-aware (`quiesce` refuses writes; `close` stops everything). |
-| `plugin.mjs` | The SDK service-runtime entry. The factory constructs the service, `prepare` loads state, `start` provides the port, `quiesce`/`stop`/`dispose` drain it. The package never chooses its own package/installation/instance identity. |
-| `source.mjs` | Ingress contribution: the real install path today (`plugin-dev dev` package install). Publishes owner routes under `/api/connectors/template-collection/` on the same injected `ctx.state`. |
-| `seed.mjs` | Generated-seed hook for `plugin-dev dev --seed`; writes one generated item and prints JSON. |
-| `web/index.html` | Custom page speaking the plugin-host page bridge (`state` and `add` methods). |
-| `scripts/pack.mjs` | Builds the deterministic ZIP payload and completes the Manifest digest into `dist/`. |
-| `test/` | Fixture `StateStore`, domain tests and a real-`PluginHost` lease test — run them with `npm test`. |
+| `mote-plugin.json` | Package authority: service-runtime data and its exact typed service/API, plus the separate page declaration. |
+| `port.mjs` | Public `serviceContract` shared by producers and consumers. |
+| `domain.mjs` | Bounded collection, durable compare-and-set writes and lifecycle cleanup. |
+| `plugin.mjs` | Factory and matching data declaration; `prepare` loads state, `start` provides the port, later phases stop admissions and release resources. |
+| `scripts/pack.mjs` | Deterministic release ZIP and completed Manifest digest; bundles the entry and public SDK so an installed profile needs no development dependencies. |
+| `test/` | Generated StateStore and real SDK `PluginHost` lease fixtures. |
+| `source.mjs`, `seed.mjs` | Optional owner-route adapter and generated seed for a development Manifest that explicitly selects ingress. |
+| `web/index.html` | Presentation example retained in the default release; the explicit data-only release omits this contribution. |
 
-The domain never imports host internals — only `@mote/plugin-sdk` for the
-port contract. Failures keep the dispatcher-mapped shape (`name`
-`ConnectorError`, `code`, `statusCode`); the dynamic dispatcher preserves that
-shape, and the seed's error branch asserts the real mapping rather than a
-silent success.
+Package code imports only `@mote/plugin-sdk`, never host internals or a raw
+Store. Central supplies package/installation/instance/activation identity.
+Disable keeps durable state; a later explicit enable or normal host restart
+loads the same instance namespace under a fresh activation.
 
-## Create, build and verify
+## Build and install
 
 From a built Mote checkout, generate a project outside the repository and
-install the packed SDK tarball:
+install the packed SDK:
 
 ```sh
 node scripts/mote.mjs plugin-dev create ./my-domain-plugin --template domain --sdk-tarball /absolute/mote-plugin-sdk-0.1.0.tgz
 cd my-domain-plugin
-npm test                                  # domain + real PluginHost lease
-MOTE_REPOSITORY=/absolute/mote npm run build   # dist/ artifact + completed Manifest
+npm test
+MOTE_REPOSITORY=/absolute/mote npm run build -- --data-only
 ```
 
-`npm run build` writes `dist/mote-plugin.json` (digest completed) and
-`dist/template-collection-0.1.0.zip`. Generic `service` packages validate as
-release artifacts; current Central releases admit `worker` packages, so the
-package deployment surface for a new domain today is the connector adapter
-— `source.mjs` is a deployment seam, not a second implementation of the
-domain.
+The build writes `dist/mote-plugin.json` and
+`dist/template-collection-0.1.0.zip`. Attach both to the same fixed GitHub
+release. Resolve and install that release through Plugin Center, create an
+instance, check it and enable it. Installation does not create an instance or
+authorize model work. The entry is self-contained ESM; the installer runs no
+npm or shell lifecycle scripts.
 
-Run it on a real host from the Mote checkout:
+`npm run build` without `--data-only` preserves the page declaration and HTML
+in the complete release. Current Central does not load its installed page
+capability, so that complete release stays blocked with `collection.page`
+unknown; the data-only build is an explicit example artifact choice. It does
+not add a host fallback or bypass capability checks. The page payload and its
+bridge remain available for the separate presentation-host work.
 
-```sh
-node scripts/mote.mjs plugin-dev dev --plugin /absolute/my-domain-plugin --home /absolute/plugin-dev-home --once --seed
-```
+The current data entry exports `manifest` and
+`createPlugin(context, {configuration, required, optional})`. Its declaration
+must match the verified package's data contributions and cannot add ports,
+capabilities or dependencies. Central resolves `required` and `optional` to
+exact live `ServiceBinding` values. A consumer acquires its selected binding
+with `context.services.acquire(collectionPort, binding)` and releases the
+resulting lease with its scope. Multiple matching active providers produce an
+explicit ambiguity; installation or catalog membership cannot satisfy a
+required dependency, and checking never enables dependencies.
 
-That creates a private plugin-dev profile, loads `source.mjs` through the
-real connector registry, mounts the owner routes, runs `seed.mjs`, and stops.
-The `ctx.state` binding persists across restarts, so a second run shows the
-items the first run wrote.
+Check runs the lifecycle with guarded instance state and staged publication:
+`prepare` can load state, `start` must supply every declared port, state writes
+are refused and no live port remains. Enable publishes through the actual
+host. Missing/extra ports, wrong APIs and lifecycle failures block readiness;
+a partially started package releases its own ports. Provider withdrawal
+invalidates required consumers and their old leases. Recovery needs an
+explicit consumer retry after a dependency failure.
+
+The optional `source.mjs` adapter still demonstrates owner-route error mapping
+for connector development. Select its ingress contribution explicitly before
+using `plugin-dev dev --once --seed`; the production data Manifest uses the
+formal release path above. Page/theme/layout loading is documented separately
+in [plugin development](../../docs/plugin-development.md).
+
+Generated production coverage lives in
+[the formal domain test](../../apps/server/test/plugin-production-domain.test.ts):
+actual template build, release digest/install, typed consumer writes, restart,
+missing/ambiguous dependencies, failed publication, withdrawal and late-write
+fences. These fixtures use temporary profiles and generated content only.

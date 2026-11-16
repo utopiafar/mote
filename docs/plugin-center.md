@@ -19,7 +19,9 @@ worker和native共享build/instance控制投影。操作带`operationId`和`expe
 
 一般processing服务包会在隔离的PluginHost实例scope中执行声明核验，使用与启用相同的注册表校验规则；核验不把处理器发布到正式运行时。明确启用后才将声明注册到现有上下文/文件处理器运行时，实际装载完成前显示启动中，空声明、失败和不支持的注入均阻断。停用立即撤回实例声明，取消在途处理并隔离迟到产物；不影响其他已启用实例。安装或启用不授予后台模型权限，不扫描历史，仍须沿现有来源、处理方案与模型授权执行。
 
-仍有生产接线差距：纯domain包直接安装受限；已安装外部页面/主题/布局尚未接入实际Web装载。SDK或plugin-dev可运行不等于这些生产入口已完成，见[当前架构](architecture.zh-CN.md)。
+纯data/domain服务包可直接按固定release解析、安装、核验和启用，模板无需声明ingress。核验沿现有PluginHost生命周期检查实际端口声明，不发布活跃端口、不写实例状态；明确启用后才提供typed service，消费者通过精确binding与lease使用。必需依赖须对应实际活跃且契约匹配的提供方，多提供方歧义、缺失端口、声明超出制品或启动失败均阻断，并释放该实例的部分发布。提供方停用使旧lease及必需消费者失效，消费者准确显示blocked；正常重启按已保存的启用意图恢复，依赖故障后的恢复需明确重试。实例状态保留，旧scope的迟到写入被拒绝，见[开发合同](plugin-development.md#contributions-and-domain-services)。
+
+已安装外部页面/主题/布局尚未接入实际Web装载；SDK或plugin-dev可运行不等于该生产入口已完成，见[当前架构](architecture.zh-CN.md)。
 
 ## 制品与worker合同
 

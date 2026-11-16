@@ -4,8 +4,8 @@ import {createCollectionService} from './domain.mjs';
 export const sdkVersion = PLUGIN_SDK_VERSION;
 export const basePath = '/api/connectors/template-collection';
 
-/** Ingress contribution for the current Central connector host — the real
- * install path used by `plugin-dev`. The host creates one scoped connector
+/** Optional ingress adapter, selected explicitly in a development Manifest.
+ * Pure data releases install plugin.mjs directly. The host creates one scoped connector
  * instance and binds `ctx.state` to the instance's persistent namespace; the
  * package publishes its own owner routes. Domain, state and error behavior are
  * shared with the SDK host entry in `plugin.mjs`. */
