@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { compose, startNative, stopNative, nativeIdentity, execute, dockerContainer, backupProfile, restoreProfile, verifiedBackup, atomicJson, updateProfileConfiguration, assertLogRetentionCompatible } from './profile-lib.mjs';
 import { preserveConnectorState, restoreConnectorState } from './update-private.mjs';
+import {dockerImageVariant,assertDockerMediaRuntime} from './docker-media.mjs';
 
 export async function startProfile(p) { return p.meta.runtime === 'docker' ? compose(p, ['up', '--detach', '--no-build', '--wait'], { timeoutMs: 120000 }).then(() => ({ started: true, project: p.project, url: p.url })) : startNative(p); }
 export async function stopProfile(p) { return p.meta.runtime === 'docker' ? compose(p, ['stop'], { capture: true }).then(() => ({ stopped: true })) : stopNative(p); }
@@ -19,9 +20,10 @@ export async function changeProfileDeployment(p, options = {}) {
     await stat(join(resolve(options.release), 'apps/server/dist/index.js')); next = { release: resolve(options.release) };
   } else {
     if (!options.image) throw Error('Docker upgrade requires --image; build or pull it first');
-    next = { image: await execute('docker', ['image', 'inspect', '--format', '{{.Id}}', options.image], { capture: true }) };
+    next = { image: await execute('docker', ['image', 'inspect', '--format', '{{.Id}}', options.image], { capture: true }), imageVariant:dockerImageVariant(options.imageVariant??p.meta.imageVariant) };
   }
   await assertLogRetentionCompatible({ ...p, meta: { ...p.meta, ...next } });
+  if(p.meta.runtime==='docker')await assertDockerMediaRuntime({...p,meta:{...p.meta,...next}},execute);
   let wasRunning;
   if (p.meta.runtime === 'docker') {
     const container = await dockerContainer(p);
