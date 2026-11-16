@@ -16,8 +16,7 @@ assert.deepEqual(process.argv.slice(2), [], 'This case accepts no arguments');
 const directory = await mkdtemp(join(tmpdir(), 'mote-ask-query-'));
 const token = randomBytes(32).toString('hex');
 const config: Config = {
-  dataDir: directory, token, tokenPath: 'generated-only', host: '127.0.0.1', port: 0,
-  maxStorageBytes: 50_000_000, maxExportBytes: 10_000_000, retentionDays: 0, insightIntervalHours: 0,
+  dataDir: directory, token, tokenPath: 'generated-only', host: '127.0.0.1', port: 0, maxExportBytes: 10_000_000, insightIntervalHours: 0,
   allowedOrigins: [], model: 'generated-ask-model', modelBaseUrl: 'https://generated.invalid', apiKey: 'generated-ask-key',
   allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
 };

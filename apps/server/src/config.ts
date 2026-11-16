@@ -63,8 +63,8 @@ export const serverConfigSchema = z.object({
   if (value.token && value.token.trim().length < 24) ctx.addIssue({ code: 'custom', path: ['token'], message: 'Owner token requires at least 24 characters' });
 });
 export const storageConfigSchema = z.object({
-  dataDir: line(4096, 1).default('./data'), maxStorageBytes: z.number().min(1024 * 1024).max(1_000_000 * 1024 * 1024).default(10240 * 1024 * 1024),
-  maxExportBytes: z.number().min(1).max(256 * 1024 * 1024).default(64 * 1024 * 1024), retentionDays: z.number().min(0).max(36500).default(0),
+  dataDir: line(4096, 1).default('./data'),
+  maxExportBytes: z.number().min(1).max(256 * 1024 * 1024).default(64 * 1024 * 1024),
   dataKey: line().refine(value => !value || /^[0-9a-f]{64}$/i.test(value)).default(''), contentEncryptionEnabled: z.boolean().default(false),
   kind: z.enum(['local-directory', 'docker-volume', 'bind-mount', 'unknown']).default('unknown'), source: line().default(''), mount: line().default(''),
 }).strict();
@@ -123,7 +123,7 @@ interface LoadedConfig {
   model: string; modelBaseUrl: string; apiKey: string; allowUnauthenticatedLocal: boolean; codexBin?: string; codexHome?: string;
   embeddingModel: string; embeddingBaseUrl: string; embeddingApiKey: string;
   interactiveConcurrency: number; agentConcurrency: number; llmConcurrency: number; memoryConcurrency: number;
-  maxStorageBytes: number; maxExportBytes: number; retentionDays: number; insightIntervalHours: number; allowedOrigins: string[];
+  maxExportBytes: number; insightIntervalHours: number; allowedOrigins: string[];
   connectors: z.infer<typeof connectorsConfigSchema>;
   diagnosticsEnabled: boolean; diagnosticsDebug: boolean; agentTraceEnabled:boolean;agentTraceExpiresAt:number; logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
   logDirectory: string; logMaxBytes:number;logMaxTotalBytes:number;logRetention:LogRetention;logMaxEntries:number;
@@ -307,7 +307,7 @@ export function configFromDocument(document: ConfigDocument, file: string, priva
   return {
     host: server.host, port: server.port, dataDir, profile: server.profile, token, tokenPath, tokenFromEnvironment: Boolean(suppliedToken), configuration,
     dataKey: storage.dataKey || undefined, contentEncryptionEnabled: storage.contentEncryptionEnabled,
-    maxStorageBytes: storage.maxStorageBytes, maxExportBytes: storage.maxExportBytes, retentionDays: storage.retentionDays, allowedOrigins: server.allowedOrigins,
+    maxExportBytes: storage.maxExportBytes, allowedOrigins: server.allowedOrigins,
     interactiveConcurrency: execution.interactiveConcurrency, agentConcurrency: execution.agentConcurrency, llmConcurrency: execution.llmConcurrency, memoryConcurrency: execution.memoryConcurrency, insightIntervalHours: execution.insightIntervalHours,
     modelProvider: model.provider, modelProtocol: model.protocol, model: model.model, modelBaseUrl: model.baseUrl, apiKey: model.apiKey, allowUnauthenticatedLocal: model.allowUnauthenticatedLocal,
     modelHeaders: model.headers, modelExtraBody: model.extraBody, modelReasoningEffort: model.reasoningEffort, modelMaxTokens: model.maxTokens, modelRequestTimeoutMs: model.modelRequestTimeoutMs, agentTimeoutMs: model.agentTimeoutMs,
@@ -329,7 +329,7 @@ export function documentFromConfig(config: Config): ConfigDocument {
     server: serverConfigSchema.parse({ host: config.host, port: config.port, profile: config.profile ?? 'default', token: config.token.length >= 24 ? config.token : '', allowedOrigins: config.allowedOrigins,
       runtime: config.configuration?.runtime ?? 'unknown', publicUrl: config.configuration?.publicUrl ?? '', hostConfigFile: config.configuration?.hostConfigFile ?? '',
       tunnelEnabled: config.configuration?.tunnelEnabled ?? false, tunnelProvider: config.configuration?.tunnelProvider ?? '', tunnelProtocol: config.configuration?.tunnelProtocol ?? 'auto' }),
-    storage: storageConfigSchema.parse({ dataDir: config.dataDir, maxStorageBytes: config.maxStorageBytes, maxExportBytes: config.maxExportBytes, retentionDays: config.retentionDays, dataKey: config.dataKey ?? '', contentEncryptionEnabled: config.contentEncryptionEnabled ?? false,
+    storage: storageConfigSchema.parse({ dataDir: config.dataDir, maxExportBytes: config.maxExportBytes, dataKey: config.dataKey ?? '', contentEncryptionEnabled: config.contentEncryptionEnabled ?? false,
       kind: config.configuration?.storageKind ?? 'unknown', source: config.configuration?.storageSource ?? '', mount: config.configuration?.storageMount ?? '' }),
     execution: executionConfigSchema.parse({ interactiveConcurrency: config.interactiveConcurrency, agentConcurrency: config.agentConcurrency, llmConcurrency: config.llmConcurrency, memoryConcurrency: config.memoryConcurrency, insightIntervalHours: config.insightIntervalHours }),
     diagnostics: diagnosticsConfigSchema.parse({ enabled: config.diagnosticsEnabled, debug:config.diagnosticsDebug??false, traceEnabled:config.agentTraceEnabled??false,traceExpiresAt:config.agentTraceExpiresAt??(config.agentTraceEnabled?Date.now()+86400000:0), level: config.logLevel,

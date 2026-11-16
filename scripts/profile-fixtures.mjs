@@ -35,7 +35,7 @@ export async function updateEnvironment(p, values) {
   const fields = {
     MOTE_HOST: ['server.host', 'string'], MOTE_PORT: ['server.port', 'number'], MOTE_TOKEN: ['server.token', 'string'], MOTE_PUBLIC_URL: ['server.publicUrl', 'string'],
     MOTE_DATA_DIR: ['storage.dataDir', 'string'], MOTE_DATA_KEY: ['storage.dataKey', 'string'], MOTE_CONTENT_ENCRYPTION: ['storage.contentEncryptionEnabled', 'boolean'],
-    MOTE_MAX_STORAGE_MB: ['storage.maxStorageBytes', 'MiB'], MOTE_MAX_EXPORT_MB: ['storage.maxExportBytes', 'MiB'], MOTE_RETENTION_DAYS: ['storage.retentionDays', 'number'],
+    MOTE_MAX_EXPORT_MB: ['storage.maxExportBytes', 'MiB'],
     MOTE_MODEL: ['models.deployment.model', 'string'], MOTE_MODEL_API_KEY: ['models.deployment.apiKey', 'string'], MOTE_MODEL_BASE_URL: ['models.deployment.baseUrl', 'string'],
     MOTE_EMBEDDING_MODEL: ['models.embedding.model', 'string'], MOTE_EMBEDDING_API_KEY: ['models.embedding.apiKey', 'string'],
     MOTE_DIAGNOSTICS_ENABLED: ['diagnostics.enabled', 'boolean'], MOTE_DEBUG: ['diagnostics.debug', 'boolean'], MOTE_AGENT_TRACE_ENABLED: ['diagnostics.traceEnabled', 'boolean'],

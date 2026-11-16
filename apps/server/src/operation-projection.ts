@@ -67,9 +67,8 @@ export function linkOperationParent(store:Store,parentId:string,childId:string){
  if(db.prepare('SELECT 1 FROM operation_parents WHERE parent_id=? AND child_id=?').get(parentId,childId))return;
  const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
  try{
-  store.reserveMetadata(Buffer.byteLength(parentId)+Buffer.byteLength(childId)+256);
   db.prepare('INSERT INTO operation_parents VALUES(?,?)').run(parentId,childId);
   db.prepare("INSERT OR IGNORE INTO execution_operation_steps(operation_id,step_id,slot,generation,active,optional) SELECT ?,step_id,operation_id||':'||slot,generation,active,optional FROM execution_operation_steps WHERE operation_id=?").run(parentId,childId);
   if(own)db.exec('COMMIT');
- }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+ }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
 }

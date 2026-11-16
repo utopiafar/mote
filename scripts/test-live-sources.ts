@@ -11,7 +11,7 @@ if(!args.includes('--key-file')||!args.includes('--out'))throw Error('Usage: nod
 const out=resolve(get('--out'));await mkdir(out,{recursive:true,mode:0o700});await chmod(out,0o700);
 const apiKey=(await readFile(resolve(get('--key-file')),'utf8')).trim();assert.ok(apiKey.length>20);
 const model=args.includes('--model')?get('--model'):'deepseek-v4-pro';
-const config:Config={dataDir:join(out,'data'),token:randomUUID()+randomUUID(),tokenPath:'unused',dataKey:undefined,host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model,modelBaseUrl:'https://api.deepseek.com',apiKey,allowUnauthenticatedLocal:false,modelReasoningEffort:'high',modelMaxTokens:8192,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
+const config:Config={dataDir:join(out,'data'),token:randomUUID()+randomUUID(),tokenPath:'unused',dataKey:undefined,host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model,modelBaseUrl:'https://api.deepseek.com',apiKey,allowUnauthenticatedLocal:false,modelReasoningEffort:'high',modelMaxTokens:8192,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
 const {app,sources,store}=await buildApp(config);
 const headers={authorization:`Bearer ${config.token}`};
 const now=new Date(),observedAt=now.toISOString(),today=observedAt.slice(0,10);

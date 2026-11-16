@@ -6,7 +6,7 @@ const {LocalSourceManager}=require('../apps/desktop/dist/source-manager');const 
  const root=await realpath(await mkdtemp(join(tmpdir(),'mote-fair-upload-')));let node,manager;
  try{
   const {buildApp}=await import('../apps/server/dist/app.js');
-  node=await buildApp({dataDir:join(root,'central'),token:'generated-fair-upload-token-000000000',tokenPath:'unused',host:'127.0.0.1',port:0,maxStorageBytes:200*1024*1024,maxExportBytes:30*1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'});
+  node=await buildApp({dataDir:join(root,'central'),token:'generated-fair-upload-token-000000000',tokenPath:'unused',host:'127.0.0.1',port:0,maxExportBytes:30*1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'});
   const sequence=[];node.app.addHook('onResponse',async(req,reply)=>{if(reply.statusCode>=400)throw Error('Fixture request failed '+reply.statusCode);if(req.url.includes('/parts/'))sequence.push('part:'+req.url.split('/').at(-1));if(req.url==='/api/file-sync/v1/manifests')sequence.push('small-manifest');if(req.url.endsWith('/commit'))sequence.push('commit');});
   await node.app.listen({host:'127.0.0.1',port:0});
   const large=join(root,'large'),small=join(root,'small');await mkdir(large);await mkdir(small);

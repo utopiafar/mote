@@ -79,7 +79,7 @@ globalThis.fetch=async(input,init)=>{const url=new URL(typeof input==='string'?i
  // The Codex App Server uses its own stdio process; this runner never permits HTTP OCR or other fetches.
  if(url.hostname==='127.0.0.1')report.blockedLoopbackFetchAttempts++;else report.externalFetchAttempts++;
  throw Error('Composed-image harness forbids fetch: '+url.origin);};
-function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],
  model:live?'gpt-6-sol':'offline-composed-image',modelReasoningEffort:'max',modelProvider:live?'codex':'custom',modelProtocol:live?'codex-app-server':'openai-completions',modelBaseUrl:live?'':'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,
  embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:false,agentTraceEnabled:true,agentTimeoutMs:300000,
  codexBin:live?process.env.MOTE_CODEX_BIN:'/nonexistent-offline-composed-image-provider',codexHome:live?process.env.MOTE_CODEX_HOME:join(output,'unused-codex-home')};}

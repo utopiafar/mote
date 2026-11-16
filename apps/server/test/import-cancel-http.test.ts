@@ -11,7 +11,7 @@ import {observeFormatWorkers} from './fixtures/format-worker-lifecycle.js';
 
 async function stoppedFormatImport(t:TestContext,shutdown:boolean){
  const lifecycle=observeFormatWorkers(t),directory=mkdtempSync(join(tmpdir(),'mote-import-format-stop-'));
- const config:Config={dataDir:directory,token:'generated-format-stop-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-format-stop-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const dependencies={backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model belongs in this generated decoder fixture');}}};
  let node:Awaited<ReturnType<typeof buildApp>>|undefined;
  t.after(async()=>{try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
@@ -54,7 +54,7 @@ test('application shutdown interrupts an actual format worker without recording 
 
 test('owner cancellation aborts import parsing, fences late results, survives restart and resumes only explicitly',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-cancel-'));
- const config:Config={dataDir:directory,token:'generated-import-cancel-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-import-cancel-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let calls=0,release!:()=>void,entered!:()=>void,signal:AbortSignal|undefined;
  const started=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
  const dependencies={backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No real model');}},prepareImport:async(input:import('../src/imports.js').ImportPreparation)=>{
@@ -91,7 +91,7 @@ test('owner cancellation aborts import parsing, fences late results, survives re
 
 for(const changed of [false,true])test(`confirm during settled preview cleanup ${changed?'rejects a changed preview':'is bounded and idempotent'}`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-confirm-tail-'));
- const config:Config={dataDir:directory,token:'generated-confirm-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-confirm-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let release!:()=>void,entered!:()=>void;
  const gate=new Promise<void>(r=>release=r),atCleanup=new Promise<void>(r=>entered=r);
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model');}},prepareImport:async input=>{

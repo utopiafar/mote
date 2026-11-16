@@ -13,7 +13,7 @@ import {importMemoryProgress} from '../src/import-memory-progress.js';
 import {materialId} from '../src/materials.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
-const config=(dataDir:string):Config=>({dataDir,token:'generated-progress-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const config=(dataDir:string):Config=>({dataDir,token:'generated-progress-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 
 for(const mode of ['failed','waiting','planner-failed'] as const)test(`import receipt progress preserves committed configured batches when another member is ${mode}`,async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-import-memory-progress-'));let badId='',contextId='',planningCalls=0;

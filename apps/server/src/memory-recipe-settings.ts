@@ -24,7 +24,6 @@ export class MemoryRecipeSettings {
   private stored(id:string){return this.store.db.prepare('SELECT json FROM memory_recipe_settings WHERE id=?').get(id);}
   private insert(id:string,selection:MemoryRecipeBinding[]){
     const json=JSON.stringify(selection);
-    this.store.reserveMetadata(Buffer.byteLength(json)+128);
     this.store.db.prepare('INSERT INTO memory_recipe_settings VALUES(?,NULL,?)').run(id,json);
   }
   private initializeDefaults(){
@@ -63,7 +62,7 @@ export class MemoryRecipeSettings {
     else{
       let selected:MemoryRecipeBinding[];
       try{selected=input.recipes.map(ref=>this.strategies.resolve(ref).binding);}catch{throw new StoreError('Memory recipe is unavailable',409);}
-      const json=JSON.stringify(selected);this.store.reserveMetadata(Buffer.byteLength(json)+256);
+      const json=JSON.stringify(selected);
       this.store.db.prepare('INSERT INTO memory_recipe_settings VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(this.key(input.sourceId,input.scope),input.sourceId??null,json);
     }
       // Revocation is committed with enablement, so a crash between saving the

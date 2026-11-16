@@ -91,7 +91,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 `, {mode: 0o700});
   const config: Config = {
     dataDir: directory, token: 'generated-codex-http-owner', tokenPath: 'generated', host: '127.0.0.1', port: 0,
-    maxStorageBytes: 30_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [],
+     maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [],
     model: 'generated-codex-model', modelProvider: 'codex', modelProtocol: 'codex-app-server', modelBaseUrl: '', apiKey: '',
     allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false,
     logLevel: 'silent', agentTimeoutMs: 20_000, codexBin: executable, codexHome: directory,

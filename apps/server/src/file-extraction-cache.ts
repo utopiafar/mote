@@ -27,7 +27,7 @@ export function fileExtractionInput(files:FileStore,id:string){
 }
 
 /** Successful raw steps are the cache: their artifacts already have retention,
- * quota, backup and deletion ownership. No in-progress row is a cache entry.
+ * accounting, backup and deletion ownership. No in-progress row is a cache entry.
  * Rebinding copies only validated machine output; it creates no dependency on
  * the donor's logical origin and discloses none of its identifiers. */
 export function readFileExtractionCache(files:FileStore,id:string,fingerprint:string,processor:string,version:string,output:ComponentRef,outputs:FileOutputRegistry,native:boolean){

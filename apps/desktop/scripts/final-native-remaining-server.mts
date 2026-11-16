@@ -9,7 +9,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 const directory=process.argv[2];
 if(!directory?.includes('/mote-native-remaining-'))throw Error('Private generated directory required');
 const token=randomBytes(32).toString('hex');
-const node=await buildApp({dataDir:join(directory,'central'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{webRoot:resolve('apps/web/dist'),backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model permitted');},close:async()=>{}}});
+const node=await buildApp({dataDir:join(directory,'central'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{webRoot:resolve('apps/web/dist'),backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model permitted');},close:async()=>{}}});
 let queryAdmissions=0,capturePosts=0,seed:unknown;
 node.app.addHook('onRequest',async(req,reply)=>{
  if(req.method==='POST'&&req.url.startsWith('/api/query-runs')){queryAdmissions++;return reply.code(503).send({error:'fixture_no_model'});}

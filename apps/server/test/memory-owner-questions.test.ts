@@ -65,7 +65,7 @@ import type {MemoryFeedbackRequest} from '../src/memory-feedback.js';
 
 async function httpFixture(t:TestContext,sourceKind:'custom'|'upload'='custom'){
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-questions-'));
- const config:Config={dataDir:directory,token:'generated-owner-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-owner-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
  let heldAnalysis:{entered:boolean;promise:Promise<void>;release:()=>void}|undefined;
  let heldQuestionRead:{entered:Promise<void>;enter:()=>void;promise:Promise<void>;release:()=>void;onDraining?:()=>void}|undefined;
  const calls:QueryInput[]=[],anchors=new Map<string,string[]>(),control={replyDisposition:'resolved' as 'resolved'|'followup'|'unknown',ownerObservation:false,contextUnresolved:false};

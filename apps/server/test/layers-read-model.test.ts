@@ -8,7 +8,7 @@ import type {Config} from '../src/config.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 const token='generated-layers-owner-token',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 
 test('assembled source HTTP overview retains exact layer totals and native Memory inventory through staleness, restart and deletion',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-layers-read-model-'));let running=await buildApp(config(directory));

@@ -27,7 +27,7 @@ test('file CLI preview matches authenticated archive receipt and bytes above the
    }
   }finally{await handle.close();}
  }
- const token='generated-file-cli-owner',config:Config={dataDir:join(root,'central'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:100*MiB,maxExportBytes:MiB,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',contentEncryptionEnabled:true,dataKey:'74'.repeat(32)};
+ const token='generated-file-cli-owner',config:Config={dataDir:join(root,'central'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:MiB,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',contentEncryptionEnabled:true,dataKey:'74'.repeat(32)};
  node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model authorized for generated CLI fixtures');},close:async()=>{}}});
  const requests:{url:string;authorization:string|undefined;version:string|string[]|undefined}[]=[];
  node.app.addHook('onRequest',async request=>{requests.push({url:request.url,authorization:request.headers.authorization,version:request.headers['x-mote-ingress-version']});});

@@ -40,7 +40,7 @@ export class AssistantTasks implements BatchProductProjection {
   this.acceptance=new AssistantTaskAcceptance(store,cards,matters,{
    validate:(request,ids)=>{if(!isDeepStrictEqual(this.discover(request.scope,false,true).ids,ids))throw new StoreError('Task execution is outside the owner scope',409);},
    accepted:(task,request,ids)=>{this.saveScope(task,request.scope,this.discover(request.scope,false,true).snapshot);
-    const dependencies=taskEvidenceIds(store,{version:1,complete:true,ids});this.assertCurrent(dependencies);addTaskEvidence(store,task.id,dependencies);store.reserveMetadata(0);},
+    const dependencies=taskEvidenceIds(store,{version:1,complete:true,ids});this.assertCurrent(dependencies);addTaskEvidence(store,task.id,dependencies);},
   });
   store.db.exec(`CREATE TABLE IF NOT EXISTS assistant_task_scopes(
    task_id TEXT PRIMARY KEY REFERENCES task_records(id) ON DELETE CASCADE,scope_hash TEXT NOT NULL,snapshot_json TEXT);
@@ -89,7 +89,6 @@ export class AssistantTasks implements BatchProductProjection {
  private scopeHash(scope:QueryScope){return sha256(canonicalRecipeJson(scope));}
  private saveScope(task:TaskRecord,scope:QueryScope,snapshot:string[]){
   this.store.db.prepare('INSERT INTO assistant_task_scopes VALUES(?,?,?)').run(task.id,this.scopeHash(scope),encodeMemoryPrivate(this.store,snapshot));
-  this.store.reserveMetadata(0);
  }
  private assertCurrent=(ids:readonly string[])=>{
   if(!this.reader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant task evidence is no longer permitted',409);
@@ -240,7 +239,7 @@ export class AssistantTasks implements BatchProductProjection {
   if(turn.result?.evidenceDependencies?.complete===false||turn.historyEvidenceDependencies?.complete===false)
    throw new StoreError('Assistant draft evidence lineage is incomplete',409);
   const task=this.acceptance.acceptDraft(request,{conversationId:command.conversationId,turnId:command.turnId,draftRevision:command.expectedRevision},evidenceIds,lineage,this.assertCurrent,
-   value=>{this.saveScope(value,request.scope,discovered!.snapshot);this.store.db.prepare('INSERT INTO assistant_task_turns VALUES(?,?,?,?,?)').run(value.id,command.conversationId,command.turnId,this.scopeHash(request.scope),command.expectedRevision);this.store.reserveMetadata(0);},
+   value=>{this.saveScope(value,request.scope,discovered!.snapshot);this.store.db.prepare('INSERT INTO assistant_task_turns VALUES(?,?,?,?,?)').run(value.id,command.conversationId,command.turnId,this.scopeHash(request.scope),command.expectedRevision);},
    (value,input)=>{this.batch().submit({operationId:value.operationId,requestId:input.requestId,items:[{question:input.goal,evidenceIds}]},
     {kind:'manual',identities:[],connections:this.connections()});});
   return {requestId:request.requestId,revision:command.expectedRevision,taskId:task.id};

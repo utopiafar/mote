@@ -25,7 +25,7 @@ try{
   store.db.prepare("UPDATE execution_steps SET available_at=? WHERE kind='context-dag.semantic'").run(Date.now()+60000);
 }finally{await runtime.close();store.close();}
 
-const config={dataDir:directory,token:'synthetic-recovery-owner-token-only',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:1e9,maxExportBytes:1e6,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelProvider:'custom',modelProtocol:'openai-completions' as const,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+const config={dataDir:directory,token:'synthetic-recovery-owner-token-only',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1e6,insightIntervalHours:0,allowedOrigins:[],model:'',modelProvider:'custom',modelProtocol:'openai-completions' as const,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
 const node=await buildApp(config,{backgroundWorker:false});
 const rows=()=>jobs.map(id=>({...node.executor.get(id)!,...node.store.db.prepare('SELECT fence,lease_until leaseUntil,created_at createdAt,recovery_deadline recoveryDeadline FROM execution_steps WHERE id=?').get(id)!}));
 const evidence=()=>node.store.evidence(ids);

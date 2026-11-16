@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -20,7 +21,7 @@ const conflict=(error:unknown)=>Boolean(error&&typeof error==='object'&&'statusC
 
 test('assistant cards retain scoped versions and feedback, resolve safely, and retire deleted evidence',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-cards-'));
- const config:Config={dataDir:directory,token:'generated-card-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-card-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+config.token},cards=node.featureServices.assistantCards;
@@ -249,7 +250,7 @@ test('assistant cards retain scoped versions and feedback, resolve safely, and r
 
 test('encrypted card bodies and feedback survive restart and maintenance deletion purges them',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-card-restart-'));
- const config:Config={dataDir:directory,token:'generated-card-restart-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',dataKey:'ab'.repeat(32),contentEncryptionEnabled:true};
+ const config:Config={dataDir:directory,token:'generated-card-restart-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',dataKey:'ab'.repeat(32),contentEncryptionEnabled:true};
  const options={backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}};
  let node=await buildApp(config,options);let closed=false;
  t.after(async()=>{if(!closed)await node.app.close();rmSync(directory,{recursive:true,force:true});});
@@ -271,17 +272,35 @@ test('encrypted card bodies and feedback survive restart and maintenance deletio
  }finally{maintenance.close();}
 });
 
-test('vault quota failure rolls back a card and its evidence inside the caller transaction',t=>{
+test('a card version write failure rolls back a card and its evidence inside the caller transaction',t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-card-quota-'));let store=new Store(directory);
  const reader=new EvidenceReader(store,new SourceStore(store));void reader;
- const budget=store.logicalBytes()+1000;store.close();store=new Store(directory,{maxStorageBytes:budget});
+ store.close();store=new Store(directory,{});
  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
  const cards=new AssistantCards(store,new EvidenceReader(store,new SourceStore(store))),id=randomUUID();
  const input={id,kind:'artifact' as const,matterId:null,version:'quota',state:'open' as const,title:'Generated quota',body:'Generated content '.repeat(300),evidence:[],evidenceDependencies:dependencies()};
  store.db.exec('BEGIN IMMEDIATE');
- assert.throws(()=>cards.publish(input,undefined,all,()=>{}),{statusCode:507});assert.equal(store.db.isTransaction,true);
+ const recover=rejectSqliteWrites(store,'assistant_card_versions');assert.throws(()=>cards.publish(input,undefined,all,()=>{}),/Generated SQLite write failure/);assert.equal(store.db.isTransaction,true);
  store.db.exec('COMMIT');
  assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_cards WHERE id=?').get(id)!.n,0);
  assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_card_versions WHERE card_id=?').get(id)!.n,0);
- assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_card_evidence WHERE card_id=?').get(id)!.n,0);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_card_evidence WHERE card_id=?').get(id)!.n,0);recover();
+});
+
+for(const failure of ['full','rollback'] as const)test(`SQLite ${failure} inside a card savepoint preserves its original error, old evidence and pending upload across recovery`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-card-full-')),store=new Store(directory),sources=new SourceStore(store),reader=new EvidenceReader(store,sources),cards=new AssistantCards(store,reader);
+ const {FileStore}=await import('../src/files.js'),{sha256}=await import('../src/store.js'),files=new FileStore(store,sources);
+ t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+ const original=randomUUID();await store.ingest({id:original,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated previously retained original'});
+ sources.register({id:'generated-pending',name:'Generated pending',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});
+ const bytes=Buffer.from('Generated staged input remains pending'),upload=files.begin({sourceId:'generated-pending',previousRevision:null,sha256:sha256(bytes),sizeBytes:bytes.length,item:{externalId:'generated-pending',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',text:'',mimeType:'text/plain'}},()=>{});files.part(upload.uploadId,0,bytes,()=>{});
+ const publication={id:randomUUID(),kind:'artifact' as const,matterId:null,version:'generated-full',state:'open' as const,title:'Generated pending card',body:'x'.repeat(32000),evidence:[],evidenceDependencies:dependencies()};
+ store.logicalBytes();const pages=Number(store.db.prepare('PRAGMA page_count').get()!.page_count);
+ if(failure==='full')store.db.exec(`PRAGMA max_page_count=${pages+4}`);
+ else store.db.exec("CREATE TRIGGER generated_card_abort BEFORE INSERT ON assistant_card_versions BEGIN SELECT RAISE(ROLLBACK,'Generated SQLite transaction abort'); END");
+ store.db.exec('BEGIN IMMEDIATE');assert.throws(()=>cards.publish(publication,undefined,all,()=>{}),(error:any)=>failure==='full'?error.statusCode===507&&(error.cause?.errcode&255)===13:(assert.match(error.message,/Generated SQLite transaction abort/),assert.notEqual(error.statusCode,507),(error.errcode&255)===19));
+ assert.equal(store.db.isTransaction,failure==='full','this FULL leaves the caller transaction valid; the native ROLLBACK trigger aborts it');if(store.db.isTransaction)store.db.exec('ROLLBACK');assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_cards WHERE id=?').get(publication.id)!.n,0);assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_card_versions WHERE card_id=?').get(publication.id)!.n,0);
+ assert.equal(store.evidence([original])[0].ocrText,'Generated previously retained original');assert.equal(files.upload(upload.uploadId,()=>{}).parts.length,1);
+ if(failure==='full')store.db.exec('PRAGMA max_page_count=4294967294');else store.db.exec('DROP TRIGGER generated_card_abort');const saved=cards.publish(publication,undefined,all,()=>{});assert.equal(cards.get(saved.id,all).body,publication.body);
+ const ack=await files.commit(upload.uploadId,()=>{});assert.deepEqual(Buffer.concat([...files.bytes(ack.id)]),bytes);assert.equal(cards.publish(publication,undefined,all,()=>{}).revision,saved.revision);
 });

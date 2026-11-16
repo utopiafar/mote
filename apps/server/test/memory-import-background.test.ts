@@ -15,7 +15,7 @@ import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 // publication/Memory workers. All source content and model responses are generated.
 test('HTTP import of a thousand generated originals rolls through bounded background packages without planning',{timeout:780000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-background-import-'));
- const config:Config={dataDir:directory,token:'generated-background-import-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-background-import-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let extracts=0,reviews=0,planning=0,importId='',reviewBeforeImportComplete=false,releasePrefix!:()=>void,releaseTail!:()=>void;
  const prefixReviewed=new Promise<void>(resolve=>releasePrefix=resolve),priorCommitted=new Promise<void>(resolve=>releaseTail=resolve),upsert=SourceStore.prototype.upsert;
  // Pause the incoming stream after seven real receipts. The ordinary 5-second
@@ -52,7 +52,7 @@ test('HTTP import of a thousand generated originals rolls through bounded backgr
    importState:node.store.db.prepare("SELECT json_extract(json,'$.failurePhase') failurePhase,json_extract(json,'$.resourceWait') resourceWait,json_extract(json,'$.recordsProcessed') recordsProcessed,json_extract(json,'$.memoryNotified') memoryNotified FROM import_jobs WHERE id=?").get(id),
    steps:node.store.db.prepare("SELECT id,kind,state,attempts,error,created_at,updated_at,lease_until,available_at,fence IS NOT NULL has_fence FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? ORDER BY kind").all(id),
    failures:node.store.db.prepare("SELECT f.json FROM execution_failures f JOIN execution_steps s ON s.id=f.step_id WHERE s.kind IN ('imports.prepare','imports.commit') AND json_extract(s.input,'$.jobId')=?").all(id).map(row=>JSON.parse(String(row.json))),
-   failureReceiptWrites:node.executor.failureDiagnostics(),storage:{logicalBytes:node.store.logicalBytes(),maxBytes:config.maxStorageBytes},
+   failureReceiptWrites:node.executor.failureDiagnostics(),storage:{logicalBytes:node.store.logicalBytes()},
    eventLoop:{maxMs:node.observabilityAssembly.eventLoop.max/1e6,meanMs:node.observabilityAssembly.eventLoop.mean/1e6},
    materials:node.store.db.prepare('SELECT count(*) n FROM material_heads').get(),
    requests:node.store.db.prepare('SELECT auto_authorized,error,count(*) n FROM material_memory_requests GROUP BY auto_authorized,error').all(),

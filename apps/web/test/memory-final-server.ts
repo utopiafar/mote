@@ -6,7 +6,7 @@ import {buildApp} from '../../server/src/app.js';
 import {memoryEvidenceFingerprint} from '../../server/src/memory.js';
 const directory=process.argv[2],webRoot=process.argv[3];if(!directory||!webRoot)throw Error('Private fixture directory and built web root required');
 const token=randomBytes(32).toString('hex'),when=new Date().toISOString();let modelCalls=0;
-const runtime=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-unavailable-model',modelBaseUrl:'http://127.0.0.1:9/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{webRoot,backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model calls allowed');},close:async()=>{}}});
+const runtime=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-unavailable-model',modelBaseUrl:'http://127.0.0.1:9/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{webRoot,backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model calls allowed');},close:async()=>{}}});
 const memoryIds:string[]=[];
 runtime.app.addHook('onRequest',async(req,reply)=>{
  if(req.url==='/api/memory-settings'&&existsSync(join(directory,'queue-generated-window'))){runtime.lifecycle.request('consolidation',[memoryIds[0]],'');rmSync(join(directory,'queue-generated-window'));}

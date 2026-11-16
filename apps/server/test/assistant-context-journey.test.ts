@@ -30,8 +30,8 @@ test('file deletion retires frozen work and privacy forget erases answers reache
  let providerFailure:unknown;
  const result=(input:QueryInput,answer:string,extra:Partial<QueryResult>={}):QueryResult=>({answer,citations:[],trace:[],runId:hostRun(input),
   evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]},...extra});
- node=await buildApp({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,
-  retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelMaxTokens:512,modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,
+ node=await buildApp({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,
+  insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelMaxTokens:512,modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,
   embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},
  {backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   try{

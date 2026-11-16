@@ -92,7 +92,7 @@ const workbenchHeaders={authorization:'Bearer generated-workbench-owner'};
 const observedAt='2026-10-01T10:00:00Z';
 async function workbenchFixture(t:import('node:test').TestContext){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-workbench-'));
-  const config:Config={dataDir,token:'generated-workbench-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:Config={dataDir,token:'generated-workbench-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
   await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   node.sources.register({id:'generated-workbench-a',name:'Generated workbench A',kind:'custom',deviceId:'generated-a',platform:'import'});

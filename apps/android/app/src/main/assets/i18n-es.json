@@ -1,4 +1,7 @@
 {
+  "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "El contenido central se conserva indefinidamente, sin cuota total de almacenamiento ni eliminación automática por antigüedad.",
+  "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Los archivos originales se archivan por defecto. Las fuentes existentes conservan sus ajustes de retención, que puedes cambiar en Fuentes.",
+  "存储设备无法继续写入，请检查可用空间后重试；已有资料和待传内容不会因此自动删除。": "El dispositivo de almacenamiento no admite más escrituras. Comprueba el espacio disponible y vuelve a intentarlo. El contenido existente y las cargas pendientes no se eliminan automáticamente por este motivo.",
   "本地图片解析": "Procesamiento local de imágenes",
   "启用后，入库图片由本地 InternVL3-14B-4bit 解析，失败时等待恢复。Memory 提取、独立复核和 Ask 仍使用各自选择的模型。": "Al activarlo, InternVL3-14B-4bit interpreta localmente las imágenes entrantes; si falla, espera hasta recuperarse. La extracción de Memory, la revisión independiente y Ask siguen usando sus modelos seleccionados.",
   "关闭后，新图片沿用已配置的图片模型；原图、OCR 与已保存的理解结果继续保留。": "Al desactivarlo, las imágenes nuevas usan el modelo de imagen configurado. Se conservan los originales, el OCR y las interpretaciones guardadas.",

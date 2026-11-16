@@ -33,7 +33,7 @@ test('feedback keeps large exact target/context sets and partitions without a gr
 
 test('a large reviewed needs-context batch recovers through the real coordinator without clipping targets or grants',{timeout:30000},async t=>{
  const dataDir=await mkdtemp(join(tmpdir(),'mote-large-feedback-'));
- const config:Config={dataDir,token:'generated-feedback-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir,token:'generated-feedback-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const calls:QueryInput[]=[],requests:MemoryFeedbackRequest[]=[];let targetIds:string[]=[],contextIds:string[]=[],node!:Awaited<ReturnType<typeof buildApp>>,fixtureMaterial:{id:string;ref:string}|undefined,checkedOrganizer=false;
  const settleOrganizer=async()=>{
   for(let turn=0;turn<20;turn++){await node.materialOrganizer.tick(200);const status=node.materialOrganizer.status();if(status.pendingChanges===0&&status.pendingSteps===0&&status.backfills.every(backfill=>backfill.complete))return status;await new Promise<void>(resolve=>setImmediate(resolve));}

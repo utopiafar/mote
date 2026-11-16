@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {fixtureMemoryPipeline,fixtureMemoryResult} from './fixtures/memory-result.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +19,7 @@ import {reviewMemory} from '../src/memory-review.js';
 
 const recipes=[{id:'fixture.body',version:'1'},{id:'fixture.transcript',version:'1'}];
 async function fixture(t:TestContext){
- const directory=mkdtempSync(join(tmpdir(),'mote-input-plans-')),options:{maxStorageBytes?:number}={};let store:Store,materials:MaterialStore,sources:SourceStore,pipeline:MemoryPipeline;
+ const directory=mkdtempSync(join(tmpdir(),'mote-input-plans-')),options:ConstructorParameters<typeof Store>[1]={};let store:Store,materials:MaterialStore,sources:SourceStore,pipeline:MemoryPipeline;
  const calls:MemoryPipelineQuery[]=[],control:{allowed:boolean;failure?:Error}={allowed:true};
  const start=()=>{store=new Store(directory,options);materials=new MaterialStore(store);sources=new SourceStore(store);const memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id)),strategies=new MemoryStrategies();
   for(const [index,ref] of recipes.entries())strategies.registerRecipe({...ref,workContract:'range-evaluation@1',requires:[index?'transcript':'body'],extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:'mote.personal-review',version:'5'}});
@@ -80,9 +81,9 @@ test('source replacement stales waiting plans and source deletion clears private
  f.materials.forget(material.id);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_input_plans').get()!.n,0);
 });
 
-test('quota failure rolls back the job, plans, batches and execution membership together',async t=>{
- const f=await fixture(t),raw=await f.add('quota'),material=f.publish('quota',raw,'pending');f.options.maxStorageBytes=f.store.logicalBytes()+100;
- assert.throws(()=>f.pipeline.create({evidenceIds:[],recipes,manualPlans:[f.plan(material.id,0),f.plan(material.id,1)]}),{statusCode:507});
+test('a plan write failure rolls back the job, plans, batches and execution membership together',async t=>{
+ const f=await fixture(t),raw=await f.add('quota'),material=f.publish('quota',raw,'pending');const recover=rejectSqliteWrites(f.store,'memory_input_plans');
+ assert.throws(()=>f.pipeline.create({evidenceIds:[],recipes,manualPlans:[f.plan(material.id,0),f.plan(material.id,1)]}),/Generated SQLite write failure/);recover();
  for(const table of ['memory_jobs','memory_input_plans','memory_batches','execution_steps','operation_progress'])assert.equal(f.store.db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n,0);
 });
 

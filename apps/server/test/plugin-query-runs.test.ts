@@ -15,7 +15,7 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {createQueryRunsPlatform,type QueryRunDependencies} from '../src/plugins/query-runs.js';
 
 const token='generated-query-runs-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
 const modelConfig=(dataDir:string):Config=>({...config(dataDir),model:'original-fixture',modelBaseUrl:'https://model.example.invalid/v1',apiKey:'synthetic-original-key',modelProvider:'custom',modelProtocol:'openai-completions',modelReasoningEffort:'auto'});
 const plain=(model='Generated answer'):QueryResult=>({answer:model,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}});
 const original={id:'00000000-0000-4000-8000-000000000201',deviceId:'generated-query-run-device',deviceName:'Generated fixture',platform:'import',source:'note' as const,capturedAt:'2026-09-20T01:00:00Z',durationMs:0,ocrText:'Generated original: the sample project selected a durable receipt.'};

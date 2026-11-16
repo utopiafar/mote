@@ -11,7 +11,7 @@ const token=randomBytes(32).toString('hex'),headers={authorization:'Bearer '+tok
 const at='2026-11-13T08:00:00.000Z',text='Generated browser evidence: prepare the review after the owner chooses an option.';
 let evidenceId='',failure:unknown;
 const node=await buildApp({dataDir:join(directory,'central'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,
- maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelMaxTokens:512,
+ maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelMaxTokens:512,
  modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},
  {backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   try{

@@ -126,7 +126,7 @@ test('owner retry reopens a timed-out review against its saved bounded scope bef
 
 test('808 generated recording segments retain every exact range and bounded read grant across independent review and restart',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-request-budget-'));
- const config:Config={dataDir:directory,token:'generated-budget-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6.1-terra',modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'auto',modelMaxTokens:65536,modelRequestTimeoutMs:null,agentTimeoutMs:null,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-budget-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6.1-terra',modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'auto',modelMaxTokens:65536,modelRequestTimeoutMs:null,agentTimeoutMs:null,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
  const calls:{phase:string;targets:string[];readIds:string[];tokens:number}[]=[];
  const failures:unknown[]=[];
  let holdReview=true,enteredReview!:()=>void;

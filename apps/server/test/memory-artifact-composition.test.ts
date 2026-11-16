@@ -23,7 +23,7 @@ const wave=Buffer.alloc(32044);wave.write('RIFF');wave.writeUInt32LE(wave.length
 
 async function fixture(t:import('node:test').TestContext,remote=false){
   const directory=mkdtempSync(join(tmpdir(),'mote-artifact-recipes-'));
-  const config:Config={dataDir:directory,token:'generated-artifact-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir:directory,token:'generated-artifact-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   if(remote)Object.assign(config,{modelBaseUrl:'https://generated.invalid',apiKey:'fixture',allowUnauthenticatedLocal:false});
   let node:Awaited<ReturnType<typeof buildApp>>,asrCalls=0;
   const boundaryChecks:{phase:string|undefined;targetCount:number;seedCount:number;siblingSeeded:boolean;ungrantedIds:string[]}[]=[];

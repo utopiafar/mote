@@ -22,7 +22,7 @@ const reached=(signal:Promise<void>)=>Promise.race([signal,new Promise<never>((_
 async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.now()<end){if(check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Timed out waiting for generated batch state');}
 async function fixture(t:TestContext,model:(input:QueryInput,lease?:QueryRunLease)=>Promise<QueryResult>,configured=true){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-batch-'));
-  const config:Config={dataDir,dataKey:'43'.repeat(32),contentEncryptionEnabled:true,token:'generated-batch-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir,dataKey:'43'.repeat(32),contentEncryptionEnabled:true,token:'generated-batch-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured,query:model,close:async()=>{}}});
   let node=await build();
   let batch=node.batchProcessing;await node.app.ready();

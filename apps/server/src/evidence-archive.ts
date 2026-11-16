@@ -143,7 +143,7 @@ export class EvidenceArchive {
         for(const row of db.prepare("SELECT id FROM context_artifacts WHERE group_key=? AND kind='segment'").all(group.group_key))if(!retained.has(String(row.id)))db.prepare('DELETE FROM context_artifacts WHERE id=?').run(row.id);
         db.prepare('DELETE FROM context_dirty WHERE group_key=? AND generation=?').run(group.group_key,group.generation);
         db.exec('COMMIT');
-      }catch(error){db.exec('ROLLBACK');throw error;}
+      }catch(error){if(db.isTransaction){db.exec('ROLLBACK');}throw error;}
     }
     return groups.length;
   }
@@ -179,7 +179,6 @@ export class EvidenceArchive {
         const {text,...retained}=existing;return retained;
       }
     }
-    this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(artifact))+Buffer.byteLength(output.text)+4096);
     db.prepare('INSERT OR IGNORE INTO context_contents VALUES(?,?)').run(contentHash,JSON.stringify({text:output.text}));
     db.prepare('DELETE FROM context_artifacts WHERE id=?').run(id);
     db.prepare('INSERT INTO context_artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,group,revision,output.kind,artifact.firstAt,artifact.lastAt,artifact.deviceId,artifact.appId,artifact.source,contentHash,JSON.stringify(artifact));

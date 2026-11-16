@@ -31,7 +31,7 @@ const result=(id:string,quote?:{offset:number;quote:string})=>({answer:JSON.stri
 const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty'});
 test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-unchanged-wake-'));
- const config:Config={dataDir:directory,token:'generated-memory-wake-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent',contentEncryptionEnabled:true,dataKey:randomBytes(32).toString('hex')};
+ const config:Config={dataDir:directory,token:'generated-memory-wake-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent',contentEncryptionEnabled:true,dataKey:randomBytes(32).toString('hex')};
  let calls=0;
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>{calls++;throw Error('Unauthorized originals must not reach the model');}})});
  t.after(async()=>{try{await node.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
@@ -174,7 +174,7 @@ test('a batch update rolled back with its transaction leaves no transition signa
 
 test('an owner reply rolled back inside its real reply transaction leaves no transition signal for an unchanged refresh',{timeout:30000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-rollback-'));
- const config:Config={dataDir:directory,token:'generated-owner-rollback-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-owner-rollback-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;
   const plan=await fixtureMemoryPlan(input);if(plan)return plan;
@@ -236,7 +236,7 @@ test('an owner reply rolled back inside its real reply transaction leaves no tra
 
 test('overlapping owner replies preserve the first committed batch transition when the second receipt rolls back',{timeout:30000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-overlap-'));
- const config:Config={dataDir:directory,token:'generated-owner-overlap-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-owner-overlap-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
  const answers:Array<()=>void>=[];
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;

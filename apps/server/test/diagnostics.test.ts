@@ -17,7 +17,7 @@ import { buildApp,type QueryAgent } from '../src/app.js';
 import type { Config } from '../src/config.js';
 
 const marker='SYNTHETIC_PRIVATE_BODY_TOKEN_URL_QUERY';
-const config=(dataDir:string):Config=>({dataDir,token:'synthetic-observability-token-only',tokenPath:join(dataDir,'synthetic-token-file'),host:'127.0.0.1',port:47832,dataKey:undefined,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'synthetic-provider-credential',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsDebug:true});
+const config=(dataDir:string):Config=>({dataDir,token:'synthetic-observability-token-only',tokenPath:join(dataDir,'synthetic-token-file'),host:'127.0.0.1',port:47832,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'synthetic-provider-credential',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsDebug:true});
 const inactive:QueryAgent={configured:false,query:async()=>{throw new Error('fixture must not run');},close:async()=>{}};
 
 const currentFiles=(directory:string)=>readdirSync(directory).filter(name=>/^central\.(error|warn|info|debug|trace)\./.test(name)).sort((a,b)=>Number(b.split('.')[3])-Number(a.split('.')[3])||b.localeCompare(a));
@@ -420,6 +420,14 @@ test('real agent error classes map to safe categories without exposing provider 
   assert.equal(safeError(Object.assign(new AgentResponseError(marker),{reason:marker})).reason,'invalid_response');
   assert.ok(!JSON.stringify(safeError(Object.assign(new Error(marker),{name:marker,code:marker,statusCode:502}))).includes(marker));
   assert.equal(safeError({get name(){throw new Error(marker);}}).category,'internal');
+});
+
+test('actual storage exhaustion maps narrowly to a safe retryable full-storage error',()=>{
+ for(const detail of [{code:'ENOSPC'},{code:'EDQUOT'},{errcode:13}]){
+  const failure=Object.assign(new Error(marker),detail),view=safeError(failure);
+  assert.equal(view.status,507);assert.equal(view.category,'storage_full');assert.match(view.message,/检查可用空间/);assert.doesNotMatch(view.message,/调整容量|配额/);assert.ok(!JSON.stringify(view).includes(marker));
+ }
+ for(const detail of [{code:'EACCES'},{code:'EPERM'},{errcode:19},{errcode:8},{errcode:10}])assert.notEqual(safeError(Object.assign(new Error(marker),detail)).status,507);
 });
 
 test('a second live logger cannot rotate another logger files and an old same-PID lock recovers',async t=>{

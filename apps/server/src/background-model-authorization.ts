@@ -59,7 +59,7 @@ export class BackgroundModelAuthorization {
       CREATE TABLE IF NOT EXISTS background_model_step_authority(step_id TEXT PRIMARY KEY,work_id TEXT NOT NULL REFERENCES background_model_work(id));`);
     if(!store.db.prepare('SELECT 1 FROM background_model_authorization WHERE id=1').get()){
       const json=JSON.stringify({revision:0,state:'off',excludedSourceIds:[]} satisfies State);
-      store.reserveMetadata(Buffer.byteLength(json)+128);store.db.prepare('INSERT INTO background_model_authorization VALUES(1,?)').run(json);
+      store.db.prepare('INSERT INTO background_model_authorization VALUES(1,?)').run(json);
     }
   }
   private state():State{if(this.closed)throw pending();return JSON.parse(String(this.store.db.prepare('SELECT json FROM background_model_authorization WHERE id=1').get()!.json));}
@@ -68,14 +68,14 @@ export class BackgroundModelAuthorization {
   command(raw:unknown){
     const input=command.parse(raw),encoded=JSON.stringify(input);
     this.transaction(()=>{
-      const state=this.state(),previousBytes=Buffer.byteLength(JSON.stringify(state));
+      const state=this.state();
       if(state.lastOperation===input.operationId){if(state.lastCommand!==encoded)throw new StoreError('Authorization operation was already used for a different request',409);return state;}
       if(state.revision!==input.revision)throw new StoreError('Model authorization changed; reload before continuing',409);
       if(input.action==='on')state.state='on';
       else if(input.action==='off'||input.action==='stop')state.state='off';
       else state.excludedSourceIds=[...input.excludedSourceIds!];
       state.revision++;state.lastOperation=input.operationId;state.lastCommand=encoded;
-      const json=JSON.stringify(state);this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-previousBytes));
+      const json=JSON.stringify(state);
       this.store.db.prepare('UPDATE background_model_authorization SET json=? WHERE id=1').run(json);
       if(input.action==='stop')this.stopBatches?.();
       return state;
@@ -92,7 +92,6 @@ export class BackgroundModelAuthorization {
     if(!this.store.db.isTransaction)throw Error('Model receipt requires the original receive transaction');
     if(!identity||identity.length>2048)throw Error('Invalid original receipt identity');
     if(this.store.db.prepare('SELECT 1 FROM background_model_receipts WHERE identity=?').get(identity))return;
-    this.store.reserveMetadata(Buffer.byteLength(identity+disclosure.sourceId)+128);
     this.store.db.prepare('INSERT INTO background_model_receipts(identity,source_id,eligible) VALUES(?,?,?)').run(identity,disclosure.sourceId,Number(eligible));
   }
   /** A routine is an original trigger only while its persisted, owner-created
@@ -118,7 +117,7 @@ export class BackgroundModelAuthorization {
     if(!roots.length)return;
     const prior=this.store.db.prepare('SELECT original FROM background_model_lineage WHERE identity=? ORDER BY original').all(identity).map(row=>String(row.original));
     if(prior.length){if(!same(prior,roots))throw new StoreError('Published model authorization lineage changed',409);return;}
-    const insert=this.store.db.prepare('INSERT INTO background_model_lineage VALUES(?,?)');for(const root of roots){this.store.reserveMetadata(Buffer.byteLength(identity+root)+64);insert.run(identity,root);}
+    const insert=this.store.db.prepare('INSERT INTO background_model_lineage VALUES(?,?)');for(const root of roots){insert.run(identity,root);}
   }
   roots(identity:string):string[]{
     if(this.closed)throw pending();
@@ -157,7 +156,7 @@ export class BackgroundModelAuthorization {
     const work=this.saved(id);if(!work)return 'missing';
     try{this.assert(work);return 'current';}catch{return 'revoked';}
   }
-  private save(work:Work){const json=JSON.stringify(work);this.store.reserveMetadata(Buffer.byteLength(json+work.id)+128);this.store.db.prepare('INSERT INTO background_model_work VALUES(?,?)').run(work.id,json);return work;}
+  private save(work:Work){const json=JSON.stringify(work);this.store.db.prepare('INSERT INTO background_model_work VALUES(?,?)').run(work.id,json);return work;}
   private saved(id:string):Work|undefined{if(this.closed)throw pending();const row=this.store.db.prepare('SELECT json FROM background_model_work WHERE id=?').get(id);return row?JSON.parse(String(row.json)):undefined;}
   /** Durable roots only. `off` drains admitted work, so the switch itself must
    * not invalidate an authority that was admitted before the owner closed it;
@@ -184,7 +183,7 @@ export class BackgroundModelAuthorization {
       if(roots.some(root=>!this.eligible(root,state)))throw pending();
       if(roots.some(root=>this.store.db.prepare('SELECT 1 FROM background_model_trigger_claims WHERE original=? AND purpose=?').get(root,purpose)))throw pending();
       const work:AutomaticWork={id,kind:'automatic',purpose,roots};this.assert(work);this.save(work);
-      for(const root of roots){this.store.reserveMetadata(Buffer.byteLength(root+purpose+id)+64);this.store.db.prepare('INSERT INTO background_model_trigger_claims VALUES(?,?,?)').run(root,purpose,id);}
+      for(const root of roots){this.store.db.prepare('INSERT INTO background_model_trigger_claims VALUES(?,?,?)').run(root,purpose,id);}
       return id;
     });
   }
@@ -244,7 +243,7 @@ export class BackgroundModelAuthorization {
   /** Native HTTP relays do not inherit AsyncLocalStorage. Capture the host
    * authority in a closure, never in a serializable plugin argument. */
   capture(connection?:ModelConnection){const authority=this.context.getStore();if(!authority)throw pending();return ()=>this.assertConnection(authority,connection);}
-  private bindStep(stepId:string,id:string){const prior=this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').get(stepId);if(prior&&prior.work_id!==id)throw new StoreError('Execution step already has a different model authority',409);if(!prior){this.store.reserveMetadata(Buffer.byteLength(stepId+id)+64);this.store.db.prepare('INSERT INTO background_model_step_authority VALUES(?,?)').run(stepId,id);}}
+  private bindStep(stepId:string,id:string){const prior=this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').get(stepId);if(prior&&prior.work_id!==id)throw new StoreError('Execution step already has a different model authority',409);if(!prior){this.store.db.prepare('INSERT INTO background_model_step_authority VALUES(?,?)').run(stepId,id);}}
   stepAuthority(stepId:string){const row=this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').get(stepId);return row?String(row.work_id):undefined;}
   inheritStep(parentId:string,childId:string){
     if(!this.store.db.isTransaction)throw Error('Dependent authority requires the publication transaction');

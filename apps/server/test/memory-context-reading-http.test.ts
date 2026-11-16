@@ -39,7 +39,7 @@ async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{
 
 async function fixture(t:TestContext,scenario:Scenario){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-memory-context-http-')),token='generated-memory-context-owner';
- const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:2_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,memoryConcurrency:1};
+ const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,memoryConcurrency:1};
  const calls:Call[]=[],rejections:{code:string;feedback:string}[]=[],spyFailures:string[]=[];let otherId='',otherCaptureId='',otherMaterialRef='',materialRef='',corrected=false;
  let node:Awaited<ReturnType<typeof buildApp>>;
  node=await buildApp(config,{backgroundWorker:false,prepareImport:async({workspace,inputPaths})=>{

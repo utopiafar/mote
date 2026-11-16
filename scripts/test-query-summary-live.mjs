@@ -26,7 +26,7 @@ DeepSeekHarness.prototype.run=async function(...args){
  return result;
 };
 try{
- const config={dataDir:root,token:randomBytes(32).toString('hex'),tokenPath:join(root,'token'),host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config={dataDir:root,token:randomBytes(32).toString('hex'),tokenPath:join(root,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  applyModelSettings(config,settings);node=await buildApp(config);const headers={authorization:'Bearer '+config.token};
  const image=(await sharp({create:{width:640,height:480,channels:3,background:'#cfded4'}}).jpeg().toBuffer()).toString('base64');
  const samples=[['合成编辑器','完善示例项目的图片预览页面：调整质量滑块与放大查看。'],['合成浏览器','阅读数据库窗口函数的生成示例，核对排序与分页。'],['合成笔记','计划下午检查演示报告，结果尚未记录。'],['合成终端','运行生成数据回归测试，显示 12 项通过。'],['合成阅读器','阅读虚构短篇《秋天的观测站》，目前停在第二章。'],['合成日历','明天有一场演示会议；这是计划，不代表已经参加。']];

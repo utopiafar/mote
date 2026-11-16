@@ -49,7 +49,7 @@ export async function assistantQuestionFixture(t:TestContext){
  });
  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
  const config:Config={dataDir,dataKey:'72'.repeat(32),contentEncryptionEnabled:true,token:'generated-a10-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,
-  maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',
+  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',
   modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512,apiKey:'generated-only',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
  const build=async()=>{

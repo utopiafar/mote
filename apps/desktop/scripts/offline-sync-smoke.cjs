@@ -135,7 +135,7 @@ app.on('browser-window-created', (_event, window) => {
 });
 app.on('quit', () => { for (const node of [server, other]) { node.closeAllConnections(); node.close(); } central?.kill('SIGTERM'); if (finished) void rm(profile, { recursive: true, force: true }); });
 (async () => {
-  const centralConfig = { dataDir: join(profile, 'central'), token, tokenPath: 'fixture-only', host: '127.0.0.1', port: 0, profile: 'test', maxStorageBytes: 10_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '' };
+  const centralConfig = { dataDir: join(profile, 'central'), token, tokenPath: 'fixture-only', host: '127.0.0.1', port: 0, profile: 'test', maxExportBytes: 1_000_000, insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '' };
   const centralCode = `const {buildApp} = await import(${JSON.stringify(pathToFileURL(resolve(__dirname, '../../server/dist/app.js')).href)}); const {app} = await buildApp(${JSON.stringify(centralConfig)}, {agent:{configured:false,query:async()=>{throw Error('No live model in generated fixture');},close:async()=>{}}}); const origin = await app.listen({host:'127.0.0.1',port:0}); process.send({origin}); process.on('SIGTERM',async()=>{await app.close();process.exit(0);});`;
   central = spawn('node', ['--input-type=module', '-e', centralCode], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   central.stderr.on('data', data => process.stderr.write(data));

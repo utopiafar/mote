@@ -15,7 +15,7 @@ import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';
 import {restoreProfile} from '../../../scripts/profile-lib.mjs';
 
 const token='generated-cache-history-owner',headers={authorization:`Bearer ${token}`,'content-type':'application/json'};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 const result=(ids:string[],answer='Generated answer based on the first interpretation.')=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids}});
 async function fixture(t:any){
  const directory=await mkdtemp(join(tmpdir(),'mote-cache-history-integration-'));let ids:string[]=[],calls=0,hook:(()=>void)|undefined;const seen:QueryInput[]=[];

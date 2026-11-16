@@ -49,7 +49,7 @@ export function registerMemoryFeedbackPlanner(options:{runtime:DelegationRuntime
   const existing=db.prepare('SELECT 1 FROM delegation_works WHERE id=?').get(id),selected=existing?payload(id):{...request,evidenceIds:pipeline.evidenceDependencies(request.authorized.map(member=>member.id))};
   if(!pipeline.feedbackAllowed(selected))throw new ExecutionFailure('stale','evidence_changed');
   const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
-  try{if(!db.prepare('SELECT 1 FROM memory_feedback_plans WHERE work_id=?').get(id)){runtime.store.reserveMetadata(Buffer.byteLength(id)+Buffer.byteLength(request.jobId)+Buffer.byteLength(request.batchId)+96);db.prepare('INSERT OR IGNORE INTO memory_feedback_plans VALUES(?,?,?,?)').run(id,request.jobId,request.batchId,request.round);}
+  try{if(!db.prepare('SELECT 1 FROM memory_feedback_plans WHERE work_id=?').get(id)){db.prepare('INSERT OR IGNORE INTO memory_feedback_plans VALUES(?,?,?,?)').run(id,request.jobId,request.batchId,request.round);}
   runtime.start({id,operationId:id,profileId:'memory.feedback',goal:'Adjust the authorized Memory plan from reviewed coverage gaps',input:selected,scope:{contextTime:selected.contextTime,evidenceIds:[...new Set(selected.authorized.map(member=>member.id))],evidenceRanges:selected.authorized.map(({id,offset,length})=>({id,offset,length}))},allowedCapabilities:['memory.feedback-group','memory.feedback-stop']});if(own)db.exec('COMMIT');}catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   let owner;try{owner=await runtime.waitForPlan(id,signal);}catch(error){
    if(error instanceof DelegationPlanningError){

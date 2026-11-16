@@ -18,7 +18,7 @@ const body='I felt proud of finishing the prototype. For the prototype retry pat
 const understanding=(input:QueryInput)=>input.question.includes('FINAL UNIFIED RESPONSE CONTRACT:\nInterpret every supplied part');
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-auto-recipes-'));
-  const config:Config={dataKey:undefined,dataDir:directory,token:'generated-auto-recipes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataKey:undefined,dataDir:directory,token:'generated-auto-recipes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const calls:QueryInput[]=[],control:{failCoding:boolean;emptyResults?:boolean;duringReview?:(input:QueryInput)=>Promise<void>}={failCoding:false};
   let node:Awaited<ReturnType<typeof buildApp>>;
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
