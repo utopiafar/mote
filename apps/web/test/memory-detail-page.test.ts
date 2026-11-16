@@ -30,6 +30,14 @@ test('isolated activity detail freshly checks Memory permission and exact eviden
  await act(async()=>root.render(React.createElement(MemoryDetailPage,{api:owner,id:a,isolatedSelection:true,onOpen:ref=>opened.push(ref),onBack:()=>{}})));
  assert.ok(d.querySelector('.memory-evidence .evidence-card'));denied=true;await act(async()=>d.querySelector<HTMLButtonElement>('.memory-evidence .evidence-card')!.click());assert.deepEqual(opened,[]);assert.equal(d.querySelector('.memory-detail-heading'),null);assert.match(d.body.textContent!,/Generated forbidden/);
 });
+test('released original evidence preserves Memory and provenance while refusing original navigation and saved quotation',async t=>{
+ const {root,d}=await fixture(t),evidenceId='00000000-0000-4000-8000-000000000123',opened:string[]=[];
+ const retained={...memory(a),evidenceIds:[evidenceId],evidence:[{id:evidenceId,capturedAt:at,receivedAt:at,sourceId:'generated-source',externalId:'original-message',revision:'v1',contentHash:'a'.repeat(64),originalAvailable:false,quote:'Generated retired quote must not be presented as readable original'}]};
+ const owner=api(path=>path.startsWith('/api/memories/'+a+'?')?retained:undefined);
+ await act(async()=>root.render(React.createElement(MemoryDetailPage,{api:owner,id:a,isolatedSelection:true,onOpen:ref=>opened.push(ref),onBack:()=>{}})));
+ assert.match(d.body.textContent!,/Complete generated original statement a/);assert.match(d.body.textContent!,/原件已释放，无法回看或引用/);assert.match(d.body.textContent!,/generated-source/);assert.match(d.body.textContent!,/original-message/);assert.doesNotMatch(d.body.textContent!,/Generated retired quote/);assert.equal(d.querySelector<HTMLButtonElement>('.memory-evidence .evidence-card')!.disabled,true);
+ await act(async()=>d.querySelector<HTMLButtonElement>('.memory-evidence .evidence-card')!.click());assert.deepEqual(opened,[]);
+});
 test('a transient failed detail read cannot revive its old body while a later revalidation is pending',async t=>{
  const {root,d}=await fixture(t),evidenceId='00000000-0000-4000-8000-000000000123',withEvidence={...memory(a),evidenceIds:[evidenceId],evidence:[{id:evidenceId,capturedAt:at,receivedAt:at,contentHash:'a'.repeat(64)}]};let reads=0,release!:(value:unknown)=>void;
  const owner=api(path=>{if(path.startsWith('/api/memories/'+a+'?')){reads++;if(reads===1)return withEvidence;if(reads<=3)throw new ApiError('Generated unavailable',503);return new Promise(done=>release=done);}return undefined;});

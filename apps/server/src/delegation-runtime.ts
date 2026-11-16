@@ -242,7 +242,20 @@ export class DelegationRuntime {
   this.journal.saveResult(work.id,result??null);work.planningComplete=true;work.status=profile.awaitExternal?this.externalCompletionState(work):'succeeded';delete work.wait;delete work.error;if(work.status==='failed')work.error='delegated_product_failed';this.save(work);this.event(work.id,work.status==='waiting'?'plan.updated':work.status==='succeeded'?'completed':'work.failed');
  }
  private wake(workId:string){const work=this.raw(workId);if(work.status!=='waiting'||!work.wait||!this.currentWork(workId,this.coordinators.get(work.profileId)))return;const states=work.wait.unitIds.map(id=>this.unit(id).status),ready=work.wait.mode==='all'?states.every(terminal):states.some(terminal);if(ready){delete work.wait;this.enqueueCoordinator(work);this.event(workId,'resumed');}}
- cancelUnit(id:string){const unit=this.unit(id);if(unit.status==='succeeded'||unit.status==='cancelled')return;this.capabilities.get(unit.capabilityId)?.cancel?.(unit,this.get(unit.workId));this.engine.cancel(unit.stepId);unit.status='cancelled';this.saveUnit(unit);this.event(unit.workId,'branch_cancelled',undefined,id);}
+ /** A product owner may report its already stopped external job without
+  * issuing another owner cancellation against that job or its continuations. */
+ cancelUnit(id:string,options?:{productStopped:true}){
+  const unit=this.unit(id);if(options?.productStopped&&!unit.external)throw new StoreError('Only external products can report stopped work',409);if(unit.status==='succeeded')return;
+  const work=this.raw(unit.workId),unlinkedRequired=unit.external&&work.planningComplete&&work.plannedUnitIds?.includes(unit.id)&&!this.engine.get(unit.stepId),changed=unit.status!=='cancelled';
+  if(!changed&&!unlinkedRequired)return;
+  if(changed&&!options?.productStopped)this.capabilities.get(unit.capabilityId)?.cancel?.(unit,this.get(unit.workId));
+  if(unlinkedRequired){
+   this.transaction(()=>{
+    const step=this.engine.recordCancellation({id:unit.id,operationId:work.operationId,kind:'delegation.unit.'+unit.capabilityId,pool:'delegated-agents',input:{unitId:unit.id}});
+    unit.stepId=step.id;unit.status='cancelled';this.saveUnit(unit);if(changed)this.event(unit.workId,'branch_cancelled',undefined,id);
+   });
+  }else{this.engine.cancel(unit.stepId);unit.status='cancelled';this.saveUnit(unit);this.event(unit.workId,'branch_cancelled',undefined,id);}
+ }
  retryUnit(id:string){const unit=this.unit(id);if(!['failed','blocked','stale'].includes(unit.status))throw new StoreError('Only a failed branch can be retried',409);this.capabilities.get(unit.capabilityId)?.retry?.(unit,this.get(unit.workId));if(unit.artifactId)this.store.db.prepare('DELETE FROM delegation_artifacts WHERE id=?').run(unit.artifactId);this.store.db.prepare('DELETE FROM delegation_source_context_dependencies WHERE work_id=? AND unit_id=?').run(unit.workId,unit.id);delete unit.artifactId;delete unit.error;unit.status='waiting';this.saveUnit(unit);this.engine.retry(unit.stepId);this.event(unit.workId,'branch_retried',undefined,id);}
  cancel(id:string){this.transaction(()=>{const work=this.raw(id);if(terminal(work.status))return;work.status='cancelled';delete work.wait;this.save(work);for(const unit of work.units)if(!terminal(unit.status))this.cancelUnit(unit.id);this.engine.cancel(work.id);for(const stepId of this.activeExecutionIds(work.operationId))this.engine.cancel(stepId);this.event(id,'cancelled');});return this.get(id);}
  /** Stop recovered work whose pinned generation is unavailable; this is an

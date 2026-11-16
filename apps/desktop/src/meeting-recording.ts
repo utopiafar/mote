@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { FILE_MAX_BYTES, FILE_PART_BYTES, filePartReceipts, meetingRecordingSessionSchema, type MeetingRecordingProvenance } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
-import { INGRESS_VERSION_HEADERS } from './ingress-protocol';
+import { INGRESS_VERSION_HEADERS,requireIngressReceipt } from './ingress-protocol';
 
 export type MeetingPermissionValue = 'granted' | 'denied' | 'not-determined' | 'unsupported';
 export interface MeetingRecordingPermissions { microphone: MeetingPermissionValue; systemAudio: MeetingPermissionValue }
@@ -13,13 +13,13 @@ export interface MeetingAudioHandle { stop(): Promise<MeetingCaptureResult> }
 export interface MeetingAudioBackend {
   start(input: { id: string; directory: string; outputFile: string; stopFile: string; maxDurationMs: number }): Promise<MeetingAudioHandle>;
 }
-export interface MeetingRecordingConnection { serverUrl?: string; token?: string; deviceId: string; syncPaused?: boolean }
+export interface MeetingRecordingConnection { serverUrl?: string; token?: string; deviceId: string; syncPaused?: boolean;generation?:number }
 
 interface StoredSession {
   id: string; startedAt: string; endedAt?: string; state: 'recording' | 'completed' | 'uploaded' | 'failed';
   durationMs: number; microphone: boolean; systemAudio: boolean; noticeAcknowledgedAt: string;
   platform: 'macos' | 'android'; warnings: string[]; audioFile?: string; mimeType?: string;
-  uploadedAt?: string; captureId?: string; error?: string;
+  uploadedAt?: string; captureId?: string; uploadOrigin?:string;error?: string;
 }
 interface StoredState { version: 1; noticeAcknowledgedAt?: string; sessions: StoredSession[] }
 
@@ -50,7 +50,7 @@ export interface MeetingRecordingManagerOptions {
   maxDurationMs?: number;
 }
 
-const SESSION_LIMIT = 200;
+const SESSION_VIEW_LIMIT = 200;
 const DEFAULT_MAX_DURATION_MS = 8 * 60 * 60 * 1000;
 
 /** A meeting begins only from this owner action. There is deliberately no
@@ -61,6 +61,9 @@ export class MeetingRecordingManager {
   private active?: StoredSession;
   private initialized = false;
   private uploading = false;
+  private closed=false;
+  private cancellation=new AbortController();
+  private persistence:Promise<unknown>=Promise.resolve();
   private error?: string;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
@@ -106,15 +109,26 @@ export class MeetingRecordingManager {
       && Array.isArray(row.warnings) && (row.platform === 'macos' || row.platform === 'android');
   }
 
-  private async persist(): Promise<void> {
-    await mkdir(this.options.directory, { recursive: true, mode: 0o700 });
-    const temporary = join(this.options.directory, `${randomUUID()}.tmp`);
-    try {
-      await writeFile(temporary, JSON.stringify(this.state), { mode: 0o600 });
-      await rename(temporary, this.file);
-    } finally { await rm(temporary, { force: true }); }
+  private persist(authorize?:()=>void,update?:{session:StoredSession;next:StoredSession}):Promise<void>{
+    const next=this.persistence.catch(()=>{}).then(async()=>{
+      authorize?.();await mkdir(this.options.directory,{recursive:true,mode:0o700});authorize?.();
+      const temporary=join(this.options.directory,`${randomUUID()}.tmp`);
+      const snapshot=update?{...this.state,sessions:this.state.sessions.map(session=>session===update.session?update.next:session)}:this.state;
+      try{
+        const file=await open(temporary,'wx',0o600);
+        try{await file.writeFile(JSON.stringify(snapshot));await file.sync();}finally{await file.close();}
+        authorize?.();await rename(temporary,this.file);
+        if(process.platform!=='win32'){const directory=await open(this.options.directory,'r');try{await directory.sync();}finally{await directory.close();}}
+        if(update)Object.assign(update.session,update.next);
+      }finally{await rm(temporary,{force:true});}
+    });this.persistence=next;return next;
+  }
+  private current(connection:MeetingRecordingConnection){
+    const selected=this.options.connection();
+    if(this.closed||this.cancellation.signal.aborted||selected.serverUrl!==connection.serverUrl||selected.token!==connection.token||selected.deviceId!==connection.deviceId||selected.generation!==connection.generation||selected.syncPaused)throw Error('Meeting upload authorization changed');
   }
 
+  connectionActivity(){return {pending:this.state.sessions.filter(session=>session.state==='completed').length,inFlight:this.uploading};}
   status(): MeetingRecordingStatus {
     const lastSession = [...this.state.sessions].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
     return {
@@ -124,7 +138,7 @@ export class MeetingRecordingManager {
       permissions: this.options.permissions(),
       pendingUploads: this.state.sessions.filter(session => session.state === 'completed').length,
       ...(lastSession ? { lastSession: structuredClone(lastSession) } : {}),
-      sessions: structuredClone(this.state.sessions.slice(-SESSION_LIMIT)),
+      sessions: structuredClone(this.state.sessions.slice(-SESSION_VIEW_LIMIT)),
       ...(this.error ? { error: this.error } : {}),
     };
   }
@@ -145,6 +159,7 @@ export class MeetingRecordingManager {
     const permissions = this.options.permissions();
     if (permissions.microphone !== 'granted') throw new Error(moteText('麦克风权限未授予，会议录音没有开始。请在系统设置中允许麦克风后重试。'));
     if (permissions.systemAudio !== 'granted') throw new Error(moteText('系统音频权限未授予，会议录音没有开始。请允许屏幕与系统音频录制后重试；不会在缺少系统声时只录麦克风。'));
+    if(this.closed)throw Error('Meeting recordings are closed');
     const id = randomUUID(), directory = join(this.options.directory, id);
     const startedAt = this.now();
     const session: StoredSession = {
@@ -160,13 +175,14 @@ export class MeetingRecordingManager {
       });
       this.active = session;
       this.state.sessions.push(session);
-      if (this.state.sessions.length > SESSION_LIMIT) this.state.sessions = this.state.sessions.slice(-SESSION_LIMIT);
       this.error = undefined;
       await this.persist();
       return this.status();
     } catch (failure) {
-      this.handle = undefined; this.active = undefined;
-      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+      await this.handle?.stop().catch(()=>undefined);this.handle=undefined;this.active=undefined;
+      session.state='failed';session.error=failure instanceof Error?failure.message:String(failure);
+      if(!this.state.sessions.includes(session))this.state.sessions.push(session);
+      await this.persist().catch(()=>undefined);
       throw failure;
     }
   }
@@ -203,8 +219,8 @@ export class MeetingRecordingManager {
 
   async flushUploads(): Promise<void> {
     await this.ensureInitialized();
-    if (this.uploading) return;
-    const connection = this.options.connection();
+    if (this.uploading||this.closed) return;
+    const connection = {...this.options.connection()};
     const pending = this.state.sessions.filter(session => session.state === 'completed');
     if (!pending.length) return;
     if (!connection.serverUrl || !connection.token || connection.syncPaused) {
@@ -213,13 +229,12 @@ export class MeetingRecordingManager {
     }
     this.uploading = true;
     try {
-      await this.registerSource(connection);
       for (const session of pending) {
         try { await this.uploadSession(connection, session); }
-        catch (failure) { session.error = failure instanceof Error ? failure.message : moteText('会议录音上传未完成，原音频保留在本机。'); this.error = session.error; await this.persist(); break; }
+        catch (failure) {if(!this.closed){session.error = failure instanceof Error ? failure.message : moteText('会议录音上传未完成，原音频保留在本机。'); this.error = session.error; await this.persist();}break; }
       }
       if (!this.state.sessions.some(session => session.state === 'completed')) this.error = undefined;
-    } finally { this.uploading = false; await this.persist(); }
+    } finally { this.uploading = false; if(!this.closed)await this.persist(); }
   }
 
   private sourceId(connection: MeetingRecordingConnection): string {
@@ -236,6 +251,10 @@ export class MeetingRecordingManager {
 
   private async uploadSession(connection: MeetingRecordingConnection, session: StoredSession): Promise<void> {
     if (!session.audioFile || !session.endedAt) throw new Error(moteText('会议录音缺少本地音频或结束时间。'));
+    this.current(connection);
+    if(session.uploadOrigin&&session.uploadOrigin!==connection.serverUrl)throw Error(moteText('本地待上传记录已绑定原节点或凭据，不能重新归属；请恢复原连接完成同步'));
+    if(!session.uploadOrigin){session.uploadOrigin=connection.serverUrl;await this.persist(()=>this.current(connection));}
+    await this.registerSource(connection);
     const directory = join(this.options.directory, session.id), path = join(directory, session.audioFile);
     const info = await stat(path);
     if (!info.isFile() || !Number.isSafeInteger(info.size) || info.size < 1 || info.size > FILE_MAX_BYTES) throw new Error(moteText('会议录音音频超出中央单文件上限或不可读。'));
@@ -255,7 +274,7 @@ export class MeetingRecordingManager {
       },
     };
     const begun = await this.request(connection, '/api/file-sync/v1/uploads', 'POST', manifest);
-    if (begun?.ack?.id) { await this.complete(connection, session, String(begun.ack.id), path, directory); return; }
+    if (begun?.ack?.id) { await this.complete(connection, session, begun.ack, manifest); return; }
     if (typeof begun?.uploadId !== 'string' || !Array.isArray(begun.parts) || begun.partBytes !== FILE_PART_BYTES) throw new Error(moteText('中央文件上传会话无效。'));
     const receipts=filePartReceipts(begun,async after=>{const page=await this.request(connection,`/api/file-sync/v1/uploads/${begun.uploadId}?afterPart=${after}`,'GET',undefined);if(page.uploadId!==begun.uploadId||page.partBytes!==FILE_PART_BYTES)throw Error('Upload receipt identity changed');return page;},info.size);let receipt=await receipts.next();
     const total = Math.ceil(info.size / FILE_PART_BYTES);
@@ -274,7 +293,7 @@ export class MeetingRecordingManager {
     } finally { await file.close(); }
     const committed = await this.request(connection, `/api/file-sync/v1/uploads/${begun.uploadId}/commit`, 'POST', {});
     if (typeof committed?.id !== 'string') throw new Error(moteText('中央未确认会议录音入库。'));
-    await this.complete(connection, session, committed.id, path, directory);
+    await this.complete(connection, session, committed, manifest);
   }
 
   private provenance(session: StoredSession): MeetingRecordingProvenance {
@@ -285,11 +304,13 @@ export class MeetingRecordingManager {
     };
   }
 
-  private async complete(_connection: MeetingRecordingConnection, session: StoredSession, captureId: string, path: string, directory: string): Promise<void> {
-    session.state = 'uploaded'; session.captureId = captureId; session.uploadedAt = this.now().toISOString(); session.error = undefined;
-    await this.persist();
-    await rm(path, { force: true });
-    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  private async complete(connection:MeetingRecordingConnection,session:StoredSession,value:unknown,manifest:{sourceId:string;sha256:string;sizeBytes:number;item:{externalId:string;revision:string}}):Promise<void>{
+    this.current(connection);
+    const ack=requireIngressReceipt(value,{kind:'file-revision',sourceId:manifest.sourceId,externalId:manifest.item.externalId,revision:manifest.item.revision});
+    const bytes=value as {sha256?:unknown;sizeBytes?:unknown};if(bytes.sha256!==manifest.sha256||bytes.sizeBytes!==manifest.sizeBytes)throw Error('Meeting archive receipt does not match the saved audio');
+    const next:StoredSession={...session,state:'uploaded',captureId:ack.id,uploadedAt:this.now().toISOString(),error:undefined};
+    await this.persist(()=>this.current(connection),{session,next});
+    // This is a formally saved local recording, not a source-file transport copy.
   }
 
   private async digest(path: string): Promise<{ hash: string }> {
@@ -299,10 +320,11 @@ export class MeetingRecordingManager {
   }
 
   private async request(connection: MeetingRecordingConnection, path: string, method: string, body: unknown, contentType = 'application/json'): Promise<any> {
+    this.current(connection);
     if (!connection.serverUrl || !connection.token) throw new Error(moteText('尚未连接中央。'));
     const payload = body===undefined?undefined:body instanceof Buffer ? body : Buffer.from(JSON.stringify(body));
     const response = await this.fetchImpl(connection.serverUrl + path, {
-      method, body: payload, redirect: 'error', signal: AbortSignal.timeout(30000),
+      method, body: payload, redirect: 'error', signal: AbortSignal.any([this.cancellation.signal,AbortSignal.timeout(30000)]),
       headers: { ...INGRESS_VERSION_HEADERS, Authorization: 'Bearer ' + connection.token, 'Content-Type': contentType },
     });
     if (!response.ok) {
@@ -311,10 +333,11 @@ export class MeetingRecordingManager {
     }
     const text = await response.text();
     if (text.length > 1024 * 1024) throw new Error(moteText('中央响应超过大小限制。'));
-    return text ? JSON.parse(text) : {};
+    this.current(connection);return text ? JSON.parse(text) : {};
   }
 
   async close(): Promise<void> {
+    this.closed=true;this.cancellation.abort();
     if (this.handle) await this.stop().catch(() => undefined);
   }
 

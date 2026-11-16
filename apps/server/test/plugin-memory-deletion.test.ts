@@ -9,7 +9,7 @@ import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {FileStore} from '../src/files.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
-import {memoryBodyDigest,type MemoryProvider,type MemoryProviderNamespace} from '../src/memory-provider-contract.js';
+import {memoryBodyDigest,memoryProviderKey,type MemoryProvider,type MemoryProviderNamespace} from '../src/memory-provider-contract.js';
 import type {Memory} from '../src/memory-schema.js';
 import {createMemoryPublication,type MemoryPublicationBindingPort} from '../src/plugins/memory-publication.js';
 
@@ -82,4 +82,19 @@ test('deleting evidence while a Memory publication is in flight retires its body
   assert.deepEqual(platform.evidenceDeletion.capability(second.id),{available:true,kind:'capture'});
   assert.deepEqual(platform.evidenceDeletion.delete(second.id),{deleted:1});
   assert.equal(store.evidence([second.id]).length,0,'the same profile serves deletion after stop and re-enable');
+});
+
+test('ordinary original release preserves the exact published provider body while retiring a different late unpublished receipt across restart',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-retained-provider-'));let store=new Store(directory),memories=new MemoryStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);
+ sources.register({id:'generated-files',name:'Generated',kind:'local-files',deviceId:'generated',platform:'android',retention:'archive'});
+ store.db.exec(`CREATE TABLE IF NOT EXISTS memory_plan_binding(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);INSERT OR IGNORE INTO memory_plan_binding VALUES(1,'{"planId":"instance:generated","generation":1,"namespace":{"ownerId":"generated-owner","instanceId":"generated-instance","bindingRevision":1}}');CREATE TABLE IF NOT EXISTS memory_provider_receipts(id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
+ const options={holdPut:false},provider=generatedProvider(options),bindings=()=>({...bindingPort(provider.provider),read:async(id:string,_binding?:unknown,key?:ReturnType<typeof memoryProviderKey>)=>{const result=await provider.provider.read({namespace,key:key??memoryProviderKey(memories.get(id))});assert.ok(result);return result;}}),open=()=>{const platform=createMemoryPublication({store,memories,bindings:bindings(),evidenceDeletion:{captures:store,files,aliases:{resolve:()=>({virtual:false})}}});platform.prepare();platform.start();return platform;};let platform=open();
+ t.after(async()=>{provider.release();await platform.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ const record=await original(store,sources,'Generated original for published and late memories.'),draft=(title:string)=>memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title,statement:title+' ['+record.id+']',uncertainty:'Generated fixture',evidenceIds:[record.id]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()}),'fixture').items[0]!;
+ const first=draft('Generated existing published conclusion'),published=await platform.port.owner.publish(first.id,first.version),key=memoryProviderKey(published);options.holdPut=true;
+ const second=draft('Generated separate uncompleted conclusion'),running=platform.port.owner.publish(second.id,second.version),rejected=assert.rejects(running,/lost acknowledgement/);await provider.entered;assert.deepEqual(platform.evidenceDeletion.delete(record.id),{deleted:1});assert.equal(memories.get(first.id).status,'published');assert.throws(()=>memories.get(second.id),{statusCode:404});
+ provider.release();await rejected;await platform.publication.reconcile();assert.equal(memoryBodyDigest((await provider.provider.read({namespace,key}))!),memoryBodyDigest(published));assert.equal((await provider.provider.export({namespace})).some(value=>value.key.memoryId===second.id),false);assert.equal(provider.puts(),2);
+ await assert.rejects(()=>platform.port.owner.publish(first.id,first.version),/deleted|revoked/,'a retired old receipt does not become a new publication grant');
+ await platform.close();store.close();store=new Store(directory);memories=new MemoryStore(store);sources=new SourceStore(store);files=new FileStore(store,sources);platform=open();await platform.publication.reconcile();assert.equal(memories.get(first.id).status,'published');assert.equal(memoryBodyDigest((await provider.provider.read({namespace,key}))!),memoryBodyDigest(published));assert.equal((await provider.provider.export({namespace})).length,1);assert.equal(provider.puts(),2,'restart reconciles identities without replaying semantic writes');
+ await platform.port.owner.delete(first.id);await platform.publication.reconcile();assert.equal(await provider.provider.read({namespace,key}),null);assert.equal((await provider.provider.export({namespace})).length,0);await platform.close();store.close();store=new Store(directory);memories=new MemoryStore(store);sources=new SourceStore(store);files=new FileStore(store,sources);platform=open();await platform.publication.reconcile();assert.throws(()=>memories.get(first.id),{statusCode:404});assert.equal((await provider.provider.export({namespace})).length,0);
 });

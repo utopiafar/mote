@@ -60,6 +60,10 @@ export class MemoryStore {
       CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(id UNINDEXED,text,tokenize='trigram');
       CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN INSERT INTO memories_fts(id,text) VALUES(new.id,json_extract(new.json,'$.title')||' '||json_extract(new.json,'$.statement')||' '||json_extract(new.json,'$.uncertainty')); END;
       CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN DELETE FROM memories_fts WHERE id=old.id; END;
+      CREATE TRIGGER IF NOT EXISTS memory_original_release_card_removed AFTER DELETE ON memories BEGIN
+        UPDATE memory_provider_evidence_revocations SET json=json_remove(json,'$.releasedOriginal.memoryFingerprints.'||old.id)
+        WHERE json_extract(json,'$.releasedOriginal.memoryFingerprints.'||old.id) IS NOT NULL;
+      END;
       CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN DELETE FROM memories_fts WHERE id=old.id; INSERT INTO memories_fts(id,text) VALUES(new.id,json_extract(new.json,'$.title')||' '||json_extract(new.json,'$.statement')||' '||json_extract(new.json,'$.uncertainty')); END;
 `);
   }
@@ -78,7 +82,9 @@ export class MemoryStore {
       CREATE TRIGGER IF NOT EXISTS memory_evidence_edited AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN
         UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed') WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=new.id);
       END;
-      CREATE TRIGGER IF NOT EXISTS memory_evidence_removed BEFORE DELETE ON captures BEGIN DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=old.id); END;`);
+      DROP TRIGGER IF EXISTS memory_evidence_removed;
+      CREATE TRIGGER memory_evidence_removed BEFORE DELETE ON captures BEGIN DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=old.id)
+        AND NOT EXISTS(SELECT 1 FROM memory_provider_evidence_revocations r,json_each(r.json,'$.releasedOriginal.memoryFingerprints') kept WHERE r.id=old.id AND kept.key=memories.id AND kept.value=json_extract(memories.json,'$.fingerprint')); END;`);
 
   }
   isCurrentEvidence(id:string):boolean {
@@ -130,15 +136,15 @@ export class MemoryStore {
     if(args.sourceIds!==undefined){
       const materialTables=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get());
       const materialJoin=materialTables?' LEFT JOIN material_evidence e ON e.id=d.evidence_id LEFT JOIN material_heads h ON h.id=e.material_id ':'';
-      const source=materialTables?"coalesce(json_extract(c.json,'$.provenance.sourceId'),json_extract(parent.json,'$.provenance.sourceId'),h.source_id,'')":"coalesce(json_extract(c.json,'$.provenance.sourceId'),json_extract(parent.json,'$.provenance.sourceId'),'')";
-      conditions.push(`EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN captures c ON c.id=d.evidence_id LEFT JOIN file_chunks chunk ON chunk.id=d.evidence_id LEFT JOIN captures parent ON parent.id=chunk.capture_id ${materialJoin} WHERE d.memory_id=memory_catalog.id AND ${source} NOT IN (SELECT value FROM json_each(?)))`);
+      const source=materialTables?"coalesce(json_extract(c.json,'$.provenance.sourceId'),json_extract(parent.json,'$.provenance.sourceId'),h.source_id,json_extract(released.json,'$.releasedOriginal.record.provenance.sourceId'),'')":"coalesce(json_extract(c.json,'$.provenance.sourceId'),json_extract(parent.json,'$.provenance.sourceId'),json_extract(released.json,'$.releasedOriginal.record.provenance.sourceId'),'')";
+      conditions.push(`EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN captures c ON c.id=d.evidence_id LEFT JOIN file_chunks chunk ON chunk.id=d.evidence_id LEFT JOIN captures parent ON parent.id=chunk.capture_id ${materialJoin} LEFT JOIN memory_provider_evidence_revocations released ON released.id=d.evidence_id WHERE d.memory_id=memory_catalog.id AND ${source} NOT IN (SELECT value FROM json_each(?)))`);
       values.push(JSON.stringify(args.sourceIds));
     }
     if(args.sourceId){
       const materialTables=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get());
       const materialJoin=materialTables?' LEFT JOIN material_evidence e ON e.id=d.evidence_id LEFT JOIN material_heads h ON h.id=e.material_id ':'';
-      const source=materialTables?"coalesce(json_extract(c.json,'$.provenance.sourceId'),h.source_id,'')":"coalesce(json_extract(c.json,'$.provenance.sourceId'),'')";
-      conditions.push(`EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN captures c ON c.id=d.evidence_id ${materialJoin} WHERE d.memory_id=memory_catalog.id AND ${source}!=?)`);values.push(args.sourceId);
+      const source=materialTables?"coalesce(json_extract(c.json,'$.provenance.sourceId'),h.source_id,json_extract(released.json,'$.releasedOriginal.record.provenance.sourceId'),'')":"coalesce(json_extract(c.json,'$.provenance.sourceId'),json_extract(released.json,'$.releasedOriginal.record.provenance.sourceId'),'')";
+      conditions.push(`EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN captures c ON c.id=d.evidence_id ${materialJoin} LEFT JOIN memory_provider_evidence_revocations released ON released.id=d.evidence_id WHERE d.memory_id=memory_catalog.id AND ${source}!=?)`);values.push(args.sourceId);
     }
     if(args.query?.trim()){
       const terms=args.query.trim().split(/\s+/u).slice(0,12),long=terms.filter(t=>Array.from(t).length>=3);

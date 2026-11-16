@@ -122,7 +122,7 @@ function metrics(value: unknown): Record<string, number | boolean | object> {
 export function buildSupportBundle(profile: DesktopProfile, version: string, status: Status, events: SupportEvent[]): object {
   const c = status.config;
   const config: Record<string, number | boolean> = {};
-  for (const key of ['intervalMs','maxQueueBytes','maxQueueEvents','idlePauseSeconds','diagnosticIntervalSeconds','jpegQuality','captureMaxSide','batteryPauseBelowPct'] as const) if (number(c[key])) config[key] = c[key];
+  for (const key of ['intervalMs','idlePauseSeconds','diagnosticIntervalSeconds','jpegQuality','captureMaxSide','batteryPauseBelowPct'] as const) if (number(c[key])) config[key] = c[key];
   for (const key of ['diagnosticsEnabled','pauseOnBattery','openAtLogin'] as const) if (typeof c[key] === 'boolean') config[key] = c[key];
   return { version: 1, scope: 'local-support-without-content', exportedAt: new Date().toISOString(),
     app: { platform: process.platform, version: /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(version) ? version : 'unknown', profile: profile.name, defaultProfile: profile.defaultProfile },

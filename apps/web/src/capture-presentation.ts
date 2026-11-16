@@ -17,8 +17,8 @@ export function evidencePresentation(capture: Pick<Capture, 'id' | 'source' | 'p
     : nativeFile ? moteText("文件元信息")
     : imported ? moteText("原始文本") : moteText("捕获文本");
   const deleteDescription = nativeFile
-    ? moteText("删除中央文件归档及其派生内容和依赖记忆，并清除已有洞察；来源设备上的原文件保留。")
-    : moteText("删除这条原始记录及不再被引用的影像，并清除依赖记忆和已有洞察。") + (capture.provenance?.document?.fileId ? moteText("导入仍保留原始文件与解析资料；如需一并删除，请到导入页删除整次导入。") : '');
+    ? moteText("删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。")
+    : moteText("删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。") + (capture.provenance?.document?.fileId ? moteText("导入仍保留原始文件与解析资料；如需一并删除，请到导入页删除整次导入。") : '');
   return {nativeFile, textLabel, deleteDescription};
 }
 

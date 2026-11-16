@@ -553,8 +553,11 @@ export class ImportStore {
     if(!retainedSharedSource){
       const records=this.store.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=?').all(job.sourceId) as {capture_id:string}[];
       for(const record of records)captures+=this.store.delete(record.capture_id).deleted;
-      this.store.db.prepare('DELETE FROM source_heads WHERE source_id=?').run(job.sourceId);
-      this.store.db.prepare('DELETE FROM source_connections WHERE id=?').run(job.sourceId);
+      const db=this.store.db;db.exec('BEGIN IMMEDIATE');try{
+        this.store.revokeReleasedMemory({sourceId:job.sourceId});
+        db.prepare('DELETE FROM source_heads WHERE source_id=?').run(job.sourceId);
+        db.prepare('DELETE FROM source_connections WHERE id=?').run(job.sourceId);db.exec('COMMIT');
+      }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
     }
     this.store.db.prepare('DELETE FROM execution_operation_steps WHERE operation_id=?').run(`import:${id}`);this.store.db.prepare('DELETE FROM operation_parents WHERE parent_id=?').run(`import:${id}`);
     this.store.db.prepare('DELETE FROM import_jobs WHERE id=?').run(id);this.attribution.pruneUnbound(id);rmSync(job.workspace,{recursive:true,force:true});

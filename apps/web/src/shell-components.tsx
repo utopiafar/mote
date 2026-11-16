@@ -640,7 +640,7 @@ export function EvidenceDialog({
           </div>
         )}
         {capture&&(confirm&&capture.deletion?.available?<footer className="evidence-dock evidence-footer">
-          <p>{capture.deletion?.kind==='file'?moteText('删除中央文件归档及其派生内容和依赖记忆，并清除已有洞察；来源设备上的原文件保留。'):presentation?.deleteDescription}{moteText("此操作无法撤销。")}</p>
+          <p>{capture.deletion?.kind==='file'?moteText('删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。'):presentation?.deleteDescription}{moteText("此操作无法撤销。")}</p>
           <button ref={cancelDelete} className="button subtle" onClick={() => setConfirm(false)} disabled={busy}>{moteText("取消")}</button>
           <button className="button danger" onClick={() => void remove()} disabled={busy}>{busy ? <Spinner label={moteText("确认删除")} /> : moteText("确认删除")}</button>
         </footer>:capture.revisionState!=='historical'&&!presentation?.nativeFile&&<footer className="evidence-dock">

@@ -37,7 +37,7 @@ test('a transport-unknown response keeps the original and retries only after ano
 });
 
 test('a positive file deletion uses the existing file confirmation without exposing a raw target',async t=>{
- const f=await fixture(t,async()=>({deleted:2}),{...original,deletion:{available:true,kind:'file'}});await act(async()=>f.d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());await act(async()=>f.d.querySelector<HTMLButtonElement>('.danger-text')!.click());assert.match(f.d.querySelector('.evidence-footer')!.textContent!,/删除中央文件归档/);assert.match(f.d.querySelector('.evidence-footer')!.textContent!,/来源设备上的原文件保留/);await act(async()=>f.d.querySelector<HTMLButtonElement>('.evidence-footer .danger')!.click());assert.deepEqual(f.events,{closed:1,deleted:1});assert.deepEqual(f.writes,['/api/captures/'+id]);
+ const f=await fixture(t,async()=>({deleted:2}),{...original,deletion:{available:true,kind:'file'}});await act(async()=>f.d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());await act(async()=>f.d.querySelector<HTMLButtonElement>('.danger-text')!.click());assert.match(f.d.querySelector('.evidence-footer')!.textContent!,/删除中央文件原件和解析正文/);assert.match(f.d.querySelector('.evidence-footer')!.textContent!,/来源设备上的原文件保留/);await act(async()=>f.d.querySelector<HTMLButtonElement>('.evidence-footer .danger')!.click());assert.deepEqual(f.events,{closed:1,deleted:1});assert.deepEqual(f.writes,['/api/captures/'+id]);
 });
 
 for(const outcome of ['success','failure'] as const)test('a late '+outcome+' for the old original cannot close or report an error in the next reader',async t=>{
