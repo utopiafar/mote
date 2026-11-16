@@ -180,7 +180,6 @@ export * from './actions.js';
 export * from './execution.js';
 export type {LarkSelection,LarkJob,LarkStatus,LarkCalendar,LarkDocumentSyncStatus} from './lark.js';
 
-export * from './ui-builtins.js';
 
 export type {ProcessingJobView,ProcessingView} from './ui-contracts.js';
 

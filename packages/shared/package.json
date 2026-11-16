@@ -67,6 +67,12 @@
       "require": "./dist/capture-sessions.js",
       "default": "./dist/capture-sessions.js"
     },
+    "./ui-builtins": {
+      "types": "./dist/ui-builtins.d.ts",
+      "import": "./dist/ui-builtins.js",
+      "require": "./dist/ui-builtins.js",
+      "default": "./dist/ui-builtins.js"
+    },
     "./i18n": {
       "types": "./dist/i18n.d.ts",
       "import": "./dist/i18n.js",
@@ -176,6 +182,9 @@
       ],
       "capture-sessions": [
         "dist/capture-sessions.d.ts"
+      ],
+      "ui-builtins": [
+        "dist/ui-builtins.d.ts"
       ],
       "i18n": [
         "dist/i18n.d.ts"

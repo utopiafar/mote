@@ -27,14 +27,26 @@ import {nativeStatusSummary} from './native-status';
 import { renderAskAnswer, renderAskCitation, renderAskScope } from './ask-presentation';
 import {currentTurnCites,prependConversationTurns,resolveAskConversation} from './ask-conversation';
 import { moteText, getLocale } from '@mote/shared/i18n';
-import {builtinUiRules} from '@mote/shared';
 import {createAppCaptureUi,describeCaptureSelection} from './app-capture-ui';
 import {normalizeAppCollectionRules} from './app-collection';
 import { DesktopNavigation, desktopPages, needsCollectionSetup, type DesktopPage } from './navigation';
 import {showSkeleton} from './loading-ui';
 const desktopApi = window.mote;
 const captureContextUi=createCaptureContextUi(desktopApi,document,markSettingsDirty);
-document.getElementById('ui-page-builtins')!.addEventListener('click',()=>{byId<HTMLTextAreaElement>('ui-page-rules').value=JSON.stringify(builtinUiRules,null,2);appCaptureUi.refreshRules();markSettingsDirty();});
+let builtinRulesDraftRevision=0;
+for(const event of ['input','change','submit'])document.getElementById('settings')!.addEventListener(event,()=>{builtinRulesDraftRevision++;},true);
+document.getElementById('settings-reset')!.addEventListener('click',()=>{builtinRulesDraftRevision++;});
+document.getElementById('ui-page-builtins')!.addEventListener('click',()=>void(async()=>{
+  if(busy)return;
+  const editor=byId<HTMLTextAreaElement>('ui-page-rules'),draft=editor.value,draftRevision=builtinRulesDraftRevision,revision=pageRevision,epoch=statusReadEpoch;
+  const owner=()=>JSON.stringify([currentStatus?.authorizationGeneration,currentStatus?.config.deviceId,currentStatus?.config.serverUrl,currentStatus?.config.tokenConfigured,currentStatus?.config.authSignedOut,currentStatus?.config.authExpiresAt,currentStatus?.config.authSourceBinding]);
+  const scope=owner(),current=()=>!busy&&revision===pageRevision&&epoch===statusReadEpoch&&draftRevision===builtinRulesDraftRevision&&editor.value===draft&&scope===owner();
+  try{
+    const {builtinUiRules}=await import('@mote/shared/ui-builtins');
+    if(!current())return;
+    editor.value=JSON.stringify(builtinUiRules,null,2);appCaptureUi.refreshRules();markSettingsDirty();
+  }catch(error){if(current())renderReadableFailure(byId('feedback'),moteText('操作未完成，请检查权限与配置后重试'),error instanceof Error?error.message:String(error));}
+})());
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 let currentStatus: import('./contracts').Status;
 let sourceSyncPreview:ReturnType<typeof createSourceSyncPreview>|undefined;
