@@ -348,7 +348,7 @@ test('long Coding conversations cover every original character through bounded i
  assert.equal(node.store.archive.page({kind:'semantic'}).items.length,job.totalBatches);
 });
 
-test('600k process text stays excluded while a long final reply remains readable through bounded batches',{timeout:15000},async t=>{
+test('600k hidden analysis stays excluded while a long final reply remains readable through bounded batches',{timeout:15000},async t=>{
  const tail='Generated final correction: physical-device checks are still pending.',final='Generated long final report: '+('y'.repeat(14000))+'\n'+tail;
  const covered:{id:string;offset:number;length:number}[]=[];let calls=0;
  const secrets=[toolSecret,'PRIVATE_PROCESS','PRIVATE_REASONING','PRIVATE_HOST_SUMMARY','PRIVATE_HOST_ENVELOPE','PRIVATE_UNKNOWN'];
@@ -363,7 +363,7 @@ test('600k process text stays excluded while a long final reply remains readable
   return response(range.id,quote,{summary:'Generated bounded final report; validation remains unverified',evidence,workRecords:[],
    events:text.includes(tail)?[{statement:'Assistant reports physical-device checks remain pending',actor:'assistant',status:'unknown',basis:'assistant_reported',sourceTime:null,uncertainty:'Assistant report only',evidence}]:[],memoryCandidates:[],actionCues:[]});
  });
- const process=Array.from({length:60},(_,i)=>{const item=event('process-'+i,'assistant','PRIVATE_PROCESS '+('x'.repeat(9980)));return {...item,document:{...item.document,coding:{...item.document!.coding!,channel:'commentary'}}};});
+ const process=Array.from({length:60},(_,i)=>{const item=event('process-'+i,'assistant','PRIVATE_PROCESS '+('x'.repeat(9980)));return {...item,document:{...item.document,coding:{...item.document!.coding!,channel:'analysis'}}};});
  const host=event('host','user','PRIVATE_HOST_SUMMARY');host.document!.coding!.attribution='host';
  const embedded=event('embedded','user','<environment_context>PRIVATE_HOST_ENVELOPE</environment_context>\nGenerated owner: Keep the travel date undecided.');
  const unknown=event('unknown','assistant','PRIVATE_UNKNOWN');delete unknown.document!.coding!.channel;
