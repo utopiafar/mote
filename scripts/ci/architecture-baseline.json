@@ -142,22 +142,6 @@
   },
   {
     "rule": "comment-card-number",
-    "from": "apps/server/src/assembly/work.ts",
-    "to": "H14",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/assembly/work.ts",
-    "to": "K04",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
     "from": "apps/server/src/bootstrap.ts",
     "to": "C02",
     "kind": "comment",
@@ -176,22 +160,6 @@
     "rule": "comment-card-number",
     "from": "apps/server/src/bootstrap.ts",
     "to": "H04",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/bootstrap.ts",
-    "to": "H05",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/bootstrap.ts",
-    "to": "H14",
     "kind": "comment",
     "symbol": "count:1",
     "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
@@ -314,22 +282,6 @@
     "to": "C11",
     "kind": "comment",
     "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugin-center.ts",
-    "to": "C08",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugin-center.ts",
-    "to": "H04",
-    "kind": "comment",
-    "symbol": "count:2",
     "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
   },
   {
@@ -746,38 +698,6 @@
     "to": "H14",
     "kind": "comment",
     "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/insight-services.ts",
-    "to": "H03",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/insight-services.ts",
-    "to": "H05",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/insight-services.ts",
-    "to": "H14",
-    "kind": "comment",
-    "symbol": "count:2",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/insight-services.ts",
-    "to": "K04",
-    "kind": "comment",
-    "symbol": "count:3",
     "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
   },
   {
@@ -1723,5 +1643,677 @@
     "kind": "runtime",
     "symbol": "Store",
     "reason": "Existing Vault boundary debt: the Vault platform still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/agent.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/connectors.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/imports.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/materials.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/memory.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/platform.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/processing.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/query.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/sources.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assembly/work.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-cards.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-change-feed.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-commitments.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-drafts.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-followup-routes.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-followup.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-matter-routes.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-matters.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-notifications.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-onboarding.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-routines.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-tasks.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/assistant-workbench.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/background-model-authorization.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/batch-processing.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/capture-memory-intake.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/connections.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/connectors/index.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/connectors/registry.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/conversation-history.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/conversation-lineage.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/conversation-understanding.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/developer-access.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/dsh-configuration.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/dsh-native.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/evidence-exposure.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/evidence-image.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/evidence-reader.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/execution-engine.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/execution-failures.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/execution-observability.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/execution-settings.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/capture.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/connections.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/developer-access.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/devices.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/features.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/files.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/media.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/memory/associations.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/notes.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/sources.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/features/system.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/file-attachments.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/file-processing.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/file-raw-reader.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/file-routes.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/imports.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/ingress.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/memory-image-grants.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/memory-lifecycle.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/memory-pipeline.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/model-agent.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/model-authorization-host.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/model-catalog.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/model-configuration.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/model-evidence-authority.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/model-settings.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/notification-configuration.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/operation-projection.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugin-center.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugin-release.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/agent-read-tools.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/c10-integration.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/capture-intake.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/central-contracts.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/domain-routes.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/outbound-export-host.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/plugin-control-http.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/processing-plugin-host.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/plugins/query-preparation.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/processing-configuration.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/query-agent.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/query-model-budget.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/query-scope.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/query-source-scope.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/raw-reader.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/semantic-extraction.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/source-context-lineage.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/store.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/usage.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "apps/server/src/working-memory.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "packages/agent/src/index.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "packages/shared/src/index.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "packages/shared/src/index.ts",
+    "kind": "type",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
+  },
+  {
+    "rule": "server-host-allowlist",
+    "from": "apps/server/src/host.ts",
+    "to": "packages/shared/src/model-providers.ts",
+    "kind": "runtime",
+    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
   }
 ]

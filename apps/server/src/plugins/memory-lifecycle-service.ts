@@ -48,7 +48,7 @@ export interface MemoryLifecycleServiceDependencies {
   readonly integrationSettings:MemoryIntegrationSettings;
   readonly semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
   readonly providerCooldownCheck?:()=>void;
-  readonly insights?:InsightRuns;
+  readonly insights?:InsightRuns|false;
   readonly insightTimeout?:()=>number|null;
   readonly query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;
   readonly model:()=>string;

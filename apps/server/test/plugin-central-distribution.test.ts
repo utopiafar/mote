@@ -16,7 +16,8 @@ import {plugins as queryPlugins} from '../src/assembly/query.js';
 import {plugins as agentPlugins} from '../src/assembly/agent.js';
 import {plugins as workPlugins} from '../src/assembly/work.js';
 import {plugins as importPlugins} from '../src/assembly/imports.js';
-import type {CentralDistribution,FoundationProvider} from '../src/bootstrap.js';
+import type {CentralDistribution,CentralDomainPlugin,FoundationProvider} from '../src/bootstrap.js';
+import {Store} from '../src/store.js';
 import type {Config} from '../src/config.js';
 import {FUNASR_PINS} from '../src/funasr-contract.js';
 
@@ -175,4 +176,92 @@ test('[M] disabling Memory or Ask surfaces keeps capture and legitimate reads li
   assert.equal((await node.app.inject({url:'/api/memory-jobs',headers})).statusCode,404);
   assert.equal((await node.app.inject({url:'/api/query-runs',headers})).statusCode,404);
   assert.equal((await node.app.inject({url:'/api/context/search?query=Generated',headers})).statusCode,200);
+});
+
+test('a new built-in domain executes and mounts by distribution registration alone',async t=>{
+  const {config,headers}=fixture(t),events:string[]=[];
+  const plugin:CentralDomainPlugin={
+    contribution:{id:'generated-domain',version:'1.0.0',surface:'data',runtime:'host',provides:[]},
+    declaration:{id:'generated-domain',apiVersion:'1'},replacement:'hot',
+    activation:{featureId:'mote.generated-domain',requires:{},create(context){
+      events.push('create');context.scope.defer(()=>{events.push('release');});
+      let active=false;
+      return {
+        prepare(){events.push('prepare');},start(){active=true;events.push('start');},
+        quiesce(){active=false;events.push('quiesce');},stop(){active=false;events.push('stop');},dispose(){events.push('dispose');},
+        route:{id:'mote.generated-domain',mount(app){app.get('/api/generated-domain',async()=>{assert.ok(active,'a quiesced domain must be fenced before dispatch');return {generated:true};});}},
+      };
+    }},
+  };
+  const distribution:CentralDistribution={...defaultDistribution,features:[...defaultFeatures,'mote.generated-domain'],plugins:[...defaultPlugins,plugin]};
+  const unselected=await buildApp(config,{agent,backgroundWorker:false,distribution:{...distribution,features:defaultFeatures}});
+  t.after(()=>unselected.app.close());
+  assert.equal((await unselected.app.inject({url:'/api/generated-domain',headers})).statusCode,404);
+  await unselected.app.close();assert.deepEqual(events,[],'an unselected declaration cannot invoke its factory or cleanup');
+  const node=await buildApp(config,{agent,backgroundWorker:false,distribution});t.after(()=>node.app.close());
+  assert.deepEqual(events,['create','prepare','start']);
+  assert.deepEqual((await node.app.inject({url:'/api/generated-domain',headers})).json(),{generated:true});
+  const inventory=(await node.app.inject({url:'/api/features',headers})).json();
+  assert.ok(inventory.capabilities.some((item:{featureId:string;id:string})=>item.featureId==='mote.generated-domain'&&item.id==='http:GET:/api/generated-domain'));
+  assert.equal(node.bootstrap.snapshot().contributions.filter(item=>item.identity.contributionId==='generated-domain').length,1);
+  const domains=await node.bootstrap.activateDomains();
+  await domains.quiesce();
+  assert.equal((await node.app.inject({url:'/api/generated-domain',headers})).statusCode,503);
+  assert.equal((await node.app.inject({url:'/api/insight-runs',headers})).statusCode,503,'the real insights activation follows the same host lifecycle');
+  assert.equal((await node.app.inject({url:'/api/assistant-cards',headers})).statusCode,503,'companion routes are fenced with their feature activation');
+  await domains.close();
+  await node.app.close();
+  for(const event of ['stop','dispose','release'])assert.equal(events.filter(value=>value===event).length,1,`${event} must run once`);
+  assert.equal(node.bootstrap.snapshot().contributions.length,0);
+});
+
+test('unselected insight feature or plugin creates no run manager and no Memory fallback',async t=>{
+  for(const selection of ['feature','plugin'] as const)await t.test(selection,async t=>{
+    const {config,headers}=fixture(t),input=note();
+    const distribution:CentralDistribution={...defaultDistribution,
+      ...(selection==='feature'?{features:defaultFeatures.filter(id=>id!=='mote.insights')}:{plugins:defaultPlugins.filter(plugin=>plugin.contribution.id!=='insight-services')})};
+    const node=await buildApp({...config,insightIntervalHours:1},{agent,backgroundWorker:false,distribution});t.after(()=>node.app.close());
+    await node.app.ready();
+    assert.equal(node.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='insight_runs'").get(),undefined,'neither assembly nor Memory may open a hidden insight manager');
+    assert.ok(!node.bootstrap.snapshot().contributions.some(item=>item.identity.contributionId.startsWith('insight-services')));
+    assert.ok(!node.lifecycle.view().extensions.some(extension=>extension.id==='insights'),'Memory must not register its implicit insight constructor');
+    assert.throws(()=>node.insightRuns,/Insights plugin is not selected/);
+    for(const url of ['/api/insights','/api/insight-runs','/api/assistant-cards'])assert.equal((await node.app.inject({url,headers})).statusCode,404,url);
+    assert.equal((await node.app.inject({method:'POST',url:'/api/notes',headers,payload:input})).statusCode,201);
+    assert.equal((await node.app.inject({url:`/api/notes/${input.id}`,headers})).json().ocrText,input.text);
+    assert.equal((await node.app.inject({url:'/api/insights',headers})).statusCode,404);
+    const inventory=(await node.app.inject({url:'/api/features',headers})).json();
+    assert.ok(!inventory.features.some((item:{id:string})=>item.id==='mote.insights'));
+  });
+});
+
+test('a failing declared domain releases accepted resources and permits the same profile to reopen',async t=>{
+  const {config}=fixture(t),primary=Error('generated domain start failure');let acquired=0,released=0,preparedStore:Store|undefined;
+  const plugin:CentralDomainPlugin={
+    contribution:{id:'generated-failing-domain',version:'1.0.0',surface:'data',runtime:'host'},declaration:{id:'generated-failing-domain',apiVersion:'1'},replacement:'hot',
+    activation:{featureId:'mote.generated-failing-domain',requires:{},create(context){
+      acquired++;context.scope.defer(()=>{released++;});
+      return {prepare(){},start(){throw primary;},quiesce(){},stop(){},dispose(){},route:{id:'mote.generated-failing-domain',mount(){throw Error('A failed domain cannot mount');}}};
+    }},
+  };
+  const distribution:CentralDistribution={...defaultDistribution,features:[...defaultFeatures,'mote.generated-failing-domain'],plugins:[...defaultPlugins,plugin],
+    foundations:defaultDistribution.foundations.map(provider=>provider.kind==='storage'?{...provider,async create(context,input){const value=await storageProvider.create(context,input);preparedStore=value.store;return value;}}:provider)};
+  await assert.rejects(buildApp(config,{agent,backgroundWorker:false,distribution}),error=>error===primary);
+  assert.deepEqual({acquired,released},{acquired:1,released:1});
+  assert.ok(preparedStore);assert.throws(()=>preparedStore!.stats(),'startup rollback must close the first vault');
+  const reopened=await buildApp(config,{agent,backgroundWorker:false});t.after(()=>reopened.app.close());
+  assert.ok(reopened.insightServices.available,'the real insight manager must reopen after rollback');
+  assert.equal((await reopened.app.inject({url:'/api/insight-runs',headers:{authorization:`Bearer ${config.token}`}})).statusCode,200);
+});
+
+test('an unavailable declared binding refuses startup before invoking its consumer factory',async t=>{
+  const {config}=fixture(t);let created=0;
+  const plugin:CentralDomainPlugin={
+    contribution:{id:'generated-unbound-domain',version:'1.0.0',surface:'data',runtime:'host'},declaration:{id:'generated-unbound-domain',apiVersion:'1'},replacement:'hot',
+    activation:{featureId:'mote.generated-unbound-domain',requires:{input:{provider:'generated-missing-provider',service:{id:'generated.missing-api',apiVersion:'1'}}},create(){created++;throw Error('Unbound consumer cannot acquire resources');}},
+  };
+  const distribution:CentralDistribution={...defaultDistribution,features:[...defaultFeatures,'mote.generated-unbound-domain'],plugins:[...defaultPlugins,plugin]};
+  await assert.rejects(buildApp(config,{agent,backgroundWorker:false,distribution}),{code:'dependency_unavailable'});
+  assert.equal(created,0);
+  const reopened=new Store(config.dataDir);reopened.close();
 });

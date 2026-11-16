@@ -20,19 +20,24 @@ import {requestLocale} from '../i18n.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import {createOwnerQuestionServices} from '../plugins/owner-question-services.js';
-import {createInsightServices,openInsightRuns,type InsightServices,type InsightServicesDependencies} from '../plugins/insight-services.js';
+import {insightServicesPlugin,insightServicesInputsContribution,insightServicesInputsDeclaration,insightServicesInputsContract,insightServicesContract,type InsightServices} from '../plugins/insight-services.js';
+import {insightServiceInputs} from '../insight-service-inputs.js';
+import {insightAssistantFeature} from '../features/insights.js';
+import {randomUUID} from 'node:crypto';
 import type {Connections,ConnectionCredential} from '../connections.js';
 import type {PluginCenter} from '../plugin-center.js';
 import type {SourceStore} from '../sources.js';
-import type {CentralDomainPlugin} from '../bootstrap.js';
+import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import {actionsServicesContribution,actionsServicesDeclaration,actionsServicesReplacement,createActionsServices} from '../plugins/actions-services.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createActivityServices} from '../plugins/activity-services.js';
 
-/** ACT01's declared build-time domain plugin. The pre-H14 feature bridge mounts
- * the same route contribution until app.ts construction moves behind K04. */
+/** Work-domain selections. Insights has an executable activation; Actions
+ * retains its existing assembly bridge until its own domain moves. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:actionsServicesContribution,declaration:actionsServicesDeclaration,replacement:actionsServicesReplacement},
+  {contribution:insightServicesInputsContribution,declaration:insightServicesInputsDeclaration,replacement:'restart'},
+  insightServicesPlugin,
 ]);
 
 export interface WorkInputDependencies {
@@ -59,33 +64,44 @@ export function workInputs(dependencies:WorkInputDependencies){
   return Object.freeze({ownerQuestions,ownerQuestionServices});
 }
 
-export interface InsightRunsAssemblyDependencies {
-  readonly store:Store;
+export type WorkDomainDependencies=Parameters<typeof insightServiceInputs>[0]&{
+  readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly resources:ServerResources;
-  readonly executor:ExecutionEngine;
-  readonly evidenceReader:EvidenceReader;
-  readonly query:InsightServicesDependencies['query'];
-  readonly modelAuthorization:ModelAuthorizationHost;
-  readonly availableModelConnections:()=>ModelConnection[];
-  readonly agent:Pick<AgentRuntimeRegistry,'configuredFor'>;
-  readonly modelSettings:Pick<import('../model-settings.js').ModelSettingsStore,'select'>;
-  readonly isClosing:()=>boolean;
-  readonly diagnostics:Pick<ServerDiagnostics,'run'>;
 }
 
-/** Durable insight run manager plus its owned HTTP activation. */
-export function assembleInsightRuns(dependencies:InsightRunsAssemblyDependencies){
-  const insightRuns=openInsightRuns(dependencies.store,{executor:dependencies.executor,evidenceReader:dependencies.evidenceReader});
-  dependencies.resources.defer(()=>insightRuns.close());
-  const insightServices:InsightServices=createInsightServices({
-    runs:insightRuns,query:dependencies.query,modelAuthorization:dependencies.modelAuthorization,
-    availableModelConnections:dependencies.availableModelConnections,agent:dependencies.agent,modelSettings:dependencies.modelSettings,
-    isClosing:dependencies.isClosing,diagnostics:dependencies.diagnostics,
-    readHistory:query=>dependencies.store.insights(query),readReport:id=>dependencies.store.insight(id),
+/** Publish only the private typed adapter. The selected declaration, common
+ * loader and plugin lifecycle create the domain and contribute its routes. */
+export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
+  const {bootstrap,resources,...inputs}=dependencies;
+  const selected=bootstrap.selectsFeature('mote.insights')&&bootstrap.selectsPlugin(insightServicesPlugin.contribution.id);
+  if(selected){
+    if(!bootstrap.selectsPlugin(insightServicesInputsContribution.id))throw Error('Insights input provider is not selected');
+    const handle=await bootstrap.host.install({
+      identity:{host:bootstrap.host.identity,packageId:insightServicesInputsContribution.id,installationId:'build:insight-services-inputs@1.0.0',instanceId:'insight-inputs',activationId:randomUUID()},
+      contributions:[insightServicesInputsDeclaration],restartRequired:true,
+      factory(context){
+        const value=insightServiceInputs(inputs);
+        bootstrap.registerDomainService(context.provide(insightServicesInputsContribution.id,insightServicesInputsContract,value));
+        return {prepare(){},start(){},quiesce(){},stop(){},dispose(){}};
+      },
+    });
+    resources.defer(()=>handle.close('shutdown'));
+  }
+  const domains=await bootstrap.activateDomains();
+  resources.beforeClose(()=>domains.quiesce());resources.defer(()=>domains.close());
+  let insights:InsightServices|undefined;
+  if(selected){
+    const lease=await bootstrap.acquireDomainService(insightServicesPlugin.contribution.id,insightServicesContract);
+    resources.defer(()=>lease.release());insights=lease.value;
+  }
+  const current=()=>{if(!insights)throw Error('Insights plugin is not selected');return insights;};
+  return Object.freeze({
+    routes:domains.routes,insights,
+    get insightServices(){return current();},get insightRuns(){return current().runs;},
+    contributeAssistantRoutes(context:Context,cards:Parameters<typeof insightAssistantFeature>[1]){
+      if(insights)contributeDomainRoutes(context,{'mote.insights':insightAssistantFeature(insights,cards)});
+    },
   });
-  insightServices.prepare();insightServices.start();
-  dependencies.resources.defer(()=>insightServices.close());
-  return Object.freeze({insightRuns,insightServices});
 }
 
 export interface ActionsAssemblyDependencies {

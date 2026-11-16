@@ -302,6 +302,15 @@ function agentRuntimeCycles(nodes){
 export function architectureViolations({nodes,browserEntries,unresolved=[]}){
   const issues=[];
   const desktopContract=file=>file==='apps/desktop/src/contracts.ts'||inside(file,'apps/desktop/src/contracts');
+  // The host composes infrastructure. Remaining domain dependencies are
+  // concrete, temporary baseline entries, never additions to this allowlist.
+  const hostInfrastructure=new Set([
+    '@deepseek-ai/cordis','@fastify/cors','@fastify/static','fastify','zod',
+    'apps/server/src/bootstrap.ts','apps/server/src/config.ts','apps/server/src/config-service.ts',
+    'apps/server/src/diagnostics.ts','apps/server/src/server-resources.ts','apps/server/src/i18n.ts',
+    'apps/server/src/assembly/lifecycle.ts','apps/server/src/features/index.ts',
+    'packages/shared/src/i18n.ts',
+  ]);
   for(const edges of nodes.values())for(const edge of edges){
     const runtime=edge.kind==='runtime';
     let rule;
@@ -311,6 +320,7 @@ export function architectureViolations({nodes,browserEntries,unresolved=[]}){
     const serverAssemblyOwner=['apps/server/src/index.ts','apps/server/src/start-server.ts'].includes(edge.from);
     if(runtime&&inside(edge.from,'apps/server/src')&&['apps/server/src/index.ts','apps/server/src/app.ts'].includes(edge.to)&&!(edge.to==='apps/server/src/app.ts'&&serverAssemblyOwner))rule='server-no-assembly-import';
     if(edge.from==='apps/server/src/app.ts'&&inside(edge.to,'apps/server/src')&&!['apps/server/src/host.ts','apps/server/src/config.ts'].includes(edge.to))rule='server-app-no-business-import';
+    if(edge.from==='apps/server/src/host.ts'&&edge.specifier!==null&&!nodeBuiltin(edge.to)&&!hostInfrastructure.has(edge.to))rule='server-host-allowlist';
     if(desktopContract(edge.from)&&inside(edge.to,'apps/desktop/src')&&!desktopContract(edge.to))rule='desktop-contract-leaf';
     if(runtime&&inside(edge.from,'apps/web/src')){
       const ownsAssembly=edge.from==='apps/web/src/main.tsx'||edge.from==='apps/web/src/boot.ts'&&edge.to==='apps/web/src/main.tsx';
