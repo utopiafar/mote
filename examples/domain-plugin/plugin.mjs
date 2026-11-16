@@ -7,8 +7,10 @@ export const manifest = {
   title: 'Template collection domain',
   version: '0.1.0',
   contributions: [
-    {id: 'template-collection.port', version: '1', surface: 'data', entry: 'plugin.mjs'},
+    {id: 'template-collection.port', version: '1', surface: 'data', runtime: 'service', entry: 'plugin.mjs',
+      provides: [{kind: 'service', id: 'template.collection.log', apiVersion: '1', cardinality: 'single'}], capabilities: ['collection.state']},
   ],
+  capabilities: ['collection.state'],
   required: [],
   optional: [],
 };

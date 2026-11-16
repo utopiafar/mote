@@ -124,7 +124,7 @@ test('archive validation rejects traversal, missing entries and tampered payload
   assert.throws(() => validatePluginArchive(zipSync({'other.mjs': new Uint8Array([0])}), packed.manifest));
 });
 
-test('validation rejects a service runtime without ingress or processing contributions', () => {
+test('validation requires an ingress, processing or service-runtime data contribution', () => {
   assert.deepEqual(releaseCompatibilityFailures(manifest), []);
   assert.deepEqual(releaseCompatibilityFailures({...manifest, runtime: 'service'}).map(failure => failure.code), ['unsupported_runtime']);
   assert.deepEqual(releaseCompatibilityFailures({
@@ -132,6 +132,9 @@ test('validation rejects a service runtime without ingress or processing contrib
     contributions: [{id: 'generated.ingress', version: '1', surface: 'ingress', runtime: 'service', entry: 'plugin.mjs', capabilities: ['source.connector']}],
     capabilities: ['source.connector'],
   }), []);
+  assert.deepEqual(releaseCompatibilityFailures({...manifest,runtime:'service',contributions:[{id:'generated.domain',version:'1',surface:'data',runtime:'service',entry:'plugin.mjs'}]}),[]);
+  assert.deepEqual(releaseCompatibilityFailures({...manifest,runtime:'service',contributions:[{id:'generated.page',version:'1',surface:'page',runtime:'host'}]}).map(failure=>failure.code),['unsupported_runtime']);
+  assert.deepEqual(releaseCompatibilityFailures({...manifest,runtime:'service',contributions:[{id:'generated.data',version:'1',surface:'data',runtime:'host'}]}).map(failure=>failure.code),['unsupported_runtime']);
 });
 
 test('a packed release is accepted by the real GitHubPluginReleases resolve/install/verify consumer', async t => {

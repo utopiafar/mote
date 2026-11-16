@@ -15,8 +15,9 @@ import type {PluginLifecycle,ServiceBinding,ScopeIdentity} from '@mote/plugin-ap
 import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext} from '@mote/plugin-host';
 import {centralServices} from './plugins/central-contracts.js';
 import {officialPluginCatalog} from './official-plugin-catalog.js';
-import {assertServicePackageSupported,connectorFromModule,isOutboundExportCapability,isProcessingCapability,loadServicePackageModule,outboundExportFromModule,processingPluginFromModule,servicePackageSurfaces,type OutboundExportDescriptor} from './plugins/service-plugin-loader.js';
+import {assertServicePackageSupported,connectorFromModule,domainContributions,domainDependencies,domainPluginFromModule,isOutboundExportCapability,isProcessingCapability,loadServicePackageModule,outboundExportFromModule,processingPluginFromModule,servicePackageSurfaces,type OutboundExportDescriptor} from './plugins/service-plugin-loader.js';
 import type {ProcessingPluginHost} from './plugins/processing-plugin-host.js';
+import {createDomainPlugin} from './plugins/domain-plugin-host.js';
 import {resolvePluginSecretReference} from './plugins/secret-reference.js';
 import type {ConnectorActivation} from './connectors/types.js';
 import type {ConnectorManifest} from './connectors/registry.js';
@@ -55,7 +56,7 @@ export type BuiltinActionDispatch=(input:{connectorId:string;target:CentralConne
 const configurationSchema=z.record(z.union([z.string(),z.number().finite(),z.boolean()]));
 const instanceSchema=z.object({name:z.string().trim().min(1).max(160),scope:z.literal('default'),configuration:configurationSchema,expectedRevision:z.number().int().positive(),operationId:z.string().uuid()}).strict();
 export type StoredPackage=BuildPackageRecord;
-type StoredInstance=BuildInstanceRecord;
+type StoredInstance=BuildInstanceRecord&{domainChecked?:string};
 type StoredBuild=BuildInstance&{package?:StoredPackage;instance?:StoredInstance};
 const healthSchema=z.object({capabilities:z.array(z.object({id:z.string(),state:z.enum(['verified','unsupported','unknown']),reason:z.string().optional()}).strict()),issues:z.array(z.string()).default([])}).strict();
 
@@ -71,7 +72,7 @@ export class PluginCenter {
   private accepting=true;
   private closed=false;
   private readonly builds=new Map<string,TrustedPluginBuild>();
-  private readonly buildHandles=new Map<string,{handle:PluginHandle;selection:BuildSelection}>();
+  private readonly buildHandles=new Map<string,{handle:PluginHandle;selection:BuildSelection;bindings:ServiceBinding[]}>();
   private readonly applying=new Map<string,Promise<void>>();
   private restored=false;
   private closing?:Promise<void>;
@@ -92,6 +93,7 @@ export class PluginCenter {
   /** Registration-only bridge into the existing processing owners. */
   processingHost?:ProcessingPluginHost;
   private readonly processingInstances=new Map<string,{controller:AbortController;handle?:PluginHandle}>();
+  private readonly domainInstances=new Map<string,{controller:AbortController;handle?:PluginHandle;bindings:ServiceBinding[]}>();
   private readonly serviceEpochs=new Map<string,number>();
   /** Bound after built-in connectors start. Selecting or authorizing one never
    * executes; the same host dispatcher revalidates it on every action. */
@@ -121,8 +123,9 @@ export class PluginCenter {
       },
       commit:(step,result)=>{const instance=this.instance(String(step.input.instanceId)),health=healthSchema.parse(result),pkg=this.package(instance.view.packageId);
         instance.view.capabilities=pkg.manifest.capabilities.map(id=>health.capabilities.find(capability=>capability.id===id)??{id,state:'unknown',reason:'The runtime did not verify this capability'});
+        instance.domainChecked=pkg.manifest.runtime==='service'&&servicePackageSurfaces(pkg.manifest).data&&!health.issues.length?this.configurationIdentity(instance.view.id):undefined;
         instance.view.issues=health.issues;instance.view.observed=health.issues.length||instance.view.capabilities.some(value=>value.state==='unknown')?'blocked':'ready';instance.view.revision++;delete instance.stepId;this.saveInstance(instance);this.bump();},
-      project:step=>{if(['failed','blocked','stale','cancelled'].includes(step.state)){const instance=this.instance(String(step.input.instanceId));if(instance.stepId!==step.id)return;instance.view.observed='blocked';instance.view.issues=[step.error??'plugin_check_failed'];instance.view.capabilities=instance.view.capabilities.map(value=>({...value,state:'unknown',reason:'Capability check did not complete'}));this.saveInstance(instance);}},
+      project:step=>{if(['failed','blocked','stale','cancelled'].includes(step.state)){const instance=this.instance(String(step.input.instanceId));if(instance.stepId!==step.id)return;delete instance.domainChecked;instance.view.observed='blocked';instance.view.issues=[step.error??'plugin_check_failed'];instance.view.capabilities=instance.view.capabilities.map(value=>({...value,state:'unknown',reason:'Capability check did not complete'}));this.saveInstance(instance);}},
       classify:()=>new ExecutionFailure('blocked','plugin_check_requires_attention'),
     }));
   }
@@ -169,6 +172,7 @@ export class PluginCenter {
     memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
     connectorService:{runtime:'service',factoryExports:['connector','default'],surfaces:['ingress'],supportedCapabilities:['source.connector']},
     processingService:{runtime:'service',factoryExports:['backendPlugin','outboundExport','default'],surfaces:['processing'],supportedCapabilities:['processing.pack','outbound.export']},
+    domainService:{runtime:'service',factoryExports:['manifest','createPlugin'],surfaces:['data'],dependencies:'active-exact-typed-bindings'},
   };}
   private sourceContributions(packages:StoredPackage[],instances:PluginInstanceView[]):PluginSourceContribution[]{
     const result:PluginSourceContribution[]=[];
@@ -187,9 +191,10 @@ export class PluginCenter {
     }
     return result;
   }
-  instanceView(id:string):PluginInstanceView{const record=this.instanceBuild(id),{view,stepId}=this.instance(id),references=this.references(id),pending=stepId&&['waiting','running'].includes(this.executor.get(stepId)?.state??'');
+  private instanceChecked(instance:StoredInstance){return instance.view.capabilities.every(value=>value.state!=='unknown')&&(instance.view.capabilities.some(value=>value.state==='verified')||instance.domainChecked!==undefined&&instance.domainChecked===(instance.configurationId??sha256(JSON.stringify(instance.view.configuration))));}
+  instanceView(id:string):PluginInstanceView{const record=this.instanceBuild(id),instance=this.instance(id),{view,stepId}=instance,references=this.references(id),pending=stepId&&['waiting','running'].includes(this.executor.get(stepId)?.state??'');
     if(!record||record.retired)return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};
-    return {...view,issues:[...view.issues,...references],allowedActions:pending?[]:[...(!view.desired&&!references.length?['configure' as const,'check' as const]:[]),...(view.desired?['disable' as const]:!view.issues.length&&view.capabilities.every(value=>value.state!=='unknown')&&view.capabilities.some(value=>value.state==='verified')?['enable' as const]:[])]};
+    return {...view,issues:[...view.issues,...references],allowedActions:pending?[]:[...(!view.desired&&!references.length?['configure' as const,'check' as const]:[]),...(view.desired?['disable' as const]:!view.issues.length&&this.instanceChecked(instance)?['enable' as const]:[])]};
   }
   /** Only installed, checked, enabled instances and built-in cloud connectors
    * with an explicit write scope supply execution declarations. */
@@ -377,7 +382,14 @@ export class PluginCenter {
         catch(error){signal.throwIfAborted();issues.push(error instanceof Error?error.message:'processing_export_invalid');}
       }
     }
-    for(const id of pkg.manifest.capabilities)if(!capabilities.some(value=>value.id===id)&&!issues.length)capabilities.push({id,state:'unknown',reason:'Requires a capability check'});
+    if(surfaces.data){
+      try{await this.installDomain(instanceId,module,false,signal);capabilities.push(...pkg.manifest.capabilities.filter(id=>domainContributions(pkg.manifest).some(value=>value.capabilities?.includes(id))).map(id=>({id,state:'verified' as const,reason:'Domain lifecycle and declared ports verified without live publication; enablement is required'})));}
+      catch(error){signal.throwIfAborted();issues.push(error instanceof PluginHostError?error.code:error instanceof Error?error.message:'domain_export_invalid');}
+    }
+    for(const id of pkg.manifest.capabilities)if(!capabilities.some(value=>value.id===id)&&!issues.length){
+      const presentation=pkg.manifest.contributions?.find(value=>['page','theme','layout'].includes(value.surface)&&value.capabilities?.includes(id));
+      capabilities.push({id,state:'unknown',reason:presentation?'Installed '+presentation.surface+' contributions are not loaded by this host':'Requires a capability check'});
+    }
     return {capabilities,issues};
   }
   private async loadConnectorManifest(instanceId:string){
@@ -402,7 +414,7 @@ export class PluginCenter {
       await this.startServiceInstance(instanceId,epoch);
     });
   }
-  private fenceProcessing(instanceId:string){const epoch=(this.serviceEpochs.get(instanceId)??0)+1;this.serviceEpochs.set(instanceId,epoch);this.processingInstances.get(instanceId)?.controller.abort();return epoch;}
+  private fenceProcessing(instanceId:string){const epoch=(this.serviceEpochs.get(instanceId)??0)+1;this.serviceEpochs.set(instanceId,epoch);this.processingInstances.get(instanceId)?.controller.abort();const domain=this.domainInstances.get(instanceId);domain?.controller.abort();void domain?.handle?.close('disabled').catch(()=>{});return epoch;}
   private async installProcessing(instanceId:string,module:Record<string,unknown>,publish:boolean,signal:AbortSignal,epoch?:number){
     if(!this.hostOwner||!this.processingHost)throw new StoreError('Processing host is unavailable',503);
     const plugin=processingPluginFromModule(module),configuration=this.configurationIdentity(instanceId),pkg=this.packageForInstance(instanceId),host=this.hostOwner.host;
@@ -417,9 +429,51 @@ export class PluginCenter {
       current();if(publish)owned.handle=handle;else await handle.close('disabled');
     }catch(error){if(handle)await handle.close('disabled');if(publish&&this.processingInstances.get(instanceId)===owned)this.processingInstances.delete(instanceId);throw error;}
   }
+  private resolveDomainDependencies(instanceId:string){
+    if(!this.hostOwner)throw new StoreError('Domain host is unavailable',503);
+    const host=this.hostOwner.host,snapshot=host.snapshot(),active=(binding:ServiceBinding)=>snapshot.contributions.some(value=>sameScope(value.identity.scope,binding.provider.scope)&&value.identity.contributionId===binding.provider.contributionId&&value.apiVersion===binding.service.apiVersion&&value.availability.state==='active');
+    const providers:{binding:ServiceBinding;packageId:string;version?:string;contributionId:string;contributionVersion?:string;hostId?:string;hostVersion?:string}[]=[];
+    for(const [id,owned] of this.domainInstances){
+      if(id===instanceId||!owned.handle||owned.handle.signal.aborted||!this.instance(id).view.desired)continue;
+      const pkg=this.packageForInstance(id);
+      for(const binding of owned.bindings)if(active(binding))providers.push({binding,packageId:pkg.manifest.id,version:pkg.manifest.version,contributionId:binding.provider.contributionId,contributionVersion:domainContributions(pkg.manifest).find(value=>value.id===binding.provider.contributionId)?.version});
+    }
+    for(const owned of this.buildHandles.values()){
+      if(owned.handle.signal.aborted)continue;const build=this.builds.get(owned.selection.packageId+'@'+owned.selection.version);
+      for(const binding of owned.bindings)if(active(binding))providers.push({binding,packageId:owned.selection.packageId,version:owned.selection.version,contributionId:binding.provider.contributionId,contributionVersion:build?.contribution.version});
+    }
+    for(const fact of this.hostOwner.hostDependencies??[])if(active(fact.binding))providers.push({binding:fact.binding,packageId:fact.binding.provider.scope.packageId,contributionId:fact.binding.provider.contributionId,hostId:fact.id,hostVersion:fact.version});
+    const required=new Map<string,ServiceBinding>(),optional=new Map<string,ServiceBinding>();
+    for(const dependency of domainDependencies(this.packageForInstance(instanceId).manifest)){
+      const matches=providers.filter(value=>dependency.kind==='service'?value.binding.service.id===dependency.id&&value.binding.service.apiVersion===dependency.version:dependency.kind==='package'?value.packageId===dependency.id&&value.version===dependency.version:dependency.kind==='contribution'?value.contributionId===dependency.id&&value.contributionVersion===dependency.version:value.hostId===dependency.id&&value.hostVersion===dependency.version);
+      const owners=new Set(matches.map(value=>JSON.stringify([value.binding.provider.scope,...(dependency.kind==='service'||dependency.kind==='contribution'?[value.contributionId]:[])])));
+      if(owners.size>1)throw new StoreError('Ambiguous domain dependency: '+dependency.id+'@'+dependency.version,409);
+      if(!matches.length){if(dependency.required===false)continue;throw new PluginHostError(dependency.kind==='service'&&providers.some(value=>value.binding.service.id===dependency.id)?'api_incompatible':'dependency_unavailable');}
+      for(const value of matches)(dependency.required===false?optional:required).set(JSON.stringify(value.binding),value.binding);
+    }
+    for(const key of required.keys())optional.delete(key);
+    return {required:[...required.values()],optional:[...optional.values()]};
+  }
+  private async installDomain(instanceId:string,module:Record<string,unknown>,publish:boolean,signal:AbortSignal,epoch?:number){
+    if(!this.hostOwner)throw new StoreError('Domain host is unavailable',503);
+    const pkg=this.packageForInstance(instanceId),factory=domainPluginFromModule(module,pkg.manifest),configuration=this.configurationIdentity(instanceId),host=this.hostOwner.host;
+    const owned={controller:new AbortController(),handle:undefined as PluginHandle|undefined,bindings:[] as ServiceBinding[]};
+    if(publish){const previous=this.domainInstances.get(instanceId);if(previous?.handle)await previous.handle.close('disabled');this.domainInstances.set(instanceId,owned);}
+    const current=()=>{signal.throwIfAborted();owned.controller.signal.throwIfAborted();if(!this.accepting||this.configurationIdentity(instanceId)!==configuration||this.instanceBuild(instanceId)?.retired||publish&&(!this.instance(instanceId).view.desired||this.serviceEpochs.get(instanceId)!==epoch))throw new PluginHostError('stale_scope');};
+    let handle:PluginHandle|undefined;
+    try{
+      current();const dependencies=this.resolveDomainDependencies(instanceId),activation=this.connectorActivation(instanceId);
+      handle=await host.install({identity:{...this.instanceIdentity(instanceId),host:host.identity,activationId:randomUUID()},contributions:domainContributions(pkg.manifest).map(value=>({id:value.id,apiVersion:value.provides![0]!.apiVersion})),requires:[this.hostOwner.binding(),...dependencies.required],optional:dependencies.optional,
+        factory:context=>createDomainPlugin(context,factory,pkg.manifest,Object.freeze({configuration:Object.freeze({...activation.configuration,...activation.secrets}),required:Object.freeze(dependencies.required),optional:Object.freeze(dependencies.optional)}),{publish,signal:AbortSignal.any([signal,owned.controller.signal]),assertCurrent:current,published:binding=>owned.bindings.push(binding)})});
+      current();if(publish){owned.handle=handle;handle.signal.addEventListener('abort',()=>{
+        if(this.admit()||this.domainInstances.get(instanceId)!==owned||!this.instance(instanceId).view.desired||this.serviceEpochs.get(instanceId)!==epoch)return;
+        const instance=this.instance(instanceId);instance.view.desired=false;instance.view.observed='blocked';instance.view.issues=['dependency_unavailable'];instance.view.revision++;this.saveInstance(instance);this.bump();this.admissionChanged?.(instanceId,false);
+      },{once:true});}else await handle.close('disabled');
+    }catch(error){if(handle)await handle.close('disabled');if(publish&&this.domainInstances.get(instanceId)===owned)this.domainInstances.delete(instanceId);throw error;}
+  }
   private async startServiceInstance(instanceId:string,epoch:number){
     const pkg=this.packageForInstance(instanceId),surfaces=servicePackageSurfaces(pkg.manifest);
-    if(!surfaces.ingress&&!surfaces.processing)return;
+    if(!surfaces.ingress&&!surfaces.processing&&!surfaces.data)return;
     let connectorId:string|undefined;
     try{
       this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest);
@@ -441,12 +495,14 @@ export class PluginCenter {
         const module=await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>;
         await this.installProcessing(instanceId,module,true,new AbortController().signal,epoch);
       }
+      if(surfaces.data){const module=await loadServicePackageModule(pkg.directory!,pkg.manifest) as Record<string,unknown>;await this.installDomain(instanceId,module,true,new AbortController().signal,epoch);}
       const instance=this.instance(instanceId);if(instance.view.desired&&this.serviceEpochs.get(instanceId)===epoch){instance.view.observed='ready';instance.view.issues=[];instance.view.revision++;this.saveInstance(instance);this.bump();}
     }catch(error){
       this.activeConnectors.delete(instanceId);
       if(connectorId&&this.connectorHost)try{await this.connectorHost.stop(connectorId);}catch{/* The blocked state below remains the visible fact. */}
       if(this.outboundHost)try{await this.outboundHost.deactivate(instanceId);}catch{/* The blocked state below remains the visible fact. */}
       const processing=this.processingInstances.get(instanceId);this.processingInstances.delete(instanceId);processing?.controller.abort();if(processing?.handle)await processing.handle.close('disabled');
+      const domain=this.domainInstances.get(instanceId);this.domainInstances.delete(instanceId);domain?.controller.abort();if(domain?.handle)await domain.handle.close('disabled');
       const instance=this.instance(instanceId);
       if(instance.view.desired&&this.serviceEpochs.get(instanceId)===epoch){instance.view.observed='blocked';instance.view.desired=false;instance.view.issues=[error instanceof Error?error.message:'service_activation_failed'];instance.view.revision++;this.saveInstance(instance);this.bump();}
     }
@@ -461,6 +517,7 @@ export class PluginCenter {
     if(owned&&this.connectorHost)tasks.push(this.connectorHost.stop(owned.connectorId));
     if(this.outboundHost)tasks.push(this.outboundHost.deactivate(instanceId));
     const processing=this.processingInstances.get(instanceId);this.processingInstances.delete(instanceId);if(processing?.handle)tasks.push(processing.handle.close('disabled'));
+    const domain=this.domainInstances.get(instanceId);this.domainInstances.delete(instanceId);domain?.controller.abort();if(domain?.handle)tasks.push(domain.handle.close('disabled'));
     const results=await Promise.allSettled(tasks),errors=results.flatMap(value=>value.status==='rejected'?[value.reason]:[]);
     if(errors.length){const instance=this.instance(instanceId);instance.view.observed='blocked';instance.view.issues=['service_stop_failed'];this.saveInstance(instance);throw new AggregateError(errors,'Service instance disposal failed');}
   }
@@ -565,7 +622,7 @@ export class PluginCenter {
         const current=this.control.build(id) as StoredBuild;if(!current?.instance)throw new StoreError('Build instance not found',404);if(current.retired)throw new StoreError('Build instance is retired',409);
         const value=current.instance,references=this.references(id);
         if(selection&&references.length)throw new StoreError('Release retained references before replacement',409);
-        const ready=value.view.capabilities.every(capability=>capability.state!=='unknown')&&value.view.capabilities.some(capability=>capability.state==='verified');
+        const ready=this.instanceChecked(value);
         value.view.desired=Boolean(selection);value.view.revision++;value.stepId=undefined;
         const service=this.package(value.view.packageId).manifest.runtime==='service';
         value.view.observed=!selection?(references.length?'draining':'disabled'):ready?(service?'checking':'ready'):'blocked';
@@ -612,6 +669,7 @@ export class PluginCenter {
   async startBuilds(){
     if(this.restored)throw new StoreError('Build startup selection is already consumed',409);
     this.restored=true;
+    const domains:string[]=[];
     for(const record of this.control.builds())if(!record.retired){
       if(bundledConnector(record.id))continue; // The connector assembly restores these before provider initialization.
       if(record.kind==='package')continue;
@@ -620,10 +678,10 @@ export class PluginCenter {
         // Worker package instances resume their persisted desired selection
         // without a second lazy installation path. Service connectors reattach
         // through the live connector host after inventory is available.
-        const ready=record.instance?.view.capabilities.every(capability=>capability.state!=='unknown')&&record.instance.view.capabilities.some(capability=>capability.state==='verified');
+        const ready=record.instance&&this.instanceChecked(record.instance);
         const service=record.instance&&this.package(record.instance.view.packageId).manifest.runtime==='service';
         record.observed=ready?(service?'starting':'active'):'blocked';record.blockers=ready?[]:['capability_unverified'];if(service&&record.instance){record.instance.view.observed=ready?'checking':'blocked';record.activeSelection=null;}this.control.saveBuild(record);
-        if(record.instance&&this.package(record.instance.view.packageId).manifest.runtime==='service'&&ready)void this.activateServiceInstance(record.instance.view.id).catch(()=>{});
+        if(record.instance&&service&&ready){if(servicePackageSurfaces(this.package(record.instance.view.packageId).manifest).data)domains.push(record.instance.view.id);else void this.activateServiceInstance(record.instance.view.id).catch(()=>{});}
         continue;
       }
       if(!record.desired){if(record.observed==='restart_required'){record.observed='stopped';record.blockers=[];this.control.saveBuild(record);}continue;}
@@ -632,6 +690,21 @@ export class PluginCenter {
       if(['starting','queued','blocked','draining'].includes(record.observed))continue;
       const task=this.applyBuild(record.id,record.operationId);this.applying.set(record.id,task);
       try{await task;}finally{if(this.applying.get(record.id)===task)this.applying.delete(record.id);}
+    }
+    // Only already-enabled domain instances participate. Declarations may
+    // order startup, but only a completed live publication satisfies a pin.
+    while(domains.length){
+      let progress=false;
+      for(const id of [...domains]){
+        const dependencies=domainDependencies(this.packageForInstance(id).manifest);
+        // Restore all already-selected candidate providers before resolving a
+        // consumer. Otherwise startup iteration order could hide ambiguity or
+        // turn an optional declared dependency into an accidental absence.
+        if(domains.some(other=>other!==id&&dependencies.some(dependency=>{const pkg=this.packageForInstance(other).manifest;return dependency.kind==='package'?pkg.id===dependency.id&&pkg.version===dependency.version:dependency.kind==='contribution'?domainContributions(pkg).some(value=>value.id===dependency.id&&value.version===dependency.version):dependency.kind==='service'?domainContributions(pkg).some(value=>value.provides?.some(port=>port.id===dependency.id&&port.apiVersion===dependency.version)):false;})))continue;
+        try{this.resolveDomainDependencies(id);}catch(error){if(error instanceof PluginHostError&&error.code==='dependency_unavailable')continue;}
+        domains.splice(domains.indexOf(id),1);await this.activateServiceInstance(id);progress=true;
+      }
+      if(!progress){for(const id of domains)await this.activateServiceInstance(id);break;}
     }
   }
   private async applyBuild(id:string,operationId:string){
@@ -667,13 +740,13 @@ export class PluginCenter {
         });
         if(!pinned)throw new PluginHostError('dependency_unavailable');
       }
-      const apiVersion=build.contribution.provides?.[0]?.apiVersion??'1';
+      const apiVersion=build.contribution.provides?.[0]?.apiVersion??'1',bindings:ServiceBinding[]=[];
       const handle=await host.install({identity,contributions:[{id:build.contribution.id,apiVersion}],requires:[this.hostOwner!.binding(),...(build.requires??[])],optional:build.optional,
         restartRequired:build.replacement==='restart',factory:async context=>{
           const published=new Set<string>();
           const lifecycle=await build.factory(Object.freeze({...context,provide:<T>(id:string,contract:import('@mote/plugin-api/contracts').ServiceContract<T>,value:T,revision=0)=>{
             if(id!==build.contribution.id||!build.contribution.provides?.some(port=>port.id===contract.id&&port.apiVersion===contract.apiVersion))throw new PluginHostError('invalid_contract');
-            const binding=context.provide(id,contract,value,revision);published.add(contract.id);return binding;
+            const binding=context.provide(id,contract,value,revision);published.add(contract.id);bindings.push(binding);return binding;
           }}),selection.configurationRevision);
           // Adopt before cancellation/publication checks, preserving the H04
           // cleanup contract and every original lifecycle receiver.
@@ -682,7 +755,7 @@ export class PluginCenter {
         }});
       const latest=this.control.build(id)!;
       if(!this.accepting||latest.operationId!==operationId){await handle.close('revoked');return;}
-      this.buildHandles.set(id,{handle,selection});latest.observed='active';latest.blockers=[];this.control.saveBuild(latest);
+      this.buildHandles.set(id,{handle,selection,bindings});latest.observed='active';latest.blockers=[];this.control.saveBuild(latest);
       await current?.handle.close('upgrade');
     }catch(error){
       const latest=this.control.build(id)!;if(latest.operationId!==operationId)return;
@@ -719,9 +792,10 @@ export class PluginCenter {
     const tasks=[...this.disposeHandlers.map(dispose=>dispose()),...[...this.runtimes.values()].map(runtime=>runtime.close())];
     if(this.outboundHost)tasks.push(this.outboundHost.close());
     for(const owned of this.processingInstances.values()){owned.controller.abort();if(owned.handle)tasks.push(owned.handle.close('shutdown'));}
+    for(const owned of this.domainInstances.values()){owned.controller.abort();if(owned.handle)tasks.push(owned.handle.close('shutdown'));}
     for(const owned of this.buildHandles.values())tasks.push(owned.handle.close('shutdown'));
     return this.closing=Promise.allSettled([...tasks,...this.applying.values()]).then(results=>{
-      this.runtimes.clear();this.buildHandles.clear();this.processingInstances.clear();const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
+      this.runtimes.clear();this.buildHandles.clear();this.processingInstances.clear();this.domainInstances.clear();const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
       if(errors.length)throw new AggregateError(errors,'Plugin control disposal failed');
     });
   }

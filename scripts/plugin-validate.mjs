@@ -8,13 +8,13 @@ import {planComposition} from '@mote/plugin-host';
 
 const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-/** Central provides a service runtime for ingress/processing packages. Other
+/** Central provides a service runtime for ingress/processing/data packages. Other
  * service ABIs still need a host that publishes them. */
 export function releaseCompatibilityFailures(manifest) {
   if (manifest.runtime !== 'service') return [];
   const surfaces = new Set((manifest.contributions ?? []).map(contribution => contribution.surface));
-  if (surfaces.has('ingress') || surfaces.has('processing')) return [];
-  return [{code: 'unsupported_runtime', message: 'This host does not provide a service runtime for the declared contributions', remediation: 'Declare an ingress or processing contribution, publish as "runtime": "worker", or install on a host that provides the required service runtime'}];
+  if (surfaces.has('ingress') || surfaces.has('processing') || (manifest.contributions ?? []).some(value => value.surface === 'data' && value.runtime === 'service')) return [];
+  return [{code: 'unsupported_runtime', message: 'This host does not provide a service runtime for the declared contributions', remediation: 'Declare an ingress, processing or service-runtime data contribution, publish as "runtime": "worker", or install on a host that provides the required service runtime'}];
 }
 
 export async function validatePackage({manifestPath, zipPath, host = 'central', hostDependencies = [], releaseContract}) {
