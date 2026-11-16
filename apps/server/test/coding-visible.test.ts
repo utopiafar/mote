@@ -139,7 +139,7 @@ async function fixture(t:TestContext,provider:CodingProvider,legacy=false){
   assert.fail('Generated collector did not drain');
  }
  const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,runtime),consumer=reader.agent({diagnostics});
- return {native,store,materials,runtime,sources,received,collect,consumer};
+ return {native,store,materials,runtime,sources,received,collect,consumer,async restartLocal(){engine=new SourceSync(state);await engine.initialize();}};
 }
 
 for(const [provider,legacy] of [['codex',false],['claude',false],['kimi',false],['kimi',true],['opencode',false]] as const){
@@ -194,4 +194,57 @@ test('mixed missing native order uses one conservative time/receipt order for fu
  assert.equal(f.materials.get(material.id)!.revision,current.revision,'a private append cannot change conservative visible order');
  await f.sources.upsert('mixed-coding',{...raw,revision:'generated-mixed-private-revision',text:'PRIVATE_TOOL_BODY replacement'});await f.runtime.tick();
  assert.equal(f.materials.get(material.id)!.revision,current.revision,'a full rebuild must keep the same conservative order and locators');
+});
+
+
+test('Kimi Code closed steps reject late text across durable restarts while a closed final still awaits turn completion',async t=>{
+ const f=await fixture(t,'kimi'),wire=join(f.native.path,'workspace','generated-session','agents','main','wire.jsonl');
+ const row=(type:string,extra:Record<string,unknown>={})=>line({type,time:ms,agentId:'main',...extra});
+ const loop=(type:string,extra:Record<string,unknown>={})=>row('context.append_loop_event',{event:{type,...extra}});
+ const text=(step:string,body:string)=>loop('content.part',{uuid:'part-'+body,stepUuid:step,part:{type:'text',text:body}});
+ await writeFile(wire,row('turn.prompt',{turnId:1,origin:{kind:'user'},input:[{type:'text',text:requestText}]})+
+  loop('step.begin',{uuid:'failed-error',turnId:'1'})+text('failed-error','FAILED_BEFORE_CLOSE')+loop('step.end',{uuid:'failed-error',finishReason:'error'}));
+ await f.collect();await f.restartLocal();
+ await appendFile(wire,text('failed-error','FAILED_LATE_CLOSED_STEP')+
+  loop('tool.call',{stepUuid:'failed-error',toolCallId:'late-tool',name:'generated',args:{body:'PRIVATE_LATE_TOOL'}})+
+  loop('step.begin',{uuid:'failed-interrupted',turnId:'1'})+text('failed-interrupted','INTERRUPTED_BEFORE_CLOSE')+
+  loop('step.end',{uuid:'failed-interrupted',finishReason:'interrupted'}));
+ await f.collect();await f.restartLocal();
+ await appendFile(wire,text('failed-interrupted','INTERRUPTED_LATE_CLOSED_STEP')+
+  loop('step.begin',{uuid:'successful-tool',turnId:'1'})+text('successful-tool',progress)+
+  loop('tool.call',{stepUuid:'successful-tool',toolCallId:'good-tool',name:'generated',args:{body:'PRIVATE_TOOL_BODY'}})+
+  loop('step.end',{uuid:'successful-tool',finishReason:'tool_use'}));
+ await f.collect();await f.restartLocal();
+ await appendFile(wire,text('successful-tool','SUCCESSFUL_TOOL_LATE_CLOSED_STEP')+
+  loop('step.begin',{uuid:'successful-final',turnId:'1'})+text('successful-final',final)+
+  loop('step.end',{uuid:'successful-final',finishReason:'end_turn'}));
+ await f.collect();await f.restartLocal();
+ const before=f.materials.list().items[0];assert.ok(!f.materials.read(before.ref,{length:12000}).text.includes(final),'step close alone does not publish the terminal answer');
+ await appendFile(wire,text('successful-final','FINAL_LATE_CLOSED_STEP')+
+  loop('step.end',{uuid:'successful-final',finishReason:'error'})+row('turn.ended',{turnId:1,reason:'completed'}));await f.collect();
+ const material=f.materials.list().items[0],page=await f.consumer.materialRead!({ref:material.ref,length:12000});
+ const evidence=await f.consumer.evidence({ids:f.materials.evidenceIds(material.ref)});let previous=-1;
+ for(const visible of [requestText,progress,final]){const index=page.text.indexOf(visible);assert.ok(index>previous);assert.equal(page.text.split(visible).length-1,1);previous=index;}
+ for(const secret of ['FAILED_BEFORE_CLOSE','FAILED_LATE_CLOSED_STEP','INTERRUPTED_BEFORE_CLOSE','INTERRUPTED_LATE_CLOSED_STEP','SUCCESSFUL_TOOL_LATE_CLOSED_STEP','FINAL_LATE_CLOSED_STEP','PRIVATE_LATE_TOOL','PRIVATE_TOOL_BODY']){
+  assert.ok(!page.text.includes(secret),secret);assert.ok(evidence.every(item=>!item.ocrText.includes(secret)),secret);assert.equal(f.materials.list({query:secret}).items.length,0,secret);
+ }
+});
+
+test('Kimi CLI StepRetry discards only the failed attempt before the successful visible tool explanation',async t=>{
+ const f=await fixture(t,'kimi',true),wire=join(f.native.path,'workspace','generated-session','wire.jsonl');
+ const row=(type:string,payload:Record<string,unknown>={})=>line({timestamp:ms,message:{type,payload}});
+ await writeFile(wire,row('TurnBegin',{user_input:requestText})+row('StepBegin',{n:1})+
+  row('ContentPart',{type:'text',text:'FAILED_ATTEMPT_STREAM'})+
+  row('StepRetry',{n:1,next_attempt:2,max_attempts:3,wait_s:0,error_type:'GeneratedTransientFailure',status_code:503}));
+ await f.collect();await f.restartLocal();
+ await appendFile(wire,row('ContentPart',{type:'text',text:progress})+
+  row('ToolCall',{id:'retry-tool',function:{name:'generated',arguments:'PRIVATE_RETRY_TOOL'}})+
+  row('ToolResult',{tool_call_id:'retry-tool',return_value:'PRIVATE_RETRY_TOOL'})+row('StepBegin',{n:2})+
+  row('ContentPart',{type:'text',text:final})+row('TurnEnd'));await f.collect();
+ const material=f.materials.list().items[0],page=await f.consumer.materialRead!({ref:material.ref,length:12000});
+ const evidence=await f.consumer.evidence({ids:f.materials.evidenceIds(material.ref)});let previous=-1;
+ for(const visible of [requestText,progress,final]){const index=page.text.indexOf(visible);assert.ok(index>previous);assert.equal(page.text.split(visible).length-1,1);previous=index;}
+ for(const secret of ['FAILED_ATTEMPT_STREAM','PRIVATE_RETRY_TOOL']){
+  assert.ok(!page.text.includes(secret),secret);assert.ok(evidence.every(item=>!item.ocrText.includes(secret)),secret);assert.equal(f.materials.list({query:secret}).items.length,0,secret);
+ }
 });

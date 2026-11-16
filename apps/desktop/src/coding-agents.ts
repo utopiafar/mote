@@ -31,7 +31,7 @@ export async function discoverCodingAgents(home=homedir(),env:NodeJS.ProcessEnv=
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>{const path=codingRoot(provider,home,env);return {provider,name:codingProviders[provider],path,available:await lstat(path).then(s=>provider==='opencode'?s.isFile()&&!s.isSymbolicLink():s.isDirectory()&&!s.isSymbolicLink(),()=>false)};}));
 }
 type EventOrder=NonNullable<CodingEvidence['order']>;
-type Context={entry?:number;sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;lastAssistantHash?:string;kimiText?:string;kimiAt?:string;kimiToolStep?:boolean;kimiHostTurn?:boolean;kimiCodeTurnId?:string;kimiOrder?:EventOrder;kimiStepId?:string;kimiParts?:string[];kimiCompacting?:boolean};
+type Context={entry?:number;sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;lastAssistantHash?:string;kimiText?:string;kimiAt?:string;kimiToolStep?:boolean;kimiHostTurn?:boolean;kimiCodeTurnId?:string;kimiOrder?:EventOrder;kimiStepId?:string;kimiStepClosed?:boolean;kimiParts?:string[];kimiCompacting?:boolean};
 type Cursor={offset:number;anchor:string;ino:number;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;generation:number;context:Context;pendingEvent?:{hash:string;nextItem:number}};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
 export type CodingOpenCodeCursor={lastSeq:number;lastUpdated:number;incomplete:string[];continuation?:{id:string;hash:string;nextItem:number}};
@@ -156,7 +156,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
       const ambiguous=activations>tagged,hostSteer=row.type==='turn.steer'&&context.kimiHostTurn!==false;
       if(row.type==='turn.prompt'){
         clearKimiText();context.kimiToolStep=false;context.kimiHostTurn=origin?.kind!=='user'||ambiguous;
-        context.kimiCodeTurnId=row.turnId==null?undefined:String(row.turnId);context.kimiStepId=undefined;context.kimiParts=[];
+        context.kimiCodeTurnId=row.turnId==null?undefined:String(row.turnId);context.kimiStepId=undefined;context.kimiStepClosed=false;context.kimiParts=[];
       }else flushKimiText('commentary');
       const userParts=parts.filter((part:any)=>!['skill activation','user prompt submit hook'].includes(part?.meta?.source));
       const first=events.length;add('user',textParts(userParts));
@@ -166,12 +166,13 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
     if(row.type==='context.append_loop_event'){
       const event=row.event;
       if(event?.type==='step.begin'){
-        flushKimiText('commentary');context.kimiToolStep=false;context.kimiStepId=event.uuid;context.kimiParts=[];
+        flushKimiText('commentary');context.kimiToolStep=false;context.kimiStepId=event.uuid;context.kimiStepClosed=false;context.kimiParts=[];
         if(event.turnId!=null)context.kimiCodeTurnId=String(event.turnId);
       }
       // The protocol binds content to a step. Late content from another step
-      // cannot enter the current speaker's text; UUID replays are idempotent.
-      const sameStep=!context.kimiStepId||!event?.stepUuid||context.kimiStepId===event.stepUuid;
+      // cannot enter the current speaker's text; closed steps stay closed across
+      // checkpoints, and UUID replays are idempotent.
+      const sameStep=!context.kimiStepClosed&&(!context.kimiStepId||!event?.stepUuid||context.kimiStepId===event.stepUuid);
       if(event?.type==='content.part'&&sameStep&&event.part?.type==='text'&&typeof event.part.text==='string'){
         if(typeof event.uuid==='string'){
           if(context.kimiParts?.includes(event.uuid))return events;
@@ -182,7 +183,8 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
       }
       if(event?.type==='tool.call'&&sameStep){flushKimiText('commentary');context.kimiToolStep=true;add('tool_call',JSON.stringify({name:event.name,arguments:event.args}),event.toolCallId);}
       if(event?.type==='tool.result')add('tool_result',typeof event.result==='string'?event.result:JSON.stringify(event.result??''),event.toolCallId);
-      if(event?.type==='step.end'&&(!context.kimiStepId||!event.uuid||context.kimiStepId===event.uuid)){
+      if(event?.type==='step.end'&&!context.kimiStepClosed&&(!context.kimiStepId||!event.uuid||context.kimiStepId===event.uuid)){
+        context.kimiStepClosed=true;
         if(['interrupted','error'].includes(event.finishReason)){clearKimiText();context.kimiToolStep=true;}
         else if(context.kimiToolStep)flushKimiText('commentary');
       }
@@ -193,13 +195,15 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
         if(context.kimiHostTurn!==false)context.kimiHostTurn=true;
         flushKimiText(context.kimiToolStep?'commentary':'final');
       }else clearKimiText();
-      context.kimiToolStep=false;context.kimiHostTurn=undefined;context.kimiCodeTurnId=undefined;context.kimiStepId=undefined;context.kimiParts=[];
+      context.kimiToolStep=false;context.kimiHostTurn=undefined;context.kimiCodeTurnId=undefined;context.kimiStepId=undefined;context.kimiStepClosed=true;context.kimiParts=[];
     }
   }else if(wire){
     const m=row.message,p=m?.payload;
     if(!m||!p)return [];
     if(m.type==='TurnBegin'){clearKimiText();context.kimiToolStep=false;context.kimiCompacting=false;context.kimiHostTurn=false;add('user',textParts(p.user_input));}
     if(m.type==='StepBegin'){flushKimiText('commentary');context.kimiToolStep=false;}
+    // A retry replaces the failed attempt's streamed text and tool-call state.
+    if(m.type==='StepRetry'){clearKimiText();context.kimiToolStep=false;context.callId=undefined;}
     if(['StepInterrupted','TurnInterrupted'].includes(m.type)){clearKimiText();context.kimiToolStep=true;}
     if(m.type==='CompactionBegin'){clearKimiText();context.kimiCompacting=true;}
     if(m.type==='CompactionEnd')context.kimiCompacting=false;
