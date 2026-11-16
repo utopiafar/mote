@@ -41,6 +41,7 @@ type FakeSlack={
   addMessage:(message:{ts:string;user:string;text:string;replyCount?:number})=>void;
   setPostFail:(value:boolean)=>void;
   setTokenFail:(value:boolean)=>void;
+  setHistoryPages:(value:number)=>void;
   lastPostedTs:()=>string|undefined;
   postCalls:()=>Call[];
 };
@@ -49,7 +50,7 @@ type FakeSlack={
  * recorded so tests can prove the package never calls another write method. */
 function fakeSlack():FakeSlack{
   const calls:Call[]=[];
-  let postFail=false,tokenFail=false,posted:string|undefined;
+  let postFail=false,tokenFail=false,posted:string|undefined,pages=0;
   let messages=[
     {type:'message',user:'U2',text:'Generated general hello',ts:parentTs,reply_count:1},
     {type:'message',user:'U3',text:'Generated general follow-up',ts:followTs},
@@ -85,16 +86,17 @@ function fakeSlack():FakeSlack{
     }
     if(method==='GET'&&parsed.pathname==='/api/conversations.history'){
       const channel=parsed.searchParams.get('channel'),oldest=Number(parsed.searchParams.get('oldest')??0);
-      if(channel!=='C1')return json({ok:true,messages:[],response_metadata:{next_cursor:''}});
-      return json({ok:true,messages:messages.filter(message=>Number(message.ts)>=oldest).map(message=>({type:'message',...message})),response_metadata:{next_cursor:''}});
+      if(pages){const index=Number(parsed.searchParams.get('cursor')??0),next=index+1<pages?String(index+1):'';return json({ok:true,messages:[{ts:`${baseTs-10000-index}.000100`,user:'U2',text:'Generated unfinished history page '+index}],has_more:Boolean(next),response_metadata:{next_cursor:next}});}
+      if(channel!=='C1')return json({ok:true,messages:[],has_more:false,response_metadata:{next_cursor:''}});
+      return json({ok:true,messages:messages.filter(message=>Number(message.ts)>=oldest).sort((a,b)=>Number(b.ts)-Number(a.ts)).map(message=>({type:'message',...message})),has_more:false,response_metadata:{next_cursor:''}});
     }
     if(method==='GET'&&parsed.pathname==='/api/conversations.replies'){
       const ts=parsed.searchParams.get('ts');
-      if(ts!==parentTs)return json({ok:true,messages:[],response_metadata:{next_cursor:''}});
+      if(ts!==parentTs)return json({ok:true,messages:[],has_more:false,response_metadata:{next_cursor:''}});
       return json({ok:true,messages:[
         {type:'message',user:'U2',text:'Generated general hello',ts:parentTs},
         {type:'message',user:'U3',text:'Generated thread reply',ts:replyTs},
-      ],response_metadata:{next_cursor:''}});
+      ],has_more:false,response_metadata:{next_cursor:''}});
     }
     if(method==='POST'&&parsed.pathname==='/api/chat.postMessage'){
       if(postFail)return json({ok:false,error:'channel_not_found'});
@@ -109,6 +111,7 @@ function fakeSlack():FakeSlack{
     addMessage:message=>{messages=[...messages,{type:'message',user:message.user,text:message.text,ts:message.ts,...(message.replyCount?{reply_count:message.replyCount}:{})}];},
     setPostFail:value=>{postFail=value;},
     setTokenFail:value=>{tokenFail=value;},
+    setHistoryPages:value=>{pages=value;},
     lastPostedTs:()=>posted,
     postCalls:()=>calls.filter(call=>call.pathname==='/api/chat.postMessage'),
   };
@@ -302,16 +305,18 @@ test('official Slack install, read-only archive, separated send authorization an
   assert.equal(firstSync.statusCode,200);
   const sourceId=slackSources()[0]!.id;
   const historyCalls=transport.calls.filter(call=>call.pathname==='/api/conversations.history');
-  assert.equal(historyCalls.length,1,'only the checked channel is read');
+  assert.equal(historyCalls.length,2,'the checked channel is scanned and its thread reference is located');
+  assert.equal(historyCalls[1]!.search.oldest,parentTs);
   assert.equal(historyCalls[0]!.search.channel,'C1');
   const firstOldest=Number(historyCalls[0]!.search.oldest);
-  assert.equal(Math.abs(firstOldest-(Math.floor(Date.now()/1000)-30*86400))<180,true,'the first sync window defaults to about 30 days');
+  assert.equal(firstOldest,0,'all history is not silently limited to thirty days');
   assert.equal(transport.calls.some(call=>call.pathname==='/api/conversations.history'&&call.search.channel!=='C1'),false,'unchecked channels and DMs are never read');
   assert.equal(transport.calls.some(call=>call.pathname==='/api/conversations.replies'),true,'thread replies are read for selected messages');
   const firstItem=node.sources.getItem(sourceId,parentTs);
   assert.equal(firstItem?.title.includes('general'),true);
   assert.match(firstItem?.text??'',/Generated general hello/);
-  assert.match(firstItem?.text??'',/Generated thread reply/);
+  assert.doesNotMatch(firstItem?.text??'',/Generated thread reply/);
+  const replyItem=node.sources.getItem(sourceId,replyTs);assert.match(replyItem?.text??'',/Generated thread reply/);assert.equal(replyItem?.document?.originalMetadata?.parentExternalId,parentTs);
   assert.match(firstItem?.uri??'',/^https:\/\/generated\.slack\.com\/archives\/C1\//);
   assert.equal(node.sources.history(sourceId,parentTs).length,1);
 
@@ -319,9 +324,9 @@ test('official Slack install, read-only archive, separated send authorization an
   transport.addMessage({ts:newTs,user:'U3',text:'Generated new message'});
   const secondSync=await node.app.inject({method:'POST',url:'/api/connectors/slack/sync',headers,payload:{}});
   assert.equal(secondSync.statusCode,200);
-  const secondHistory=transport.calls.filter(call=>call.pathname==='/api/conversations.history').at(-1)!;
+  const secondHistory=transport.calls.filter(call=>call.pathname==='/api/conversations.history'&&call.search.oldest==='0').at(-1)!;
   assert.equal(secondHistory.search.channel,'C1');
-  assert.equal(secondHistory.search.oldest,followTs,'later syncs resume from the last archived message');
+  assert.equal(secondHistory.search.oldest,'0','bounded full-history review also discovers new replies on old roots');
   const followUpHistory=node.sources.history(sourceId,followTs);
   assert.equal(followUpHistory.length,2,'an edited message enters the version chain');
   assert.match(followUpHistory[0]!.text,/follow-up edited/);
@@ -425,10 +430,16 @@ test('official Slack install, read-only archive, separated send authorization an
   const secondProposal=secondProposalResponse.json() as {proposal:{id:string;status:string;version:number;message:{conversationId:string;text:string}};revision:number};
   assert.equal(secondProposal.revision,2);
   assert.equal(transport.postCalls().length,0,'an authorized proposal still waits for owner confirmation');
+  transport.setHistoryPages(21);
+  const boundedSync=await node.app.inject({method:'POST',url:'/api/connectors/slack/sync',headers,payload:{}});assert.equal(boundedSync.statusCode,200,boundedSync.body);
+  const scanBeforeSend=node.store.db.prepare("SELECT json FROM plugin_instance_state WHERE key='slack.scan.0'").get()!.json;
+  assert.equal(JSON.parse(String(scanBeforeSend)).complete,false);assert.equal(JSON.parse(String(scanBeforeSend)).history.cursor,'20');
   const secondConfirm=await node.app.inject({method:'POST',url:'/api/actions/'+secondProposal.proposal.id+'/confirm',headers,payload:{version:secondProposal.proposal.version,target:currentChoice.target,message:secondProposal.proposal.message}});
   assert.equal(secondConfirm.statusCode,200,secondConfirm.body);
   await waitFor(()=>node.actions.get(secondProposal.proposal.id).status==='succeeded','the host dispatches the confirmed message');
   assert.equal(transport.postCalls().length,1);
+  assert.equal(node.store.db.prepare("SELECT json FROM plugin_instance_state WHERE key='slack.scan.0'").get()!.json,scanBeforeSend,'a real host-dispatched send cannot advance or rewrite incomplete history coverage');
+  transport.setHistoryPages(0);
   const postedCall=transport.postCalls()[0]!;
   assert.equal(postedCall.form.channel,'C1');
   assert.equal(postedCall.form.text,'Generated owner approved message');
