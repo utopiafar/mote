@@ -382,8 +382,11 @@ const connector = {
       await saveScan(active, scan); return active;
     };
     const pageOf = (body, cursor, direction, boundary, parent) => {
-      const next = body?.response_metadata?.next_cursor;
-      if (!Array.isArray(body?.messages) || typeof body.has_more !== 'boolean' || typeof next !== 'string' || next.length > 2048 || Boolean(next) !== body.has_more || next && next === cursor || next && !body.messages.length) throw new SlackError('slack_pagination_invalid', 502);
+      const metadata = body?.response_metadata;
+      // Slack permits an empty, null or absent terminal cursor. Normalize only
+      // those forms; a continuing page still needs a bounded string cursor.
+      const next = metadata?.next_cursor ?? '';
+      if (!Array.isArray(body?.messages) || typeof body.has_more !== 'boolean' || metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata)) || typeof next !== 'string' || next.length > 2048 || Boolean(next) !== body.has_more || next && next === cursor || next && !body.messages.length) throw new SlackError('slack_pagination_invalid', 502);
       let previous; const ids = new Set();
       for (const message of body.messages) {
         if (!validTs(message?.ts) || ids.has(message.ts)) throw new SlackError('slack_response_invalid', 502);

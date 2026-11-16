@@ -108,9 +108,9 @@ test('Slack same-channel workspace changes preserve the old archive under its or
  f.transport.setTeam('T2');await f.connect();await f.select();f.transport.setMessages([{ts:ts(1),user:'U1',text:'Generated T2 original'}]);await f.sync();const current=f.source();assert.notEqual(current.id,prior.id);assert.equal(f.node.sources.getSource(prior.id).enabled,false);assert.match(f.node.sources.getItem(prior.id,ts(1))!.text,/T1 original/);assert.match(f.node.sources.getItem(current.id,ts(1))!.text,/T2 original/);assert.equal(f.node.sources.history(prior.id,ts(1)).length,1);assert.equal(f.node.sources.history(current.id,ts(1)).length,1);
 });
 
-for(const signal of ['missing','conflict','repeat'])test(`Slack ${signal} paging signals fail partial and keep the committed position`,async t=>{
+for(const signal of ['missing','conflict','repeat','invalid_type','terminal_conflict'])test(`Slack ${signal} paging signals fail partial and keep the committed position`,async t=>{
  const transport=fakeSlack(),delegate=transport.fetch;let armed=true;
- transport.fetch=async(input,init)=>{const response=await delegate(input,init);if(armed&&String(input).includes('/api/conversations.history')){const body=await response.json() as any;if(signal==='missing')delete body.has_more;else if(signal==='conflict')body.has_more=true;else {body.has_more=true;body.response_metadata.next_cursor='same';}return new Response(JSON.stringify(body));}return response;};
+ transport.fetch=async(input,init)=>{const response=await delegate(input,init);if(armed&&String(input).includes('/api/conversations.history')){const body=await response.json() as any;if(signal==='missing')delete body.has_more;else if(signal==='conflict')body.has_more=true;else if(signal==='invalid_type')body.response_metadata.next_cursor=0;else if(signal==='terminal_conflict')body.response_metadata.next_cursor='unexpected-more';else {body.has_more=true;body.response_metadata.next_cursor='same';}return new Response(JSON.stringify(body));}return response;};
  const f=await fixture(t,transport);transport.setMessages([{ts:ts(1),user:'U1',text:'Generated paging signal'}]);
  if(signal==='repeat'){await f.sync(502);assert.equal(f.scan().history.cursor,'same');}else await f.sync(502);
  assert.equal(f.scan().complete,false);assert.equal(f.scan().completeThrough,undefined);assert.equal(f.scan().failed,1);assert.equal(f.node.sources.getSource(f.source().id).status?.coverage?.state,'partial');armed=false;await f.sync();assert.equal(f.scan().complete,true);
@@ -183,4 +183,27 @@ test('Slack multiple roots and broadcasts resume ownership and reply phases unde
  for(const externalId of [a,b,ts(29),ts(30),ts(39),ts(40)])assert.equal(f.node.sources.history(id,externalId).length,1);
  assert.match(f.node.sources.getItem(id,ts(40))!.text,/second A complete reply/);assert.match(f.node.sources.getItem(id,ts(30))!.text,/second B complete reply/);
  assert.ok(f.transport.calls.filter(url=>url.pathname.endsWith('.history')).every(url=>url.searchParams.get('limit')==='200'),'short provider pages do not shrink the requested history page size');
+});
+
+
+// Slack permits null, absent and empty-metadata terminal cursor forms.
+// See https://docs.slack.dev/apis/web-api/pagination/#just-the-facts
+for(const phase of ['history','replies'])for(const shape of ['null','absent','empty-metadata'])
+test(`Slack ${phase} accepts an official ${shape} terminal cursor`,async t=>{
+ const transport=fakeSlack(),delegate=transport.fetch;
+ transport.fetch=async(input,init)=>{
+  const response=await delegate(input,init),url=new URL(String(input));
+  if(!url.pathname.endsWith('.'+phase))return response;
+  const body=await response.json() as any;
+  if(body.has_more===false){if(shape==='null')body.response_metadata.next_cursor=null;else if(shape==='empty-metadata')body.response_metadata={};else delete body.response_metadata;}
+  return new Response(JSON.stringify(body),{status:response.status,headers:{'content-type':'application/json'}});
+ };
+ const f=await fixture(t,transport),root=ts(1),reply=ts(2);
+ transport.setMessages([{ts:root,user:'U1',text:'Generated complete root',...(phase==='replies'?{reply_count:1}:{})}]);
+ if(phase==='replies')transport.replies.set(root,[{ts:reply,thread_ts:root,user:'U2',text:'Generated complete reply'}]);
+ const result=await f.node.app.inject({method:'POST',url:'/api/connectors/slack/sync',headers:f.headers,payload:{}});
+ assert.equal(result.statusCode,200,result.body);
+ assert.equal(f.scan().complete,true);assert.equal(f.scan().processed,phase==='replies'?2:1);assert.equal(f.scan().history.cursor,'');assert.equal(f.scan().completeThrough,f.scan().window.to);
+ assert.equal(f.node.sources.getSource(f.source().id).status?.coverage?.state,'complete');
+ assert.match(f.node.sources.getItem(f.source().id,phase==='replies'?reply:root)!.text,/Generated complete/);
 });
