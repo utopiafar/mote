@@ -2,7 +2,7 @@ import {MaterialStore} from './materials.js';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
-import {ownerRelationSchema,type OwnerRelation,sourceCapabilities,sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
+import {ownerRelationSchema,type OwnerRelation,sourceCapabilities,sourceConnectionSchema,sourceStatusSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import type {MemoryInputAuthorization} from './memory-input-authorization.js';
 import {SourceContextStore} from './source-context.js';
@@ -29,10 +29,11 @@ export class SourceStore {
   register(raw:unknown,authorize?:(source:SourceRegistration)=>void):SourceConnection {
     const input=sourceConnectionSchema.parse(raw),row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.id) as {json:string}|undefined,existing=row?this.present(JSON.parse(row.json)):undefined;
     return this.control(()=>{
+    if(input.syncScopeVersion!==undefined)throw new StoreError('Source synchronization version is read-only',403);
     if(input.sourceContext)throw new StoreError('Source context is owner control plane metadata; use the source context API',403);
     if(!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
-    const now=new Date().toISOString(),value={...input,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
+    const now=new Date().toISOString(),value={...input,syncScopeVersion:0,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
     },()=>authorize?.(input));
   }
   updateContext(id:string,patch:{expectedVersion:number;description:string},authorize?:()=>void){
@@ -44,9 +45,13 @@ export class SourceStore {
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only';ownerRelation?:OwnerRelation|null},authorize?:(source:SourceConnection)=>void):SourceConnection {
+    if('syncScopeVersion' in patch)throw new StoreError('Source synchronization version is read-only',403);
     const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch,...('ownerRelation' in patch?{ownerRelation:patch.ownerRelation??undefined,ownerRelationVersion:(existing.ownerRelationVersion??0)+(patch.ownerRelation!==(existing.ownerRelation??null)?1:0)||undefined}:{})});
     if(input.enabled&&!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     const value={...existing,...input,updatedAt:new Date().toISOString()};
+    // A new owner-selected history policy has no coverage until its producer
+    // starts the new range; ordinary pause/resume keeps the current checkpoint.
+    if((existing.initialSync??'all')!==(input.initialSync??'all')){value.syncScopeVersion=(existing.syncScopeVersion??0)+1;if(value.status){const {coverage,...status}=value.status;value.status=status;}}
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
     if(growth>0)this.store.reserveMetadata(growth);
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
@@ -57,7 +62,27 @@ export class SourceStore {
   }
   private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:{...this.capabilities.describe(value),...(value.kind==='coding-agent'?{codingEvidenceFieldsVersion:1 as const}:{})}}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
   private save(value:SourceConnection){const {capabilities,...persisted}=value;this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));}
-  reportStatus(id:string,status:NonNullable<SourceConnection['status']>){const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});}
+  /** Read-only pin checked again inside each actual write, including queued intake. */
+  assertSyncScope(id:string,expectedVersion:number){
+    const value=this.getSource(id);if(!value.enabled||(value.syncScopeVersion??0)!==expectedVersion)throw new StoreError('Source synchronization scope changed',409);
+    return value;
+  }
+  reportStatus(id:string,status:NonNullable<SourceConnection['status']>,expectedScopeVersion?:number){
+    this.control(()=>{
+      const value=expectedScopeVersion===undefined?this.getSource(id):this.assertSyncScope(id,expectedScopeVersion),input=sourceStatusSchema.parse(status),coverage=input.coverage??value.status?.coverage;
+      const next={...value,status:{...input,...(coverage?{coverage}:{})},updatedAt:new Date().toISOString()},growth=Buffer.byteLength(JSON.stringify(next))-Buffer.byteLength(JSON.stringify(value));
+      if(growth>0)this.store.reserveMetadata(growth);this.save(next);
+    });
+  }
+  /** Explicit range/authorization changes withdraw coverage and advance the
+   * durable generation even when no coverage has been published yet. */
+  resetCoverage(id:string){
+    this.control(()=>{
+      const value=this.getSource(id),next={...value,syncScopeVersion:(value.syncScopeVersion??0)+1,updatedAt:new Date().toISOString()};
+      if(value.status){const {coverage,...status}=value.status;next.status=status;}
+      const growth=Buffer.byteLength(JSON.stringify(next))-Buffer.byteLength(JSON.stringify(value));if(growth>0)this.store.reserveMetadata(growth);this.save(next);
+    });
+  }
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {
     const p=c.provenance!;return {sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,observedAt:c.capturedAt,modifiedAt:p.modifiedAt,title:c.windowTitle,text:p.layer==='reference'||p.deleted?'':c.ocrText,uri:p.uri,kind:c.source as SourceItem['kind'],layer:p.layer,calendar:p.calendar,mimeType:p.mimeType,deleted:p.deleted,metadata:p.metadata,document:p.document,captureId:c.id,receivedAt:c.receivedAt,current};
   }

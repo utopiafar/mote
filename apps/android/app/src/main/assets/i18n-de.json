@@ -10766,5 +10766,19 @@
   "已有部分结果；需要你补充的问题只影响相关结论。": "Teilergebnisse sind verfügbar. Fragen, die deine Antwort benötigen, betreffen nur die zugehörigen Schlussfolgerungen.",
   "任务资料范围": "Aufgabenmaterialien",
   "仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。": "Verwendet nur die vollständigen Belege und Originalquellen dieses Vorschlags. Andere Materialien sind nicht Teil dieser Aufgabe. Fehlende Inhalte oder unvollständige Abdeckung werden ausdrücklich genannt.",
-  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Die vollständigen Materialien dieses Vorschlags sind nicht verfügbar. Aktualisieren und erneut prüfen."
+  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Die vollständigen Materialien dieses Vorschlags sind nicht verfügbar. Aktualisieren und erneut prüfen.",
+  "覆盖未知": "Abdeckung unbekannt",
+  "部分覆盖": "Teilweise abgedeckt",
+  "所选范围已完成": "Ausgewählter Bereich vollständig",
+  "同步覆盖": "Synchronisierungsabdeckung",
+  "已处理 {0} 条来源记录": "{0} Quelleinträge verarbeitet",
+  "剩余条目数未知": "Anzahl verbleibender Einträge unbekannt",
+  "剩余 {0} 条来源记录": "{0} Quelleinträge verbleibend",
+  "待处理的失败 {0} 项": "Ungelöste Lesefehler: {0}",
+  "仍有分页待继续": "Weitere Seiten stehen aus",
+  "部分正文尚未读取": "Ein Teil des Inhalts wurde noch nicht gelesen",
+  "覆盖窗口": "Abdeckungszeitraum",
+  "从 {0} 到 {1}": "Von {0} bis {1}",
+  "截至 {0}": "Bis {0}",
+  "首次同步建立基线，之后接入新增内容并跟踪已接入资料的修订。": "Die erste Synchronisierung legt einen Ausgangsstand fest. Danach werden neue Inhalte erfasst und Änderungen bereits erfasster Materialien nachverfolgt."
 }

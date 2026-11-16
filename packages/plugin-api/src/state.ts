@@ -19,6 +19,8 @@ export type StateErrorCode =
   | 'value_too_large'
   | 'namespace_limit'
   | 'limit_exceeded'
+  | 'condition_failed'
+  | 'invalid_condition'
   | 'conflict'
   | 'not_found'
   | 'quiesced'
@@ -70,12 +72,20 @@ export interface StateCheckpoint {
   readonly records: number;
 }
 
+/** A source checkpoint may be conditional on the host-owned range generation.
+ * The host restricts this to the connector's verified source kinds and checks
+ * it in the write transaction. It grants no new source or namespace access. */
+export interface StateWriteCondition {
+  readonly sourceId: string;
+  readonly syncScopeVersion: number;
+}
+
 /** Methods deliberately take no namespace or instance ID. The host binds them
  * from the executing ScopeIdentity; a caller-supplied namespace is rejected. */
 export interface StateStore {
   get(key: string): Promise<StateRecord | undefined>;
   list(prefix?: string, limit?: number): Promise<readonly StateRecord[]>;
   /** `null` creates only; a number updates only that exact revision. */
-  compareAndSet(key: string, expectedRevision: number | null, value: StateValue): Promise<StateRecord>;
+  compareAndSet(key: string, expectedRevision: number | null, value: StateValue, condition?: StateWriteCondition): Promise<StateRecord>;
   checkpoint(): Promise<StateCheckpoint>;
 }

@@ -195,3 +195,15 @@ test('quiesce rejects new admissions, stop rejects the old scope, and state is a
   await a.handle.close('disabled');
   await assert.rejects(a.state.get('secret'), (error: StateError) => error.code === 'stale_scope');
 });
+
+test('source-conditional state commits check the host-bound source kind and scope version after async admission',async t=>{
+ const {store}=fixture(t),{SourceStore}=await import('../src/sources.js'),sources=new SourceStore(store);
+ sources.register({id:'permitted-source',name:'Generated permitted source',kind:'custom',deviceId:'generated',platform:'import'});sources.register({id:'other-source',name:'Generated other source',kind:'upload',deviceId:'generated',platform:'import'});
+ const bound=new PluginHost(hostIdentity,undefined,undefined,{stateFor:scope=>createInstanceState(store,scope,undefined,['custom'])});t.after(()=>bound.close());const a=await install(bound,'source-condition');
+ const pin={sourceId:'permitted-source',syncScopeVersion:0};const pending=a.state.compareAndSet('scan',null,{cursor:'old'},pin);sources.update(pin.sourceId,{initialSync:'new_only'});sources.update(pin.sourceId,{initialSync:'all'});
+ await assert.rejects(pending,(error:StateError)=>error.code==='condition_failed');assert.equal(await a.state.get('scan'),undefined,'the source may change after CAS admission and before its actual write');
+ for(const sourceId of ['other-source','missing-source'])await assert.rejects(a.state.compareAndSet('foreign',null,{}, {sourceId,syncScopeVersion:0}),(error:StateError)=>error.code==='condition_failed');
+ const ordinaryHost=stateHost(store);t.after(()=>ordinaryHost.close());const ordinary=await install(ordinaryHost,'ordinary-condition');await assert.rejects(ordinary.state.compareAndSet('scan',null,{}, {sourceId:pin.sourceId,syncScopeVersion:2}),(error:StateError)=>error.code==='condition_failed');await ordinary.handle.close();
+ assert.equal((await a.state.compareAndSet('scan',null,{cursor:'new'},{sourceId:pin.sourceId,syncScopeVersion:2})).revision,1);
+ await assert.rejects((a.state as any).compareAndSet('forged',null,{}, {...pin,instanceId:'another-instance'}),(error:StateError)=>error.code==='invalid_namespace');
+});

@@ -10766,5 +10766,19 @@
   "已有部分结果；需要你补充的问题只影响相关结论。": "Ya hay resultados parciales. Las preguntas que necesitan tu respuesta solo afectan a las conclusiones relacionadas.",
   "任务资料范围": "Materiales de la tarea",
   "仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。": "Solo se usan las pruebas completas y las fuentes originales de esta sugerencia. Los demás materiales quedan fuera de esta tarea. Se indicará si falta contenido o la cobertura es incompleta.",
-  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Los materiales completos de esta sugerencia no están disponibles. Actualiza y vuelve a revisarlos."
+  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Los materiales completos de esta sugerencia no están disponibles. Actualiza y vuelve a revisarlos.",
+  "覆盖未知": "Cobertura desconocida",
+  "部分覆盖": "Cobertura parcial",
+  "所选范围已完成": "Intervalo seleccionado completo",
+  "同步覆盖": "Cobertura de sincronización",
+  "已处理 {0} 条来源记录": "{0} entradas de origen procesadas",
+  "剩余条目数未知": "Se desconoce el número de entradas restantes",
+  "剩余 {0} 条来源记录": "Quedan {0} entradas de origen",
+  "待处理的失败 {0} 项": "Fallos de lectura sin resolver: {0}",
+  "仍有分页待继续": "Quedan más páginas por leer",
+  "部分正文尚未读取": "Aún no se ha leído parte del contenido",
+  "覆盖窗口": "Intervalo de cobertura",
+  "从 {0} 到 {1}": "De {0} a {1}",
+  "截至 {0}": "Hasta {0}",
+  "首次同步建立基线，之后接入新增内容并跟踪已接入资料的修订。": "La primera sincronización establece una base. Las siguientes incorporan contenido nuevo y siguen las revisiones del material ya recopilado."
 }
