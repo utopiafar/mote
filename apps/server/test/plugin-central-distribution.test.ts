@@ -204,10 +204,12 @@ test('a new built-in domain executes and mounts by distribution registration alo
   const inventory=(await node.app.inject({url:'/api/features',headers})).json();
   assert.ok(inventory.capabilities.some((item:{featureId:string;id:string})=>item.featureId==='mote.generated-domain'&&item.id==='http:GET:/api/generated-domain'));
   assert.equal(node.bootstrap.snapshot().contributions.filter(item=>item.identity.contributionId==='generated-domain').length,1);
-  await (await node.bootstrap.activateDomains()).quiesce();
+  const domains=await node.bootstrap.activateDomains();
+  await domains.quiesce();
   assert.equal((await node.app.inject({url:'/api/generated-domain',headers})).statusCode,503);
   assert.equal((await node.app.inject({url:'/api/insight-runs',headers})).statusCode,503,'the real insights activation follows the same host lifecycle');
   assert.equal((await node.app.inject({url:'/api/assistant-cards',headers})).statusCode,503,'companion routes are fenced with their feature activation');
+  await domains.close();
   await node.app.close();
   for(const event of ['stop','dispose','release'])assert.equal(events.filter(value=>value===event).length,1,`${event} must run once`);
   assert.equal(node.bootstrap.snapshot().contributions.length,0);

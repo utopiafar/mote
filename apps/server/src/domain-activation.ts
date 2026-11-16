@@ -48,7 +48,16 @@ export function createDomainActivations(host:PluginHost,plugins:readonly Central
         for(const handle of [...handles].reverse())try{await operation(handle);}catch(error){errors.push(error);}
         if(errors.length)throw new AggregateError(errors,message);
       };
-      const close=()=>visitHandles(handle=>handle.close('shutdown'),'Domain disposal failed');
+      let quiescing:Promise<void>|undefined,closing:Promise<void>|undefined;
+      const quiesce=()=>closing??(quiescing??=visitHandles(handle=>handle.quiesce('shutdown'),'Domain quiescence failed'));
+      const close=()=>closing??=(async()=>{
+        const errors:unknown[]=[];
+        // Finish an accepted pass before disposal makes its remaining provider
+        // handles stale. Later quiesce calls join this same closing result.
+        if(quiescing)try{await quiescing;}catch(error){errors.push(error);}
+        try{await visitHandles(handle=>handle.close('shutdown'),'Domain disposal failed');}catch(error){errors.push(error);}
+        if(errors.length)throw new AggregateError(errors,'Domain disposal failed');
+      })();
       try{
         for(const plugin of plugins){
           const activation=plugin.activation;
@@ -80,7 +89,7 @@ export function createDomainActivations(host:PluginHost,plugins:readonly Central
           const existing=routes.get(route.id);
           routes.set(route.id,existing?{...guarded,mount(app,scope){existing.mount(app,scope);guarded.mount(app,scope);}}:guarded);
         }
-        return Object.freeze({routes:Object.freeze([...routes.values()]),quiesce:()=>visitHandles(handle=>handle.quiesce('shutdown'),'Domain quiescence failed'),close});
+        return Object.freeze({routes:Object.freeze([...routes.values()]),quiesce,close});
       }catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Domain startup and cleanup failed',{cause:error});}throw error;}
     })(),
   });
