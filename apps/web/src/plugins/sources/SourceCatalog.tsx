@@ -55,7 +55,7 @@ export function SourceCatalog({ api, onPage }: {
     const cards = [
         { title: moteText("手机与电脑"), body: moteText("连接 Mac 或 Android 客户端"), state:moteText("在客户端管理"), note: moteText("先从官方发布页安装客户端；采集与隐私范围在本机设置。"), target: {pageId:'deviceConnections',href:'#/connections/pair'}, icon: Monitor },
         { title: moteText("Coding Agent 会话"), body: moteText("在客户端选择 Codex、Claude Code 等已有会话"),state:moteText("通过 Mac 客户端接入"), note: moteText("先安装并连接 Mac 客户端，在客户端「来源 → 连接 Coding Agent」选择实际存在的 Agent 与采集范围。这里打开说明和同步状态。"), action: moteText("查看客户端接入与同步状态"), target: {pageId:'archive',collectionId:'coding-status',href:'#/library?view=coding-status',requires:['http:GET:/api/coding/uploads']}, icon: Monitor },
-        { title: moteText("文件与文件夹"), body: moteText("导入原件，或在客户端连接文件夹"),state:moteText("支持多个文件、文件夹和 ZIP 压缩包。"), note: moteText("可靠且无歧义的解析结果自动保存；其余先确认。"), target: {pageId:'imports',href:'#/library/import'}, icon: FolderInput },
+        { title: moteText("文件与文件夹"), body: moteText("导入原件，或在客户端连接文件夹"),state:moteText("支持多个文件、文件夹和 ZIP 压缩包。"), note: moteText("可安全推进的解析会自动保存；关键缺口需要确认。"), target: {pageId:'imports',href:'#/library/import'}, icon: FolderInput },
         plugin('mote.connector.lark'),
         plugin('mote.connector.gmail'),
         plugin('mote.connector.google-calendar'),

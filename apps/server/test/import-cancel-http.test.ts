@@ -61,7 +61,7 @@ test('owner cancellation aborts import parsing, fences late results, survives re
   calls++;signal=input.signal;if(calls===1){entered();await gate;}
   writeFileSync(join(input.workspace,'records.jsonl'),JSON.stringify({item:{externalId:'generated-one',revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original',title:'Generated',text:'Generated original'},evidencePaths:[input.inputPaths[0]],attachments:[]})+'\n');
   if(calls===1)writeFileSync(join(input.workspace,'dispositions.json'),JSON.stringify({items:[{path:input.inputPaths[0],status:'parsed',reason:'Generated complete input'}]}));
-  return {summary:'Generated parser result',...(calls===1?{reviewDecision:{confidence:'high' as const,ambiguous:false,reason:'Generated exact mapping'}}:{})};
+  return {summary:'Generated parser result',...(calls===1?{reviewDecision:{confidence:'high' as const,ambiguous:false,requiresConfirmation:false,reason:'Generated exact mapping'}}:{})};
  }};
  let node=await buildApp(config,dependencies);await node.app.ready();
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});

@@ -18,7 +18,7 @@ export type ImportAgentLaunch=(input:{workspace:string;runtimeRoot:string})=>Pro
 
 export const IMPORT_CAPABILITY_API_VERSION='1' as const;
 const idPattern=/^[a-z][a-z0-9-]{0,63}$/,versionPattern=/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/,protocolPattern=/^[a-z][a-z0-9-]{0,63}$/;
-const previewKeys=new Set(['summary','recordsPath','warnings','reviewDecision']),reviewKeys=new Set(['confidence','ambiguous','reason']);
+const previewKeys=new Set(['summary','recordsPath','warnings','reviewDecision']),reviewKeys=new Set(['confidence','ambiguous','requiresConfirmation','reason']);
 const previewLimit=64000;
 
 export type ImportCapabilityErrorCode='invalid_import_capability'|'duplicate_import_capability'|'unknown_import_capability';
@@ -103,7 +103,7 @@ export function importRequestPayload(input:ImportAgentInput):string{
 
 /** Bounded same-session correction shared by every import transport. */
 export function importRepairPrompt(validationError:string):string{
-  return JSON.stringify({instruction:'Your final import response could not be accepted. Using only the analysis already completed in this session, return ONLY one JSON object with summary (a string in the selected language), optional recordsPath (a string), optional warnings (an array of strings), and optional reviewDecision ({confidence:"high"|"low"|"unknown",ambiguous:boolean,reason:string}). Report high only when the mapping has no unresolved ambiguity. Do not include Markdown fences or any text outside JSON. Do not repeat analysis, run tools, rewrite files, or claim an artifact exists unless it was actually produced. Preserve any reported limitations. The host independently validates the manifest and decides whether review is required.',validationError});
+  return JSON.stringify({instruction:'Your final import response could not be accepted. Using only the analysis already completed in this session, return ONLY one JSON object with summary (a string in the selected language), optional recordsPath (a string), optional warnings (an array of strings), and optional reviewDecision ({confidence:"high"|"low"|"unknown",ambiguous:boolean,requiresConfirmation:boolean,reason:string}). Preserve the completed judgment about whether a material gap requires owner input before publishing; do not infer that decision from confidence or the mere presence of warnings. Do not include Markdown fences or any text outside JSON. Do not repeat analysis, run tools, rewrite files, or claim an artifact exists unless it was actually produced. Preserve any reported limitations. The host independently validates the manifest, authorization and requested processing mode.',validationError});
 }
 
 /** Accept exactly the preview shape the Host validates. A candidate outside
@@ -120,8 +120,8 @@ export function parseImportPreview(text:string,workspace:string):ImportAgentResu
   if(warnings!==undefined&&(!Array.isArray(warnings)||warnings.length>200||warnings.some(warning=>typeof warning!=='string'||warning.length>2000)))throw new AgentResponseError('Import response has invalid warnings');
   let reviewDecision:ImportReviewDecision|undefined;
   if(decision!==undefined&&decision!==null){
-    if(!plainRecord(decision)||Object.keys(decision).some(key=>!reviewKeys.has(key))||!['high','low','unknown'].includes(decision.confidence as string)||typeof decision.ambiguous!=='boolean'||(decision.reason!==undefined&&(typeof decision.reason!=='string'||!decision.reason.trim()||decision.reason.length>1000)))throw new AgentResponseError('Import response has an invalid review decision');
-    reviewDecision={confidence:decision.confidence as ImportReviewDecision['confidence'],ambiguous:decision.ambiguous,...(decision.reason!==undefined?{reason:decision.reason as string}:{})};
+    if(!plainRecord(decision)||Object.keys(decision).some(key=>!reviewKeys.has(key))||!['high','low','unknown'].includes(decision.confidence as string)||typeof decision.ambiguous!=='boolean'||typeof decision.requiresConfirmation!=='boolean'||(decision.reason!==undefined&&(typeof decision.reason!=='string'||!decision.reason.trim()||decision.reason.length>1000)))throw new AgentResponseError('Import response has an invalid review decision');
+    reviewDecision={confidence:decision.confidence as ImportReviewDecision['confidence'],ambiguous:decision.ambiguous,requiresConfirmation:decision.requiresConfirmation,...(decision.reason!==undefined?{reason:decision.reason as string}:{})};
   }
   try{resolveImportRecordsPath(workspace,recordsPath??undefined);}catch(error){if(error instanceof ImportTaskContractError)throw new AgentResponseError(error.message);throw error;}
   return {summary,...(recordsPath!=null?{recordsPath}:{}),...(warnings!==undefined?{warnings:[...warnings as string[]]}:{}),...(reviewDecision?{reviewDecision}:{})};
