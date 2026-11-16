@@ -133,7 +133,7 @@ export class PluginCenter {
         instance.view.capabilities=pkg.manifest.capabilities.map(id=>health.capabilities.find(capability=>capability.id===id)??{id,state:'unknown',reason:'The runtime did not verify this capability'});
         const surfaces=servicePackageSurfaces(pkg.manifest);
         instance.domainChecked=pkg.manifest.runtime==='service'&&(surfaces.data||surfaces.presentation)&&!health.issues.length?this.configurationIdentity(instance.view.id):undefined;
-        instance.view.issues=health.issues;instance.view.observed=health.issues.length||instance.view.capabilities.some(value=>value.state!=='verified')?'blocked':'ready';instance.view.revision++;delete instance.stepId;this.saveInstance(instance);this.bump();},
+        instance.view.issues=health.issues;instance.view.observed=health.issues.length||instance.view.capabilities.some(value=>value.state==='unknown')?'blocked':'ready';instance.view.revision++;delete instance.stepId;this.saveInstance(instance);this.bump();},
       project:step=>{if(['failed','blocked','stale','cancelled'].includes(step.state)){const instance=this.instance(String(step.input.instanceId));if(instance.stepId!==step.id)return;delete instance.domainChecked;instance.view.observed='blocked';instance.view.issues=[step.error??'plugin_check_failed'];instance.view.capabilities=instance.view.capabilities.map(value=>({...value,state:'unknown',reason:'Capability check did not complete'}));this.saveInstance(instance);}},
       classify:()=>new ExecutionFailure('blocked','plugin_check_requires_attention'),
     }));
@@ -201,7 +201,7 @@ export class PluginCenter {
     }
     return result;
   }
-  private instanceChecked(instance:StoredInstance){return instance.view.capabilities.every(value=>value.state==='verified')&&(instance.view.capabilities.some(value=>value.state==='verified')||instance.domainChecked!==undefined&&instance.domainChecked===(instance.configurationId??sha256(JSON.stringify(instance.view.configuration))));}
+  private instanceChecked(instance:StoredInstance){return instance.view.capabilities.every(value=>value.state!=='unknown')&&(instance.view.capabilities.some(value=>value.state==='verified')||instance.domainChecked!==undefined&&instance.domainChecked===(instance.configurationId??sha256(JSON.stringify(instance.view.configuration))));}
   instanceView(id:string):PluginInstanceView{const record=this.instanceBuild(id),instance=this.instance(id),{view,stepId}=instance,references=this.references(id),pending=stepId&&['waiting','running'].includes(this.executor.get(stepId)?.state??'');
     if(!record||record.retired)return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};
     return {...view,issues:[...view.issues,...references],allowedActions:pending?[]:[...(!view.desired&&!references.length?['configure' as const,'check' as const]:[]),...(view.desired?['disable' as const]:!view.issues.length&&this.instanceChecked(instance)?['enable' as const]:[])]};

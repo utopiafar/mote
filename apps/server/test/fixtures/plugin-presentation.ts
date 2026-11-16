@@ -40,7 +40,7 @@ export async function presentationDomainRelease(manifest:PluginManifest,body:str
  * caller owns close(); every restart reuses only this temporary profile. */
 export async function pluginPresentationFixture(webRoot?:string){
   const directory=await mkdtemp(join(tmpdir(),'mote-presentation-')),releases=new Map<string,PresentationRelease>();
-  const config:Config={dataDir:join(directory,'central'),token:'generated-presentation-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:40e6,maxExportBytes:1e6,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:Config={dataDir:join(directory,'central'),token:'generated-presentation-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1e6,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
   const transport:PluginReleaseTransport=async url=>{
     const item=[...releases.values()].find(value=>url.includes('/generated/'+value.manifest.id+'/'));assert.ok(item,'fixture accepts generated release URLs only');
     const base='https://github.com/generated/'+item.manifest.id+'/releases/download/v1/';

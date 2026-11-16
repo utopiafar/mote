@@ -8,6 +8,9 @@ const assert=require('node:assert/strict');
 const repository=resolve(__dirname,'../../..'),profile=mkdtempSync(join(tmpdir(),'mote-installed-page-browser-'));
 const output=join(repository,'.mote/validation/plugin-page-browser');mkdirSync(output,{recursive:true});
 app.setPath('userData',profile);
+// Keep cleanup under this runner so destroying the hidden window cannot turn
+// a failed assertion into Electron's ordinary successful quit.
+app.on('window-all-closed',()=>{});
 const node=process.env.MOTE_NODE_EXECUTABLE||execFileSync('which',['node'],{encoding:'utf8'}).trim();
 const child=spawn(node,['--import','tsx','apps/web/test/plugin-installed-presentation-server.ts',join(repository,'apps/web/dist')],{cwd:repository,stdio:['ignore','pipe','pipe']});
 let serverLog='',window;
@@ -48,6 +51,8 @@ async function run(){
   await until(()=>js(`document.documentElement.style.getPropertyValue('--mote-accent')==='#aabbcc'&&document.querySelector('.app-shell').dataset.navigation==='top'`),'actual theme roles and compiled layout render');
   assert.equal(await js(`document.querySelector('.app-shell').dataset.detail`),'stack');
   assert.equal(await js(`getComputedStyle(document.querySelector('.sidebar-bottom')).display`),'flex','top layout retains the settings and account controls');
+  const geometry=await js(`(()=>{const nav=document.querySelector('.sidebar').getBoundingClientRect(),main=document.querySelector('.main').getBoundingClientRect();return {navBottom:nav.bottom,navWidth:nav.width,mainTop:main.top,mainLeft:main.left,width:document.documentElement.clientWidth};})()`);
+  assert.ok(geometry.navWidth>=geometry.width-1&&geometry.mainTop>=geometry.navBottom-1&&geometry.mainLeft<1,'top navigation occupies a real row above full-width content: '+JSON.stringify(geometry));
   assert.deepEqual(await js(`[...document.querySelectorAll('.sidebar>nav>button span')].map(value=>value.textContent)`),['问一问','来源','资料库','首页']);
   writeFileSync(join(output,'installed-theme-layout.png'),await window.webContents.capturePage().then(value=>value.toPNG()));
   await new Promise(resolve=>{window.webContents.once('did-finish-load',resolve);window.reload();});

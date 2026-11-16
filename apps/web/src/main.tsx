@@ -257,7 +257,7 @@ function App() {
   apiRef.current=api;
   useEffect(()=>api&&verified?installedWebPlugins.connect(api,connection?.viewScope):undefined,[api,verified,connection?.viewScope]);
   useEffect(()=>{
-    const update=()=>{const resolved=readPage(location.hash);setPage(resolved);};
+    const update=()=>{const resolved=readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage);setPage(resolved.page);};
     return webFeatures.registry.subscribe(update);
   },[]);
   useEffect(()=>{

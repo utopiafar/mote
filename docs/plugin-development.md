@@ -243,7 +243,8 @@ same-instance data contribution and only the methods it needs, for example:
 ```
 
 The page must also require that contribution at its exact version. Check validates
-the actual staged port's methods without calling them. The bridge carries the
+the actual staged port's own function properties without calling them; expose a
+plain method facade when the domain uses a class or accessors internally. The bridge carries the
 existing nonce/documentKey/instance/generation envelope over a document-bound
 MessagePort. The trusted parent dispatches only declared methods to an owner-only
 API using the exact live instance/activation; no owner token or Host API enters
