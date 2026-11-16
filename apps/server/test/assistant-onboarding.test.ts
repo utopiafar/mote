@@ -224,7 +224,7 @@ test('an interrupted progress write rolls back assistant admission instead of le
 
 test('assembled server mounts owner-only onboarding commands without enabling automatic processing',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-onboarding-host-'));
- const config:Config={dataDir,token:'generated-onboarding-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir,token:'generated-onboarding-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('An unconfigured production guard must not send');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const unauthorized=await node.app.inject({method:'POST',url:'/api/assistant/onboarding',payload:{}});assert.equal(unauthorized.statusCode,401);

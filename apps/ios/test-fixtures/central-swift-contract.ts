@@ -14,8 +14,7 @@ assert.ok(process.argv.length===2||historyOnly,'Expected no arguments or --histo
 const directory=await mkdtemp(join(tmpdir(),'mote-swift-contract-'));
 const token=randomBytes(32).toString('hex');
 const deviceId='generated-iphone';
-const config:Config={dataDir:directory,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,
-  maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,
+const config:Config={dataDir:directory,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,
   allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,
   embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
 let central:Awaited<ReturnType<typeof buildApp>>|undefined;

@@ -5,7 +5,7 @@ import {materialId} from '../../server/src/materials.js';
 /** Generated originals and host Material publication. No model or private source reads. */
 export async function noteMaterialFixture(directory:string,webRoot?:string,prepare?:(node:Awaited<ReturnType<typeof buildApp>>)=>void){
  const token='generated-note-material-'+randomUUID();let modelCalls=0;
- const node=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{webRoot,backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No models in Note Material UI fixture');},close:async()=>{}}});
+ const node=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{webRoot,backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No models in Note Material UI fixture');},close:async()=>{}}});
  try{
  prepare?.(node);
  const headers={authorization:'Bearer '+token},at='2026-10-29T00:00:00.000Z';

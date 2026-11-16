@@ -121,8 +121,7 @@ export class AutomaticTopics {
       // Synchronous publication: no await between the final fences and commit.
       fence();this.assertInputs(memories);
       const previousHead=this.store.db.prepare('SELECT operation_id FROM context_topic_heads WHERE snapshot_key=?').get(snapshotKey);
-      const headGrowth=previousHead?Math.max(0,Buffer.byteLength(operationId)-Buffer.byteLength(String(previousHead.operation_id))):Buffer.byteLength(snapshotKey)+Buffer.byteLength(operationId)+128;
-      this.store.reserveMetadata(Buffer.byteLength(json)+Buffer.byteLength(operationId)+128+headGrowth);
+
       this.store.db.exec('SAVEPOINT context_topic_publish');
       try{
         this.store.db.prepare('INSERT INTO context_topic_batches VALUES (?,?)').run(operationId,json);

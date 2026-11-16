@@ -1,4 +1,10 @@
 import {DatabaseSync,type StatementSync} from 'node:sqlite';
+import {StoreError} from './store.js';
+
+const writeError=(error:unknown)=>{
+ const code=error&&typeof error==='object'?(error as {errcode?:unknown}).errcode:undefined;
+ return typeof code==='number'&&(code&255)===13?new StoreError('SQLite storage is full',507,{cause:error}):error;
+};
 
 const safeInteger=(value:number|bigint):number|bigint=>typeof value==='bigint'&&value>=BigInt(Number.MIN_SAFE_INTEGER)&&value<=BigInt(Number.MAX_SAFE_INTEGER)?Number(value):value;
 
@@ -6,6 +12,7 @@ const safeInteger=(value:number|bigint):number|bigint=>typeof value==='bigint'&&
  * connection. Even UPDATE/DELETE run() reads that unrelated lastInsertRowid.
  * Decode write receipts losslessly without changing query result types. */
 export class StoreDatabase extends DatabaseSync {
+ override exec(sql:string):void{try{super.exec(sql);}catch(error){throw writeError(error);}}
  override prepare(sql:string):StatementSync {
   const statement=super.prepare(sql),run=statement.run.bind(statement),setReadBigInts=statement.setReadBigInts.bind(statement);
   let readBigInts=false;
@@ -15,7 +22,7 @@ export class StoreDatabase extends DatabaseSync {
    try{
     const result=run(...args);
     return readBigInts?result:{changes:safeInteger(result.changes),lastInsertRowid:safeInteger(result.lastInsertRowid)};
-   }finally{setReadBigInts(readBigInts);}
+   }catch(error){throw writeError(error);}finally{setReadBigInts(readBigInts);}
   }) as StatementSync['run'];
   return statement;
  }

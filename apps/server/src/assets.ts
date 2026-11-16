@@ -91,7 +91,6 @@ export class AssetStore {
    try{
     const old=db.prepare('SELECT bytes FROM assets WHERE hash=?').get(actualHash);
     if(old&&old.bytes!==expectedBytes)throw new StoreError('Asset size conflict',409);
-    this.store.reserveMetadata(old?0:expectedBytes);
     if(!result.destination){renameSync(staging,destination);syncDirectory(this.directory);}
     db.prepare("INSERT INTO assets VALUES(?,?,?,'chunks') ON CONFLICT(hash) DO UPDATE SET parts=excluded.parts,format='chunks'").run(actualHash,expectedBytes,parts.length);
     const record=db.prepare('INSERT INTO asset_parts VALUES(?,?,?) ON CONFLICT(hash,part) DO UPDATE SET checksum=excluded.checksum');
@@ -126,7 +125,6 @@ export class AssetStore {
     authorize?.();
     const destination=join(this.directory,hash),old=db.prepare('SELECT * FROM assets WHERE hash=?').get(hash) as Asset|undefined;
     if(old&&old.bytes!==size)throw new StoreError('Asset size conflict',409);
-    this.store.reserveMetadata(old?0:size);
     if(existsSync(destination))this.verify({hash,bytes:size,parts:part,format:'chunks'});
     else {syncDirectory(staging);renameSync(staging,destination);installed=true;syncDirectory(this.directory);}
     db.prepare("INSERT INTO assets VALUES(?,?,?,'chunks') ON CONFLICT(hash) DO UPDATE SET parts=excluded.parts,format='chunks'").run(hash,size,part);

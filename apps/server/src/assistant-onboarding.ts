@@ -57,7 +57,7 @@ export class AssistantOnboarding {
  }
  private transaction<T>(run:()=>T):T{
   this.store.db.exec('SAVEPOINT assistant_onboarding_write');
-  try{const result=run();this.store.reserveMetadata(0);this.store.db.exec('RELEASE assistant_onboarding_write');return result;}
+  try{const result=run();this.store.db.exec('RELEASE assistant_onboarding_write');return result;}
   catch(error){this.store.db.exec('ROLLBACK TO assistant_onboarding_write; RELEASE assistant_onboarding_write');throw error;}
  }
  private task(id:string){const task=this.tasks.get(id);if(task.kind!=='assistant.onboarding')throw new StoreError('Onboarding not found',404);return task;}

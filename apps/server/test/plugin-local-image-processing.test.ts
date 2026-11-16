@@ -284,7 +284,7 @@ async function intake(t:TestContext,options:{installed?:boolean;authorize?:boole
     else configuredCalls++;
     return {answer:JSON.stringify(result),citations:[],trace:[],runId:randomUUID()};
   }});
-  const config:Config={dataDir:join(f.directory,'central'),token:'generated-intake-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-configured-image',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.example.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+  const config:Config={dataDir:join(f.directory,'central'),token:'generated-intake-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-configured-image',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.example.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
   node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});const central=node;
   f.defer(()=>central.app.close());
   const models=central.modelSettings.view();await central.modelSettings.updateDefaults({revision:models.revision,defaults:models.defaults,defaultModels:{file:'generated-configured-image',memory:'generated-memory-model',chat:'generated-chat-model'}});

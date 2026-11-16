@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -124,16 +125,16 @@ test('archive merge rejects ambiguous equal-time current pointers without partia
  assert.equal(local.history('generated-source',first.externalId).length,1);
 });
 
-test('archive imports account for source and memory metadata in the destination storage quota',async t=>{
+test('a memory write failure rolls back source and memory metadata during archive import',async t=>{
  const {store,sources}=fixture(t),ack=await sources.upsert('generated-source',item());
  const memory={title:'合成容量检查',statement:`${'合成陈述。'.repeat(100)} [${ack.id}]`,uncertainty:'仅用于生成的容量测试',evidenceIds:[ack.id]};
  const memories=new MemoryStore(store);memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[memory]}),citations:[{id:ack.id,capturedAt:item().observedAt,appName:'generated',excerpt:'generated'}],trace:[],runId:'generated-capacity'}),'fixture-model');
  const directory=mkdtempSync(join(tmpdir(),'mote-source-quota-'));
- const destination=new Store(directory,{maxStorageBytes:store.logicalBytes()-500});
+ const destination=new Store(directory,{});
  t.after(()=>{destination.close();rmSync(directory,{recursive:true,force:true});});
- await assert.rejects(destination.importArchive(store.exportArchive(1_000_000)),{statusCode:507});
+ const recover=rejectSqliteWrites(destination,'memories');await assert.rejects(destination.importArchive(store.exportArchive(1_000_000)),/Generated SQLite write failure/);
  assert.equal(destination.list().totalCount,0);
  assert.equal(destination.db.prepare('SELECT COUNT(*) AS n FROM source_connections').get()!.n,0);
  assert.equal(destination.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n,0);
- assert.equal(destination.updates(0).items.length,0);
+ assert.equal(destination.updates(0).items.length,0);recover();
 });

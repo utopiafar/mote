@@ -13,7 +13,7 @@ import {staticReportHtml} from '../src/insights.js';
 import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
-const config=(dataDir:string):Config=>({dataDir,token:'synthetic-central-workflow-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const config=(dataDir:string):Config=>({dataDir,token:'synthetic-central-workflow-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const original='合成记录：我准备下周验证观测方案。';
 async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{
   const deadline=performance.now()+10_000;

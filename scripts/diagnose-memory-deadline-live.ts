@@ -35,7 +35,7 @@ if(reviewSource){assert.equal(reviewSource.status,'diagnostic_completed');assert
 await mkdir(directory,{mode:0o700});await writeFile(join(directory,'source-report.json'),sourceBytes,{mode:0o600,flag:'wx'});
 await writeFile(join(directory,'source-context.json'),JSON.stringify(baseline,null,2)+'\n',{mode:0o600,flag:'wx'});
 const vault=join(directory,'vault'),token=randomBytes(32).toString('hex');
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:100000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],
  model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:reviewSource?300000:600000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
 const report:any={status:'running',startedAt:new Date().toISOString(),sourceRun:source,sourceReportHash:sha256(sourceBytes),sourceContextHash:sha256(JSON.stringify(baseline)),manifestHash:sha256(manifestBytes),

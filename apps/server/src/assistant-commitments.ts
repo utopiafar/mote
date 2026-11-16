@@ -227,7 +227,7 @@ export class AssistantCommitments {
     .run(input.eventId,input.commitmentId,target?.event_id??null,hash,encodeMemoryPrivate(this.store,{...input,origin,...(historical.length?{historicalEvidenceIds:historical}:{})}),at);
    const insert=this.store.db.prepare('INSERT INTO assistant_commitment_evidence(event_id,evidence_id) VALUES(?,?)');for(const id of ids)insert.run(input.eventId,id);
    const insertContext=this.store.db.prepare('INSERT INTO assistant_commitment_context(event_id,source_id) VALUES(?,?)');for(const id of new Set(pins.map(pin=>pin.sourceId)))insertContext.run(input.eventId,id);
-   this.store.reserveMetadata(0);return this.view(this.row(input.commitmentId),scope);
+   return this.view(this.row(input.commitmentId),scope);
   });
  }
  publish(input:CommitmentProposal,expectedRevision:number|undefined,scope:QueryScope,assertCurrent:AssertTaskCurrent,internalDependencies:readonly string[]=[],historicalDependencies:readonly string[]=[]){return this.write(input,'proposal',expectedRevision,scope,assertCurrent,internalDependencies,historicalDependencies);}

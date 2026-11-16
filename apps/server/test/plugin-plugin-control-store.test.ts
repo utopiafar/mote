@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -148,24 +149,23 @@ test('worker package and trusted native builds expose the same control projectio
   assert.deepEqual(Object.keys(worker).sort(),Object.keys(native).sort(),'Web and Android consume one field set for both build sources');
 });
 
-test('control JSON rows are charged and a quota failure rolls intent, state and receipt back together',t=>{
-  const path=directory(t),limits:{maxStorageBytes?:number}={},store=new Store(path,limits);t.after(()=>store.close());const control=new PluginControlStore(store);
+test('control JSON rows are counted and a SQLite receipt failure rolls intent, state and receipt back together',t=>{
+  const path=directory(t),store=new Store(path);t.after(()=>store.close());const control=new PluginControlStore(store);
   const before=store.logicalBytes();const input=command(control.revision());
   control.command('select',input,()=>control.revision(),()=>control.saveBuild({id:'fixture',packageId:'fixture.build',installationId:randomUUID(),revision:1,desired:selection,retired:false,observed:'queued',blockers:[],operationId:input.operationId}));
   const rows=store.db.prepare("SELECT name,bytes FROM storage_ledger WHERE name IN ('plugin_control_receipts','plugin_build_instances') ORDER BY name").all();
   assert.equal(rows.length,2);assert.ok(rows.every(row=>Number(row.bytes)>128));assert.ok(store.logicalBytes()>before);
   const queued=control.build('fixture')!,grown={...queued,blockers:['Generated quota detail 🌱']};
-  limits.maxStorageBytes=store.logicalBytes()+Buffer.byteLength(JSON.stringify(grown))-Buffer.byteLength(JSON.stringify(queued));
-  control.saveBuild(grown);assert.equal(store.logicalBytes(),limits.maxStorageBytes,'a replacement reserves exactly its UTF-8 growth');
+  const grownBytes=store.logicalBytes()+Buffer.byteLength(JSON.stringify(grown))-Buffer.byteLength(JSON.stringify(queued));
+  control.saveBuild(grown);assert.equal(store.logicalBytes(),grownBytes,'a replacement counts exactly its UTF-8 growth');
   control.saveBuild(grown);control.saveBuild({...grown,observed:'active'});
-  assert.equal(store.logicalBytes(),limits.maxStorageBytes,'replaying or updating an equal-size status needs no free quota');
+  assert.equal(store.logicalBytes(),grownBytes,'replaying or updating an equal-size status counts no extra bytes');
   control.saveBuild({...grown,observed:'active',blockers:[]});
-  assert.ok(store.logicalBytes()<limits.maxStorageBytes,'a smaller status releases its previous payload bytes');
+  assert.ok(store.logicalBytes()<grownBytes,'a smaller status releases its previous payload bytes');
   const previous=control.build('fixture')!,revision=control.revision(),failed=command(revision);
-  // A generated profile's actual ledger is the enforcement boundary, not a
-  // fake reserveMetadata method or a second per-plugin quota counter.
-  limits.maxStorageBytes=store.logicalBytes()+64;
-  assert.throws(()=>control.command('select',failed,()=>control.revision(),()=>control.saveBuild({...previous,blockers:['x'.repeat(1024)]})),{statusCode:507});
+  // Fail the actual receipt INSERT after the build intent has been written.
+  const recover=rejectSqliteWrites(store,'plugin_control_receipts');
+  assert.throws(()=>control.command('select',failed,()=>control.revision(),()=>control.saveBuild({...previous,blockers:['x'.repeat(1024)]})),/Generated SQLite write failure/);recover();
   assert.deepEqual(control.build('fixture'),previous);assert.equal(control.revision(),revision);assert.equal(control.receipt(failed.operationId),undefined);
 });
 

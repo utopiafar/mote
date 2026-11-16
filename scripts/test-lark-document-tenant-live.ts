@@ -57,7 +57,7 @@ const report:Record<string,any>={status:'running',startedAt:new Date().toISOStri
   contentBoundary:'Only the explicit generated test folder and generated document allowlist; no global search or unrelated document bodies',
   head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),manifest,calls:[],transport:[],cases:[],authorizations:[]};
 const config:Config={dataDir:join(output,'vault'),token,tokenPath:join(output,'token'),host:'127.0.0.1',port:0,
-  maxStorageBytes:200_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+  maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
   model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'high',modelBaseUrl:'',apiKey:'',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentTimeoutMs:300000,
   diagnosticsEnabled:true,agentTraceEnabled:true,logLevel:'warn',memoryConcurrency:2,

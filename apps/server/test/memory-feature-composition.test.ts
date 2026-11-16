@@ -23,7 +23,7 @@ assert.equal(original.length,4096);
 
 test('HTTP composed personal policy reads context, reviews over 32 selected candidates, then reports source invalidation across restart',{timeout:30000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-composition-'));
- const config:Config={dataDir:directory,token:'generated-composition-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-composition-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
  type Call={jobId?:string;phase?:string;target:MemoryWorkMember[];contextRead:boolean};
  const calls:Call[]=[],spyFailures:string[]=[];
  let node:Awaited<ReturnType<typeof buildApp>>;

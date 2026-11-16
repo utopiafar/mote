@@ -29,12 +29,12 @@ export class ImportUploads {
   }
   const prior=this.store.db.prepare('SELECT json FROM import_uploads WHERE id=?').get(id);
   if(prior){const {fileId:_,...manifest}=JSON.parse(String(prior.json));if(manifest.name!==input.name||manifest.sizeBytes!==input.sizeBytes||manifest.mimeType!==input.mimeType)throw new StoreError('Upload identity conflict',409);}
-  else{this.store.reserveMetadata(2048);this.store.db.prepare('INSERT INTO import_uploads VALUES(?,?,?)').run(id,Date.now()+86400000,JSON.stringify({...input,id}));}
+  else{this.store.db.prepare('INSERT INTO import_uploads VALUES(?,?,?)').run(id,Date.now()+86400000,JSON.stringify({...input,id}));}
   const value=this.load(id);return {id,partBytes:PART,fileId:value.fileId,parts:this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id)};
  }
  part(id:string,part:number,bytes:Buffer){this.assertOpen();const manifest=this.load(id),expected=Math.min(PART,manifest.sizeBytes-part*PART);if(!Buffer.isBuffer(bytes)||!Number.isSafeInteger(part)||part<0||part>=Math.ceil(manifest.sizeBytes/PART)||bytes.length!==expected)throw new StoreError('Invalid import part');
   const hash=sha256(bytes),prior=this.store.db.prepare('SELECT hash FROM import_upload_parts WHERE upload_id=? AND part=?').get(id,part);if(prior){if(prior.hash!==hash)throw new StoreError('Import part conflicts',409);return {part,bytes:bytes.length,hash};}if(manifest.fileId)throw new StoreError('Upload already committed',409);
-  this.store.reserveMetadata(bytes.length+128);const directory=join(this.directory,id);privateDirectory(directory);this.store.contentEncryption.write(join(directory,String(part)),bytes);this.store.db.prepare('INSERT INTO import_upload_parts VALUES(?,?,?,?)').run(id,part,bytes.length,hash);return {part,bytes:bytes.length,hash};
+  const directory=join(this.directory,id);privateDirectory(directory);this.store.contentEncryption.write(join(directory,String(part)),bytes);this.store.db.prepare('INSERT INTO import_upload_parts VALUES(?,?,?,?)').run(id,part,bytes.length,hash);return {part,bytes:bytes.length,hash};
  }
  close():Promise<void>{return this.closingTask??=(async()=>{this.closed=true;this.closing.abort();await Promise.allSettled([...this.pending.values()]);})();}
  async commit(id:string,signal?:AbortSignal){this.assertOpen();const prior=this.pending.get(id)??Promise.resolve(),next=prior.catch(()=>{}).then(()=>this.commitOnce(id,signal));this.pending.set(id,next);try{return await next;}finally{if(this.pending.get(id)===next)this.pending.delete(id);}}

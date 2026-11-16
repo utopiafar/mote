@@ -191,14 +191,12 @@ test('a submitted provider write reconciles to its committed body and durable er
   // The provider committed the write; its reply was lost before acknowledgement.
   await stack.platform.port.provider(instanceId,namespace).put({namespace,key,memory,opId});
   const lostWrite={namespace,key,memory,opId,bodyDigest:memoryBodyDigest(memory),hostPublished:false},lostJson=JSON.stringify(lostWrite);
-  stack.store.reserveMetadata(Buffer.byteLength(lostJson));
   stack.store.db.prepare("INSERT INTO memory_provider_writes VALUES(?,?,?,'submitted',?)").run(opId,'generated-parent',lostJson,0);
   await publication.reconcile();
   assert.equal(stack.store.db.prepare('SELECT state FROM memory_provider_writes WHERE id=?').get(opId)?.state,'acknowledged','an observed committed body is acknowledged, never rolled back');
 
   // A durable erase intent survives a shutdown before its physical removal ran.
   const eraseId='owner-delete:'+memory.id+':'+sha256(JSON.stringify(namespace)),eraseJson=JSON.stringify({namespace,memoryId:memory.id,key});
-  stack.store.reserveMetadata(Buffer.byteLength(eraseJson));
   stack.store.db.prepare('INSERT INTO memory_provider_erases VALUES(?,?,\'submitted\')').run(eraseId,eraseJson);
   await publication.close();await closeStack();
 

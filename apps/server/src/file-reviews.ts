@@ -65,7 +65,6 @@ export class FileReviews {
       })};
     }
     const value={...payload,citations:result.citations.map(c=>c.id),scope:{offset:input.offset,count:all.length,nextOffset:all.length===200?input.offset+200:null}},reviewId=randomUUID(),json=JSON.stringify(value);
-    this.files.store.reserveMetadata(Buffer.byteLength(json)+1024);
     this.files.store.db.prepare("INSERT INTO file_reviews VALUES(?,?,?,?,?,?,?)").run(reviewId,id,snapshot.artifactId,input.kind,'proposed',json,new Date().toISOString());
     return {id:reviewId,status:'proposed',...value};
   }
@@ -111,7 +110,7 @@ export class FileReviews {
   }
   private publish(id:string,current:ReturnType<typeof latestFileTranscript>,kind:string,payload:unknown,transcript?:Transcript,reviewId?:string){
     const db=this.files.store.db;
-    const json=JSON.stringify(payload);this.files.store.reserveMetadata(Buffer.byteLength(json)*2+4096);const artifactId=randomUUID();
+    const json=JSON.stringify(payload);const artifactId=randomUUID();
     const priorChunks=transcript?db.prepare('SELECT id FROM file_chunks WHERE artifact_id=?').all(current.artifactId).map(row=>String(row.id)):[];
     db.exec('BEGIN IMMEDIATE');try{
       db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind=?').run(id,kind);
@@ -125,7 +124,7 @@ export class FileReviews {
         if(Object.keys(attributions).length){
           db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind='speaker-names'").run(id);
           const names=Object.fromEntries(Object.entries(attributions).map(([label,attribution])=>[label,attribution.name]));
-          const speakerJson=JSON.stringify({names,attributions,confirmed:true,inputArtifact:artifactId});this.files.store.reserveMetadata(Buffer.byteLength(speakerJson)+512);
+          const speakerJson=JSON.stringify({names,attributions,confirmed:true,inputArtifact:artifactId});
           db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(randomUUID(),id,'speaker-names',new Date().toISOString(),'user-confirmed',speakerJson);
         }
         db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);
@@ -145,7 +144,7 @@ export class FileReviews {
     const changed=[...new Set([...Object.keys(previous),...Object.keys(input.names)])].filter(label=>previous[label]?.name!==input.names[label]);
     if(!changed.length)return {saved:true};
     const attributions=Object.fromEntries(Object.entries(input.names).map(([label,name])=>[label,previous[label]?.name===name?previous[label]:{name,confirmedBy:'owner',confirmationId,confirmedAt}]));
-    const json=JSON.stringify({names:input.names,attributions,confirmed:true,inputArtifact:current.artifactId});this.files.store.reserveMetadata(Buffer.byteLength(json)+1024);
+    const json=JSON.stringify({names:input.names,attributions,confirmed:true,inputArtifact:current.artifactId});
     db.exec('BEGIN IMMEDIATE');try{
       db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind='speaker-names'").run(id);
       db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(confirmationId,id,'speaker-names',confirmedAt,'user-confirmed',json);

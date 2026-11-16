@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {copyFileSync, mkdtempSync, rmSync} from 'node:fs';
@@ -19,7 +20,7 @@ const identity = (instanceId: string, activationId = randomUUID()): ScopeIdentit
 const stateHost = (store: Store, limits: StateLimits = stateLimits) =>
   new PluginHost(hostIdentity, undefined, undefined, {stateFor: scope => createInstanceState(store, scope, limits)});
 
-function fixture(t: {after: (work: () => unknown) => void}, options: {maxStorageBytes?: number} = {}) {
+function fixture(t: {after: (work: () => unknown) => void}, options: ConstructorParameters<typeof Store>[1] = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'mote-instance-state-'));
   const store = new Store(directory, options);
   const host = stateHost(store);
@@ -124,30 +125,20 @@ test('keys, values and namespace accounting are bounded without partial writes',
   await assert.rejects(strict.state.compareAndSet('k', null, '12345678'), (error: StateError) => error.code === 'value_too_large');
 });
 
-test('the existing metadata budget rejects an oversized state write and rolls it back', async t => {
-  const {host, store} = fixture(t, {maxStorageBytes: 2048});
-  const a = await install(host, 'instance-a');
-  await assert.rejects(a.state.compareAndSet('large', null, 'x'.repeat(4096)), (error: StateError) => error.code === 'limit_exceeded');
-  assert.equal(await a.state.get('large'), undefined);
-  assert.equal((await a.state.checkpoint()).records, 0);
-  await a.state.compareAndSet('small', null, 'ok');
-  assert.equal((await a.state.get('small'))?.value, 'ok');
+test('an actual SQLite state write failure rolls back the value and checkpoint', async t => {
+  const {host, store} = fixture(t),a = await install(host, 'instance-a'),recover=rejectSqliteWrites(store,'plugin_instance_state');
+  await assert.rejects(a.state.compareAndSet('large', null, 'x'.repeat(4096)), /Generated SQLite write failure/);
+  assert.equal(await a.state.get('large'), undefined);assert.equal((await a.state.checkpoint()).records, 0);
+  recover();await a.state.compareAndSet('small', null, 'ok');assert.equal((await a.state.get('small'))?.value, 'ok');
 });
 
-test('the global reservation includes the full ledger row cost at the boundary', async t => {
-  const directory = mkdtempSync(join(tmpdir(), 'mote-instance-state-boundary-'));
-  const probe = new Store(directory), base = probe.logicalBytes();
-  probe.close();
-  const key = 'boundary', value = 'x'.repeat(4000), scope = identity('instance-a');
-  const fixed = Buffer.byteLength(scope.packageId) + Buffer.byteLength(scope.installationId) +
-    Buffer.byteLength(scope.instanceId) + 24 + 32;
-  const max = base + Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(value)) + fixed - 1;
-  const store = new Store(directory, {maxStorageBytes: max}), host = stateHost(store);
-  t.after(async () => { await host.close().catch(() => {}); store.close(); rmSync(directory, {recursive: true, force: true}); });
-  const a = await install(host, 'instance-a');
-  await assert.rejects(a.state.compareAndSet(key, null, value), (error: StateError) => error.code === 'limit_exceeded');
-  assert.equal(await a.state.get(key), undefined);
-  assert.equal((await a.state.checkpoint()).records, 0);
+test('the logical state meter includes the full UTF-8 ledger row cost without a total quota', async t => {
+  const directory=mkdtempSync(join(tmpdir(),'mote-instance-state-boundary-')),store=new Store(directory),host=stateHost(store);
+  t.after(async()=>{await host.close().catch(()=>{});store.close();rmSync(directory,{recursive:true,force:true});});
+  const a=await install(host,'instance-a'),before=store.logicalBytes(),key='boundary',value='x'.repeat(4000),scope=identity('instance-a');
+  const fixed=Buffer.byteLength(scope.packageId)+Buffer.byteLength(scope.installationId)+Buffer.byteLength(scope.instanceId)+24+32;
+  await a.state.compareAndSet(key,null,value);assert.equal(store.logicalBytes()-before,Buffer.byteLength(key)+Buffer.byteLength(JSON.stringify(value))+fixed);
+  assert.equal((await a.state.get(key))?.value,value);assert.equal((await a.state.checkpoint()).records,1);
 });
 
 test('restart and the existing whole-database backup retain current-format state', async t => {

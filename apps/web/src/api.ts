@@ -110,14 +110,12 @@ export interface Status {
     imageBytes: number;
     imageCaptures?: number;
     logicalBytes: number;
-    maxBytes?: number;
     imagesEncrypted: boolean;
     firstCaptureAt?: string;
     lastCaptureAt?: string;
     indexing: { status: string; count: number }[];
   };
   index: { mode: string; model: string | null };
-  retentionDays: number;
   insightIntervalHours: number;
   serverTime: string;
 }

@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -20,7 +21,7 @@ const conflict=(error:unknown)=>Boolean(error&&typeof error==='object'&&'statusC
 
 test('assistant cards retain scoped versions and feedback, resolve safely, and retire deleted evidence',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-cards-'));
- const config:Config={dataDir:directory,token:'generated-card-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-card-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+config.token},cards=node.featureServices.assistantCards;
@@ -249,7 +250,7 @@ test('assistant cards retain scoped versions and feedback, resolve safely, and r
 
 test('encrypted card bodies and feedback survive restart and maintenance deletion purges them',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-card-restart-'));
- const config:Config={dataDir:directory,token:'generated-card-restart-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',dataKey:'ab'.repeat(32),contentEncryptionEnabled:true};
+ const config:Config={dataDir:directory,token:'generated-card-restart-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',dataKey:'ab'.repeat(32),contentEncryptionEnabled:true};
  const options={backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}};
  let node=await buildApp(config,options);let closed=false;
  t.after(async()=>{if(!closed)await node.app.close();rmSync(directory,{recursive:true,force:true});});
@@ -271,17 +272,17 @@ test('encrypted card bodies and feedback survive restart and maintenance deletio
  }finally{maintenance.close();}
 });
 
-test('vault quota failure rolls back a card and its evidence inside the caller transaction',t=>{
+test('a card version write failure rolls back a card and its evidence inside the caller transaction',t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-card-quota-'));let store=new Store(directory);
  const reader=new EvidenceReader(store,new SourceStore(store));void reader;
- const budget=store.logicalBytes()+1000;store.close();store=new Store(directory,{maxStorageBytes:budget});
+ store.close();store=new Store(directory,{});
  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
  const cards=new AssistantCards(store,new EvidenceReader(store,new SourceStore(store))),id=randomUUID();
  const input={id,kind:'artifact' as const,matterId:null,version:'quota',state:'open' as const,title:'Generated quota',body:'Generated content '.repeat(300),evidence:[],evidenceDependencies:dependencies()};
  store.db.exec('BEGIN IMMEDIATE');
- assert.throws(()=>cards.publish(input,undefined,all,()=>{}),{statusCode:507});assert.equal(store.db.isTransaction,true);
+ const recover=rejectSqliteWrites(store,'assistant_card_versions');assert.throws(()=>cards.publish(input,undefined,all,()=>{}),/Generated SQLite write failure/);assert.equal(store.db.isTransaction,true);
  store.db.exec('COMMIT');
  assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_cards WHERE id=?').get(id)!.n,0);
  assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_card_versions WHERE card_id=?').get(id)!.n,0);
- assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_card_evidence WHERE card_id=?').get(id)!.n,0);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM assistant_card_evidence WHERE card_id=?').get(id)!.n,0);recover();
 });

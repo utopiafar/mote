@@ -48,8 +48,7 @@ it('delivers real query progress and its answer through the one restricted Ask s
   const gate = new Promise<void>(resolve => { release = resolve; });
   let calls = 0;
   const node = await buildApp({
-    dataDir: join(serverDirectory, 'data'), token, tokenPath: 'generated', host: '127.0.0.1', port: 0,
-    maxStorageBytes: 20_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0,
+    dataDir: join(serverDirectory, 'data'), token, tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0,
     allowedOrigins: [], model: 'generated-model', modelBaseUrl: 'https://generated.invalid', apiKey: 'generated-key',
     allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
   }, {

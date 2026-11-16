@@ -14,7 +14,7 @@ import {readCurrentMemoryPage} from '../src/current-memory.js';
 const headers={authorization:'Bearer generated-current-memory-owner'};
 async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<any>=async()=>({answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}})){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-current-memory-'));
- const config:Config={dataDir,token:'generated-current-memory-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir,token:'generated-current-memory-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query,close:async()=>{}}});await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const add=async(text:string,deviceId='generated-work')=>{

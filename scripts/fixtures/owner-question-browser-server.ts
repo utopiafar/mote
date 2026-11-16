@@ -8,7 +8,7 @@ import type {MemoryWorkMember} from '../../apps/server/src/memory-work-contract.
 import {fixtureMemoryPlan} from '../../apps/server/test/fixtures/memory-planning.js';
 
 const original='说话人1：我觉得工作压力很大。说话人1：可以讲讲发生什么了吗？参与者：我是林岚。';
-const config:Config={dataDir:process.env.MOTE_FIXTURE_DIR!,token:process.env.MOTE_FIXTURE_TOKEN!,dataKey:process.env.MOTE_FIXTURE_TOKEN!,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+const config:Config={dataDir:process.env.MOTE_FIXTURE_DIR!,token:process.env.MOTE_FIXTURE_TOKEN!,dataKey:process.env.MOTE_FIXTURE_TOKEN!,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
 const result=(answer:unknown):QueryResult=>({runId:'generated-browser-model',answer:JSON.stringify(answer),citations:[],trace:[]});
 const generate=async(input:QueryInput):Promise<QueryResult>=>{
  if(input.taskContext?.ownerClarificationReply)return result({disposition:'followup',prompt:'请指出这份资料中哪一句话属于你。'});

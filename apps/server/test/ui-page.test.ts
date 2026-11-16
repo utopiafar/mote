@@ -10,7 +10,7 @@ import type {Config} from '../src/config.js';
 
 test('UI pages ingest, retry, browse, index and export without an image or OCR job',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-ui-e2e-')),token='generated-ui-page-owner-token-000000';
- const config:Config={dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'31'.repeat(32),maxStorageBytes:20_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'31'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const {app,store}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No live models');},close:async()=>{}}});
  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
  const f=JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/structured-conformance.json',import.meta.url),'utf8')).find((fixture:{name:string})=>fixture.name==='builtin-wechat-article-android-8.0.78-visible');

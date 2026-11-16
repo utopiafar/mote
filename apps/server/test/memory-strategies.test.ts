@@ -33,7 +33,7 @@ async function fixture(t:any){
     for(const value of ${JSON.stringify(recipes)})disposers.push(ctx.memoryStrategies.registerRecipe(value));
   },close(){for(const dispose of disposers.reverse())dispose();}};}};`);
   const connectorManifest=(await import(pathToFileURL(modulePath).href)).default;
-  const config:Config={dataDir:join(directory,'vault'),token:'generated-strategy-test-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir:join(directory,'vault'),token:'generated-strategy-test-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const calls:QueryInput[]=[],control:{failCoding:boolean;duringExtract?:()=>void;duringReview?:()=>void}={failCoding:false};
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
     const topic=fixtureTopicResult(input);if(topic)return topic;

@@ -10,7 +10,7 @@ const root=await mkdtemp(join(tmpdir(),'mote-issue-2-live-'));
 const token=randomUUID();let node;
 try {
   node=await buildApp({dataDir:root,token,tokenPath:join(root,'token'),host:'127.0.0.1',port:0,
-    maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+    maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],
     codexBin:process.env.MOTE_CODEX_BIN??'/Applications/ChatGPT.app/Contents/Resources/codex',modelProvider:'codex',modelProtocol:'codex-app-server',model:'gpt-5.6-luna',modelReasoningEffort:'max',modelRequestTimeoutMs:null,agentTimeoutMs:300000,
     modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
   const headers={authorization:'Bearer '+token},id=randomUUID();

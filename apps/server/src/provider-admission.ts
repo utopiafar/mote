@@ -15,7 +15,7 @@ export class ProviderAdmission {
  async run<T>(settings:Identity,task:()=>Promise<T>){this.check(settings);try{return await task();}catch(error){
   if(!this.closed&&error instanceof ProviderFailure&&error.details.category==='transient'&&(error.details.code==='rate_limited'||error.details.retryAfterMs!==undefined)&&['rate_limited','provider_unavailable','provider_timeout','provider_network'].includes(error.details.code)){
    const db=this.store.db,scope=this.scope(settings),now=this.now(),delay=error.details.retryAfterMs??30000,until=now+Math.max(1000,Math.min(Number.isFinite(delay)?delay:30000,7*86400000));
-   db.prepare('DELETE FROM provider_cooldowns WHERE until<=?').run(now);if(!db.prepare('SELECT 1 FROM provider_cooldowns WHERE scope=?').get(scope))this.store.reserveMetadata(256);
+   db.prepare('DELETE FROM provider_cooldowns WHERE until<=?').run(now);
    db.prepare('INSERT INTO provider_cooldowns VALUES(?,?,?) ON CONFLICT(scope) DO UPDATE SET code=excluded.code,until=excluded.until WHERE excluded.until>provider_cooldowns.until').run(scope,error.details.code,until);
    const effective=Number(db.prepare('SELECT until FROM provider_cooldowns WHERE scope=?').get(scope)!.until);
    throw new ProviderFailure({...error.details,retryAfterMs:Math.max(1,effective-this.now())});

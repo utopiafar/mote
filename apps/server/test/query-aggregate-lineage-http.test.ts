@@ -10,7 +10,7 @@ import type {Config} from '../src/config.js';
 
 for(const transition of ['heartbeat','delete-before-followup','delete-during-query'] as const)test(`formal Ask aggregate lineage survives ${transition} with precise original and device scope`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-aggregate-query-')),token='generated-aggregate-owner',headers={authorization:'Bearer '+token},id=randomUUID();let node!:Awaited<ReturnType<typeof buildApp>>,calls=0,fixtureFailure:unknown;
- const cfg:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const cfg:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  node=await buildApp(cfg,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   calls++;const bridge=await startBridge(node.featureServices.archiveReader,input);
   try{

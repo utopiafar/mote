@@ -16,7 +16,7 @@ const headers = {authorization: `Bearer ${token}`};
 function config(dataDir: string): Config {
   return {
     dataDir, token, tokenPath: 'fixture-only', host: '127.0.0.1', port: 0,
-    maxStorageBytes: 20_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0,
+     maxExportBytes: 1_000_000,  insightIntervalHours: 0,
     allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
     embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
     connectors: {

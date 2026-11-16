@@ -15,7 +15,7 @@ const headers=(token=owner)=>({authorization:'Bearer '+token,'x-mote-ingress-ver
 const scope={after:'2026-10-29T00:00:00.000Z',before:'2026-10-30T00:00:00.000Z',timeZone:'UTC'};
 async function fixture(t:TestContext){
  const dir=await mkdtemp(join(tmpdir(),'mote-capture-timeline-'));
- const node=await buildApp({dataDir:dir,token:owner,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No inference in read-only browsing');},close:async()=>{}}});
+ const node=await buildApp({dataDir:dir,token:owner,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No inference in read-only browsing');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();await rm(dir,{recursive:true,force:true});});
  const request=async(path:string,query:Record<string,string|number>={},token=owner,status=200)=>{const response=await node.app.inject({url:path+'?'+new URLSearchParams(Object.entries(query).map(([key,value])=>[key,String(value)])),headers:headers(token)});assert.equal(response.statusCode,status,response.body);return response.json();};
  const add=async(payload:unknown)=>{const response=await node.app.inject({method:'POST',url:'/api/captures',headers:headers(),payload});assert.ok([200,201].includes(response.statusCode),response.body);};
@@ -81,7 +81,7 @@ test('deleting an unloaded member or changing OCR invalidates a previous group a
 });
 
 test('central OCR jobs and results preserve unfiltered page and member cursors while OCR-filtered locators expire',async t=>{
- const dir=await mkdtemp(join(tmpdir(),'mote-timeline-ocr-')),store=new Store(dir,{maxStorageBytes:50_000_000,maintenance:false});
+ const dir=await mkdtemp(join(tmpdir(),'mote-timeline-ocr-')),store=new Store(dir,{maintenance:false});
  t.after(async()=>{store.close();await rm(dir,{recursive:true,force:true});});
  const image=(await sharp({create:{width:8,height:8,channels:3,background:'#6e8179'}}).png().toBuffer()).toString('base64');
  const records=Array.from({length:6},(_,index)=>({id:randomUUID(),deviceId:'generated-ocr-'+Math.floor(index/3),deviceName:'Generated OCR device',platform:'android',capturedAt:new Date(Date.parse(scope.after)+3600000*Math.floor(index/3)+(index%3)*60000).toISOString(),durationMs:0,appId:'generated.app',appName:'Generated app',windowTitle:'Generated screenshot',source:'screen',imageMime:'image/png',imageBase64:image,ocrText:'',ocr:{status:'disabled'},privacy:{collection:'content',mode:'none'}}));
@@ -148,7 +148,7 @@ test('a retained metadata-only screen series has distinct date rows when its ori
 });
 
 async function groupedFixture(t:TestContext,groups:number){
- const dir=await mkdtemp(join(tmpdir(),'mote-timeline-group-reuse-')),store=new Store(dir,{maxStorageBytes:50_000_000,maintenance:false});
+ const dir=await mkdtemp(join(tmpdir(),'mote-timeline-group-reuse-')),store=new Store(dir,{maintenance:false});
  t.after(async()=>{store.close();await rm(dir,{recursive:true,force:true});});
  const records=Array.from({length:groups*2},(_,index)=>{const group=Math.floor(index/2),day=group%3,at=new Date(Date.parse(scope.after)+day*86400000+3600000+(index%2)*1000).toISOString();return {id:randomUUID(),deviceId:'generated-group-'+group,deviceName:'Generated device',platform:'android',capturedAt:at,durationMs:1000,appId:'generated.app',appName:'Generated app',windowTitle:'',source:'activity',ocrText:'',metadata:{version:1,observedAt:at},privacy:{collection:'activity',mode:'none'}};});
  for(let index=0;index<records.length;index+=500)await store.ingestBatch(records.slice(index,index+500));

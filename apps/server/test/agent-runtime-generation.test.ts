@@ -12,8 +12,8 @@ import type {ModelAgentFactory} from '../src/model-agent.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 
 const token='generated-agent-runtime-generation',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,
-  retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'original-fixture',modelBaseUrl:'https://model.example.invalid/v1',apiKey:'synthetic-original-key',
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
+  insightIntervalHours:0,allowedOrigins:[],model:'original-fixture',modelBaseUrl:'https://model.example.invalid/v1',apiKey:'synthetic-original-key',
   modelProvider:'custom',modelProtocol:'openai-completions',modelReasoningEffort:'auto',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',
   agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
 type Node=Awaited<ReturnType<typeof buildApp>>;

@@ -173,7 +173,7 @@ export class AssistantCards {
    this.store.db.prepare('INSERT INTO assistant_card_versions(card_id,version,request_hash,state,private_json,created_at) VALUES(?,?,?,?,?,?)').run(input.id,input.version,hash,input.state,body,at);
    const insert=this.store.db.prepare('INSERT INTO assistant_card_evidence(card_id,version,evidence_id) VALUES(?,?,?)');for(const id of ids)insert.run(input.id,input.version,id);
    const insertSource=this.store.db.prepare('INSERT INTO assistant_card_context(card_id,version,source_id) VALUES(?,?,?)');for(const sourceId of sourceIds)insertSource.run(input.id,input.version,sourceId);
-   this.store.reserveMetadata(0);return this.view(this.row(input.id),scope);
+   return this.view(this.row(input.id),scope);
   });
  }
  get(id:string,rawScope:QueryScope){return this.transaction(()=>this.view(this.row(id),queryScopeSchema.parse(rawScope)));}
@@ -239,7 +239,7 @@ export class AssistantCards {
      AND kind IN ('assistant.followup','batch','batch.item')`)).run(id);
     this.store.db.prepare('UPDATE assistant_cards SET revision=revision+1,updated_at=? WHERE id=?').run(at,id);
    }
-   this.store.reserveMetadata(0);return this.view(this.row(id),scope);
+   return this.view(this.row(id),scope);
   });
  }
  /** The accepting service wraps this link and task creation in its transaction. */
@@ -253,7 +253,7 @@ export class AssistantCards {
    tasks.evidenceDependencies(taskId,task.revision,ids=>this.assertValid(ids,scope));
    if(row.accepted_task_id===taskId)return this.view(row,scope);
    this.store.db.prepare('UPDATE assistant_cards SET accepted_task_id=?,revision=revision+1,updated_at=? WHERE id=?').run(taskId,this.now(),id);
-   this.store.reserveMetadata(0);return this.view(this.row(id),scope);
+   return this.view(this.row(id),scope);
   });
  }
  private sign(row:CardRow,value:unknown){return createHmac('sha256',Buffer.from(row.cursor_key,'hex')).update(canonicalRecipeJson(value)).digest('hex');}

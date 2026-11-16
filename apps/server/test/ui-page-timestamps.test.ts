@@ -15,7 +15,7 @@ const agent={configured:false,query:async()=>{throw Error('No live model in gene
 async function fixture(t:TestContext){
   const dir=mkdtempSync(join(tmpdir(),'mote-page-time-'));
   const config:Config={dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'32'.repeat(32),
-    maxStorageBytes:30_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+    maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],
     model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const result=await buildApp(config,{agent,backgroundWorker:false});
   t.after(async()=>{await result.app.close();rmSync(dir,{recursive:true,force:true});});

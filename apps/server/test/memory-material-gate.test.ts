@@ -83,7 +83,7 @@ test('a ready named source body admits partial Material anchor, then supersessio
 test('production manual Memory routes reject raw source items and raw model citations',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-route-gate-'));
   const config:Config={dataDir:directory,token:'generated-memory-gate-token',tokenPath:'fixture',host:'127.0.0.1',port:0,
-    maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
     model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,
     embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   let raw='';

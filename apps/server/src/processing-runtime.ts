@@ -131,7 +131,6 @@ export class ProcessingRuntime {
       jobs.push({...(contextInputs?{contextInputs}:{}),...(consumerGrant?{consumerGrant}:{}),...(step.productInputs.length?{productInputs:step.productInputs}:{}),...(parentGrant?{parentGrant}:{}),id,processor:processor.id,version:processor.version,lane:processor.lane,inputs,materialInputs:step.materialInputs,config,dependencies,artifactInputs:step.artifactInputs,outputs:[]});
     }
     const db=this.store.db,own=!db.isTransaction;db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT processing_enqueue');try{
-      this.store.reserveMetadata(jobs.reduce((n,j)=>n+Buffer.byteLength(JSON.stringify(j))+1024,0));
       for(const job of jobs){db.prepare("INSERT OR IGNORE INTO processing_jobs(id,lane,state,json) VALUES(?,?,'waiting',?)").run(job.id,job.lane,JSON.stringify(job));
         // Saved products are reusable across recipes. A parent can renew an
         // interrupted grant, but observing a failed child never authorizes

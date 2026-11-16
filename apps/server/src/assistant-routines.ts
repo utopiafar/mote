@@ -76,7 +76,7 @@ export class AssistantRoutines {
    const event=this.calendar(payload);if(payload.event&&!event)throw new StoreError('Routine calendar event is unavailable',409);
    const next=this.next(payload,this.now()),id=randomUUID();
    this.store.db.prepare('INSERT INTO assistant_routines VALUES(?,?,?,1,1,?,?,?,?)').run(id,input.requestId,hash,next?.scheduledAt??null,event?.revision??null,encodeMemoryPrivate(this.store,payload),Number(Boolean(payload.event)));
-   this.store.reserveMetadata(0);return this.get(id);
+   return this.get(id);
   });
  }
  /** Changing or pausing a rule revokes all of its older occurrences. Resume
@@ -97,7 +97,7 @@ export class AssistantRoutines {
    const next=enabled?this.next(payload,this.now()):null;
    this.store.db.prepare('UPDATE assistant_routines SET revision=?,enabled=?,next_due=?,event_revision=?,json=?,event_rule=? WHERE id=? AND revision=?')
     .run(revision,Number(enabled),next?.scheduledAt??null,event?.revision??null,encodeMemoryPrivate(this.store,payload),Number(Boolean(payload.event)),row.id,row.revision);
-   this.store.reserveMetadata(0);return this.get(row.id);
+   return this.get(row.id);
   });
  }
  private occurrence(ref:RoutineRef):OccurrenceRow|undefined{return this.store.db.prepare('SELECT * FROM assistant_routine_occurrences WHERE rule_id=? AND revision=? AND scheduled_at=?').get(ref.ruleId,ref.revision,ref.scheduledAt) as OccurrenceRow|undefined;}
@@ -156,7 +156,7 @@ export class AssistantRoutines {
    this.store.db.prepare('UPDATE assistant_routine_occurrences SET task_id=? WHERE rule_id=? AND revision=? AND scheduled_at=?').run(task.id,row.id,row.revision,scheduledAt);
    const next=payload.event?null:this.next(payload,now);
    this.store.db.prepare('UPDATE assistant_routines SET next_due=?,event_revision=? WHERE id=? AND revision=?').run(next?.scheduledAt??null,payload.event?event?.revision??null:next?.eventRevision??null,row.id,row.revision);
-   this.store.reserveMetadata(0);return {taskId:task.id};
+   return {taskId:task.id};
   });
  }
  /** Called on the existing Central poll, including when there are no changes. */

@@ -9,7 +9,7 @@ import {ProviderFailure} from '@mote/shared';
 import type {Config} from '../src/config.js';
 import {hostRun,hostTerminal,hostUsage} from './fixtures/host-run.js';
 const token='generated-query-owner-token',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 test('background admission survives client departure, deduplicates and persists progress, result and usage',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-query-runs-'));let complete!:()=>void,calls=0,heldRun='';
   const agent:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{

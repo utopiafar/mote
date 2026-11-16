@@ -96,7 +96,6 @@ export class AssistantActions {
      id=this.actions.proposeAssistant(draft,input.target).id;
     }
     db.prepare('INSERT INTO assistant_action_links VALUES(?,?,?,?,?,?)').run(input.taskId,input.index,source.matterId,draft.kind,id,hash);
-    this.store.reserveMetadata(0);
    }
    const result=this.get(input.taskId,input.scope);db.exec('RELEASE assistant_action_command');return result;
   }catch(error){db.exec('ROLLBACK TO assistant_action_command; RELEASE assistant_action_command');throw error;}

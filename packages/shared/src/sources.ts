@@ -137,7 +137,7 @@ export const sourceConnectionSchema=z.object({
   sourceContext:sourceDescriptionDeclarationSchema.omit({sourceId:true}).optional(),
   /** Read-only host generation for the effective synchronization range. */
   syncScopeVersion:z.number().int().nonnegative().safe().optional(),
-  initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
+  initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('archive'),enabled:z.boolean().default(true),
 }).strict();
 /** Coverage is independent of whether a connector is running. Processed/remaining count
  * source entries in this scan window, not attempts or document characters.

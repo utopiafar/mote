@@ -229,8 +229,8 @@ export class AssistantChangeFeed {
    (SELECT task_id FROM task_evidence WHERE evidence_id IN (SELECT evidence_id FROM assistant_card_feedback_evidence WHERE feedback_seq=?))`).run(input.feedbackSeq);
  }
  /** Process each event in its own transaction. Cursor and task input move
-  * together, so a failed item cannot acknowledge a half-created task. Quota
-  * exhaustion leaves the event pending for a later poll, including at startup. */
+  * together, so a failed item cannot acknowledge a half-created task. Full
+  * storage leaves the event pending for a later poll, including at startup. */
  tick(limit=100){
   if(!Number.isSafeInteger(limit)||limit<1||limit>1000)throw Error('Invalid assistant change page');
   const process=(row:ChangeRow)=>{
@@ -243,7 +243,7 @@ export class AssistantChangeFeed {
    // A different Central may have retried or deleted this event while we waited.
    const row=this.store.db.prepare('SELECT l.* FROM assistant_change_deferred d JOIN assistant_change_log l ON l.seq=d.seq WHERE d.seq=?').get(seq) as ChangeRow|undefined;
    if(!row)return;
-   process(row);this.store.db.prepare('DELETE FROM assistant_change_deferred WHERE seq=?').run(seq);this.store.reserveMetadata(0);
+   process(row);this.store.db.prepare('DELETE FROM assistant_change_deferred WHERE seq=?').run(seq);
   });}
    catch(error){if(error instanceof StoreError&&error.statusCode===507)return 0;if(!(error instanceof StoreError&&error.statusCode===409))throw error;this.store.db.prepare('UPDATE assistant_change_deferred SET attempts=attempts+1 WHERE seq=?').run(seq);}
   let count=0;
@@ -254,7 +254,7 @@ export class AssistantChangeFeed {
     // replay its old event or move the shared cursor backwards.
     row=this.store.db.prepare('SELECT * FROM assistant_change_log WHERE seq>(SELECT cursor FROM assistant_change_state WHERE id=1) ORDER BY seq LIMIT 1').get() as ChangeRow|undefined;
     if(!row)return false;
-    process(row);this.store.db.prepare('UPDATE assistant_change_state SET cursor=? WHERE id=1').run(row.seq);this.store.reserveMetadata(0);return true;
+    process(row);this.store.db.prepare('UPDATE assistant_change_state SET cursor=? WHERE id=1').run(row.seq);return true;
    });if(!processed)break;}
    catch(error){
     if(error instanceof StoreError&&error.statusCode===507)return count;
@@ -263,7 +263,7 @@ export class AssistantChangeFeed {
     try{this.transaction(()=>{
      if(!this.store.db.prepare('SELECT 1 FROM assistant_change_log WHERE seq=? AND seq>(SELECT cursor FROM assistant_change_state WHERE id=1)').get(seq))return;
      this.store.db.prepare('INSERT OR IGNORE INTO assistant_change_deferred(seq) VALUES(?)').run(seq);
-     this.store.db.prepare('UPDATE assistant_change_state SET cursor=? WHERE id=1').run(seq);this.store.reserveMetadata(0);
+     this.store.db.prepare('UPDATE assistant_change_state SET cursor=? WHERE id=1').run(seq);
     });}
     catch(error){if(error instanceof StoreError&&error.statusCode===507)return count;throw error;}
    }

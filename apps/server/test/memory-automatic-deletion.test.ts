@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +22,7 @@ async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-automatic-memory-'));let store=new Store(directory),memories=new MemoryStore(store),sources=new SourceStore(store);
  sources.register({id:'generated',name:'Generated fixtures',kind:'custom',deviceId:'fixture',platform:'import'});
  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
- return {get store(){return store;},get memories(){return memories;},async add(text:string,date='2026-01-01T00:00:00Z',externalId=randomUUID()){return (await sources.upsert('generated',{externalId,revision:'1',observedAt:date,kind:'message',layer:'original',text})).id;},restart(options:{maxStorageBytes?:number}={},beforeMemoryStore?:(store:Store)=>void){store.close();store=new Store(directory,options);beforeMemoryStore?.(store);memories=new MemoryStore(store);sources=new SourceStore(store);}};
+ return {get store(){return store;},get memories(){return memories;},async add(text:string,date='2026-01-01T00:00:00Z',externalId=randomUUID()){return (await sources.upsert('generated',{externalId,revision:'1',observedAt:date,kind:'message',layer:'original',text})).id;},restart(options:ConstructorParameters<typeof Store>[1]={},beforeMemoryStore?:(store:Store)=>void){store.close();store=new Store(directory,options);beforeMemoryStore?.(store);memories=new MemoryStore(store);sources=new SourceStore(store);}};
 }
 type Fixture=Awaited<ReturnType<typeof fixture>>;
 function output(f:Fixture,ids:string[],statement='Generated personal conclusion',extra:Record<string,unknown>={}):QueryResult{return {answer:JSON.stringify({memories:[{title:'Generated Memory',statement:statement+' '+ids.map(id=>`[${id}]`).join(' '),uncertainty:'Generated fixture, no real personal data.',evidenceIds:ids,evidence:ids.map(id=>({id,quote:f.store.evidence([id])[0].ocrText})),admission:{layer:'memory',scope:'fixture',reason:'Explicit owner statement in generated evidence',attribution:'user'},...extra}]}),runId:randomUUID(),trace:[],citations:ids.map(id=>({id,capturedAt:f.store.evidence([id])[0].capturedAt,appName:'Generated fixture',excerpt:''}))};}
@@ -331,17 +332,17 @@ test('incomplete lineage archives are refused atomically and current lineage can
  const bad=structuredClone(archive);bad.memoryDeletions[0].derivationSourceIds=[];await assert.rejects(rejected.store.importArchive(bad),/source lineage mismatch/);assert.equal(rejected.store.evidence([id]).length,0);
 });
 
-test('deletion rules and provenance dependencies consume exact quota and release it when originals are removed',async t=>{
+test('deletion rules and provenance dependencies have exact byte accounting and release it when originals are removed',async t=>{
  const f=await fixture(t),id=await f.add('Generated quota evidence 中文'),[memory]=await save(f,output(f,[id])),before=f.store.logicalBytes(),memoryBytes=Buffer.byteLength(String(f.store.db.prepare('SELECT json FROM memories WHERE id=?').get(memory.id)!.json));
  f.memories.delete(memory.id);
  const intent=f.memories.deletions.export()[0],jsonBytes=Buffer.byteLength(JSON.stringify(intent)),rows=f.store.db.prepare('SELECT * FROM memory_deletion_dependencies').all(),dependencyBytes=rows.reduce((total,row)=>total+['deletion_id','evidence_id','origin_keys','lineage_keys'].reduce((n,key)=>n+Buffer.byteLength(String(row[key])),0)+128,0),ruleBytes=jsonBytes+dependencyBytes;
  assert.equal(f.store.logicalBytes(),before-memoryBytes+ruleBytes);
  assert.equal(f.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='memory_deletions'").get()!.bytes,jsonBytes);
  assert.equal(f.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='memory_deletion_dependencies'").get()!.bytes,dependencyBytes);
- const persisted=f.store.logicalBytes(),second={...intent,id:randomUUID()};f.restart({maxStorageBytes:persisted+ruleBytes-1});
- assert.equal(f.store.stats().logicalBytes,persisted);assert.throws(()=>f.memories.deletions.restore([second]),{statusCode:507});assert.equal(f.memories.deletions.export().length,1);
- f.restart({maxStorageBytes:persisted+ruleBytes});f.memories.deletions.restore([second]);assert.equal(f.store.logicalBytes(),persisted+ruleBytes);f.memories.deletions.restore([second]);assert.equal(f.store.logicalBytes(),persisted+ruleBytes,'Idempotent restore requires no extra capacity');assert.throws(()=>f.store.reserveMetadata(1),{statusCode:507});
- f.store.delete(id);assert.deepEqual(f.memories.deletions.export(),[]);assert.equal(f.store.db.prepare("SELECT sum(bytes) n FROM storage_ledger WHERE name IN ('memory_deletions','memory_deletion_dependencies')").get()!.n,0);f.store.reserveMetadata(ruleBytes*2);
+ const persisted=f.store.logicalBytes(),second={...intent,id:randomUUID()};f.restart({});
+ assert.equal(f.store.stats().logicalBytes,persisted);const recover=rejectSqliteWrites(f.store,'memory_deletion_dependencies');f.store.db.exec('BEGIN IMMEDIATE');assert.throws(()=>f.memories.deletions.restore([second]),/Generated SQLite write failure/);assert.equal(f.memories.deletions.export().length,1);assert.equal(f.store.logicalBytes(),persisted);assert.equal(f.store.db.isTransaction,true);f.store.db.exec('COMMIT');recover();
+ f.restart({});f.memories.deletions.restore([second]);assert.equal(f.store.logicalBytes(),persisted+ruleBytes);f.memories.deletions.restore([second]);assert.equal(f.store.logicalBytes(),persisted+ruleBytes,'Idempotent restore counts no extra bytes');
+ f.store.delete(id);assert.deepEqual(f.memories.deletions.export(),[]);assert.equal(f.store.db.prepare("SELECT sum(bytes) n FROM storage_ledger WHERE name IN ('memory_deletions','memory_deletion_dependencies')").get()!.n,0);
 });
 
 test('current deletion ledgers reopen with exact accounting and dependency identities',async t=>{

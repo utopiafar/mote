@@ -34,7 +34,7 @@ async function fixture(t:import('node:test').TestContext,createProvider?:(direct
   media:async()=>{calls.push({phase:'media'});if(state.mediaFails)throw new ExecutionFailure('blocked','generated_media_permission');return {mimeType:'audio/wav',bytes:wav};},
  };
  const activeProvider=createProvider?.(directory)??provider;
- const config:Config={dataDir:directory,token:'generated-recording-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
+ const config:Config={dataDir:directory,token:'generated-recording-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
  let node:Awaited<ReturnType<typeof buildApp>>;
  const deps={backgroundWorker:false,connectorTesting:{recordings:[activeProvider]},agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;

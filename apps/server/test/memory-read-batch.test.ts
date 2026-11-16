@@ -146,7 +146,7 @@ test('bulk Formal input validation preserves appended Coding prefixes and reject
 // 4097 context grants, exact coverage and single attempts remain unchanged.
 test('three actual Memory jobs prepare large context grants through the bridge without losing their execution lease',{timeout:240000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-large-bridge-'));
- const config:Config={dataDir:directory,token:'generated-large-memory-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:60_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,memoryConcurrency:3};
+ const config:Config={dataDir:directory,token:'generated-large-memory-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,memoryConcurrency:3};
  const calls:QueryInput[]=[];
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   calls.push(input);assert.ok(input.processingMaterialInputs?.length);assert.equal(Object.keys(input.processingEvidence!).length,4097);

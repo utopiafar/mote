@@ -34,7 +34,7 @@ import {invalidateTaskEvidence} from './task-evidence.js';
 import {installAssistantCards,invalidateAssistantCardEvidence} from './assistant-card-storage.js';
 import {installAssistantCommitments,invalidateAssistantCommitmentEvidence} from './assistant-commitment-storage.js';
 
-export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
+export class StoreError extends Error { constructor(message:string, public statusCode=400, options?:ErrorOptions) {super(message,options);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
 export type Range = {capturedOrder?:boolean;sources?:CaptureInput['source'][];sourceIds?:readonly string[];sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
@@ -185,7 +185,7 @@ export class EvidenceStore {
     if(prior) {
       if(p.input.stateSeries){const previous=JSON.parse(prior.json) as CaptureInput;
         if(isStateExtension(previous,p.input)){
-          const json=JSON.stringify(p.input);this.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(prior.json)));
+          const json=JSON.stringify(p.input);
           this.db.prepare('UPDATE captures SET json=?,fingerprint=? WHERE id=?').run(json,p.fingerprint,p.input.id);
           return {id:p.input.id,duplicate:true,blobHash:null,indexingStatus:prior.index_status};
         }
@@ -216,9 +216,6 @@ export class EvidenceStore {
     }
     const {imageBase64:_,imageMime,...metadata}=p.input;
     const json=JSON.stringify(metadata);
-    const known=p.hash ? this.db.prepare('SELECT hash FROM assets WHERE hash=?').get(p.hash):null;
-    const estimatedNewBytes=Buffer.byteLength(json)+(known?0:p.bytes?.length??0);
-    if(this.options.maxStorageBytes && this.logicalBytes()+estimatedNewBytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached; free space or increase MOTE_MAX_STORAGE_MB',507);
     if(p.hash&&p.bytes) {
       this.writeBlob(p.hash,p.bytes);
       this.db.prepare('INSERT OR IGNORE INTO blobs(hash,bytes,mime) VALUES(?,?,?)').run(p.hash,p.bytes.length,imageMime!);
@@ -230,7 +227,6 @@ export class EvidenceStore {
     if(automatic)this.captureInputReceived?.(p.input);
     this.db.prepare('INSERT INTO captures_fts(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)').run(p.input.id,p.input.id,searchText(p.input));
     this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(p.input.id,'upsert',new Date().toISOString());
-    this.reserveMetadata(0);
     const device=this.db.prepare('SELECT json FROM devices WHERE id=?').get(p.input.deviceId) as {json:string}|undefined;
     if(!device)this.heartbeat({deviceId:p.input.deviceId,deviceName:p.input.deviceName,platform:p.input.platform,status:'offline',queueDepth:0,lastCaptureAt:p.input.capturedAt,...(p.input.metadata?{metadata:p.input.metadata}:{})});
     return {id:p.input.id,duplicate:false,blobHash:p.hash,indexingStatus:status};
@@ -333,9 +329,8 @@ export class EvidenceStore {
       for(const {requestHash,...task} of todoEntries){
         const prior=this.db.prepare('SELECT json,request_hash FROM todos WHERE id=?').get(task.id);
         if(prior){if(prior.request_hash!==requestHash||!Object.entries(task).every(([key,value])=>JSON.stringify(JSON.parse(String(prior.json))[key])===JSON.stringify(value)))throw new StoreError('Archived task conflicts with an existing task',409);continue;}
-        const json=JSON.stringify(task);this.reserveMetadata(Buffer.byteLength(json)+1024);this.db.prepare('INSERT INTO todos VALUES(?,?,?,?,?,?)').run(task.id,task.createdAt,task.status,task.version,requestHash,json);
+        const json=JSON.stringify(task);this.db.prepare('INSERT INTO todos VALUES(?,?,?,?,?,?)').run(task.id,task.createdAt,task.status,task.version,requestHash,json);
       }
-      this.reserveMetadata(0);
       this.db.exec('COMMIT');return {imported,duplicates};
     }catch(e){this.db.exec('ROLLBACK');this.sweep();archivedFiles.sweepOrphans();throw e;}
   }
@@ -476,7 +471,6 @@ export class EvidenceStore {
     const previousText=searchText(before)+'\n'+(before.summary??'');
     const own=!this.db.isTransaction;if(own)this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.reserveMetadata(Buffer.byteLength(JSON.stringify(result))+4096);
       this.db.prepare('UPDATE perception_results SET current=0 WHERE capture_id=? AND kind=?').run(id,kind);
       this.db.prepare('INSERT INTO perception_results(id,capture_id,kind,fingerprint,json) VALUES(?,?,?,?,?)').run(result.id,id,kind,result.fingerprint,JSON.stringify(result));
       if(projectState)this.db.prepare("UPDATE perception_jobs SET state='succeeded',error=NULL WHERE capture_id=? AND kind=?").run(id,kind);
@@ -510,7 +504,6 @@ export class EvidenceStore {
     const fingerprint=sha256(JSON.stringify({...metadata,blobHash:row.blob_hash}));
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(row.json)));
       this.db.prepare('INSERT OR IGNORE INTO capture_ocr_receipts(id,original_fingerprint) VALUES(?,?)').run(id,row.fingerprint);
       this.db.prepare('UPDATE captures SET json=?,fingerprint=?,index_status=?,embedding=NULL,embedding_model=NULL,summary=NULL,index_error=NULL,attempts=0 WHERE id=?')
         .run(json,fingerprint,this.options.embeddingEnabled&&update.ocrText.trim()?'pending':'text_ready',id);
@@ -620,7 +613,7 @@ export class EvidenceStore {
     const snapshot=physical?JSON.parse(String(physical.value)):{bytes:0,asOf:null};
     const logicalBytes=this.logicalBytes();
     const fileBytes=Number(this.db.prepare("SELECT bytes FROM storage_ledger WHERE name='file_blobs'").get()?.bytes??0),assetBytes=Number(this.db.prepare("SELECT bytes FROM storage_ledger WHERE name='assets'").get()?.bytes??0);
-    return {...counts,...times,...blob,fileBytes,assetBytes,bytes:snapshot.bytes,asOf:snapshot.asOf,physicalPending:!snapshot.asOf,logicalBytes,maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:this.contentEncryption.enabled};
+    return {...counts,...times,...blob,fileBytes,assetBytes,bytes:snapshot.bytes,asOf:snapshot.asOf,physicalPending:!snapshot.asOf,logicalBytes,indexing,imagesEncrypted:this.contentEncryption.enabled};
   }
   /** Run only in the maintenance worker, never from an HTTP request. */
   measurePhysicalStorage(){

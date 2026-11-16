@@ -59,7 +59,7 @@ export class ArchivedFileStore {
     if(duplicate)return JSON.parse(duplicate.json);
     const value:ArchivedFile={id:randomUUID(),hash,name,relativePath,mimeType,sizeBytes,createdAt:new Date().toISOString()};
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
-    try{authorize?.();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.store.db.prepare('INSERT OR IGNORE INTO file_blobs(hash,bytes) VALUES(?,?)').run(hash,sizeBytes);this.store.db.prepare('INSERT INTO archived_files(id,hash,json) VALUES(?,?,?)').run(value.id,hash,JSON.stringify(value));authorize?.();if(own)this.store.db.exec('COMMIT');}
+    try{authorize?.();this.store.db.prepare('INSERT OR IGNORE INTO file_blobs(hash,bytes) VALUES(?,?)').run(hash,sizeBytes);this.store.db.prepare('INSERT INTO archived_files(id,hash,json) VALUES(?,?,?)').run(value.id,hash,JSON.stringify(value));authorize?.();if(own)this.store.db.exec('COMMIT');}
     catch(error){if(own){this.store.db.exec('ROLLBACK');this.sweepOrphans();}throw error;}
     return value;
     }finally{asset.release();}
@@ -104,7 +104,7 @@ export class ArchivedFileStore {
   restorePortable(prepared:PreparedPortableFile[]){
     for(const {file,bytes}of prepared){
       if(this.store.db.prepare('SELECT id FROM archived_files WHERE id=?').get(file.id))continue;
-      const known=this.store.db.prepare('SELECT hash FROM file_blobs WHERE hash=?').get(file.hash);this.store.reserveMetadata((known?0:bytes.length)+Buffer.byteLength(JSON.stringify(file)));
+
       this.writeBytes(file.hash,bytes);this.store.db.prepare('INSERT OR IGNORE INTO file_blobs(hash,bytes) VALUES(?,?)').run(file.hash,bytes.length);this.store.db.prepare('INSERT INTO archived_files(id,hash,json) VALUES(?,?,?)').run(file.id,file.hash,JSON.stringify(file));
     }
   }

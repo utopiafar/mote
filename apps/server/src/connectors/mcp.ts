@@ -333,7 +333,7 @@ export class RemoteMcp {
           if(prior&&!prior.deleted)items.push(prepare({externalId,title:prior.title??manifest.uri.slice(0,2000),text:'',mimeType:prior.mimeType??'text/plain',...(prior.uri?{uri:prior.uri}:{})},true));
         }
         const members=JSON.stringify(manifest.members),save=()=>{
-          assertActive();this.ctx.manifests.save(source.id,identity,members,priorMembers);
+          assertActive();this.ctx.manifests.save(source.id,identity,members);
         };
         if(items.length){
           const result=await this.ctx.sources.upsertBatch(source.id,items,assertActive,(_receipt,index)=>{if(index===items.length-1)save();});

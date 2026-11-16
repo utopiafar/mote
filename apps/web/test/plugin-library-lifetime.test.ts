@@ -37,7 +37,7 @@ async function domFixture(t:import('node:test').TestContext,hash='#/library?view
 
 async function centralFixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-plugin-library-')),token='generated-plugin-library-owner-123456789';
-  const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:3_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No models in library contract');},close:async()=>{}}});
+  const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No models in library contract');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true,maxRetries:10,retryDelay:50});});
   return {node,headers:{authorization:'Bearer '+token,'x-mote-ingress-version':'2'}};
 }

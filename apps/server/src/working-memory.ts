@@ -31,7 +31,6 @@ export class WorkingMemory {
       const old=String(db.prepare('SELECT json FROM conversations WHERE id=?').get(id)!.json);
       const json=JSON.stringify({...JSON.parse(old),workingContextStartSeq:next.startSeq,workingContextVersion:next.version});
       db.prepare('DELETE FROM working_memories WHERE id=?').run(id);
-      this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(old)));
       db.prepare('UPDATE conversations SET json=? WHERE id=?').run(json,id);
       db.exec('RELEASE reset_working_context');return next;
     }catch(error){db.exec('ROLLBACK TO reset_working_context; RELEASE reset_working_context');throw error;}
@@ -182,7 +181,6 @@ export class WorkingMemory {
         const row=db.prepare('SELECT json FROM working_memories WHERE id=?').get(conversation.id),actual=row?String(row.json):undefined;
         if(!db.prepare('SELECT 1 FROM conversations WHERE id=?').get(conversation.id)||JSON.stringify(previous)!==actual||this.state(conversation.id).version!==state.version||this.fingerprint(this.conversations.get(conversation.id),state.startSeq,coveredThroughSeq)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
         const json=JSON.stringify({text:summaryText,coveredThroughSeq,contextVersion:state.version,generatedAt:new Date().toISOString(),fingerprint,evidenceDependencies,...(sourceContextDependencies.length?{sourceContextDependencies}:{})} satisfies Summary);
-        this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(actual??'')));
         db.prepare('INSERT INTO working_memories VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(conversation.id,json);
         db.exec('RELEASE commit_working_summary');
       }catch(error){db.exec('ROLLBACK TO commit_working_summary; RELEASE commit_working_summary');throw error;}

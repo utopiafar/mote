@@ -179,7 +179,6 @@ export class EvidenceArchive {
         const {text,...retained}=existing;return retained;
       }
     }
-    this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(artifact))+Buffer.byteLength(output.text)+4096);
     db.prepare('INSERT OR IGNORE INTO context_contents VALUES(?,?)').run(contentHash,JSON.stringify({text:output.text}));
     db.prepare('DELETE FROM context_artifacts WHERE id=?').run(id);
     db.prepare('INSERT INTO context_artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,group,revision,output.kind,artifact.firstAt,artifact.lastAt,artifact.deviceId,artifact.appId,artifact.source,contentHash,JSON.stringify(artifact));

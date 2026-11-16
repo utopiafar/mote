@@ -255,7 +255,6 @@ export class AssistantMatters {
         .run(this.encode(payload),nextRevision,at,id,row.revision);
       if(!changed.changes)throw new StoreError('Matter changed; reload before continuing',409);
       this.insertRevision(id,nextRevision,'edit',row.state,payload,at);
-      this.store.reserveMetadata(0);
       return this.get(id);
     });
   }
@@ -272,8 +271,6 @@ export class AssistantMatters {
       this.store.db.prepare('INSERT INTO assistant_matters VALUES(?,?,?,NULL,?,?,?,?,?)')
         .run(id,at,at,'active',1,command.requestId,hash,this.encode(payload));
       this.insertRevision(id,1,'create','active',payload,at);
-      // Meter the actual inserted rows so quota failures roll back both rows.
-      this.store.reserveMetadata(0);
       return this.get(id);
     });
   }
@@ -298,7 +295,6 @@ export class AssistantMatters {
         .run(this.encode(payload),nextRevision,at,command.matterId,row.revision);
       if(!changed.changes)throw new StoreError('Matter changed; reload before continuing',409);
       this.insertRevision(command.matterId,nextRevision,'edit',row.state,payload,at);
-      this.store.reserveMetadata(0);
       return this.get(command.matterId);
     });
   }
@@ -317,7 +313,6 @@ export class AssistantMatters {
         .run(this.encode(payload),state,nextRevision,at,state==='archived'?at:row.archived_at,command.matterId,row.revision);
       if(!changed.changes)throw new StoreError('Matter changed; reload before continuing',409);
       this.insertRevision(command.matterId,nextRevision,command.type,state,payload,at);
-      this.store.reserveMetadata(0);
       return this.get(command.matterId);
     });
   }

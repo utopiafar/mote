@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync,rmSync,readFileSync,readdirSync,mkdirSync,chmodSync,statSync,writeFileSync,symlinkSync,linkSync } from 'node:fs';
@@ -99,11 +100,25 @@ test('privacy-excluded, oversized/mismatched image and invalid events fail befor
   await assert.rejects(store.ingest({...f,durationMs:-5}));
   assert.equal((store.stats() as {captures:number}).captures,0);assert.equal(readdirSync(store.assets.directory).length,0);
 });
-test('bounded capacity rejects new data but still acknowledges already saved retries',async t=>{
-  const sample=await fixture();const store=vault(t,{maxStorageBytes:1500});await store.ingest(sample);
-  for(let i=0;i<4;i++){try{await store.ingest({...sample,id:randomUUID()});}catch{break;}}
-  await assert.rejects(store.ingest({...sample,id:randomUUID(),ocrText:'x'.repeat(2000)}),/storage limit/);
-  assert.equal((await store.ingest(sample)).duplicate,true);
+test('logical volume does not impose a quota and a real SQLite failure preserves saved retries',async t=>{
+  const sample=await fixture(),store=vault(t);await store.ingest(sample);
+  for(let index=0;index<4;index++)await store.ingest({...sample,id:randomUUID()});
+  await store.ingest({...sample,id:randomUUID(),ocrText:'x'.repeat(2000)});
+  const pending={...sample,id:randomUUID()},before=store.logicalBytes(),recover=rejectSqliteWrites(store,'captures');
+  await assert.rejects(store.ingest(pending),(error:any)=>{assert.match(error.message,/Generated SQLite write failure/);assert.equal(error.errcode&255,19);assert.notEqual(error.statusCode,507);return true;});assert.equal(store.logicalBytes(),before);
+  assert.equal((await store.ingest(sample)).duplicate,true);assert.equal(store.evidence([sample.id])[0].ocrText,sample.ocrText);
+  recover();assert.equal((await store.ingest(pending)).duplicate,false);
+});
+
+test('actual SQLite FULL preserves its cause, rolls back admission and permits retry after storage recovery',async t=>{
+  const store=vault(t),sample=await fixture();await store.ingest(sample);
+  const pages=Number(store.db.prepare('PRAGMA page_count').get()!.page_count);store.db.exec('PRAGMA max_page_count='+pages);
+  const pending={...sample,id:randomUUID(),ocrText:'Generated disk full input '.repeat(2000)},before=store.logicalBytes();
+  await assert.rejects(store.ingest(pending),(error:any)=>error.statusCode===507&&(error.cause?.errcode&255)===13);
+  assert.throws(()=>store.db.exec('CREATE TABLE generated_storage_full(id INTEGER PRIMARY KEY)'),(error:any)=>error.statusCode===507&&(error.cause?.errcode&255)===13);
+  assert.equal(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='generated_storage_full'").get(),undefined);
+  assert.equal(store.db.isTransaction,false);assert.equal(store.logicalBytes(),before);assert.equal(store.evidence([pending.id]).length,0);assert.equal(store.evidence([sample.id])[0].ocrText,sample.ocrText);
+  store.db.exec('PRAGMA max_page_count=1073741823');const result=await store.ingest(pending);assert.equal(result.duplicate,false);assert.equal(store.evidence([result.id])[0].ocrText,pending.ocrText);
 });
 test('encrypted image blobs round trip; export contains plaintext evidence but never secrets',async t=>{
   const key='a3'.repeat(32);const store=vault(t,{dataKey:key,contentEncryptionEnabled:true});const f=await fixture();const saved=await store.ingest(f);

@@ -43,7 +43,6 @@ export class MemoryExtractionDrafts {
     const rows=this.store.db.prepare('SELECT batch_id,length(CAST(json AS BLOB)) bytes FROM memory_extraction_drafts ORDER BY created_at,rowid').all();
     let total=rows.reduce((sum,row)=>sum+Number(row.bytes),0),count=rows.length;
     for(const row of rows){if(total+bytes<=this.maxBytes&&count<this.maxEntries)break;this.clear(String(row.batch_id));total-=Number(row.bytes);count--;}
-    this.store.reserveMetadata(bytes+256);
     this.store.db.prepare('INSERT INTO memory_extraction_drafts VALUES(?,?,?,?,?)').run(batchId,inputHash,json,Date.now(),Number(shared));
   }
   clear(batchId:string){this.store.db.prepare('DELETE FROM memory_extraction_drafts WHERE batch_id=?').run(batchId);}

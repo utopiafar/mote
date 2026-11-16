@@ -12,7 +12,7 @@ import type {QueryInput} from '@mote/agent';
 
 test('owner-selected OCR and composed originals reach manual Memory without adopting automatic source defaults',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-selected-output-')),token='generated-selection-token';
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://generated.invalid',apiKey:'generated',embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',allowUnauthenticatedLocal:false};
+ const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://generated.invalid',apiKey:'generated',embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',allowUnauthenticatedLocal:false};
  const calls:QueryInput[]=[];
  const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async input=>{calls.push(input);return fixtureMemoryWorkResult(input,{answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()});}})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});

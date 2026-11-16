@@ -133,8 +133,8 @@ test('feature inventory keeps the Web contract and content-hash revision', async
   const directory = mkdtempSync(join(tmpdir(), 'mote-c08-features-'));
   const config: Config = {
     dataDir: directory, token: 'generated-c08-owner', tokenPath: join(directory, 'owner-token'), host: '127.0.0.1', port: 0,
-    profile: 'test', tokenFromEnvironment: true, maxStorageBytes: 30 * 1024 * 1024, maxExportBytes: 1024 * 1024,
-    retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: 'https://api.deepseek.com',
+    profile: 'test', tokenFromEnvironment: true,  maxExportBytes: 1024 * 1024,
+     insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: 'https://api.deepseek.com',
     apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
   };
   const node = await buildApp(config);

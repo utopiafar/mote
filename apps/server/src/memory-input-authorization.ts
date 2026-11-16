@@ -47,7 +47,6 @@ export class MemoryInputAuthorization {
     const value=identity.parse(raw);
     if(this.store.db.prepare('SELECT 1 FROM memory_input_authorizations WHERE source_id=? AND input_key=? AND scope=?').get(value.sourceId,value.inputKey,value.scope))return;
     const json=binding?JSON.stringify(binding):null;
-    this.store.reserveMetadata(Buffer.byteLength(value.sourceId+value.inputKey+value.scope+(json??''))+256);
     this.store.db.prepare('INSERT OR IGNORE INTO memory_input_authorizations(source_id,input_key,scope,capture_id,authorized,received_at,job_id,binding_json) VALUES(?,?,?,?,?,?,NULL,?)')
       .run(value.sourceId,value.inputKey,value.scope,value.captureId??null,Number(automatic&&this.enabled()),receivedAt,json);
   }
