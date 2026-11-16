@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
-import {captureSchema,uiRulesSchema,uiRuleSchema,uiPageSchema,uiSnapshotSchema,extractUiPages,uiPageText,builtinUiRules} from '../dist/index.js';
+import {captureSchema,uiRulesSchema,uiRuleSchema,uiPageSchema,uiSnapshotSchema,extractUiPages,uiPageText} from '../dist/index.js';
+import {builtinUiRules} from '@mote/shared/ui-builtins';
 const retiredFixtures=[...JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/conformance.json',import.meta.url))),...JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/builtin-coverage.json',import.meta.url)))];
 const structuredFixtures = JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/structured-conformance.json', import.meta.url)));
 test('retired selected-node rule packs are rejected instead of extracted',()=>{
