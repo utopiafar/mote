@@ -17,6 +17,7 @@ import { actionsRuntimeSettingsSchema } from './actions-configuration.js';
 import { workflowConfigurationSchema } from './workflow-configuration.js';
 import { activityConfigurationSchema } from './activity-configuration.js';
 import { notificationSettingsSchema } from './notification-configuration.js';
+import { dshConfigurationSchema, validateDshModelProfiles, type DshConfiguration } from './dsh-configuration.js';
 import type { ConfigDomainRegistration, ConfigService } from './config-service.js';
 import { defaultLogMaxBytes, logRetentionFromDocument, LogRetentionError, MAX_LOG_FILE_BYTES, DEFAULT_LOG_RETENTION, type LogRetention, MiB } from './log-retention-config.mjs';
 
@@ -128,11 +129,12 @@ interface LoadedConfig {
   diagnosticsEnabled: boolean; diagnosticsDebug: boolean; agentTraceEnabled:boolean;agentTraceExpiresAt:number; logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
   logDirectory: string; logMaxBytes:number;logMaxTotalBytes:number;logRetention:LogRetention;logMaxEntries:number;
   importPythonPacks: ImportPythonPackConfig[];
+  dsh: DshConfiguration;
   updateRepository: string; updateChannel: 'stable' | 'preview'; media: MediaConfiguration; configuration: ConfigurationContext;
 }
 type OptionalFields = 'interactiveConcurrency' | 'agentConcurrency' | 'llmConcurrency' | 'memoryConcurrency' | 'codexBin' | 'codexHome' | 'contentEncryptionEnabled' | 'importPythonPacks' | 'modelProvider' | 'modelProtocol' | 'modelHeaders' | 'modelExtraBody' | 'updateRepository' | 'updateChannel' | 'connectors' | 'configuration' | 'modelReasoningEffort' | 'modelMaxTokens' | 'modelRequestTimeoutMs' | 'agentTimeoutMs' | 'profile' | 'tokenFromEnvironment' | 'diagnosticsEnabled' | 'diagnosticsDebug' | 'agentTraceEnabled' | 'agentTraceExpiresAt' | 'logLevel' | 'logDirectory' | 'logMaxBytes' | 'logMaxTotalBytes' | 'logRetention' | 'logMaxEntries' | 'media';
 /** Existing buildApp fixtures can still supply a Config without writing configuration files. */
-export type Config = Omit<LoadedConfig, OptionalFields> & Partial<Pick<LoadedConfig, OptionalFields>> & { configService?: ConfigService };
+export type Config = Omit<LoadedConfig, OptionalFields | 'dsh'> & Partial<Pick<LoadedConfig, OptionalFields | 'dsh'>> & { configService?: ConfigService };
 
 function resolveDomainSecrets(id: string, value: unknown): unknown {
   return parseYaml(serializeConfigDocument({ version: 1, revision: 0, [id]: value })).document[id];
@@ -184,6 +186,7 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
       { path: 'profiles.*.settings.apiKey', sensitive: true }, { path: 'profiles.*.settings.headers', sensitive: true }, { path: 'profiles.*.settings.extraBody', sensitive: true },
       { path: 'embedding', effect: 'restart' }, { path: 'embedding.apiKey', sensitive: true }, { path: 'codex', effect: 'restart' },
     ]),
+    definition('dsh', dshConfigurationSchema, true, [{path: 'profiles', effect: 'restart'}]),
     definition('connectors', connectorsConfigSchema, false, [
       { path: 'syncIntervalMs', effect: 'immediate' }, ...['directory', 'mcpEnabled', 'mcpReadToken', 'mcpWriteEnabled', 'mcpWriteToken', 'mcpWriteSourceIds', 'allowLocalMcp', 'googleClientId', 'googleClientSecret', 'googleRedirectUri'].map(path => ({ path, effect: 'restart' as const, ...(['mcpReadToken', 'mcpWriteToken', 'googleClientId', 'googleClientSecret'].includes(path) ? { sensitive: true } : {}) })),
     ]),
@@ -222,6 +225,8 @@ export function validateResolvedConfigDocument(document: ConfigDocument, private
   catch (error) { if (error instanceof LogRetentionError) throw new ConfigError(error.field, 'Configuration validation failed; values are suppressed'); throw error; }
   const server = document.server as z.infer<typeof serverConfigSchema>;
   const connectors = document.connectors as z.infer<typeof connectorsConfigSchema>;
+  try { validateDshModelProfiles(dshConfigurationSchema.parse(document.dsh ?? {}), modelDomainSchema.parse(document.models ?? {})); }
+  catch { throw new ConfigError('dsh.profiles'); }
   const ownerTokens = [server.token.trim(), privateOwnerToken].filter((value): value is string => Boolean(value));
   if (connectors.mcpReadToken && ownerTokens.includes(connectors.mcpReadToken)) throw new ConfigError('connectors.mcpReadToken');
   if (connectors.mcpWriteToken && ownerTokens.includes(connectors.mcpWriteToken)) throw new ConfigError('connectors.mcpWriteToken');
@@ -316,7 +321,7 @@ export function configFromDocument(document: ConfigDocument, file: string, priva
     connectors: { ...connectors, directory: connectors.directory ? resolve(baseDir, connectors.directory) : join(dataDir, 'connectors') },
     diagnosticsEnabled: diagnostics.enabled, diagnosticsDebug: diagnostics.debug, agentTraceEnabled:diagnostics.traceEnabled,agentTraceExpiresAt:diagnostics.traceExpiresAt,
     logLevel: diagnostics.level, logDirectory: diagnostics.directory ? resolve(baseDir, diagnostics.directory) : join(dataDir, 'logs'), logMaxBytes: diagnostics.maxBytes, logMaxTotalBytes:diagnostics.maxTotalBytes,logRetention:diagnostics.retention, logMaxEntries: diagnostics.maxEntries,
-    importPythonPacks: plugins.importPythonPacks,
+    importPythonPacks: plugins.importPythonPacks, dsh: dshConfigurationSchema.parse(effective.dsh),
     updateRepository: updates.repository, updateChannel: updates.channel,
     media: { ...media, modelDirectory: media.modelDirectory ? resolve(baseDir, media.modelDirectory) : join(dataDir, 'media-models') },
   };
@@ -339,7 +344,7 @@ export function documentFromConfig(config: Config): ConfigDocument {
       agentTimeoutMs: config.agentTimeoutMs === undefined ? config.modelProtocol === 'codex-app-server' ? null : defaults.agentTimeoutMs : config.agentTimeoutMs, allowUnauthenticatedLocal: config.allowUnauthenticatedLocal,
       headers: config.modelHeaders ?? {}, extraBody: config.modelExtraBody ?? {}, ...(config.modelProtocol === 'codex-app-server' ? { serviceTier: 'default' } : {}) },
       embedding: { model: config.embeddingModel, baseUrl: config.embeddingBaseUrl, apiKey: config.embeddingApiKey }, codex: { executable: config.codexBin, home: config.codexHome } }),
-    connectors: connectorsConfigSchema.parse(config.connectors ?? {}),
+    connectors: connectorsConfigSchema.parse(config.connectors ?? {}), dsh: dshConfigurationSchema.parse(config.dsh ?? {}),
     plugins: pluginsConfigSchema.parse({ importPythonPacks: config.importPythonPacks }),
     updates: updatesConfigSchema.parse({ repository: config.updateRepository, channel: config.updateChannel }), media: mediaConfigSchema.parse(config.media ?? {}),
     processing: defaultProcessingConfiguration(config.media), perception: perceptionConfigurationSchema.parse({}), memory: lifecycleSettingsSchema.parse({}), conversations: conversationSettingsSchema.parse({}),

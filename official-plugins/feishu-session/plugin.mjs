@@ -72,7 +72,8 @@ function parseSelection(raw) {
     const id = text(value?.id), type = text(value?.type);
     if (!protocolId(id) || !['group', 'p2p'].includes(type) || identities.has(id)) throw new FeishuSessionError('feishu_session_input_invalid', 400);
     identities.add(id);
-    selected.push({id, type});
+    if (value.initialSync !== undefined && !['all', 'new_only'].includes(value.initialSync)) throw new FeishuSessionError('feishu_session_input_invalid', 400);
+    selected.push({id, type, ...(value.initialSync !== undefined ? {initialSync: value.initialSync} : {})});
   }
   return selected;
 }
@@ -143,7 +144,11 @@ const connector = {
       sendScopesOk: sendScopesOk(snapshot.scopes),
       archiveAuthorized: doc.archiveAuthorized === true,
       sendAuthorized: doc.sendAuthorized === true && sendScopesOk(snapshot.scopes),
-      selected: Array.isArray(doc.selected) ? doc.selected.map(item => ({id: item.id, type: item.type, name: item.name})) : [],
+      selected: Array.isArray(doc.selected) ? doc.selected.map(item => {
+        let source;
+        try { source = ctx.sources.getSource(sourceId(item.id)); } catch { /* A selection can exist before its source. */ }
+        return {id: item.id, type: item.type, name: item.name, sourceId: sourceId(item.id), initialSync: source?.initialSync ?? 'all'};
+      }) : [],
       state: closed ? 'closed' : state,
       ...(code ? {code} : {}),
       ...(doc.lastSyncAt ? {lastSyncAt: doc.lastSyncAt} : {}),
@@ -217,9 +222,7 @@ const connector = {
           id, name: sourceName(item), kind: SOURCE_KIND, deviceId: DEVICE_ID,
           platform: 'import', retention: 'snapshot', enabled: true,
         });
-        try {
-          ctx.sources.update(id, {name: sourceName(item), ...(enable ? {enabled: true} : {})});
-        } catch { /* Registration already failed above when identity changed. */ }
+        ctx.sources.update(id, {name: sourceName(item), ...(enable ? {enabled: true} : {})});
         watchReadSource(item);
       }
     };
@@ -663,17 +666,34 @@ const connector = {
               firstSyncAt: previous?.firstSyncAt ?? now(),
             };
           });
+          for (const request of selection) if (request.initialSync !== undefined) {
+            const item = chosen.find(value => value.id === request.id), id = sourceId(item.id);
+            ctx.sources.register({id, name: sourceName(item), kind: SOURCE_KIND, deviceId: DEVICE_ID, platform: 'import', retention: 'snapshot', enabled: false, initialSync: request.initialSync});
+            ctx.sources.update(id, {enabled: false, initialSync: request.initialSync});
+          }
           releaseReadWatches();
           const keep = new Set(chosen.map(item => item.id));
-          for (const previous of doc.selected) {
-            if (keep.has(previous.id)) continue;
-            try {
-              ctx.sources.resetCoverage(sourceId(previous.id));
-              ctx.sources.update(sourceId(previous.id), {enabled: false});
-            } catch { /* A removed historical source is already stopped. */ }
+          try {
+            for (const previous of doc.selected) {
+              if (keep.has(previous.id)) continue;
+              try {
+                ctx.sources.resetCoverage(sourceId(previous.id));
+                ctx.sources.update(sourceId(previous.id), {enabled: false});
+              } catch (error) {
+                // Only an actually missing source is already stopped.
+                if (error?.statusCode !== 404) throw error;
+              }
+            }
+          } catch (error) {
+            // The durable selection/grant did not change. Keep observing its
+            // read authority even when a prerequisite pause could not commit.
+            restoreReadWatches();
+            throw error;
           }
-          doc.selected = chosen;
-          await persist();
+          const previous = doc;
+          doc = {...doc, selected: chosen};
+          restoreReadWatches();
+          try { await persist(); } catch (error) { doc = previous; releaseReadWatches(); restoreReadWatches(); throw error; }
           ensureSources();
           schedule();
           return status();

@@ -33,6 +33,7 @@ export {
 } from './models/context-budget.js';
 export {SYSTEM_PROMPT, SOURCE_TIME_INSTRUCTIONS, ATTRIBUTION_CONTEXT_INSTRUCTIONS, systemInstructions} from './instructions.js';
 export {createRuntimePatch} from './runtime/dsh/profile-compiler.js';
+export type {NativeDshAssemblyBinding, InstalledDshModule} from './runtime/dsh/profile-compiler.js';
 export {CodexSession} from './codex-session.js';
 export {codexContextCapacity} from './runtime/codex/launch.js';
 

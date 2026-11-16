@@ -25,6 +25,7 @@ import {applyModelSettings,modelSettingsFromConfig,testModelConnection,type Mode
 import type {AgentRuntimeRegistryDependencies} from '../agent-runtime-registry.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {agentRuntimeContribution,agentRuntimeDeclaration,agentRuntimeReplacement,createAgentRuntimeServices} from '../plugins/agent-runtime.js';
+import type {PluginCenter} from '../plugin-center.js';
 
 /** A09's declared build-time domain plugin; the distribution concatenates each
  * domain's list into one selected table. */
@@ -59,6 +60,8 @@ export interface AgentAssemblyDependencies extends Omit<AgentRuntimeRegistryDepe
   readonly evidenceReader:Pick<EvidenceReader,'retainMemorySnapshot'|'releaseMemorySnapshot'>;
   /** Test injection wraps a supplied agent with the deployment profile identity. */
   readonly agent?:QueryAgent;
+  readonly nativeDshModules?:PluginCenter['nativeDshModules'];
+  readonly validateNativeDshConfiguration?:PluginCenter['validateNativeDshConfiguration'];
 }
 
 /** The agent-runtime plugin owns the model factory, every prepared/retired
@@ -71,7 +74,7 @@ export async function assembleAgent(dependencies:AgentAssemblyDependencies){
     agentGate:dependencies.agentGate,llmGate:dependencies.llmGate,interactiveGate:dependencies.interactiveGate,interactiveModelGate:dependencies.interactiveModelGate,
     onCloseError:()=>diagnostics.record('agent.failed',{category:'internal'},'error'),
     registry:{
-      createModelAgent:dependencies.createModelAgent,authorization:dependencies.authorization,admission:dependencies.admission,
+      createModelAgent:dependencies.createModelAgent,nativeDshForProfile:dependencies.nativeDshForProfile,authorization:dependencies.authorization,admission:dependencies.admission,
       runModelFor:dependencies.runModelFor,authorizeModelRequest:dependencies.authorizeModelRequest,assertPurpose:dependencies.assertPurpose,assertEvidence:dependencies.assertEvidence,assertEvidenceAsync:dependencies.assertEvidenceAsync,pinEvidence:dependencies.pinEvidence,
       modelContext:dependencies.modelContext,modelOperation:dependencies.modelOperation,archiveImagesEnabled:dependencies.allowQueryImages,
       retainSnapshot:input=>dependencies.observeMemory(input,'catalog_snapshot',()=>dependencies.evidenceReader.retainMemorySnapshot(input)),
@@ -80,6 +83,7 @@ export async function assembleAgent(dependencies:AgentAssemblyDependencies){
     },
     routes:{
       modelSettings:()=>dependencies.configurationPlatform.modelSettings,configService:dependencies.configService,runtimeSettings:dependencies.runtimeSettings,
+      nativeDshModules:dependencies.nativeDshModules,validateNativeDshConfiguration:dependencies.validateNativeDshConfiguration,
       insightSettings:dependencies.insightSettings,providerAdmission:dependencies.providerAdmission,
       maintenanceSnapshot:dependencies.maintenanceSnapshot,delegatedSnapshot:dependencies.delegatedSnapshot,wakeMemory:dependencies.wakeMemory,
     },

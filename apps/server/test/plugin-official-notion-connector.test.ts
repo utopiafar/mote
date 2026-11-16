@@ -241,6 +241,9 @@ test('official Notion install, OAuth selection and read-only archiving use the p
   const notionSources=()=>node.sources.listSources().filter(source=>source.kind==='mote.official.notion');
   assert.equal(notionSources().length,1);
   assert.equal(notionSources()[0]!.enabled,true);
+  const selectedSource=selected.json().status.selected[0];
+  assert.equal(selectedSource.sourceId,notionSources()[0]!.id);
+  assert.equal(selectedSource.initialSync,'all');
   assert.equal(transport.calls.some(call=>call.pathname==='/v1/pages/page-1'),false,'selection alone does not pull content');
   assert.equal(transport.calls.some(call=>call.pathname==='/v1/databases/db-1/query'),false,'the unselected database is never queried');
 

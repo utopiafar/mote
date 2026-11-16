@@ -1,4 +1,4 @@
-import type { RecordingStatus, SourceConnection } from '@mote/shared';
+import type { PluginCenterView, RecordingStatus, SourceConnection } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import type { LucideIcon } from 'lucide-react';
 import { CalendarDays, FileText, Link2, Mail } from 'lucide-react';
@@ -13,6 +13,7 @@ import { GoogleCalendarSettings } from './GoogleCalendarSettings';
 import { LarkSettings } from './LarkSettings';
 import { Loading } from '../../Loading';
 import {BundledConnector} from './BundledConnector';
+import {OfficialConnectorSettings,officialConnectorDefinitions,type OfficialProvider} from './OfficialConnectorSettings';
 
 export type SourceCatalogStatus = Record<string, unknown> | null;
 
@@ -21,6 +22,7 @@ export type SourceCatalogStatus = Record<string, unknown> | null;
  * contributions; provider code stays in the owning plugin package. */
 export interface SourcePlugin {
   readonly id: string;
+  readonly packageId?: string;
   readonly kinds: readonly string[];
   /** Exact key in GET /api/connectors/status, when the plugin binds an account. */
   readonly binding?: string;
@@ -44,6 +46,7 @@ export interface SourcePlugin {
 export interface SourcePluginStateContext {
   readonly catalog: SourceCatalogStatus;
   readonly sources: readonly SourceConnection[];
+  readonly plugins?: PluginCenterView;
 }
 
 export interface SourcePluginSetupContext {
@@ -71,6 +74,9 @@ export type SourcePluginConnectorStatus = {
   documentSync?: { sourceId?: string };
   sourceId?: string;
   category?: string;
+  selected?:{sourceId:string}[];
+  archiveAuthorized?:boolean;
+  readScopesOk?:boolean;
 };
 
 const statusFor = (plugin: SourcePlugin, catalog: SourceCatalogStatus): SourcePluginConnectorStatus | undefined =>
@@ -83,7 +89,8 @@ export function sourcePluginState(plugin: SourcePlugin, context: SourcePluginSta
   if (sources.length > 0 && !sources.some(source => source.enabled)) return 'paused';
   const status = statusFor(plugin, context.catalog);
   if (!status) return 'unknown';
-  if (status.state === 'permission_required' || Boolean(status.missingScopes?.length)) return 'permission_required';
+  if (status.state === 'permission_required' || Boolean(status.missingScopes?.length) || status.readScopesOk===false) return 'permission_required';
+  if (plugin.packageId && status.archiveAuthorized===false) return 'unauthenticated';
   if (status.connected) return 'connected';
   return 'unauthenticated';
 }
@@ -103,6 +110,7 @@ export function sourcePluginStateLabel(plugin: SourcePlugin, context: SourcePlug
 export function sourcePluginBound(plugin: SourcePlugin, source: SourceConnection, catalog: SourceCatalogStatus): boolean {
   const status = statusFor(plugin, catalog);
   if (!status) return false;
+  if (plugin.packageId) return Boolean(status.connected&&status.selected?.some(item=>item.sourceId===source.id));
   if (plugin.binding?.endsWith('-recordings')) return status.sourceId === source.id;
   if (source.kind === 'lark-docs') return status.documentSync?.sourceId === source.id;
   return Boolean(status.connected);
@@ -183,7 +191,18 @@ const mcpPlugin: SourcePlugin = {
   },
 };
 
-export const sourcePlugins: readonly SourcePlugin[] = [larkPlugin, gmailPlugin, googleCalendarPlugin, mcpPlugin];
+function officialSourcePlugin(provider:OfficialProvider):SourcePlugin{
+ const definition=officialConnectorDefinitions[provider];
+ const plugin:SourcePlugin={id:definition.packageId,packageId:definition.packageId,kinds:[definition.kind],binding:definition.id,
+  catalog:{title:definition.name,body:()=>moteText('只读归档已选择的内容，按原始身份保留版本。'),note:()=>moteText('安装不等于授权。请先在插件中心完成配置和启用，再连接账号并选择读取范围。'),
+   state:context=>!context.plugins?moteText('待确认'):!context.plugins.sourceContributions?.some(item=>item.contributionId===definition.id)?moteText('尚未安装'):!context.catalog?.[definition.id]?moteText('已安装，待配置'):sourcePluginStateLabel(plugin,context),
+   target:{pageId:'sources',href:'#/connections?setup='+definition.id},icon:provider==='notion'?FileText:Link2,setupChoice:{id:definition.id,title:definition.name}},
+  setup:{id:definition.id,render:({api,refresh,requested})=>requested?<OfficialConnectorSettings api={api} provider={provider} refresh={refresh}/>:null},
+  settings:({api,source,refresh})=><OfficialConnectorSettings api={api} provider={provider} sourceId={source.id} refresh={refresh}/>,
+ };
+ return plugin;
+}
+export const sourcePlugins: readonly SourcePlugin[] = [larkPlugin, gmailPlugin, googleCalendarPlugin, mcpPlugin,...(['notion','slack','feishu-session'] as const).map(officialSourcePlugin)];
 
 export function sourcePluginForSetup(id: string): SourcePlugin | undefined {
   return sourcePlugins.find(plugin => plugin.setup?.id === id);
