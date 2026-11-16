@@ -1,4 +1,6 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {preparationTargetFromHash} from '../../advanced-web-target';
+import {useHashChoice} from '../../useHashChoice';
 import {moteText} from '@mote/shared/i18n';
 import type {ProcessingProfile} from '@mote/shared';
 import {type Api,errorMessage,ApiError} from '../../api';
@@ -23,6 +25,8 @@ function Check({children,value,onChange}:{children:ReactNode;value:boolean;onCha
 /** Ordinary settings compose the existing image and file policies. Advanced
  * plugin/profile controls remain available without taking over these pages. */
 export function MaterialProcessing({api,kind,onDetailChange}:{api:Api;kind:Kind;onDetailChange?:(value:boolean)=>void}){
+ const [routePreparation]=useHashChoice('prepare',preparationTargetFromHash),panel=useRef<HTMLElement>(null);
+ const requestedPreparation=kind==='audio'&&routePreparation==='dialogue'||kind==='images'&&(routePreparation==='ocr'||routePreparation==='local-image')?routePreparation:null;
  const files=useResource<FileSettingsView>(api,'/api/file-processing'),images=useResource<ImageView>(api,'/api/perception');
  const [draft,setDraft]=useState<Draft>(),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const related=useProcessingRelatedPages(api,kind,onDetailChange,(next,previousRevision)=>{setDraft(value=>{
@@ -43,6 +47,7 @@ export function MaterialProcessing({api,kind,onDetailChange}:{api:Api;kind:Kind;
   setDraft({owner:api,kind,file:structuredClone(files.data),image:structuredClone(images.data),dirty:false});
  }},[api,kind,files.data,images.data,busy,current?.dirty]);
  const revoked=[files.error,images.error].some(value=>value instanceof ApiError&&[401,403,404,410].includes(value.status));
+ useEffect(()=>{if(requestedPreparation&&current&&!revoked){const target=panel.current?.querySelector<HTMLElement>('[data-advanced-preparation="'+requestedPreparation+'"]');target?.focus({preventScroll:true});target?.scrollIntoView?.({block:'start'});}},[api,kind,requestedPreparation,Boolean(current),revoked]);
  useEffect(()=>{if(revoked)setDraft(undefined);},[revoked]);
  const failure=files.error??images.error;
  function edit(change:(value:Draft)=>void){if(!current||busy)return;setDraft(value=>{if(!value||value.owner!==api||value.kind!==kind)return value;const next={...value,file:structuredClone(value.file),image:structuredClone(value.image),dirty:true};change(next);return next;});setNotice('');setError('');}
@@ -75,7 +80,7 @@ export function MaterialProcessing({api,kind,onDetailChange}:{api:Api;kind:Kind;
  const number=(label:string,value:number|null|undefined,onChange:(value:number|null)=>void,min:number,max:number,optional=false)=><label className="preference-field">{moteText(label)}<input type="number" aria-label={moteText(label)} value={value??''} min={min} max={max} step="1" required={!optional} onChange={event=>onChange(event.target.value===''?null:Number(event.target.value))}/></label>;
  const model=<div className="processing-model-link"><small>{moteText('使用文件分析模型 · {0}',current?.image.model?.model||moteText('未配置'))}</small><button type="button" className="text-button" onClick={related.openModels}>{moteText('更改功能模型')} →</button></div>;
  const runtime=kind==='images'&&!archived&&local||kind==='audio'&&profile?.processorId==='audio.local-dialogue';
- return <section className="material-processing" aria-label={moteText(kind==='images'?'图片':kind==='audio'?'录音':'文档与其他文件')} aria-busy={busy}>
+ return <section ref={panel} className="material-processing" aria-label={moteText(kind==='images'?'图片':kind==='audio'?'录音':'文档与其他文件')} aria-busy={busy}>
   <div data-processing-main hidden={related.active}>
   {(error||failure!==undefined)&&<p ref={saveError} role="alert">{error||errorMessage(failure)}</p>}
   {!current&&!revoked&&(failure!==undefined?<p role="status">{moteText('暂不可用')}</p>:<Loading rows={2}/>)}
@@ -100,12 +105,12 @@ export function MaterialProcessing({api,kind,onDetailChange}:{api:Api;kind:Kind;
    {notice&&<p role="status">{notice}</p>}
    <div className="model-save-footer"><span>{moteText('保存后续处理设置，原件继续保留')}</span><button className="button primary" disabled={busy||!current.dirty}>{moteText('保存设置')}</button></div>
   </fieldset></form>
-  {runtime&&<section className="managed-runtime"><h2>{moteText('中心本机处理')}</h2><MediaPreparation api={api} role={kind==='images'?'ocr':'dialogue'} title={moteText(kind==='images'?'图片文字识别':'录音转写与说话人分离')}/><details><summary>{moteText('高级连接配置')}</summary><button className="text-button" disabled={!profile?.serviceId} onClick={()=>{if(profile?.serviceId)related.openService(profile.serviceId);}}>{moteText('自定义本机处理服务')} →</button></details></section>}
-  {kind==='images'&&<LocalImageSettings api={api} control={{instanceId:'local-image',selection:{packageId:'mote.local-image-processing',version:'1.0.0',configurationRevision:0},statePath:'/api/local-image-processing'}} modelName="InternVL3-14B-4bit" copy={{
+  {(runtime||requestedPreparation==='ocr'||requestedPreparation==='dialogue')&&<section className="managed-runtime" data-advanced-preparation={kind==='images'?'ocr':'dialogue'} tabIndex={-1}><h2>{moteText('中心本机处理')}</h2><MediaPreparation api={api} role={kind==='images'?'ocr':'dialogue'} title={moteText(kind==='images'?'图片文字识别':'录音转写与说话人分离')}/><details><summary>{moteText('高级连接配置')}</summary><button className="text-button" disabled={!profile?.serviceId} onClick={()=>{if(profile?.serviceId)related.openService(profile.serviceId);}}>{moteText('自定义本机处理服务')} →</button></details></section>}
+  {kind==='images'&&<div data-advanced-preparation="local-image" tabIndex={-1}><LocalImageSettings api={api} control={{instanceId:'local-image',selection:{packageId:'mote.local-image-processing',version:'1.0.0',configurationRevision:0},statePath:'/api/local-image-processing'}} modelName="InternVL3-14B-4bit" copy={{
    title:moteText('本地图片解析'),scope:moteText('启用后，入库图片由本地 InternVL3-14B-4bit 解析，失败时等待恢复。Memory 提取、独立复核和 Ask 仍使用各自选择的模型。'),
    preparationNote:moteText('安装模型不会启用本地识图或改变处理设置。'),disabled:moteText('关闭后，新图片沿用已配置的图片模型；原图、OCR 与已保存的理解结果继续保留。'),
    ready:moteText('可使用'),waiting:moteText('未就绪'),stopping:moteText('正在停止'),unavailable:moteText('暂不可用'),reasons:{model_missing:moteText('所需本地模型尚未安装。'),model_failed:moteText('模型校验失败')},
-  }} preparation={<MediaPreparation api={api} role="local-image" title="InternVL3-14B-4bit"/>}/>}
+  }} preparation={<MediaPreparation api={api} role="local-image" title="InternVL3-14B-4bit"/>}/></div>}
   <details className="material-processing-advanced"><summary>{moteText(kind==='images'?'更多：已有图片与完整处理策略':'来源覆盖、规则试算与完整处理策略')}</summary>{kind==='images'?<PerceptionSettings api={api}/>:<FileProcessingSettings api={api}/>}</details>
   </>}
   <button type="button" className="text-button processing-refresh" disabled={busy} onClick={refresh}>{moteText('重新读取并还原草稿')}</button>

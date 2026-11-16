@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {spawn,type ChildProcess} from 'node:child_process';
+import {randomBytes,randomUUID} from 'node:crypto';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {buildApp} from '../../server/src/app.js';
+import {sha256} from '../../server/src/store.js';
+import {consumeAdvancedTargets,type AdvancedContractOutput} from '../../web/test/advanced-web-contract.js';
+
+// Actual Central ticket HTTP -> production Kotlin handoff -> actual Web
+// exchange/readers. Generated ASR artifacts and OS audio are fixture boundaries.
+assert.deepEqual(process.argv.slice(2),[]);
+const root=fileURLToPath(new URL('../../../',import.meta.url)),directory=await mkdtemp(join(tmpdir(),'mote-advanced-web-')),token=randomBytes(32).toString('hex');
+let node:Awaited<ReturnType<typeof buildApp>>|undefined,child:ChildProcess|undefined,interrupted=false,modelCalls=0;
+const stop=()=>{if(child?.pid&&child.exitCode===null&&child.signalCode===null)try{process.kill(process.platform==='win32'?child.pid:-child.pid,'SIGTERM');}catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}};
+const interrupt=()=>{interrupted=true;stop();};process.once('SIGINT',interrupt);process.once('SIGTERM',interrupt);
+try{
+ node=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:2_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{backgroundWorker:false,agent:{configured:false,async query(){modelCalls++;throw Error('No model in advanced handoff contract');},async close(){}}});
+ const origin=await node.app.listen({host:'127.0.0.1',port:0}),when='2026-11-17T00:00:00Z';
+ const call=async(path:string,payload:object,credential=token)=>{const response=await node!.app.inject({method:'POST',url:path,headers:{authorization:'Bearer '+credential},payload});assert.equal(response.statusCode,200,response.body);return response.json();};
+ const session=await call('/api/login/session',{serverUrl:origin,deviceId:'generated-advanced-phone',deviceName:'Generated advanced phone',platform:'android',durationMs:86400000}),revoked=await call('/api/login/session',{serverUrl:origin,deviceId:'generated-revoked-phone',deviceName:'Generated revoked phone',platform:'android',durationMs:86400000});
+ const invitation=await call('/api/connections/collector-invitations',{serverUrl:origin,label:'Generated collector'}),collector=await call('/api/connections/redeem',{code:invitation.invitation.code,deviceId:'generated-collector',deviceName:'Generated collector',platform:'android'});
+ node.sources.register({id:'generated-advanced-recording',name:'Generated recording',kind:'local-files',deviceId:'generated-advanced-source',platform:'import',retention:'archive'});
+ const bytes=Buffer.alloc(44+160);bytes.write('RIFF');bytes.writeUInt32LE(bytes.length-8,4);bytes.write('WAVEfmt ',8);bytes.writeUInt32LE(16,16);bytes.writeUInt16LE(1,20);bytes.writeUInt16LE(1,22);bytes.writeUInt32LE(8000,24);bytes.writeUInt32LE(16000,28);bytes.writeUInt16LE(2,32);bytes.writeUInt16LE(16,34);bytes.write('data',36);bytes.writeUInt32LE(160,40);
+ const upload=node.files.begin({sourceId:'generated-advanced-recording',item:{externalId:'generated.wav',revision:'1',observedAt:when,kind:'file',layer:'original',mimeType:'audio/wav',title:'Generated advanced recording.wav'},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});node.files.part(upload.uploadId,0,bytes,()=>{});const id=(await node.files.commit(upload.uploadId,()=>{})).id;
+ const raw=randomUUID(),dialogue=randomUUID(),diarization=randomUUID(),segments=[{startMs:0,endMs:5,text:'Generated current recording',speaker:'SPEAKER_0'},{startMs:5,endMs:10,text:'Generated second speaker',speaker:'SPEAKER_1'}];
+ for(const [artifact,kind,value]of [[raw,'transcript',{complete:true,transcript:{durationMs:10,segments:segments.map(value=>({...value,text:'Generated raw recording'}))}}],[dialogue,'dialogue',{complete:true,transcript:{durationMs:10,segments},inputArtifacts:[raw]}],[diarization,'diarization',{durationMs:10,segments:segments.map(({startMs,endMs,speaker})=>({startMs,endMs,speaker})),samples:[{speaker:'SPEAKER_0'},{speaker:'SPEAKER_1'}],warnings:[],observedSpeakers:2}]] as const)node.store.db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(artifact,id,kind,when,'generated-controlled-ASR',JSON.stringify(value));
+ for(const [index,segment]of segments.entries())node.store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,start_ms,end_ms,text,metadata,ordinal) VALUES(?,?,?,?,?,?,?,?)').run(randomUUID(),dialogue,id,segment.startMs,segment.endMs,segment.text,JSON.stringify({speaker:segment.speaker}),index);
+ for(const speaker of ['SPEAKER_0','SPEAKER_1'])node.files.saveAsset(diarization,'speaker_samples/'+speaker+'.wav','audio/wav',bytes);node.store.db.prepare("UPDATE file_jobs SET state='succeeded',summary_state='skipped',error=NULL WHERE capture_id=?").run(id);
+ const settings=node.processing.view(),archive=settings.policy.profiles.find(value=>value.processorId==='archive');assert.ok(archive);
+ const configured=await node.app.inject({method:'PUT',url:'/api/file-processing',headers:{authorization:'Bearer '+token},payload:{revision:settings.revision,settings:settings.settings,policy:{...settings.policy,rules:[{type:'audio/*',profileId:archive.id},{type:'image/*',profileId:archive.id},...settings.policy.rules.filter(value=>value.sourceId||!['audio/*','image/*'].includes(value.type))]}}});assert.equal(configured.statusCode,200,configured.body);
+ const authority=structuredClone(node.modelAuthorization.view()),policy=structuredClone(node.processing.view()),selection=node.pluginCenter.buildView('local-image').desired,output=join(directory,'kotlin-targets.json');
+ assert.equal(interrupted,false);child=spawn(resolve(root,'apps/android/gradlew'),['-p','apps/android','--no-daemon',':app:testDebugUnitTest','--rerun','--tests','dev.mote.collector.AdvancedWebCentralContractTest','--tests','dev.mote.collector.AdvancedWebNavigationTest','--tests','dev.mote.collector.CentralFailureTest'],{cwd:root,stdio:'inherit',detached:process.platform!=='win32',env:{...process.env,MOTE_ADVANCED_ORIGIN:origin,MOTE_ADVANCED_SESSION:session.token,MOTE_ADVANCED_COLLECTOR:collector.token,MOTE_ADVANCED_REVOKED:revoked.token,MOTE_ADVANCED_FILE:id,MOTE_ADVANCED_OUTPUT:output}});
+ await new Promise<void>((done,failed)=>{let error:unknown;const timer=setTimeout(()=>{error=Error('Advanced Web Gradle contract exceeded 15 minutes');stop();},15*60_000);child!.once('error',value=>{error=value;});child!.once('close',(code,signal)=>{clearTimeout(timer);if(error)failed(error);else if(code!==0||interrupted)failed(Error('Advanced Web Gradle failed: '+(signal??code)));else done();});});
+ const report=await readFile(join(root,'apps/android/app/build/test-results/testDebugUnitTest/TEST-dev.mote.collector.AdvancedWebCentralContractTest.xml'),'utf8');assert.match(report,/<testcase name="actualCentralTicketsBecomeTheExactWebRecordingAndPreparationTargets"/);for(const attribute of ['skipped','failures','errors'])assert.match(report,new RegExp('\\b'+attribute+'="0"'));
+ for(const [name,count]of [['AdvancedWebNavigationTest',10],['CentralFailureTest',4]] as const){const report=await readFile(join(root,'apps/android/app/build/test-results/testDebugUnitTest/TEST-dev.mote.collector.'+name+'.xml'),'utf8');assert.ok(Number(report.match(/tests="(\d+)"/)?.[1])>=count);for(const attribute of ['skipped','failures','errors'])assert.match(report,new RegExp('\\b'+attribute+'="0"'));}
+ await call('/api/login/logout',{},revoked.token);await consumeAdvancedTargets(JSON.parse(await readFile(output,'utf8')) as AdvancedContractOutput);
+ assert.deepEqual(node.modelAuthorization.view(),authority);assert.deepEqual(node.processing.view(),policy);assert.deepEqual(node.pluginCenter.buildView('local-image').desired,selection);assert.equal(modelCalls,0);
+ console.log('Real Central tickets -> production Kotlin targets -> real Web exchange, recording panels and media preparation passed; generated data, no device/model.');
+}finally{process.removeListener('SIGINT',interrupt);process.removeListener('SIGTERM',interrupt);stop();await node?.app.close();await rm(directory,{recursive:true,force:true});}
