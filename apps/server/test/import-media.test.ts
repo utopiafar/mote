@@ -71,7 +71,7 @@ test('a link-only diary record attaches host-retained ZIP media through helper, 
   writeFileSync(join(input.workspace,'dispositions.json'),JSON.stringify({items:input.inputPaths.map(path=>({path,status:'parsed',reason:'Generated diary text'}))}));
   const prepared=prepareImportInput(input),helper=await import(pathToFileURL(prepared.helperPath).href);
   assert.deepEqual(await helper.validateRecords('records.jsonl'),{valid:true,count:1,errors:[]});
-  return {summary:'Generated diary; media extraction follows confirmation.',reviewDecision:{confidence:'high',ambiguous:false,reason:'Explicit generated source mapping'}};
+  return {summary:'Generated diary; media extraction follows confirmation.',reviewDecision:{confidence:'high',ambiguous:false,requiresConfirmation:false,reason:'Explicit generated source mapping'}};
  });
  const job=await f.create([entry('diary.zip',Buffer.from(zipSync({'diary.md':Buffer.from(text),'assets/photo.png':png})))],'preview','Preserve diary entries and image references');
  assert.equal(job.status,'awaiting_confirmation',JSON.stringify(job));assert.deepEqual(job.warnings,[]);

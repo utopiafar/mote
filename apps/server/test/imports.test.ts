@@ -78,31 +78,33 @@ test('generic model manifest previews, confirms, retains attachments and notifie
  assert.equal(files.listForCapture(saved.captureIds[0]).length,2);assert.equal(store.search({query:'syntheticSecret'}).length,0);
  assert.equal((await imports.confirm(job.id)).status,'completed');assert.equal(notified.length,1);
 });
-test('automatic import publishes only a validated, unambiguous high-confidence result',async t=>{
- let decision:any={confidence:'high',ambiguous:false,reason:'Generated mapping has one source identity and exact original text.'},warnings:string[]=[],includeDispositions=true;
+test('automatic import follows an explicit confirmation judgment after host validation',async t=>{
+ let decision:any={confidence:'high',ambiguous:false,requiresConfirmation:false,reason:'Generated mapping has one source identity and exact original text.'},warnings:string[]=[],includeDispositions=true,unsupported=false;
  const {imports,store}=fixture(t,{prepare:async({workspace,inputPaths})=>{
    writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(randomUUID()),evidencePaths:[inputPaths[0]],attachments:[]})+'\n');
-   if(includeDispositions)writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:[{path:inputPaths[0],status:'parsed',reason:'Generated source text'}]}));
+   if(includeDispositions)writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:inputPaths.map((path,index)=>({path,status:index?(unsupported?'unsupported':'excluded'):'parsed',reason:index?'Generated non-evidence original':'Generated source text'}))}));
    return {summary:'Generated parser assessment',warnings,reviewDecision:decision};
  }});
- const create=async(processing:'automatic'|'preview'='automatic')=>imports.create({files:[entry('generated.custom','Synthetic source')],processing});
+ const create=async(processing:'automatic'|'preview'='automatic',extra=false)=>imports.create({files:[entry('generated.custom','Synthetic source'),...(extra?[entry('generated-extra.custom','Synthetic non-evidence original')]:[])],processing});
  let job=await create();let result=await imports.prepare(job.id);
  assert.equal(result.status,'completed');assert.equal(result.reviewGate?.decision,'automatic');assert.equal(result.progress.imported,1);
- decision={confidence:'low',ambiguous:true,reason:'The generated author field has two plausible meanings.'};job=await create();result=await imports.prepare(job.id);
- assert.equal(result.status,'awaiting_confirmation');assert.equal(result.reviewGate?.decision,'confirmation');assert.match(result.reviewGate?.reason??'',/two plausible/);
- decision={confidence:'high',ambiguous:false,reason:'Generated text roles are clear.'};warnings=['Generated source has an unresolved section'];job=await create();result=await imports.prepare(job.id);
- assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/warnings/);
- warnings=[];imports.updateInstruction(job.id,'');result=await imports.prepare(job.id);
+ decision={confidence:'low',ambiguous:true,requiresConfirmation:false,reason:'The date-only interpretation follows the owner explanation, is low consequence and can be revised.'};warnings=['Exact time zone is unknown; the date interpretation remains separate from original timestamps.'];job=await create('automatic',true);result=await imports.prepare(job.id);
+ assert.equal(result.status,'completed');assert.equal(result.reviewGate?.decision,'automatic');assert.equal(result.reviewGate?.reason,decision.reason);assert.deepEqual(result.warnings,warnings);assert.equal(result.dispositions?.counts.excluded,1);
+ decision={confidence:'high',ambiguous:false,requiresConfirmation:true,reason:'A missing source subject would materially change attribution; owner clarification is required.'};job=await create();result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.equal(result.reviewGate?.decision,'confirmation');assert.equal(result.reviewGate?.reason,decision.reason);
+ warnings=[];decision={...decision,requiresConfirmation:false,reason:'The owner clarified the source subject.'};imports.updateInstruction(job.id,'Generated source subject clarification');result=await imports.prepare(job.id);
  assert.equal(result.status,'completed');assert.equal(result.warnings.length,0);
  includeDispositions=false;job=await create();result=await imports.prepare(job.id);
- assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/warnings/);
- includeDispositions=true;decision=undefined;job=await create();result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/every original/);assert.ok(result.warnings.some(w=>w.includes('per-file disposition')));
+ includeDispositions=true;unsupported=true;job=await create('automatic',true);result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.equal(result.dispositions?.counts.unsupported,1);assert.match(result.reviewGate?.reason??'',/not parsed/);
+ unsupported=false;decision=undefined;job=await create();result=await imports.prepare(job.id);
  assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/did not provide/);
- decision={confidence:'high',ambiguous:false};job=await create();result=await imports.prepare(job.id);
+ decision={confidence:'high',ambiguous:false,requiresConfirmation:false};job=await create();result=await imports.prepare(job.id);
  assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/did not explain/);
- decision={confidence:'high',ambiguous:false};job=await create('preview');result=await imports.prepare(job.id);
+ decision={confidence:'low',ambiguous:true,requiresConfirmation:false,reason:'Generated low-impact interpretation can be corrected.'};job=await create('preview');result=await imports.prepare(job.id);
  assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/manual preview/);
- assert.equal(store.list().items.length,2);
+ assert.equal(store.list().items.length,3);
 });
 test('imports select only a configured pinned Python pack and do not fall back to model analysis',async t=>{
  let packCalls=0,modelCalls=0;
@@ -110,7 +112,7 @@ test('imports select only a configured pinned Python pack and do not fall back t
    assert.equal(instruction,'','Owner context does not override a fixed pack parser');
    packCalls++;writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(),evidencePaths:[inputPaths[0]],attachments:[]})+'\n');
    writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:[{path:inputPaths[0],status:'parsed',reason:'Generated fixed parser'}]}));
-   return {summary:'Generated fixed pack',reviewDecision:{confidence:'high' as const,ambiguous:false,reason:'One exact mapping'}};
+   return {summary:'Generated fixed pack',reviewDecision:{confidence:'high' as const,ambiguous:false,requiresConfirmation:false,reason:'One exact mapping'}};
  }}]]);
  const {imports,store}=fixture(t,{sourcePacks,prepare:async()=>{modelCalls++;throw Error('Model must not receive pack input');}});
  await assert.rejects(imports.create({sourcePackId:'missing.pack',files:[entry('input.custom','Generated')]}),{statusCode:409});

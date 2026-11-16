@@ -5,7 +5,7 @@ import {importSkillDescriptor} from './tasks/import.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 
 const importAnswerSchema={
- type:'object',properties:{summary:{type:'string'},recordsPath:{type:['string','null']},warnings:{type:'array',items:{type:'string'}},reviewDecision:{type:['object','null'],properties:{confidence:{type:'string',enum:['high','low','unknown']},ambiguous:{type:'boolean'},reason:{type:'string'}},required:['confidence','ambiguous','reason'],additionalProperties:false}},required:['summary','recordsPath','warnings','reviewDecision'],additionalProperties:false,
+ type:'object',properties:{summary:{type:'string'},recordsPath:{type:['string','null']},warnings:{type:'array',items:{type:'string'}},reviewDecision:{type:['object','null'],properties:{confidence:{type:'string',enum:['high','low','unknown']},ambiguous:{type:'boolean'},requiresConfirmation:{type:'boolean'},reason:{type:'string'}},required:['confidence','ambiguous','requiresConfirmation','reason'],additionalProperties:false}},required:['summary','recordsPath','warnings','reviewDecision'],additionalProperties:false,
 };
 
 /** Codex transport for the same writable Import capability. It receives only

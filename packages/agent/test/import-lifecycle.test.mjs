@@ -92,6 +92,10 @@ test('import transports share one bounded preview contract',()=>{
   assert.throws(()=>parseImportPreview(JSON.stringify({summary:'Generated',recordsPath:'../outside.jsonl'}),process.cwd()),AgentResponseError);
   assert.throws(()=>parseImportPreview(JSON.stringify({summary:'Generated',unexpected:true}),process.cwd()),AgentResponseError);
   assert.throws(()=>parseImportPreview(JSON.stringify({summary:'Generated',reviewDecision:{confidence:'certain',ambiguous:true}}),process.cwd()),AgentResponseError);
+  const decision={confidence:'low',ambiguous:true,requiresConfirmation:false,reason:'A generated date-only interpretation is reversible and does not establish an observation.'};
+  assert.deepEqual(parseImportPreview(JSON.stringify({summary:'Generated',reviewDecision:decision}),process.cwd()).reviewDecision,decision);
+  assert.deepEqual(parseImportPreview(JSON.stringify({summary:'Generated',reviewDecision:{...decision,requiresConfirmation:true}}),process.cwd()).reviewDecision,{...decision,requiresConfirmation:true});
+  for(const requiresConfirmation of [undefined,'false',null,0])assert.throws(()=>parseImportPreview(JSON.stringify({summary:'Generated',reviewDecision:{...decision,requiresConfirmation}}),process.cwd()),AgentResponseError);
 });
 
 test('import capability registry selects an implementation only from explicit protocol configuration and retires it',async()=>{

@@ -6,7 +6,11 @@ export type ArchivedFile={id:string;hash:string;name:string;relativePath:string;
 export type ImportPreview={count:number;samples:{title:string;text:string;kind:string;attachmentCount:number}[]};
 export type ImportDispositionStatus='parsed'|'attachment'|'container'|'excluded'|'unsupported'|'processing';
 export type ImportDispositions={counts:Record<Exclude<ImportDispositionStatus,'processing'>,number>&{processing?:number};items:{fileId:string;path:string;status:ImportDispositionStatus;reason:string}[]};
-export const importReviewDecisionSchema=z.object({confidence:z.enum(['high','low','unknown']),ambiguous:z.boolean(),reason:z.string().min(1).max(1000).optional()}).strict();
+export const importReviewDecisionSchema=z.object({
+  confidence:z.enum(['high','low','unknown']),ambiguous:z.boolean(),
+  requiresConfirmation:z.boolean().describe('Whether a material gap requires owner input before publishing; uncertainty alone need not require confirmation for low-consequence, revisable interpretations.'),
+  reason:z.string().min(1).max(1000).optional(),
+}).strict();
 export type ImportReviewDecision=z.infer<typeof importReviewDecisionSchema>;
 export type ImportReviewGate={decision:'automatic'|'confirmation';reason:string};
 export type ImportMediaItem={fileId:string;format:{id:string;version:string;mimeType:string;reason:string};captureId?:string;

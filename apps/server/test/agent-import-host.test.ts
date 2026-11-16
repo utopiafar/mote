@@ -82,7 +82,7 @@ test('DSH fixture preview is consumed by ImportRuntime and manifest while archiv
       {path:request.inputPaths[1],status:'attachment',reason:'Generated retained attachment'},
     ]}));
     return {events:[],finalResponse:JSON.stringify({summary:'Generated preview summary',recordsPath:'records.jsonl',
-      warnings:['Generated preview warning'],reviewDecision:{confidence:'low',ambiguous:true,reason:'Generated review ambiguity'}})};
+      warnings:['Generated preview warning'],reviewDecision:{confidence:'low',ambiguous:true,requiresConfirmation:true,reason:'Generated review ambiguity'}})};
   });
   t.mock.method(DeepSeekHarness.prototype,'close',async()=>{});
 
@@ -133,7 +133,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   send({id:m.id,result:{turn:{id:'generated-turn'}}});
   writeFileSync('records.jsonl',JSON.stringify({item:{externalId:'generated-codex-diary',revision:'v1',observedAt:'2026-09-15T12:00:00Z',kind:'file',layer:'original',title:'Generated Codex diary title',text:original,document:{recordedAt:'2020-01-01T10:00:00Z',timeBasis:'recorded',contentRole:'authored'}},evidencePaths:[request.inputPaths[0]],attachments:[attachment]})+'\\n');
   writeFileSync('dispositions.json',JSON.stringify({items:[{path:request.inputPaths[0],status:'parsed',reason:'Generated authored text'},{path:attachment,status:'attachment',reason:'Generated retained attachment'}]}));
-  send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify({summary:'Generated Codex preview summary',recordsPath:'records.jsonl',warnings:['Generated Codex preview warning'],reviewDecision:{confidence:'low',ambiguous:true,reason:'Generated Codex review ambiguity'}})}}});
+  send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify({summary:'Generated Codex preview summary',recordsPath:'records.jsonl',warnings:['Generated Codex preview warning'],reviewDecision:{confidence:'low',ambiguous:true,requiresConfirmation:true,reason:'Generated Codex review ambiguity'}})}}});
   send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'completed'}}});
  }
 });
