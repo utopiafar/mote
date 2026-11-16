@@ -8,7 +8,7 @@
   .hidden { display: none; }
   .notice { padding: .75rem 1rem; border: 1px solid #c8c8c8; border-radius: .375rem; }
   ul { padding-left: 1.25rem; }
-  form { display: flex; gap: .5rem; margin-top: 1rem; }
+  #add { display: flex; gap: .5rem; margin-top: 1rem; }
   input { flex: 1; padding: .4rem .6rem; }
 </style>
 </head>
@@ -18,15 +18,15 @@
   <div id="notice" class="notice hidden"></div>
   <section id="content" class="hidden">
     <ul id="items"></ul>
-    <form id="add">
+    <div id="add">
       <input id="text" name="text" maxlength="1024" required placeholder="New collection item">
-      <button type="submit">Add</button>
-    </form>
+      <button id="submit" type="button">Add</button>
+    </div>
   </section>
 </main>
 <script>
   'use strict';
-  const elements = Object.fromEntries(['notice', 'content', 'items', 'add', 'text'].map(id => [id, document.getElementById(id)]));
+  const elements = Object.fromEntries(['notice', 'content', 'items', 'add', 'text', 'submit'].map(id => [id, document.getElementById(id)]));
   let channel = null;
   let sequence = 0;
   const pending = new Map();
@@ -61,10 +61,14 @@
     if (!state.items.length) elements.items.textContent = 'No items yet.';
   }
 
-  elements.add.addEventListener('submit', event => {
-    event.preventDefault();
+  // The host permits scripts, without native form submission or top navigation.
+  function addItem() {
     const text = elements.text.value;
-    request('add', {text}).then(showState).then(() => { elements.text.value = ''; }).catch(() => showNotice('The item was not accepted.'));
+    request('add', {text}).then(() => request('state')).then(showState).then(() => { elements.text.value = ''; }).catch(() => showNotice('The item was not accepted.'));
+  }
+  elements.submit.addEventListener('click', addItem);
+  elements.text.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); addItem(); }
   });
 
   window.addEventListener('message', event => {

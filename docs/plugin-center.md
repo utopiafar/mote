@@ -21,7 +21,9 @@ worker和native共享build/instance控制投影。操作带`operationId`和`expe
 
 纯data/domain服务包可直接按固定release解析、安装、核验和启用，模板无需声明ingress。核验沿现有PluginHost生命周期检查实际端口声明，不发布活跃端口、不写实例状态；明确启用后才提供typed service，消费者通过精确binding与lease使用。必需依赖须对应实际活跃且契约匹配的提供方，多提供方歧义、缺失端口、声明超出制品或启动失败均阻断，并释放该实例的部分发布。提供方停用使旧lease及必需消费者失效，消费者准确显示blocked；正常重启按已保存的启用意图恢复，依赖故障后的恢复需明确重试。实例状态保留，旧scope的迟到写入被拒绝，见[开发合同](plugin-development.md#contributions-and-domain-services)。
 
-已安装外部页面/主题/布局尚未接入实际Web装载；SDK或plugin-dev可运行不等于该生产入口已完成，见[当前架构](architecture.zh-CN.md)。
+已安装服务包的`page/theme/layout`展示声明经核验、明确启用后进入owner展示快照，实际Web启动按实例装载到registry。页面通过可信renderer在opaque-origin sandbox中打开，桥只调用Manifest声明的同实例typed service方法，不传owner令牌或Host API。主题为完整角色值JSON，布局为当前可信shell支持的JSON；启用登记可选项，所有者在“外观、语言与会话”中选择。选择按当前登录的非秘密view scope保存；刷新可恢复，缺失或停用时回到固定内置展示并说明回退。依赖缺失、版本不符、不支持声明及无效资产不报ready，见[展示开发合同](plugin-development.md#installed-web-presentation)。
+
+展示按安装、实例与activation固定身份。停用、卸载、依赖撤回和重启释放旧展示scope，旧文档/迟到结果不能进入新实例；正常重启保留已有启用意图。单纯关闭页面只释放该视图和桥，不取消独立获准的服务器工作。新增renderer或OS原语仍随可信客户端构建发布，动态包不能装载任意远程React代码。
 
 ## 制品与worker合同
 
