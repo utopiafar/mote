@@ -10,7 +10,6 @@ object ConfigurationArchive {
             .put("server", c.server)
             .put("deviceName", c.deviceName)
             .put("intervalSeconds", c.intervalSeconds)
-            .put("maxQueueMiB", c.maxQueueMiB)
             .put("wifiOnly", c.wifiOnly)
             .put("excludedPackages", c.excludedPackages)
             .put("masks", c.masks)
@@ -45,7 +44,6 @@ object ConfigurationArchive {
             .put("ocrAppModes", c.ocrAppModes)
             .put("imageDedupeDiagnosticsEnabled", c.imageDedupeDiagnosticsEnabled)
 
-            .put("uploadedRetentionDays", c.uploadedRetentionDays)
         if (includeToken) settings.put("token", c.token)
         return JSONObject().put("format", "mote-android-settings").put("version", 2).put("settings", settings).toString(2)
     }
@@ -62,7 +60,6 @@ object ConfigurationArchive {
             server = nextServer,
             deviceName = string(values, "deviceName", current.deviceName),
             intervalSeconds = int(values, "intervalSeconds", current.intervalSeconds),
-            maxQueueMiB = int(values, "maxQueueMiB", current.maxQueueMiB),
             wifiOnly = boolean(values, "wifiOnly", current.wifiOnly),
             excludedPackages = string(values, "excludedPackages", current.excludedPackages),
             masks = string(values, "masks", current.masks),
@@ -99,7 +96,6 @@ object ConfigurationArchive {
             ocrAppModes = string(values, "ocrAppModes", current.ocrAppModes),
             imageDedupeDiagnosticsEnabled = boolean(values, "imageDedupeDiagnosticsEnabled", current.imageDedupeDiagnosticsEnabled),
 
-            uploadedRetentionDays = int(values, "uploadedRetentionDays", current.uploadedRetentionDays),
             token = string(values, "token", if (nextServer == current.server) current.token else "")
         ).also { it.validate() }
     }
@@ -112,5 +108,5 @@ object ConfigurationArchive {
     private fun int(j: JSONObject, key: String, fallback: Int): Int {
         val n = long(j, key, fallback.toLong()); require(n in Int.MIN_VALUE..Int.MAX_VALUE); return n.toInt()
     }
-    private val keys = setOf("syncPaused", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "debugHttp", "mode", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "localContentOcr", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "uploadedRetentionDays")
+    private val keys = setOf("syncPaused", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "wifiOnly", "excludedPackages", "masks", "debugHttp", "mode", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "localContentOcr", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled")
 }

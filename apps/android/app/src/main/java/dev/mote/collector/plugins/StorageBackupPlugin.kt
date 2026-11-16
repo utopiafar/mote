@@ -491,7 +491,6 @@ internal class StorageBackupOwner internal constructor(
             val staged = QueueArchive.prepare(
                 requireNotNull(app.contentResolver.openInputStream(Uri.parse(uri))) { MoteI18n.text("备份无法读取") },
                 File(staging, "restore-${UUID.randomUUID()}"),
-                settings.read().maxQueueMiB * 1024L * 1024,
             )
             try {
                 if (staged.origin != settings.dataOrigin()) error(MoteI18n.text("备份属于不同中央。先连接原节点"))
@@ -526,7 +525,7 @@ internal class StorageBackupOwner internal constructor(
         restoring = true
         RuntimeSettings.apply(activity, next, expected = current, change = {
             settings.save(next, current)
-            QueueArchive.restore(staged, app.queue(), settings.dataOrigin(), next.maxQueueMiB * 1024L * 1024)
+            QueueArchive.restore(staged, app.queue(), settings.dataOrigin())
         }) { applied ->
             restoring = false
             if (applied.isSuccess || permanentlyDetached) releasePrepared()

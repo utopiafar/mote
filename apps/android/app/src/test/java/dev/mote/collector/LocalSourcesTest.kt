@@ -35,10 +35,10 @@ class LocalSourcesTest {
         val identity=ItemUploadIdentity("source-item","scope","source","https://generated.example","device","target",source.id,old.getString("externalId"),old.getString("revision"),SourceRules.hash(SourceRules.canonical(old)))
         store.scan(source,SourceScan(listOf(body().put("text","Generated newer revision")),true,at))
         assertEquals(2,store.state(source.id).getJSONArray("pending").length())
-        assertFalse(store.acknowledgeExact(identity.copy(target="other")))
-        assertFalse(store.acknowledgeExact(identity.copy(fingerprint="wrong")))
+        assertFalse(store.acknowledgeExact(identity.copy(target="other"), "11111111-2222-4333-8444-555555555555"))
+        assertFalse(store.acknowledgeExact(identity.copy(fingerprint="wrong"), "11111111-2222-4333-8444-555555555555"))
         assertEquals(2,store.state(source.id).getJSONArray("pending").length())
-        assertTrue(store.acknowledgeExact(identity))
+        assertTrue(store.acknowledgeExact(identity, "11111111-2222-4333-8444-555555555555"))
         assertEquals(1,store.state(source.id).getJSONArray("pending").length())
         assertNotEquals(old.getString("revision"),store.next(source.id,"target")!!.getString("revision"))
     }
@@ -89,7 +89,7 @@ class LocalSourcesTest {
         assertTrue(LocalSource.from(source().json().put("centralProcessingConsent", true)).centralProcessingConsent)
     }
     @Test fun unconfirmedSourceCannotMakeAggregateSyncLookCompleteAfterEarlierAck() {
-        val source = source(); val metadata = JSONObject().put("registered", true).put("status", "synced")
+        val source = source().copy(retention = "snapshot"); val metadata = JSONObject().put("registered", true).put("status", "synced")
         assertTrue(SyncHealth.sourceRequiresAttention(source, metadata, 0))
         assertFalse(SyncHealth.sourceRequiresAttention(source.copy(enabled = false), metadata, 0))
         assertFalse(SyncHealth.sourceRequiresAttention(source.copy(centralProcessingConsent = true), metadata, 0))
@@ -122,7 +122,7 @@ class LocalSourcesTest {
         restored.acknowledge(source.id, "target-a", pending.getString("externalId"), "wrong-revision"); assertNotNull(restored.next(source.id, "target-a"))
         restored.acknowledge(source.id, "target-a", pending.getString("externalId"), pending.getString("revision")); assertNull(restored.next(source.id, "target-a"))
         assertTrue(restored.state(source.id).has("lastAcknowledgedAt"))
-        restored.selectTarget(source.id, "target-b"); assertFalse(restored.state(source.id).has("lastAcknowledgedAt")); assertEquals(pending.toString(), restored.next(source.id, "target-b")!!.toString()); assertFalse(restored.state(source.id).optBoolean("registered"))
+        restored.selectTarget(source.id, "target-b"); assertFalse(restored.state(source.id).has("lastAcknowledgedAt")); assertNull(restored.next(source.id, "target-b")); assertEquals(1, restored.state(source.id).getJSONObject("current").length()); assertFalse(restored.state(source.id).optBoolean("registered"))
     }
     @Test fun `offline edits deletion and restoration preserve order with distinct versions`() {
         val store = LocalSourceStore(folder.newFolder(), cipher); val source = source(); store.save(source); store.selectTarget(source.id, "target")
@@ -147,7 +147,7 @@ class LocalSourcesTest {
         store.scan(source, SourceScan(emptyList(), true, at, Instant.parse(at).minusSeconds(86400).toEpochMilli(), Instant.parse(at).toEpochMilli()))
         assertEquals(2, store.state(source.id).getJSONArray("pending").length())
     }
-    @Test fun `privacy selection edits purge old pending data but a rename preserves history`() {
+    @Test fun `privacy selection edits isolate old pending input while rename preserves it`() {
         val store = LocalSourceStore(folder.newFolder(), cipher); val source = source(); store.save(source); store.selectTarget(source.id, "target"); store.registered(source.id, "target")
         store.scan(source, SourceScan(listOf(body()), true, at)); store.save(source.copy(name = "新名称"))
         assertEquals(1, store.state(source.id).getJSONArray("pending").length()); assertFalse(store.state(source.id).getBoolean("registered"))
@@ -155,13 +155,13 @@ class LocalSourcesTest {
         store.save(restricted); assertEquals(0, store.state(source.id).optJSONArray("pending")?.length() ?: 0)
         store.scan(source, SourceScan(listOf(body()), true, at)) // in-flight scanner with obsolete privacy selection
         assertEquals(0, store.state(source.id).optJSONArray("pending")?.length() ?: 0)
-        store.save(restricted.copy(enabled = false)); store.scan(restricted, SourceScan(listOf(body()), true, at)); assertFalse(store.state(source.id).has("current"))
+        store.save(restricted.copy(enabled = false)); store.scan(restricted, SourceScan(listOf(body()), true, at)); assertTrue(store.state(source.id).has("current")); assertEquals(1, store.state(source.id).getJSONArray("quarantine").length())
     }
-    @Test fun `bounded queue failure is atomic and never removes previous pending material`() {
+    @Test fun `former total cache budget does not reject or evict pending revisions`() {
         val store = LocalSourceStore(folder.newFolder(), cipher); val source = source(); store.save(source); store.selectTarget(source.id, "target")
         store.scan(source, SourceScan(listOf(body("A")), true, at)); val before = store.state(source.id).toString()
-        assertThrows(IllegalStateException::class.java) { store.scan(source, SourceScan(listOf(body("B")), true, at), 1) }
-        assertEquals(before, store.state(source.id).toString())
+        store.scan(source, SourceScan(listOf(body("B")), true, at))
+        val rows = store.state(source.id).getJSONArray("pending"); assertEquals(2, rows.length()); assertEquals("A", rows.getJSONObject(0).getString("text")); assertEquals("B", rows.getJSONObject(1).getString("text"))
     }
     @Test fun `deterministic file format filters preserve Unicode and reject binary malformed UTF8 and excess size`() {
         val source = source().copy(excluded = "private/*\n*.secret.txt")

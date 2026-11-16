@@ -3,6 +3,7 @@ package dev.mote.collector
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.File
 import java.nio.file.Files
 import java.util.UUID
 
@@ -17,7 +18,7 @@ class LocalInventoryTest {
     @Test fun unreadableSourceDoesNotReplaceFreshLocalAndQuarantineInventories() {
         val dir = Files.createTempDirectory("inventory-source-failure").toFile()
         try {
-            val queue = DurableQueue(dir, cipher); queue.enqueue(event("note"), null, 1000000)
+            val queue = DurableQueue(dir, cipher); queue.enqueue(event("note"), null)
             val current = queue.inventory(); val quarantine = current.copy(records = 0, pending = 0)
             val result = LocalStateSnapshot(active = current, quarantine = quarantine).withSources { error("generated unreadable source") }
             assertEquals(current, result.active); assertEquals(quarantine, result.quarantine)
@@ -25,25 +26,27 @@ class LocalInventoryTest {
         } finally { dir.deleteRecursively() }
     }
 
-    @Test fun everyCommittedMutationInvalidatesButCapacityRejectionDoesNot() {
+    @Test fun everyCommittedMutationInvalidatesButFailedStorageDoesNotAndAckKeepsImage() {
         val dir = Files.createTempDirectory("inventory-events").toFile()
         try {
             val signals = mutableListOf<Boolean>(); val queue = DurableQueue(dir, cipher).apply { onMutation = signals::add }
             val row = event()
-            assertThrows(QueueFull::class.java) { queue.enqueue(row, byteArrayOf(2), 1) }
+            val blocked = File(dir, ".capture-stages.inbox").apply { check(mkdir()) }
+            assertThrows(java.io.IOException::class.java) { queue.enqueue(row, byteArrayOf(2)) }
             assertTrue(signals.isEmpty())
-            queue.enqueue(row, byteArrayOf(2), 1000000)
+            check(blocked.delete())
+            queue.enqueue(row, byteArrayOf(2))
             assertTrue(signals.contains(true)); signals.clear()
-            queue.cacheThumbnail(row.getString("id"), byteArrayOf(3), 1000000)
+            queue.cacheThumbnail(row.getString("id"), byteArrayOf(3))
             assertEquals(listOf(false), signals); signals.clear()
             queue.acknowledge(row.getString("id")); assertEquals(listOf(true), signals)
-            assertEquals(0, queue.inventory().images)
+            assertEquals(1, queue.inventory().images); assertNull(queue.peek())
         } finally { dir.deleteRecursively() }
     }
     @Test fun missingImageFailsInventoryAndStateCanRepresentStaleCountsWithoutZeroing() {
         val dir = Files.createTempDirectory("inventory-missing").toFile()
         try {
-            val queue = DurableQueue(dir, cipher); val row = event(); queue.enqueue(row, byteArrayOf(4), 1000000)
+            val queue = DurableQueue(dir, cipher); val row = event(); queue.enqueue(row, byteArrayOf(4))
             val before = queue.inventory(); dir.listFiles()!!.single { it.extension == "blob" }.delete()
             assertThrows(IllegalStateException::class.java) { queue.inventory() }
             val state = LocalStateSnapshot(active = before, quarantine = before.copy(records = 0, images = 0), error = "unavailable")
@@ -56,11 +59,11 @@ class LocalInventoryTest {
         try {
             val queue = DurableQueue(dir, cipher)
             val a = event().put("ocr", JSONObject().put("status", "disabled")); val b = event()
-            queue.enqueue(a, byteArrayOf(1), 10000000); queue.enqueue(b, byteArrayOf(1), 10000000)
-            queue.enqueue(event("note"), null, 10000000)
+            queue.enqueue(a, byteArrayOf(1)); queue.enqueue(b, byteArrayOf(1))
+            queue.enqueue(event("note"), null)
             val duplicate = event().put("ocr", JSONObject().put("status", "disabled")).put("ocrText", "")
                 .put("metadata", JSONObject().put("capture", JSONObject().put("deduplication", JSONObject().put("mode", "exact").put("duplicate", true))))
-            queue.enqueue(duplicate, null, 10000000)
+            queue.enqueue(duplicate, null)
             val first = queue.inventory()
             assertEquals(4, first.records); assertEquals(2, first.images); assertEquals(1, first.imageFiles)
             assertEquals(4, first.pending); assertEquals(0, first.awaitingOcr)
@@ -68,7 +71,8 @@ class LocalInventoryTest {
             assertEquals(3, queue.inventory().pending); assertEquals(2, queue.inventory().images)
             assertEquals(0, queue.inventory().awaitingOcr)
             queue.pruneUploaded(Long.MAX_VALUE)
-            assertEquals(1, queue.inventory().images); assertEquals(1, queue.inventory().imageFiles)
+            assertEquals(2, queue.inventory().images); assertEquals(1, queue.inventory().imageFiles)
+            assertTrue(queue.capture(a.getString("id"))!!.getBoolean("uploaded")); assertArrayEquals(byteArrayOf(1), queue.image(a.getString("id")))
         } finally { dir.deleteRecursively() }
     }
 }

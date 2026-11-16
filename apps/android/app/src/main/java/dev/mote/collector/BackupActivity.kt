@@ -71,6 +71,7 @@ class BackupActivity : MoteActivity() {
         SecondaryUi.text(range, MoteI18n.text("备份本机仍保留的截图、应用活动、通知、媒体和记录。ZIP 为明文，不含中央归档、来源文件原件、未提交草稿或模型文件。"), muted = true)
         SecondaryUi.text(range, MoteI18n.text("已清理的本机副本不在其中。"), muted = true)
         SecondaryUi.text(range, MoteI18n.text("备份文件为明文，仅保存在自己信任的位置。"), muted = true)
+        SecondaryUi.text(range, MoteI18n.text("ZIP 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件、附件和会议录音需另行备份。"), muted = true)
         SecondaryUi.action(range, MoteI18n.text("导出本机元数据 JSON")) { create(14, "application/json", "mote-local-metadata.json") }
         SecondaryUi.row(records, MoteI18n.text("本机存储位置")) { startActivity(Intent(this, StorageActivity::class.java)) }
         val central = SecondaryUi.disclosure(records, MoteI18n.text("中央资料导出"), "backup-central")
@@ -261,7 +262,6 @@ class BackupActivity : MoteActivity() {
                 }
                 row(MoteI18n.text("设置"), MoteI18n.text("当前"), MoteI18n.text("导入后"))
                 row(MoteI18n.text("采集间隔"), MoteI18n.text("{0} 秒", current.intervalSeconds), MoteI18n.text("{0} 秒", next.intervalSeconds))
-                row(MoteI18n.text("本机保留"), MoteI18n.text("{0} 天", current.uploadedRetentionDays), MoteI18n.text("{0} 天", next.uploadedRetentionDays))
                 row(MoteI18n.text("发送方式"), syncLabel(current), syncLabel(next))
                 row(MoteI18n.text("应用规则"), current.collectionRules.apps.size.toString(), next.collectionRules.apps.size.toString())
                 SecondaryUi.text(card, if (current.server == next.server) MoteI18n.text("中央不变") else MoteI18n.text("中央将改变；未携带令牌时需重新连接"), muted = true)

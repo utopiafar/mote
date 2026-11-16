@@ -33,6 +33,7 @@ object HttpJson {
     fun requestBytes(method: String, url: String, body: ByteArray?, token: String? = null, contentType: String = "application/json", maxResponseBytes: Int = 256 * 1024, headers: Map<String, String> = emptyMap(), sendingContext: Context? = null): Pair<Int, JSONObject?> {
         val started = android.os.SystemClock.elapsedRealtime()
         runCatching { onRequest?.invoke() }
+        TransferRequestGuard.check()
         val connection = URL(url).openConnection() as HttpURLConnection
         track(connection, collectorSending = sendingContext != null)
         try {
@@ -49,6 +50,7 @@ object HttpJson {
             if (IngressV2Protocol.uploadWrite(method, url)) connection.setRequestProperty(IngressV2Protocol.HEADER, IngressV2Protocol.VERSION)
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
+                TransferRequestGuard.check()
                 connection.setFixedLengthStreamingMode(body.size)
                 connection.outputStream.use { out ->
                     var offset = 0
@@ -59,6 +61,7 @@ object HttpJson {
                     }
                 }
             }
+            TransferRequestGuard.check()
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.use { input ->
@@ -108,6 +111,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         }
         return try {
             val config = settings.read()
+            val connectionLease = ConnectionLease(applicationContext, config)
             val explicit = inputData.getBoolean("manual", false)
             if (UploadHistoryRecovery.unavailable && !UploadHistoryRecovery.restore(applicationContext, applicationContext.queue(), settings))
                 return if (config.syncMode == "manual") Result.failure() else Result.retry()
@@ -231,7 +235,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     when (code) {
                         200, 201 -> {
                             if (individual) SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
-                            settings.syncStatus("uploading", MoteI18n.text("已收到上传确认"), uploaded = true)
+                            settings.syncStatus("uploading", MoteI18n.text("已收到上传确认"), uploaded = true, acknowledgedOrigin = config.server, ackGeneration = connectionLease.generation)
                         }
                         409 -> queue.uploadConflict(id)
                         410 -> queue.archiveMissing(id)

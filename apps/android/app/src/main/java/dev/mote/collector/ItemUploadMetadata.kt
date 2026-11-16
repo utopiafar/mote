@@ -6,14 +6,14 @@ import java.util.UUID
 /** Whitelist only: no original body, title, URI, file name, response text or credential. */
 internal data class ItemUploadIdentity(val kind: String, val scope: String, val lane: String, val origin: String,
     val deviceId: String, val target: String, val sourceId: String, val externalId: String, val revision: String,
-    val fingerprint: String, val sha256: String = "", val sizeBytes: Long = 0, val recordId: String = "", val attachmentId: String = "") {
+    val fingerprint: String, val sha256: String = "", val sizeBytes: Long = 0, val recordId: String = "", val attachmentId: String = "", val connectionGeneration: String = "") {
     init { require(kind in setOf("source-item", "file", "attachment") && lane in setOf("source", "capture")); require(sizeBytes >= 0) }
-    val key get() = SourceRules.hash(listOf(scope,kind,sourceId,externalId,revision,fingerprint,sha256,recordId,attachmentId).joinToString("\u0000"))
+    val key get() = SourceRules.hash(listOf(scope,kind,sourceId,externalId,revision,fingerprint,sha256,recordId,attachmentId,connectionGeneration).joinToString("\u0000"))
     fun json() = JSONObject().put("kind",kind).put("scope",scope).put("lane",lane).put("origin",origin).put("deviceId",deviceId).put("target",target)
         .put("sourceId",sourceId).put("externalId",externalId).put("revision",revision).put("fingerprint",fingerprint).put("sha256",sha256)
-        .put("sizeBytes",sizeBytes).put("recordId",recordId).put("attachmentId",attachmentId)
+        .put("sizeBytes",sizeBytes).put("recordId",recordId).put("attachmentId",attachmentId).put("connectionGeneration",connectionGeneration)
     companion object {
-        fun parse(v: JSONObject) = ItemUploadIdentity(v.getString("kind"),v.getString("scope"),v.getString("lane"),v.getString("origin"),v.getString("deviceId"),v.getString("target"),v.getString("sourceId"),v.getString("externalId"),v.getString("revision"),v.getString("fingerprint"),v.getString("sha256"),v.getLong("sizeBytes"),v.getString("recordId"),v.getString("attachmentId"))
+        fun parse(v: JSONObject) = ItemUploadIdentity(v.getString("kind"),v.getString("scope"),v.getString("lane"),v.getString("origin"),v.getString("deviceId"),v.getString("target"),v.getString("sourceId"),v.getString("externalId"),v.getString("revision"),v.getString("fingerprint"),v.getString("sha256"),v.getLong("sizeBytes"),v.getString("recordId"),v.getString("attachmentId"),v.optString("connectionGeneration"))
     }
 }
 internal data class ItemUploadAttempt(val id: String, val batchId: String, val process: String, val identity: ItemUploadIdentity,

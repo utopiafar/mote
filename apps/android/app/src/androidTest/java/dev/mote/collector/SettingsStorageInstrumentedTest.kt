@@ -68,7 +68,7 @@ class SettingsStorageInstrumentedTest {
             assertEquals(AppCollectionRules.DEFAULT, config.appCollectionRules)
             assertEquals(AppCollectionRules.DEFAULT, prefs.getString("appCollectionRules", null))
             assertEquals("", settings.dataOrigin()); assertTrue(prefs.contains("dataOrigin"))
-            assertTrue(prefs.contains("uploadedRetentionDays") && prefs.contains("packedUpload") && prefs.contains("uploadGateEnabled"))
+            assertTrue(!prefs.contains("uploadedRetentionDays") && !prefs.contains("maxQueue") && prefs.contains("packedUpload") && prefs.contains("uploadGateEnabled"))
             assertFalse(prefs.contains("contentEncryptionEnabled") || prefs.contains("ocrChargingOnly"))
             prefs.edit().remove("dataOrigin").commit()
             assertThrows(IllegalStateException::class.java) { settings.read() }
@@ -190,7 +190,7 @@ class SettingsStorageInstrumentedTest {
         try {
             val config = original.copy(server = "", token = "", syncMode = "manual")
             settings.save(config); val origin = settings.dataOrigin(); val stale = context.queue()
-            stale.enqueue(event, image, 2000000)
+            stale.enqueue(event, image)
             val storedImage = File(initial.path).listFiles()!!.single { it.extension == "blob" }.readBytes()
             assertArrayEquals(image, storedImage)
             assertEquals(id, JSONObject(File(initial.path, "$id.event").readText()).getString("id"))
@@ -201,10 +201,10 @@ class SettingsStorageInstrumentedTest {
             assertArrayEquals(storedImage, File(storage.current().path).listFiles()!!.single { it.extension == "blob" }.readBytes())
             apply(config, change = { storage.migrate("internal") })
             assertEquals("internal", storage.current().baseId); assertArrayEquals(image, context.queue().image(id))
-            context.queue().acknowledge(id); assertEquals(0, context.queue().depth())
+            context.queue().acknowledge(id); assertEquals(1, context.queue().depth()); assertNull(context.queue().peek()); assertArrayEquals(image, context.queue().image(id))
         } finally {
             if (storage.current().baseId != "internal") storage.migrate("internal")
-            context.queue().acknowledge(id); settings.enabled = false; settings.save(original)
+            context.queue().removeGeneratedRecord(id); settings.enabled = false; settings.save(original)
             WorkManager.getInstance(context).cancelAllWork().result.get(20, TimeUnit.SECONDS)
         }
     }

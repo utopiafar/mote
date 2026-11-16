@@ -19,16 +19,19 @@ class CaptureStageDurabilityTest {
         .put("source", "note").put("ocrText", text)
         .put("privacy", JSONObject().put("excluded", false).put("redacted", redacted).put("mode", "none"))
 
-    private class SplitStage(private val configKey: String = "default") : CaptureStage {
+    private class SplitStage(private val configKey: String = "default", private val onConsume: () -> Unit = {}) : CaptureStage {
         override val id = "split-fixture"
         override val version = 1
         override val configuration = JSONObject().put("configKey", configKey)
         override fun consume(inputs: List<StageCapture>, checkpoint: JSONObject?, held: List<StageCapture>, flush: Boolean,
-                             deriveId: (List<String>, String) -> String): StageResult = StageResult(inputs.flatMap { input ->
+                             deriveId: (List<String>, String) -> String): StageResult {
+            onConsume()
+            return StageResult(inputs.flatMap { input ->
             listOf("a", "b").map { key -> StageCapture(JSONObject(input.event.toString())
                 .put("id", deriveId(listOf(input.event.getString("id")), key))
                 .put("ocrText", input.event.getString("ocrText") + key), null) }
-        })
+            })
+        }
     }
 
     private class PairStage(override val version: Int = 1) : CaptureStage {
@@ -53,13 +56,13 @@ class CaptureStageDurabilityTest {
         val dir = folder.newFolder(); val stages = CaptureStageRegistry(listOf(SplitStage()))
         val original = note("generated-")
         val first = DurableQueue(dir, cipher, captureStages = stages)
-        first.enqueue(original, null, 1_000_000)
+        first.enqueue(original, null)
         assertEquals(2, first.depth())
         val ids = first.syncIds().toSet()
         assertTrue(ids.all { it != original.getString("id") })
         assertEquals(setOf("generated-a", "generated-b"), first.peekBatch().map { it.getString("ocrText") }.toSet())
         val restarted = DurableQueue(dir, cipher, captureStages = stages)
-        restarted.enqueue(original, null, 1_000_000)
+        restarted.enqueue(original, null)
         assertEquals(ids, restarted.syncIds().toSet())
     }
 
@@ -75,13 +78,13 @@ class CaptureStageDurabilityTest {
         val dir = folder.newFolder(); val stages = CaptureStageRegistry(listOf(PairStage()))
         val queue = DurableQueue(dir, cipher, captureStages = stages)
         val first = note("generated first")
-        queue.enqueue(first, null, 1_000_000)
+        queue.enqueue(first, null)
         assertEquals(0, queue.depth())
         assertTrue(queue.hasPendingConnectionWork())
         assertThrows(IllegalStateException::class.java) { queue.pinRetainedOrigin("https://generated.invalid") }
         assertFalse(File(dir, ".capture-stages.checkpoint").readText().contains("generated first"))
         val restarted = DurableQueue(dir, cipher, captureStages = stages)
-        val ids = restarted.flushStages(1_000_000)
+        val ids = restarted.flushStages()
         assertEquals(listOf(first.getString("id")), ids)
         assertEquals("generated first", restarted.peek()!!.getString("ocrText"))
     }
@@ -100,7 +103,7 @@ class CaptureStageDurabilityTest {
         val registry = CaptureStageRegistry(listOf(stage))
         val queue = DurableQueue(dir, cipher, captureStages = registry)
         val input = note("generated inbox")
-        assertThrows(IllegalStateException::class.java) { queue.enqueue(input, null, 1_000_000) }
+        assertThrows(IllegalStateException::class.java) { queue.enqueue(input, null) }
         assertEquals(0, queue.depth())
         assertTrue(File(dir, ".capture-stages.inbox").exists())
         val restarted = DurableQueue(dir, cipher, captureStages = registry)
@@ -113,12 +116,12 @@ class CaptureStageDurabilityTest {
         val queue = DurableQueue(dir, cipher, captureStages = stages)
         queue.afterStageJournal = { error("generated commit crash") }
         val input = note("generated journal")
-        assertThrows(IllegalStateException::class.java) { queue.enqueue(input, null, 1_000_000) }
+        assertThrows(IllegalStateException::class.java) { queue.enqueue(input, null) }
         assertTrue(File(dir, ".capture-stages.journal").exists())
         val restarted = DurableQueue(dir, cipher, captureStages = stages)
         assertEquals(2, restarted.depth())
         val ids = restarted.syncIds().toSet()
-        restarted.enqueue(input, null, 1_000_000)
+        restarted.enqueue(input, null)
         assertEquals(ids, restarted.syncIds().toSet())
         assertFalse(File(dir, ".capture-stages.journal").exists())
     }
@@ -126,9 +129,9 @@ class CaptureStageDurabilityTest {
     @Test fun `stage preserves redaction across a held pair`() {
         val dir = folder.newFolder()
         val stages = CaptureStageRegistry(listOf(PairStage()))
-        DurableQueue(dir, cipher, captureStages = stages).enqueue(note("generated redacted", redacted = true), null, 1_000_000)
+        DurableQueue(dir, cipher, captureStages = stages).enqueue(note("generated redacted", redacted = true), null)
         val restarted = DurableQueue(dir, cipher, captureStages = stages)
-        restarted.enqueue(note("generated second"), null, 1_000_000)
+        restarted.enqueue(note("generated second"), null)
         assertEquals(1, restarted.depth())
         assertTrue(restarted.peek()!!.getJSONObject("privacy").getBoolean("redacted"))
     }
@@ -148,15 +151,15 @@ class CaptureStageDurabilityTest {
         val first = note("generated committed")
         val next = note("generated pending")
         val queue = DurableQueue(dir, cipher, captureStages = stages)
-        queue.enqueue(first, null, 1_000_000)
+        queue.enqueue(first, null)
         broken = true
-        assertThrows(IllegalStateException::class.java) { queue.enqueue(next, null, 1_000_000) }
+        assertThrows(IllegalStateException::class.java) { queue.enqueue(next, null) }
         val restarted = DurableQueue(dir, cipher, captureStages = stages)
         assertNotNull(restarted.pendingStageFailure)
         assertEquals(first.getString("id"), restarted.peek()!!.getString("id"))
         assertEquals(1, restarted.inventory().records)
         assertTrue(File(dir, ".capture-stages.inbox").exists())
-        assertThrows(IllegalStateException::class.java) { restarted.enqueue(note("generated later"), null, 1_000_000) }
+        assertThrows(IllegalStateException::class.java) { restarted.enqueue(note("generated later"), null) }
         broken = false
         val recovered = DurableQueue(dir, cipher, captureStages = stages)
         assertEquals(setOf(first.getString("id"), next.getString("id")), recovered.syncIds().toSet())
@@ -166,9 +169,9 @@ class CaptureStageDurabilityTest {
 
     @Test fun `stage upgrade cannot drop a held capture`() {
         val dir = folder.newFolder()
-        DurableQueue(dir, cipher, captureStages = CaptureStageRegistry(listOf(PairStage()))).enqueue(note("generated held"), null, 1_000_000)
+        DurableQueue(dir, cipher, captureStages = CaptureStageRegistry(listOf(PairStage()))).enqueue(note("generated held"), null)
         val upgraded = DurableQueue(dir, cipher, captureStages = CaptureStageRegistry(listOf(PairStage(version = 2))) )
-        assertThrows(IllegalStateException::class.java) { upgraded.enqueue(note("generated next"), null, 1_000_000) }
+        assertThrows(IllegalStateException::class.java) { upgraded.enqueue(note("generated next"), null) }
         assertEquals(0, upgraded.depth())
         assertTrue(File(dir, ".capture-stages.inbox").exists())
     }
@@ -180,10 +183,10 @@ class CaptureStageDurabilityTest {
             .put("appId", "generated.app").put("appName", "Generated")
             .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
         val first = activity("2026-09-24T00:00:00Z")
-        queue.enqueue(first, null, 1_000_000)
+        queue.enqueue(first, null)
         queue.acknowledge(first.getString("id"))
         val second = activity("2026-09-24T00:00:05Z")
-        queue.enqueue(second, null, 1_000_000)
+        queue.enqueue(second, null)
         assertEquals(second.getString("id"), queue.peek()!!.getString("id"))
     }
 
@@ -194,24 +197,27 @@ class CaptureStageDurabilityTest {
             .put("appId", "generated.app").put("appName", "Generated")
             .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
         val first = activity("2026-09-24T00:00:00Z")
-        queue.enqueue(first, null, 1_000_000)
+        queue.enqueue(first, null)
         queue.uploadConflict(first.getString("id"))
         val second = activity("2026-09-24T00:00:05Z")
-        queue.enqueue(second, null, 1_000_000)
+        queue.enqueue(second, null)
         assertEquals(2, queue.depth())
         assertEquals(second.getString("id"), queue.peek()!!.getString("id"))
         assertEquals(1, queue.syncIssues().size)
     }
 
-    @Test fun `full pending inbox does not prevent restart and can use a raised quota`() {
-        val dir = folder.newFolder(); val stages = CaptureStageRegistry(listOf(SplitStage()))
+    @Test fun `actual journal rename failure keeps pending input and restart replays it without duplicate outputs`() {
+        val dir = folder.newFolder(); val blocked = File(dir, ".capture-stages.journal"); var obstruct = true
+        val stages = CaptureStageRegistry(listOf(SplitStage(onConsume = { if (obstruct) { check(blocked.mkdir()); obstruct = false } })))
         val input = note("generated limited")
         val first = DurableQueue(dir, cipher, captureStages = stages)
-        assertThrows(QueueFull::class.java) { first.enqueue(input, null, 4_000) }
+        assertThrows(IllegalStateException::class.java) { first.enqueue(input, null) }
         assertTrue(File(dir, ".capture-stages.inbox").exists())
+        assertTrue(String(cipher.open(File(dir, ".capture-stages.inbox").readBytes())).contains(input.getString("ocrText")))
+        assertEquals(0, first.depth()); check(blocked.delete())
         val restarted = DurableQueue(dir, cipher, captureStages = stages)
-        assertEquals(0, restarted.depth())
-        restarted.enqueue(input, null, 1_000_000)
+        assertEquals(2, restarted.depth()); assertFalse(File(dir, ".capture-stages.inbox").exists())
+        restarted.enqueue(input, null)
         assertEquals(2, restarted.depth())
     }
 }

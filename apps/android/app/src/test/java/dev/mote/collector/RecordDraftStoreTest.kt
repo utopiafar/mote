@@ -54,10 +54,10 @@ class RecordDraftStoreTest {
         store.edit("Generated comment", JSONArray().put(attachment), JSONObject().put("kind", "manual"))
         val prepared = store.prepare("https://fixture.example", ::event)
         assertTrue(store.hasPrepared())
-        val queue = DurableQueue(folder.newFolder(), cipher); queue.enqueue(prepared, null, 100000)
+        val queue = DurableQueue(folder.newFolder(), cipher); queue.enqueue(prepared, null)
         val reopened = RecordDraftStore(directory, cipher)
         val retry = reopened.prepare("https://fixture.example") { error("No new ID after crash") }
-        queue.enqueue(retry, null, 100000)
+        queue.enqueue(retry, null)
         assertEquals(1, queue.depth()); assertEquals(prepared.toString(), retry.toString())
         assertEquals("generated original attachment", String(reopened.bytes(attachment.getString("id"))))
         assertFalse(directory.listFiles()!!.any { String(it.readBytes()).contains("Generated comment") || String(it.readBytes()).contains("generated original attachment") })
@@ -110,26 +110,25 @@ class RecordDraftStoreTest {
         store.prune { false }; assertNull(store.record(event.getString("id")))
     }
 
-    @Test fun `combined local quota rejects attachment without destroying existing draft or prepared submission`() {
-        val directory = folder.newFolder(); var available = 4096L
-        val store = RecordDraftStore(directory, cipher) { available }
+    @Test fun `former total quota permits attachment while preserving existing draft and prepared submission`() {
+        val directory = folder.newFolder()
+        val store = RecordDraftStore(directory, cipher)
         store.edit("Quota protected draft", JSONArray(), JSONObject().put("kind", "manual"))
         val prepared = store.prepare("https://fixture.example", ::event)
-        available = store.diskBytes() + 8
-        assertThrows(QueueFull::class.java) { store.stage(ByteArray(20), "too-large.bin", "application/octet-stream") }
+        val attachment = store.stage(ByteArray(20) { 3 }, "retained.bin", "application/octet-stream")
+        assertArrayEquals(ByteArray(20) { 3 }, store.bytes(attachment.getString("id")))
         assertEquals(prepared.toString(), store.prepare("https://fixture.example") { error("Keep stable identity") }.toString())
         assertEquals("Quota protected draft", store.draft().getString("text"))
         assertTrue(store.hasPrepared())
     }
 
-    @Test fun `ordinary capture writers count existing record originals in the same queue limit`() {
+    @Test fun `ordinary capture writers retain existing record originals without a total quota`() {
         val store = RecordDraftStore(folder.newFolder(), cipher)
-        store.stage(ByteArray(32000) { 1 }, "fixture.bin", "application/octet-stream")
+        val attachment = store.stage(ByteArray(32000) { 1 }, "fixture.bin", "application/octet-stream")
         val queue = DurableQueue(folder.newFolder(), cipher).apply { externalStorageBytes = { store.diskBytes() } }
         val capture = event(JSONObject().put("text", "Generated ordinary capture"))
-        assertThrows(QueueFull::class.java) { queue.enqueue(capture, null, 32000) }
-        assertEquals(0, queue.depth())
-        queue.enqueue(capture, null, 1000000); assertEquals(1, queue.depth())
+        queue.enqueue(capture, null); assertEquals(1, queue.depth())
+        assertArrayEquals(ByteArray(32000) { 1 }, store.bytes(attachment.getString("id")))
     }
     @Test fun `failed native media staging remains journaled across reopening until explicit completion`() {
         val directory = folder.newFolder(); val store = RecordDraftStore(directory, cipher)

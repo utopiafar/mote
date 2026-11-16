@@ -3,13 +3,14 @@ package dev.mote.collector
 import android.content.Context
 import android.os.Build
 import java.util.UUID
+import dev.mote.collector.meeting.meetingRecordings
 
 data class CollectorConfig(
     val uiPageMode: String = "ui_preferred", val uiPageRules: String = "[]",
     val uploadGate: UploadGateConfig = UploadGateConfig(),
     val authSignedOut: Boolean = false, val authExpiresAt: Long = 0, val authProcess: String = "",
     val server: String = "", val token: String = "", val deviceName: String = Build.MODEL,
-    val intervalSeconds: Int = 30, val maxQueueMiB: Int = 256, val wifiOnly: Boolean = true,
+    val intervalSeconds: Int = 30, val wifiOnly: Boolean = true,
     val excludedPackages: String = "", val masks: String = "",
     val debugHttp: Boolean = false, val mode: String = "accessibility",
     val jpegQuality: Int = 75, val captureMaxSide: Int = 1280, val chargingOnly: Boolean = false, val batteryPauseBelowPct: Int = 0,
@@ -20,7 +21,7 @@ data class CollectorConfig(
     val notificationCollectionEnabled: Boolean = false, val deviceEventCollectionEnabled: Boolean = false,
     val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off",
     val localContentOcr: Boolean = false, val ocrMode: String = "chinese", val ocrAppModes: String = "{}",
-    val imageDedupeDiagnosticsEnabled: Boolean = false, val uploadedRetentionDays: Int = 7
+    val imageDedupeDiagnosticsEnabled: Boolean = false
 ) {
     /** Sending pause never changes screen/media/privacy authorization or an in-flight capture. */
     fun captureStamp() = SourceRules.hash(copy(syncPaused = false).toString())
@@ -47,8 +48,6 @@ data class CollectorConfig(
         require(imageDedupeMode in setOf("off", "exact", "conservative", "balanced", "aggressive")) { MoteI18n.text("图片去重档位无效") }
         require(deviceName.isNotBlank() && deviceName.length <= 128) { MoteI18n.text("请填写 1..128 字符的设备名称") }
         require(intervalSeconds in 5..300) { MoteI18n.text("采集间隔为 5..300 秒") }
-        require(uploadedRetentionDays in 0..365) { MoteI18n.text("本机保留时间为 0..365 天") }
-        require(maxQueueMiB in 8..4096) { MoteI18n.text("队列上限为 8..4096 MiB") }
         require(jsonlWindowMinutes in 1..1440) { MoteI18n.text("JSONL 合并窗口为 1..1440 分钟") }
         Mask.parse(masks)
         AppCollectionRules.parse(appCollectionRules)
@@ -92,7 +91,7 @@ class Settings(private val context: Context) {
         server = prefs.getString("server", BuildConfig.DEFAULT_SERVER)!!,
         token = credentials(prefs.getString("token", null)),
         deviceName = prefs.getString("deviceName", Build.MODEL)!!,
-        intervalSeconds = prefs.getInt("interval", 30), maxQueueMiB = prefs.getInt("maxQueue", 256),
+        intervalSeconds = prefs.getInt("interval", 30),
         wifiOnly = prefs.getBoolean("wifiOnly", true), excludedPackages = prefs.getString("excluded", "")!!,
         masks = prefs.getString("masks", "")!!,
         debugHttp = prefs.getBoolean("debugHttp", RuntimeProfile.current.developerTools), mode = prefs.getString("mode", "accessibility")!!,
@@ -107,7 +106,6 @@ class Settings(private val context: Context) {
         notificationCollectionEnabled = prefs.getBoolean("notificationCollectionEnabled", false), deviceEventCollectionEnabled = prefs.getBoolean("deviceEventCollectionEnabled", false),
         syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!,
         imageDedupeDiagnosticsEnabled = prefs.getBoolean("imageDedupeDiagnosticsEnabled", false),
-        uploadedRetentionDays = prefs.getInt("uploadedRetentionDays", 7),
         localContentOcr = prefs.getBoolean("localContentOcr", false), ocrMode = prefs.getString("ocrMode", "chinese")!!, ocrAppModes = prefs.getString("ocrAppModes", "{}")!!
     )
         if (!prefs.contains("configurationFormat")) {
@@ -134,14 +132,13 @@ class Settings(private val context: Context) {
             "configurationFormat" to LocalDataFormat.VERSION, "authSignedOut" to c.authSignedOut, "authExpiresAt" to c.authExpiresAt, "authProcess" to c.authProcess,
             "uiPageMode" to c.uiPageMode, "uiPageRules" to c.uiPageRules,
             "uploadGateEnabled" to c.uploadGate.enabled, "uploadGateText" to c.uploadGate.blockedText, "uploadGateFailure" to c.uploadGate.failureAction,
-            "uploadedRetentionDays" to c.uploadedRetentionDays,
             "localContentOcr" to c.localContentOcr, "ocrMode" to c.ocrMode, "ocrAppModes" to c.ocrAppModes, "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
             "syncPaused" to c.syncPaused, "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
             "syncChargingOnly" to c.syncChargingOnly, "syncBatteryNotLow" to c.syncBatteryNotLow,
             "packedUpload" to c.packedUpload, "syncBatchSize" to c.syncBatchSize, "jsonlWindowMinutes" to c.jsonlWindowMinutes, "server" to c.server.trim().trimEnd('/'),
             "token" to (prefs.getString("token", null)?.takeIf { credentials(it) == c.token }
                 ?: credentialValue.encode(c.token)),
-            "deviceName" to c.deviceName, "interval" to c.intervalSeconds, "maxQueue" to c.maxQueueMiB,
+            "deviceName" to c.deviceName, "interval" to c.intervalSeconds,
             "wifiOnly" to c.wifiOnly, "excluded" to c.excludedPackages, "masks" to c.masks,
             "debugHttp" to c.debugHttp, "mode" to c.mode, "appCollectionRules" to c.appCollectionRules, "metadataEnabled" to c.metadataEnabled,
             "jpegQuality" to c.jpegQuality, "captureMaxSide" to c.captureMaxSide, "chargingOnly" to c.chargingOnly,
@@ -154,7 +151,10 @@ class Settings(private val context: Context) {
         c.validate()
         val origin = originAfterChange(c)
         val values = configurationValues(c, origin)
-        val committedValues = if (confirmCentralEndpoint) values + ("centralEndpoint" to c.server.trim().trimEnd('/')) else values
+        val currentConnection = read()
+        val generation = if (SourceRules.target(currentConnection.server, currentConnection.token) != SourceRules.target(c.server, c.token) || currentConnection.authSignedOut != c.authSignedOut || currentConnection.authExpiresAt != c.authExpiresAt || currentConnection.authProcess != c.authProcess) UUID.randomUUID().toString() else connectionGeneration()
+        val chosenValues = values + ("connectionGeneration" to generation)
+        val committedValues = if (confirmCentralEndpoint) chosenValues + ("centralEndpoint" to c.server.trim().trimEnd('/')) else chosenValues
         val previous = committedValues.keys.associateWith { prefs.all[it] }
         fun write(items: Map<String, Any?>): Boolean {
             val edit = prefs.edit()
@@ -176,7 +176,7 @@ class Settings(private val context: Context) {
         if (token == current.connectionToken() && url.startsWith(current.server.trimEnd('/') + "/api/")) signOut()
     }
     fun signOut() = synchronized(Settings::class.java) {
-        if (!prefs.edit().putBoolean("authSignedOut", true).commit()) throw SettingsWriteFailure()
+        if (!prefs.edit().putBoolean("authSignedOut", true).putString("connectionGeneration", UUID.randomUUID().toString()).commit()) throw SettingsWriteFailure()
     }
     fun centralEndpoint(): String = prefs.getString("centralEndpoint", "")!!
     fun saveConnection(server: String, token: String, deviceName: String, debugHttp: Boolean) = synchronized(Settings::class.java) {
@@ -192,8 +192,13 @@ class Settings(private val context: Context) {
     }
     /** Sticky while records or prepared submissions exist, including after disconnecting. */
     fun dataOrigin(): String = requireNotNull(prefs.getString("dataOrigin", null)) { MoteI18n.text(LocalDataFormat.RESET_MESSAGE) }
-    fun hasPendingData(): Boolean = context.captureContexts().hasPendingConnectionWork() || context.fileArchives().pendingSync().count > 0 || context.queue().hasPendingConnectionWork() || BulkDedupeStore(context).quarantine().hasUnboundRecords() || QuickNotes.draft(context).read().prepared != null || context.recordDraftStore().pendingSubmission { context.queue().capture(it) != null } ||
-        context.localSources().sources().any { (context.localSources().state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }
+    fun hasPendingData(): Boolean = context.captureContexts().hasPendingConnectionWork() || context.fileArchives().pendingSync().count > 0 || context.queue().hasPendingConnectionWork() || BulkDedupeStore(context).quarantine().hasUnboundRecords() || BulkDedupeStore(context).quarantine().hasPendingConnectionWork() || QuickNotes.draft(context).read().prepared != null || context.recordDraftStore().pendingSubmission { context.queue().capture(it) != null } ||
+        context.localSources().pendingSync().count > 0 || dev.mote.collector.meeting.MeetingRecordingService.runningSession != null || dev.mote.collector.meeting.MeetingRecordingUploader.active.get() || context.meetingRecordings().hasPendingConnectionWork()
+    internal fun connectionGeneration(): String = synchronized(Settings::class.java) {
+        prefs.getString("connectionGeneration", null) ?: UUID.randomUUID().toString().also {
+            if (!prefs.edit().putString("connectionGeneration", it).commit()) throw SettingsWriteFailure()
+        }
+    }
     private fun originAfterChange(next: CollectorConfig): String {
         val previous = dataOrigin()
         val current = read()
@@ -216,10 +221,11 @@ class Settings(private val context: Context) {
         val values = prefs.all
         return StoredSyncStatus(values["syncState"] as? String ?: "idle", values["uploadStatus"] as? String ?: MoteI18n.text("尚未上传"))
     }
-    fun syncStatus(state: String, message: String, uploaded: Boolean = false) {
-        if (!uploaded && syncState() == state && uploadStatus() == message) return
+    fun syncStatus(state: String, message: String, uploaded: Boolean = false, acknowledgedOrigin: String? = null, ackGeneration: String? = null) = synchronized(Settings::class.java) {
+        if (uploaded && (acknowledgedOrigin == null || ackGeneration != connectionGeneration() || read().server.trim().trimEnd('/') != acknowledgedOrigin.trim().trimEnd('/'))) return@synchronized
+        if (!uploaded && syncState() == state && uploadStatus() == message) return@synchronized
         val edit = prefs.edit().putString("syncState", state).putString("uploadStatus", message)
-        if (uploaded) edit.putString("lastUploadAt", java.time.Instant.now().toString()).putString("lastUploadOrigin", read().server)
+        if (uploaded) edit.putString("lastUploadAt", java.time.Instant.now().toString()).putString("lastUploadOrigin", acknowledgedOrigin!!.trim().trimEnd('/'))
         edit.apply()
     }
     companion object {
@@ -228,7 +234,7 @@ class Settings(private val context: Context) {
         private var cachedConfig: CollectorConfig? = null
         private var cachedCiphertext: String? = null
         private var cachedToken = ""
-        private val configurationKeys = setOf("configurationFormat", "dataOrigin", "authSignedOut", "authExpiresAt", "authProcess", "uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "ocrAppModes", "ocrMode", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
+        private val configurationKeys = setOf("configurationFormat", "dataOrigin", "authSignedOut", "authExpiresAt", "authProcess", "uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "masks", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "ocrAppModes", "ocrMode", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
 
     }
     fun status(state: String, message: String) {

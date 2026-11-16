@@ -242,13 +242,13 @@ class ConnectionInstrumentedTest {
             connectThroughRuntime(client, first)
             waitUntil { ConnectionGuard.sync { true } == true }; stopUploads()
             assertEquals("owner", client.test()); assertEquals(deviceId, settings.deviceId)
-            val config = settings.read().copy(wifiOnly = false, diagnosticsEnabled = false, syncMode = "manual", uploadedRetentionDays = 0); settings.save(config)
+            val config = settings.read().copy(wifiOnly = false, diagnosticsEnabled = false, syncMode = "manual"); settings.save(config)
             val credential = context.getSharedPreferences("connection", 0).getString("credentialId", "")!!
             assertEquals(410, HttpJson.post("$server/api/connections/redeem", JSONObject().put("code", first.code).put("deviceId", deviceId).put("deviceName", "合成").put("platform", "android")).first)
             assertEquals(200, HttpJson.get("$server/api/configuration", config.token).first)
             assertTrue(HttpJson.request("DELETE", "$server/api/connections/$credential", JSONObject(), owner).first in 200..299)
             val queued = event("note", "仅合成离线笔记 👩🏽‍💻\n等待重新配对")
-            context.queue().enqueue(queued, null, 1024 * 1024); context.queue().enqueue(queued, null, 1024 * 1024)
+            context.queue().enqueue(queued, null); context.queue().enqueue(queued, null)
             QuickNotes.draft(context).update("合成已准备提交草稿 e\u0301", "")
             val prepared = QuickNotes.draft(context).prepare(server) { event("note", it.text) }.prepared!!
             val queueBefore = context.queue().peek()!!.toString(); val preparedBefore = prepared.toString()
@@ -276,8 +276,8 @@ class ConnectionInstrumentedTest {
             val imageEvent = event("screen", "纯生成图片 fixture").put("imageMime", "image/png")
             val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
             val bytes = ByteArrayOutputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it); it.toByteArray() }; bitmap.recycle()
-            context.queue().enqueue(imageEvent, bytes, 1024 * 1024)
-            UploadWorker.schedule(context, settings.read(), true); waitUntil { context.queue().depth() == 0 }
+            context.queue().enqueue(imageEvent, bytes)
+            UploadWorker.schedule(context, settings.read(), true); waitUntil { context.queue().pendingSync().count == 0 }
             val after = Operations.ledger(context).read(); val counts = after.getJSONObject("counts")
             assertEquals(2, counts.getLong("NOTE_QUEUED") - baseline.getLong("NOTE_QUEUED")); assertEquals(2, counts.getLong("NOTE_ACK") - baseline.getLong("NOTE_ACK"))
             assertEquals(1, counts.getLong("SCREEN_QUEUED") - baseline.getLong("SCREEN_QUEUED")); assertEquals(1, counts.getLong("SCREEN_ACK") - baseline.getLong("SCREEN_ACK"))
@@ -298,6 +298,7 @@ class ConnectionInstrumentedTest {
                 .put("screenAcknowledged", 1).put("notesAcknowledged", 2).put("duplicateQueueNotCounted", true).put("diagnosticsDisabled", true).put("contentFreeStats", true).toString())
         } finally {
             stopUploads(); QuickNotes.draft(context).clear(); input.delete()
+            context.queue().dedupeIds().forEach { context.queue().removeGeneratedRecord(it) }
             val editor = context.getSharedPreferences("mote", 0).edit().clear()
             original.forEach { (key, value) -> when (value) { is String -> editor.putString(key, value); is Boolean -> editor.putBoolean(key, value); is Int -> editor.putInt(key, value); is Long -> editor.putLong(key, value); is Float -> editor.putFloat(key, value) } }; editor.commit()
         }

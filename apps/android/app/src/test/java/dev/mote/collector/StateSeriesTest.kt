@@ -15,7 +15,7 @@ class StateSeriesTest {
         val cipher = object : ByteCipher { override fun seal(bytes: ByteArray) = bytes; override fun open(bytes: ByteArray) = bytes }
         try {
             val queue = DurableQueue(dir, cipher); val first = event("2026-09-17T00:00:00Z")
-            queue.enqueue(first, null, 1000000); queue.enqueue(event("2026-09-17T00:00:05Z", 5), null, 1000000)
+            queue.enqueue(first, null); queue.enqueue(event("2026-09-17T00:00:05Z", 5), null)
             assertEquals(1, queue.depth()); val restored = DurableQueue(dir, cipher)
             val samples = restored.peek()!!.getJSONObject("stateSeries").getJSONArray("samples")
             assertEquals(2, samples.length()); assertEquals(5, samples.getJSONObject(1).getInt("idleSeconds"))
