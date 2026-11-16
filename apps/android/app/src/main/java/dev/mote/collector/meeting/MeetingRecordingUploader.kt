@@ -14,6 +14,9 @@ import dev.mote.collector.Settings
 import dev.mote.collector.SyncConditionsUnavailable
 import dev.mote.collector.SyncSchedule
 import dev.mote.collector.UnifiedCentralSession
+import dev.mote.collector.FileTransfer
+import dev.mote.collector.FilePartReceipts
+import dev.mote.collector.FileUploadConfirmation
 import dev.mote.collector.localContentCipher
 import org.json.JSONArray
 import org.json.JSONObject
@@ -48,21 +51,20 @@ internal object MeetingRecordingUploader {
             if (existingCapture.isNotBlank()) { finish(store, session, existingCapture, file); continue }
             val uploadId = begun.getString("uploadId"); UUID.fromString(uploadId)
             check(begun.getInt("partBytes") == PART_BYTES)
-            val parts = begun.optJSONArray("parts") ?: JSONArray()
-            val received = (0 until parts.length()).map { parts.getJSONObject(it).getInt("part") }.toSet()
-            val total = ((file.length() + PART_BYTES - 1) / PART_BYTES).toInt()
+            val received = FilePartReceipts(begun, file.length(), "uploadId", uploadId) { after -> client.bytes("GET", "/api/file-sync/v1/uploads/$uploadId?afterPart=$after", null, "application/json") }
+            val total = FileTransfer.count(file.length())
             file.inputStream().use { input ->
-                repeat(total) { part ->
+                var part = 0L
+                while (part < total) {
                     val length = minOf(PART_BYTES.toLong(), file.length() - part.toLong() * PART_BYTES).toInt()
                     val bytes = ByteArray(length)
                     var offset = 0
                     while (offset < bytes.size) { val count = input.read(bytes, offset, bytes.size - offset); check(count > 0); offset += count }
-                    if (part !in received) {
-                        val response = client.bytes("PUT", "/api/file-sync/v1/uploads/$uploadId/parts/$part", bytes, "application/octet-stream")
-                        check(response.getInt("part") == part && response.getInt("bytes") == bytes.size)
-                    }
+                    val response = received.receipt(part) ?: client.bytes("PUT", "/api/file-sync/v1/uploads/$uploadId/parts/$part", bytes, "application/octet-stream")
+                    FileUploadConfirmation.part(response, FileTransfer.index(part), bytes); part++
                 }
             }
+            received.finish()
             val committed = client.post("/api/file-sync/v1/uploads/$uploadId/commit", JSONObject())
             val captureId = committed.optString("id")
             check(captureId.isNotBlank()) { "中央未确认会议录音入库" }
@@ -77,7 +79,7 @@ internal object MeetingRecordingUploader {
     }
 
     private const val PART_BYTES = 4 * 1024 * 1024
-    private const val MAX_BYTES = 512L * 1024 * 1024
+    private const val MAX_BYTES = FileTransfer.MAX_BYTES
 }
 
 class MeetingRecordingUploadWorker(context: Context, params: WorkerParameters) : Worker(context, params) {

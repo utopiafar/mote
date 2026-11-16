@@ -555,7 +555,7 @@ class SourcesActivity : MoteActivity() {
         advanced.addView(TextView(this).apply { text = MoteI18n.text("扫描间隔 / 分钟（15–1440，系统可能推迟）") }); advanced.addView(interval); draftControls["interval"] = interval
         val before = if (source.kind == "local-calendar") field(MoteI18n.text("过去多少天（0–365）"), source.daysBefore.toString(), true) else null
         val after = if (source.kind == "local-calendar") field(MoteI18n.text("未来多少天（1–365）"), source.daysAfter.toString(), true) else null
-        val maxFileMiB = if (source.kind == "local-files") EditText(this).apply { setText(source.maxFileMiB.toString()); inputType = InputType.TYPE_CLASS_NUMBER }.also { advanced.addView(TextView(this).apply { text = MoteI18n.text("单文件上限（MiB，1–512）") }); advanced.addView(it); draftControls["maxFileMiB"] = it } else null
+        val maxFileMiB = if (source.kind == "local-files") EditText(this).apply { setText(source.maxFileMiB.toString()); inputType = InputType.TYPE_CLASS_NUMBER }.also { advanced.addView(TextView(this).apply { text = MoteI18n.text("单文件上限（MiB，0 为不限）") }); advanced.addView(it); draftControls["maxFileMiB"] = it } else null
         val extensions = if (source.kind == "local-files") field(MoteI18n.text("允许扩展名，逗号分隔"), source.extensions) else null
         val excludes = if (source.kind == "local-files") field(MoteI18n.text("排除相对路径：每行一项，* 表示任意字符；区分大小写"), source.excluded) else null
         form.addView(TextView(this).apply { text = MoteI18n.text("更改选择、过滤或保留方式会清除这个来源的本机旧待发缓存，按新设置重新扫描；不会自动删除中央历史。停用仅暂停本机检查与同步，中央的启用状态与历史保持不变。移除只影响本机连接。") })

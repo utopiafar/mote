@@ -45,7 +45,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.post('/api/file-sync/v1/recovery/:id/uploads',{bodyLimit:1024},async req=>{z.object({}).strict().parse(req.body??{});return ingress.fileRecovery(fileId(req),check(req));});
   app.post('/api/file-sync/v1/manifests',{bodyLimit:8*1024*1024},async req=>measure('file_revision',()=>ingress.fileManifests(req.body,check(req))));
   app.post('/api/file-sync/v1/uploads',{bodyLimit:32768},async req=>measure('file_upload',()=>ingress.fileBegin(req.body,check(req))));
-  app.get('/api/file-sync/v1/uploads/:id',async req=>ingress.fileUpload(id(req),check(req)));
+  app.get('/api/file-sync/v1/uploads/:id',async req=>{const query=z.object({afterPart:z.coerce.number().int().safe().min(-1).default(-1)}).strict().parse(req.query);return ingress.fileUpload(id(req),check(req),query.afterPart);});
   app.put('/api/file-sync/v1/uploads/:id/parts/:part',{bodyLimit:FILE_PART_BYTES},async req=>{if(!Buffer.isBuffer(req.body))throw new StoreError('Binary part required');return measure('file_part',()=>files.part(id(req),Number((req.params as {part:string}).part),req.body as Buffer,check(req)));});
   app.post('/api/file-sync/v1/uploads/:id/commit',async(req,reply)=>{
     const controller=new AbortController(),abort=()=>{if(!reply.raw.writableEnded)controller.abort();};

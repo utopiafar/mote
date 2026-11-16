@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterEach, describe, expect, test } from 'vitest';
 import { FILE_PART_BYTES } from '@mote/shared';
+import { createHash } from 'node:crypto';
 import {
   MeetingNoticeRequiredError, MeetingRecordingManager, type MeetingAudioBackend, type MeetingRecordingConnection,
   type MeetingRecordingPermissions,
@@ -54,7 +55,7 @@ function uploadFetch(seen: { sources: unknown[]; manifests: unknown[]; parts: nu
     const body = contentType === 'application/json' && init?.body instanceof Uint8Array ? JSON.parse(Buffer.from(init.body).toString('utf8')) : init?.body;
     if (url.endsWith('/api/sources')) { seen.sources.push(body); return new Response(JSON.stringify({ id: (body as { id: string }).id }), { status: 200 }); }
     if (url.endsWith('/api/file-sync/v1/uploads')) { seen.manifests.push(body); return new Response(JSON.stringify({ uploadId: 'generated-upload', partBytes: FILE_PART_BYTES, parts: [] }), { status: 200 }); }
-    if (/\/parts\/\d+$/.test(url)) { seen.parts++; const part = Number(url.slice(url.lastIndexOf('/') + 1)); return new Response(JSON.stringify({ part, bytes: (body as Buffer).length }), { status: 200 }); }
+    if (/\/parts\/\d+$/.test(url)) { seen.parts++; const part = Number(url.slice(url.lastIndexOf('/') + 1)); return new Response(JSON.stringify({ part, bytes: (body as Buffer).length, hash: createHash('sha256').update(body as Buffer).digest('hex') }), { status: 200 }); }
     if (url.endsWith('/commit')) { seen.commits++; return new Response(JSON.stringify({ id: 'generated-capture', sourceId: 'generated-source' }), { status: 200 }); }
     return new Response('{}', { status: 404 });
   }) as typeof fetch;

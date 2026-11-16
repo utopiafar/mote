@@ -9,15 +9,13 @@ export type ImportQueueState='queued'|'uploading'|'creating'|'waiting'|'paused'|
 export type ImportQueueEntry={
   id:string;name:string;createdAt:string;state:ImportQueueState;uploadedBytes:number;totalBytes:number;
   source:{kind:'files';files:{name:string;size:number}[]}|{kind:'directory';path:string};
-  failure?:{message:string;recovery:'retry'|'files'|'directory'};job?:ImportJob;
+  failure?:{message:string;recovery:'retry'|'files'|'directory'};job?:ImportJob;archivedFileIds?:string[];
 };
 type Task={entry:ImportQueueEntry;draft:ImportDraft;uploadIds:WeakMap<File,string>;archived:WeakMap<File,string>};
 type Snapshot={entries:readonly ImportQueueEntry[];completedVersion:number};
 
 export function validateImportFiles(files:readonly File[]):string|undefined{
   if(files.length>4000)return moteText('一次最多选择 4,000 个文件。较多文件可以打包为 ZIP 或分批导入。');
-  if(files.some(file=>file.size>64*1024*1024))return moteText('单个上传文件不能超过 64 MB，请拆分文件后导入。');
-  if(files.reduce((sum,file)=>sum+file.size,0)>256*1024*1024)return moteText('一次上传的文件总量不能超过 256 MB，请分批导入。');
   if(new Set(files.map(file=>file.webkitRelativePath||file.name)).size!==files.length)return moteText('同一次导入中的文件路径不能重复，请移除重复文件或分开提交。');
 }
 
@@ -113,7 +111,7 @@ export class ImportQueue {
       this.patch(task,{state:draft.source.kind==='files'?'uploading':'creating',failure:undefined});
       const archivedFileIds=draft.source.kind==='files'?await uploadImportFiles(this.api,draft.source.files,task.uploadIds,bytes=>{if(current()&&!controller.signal.aborted)this.patch(task,{uploadedBytes:bytes});},controller.signal,task.archived):undefined;
       controller.signal.throwIfAborted();if(!current())return;
-      this.patch(task,{state:'creating'});
+      this.patch(task,{state:'creating',archivedFileIds});
       const payload={...(draft.imageProfileId?{imageProfileId:draft.imageProfileId}:{}),requestId:task.entry.id,name:draft.name||undefined,instruction:draft.instruction,processing:draft.sourcePackId?'automatic':draft.instruction.trim()?'preview':'automatic',...(draft.sourcePackId?{sourcePackId:draft.sourcePackId}:{}),...(draft.source.kind==='files'?{archivedFileIds}:{directory:draft.source.path})};
       const job=await this.api.request<ImportJob>('/api/imports',{method:'POST',body:JSON.stringify(payload),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(180000)])});
       controller.signal.throwIfAborted();if(!current())return;

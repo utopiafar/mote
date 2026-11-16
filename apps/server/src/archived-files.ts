@@ -8,8 +8,10 @@ import {privateDirectory} from './private-storage.js';
 import {Store,StoreError,sha256} from './store.js';
 import type {Asset} from './assets.js';
 
+/** In-memory import/container parsing budget, independent of original archive size. */
 export const MAX_FILE_BYTES=64*1024*1024;
-const portableFileSchema=z.object({id:z.string().uuid(),hash:z.string().regex(/^[a-f0-9]{64}$/),name:z.string().min(1).max(1000),relativePath:z.string().min(1).max(1000),mimeType:z.string().min(1).max(200),sizeBytes:z.number().int().min(0).max(FILE_MAX_BYTES),createdAt:z.string().datetime({offset:true}),dataBase64:z.string().max(Math.ceil(FILE_MAX_BYTES/3)*4)}).strict();
+const PORTABLE_FILE_BYTES=512*1024*1024;
+const portableFileSchema=z.object({id:z.string().uuid(),hash:z.string().regex(/^[a-f0-9]{64}$/),name:z.string().min(1).max(1000),relativePath:z.string().min(1).max(1000),mimeType:z.string().min(1).max(200),sizeBytes:z.number().int().min(0).max(PORTABLE_FILE_BYTES),createdAt:z.string().datetime({offset:true}),dataBase64:z.string().max(Math.ceil(PORTABLE_FILE_BYTES/3)*4)}).strict();
 export type PreparedPortableFile={file:ArchivedFile;bytes:Buffer};
 /** Structural path validation only; content interpretation belongs to the import agent. */
 export function archiveRelativePath(raw:string):string {
@@ -37,14 +39,12 @@ export class ArchivedFileStore {
     return this.savePrepared({relativePath,name:basename(relativePath),mimeType:input.mimeType},input.bytes.length,asset,authorize);
   }
   putParts(input:{name:string;mimeType?:string;relativePath?:string},parts:Iterable<Buffer>,sizeBytes:number,authorize?:()=>void):ArchivedFile {
-    if(sizeBytes>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
     const relativePath=archiveRelativePath(input.relativePath??input.name),name=basename(relativePath),mimeType=input.mimeType?.trim()||'application/octet-stream';
     if(mimeType.length>200||/[\r\n\u0000]/.test(mimeType))throw new StoreError('Invalid file MIME type');
     const asset=this.store.assets.putParts(parts,sizeBytes,undefined,authorize);
     return this.savePrepared({relativePath,name,mimeType},sizeBytes,asset,authorize);
   }
-  async putUpload(input:{name:string;mimeType?:string},directory:string,parts:{part:number;hash:string;bytes:number}[],sizeBytes:number,signal?:AbortSignal,validate?:()=>void):Promise<ArchivedFile>{
-    if(sizeBytes>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
+  async putUpload(input:{name:string;mimeType?:string},directory:string,parts:Iterable<{part:number;hash:string;bytes:number}>,sizeBytes:number,signal?:AbortSignal,validate?:()=>void):Promise<ArchivedFile>{
     const relativePath=archiveRelativePath(input.name),name=basename(relativePath),mimeType=input.mimeType?.trim()||'application/octet-stream';
     if(mimeType.length>200||/[\r\n\u0000]/.test(mimeType))throw new StoreError('Invalid file MIME type');
     const asset=await this.store.assets.putUpload(directory,parts,sizeBytes,undefined,signal);

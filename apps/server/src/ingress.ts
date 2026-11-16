@@ -87,8 +87,8 @@ export class IngressService {
     const ack=upload.ack??await this.files.reuse(upload.uploadId,authorize);
     return {...upload,ack:ack?fileAcknowledgement(ack as FileAck):null};
   }
-  fileUpload(id:string,authorize:(sourceId:string)=>void){
-    const upload=this.files.upload(id,authorize);
+  fileUpload(id:string,authorize:(sourceId:string)=>void,afterPart=-1){
+    const upload=this.files.upload(id,authorize,afterPart);
     return {...upload,ack:upload.ack?fileAcknowledgement(upload.ack as FileAck):null};
   }
   async fileManifests(input:unknown,authorize:(sourceId:string)=>void){

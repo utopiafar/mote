@@ -1,7 +1,8 @@
 import React from 'react';
 import {FileText,LoaderCircle} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
-import {bytes} from '../../api';
+import {bytes,type Api} from '../../api';
+import {ArchivedFileButton} from '../../ArchivedFileButton';
 import type {ImportQueue,ImportQueueEntry as Entry} from './import-queue';
 
 function stateLabel(entry:Entry){
@@ -33,15 +34,16 @@ export function ImportQueueRow({entry,queue,selected,onSelect,onEdit}:{entry:Ent
     <Controls entry={entry} queue={queue} onEdit={onEdit}/>
   </div>;
 }
-export function ImportQueueDetail({entry,queue,onEdit}:{entry:Entry;queue:ImportQueue;onEdit:(entry:Entry)=>void}){
+export function ImportQueueDetail({api,entry,queue,onEdit}:{api:Api;entry:Entry;queue:ImportQueue;onEdit:(entry:Entry)=>void}){
   return <article className="panel import-detail import-upload-detail">
     <div className="section-heading"><div><div className="eyebrow">{stateLabel(entry)}</div><h2>{entry.name}</h2><p>{moteText('每份资料独立处理，可以继续添加其他资料。')}</p></div></div>
     <Progress entry={entry}/>
+    {Boolean(entry.archivedFileIds?.length)&&<p className="notice" role="status">{moteText('原件已保留')}</p>}
     {entry.state==='paused'&&<p className="notice" role="status">{moteText('上传已暂停，文件和已上传的分片仍保留，点击继续上传即可恢复。')}</p>}
     {entry.state==='creating'&&<p role="status">{moteText('正在归档并提交任务，请等待服务器返回。')}</p>}
     {entry.failure&&<div className="error-banner" role="alert">{entry.failure.message}</div>}
     <Controls entry={entry} queue={queue} onEdit={onEdit}/>
-    {entry.source.kind==='files'?<section className="import-originals"><h3>{moteText('本次提交的文件')}</h3>{entry.source.files.map(file=><div className="file-row" key={file.name}><FileText size={15}/><span>{file.name}</span><small>{bytes(file.size)}</small></div>)}</section>:<p className="import-source-path">{entry.source.path}</p>}
+    {entry.source.kind==='files'?<section className="import-originals"><h3>{moteText('本次提交的文件')}</h3>{entry.source.files.map((file,index)=><div className="file-row" key={file.name}><FileText size={15}/><span>{file.name}</span><small>{bytes(file.size)}</small>{entry.archivedFileIds?.[index]&&<ArchivedFileButton api={api} id={entry.archivedFileIds[index]} name={file.name}/>}</div>)}</section>:<p className="import-source-path">{entry.source.path}</p>}
     <p className="muted">{moteText('已归档的原件会保留。未上传完的本地文件需保持当前浏览器会话，刷新或关闭后请重新选择。')}</p>
   </article>;
 }

@@ -19,14 +19,14 @@ internal class CentralImports(private val directory: File, private val cipher: B
             if (it.moveToFirst()) it.getString(0) else null
         } ?: "import"
         val mime = context.contentResolver.getType(uri)
-        var size = 0L; var part = 0
+        var size = 0L; var part = 0L
         try {
             requireNotNull(context.contentResolver.openInputStream(uri)).use { input ->
                 while (true) {
                     val bytes = ByteArray(PART); var offset = 0
                     while (offset < bytes.size) { val count = input.read(bytes, offset, bytes.size - offset); if (count < 0) break; offset += count }
                     if (offset == 0) break
-                    size += offset; require(size <= MAX) { MoteI18n.text("导入文件最多 64 MiB。") }
+                    size += offset; require(size <= MAX)
                     File(directory, "part-${part++}.enc").outputStream().use { it.write(cipher.seal(bytes.copyOf(offset))) }
                 }
             }
@@ -35,23 +35,32 @@ internal class CentralImports(private val directory: File, private val cipher: B
             return JSONObject().put("manifest", manifest).put("requestId", UUID.randomUUID().toString()).put("instruction", instruction).also(state::write)
         } catch (error: Throwable) { discard(); throw error }
     }
-    fun send(client: CentralUploadClient, progress: (Int, Int) -> Unit): JSONObject {
+    fun send(client: CentralUploadClient, progress: (Long, Long) -> Unit): JSONObject {
         val saved = pending(); val manifest = saved.getJSONObject("manifest")
         val upload = client.post("/api/import-uploads", manifest)
         val id = manifest.getString("id"); UUID.fromString(id)
         require(upload.getString("id") == id && upload.getInt("partBytes") == PART)
-        val received = upload.getJSONArray("parts").let { parts -> (0 until parts.length()).map { parts.getJSONObject(it).getInt("part") }.toSet() }
-        val total = ((manifest.getLong("sizeBytes") + PART - 1) / PART).toInt()
-        if (upload.optString("fileId").isBlank()) repeat(total) { part ->
-            if (part !in received) client.bytes("PUT", "/api/import-uploads/$id/parts/$part", cipher.open(File(directory, "part-$part.enc").readBytes()), "application/octet-stream")
-            progress(part + 1, total)
+        val size = FileTransfer.number(manifest, "sizeBytes"); val total = FileTransfer.count(size)
+        if (upload.optString("fileId").isBlank()) {
+            val received = FilePartReceipts(upload, size, "id", id) { after -> client.bytes("GET", "/api/import-uploads/$id?afterPart=$after", null, "application/json") }
+            var part = 0L
+            while (part < total) {
+                val bytes = cipher.open(File(directory, "part-$part.enc").readBytes()); check(bytes.size == FileTransfer.length(size, part))
+                val prior = received.receipt(part)
+                val ack = prior ?: client.bytes("PUT", "/api/import-uploads/$id/parts/$part", bytes, "application/octet-stream")
+                FileUploadConfirmation.part(ack, FileTransfer.index(part), bytes); part++; progress(part, total)
+            }
+            received.finish()
         }
-        val fileId = upload.optString("fileId").ifBlank { client.post("/api/import-uploads/$id/commit").getString("id") }
+        val fileId = client.post("/api/import-uploads/$id/commit").getString("id")
+        UUID.fromString(fileId)
+        check(upload.optString("fileId").isBlank() || upload.getString("fileId") == fileId)
+        saved.put("archivedFileId", fileId); state.write(saved)
         val request = JSONObject().put("requestId", saved.getString("requestId")).put("processing", "preview")
             .put("instruction", saved.getString("instruction")).put("archivedFileIds", JSONArray().put(fileId))
         val result = client.post("/api/imports", request)
         discard(); return result
     }
     fun discard() { directory.listFiles()?.forEach { check(it.delete()) }; }
-    companion object { const val PART = 4 * 1024 * 1024; const val MAX = 64 * 1024 * 1024L }
+    companion object { const val PART = FileTransfer.PART_BYTES; const val MAX = FileTransfer.MAX_BYTES }
 }

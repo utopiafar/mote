@@ -142,7 +142,7 @@ test('backup preserves current plain/encrypted chunks and processing history whi
 test('backup rejects invalid part counts, linked parts and missing committed bytes without leaving partial output',async()=>fixture(async directory=>{
   const {source}=await vault(directory),hash='c'.repeat(64);await mkdir(join(source,'files','objects',hash),{recursive:true});
   const db=new DatabaseSync(join(source,'mote.sqlite'));db.prepare('INSERT INTO asset_references VALUES(?,?)').run('invalid-parts',hash);
-  for(const [index,parts] of [-1,129,1.5,'invalid',null].entries()){
+  for(const [index,parts] of [-1,Math.ceil(Number.MAX_SAFE_INTEGER/(4*1024*1024))+1,1.5,'invalid',null].entries()){
     db.prepare('DELETE FROM assets WHERE hash=?').run(hash);db.prepare("INSERT INTO assets VALUES(?,?,'chunks')").run(hash,parts);const out=join(directory,'invalid-'+index);
     await assert.rejects(backup(source,out),/Invalid asset metadata/);await assert.rejects(lstat(out),{code:'ENOENT'});
   }
@@ -160,4 +160,19 @@ test('restore only accepts canonical bounded file part paths before touching the
     await writeFile(join(out,'backup-manifest.json'),JSON.stringify({...manifest,checksums:{...manifest.checksums,[name]:hash}}));
     await assert.rejects(restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(directory,'none')},out),/Unsafe backup manifest entry/);assert.equal(await readFile(join(target,'sentinel'),'utf8'),'keep');
   }
+}));
+
+
+test('verified restore requires exactly the database-declared referenced parts',async()=>fixture(async directory=>{
+  const {source,hash}=await vault(directory),out=join(directory,'snapshot');await backup(source,out);
+  const path=`files/objects/${hash}/0.plain`,manifestPath=join(out,'backup-manifest.json'),manifest=JSON.parse(await readFile(manifestPath,'utf8'));
+  const missing={...manifest,checksums:{...manifest.checksums}};delete missing.checksums[path];
+  await writeFile(manifestPath,JSON.stringify(missing));await assert.rejects(verifiedBackup(out),/does not match referenced asset parts/);
+  const extra=`files/objects/${hash}/1.plain`;await writeFile(join(out,extra),'generated extra');
+  await writeFile(manifestPath,JSON.stringify({...manifest,checksums:{...manifest.checksums,[extra]:createHash('sha256').update('generated extra').digest('hex')}}));
+  await assert.rejects(verifiedBackup(out),/undeclared asset part/);
+  const encrypted=`files/objects/${hash}/0.aes`;await writeFile(join(out,encrypted),'generated duplicate format');
+  await writeFile(manifestPath,JSON.stringify({...manifest,checksums:{...manifest.checksums,[encrypted]:createHash('sha256').update('generated duplicate format').digest('hex')}}));
+  await assert.rejects(verifiedBackup(out),/does not match referenced asset parts/);
+  await writeFile(manifestPath,JSON.stringify(manifest));assert.ok((await verifiedBackup(out)).names.includes(path));
 }));
