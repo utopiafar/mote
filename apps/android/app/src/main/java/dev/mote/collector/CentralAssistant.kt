@@ -85,6 +85,7 @@ internal data class AssistantCard(
     val id: String, val revision: Long, val version: String, val kind: String, val state: String,
     val title: String, val body: String, val evidence: List<AssistantProof>, val matterId: String?,
     val acceptedTaskId: String?, val readAt: String?, val feedback: List<String>, val updatedAt: String, val stale: Boolean,
+    val taskScope: AssistantScope?,
 ) {
     val startable get() = kind == "suggestion" && state == "open" && !stale && acceptedTaskId == null
     companion object {
@@ -98,6 +99,9 @@ internal data class AssistantCard(
             AssistantJson.nullable(row, "readAt")?.also { Instant.parse(it) },
             AssistantJson.rows(row, "feedback") { AssistantJson.state(it, "action", setOf("later", "ignore", "correct", "never_remind")) },
             AssistantJson.time(row, "updatedAt"), if (row.has("evidenceStale")) AssistantJson.bool(row, "evidenceStale") else false,
+            if (row.get("taskScope") === JSONObject.NULL) null else AssistantScope(row.getJSONObject("taskScope")).also {
+                require(it.json().has("evidenceIds"))
+            },
         )
     }
 }

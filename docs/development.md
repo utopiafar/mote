@@ -1,97 +1,57 @@
-# 开发与测试环境隔离
+# Development
 
-开发默认使用 dev 中央 47842，测试使用 test 中央 47852；正式部署 prod 使用 47832。不要用正式中央的配置、令牌、数据库、App profile 或实际屏幕做自动化测试。所有验证素材应由程序生成。
+**English** · [简体中文](development.zh-CN.md)
 
-## 首次准备
+Choose an entry point for the module being changed. [Architecture](architecture.md) maps the code; app AGENTS contain short platform constraints and focused commands.
+
+## Choose a contribution path
+
+| Goal | Preparation and entry point |
+| --- | --- |
+| Central / Web | Node.js 24 and npm; use the steps below for Central and Web hot reload. |
+| Collectors | Prepare only the selected platform's native tooling and an isolated development app. Platform commands and limits: [Mac](../apps/desktop/AGENTS.md), [Android](../apps/android/AGENTS.md). |
+| Plugins and source integrations | Use the existing SDK and examples through [plugin development](plugin-development.md). Enter a collector path when the extension needs native capabilities. |
+
+## Start Central / Web locally
+
+Use Node.js 24 and npm. From the repository root:
 
 ```sh
 npm ci
-npm run build:libs
-npm run build -w @mote/server -w @mote/web
-npm run connectors:prepare
 node scripts/mote.mjs init --profile dev
-node scripts/mote.mjs init --profile test
-```
-
-每个环境都有自己的 `.mote/profiles/<name>/mote.yaml`、`data/`、`logs/`、`backups/` 和 `file-sync/`。`file-sync/` 在第一次明确文件导入时创建。初始化不读取根 `.env`，不继承模型 key，不复制正式资料。新 profile 不预置模型；需要 AI 时在中央界面完成一次模型配置，仅验证存储、UI 与同步时保持未配置即可。
-
-CLI 不自动初始化，已有 profile 不会被覆盖；重复 init 报错后直接使用已有配置即可。`--home /absolute/test-profiles` 可创建另一整套环境，Docker project 与 volume 也随路径隔离。不要把私有 YAML 加入 Git。旧 `mote.env` profile 会被拒绝；先停止旧版本、保留原目录，再离线手工填写新 YAML，CLI 不自动迁移。
-
-## 日常开发
-
-已构建中央服务并配置命名 Tunnel 的本机 DEV，可用一个命令前台运行两者：
-
-```sh
-npm run up
-```
-
-该命令使用 DEV 中已有的 Tunnel 凭据并自动启用隧道，先启动中央服务再启动 cloudflared；按 Ctrl+C 同时停止两者，任一进程退出也会停止另一个。已有中央或隧道实例时会拒绝重复启动。它不执行构建、不启动屏幕采集，也不创建 Cloudflare 域名路由。中央日志仍在 `.mote/profiles/dev/logs/central.log`；cloudflared 原始输出仍由运行器抑制。其他原生 profile 可使用 `node scripts/mote.mjs run-all --profile NAME`。
-
-```sh
 npm run dev
 ```
 
-此命令先构建共享库，再通过 `mote exec --profile dev` 启动 API 热重载和 Vite。API 是所选 dev 端口，Web 默认 `http://localhost:5173`。如果先前用 CLI 后台启动过 dev 中央，先 `node scripts/mote.mjs stop --profile dev`，避免两个进程争用同一个环境。
+`npm run dev` builds shared libraries, then starts Central and Web hot reload. Central uses port 47842 and Web 5173 by default. Stop an existing background dev Central before starting this path. Repeated init refuses to overwrite an existing profile.
 
-```sh
-# 构建完成后启动独立 Mac App，绑定独立 dev profile
-npm run build -w @mote/desktop
-npm run desktop:dev
-# 获取 dev 访问令牌，只填入自己的测试客户端
-node scripts/mote.mjs token --profile dev
-```
+Initialization selects no usable model and inherits no model key. Configure a model explicitly when AI is needed. Collection, browsing and ordinary interface development can start without a real model. Tunnel, Android SDK and Mac collection permissions are not default prerequisites.
 
-Mac 的命名 profile 使用独立的用户数据目录、队列、草稿和连接设置。`desktop:dev` 将所选中央 URL 与令牌交给主进程；只对新 profile 引导连接，已有设置不会被后台替换。首次开始截图仍需要用户在 App 中设置并授权；这些命令本身不会采集屏幕。未命名 App 的 default profile 使用原 Electron 用户数据路径，旧存储仍受格式 4 拒绝边界约束，详见 [电脑端说明](desktop.md)。
+With Central built and a named Tunnel configured, `npm run up` runs Central and the tunnel; it does not build, start capture or create domain routes. Use `npm run desktop:dev` for the isolated Mac development app; see the [Mac guide](desktop.md) for build and permission requirements.
 
-运行 test 环境的同一套热重载界面：
+## Environments and material
 
-```sh
-node scripts/mote.mjs exec --profile test -- npm run dev:workspace
-```
+Keep dev, test and prod configuration, tokens, databases and app profiles separate. Test Central defaults to 47852; prod defaults to 47832. CLI `--home /absolute/private/profiles` selects a separate isolated home. Use generated material and private temporary profiles for tests, excluding production archives, actual screen content and everyday devices from automated fixtures.
 
-test Web 默认 5174。Vite 的代理读取 `MOTE_CONFIG_FILE` 选择的 dev/test YAML 中 `server.port`；没有所选环境或端口为 47832 时会拒绝启动。浏览器 bundle 不包含 `MOTE_*` 配置或令牌。`dev:workspace` 是内部命令，应由 `mote exec` 提供环境。
+Keep private configuration and credentials out of Git. Development stores Mote credentials in private profiles; production uses OS protection; third-party CLIs own their credential stores. Cross-device deployment uses HTTPS and a strong token.
 
-## CLI 工具使用同一连接
+## Format and upgrade stages
 
-任意已有工具都可在所选环境执行：
+The current MVP maintains one wire and storage format, without migrations, old-format readers or dual writes unless explicitly requested. Reject incompatible input while retaining the old data; do not reset it automatically. Future long-term use needs data-preserving upgrades. The MVP exception is not a permanent product promise.
 
-```sh
-node scripts/mote.mjs exec --profile dev -- npm run demo
-node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /absolute/selected-notes --dry-run
-node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /absolute/selected-notes
-node scripts/mote.mjs exec --profile test -- npm run import:files -- --root /absolute/selected-notes
-```
+## Changes and collaboration
 
-导入脚本只读取用户明确选择的文件或文件夹，默认包含 `.md,.txt,.json,.csv,.ics,.pdf,.docx,.wav,.mp3,.m4a`，不递归隐藏目录或符号链接。加 `--extensions .md,.txt,.csv` 明确类型；`--watch` 每 30 秒检查更改。`snapshot` 与 `archive` 单文件最多 512 MiB，以 4 MiB 分块暂存和上传；16 MiB 是扫描分片预算，大文件可独占一个分片，单次运行会继续扫描至目录完成。`reference` 只发送元信息，不读取文件内容，不受原件上传大小上限限制。`snapshot` 实际传输须加 `--allow-transient-upload`；文字遮盖无法安全应用的复杂格式会保留阻止状态，不上传原始内容。
+- Decide implementation details. Reuse existing terms, components, the SDK and task infrastructure, evolving interfaces and implementation as actual needs require.
+- Run `npm run build:libs` for changed or missing shared/Agent outputs. Serialize shared builds across collaborators.
+- For new `moteText` source strings, update all six target-language catalogs, then run `node scripts/sync-i18n.mjs` and `npm run check:i18n`.
+- Connect the shortest real path early in multi-module work, using the actual entrypoint and producer/consumer. Delegate independent modules without parallel duplicate implementations.
+- Update current documentation and both core-document languages with changes to behavior, interfaces, development commands or effective constraints. Internal refactoring does not require artificial documentation tasks.
 
-`--dry-run` 使用相同的大小限制和扫描规则，读取并暂存可导入文件以核对范围，但不连接中央，也不修改所选 profile 的导入状态；副本在每个扫描分片统计后删除，退出时清理私有临时目录。预览不能保证中央的可用性、来源授权或存储额度。实际导入的文件状态基于所选节点 URL，落在该 profile 的 `file-sync/`，所以同一个源目录可以分别导入 dev 与 test；成功 ACK 后同环境再次运行会跳过不变文件。原文删除不删除中央历史。
+## Verification and delivery
 
-`exec` 清除继承的普通 `MOTE_*` 与 `COMPOSE_*` 参数，设置所选 `MOTE_CONFIG_FILE`，并从同一 YAML 派生设备/工具连接 URL 与令牌。普通进程环境不能覆盖服务端 YAML；只有声明的敏感字段支持 `${SECRET_NAME}` 引用。直接运行 `npm start` 默认读取工作目录的 `mote.yaml`，或显式设置 `MOTE_CONFIG_FILE=/absolute/mote.yaml`；导入工具同样支持该文件选择。`MOTE_ENV_FILE` 已拒绝，根 `.env` 不参与加载。API/model 密钥不要写进命令参数、示例文件或公开诊断。
+Decide implementation and delivery within existing authorization, without a prescribed sequence of task stages.
 
-## Android 开发连接
+Select the smallest effective checks under Testing. PRs describe behavior, checks run or reused, and unverified scope. Keep full logs in CI or ignored files. Do not create a report, acceptance ledger or duplicate guide for each task.
 
-```sh
-adb reverse tcp:47842 tcp:47842
-```
+References: [Testing](testing.md), [CI](ci.md), [background UI and emulators](testing-runbook.md), [plugins](plugin-development.md), [localization](internationalization.md), [releasing](releasing.md).
 
-开发版 Android 填 `http://127.0.0.1:47842`，并显式允许调试 HTTP。开发 APK 使用独立 application ID 和本地存储，与日常版本分开；实际 Gradle 命令及 HyperOS 设备设置见 [Android 说明](android.md)。手机 loopback 默认指手机本身，USB reverse 断开后待传事件应保留，恢复网络再重试。跨设备长期部署使用 HTTPS。
-
-## 验证与审查
-
-开发时使用[定向测试](testing.md#daily-feedback)，尽早接通跨模块真实路径；计划收敛后再完成候选检查。检查范围、日志和风险分级见 [testing](testing.md)，自动 PR 检查见 [CI](ci.md)。
-
-<a id="background-testing"></a>
-后台 UI、生成素材和模拟器操作见[测试操作手册](testing-runbook.md#background-testing)。
-
-<a id="pr-check-scope"></a>
-受影响候选计划和结果复用见[候选检查](testing.md#early-integration-and-candidate-checks)。
-
-## 调试与分享诊断
-
-每个中央环境默认开启有上限的结构化诊断。所有 profile 默认关闭 debug 与详细过程记录；显式 `false` 或 `silent` 保持有效。需要调试时只修改正在测试的 `mote.yaml`；enabled/debug/traceEnabled/level 经校验热应用，日志目录与容量参数需要重启。中央界面的运行诊断、Mac 和 Android 的支持包用于查看版本、连接类别、队列状态、数值指标与固定事件。分享前仍应查看导出内容；不要改为转发原始截图、OCR、随手记、模型 prompt 或 token。
-
-结构化日志按 error、warn、info、debug、trace 分开保存，原生监督进程使用同一目录和总预算。默认分段大小 16 MiB、总预算 2 GiB；各级别的时间与容量见[日志保留决策](adr-dev-log-retention.md)。跨 UTC 日期或文件写满只创建新分段，删除按时间、级别预算与总预算执行，不按固定文件数删除。详细记录需显式开启，最多持续 24 小时；支持包仍排除正文。日志文件不用于保存原始资料，清理日志不清理任务记录里的失败摘要。
-
-## 独立版本与发布
-
-保留 npm workspaces。Central（server + web）、macOS、Android 分别维护版本和标签；改动一个端只发布该端。共享依赖和协议改动需要检查所有受影响端，但不会自动生成其他端的发布。操作、发布产物和迁移说明见 [发布流程](releasing.md) 与 [独立发布架构](release-architecture.md)。
+Configuration and operations: [server configuration](server-configuration.md), [CLI file import](files.md#cli-import), [diagnostics](troubleshooting.md).

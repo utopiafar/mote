@@ -1,6 +1,6 @@
 # Third-party sources and notices
 
-As of 0.0.82, Android and macOS no longer build or distribute the Qwen runtime or local file decoders. The Qwen workspace, manifests and experimental scripts have been removed; historical license notices are retained. Current central OCR/ASR dependencies are pinned in `scripts/requirements-ocr.txt` and `scripts/requirements-audio.txt`, and model artifacts in `apps/server/src/media-assets.ts`; their installation and execution boundaries are documented in [central media processing](docs/ocr-asr-implementation-plan.md).
+As of 0.0.82, Android and macOS no longer build or distribute the Qwen runtime or local file decoders. The Qwen workspace, manifests and experimental scripts have been removed; historical license notices are retained. Current central OCR/ASR dependencies are pinned in `scripts/requirements-ocr.txt` and `scripts/requirements-audio.txt`, and model artifacts in `apps/server/src/media-assets.ts`; their installation and execution boundaries are documented in [central media processing](docs/media-setup.md).
 
 This file identifies major runtime and model sources used by Mote. Exact JavaScript dependencies are recorded in `package-lock.json`; Android dependencies are declared in `apps/android/app/build.gradle.kts`. Preserve the licenses and notices shipped by those dependencies in redistributed binaries. This document is not a replacement for their complete license texts or transitive dependency notices.
 

@@ -1,4 +1,5 @@
 /** Generated caption + long image + reused OCR proof. Default offline; no quality claim.
+ * Set MOTE_COMPOSED_IMAGE_FIXTURE to the external frozen generated v1 assets.
  * MOTE_COMPOSED_IMAGE_OUTPUT=/external/new-run node --import tsx scripts/test-composed-image-context.ts
  * Live additionally requires MODE=live and SEED=/external/passed-preflight. One ordinary Ask only.
  * MOTE_COMPOSED_IMAGE_PROTOCOL defaults to one-original; bounded-views requires the region-capable product.
@@ -32,7 +33,8 @@ const json=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 function disjoint(a:string,b:string){for(const [from,to] of [[a,b],[b,a]]){const part=relative(from,to);assert.ok(part==='..'||part.startsWith('../'),'Paths must be disjoint');}}
 async function external(path:string){const actual=await realpath(resolve(path));disjoint(repositoryRoot,actual);return actual;}
-const fixtureRoot=await external(process.env.MOTE_COMPOSED_IMAGE_FIXTURE??'/Users/utopiafar/Documents/Codex/mote-goal-2026-09-27/generated-composed-image-v1');
+assert.ok(process.env.MOTE_COMPOSED_IMAGE_FIXTURE,'MOTE_COMPOSED_IMAGE_FIXTURE must name the external frozen generated v1 assets');
+const fixtureRoot=await external(process.env.MOTE_COMPOSED_IMAGE_FIXTURE);
 const manifestBytes=await readFile(join(fixtureRoot,'manifest.json'));assert.equal(sha256(manifestBytes),frozenManifestHash,'Frozen generated v1 manifest changed');
 const manifest=JSON.parse(manifestBytes.toString()) as {files:Record<string,{sha256:string;bytes:number}>};
 for(const [name,file] of Object.entries(manifest.files)){assert.ok(!name.includes('..')&&!name.startsWith('/'));const bytes=await readFile(join(fixtureRoot,name));assert.equal(sha256(bytes),file.sha256);assert.equal(bytes.length,file.bytes);}

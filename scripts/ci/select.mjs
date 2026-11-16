@@ -7,7 +7,8 @@ import { changedPaths } from '../release/affected-components.mjs';
 // Check scopes are independent of release/components.json and its central artifact.
 export const scopes = ['web', 'server', 'agent', 'shared', 'plugin-sdk', 'i18n', 'desktop', 'android', 'ios', 'tooling'];
 const documentation = path => path.startsWith('docs/') || path.startsWith('release/notes/')
-  || /(?:^|\/)AGENTS\.md$/.test(path) || /^(?:README(?:\.[\w-]+)?|THIRD_PARTY_NOTICES)\.md$/.test(path)
+  // Root Markdown is project documentation; workspace runtime prompts remain inputs.
+  || /^[^/]+\.md$/.test(path) || /(?:^|\/)AGENTS\.md$/.test(path)
   || /^\.agents\/skills\/.*\.(?:md|yaml)$/.test(path)
   || ['protocol/README.md', 'adapters/ui/README.md'].includes(path);
 

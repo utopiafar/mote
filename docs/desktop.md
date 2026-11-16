@@ -1,402 +1,46 @@
-# Mote 电脑采集器
+# Mac client
 
-2026-10-25：导航、默认首页及页面职责已由 [UI IA v1](adr-ui-ia-v1.md) 更新。下文更早的导航描述保留为历史；视觉、原生行为与采集安全边界继续适用。
+The Mac client collects permitted local context, keeps durable local records and synchronizes with an independent Central. Notes and selected sources work before connecting. Capture requires macOS 13.3+; native helpers need Apple Command Line Tools. Windows/Linux do not have supported capture.
 
-当前格式与配置说明核对于 2026-10-29。本次 MVP 清理采用桌面存储格式 4，旧配置、队列、草稿和来源状态明确拒绝读取，不执行运行时升级迁移。文中带历史版本或日期的验收记录保留当时原文，仅说明历史结果，不代表本次执行或当前升级兼容承诺。
+## Build and profiles
 
-当前主导航为「工作台 / 内容 / 来源 / 问一问」，无明确深链或恢复页面时先进入工作台。工作台以随手记、导入文件、添加来源为主要动作，采集、连接与发送占紧凑状态区；活动与同步是二级详情。来源按本机类型分组，内容页阅读本机资料和实际 Central 接收状态。首次打开无需先完成屏幕配置，选择记录屏幕后才进入范围审阅与显式授权。文件夹默认持续同步，单个文件默认一次导入，可明确选择后续修改也同步。高级设置保留低频参数，确认页保留隐私范围、完整文件发送地址、资料说明与原件保留方式。当前决策和完整旅程以 [用户旅程与 UI](ui-user-journeys.md) 为准，采集约束见 [统一采集与上传行为](collection-and-sync.md)。
-
-此工作区交付 macOS Electron 采集程序、Swift 本地助手、中文配置界面和持久队列。中央节点是独立服务：本期可以运行在同一台 Mac，之后只需迁移中央仓库并修改节点地址，无需更换端点协议。
-
-## 构建与运行
-
-最低 macOS 13.3（当前验证为 Apple Silicon Mac）。构建需要 Node.js 24、npm 11 和 Apple Command Line Tools（`xcode-select --install`）。在仓库根目录执行：
+From the repository root with Node 24 and npm 11:
 
 ```sh
-npm install
-npm run build -w @mote/diagnostics
-npm run build -w @mote/shared
+npm ci
+npm run build:libs
 npm run build -w @mote/desktop
-npm run start -w @mote/desktop
+npm run dev -w @mote/desktop
 ```
 
-开发迭代可用 `npm run dev -w @mote/desktop`。构建会编译 TypeScript、复制界面资源，用 `swiftc` 生成当前 Mac 架构的 `native/bin/mote-helper` 与独立更新助手 `mote-updater`。屏幕截图不需要辅助功能权限，不查询或存储窗口标题；可选的页面文字采集另需 Accessibility 授权，见 [页面采集](ui-page-capture.md)。
+`npm run package -w @mote/desktop` produces a local app directory and builds Swift helpers. An ad-hoc build is not a notarized Developer ID release; see [releasing](releasing.md).
 
-生成可运行应用目录：
+An unqualified packaged launch uses `default`; development uses a separate `dev` profile. Explicit `--profile=<name>` selects another profile. Data, device identity, credentials, drafts, source checkpoints and queues remain separate. Dev uses private credential files; Prod retains OS protection. Only the default profile registers the ordinary login item because macOS does not preserve profile arguments.
 
-```sh
-npm run package -w @mote/desktop
-```
+Current local storage is format 4. Old or incomplete formats are rejected with files retained, without implicit migration or deletion. Back up required data before an explicit reset. Replacing the app preserves package-external data; this alone does not make an old format readable. See [content storage](content-storage.md) and [updating](updating.md).
 
-当前 Dev 包用 `MOTE_BUILD_PROFILE=dev node scripts/release/mac-package.mjs` 生成；文件名按 `apps/desktop/package.json` 版本和当前架构生成，位于 `artifacts/release/`。普通 `npm run package -w @mote/desktop` 仍可生成本地 App。默认 ad-hoc 签名；Developer ID 与公证需配置 Apple 凭据，不能把本机构建当作已公证。
+## Start with a useful source
 
-收藏 [Mac Dev 下载入口](https://github.com/utopiafar/mote/releases?q=desktop-dev-+prerelease%3Atrue+draft%3Afalse&expanded=true)，打开最新 Pre-release，点击 **Download Mac ZIP**。退出 Mote Collector Dev 后，解压并覆盖应用目录中的 `Mote Collector Dev.app`，保留包外资料目录。每次构建有独立的 `desktop-dev-<构建序号>-<短 SHA>` 标签，App 版本沿用组件版本，具体提交与签名模式见发布说明。Dev 的 Bundle ID 为 `dev.mote.collector.dev`，凭据使用私有本地文件。构建与发布命令见 [发布流程](releasing.md#日常-dev-构建)。
+The workspace offers a note, file import or source connection without requiring screen configuration first. Folders keep checking their selected scope; one-file import is one-time unless explicitly configured to track changes. Confirmation shows scope, inclusion of existing files, complete-file destination, source context and retention choice.
 
-Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按钮被禁用。MVP 尚未接入其可靠前台/可见窗口身份与 OCR，不能以无过滤截图代替。
+Screen recording starts after scope review and explicit start. Per-app duration, screenshots and structured fields are independent choices. Saving settings or granting OS permissions does not start paused capture. Duration-only capture needs neither pixels nor Accessibility; screenshots need Screen Recording, and page fields need Accessibility. If macOS requests a restart, reopen and resume explicitly.
 
-## 当前更新与历史签名更新机制
+Fixed masks and optional text privacy rules run locally before persistence. Privacy OCR is not a saved OCR product. Structured capture uses registered field rules and preserves provenance; app names do not classify topics or tasks. See [privacy](privacy-and-metadata.md) and [collection](collection-and-sync.md).
 
-当前 DEV 版本从 GitHub Releases 手动下载覆盖安装，保留包外资料目录。签名清单与自更新事务实现仍在代码中，首次验收记录见下文历史 0.5.0 段落，但当前 DEV 发布不提供 `mote-release.json`，不能按下文假定能完成在线自更新。
+Closing the window hides the resident app; quitting stops it. Pausing screen recording stops new screen/app samples, while enabled file/calendar sources and existing uploads retain their own policy. Restart waits for manual screen start and restores permitted persistent source/queue state.
 
-原生采集窗口提供「应用更新」：选择稳定 / 预览渠道，点击「检查更新」，再下载、校验，最后「安装并重启」。只手动发起检查，不上传中央令牌、截图、笔记或路径。默认只信任 GitHub `utopiafar/mote` 的签名发布。首次提供该能力的版本为 0.5.0，旧版需先手动安装；没有可信发布清单时会显示暂不可用，不能把旧的普通 ZIP 当成应用内更新。
+## Connect and synchronize
 
-App 内置发布公钥，使用 RSA-3072 / SHA-256 验证 `mote-release.json` 原始 payload 字节；清单绑定渠道、版本、仓库、架构、Bundle ID、安装包大小与 SHA-256。下载临时文件校验成功后才转为完整包。解压前拒绝路径穿越、跨目录/循环符号链接、不支持的 ZIP 格式和过大展开体积；解压后再次核验 ZIP 哈希，随后验证应用签名、版本、架构以及文件树摘要。安装前和旧进程退出后都重新检查文件树，校验后被篡改或被重新 ad-hoc 签名的包仍被拒绝。更新缓存限于一个下载批次，取消后重新下载；使用独立的更新缓存。
+Import a Central invitation as JSON, a pasted link, a file or a QR image. QR decoding is local. Confirm the complete origin before exchanging its one-time code. The full client receives owner scope; dedicated collector and MCP credentials have separate roles. [Connections](connections.md) covers login, browser handoff and revocation.
 
-当前 ad-hoc 构建使用独立 Swift 助手，不依赖 Electron 的内置自动更新器。[Electron 官方说明](https://www.electronjs.org/docs/latest/api/auto-updater)指出 macOS 自动更新基于 Squirrel.Mac，要求应用签名；本项目不把该机制等同于已验证可用的 ad-hoc 自更新。这里的发布者信任来自固定密钥签名，Apple Developer ID、公证与 Gatekeeper 的系统信任仍是另一层。ad-hoc 更新后系统可能再次要求 Keychain、屏幕或日历授权；应用不会为绕过授权重置资料或令牌。
+Unbound records need a confirmed first destination. Same-node reauthorization preserves IDs, content, time and pending versions. A different origin cannot silently inherit another node's queue. Coordinate in-flight work before changing credentials; only matching per-item acknowledgements retire pending uploads.
 
-安装只更换当前 `.app`：先在同一父目录建立候选包和更新锁，确认其他 profile 没有运行该 App，再保存原生草稿、停止采集、等待持久操作结束并退出。助手使用 macOS 原子交换，把旧包暂存为应用旁的 `.mote-stage-<事务号>.app`，以相同 `--profile` 重启。新进程完成自身配置、队列和窗口初始化后写入启动确认，才删除旧包。75 秒内未确认会尝试停止未确认的新进程并自动恢复旧版；若新进程无法退出或恢复失败，保留旧包与明确错误，不强删应用。死助手留下的事务仅在同一 profile 重新打开、文件树仍精确匹配时完成清理；无法确认的恢复包保留供人工恢复。
+The four upload modes, pauses and offline behavior are in [collection and sync](collection-and-sync.md). Sleep or complete exit prevents timely execution. Central receipt, organization, OCR, index and Memory status stay separate. Files use native selection; calendars use EventKit and explicit OS access. Planned calendar time does not establish attendance. [Files](files.md) explains stable versions and archive semantics.
 
-安装保留包外 profile 数据，不执行旧存储格式转换。当前格式 4 可在重启后读取；升级前已有旧格式时启动会拒绝并保留文件，需退出、备份并明确重置后使用。本机升级事务仍保留安装校验、启动确认和失败回滚。安装不会清空或重建任何 profile 的设置、Keychain 加密令牌、草稿、截图/来源队列、下载模型、诊断和中央窗口会话。仍需先保存未提交的普通设置；当前随手记正文会在交接前持久化。重新打开后截图采集等待用户手动开始，待传队列与已启用来源按原有行为恢复。更新状态和事务文件位于当前 profile 的 `updates/`，安全支持包不会导出安装路径或配置正文。
+## Updates and recovery
 
-应用位于只读磁盘、App Translocation 或父目录不可写时禁止自动替换。可点击「显示安装包」，在 Finder 退出所有 Mote 实例后把已验证的 App 拖到可写应用目录手动替换，用户资料仍保留在包外。更新磁盘至少需要容纳 ZIP、展开包与同目录候选包；空间不足会保留原 App。人工处理异常事务前先备份，确认没有更新助手或 Mote 实例运行，并保留 `.mote-stage-*` 旧包，不能直接当缓存删除。
+Current Dev distributions use [GitHub Dev releases](https://github.com/utopiafar/mote/releases?q=desktop-dev-+prerelease%3Atrue+draft%3Afalse&expanded=true): quit and replace the Dev app bundle, keeping external profile data. Current Dev releases do not supply `mote-release.json`; do not assume the retained signed-manifest updater is available for them.
 
-复现验证（只生成临时 App，不更新日常安装）：
+For a supported signed channel, the updater verifies publisher signature, component, architecture, Bundle ID, hashes, archive paths and expanded app. Its helper retains the old app until startup acknowledgement and can roll back failed startup. Uncertain transactions retain recovery files; `.mote-stage-*` is not disposable cache. Read-only/translocated apps need manual replacement in a writable location. OS trust and data-format compatibility are separate checks.
 
-```sh
-npm run build -w @mote/desktop
-node apps/desktop/scripts/update-fixture.cjs
-npm run test -w @mote/desktop -- updater update-archive update-install
-```
-
-历史 0.5.0 本地验收：完整桌面 100 项回归通过，其中更新新增 12 项 TypeScript 回归：签名失败阻止下载/安装、下载取消、渠道持久化、ZIP 路径/符号链接、解压期间篡改、跨 profile 启动确认、反复下载缓存有界。原生 fixture 已实际验证生成 ad-hoc App 的原子替换、同 profile 重启、缺失启动 ACK 自动回滚、重新签名篡改拒绝、其他 profile 阻止以及中断准备恢复；15 个合成配置、令牌文件、草稿、队列与模型逐字节不变。本次本机 ZIP 为 113,094,457 字节，SHA-256 `211e801f539a9b2cb981e147851ba897adc256f82ac6f15ab71fb7382e6f6f6d`；GitHub runner 重建的发布包以其签名清单为准。包内更新助手与共享发布模块已通过实际加载，包内千问对生成白图返回通过（约 7.48 秒）；原生界面和渠道 IPC 使用临时 profile 验证，未发更新网络请求。未操作真实 Keychain 项，未替换日常 App，未新增 Intel / 旧版 macOS 实机验证。签名清单发布与 GitHub 完整线上更新另由发布流程验收，不能把本地 fixture 当成已发布版本的线上升级。
-
-## 环境隔离与启动 profile
-
-不设置 `MOTE_PROFILE` / `--profile` 时使用 **default**，继续使用原 Electron `userData` 路径。新安装创建格式 4；该路径存在旧格式数据时明确拒绝启动，保留原文件，要求先退出、备份并重置，不能通过改名 profile 隐藏旧数据。显式 `--profile=legacy` 已拒绝。首次默认节点为 47832，当前格式已有设置优先。开发命令 `npm run desktop:dev` 使用独立 dev；直接工作区 `npm run dev -w @mote/desktop` 也显式选 dev。
-
-命名 profile 使用 `<原 userData>-profiles/<短名>`，在 Electron 实例锁和 session 创建之前设置；dev 默认端口 47842，test 为 47852，prod 为 47832，其他命名环境为 47842。短名仅接受 1–32 个小写字母、数字、下划线和连字符。可同时运行不同 profile，同名进程只能有一个。窗口顶部、标题和菜单栏显示当前 profile，界面显示实际数据目录。
-
-```sh
-# 由统一启动器读取选定环境，注入匹配的节点与令牌：
-node scripts/mote.mjs exec --profile dev -- npm run start -w @mote/desktop
-# 默认 profile 使用原 userData 路径（只接受当前格式 4）：
-npm run start -w @mote/desktop -- --profile=default
-# 打包应用可以指定环境，不需要浏览器：
-open -n "apps/desktop/release/mac-arm64/Mote Collector.app" --args --profile=dev
-```
-
-`--profile` 优先于 `MOTE_PROFILE`。命名环境仅在 `MOTE_PROFILE` 精确匹配时才接受启动器注入的 `MOTE_URL` / `MOTE_TOKEN`；缺 profile 的 ambient 节点/令牌或切换 CLI profile 后遗留的凭据均不继承。它们只用于新环境首次配置，已有节点和已加密凭据始终成对保留。统一启动器从选定 `mote.yaml` 派生连接信息，`MOTE_CONFIG_FILE` 选择中央文件；采集器的本机采集、隐私与队列设置仍独立保存，不并入中央 YAML，也不另行寻找 `.env`。dev/test 等非 default、非 prod 环境的自动配置拒绝回环 47832；确需连接另一节点，用户仍可在原生设置中显式填写地址与新令牌。
-
-每个 profile 独立保存设备 UUID、连接令牌、原生草稿、队列、模型和数值/事件诊断。Dev 凭据使用私有本地文件，Prod 保留系统保护。浏览器中央页面使用浏览器自己的登录会话。新环境不自动复制模型或用户资料，可手动导入公开模型。支持包不跨环境读取。普通启动不会自动把 dev 变成日常环境；Prod 包从 Finder 无参数启动进入 default，独立 Dev 包默认进入 dev。
-
-default 以外的 profile 不注册系统默认登录项，避免 macOS 丢失启动参数后进入 default；界面给出提示。需使用明确带 profile 的启动命令。default 可使用登录项开关。该限制依据 [Electron 登录项文档](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings)：`args` 选项仅支持 Windows。本轮没有更改本机真实登录项。
-
-## 首次使用
-
-1. 首次启动进入工作台，从随手记、导入文件或添加来源开始；记录屏幕与同步文件夹从相应来源进入。没有中央连接也可先保存笔记和文件任务；浏览内容或工作台不会自动请求采集权限。引导尽快完成连接、第一份真实资料上传及 Central 原件查看，不强制配置模型或 MCP。
-2. 同步文件夹和导入文件使用原生选择器，随后确认所选范围、是否包含已有内容、完整文件的发送地址与原件保留方式。文件夹默认持续同步，单个文件默认一次导入，可明确选择以后修改也同步。取消选择或确认不会开始导入。
-3. 选择记录屏幕后，按应用分别勾选时长、截图和结构化内容，并查看字段规则、配置遮挡区域与可选文字审查规则。单个应用的三个布尔选择保存在 `appCollectionRules`；全部取消即不采集，沿用默认时移除单独设置。文字审查命中则丢弃，识别异常默认暂存待复核；下载模型不是采集前提。
-4. 查看已保存范围和生成示例，点击「按此范围开始」才开始记录。只记录时长不请求屏幕权限；截图与页面字段按所需能力检查系统授权。系统要求重启时，授权后退出并重新打开，再从首页继续。开发模式权限可能显示 Electron。
-5. 需要集中归档时，在中央「设备连接」生成邀请，从客户端连接页粘贴 JSON / 链接，或导入 JSON 文件、二维码图片，核对完整地址与到期时间后确认。已有未绑定资料时必须明确确认其发送目标。手动地址配置仍可使用；远程要求 HTTPS 和强令牌，已保存令牌不会向前端暴露。
-6. 首页查看持续来源、近期内容和发送摘要；内容页打开原文与来源，并核对本机保存、中央收到和整理状态。暂停屏幕记录、暂停单个来源和暂停全部发送各自独立；全部发送暂停保留原发送策略，本机记录与来源检查继续。
-
-中央当前生成的 owner 邀请可使用完整仓库、问答和设置，权限以身份确认返回的 scope/capabilities 为准。首次采样及应用切换后的首次采样时长为 0；连续两次同一前台应用且采集级别相同时才累计两次采样之间、最多一个采样间隔的时长。
-
-「暂停屏幕记录」立即停止新采样，已入队记录继续按原发送策略处理。「关闭窗口」隐藏到菜单栏；「退出 Mote」停止本机进程。应用重启后等待手动开始屏幕记录，已保存队列和启用来源按原策略恢复，已保存的全部发送暂停仍然生效。
-
-## JSON、链接与二维码连接
-
-「连接中央」是 App 原生配置入口，不需要打开浏览器。支持粘贴中央生成的 JSON 或 `mote://connect?data=…` 链接，也可用系统文件选择器导入 JSON / TXT，或 PNG / JPEG 二维码图片。链接在本期通过粘贴使用，未注册 macOS 全局 URL 打开处理。二维码只在本机 Swift Vision 中解码，不请求摄像头、不上传图片。JSON / 链接最多 8 KiB，图片最多 8 MiB、4096×4096；必须只有一个有效二维码。预览不联网，过期、含额外字段或不安全地址的邀请直接拒绝。
-
-邀请预览显示完整中央 origin（协议、域名、端口）与到期时间。核对地址后勾选确认，再点击「确认连接并安全保存」。远程只允许 HTTPS，HTTP 只允许 localhost / 127.0.0.1 / ::1；不接受 URL 用户名、密码、路径、查询参数或重定向。提交期间禁用取消、编辑和再次连接，界面明确此时不能撤回兑换；单次网络步骤有 15 秒超时。邀请文本在预览后从输入框清除，短期兑换码仅在主进程内存保留，不写入配置或诊断。
-
-兑换后还会调用中央身份确认接口，校验凭据 ID、当前协议、权限、原设备 UUID 和中央地址，再写入系统加密存储。连接失败不会把未验证凭据写入配置。由于邀请一次性兑换可能已在中央完成，若网络或本机保存失败，需重新生成邀请；中央选择已有设备 ID 后可再次授权。设备名与 UUID 在入口显示；旧设备迁移、凭据撤销或遗失时，中央邀请必须显式选择该设备，不能用未绑定的普通邀请接管它。
-
-保存连接或确认邀请时，App 自动暂停新采集与上传，取消并等待在途处理、来源同步完成，再检查待传状态；完成后按原采集意图恢复。**同一 origin、同一设备的邀请重新授权**会在确认文字中说明：现有待传截图、随手记和来源版本将继续发往这个地址。来源版本先完整持久化到新凭据命名空间，再保存新凭据；事件 ID、原文、观察时间与版本链保持不变，只有匹配的中央 ACK 才能移出队列。这允许旧 token 已撤销时直接恢复，无需删除资料。中央身份信任边界是该 origin 和 TLS 证书；如果同一域名改指向新服务器，也须确认待传数据应送到那里。更换到不同 origin，或手动修改 token 时，任何待传截图、准备提交的笔记或来源版本都会阻止切换。
-
-邀请兑换只接受当前 owner scope，并绑定当前设备；该身份具备完整中央权限。退役 collector 和只读 MCP 凭据不能用于采集器登录。「测试已保存连接」可查看中央版本、profile 和权限。当前客户端以统一登录接续中央浏览器页面，管理员凭据不会放进 URL；短期登录请求或一次性兑换票据可用于完成浏览器登录。连接必须通过当前身份与协议确认，缺协议元数据或不兼容版本会拒绝，不再继续连接旧中央。
-
-「本机统计」展示队列条目/容量/占比、采样间隔、图像尺寸和质量。开启「开发者诊断与资源优化」后，还显示累计保存/过滤/失败、文字规则识别耗时和上传请求体估算。CPU/RSS 仅为被采样主进程数值，电量为整台设备值；它们不等于整个 App 的功耗，上传请求体也不等于中央磁盘占用。诊断默认关闭，统计不读取更多个人内容。
-
-历史 0.6.0 验证使用生成数据、临时 profile 和独立真实中央进程，未访问个人屏幕、日历或真实 Keychain 项。桌面 109 项回归与 Swift / TypeScript 构建通过；原生界面 fixture 验证 JSON/URI/文件/二维码预览、确认、挂起时禁止假取消、失败保留设置、管理员令牌隔离、跨节点待传阻止及同源重新授权恢复。真实中央 fixture 验证设备绑定、权限隔离、撤销后笔记与来源队列重新授权恢复、原版本与正文保持及 ACK。可复现：
-
-```sh
-npm run build -w @mote/desktop
-npm test -w @mote/desktop
-# 需已构建 server；只启动临时 loopback 中央，不使用日常节点
-node apps/desktop/scripts/connection-server-smoke.cjs
-# 原生 Electron 窗口与 Swift QR 解码；仅截图生成测试 UI
-npx electron apps/desktop/scripts/connection-smoke.cjs
-# 当前中央认证入口使用外部浏览器票据；旧 embedded window smoke 已退役。
-npm run test:central -w @mote/desktop
-```
-
-## 本地日历、文件与目录来源（0.4.0 历史说明）
-
-本节保留 0.4.0 的使用与验证背景，其中的入口、文本格式、扩展名、大小和保留模式不作为当前行为清单。当前从首页「同步文件夹 / 导入文件」进入原生选择与确认，完整文件交给中央处理，可选择归档、提取后释放原件或仅引用；单次与持续导入的生命周期见 [统一采集与上传行为](collection-and-sync.md)。
-
-当前不按累计来源数量限制新增导入。客户端不再保存轻量索引选项；包含退役 `indexMode` 字段的配置按现有 MVP 基线拒绝，并保留原配置、队列与暂存字节，不自动迁移或清空。使用新空 profile 或处理旧数据前先保留备份；具体边界见 [当前基线](adr-mvp-baseline.md) 和 [本轮清理决策](adr-archive-admission-cleanup.md)。当前配置的离线待传、重启及同节点重新授权仍保持原版本。
-
-Mac App 的「本地来源」提供原生文件选择器和 EventKit 日历入口。它独立于屏幕采样：停止截图后，已启用来源仍会检查本地变化，并按统一上传策略同步；可逐个点击「暂停本机同步」，完全退出 App 则中止扫描和上传。应用重新打开后，已连接且启用的来源自动恢复；不会在启动时申请日历权限。
-
-1. 先在来源规则选择「快照」或「引用」。快照保存标题与 UTF-8 正文，引用仅保存标题、文件 URI/修改时间或日历起止时间等元数据，正文为空。引用不会读取文件正文，日历引用也不读取备注和地点。
-2. 点击「选择文件」或「选择目录」，只会读取你明确选择的路径。默认扩展名为 `.md,.txt,.json,.csv,.ics`，按普通文字归档，不推断 CSV、JSON 或 ICS 的业务语义。每份最大 100,000 字节；快照必须是合法 UTF-8。扫描跳过隐藏项、`.git` 和符号链接。可配置排除相对路径或目录前缀，例如 `private`、`notes/private.md`。
-3. 日历先点击「连接系统日历」，系统要求授权时允许只读使用所需的完整日历读取权限；macOS 14+ 使用 EventKit full access，旧系统使用兼容授权 API。接着从已授权列表选择一个日历并点击「同步所选日历」。Mote 不创建、修改或删除系统日程。每次查询所选日历过去 30 天至未来 90 天的事件，保留独立的开始/结束、全天、时区和状态；观察时间不会冒充会议时间。权限拒绝、撤销、日历不可用或助手错误均暂停该扫描，不按空列表删除记录。可用旁边「日历权限」打开系统设置处理。
-4. 检查间隔默认 300 秒，可设 30–3600 秒。「立即检查并上传」提前触发检查和一次上传；列表显示待传数量、条目数、跳过数量、最近同步和错误。最多 40 个来源。单次文件扫描最多处理 5,000 个入口、2,000 份资料、16 MiB 总文本；日历输出最多 2,000 事件、8 MiB。达到扫描限额时标记不完整，不据此判断删除。
-5. 「跟踪删除」默认关闭。开启后，仅完整成功扫描覆盖范围内、先前确认存在而此次消失的项产生删除版本；日历滚动窗口外的旧记录不因此标记删除。中央保留历史，删除标记不是抹除原文。调整隐私/保留/删除规则后，旧状态仅保留版本链；必须先在新规则下重新观察，才用于后续删除判断。
-
-文字来源的隐私规则与截图分开。截图的应用规则、固定矩形和文字审查不会处理文件或日历文字。来源中的「上传前遮盖的确切文字」只执行你明确配置的替换，同时作用于来源名称、标题和正文；配置后不发送文件 URI，避免路径夹带原文。没有语义关键词推断。过滤和遮盖在待传正文落盘前完成；修改策略会放弃尚未确认的旧策略正文与删除记录，重新按新规则扫描，但不会自动抹除中央已接收的历史。
-
-每来源队列限制 4,000 版本 / 32 MiB（含持久状态）；保存使用私有目录、原子替换和 fsync。版本包含前一版本哈希，重试保持原版本与观察时间不变，因此 A→删除→相同 A 恢复仍是三个不同版本。中央 ACK 必须严格匹配来源、外部 ID、版本和记录 UUID 后才清除待传项。网络恢复时先排空旧队列，避免满队列阻挡恢复。中央页面暂停来源时，客户端不强行重新启用它。
-
-配置保存在当前 profile 的 `local-sources/sources.json`；各节点状态在 `local-sources/nodes/<节点及凭据哈希>/`。不同节点或手动凭据切换使用独立状态；有待传内容时阻止切换。经上文明确确认的同节点邀请重新授权会完整保留当前待传版本并重注册来源，其他连接不自动继承旧待传内容；原目录保留供用户处理。路径、规则和来源正文不进入安全支持包。这些文件与截图队列一样使用本机私有文件权限，正文不是 Keychain 加密；磁盘加密依赖系统 FileVault 等。截图队列导出按钮不包含本地来源状态，迁移本地来源时应在退出 App 后备份整个 `local-sources` 目录；中央完整归档仍使用服务端备份流程。
-
-本地来源 CLI 与 App 复用相同扫描、隐私和持久版本逻辑，可用于显式挂载的 NAS 文本目录：
-
-```sh
-node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /absolute/selected/folder --retention snapshot --watch
-node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /absolute/selected/folder --retention reference --track-deletions
-# 只预览可导入数量，不上传，也不建立同步状态
-node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /absolute/selected/folder --dry-run
-```
-
-保留 `--extensions`、`--dry-run`、`--watch`，另支持 `--exclude relative/path,...` 和可重复的 `--redact-literal`。涉及私密遮盖原文时优先使用 App 配置，避免正文出现在终端命令历史。watch 每 30 秒检查；Ctrl+C 中止在途请求并保留已持久版本。状态位于所选 profile 的 `file-sync`，按来源、节点和同一请求使用的凭据哈希隔离。只有确认旧进程已退出时才自动回收其 `.lock`；存在活动进程或不可信锁时拒绝同时写入。
-
-## 0.4.0 验证范围（历史）
-
-冻结版本通过 88 项桌面测试，其中 25 项覆盖新来源。验证包括：多段中文与组合 emoji；100 KB/非法 UTF-8；隐藏项、静态符号链接和显式路径排除；引用无正文；EventKit 合成解码和权限失效；错误 ACK/断连后同版本恢复；删除与恢复链；隐私策略改变后不再发送旧标题、路径或正文；关闭删除跟踪丢弃旧待传删除；满队列恢复；CLI 真子进程的两个 profile、同 URL 更换凭据、dry-run 和失效进程锁恢复。满队列回归注入小上限触发同一容量分支，不是 4,000 次 fsync 的性能测试。
-
-完整 TypeScript、Swift EventKit 助手和 C++ 千问助手已在 Apple Silicon Mac 编译。真实 Electron 临时 profile 通过原生文件选择器 IPC（选择结果仅注入合成文件）、离线来源待传、配置保存和随手记测试，截图采集始终停止；生成页面截图为 `apps/desktop/release/source-ui-fixture.png`。实际 dev/test 临时中央进程验证了文件 CLI 独立导入、重复跳过及既有离线备份/恢复和升级回退。
-
-独立本机中央节点还通过合成「来源管理器→文件扫描→丢失 ACK→退出重建→相同版本重试→更新→删除→恢复→引用转换」全链路，中央正确保留四个快照/删除历史版本及后续引用版本。合成 EventKit 对象经同一解码器和队列上传后，中央保留正确的会议时间与独立观察时间。复现时仅指向专用测试节点：
-
-```sh
-# 私有连接文件：{"url":"http://127.0.0.1:<port>","token":"..."}
-node apps/desktop/scripts/source-fixture.cjs /private/path/connection.json
-```
-
-0.4.0 `.app` 已通过 ad-hoc `codesign --verify --deep --strict`，打包 ASAR 及随包原生进程对生成白图实际运行千问成功（本机约 4.05 秒）。这不是模型准确率评测。日历部分只验证了 Swift 编译、合成数据与权限失败行为，没有请求或读取个人日历；真实 EventKit 授权弹窗、账户同步日历及真实个人日程仍需用户在自己的设备上验收。最低 macOS 13.3 是构建目标，未新增旧系统或 Intel Mac 实机验证。
-
-## 隐私与采样流水线
-
-每个周期执行以下顺序：
-
-1. 检查锁屏、休眠、系统空闲时间和队列上限；通过只读应用身份接口判断级别。仅活动直接生成无内容事件，不进入后面的屏幕链路。完整内容另检查屏幕权限。锁屏与休眠始终暂停；默认连续空闲 300 秒后暂停，可设为 0 关闭空闲检测。
-2. 完整内容分支枚举主屏范围内、正面积且非透明的可见窗口。默认内容规则允许桌面、无前台应用或没有明确身份的画面；有显式排除或限制级别时，身份不明仍跳过。已知窗口的应用级别为仅活动或不记录时，跳过整张截图，不凭窗口层级绕过用户规则。
-3. 在内存中采集主屏，最长边默认 1600 像素，可在开发者设置中调整为 640–2560。再次读取前台与可见窗口身份；身份变化或存在受限窗口时丢弃。
-4. 对用户配置区域进行黑色遮挡。坐标是相对主屏的 `x, y, width, height`，范围 0–1，边界向外取整。原始图像从不写入临时文件或上传中央节点。
-5. 编码最终 JPEG（默认质量 75，可配 40–95），按配置执行图片去重。
-6. 上传文字规则已开启且非空时，调用 Apple Vision 读取遮挡后的图片，仅用于精确规则匹配。规则命中丢弃；识别异常按 `drop / hold / allow` 执行，默认 `hold` 隔离待复核。
-7. 保存新截图时 `ocrText` 为空、`ocr.status=disabled`；审查文字不落盘、不上传，也不创建新的本机补识别任务。不再扫描或补传旧本机 OCR 任务；旧队列格式需先备份并重置。
-8. 图像与元数据原子入队，获准条目按策略上传；中央独立生成 OCR 和可选语义结果。
-
-固定区域示例（右上角 30% × 15%）：
-
-```json
-[{ "x": 0.7, "y": 0, "width": 0.3, "height": 0.15 }]
-```
-
-应用排除不等于万能隐私检测：系统通知可能由系统进程承载，无法从窗口 owner 推断原应用；窗口枚举与截图也无法构成操作系统级原子快照。最保守的使用方式是关闭敏感通知、配置其位置遮挡，并在敏感操作前停止采集。窗口枚举可能保守地报告被其他窗口遮住的应用，导致整帧跳过。当前没有运行端侧 NSFW 模型；文字规则也不是完整隐私检测，不能保证识别图片中的全部敏感信息。
-
-采样数据是观察证据，不是执行指令。电脑端只负责明确配置的过滤、传输和时间测量；主题理解、任务识别和检索工具选择由中央 Agent 完成，不在端点写关键词路由。
-
-## 中央处理与本机隐私审查
-
-客户端不再提供 Qwen 模型管理、视觉推理进程或本机文件解码器，安装包也不构建或携带这些引擎。截图明确文字规则仍使用 Apple Vision；页面和通知已包含文字，直接执行用户配置的确定性规则。文件内容及音频统一上传中央处理，保存方式和完整文件上传范围在来源设置中确认。旧模型文件不会在升级时擅自删除。
-
-## Mac 中央页面与随手记
-
-同一个可安装 Mac App 提供采集、原生随手记和中央问答入口。中央节点仍是独立服务，不在 App 内隐式启动。「打开中央仓库」在 macOS 优先打开 Google Chrome，不可用时打开系统默认浏览器。页面与客户端可通过短期登录交换接续授权，访问令牌不会放进页面 URL；节点切换和登录撤销仍遵守当前设备绑定、待传数据和会话约束。历史内嵌中央窗口模块及其 fixture 入口仍保留，下面带历史版本或日期的内嵌窗口验收只说明当时结果。
-
-控制台「随手记」可以在采集停止、未下载模型或断网时保存。输入时自动把草稿写入本机私有目录，关闭或重启可恢复。提交前先原子保存稳定 ID 与时间，入队后记录完成标记；即使在入队和 UI 清空之间崩溃，重试也沿用同 ID。用户主动新建另一笔相同正文仍可保存，不做文本去重。正文保留用户原文，心情完全由用户输入，无模型或关键词擅自分类。记录使用 `source:note`、时长 0、无图像，不经过屏幕 OCR/过滤链；写入相同的原子持久队列，固定 UUID/时间，ACK 后删除。此入口与中央 Web 随手记共用服务器协议，但各自管理本地离线记录。存在待上传记录时不能切换中央节点；先上传完成，或退出后导出并移走原队列，再重新启动。更换节点必须明确输入新节点令牌，禁止沿用旧令牌。原队列需要迁移到新节点时，可在核对新节点后手动导入。
-
-## 开发者诊断与优化
-
-开发者区默认关闭诊断。启用后每 15–3600 秒（默认 60）记录有界数值日志（最多 1440 样本）：主进程 RSS/累计 CPU、队列与模型字节、保存/过滤/失败计数、推理/OCR 延迟、估算上传请求体字节和设备电量。日志和导出不含截图、OCR、随手记、模型 reason 或令牌。CPU 只表示采集主进程，原生推理以延迟单独测量；电量变化是整台电脑的读数，不可归因于 Mote。电源来源由 IOKit 获取，无法读取时显示不可用。
-
-同一开关还控制最多 500 条结构化事件，只包含时间、固定阶段与错误类别、可选耗时和 HTTP 状态；覆盖配置、模型加载/下载、采集、OCR、隐私、队列、上传、心跳、随手记和支持导出。分类只看异常类型/错误码，不保存原始异常消息。HTTP 401/403 可定位认证阶段，超时、TLS、网络、存储错误分别标记；诊断失败不改变原本隐私和 ACK 条件。关闭后停止新增，旧事件保留；崩溃遗留的已退出进程临时诊断文件会清理。
-
-“导出安全支持包”含当前 profile/版本、采集与队列数值、非敏感配置开关、模型耗时、累计/最近数值诊断及固定事件。输出再次按白名单投影，排除截图、OCR、笔记、心情、窗口/设备名、设备 ID、节点/下载 URL、数据目录、令牌、审查策略、模型理由和原始错误。完整 1440 条数值轨迹另用“导出数值诊断”；有内容的队列备份是独立入口。
-
-可以显式选择电池供电暂停、低电量暂停（0 关闭）、JPEG 质量和截图分辨率。采样间隔、空闲阈值及文字规则审查也影响资源占用；旧 VLM 的线程和审查尺寸不影响当前截图路径。电量策略默认不启用；启用后若电量无法确认则保守暂停。保存设置时应用自动结束旧规则下的处理并应用新参数，保留原采集开停状态，避免同一帧混用不同策略。
-
-## 历史本地隐私模型接口
-
-以下为历史 HTTP 契约记录，相关无调用方审查工具已移除，当前采集器不支持此钩子。它不属于本次回归或当前配置入口。
-
-只接受 `localhost`、`127.0.0.1`、`::1`，不允许跳转到其他地址。HTTP 请求最长 15 秒，不附带中央节点令牌：
-
-```http
-POST http://127.0.0.1:8787/review
-Content-Type: application/json
-```
-
-```json
-{
-  "version": 1,
-  "purpose": "privacy_review",
-  "imageMime": "image/jpeg",
-  "imageBase64": "经过固定区域遮挡的 JPEG base64"
-}
-```
-
-响应必须同时含布尔 `allow` 与 `rectangles` 数组（无额外区域也必须返回空数组）：
-
-```json
-{ "allow": true, "rectangles": [{ "x": 0.2, "y": 0.1, "width": 0.4, "height": 0.1 }] }
-```
-
-`allow: false` 表示丢弃整张截图。所有矩形须合法且不能超出画面，最多 100 个。回环地址只约束采集器发往何处；应确保所接入服务自身使用本地模型、不会继续转发原图到云端，并按需关闭模型日志。
-
-## 队列、断网和迁移
-
-默认队列限制为 512 MiB / 10,000 条观测，两个上限先到即停止采集。没有覆盖最旧记录的静默丢弃。重新联网后按上传策略处理待传记录；仅手动模式需显式触发。容量恢复后需手动重新开始采集。
-
-队列默认位于 Electron `userData` 下，macOS 开发环境通常为 `~/Library/Application Support/@mote/desktop`，打包后可能为 `~/Library/Application Support/Mote Collector`。可在“采集与存储”中选择图片队列位置，应用搬移当前格式的图片、记录及上传重试状态；以设置显示的当前位置为准。配置、令牌、模型和笔记草稿仍留在固定 profile 目录。详细操作见 [设置与图片位置](client-settings-and-storage.md)。默认目录结构如下：
-
-```text
-storage-format.json          # 当前桌面存储格式 4
-config.json                 # 格式 4 设备配置与 Keychain 加密的令牌
-notes/draft.json             # 原生随手记草稿、已准备的稳定提交与完成标记
-local-sources/              # 显式日历/文件来源配置及按连接隔离的持久版本队列
-diagnostics/diagnostics.json # 可选、有界数值诊断
-diagnostics/events.0.ndjson  # 当前固定阶段事件日志，按大小轮转
-queue/
-  events/<event-uuid>.json   # 不变的 observation、图像 hash、重试状态
-  blobs/<sha256>.jpg        # 已脱敏图像，同内容只存一份
-```
-
-文件夹权限为 0700，文件为 0600。本机截图、随手记、来源正文和原件以原样普通字节存储，已移除本机内容 AES 开关、旧密文读取及批量转换工具；凭据继续使用系统 safeStorage 加密。需要保护本机磁盘内容时可使用 FileVault 或加密磁盘。中央节点的可选 AES 内容存储是独立当前能力。安全存储不可用时拒绝保存明文令牌；不把个人数据或令牌写入源码、日志、崩溃提示。
-
-每次采样都有独立 UUID。即使图像内容相同，仍保留每次 observation 以支持时间统计；图像按 SHA-256 去重。上传失败保持相同 ID、时间、元数据与图像。只有 HTTP 200/201 且返回 ID 匹配才移除对应本地事件，最后一个引用移除后删除图像。失败重试从约 2 秒起指数退避并加入抖动，最长约 18 分钟，退避状态写入磁盘。界面显示上传错误、下次重试和队列深度，可手动立即重试。
-
-小队列可从界面导出/导入专用 JSON 备份，含图像 hash 校验和，不含访问令牌。导入前先检查全部记录；相同内容 ID 去重，冲突拒绝。为控制内存，导出仅支持至多 256 MiB 队列；大队列应退出应用后复制整个 `queue` 目录。导入完成后按上传策略发送到当前配置中央节点。电脑端队列备份仅接受当前版本 4；与中央仓库导出格式不同，不能互换；中央仓库完整迁移见服务端文档。
-
-导出先写入同目录的临时文件，再提交到所选位置。停用插件的取消先于提交时，临时文件清理，已有目标文件保持不变；提交开始后不能再取消，界面按实际写入结果报告成功或失败。后台进程异常退出时，不能仅凭取消状态判断目标文件是否已写入，应先检查所选位置。
-
-进程被杀后，下次启动会恢复完整事件、清理未完成临时文件和孤立图像。遇到已提交事件或图像损坏时启动失败，保留损坏记录供人工备份恢复，避免静默丢失。新机器上不要依赖复制后的 Keychain 密文可解密，应复制队列并重新配置令牌。设备 UUID 随原队列事件保留，已有观测不会因迁移改写来源。
-
-## 历史 0.3.0 验证范围
-
-0.3.0 当时执行 63 个桌面单元测试、TypeScript/Swift/C++ 构建、0.3.0 `.app` 打包及 `codesign --verify --deep --strict`。原生 Electron profile fixture 同时启动 dev/test 两个进程，各自通过 IPC 保存合成凭据/随手记/草稿，实际 loopback HTTP 401 后保留队列，导出支持包，再重启两个进程验证设备 ID、凭据、草稿、队列与 session 路径独立稳定。支持包逐项检查没有合成私密原文、令牌、URL、策略、设备 ID 或目录。整个测试没有开始截图、下载模型或调用真实模型。
-
-```sh
-npm run test:profiles -w @mote/desktop
-```
-
-此命令只创建临时 fixture 根目录和临时 HTTP 拒绝服务，完成后清理。另完成真实 Electron 控制台 smoke：配置保存、无图随手记入队、profile/实际目录显示、保持停止状态，未读取已有用户目录。跨平台类型与持久化逻辑有测试，但本轮真实环境仍仅 Apple Silicon Mac，没有新增 Intel、Windows、Linux 或实体安卓手机验证。
-
-## 历史采集链路验证
-
-最终打包后的 ASAR 模块及随 App 分发的原生 helper 已用生成白图实际运行千问通过（0.2.1 的 CPU 合成白图约 4.7 秒）；ad-hoc 签名通过 `codesign --verify --deep --strict`。编译最低 macOS 13.3 是部署目标，未在 13.3 旧系统或 Intel Mac 实测。
-
-原生随手记另已对独立合成中央节点通过「草稿落盘 → 模拟入队后中断 → 重建草稿存储 → 相同事件重试 → 服务器重复 ACK → 清空本地队列」验证，无占位图片。可复现命令：
-
-```sh
-MOTE_FIXTURE_SERVER=http://127.0.0.1:47835 MOTE_FIXTURE_TOKEN='<测试节点令牌>' node apps/desktop/scripts/note-fixture.cjs
-```
-
-
-此前执行：57 个桌面单元测试、TypeScript/Swift/C++ 编译、真实 Electron 控制台和中央窗口 smoke；中央窗口验证主进程注入认证、禁止外域、隔离 Node、关窗重开保留草稿以及节点存储隔离。真实 Qwen CPU 对 Android/Mac 共用生成图连续推理及强杀恢复通过：两次均 `allow:true`，本轮 Mac 冷启动约 5.4 秒、暖约 4.5 秒。这是功能性 live-model fixture 验证，不是 NSFW 准确率评测，也未采集用户真实屏幕。
-
-```sh
-npm run test:central -w @mote/desktop
-# 历史 test:vision / models:download 已移除，不再是当前验收入口。
-```
-
-当前 `test:central` 运行轻量 `showCentral → Fastify → Web session` 消费合同和浏览器 URL 合同，覆盖固定节点、凭据不进入 URL、一次性/过期票据、共享退出及失败后重试。上面的内嵌中央窗口记录仅描述历史验证；其实现、专用 preload 和 smoke 已退役。需要检查实际浏览器渲染时，构建 Central 与 Desktop 后手动选择 `npx electron scripts/test-web-login.cjs`；该脚本使用隐藏窗口、生成资料及临时 loopback Central，不证明真实 Chrome 或系统授权行为。
-
-
-自动化使用生成的像素/协议 fixture，不读取用户真实屏幕，不启动采集。运行：
-
-```sh
-npm run typecheck -w @mote/desktop
-npm run test -w @mote/desktop
-npm run build -w @mote/desktop
-```
-
-`npm run test:ui -w @mote/desktop` 用独立的生成配置启动真实 Electron 窗口，验证渲染、preload IPC、保存配置、无图随手记入队和保持停止状态，并在 `apps/desktop/release/ui-fixture.png` 输出本应用生成界面的截图。此测试不会调用屏幕采集 API，不读取已有用户配置。
-
-还可对已经启动的本机测试中央节点运行真正 Electron 图像处理 + Apple Vision + 队列 + HTTP 上传验证，只使用程序生成的图片，不申请或调用屏幕采集：
-
-```sh
-MOTE_FIXTURE_SERVER=http://127.0.0.1:47834 MOTE_FIXTURE_TOKEN='<测试节点令牌>' npm run test:fixture -w @mote/desktop
-```
-
-该测试验证遮挡区文字不再进入 OCR、可见测试标题仍可识别、两条观测复用一份图像、ACK 后队列清空以及同 ID 重传幂等。本次已在 macOS 上对生成图与本机中央节点执行通过；它不代表真实用户屏幕采集验证。
-
-本轮额外使用完全虚构的多段中文日记、后续更正、组合 emoji、ZWJ、组合重音、JSON/HTML 字面量，以及正文 20,000 / 心情 80 个 UTF-16 字符位边界进行多轮验证。正文不做归一化或截断，空格和原始编码保持不变。超限时保留编辑内容并在正文旁显示可修正的错误；输入法组合阶段不会误提交。已修复合法长草稿经 JSON 转义后无法恢复的问题，并在正常退出前等待已接收的草稿和提交写入完成。突然断电或强杀仍只能恢复最后一次已持久化的内容。
-
-真实 Electron 进程已完成「DOM 输入后立即退出 → 新进程恢复 → 三条无令牌离线入队 → 中央已接收但返回错误确认 ID → 再次退出重建 → 同 ID 重试 → 精确原文比对」；同时通过合成 HTTP 服务验证接收后断连、错误 ID、无效 JSON 的确认故障。测试不申请或调用屏幕采集。独立复杂输入 UI 测试可用：
-
-```sh
-# 在仓库根目录先完成 build；以下命令从 apps/desktop 目录执行。
-../../node_modules/.bin/electron scripts/complex-ui-smoke.cjs
-
-# 在 ignored 私有文件中配置本机测试中央地址与访问令牌：{"url":"http://127.0.0.1:<port>","token":"..."}
-MOTE_COMPLEX_CONNECTION=/absolute/private/connection.json node scripts/complex-app-driver.cjs
-# 节点重启中断时，使用上次输出的 statePath 保留原 ID 继续尚未完成的阶段。
-MOTE_COMPLEX_RESUME=/absolute/private/run-fixture.json node scripts/complex-app-driver.cjs
-```
-
-2026-09-13 已从真实 App 内选择合成设备并调用中央配置的 `deepseek-flash`：日记更正问题正确回答周五 10:30、林舟、只检查图表和注释，并区分取消的安排、引文中的伪指令与非实测时间；点击行内来源打开匹配 ID 的完整原文。长文问题早期返回 HTTP 502 模型格式错误，保留失败响应后在新版中央复测通过：约 5.45 秒、3 次只读工具调用，使用 offset 18000 / length 2000 读取末尾，准确回答校验事实；唯一行内来源打开的 ID 与完整 20,000 字符位原文匹配。期间有一次测试脚本挂起尚未发模型请求，不计为模型失败；脚本现已记录 fetch 确认与异常，并为单次 UI 调用设置短超时。这些合成问答不能替代真实个人资料的效果评估。
-
-中央内嵌窗口还用延迟响应和 HTTP 502 合成故障验证：用户切换查询时间范围时中止旧请求，忽略迟到的旧答案；切换设备后清除旧答案；失败保留问题，点击重试仍使用原设备、范围和浏览器时区。另外连续 10 轮快速切换设备后立即提交，验证新范围请求不会被误取消。此故障注入不调用模型。实际模型问答与它分开运行：
-
-```sh
-# 同样从 apps/desktop 执行，STATE 必须是上述脚本生成的 statePath。
-MOTE_COMPLEX_STATE=/absolute/private/run-fixture.json MOTE_COMPLEX_PHASE=query-ui ../../node_modules/.bin/electron scripts/complex-app-phase.cjs
-# 需要测试中央配置真实模型；在真实界面选择该合成设备，然后串行提问并核对行内来源与完整原文。
-MOTE_COMPLEX_STATE=/absolute/private/run-fixture.json MOTE_COMPLEX_PHASE=query ../../node_modules/.bin/electron scripts/complex-app-phase.cjs
-```
-
-该链路默认将生成配置和测试状态保存在 ignored 的 `.mote/live-validation/desktop`；令牌仅从私有连接文件读取，真实 App 配置使用系统安全存储加密。它会向明确配置的本机测试中央写入三条合成随手记；不要指向已有个人使用的节点。生产应用不会自动执行这些脚本。
-
-覆盖：精确应用过滤、可见窗口排除决策、矩形边界、本地审查失败关闭、TLS/令牌配置、队列并发与容量、进程重建恢复、图像去重但观测保留、幂等冲突、ACK 身份校验、持久重试、导入校验以及损坏后保留数据。Swift 编译验证不等于真实屏幕授权或真实截图验证。
-
-需要用户授权后完成的 macOS 实机验收：
-
-- 首次屏幕权限申请、拒绝、撤销、授权后重启。
-- 主屏截图与排除窗口（含分屏/叠放窗口）的实际过滤、显示器切换和 Retina 比例。
-- 固定区域/本地模型区域遮挡，以及遮挡后中英文 OCR 的真实效果。
-- 锁屏、休眠、空闲与恢复，菜单栏停止/退出、登录启动。
-- 断网入队、强制终止后恢复、真实中央节点幂等上传和磁盘满。
-
-上述真实屏幕采集、真实个人数据上传与真实使用场景的过滤准确率尚未验证。已通过的实际千问推理只针对合成图片，不可替代这些验收。
-
-
-## 按应用配置与元数据
-
-「未单独配置的应用」默认只选择应用时长，时长、截图和结构化内容使用三个独立复选框。列表显示应用名称、已选采集项、默认继承或单独设置及规则状态，右侧详情集中调整采集项和查看规则。可筛选单独设置、有字段规则或需要处理的应用；找不到应用时仍可在高级入口填写精确 Bundle ID。配置字段仍为 `defaultCollection`、`appCollectionRules` 与 `metadataEnabled`，不按应用名称或内容猜测采集范围。
-
-- **应用时长**：记录实测前台应用活动，上传独立的 `source:activity` 记录。前台身份未知则不记录；只选择此项不请求截图或页面文字。
-- **截图**：画面中所有应用均允许截图且身份可确认时，执行隐私过滤、固定区域遮挡及已配置的文字规则审查，再保存图片。未选择截图时，结构化提取失败不会触发截图保存。
-- **结构化内容**：通过平台当前使用的读取路径提取可见字段，规则及具体条件见[页面采集](ui-page-capture.md)。规则存在、安装版本匹配与实际页面匹配分别展示，不能据此宣称全文或真机覆盖。
-
-三项全部取消表示不采集该应用。恢复「沿用默认」会移除该应用的单独设置，应用以后随默认范围变化；载入字段规则不改变任何采集项。
-
-应用切换、采集级别切换、跳过样本、锁屏、休眠、停止或重新开始都会打断计时。首次样本时长为 0，后续同应用同级别只累计最多一个配置间隔；它是采样估计，不是精确的键鼠工作时长。完整内容权限缺失只暂停该分支，下一次明确设置为仅活动的应用仍可记录。权限按钮单独调用 [Apple CGRequestScreenCaptureAccess](https://developer.apple.com/documentation/coregraphics/cgrequestscreencaptureaccess()) 后打开系统设置，不通过试拍一张屏幕触发授权；测试没有实际触发本机授权弹窗。
-
-「上传设备与采样元数据」默认开启，可用于截图、活动、心跳和随手记。关闭后新记录不附元数据，基本应用/时间/时长仍保留。Mac 当前上报可实际取得的采集器版本、系统版本/build、Apple 型号、架构、语言时区、设备电量/供电、低电量模式、温度级别、系统空闲秒数、锁屏状态和当前队列磁盘可用字节数。完整内容还可带采样间隔、图像尺寸、显示缩放、中央 OCR 状态、遮挡数量；活动的采样参数只有间隔。未取得的字段省略，不假定值；当前没有上报网络类型、计费网络或屏幕交互状态，也不采集序列号、SSID、硬件唯一号、位置。这些元数据不是 Mote 专属耗电归因。随手记在准备提交时采样一次，崩溃重试保留完全相同的元数据。
-
-规则与元数据开关只影响后续新采样；此前已经入队的记录保留原字节和原策略，并继续重试上传，不会被暗中删除或重写。若旧队列含不再想上传的内容，应停止程序并先备份、处理队列。文字来源使用独立的来源过滤设置，文件/日历时间元数据不受设备元数据开关控制。
-
-文件来源新增大小、文件系统创建时间（可用时）、修改时间、访问时间、元数据改变时间；`modifiedAt` 仍表示文件系统 mtime。创建时间不能用 ctime 代替：按 [Node Stat 时间说明](https://nodejs.org/api/fs.html#stat-time-values)，不支持 birthtime 的文件系统可能回填 ctime 或 epoch；Mote 对两者相同、零值或无效值省略创建时间，即使真实创建恰好相同也宁可不报告。日历另保留 EventKit 提供的创建/更新时间，与日程发生时间分开。
-
-访问时间采用读取前的文件系统 atime。读取本身可能改变 atime，它不能证明用户查阅、编辑或执行了文件。每个来源在 `local-sources/access-markers/` 持久化本次读取后 atime 与文件身份；下轮身份/大小/mtime/ctime 稳定且读前 atime 正好等于本程序上次读后值时，复用旧上报值，防止自身扫描无限产生版本。发现外部变化则保留新元数据版本；不修改原文件时间戳。异常断电发生在文件读取和标记保存之间，可能多出一次访问时间版本；其他进程的读取也可能改变时间，无法判断读取者。文件系统在读取期间改变大小、mtime 或 ctime 时，本次扫描视为不完整并跳过不稳定文件。
-
-明确开启删除跟踪时，只在完整成功扫描发现项目消失后添加 `deletionObservedAt`，表示 Mote 发现消失的时间，不声称实际删除发生时刻；保留最后已知 mtime。元数据变化使用同一持久版本链，ACK 后清除，删除/恢复也不会复用旧版本号。
-
-历史验收记录（下文 0.7.0 测试、打包和升级读取均非本次结果；当前脚本已使用格式 4，并验证旧格式拒绝）：
-
-0.7.0 本轮桌面 **136 项回归通过**；TypeScript 与 Swift 助手已编译。新的纯 Swift 窗口策略 fixture 用生成窗口描述确认未知普通/浮动/负层窗口与缺失 PID 都阻止内容采样，透明或屏外窗口不参与。独立 Electron UI fixture 验证默认级别、按应用下拉规则、元数据开关保存与原生 IPC；采集保持停止，仅使用生成笔记和临时文件。实际本机中央对接验证活动事件无图片/OCR、ACK 丢失后重建重传、元数据逐字段回读、心跳元数据、文件纯元数据变更的新版本、自身读取不产生新版本与删除观察时间；未读取个人屏幕或日历。
-
-```sh
-npm run test -w @mote/desktop
-node apps/desktop/scripts/window-identity-smoke.mjs
-node_modules/.bin/electron apps/desktop/scripts/ui-smoke.cjs
-# 专用合成节点配置文件须含 generatedOnly:true、serverUrl、token；令牌只从私有文件读取：
-node apps/desktop/scripts/graded-metadata-smoke.cjs /private/path/generated-node.json /private/path/result.json
-```
-
-真实屏幕授权弹窗、不同 macOS 窗口组合、未知系统窗口是否造成保守暂停，以及实体设备上的电量/热状态变化仍需用户实机验收。本轮没有截取个人屏幕、读取真实日历或开展模型准确率评测。
-
-
-0.7.0 本地打包补充验收：已通过既定 `mac-package.mjs` 生成 arm64 ad-hoc ZIP，大小 **113,123,477 字节**，SHA-256 `325240aa050e416a3eb8d66be06cc67d4b5f6cb1c71fc945157182f90c98c08c`。`codesign --verify --deep --strict`、Bundle ID/版本/架构、ZIP 安全布局和包内更新助手身份检查通过。使用该包自己的 Electron 可执行文件（`ELECTRON_RUN_AS_NODE=1`，不启动正常 App）实际加载包内 `@mote/shared/metadata`、严格 schema 与活动队列；ASAR 包含 metadata 和 Zod 依赖，包内 Swift 助手已链接新的窗口身份策略，并实际解码生成二维码。
-
-兼容验收从此前已验证的公开 0.6.1 包加载真实旧版配置/队列/草稿模块，仅让这些模块写入合成资料，再使用新包读取：设备 ID、模拟加密令牌、旧排除与遮挡配置、旧队列文件字节、未完成草稿/提交 ID 保留；默认级别迁移为完整内容且开启元数据；已准备笔记重试不重复记录、不重新采样元数据，合成模型占位文件不变。测试脚本为 `apps/desktop/scripts/packaged-metadata-smoke.cjs`。此项验证没有使用真实 Keychain、替换日常 App、运行千问或读取屏幕/日历；没有验证 Apple Developer ID、公证或 Gatekeeper 放行。以上是本地包结果，正式 CI 重建包以签名清单为准。
-
-
-## 2026-10-04 本次清理验证
-
-完整桌面 53 个测试文件、388 项 fixture 回归通过；TypeScript、界面资源、固定 C++ 千问助手、Swift 采集/更新助手和图标完整构建通过。真实 Electron dev/test 临时 profile 验证了当前协议连接、系统加密凭据、停止采集、离线笔记队列、设备与草稿重启，以及 profile 隔离；内容 UI fixture 验证普通字节写入与旧加密控件移除。全部使用生成资料和临时目录，没有读取真实用户存储、采集个人屏幕、调用真实模型或操作日常安装。上述历史真实模型与打包验收没有在本次重复执行。
+Diagnostics expose actual queue/state, safe counters and measured main-process usage, not whole-app energy. [Troubleshooting](troubleshooting.md) covers logs/support bundles. Focused tests and hidden-UI limits are in [Desktop AGENTS](../apps/desktop/AGENTS.md) and the [runbook](testing-runbook.md); historical pass counts are not current verification.

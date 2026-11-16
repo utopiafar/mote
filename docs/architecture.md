@@ -1,101 +1,61 @@
-# Mote 架构
+# Current architecture map
 
-Current direction (2026-10-23): [single-owner MVP](adr-single-owner-mvp.md). Earlier dated validation does not qualify this recovery.
-任务期限与失败恢复的目标原则见 [2026-10-15 ADR](adr-task-recovery-and-execution-budgets.md)：每种任务在开发和注册时声明自身的宽松默认超时策略，不统一套用 600 秒；资源等待、模型反馈修正、实际失败和结果未知分别处理。中央注册策略与具体默认值见[任务执行策略](task-execution-policies.md)；部署与验证范围单独记录。
+**English** · [简体中文](architecture.zh-CN.md)
 
-问答覆盖、无字符近似配额的正常分页、录音语料时间与规范正文，以及质量对照和实际恢复边界，以[2026-10-14简化决定](adr-ask-evidence-quality-and-simple-context.md)为准。Memory不再自动二分恢复，历史验证与已固定记录仍保留各自日期和身份。
+These responsibility groups map current code. [Product](product.md) and [Design](design.md) describe the long-term direction.
 
-Mote 是 AI-native 的个人上下文采集器与中央归档。当前实现采用单一 MVP 基线：Central 存储 epoch 7，Desktop / Android 本机格式 4，不安装旧库迁移器。产品版本、wire protocol 1、collector Ingress 2、便携归档 v2 各自独立，见 [MVP 基线决策](adr-mvp-baseline.md)。
-
-导入说明是确切新增原件的宿主背景，不是整份来源的身份分类。个人 v5 保留 v4 的声明、日记主叙述者、时间框架与续文解释，并组合范围评估与模型择要；真实身份未知时仍保留有限观察。新 Memory 任务区分产出目标与同一任务的已授权解释范围，提取和独立审核模型可按具体缺口补读原件。实际披露范围提供精确引用资格并保留阶段依赖；未读许可不成为本批上下文依赖，另一未读原件的变化不撤出独立目标。Ask 逐事实核对主体和时间。版本与旧任务边界见[上下文读取 ADR](adr-memory-context-reading.md)，v3 固定定义见[有限个人 Memory ADR](adr-bounded-personal-memory.md)。
-
-新的 `range-evaluation@1` 配方及新建的未指定配方独立审核任务保留完整原件，逐授权范围评估并独立审核，由模型选取有用 Memory；完成不承诺列出全部有用事实。未读、截断或未完成评估的范围保持未完成。显式旧配方/收据仍保留固定身份和输出合同，但宿主对所有任务取消自动二分；实际容量失败保留原范围，明确临时传输故障复用共享执行器的有界重试。见[范围评估 ADR](adr-memory-range-evaluation.md)与[简化决定](adr-ask-evidence-quality-and-simple-context.md)。
-
-Android 文件任务另有选填来源说明：所有者原文以私有版本化元信息保存，当前版本作用于已有和未来资料，单份归属纠正保留。模型通过只读来源目录与上下文读取说明，语义产物和对话记录实际读取的版本；修改会撤出旧当前结论并拒绝迟到提交，原件及 ASR/OCR 保留，历史收费处理由用户明确重试。它与 Web 导入批次的冻结说明范围不同，见[文件任务与来源说明 ADR](adr-file-source-context.md)。
+Central owns the shared archive, processing and retrieval, and submitted conversation, task and action state. Clients own local collection, privacy processing, offline persistence and synchronization, and authorized device capabilities.
 
 ```mermaid
 flowchart LR
-  C[Android / macOS 采集与隐私规则] --> Q[本机持久队列 / 原件快照]
-  Q --> I[Ingress 2 / 幂等确认]
-  S[连接器 / 来源 / 显式导入] --> I
-  I --> R[原件与来源版本]
-  R --> M[正式资料 Material / 不可变修订]
-  R --> P[OCR / ASR / 文件解码]
-  P --> M
-  M --> E[只读 EvidenceReader / ArchiveReader]
-  M --> W[获授权的滚动 Memory 提取与独立审核]
-  W --> E
-  E <--> A[Agent / 持久委派 / 模型]
-  A --> U[网页 / 原生中央窗口 / 回答与洞察]
-  X[ExecutionEngine / 租约 / 检查点] --- P
-  X --- W
-  X --- A
+  I[Collection and intake] --> A[Archive and processing]
+  A --> R[Original and memory retrieval]
+  R --> P[Applications and agents]
+  P --> X[Authorized actions]
+  X --> P
 ```
 
-中央当前系统配置统一为私有 `mote.yaml` 与 Cordis 生命周期中的 ConfigService：网页和文件编辑共用校验、revision、准备和应用事务。业务数据库、不可变 Memory 策略与历史授权、任务配置快照、设备本地隐私仍属于各领域。热更新与需重启/迁移字段明确区分，见 [统一配置 ADR](adr-unified-configuration.md) 和 [配置归属](configuration-ownership.md)。
+Material can be retrieved directly while Memory and interpretations are produced under authorization. Plugins, models, configuration, execution and diagnostics support the entire path.
 
-## 代码目录与责任
+## Responsibilities and entry points
 
-| 目录 | 当前责任 |
+| Responsibility | Current content | Code entry points |
+| --- | --- | --- |
+| Collection and intake | Mac / Android collection, explicit records, source synchronization and Central intake | [desktop](../apps/desktop), [android](../apps/android), [ingress.ts](../apps/server/src/ingress.ts), [sources.ts](../apps/server/src/sources.ts) |
+| Archive and processing | Originals and versions, Material, decoding, image and audio processing | [materials.ts](../apps/server/src/materials.ts), [evidence-archive.ts](../apps/server/src/evidence-archive.ts), [plugins](../apps/server/src/plugins) |
+| Memory and retrieval | Memory extraction, review and publication; material, memory and original reads | [memory-pipeline.ts](../apps/server/src/memory-pipeline.ts), [context-query.ts](../apps/server/src/context-query.ts), [evidence-reader.ts](../apps/server/src/evidence-reader.ts), [agent](../packages/agent) |
+| Assistant applications | Main conversation, tasks, matters, suggestions, feedback and notifications | [web](../apps/web), [assistant-tasks.ts](../apps/server/src/assistant-tasks.ts), [assistant-notifications.ts](../apps/server/src/assistant-notifications.ts) |
+| Action execution | Connected Todo, calendar and messaging product commands, authorization, targets and results | [assistant-actions.ts](../apps/server/src/assistant-actions.ts), [assistant-drafts.ts](../apps/server/src/assistant-drafts.ts), [actions.ts](../apps/server/src/actions.ts) |
+| Shared foundations | Plugin contracts and host, models, configuration, execution, shared types and diagnostics | [plugin-sdk](../packages/plugin-sdk), [plugin-host](../packages/plugin-host), [plugin-api](../packages/plugin-api), [model-agent.ts](../apps/server/src/model-agent.ts), [execution-engine.ts](../apps/server/src/execution-engine.ts), [shared](../packages/shared), [diagnostics](../packages/diagnostics) |
+
+[host.ts](../apps/server/src/host.ts) is the Central composition root. Existing assembly, features and plugins connect domains. Extensions reuse the existing SDK, models and task infrastructure. Interfaces and implementation evolve with actual needs.
+
+## Technical foundations
+
+- Central uses Node.js / TypeScript and Fastify; Web uses React. Mac uses Electron and native helpers; Android uses a native Kotlin client.
+- The MVP defaults to SQLite and file archives, with FTS5 full-text search and optional semantic retrieval. Keep originals, published Memory and task state distinct from rebuildable indexes, retaining the existing storage and retrieval extension boundaries.
+- Runtime adapters connect DSH and Codex under the same Mote context and authorization principles. DSH ecosystem compatibility prioritizes unchanged packages, followed by general configuration and composition adapters. Native applications may retain internal sessions and workflows, with Mote connecting authorized context, visible state and artifacts.
+- Plugins use the existing Cordis, PluginHost and SDK. Composition depends on actual platform support and dependencies; new OS primitives ship with client builds.
+
+## Current boundaries
+
+- Central, macOS and Android are formally supported. iOS has an experimental client outside the formal support matrix.
+- Originals, structured material, Memory, conversations and task state are distinct. Receipt does not establish parsing, indexing or Memory completion.
+- Queries, Memory and insights currently use read-only context tools. Product commands and Actions perform external effects. Dedicated runtimes such as import have their own tool boundaries.
+- A module or request selects its model configuration. Central stores metadata, indexes and archives, with source identity, versions and current permissions controlling reads and publication.
+
+## Product direction and implementation gaps
+
+| Product direction | Current implementation and gap |
 | --- | --- |
-| `apps/server` | Fastify Central、来源接入、存储、Material、处理与执行器、委派、Memory、权限和查询 |
-| `apps/web` | Central 网页；随 server 发布，展示资料、问答、活动、设置与处理状态 |
-| `apps/desktop` | Electron macOS 采集器、Swift 原生助手、本机隐私审查、持久队列及来源原件上传 |
-| `apps/android` | Kotlin 平台采集、ML Kit 可选文字规则审查、本机队列、来源与同步 |
-| `apps/ios` | SwiftUI 实验客户端；不进入正式支持矩阵 |
-| `packages/shared` | TypeScript 数据/协议契约、国际化、发布验证及公共工具 |
-| `packages/agent` | DeepSeek Harness / Codex 适配、只读工具桥、上下文装配和运行时 Skills |
-| `packages/diagnostics` | 有界数值诊断、固定事件与支持包 |
-| `protocol` | 跨平台 wire 契约和共享生成 fixture |
-| `plugins`、`adapters`、`examples` | 已有宿主契约上的来源、UI 与连接器扩展示例 |
-| `scripts`、`deploy`、`.github`、`release` | 合成验证、环境/备份/构建、部署与组件发布 |
-| `docs`、`licenses` | 当前指南、ADR、带日期的验证证据和依赖许可证 |
+| Main conversation, background tasks and authorized actions | The main conversation still uses read-only queries and action drafts, with messages queued per conversation. Codex already uses steering for image evidence; user guidance, unified actions and background integration still need wiring. |
+| Notification delivery | The current MVP retains Android polling while the app process is alive, without background push. Online presentation does not establish timely delivery while the phone is idle. |
+| Default retention and synchronization | The shared source schema still defaults to snapshot. Central's 10 GiB, Mac's 512 MiB/10,000-event and Android's 256 MiB limits, plus acknowledgement/7-day cleanup, still differ from the long-term retention direction. Pending uploads after scope narrowing also need adjustment. |
+| Memory use and lifecycle | Replace mandatory independent review with review chosen by the model or selected memory implementation, without handcrafted semantic routing. Distinguish memory use from original quotation. Preserving valid memory after expiry and processing paused backlogs still need work. Align context and clarification with reasonable judgments, subject/provenance retention and fewer interruptions. |
+| DSH ecosystem compatibility | Native package, Hook and Factory composition interfaces exist, but the current [official DSH runtime](../packages/agent/src/runtime/dsh/provider.ts) declares query tasks only. Verify complete agents, native pages and persistent applications with actual plugins. |
+| Coding dialogue coverage | The current conversation projection admits human messages and protocol-confirmed final replies only. The confirmed visible-intermediate-text direction still needs integration, without opening tool bodies or internal reasoning. |
+| Execution and extensions | Generic batch processing and older delegation coexist. Reuse task foundations and consolidate duplicate state progressively as real work requires. MVP interfaces may evolve without blanket host, delegation or interface freezes. |
 
-退役的 `packages/local-inference`、`models` 与端侧 Qwen 启动/下载工具已删除。中央 OCR/ASR 模型由 `media-assets.ts` 与 Worker 安装流程管理，不依赖端侧 Qwen。
+Update this map as implementation changes. Keep necessary short references for protocols, the plugin SDK, configuration, deployment and verification; code and schemas own concrete interfaces.
 
-## 接入、原件与正式资料
-
-客户端独立采集，Central 不远程开启屏幕采集。应用规则、遮罩和用户指定的文字隐私规则在本机处理；只有开启文字审查且规则非空时调用本机 OCR。Central 模型不参与接入授权。来源适配器提供协议身份、原文、可靠时间和稳定版本，不用语义关键词推断主题或用户意图。
-
-接入事务保存原件和版本并返回 Ingress 2 回执，确认只证明输入可恢复。普通来源保存观察/来源版本；Coding 原始事件写私有 `source-archive` 批次和清单，经声明的 recipe 发布 schema 6 的干净对话 Material。过程、工具、推理、未确认发言和超长消息在模型曝光前排除，并保留 fidelity 说明。来源发布、理解与 Memory 完成是分别可见的状态。
-
-`capturedAt` 是观察时间，`receivedAt` 是首次接收时间，journal 游标是到达/变化顺序。文档另保留 `recordedAt / occurredAt / timeBasis`；没有可靠发生时间时不以上传日期代替。重试相同身份和字节；冲突不会覆盖原版本。
-
-原件统一使用 `files/objects/<sha256>/<part>.plain|.aes`，每片最多 4 MiB，引用与 pin 控制 GC。SQLite 保存元数据、来源状态、索引和执行记录；Coding 原始正文在 `source-archive/`。中央内容加密默认关闭，启用后只保护内容对象及明确的私有载荷，不等于整个 SQLite 加密。客户端格式 4 内容原样存放于应用私有目录，凭据仍使用系统安全存储。
-
-图片默认绑定中央本地 OCR 策略；图片理解是独立的模型阶段，由当前方案、授权与模型可用性控制。Agent 读取原图另受披露开关与范围约束。音频默认本地 ASR 与匿名说话人分离；模型和 Worker 未就绪时保留原件并等待。文件快照索引单独保存，处理结果不改写接入时的原始回执。
-
-截图和 Android v2 页面字段的自动 Memory 凭据由统一采集接收入口在原件事务中登记。
-页面沿用独立的原文资料组织器，以就绪 `source-body` 进入现有分批提取与审核流程；
-`visible_window` 部分覆盖及按需原文查询保留。详见
-[页面自动 Memory](adr-ui-page-automatic-memory.md)。
-
-截图和页面另有按原件身份组织的事件资料，以 `daily-events` 输入进入独立日常事件
-提取和审核策略。事件保存为可按天检索的 observation，保留状态、说话者、采集时间
-和原件证据；截图/页面默认组合与一般来源默认、具体来源覆盖分开配置。详见
-[日常事件 ADR](adr-daily-event-memory.md)。
-
-## 执行与模型边界
-
-ExecutionEngine 负责并发、资源互斥、持久租约、输入版本、取消、超时、重试与提交 fence。当前任务中断可恢复成功检查点；删除、授权撤销和配置变化阻止晚到输出发布。没有每日调用、字符、token 或费用硬预算；实际用量和价格记录继续保留，未知用量不当作零费用。
-
-问答统一通过 DelegatedQueryRuns 和 DelegationRuntime，普通问题默认直接查证；模型可提交有界只读研究子任务，等待时释放模型槽，重启复用已完成子任务和 journal。普通就绪自动 Memory 按冻结的配方/授权合同结构装成有界滚动 package，直接交给现有 MemoryPipeline；需要语义规划或额外上下文时仍由模型决定。逐成员覆盖与独立审核决定长期记忆，模型语义结论不会由宿主关键词替代。新接收输入持续记录自动 Memory 授权，重复确认、派生更新和重启不产生新授权。可信前后台 lane 在同一执行器中准入，工具采用小原生核心与版本固定的按需能力目录；见 [本轮ADR](adr-system-refactor.md)。
-
-查询、理解、Memory 与洞察运行时仅提供宿主授予的只读上下文工具与 Skill。原文、OCR、元数据和模型产物都是证据，不能改变权限或系统指令。引用必须指向本轮实际读取且范围允许的原始片段；派生摘要不授予未读原文的引用权限。
-
-导入是独立运行时，可使用文件/shell 工具生成预览清单；宿主校验原件、版本、路径和用户确认后提交。日程建议的外部写入也由独立的用户授权与宿主队列处理，不向查询 Agent 开放写工具。
-
-## 产品与运维边界
-
-服务端的当前配置入口是 version 1 的主 `mote.yaml`；`MOTE_CONFIG_FILE` 只选择该文件，普通环境变量不覆盖 YAML。命名 profile 由 CLI 选择独立文件与目录；旧 `mote.env` / `MOTE_ENV_FILE` 不再作为配置来源。详见 [统一配置决策](adr-unified-configuration.md) 与 [配置说明](server-configuration.md)。
-
-Central 不设置 HTTP 请求次数额度，不按前台/同步接口划分频控，也不因上传、查询、导入、登录、原件读取或文件准备队列达到固定总数而拒绝新请求。积压任务由现有执行并发、取消和生命周期机制调度；用户配置的存储容量和上游实际限流仍适用，见 [请求准入决策](adr-central-request-admission.md)。
-
-Central 是单所有者仓库，server/web 同版本发布。首发正式支持 Central、macOS 与 Android；iOS 客户端是实验，不进入正式支持矩阵。Desktop 与 Android 是独立产品；连接时严格验证 wire 元数据、Ingress 和当前凭据能力，不用产品版本号猜权限。配对凭据授予采集与声明的仓库读取范围；管理员会话管理整个归档，独立 MCP scope 按授权约束来源读写。
-
-命名环境隔离配置、令牌、队列、目录与进程。默认绑定 loopback；远程部署使用 TLS 和强令牌。当前格式的队列位置迁移和同 epoch 备份恢复是显式功能，旧 epoch 库会保留并拒绝启动。日志和支持包只记录固定类别、数值与状态，不记录私人正文或凭据。
-
-扩展应复用宿主来源、recipe、processor、Material 与只读证据契约。更大存储、多租户、其他硬件或新模型运行时需要各自明确设计与验证，不能从现有接口推断已经支持。
-
-细节见 [正式资料](material-architecture.md)、[来源流水线](source-pipelines.md)、[执行器](execution-engine.md)、[委派与活动](delegation-and-activity.md)、[Memory](memory-lifecycle.md)、[部署](deployment.md) 和 [文档索引](README.md)。
-一条资料从接入到问答的逐步路径见 [资料生命周期](material-lifecycle.md)。
+Technical references: [material and sources](materials.md#publication-and-extension), [Memory](memory.md), [execution](agent-runtime.md#execution-state-and-recovery), [protocol](protocol.md), [configuration](server-configuration.md), [content storage](content-storage.md).

@@ -1,436 +1,48 @@
-# Android 采集端
+# Android client
 
-2026-10-25：导航、默认首页及页面职责已由 [UI IA v1](adr-ui-ia-v1.md) 更新。下文更早的导航描述保留为历史；视觉、原生行为与采集安全边界继续适用。
+Android uses native Kotlin (`minSdk 29`, `targetSdk 36`) for local capture, privacy, persistence and transport. Central is independent. Notes, selected files and permitted capture work without a node; connecting later does not change original identities or redirect an existing queue.
 
-2026-10-15：一级导航为「内容 / 问一问 / 来源 / 活动」，默认进入内容，明确深链与恢复页面优先；首页作为辅助入口保留。首页和统一「添加」入口并列提供同步文件夹、导入文件、记录屏幕和随手记。文件与笔记无需先配置屏幕采集；文件夹默认持续同步，单个文件默认一次导入，可明确选择后续修改也同步。来源管理可从主导航进入，活动呈现本机发送与中央工作，首页保留原有摘要；内容详情区分本机保存、中央接收与整理状态，连接、隐私与高级参数位于设置。结构、视觉与展示包决策见 [UI presentation ADR](adr-ui-presentation-packs.md)，采集、隐私与发送边界继续遵循 [行动优先 ADR](adr-client-action-first.md)。
+## Build and installation
 
-2026-10-13 反馈续迭代：采集开始 / 暂停与实际状态归入首页现有来源区，同步操作与连接状态归入首页现有同步区；设置直接承接配置、权限、插件与维护。整体采集和屏幕 / 应用活动的操作分别标明范围，保存设置不改变原开停意图。普通笔记等原文页采用实际来源标题和日期阅读说明，屏幕仍保留 Session / App 浏览。
-
-记录屏幕仍从“按应用配置”设置范围，首次开始先预览已保存范围。
-文章/商品按精确 App 版本轻量提取字段与可靠重叠，成功只保存字段、未取得必需字段才截图，
-中央组织和解释原文。详见 [页面采集](ui-page-capture.md) 与 [分工 ADR](adr-android-page-fields.md)。
-
-原生 Kotlin，`minSdk 29 / targetSdk 36`。中央节点是独立服务，Android 负责本机采集、隐私处理、持久保存和按策略同步（本机内容格式 4，原始字节保存）；首次使用无需节点。中央节点可运行在电脑、NAS 或服务器，待发资料已绑定的目标不能直接改投。桌面与 Android 共用 [protocol.md](protocol.md)。没有语义关键词分流、自动应用黑名单或任务识别逻辑。
-
-## 当前本机格式与回归（2026-10-04）
-
-本机设置、队列与记录备份采用格式 4。新安装写入完整设置和明确的节点归属；已有 Mote 数据缺少当前格式标记、设置缺字段或格式不匹配时明确拒绝，提示“本机数据格式已退役，请清除应用存储后重新设置。”不会读取旧 AES-GCM 内容、补写旧配置、自动迁移或删除旧数据。清除应用存储会丢失尚未归档的本机内容，需在升级前完成所需归档，并由用户明确操作。
-
-截图、事件、缩略图、来源、文件暂存、本机随手记草稿、扫描报告和待决定区使用原始 JSON/图片/文件字节，没有可选内容加密或批量解密工具。连接令牌、连接恢复文件、中央私有草稿和操作 ledger 仍单独使用 Keystore `SecretBox`；文件扩展名不改变这两类存储的边界。本机延迟 OCR 与 OCR 补上传已移除；本机原生 OCR 仍可用于当前隐私文字规则，完整截图 OCR 由中央生成。
-
-2026-10-04 本次清理验证：54 个 JVM 测试类、245 项测试全部通过（0 失败、0 错误、0 跳过）；instrumentation Kotlin 源码编译与 debug APK 构建通过。未运行模拟器或物理设备 instrumentation、真实模型或个人数据检查。下方历史验证不能视为本次重新执行。
-
-本次实测命令（工作目录 `apps/android`，固定 llama.cpp 依赖已准备）：
+Use JDK 17+, Android SDK 36 and the included Gradle wrapper. Put the SDK path in ignored `apps/android/local.properties`. The current APK needs no Qwen/llama.cpp, NDK, CMake or model-source preparation.
 
 ```sh
-./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:assembleDebug
+apps/android/gradlew -p apps/android :app:assembleDebug
+adb -s <dedicated-device-serial> install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## 历史离线与同步验证（2026-09-14）
+`debug` is the automation package `dev.mote.collector.test`; `development` is Mote Dev (`dev.mote.collector.dev`); `release` is `dev.mote.collector`. Build Dev with `:app:assembleDevelopment`. UIDs, identities, settings, drafts, permissions and WorkManager state are separate. Dev credentials use private files; Prod uses Keystore. Do not clear or uninstall a daily app to switch environments.
 
-开发 APK、开发测试 APK 与开发 JVM 测试构建通过；最终 **60 项 JVM 测试，0 失败、0 跳过**。新增覆盖同步时机、批量少量记录的最长等待、独立元数据期限、首次未绑定笔记的 ID 保留，以及来源元数据等待时间的持久化。
+Dev initially targets `http://127.0.0.1:47842` after explicit configuration. A dedicated emulator can use `adb -s <serial> reverse tcp:47842 tcp:47842`. Phone localhost is the phone. Production connections require HTTPS; see [connections](connections.md).
 
-在专用 `mote_fixture_api35` / API 35 的只读实例上，最终 **14 项 instrumentation 测试全部通过，0 跳过**（12.611 秒）：10 项本机加密保存/生成活动/首次目标绑定/手动无自动心跳/批量阈值与最长等待/定时发送/手动错误 ACK 与断连/来源错误 ACK/25 条边界最终心跳；3 项页面导航、原生数值与应用选择器及遮罩、预览；1 项加密笔记草稿重建。HTTP 只访问模拟器内的合成 loopback 服务。来源测试只向本机缓存写入生成记录，未读取实际日历或文件。
+## Capture and system entries
 
-7 张 UI 预览位于忽略构建目录 `apps/android/app/build/reports/navigation-ui/`：`overview.png`、`notes.png`、`sources.png`、`settings.png`、`capture-settings.png`、`sync-settings.png`、`privacy-settings.png`。预览来自本应用的 `View.draw(Canvas)`，只含生成测试状态；`FLAG_SECURE` 一直保留，没有读取设备屏幕。只读模拟器会话结束后丢弃测试改动，原 AVD 与日常安装保持原样。
+Choose app duration, screenshots and structured content independently, including any combination or none. Default app capture records duration only. Accessibility field rules do not enlarge app authorization. Structured content needs Accessibility; MediaProjection supports screenshots and duration. Starting/resuming returns to scope preview and needs a fresh projection grant where applicable. Permission alone does not start capture.
 
-本轮未执行真机、真实个人屏幕、真实日历/文件或实时模型检查；短时 fixture 不代表 OEM 后台运行、长期 WorkManager 调度或真实系统采集权限已验证。下方较早版本验证记录保留为历史证据，不能视为本轮重新执行。
+App rules, masks and optional OCR privacy rules run before persistence. Content OCR is a separate opt-in, default off. Without selected screenshots, temporary OCR pixels are released without persistence/upload. Central screenshot OCR is a separate product. Missing field extraction does not silently turn screenshots on.
 
-## 首页与系统入口
+Screen pause is independent of notification/device events, folders and sending. The notification and Quick Settings tile can pause screen capture; starting returns to the app preview. Note/photo/audio shortcuts and the quick-record widget open the shared editor without discarding drafts or navigation; saving is explicit. Configuration screens retain `FLAG_SECURE`.
 
-首页按「上面看，下面做」组织，决策见 [D36](design/ui-final-three-clients-2026-10-29.md)：
+Notification and device-event sources need their corresponding access. Provenance is retained rather than treating a notification as an owner action. Only independent duration records accumulate measured intervals: first samples/app switches contribute zero; continuing intervals stay bounded. Screenshots, fields and OCR do not add duration again.
 
-- 顶部一行采集状态由 `CaptureOverview` 从本机设置与服务连接推导，不读取采集内容。正常采集只显示「采集中」和实际在采的来源；主动暂停显示中性的「采集已暂停」或「屏幕采集已暂停」并带「恢复采集」，屏幕暂停后又暂停全部采集时按全部暂停显示，恢复时屏幕一并回到开启前预览；只有可处理的中断显示琥珀色，按原因给出「重新开启」（开启前预览或新的系统同意）或「处理」（系统权限、本机存储）。从未开始过采集时不显示。点按进入「采集状态」页。
-- 中间只放有内容的接着上次：等你补充时间的日程（只读取既有建议，不确认、不写入；向前最多看 5 页建议，更早的留在日程页）、按天排列的本机与中央记录、已有发现。本机新记录用普通行显示「已保存」，中央出现同一记录后按连接、设备和记录 ID 去重；权限撤销只撤回中央行。各块实现 `HomeSection`，由首页统一刷新、暂停和关闭。
-- 底部拇指区是问一问，以及记录、拍照、录音。拍照和录音打开同一编辑器并直接开始，仍需明确保存。
-- 顶栏「搜索资料」打开中央资料库的原文搜索（`search` 路由，查询原样交给中央证据读取器）；未连接时如实说明。菜单可一步打开我的记忆。
+## Browse and synchronize
 
-系统入口只打开编辑器或问一问，或者暂停：
+Native content uses paged projections and lazy images rather than decoding the entire queue. Local and Central records retain actual state; connection/device/record identity avoids duplicate navigation rows. Central requests use the unified owner session; a device filter is a view, not an account boundary.
 
-- 采集状态通知：有屏幕采集时动作为「暂停屏幕采集」，只停屏幕，通知、设备事件、文件夹和发送不变；没有屏幕采集时保留原「停止采集」。「记录」打开编辑器；点按通知打开采集状态页，叠在当前任务上。
-- 快速设置磁贴「屏幕采集」：采集中点按即暂停屏幕，否则打开采集状态页。
-- 桌面长按（记录、拍照、录音、问一问）与「Mote 快速记录」小组件共用 `MoteQuickEntry`，经独立任务的 `QuickEntryActivity` 转入应用，不清空应用已有页面、草稿或阅读位置。
-- 恢复或开始采集一律回到应用的开启前预览，投屏模式还需新的系统同意；保存规则、授权或任何系统入口都不会直接开始采集。暂停屏幕记录的是临时状态 `screenPausedAt`，不是配置项；在设置里关闭屏幕采集不显示为暂停。
+Folders use the Storage Access Framework with stable versions, one-time/continuous scope, resume checkpoints and matched receipts. Lost permission or provider failure does not prove deletion. Progress separates stability waiting, queueing, saving/uploading, retry and actionable conflict. See [files](files.md).
 
-## 构建和安装
+The four sending modes share [collection policy](collection-and-sync.md). WorkManager applies network, battery and charging constraints. Doze/OEM restrictions may delay execution, and force-stop cannot promise background continuation. Retry preserves UUIDs, bytes and timestamps; HTTP success without a matching ACK is not completion.
 
-需要 JDK 17+、Android SDK 36，项目内已含 Gradle 8.14 wrapper。当前 APK 不构建端侧 Qwen / llama.cpp，也不需要 NDK、CMake 或模型源码准备。平台测试可使用受支持的 Android 模拟器；物理设备采集需单独验收。Android Studio 打开 `apps/android`；将 SDK 路径写入该目录下未纳入版本控制的 `local.properties`：
+Current local format 4 stores raw record/image/file bytes. Credentials, sensitive recovery and private command state have separate protection. Old/incomplete formats are rejected without automatic conversion or deletion. Clearing storage destroys unarchived records and requires an explicit owner operation. Quotas and acknowledgement cleanup still differ from long-term retention; see [architecture gaps](architecture.md#product-direction-and-implementation-gaps).
 
-```properties
-sdk.dir=/absolute/path/to/Android/sdk
-```
+## Updates
 
-```sh
-cd apps/android
-./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
+Install the latest APK from [Android Dev releases](https://github.com/utopiafar/mote/releases?q=android-dev-+prerelease%3Atrue+draft%3Afalse&expanded=true) over the same Dev package with its matching certificate. Production/Beta uses `android-v*`. Current releases do not supply `mote-release.json`; the retained manifest downloader is not the current distribution path.
 
-APK 位置：`apps/android/app/build/outputs/apk/debug/app-debug.apk`。Debug APK 可直接侧载；release 需注入签名配置，覆盖现有安装必须保持同一证书，详见下方更新说明。中国大陆小米设备不依赖 Google Play 下载 OCR 模型：中英 OCR 模型随 APK 打包，但仍需实机验证设备上的 ML Kit 运行兼容性。
+An update preserves package/signing identity and increases `versionCode`. Release/Dev builds need the private keystore path/password and key alias/password. A new certificate cannot replace an existing install without data loss; do not propose automatic uninstall/reset. System confirmation and OEM policies apply; replacing the process may require a fresh projection grant.
 
-## 开发环境与日常版本隔离
+For a validation-only signed build, `Release Android` accepts `profile=dev`, `publish=false`, retaining verification/artifacts without public distribution. See [releasing](releasing.md).
 
-`release` 使用 `dev.mote.collector`，自动化 `debug` 使用独立 `dev.mote.collector.test` 包名；旧应用数据须按上面的格式 4 边界明确重置。`development` 构建类型：名称 **Mote Dev**，包名 `dev.mote.collector.dev`，可与日常版本同时安装。Android UID、凭据、设备 ID、配置、草稿、队列、WorkManager 数据库、诊断和模型目录均由系统按应用隔离。Dev 初始没有令牌、草稿或模型；不能读取日常采集权限与数据，各权限需单独启用。
+## Verification
 
-```sh
-apps/android/gradlew -p apps/android :app:assembleDevelopment
-adb install -r apps/android/app/build/outputs/apk/development/app-development.apk
-```
-
-Dev 默认节点 `http://127.0.0.1:47842`，仅供用户显式配令牌后的本机调试。模拟器使用 `adb reverse tcp:47842 tcp:47842`；真机仍需填写可达的节点地址。日常版本保持原配置、首次地址为空。“设置 → 关于与更新 → 开发者选项”显示环境、包名与实际 `noBackupFilesDir`，方便判断正在操作哪个版本。不要用卸载或清除日常数据代替切换环境。
-
-## 当前更新与签名兼容
-
-Android Dev 的固定入口为 [Android Dev 下载](https://github.com/utopiafar/mote/releases?q=android-dev-+prerelease%3Atrue+draft%3Afalse&expanded=true)：选择最新 Pre-release，直接点击说明中的 **Download APK**，在手机上下载并覆盖安装。每次构建有独立 Tag，CI 版本显示为 `<版本>-dev.<构建序号>`，版本码随 workflow run number 递增；沿用 Dev 包名和固定证书。Prod Beta / 正式版仍通过 `android-v*` 标签发布，安装身份与 Dev 分开。具体触发命令见 [发布流程](releasing.md#日常-dev-构建)。
-
-下文签名清单下载器属于保留的历史实现；当前发布没有 `mote-release.json`，不使用该自动更新通道。
-
-从“设置 → 关于与更新”打开“应用更新”，保存发布仓库和渠道后检查。默认仓库 `utopiafar/mote`；稳定版 `stable` 查询正式发布，预览版 `preview` 查询预发布。检查与下载由用户发起，不会自动安装；下载默认等待非计费 Wi-Fi，可自行关闭这一下载约束。APK 下载由独立 WorkManager 任务执行，取消或中断保留断点，重新打开页面可以继续；后台时机仍由 Android 调度。
-
-保留的签名更新器只接受 `android-v*` Release 及明确 `component: "android"` 的 `mote-release.json`；不回退到旧 `v*` 统一发布或缺少组件的清单。APK 内置 `release-public-key.pem`，按固定 key ID、RSA/SHA-256 校验原始 payload 字节，再校验仓库、渠道、版本、tag、资产 URL 与包名。换仓库不能自动引入另一把信任公钥；本期仅适用于同一受信任发布密钥签署的发布镜像。网络只访问允许的 GitHub HTTPS 主机及发布 CDN，重定向重新检查，不发送中央节点令牌。
-
-下载内容位于应用私有 `noBackupFilesDir/app-updates`；APK 大小与 SHA-256 匹配后，还通过 `apksig` 验证实际 APK 签名、系统 PackageManager 检查包名、versionCode 与最低 Android 版本。清单证书、APK 证书和当前安装证书必须相同，只允许更高 versionCode；日常与 Dev 通过不同包名分别选择资产。签名不符、篡改、错误包名或降级均不会进入安装。
-
-点击“交给系统安装”才申请允许安装应用的系统设置；从设置返回后再次点击安装。应用创建 Android `PackageInstaller.Session`，要求用户确认。没有收到确认时可通过更新通知继续；系统取消或失败保留旧应用与数据，可以取消待确认的会话后重试。更新采用同包覆盖安装，**没有自动卸载或清除数据流程**；Android 系统可保留设置、队列、草稿、模型和已授予权限，但应用只打开格式 4 数据；系统保留数据不代表旧格式可继续使用。安装可能中断正在进行的采集；投屏会话在进程被替换后需重新授权。OEM 安装校验、权限和电池策略仍可能要求额外用户操作。
-
-0.4.0 的日常 debug 和 Dev 包使用本机生成的同一 Android Debug 证书，SHA-256 为 `0670a89e6f9548552b90777dd1e0dc4e3efab6cf7082d436fcc60d6e9edb5076`。兼容发布沿用这个证书身份，发布用私钥以受保护签名配置保存；日常 release 构建关闭 debuggable，Dev 保持独立开发包。重新生成一把 release 密钥，即使包名相同，也不能无损覆盖这些已安装包；当前更新器会阻止这种情况，不提示自动卸载。
-
-发布构建从环境读取以下四项，值不写入源码或更新清单：
-
-```text
-MOTE_ANDROID_KEYSTORE_PATH
-MOTE_ANDROID_KEYSTORE_PASSWORD
-MOTE_ANDROID_KEY_ALIAS
-MOTE_ANDROID_KEY_PASSWORD
-```
-
-四项齐备时 `release` 和 `development` 都使用指定证书；普通本机 debug 继续使用本机 debug keystore。缺少配置时 `assembleRelease` 拒绝产出未签名发布包，不能把另一台机器新生成的 debug 证书当成升级凭据。构建时需同时包含仓库内的固定发布公钥；APK 签名和发布清单签名是两层独立检查。
-
-只需要真机验证用的同签名 APK 时，可以在签名环境允许的分支上手动运行 `Release Android`，选择 `profile=dev`、`publish=false`。它保留构建、签名、验证与构建产物，跳过公开发布；不会放宽 `release` 环境的分支保护。默认手动发布及版本标签触发的发布行为保持原样。
-
-## 从本机开始，以及可选的节点连接
-
-主导航为“内容 / 问一问 / 来源 / 活动”，手机采用底栏，宽屏原生适配侧栏。辅助首页仍可从现有入口打开。首页提供添加内容、持续来源与状态详情，设置从顶部进入；内容与问一问中的中央页面共用中央 owner 登录。当前设备邀请同样签发 owner 凭据，可管理全归档；设备、来源和时间筛选限定当前视图，不构成旧 collector 权限。MCP 读写凭据仍分别限制为只读或获准来源写入。当前导航见 [导航说明](client-navigation.md)，共享登录生命周期见 [客户端统一登录](client-login-unification.md)。
-
-1. **无需先配置节点。** 地址与令牌可以留空，在“随手记”直接保存，或配置本机采集；页面字段、截图、活动和笔记先进入有上限的本机队列（原始字节保存）。未配置完整连接时不上传、不发送自动心跳，也不反复创建失败的网络任务。离线队列是有限的本机保存区，并非无限容量的内容浏览器；长期资料浏览与导出在节点进行。
-2. 选择首页“记录屏幕”后，从“按应用配置”选择已安装应用的内容/活动/忽略范围，查看该版本字段规则并保存预览；固定遮罩与文字规则沿用原隐私配置。规则 JSON 在高级项，应用详情也可配置或导入精确版本的规则。页面模式只有“只截图”和“页面优先，未取得内容时截图”，对所有允许记录内容的应用生效，字段规则仍按应用和版本匹配；加载字段规则不扩大应用授权。高级设置继续提供间隔、图片尺寸与质量、存储上限和电量条件。
-3. 内容采集执行应用规则、固定遮罩和可选文字规则审查；端侧 Qwen 与额外 HTTP 审查暂停执行，不要求下载权重。仅应用活动不读取图片或页面正文。保存或普通预览不会开启已暂停的采集。首次从首页“记录屏幕”继续开始时，先审阅已保存范围和生成格式示例，点击“按此范围开始”才检查权限并启动；取消预览继续暂停。通知和无障碍/投屏授权仍由 Android 决定；权限页提供“返回原配置页面”和“返回首页继续记录”，授权后回首页继续。节点地址与令牌不属于采集前置条件。
-4. 首页分别显示持续来源、屏幕记录与发送状态；展开同步详情可查看“仅保存在本机 / 手动同步 / 等待约定时间 / 正在同步 / 同步失败”，并单独暂停或恢复全部发送。页面和截图分别计数，本机保存与已确认同步也分别显示。暂停屏幕记录保留已有记录，来源与发送继续遵循各自设置。
-5. 需要集中归档时，在中央前端生成 10 分钟有效、只能兑换一次的邀请，在“设置 → 连接与同步”打开邀请连接，可扫码、粘贴邀请 JSON / `mote://connect` URI 或选择 JSON 文件。二维码解码器随 APK 打包；只有点击扫码后请求相机权限，不保存相机画面。
-6. 页面先显示地址和有效期，再由用户确认。外部 URI 只打开审阅页，不自动兑换、保存或启动采集。已有未绑定节点的本机记录时，明确确认将这些记录绑定到所显示的节点后才连接；原记录 ID、内容和时间保留。邀请只接受 HTTPS；Dev 的 loopback HTTP 例外需显式打开。`localhost` 指手机自身。
-7. 当前邀请签发绑定这台设备身份的 owner 凭据，支持采集同步、全归档读取/管理和 Agent 查询。新邀请的 owner 行为保持原样；旧 `collector` 凭据文件明确拒绝。客户端验证兑换响应与 `/api/connections/self` 的节点、凭据、设备身份、平台、能力及必有的协议元数据后保存。self 返回当前凭据身份；owner 的归档视图不由其绑定设备隐式缩小。“测试已保存连接”代表最后一次检查，并非永久在线保证。连接成功后也遵循所选同步策略；手动模式需主动点击“立即同步”。
-
-所有配置页保留 `FLAG_SECURE`。从设置“采集与存储详情”查看已保存、被拦截、失败、待发和已确认数量，不把“本机保存成功”显示成“已同步”。
-
-既有手动令牌仍可使用。生产节点使用 HTTPS；首次局域网联调仅 debug APK 可显式允许私有 IPv4 HTTP，这个历史手动配置选项不放宽邀请的 HTTPS / loopback 限制。编辑已配置节点地址会清空输入框中的旧令牌，必须明确填写目标凭据；从配对页返回后也执行这项保护。
-
-已登记设备不能通过普通新设备邀请接管。页面可以复制本机设备 ID，在中央选择或明确绑定这个 ID 生成邀请，不需要轮换设备 ID。凭据撤销、过期配置或离线期间认证失败时，用**同一节点、绑定同一设备的邀请**确认“使用新凭据继续同步本机待上传截图/笔记/来源”；应用自动协调旧处理和连接变更，队列、已准备的随手记、设备身份和采集设置原样保留。已有记录绑定节点后，只要仍有队列、已准备的笔记或来源待发版本，就拒绝改投另一节点；先清空地址也不会解除这项绑定。首次未绑定的离线记录可在上述明确确认后绑定。连接更新完成后按原采集意图恢复；已经发出的投屏授权回调在配置变化后不会启动旧会话，需要新授权时引导系统确认。
-
-兑换成功但身份验证或本机持久化中断时，已领取的凭据先保存在应用私有加密恢复文件；重新打开连接页可审阅原节点并确认继续。保存失败不会删除这份恢复凭据。邀请、令牌和响应正文不写入日志；网络请求不自动跟随重定向。
-
-## 采集数量、记录详情与实际存储
-
-“采集与存储详情”独立于开发者诊断开关，持续保存固定事件和数值。分组显示当前采集、累计结果、当前待上传、资料在哪里与生效设置；小文件用 B / KiB 显示，较大文件用 MiB / GiB。刷新在后台执行，不周期扫描全部文件。
-
-- **请求 / 收到 / 保存 / 拦截**分别计数。已保存只表示持久入队成功，已确认上传只在节点 ACK 匹配并清除本机记录后增加；截图、仅活动和随手记分别统计。重复入队或重复 ACK 不重复计数。用户规则导致的暂停、收到画面后丢弃和实际处理失败不是同一件事。
-- 最近 200 条固定结果可点按查看时间、错误阶段、HTTP 状态、耗时、字节和关联记录 ID。入队、重试和确认沿用同一 UUID，能区分某条记录还在重试还是已成功；不显示截图、笔记、OCR、应用名、模型理由或令牌。
-- 当前队列直接读取本机文件。最多展示最早 100 条的 ID、类型、创建时间和条目字节，不含共享图片 blob 的分摊估计；无法读取或未检查的条目明确列出，不能当成零。来源同步也显示待确认数、确认数及失败数。撤销凭据导致的心跳 401 会标为认证失败，已有记录仍保留。
-- 页面显示实际 `noBackupFilesDir/queue`、`noBackupFilesDir/local-sources`、`noBackupFilesDir/models`、缓存目录、字节上限和当前分区可用空间。应用私有文件总计不等于 Android 系统安装占用，不包含 APK 或系统配额；文件过多、超时或不可读会显示未完成，不跟随符号链接遍历。
-- 统计从明确的起算时间开始；旧版本没有的历史数据不可补造。统计损坏后标记重新起算，写入失败会标记不完整。队列和统计文件分开原子持久化，进程恰好在两次写入间终止可能少记累计数，不能用累计数代替当前队列检查。
-
-“导出无正文统计 JSON”仅包含固定统计、记录 UUID 和结果事件，不包含上述目录、节点地址、配置凭据或用户内容。“重置统计起点”只清统计，不删队列、模型、设置或中央资料。采集记录的长期浏览与内容导出仍在中央完成。相机解码集成参考 [ZXing Android Embedded](https://github.com/journeyapps/zxing-android-embedded) 与 [ZXing 发布说明](https://github.com/zxing/zxing/releases)。
-
-## 按应用分级与设备元数据
-
-格式 4 新安装明确保存统一默认：仅记录应用活动；不根据旧配置推断采集级别。“本机 → 按应用配置”可选择默认采集级别，通过搜索已安装应用添加例外，再选择截图与内容、仅应用和时长、不记录或跟随默认。系统包可见性可能使列表不完整；高级项仍支持手工输入 `包名=content`、`包名=activity` 或 `包名=off`，原有自定义包名不会丢失。最多 200 项；按完整包名精确匹配，不按名称或正文关键词推断。显式配置的排除包名列表按 `off` 执行，优先于分级设置。内容采集时，可见键盘和系统辅助窗口也遵守同一规则，经系统身份和几何校验的导航栏有窄范围豁免，包含已验证的 Xiaomi 导航面板；不会豁免启动器 Activity、键盘或内容浮层。默认 `off` 时，其他辅助窗口仍须明确允许。活动采样本来不读取任何窗口内容，无需把已识别辅助窗口设为 `content`，但未知窗口、多应用及明确排除仍暂停。
-
-- **截图与内容 / content**：页面优先时，匹配精确版本规则并取得文章/商品必需字段就保存字段原文；未取得结构化内容才按固定遮罩与文字规则审查保存截图。显式只截图和投屏只使用截图路径。隐私拒绝或状态失效均不回退截图；截图完整 OCR 在中央生成。
-- **仅应用活动 / activity**：只记包名、系统可取得的应用名、采样时间与有界时长；没有图片、窗口标题、控件文字、OCR、心情或正文，也不启动本机模型/OCR。首次、暂停后或应用/级别切换后的采样时长为零，随后同应用时长不超过配置间隔，不能视为连续观测。截图请求或活动观察入口固定单调时钟，OCR/模型处理完成时间不参与区间计算。
-- **不记录 / off**：不产生截图或活动记录。多可见应用、受限辅助窗口/浮层及未知窗口都保守暂停，不把内容权限自动降为活动记录。
-
-如果全部规则都不需要内容，即使保存的是投屏模式，也使用无障碍包名观察且不申请投屏权限；Android 10 也可只记录活动。规则仍允许某些应用截图与内容时，投屏模式需要正常系统授权。保存规则后应用自动协调旧处理和新配置，不需要手动暂停再开始；若切换方式需要新投屏授权，会引导系统确认。已入队的记录保留入队时的字段与权限结果，不因后续设置改变而删除或重写。
-
-“上传设备与采集状态元数据”默认开启，可关闭。开启后，新截图、活动、随手记与心跳附带当时实际可取得的系统版本/build、制造商/型号、架构、语言/时区、电量、是否充电/使用电池、省电/温控状态、网络类型/是否计费、屏幕交互/锁定状态及可用存储。未知数据省略；满电本身不当成“正在充电”。不采设备序列号、IMEI、MAC、SSID、定位或网络地址。截图可附保存图尺寸、OCR 开关与遮罩数量；活动只附采样间隔，手动笔记标注 `manual`。`observedAt` 表示状态实际读取时间，不是历史状态回填。
-
-关闭开关只影响之后生成的数据，已有待传记录保持原样；文件来源经用户授权取得的文件元数据独立于此开关。系统 API 的读数及权限可用性由 Android/OEM 决定，无法取得的字段不伪造。
-
-## 平台采集方式与页面模式
-
-新安装默认“页面优先，未取得内容时截图”（`ui_preferred`），已有显式 `screen_only` 设置保持只截图。旧 `hybrid`、`page_only` 可继续读取和执行页面优先，在界面上也显示页面优先；用户保存此配置页时统一为 `ui_preferred`。页面模式是全局设置，应用详情载入、配置或导入字段时切换页面优先也会作用于所有允许记录内容的应用；各应用的授权范围和精确版本规则仍独立。
-
-| 模式 | 用途 | 授权与恢复 |
-| --- | --- | --- |
-| 无障碍服务，截图 API 为 `takeScreenshot`、Android 11+ | 推荐；按页面模式提取可见字段或采集截图，并观察应用身份 | 用户在系统手动启用，经本机开始流程后采集。系统重新绑定服务后可恢复已启用的采集；系统是否重绑不由应用保证。 |
-| MediaProjection，Android 10+ | 备用；一个会话内复用 VirtualDisplay，旋转时 resize 并换 surface | 每次新会话都需系统同意。前台服务可见；锁屏、授权撤销或进程死亡会结束会话，必须返回应用重新授权，绝不复用旧 consent token。 |
-
-在无障碍页面优先模式中，只有应用获得内容授权并匹配当前版本字段规则，才有界遍历可见节点文字；只截图模式不做字段提取，密码、输入框和遮挡区域在端上过滤。选择投屏并保存时同时改为只截图；投屏每次新会话仍需系统授权。详见[页面采集](ui-page-capture.md)。服务不点击、不滚动、不发送手势，没有自动交互能力。此 MVP 是用户主动侧载的个人采集器，不宣称已满足应用商店对无障碍 API 使用的上架审核。
-
-无障碍路径在请求截图前后核对窗口信息，有变化则丢弃。选择默认内容规则时允许系统桌面、启动器及没有明确前台应用的画面；已知的可见应用、键盘和系统辅助窗口仍按用户分级规则处理，任一窗口为 activity/off 时跳过整张内容采样。有显式排除或限制级别且无法可靠识别窗口时仍暂停，以免绕过规则。仅活动模式始终需要可靠的单一前台应用身份，不读取辅助窗口内容。窗口身份检查只取类型与根节点包名，不读取键盘候选或剪贴板；可选页面正文采集的范围与过滤见页面采集文档。显式旧排除列表始终优先于新的应用分级规则。
-
-两种平台采集方式均需无障碍窗口识别；UsageStats 不能证明全部可见窗口，单靠使用情况权限不会放行。投屏会话只创建一次 VirtualDisplay，起始不挂接 Surface；仅当本次窗口策略允许内容采集时才创建 ImageReader 并挂接，读取前再次核对窗口，随后立即移除 Surface。仅活动和不记录分支不请求帧、不读取图像。屏幕流与窗口事件不是原子事务，切换、悬浮窗和系统通知仍需实机验证；固定遮罩与文字规则提供另一层保护，不应把应用排除理解为操作系统级隔离保证。
-
-锁屏/熄屏不采集。投屏模式主动结束会话；无障碍模式在系统允许时解锁后恢复。遵守系统安全窗口限制，不绕过 `FLAG_SECURE`。系统自动停止投屏后不会启动录制、更不会请求自动同意权限。
-
-## 本机隐私流水线
-
-```text
-应用与可见窗口身份 → 用户配置的 content / activity / off
-├─ off：不获取画面、不产生记录
-├─ activity：应用身份 + 有界采样时长 → 无图持久队列
-└─ content
-   ├─ 无障碍页面优先 + 当前版本规则：可见节点过滤 / 文字规则审查
-   │  ├─ 取得必需字段：原文字段持久队列 → 逐条 ACK → 中央组织
-   │  └─ 未取得结构化内容：进入下方截图路径
-   └─ 只截图 / 投屏 / 截图回退：获取画面 → 固定遮罩 / 缩放 / 按配置去重
-      → 可选文字规则审查（规则为空不调用 ML Kit）
-      → JPEG / 元数据持久队列 → 逐条 ACK → 中央 OCR
-隐私拒绝、锁屏、暂停或状态失效：停止当前采样，不切换为截图
-```
-
-文字规则按用户输入的原文精确包含匹配。命中则丢弃；识别异常默认隔离待复核，也可显式配置丢弃或放行。隔离图片占用本机容量，普通重试不能自动放行。新截图的 `ocrText` 为空、`ocr.status=disabled`，本机审查文字不上传，也不创建补识别任务。端侧 Qwen、额外 HTTP 视觉钩子及预留接口已移除，详见 [当前审查边界](central-perception.md)。
-
-固定遮罩使用 0..1 的归一化矩形，边界向外取整；配置错误不能静默忽略。纯活动不读取像素或正文。经严格识别的系统导航表面豁免不代表任意系统应用可绕过规则，详见 [隐私与元数据](privacy-and-metadata.md)。
-
-## 统一同步策略
-
-在“本机 → 连接与同步”选择策略，页面字段、截图、仅活动、随手记及来源上传共同遵守。新安装默认积攒一批（100 条或最长 1 分钟），开启打包上传；格式 4 内已有明确设置保留。打包上传只使用当前 bundle 端点，404/405 不触发旧端点回退；关闭打包时仍可合法逐条上传。413 缩小批次及严格 ACK 校验继续保护队列。
-
-| 策略 | 自动发送时机 |
-| --- | --- |
-| 实时 `realtime` | 新记录触发可运行的上传任务；网络与系统调度允许后发送。 |
-| 定时 `interval` | 约每所选间隔同步一次。 |
-| 批量 `batch` | 待发正文达到所选条数，或最早待发内容达到等待上限；少量记录不会无限等待。启用压缩包后，客户端以 gzip JSONL 包发送，默认按 10 分钟窗口合并无图片状态记录。 |
-| 手动 `manual` | 没有自动上传或自动心跳；点击“立即同步”才发起一次操作。发送前可以等待符合条件的网络；发起后的失败保留记录，等用户再次触发。 |
-
-间隔默认 1 分钟，可选 1–1440；批量默认 100 条，可选 1–500。“批量”的条数只统计记录正文，空来源首次注册、改名等元数据另记等待时间，也在上限到期后发送。每个来源自身的扫描间隔控制读取频率，不代替这里的上传策略。中央自行暂停的来源不会被自动恢复，本机停用也不修改中央状态。
-
-Android WorkManager 是可延期后台任务，15 分钟周期是最小周期，并非精确闹钟。一次性延迟、非计费 Wi-Fi、Doze、省电、应用被强停和系统资源限制都可能延后发送；界面的下一次时间是估计值，不能保证分钟级准点。手动模式的中央状态是最近一次报告；没有自动心跳时，中央不能据此声称设备当前在线。
-
-## 数据、安全与可靠性
-
-- 应用私有 `noBackupFilesDir/queue`，格式 4 内容原样保存，令牌及私有中央草稿/操作 ledger 单独使用 Android Keystore SecretBox。关闭系统备份和设备迁移。卸载/清除应用数据会销毁未上传内容，不会自动恢复密钥。
-- 图片按 SHA-256 内容寻址，同图多次观察共享一个 blob；每次观察仍保留单独事件与时间。JSON 元数据原样保存，先写临时文件并 fsync，再原子重命名；启动时只回收不被有效事件引用的临时/孤儿 blob。损坏事件报错，不默删。
-- 采样间隔默认 30 秒。持续显示且同一应用的连续采样才计入间隔，首次或应用切换计 0，最多计一个采样间隔；这不是用户注意力或精确前台使用时长。多设备的时间可重叠。
-- JPEG 缩放/质量、本机 blob 去重、容量上限降低空间成本。达到上限暂停，不覆盖最旧未确认数据。OCR 文本最大 100,000 字符。
-- 上传保持原 id、时间、元数据、图像不变；只在 HTTP 200/201 且响应 id 匹配后删除。401/409/5xx、断网和无效 ACK 均保留原记录。自动模式指数退避；手动模式中已发起的 HTTP/ACK 失败结束本次操作，等待再次点击“立即同步”。单次 WorkManager 批次最多 25 条，成功分块后可以继续同一次用户发起的操作。
-- 自动同步使用 WorkManager 连接约束、30 秒起指数退避和 15 分钟恢复巡检；所有截图、笔记、来源版本及心跳经过同一策略。采集服务最多每 30 秒请求一次调度，只有策略允许时才发送。停止/权限变化不会绕过手动模式。Wi-Fi 选项同时检查 Wi-Fi transport 和非计费网络，计费热点会等待；已经发出的字节无法撤回。
-- 队列传输与采集生命周期分开。服务未连接时心跳报告需恢复权限。断网/休眠时状态更新也会延迟；中央节点需按最后心跳时间判断离线。
-- 不申请相册、麦克风、设备管理员或 Root；只有主动打开连接扫码时才申请相机权限。TLS 使用平台证书验证，不信任所有证书，不自动绕过自签名错误；建议用正常受信任的域名证书。
-
-## 随手记和开发者选项
-
-本机随手记界面提供正文（最多 100000 UTF-16 码元），不再保留隐藏心情控件；中央随手记页面仍提供心情。输入立即写入原始字节的持久草稿，页面重建/应用重启后恢复。保存前先原子持久化固定 ID、capturedAt 和完整提交内容，再幂等入队、请求同步调度，最后清草稿。调度异常时明确提示记录已经本机保存，并保留原提交供安全重试；即使在入队成功与清草稿之间被杀，恢复重试也复用原 ID，不会悄悄新建重复笔记。只有明确编辑内容或“新记”才生成新提交；不按正文全局去重。已准备的提交不能直接改投其它节点。无需地址、令牌或模型即可保存笔记；正文保持原样。第一次将未绑定提交连接节点需要明确确认，之后未确认的提交不能改投其它节点。随手记不需截图权限、不受截图审查阻塞，使用同一持久离线队列，以 `source: note`、零时长及真正无图记录同步；重试保持 ID/时间，中央确认后清除本机上传缓冲。已同步内容在中央随手记页面管理。
-
-可配置保存图最长边 640–2560（默认 1280）、JPEG 质量 40–95（默认 75）、仅充电时截图（默认关）、低于指定电量暂停（0 关闭，1–95）。它们与间隔、Wi-Fi 和文字审查配置共同调节资源开销；不会根据画面主题自动改采集规则。
-
-新截图完整 OCR 由中央完成，本机 OCR 仅按需执行文字规则审查。本机不再调度遗留补识别或 OCR 结果补上传任务。采集记录仍可查看本机图片和中央归档，中央识别状态与上传状态分别展示。参见 [OCR 与预览行为](collection-and-sync.md#ocr-节能与采集预览)。
-
-“采集与存储”提供图片队列保存位置，支持应用内部空间和系统枚举的应用专用本机／存储卡空间，显示位置与容量。更改时复制并校验当前格式 4 记录和图片，外部介质缺失时报错暂停，不改为空队列。中央已归档图片不随客户端目录设置迁移。参见 [设置与图片位置](client-settings-and-storage.md)。
-
-开发者诊断默认关闭，采样间隔 15–3600 秒、默认 60 秒，在界面或采集服务运行时记录，最多保留 1440 条。内容为整机电量/充电状态、可用时的 chargeCounter、整机电量变化、队列/模型/诊断占用、入队/拦截/失败累计、最近推理/OCR 耗时、已确认上传 JSON 载荷字节。整机电量变化不能归因于 Mote。原生“导出数值诊断 JSON”使用系统保存文件选择器；不包含截图、OCR、笔记、token、prompt、模型reason、设备ID。关闭后停止新增采样，不为诊断单独拉活后台。
-
-诊断开关同时控制最多 500 条固定事件，阶段包括配置、模型、OCR、隐私、队列、上传、心跳、随手记和来源同步；只含时间、固定错误类别、可选耗时及 HTTP 状态。分类依据异常类型/协议状态，不保存原始异常消息。关闭后停止新增，已记内容保留。日志损坏会重新开始诊断，但不会删改采集队列。
-
-“导出安全支持包 JSON”通过系统文件选择器导出应用/环境版本、采集状态、非敏感数值开关、数值诊断和上述事件；不含节点 URL、设备名/ID、目录、令牌、截图、OCR、笔记、心情、策略或模型理由。读取导出时再按字段白名单投影，诊断写入失败不影响隐私或 ACK 删除条件。支持包不等同于含内容的队列备份。
-
-## 本机日历与文件来源
-
-从首页或统一「添加」选择「导入文件」或「同步文件夹」时，先进入统一任务编辑页，点击「选择文件」或「选择文件夹」才打开系统选择器；取消选择或重建页面不会自动弹出选择器，填写的说明和设置保留。导入页明确显示「导入一次，不跟踪后续修改」，文件夹页提供支持的文件、音频、自定义三个范围预设；新音频预设默认归档原件，用户手动选择的保存方式不被预设覆盖。范围、选填资料说明、已有文件和中央保存方式在主表单，名称、过滤和频率在高级设置。来源管理继续编辑已有来源和连接日历。未连接中央时可以先保存本机任务；此入口不需要截图权限，也不会在打开页面时读取日历。不按累计来源数量拒绝新增，已完成的一次性导入继续保留接收和来源身份。来源的原始版本、当前快照、引用与衍生记忆之间的区别见 [上下文分层](context-layers.md)，跨端连接与中央管理见 [连接器](connectors.md)。
-
-- **日历**：点击「连接本机日历」时才申请 `READ_CALENDAR`，选择系统日历提供者中可见的一个日历。默认同步过去 30 天到未来 90 天的实例，可设过去 0–365 天、未来 1–365 天；重复日程通过系统 `Instances` 展开。保存计划起止、全天标记、时区和状态，实际扫描时间另记为 `observedAt`，不将日程视为参加或完成证据。没有写日历权限，不会修改日程；只存在远端、尚未同步到系统提供者的日历不可读取。
-- **文件**：通过系统 SAF 选择器授予并保留只读 URI 权限。不申请全盘访问，不扫描未选择的目录。文件夹持续观察所选范围；单个文件默认只保存一次，明确勾选持续同步后才观察后续修改。扩展名和排除路径按用户配置执行。文件正文不在设备解码：文本、PDF、Word、图片和音视频均按原始字节交给中央处理，是否支持及实际覆盖由中央报告。
-- **保存方式**：「中央提取正文，不保留原件」和原件归档都会保存、发送完整文件，并要求明确确认完整输入的范围。前者在中央处理成功后释放临时输入，后者在中央保留原件。「仅引用」不打开文件内容流，也不查询日历描述/地点，只发送名称、URI、修改/计划时间等元数据。引用不会让中央节点获得读取手机 URI 的权限。用户主动选择的日历/文件不经过截图文字规则审查；需要限制上传时，应选择引用、缩小范围或设置文件排除路径。
-- **资料说明**：自然语言原文以来源范围、版本及指纹保存为所有者元信息，不直接生成全局 Memory。文件夹说明作用于已有和未来资料；一次导入说明限定于这个单文件来源。单份资料的归属纠正保留，描述不会自动识别录音中的匿名说话人。修改或清空说明产生新版本，撤出依赖旧说明的当前语义产物，不重新上传或转写原件，不自动发起历史收费重算。离线修改保存在本机，中央先确认来源与说明再发送文件；版本冲突保留草稿和待发文件，来源设置中可选择本机或中央说明。旧来源未填写说明时保持原配置，普通注册不会清空中央说明。详见[实现决策](adr-file-source-context.md)。
-
-文件排除每行一个相对路径模式，只有 `*` 是通配符，其他字符按字面匹配，例如 `private/*`、`*.secret.txt`；匹配区分大小写，扩展名匹配不区分大小写。过滤只用于用户配置的访问范围，不按内容关键词推断主题。文件目录以持久检查点分轮遍历，完整扫描才判断删除；读取失败或部分扫描不会将漏扫项当作删除。移动窗口外的旧日程也不会被误标为删除。文件选择器受 Android 和提供者限制，某些目录不可选择；授权失效需重新选择，隐藏/不可用的日历需在系统恢复后重试。
-
-每个来源可设 15–1440 分钟扫描间隔，默认 60 分钟；WorkManager 约每 15 分钟检查各来源是否到期，“立即扫描并同步”可手动请求。扫描和上传独立，离线时先保存快照与有序待发版本，上传统一遵循“本机 → 连接与同步”的策略与 Wi-Fi 约束；无节点也可完成本机扫描。来源的扫描间隔与统一上传间隔彼此独立。应用主进程再次启动会恢复任务；Android/HyperOS 省电、强行停止和提供者不可用可能延迟后台执行，不保证准点或永久后台存活。
-
-来源配置和状态位于各安装环境独立的 `noBackupFilesDir/local-sources`，当前格式内容原样保存，使用临时文件 fsync 后原子替换。总缓存上限为 64 MiB 与“采集与存储”中队列上限的较小值，单来源最多 4096 个待发版本；达到上限暂停增加，不默删未确认数据。上传严格核对来源 ID、外部 ID、revision、记录 UUID 和重复标记，再移除对应待发项；丢 ACK 后重试同一版本。同节点更新凭据保持原待发版本，当前快照可按新凭据重新确认。没有任何待发正文后更换节点会先清除旧的已同步快照状态，随后重新扫描所选来源；不会直接将旧目标已确认的本机快照改投新节点。文件附带提供者实际报告的非负大小和可取得的最后修改时间；SAF 不提供的创建、访问或元数据变更时间保持缺省。完整扫描发现文件消失时，删除版本保留最后已知大小/修改时间，并另记本次 `deletionObservedAt`；它不是文件真实删除时间。正文变化、删除、恢复形成不同的链式 revision；只有完整成功扫描才生成不带原文的删除版本，旧版本重试不会倒退中央当前指针。
-
-修改选择范围、过滤、时间窗口或保存方式会清掉该来源旧的本机缓存和未发送内容后重新扫描，界面在保存前明确说明。停用只暂停本机检查与同步，不改变中央的启用状态；移除连接清除本机来源状态并释放未被其他连接使用的 URI 权限，两者都不会删除已经同步到中央的历史。中央暂停的来源会保留待发版本，不自动重新启用；需在中央恢复后重试。支持包仅增加来源数量、启用数量和缓存字节，不包含名称、URI 或正文。
-
-## K90 Pro Max / HyperOS 验证指南
-
-代码提供小米自启动页 Intent，并在该入口缺失时回退到应用详情；不假设特定 HyperOS 版本一定提供该 Activity。需要用户手动在当前固件确认：
-
-1. 应用详情 → 通知允许；省电策略设为“无限制”（实际菜单名以设备为准）。
-2. 设置 → 应用/权限 → 后台自启动，允许 Mote；应用内“自启动设置”可尝试打开入口。
-3. 侧载 APK 无障碍开关如受限制，在应用详情的菜单查看“允许受限制的设置”，确认应用来源可信后由用户操作。
-4. 可在最近任务页锁定 Mote。该设置和自启动不能保证进程永不被杀。
-5. 用合成内容测试：联网/断网切换、上传确认、非计费 Wi-Fi、旋转、切换排除应用、通知抽屉/分屏/悬浮窗、锁屏/解锁、省电、清理后台、进程被杀和重启。每个场景检查通知、节点最后心跳、队列与事件时间。
-6. 投屏模式被杀或锁屏后应明确要求重新授权；无障碍模式若系统未重绑服务，应提示服务未连接，不显示“仍在采集”。
-
-**Xiaomi / HyperOS 导航窗口修复做过生成画面真机检查，不能证明长期后台稳定性、耗电、所有权限路径或识别质量。** Android 系统与 OEM 会限制后台行为；MVP 不用闹钟、WakeLock 或循环重启规避限制。
-
-## 历史 0.7.0 分级采集与元数据验证
-
-本机 0.7.0 / versionCode 10 完成 debug、Dev 和 Dev 测试 APK 构建。49 项 JVM 测试全部通过（0 失败、0 跳过），包括显式分级、旧排除优先、键盘/系统辅助窗与未知窗口、无图活动队列重建/幂等确认、旧统计升级，以及异步处理耗时不同但观察间隔不变。lint 为 debug 0 error / 100 warning、Dev 0 error / 104 warning。两包通过实际 APK 签名与 16 KiB ZIP 对齐；继续使用兼容证书 `0670a89e6f9548552b90777dd1e0dc4e3efab6cf7082d436fcc60d6e9edb5076`。
-
-| 本机调试产物 | 字节 | SHA-256 |
-| --- | ---: | --- |
-| `app/build/outputs/apk/debug/app-debug.apk` | 33,869,247 | `0349ccae3844a305c4a4a0c0f308b5e329cac7763e40eb9a6358b31b255c040f` |
-| `app/build/outputs/apk/development/app-development.apk` | 33,869,559 | `c771bd096a6062b2df5e002b6df0c1ef02c7dbb610d8c5ecef7f25041b6ea66f` |
-
-这些是相对 `apps/android` 的本机调试产物，不替代 GitHub 正式发布的签名清单。
-
-专用 `mote_release_060` / API35 / arm64 模拟器执行 6 项仪器测试，全通过、无跳过（28.842 秒）：
-
-- 首页保存投屏模式但全局设为活动后，实际点击开始直接启用无障碍观察，没有请求投屏授权。至少两条新活动获中央 ACK，截图请求、图像读取与截图入队计数都为零；Qwen 开关保持开启。旧排除仍阻止记录。
-- 真实无障碍截图只针对 debug 生成画面，完成 bundled OCR、加密队列与中央 ACK。投屏路径接受真实 Android 系统同意后，活动仍零图像请求；内容模式在同一个 VirtualDisplay 上取得至少两帧并获 ACK，验证按需挂接 Surface 的实际行为。
-- 两张内存生成图通过实际 OCR 流水线，处理间隔为 250ms，而固定观察时刻相距 15s；第二条保存的 `durationMs` 为 15000，未混入处理完成时间。首次时长为零。
-- 活动队列无图片/正文，关闭元数据开关不改已经入队的原始字节；新记录不再附设备元数据。生成 SAF 提供者报告的大小/修改时间经生产 HTTP 客户端写入中央，引用模式不打开内容流、不虚构日期；完整扫描墓碑保留最后已知大小/修改时间并另记观察删除时间，部分扫描不误删。
-
-复跑要求显式将隔离节点 `{serverUrl,token,generatedOnly:true}` 私密写入 Dev 的 `files/app-policy-fixture.json`，测试不打印令牌；对应实连项在没有文件时跳过。本轮仅用 loopback 合成节点 61317，通过 `adb reverse tcp:61317 tcp:61317` 连接。宿主在仪器测试前向专用 Dev 授予通知权限，并在测试结束后恢复；测试内部撤销权限会被 Android 直接终止进程，不能据此声称测试通过。
-
-```sh
-adb -s emulator-5582 shell am instrument -w \
-  -e class 'dev.mote.collector.AppPolicyInstrumentedTest,dev.mote.collector.LocalSourcesInstrumentedTest#generatedProviderCalendarFilesReferenceAndPartialDeletion' \
-  dev.mote.collector.dev.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-结束时确认采集已停止，恢复专用 Dev 的通知/无障碍测试授权，移除私密输入和端口转发并关闭本次模拟器。未操作其他 AVD 或真机，未读取个人画面、日历或文件。本轮内容链路为明确关闭图像模型的生成画面 fixture；没有新增真实 Qwen 推理或 NSFW 准确率测试。键盘/浮层边界采用合成窗口类型和包名回归，未覆盖所有 OEM 真实窗口组合；K90 Pro Max / HyperOS、物理键盘/相机、旋转与长时间后台续航仍需真机验证。本轮没有重复完整旧版本升级保留验收，前次正式升级验证不能当成本轮实测。
-
-## 历史 0.6.0 连接与统计验证
-
-0.6.0 / versionCode 8 的日常 debug、Dev 和测试 APK 构建通过。44 项 JVM 测试全部通过，无失败或跳过；lint 为 debug 0 error / 99 warning、Dev 0 error / 103 warning。两包通过 16 KiB ZIP 对齐及实际 APK 签名校验，继续使用上文兼容证书。下表为历史本机调试产物，构建路径已被后续版本覆盖，不能代替正式 release 的签名发布清单：
-
-| 版本 | 文件（相对 `apps/android`） | 字节 | SHA-256 |
-| --- | --- | ---: | --- |
-| 日常 debug | `app/build/outputs/apk/debug/app-debug.apk` | 33,779,319 | `c61b6e48935a22d2c80b037a1e34462b123b45419185bb516ca69897732b950e` |
-| Mote Dev | `app/build/outputs/apk/development/app-development.apk` | 33,779,631 | `f16e579dc28a54b76c25c661f5cd1523e1475e2499882e7b2a146b104eacb401` |
-
-新增 JVM 验证涵盖邀请 JSON / URI 的严格解析、危险地址和过期/超限输入拒绝、生成二维码的真实 ZXing 解码、统计持久化与损坏重建，以及重复入队/ACK 不重复计数。
-
-专用 `mote_fixture_api35` / API35 上运行 `ConnectionInstrumentedTest`，5 项全部通过、无跳过。实际通过生产 HTTP 客户端连接隔离中央：兑换、一次性邀请重放 410、采集凭据访问管理接口 403；撤销后心跳 401 正确显示认证失败，离线队列和已准备笔记保留；同源绑定邀请恢复后原设备 ID 不变，2 条生成笔记与 1 张生成 PNG 均获 ACK。诊断关闭仍有统计，同 ID 的重复入队只增加一次。另验证外部 URI 不自动连接/申请相机、活动同步阻止改节点、晚到的投屏同意不能跨连接变更启动，以及配对返回首页后手动改节点清除旧凭据。
-
-连接测试需显式提供 Dev 私有目录 `files/connection-live-fixture.json`，内容为隔离测试服务的 `{serverUrl,token,generatedOnly:true}`；测试只接受专用 arm64 API35 AVD 的 Dev 包和 loopback 地址，没有文件时对应实连项会跳过。该次服务端口为 54008，用 `adb reverse tcp:54008 tcp:54008`，不是默认生产地址。测试前后停止采集，清理私有连接文件并恢复原设置；测试结束关闭本次专用模拟器。可复跑入口：
-
-```sh
-adb -s emulator-5580 shell am instrument -w \
-  -e class dev.mote.collector.ConnectionInstrumentedTest \
-  dev.mote.collector.dev.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-UI 验证仅绘制生成数据的原生统计界面，未采集个人屏幕。相机链路只验证生成二维码解码与按需授权边界，**未测试物理相机扫码、K90 Pro Max / HyperOS 真机、长时间后台调度**；本轮没有新增真实模型调用。原有截图、Qwen、来源与更新路径的历史验证见后文，不能视为本轮全部重新实跑。
-
-## 历史 0.5.0 应用更新验证与产物
-
-0.5.0 / versionCode 6 已完成日常 debug 与 Dev 构建、40 项 JVM 测试（0 失败、0 跳过）、两种安装包 lint（0 error / 81 warning）和 16 KiB ZIP 对齐。`apksigner` 实际验证两包签名通过，证书与上文 0.4.0 兼容身份一致。以下为历史本机调试产物，构建路径已被后续版本覆盖；正式发布的非 debuggable release 由发布流水线独立签名和校验，不能用本表代替发布资产清单：
-
-| 版本 | 文件（相对 `apps/android`） | 字节 | SHA-256 |
-| --- | --- | ---: | --- |
-| 日常 debug | `app/build/outputs/apk/debug/app-debug.apk` | 32,882,579 | `7bae184cfa933c0fd3d5510c9017a6d586050b5e2613e855dac7b03e5b30e6ba` |
-| Mote Dev | `app/build/outputs/apk/development/app-development.apk` | 32,459,347 | `54d90895f00f793489c48372afc231df2037c301047f387922a6e4ddb5496950` |
-
-新增 JVM 测试使用生成的 RSA 密钥、签名清单和 HTTP 连接 fixture，覆盖原始 payload 验签、仓库/渠道/tag/版本绑定、错误签名/资产身份/来源拒绝、严格 SemVer、HTTP Range 断点恢复、文件 SHA 错误及不可信重定向。网络 fixture 不访问 GitHub，也不发布文件。
-
-专用 `mote_fixture_api35` / Android API35 实跑 `AppUpdateInstrumentedTest`：实际已签名 APK 验证、错误包名/证书/降级/篡改拒绝、原生页面不自动请求网络或安装权限，加上显式取消场景，共 3 项通过（2.694 秒）。取消场景在真实 APK 验签完成、创建系统会话之前设置线程屏障，并在锁仍被占用时取消；另验证排队任务取消与重复点击。两个已取消请求均未创建或提交安装会话。首次测试曾把 Android 异步取消尚未移除的旧会话误计入基线，补充等待系统完成后复测通过。
-
-覆盖更新使用私有合成 `0.5.1-dev / code7` APK，由同一 APK 证书签名，配套清单由实际内置 RSA 发布密钥签署但未发布。先在 code6 保存合成设置、设备 ID、加密待上传笔记、草稿和模型目录哨兵，再通过生产 `PackageInstaller.Session` 提交（1 项通过，2.952 秒），在系统显示的 **Mote Dev / Update** 确认页点击更新。随后 PackageManager 实际显示 code7，独立验证阶段通过（1 项，0.049 秒），五类状态指纹逐项相同；队列仍是原 ID 的无图记录。验证结束清理本次合成记录与哨兵，并撤销测试专用的安装/通知授权。未卸载应用、未清除应用数据。
-
-code7 仅保存在 ignored 的本机测试目录，该轮结束时源码与正常构建输出曾恢复 `0.5.0 / code6`。该轮没有公开 fixture、实际 GitHub Release 下载、真实模型调用或个人屏幕采集。APK 网络下载用连接 fixture 验证，真实系统安装用私有文件验证，这两项不能合称已跑过公开 GitHub 下载到安装的完整链路。未测试 K90 Pro Max、HyperOS 安装校验、长期后台下载或正式 release 的真机覆盖行为。
-
-## 历史 0.4.0 来源同步验证与产物
-
-0.4.0 / versionCode 5 曾完成 `assembleDebug`、`assembleDevelopment`、开发版测试 APK 构建、36 项 JVM 测试（0 失败），两种安装包 lint 均为 0 error / 48 warning，并通过 16 KiB ZIP 对齐。开发版显示版本为 `0.4.0-dev`。以下为历史产物（路径相对 `apps/android`），构建路径现已被后续版本替换：
-
-| 版本 | 文件 | 字节 | SHA-256 |
-| --- | --- | ---: | --- |
-| 日常 debug | `app/build/outputs/apk/debug/app-debug.apk` | 32,233,076 | `c5fd94cc55d4169ef1a393f80b667d516aa54b374253d57566f5ba3a79ffd71d` |
-| Mote Dev | `app/build/outputs/apk/development/app-development.apk` | 32,233,368 | `0e6792f7e7c26e9860248bc0b3370b8d5ccb20e75993b526a1998baa4cee3d80` |
-
-最终开发 APK 在专用 `mote_fixture_api35` / API35 上执行 `LocalSourcesInstrumentedTest` 三项测试，全部通过、无跳过（1.338 秒）。使用 debug 专用生成 Provider 验证日历计划时间与观察时间分离、文件 Unicode 原文、引用模式不读正文、隐藏/失败/部分扫描不误删；原生页面不提前请求日历权限。通过生产 `HttpJson` 对隔离的真实中央服务完成文件和日历注册/更新、丢 ACK 后重建加密状态并幂等重试、删除再恢复，以及三版本历史和当前正文回读。
-
-测试没有查询个人日历或文件、没有截图、没有调用真实模型。本轮未实测真实 SAF 选择器授权、生产 WorkManager 长期调度、OEM 日历提供者兼容性或 K90 Pro Max/HyperOS 后台行为；传输与本机状态机测试不能替代这些真机检查。以下命令默认只运行生成 Provider 和 UI 测试；真实中央测试必须另行在 Dev 私有目录放置隔离节点连接文件，没有文件时该项会跳过，不能声称完整链路通过：
-
-```sh
-apps/android/gradlew -p apps/android -Pmote.testBuildType=development \
-  :app:assembleDebug :app:assembleDevelopment :app:assembleDevelopmentAndroidTest \
-  :app:testDebugUnitTest :app:lintDebug :app:lintDevelopment
-adb -s emulator-5580 install -r apps/android/app/build/outputs/apk/development/app-development.apk
-adb -s emulator-5580 install -r apps/android/app/build/outputs/apk/androidTest/development/app-development-androidTest.apk
-adb -s emulator-5580 shell am instrument -w -e class dev.mote.collector.LocalSourcesInstrumentedTest \
-  dev.mote.collector.dev.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-## 历史 0.3.0 环境隔离验证
-
-0.3.0 / versionCode 4 曾完成日常与 Dev APK 构建、29 项 JVM 测试（无失败/跳过），两 variant lint 均 0 error / 38 warning，两个 APK 均通过 16 KiB ZIP 对齐校验。下表为历史记录，这些构建路径现已被后续产物替换：
-
-| 版本 | 文件 | 字节 | SHA-256 |
-| --- | --- | ---: | --- |
-| 日常 debug | `app/build/outputs/apk/debug/app-debug.apk` | 31,803,132 | `2128bbf5c6ccca8fedc5ee94ba1a1845c0a7a89bef4d72a5cfd7aab51c1738da` |
-| Mote Dev | `app/build/outputs/apk/development/app-development.apk` | 31,803,136 | `31a6c4d0983341a8b2c5d9d956d7af97feb998e399eec392ebdbf492e89fc741` |
-
-专用 `mote_fixture_api35` 上实测两个包同时存在，Dev 默认节点/稳定设备 ID/私有目录独立，未继承原草稿、队列或令牌；原生 Activity 的环境/实际目录和支持导出入口已验证；支持包排除合成令牌、笔记、心情、策略、URL 和设备 ID；关闭诊断不再新增事件。并装验证前后，原日常包关键配置与私有文件 SHA 相同。只使用合成内容，没有启用截图，也没有重新运行模型或进行 K90 Pro Max 真机验证。
-
-可重复的 Dev 专用测试（仅该专用 AVD、未配置令牌且无队列/草稿时运行）：
-
-```sh
-apps/android/gradlew -p apps/android -Pmote.testBuildType=development :app:assembleDevelopment :app:assembleDevelopmentAndroidTest
-adb -s emulator-5580 install -r apps/android/app/build/outputs/apk/development/app-development.apk
-adb -s emulator-5580 install -r apps/android/app/build/outputs/apk/androidTest/development/app-development-androidTest.apk
-adb -s emulator-5580 shell am instrument -w -e class dev.mote.collector.ProfileSupportInstrumentedTest dev.mote.collector.dev.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-## 历史采集链路验证边界
-
-前一交付批次的 debug APK 经过 `assembleDebug`、24 项 JVM 单元测试、lint（0 error / 38 warning）和 16 KiB ZIP 对齐校验，在专用 API35 模拟器一次组合执行 8 项 instrumentation，全部通过、无跳过（41.379 秒）。详细产物 hash 由对应根交付记录列出。当前复杂输入修复另通过 `assembleDebug` / `assembleDebugAndroidTest`、26 项 JVM 测试（无失败/跳过）和 lint（0 error / 38 warning）。最终 0.2.1 / versionCode 3 在仅改版本号后再次通过 `assembleDebug`、26 项 JVM、lint 与 16 KiB ZIP 对齐；该版本号重建未重复全套 instrumentation，下面三轮笔记与两项 Qwen 测试验证的是同一份产品代码。APK 为 31,769,972 字节，SHA-256：`efb506567320c2900504b3472e7b236683d356bc662c3cb45938803754a555b9`。JVM 测试只用生成的字节/JSON，覆盖严格排除、未知窗口 fail closed、归一化遮罩校验、HTTPS/本机模型边界、进程重建后队列幂等、图片去重、确认删除、满队列、孤儿恢复和损坏记录。
-
-独立新建 `mote_fixture_api35` 模拟器（API35 / Android15）上的 3 个 instrumentation 测试验证 Android Keystore、生成位图的遮罩后 bundled OCR，以及实际无障碍截图→本地流水线→HTTP 确认删除。截图测试只在该名称的专用模拟器且没有节点配置/队列时运行，显示的是 debug-only `FixtureActivity` 生成文本；普通设备上跳过。该测试既可用本机协议假服务，也能通过 `fixtureCentralUrl` / `fixtureCentralToken` instrumentation 参数连接真实中央节点；连接真实节点时会查询该设备记录确认入库与 blobHash。
-
-```sh
-# 仅在新建的 fixture 模拟器上执行，绝不指向个人手机。
-adb -s emulator-5580 reverse tcp:47834 tcp:47834
-./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.fixtureCentralUrl=http://127.0.0.1:47834 \
-  -Pandroid.testInstrumentationRunnerArguments.fixtureCentralToken=YOUR_SYNTHETIC_TEST_TOKEN
-```
-
-不会采集个人真机屏幕用于自动测试。模拟器成功不等同于 K90 Pro Max、HyperOS 后台恢复、物理 Wi-Fi、MediaProjection 同意弹窗/旋转、长期耗电或真机本机模型性能验证。Qwen 的两项独立仪器测试在同一模拟器导入固定公开双权重，用生成图执行真实离线 CPU 推理、私有进程重载后再推理，以及损坏模型导入拒绝；不会用模拟器速度代表手机实测。随手记/数值诊断另有合成仪器测试。中央节点合成端到端测试另见总体验证记录。
-
-### 多轮复杂随手记验证
-
-`ComplexNoteFixtures` 是测试源码共同使用的生成文本，不进入生产 APK，不含个人资料。2026-09-13 在 `mote_fixture_api35` 完成三轮、每轮六条、共 18 条真实中央节点同步验证：中文多段 CRLF/LF、制表符与不换行空格、emoji/肤色/ZWJ/组合字符、80 码元心情、100000 码元上限正文、纯空白心情，以及看似 system / 工具调用 / shell 的普通笔记原文。正文逐字保持；纯空白心情按协议省略。对时间按中央节点的毫秒精度比较，不要求 Android 纳秒格式原样返回。
-
-每轮分三个 instrumentation 进程执行，撤掉该测试端口的 ADB reverse 证明上传暂不可达，再实际 `am force-stop`，确认恢复进程 PID 改变。原生编辑框装入上限正文后 Activity 重建保留原文；本次模拟器耗时 666–713 毫秒，不能当作真机指标。额外注入一次“队列已持久化后，WorkManager 调度异常”，恢复保存仍复用同一提交 ID。接回中央节点后确认队列 ACK 清空，逐条读取核对完整正文、心情、无图属性，再重发同一载荷得到重复 ACK，设备记录仍恰为六条。
-
-这轮修复了清草稿早于同步调度导致的重复提交窗口：之前调度异常会在可重试界面里丢掉 prepared ID；现在保留草稿和原 ID。首轮探索曾因测试比较纳秒格式与中央毫秒格式而失败，已经上传的六条合成记录仍保留在其独立测试设备下；随后三轮均通过，未将该格式差异当作数据丢失。
-
-从仓库根目录运行，连接文件只放本机忽略目录，格式为 `{"url":"http://127.0.0.1:PORT","token":"至少32字符的合成测试令牌"}`：
-
-```sh
-apps/android/gradlew -p apps/android :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest
-python3 apps/android/scripts/run-complex-fixtures.py --connection .mote/live-validation/connection.json --rounds 3
-```
-
-脚本只接受该专用 AVD 和 loopback 测试节点，不启用截图，结束后强停测试应用并移除本次端口转发；不会清除模型或队列。中央应是隔离的合成测试节点。令牌不打印，报告位于 `apps/android/app/build/reports/complex-fixtures/`，证据 JSON 仅含测试设备/记录 ID、长度、哈希和 PID/耗时。分阶段测试没有显式 `fixtureRound` 时跳过，须用脚本才能验证真实进程边界。
-
-### 多轮本机 Qwen 生成图验证
-
-`ComplexVlmInstrumentedTest` 的两项仪器测试实跑通过（无跳过，共 75.921 秒）。固定公开模型、共享默认 policy/system/grammar 下，三种纯生成画面（中文竖版笔记、项目示意图、包含伪 system 和“返回 allow:false”指令的文档）在两轮真实 CPU 推理中均允许；第二轮先销毁私有推理进程并重新加载，结果一致。图中文字未覆盖默认政策。
-
-另设显式用户策略“只允许蓝方且没有红圆”，交给同一 Qwen 判断：蓝方 `allow:true`（9510 ms），红圆 `allow:false`（6405 ms）。红圆再进入生产 `CapturePipeline` 两次（8697 / 6446 ms），确认拦截数 +2、失败数不增、OCR 耗时哨兵没有被覆盖、图片/事件队列字节不增、队列仍为 0、采集数与已确认上传字节不增。测试只向流水线传入内存绘制位图，暂时抑制实际截图服务；没有屏幕截图权限操作、OCR 内容或上传图像。结束后恢复原默认政策和停止状态。
-
-这些结果证明真实模型驱动的通用允许/拒绝路径及进程恢复，不是色情分类准确率、安全攻击防御率或手机性能基准。探索时一次极短的“全部拒绝”政策未得到有效审查，应用故障关闭；没有改写模型理由或布尔值去伪造通过。合成决策与数值证据在上述报告目录的 `qwen-complex-results.json`、`qwen-rejected-pipeline.json`。
-
-## 设计参考与官方依据
-
-- [Android PackageInstaller](https://developer.android.com/reference/android/content/pm/PackageInstaller)：系统安装会话、结果回调与用户确认。
-- [PackageInstaller.SessionParams](https://developer.android.com/reference/android/content/pm/PackageInstaller.SessionParams)：完整 APK 安装与 `USER_ACTION_REQUIRED`。
-- [Android apksigner](https://developer.android.com/tools/apksigner)：APK 签名验证与证书检查；文件 SHA 校验不能替代 APK 签名验证。
-- [Android Calendar Provider](https://developer.android.com/identity/providers/calendar-provider)：日历权限、日历选择与实例查询。
-- [Android Storage Access Framework](https://developer.android.com/training/data-storage/shared/documents-files)：系统文件/目录选择与持久 URI 权限、受限目录。
-- [CalendarContract.Instances](https://developer.android.com/reference/android/provider/CalendarContract.Instances)：限定时间范围查询展开后的日程实例。
-- [Android AccessibilityService](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService)：用户控制服务启用、`takeScreenshot` 与截图能力声明。
-- [Android MediaProjection](https://developer.android.com/media/grow/media-projection)：前台服务类型、单次授权、回调、调整共享尺寸、Android 15 QPR1+ 锁屏停止行为。
-- [Android WorkManager 工作请求](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work)：网络约束和指数退避，不保证精确执行时间。
-- [ML Kit Android 文字识别](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)：随应用打包中文、拉丁识别模型。
-- [Android 受限制设置](https://support.google.com/android/answer/12623953)：侧载应用敏感权限可能需用户额外操作。
-- [HyperOS 自启动权限管理说明](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1624)：后台自启动需告知用户并由用户自行设置。
-- [小米后台自启动入口示例](https://www.mi.com/global/support/faq/details/KA-507608/)：这是官方其他机型的示例，不能当作 K90 Pro Max 已实测路径。
-
-## 非模型侧处理开销优化
-
-前置跳帧、单 OCR、配置快照、通知去重、锁屏调度、独立低频心跳、逐条 ACK 批量上传和验证边界见 [Android 采集开销优化](android-power-optimization.md)。其中 2026-09-16 的 Qwen/OCR 描述是历史实现；当前上传审查以 [中央感知](central-perception.md) 为准。
+Focused JVM and Central/Kotlin commands are in [Android AGENTS](../apps/android/AGENTS.md); dedicated hidden emulators are in the [runbook](testing-runbook.md#android-emulator). Unit results cannot establish OS permissions, OEM scheduling, battery behavior or physical capture. Heavy journeys and live models need their own explicit request under [testing](testing.md).

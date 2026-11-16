@@ -165,7 +165,8 @@ class CentralProducerContractTest {
             host.refresh(); assertNull(host.error)
             val suggestion = host.cards.single { it.id == hostFixture.getString("cardId") }
             assertTrue(host.canStart(suggestion.id)); assertTrue(suggestion.startable)
-            assertTrue("The all-material production entry keeps the server's saved matter scope", hostScope.same(host.scope(suggestion.id)))
+            assertTrue("The all-material entry uses the server's fixed task scope", requireNotNull(suggestion.taskScope).same(host.scope(suggestion.id)))
+            assertFalse("Starting a suggestion must not read the broader matter", hostScope.same(host.scope(suggestion.id)))
             val started = host.start(suggestion.id, suggestion.revision, "Generated ${generated.getString("kind")} Android owner goal")
             assertNull(host.error); assertNotNull(started)
             assertEquals(started, host.start(suggestion.id, suggestion.revision, "Generated duplicate click"))
@@ -178,7 +179,7 @@ class CentralProducerContractTest {
             assertTrue(AssistantJson.rows(hostApi.questions(workId), "items", AssistantQuestionLink::read).all { it.workId == workId })
             val request = exchanges.last { it.method == "POST" && it.path == "/api/assistant/tasks" }.request!!
             assertEquals(suggestion.id, request.getString("cardId")); assertEquals(suggestion.revision, request.getLong("expectedRevision"))
-            assertTrue(hostScope.same(AssistantScope(request.getJSONObject("scope"))))
+            assertTrue(requireNotNull(suggestion.taskScope).same(AssistantScope(request.getJSONObject("scope"))))
             assertFalse(hostDisk.read().has("pending"))
             assertTrue(AssistantJson.rows(api.matters(), "items") { AssistantJson.id(it) }.contains(matter.id))
             val hostMatterId = hostFixture.getString("matterId")

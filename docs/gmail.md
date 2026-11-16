@@ -1,6 +1,6 @@
 # Gmail 只读来源
 
-在 Google Cloud 启用 Gmail API，配置现有的 `MOTE_GOOGLE_CLIENT_ID`、`MOTE_GOOGLE_CLIENT_SECRET` 和 `MOTE_GOOGLE_REDIRECT_URI`。回调仍是 `/oauth/google/callback`，必须与 Google Cloud 登记的完整地址一致。非 loopback 节点使用 HTTPS。密钥只放在节点私有配置中，不提交到仓库。
+在 Google Cloud 启用 Gmail API，在所选 profile 的私有 `mote.yaml` 配置 `connectors.googleClientId`、`connectors.googleClientSecret` 和 `connectors.googleRedirectUri`，字段示例见[连接器说明](connectors.md#google-日历)。回调仍是 `/oauth/google/callback`，必须与 Google Cloud 登记的完整地址一致。非 loopback 节点使用 HTTPS。密钥只放在节点私有配置中，不提交到仓库。
 
 在 Mote 中打开 **连接 → 添加来源 → 连接服务 → 连接 Gmail（只读）**，开始授权，在 Google 页面完成后返回刷新。Gmail 与 Google Calendar 分别授权、分别保存凭据。Gmail 只请求 `https://www.googleapis.com/auth/gmail.readonly`，没有发送、删除、标记已读或修改标签的接口。
 

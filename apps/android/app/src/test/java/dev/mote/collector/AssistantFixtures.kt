@@ -18,6 +18,7 @@ internal object AssistantFixtures {
         .put("kind", "suggestion").put("state", "open").put("title", if (id == work) "Generated project preparation" else "Generated family trip preparation")
         .put("body", "Generated observation, relevance and offered help").put("evidence", JSONArray().put(proof()))
         .put("matterId", matterId).put("acceptedTaskId", JSONObject.NULL).put("readAt", JSONObject.NULL)
+        .put("taskScope", scope().json())
         .put("feedback", JSONArray()).put("createdAt", time).put("updatedAt", time)
     fun page(vararg cards: JSONObject) = JSONObject().put("items", JSONArray(cards.toList())).put("nextCursor", JSONObject.NULL)
     fun task(state: String = "waiting") = JSONObject().put("task", JSONObject().put("id", taskId).put("revision", 1).put("state", state)

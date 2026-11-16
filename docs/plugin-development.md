@@ -11,6 +11,11 @@ contribution surfaces, 4 runtime locations and 6 extension methods — is
 [plugin surfaces](plugin-surfaces.md). It describes the code as it is today,
 including that iOS does not load plugins.
 
+Public APIs are available during the MVP and may change. Keep the SDK,
+examples and incompatibility notes in sync when an interface changes; the
+MVP does not promise a transition window for old APIs. Define compatibility
+support before long-term stable use.
+
 The author-facing boundary is `@mote/plugin-sdk` alone: a plugin never
 imports `apps/*`, `packages/*` internals or `@mote/shared`. The SDK tarball
 bundles the public contracts and the host entry; `plugin-dev` verifies the
@@ -18,7 +23,7 @@ installed copy (`PLUGIN_CONTRACT_VERSION 1`, package version `0.1.0`) before
 starting a dev profile. The in-repository example packages
 (`examples/journal-plugin`, `examples/media-intake-plugin`,
 `examples/text-normalization-plugin`) are a different deployment seam described
-in [library-plugin-contracts](library-plugin-contracts.md); they are assembled
+in [library-plugin-contracts](plugin-surfaces.md#material-and-processing-contracts); they are assembled
 by the host and are not covered by these templates.
 
 ## Choosing a template
@@ -174,22 +179,12 @@ paths. `--json` prints the complete report and a finding exits nonzero.
 `--private-root` adds an isolated host root when a fixture lives outside the
 standard home, temporary or repository directories.
 
-## G4 — independent author checklist
+## Contributions and domain services
 
-For manual verification by an author who did not participate in the
-implementation, in an external directory, with no repository writes:
+`mote-plugin.json` is the package authority. Feature inventories project its declared contributions and actually registered capabilities; they are not a second manifest. Central features mount before listen, check their live scope on every request, and dispose routes/timers/resources. Web registers declarative views in a disposable host; native primitives ship in client builds. iOS currently has no plugin host. Theme/layout packs use the trusted presentation host, not arbitrary downloaded React/HTML.
 
-1. Pick a template (`connector`, `worker` or `domain`); a second author picks
-   a different one.
-2. `plugin-dev create --template <t> --sdk-tarball <packed-sdk>` into a new
-   external directory.
-3. Read the generated `README.md`; change one small behavior (route,
-   configuration field or domain method).
-4. `npm run build` (worker/domain need `MOTE_REPOSITORY` pointing at the
-   checkout) and — for the domain template — `npm test`.
-5. Run on the real host (`plugin-dev dev --once --seed` for connector and
-   domain; plugin-center release install for worker) and observe the
-   artifact serving the changed behavior.
+A new source declares explicit source kinds and uses the existing connector/source-pipeline services. A processing contribution registers `moteContextProcessors`; file decoders use `moteFileProcessors`. The [text-normalization example](../examples/text-normalization-plugin) demonstrates deterministic processing. Owner workflows at `POST /api/processing/workflows` name processors and versioned original/artifact inputs, and can use `dependsOn` for a DAG. The host retains authorization, cancellation, measured usage, output bounds and commit checks. Lane names (`extract`, `aggregate`, `semantic`, `memory`) are scheduling categories, not semantic intent classifiers.
 
-Both authors succeeding without repository edits satisfies the unit's G4
-check.
+Installing or upgrading a consumer does not scan history or grant model work. Versioned outputs, source scope, runtime removal and current installation identity control reuse and publication. Disabling presentation does not revoke or enable processing. A native application can keep internal workflows while connecting authorized Mote context, visible state and artifacts. See [material and consumer contracts](plugin-surfaces.md#material-and-processing-contracts), [materials](materials.md), [processing](processing.md) and [Memory](memory.md).
+
+Use the smallest meaningful existing check under [testing](testing.md); the example commands above describe available fixtures, not a required contributor sequence or a claim of live-platform validation.

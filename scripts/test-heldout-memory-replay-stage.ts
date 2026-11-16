@@ -12,7 +12,7 @@ import {repositoryRoot,type Config} from '../apps/server/src/config.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {defaultMemoryIntegrationRecipe} from '../apps/server/src/memory-integration-policy.js';
-import {corpus,evaluation,freezes,recipes,SafeFailure,check,equal,json,hashObject,externalNew,parse,verifyFreeze,lines,config,tables,closed,cloneClosed,ablateClone,sqliteCheck} from './test-heldout-memory-replay.js';
+import {base,corpus,evaluation,freezes,recipes,SafeFailure,check,equal,json,hashObject,externalNew,parse,verifyFreeze,lines,config,tables,closed,cloneClosed,ablateClone,sqliteCheck} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,StageSafetyError,inspectAdmissionLedger,type LedgerEvent,recoveryELimits} from './test-heldout-memory-replay-ledger.js';
 type Node=Awaited<ReturnType<typeof buildApp>>;
 type Stub=(reader:ContextReader,input:QueryInput)=>Promise<QueryResult>;
@@ -26,7 +26,7 @@ export type Manifest={continuation?:{parent:string;parentTreeHash:string;index:n
 const fixedLimits={stageOuter:2,perOuterMs:300000,stageProcessMs:720000,cumulativePlanningCap:124,automaticOuterRetries:0,concurrency:1} as const;
 const experimentPlan={version:'heldout-v2.1-six-wave@1',batchesByWave:[6,6,10,6,8,6],stageOuterCaps:[2,14,18,26,18,22,16,2,2,2,2],totalOuterPlanningCap:124,extractionRecipes:recipes,integrationRecipe:defaultMemoryIntegrationRecipe,batchCharacters:12000,clock:'checkpoint-availability.json contextTime frozen per host task',outerAutomaticRetries:0};
 export function experimentHash(m:Manifest){return hashObject({corpus:m.corpusFreeze,evaluation:m.evaluationFreeze,production:Object.fromEntries(Object.entries(m.codeHashes).filter(([file])=>!file.startsWith('scripts/'))),model:m.model,runtime:m.runtime,bindings:m.bindingsHash,initialSeed:m.seedTreeHash,initialBatchPlan:m.batchPlan,plan:m.experimentPlan});}
-const supervisor=join('/Users/utopiafar/Documents/Codex/mote-goal-2026-09-27','run-heldout-stage-supervised.py');
+const supervisor=join(base,'run-heldout-stage-supervised.py');
 const semantics='2025-11-30T23:59:59+08:00';
 const safeCode=(e:unknown)=>e instanceof SafeFailure||e instanceof StageSafetyError?e.code:'internal_error_details_sealed';
 async function privateWrite(path:string,value:unknown){await writeFile(path,json(value),{mode:0o600});}

@@ -24,6 +24,34 @@ class AssistantFeedViewModelTest {
             exchange(method, url, bytes?.let { JSONObject(String(it)) })
         }), scope, domain)
 
+    @Test fun `server task scope controls suggestion acceptance and reads independently of a broader matter`() {
+        val broad = AssistantScope(JSONObject().put("kind", "all").put("deviceId", "generated-device"))
+        val selected = f.scope()
+        var starts = 0
+        val domain = object : GeneratedAssistantDomain() {
+            override fun matter(id: String, scope: AssistantScope) = AssistantMatterDetail.read(f.matter().apply {
+                getJSONObject("matter").put("scope", broad.json())
+            })
+            override fun start(request: JSONObject, card: JSONObject): String {
+                assertTrue(selected.same(AssistantScope(request.getJSONObject("scope"))))
+                starts++
+                return f.taskId
+            }
+        }
+        val api = api(domain, broad) { _, url, _ ->
+            if (url.contains("/tasks/")) {
+                val scope = JSONObject(URLDecoder.decode(URI(url).rawQuery.substringAfter("scope="), "UTF-8"))
+                assertTrue(selected.same(AssistantScope(scope)))
+                200 to f.task()
+            } else 200 to f.page(f.card())
+        }
+        val disk = store(); val model = AssistantFeedViewModel(api, disk::read, disk::write)
+        model.refresh(); assertNull(model.error)
+        assertTrue(model.canStart(f.work)); assertTrue(selected.same(model.scope(f.work)))
+        assertEquals(f.taskId, model.start(f.work, 1, "Generated owner goal"))
+        assertNull(model.error); assertEquals(1, starts)
+    }
+
     @Test fun `a task accepted under another exact scope does not blank readable feed cards`() {
         val accepted = f.card().put("acceptedTaskId", f.taskId)
         val api = api { _, url, _ ->

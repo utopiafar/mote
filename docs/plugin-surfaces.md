@@ -8,6 +8,9 @@ promise. The canonical package descriptor is
 `@mote/plugin-sdk` and use `@mote/plugin-sdk/node` only for Node-only host
 helpers.
 
+The [MVP compatibility policy](plugin-development.md) applies to these public
+surfaces.
+
 A package authors one `mote-plugin.json`, and the host validates it with
 `packageManifestSchema`. The package `runtime` and `entry` select the process
 that starts the package; each contribution's `runtime` says where that
@@ -883,3 +886,25 @@ its own fence.
 **Common errors.** Using install order as priority, omitting a finite `order`,
 duplicating a chain step, assuming ties fall back to input order, or treating
 chain position as an authorization scope.
+
+## Material and processing contracts
+
+Library presentation reads MaterialStore's published documents and immutable revisions. Raw input belongs to SourceArchive; decoding/organization/indexing belongs to the source/file recipe; post-processing uses ProcessingRuntime and the existing ExecutionEngine. Receipt, readable body, indexing and Memory are separate. A view does not create a second archive, authorization database or task engine.
+
+| Extension | Existing registration and contract |
+| --- | --- |
+| Sources | ConnectorRegistry + SourcePipelineRegistry; exact source kind, reception and privacy policy. |
+| Organization | SourceRecipeExecutor; versioned reader/group/window/join/steps/aggregation/publisher. |
+| Named products | MaterialStore.artifacts; key, readiness state, revision and block IDs. Ready outputs need not wait for unrelated ones. |
+| Consumers | `moteContextProcessors` + `moteMaterialConsumers`; exact kind/schemaVersion/key and processor/version/config, with declared output key/kind. |
+| Catalog | `moteMaterialCatalog`; type labels and card/detail/panel/action registration IDs, without executable code or remote URLs. |
+| Web/native reading | Exact kind/schemaVersion/representation and dependency versions; generic body fallback when specialized views are absent or fail. |
+| Memory | Existing bindings, providers and publication; installation, instance, enablement and active reading authority remain separate. |
+
+`window` and `join` transform the current authorized raw group snapshot, not arbitrary cross-source data. Current bounds are 10,000 items / 16 MiB; aggregation returns at most 1 MiB through the existing publisher. Installation epochs prevent same-ID/version reinstallations from inheriting an old instance's commit authority.
+
+Material and EvidenceArchive products have different authorities. For named Material input, use `productInputs` with `authority: "material"`, a pinned material ref, key and bounded offset/length. Artifact input uses `authority: "artifact"`, ID and revision. Resolvers preserve actual read ranges and lineage. `produces: [{key, kind}]` and `metadata.productKey` identify declared outputs, exposed through the processing job's products.
+
+An installed consumer does not authorize work. An owner source binding can admit deterministic extract/aggregate on newly published material through existing execution planning; semantic/Memory still require their own authority. Reinstall, upgrade or repair does not authorize historical paid work. [journal-plugin](../examples/journal-plugin) demonstrates named body/counts, a deterministic consumer and optional catalog/view anchors.
+
+Memory providers hold exact immutable bodies under host-issued namespaces and keys. The host retains admission, originals, dependencies, current permissions and publication/deletion coordination. Missing external bodies fail explicitly rather than silently reading old SQL copies. Prepare verifies migration before an explicit binding switch; failed preparation keeps the previous authority. Unknown external writes/erases are durable reconciliation work. See [Memory](memory.md#publication-deletion-and-replacement) and [plugin control](plugin-center.md).

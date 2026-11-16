@@ -79,7 +79,7 @@ node scripts/mote.mjs stop --profile prod --home "$HOME/Library/Application Supp
 
 启动环境保留原有绕过规则并补齐 IPv4/IPv6 loopback，统一大小写代理变量。`launchd` 生成的 plist 会把生成时进程环境中已存在的代理变量原样写入 `EnvironmentVariables`，缺失的变量不会补造；运行仍由 `mote run` 补齐 `NODE_USE_ENV_PROXY=1`。本机语音、图像处理和 worker 健康探测另使用强制直连传输，即使直接启动中央并遗漏 `NO_PROXY`，也不会通过环境代理发送本机处理原件或授权头。
 
-原生 stdout/stderr 先经监督进程白名单化：保留固定启动/停止事件，未知 SDK 输出只记类型与字节数。监督进程和中央诊断都按级别分段，使用同一目录与 2 GiB 总预算；各级别保留目标和容量见[日志保留决策](adr-dev-log-retention.md)。所有 profile 默认关闭 debug 与详细过程记录。详细记录开启后最多持续 24 小时；开关、级别和截止时间经校验热应用，目录与容量修改需要重启。
+原生 stdout/stderr 先经监督进程白名单化：保留固定启动/停止事件，未知 SDK 输出只记类型与字节数。监督进程和中央诊断都按级别分段，使用同一目录与 2 GiB 总预算；各级别保留目标和容量见[日志保留决策](troubleshooting.md)。所有profile默认关闭debug 与详细过程记录。详细记录开启后最多持续 24 小时；开关、级别和截止时间经校验热应用，目录与容量修改需要重启。
 
 ### 日志锁与离线恢复
 
@@ -184,76 +184,23 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 ## 升级与回退
 
-本次是配置格式的破坏变更：主配置改为 YAML version 1，旧 `mote.env`、`model-settings.json`、`file-processing.json` 与 SQLite 当前运行设置不再作为配置来源，也不会自动转换。中央当前为 `backend_epoch=7`，Desktop/Android 当前本机格式为 4，HTTP 便携归档仍为 version 2。epoch 7 不能打开 epoch 6 的库，需要新的空数据目录。
+当前配置为YAML version 1，Central为backend epoch 7，Mac/Android本机格式4，便携JSON为version 2。MVP只支持当前格式；旧目录保留，程序不自动转换、清空或用旧配置覆盖当前设置。未来长期使用需要保留数据的升级方案。跨历史基线前先由对应旧版本停写并备份完整旧目录、凭据和密钥，再明确选择新目录；只有明确放弃旧资料才执行reset。
 
-历史 MVP 基线曾切换上述存储与客户端格式，这与本次配置改造是两件事。来自更早 epoch、客户端格式、内容包装或便携包的资料仍不自动转换。跨越该历史基线时，请先用相应旧版本完成必要导出、停止全部写入并保留完整旧目录、凭据及密钥，再选择新空目录；只有明确放弃旧资料时才按 [MVP 基线操作](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/audits/mvp-baseline-cleanup-2026-10-09.md) 执行 reset。当前程序不能替旧程序读取和备份旧格式。
-
-上述历史跨代的新空环境可使用 `node scripts/mote.mjs init --profile prod --home /srv/mote-epoch4/profiles`，再重新配置当前模型、文件 policy、来源和客户端连接。若在已备份且停止的原目录明确放弃旧资料，可执行 `npm run reset:mvp-vault -- --data-dir /absolute/old-vault --confirm-clear`；该命令会清空资料及旧模型/文件处理配置。它保留令牌、content-key 和 connectors，不能把旧 collector 凭据改成 owner；旧 collector 文件需另行备份并移走后重新配对，见上述实施记录。仅转换配置格式时不要执行该命令。
-
-以下 `upgrade` / `rollback` 事务用于同一存储代际内的部署切换，不能把它当作跨代迁移。升级和回退会短暂停机，本代采集端保留未确认的本地队列。先确认新的 release 已构建或镜像已拉取，使用版本目录/不可变镜像，不要在旧 release 中直接覆盖代码。
-
-### 签名清单更新通道
-
-当前 Central 的 Dev Artifact 与 Beta / 正式发布提供中央源码包，但不提供签名更新清单或 GHCR 镜像；本节说明当前签名更新契约，不能用于获取当前发布版本。清单必须声明组件，并使用该组件的 `central-vX.Y.Z` / `desktop-vX.Y.Z` / `android-vX.Y.Z` 标签；旧统一 `vX.Y.Z` 标签不受支持。当前升级请使用下节的手动源码构建或自行构建 Docker 镜像，再运行 `upgrade`。
-
-已初始化的独立 profile 可以检查并安装符合当前契约的可信签名 Release。中央「服务端配置」页面也可检查最新版本并给出当前环境的操作命令；HTTP 接口不会启动 shell、选择本机路径或直接安装。检查是手动触发，同一分钟内共享同一次结果，不在中央启动时自动联网。非 CLI 托管进程需先由管理员建立明确的独立部署；检查接口不会自动认领根目录安装。
-
-从 Git 源码运行签名更新 CLI 前，宿主机需要 Node 24，并在可信检出目录执行 `npm ci --ignore-scripts`、`npm run build:libs` 以准备验证器及其锁定依赖。所有 profile 命令都需要宿主已安装的锁定 YAML 解析依赖；`init` 无需预先构建共享库，`check-update/update` 还需构建签名验证器。
+当前Central发布源码包，不提供签名更新清单或GHCR镜像。用独立目录构建源码（含connectors:prepare），或自行构建固定镜像，再执行同代部署切换；不能把保留的check-update/update签名机制当当前下载通道。组件独立版本，Central的server/web一起部署，客户端按协议范围判断，不要求版本号相等。
 
 ```sh
-node scripts/mote.mjs check-update --profile prod --home /srv/mote/profiles
-# 可明确固定目标版本；省略 --version 时检查所选渠道最新版本
-node scripts/mote.mjs update --profile prod --home /srv/mote/profiles --version X.Y.Z
-```
-
-版本号只是示例；目标必须高于当前安装的版本，已是该版本时不会重装或降级。尚无签名发行版、GitHub 限流、签名失效或包校验失败都会明确报错，不退回下载任意代码。当前原生进程的版本优先通过已认证的本机节点确认；Docker 使用该 profile 容器实际镜像的版本，不能把执行 CLI 的代码目录版本当成容器版本。
-
-发行来源默认是 `utopiafar/mote`、`stable`，可以在所选私有 `mote.yaml` 调整 `updates.repository` 与 `updates.channel: stable|preview` 后重启中央界面服务。CLI 每次读取该文件。`preview` 接收预发行版本；更换仓库不会更换内置的发行签名公钥。
-
-`mote-release.json` 包含 RSA-3072 / SHA-256 签名的原始 JSON payload。客户端只接受已安装程序内置的公钥与 keyId；manifest 不能自带替代公钥。验证仓库、版本、渠道、固定 GitHub asset URL、大小和 SHA-256 后才准备代码。原生源包限制压缩 128 MiB、展开 256 MiB、单文件 32 MiB，并拒绝路径穿越、符号链接、硬链接与私有配置条目。
-
-原生更新在 profile 的 `releases/版本-哈希/` 中准备一个独立目录，执行锁定依赖的 `npm ci` 与中央/Web 构建。构建不接收 profile 令牌、模型密钥或数据路径；需要 npm 网络访问、构建依赖和额外磁盘空间。准备失败不会停止正在运行的中央。独立目录准备好之后，复用下面的停机、一致备份、切换和健康检查流程，并确认启动进程报告的版本一致。旧目录保留用于回退，不被覆盖。
-
-Docker 更新只拉取已签名 manifest 中的 `ghcr.io/仓库@sha256:...`，验证本地 RepoDigest 后切换。不会使用漂移的 `latest` tag，也不把宿主 profile 凭据交给镜像拉取进程。公开发行依赖的 registry 可用性需要部署机器具备网络访问。
-
-同代更新保留现有 `mote.yaml`、访问令牌、数据目录/卷、连接器凭据与 Tunnel 配置；Docker 快照回退会生成新的数据卷，并原子更新 YAML 的 `storage.source` 与 revision，模型卷保持原部署身份。仅配置文件改造无需改变已符合 epoch 7 的资料库，旧配置必须手工转换。回退时归档回到升级前快照，当前连接器凭据、日历选择和来源连接配置另作私有移交；Google 增量游标会清空，下一轮重新构建有界窗口，避免跳过已回退的数据。这份临时私有移交不进入可携带的备份文件，完成后删除。服务没有自动重启安装、自动降级或自动回退策略。
-
-### 手动准备的版本
-
-中央发布标签为 `central-vX.Y.Z`，server 与 web 同版本部署；下载该标签的 `mote-server-X.Y.Z.tar.gz` 或检出源码后独立构建。同代中央版本更新无需同步升级 Mac 或 Android；只有跨越历史 MVP 存储基线时，各端才都须使用当前格式实现。其他端的标签和版本不用于选择中央部署。
-
-原生示例：
-
-```sh
-# 在另一个检出目录完成 npm ci、中央/Web 构建和 npm run connectors:prepare
 node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --release /srv/mote/releases/next
-```
-
-Docker 示例：
-
-```sh
-# 先 docker pull 已发布镜像，或在新代码目录构建带新 tag 的镜像
-docker build --tag mote-central:next .
-node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --image mote-central:next
-```
-
-升级先停止该环境、生成 `backups/pre-upgrade-*` 一致快照，再切换代码路径或本地镜像 ID，等待健康检查。备份或私有连接器移交准备失败、且资料和版本选择均未变更时，会恢复此前正在运行的服务；原本已停止的环境仍保持停止。切换或恢复资料开始后，失败会保留快照与选择记录，不会自动让旧代码打开不兼容的数据库。当前切换没有跨代 schema 转换。`profile.json` 的 `previous` 记录回退目标，镜像保存实际 image ID，避免旧 tag 被覆盖后指向新代码。
-
-```sh
+# Docker先准备明确的本地镜像，再选择--image mote-central:next
 node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restore-data
 ```
 
-回退先验证旧快照，另存当前仓库的 `pre-rollback-*` 备份，恢复升级前的数据和版本。**升级后新增资料不会出现在回退后的活动仓库中**，但会保存在额外快照，以及原生的 `data.before-rollback-*` 目录或 Docker 原来的命名卷中。CLI 不删除这些保留副本，可验收后导出需要的数据再迁入。只保留一级直接回退元数据；备份目录中更早的快照仍在。
+upgrade先停该环境并生成一致快照，再切换代码/镜像和验证健康。准备失败且未改动资料时恢复原运行意图；切换开始后的失败保留快照与状态，不让旧代码自动打开不兼容库。rollback额外保留当前资料；升级后新增内容不在恢复后的活动仓库中，但保留在pre-rollback副本/原目录或卷，不自动删除。当前连接器凭据另作私有移交，游标按恢复规则重建。
 
-跨代回滚需要旧程序配套完整旧备份，不能让旧程序直接打开 epoch 7，也不能让本代程序打开旧库。reset/newdir 后的资料与旧库彼此独立；先保留两代目录，按 [本次清理实施记录](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/audits/mvp-baseline-cleanup-2026-10-09.md) 手动选择。
-
-使用 launchd 的环境：先 `launchctl bootout` 停止自动管理，再执行升级或回退；验收后用 CLI `stop` 停止临时后台实例，再 `launchctl bootstrap` 原 plist，使 launchd 重新接管新版本。不要在 job 正在自动重启时迁移数据。
+launchd等自动管理须先停止接管，升级验收后恢复，避免迁移时自动重启写入。跨代回滚必须配套旧程序与完整旧备份。签名、不可变制品及客户端更新说明见[更新](updating.md)和[发布](releasing.md)。
 
 ## 备份、恢复和迁移
 
-本代对话历史保存在中央 SQLite 数据库，随完整离线备份恢复。中央界面的 HTTP 便携归档为完整 version 2，包含原始资料、来源与记忆，不包含对话历史；旧 version 1 或缺集合字段的包拒绝导入。离线快照和 HTTP 便携归档是不同契约，均不承担旧格式自动转换。
-
-本代小资料库可在中央界面导出/导入完整 JSON 便携归档；导出包含原文、图片、文件原件及附件关系，按私密数据保管。文件 ID 在恢复后保持不变，加密原件按目标仓库的密钥重新加密。JSON 不包含导入工作目录、运行脚本或批处理任务；恢复后的派生记忆需要重新核验。超过 HTTP 导出限制的仓库使用离线备份：
+更换机器或恢复完整中央资料库（包括对话历史），应使用停库后的离线备份。设备本机副本和外部服务数据需另行备份；此备份不含令牌、模型凭据或内容加密密钥，使用过内容加密时须另存原密钥。备份按私密数据保管。
 
 ```sh
 node scripts/mote.mjs stop --profile prod --home /srv/mote/profiles
@@ -275,12 +222,10 @@ node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 
 内容加密默认关闭，`storage.dataKey` 本身不启用加密；主 YAML 的 `storage.contentEncryptionEnabled` 与开发者页面共用同一设置，校验提交成功后立即影响后续写入，无需重启，也不重写已有对象。`storage.dataKey` 是可选的 64 位十六进制 AES-256-GCM 图片及文件原件密钥；显式开启且未配置时会生成资料库私有的 `content-key` 文件。存在密文时必须单独备份原环境密钥或该文件，离线内容备份不携带密钥。解析文本、元数据与导入工作产物保持明文。尚有密文时不要更换原密钥；丢失密钥不能通过重新下载模型或更换访问令牌恢复内容。已有内容可在开发者页面一次性批量解密，详见[内容存储设置](content-storage.md)。
 
-## 验证范围
+### 进阶：JSON 便携归档
 
-更新专项使用 `node --test scripts/update-tests.mjs scripts/update-deployment-tests.mjs`，覆盖合成 RSA 签名、真实校验下载、安全提取、镜像 digest/实际版本、无权限 HTTP 参数，以及临时 Node 中央的实际切换/回退。进程用例复用当前编译代码作为构建 fixture，不等于从公网完成 npm 安装或发布生产 Release；Docker 用例需在 Docker 主机另行验收。没有操作日常节点、调用真实模型或使用真实 Google/Tunnel 凭据。HTTP 更新接口另由 `apps/server/test/updates.test.ts` 覆盖。
+中央界面的 JSON 便携归档只适用于满足当前导出条件的小资料库，不包含对话历史。库中存在文件归档、图片处理成果或来源处理档案时，当前实现会拒绝导出；JSON 不覆盖这些资料。当前导入只接受完整 version 2 包；MVP 阶段不自动转换旧格式。 JSON 导出不能替代完整离线备份，导出文件须按私密数据保管。
 
-0.3.1 已完成服务端配置页面、Cloudflare Tunnel 专项回归和真实 Linux Docker 验收。下方同时保留既有部署能力的验证说明。
+## 验证
 
-`npm run test:profiles` 在一次性临时 dev/test 目录及随机 loopback 端口运行真实 Node 中央进程，覆盖环境污染隔离、跨令牌拒绝、加密图片、文件导入状态分离、备份恢复、代码版本切换、回退、PID 防误杀、原生输出轮转与 plist 语法。本轮已在 Mac 执行通过；没有读取个人屏幕、连接正式 47832 或调用真实模型。
-
-`npm run test:profiles:container` 在有 Docker 的主机真实构建临时镜像，并验证 Compose project/volume 隔离、凭据字面值、容器重建、卷备份恢复、镜像切换回退和 Caddy 配置；已加入 Linux CI。当前 Mac 没有 Docker，容器验证在 GitHub Linux 环境执行；源码 `12fdef7` 的 [本次 CI](https://github.com/utopiafar/mote/actions/runs/34764645477) 已实际通过上述 Docker/Compose 检查，包含同名 tag 被覆盖后的镜像 ID 回退。没有安装 launchd job，也未验证目标 NAS 权限或公网证书签发；这些属于实际部署机器验收。
+部署测试使用临时profile、生成数据和独立loopback进程验证健康、身份隔离、备份/恢复与切换。`test:profiles`、`test:profiles:container`和更新测试是按需入口；Docker/NAS权限、公网证书、系统服务和实际目标机器必须各自验证。已有历史通过数量不代表当前部署已验收，见[测试规范](testing.zh-CN.md)。
