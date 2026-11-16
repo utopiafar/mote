@@ -8,7 +8,7 @@ import {once} from 'node:events';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {MediaPreparation} from '../src/media-preparation.js';
-import {MediaAssets,type MediaRole} from '../src/media-assets.js';
+import {MEDIA_CATALOG,MediaAssets,type MediaRole} from '../src/media-assets.js';
 
 const asrProducer=execFileSync('python3',[fileURLToPath(new URL('../../../scripts/test_mote_asr_contract.py',import.meta.url)),'--emit'],{encoding:'utf8'});
 const asrIdentity=JSON.parse(asrProducer).request.identity;
@@ -183,6 +183,84 @@ ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
 }
 const gone=(pid:number)=>{try{process.kill(pid,0);return false;}catch(error){if((error as NodeJS.ErrnoException).code==='ESRCH')return true;throw error;}};
 const settleRole=settled as (preparation:MediaPreparation,role:import('@mote/shared').MediaRole)=>ReturnType<typeof settled>;
+
+async function installedAssets(t:import('node:test').TestContext,f:Awaited<ReturnType<typeof lifecycle>>,role:MediaRole){
+ const {createHash}=await import('node:crypto');
+ const prior=MEDIA_CATALOG[role],bytes=Buffer.alloc(64*1024,27),file={name:'model.bin',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),official:'https://fixture.invalid/model'};
+ MEDIA_CATALOG[role]={version:'generated-repair-'+role,files:[file]};
+ const bundle=join(f.root,'bundle');await mkdir(bundle);await writeFile(join(bundle,file.name),bytes);
+ const assets=new MediaAssets(f.assets.root);t.after(async()=>{await assets.close();MEDIA_CATALOG[role]=prior;});
+ await assets.importBundle(role,bundle);
+ return {assets,bytes,file,path:join(assets.path(role),file.name)};
+}
+
+test('explicit OCR and dialogue preparation verifies a healthy installation and repairs changed bytes before reporting ready',async t=>{
+ const {readFile}=await import('node:fs/promises'),fs=(await import('node:fs')).default,{syncBuiltinESMExports}=await import('node:module');
+ for(const role of ['ocr','dialogue'] as const)await t.test(role,async child=>{
+  const f=await lifecycle(child),installed=await installedAssets(child,f,role),preparation=f.make({assets:installed.assets});
+  const originalFetch=fetch;child.mock.method(globalThis,'fetch',(input,init)=>{assert.equal(new URL(String(input)).protocol,'http:','repair reuses the verified generated download cache');return originalFetch(input,init);});
+  let verified=0;const read=fs.createReadStream;
+  child.mock.method(fs,'createReadStream',((...args:Parameters<typeof fs.createReadStream>)=>{if(String(args[0])===installed.path)verified++;return read(...args);}) as typeof fs.createReadStream);syncBuiltinESMExports();
+  child.after(()=>{child.mock.restoreAll();syncBuiltinESMExports();});
+  await preparation.start(role);assert.equal((await settled(preparation,role)).runtimeReady,true);
+  const pid=Number(await f.waitFile(role+'.pid')),first=verified;
+  await preparation.start(role);assert.equal((await settled(preparation,role)).runtimeReady,true);
+  assert.ok(verified>first,'the existing healthy-worker shortcut cannot bypass explicit full verification');
+  assert.equal(Number(await f.waitFile(role+'.pid')),pid,'healthy verified workers remain owned');
+  const checked=verified;await preparation.start(role,false);assert.equal((await settled(preparation,role)).runtimeReady,true);await preparation.status(role);
+  assert.equal(verified,checked,'normal resume and status do not hash installed model bytes');
+  await writeFile(installed.path,Buffer.alloc(installed.bytes.length,1));
+  assert.equal(installed.assets.ready(role),role==='dialogue','large assets retain the worker hash boundary; small OCR verifies metadata changes');
+  await preparation.start(role);assert.equal((await settled(preparation,role)).runtimeReady,true);
+  assert.deepEqual(await readFile(installed.path),installed.bytes,'an explicit retry repairs same-size corruption from the verified cache');
+  await preparation.close();await assert.rejects(fetch(role==='ocr'?f.media.ocrEndpoint:f.media.asrEndpoint));
+ });
+});
+
+test('local-image asset repair leaves selection unchanged and the existing plugin refresh reloads verified bytes into an owned worker',async t=>{
+ const {readFile}=await import('node:fs/promises'),{PluginHost}=await import('@mote/plugin-host'),Fastify=(await import('fastify')).default;
+ const {mediaModelsFeature}=await import('../src/features/media.js');
+ const {createLocalImageProcessing,LOCAL_IMAGE_PROCESSING_INSTANCE,localImageProcessingSelection,localImageProcessingDeclaration}=await import('../src/plugins/local-image-processing.js');
+ const f=await lifecycle(t);if(!f.supported.includes('local-image')){t.skip('local image workers require Apple Silicon');return;}
+ const installed=await installedAssets(t,f,'local-image'),preparation=f.make({assets:installed.assets}),script=join(f.scripts,'vlm-server.py');
+ // Only inference/dependency loading is generated. The physical child runs the
+ // actual loader's pinned-byte verifier before publishing its real HTTP health.
+ const original=await readFile(script,'utf8'),scripts=fileURLToPath(new URL('../../../scripts/',import.meta.url));
+ await writeFile(script,`import sys\nsys.path.insert(0,${JSON.stringify(scripts)})\nfrom mote_vlm import verify_assets\nverify_assets(sys.argv[sys.argv.index('--model-root')+1],${JSON.stringify([[installed.file.name,installed.file.size,installed.file.sha256]])})\n`+original);
+ await f.prepare({repository:f.repository,directory:join(installed.assets.root,'runtime'),role:'local-image',signal:new AbortController().signal});
+ await writeFile(installed.path,Buffer.alloc(installed.bytes.length,1));assert.equal(installed.assets.ready('local-image'),true);
+ const host=new PluginHost({kind:'central',id:'generated-image-repair'});t.after(()=>host.close());
+ const desired=localImageProcessingSelection;
+ const local=createLocalImageProcessing({desired:()=>desired,modelStatus:async()=>({...installed.assets.status('local-image'),runtimeReady:(await preparation.status('local-image')).runtimeReady}),createWorker:()=>({prepare(){},async start(){await preparation.start('local-image',false);const status=await settled(preparation,'local-image');if(!status.runtimeReady)throw Error('Generated worker rejected corrupt bytes');},quiesce(){},stop:async()=>{await preparation.stop('local-image');},dispose(){}})});
+ await host.install({identity:{host:host.identity,packageId:desired.packageId,installationId:'generated-image-repair',instanceId:LOCAL_IMAGE_PROCESSING_INSTANCE,activationId:'generated-first'},contributions:[localImageProcessingDeclaration],factory:local.factory});
+ assert.deepEqual(local.port.state(),{enabled:true,state:'failed',reason:'worker_unavailable'});
+ assert.equal((await preparation.status('local-image')).runtimeReady,false);
+ const app=Fastify();mediaModelsFeature({mediaAssets:installed.assets,runtimeStatus:async()=>({runtimeReady:false})}).mount(app,{} as never);t.after(()=>app.close());
+ assert.equal((await app.inject({method:'POST',url:'/api/media-models/local-image/install',payload:{}})).statusCode,202);
+ for(let i=0;installed.assets.status('local-image').state!=='ready';i++){assert.ok(i<300);await new Promise(resolve=>setTimeout(resolve,10));}
+ assert.deepEqual(await readFile(installed.path),installed.bytes);
+ assert.equal(local.port.state().state,'failed','installing assets does not enable or restart optional inference');
+ assert.equal((await preparation.status('local-image')).runtimeReady,false);
+ assert.deepEqual(await local.port.refresh(),{enabled:true,state:'ready'},'the existing explicit plugin retry starts a freshly verified child');
+ assert.equal((await preparation.status('local-image')).runtimeReady,true);
+ const pid=Number(await f.waitFile('local-image.pid'));await host.close();assert.equal(gone(pid),true);
+});
+
+test('stopping during explicit model verification cancels it before a late result can restart the owned worker',async t=>{
+ const fs=(await import('node:fs')).default,{syncBuiltinESMExports}=await import('node:module');
+ const f=await lifecycle(t),installed=await installedAssets(t,f,'dialogue'),preparation=f.make({assets:installed.assets});
+ await preparation.start('dialogue');assert.equal((await settled(preparation,'dialogue')).runtimeReady,true);const pid=Number(await f.waitFile('dialogue.pid'));
+ let began!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>began=resolve),gate=new Promise<void>(resolve=>release=resolve),read=fs.createReadStream;
+ t.mock.method(fs,'createReadStream',((...args:Parameters<typeof fs.createReadStream>)=>{
+  const stream=read(...args),iterate=stream[Symbol.asyncIterator].bind(stream);
+  if(String(args[0])===installed.path){stream.on('error',()=>{});stream[Symbol.asyncIterator]=async function*(){began();await gate;yield* iterate();};}
+  return stream;
+ }) as typeof fs.createReadStream);syncBuiltinESMExports();t.after(()=>{release();t.mock.restoreAll();syncBuiltinESMExports();});
+ await preparation.start('dialogue');await started;assert.equal((await preparation.status('dialogue')).model.state,'verifying');
+ const stopping=preparation.stop('dialogue');release();const stopped=await stopping;
+ assert.equal(stopped.runtimeReady,false);assert.equal(gone(pid),true);assert.equal(Number(await f.waitFile('dialogue.pid')),pid);
+ assert.equal(installed.assets.status('dialogue').state,'cancelled');await assert.rejects(fetch(f.media.asrEndpoint));
+});
 
 test('the actual preparer isolates three worker roles, stops only VLM, reaps descendants and resumes only prepared OCR/ASR after Central restart',async t=>{
  const f=await lifecycle(t),preparation=f.make();

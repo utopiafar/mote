@@ -77,6 +77,28 @@ test('close cancels an import during verification, excludes competing installs, 
  const next=new MediaAssets(root);t.after(()=>next.close());await next.importBundle('local-image',bundle);assert.equal(next.ready('local-image'),true);
 });
 
+test('cancel and close abort explicit verification of ready weights without publishing or admitting another installer',async t=>{
+ for(const action of ['cancel','close'] as const)await t.test(action,async child=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-model-reverify-cancel-')),bundle=join(directory,'bundle'),prior=MEDIA_CATALOG['local-image'],data=Buffer.alloc(64*1024,31);
+  MEDIA_CATALOG['local-image']={version:'generated-reverify',files:[{name:'model.bin',size:data.length,sha256:createHash('sha256').update(data).digest('hex'),official:'https://fixture.invalid/model'}]};
+  await mkdir(bundle);await writeFile(join(bundle,'model.bin'),data);const assets=new MediaAssets(join(directory,'models'));await assets.importBundle('local-image',bundle);
+  const installed=join(assets.path('local-image'),'model.bin'),marker=await readFile(join(assets.path('local-image'),'complete.json'));
+  let began!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>began=resolve),gate=new Promise<void>(resolve=>release=resolve),read=fs.createReadStream;
+  child.mock.method(fs,'createReadStream',((...args:Parameters<typeof fs.createReadStream>)=>{
+   const stream=read(...args),iterate=stream[Symbol.asyncIterator].bind(stream);
+   if(String(args[0])===installed){stream.on('error',()=>{});stream[Symbol.asyncIterator]=async function*(){began();await gate;yield* iterate();};}
+   return stream;
+  }) as typeof fs.createReadStream);syncBuiltinESMExports();
+  child.after(async()=>{release();await assets.close();child.mock.restoreAll();syncBuiltinESMExports();MEDIA_CATALOG['local-image']=prior;await rm(directory,{recursive:true,force:true});});
+  const pending=assets.installAsync('local-image');void pending.catch(()=>{});await started;
+  assert.equal(assets.status('local-image').state,'verifying');assert.throws(()=>assets.installAsync('local-image'),{statusCode:409});
+  const cancelled=action==='cancel'?assets.cancel('local-image'):assets.close();release();await cancelled;await assert.rejects(pending);
+  assert.equal(assets.status('local-image').state,'cancelled');assert.equal(assets.ready('local-image'),true);
+  assert.deepEqual(await readFile(installed),data);assert.deepEqual(await readFile(join(assets.path('local-image'),'complete.json')),marker);
+  assert.deepEqual((await readdir(assets.root)).filter(name=>/\.(?:lock|install|old)$/.test(name)),[]);
+ });
+});
+
 test('a mismatched HTTP resume range cannot append bytes or publish a model',async t=>{
  const root=await mkdtemp(join(tmpdir(),'mote-model-range-')),prior=MEDIA_CATALOG['local-image'],data=Buffer.from('Generated range validation model');
  MEDIA_CATALOG['local-image']={version:'generated-range',files:[{name:'model.bin',size:data.length,sha256:createHash('sha256').update(data).digest('hex'),official:'https://fixture.invalid/model'}]};

@@ -17,7 +17,7 @@ import type {ModelAgentFactory} from '../src/model-agent.js';
 import {Store,sha256} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {MEDIA_CATALOG} from '../src/media-assets.js';
-import {LOCAL_IMAGE_MODEL,LOCAL_IMAGE_PROTOCOL,localImageRequestSchema,parseLocalImageResponse,type LocalImageRequest,type LocalImageSuccess} from '../src/local-image-contract.js';
+import {LOCAL_IMAGE_MODEL,LOCAL_IMAGE_PROMPT_VERSION,LOCAL_IMAGE_PROTOCOL,localImageRequestSchema,parseLocalImageResponse,type LocalImageRequest,type LocalImageSuccess} from '../src/local-image-contract.js';
 import {LOCAL_IMAGE_ADAPTER} from '../src/local-image-understanding.js';
 import {createLocalImageProcessing,LOCAL_IMAGE_PROCESSING_INSTANCE,localImageProcessingSelection} from '../src/plugins/local-image-processing.js';
 import {createImageProcessingService,imageProcessingServiceForAssembly} from '../src/plugins/image-processing-service.js';
@@ -113,6 +113,11 @@ async function fixture(t:TestContext,options:{enabled?:boolean;authorize?:boolea
  const control=createPluginControlPlatform({store:controlStore,executor:controlExecutor,host,releases:new GitHubPluginReleases(join(directory,'packages'))},[local.build]);
  controlHandle=await host.install({identity:{host:host.identity,packageId:'mote.plugin-control',installationId:'generated-img03-control',instanceId:'control',activationId:randomUUID()},contributions:[pluginControlDeclaration],factory:control.factory});
  plugins=control.assembly;await control.startBuilds();imageProcessingServiceForAssembly(central.processing).bindLocalImages({selection:local.selection,media:{localImageEndpoint:localUrl+LOCAL_IMAGE_PROTOCOL.path,workerToken:token},usage:central.observabilityAssembly.usage});
+ // The previous release hashed the full model/source catalog into this receipt.
+ // Retain its exact producer formula to seed a generated pre-upgrade plan.
+ const catalog=MEDIA_CATALOG['local-image'],model=catalog.models!.image;
+ const legacyReceipt={execution:'local',provider:'local',model:model.id,revision:model.revision,manifestSha256:sha256(JSON.stringify({model,files:catalog.files})),quantization:LOCAL_IMAGE_MODEL.quantization,engine:'mlx',promptVersion:LOCAL_IMAGE_PROMPT_VERSION,adapter:LOCAL_IMAGE_ADAPTER};
+ const legacyConnection=sha256(JSON.stringify({endpoint:localUrl+LOCAL_IMAGE_PROTOCOL.path,workerToken:token,receipt:legacyReceipt})),legacyFingerprint=sha256(JSON.stringify([legacyReceipt,legacyConnection]));
  const enable=async(enabled:boolean)=>{
   await plugins!.selectBuild(LOCAL_IMAGE_PROCESSING_INSTANCE,{selection:enabled?localImageProcessingSelection:null,operationId:randomUUID(),expectedRevision:plugins!.control.build(LOCAL_IMAGE_PROCESSING_INSTANCE)?.revision??plugins!.revision()});
   central.perception.configurationChanged();
@@ -137,7 +142,7 @@ async function fixture(t:TestContext,options:{enabled?:boolean;authorize?:boolea
  const held=(kind:'local'|'cloud'|'ocr'|'queued'|'status')=>{const value=gate();gates.push(value);if(kind==='local')localGate=value;else if(kind==='cloud')cloudGate=value;else if(kind==='ocr')ocrGate=value;else if(kind==='queued')queuedGate=value;else statusGate=value;return value;};
  const product=(id:string,kind='understanding')=>{const row=central.store.db.prepare('SELECT json FROM image_products WHERE capture_id=? AND kind=? AND current=1').get(id,kind);return row?JSON.parse(String(row.json)):undefined;};
  const retry=async(id:string)=>{const response=await central.app.inject({method:'POST',url:`/api/images/${id}/retry`,headers,payload:{mode:'complete'}});assert.equal(response.statusCode,200,response.body);return response.json();};
- return {node:central,headers,directory,controlStore,local,plugins,enable,image,upload,screen,settle,held,product,retry,localCalls,cloudCalls,responses,ocrCalls:()=>ocrCalls,setFault:(value:string)=>{fault=value;},failOcr:()=>{failOcr=true;},intakeCloud:()=>cloudCalls.filter(call=>call.phase==='image-understanding'),usage:()=>central.store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt)};
+ return {node:central,headers,directory,controlStore,local,plugins,enable,image,upload,screen,settle,held,product,retry,legacyFingerprint,localCalls,cloudCalls,responses,ocrCalls:()=>ocrCalls,setFault:(value:string)=>{fault=value;},failOcr:()=>{failOcr=true;},intakeCloud:()=>cloudCalls.filter(call=>call.phase==='image-understanding'),usage:()=>central.store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt)};
 }
 
 test('screenshots, import, sync and retained attachments call the selected local worker and publish current products with independent searchable OCR',async t=>{
@@ -228,6 +233,29 @@ for(const initialLocal of [false,true])test(`switching ${initialLocal?'off':'on'
  const f=await fixture(t,{enabled:initialLocal}),image=await f.image(),id=await f.upload(image),held=f.held('ocr'),running=f.node.perception.tick();await held.started;
  await f.enable(!initialLocal);held.release();await running;await f.settle();assert.equal(f.product(id),undefined);assert.equal(f.localCalls.length,0);assert.equal(f.intakeCloud().length,0);assert.equal(f.node.perception.detail(id).jobs.find(j=>j.name==='understanding')!.error,'input_changed');
  const ocr=f.ocrCalls();await f.retry(id);await f.settle();assert.ok(f.product(id));assert.equal(f.ocrCalls(),ocr);assert.equal(f.localCalls.length,initialLocal?0:1);assert.equal(f.intakeCloud().length,initialLocal?1:0);
+});
+
+test('changing image download URLs and upstream metadata during OCR leaves the admitted local interpretation current',async t=>{
+ const f=await fixture(t),id=await f.upload(await f.image()),held=f.held('ocr'),running=f.node.perception.tick();await held.started;
+ const catalog=MEDIA_CATALOG['local-image'];catalog.files=catalog.files.map(file=>({...file,official:'https://relocated.fixture.invalid/'+file.name,mirror:'https://mirror.fixture.invalid/'+file.name}));
+ Object.assign(catalog.models!.image,{repository:'relocated-repository',upstream:'https://upstream.fixture.invalid/relocated'});
+ f.node.perception.configurationChanged();held.release();await running;await f.settle();
+ assert.ok(f.product(id));assert.equal(f.localCalls.length,1);assert.equal(f.intakeCloud().length,0);
+ assert.equal(f.node.perception.detail(id).jobs.find(job=>job.name==='understanding')!.state,'succeeded');
+});
+
+test('a plan with the previous image manifest fingerprint cancels once and an explicit retry adopts the content identity',async t=>{
+ const f=await fixture(t),id=await f.upload(await f.image()),held=f.held('ocr'),running=f.node.perception.tick();await held.started;
+ const admitted=f.node.store.db.prepare("SELECT id,input FROM execution_steps WHERE operation_id=? AND kind='images.ocr'").get('image:'+id)!;
+ assert.notEqual(JSON.parse(String(admitted.input)).understandingFingerprint,f.legacyFingerprint,'the content-only manifest deliberately changes the release fingerprint once');
+ // Seed only the prior release's persisted model pin. Reconciliation, fenced
+ // cancellation, publication and the subsequent retry all use the real paths.
+ f.node.store.db.prepare("UPDATE execution_steps SET input=json_set(input,'$.understandingFingerprint',?) WHERE id=?").run(f.legacyFingerprint,admitted.id);
+ held.release();await running;await f.settle();
+ assert.equal(f.product(id),undefined);assert.ok(f.product(id,'ocr'));assert.equal(f.localCalls.length,0);assert.equal(f.intakeCloud().length,0);
+ assert.equal(f.node.perception.detail(id).jobs.find(job=>job.name==='understanding')!.error,'input_changed');
+ const ocr=f.ocrCalls();await f.retry(id);await f.settle();assert.ok(f.product(id));assert.equal(f.ocrCalls(),ocr);assert.equal(f.localCalls.length,1);
+ const second=await f.upload(await f.image());await f.settle();assert.ok(f.product(second));assert.equal(f.localCalls.length,2,'newly admitted plans keep the stable content identity');
 });
 
 test('archive-only, disabled understanding, authorization off and excluded sources cannot be overridden by the local plugin',async t=>{

@@ -9317,6 +9317,7 @@
   "此运行方式暂不支持自动安装，可在高级连接中使用已准备的服务。": "Este entorno no admite instalación automática. Usa un servicio preparado en conexiones avanzadas.",
   "准备未完成，请检查网络和可用空间后重试。": "Preparación incompleta. Revisa la red y el espacio disponible y reintenta.",
   "安装中…": "Instalando…",
+  "验证并修复": "Verificar y reparar",
   "一键安装": "Instalar",
   "安装进度": "Progreso de instalación",
   "图片文字识别": "Reconocimiento de texto en imágenes",
