@@ -9,6 +9,7 @@ import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import type {Config} from '../src/config.js';
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 
 const token='generated-delegation-app-owner',headers={authorization:`Bearer ${token}`};
@@ -26,7 +27,7 @@ function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){
 
 for(const restart of [false,true])test(`full app delegation ${restart?'resumes after restart without repeating a successful child':'yields its only slot and saves an answer citing the original receipt'}`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-delegated-query-app-')),id=randomUUID();
- let node:Awaited<ReturnType<typeof buildApp>>,childCalls=0,active=0,maxActive=0,coordinatorCalls=0,heldResume=false,readCalls=0,initialFingerprint:string|undefined;
+ let node:Awaited<ReturnType<typeof buildApp>>,childCalls=0,active=0,maxActive=0,coordinatorCalls=0,heldResume=false,readCalls=0,initialFingerprint:string|undefined,standingId:string,ordinaryId:string;
  const observed:QueryInput[]=[],order:string[]=[],queryPins:{profileId?:string;model?:string}[]=[];
  const fixtureFactory=(holdResume:boolean):ModelAgentFactory=>async(settings,_reader,_host,identity)=>{
   const agent=fixtureAgent(holdResume),profileId=identity?.id;
@@ -45,12 +46,15 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
     return {...parseAnswer(JSON.stringify({answer:`Generated child found the local archive choice [${original.id}]`,citationIds:[original.id]}),new Map([[receipt.id,receipt]])),trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[original.id]}};
    }
    coordinatorCalls++;order.push('coordinator');const controls=input.hostControlChannel,delegation=input.taskContext!.delegation as {revision:number;units:{id:string;status:string;artifactId?:string}[]};
+   assert.ok(input.openingMemories?.some(memory=>memory.id===standingId&&memory.contextPriority==='standing'),'standing context survives parent workspace continuation and restart');
    if(!delegation.units.length){
+    assert.ok(input.openingMemories?.some(memory=>memory.id===ordinaryId),'ordinary context is available in the initial fragment');
     const submitted=await controls.execute('delegation_submit',{units:[{id:'original',capabilityId:'context.research',title:'Check the generated original',goal:'Read the scoped source',input:{question:'Inspect the generated original'},scope:{deviceId:scope.deviceId,after:scope.after,before:scope.before}}]});
     assert.equal((submitted.data as {units:unknown[]}).units.length,1);assert.equal(childCalls,0,'submission must immediately return a handle without waiting for the child');
     const yielded=await controls.execute('delegation_yield',{mode:'all',message:'Wait for the generated original check',workspaceJson:JSON.stringify({unresolved:['Check the generated local archive choice'],workerIds:[`query:${id}:unit:original`],searches:[{tool:'material_catalog',query:'local archive'}]})});assert.equal(yielded.yield,true);throw new AgentYieldError();
    }
    assert.equal(delegation.units[0].status,'succeeded');assert.ok(delegation.units[0].artifactId);
+   assert.deepEqual(input.openingMemories?.map(memory=>memory.id),[standingId],'workspace continuation retains explicit standing context without replaying ordinary samples');
    const workspace=input.taskContext!.queryWorkspace as {revision:number;unresolved:string[];supported:unknown[];citationAuthority:boolean};assert.equal(workspace.citationAuthority,false);assert.equal(workspace.unresolved[0],'Check the generated local archive choice');
    if(holdResume){await controls.execute('delegation_workspace',{workspaceJson:JSON.stringify({unresolved:workspace.unresolved,supported:[{statement:'Generated child inspected the local archive choice',evidenceIds:[original.id]}],inspected:[{id:original.id,start:0,end:original.ocrText.length}],workerIds:[delegation.units[0].id]})});heldResume=true;await new Promise<void>(resolve=>input.signal!.addEventListener('abort',()=>resolve(),{once:true}));throw input.signal!.reason;}
    const bridge=await startBridge(node.featureServices.archiveReader,input,12);
@@ -70,6 +74,12 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
  const pinnedProfile=node.modelSettings.select('chat').id,pinnedModel=node.modelSettings.select('chat').settings.model;
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.store.ingest(original);
+ const generated=fixtureMemoryResult(node.memories,{...plain(),answer:JSON.stringify({memories:[
+  {title:'Generated standing boundary',statement:`Generated project boundary [${original.id}]`,uncertainty:'Generated project only',contextPriority:'standing',evidenceIds:[original.id]},
+  {title:'Generated optional context',statement:`Generated optional project detail [${original.id}]`,uncertainty:'Generated optional context',evidenceIds:[original.id]},
+ ]}),citations:[{id:original.id,capturedAt:original.capturedAt,appName:'Generated',excerpt:''}]});
+ const memories=node.memories.extract(generated,'generated').items.map(memory=>node.memories.publish(memory.id,memory.version));
+ standingId=memories[0].id;ordinaryId=memories[1].id;
  // Admit through owner HTTP, then pump from an ordinary worker context.
  // A timer must not accidentally borrow the HTTP caller's model authority.
  const scheduled=t.mock.method(node.executor,'tick',async()=>{});

@@ -66,6 +66,6 @@ export interface ContextReader {
   sources?(args:ContextRange & {query?:string}): Promise<unknown>;
   sourceContext?(args:ContextRange & {sourceContextRef:string}):Promise<{attributionContext:import('@mote/shared').AttributionContext}>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextPage>;
-  memories?(args:ContextRange & {includeEvidence?:boolean;includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[];sourceSpans?:MemorySourceSpan[];sourceCoverage?:{references:number;delivered:number;partial:boolean}}>;
+  memories?(args:ContextRange & {includeEvidence?:boolean;includeHistory?:boolean;asOf?:string;id?:string;query?:string;contextPriority?:'standing';tier?:'episode'|'consolidated';layer?:'observation'|'memory';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[];sourceSpans?:MemorySourceSpan[];sourceCoverage?:{references:number;delivered:number;partial:boolean}}>;
 }
 

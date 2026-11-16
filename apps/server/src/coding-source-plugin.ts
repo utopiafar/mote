@@ -8,7 +8,7 @@ import {PluginResourceScope,type HostPluginContext,type HostScope} from '@mote/p
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import type {SourceStore} from './sources.js';
 import type {Store} from './store.js';
-import {codingConversationEvidence,codingDialogueText,CODING_DIALOGUE_SCHEMA_VERSION,sourceItemSchema,type SourceConnection,type SourceItem} from '@mote/shared';
+import {codingConversationEvidence,codingDialogueText,CODING_DIALOGUE_SCHEMA_VERSION,sourceItemSchema,type CodingEvidence,type SourceConnection,type SourceItem} from '@mote/shared';
 import {materialId,type CodingAppendBase,type MaterialAppendDraft,type MaterialDraft} from './materials.js';
 import {archiveHash} from './source-archive.js';
 import {StoreError} from './store.js';
@@ -38,6 +38,15 @@ function conversationRecords(items:SourceItem[]){
   }
   return [...admitted.values()].flat();
 }
+const compareOrder=(a:NonNullable<CodingEvidence['order']>,b:NonNullable<CodingEvidence['order']>)=>a.entry-b.entry||a.event-b.event;
+const orderedConversation=(items:SourceItem[])=>{
+  const records=conversationRecords(items),nativeOrder=records.every(item=>item.document!.coding!.order),receivedOrder=new Map(records.map((item,index)=>[item,index]));
+  return records.sort((a,b)=>{
+    const ac=a.document!.coding!,bc=b.document!.coding!;
+    return (nativeOrder?compareOrder(ac.order!,bc.order!):Date.parse(a.document?.recordedAt??a.observedAt)-Date.parse(b.document?.recordedAt??b.observedAt))||
+      (ac.eventId===bc.eventId?ac.part-bc.part:0)||receivedOrder.get(a)!-receivedOrder.get(b)!;
+  });
+};
 /** The same ordered visible events yield the same artifact identity whether
  * assembled in one pass or appended. Private archive activity is not a part. */
 const conversationRevision=(records:SourceItem[],seed=archiveHash('mote.coding.conversation-v1'))=>
@@ -92,6 +101,7 @@ async function readCodingSnapshot(reader:RawReader,source:SourceConnection,ident
     if(delta){const visible=conversationRecords(delta.items);
       if((!visible.length||Object.entries(codingProjectContext(visible.map(item=>item.document!.coding!))).every(([key,value])=>value===(base.record.origin as Record<string,unknown>)[key]))&&delta.appendEpoch===base.appendEpoch&&delta.items.every(item=>!item.deleted)&&visible.every(item=>item.layer!=='reference'&&
         item.document?.coding?.parts===1&&item.document.coding.part===0&&
+        (item.document.coding.order&&base.lastBlock?.locator?.codingOrder?compareOrder(item.document.coding.order,base.lastBlock.locator.codingOrder as NonNullable<CodingEvidence['order']>)>0:!item.document.coding.order&&!base.lastBlock?.locator?.codingOrder)&&
         Date.parse(item.document.recordedAt??item.observedAt)>=Date.parse(base.record.origin.lastAt??'1970-01-01T00:00:00.000Z')))
         if(!delta.items.some(item=>codingConversationEvidence(item.document!.coding!)&&item.document!.coding!.parts>1))return {...delta,mode:'append',base};
     }
@@ -105,34 +115,32 @@ const eventText=(item:SourceItem)=>{const c=item.document!.coding!,attribution=c
  * headers; the block context declares only its earliest actual observation. */
 class CodingMaterialBody {
   readonly blocks:MaterialDraft['blocks']=[];
-  constructor(private firstIndex=0,private buffer='',private observedAt?:string){}
+  constructor(private firstIndex=0,private buffer='',private observedAt?:string,private order?:CodingEvidence['order']){}
   flush(){
     if(!this.buffer)return;
     this.blocks.push({id:`section-${this.firstIndex+this.blocks.length}`,kind:'text',format:'markdown-fragment',text:this.buffer,memberIds:['archive'],
+      ...(this.order?{locator:{codingOrder:this.order}}:{}),
       ...(this.observedAt?{evidenceContext:{observedAt:this.observedAt,document:{timeBasis:'unknown',contentRole:'transcript'}}}:{})});
-    this.buffer='';this.observedAt=undefined;
+    this.buffer='';this.observedAt=undefined;this.order=undefined;
   }
-  append(text:string,observedAt?:string){
+  append(text:string,observedAt?:string,order?:CodingEvidence['order']){
     while(text){
       let take=Math.min(12000-this.buffer.length,text.length);
       if(take<text.length&&/[\uD800-\uDBFF]/.test(text[take-1])&&/[\uDC00-\uDFFF]/.test(text[take]))take--;
       if(!take){this.flush();continue;}
       if(observedAt&&(!this.observedAt||Date.parse(observedAt)<Date.parse(this.observedAt)))this.observedAt=observedAt;
-      this.buffer+=text.slice(0,take);text=text.slice(take);if(this.buffer.length>=11999)this.flush();
+      this.order=order;this.buffer+=text.slice(0,take);text=text.slice(take);if(this.buffer.length>=11999)this.flush();
     }
   }
 }
 const organize=({source,items,group:identity}:{source:SourceConnection;items:SourceItem[];group:string}):MaterialDraft=>{
       const [provider,projectKey,sessionId]=JSON.parse(identity) as string[];
-      const records=conversationRecords(items).sort((a,b)=>{
-        const at=a.document?.recordedAt??a.observedAt,bt=b.document?.recordedAt??b.observedAt;
-        return Date.parse(at)-Date.parse(bt)||(a.document?.coding?.eventId===b.document?.coding?.eventId?(a.document?.coding?.part??0)-(b.document?.coding?.part??0):0);
-      });
+      const records=orderedConversation(items),nativeOrder=records.every(item=>item.document!.coding!.order);
       // Keep the logical document complete. Physical blocks are bounded reads,
       // not event records; a block may contain many messages or part of one.
       const body=new CodingMaterialBody();
-      body.append(`# Coding dialogue\n\nProvider: ${provider}\nSession: ${sessionId}\n\nUntrusted evidence: human messages and protocol-confirmed final replies only. Process text, tools, host envelopes and unconfirmed replies are excluded by rules before indexing or model processing. Agent reports are not independently verified.\n\n`);
-      for(const item of records)body.append(eventText(item),item.observedAt);
+      body.append(`# Coding dialogue\n\nProvider: ${provider}\nSession: ${sessionId}\n\nUntrusted evidence: human messages and protocol-confirmed visible assistant text, including intermediate explanations. Hidden reasoning, tools, host envelopes and unconfirmed text are excluded by rules before indexing or model processing. Agent reports are not independently verified.\n\n`);
+      for(const item of records)body.append(eventText(item),item.observedAt,nativeOrder?item.document!.coding!.order:undefined);
       body.flush();const times=records.map(item=>new Date(item.document?.recordedAt??item.observedAt).toISOString()).sort();
       const events=new Map<string,{parts:number;seen:Set<number>}>();for(const item of items.filter(item=>!item.deleted&&codingConversationEvidence(item.document!.coding!))){const c=item.document!.coding!;const event=events.get(c.eventId)??{parts:c.parts,seen:new Set<number>()};event.parts=Math.max(event.parts,c.parts);event.seen.add(c.part);events.set(c.eventId,event);}
       const missingParts=[...events.values()].some(event=>event.seen.size!==event.parts||[...event.seen].some(part=>part>=event.parts));
@@ -145,15 +153,15 @@ const organize=({source,items,group:identity}:{source:SourceConnection;items:Sou
         members:[{id:'archive',kind:'archive',ref:'archive:'+archiveHash([source.id,identity])}],
         coverage:partial?{state:'partial',reason:partial}:{state:'complete'},
         artifacts:[{key:'conversation',state:conversationState,revision:conversationRevision(records),...(partial?{reason:partial}:{})}],
-        fidelity:{state:'derived',limitations:['metadata_projected','tool_bodies_omitted','host_context_omitted','process_messages_omitted','unconfirmed_replies_omitted']},retention:{original:'retained',policy:'keep'}};
+        fidelity:{state:'derived',limitations:['metadata_projected','tool_bodies_omitted','host_context_omitted','hidden_reasoning_omitted','unconfirmed_replies_omitted',...(records.some(item=>!item.document!.coding!.order)?['native_order_unknown']:[])]},retention:{original:'retained',policy:'keep'}};
 };
 const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSnapshot):MaterialAppendDraft=>{
   const base=snapshot.base!;const prior=base.record;
-  const records=conversationRecords(snapshot.items).sort((a,b)=>Date.parse(a.document?.recordedAt??a.observedAt)-Date.parse(b.document?.recordedAt??b.observedAt));
+  const records=orderedConversation(snapshot.items);
   const reuseBlocks=records.length&&base.lastBlock!.text.length<11999?prior.blockCount-1:prior.blockCount;
   const tail=reuseBlocks<prior.blockCount?base.lastBlock:undefined;
-  const body=new CodingMaterialBody(reuseBlocks,tail?.text,tail?.evidenceContext?.observedAt);
-  for(const item of records)body.append(eventText(item),item.observedAt);body.flush();
+  const body=new CodingMaterialBody(reuseBlocks,tail?.text,tail?.evidenceContext?.observedAt,tail?.locator?.codingOrder as CodingEvidence['order']);
+  for(const item of records)body.append(eventText(item),item.observedAt,item.document!.coding!.order);body.flush();
   const newLast=records.length?new Date(records.at(-1)!.document?.recordedAt??records.at(-1)!.observedAt).toISOString():prior.origin.lastAt;
   const conversation=prior.artifacts?.find(artifact=>artifact.key==='conversation');
   return {mode:'append',baseRevision:prior.revision,reuseBlocks,id:prior.id,kind:'mote.coding-session',schemaVersion:prior.schemaVersion,
@@ -174,13 +182,13 @@ export function installCodingSource(registries:CodingSourceRegistries,options:{a
     keep(registries.moteSourceRecipes.registerPolicy({id:'mote.retain-source-archive',version:'1',kind:'raw-retention'}));
     keep(registries.moteSourceRecipes.registerPolicy({id:'mote.on-receive',version:'1',kind:'trigger'}));
     keep(registries.moteSourceRecipes.registerGroup({id:'mote.coding-group',version:'1',kind:'group'},group));
-    keep(registries.moteSourceRecipes.registerStep({id:'mote.coding-assemble',version:'7',kind:'step'},input=>input.snapshot.mode==='append'?
+    keep(registries.moteSourceRecipes.registerStep({id:'mote.coding-assemble',version:'8',kind:'step'},input=>input.snapshot.mode==='append'?
       organizeAppend(input.source,input.group,input.snapshot):organize({source:input.source,items:[...input.items],group:input.group})));
     keep(registries.moteSourceRecipes.registerPublisher({id:'mote.material-draft',version:'1',kind:'publish'},input=>input.outputs.assemble as MaterialDraft|MaterialAppendDraft|undefined));
     keep(registries.moteSourceRecipes.registerPolicy({id:'mote.material-index',version:'1',kind:'index'}));
     keep(registries.moteSourceRecipes.registerPolicy({id:'mote.coding-exposure',version:'3',kind:'exposure'}));
     keep(registries.moteSourceRecipes.installRecipe({
-      schemaVersion:1,id:'mote.coding',version:'8',accepts:{sourceKind:'coding-agent'},
+      schemaVersion:1,id:'mote.coding',version:'9',accepts:{sourceKind:'coding-agent'},
       raw:{writer:{id:'mote.source-archive-writer'},reader:{id:'mote.source-archive-reader'},retention:{id:'mote.retain-source-archive'}},
       trigger:{policy:{id:'mote.on-receive'}},group:{policy:{id:'mote.coding-group'}},
       steps:[{id:'assemble',use:{id:'mote.coding-assemble'},dependsOn:[]}],
@@ -194,7 +202,7 @@ export function installCodingSource(registries:CodingSourceRegistries,options:{a
       ]},
     }));
     keep(registries.moteSourcePipelines.register({
-      id:'mote.coding',featureId:'mote.coding',version:'8',recipe:{id:'mote.coding',version:'8'},reprocess:'manual',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memoryDependencies:['conversation'],
+      id:'mote.coding',featureId:'mote.coding',version:'9',recipe:{id:'mote.coding',version:'9'},reprocess:'manual',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memoryDependencies:['conversation'],
     }));
   }catch(error){
     for(const stop of dispose.reverse()){try{stop();}catch{}}

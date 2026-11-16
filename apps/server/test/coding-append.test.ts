@@ -1,3 +1,4 @@
+import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import {evidenceRefId} from '@mote/shared';
 import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test from 'node:test';
@@ -51,7 +52,7 @@ test('the Coding conversation projection excludes tool bodies and host envelopes
     withRole(7,'assistant','Generated report: completed; device validation unknown.',{attribution:'agent',channel:'final'}),
     withRole(8,'user','Explain the string tool_call and AGENTS.md.'),
   ]);await runtime.tick();
-  const record=materials.list().items[0]!;assert.equal(record.schemaVersion,6);
+  const record=materials.list().items[0]!;assert.equal(record.schemaVersion,CODING_DIALOGUE_SCHEMA_VERSION);
   const text=materials.read(record.ref,{length:12000}).text;
   for(const secret of ['PRIVATE_TOOL_CALL_FIXTURE','PRIVATE_TOOL_RESULT_FIXTURE','PRIVATE_TOOL_DELTA_FIXTURE','PRIVATE_STRUCTURED_HOST_FIXTURE','PRIVATE_LEGACY_HOST_FIXTURE','PRIVATE_PAGE_FIXTURE']){
     assert.equal(materials.list({query:secret}).items.length,0);assert.ok(!text.includes(secret));
