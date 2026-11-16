@@ -17,6 +17,8 @@ worker和native共享build/instance控制投影。操作带`operationId`和`expe
 
 当前支持内置、受控外部正文/检索模块和固定适配的完整引擎；具体可安装版本以目录和实际核验为准，不靠包名推断兼容。通用source/processor仓库外开发使用[插件SDK与plugin-dev](plugin-development.md)，不与Memory worker ABI混用。通用生产安装能力仍按实际宿主支持判断。
 
+已知生产接线差距：一般processing包目前检查导出后未真正注册处理器，却可能显示ready；纯domain包直接安装受限；已安装外部页面/主题/布局尚未接入实际Web装载。SDK或plugin-dev可运行不等于这些生产入口已完成，见[当前架构](architecture.zh-CN.md)。
+
 ## 制品与worker合同
 
 固定GitHub兼容release使用`mote-plugin.json`：schemaVersion、包身份/version、`runtime: "worker"`、相对entry、同release ZIP与SHA-256、capabilities、无代码configuration、dependencies和access。解析器检查来源、路径与资源边界；安装不执行任意bootstrap、npm lifecycle或shell。兼容适配器和所需依赖须实际分发。schema见[plugin-release.ts](../apps/server/src/plugin-release.ts)。

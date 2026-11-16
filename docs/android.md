@@ -29,6 +29,8 @@ Notification and device-event sources need their corresponding access. Provenanc
 
 Native content uses paged projections and lazy images rather than decoding the entire queue. Local and Central records retain actual state; connection/device/record identity avoids duplicate navigation rows. Central requests use the unified owner session; a device filter is a view, not an account boundary.
 
+Common audio reading, playback and text correction are native. The MVP direction is contextual entries to the same Central's Web for advanced speaker review, original comparison and model preparation; those entries are not implemented yet. Dedicated automatic photo-library collection is planned for later; manual photo/file intake does not establish that capability. Existing source files and photos remain outside Central archive deletion.
+
 Folders use the Storage Access Framework with stable versions, one-time/continuous scope, resume checkpoints and matched receipts. Lost permission or provider failure does not prove deletion. Progress separates stability waiting, queueing, saving/uploading, retry and actionable conflict. See [files](files.md).
 
 The four sending modes share [collection policy](collection-and-sync.md). WorkManager applies network, battery and charging constraints. Doze/OEM restrictions may delay execution, and force-stop cannot promise background continuation. Retry preserves UUIDs, bytes and timestamps; HTTP success without a matching ACK is not completion.

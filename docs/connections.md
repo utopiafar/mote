@@ -100,11 +100,13 @@ Content-Type: application/json
 
 完整 token 只在创建成功时返回。之后的列表和 self 接口无法再次取出它；需要时重新创建并撤销旧连接。
 
-读取凭据可通过标准 MCP 工具读取中央完整归档，包括笔记、截图文本、来源版本和渐进展开的派生记忆。写入凭据只注册 `mote_put_item`，不包含读取工具，也不能建立来源。其允许来源是创建时的 `MOTE_MCP_WRITE_SOURCE_IDS` 与当前配置的交集：扩大配置不会扩大已发凭据；缩小配置立即收紧已有凭据。
+读取凭据通过标准MCP工具读取查询可见的笔记、正式资料、来源版本与派生记忆；高频截图和Coding原始事件受同一可见性策略限制，已知UUID不授予原件读取权。写入凭据只注册`mote_put_item`，不包含读取工具，也不能建立来源或执行外部Actions。其允许来源是签发时的`connectors.mcpWriteSourceIds`与当前配置的交集：扩大配置不扩大已发凭据，缩小配置立即收紧。
 
-必须先按现有节点启动要求配置至少 32 字符的 `MOTE_MCP_READ_TOKEN`，再开启 `MOTE_MCP_ENABLED`。写入还需要至少 32 字符的 `MOTE_MCP_WRITE_TOKEN`、`MOTE_MCP_WRITE_ENABLED` 和非空 `MOTE_MCP_WRITE_SOURCE_IDS`；修改后重启中央。未开启时创建连接返回带说明的 `409 mcp_disabled` 或 `409 mcp_write_disabled`。发给聊天客户端的是新生成的独立凭据，不是这些静态配置 token。静态 token 继续遵循原设置，需要通过配置轮换，不能在独立连接列表中撤销。
+在私有YAML配置至少32字符的`connectors.mcpReadToken`并开启`mcpEnabled`；写入另需独立`mcpWriteToken`、`mcpWriteEnabled`与非空`mcpWriteSourceIds`，修改后重启中央。完整片段见[连接器设置](connectors.md#把-mote-提供给其他-agent)。未开启时创建连接返回`409 mcp_disabled`或`409 mcp_write_disabled`。发给客户端的是新生成的独立凭据；启动静态token需通过配置轮换，不能在独立连接列表中撤销。
 
-这份 JSON 适用于支持 Streamable HTTP 与自定义 Bearer 请求头的 MCP 客户端。只支持 OAuth 授权的聊天产品不能直接使用此配置；本功能不提供 MCP OAuth 授权服务器。需要本地 stdio 的客户端可按 [连接器文档](connectors.md) 配置桥接：将中央下载的 `mote-mcp.json` 放到本机私有位置，在 macOS/Linux 执行 `chmod 600 /绝对路径/mote-mcp.json`，再使用 `node scripts/mcp-stdio.mjs --connection /绝对路径/mote-mcp.json`。桥接只接受当前 `mcpServers.mote` HTTP 配置，拒绝旧的 `{url,token}` 文件，不会执行导入 JSON 中的 `command` 或 `args`。
+这份JSON用于支持Streamable HTTP与自定义Bearer的客户端。OAuth客户端则连接节点`/mcp`，通过发现、注册、授权码/PKCE及「AI接入」批准流程获取同一权限类型的独立凭据；可请求`mote.read`或已启用的`mote.write`，写入仍只表示指定来源归档，不授予Actions。具体客户端兼容性另行核验。
+
+需要本地stdio的客户端可按[连接器文档](connectors.md)配置桥接：将中央下载的`mote-mcp.json`放到私有位置，在macOS/Linux执行`chmod 600 /绝对路径/mote-mcp.json`，再使用`node scripts/mcp-stdio.mjs --connection /绝对路径/mote-mcp.json`。桥接只接受当前`mcpServers.mote` HTTP配置，拒绝旧的`{url,token}`文件，不执行JSON中的`command`或`args`。
 
 ## 持久性与边界
 

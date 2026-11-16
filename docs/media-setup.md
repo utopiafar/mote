@@ -27,6 +27,8 @@ node scripts/mote.mjs media-runtime --profile dev --role local-image
 
 This prepares an isolated Python 3.11 environment for one role. `--python` selects its preparation interpreter. It does not install weights, start a worker or prove inference. Normal startup does not implicitly download new dependencies. Successful prepared environments can be reused after restart; failure preserves the last successful preparation record.
 
+On a clean Mac, the current local-image page installs weights only; prepare its dependencies with the CLI above before enabling the plugin. Completing that preparation from the page remains an implementation gap. Current default audio pages also retain a WeSpeaker installation entry that the managed preparation service does not support; FunASR uses CAM++ from its dialogue installation.
+
 Offline bundles use the same verifier without downloading missing files:
 
 ```sh
