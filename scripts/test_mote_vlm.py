@@ -251,6 +251,31 @@ class VlmTests(unittest.TestCase):
         self.assertEqual(vlm.interpretation(raw, geometry)['regions'][0]['y'], 2400)
         image.close()
 
+    def test_invalid_exif_orientations_use_host_identity_geometry_without_rotating_pixels(self):
+        for mime in ('PNG', 'JPEG'):
+            for orientation in (0, 9):
+                with self.subTest(mime=mime, orientation=orientation):
+                    request = generated_request(mime=mime, orientation=orientation)
+                    # sharp reports invalid EXIF orientations as 1 in ImageView.
+                    request['image']['imageView']['original']['orientation'] = 1
+                    request = vlm.parse_request(json.dumps(request))
+                    with Image.open(io.BytesIO(base64.b64decode(request['image']['data']))) as original:
+                        self.assertEqual(original.getexif()[274], orientation)
+                        with original.convert('RGB') as expected:
+                            expected_pixels = expected.tobytes()
+                    image, geometry = vlm.prepare_pixels(request)
+                    try:
+                        self.assertEqual(image.size, (160, 80))
+                        self.assertEqual(image.tobytes(), expected_pixels)
+                        self.assertNotIn(274, image.getexif())
+                        self.assertEqual(geometry.orientation, 1)
+                        self.assertEqual(geometry.display_size, (160, 80))
+                        self.assertEqual(vlm.interpretation(GENERATED_OUTPUT, geometry)['regions'][0],
+                                         {'x': 40, 'y': 20, 'width': 80, 'height': 40,
+                                          'description': 'Generated red rectangle.'})
+                    finally:
+                        image.close()
+
     def test_transport_rejects_paths_tampering_metadata_versions_and_pixel_overflow(self):
         request = generated_request()
         mutations = [lambda r: r.update(archivePath='/generated/forbidden.png'),
@@ -316,6 +341,53 @@ class VlmTests(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(vlm.VlmError):
                 vlm.interpretation(raw, geometry)
         self.assertEqual(vlm.interpretation('{"text":"uncertain generated scene","regions":[]}', geometry)['regions'], [])
+
+    def test_interpretation_accepts_one_complete_outer_code_fence_with_whitespace(self):
+        geometry = vlm.Geometry(160, 80, 1)
+        expected = {'text': json.loads(GENERATED_OUTPUT)['text'], 'regions': [
+            {'x': 40, 'y': 20, 'width': 80, 'height': 40, 'description': 'Generated red rectangle.'}]}
+        for raw in ('```\n'+GENERATED_OUTPUT+'\n```', '```json\n'+GENERATED_OUTPUT+'\n```',
+                    ' \t\n```json \n\t'+GENERATED_OUTPUT+'\n```\n\t ', '```'+GENERATED_OUTPUT+'```'):
+            with self.subTest(raw=raw):
+                self.assertEqual(vlm.interpretation(raw, geometry), expected)
+
+    def test_interpretation_defaults_only_omitted_regions_to_empty(self):
+        geometry = vlm.Geometry(160, 80, 1)
+        raw = '{"text":"  uncertain generated scene  "}'
+        for output in (raw, '```json\n'+raw+'\n```'):
+            with self.subTest(output=output):
+                self.assertEqual(vlm.interpretation(output, geometry),
+                                 {'text': 'uncertain generated scene', 'regions': []})
+        for regions in (None, {}, '', False):
+            with self.subTest(regions=regions), self.assertRaisesRegex(vlm.VlmError, 'invalid_model_output'):
+                vlm.interpretation(json.dumps({'text': 'Generated scene.', 'regions': regions}), geometry)
+
+    def test_interpretation_rejects_partial_nested_or_explained_code_fences_and_oversize_raw_output(self):
+        geometry = vlm.Geometry(160, 80, 1)
+        fenced = '```json\n'+GENERATED_OUTPUT+'\n```'
+        for raw in ('Explanation before.\n'+fenced, fenced+'\nExplanation after.',
+                    '```json\n'+GENERATED_OUTPUT, GENERATED_OUTPUT+'\n```',
+                    '```\n'+fenced+'\n```', fenced+'\n'+fenced,
+                    '```javascript\n'+GENERATED_OUTPUT+'\n```',
+                    ' '*vlm.MAX_MODEL_TEXT_BYTES+fenced):
+            with self.subTest(raw=raw[:200]), self.assertRaisesRegex(vlm.VlmError, 'invalid_model_output'):
+                vlm.interpretation(raw, geometry)
+
+    def test_fenced_interpretation_keeps_strict_fields_bounds_and_duplicate_checks(self):
+        geometry = vlm.Geometry(160, 80, 1)
+        out_of_bounds = json.loads(GENERATED_OUTPUT)
+        out_of_bounds['regions'][0]['x'] = .75
+        for language in ('', 'json'):
+            with self.subTest(language=language), self.assertRaisesRegex(vlm.VlmError, 'invalid_image_region'):
+                vlm.interpretation('```'+language+'\n'+json.dumps(out_of_bounds)+'\n```', geometry)
+        duplicate = json.loads(GENERATED_OUTPUT)
+        duplicate['regions'] *= 2
+        for raw in ('{"text":"x","regions":[],"extra":1}', '{"text":" ","regions":[]}',
+                    GENERATED_OUTPUT.replace('0.25', '-0.25', 1),
+                    GENERATED_OUTPUT.replace('0.5', '1.5', 1),
+                    GENERATED_OUTPUT.replace('0.25', 'true', 1), json.dumps(duplicate)):
+            with self.subTest(raw=raw), self.assertRaisesRegex(vlm.VlmError, 'invalid_model_output'):
+                vlm.interpretation('```json\n'+raw+'\n```', geometry)
 
     def test_real_adapter_requires_completed_pixel_inference_and_limits_stream_output(self):
         # Replace only MLX/library operations; execute MlxEngine.infer itself.
@@ -562,11 +634,19 @@ const request=localImageRequestSchema.parse({...r,image});
 const body=Buffer.from(JSON.stringify(request));
 const raw=await requestLocalJson(input.url+'/v1/interpret',{method:'POST',headers:{Authorization:'Bearer '+input.token,'Content-Type':'application/json','Content-Length':String(body.length)},body:(async function*(){yield body;})(),signal:AbortSignal.timeout(10000),limit:1048576,requireOfflineExecution:true});
 const response=parseLocalImageResponse(raw,request);
+const originals=[];
+for(const original of input.originals??[]){
+ const image=await imageOutput(Buffer.from(original.image.data,'base64'),original.image.mimeType,{id:original.captureId},()=>true);
+ const request=localImageRequestSchema.parse({...original,image}),body=Buffer.from(JSON.stringify(request));
+ const raw=await requestLocalJson(input.url+'/v1/interpret',{method:'POST',headers:{Authorization:'Bearer '+input.token,'Content-Type':'application/json','Content-Length':String(body.length)},body:(async function*(){yield body;})(),signal:AbortSignal.timeout(10000),limit:1048576,requireOfflineExecution:true});
+ originals.push({request,response:parseLocalImageResponse(raw,request)});
+}
 const health=await requestLocalJson(input.url+'/health',{headers:{Authorization:'Bearer '+input.token},signal:AbortSignal.timeout(10000),limit:65536,requireOfflineExecution:true});
-console.log(JSON.stringify({request,response,health:mediaModelHealth('local-image',health),...('localImage' in health?{workerReady:health.localImage}:{}),...(response.status==='error'?{host:LOCAL_IMAGE_ERRORS[response.error.code]}:{})}));
+console.log(JSON.stringify({request,response,originals,health:mediaModelHealth('local-image',health),...('localImage' in health?{workerReady:health.localImage}:{}),...(response.status==='error'?{host:LOCAL_IMAGE_ERRORS[response.error.code]}:{})}));
 '''
+        originals = [generated_request(orientation=orientation, mime='JPEG') for orientation in (0, 9)]
         result = subprocess.run(['node', '--import', 'tsx', '--input-type=module', '-e', script], cwd=ROOT,
-                                input=json.dumps({'request': request, 'url': url, 'token': TOKEN}),
+                                input=json.dumps({'request': request, 'originals': originals, 'url': url, 'token': TOKEN}),
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         bundle = json.loads(result.stdout)
@@ -578,6 +658,14 @@ console.log(JSON.stringify({request,response,health:mediaModelHealth('local-imag
                          {'x': 360, 'y': 230, 'width': 120, 'height': 60, 'description': 'Generated red rectangle.'})
         self.assertEqual(bundle['request']['image']['imageView']['original']['sha256'], request['image']['imageView']['original']['sha256'])
         self.assertEqual(bundle['response']['originalSha256'], request['image']['imageView']['original']['sha256'])
+        self.assertEqual(len(bundle['originals']), 2)
+        for original, delivered in zip(originals, bundle['originals']):
+            self.assertEqual(delivered['request']['image']['data'], original['image']['data'])
+            self.assertEqual(delivered['request']['image']['imageView']['original']['orientation'], 1)
+            self.assertEqual(delivered['response']['status'], 'ok')
+            self.assertEqual(delivered['response']['originalSha256'], original['image']['imageView']['original']['sha256'])
+            self.assertEqual(delivered['response']['result']['regions'][0],
+                             {'x': 40, 'y': 20, 'width': 80, 'height': 40, 'description': 'Generated red rectangle.'})
         worker.close()
         result = subprocess.run(['node', '--import', 'tsx', '--input-type=module', '-e', script], cwd=ROOT,
                                 input=json.dumps({'request': request, 'url': url, 'token': TOKEN}),
