@@ -30,6 +30,8 @@ connectors:
 
 云日历写出另需独立的 `calendar.events` 授权。启用连接器并完成写授权后，已选日历会进入 Actions 的中央执行目录；所有者还需明确授权一个目标日历及输入来源范围。有效范围内的完整、明确日程沿同一行动派发与回执链执行，无需逐条再次确认；重叠授权不会静默选择日历。撤回写授权、取消日历选择或停用连接器会停止对应的新写入；停用选择在重启后保留，重新启用只恢复原范围。没有事件身份的创建回执记为未知，不作为成功或自动重试。
 
+等待写前授权检查时停用或撤回范围，会阻断旧执行，即使随后恢复同一范围也不会让它继续写出。已发出的云端请求只能请求中止，不能据此声称写入已撤销；仍以实际回执判断，结果不明时保持未知且不自动重试。
+
 首次同步覆盖过去 90 天至未来 365 天。日内使用 `syncToken` 增量同步；每天重建这个有界窗口，使新进入范围的重复日程也可见。完整分页成功并保存条目之后才提交新游标。增量请求不会混入 `timeMin`、`timeMax` 或 `orderBy`；失效游标的 HTTP 410 会触发完整重建。失败时保留旧游标和已归档证据，下一次可幂等重试。完整结果中消失的原有窗口条目记录为取消/移除，旧版本及计划时间保留；它不证明用户实际参加过日程。参考 [同步指南](https://developers.google.com/workspace/calendar/api/guides/sync) 和 [events.list 参数约束](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)。
 
 全天日程按日历的 IANA 时区转换边界；结束日期为独占边界，跨夏令时时一天不一定是 24 小时。一般日程保留上游时区偏移。附件只保留已有正文中的引用，不自动下载远端附件。每轮最多 100 页事件、每页 250 条；超过限制会明确失败，不假装同步完整。
@@ -126,7 +128,7 @@ reference 模式只调用 `resources/list` 获取选中资源的元数据，不�
 
 ## 验证边界
 
-`npm run test:file -w @mote/server -- test/cloud-calendar-writes.test.ts` 还通过生产 manifest、正式连接器 host 与 Actions 目录/授权/派发链，使用临时生成 profile、受控 Google OAuth/API 和飞书 runner 验证云日历写入。覆盖读取与写出分离、目标日历和输入来源、撤权、停用/关闭/重启、账号变化及缺少事件身份时的未知回执。
+`npm run test:file -w @mote/server -- test/cloud-calendar-writes.test.ts` 还通过生产 manifest、正式连接器 host 与 Actions 目录/授权/派发链，使用临时生成 profile、受控 Google OAuth/API 和飞书 runner 验证云日历写入。覆盖读取与写出分离、目标日历和输入来源、撤权、停用/关闭/重启、账号变化及缺少事件身份时的未知回执。受控 gate 另覆盖写前检查等待期间的停用、目标/写授权撤回后恢复，以及已派发写入在取消后的未知回执；替身故意忽略取消以验证晚返回边界。
 
 `node --import tsx --test apps/server/test/connectors.test.ts` 使用临时资料库、真实 MCP SDK 客户端/服务端、本机合成 HTTP 服务，以及可控 Google OAuth/API fixture。覆盖读写凭据隔离、写范围、证据分页、恢复旧内容、reference 不读取正文、SSRF/重定向拒绝、PKCE/state 防重放、分页失败保留游标、410 重建、取消计划时间、跨夏令时全天日程和断开连接竞态。统一查询层的合成回归使用 `node --import tsx --test apps/server/test/context-query.test.ts`；本机 Codex Server 的真实外部 MCP 验收使用 `MOTE_TEST_CODEX_MODEL=... node --import tsx scripts/test-mcp-context-live.ts`。
 

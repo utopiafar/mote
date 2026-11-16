@@ -204,32 +204,41 @@ test('the host dispatch seam revalidates a built-in calendar target and the cata
 
 /** Exercise the production manifests and host assembly; only the cloud OAuth,
  * HTTP and CLI boundaries are generated. No connector class is exposed here. */
+function calendarGate(){
+ let release!:()=>void,returned!:()=>void;const wait=new Promise<void>(resolve=>{release=resolve;}),finished=new Promise<void>(resolve=>{returned=resolve;});
+ const state={entered:false,returned:false,signal:undefined as AbortSignal|undefined};
+ return {state,release,finished,async pause(signal?:AbortSignal){state.entered=true;state.signal=signal;await wait;state.returned=true;returned();}};
+}
 async function productionCalendarFixture(t:TestContext,kind:'google'|'lark'){
  const directory=await mkdtemp(join(tmpdir(),'mote-cloud-production-'+kind+'-'));
  const config:Config={dataDir:directory,token:ownerToken,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}};
  const state={write:false,account:'generated-lark-user',outcome:'ok' as 'ok'|'missing',requests:0,calls:[] as {calendarId:string;event:Record<string,unknown>;authorization?:string}[]};
+ const gates:ReturnType<typeof calendarGate>[]=[],blocked:{preflight?:ReturnType<typeof calendarGate>;write?:ReturnType<typeof calendarGate>}={};
+ const pause=async(phase:'preflight'|'write',signal?:AbortSignal)=>{const gate=blocked[phase];if(gate){delete blocked[phase];await gate.pause(signal);}};
  const google:GoogleDependencies={oauthFactory:()=>{
   const oauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:config.connectors!.googleRedirectUri});
   oauth.getToken=(async(options:{code?:string})=>{const write=options.code==='generated-write-code',identity=write?'write':options.code==='generated-other-read-code'?'other-read':'read';return {tokens:{refresh_token:'synthetic-'+identity+'-refresh-private',access_token:'synthetic-'+identity+'-access-private',scope:write?writeScope:readScope}};}) as any;
-  oauth.getAccessToken=(async()=>({token:oauth.credentials.access_token})) as any;return oauth;
+  oauth.getAccessToken=(async()=>{await pause('preflight');return {token:oauth.credentials.access_token};}) as any;return oauth;
  },fetch:(async(input,init)=>{
   state.requests++;const url=new URL(String(input));assert.equal(url.origin,'https://www.googleapis.com');
   if((init?.method??'GET')==='GET'&&url.pathname.endsWith('/calendarList'))return Response.json({items:[calendarA,calendarB]});
   assert.equal(init?.method,'POST','the production fixture allows only explicit event creates');
   const match=url.pathname.match(/^\/calendar\/v3\/calendars\/([^/]+)\/events$/);assert.ok(match,url.pathname);
   state.calls.push({calendarId:decodeURIComponent(match[1]),event:JSON.parse(String(init?.body)),authorization:new Headers(init?.headers).get('authorization')??''});
+  await pause('write',init?.signal??undefined);
   return Response.json(state.outcome==='missing'?{}:{id:'generated-google-event-'+state.calls.length});
  }) as typeof fetch};
- const lark:LarkRunner=async command=>{
+ const lark:LarkRunner=async(command,options)=>{
   state.requests++;
   switch(command.kind){
    case 'version':return 'lark-cli version 1.0.98';
-   case 'status':return JSON.stringify({appId:'cli_generated',identities:{user:{available:true,openId:state.account,userName:'Generated Lark user',scope:[...LARK_SCOPES,'calendar:calendar:readonly',...(state.write?['calendar:calendar']:[])].join(' ')}}});
+   case 'status':{const value=JSON.stringify({appId:'cli_generated',identities:{user:{available:true,openId:state.account,userName:'Generated Lark user',scope:[...LARK_SCOPES,'calendar:calendar:readonly',...(state.write?['calendar:calendar']:[])].join(' ')}}});await pause('preflight',options?.signal);return value;}
    case 'login':if(command.scopes.includes('calendar:calendar'))state.write=true;return JSON.stringify({verification_url:'https://accounts.feishu.cn/authorize?fixture=generated',device_code:'generated-private-device-code',expires_in:600});
    case 'complete':return '{}';
    case 'calendars':return JSON.stringify({data:{calendar_list:[{calendar_id:'generated-lark-calendar-a',summary:'Generated Lark calendar A',role:'owner',type:'primary'},{calendar_id:'generated-lark-calendar-b',summary:'Generated Lark calendar B',role:'writer'}],has_more:false}});
    case 'calendar-event-create':
     state.calls.push({calendarId:command.calendarId,event:command.data});
+    await pause('write',options?.signal);
     return JSON.stringify(state.outcome==='missing'?{}:{data:{event:{event_id:'generated-lark-event-'+state.calls.length}}});
    default:throw Error('Unexpected generated Lark command: '+command.kind);
   }
@@ -240,7 +249,7 @@ async function productionCalendarFixture(t:TestContext,kind:'google'|'lark'){
   return {runId:randomUUID(),answer:JSON.stringify(answer),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}],trace:[]};
  }}});
  let node:Awaited<ReturnType<typeof buildApp>>|undefined;
- t.after(async()=>{await node?.app.close();await rm(directory,{recursive:true,force:true});});
+ t.after(async()=>{for(const gate of gates)gate.release();await node?.app.close();await rm(directory,{recursive:true,force:true});});
  node=await start();
  const current=()=>node!,headers={authorization:'Bearer '+ownerToken};
  const request=async(method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE',url:string,payload?:any)=>{const response=await current().app.inject({method,url,headers,...(payload===undefined?{}:{payload})});assert.equal(response.statusCode,200,response.body);return response.json();};
@@ -265,6 +274,7 @@ async function productionCalendarFixture(t:TestContext,kind:'google'|'lark'){
  const grant=async(choice:ActionConnectorChoice)=>{const provider=(await inventory()).providers.find(value=>value.identity.packageId===choice.target.packageId&&value.calendarId===choice.target.calendarId)!;const draft=await request('PUT','/api/action-capability-drafts',{...command(0),id:randomUUID(),capability:choice.capability,target:choice.target,inputs:{sources:[source],existingArchived:true,futureInputs:true}});return await request('PUT','/api/action-capability-grants',{...command(0),id:randomUUID(),draftId:draft.id,draftRevision:draft.revision,plugin:provider.identity,acknowledgeCalendarWrites:true}) as ActionGrant;};
  const setEnabled=async(enabled:boolean)=>{const path='/api/plugin-builds/'+encodeURIComponent('bundled:'+(kind==='google'?'google-calendar':'lark'));const build=await request('GET',path) as PluginBuildView;return request('PATCH',path,{...command(build.revision),selection:enabled?{packageId:build.packageId,version:build.version,configurationRevision:0}:null});};
  return {current,state,calendarIds,packageId,excluded,inventory,request,connectRead,connectWrite,disconnectWrite,select,propose,grant,tick,setEnabled,
+  holdNext(phase:'preflight'|'write'){assert.equal(blocked[phase],undefined);const gate=calendarGate();gates.push(gate);blocked[phase]=gate;return gate;},
   async restart(){await current().app.close();node=await start();},
   async changeAccount(){if(kind==='google')await googleAuthorize(false,'generated-other-read-code');else{state.account='generated-other-lark-user';await request('POST','/api/connectors/lark/check');}},
  };
@@ -321,4 +331,37 @@ for(const kind of ['google','lark'] as const)test('production '+kind+' calendar 
  await assert.rejects(()=>host.executeAction(kind==='google'?'google-calendar':'lark',request),/closed/);
  await assert.rejects(()=>center.executeConnectorAction({target:choice.target,request}),/closed/);
  assert.equal(f.state.calls.length,3);
+});
+
+for(const kind of ['google','lark'] as const)for(const withdrawal of ['stop','selection','write authorization'] as const)test('production '+kind+' preflight is fenced by '+withdrawal+' even when the cloud ignores cancellation',async t=>{
+ const f=await productionCalendarFixture(t,kind);await f.connectRead();await f.connectWrite();
+ const choice=(await f.inventory()).centralConnectors.find(value=>value.target.calendarId===f.calendarIds[0])!;await f.grant(choice);
+ const pending=await f.propose(),gate=f.holdNext('preflight');await f.tick();await until(()=>gate.state.entered,'the write reaches the controlled cloud preflight');
+ assert.equal(f.state.calls.length,0,'the cloud create has not been issued');
+ if(withdrawal==='stop'){assert.equal((await f.setEnabled(false)).observed,'stopped');assert.deepEqual((await f.inventory()).centralConnectors,[]);}
+ else if(withdrawal==='selection'){await f.select([f.calendarIds[1]]);await f.select(f.calendarIds);}
+ else{await f.disconnectWrite();await f.connectWrite();}
+ assert.equal(gate.state.returned,false,'scope withdrawal completes while the old cloud preflight is still blocked');
+ assert.equal(f.state.calls.length,0);
+ gate.release();await gate.finished;await until(()=>['succeeded','uncertain'].includes(f.current().actions.get(pending.id).status),'the old accepted operation settles');
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.state.calls.length,0,'late preflight results cannot dispatch an old authorization generation');
+ assert.equal(f.current().actions.get(pending.id).status,'uncertain');assert.equal(f.current().actions.get(pending.id).externalId,undefined);
+ await f.tick();assert.equal(f.state.calls.length,0,'an interrupted operation is not blindly retried');
+ if(withdrawal==='stop')await f.setEnabled(true);
+ const next=await f.propose();await f.tick();await until(()=>f.current().actions.get(next.id).status==='succeeded','a new operation can use the current explicit scope');
+ assert.equal(f.state.calls.length,1);assert.equal(f.state.calls[0].calendarId,f.calendarIds[0]);
+});
+
+for(const kind of ['google','lark'] as const)test('production '+kind+' stop tracks an issued write and keeps a missing late receipt uncertain',async t=>{
+ const f=await productionCalendarFixture(t,kind);await f.connectRead();await f.connectWrite();
+ const choice=(await f.inventory()).centralConnectors.find(value=>value.target.calendarId===f.calendarIds[0])!;await f.grant(choice);
+ const pending=await f.propose(),gate=f.holdNext('write');await f.tick();await until(()=>gate.state.entered,'the cloud write is issued');assert.equal(f.state.calls.length,1);
+ let stopped=false;const stopping=f.setEnabled(false).then(value=>{stopped=true;return value;});
+ await until(()=>gate.state.signal?.aborted===true,'stop signals the in-flight cloud write');await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(stopped,false,'an issued write is tracked until its runner settles');
+ f.state.outcome='missing';gate.release();assert.equal((await stopping).observed,'stopped');
+ await until(()=>f.current().actions.get(pending.id).status==='uncertain','a missing issued-write receipt remains uncertain');
+ assert.equal(f.current().actions.get(pending.id).managed?.state,'uncertain');assert.equal(f.current().actions.get(pending.id).externalId,undefined);
+ await f.tick();assert.equal(f.state.calls.length,1,'stop never claims the cloud write was undone or retries it');
 });
