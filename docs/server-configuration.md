@@ -64,6 +64,7 @@ Memory策略、不可变版本、输入授权和检查点保留在领域数据�
 | `storage.maxExportBytes` | 64 MiB，最高256 MiB；HTTP导出不替代全库备份 |
 | `execution.interactiveConcurrency/agentConcurrency/llmConcurrency/memoryConcurrency` | 2／8／4／3 |
 | `connectors.syncIntervalMs` | 900000，范围60000–86400000 |
+| `media.dockerWorkers` | `[]`；Docker显式选择的受管资源，仅接受不重复的`ocr`、`asr`，需要full镜像，`start`应用 |
 
 Central 不设资料总量配额，也不按天自动删除原件或资料。新文件来源默认归档原件，已有明确保存选择保持不变；仅保留解析内容与仅引用在来源高级设置中选择。实际磁盘、文件系统或 SQLite 无法写入时，写入失败会保留诊断原因；容量耗尽返回 `507/storage_full`，已有资料和待传内容不会因此自动淘汰。单次传输、导出、处理输入及插件状态的资源边界继续按各自用途生效，诊断日志仍使用独立的保留设置。 当前配置格式不再接受 `storage.maxStorageBytes` 或 `storage.retentionDays`；旧 YAML 若仍显式声明这两个键，需移除后启动，本次不会自动改写配置或迁移。
 
