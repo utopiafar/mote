@@ -22,8 +22,10 @@ internal class AssistantFeedViewModel(
     }
     private fun persist() = writeState(JSONObject(saved.toString()))
     val canStart get() = api.domain != null
-    fun scope(cardId: String) = cardScopes[cardId] ?: api.scope
-    fun canStart(cardId: String) = canStart && (cards.single { it.id == cardId }.matterId == null || cardId in cardScopes)
+    fun scope(cardId: String) = cards.firstOrNull { it.id == cardId }?.taskScope ?: api.scope
+    fun canStart(cardId: String) = cards.firstOrNull { it.id == cardId }?.let {
+        canStart && it.taskScope != null && (it.matterId == null || cardId in cardScopes)
+    } ?: false
     private fun cardApi(cardId: String) = CentralAssistant(api.client, scope(cardId), api.domain)
     val pendingCardId: String? get() = saved.optJSONObject("pending")?.getJSONObject("card")?.getString("cardId")
 
@@ -37,8 +39,8 @@ internal class AssistantFeedViewModel(
         cards = (prior + incoming).associateBy { it.id }.values.toList()
         nextCursor = AssistantJson.cursor(page)
         // A feed can browse all material while each matter keeps its saved
-        // owner scope. Use that server projection for acceptance and task reads;
-        // never reconstruct a scope from a card's evidence or its prose.
+        // owner scope. Keep that visibility check separate from the server's
+        // fixed taskScope, which controls acceptance and subsequent task reads.
         api.domain?.let { domain ->
             val matters = cards.mapNotNull { it.matterId }.distinct().associateWith { id ->
                 try { domain.matter(id, api.scope).scope }
