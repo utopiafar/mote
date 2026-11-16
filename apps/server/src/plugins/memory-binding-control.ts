@@ -48,7 +48,7 @@ export interface MemoryBindingControlRuntime {
   readonly plugins:BindingsPlugins;
   readonly executor:BindingsExecutor;
   readonly pipeline:()=>Pick<MemoryPipeline,'get'|'cancel'>;
-  readonly lifecycle:()=>Pick<MemoryLifecycle,'view'|'cancel'|'skipAutomaticBacklog'|'automaticAdmission'>;
+  readonly lifecycle:()=>Pick<MemoryLifecycle,'view'|'cancel'|'skipAutomaticBacklog'|'resumeAutomaticBacklog'|'revokeAutomaticRounds'|'automaticAdmission'>;
   readonly publication:()=>Pick<MemoryPublication,'pending'>;
 }
 
