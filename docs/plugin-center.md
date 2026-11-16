@@ -17,7 +17,9 @@ worker和native共享build/instance控制投影。操作带`operationId`和`expe
 
 当前支持内置、受控外部正文/检索模块和固定适配的完整引擎；具体可安装版本以目录和实际核验为准，不靠包名推断兼容。通用source/processor仓库外开发使用[插件SDK与plugin-dev](plugin-development.md)，不与Memory worker ABI混用。通用生产安装能力仍按实际宿主支持判断。
 
-已知生产接线差距：一般processing包目前检查导出后未真正注册处理器，却可能显示ready；纯domain包直接安装受限；已安装外部页面/主题/布局尚未接入实际Web装载。SDK或plugin-dev可运行不等于这些生产入口已完成，见[当前架构](architecture.zh-CN.md)。
+一般processing服务包会在隔离的PluginHost实例scope中执行声明核验，使用与启用相同的注册表校验规则；核验不把处理器发布到正式运行时。明确启用后才将声明注册到现有上下文/文件处理器运行时，实际装载完成前显示启动中，空声明、失败和不支持的注入均阻断。停用立即撤回实例声明，取消在途处理并隔离迟到产物；不影响其他已启用实例。安装或启用不授予后台模型权限，不扫描历史，仍须沿现有来源、处理方案与模型授权执行。
+
+仍有生产接线差距：纯domain包直接安装受限；已安装外部页面/主题/布局尚未接入实际Web装载。SDK或plugin-dev可运行不等于这些生产入口已完成，见[当前架构](architecture.zh-CN.md)。
 
 ## 制品与worker合同
 
