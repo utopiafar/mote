@@ -14,6 +14,7 @@ import {InsightRuns} from '../src/insight-runs.js';
 import {Store} from '../src/store.js';
 import {createInsightServices,type InsightServicesDependencies} from '../src/plugins/insight-services.js';
 import {hostRun} from './fixtures/host-run.js';
+import {defaultDistribution} from '../src/distribution/default.js';
 
 const headers={authorization:'Bearer generated-insight-plugin-owner'};
 function generatedConfig(dataDir:string,token=headers.authorization.slice(7)):Config{
@@ -26,7 +27,7 @@ function profile(t:any){
 }
 function dependencies(store:Store,runs:InsightRuns,query:InsightServicesDependencies['query']):InsightServicesDependencies{
   return {
-    runs,query,
+    openRuns:()=>runs,query,
     modelAuthorization:{manual:async(_id,_connections,task)=>task(new AbortController().signal)} as InsightServicesDependencies['modelAuthorization'],
     availableModelConnections:()=>[],
     agent:{configuredFor:()=>true},
@@ -43,7 +44,7 @@ async function until<T>(read:()=>T|undefined,label:string):Promise<T>{
 }
 
 test('insight activation fences new runs, cancels accepted work, and serves the same durable profile after re-enable',async t=>{
-  const {store,runs}=profile(t);
+  const {store,executor,runs,track}=profile(t);
   let entered!:()=>void,release!:()=>void;
   const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
   const plugin=createInsightServices(dependencies(store,runs,async(_input,_observe,_signal,snapshot)=>{entered();await gate;return {runId:randomUUID(),answer:'Generated held review',citations:[],trace:[],...(snapshot?{snapshot}:{})};}));
@@ -60,12 +61,13 @@ test('insight activation fences new runs, cancels accepted work, and serves the 
   assert.throws(()=>runs.start(randomUUID(),{},async()=>({runId:randomUUID(),answer:'Generated blocked review',citations:[],trace:[]})),{statusCode:503},'a disabled activation also fences lifecycle callers');
   release();
 
-  const revived=createInsightServices(dependencies(store,runs,async(_input,_observe,_signal,snapshot)=>({runId:randomUUID(),answer:'Generated re-enabled review',citations:[],trace:[],...(snapshot?{snapshot}:{})})));
+  const resumed=track(new InsightRuns(store,{executor}));
+  const revived=createInsightServices(dependencies(store,resumed,async(_input,_observe,_signal,snapshot)=>({runId:randomUUID(),answer:'Generated re-enabled review',citations:[],trace:[],...(snapshot?{snapshot}:{})})));
   revived.prepare();revived.start();
   const nextApp=Fastify();revived.routes(nextApp);t.after(()=>nextApp.close());
   const nextId=randomUUID(),next=await nextApp.inject({method:'POST',url:'/api/insight-runs',payload:{requestId:nextId}});
   assert.equal(next.statusCode,202,next.body);
-  await until(()=>runs.get(nextId).status==='completed'?'completed':undefined,'the re-enabled run');
+  await until(()=>resumed.get(nextId).status==='completed'?'completed':undefined,'the re-enabled run');
   assert.equal(store.insights().items.length,1,'the cancelled attempt never publishes a report');
   assert.equal((await nextApp.inject({url:'/api/insight-runs/'+nextId})).json().result.answer,'Generated re-enabled review');
   assert.equal((await nextApp.inject({url:'/api/insights'})).json().items.length,1);
@@ -128,6 +130,20 @@ test('the plugin route publishes one real run snapshot into report history',asyn
   assert.equal((await node.app.inject({method:'POST',url:'/api/insight-runs',headers,payload})).statusCode,202);
   assert.equal(calls,1,'a repeated request reuses the fenced receipt instead of calling the model twice');
   assert.equal(node.store.insights().items.length,1);
+  await node.app.close();
+  const disabled=await buildApp(config,{backgroundWorker:false,distribution:{...defaultDistribution,plugins:defaultDistribution.plugins.filter(plugin=>plugin.contribution.id!=='insight-services')},agent:{configured:false,close:async()=>{},query:async()=>{throw Error('A disabled plugin cannot run a model');}}});
+  t.after(()=>disabled.app.close());
+  assert.equal((await disabled.app.inject({url:'/api/insights',headers})).statusCode,404);
+  assert.equal(disabled.store.insights().items.length,1,'removing the plugin must retain published history');
+  assert.ok(!disabled.lifecycle.view().extensions.some(extension=>extension.id==='insights'));
+  await disabled.app.close();
+  const restarted=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{throw Error('A persisted request cannot call the model again');}}});
+  t.after(()=>restarted.app.close());
+  const restored=(await restarted.app.inject({url:'/api/insight-runs/'+id,headers})).json();
+  assert.equal(restored.result.runId,completed.resultRunId);
+  assert.deepEqual(restored.result.snapshot,completed.snapshot);
+  assert.equal((await restarted.app.inject({method:'POST',url:'/api/insight-runs',headers,payload})).statusCode,202);
+  assert.equal(restarted.store.insights().items.length,1,'host restart retains the same single published report');
 });
 
 test('deleting evidence while the report is in flight fences the old report out of history',async t=>{

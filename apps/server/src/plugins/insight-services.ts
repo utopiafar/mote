@@ -1,6 +1,6 @@
 import {AgentNotConfiguredError,type QueryInput} from '@mote/agent';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import {serviceContract,type PluginLifecycle,type StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {InsightSnapshot} from '@mote/shared';
 import type {FastifyInstance} from 'fastify';
@@ -9,7 +9,6 @@ import {z} from 'zod';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {InsightRuns} from '../insight-runs.js';
-import {InsightRuns as InsightRunsStore} from '../insight-runs.js';
 import type {InsightResult} from '../insights.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
@@ -17,24 +16,23 @@ import {modelProfileIdSchema,type ModelSettingsStore} from '../model-settings.js
 import {insightRequestSchema} from '../query-request.js';
 import {scopeFields,validRange,type QueryScope} from '../query-scope.js';
 import {StoreError} from '../store.js';
+import type {CentralDomainPlugin} from '../domain-activation.js';
+import {insightFeature} from '../features/insights.js';
 
-/** C26B's actual data-contribution fragment. H03 owns the package Manifest and
- * H05 owns install topology; this plugin owns review runs, snapshots and the
- * complete `/api/insights` transport. */
+/** Review runs, snapshots and the complete insights transport have one owner. */
 export const insightServicesContribution={
   id:'insight-services',version:'1.0.0',surface:'data',runtime:'host',
-  requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'}],
-  provides:[],
+  requires:[{kind:'service',id:'mote.central.insight-inputs',version:'1.0.0'}],
+  provides:[{kind:'service',id:'mote.central.insights',apiVersion:'1',cardinality:'single'}],
 } as const satisfies ManifestContribution;
 export const insightServicesDeclaration={id:insightServicesContribution.id,apiVersion:'1'} as const;
 /** Report history and run receipts are replaceable while the vault stays live. */
 export const insightServicesReplacement='hot' as const;
 
 export interface InsightServicesDependencies {
-  /** Transitional bridge: the root already owns the durable run manager. */
-  readonly runs?:InsightRuns;
-  /** Native ownership after app.ts construction moves behind H14/K04. */
-  readonly openRuns?:()=>InsightRuns;
+  /** The trusted persistence/execution adapter opens resources only when this
+   * activation prepares. The activation owns the returned manager's lifetime. */
+  readonly openRuns:()=>InsightRuns;
   readonly query:(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId?:string,snapshot?:InsightSnapshot)=>Promise<InsightResult>;
   readonly modelAuthorization:Pick<ModelAuthorizationHost,'manual'>;
   readonly availableModelConnections:()=>ModelConnection[];
@@ -56,19 +54,13 @@ export interface InsightServices extends PluginLifecycle {
 const unavailable=()=>new StoreError('Insight services are unavailable',503);
 const launchSchema=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional(),requestId:z.string().uuid()}).strict().refine(validRange,{message:'Invalid time range'});
 
-/** Trusted assembly seam only: the durable run manager is a business object of
- * this domain, not a root-constructed dependency. */
-export function openInsightRuns(...args:ConstructorParameters<typeof InsightRunsStore>){return new InsightRunsStore(...args);}
-
-/** A borrowed run manager cannot be closed here: app.ts still defers its
- * close until K04 moves construction. A natively opened manager belongs to
- * this activation and is stopped/closed with it. */
+/** A fresh run manager belongs to each activation over the same durable profile. */
 export function createInsightServices(dependencies:InsightServicesDependencies):InsightServices {
-  const {runs:borrowed,openRuns}=dependencies;
-  if(Boolean(borrowed)===Boolean(openRuns))throw new StoreError('Insight services need exactly one run manager',503);
+  const {openRuns}=dependencies;
+  if(typeof openRuns!=='function')throw new StoreError('Insight run storage is unavailable',503);
   if(typeof dependencies.query!=='function'||typeof dependencies.modelAuthorization?.manual!=='function')throw new StoreError('Insight service dependencies are unavailable',503);
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
-  let runs=borrowed,ownsRuns=Boolean(openRuns),mounted=false,closing:Promise<void>|undefined;
+  let runs:InsightRuns|undefined,mounted=false,closing:Promise<void>|undefined;
   const manager=()=>{
     if(!runs||phase==='created'||phase==='disposed')throw unavailable();
     return runs;
@@ -84,24 +76,23 @@ export function createInsightServices(dependencies:InsightServicesDependencies):
     const errors:unknown[]=[];
     try{await owned.stop();}catch(error){errors.push(error);}
     try{await owned.close();}catch(error){errors.push(error);}
-    if(ownsRuns)runs=undefined;
+    runs=undefined;
     if(errors.length)throw new AggregateError(errors,'Insight run disposal failed');
   };
-  const pauseBorrowed=()=>{if(!ownsRuns&&runs)runs.pause();};
   const stop=async()=>{
     if(phase==='created'||phase==='stopped'||phase==='disposed')return;
     phase='quiescing';
-    pauseBorrowed();
+    runs?.pause();
     const errors:unknown[]=[];
     try{cancelActive();}catch(error){errors.push(error);}
-    if(ownsRuns)try{await closeRuns();}catch(error){errors.push(error);}
+    try{await closeRuns();}catch(error){errors.push(error);}
     phase='stopped';
     if(errors.length)throw new AggregateError(errors,'Insight service stop failed');
   };
   const close=()=>closing??=(async()=>{
     const errors:unknown[]=[];
     try{await stop();}catch(error){errors.push(error);}
-    try{if(runs&&ownsRuns)await closeRuns();}catch(error){errors.push(error);}
+    try{if(runs)await closeRuns();}catch(error){errors.push(error);}
     phase='disposed';
     if(errors.length)throw new AggregateError(errors,'Insight service disposal failed');
   })();
@@ -135,27 +126,22 @@ export function createInsightServices(dependencies:InsightServicesDependencies):
     get available(){return phase==='active';},
     prepare(){
       if(phase!=='created')throw unavailable();
-      if(openRuns){const created=openRuns();if(!created)throw new StoreError('Insight run manager is unavailable',503);runs=created;ownsRuns=true;}
+      const created=openRuns();if(!created)throw new StoreError('Insight run manager is unavailable',503);runs=created;
       phase='prepared';
     },
     start(){
       if(phase==='prepared'){
-        // A fresh activation over the same durable manager restores admission;
-        // app.ts still owns that manager's final close until K04.
-        if(!ownsRuns)manager().resume();
         phase='active';return;
       }
       if(phase==='stopped'){
-        if(!ownsRuns){manager().resume();phase='active';return;}
         // A natively owned manager is re-opened from the same durable profile,
         // preserving receipts, fences and the original report history.
-        if(!openRuns)throw unavailable();
         const created=openRuns();if(!created)throw new StoreError('Insight run manager is unavailable',503);
         runs=created;phase='active';return;
       }
       throw unavailable();
     },
-    quiesce(_reason?:StopReason){if(phase==='active'){phase='quiescing';pauseBorrowed();}},
+    quiesce(_reason?:StopReason){if(phase==='active'){phase='quiescing';runs?.pause();}},
     stop:async(_reason?:StopReason)=>{await stop();},
     dispose:close,close,
     get runs(){return manager();},
@@ -163,8 +149,7 @@ export function createInsightServices(dependencies:InsightServicesDependencies):
   });
 }
 
-/** Trusted H14 wiring. The activation owns snapshots/runs; a borrowed manager
- * remains owned by the current root until construction moves here. */
+/** The common host drives this lifecycle and owns its cleanup scope. */
 export function createInsightServicesFactory(dependencies:InsightServicesDependencies){
   return (context:HostPluginContext):InsightServices=>{
     const service=createInsightServices(dependencies);
@@ -182,3 +167,27 @@ export function createInsightServicesFactory(dependencies:InsightServicesDepende
     });
   };
 }
+
+export const insightServicesInputsContract=serviceContract<InsightServicesDependencies>('mote.central.insight-inputs','1');
+export const insightServicesContract=serviceContract<InsightServices>('mote.central.insights','1');
+export const insightServicesInputsContribution={id:'insight-services-inputs',version:'1.0.0',surface:'data',runtime:'host',
+  provides:[{kind:'service',id:insightServicesInputsContract.id,apiVersion:'1',cardinality:'single'}],
+} as const satisfies ManifestContribution;
+export const insightServicesInputsDeclaration={id:insightServicesInputsContribution.id,apiVersion:'1'} as const;
+
+/** Selected by the distribution; Host contains no insights factory or route branch. */
+export const insightServicesPlugin:CentralDomainPlugin=Object.freeze<CentralDomainPlugin>({
+  contribution:insightServicesContribution,declaration:insightServicesDeclaration,replacement:insightServicesReplacement,
+  activation:{featureId:'mote.insights',requires:{inputs:{provider:insightServicesInputsContribution.id,service:insightServicesInputsContract}},
+    async create(context,bindings){
+      const inputs=await context.services.acquire(insightServicesInputsContract,bindings.inputs!);
+      context.scope.defer(()=>inputs.release());
+      const service=createInsightServicesFactory(inputs.value)(context);
+      return Object.freeze({
+        route:insightFeature(service),prepare:()=>service.prepare(),
+        start(){service.start();context.provide(insightServicesContribution.id,insightServicesContract,service);},
+        quiesce:(reason:StopReason)=>service.quiesce(reason),stop:(reason:StopReason)=>service.stop(reason),dispose:()=>service.dispose(),
+      });
+    },
+  },
+});
