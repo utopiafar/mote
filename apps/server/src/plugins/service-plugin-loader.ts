@@ -3,6 +3,7 @@ import {join} from 'node:path';
 import type {PluginManifest} from '../plugin-release.js';
 import type {ConnectorManifest} from '../connectors/registry.js';
 import {StoreError} from '../store.js';
+import type {Plugin} from '@deepseek-ai/cordis';
 
 /** Load a trusted installed service package entry. Official packages have host
  * privileges; the installer never runs npm/shell lifecycle scripts. */
@@ -23,6 +24,13 @@ export function connectorFromModule(module: Record<string, unknown>, contributio
       : 'Service package has no connector export', 422);
   }
   return connector;
+}
+
+export const isProcessingCapability=(id:string)=>id==='processing.pack'||id.startsWith('processing.');
+export function processingPluginFromModule(module:Record<string,unknown>):Plugin {
+  const plugin=module.backendPlugin??module.default;
+  if(typeof plugin!=='function'&&(!plugin||typeof plugin!=='object'||typeof (plugin as {apply?:unknown}).apply!=='function'))throw new StoreError('Service package has no valid processing export',422);
+  return plugin as Plugin;
 }
 
 /** An outbound package declares presentation choices only. The Central host

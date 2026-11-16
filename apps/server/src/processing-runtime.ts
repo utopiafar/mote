@@ -29,7 +29,7 @@ export class ContextProcessorRegistry {
   readonly epochs:PluginEpochs;
   constructor(scope?:HostScope){this.epochs=new PluginEpochs(scope);}
   register(processor:ContextProcessor){
-    if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(processor.id)||!processor.version||!['extract','aggregate','semantic','memory'].includes(processor.lane)||this.processors.has(processor.id))throw Error('Invalid or duplicate context processor');
+    if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(processor.id)||typeof processor.version!=='string'||!processor.version||typeof processor.process!=='function'||!['extract','aggregate','semantic','memory'].includes(processor.lane)||processor.deterministic!==undefined&&typeof processor.deterministic!=='boolean'||this.processors.has(processor.id))throw Error('Invalid or duplicate context processor');
     if(processor.produces&&(processor.produces.length>16||new Set(processor.produces.map(v=>v.key)).size!==processor.produces.length||processor.produces.some(v=>!(/^[a-z0-9][a-z0-9._/-]{0,127}$/.test(v.key))||!v.kind)))throw Error('Invalid processor product declaration');
     const revoke=this.epochs.install(processor.id);this.processors.set(processor.id,processor);return ()=>{revoke();if(this.processors.get(processor.id)===processor)this.processors.delete(processor.id);};
   }
