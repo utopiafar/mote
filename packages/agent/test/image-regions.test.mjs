@@ -19,6 +19,10 @@ test('a model placeholder region without a pinned hash reads the full authorized
  assert.ok(result.body.image,'the full image is delivered instead of rejecting the optional placeholder crop');
  assert.equal(result.body.imageView.region,null);
 });
+test('staged native image metadata retains private lineage without claiming pixels',async t=>{
+ const f=await fixture(t),b=await f.open(),staged=await b.prepareDelivery('read_image',{id:record.id,view:'metadata'},new AbortController().signal);
+ assert.ok(staged.nativeExposure.evidenceDependencies.ids.includes(record.id));assert.deepEqual(staged.nativeExposure.originalEvidenceIds,[]);assert.equal(staged.value.image,undefined);assert.deepEqual(b.imageReadReceipts,[]);staged.discard();
+});
 test('metadata, regions, aliases and identical pixels retain current and first source geometry',async t=>{
  const f=await fixture(t),b=await f.open(),expectedImageSha256=digest(f.bytes),region={x:0,y:0,width:8,height:8};
  const meta=await call(b,'read_image',{id:record.id,view:'metadata'});assert.equal(meta.status,200);assert.equal(meta.body.image,undefined);assert.equal(meta.body.imageBudget.remainingPayloads,4);assert.equal(meta.body.imageView.original.sha256,expectedImageSha256);

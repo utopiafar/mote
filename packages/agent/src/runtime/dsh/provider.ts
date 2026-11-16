@@ -20,14 +20,17 @@ import {createDshHostChannel} from './context-plugin.js';
 import {AgentYieldError} from '../../host-controls.js';
 import {ContextToolError} from '../../tool-errors.js';
 import {DSH_RUNTIME_ID, compileNativeDshProfile, createRuntimePatch, DshProfileError, type InstalledDshModule} from './profile-compiler.js';
+import type {NativeDshApplication} from './application-contracts.js';
 
 export {DSH_RUNTIME_ID, DshProfileError, createRuntimePatch} from './profile-compiler.js';
 export type {InstalledDshModule, NativeDshAssemblyBinding} from './profile-compiler.js';
+export type {NativeDshApplication, NativeApplicationContext, NativeApplicationExposure} from './application-contracts.js';
 export {readNativeDshManifest, nativeDshEntrySpecifier, planNativeDshAssembly} from './native-assembly.js';
 
 export {dshModelConfigured, type DshModelAdapter} from '../../models/dsh-adapter.js';
 export interface DshProviderOptions {
   readonly installedModules?: readonly InstalledDshModule[] | (() => readonly InstalledDshModule[] | Promise<readonly InstalledDshModule[]>);
+  readonly applicationForRun?: (runId:string)=>NativeDshApplication|undefined;
   /** Safe lifecycle observation for selected local integration checks. */
   readonly resourceObserver?: (event: {type: 'created' | 'closed'; runId: string; root: string}) => void;
 }
@@ -58,6 +61,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
             host.identity.runtime.id !== profile.runtimeId || host.identity.runtime.profileId !== profile.profileId || host.identity.runtime.profileRevision !== profile.profileRevision || host.identity.runtime.assemblyFingerprint !== profile.assemblyFingerprint || !provider.capabilities.taskKinds.includes(profile.taskKind)) throw new DshProfileError('dsh_profile_invalid');
         const installed = typeof options.installedModules === 'function' ? await options.installedModules() : options.installedModules ?? [];
         const native = await compileNativeDshProfile(profile, installed);
+        const application=options.applicationForRun?.(host.identity.runId),sessionId=application?.sessionId??host.identity.runId;
         host.assertCurrent();
         const root = await mkdtemp(join(tmpdir(), 'mote-dsh-runtime-'));
         observe({type: 'created', runId: host.identity.runId, root});
@@ -81,16 +85,17 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
         abortPreparations.add(abort);
         host.signal.addEventListener('abort', abort, {once: true});
         try {
-          channel = await createDshHostChannel(host);
+          channel = await createDshHostChannel(host,sessionId);
           observer = await modelAdapter.start();
-          await mkdir(join(root, 'workspace'));
+          const workspace=application?.workspace??join(root,'workspace'),home=application?.home??join(root,'home');
+          await mkdir(workspace,{recursive:true});
           const patch = join(root, 'runtime.patch.json');
           const entry = fileURLToPath(new URL('../../plugin.mjs', import.meta.url));
-          await writeFile(patch, createRuntimePatch(entry, adapter.model!, adapter.baseUrl, adapter.reasoningEffort, adapter.maxTokens, adapter, host.systemPrompt, native), {mode: 0o600});
+          await writeFile(patch, createRuntimePatch(entry, adapter.model!, adapter.baseUrl, adapter.reasoningEffort, adapter.maxTokens, adapter, host.systemPrompt, native,Boolean(application)), {mode: 0o600});
           host.assertCurrent(); if (stopped) throw new AgentProviderError();
-          harness = new DeepSeekHarness({profile: 'sdk-minimal', patches: [patch], dshHome: join(root, 'home'), cwd: join(root, 'workspace'), processCwd: join(root, 'workspace'),
+          harness = new DeepSeekHarness({profile: 'sdk-minimal', patches: [patch], dshHome: home, cwd: workspace, processCwd: workspace,
             provider: connection.route, model: adapter.model!, maxTokens: adapter.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS, initializeTimeoutMs: 30_000, requestTimeoutMs: adapter.requestTimeoutMs ?? 120_000,
-            env: {PATH: process.env.PATH, TMPDIR: tmpdir(), HOME: join(root, 'home'), DEEPSEEK_API_KEY: adapter.apiKey || 'mote-local-no-auth', DEEPSEEK_BASE_URL: connection.baseUrl, MOTE_MODEL_API_KEY: adapter.apiKey || 'mote-local-no-auth',
+            env: {PATH: process.env.PATH, TMPDIR: tmpdir(), HOME: home, DEEPSEEK_API_KEY: adapter.apiKey || 'mote-local-no-auth', DEEPSEEK_BASE_URL: connection.baseUrl, MOTE_MODEL_API_KEY: adapter.apiKey || 'mote-local-no-auth',
               MOTE_HOST_RUN: JSON.stringify(channel.configuration), MOTE_MODEL_OBSERVER: JSON.stringify(observer.configuration),
               MOTE_MODEL_TRANSPORT: JSON.stringify({baseUrl: connection.baseUrl, protocol: connection.protocol, reasoningEffort: connection.effort, provider: adapter.provider, headers: adapter.headers, extraBody: adapter.extraBody, contextWindow: resolveModelCapabilities(adapter).contextWindow, maxTokens: resolveModelCapabilities(adapter).maxOutputTokens}),
               ...Object.fromEntries((['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy', 'NODE_USE_ENV_PROXY', 'SystemRoot'] as const).filter(key => process.env[key]).map(key => [key, process.env[key]!])),
@@ -100,7 +105,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
           host.assertCurrent(); if (stopped) throw new AgentProviderError();
           const usage = observeHarness({question: '', onUsage(value) { if (active) host.emit({type: 'usage', usage: value}, active); }, onProgress(value) { if (active) host.emit({type: 'progress', progress: value}, active); }}, host.identity.runId, connection.protocol !== 'deepseek');
           const notification = (value: HarnessNotification) => {
-            if (value.method !== 'session.event' || value.params.sessionId !== host.identity.runId) return;
+            if (value.method !== 'session.event' || value.params.sessionId !== sessionId) return;
             const event = value.params.event as {type: string; data?: {turn?: number; callId?: string; name?: string; arguments?: string}};
             if (event.type === 'turn/start' && active && Number.isSafeInteger(event.data?.turn)) turns.set(event.data!.turn!, active);
             if (event.type === 'tool/call' && typeof event.data?.callId === 'string' && typeof event.data.name === 'string') {
@@ -117,7 +122,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
             host.assertCurrent(); active = request.attempt;
             task = (async () => {
               try {
-                const result = await host.runModel(request.attempt, () => Promise.race([harness!.run(request.prompt, {sessionId: host.identity.runId, onNotification: notification}), channel!.failure, observer!.failure]));
+                const result = await host.runModel(request.attempt, () => Promise.race([harness!.run(request.prompt, {sessionId, onNotification: notification}), channel!.failure, observer!.failure]));
                 const end = result.events && [...result.events].reverse().find(event => event.type === 'turn/end');
                 const reason = (end?.data as {reason?: {kind?: string}} | undefined)?.reason;
                 if (reason?.kind === 'max-tokens') return {terminal: {kind: 'output_limit'}, candidate: {text: result.finalResponse}};

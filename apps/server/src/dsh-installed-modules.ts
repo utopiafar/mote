@@ -5,6 +5,7 @@ import type {InstanceIdentity, ServiceBinding} from '@mote/plugin-api/contracts'
 import {PluginHostError, type PluginHandle, type PluginHost} from '@mote/plugin-host';
 import {runtimeModuleReferenceSchema, type RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {DshProfileError, readNativeDshManifest, nativeDshEntrySpecifier, type InstalledDshModule} from '@mote/agent/runtime/dsh';
+import type {StateStore} from '@mote/plugin-api';
 import type {InstalledDshAuthority} from './dsh-native.js';
 
 /** Metadata from an already verified immutable installation. This projection
@@ -88,6 +89,7 @@ export async function activateInstalledDsh(input: {
   assertCurrent(): void;
 }): Promise<InstalledDshActivation> {
   let handle: PluginHandle | undefined;
+  let state:StateStore|undefined;
   const current = () => {
     input.signal.throwIfAborted(); input.assertCurrent(); handle?.signal.throwIfAborted();
     if (handle && !input.host.snapshot().contributions.some(contribution => contribution.identity.scope.activationId === handle!.identity.activationId && contribution.identity.scope.host.id === input.host.identity.id && contribution.availability.state === 'active')) throw new PluginHostError('stale_scope');
@@ -98,6 +100,7 @@ export async function activateInstalledDsh(input: {
       contributions: input.projection.modules.map(module => ({id: module.reference.contribution.contributionId, apiVersion: '1'})),
       requires: input.required, optional: input.optional, restartRequired: true,
       factory(context) {
+        state=context.state;
         const aborted = () => {void handle?.close('disabled').catch(() => {});};
         input.signal.addEventListener('abort', aborted, {once: true});
         context.scope.defer(() => input.signal.removeEventListener('abort', aborted));
@@ -108,7 +111,7 @@ export async function activateInstalledDsh(input: {
     const owned = handle, signal = AbortSignal.any([input.signal, owned.signal]);
     return Object.freeze({signal, assertCurrent: current, close: () => owned.close('disabled'), module(reference: RuntimeModuleReference) {
       current(); const module = installedDshModule(input.projection, reference);
-      return module ? {module, signal, assertCurrent: current} : undefined;
+      return module ? {module, signal, assertCurrent: current,...(state?{applicationState:state}:{})} : undefined;
     }});
   } catch (error) {
     try {await handle?.close('disabled');}
