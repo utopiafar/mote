@@ -60,6 +60,7 @@ export function createConversations(store:Store,authorization:Pick<ModelAuthoriz
     context:(conversation:Parameters<Conversations['context']>[0],maxTurns?:number,maxCharacters?:number)=>read().context(conversation,maxTurns,maxCharacters),
     historyContext:(conversation:Parameters<Conversations['historyContext']>[0],turns?:Parameters<Conversations['historyContext']>[1])=>read().historyContext(conversation,turns),
     assertHistoryContext:(snapshot:Parameters<Conversations['assertHistoryContext']>[0])=>read().assertHistoryContext(snapshot),
+    historyOriginalDependencies:(snapshot:Parameters<Conversations['historyOriginalDependencies']>[0])=>read().historyOriginalDependencies(snapshot),
     retiredSelection:(snapshot:Parameters<Conversations['retiredSelection']>[0],ids:readonly string[])=>read().retiredSelection(snapshot,ids),
   });
   const close=()=>closing??=(async()=>{phase='stopped';current=undefined;})();

@@ -406,6 +406,7 @@ export class SourcePipelineRuntime {
     const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
       db.prepare("UPDATE source_connections SET json=json_set(json,'$.enabled',json('false')) WHERE id=?").run(sourceId);
       forgetRetiredConversationRoots(this.store,{sourceId});
+      this.store.revokeReleasedMemory({sourceId});
       // Explicit source forgetting erases entire derived owner rules, including
       // mixed-source conclusions. Ordinary retention uses partial cleanup instead.
       if(db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletion_dependencies'").get())db.prepare(`DELETE FROM memory_deletions WHERE id IN (

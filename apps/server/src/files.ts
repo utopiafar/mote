@@ -594,18 +594,20 @@ export class FileStore {
   allowAgain(sourceId:string,externalId:string){
     this.store.db.prepare('DELETE FROM file_forgotten WHERE source_id=? AND external_id=?').run(sourceId,externalId);return {allowed:true};
   }
-  remove(id:string){return this.removeOriginal(id,true,false);}
+  remove(id:string){return this.removeOriginal(id,true,false,true);}
   /** Owner history deletion keeps future revisions under their existing grant. */
-  deleteArchive(id:string){return this.removeOriginal(id,false,false);}
+  deleteArchive(id:string){return this.removeOriginal(id,false,false,true);}
   /** Explicit forgetting additionally suppresses future versions until allowAgain. */
-  forget(id:string){return this.removeOriginal(id,false,true);}
-  private removeOriginal(id:string,preserveDialogue:boolean,forgetFuture:boolean){
+  forget(id:string){return this.removeOriginal(id,false,true,false);}
+  private removeOriginal(id:string,preserveDialogue:boolean,forgetFuture:boolean,retainPublishedMemory:boolean){
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');
     let ids:{capture_id:string}[],uploads:{id:string;manifest:string}[];
     try{
       const retired=!preserveDialogue&&retiredConversationRoot(this.store,id)?.file;
-      const version=retired?{source_id:retired.sourceId,external_id:retired.externalId}:this.version(id);
-      if(!preserveDialogue)forgetRetiredConversationRoots(this.store,{file:{sourceId:version.source_id,externalId:version.external_id}});
+      const released=forgetFuture?db.prepare("SELECT source_id,external_id FROM source_versions v WHERE capture_id=? AND EXISTS(SELECT 1 FROM memory_provider_evidence_revocations r WHERE json_extract(r.json,'$.releasedOriginal.file.sourceId')=v.source_id AND json_extract(r.json,'$.releasedOriginal.file.externalId')=v.external_id)").get(id):undefined;
+      const version=retired?{source_id:retired.sourceId,external_id:retired.externalId}:released?{source_id:String(released.source_id),external_id:String(released.external_id)}:this.version(id);
+      if(!preserveDialogue)forgetRetiredConversationRoots(this.store,{file:{sourceId:version.source_id,externalId:version.external_id}},retainPublishedMemory);
+      if(!retainPublishedMemory)this.store.revokeReleasedMemory({file:{sourceId:version.source_id,externalId:version.external_id}});
       if(forgetFuture)db.prepare('INSERT OR IGNORE INTO file_forgotten VALUES(?,?)').run(version.source_id,version.external_id);
       uploads=db.prepare("SELECT id,manifest FROM file_uploads WHERE source_id=? AND json_extract(manifest,'$.item.externalId')=?").all(version.source_id,version.external_id) as {id:string;manifest:string}[];
       // Reuse the immutable version ledger's existing missing-capture guard for
@@ -613,7 +615,7 @@ export class FileStore {
       const staged=[...uploads.map(row=>JSON.parse(row.manifest) as FileRevision),...this.admittedRevisions].filter(input=>input.sourceId===version.source_id&&input.item.externalId===version.external_id);
       for(const input of staged){const {observedAt,...semantic}=input.item;db.prepare('INSERT OR IGNORE INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(input.sourceId,input.item.externalId,input.item.revision,randomUUID(),sha256(JSON.stringify(semantic)));}
       ids=db.prepare('SELECT capture_id FROM file_versions WHERE source_id=? AND external_id=?').all(version.source_id,version.external_id) as {capture_id:string}[];
-      for(const row of ids)this.store.deleteInTransaction(row.capture_id,preserveDialogue);
+      for(const row of ids)this.store.deleteInTransaction(row.capture_id,preserveDialogue,retainPublishedMemory);
       for(const row of uploads)db.prepare('DELETE FROM file_uploads WHERE id=?').run(row.id);
       db.exec('COMMIT');
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}

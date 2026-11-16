@@ -19,8 +19,8 @@ export const contextFailure=(code:'context_lineage_incomplete'|'context_evidence
 export interface ModelEvidenceAuthorityDependencies {
   resolveLineage:(value:EvidenceDependencies|undefined)=>EvidenceDependencies|undefined;
   assertImageGrants:(materials:Parameters<typeof assertMemoryImageGrants>[1],images:Parameters<typeof assertMemoryImageGrants>[2])=>void;
-  reader:Pick<EvidenceReader,'sources'|'deletionContextAllowed'|'contextDependenciesAllowed'|'currentMemoryLeadsAllowed'|'evidence'|'memoryCatalogMetadataAllowed'|'processingEvidenceAllowed'|'memoryCatalogMetadata'|'queryMaterialReference'>;
-  conversations:Pick<Conversations,'assertHistoryContext'|'retiredSelection'>;
+  reader:Pick<EvidenceReader,'sources'|'deletionContextAllowed'|'contextDependenciesAllowed'|'contextDependencyGroups'|'currentMemoryLeadsAllowed'|'evidence'|'memoryCatalogMetadataAllowed'|'processingEvidenceAllowed'|'memoryCatalogMetadata'|'queryMaterialReference'>;
+  conversations:Pick<Conversations,'assertHistoryContext'|'historyOriginalDependencies'|'retiredSelection'>;
   sourceContexts:SourceContextStore;
   authorization:Pick<BackgroundModelAuthorization,'currentId'|'assertDisclosure'|'allowsDisclosure'>;
   host:Pick<ModelAuthorizationHost,'assertEvidence'>;
@@ -100,7 +100,11 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     }
     // Derived nodes remain in the fence alongside every original ancestor.
     // Private metadata checks never disclose bodies or grant raw reads.
-    for(const group of modelContextGroups(input))if(!evidenceReader.contextDependenciesAllowed(group.ids,querySourcePolicy(input,sourceAllowed),group.historical,group.snapshot?conversations.assertHistoryContext(group.snapshot):undefined))throw contextFailure('context_evidence_restricted');
+    for(const group of modelContextGroups(input)){
+      const retired=group.snapshot?conversations.assertHistoryContext(group.snapshot):undefined;
+      if(group.snapshot){const originals=conversations.historyOriginalDependencies(group.snapshot);if(!originals.complete||!evidenceReader.contextDependenciesAllowed(originals.ids,querySourcePolicy(input,sourceAllowed),true,retired))throw contextFailure('context_evidence_restricted');}
+      for(const ids of evidenceReader.contextDependencyGroups(group.ids))if(!evidenceReader.contextDependenciesAllowed(ids,querySourcePolicy(input,sourceAllowed),group.historical,retired,new Set(input?.derivedContextEvidenceIds??[])))throw contextFailure('context_evidence_restricted');
+    }
     // The bridge may already hold restricted originals while deletion or a
     // Formal input/owner declaration changes. Check the frozen Memory grant at
     // every outbound request as well as before entering the agent; publication
@@ -121,10 +125,21 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     const policy=querySourcePolicy(input,sourceAllowed);
     // This is scheduling granularity, not a scope or processing limit. Inspect
     // every dependency while allowing lease renewal, cancellation and intake.
-    for(const group of modelContextGroups(input))for(let offset=0;offset<group.ids.length;offset+=256){
-      input.signal?.throwIfAborted();
-      if(!evidenceReader.contextDependenciesAllowed(group.ids.slice(offset,offset+256),policy,group.historical,group.snapshot?conversations.assertHistoryContext(group.snapshot):undefined))throw contextFailure('context_evidence_restricted');
-      await yieldEventLoop();
+    for(const group of modelContextGroups(input)){
+      const retired=group.snapshot?conversations.assertHistoryContext(group.snapshot):undefined;
+      if(group.snapshot){
+        const originals=conversations.historyOriginalDependencies(group.snapshot);if(!originals.complete)throw contextFailure('context_evidence_restricted');
+        for(let offset=0;offset<originals.ids.length;offset+=256){
+          input.signal?.throwIfAborted();
+          if(!evidenceReader.contextDependenciesAllowed(originals.ids.slice(offset,offset+256),policy,true,retired))throw contextFailure('context_evidence_restricted');
+          await yieldEventLoop();
+        }
+      }
+      for(const ids of evidenceReader.contextDependencyGroups(group.ids)){
+        input.signal?.throwIfAborted();
+        if(!evidenceReader.contextDependenciesAllowed(ids,policy,group.historical,retired,new Set(input.derivedContextEvidenceIds??[])))throw contextFailure('context_evidence_restricted');
+        await yieldEventLoop();
+      }
     }
     await yieldEventLoop();input.signal?.throwIfAborted();
   };
