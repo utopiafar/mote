@@ -35,17 +35,16 @@ class IssueOneInstrumentedTest {
     }
     @Test fun settingsArchiveRoundTripsAndNeverReusesTokenOnAnotherHost() {
         val current = Settings(context).read()
-        val config = current.copy(server = "https://fixture.example", token = "generated-config-fixture-token-12345678", intervalSeconds = 47,
-            uploadedRetentionDays = 30, syncMode = "manual", appCollectionRules = "{\"default\":\"off\",\"apps\":{\"com.miui.home\":\"activity\"}}")
+        val config = current.copy(server = "https://fixture.example", token = "generated-config-fixture-token-12345678", intervalSeconds = 47, syncMode = "manual", appCollectionRules = "{\"default\":\"off\",\"apps\":{\"com.miui.home\":\"activity\"}}")
         val encoded = ConfigurationArchive.encode(config, true)
         assertEquals(config, ConfigurationArchive.decode(encoded, current))
         val withoutToken = ConfigurationArchive.encode(config)
         assertFalse(withoutToken.contains(config.token))
         assertEquals("", ConfigurationArchive.decode(withoutToken, current.copy(server = "https://other.example", token = "different-generated-token-123456789")).token)
         assertEquals(config, ConfigurationArchive.decode(withoutToken, config))
-        val invalid = JSONObject(encoded); invalid.getJSONObject("settings").put("uploadedRetentionDays", 366)
+        val invalid = JSONObject(encoded); invalid.getJSONObject("settings").put("intervalSeconds", 366)
         assertThrows(Exception::class.java) { ConfigurationArchive.decode(invalid.toString(), current) }
-        invalid.getJSONObject("settings").put("uploadedRetentionDays", "7")
+        invalid.getJSONObject("settings").put("intervalSeconds", "7")
         assertThrows(Exception::class.java) { ConfigurationArchive.decode(invalid.toString(), current) }
         assertEquals(current, Settings(context).read())
     }
@@ -85,7 +84,7 @@ class IssueOneInstrumentedTest {
     @Test fun queueBackupAndUpdatePagesShowAvailableActions() {
         val id = UUID.randomUUID().toString(); val queue = context.queue()
         queue.enqueue(JSONObject().put("id", id).put("source", "note").put("capturedAt", "2026-09-16T00:00:00Z")
-            .put("ocrText", "generated queue fixture").put("privacy", JSONObject().put("excluded", false)), null, 4_000_000)
+            .put("ocrText", "generated queue fixture").put("privacy", JSONObject().put("excluded", false)), null)
         try {
             ActivityScenario.launch(SyncQueueActivity::class.java).awaitUiText("共 ").use { scenario -> scenario.onActivity { activity ->
                 assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("等待上传") }); render(activity, "queue")
@@ -99,6 +98,6 @@ class IssueOneInstrumentedTest {
                 assertTrue(visible.contains(if (BuildConfig.APPLICATION_ID.endsWith(".dev")) "打开构建页面" else "检查更新")); assertFalse(visible.contains("下载更新")); assertFalse(visible.contains("安装更新")); render(activity, "updates")
             } }
             assertFalse(Settings(context).enabled)
-        } finally { queue.acknowledge(id) }
+        } finally { queue.removeGeneratedRecord(id) }
     }
 }

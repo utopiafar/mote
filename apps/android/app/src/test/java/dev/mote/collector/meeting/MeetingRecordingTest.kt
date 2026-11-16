@@ -55,9 +55,10 @@ class MeetingRecordingTest {
         assertEquals("android", meeting.getString("platform"))
         assertTrue(meeting.getBoolean("microphone"))
         assertTrue(meeting.getBoolean("systemAudio"))
-        store.markUploaded(id, "capture-generated")
+        val captureId = UUID.randomUUID().toString()
+        store.markUploaded(session, captureId, "https://generated.invalid", manifest)
         assertEquals("uploaded", store.sessions().single().state)
-        assertEquals("capture-generated", store.sessions().single().captureId)
+        assertEquals(captureId, store.sessions().single().captureId)
     }
 
     @Test fun interruptedRecordingIsMarkedFailedAndNeverResumed() {

@@ -66,7 +66,6 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         // canCollect runs on service/UI callbacks. Queue accounting and diagnostic sampling
         // may scan the current queue, so run them only on the processing executor.
         runCatching { diagnostics.sample(config) }
-        if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) throw QueueFull()
     }
     fun submitActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime(), isCurrent: () -> Boolean = { true }) =
         submitObservedActivity(windows, config, capturedAt, observedAtMs, AppCollectionMode.ACTIVITY, isCurrent)
@@ -89,14 +88,13 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.STARTED)
                 if (!isCurrent()) return@execute
-                context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                context.queue().enqueue(event, null)
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.OK)
                 dedupeSignature = null; dedupeReference = null
                 observationClock.accept(now, appId, selected); lastPause = null
                 settings.captured(capturedAt); settings.status("capturing", if (selected == AppCollectionMode.CONTENT) MoteI18n.text("页面采样的应用活动已保存") else MoteI18n.text("仅应用活动已保存；未请求截图、OCR或模型")); settings.screenStatus(settings.message())
                 scheduleUpload(config)
-            } catch (error: QueueFull) { Operations.record(context, OperationKind.ACTIVITY_FAILED, OperationReason.QUEUE_FULL); pause(error.message ?: MoteI18n.text("队列已满"), OperationReason.QUEUE_FULL) }
-            catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause(MoteI18n.text("应用活动未保存，请检查本机队列；未采集内容")) }
+            } catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause(MoteI18n.text("应用活动未保存，请检查本机队列；未采集内容")) }
             finally { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
     }
@@ -113,7 +111,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
             .put("privacy",JSONObject().put("excluded",false).put("redacted",false).put("mode","none").put("collection","activity"))
             .put("metadata",JSONObject().put("version",1).put("observedAt",sample.at).put("collector",JSONObject().put("method","accessibility")).put("captureObservation",sample.metadata(config,windows)))
         if(!isCurrent())return
-        context.queue().enqueue(event,null,config.maxQueueMiB*1024L*1024L)
+        context.queue().enqueue(event,null)
         observationClock.accept(sample.elapsed,app,AppCollectionMode.CONTENT);settings.captured(sample.at);scheduleUpload(config)
     }
     private class ContentPrivacyRejected:IllegalStateException()
@@ -133,7 +131,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 .put("metadata",JSONObject().put("version",1).put("observedAt",sample.at).put("collector",JSONObject().put("method","accessibility")).put("captureObservation",sample.metadata(config,windows)).put("uiPage",page))
             UiPageRules.validateEvent(event)
             if(!sample.contentCurrent()||!isCurrent()||!settings.enabled||!unlocked(context)||!settings.read().sameCaptureConfiguration(config))return
-            context.queue().enqueue(event,null,config.maxQueueMiB*1024L*1024L);settings.captured(sample.at);scheduleUpload(config)
+            context.queue().enqueue(event,null);settings.captured(sample.at);scheduleUpload(config)
         } finally {approved.recycle()}
     }
     fun submit(bitmap: Bitmap, windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime(), sample: CaptureObservation = CaptureObservation(at=capturedAt,elapsed=observedAtMs), isCurrent: () -> Boolean = { true }) {
@@ -175,7 +173,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     if (!isCurrent()) return@execute
                     val correlation=event.optJSONObject("metadata")?:JSONObject().put("version",1).put("observedAt",capturedAt)
                     event.put("metadata",correlation.put("captureObservation",sample.metadata(config,windows)))
-                    context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                    context.queue().enqueue(event, null)
                     diagnostics.add("earlySkippedFrames")
 
                     settings.captured(capturedAt); settings.status("capturing", MoteI18n.text("重复画面已丢弃，仅保存应用活动；未执行审查与 OCR")); settings.screenStatus(settings.message())
@@ -236,12 +234,12 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 if (!isCurrent() || !allows(config,windows,AppCollectionChannel.SCREENSHOT)) return@execute
                 val correlation=event.optJSONObject("metadata")?:JSONObject().put("version",1).put("observedAt",capturedAt)
                 event.put("metadata",correlation.put("captureObservation",sample.metadata(config,windows)))
-                val committedId = context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L, gate == "hold")
+                val committedId = context.queue().enqueue(event, encoded, gate == "hold")
                 diagnostics.timing("queueMs", SystemClock.elapsedRealtime() - queueStart)
                 if (!duplicate) runCatching {
                     val ratio = minOf(1f, 320f / maxOf(output.width, output.height))
                     val thumb = Bitmap.createScaledBitmap(output, maxOf(1, (output.width * ratio).roundToInt()), maxOf(1, (output.height * ratio).roundToInt()), true)
-                    try { context.queue().cacheThumbnail(event.getString("id"), jpeg(thumb, 70), config.maxQueueMiB * 1024L * 1024L) }
+                    try { context.queue().cacheThumbnail(event.getString("id"), jpeg(thumb, 70)) }
                     finally { if (thumb !== output) thumb.recycle() }
                 }
                 if (duplicate && config.imageDedupeDiagnosticsEnabled && features != null) {
@@ -273,8 +271,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 settings.status("capturing", MoteI18n.text("采集中 · {0}", if (duplicate) MoteI18n.text("图片去重命中，仅元数据已保存") else if (gate == "hold") MoteI18n.text("审查未完成，已隔离暂存待复核") else MoteI18n.text("图片已保存，上传后由中央识别")))
                 settings.screenStatus(settings.message())
                 scheduleUpload(config)
-            } catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: MoteI18n.text("队列已满")) }
-            catch (error: Exception) { Operations.record(context, OperationKind.CAPTURE_FAILED, Operations.failure(error, stage)); SupportEvents.failure(context, stage, error); diagnostics.add("failedCount"); pause(MoteI18n.text("本机 OCR、隐私审查或存储失败，此帧未入队；下一周期重试")) }
+            } catch (error: Exception) { Operations.record(context, OperationKind.CAPTURE_FAILED, Operations.failure(error, stage)); SupportEvents.failure(context, stage, error); diagnostics.add("failedCount"); pause(MoteI18n.text("本机 OCR、隐私审查或存储失败，此帧未入队；下一周期重试")) }
             finally { output?.recycle(); bitmap.recycle(); runCatching { diagnostics.timing("pipelineMs", SystemClock.elapsedRealtime() - pipelineStart) }; busy.set(false); ConnectionGuard.processing.decrementAndGet() }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { ConnectionGuard.processing.decrementAndGet(); busy.set(false); bitmap.recycle(); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.CANCELLED) }
     }

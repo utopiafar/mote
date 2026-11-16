@@ -178,7 +178,7 @@ class FileTaskActivity : MoteActivity() {
         body.addView(advanced)
         label("来源名称", advanced); name = field(source.name, "file-task:name", advanced)
         label("扫描间隔 / 分钟（15–1440，系统可能推迟）", advanced); interval = field(source.intervalMinutes.toString(), "file-task:interval", advanced, numeric = true).apply { isEnabled = source.tree || (savedSource != null && source.syncContinuously) }
-        label("单文件上限（MiB，1–512）", advanced); maximum = field(source.maxFileMiB.toString(), "file-task:maximum", advanced, numeric = true)
+        label("单文件上限（MiB，0 为不限）", advanced); maximum = field(source.maxFileMiB.toString(), "file-task:maximum", advanced, numeric = true)
         label("允许扩展名，逗号分隔", advanced); extensions = field(source.extensions, "file-task:extensions", advanced)
         label("排除相对路径：每行一项，* 表示任意字符；区分大小写", advanced); excludes = field(source.excluded, "file-task:excludes", advanced, multiline = true)
         allowRead = CheckBox(this).apply { text = MoteI18n.text("中央保留完整提取正文，供离线读取片段"); isChecked = source.allowRead; advanced.addView(this) }
@@ -279,7 +279,7 @@ class FileTaskActivity : MoteActivity() {
                 enabled = enabled.isChecked, allowRead = if (retention.selectedItemPosition == 0) allowRead.isChecked else if (listOf("snapshot", "archive", "reference")[retention.selectedItemPosition] == source.retention) source.allowRead else false,
                 initialSync = if (source.tree && initial.selectedItemPosition == 1) "new_only" else "all", syncContinuously = if (source.tree) true else if (savedSource != null) continuous.isChecked else false,
                 intervalMinutes = interval.text.toString().toInt(), maxFileMiB = maximum.text.toString().toInt(), extensions = extensions.text.toString(), excluded = excludes.text.toString())
-            if (next.maxFileMiB !in 1..512) { advanced.visibility=View.VISIBLE;maximum.error=MoteI18n.text("单文件上限（MiB，1–512）");maximum.requestFocus();status.text=MoteI18n.text("单文件上限（MiB，1–512）");return }
+            if (next.maxFileMiB < 0) { advanced.visibility=View.VISIBLE;maximum.error=MoteI18n.text("单文件上限（MiB，0 为不限）");maximum.requestFocus();status.text=MoteI18n.text("单文件上限（MiB，0 为不限）");return }
             next.validate(); confirm.isEnabled = false; pickButton.isEnabled = false
             task.start(MoteI18n.text("正在保存来源设置…"), MoteComponents.progress(status, read = false), {
                 owner.saveFile(next, savedSource, descriptionText, draftKey)

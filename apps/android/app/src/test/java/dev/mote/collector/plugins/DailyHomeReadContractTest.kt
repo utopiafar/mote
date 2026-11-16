@@ -67,7 +67,7 @@ class DailyHomeReadContractTest {
             .put("capturedAt", "2026-11-04T04:00:00Z").put("platform", "android").put("source", "note")
             .put("durationMs", 0).put("ocrText", "Generated home evidence")
             .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
-        queue.enqueue(event, null, 1_000_000)
+        queue.enqueue(event, null)
         val localPage = queue.recentPage()
         val local = HomeFeed.localPage { localPage }
         assertTrue(local.single().saved)

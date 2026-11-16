@@ -75,7 +75,7 @@ class QueuePerformanceTest {
             println("Generated 2000-record fixture: cold inventory + two pages ${readMs} ms; 1000 deletes ${(System.nanoTime() - deletionStart) / 1_000_000} ms")
         } finally { root.deleteRecursively() }
     }
-    @Test fun firstCaptureCanUseConservativeHeadroomBeforeCurrentIndexRebuildWithoutBypassingQuota() {
+    @Test fun firstCaptureDoesNotNeedAWholeIndexRebuildOrATotalQuota() {
         val root = Files.createTempDirectory("mote-capture-headroom").toFile()
         val cipher = CountingCipher()
         try {
@@ -85,7 +85,7 @@ class QueuePerformanceTest {
                 File(roomy, "${row.getString("id")}.event").writeBytes(cipher.seal(row.toString().toByteArray()))
             }
             cipher.reset()
-            DurableQueue(roomy, cipher).enqueue(event(200), byteArrayOf(1), 100_000_000)
+            DurableQueue(roomy, cipher).enqueue(event(200), byteArrayOf(1))
             assertTrue("Safe headroom must not deserialize the generated library; only the accepted input is replayed", cipher.records <= 2)
             val tight = File(root, "tight").apply { mkdirs(); LocalDataFormat.requireCurrent(this) }
             repeat(2) { index ->
@@ -93,12 +93,12 @@ class QueuePerformanceTest {
                 File(tight, "${row.getString("id")}.event").writeBytes(cipher.seal(row.toString().toByteArray()))
             }
             val queue = DurableQueue(tight, cipher)
-            assertThrows(QueueFull::class.java) { queue.enqueue(event(3), byteArrayOf(2), 150_000) }
-            assertEquals(2, queue.depth())
+            queue.enqueue(event(3), byteArrayOf(2))
+            assertEquals(3, queue.depth())
             assertEquals(0L, queue.reservedOcrBytes())
         } finally { root.deleteRecursively() }
     }
-    @Test fun deferredIndexesStillCountTowardTheStorageLimit() {
+    @Test fun deferredIndexesPreserveEveryInputWithoutATotalStorageQuota() {
         val root = Files.createTempDirectory("mote-index-quota").toFile()
         try {
             val queue = DurableQueue(root, CountingCipher())
@@ -107,11 +107,11 @@ class QueuePerformanceTest {
             queue.withDeferredIndexWrites {
                 repeat(100) { index ->
                     val note = event(index).put("source", "note").apply { remove("imageMime"); put("ocrText", "generated") }
-                    try { queue.enqueue(note, null, cap); added++ } catch (_: QueueFull) { return@withDeferredIndexWrites }
+                    queue.enqueue(note, null); added++
                 }
             }
-            assertTrue(added in 1..99)
-            assertTrue("Persisting deferred metadata must not overrun the accepted quota", queue.bytes() <= cap)
+            assertEquals(100, added); assertEquals(100, queue.depth())
+            assertTrue("The former aggregate quota no longer rejects inputs", queue.bytes() > cap)
         } finally { root.deleteRecursively() }
     }
     @Test fun interruptedIndexBatchRebuildsAndPreservesSharedBlobReferences() {
@@ -120,7 +120,7 @@ class QueuePerformanceTest {
         try {
             val source = File(root, "source"); val queue = DurableQueue(source, cipher)
             val rows = (0..3).map(::event)
-            rows.forEach { queue.enqueue(it, byteArrayOf(1, 2, 3), 10_000_000) }
+            rows.forEach { queue.enqueue(it, byteArrayOf(1, 2, 3)) }
             val hash = queue.dedupeRow(rows.first().getString("id"))!!.getString("blob")
             val crashed = File(root, "crashed")
             queue.withDeferredIndexWrites {
@@ -143,7 +143,7 @@ class QueuePerformanceTest {
         try {
             val queue = DurableQueue(root, cipher)
             val reference = event(0); val first = event(1); val second = event(2)
-            listOf(reference, first, second).forEach { queue.enqueue(it, byteArrayOf(4, 5, 6), 10_000_000) }
+            listOf(reference, first, second).forEach { queue.enqueue(it, byteArrayOf(4, 5, 6)) }
             val hash = queue.dedupeRow(reference.getString("id"))!!.getString("blob")
             assertTrue(queue.resolveDedupe(first.getString("id"), hash, reference.getString("id"), hash, null))
             File(root, "$hash.blob").writeBytes(cipher.seal(byteArrayOf(9, 9, 9, 9)))

@@ -210,7 +210,7 @@ class CaptureReaderLifecycleInstrumentedTest {
             instrumentation.removeMonitor(monitor)
             // Failure cleanup only; all success checks above use the real Close and header Back actions.
             instrumentation.runOnMainSync { activeReader?.takeUnless { it.isDestroyed }?.finish() }
-            generatedId?.let { context.queue().acknowledge(it) }
+            generatedId?.let { context.queue().removeGeneratedRecord(it) }
             try { settings.save(previous, confirmCentralEndpoint = true) }
             finally { MoteI18n.select(context, previousLanguage) }
         }

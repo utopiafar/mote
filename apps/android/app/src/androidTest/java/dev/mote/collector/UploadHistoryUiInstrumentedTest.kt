@@ -48,7 +48,7 @@ class UploadHistoryUiInstrumentedTest {
             val at = System.currentTimeMillis(); val event = JSONObject().put("id",UUID.randomUUID().toString()).put("deviceId",settings.deviceId)
                 .put("source","note").put("capturedAt",java.time.Instant.ofEpochMilli(at).toString()).put("durationMs",0).put("ocrText","Generated history UI original").put("privacy",JSONObject().put("excluded",false))
             val batch = UUID.randomUUID().toString(); val store = context.captureUploadHistory()
-            context.queue().enqueue(event,null,100000)
+            context.queue().enqueue(event,null)
             val receipt = CaptureUploadReceipt.create(origin,settings.deviceId,event,event,batch,at,30)
             val attempt = CaptureUploadAttempt.create(batch,receipt.scope,LoginProcess.id,listOf(event),100,at)
             store.saveAttempt(attempt.copy(state="received",acknowledged=1,results=JSONObject().put(event.getString("id"),201)))
@@ -56,7 +56,7 @@ class UploadHistoryUiInstrumentedTest {
             val observed = JSONObject(event.toString()).put("id",UUID.randomUUID().toString()).put("source","activity").put("appId","generated.history").put("appName","Generated history").apply { remove("ocrText") }
                 .put("durationMs",5000).put("privacy",JSONObject().put("excluded",false).put("collection","activity"))
                 .put("metadata",JSONObject().put("version",1).put("state",JSONObject().put("idleSeconds",0)))
-            context.queue().enqueue(observed,null,100000)
+            context.queue().enqueue(observed,null)
             val observedOriginal = context.queue().archiveRecord(observed.getString("id"))!!.first
             val observedReceipt = CaptureUploadReceipt.create(origin,settings.deviceId,observedOriginal,observedOriginal,batch,at,30)
             store.received(observedReceipt); store.completed(observedReceipt.itemKey)
@@ -79,7 +79,7 @@ class UploadHistoryUiInstrumentedTest {
             until("batch returned") { main { activityOrNull() is UploadBatchActivity } }
             val changed = JSONObject(observed.toString()).put("id",UUID.randomUUID().toString()).put("capturedAt",java.time.Instant.ofEpochMilli(at+5000).toString())
             changed.getJSONObject("metadata").getJSONObject("state").put("idleSeconds",5)
-            context.queue().enqueue(changed,null,100000)
+            context.queue().enqueue(changed,null)
             assertEquals(2,context.queue().archiveRecord(observed.getString("id"))!!.first.getJSONObject("stateSeries").getJSONArray("samples").length())
             click("historical original after same-ID update") { it.tag == "history-original-${observed.getString("id")}" }
             until("historical version unavailable") { text(MoteI18n.text("历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。")) }
@@ -133,7 +133,7 @@ class UploadHistoryUiInstrumentedTest {
         val now=System.currentTimeMillis();val store=context.captureUploadHistory();val ids=mutableListOf<String>();val batches=mutableListOf<String>()
         for((offset,confirmed) in listOf(0L to true,2L to false)) {
             val at=now-offset*86400000;val event=JSONObject().put("id",UUID.randomUUID().toString()).put("deviceId",settings.deviceId).put("source","note").put("capturedAt",java.time.Instant.ofEpochMilli(at).toString()).put("durationMs",0).put("ocrText","Generated cross-day original "+offset).put("privacy",JSONObject().put("excluded",false))
-            context.queue().enqueue(event,null,100000);ids.add(event.getString("id"));val batch=UUID.randomUUID().toString();batches.add(batch)
+            context.queue().enqueue(event,null);ids.add(event.getString("id"));val batch=UUID.randomUUID().toString();batches.add(batch)
             val receipt=CaptureUploadReceipt.create(origin,settings.deviceId,event,event,batch,at,30)
             store.saveAttempt(CaptureUploadAttempt.create(batch,receipt.scope,LoginProcess.id,listOf(event),100,at).copy(state=if(confirmed)"received" else "unknown",acknowledged=if(confirmed)1 else 0))
             if(confirmed)CaptureReceiptFinalizer(store).received(context.queue(),receipt)

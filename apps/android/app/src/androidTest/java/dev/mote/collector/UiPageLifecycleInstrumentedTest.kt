@@ -46,9 +46,11 @@ class UiPageLifecycleInstrumentedTest {
             assertEquals(1,context.queue().depth());assertEquals(1,scheduled.get())
             val item=requireNotNull(context.queue().peek());assertEquals("screen",item.getString("source"));assertNotNull(context.queue().image(item.getString("id")))
             context.queue().acknowledge(item.getString("id"))
+            assertTrue(context.queue().capture(item.getString("id"))!!.getBoolean("uploaded"))
+            context.queue().removeGeneratedRecord(item.getString("id"))
         } finally {
             pipeline.close();settings.enabled=false;settings.save(original)
-            context.queue().peekBatch(10).forEach { context.queue().acknowledge(it.getString("id")) }
+            context.queue().dedupeIds().forEach { context.queue().removeGeneratedRecord(it) }
         }
     }
 }

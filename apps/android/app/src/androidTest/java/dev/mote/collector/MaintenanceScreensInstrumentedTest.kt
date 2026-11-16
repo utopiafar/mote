@@ -236,7 +236,7 @@ class MaintenanceScreensInstrumentedTest {
             ids.forEachIndexed { index, id ->
                 queue.enqueue(JSONObject().put("id", id).put("source", "screen").put("capturedAt", "2026-10-29T01:0${index}:00Z")
                     .put("appId", "fixture.maintenance").put("appName", "Generated maintenance fixture")
-                    .put("privacy", JSONObject().put("excluded", false)).put("ocr", JSONObject().put("status", "disabled")), png(if (index == 2) Color.BLACK else Color.WHITE), 64L * 1024 * 1024)
+                    .put("privacy", JSONObject().put("excluded", false)).put("ocr", JSONObject().put("status", "disabled")), png(if (index == 2) Color.BLACK else Color.WHITE))
             }
             ActivityScenario.launch(BulkDedupeActivity::class.java).use { scenario ->
                 until("bulk idle") { has("就绪") || has("扫描结果") || has("尚无完整扫描结果") }

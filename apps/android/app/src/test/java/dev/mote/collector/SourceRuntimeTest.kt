@@ -64,7 +64,8 @@ class SourceRuntimeTest {
             store.save(source.copy(excluded = "a.txt"))
         }))
         assertNull(queue.next(source.id)); assertThrows(SourceLeaseRevoked::class.java) { queue.configure(source) }
-        queue.configure(store.sources().single()); assertEquals(0, queue.pendingCount(source.id))
+        queue.configure(store.sources().single()); assertEquals(1, queue.pendingCount(source.id))
+        assertTrue(queue.row(source.id, item().getString("externalId")).has("quarantine"))
         assertFalse(directory.listFiles()!!.any { it.name.startsWith(".staging-") })
     }
 

@@ -35,16 +35,16 @@ class CaptureUploadReceiptTest {
         override fun pending(scope: String) = unfinished.values.filter { it.scope == scope }
         override fun completed(itemKey: String) { check(!failCompletion); unfinished.remove(itemKey) }
     }
-    @Test fun historyReaderPinsOriginalAndImageAndRejectsClearedOriginal() {
+    @Test fun historyReaderPinsOriginalAndImageAfterAcknowledgment() {
         val queue = queue(); val event = note(); val id = event.getString("id")
         val oldImage = byteArrayOf(1, 2, 3, 4)
-        queue.enqueue(event, oldImage, 100000)
+        queue.enqueue(event, oldImage)
         val version = CaptureUploadVersion.of(queue.archiveRecord(id)!!.first)
         val snapshot = queue.captureExactVersion(id, version)!!
         assertEquals(event.getString("ocrText"), snapshot.first.getString("ocrText"))
         assertArrayEquals(oldImage, snapshot.second)
         queue.acknowledge(id, retentionDays = 0)
-        assertNull(queue.captureExactVersion(id, version))
+        assertArrayEquals(oldImage, queue.captureExactVersion(id, version)!!.second)
         assertEquals(event.getString("ocrText"), snapshot.first.getString("ocrText"))
         assertArrayEquals(oldImage, snapshot.second)
         assertNull(queue.captureExactVersion(UUID.randomUUID().toString(), version))
@@ -55,22 +55,22 @@ class CaptureUploadReceiptTest {
         fun observed(at: String, idle: Int) = note().put("source", "activity").put("capturedAt", at).put("appId", "generated.history").put("appName", "Generated history").apply { remove("ocrText") }
             .put("durationMs", 5000).put("privacy", JSONObject().put("excluded", false).put("collection", "activity"))
             .put("metadata", JSONObject().put("version", 1).put("state", JSONObject().put("idleSeconds", idle)))
-        val first = observed("2026-10-26T00:00:00Z", 0); queue.enqueue(first, null, 100000)
+        val first = observed("2026-10-26T00:00:00Z", 0); queue.enqueue(first, null)
         val id = first.getString("id"); val version = CaptureUploadVersion.of(queue.archiveRecord(id)!!.first)
         assertNotNull(queue.captureExactVersion(id, version))
-        queue.enqueue(observed("2026-10-26T00:00:05Z", 5), null, 100000)
+        queue.enqueue(observed("2026-10-26T00:00:05Z", 5), null)
         assertEquals(2, queue.archiveRecord(id)!!.first.getJSONObject("stateSeries").getJSONArray("samples").length())
         assertNull(queue.captureExactVersion(id, version))
     }
 
     @Test fun storageFailureNeverDiscardsAnAcknowledgedOriginalFromOutbox() {
-        val queue = queue(); val event = note(); queue.enqueue(event, null, 100000)
+        val queue = queue(); val event = note(); queue.enqueue(event, null)
         val store = Store().apply { failBeforeSave = true }
         assertThrows(IllegalStateException::class.java) { CaptureReceiptFinalizer(store).received(queue, receipt(event, days = 0)) }
         assertEquals(event.getString("id"), queue.peek()!!.getString("id")); assertTrue(store.rows.isEmpty())
     }
     @Test fun restartAfterDurableReceiptCompletesExactlyOnceUsingFirstConfirmationTime() {
-        val queue = queue(); val event = note(); queue.enqueue(event, null, 100000)
+        val queue = queue(); val event = note(); queue.enqueue(event, null)
         val store = Store().apply { stopAfterSave = true }
         val first = receipt(event, now = 1000)
         assertThrows(IllegalStateException::class.java) { CaptureReceiptFinalizer(store).received(queue, first) }
@@ -79,17 +79,17 @@ class CaptureUploadReceiptTest {
         CaptureReceiptFinalizer(store).recover(queue, first.scope)
         assertEquals(0, queue.pendingSync().count); assertEquals(0, store.unfinished.size)
         val retained = queue.capture(event.getString("id"))!!
-        assertEquals(1000 + 7 * 86_400_000L, retained.getLong("retainedUntil"))
+        assertEquals(0, retained.getLong("retainedUntil")); assertEquals(1000, queue.archiveRecord(event.getString("id"))!!.first.getJSONObject("_archiveAcknowledgment").getLong("at"))
         CaptureReceiptFinalizer(store).received(queue, receipt(event, now = 50000))
         assertEquals(1, store.rows.size); assertEquals(1000, store.rows.values.single().receivedAt)
         assertEquals(retained.toString(), queue.capture(event.getString("id"))!!.toString())
     }
-    @Test fun restartAfterQueueCompletionDoesNotRepeatDeletionOrOperationCount() {
+    @Test fun restartAfterQueueCompletionKeepsOriginalAndDoesNotRepeatOperationCount() {
         val ids = mutableListOf<String>(); val queue = DurableQueue(folder.newFolder(), cipher, onChange = { kind, _, id -> if (kind == OperationKind.NOTE_ACK) ids.add(id) }).apply { archiveOrigin = origin }
-        val event = note(); queue.enqueue(event, null, 100000)
+        val event = note(); queue.enqueue(event, null)
         val store = Store().apply { failCompletion = true }; val confirmed = receipt(event, days = 0)
         assertThrows(IllegalStateException::class.java) { CaptureReceiptFinalizer(store).received(queue, confirmed) }
-        assertNull(queue.capture(event.getString("id"))); assertEquals(listOf(event.getString("id")), ids)
+        assertTrue(queue.capture(event.getString("id"))!!.getBoolean("uploaded")); assertNull(queue.peek()); assertEquals(listOf(event.getString("id")), ids)
         store.failCompletion = false
         CaptureReceiptFinalizer(store).recover(queue, confirmed.scope)
         assertEquals(1, ids.size); assertTrue(store.unfinished.isEmpty())
@@ -97,10 +97,10 @@ class CaptureUploadReceiptTest {
     @Test fun olderStateSeriesReceiptCannotClearNewObservationsAfterProcessRestart() {
         fun activity(at: String) = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", device).put("source", "activity").put("appId", "generated.app").put("appName", "Generated")
             .put("capturedAt", at).put("durationMs", 5000).put("privacy", JSONObject().put("excluded", false).put("collection", "activity"))
-        val queue = queue(); queue.enqueue(activity("2026-10-26T00:00:00Z"), null, 100000)
+        val queue = queue(); queue.enqueue(activity("2026-10-26T00:00:00Z"), null)
         val selected = queue.peek()!!; val confirmed = receipt(selected)
         val store = Store(); store.received(confirmed)
-        queue.enqueue(activity("2026-10-26T00:00:05Z"), null, 100000)
+        queue.enqueue(activity("2026-10-26T00:00:05Z"), null)
         CaptureReceiptFinalizer(store).recover(queue, confirmed.scope)
         assertEquals(1, queue.pendingSync().count)
         assertEquals(2, queue.peek()!!.getJSONObject("stateSeries").getJSONArray("samples").length())
@@ -109,7 +109,7 @@ class CaptureUploadReceiptTest {
         assertEquals(0, queue.pendingSync().count); assertEquals(2, store.rows.size)
     }
     @Test fun sameIdAndSampleCountWithChangedBodyCannotUseAnOlderConfirmation() {
-        val queue = queue(); val event = note(); queue.enqueue(event, null, 100000)
+        val queue = queue(); val event = note(); queue.enqueue(event, null)
         val altered = JSONObject(event.toString()).put("ocrText", "Different exact body")
         assertFalse(queue.acknowledgeReceivedVersion(event.getString("id"), CaptureUploadVersion.of(altered), origin, 1, 0, 1000))
         assertNotNull(queue.peek())

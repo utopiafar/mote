@@ -86,7 +86,7 @@ class BackupJourneyInstrumentedTest {
         require(!settings.enabled && !ProjectionService.running && !CaptureAccessibilityService.connected)
         if (InstrumentationRegistry.getArguments().getString("backupCleanupGenerated") == "true") {
             finishGeneratedStage(null)
-            context.queue().dedupeIds().forEach { id -> context.queue().capture(id)?.takeIf(::isGenerated)?.let { context.queue().acknowledge(id) } }
+            context.queue().dedupeIds().forEach { id -> context.queue().capture(id)?.takeIf(::isGenerated)?.let { context.queue().removeGeneratedRecord(id) } }
         }
         require(!context.queue().hasPendingConnectionWork())
         val root = File(context.cacheDir, "record-camera/backup-ui-${UUID.randomUUID()}").apply { mkdirs() }
@@ -96,7 +96,7 @@ class BackupJourneyInstrumentedTest {
             block(root)
         } finally {
             finishGeneratedStage(generatedIds.toSet())
-            generatedIds.forEach { context.queue().acknowledge(it) }; generatedIds.clear()
+            generatedIds.forEach { context.queue().removeGeneratedRecord(it) }; generatedIds.clear()
             root.deleteRecursively(); settings.save(before, confirmCentralEndpoint = true); MoteI18n.select(context, language)
         }
     }
@@ -106,7 +106,7 @@ class BackupJourneyInstrumentedTest {
         if (!inbox.exists()) return
         val input = JSONObject(String(LocalContentCipher().open(inbox.readBytes()), Charsets.UTF_8)).getJSONObject("input").getJSONObject("event")
         check(isGenerated(input) && (allowedIds == null || input.getString("id") in allowedIds)) { "Preserve an unrelated pending capture stage" }
-        context.queue().flushStages(64L * 1024 * 1024)
+        context.queue().flushStages()
     }
     private fun event(): JSONObject = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "screen")
         .put("capturedAt", "2026-10-29T01:00:00Z").put("privacy", JSONObject().put("excluded", false))
@@ -114,7 +114,7 @@ class BackupJourneyInstrumentedTest {
     private fun archive(root: File, sizes: List<Int> = listOf(4)): Pair<File, List<String>> {
         val source = DurableQueue(File(root, "queue-${UUID.randomUUID()}"), plain)
         val ids = sizes.mapIndexed { i, size ->
-            val event = event(); source.enqueue(event, ByteArray(size).also { java.util.Random(i.toLong() + 101).nextBytes(it) }, 20_000_000)
+            val event = event(); source.enqueue(event, ByteArray(size).also { java.util.Random(i.toLong() + 101).nextBytes(it) })
             event.getString("id").also(generatedIds::add)
         }
         val file = File(root, "generated-records.zip")
@@ -224,15 +224,20 @@ class BackupJourneyInstrumentedTest {
     }
 
     @Test fun partialRestoreRetainsRecordsAndRetriesSameValidatedFileWithoutDuplication() = fixture { root ->
-        val settings = Settings(context); val before = settings.read(); settings.save(before.copy(maxQueueMiB = 8))
         val blocker = event().getString("id")
         val existing = event().put("id", blocker); generatedIds.add(blocker)
-        context.queue().enqueue(existing, ByteArray(2_000_000).also { java.util.Random(99).nextBytes(it) }, 32_000_000)
+        context.queue().enqueue(existing, ByteArray(2_000_000).also { java.util.Random(99).nextBytes(it) })
         val (file, ids) = archive(root, listOf(1_500_000, 1_500_000))
+        val prepared = QueueArchive.prepare(file.inputStream(), File(root, "partial-restore-check"))
+        val last = prepared.queue().archiveRecord(prepared.queue().dedupeIds().last())!!.first.getString("_blob")
+        prepared.close()
+        val obstruction = File(QueueStorage(context).current().path, "$last.blob").apply { check(mkdir()) }
         ActivityScenario.launch(BackupActivity::class.java).use { scenario ->
             chooseRestore(file); click("导入到此手机"); until("partial failure") { textVisible("导入尚未完成") }
             assertEquals(1, ids.count { context.queue().capture(it) != null }); screenshot(scenario, "backup-restore-partial")
+            check(obstruction.delete())
             context.queue().acknowledge(blocker)
+            assertNotNull(context.queue().capture(blocker))
             click("重试同一备份"); until("same preview") { textVisible("备份已校验") }; click("导入到此手机")
             until("retry completed") { textVisible("记录已回来") }; assertEquals(2, ids.count { context.queue().capture(it) != null })
             screenshot(scenario, "backup-restore-retry-success")

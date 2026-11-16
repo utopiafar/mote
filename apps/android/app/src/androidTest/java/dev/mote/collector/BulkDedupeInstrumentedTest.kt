@@ -70,7 +70,7 @@ class BulkDedupeInstrumentedTest {
                                 .put("capturedAt", start.plusSeconds(group * 20L + offset).toString())
                                 .put("appId", "fixture.bulk").put("appName", "Generated bulk fixture")
                                 .put("privacy", JSONObject().put("excluded", false))
-                                .put("ocr", JSONObject().put("status", "disabled")), png, 1_000_000_000)
+                                .put("ocr", JSONObject().put("status", "disabled")), png)
                         }
                     }
                 }
@@ -166,7 +166,7 @@ class BulkDedupeInstrumentedTest {
                 val id = UUID.randomUUID().toString(); ids += id
                 context.queue().enqueue(JSONObject().put("id", id).put("source", "screen").put("capturedAt", start.plusSeconds(second).toString())
                     .put("appId", app).put("appName", "Generated fixture").put("privacy", JSONObject().put("excluded", false))
-                    .put("ocr", JSONObject().put("status", "disabled")), image, 100_000_000)
+                    .put("ocr", JSONObject().put("status", "disabled")), image)
             }
             add(0); add(30); add(61); add(62, black); add(63, black, "fixture.b"); add(64, black, "fixture.b")
             repeat(100) { add(200 + it.toLong() * 86400, white, "fixture.long") }

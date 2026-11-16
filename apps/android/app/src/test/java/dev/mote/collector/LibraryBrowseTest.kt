@@ -24,7 +24,7 @@ class LibraryBrowseTest {
         records.forEach { record ->
             val image = if (record.getString("source") == "screen") byteArrayOf(1, 2, 3) else null
             if (image != null) record.put("imageMime", "image/png")
-            queue.enqueue(record, image, 1000000)
+            queue.enqueue(record, image)
         }
         val after = "2026-10-01T00:00:00Z"; val before = "2026-10-02T00:00:00Z"
         val first = queue.capturePage(after, before, limit = 2, source = "")
@@ -43,8 +43,8 @@ class LibraryBrowseTest {
 
     @Test fun libraryBindingSidecarPreservesOriginsWithoutChangingCapturedBodies() {
         val queue = DurableQueue(directory.newFolder(), cipher)
-        val old = fixture("note", 8); queue.archiveOrigin = "https://old.invalid"; queue.enqueue(old, null, 1000000)
-        val unbound = fixture("note", 9); queue.archiveOrigin = ""; queue.enqueue(unbound, null, 1000000)
+        val old = fixture("note", 8); queue.archiveOrigin = "https://old.invalid"; queue.enqueue(old, null)
+        val unbound = fixture("note", 9); queue.archiveOrigin = ""; queue.enqueue(unbound, null)
         val page = queue.capturePage("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", source = "", libraryBindings = true)
         assertEquals("https://old.invalid", page.getJSONObject("bindings").getString(old.getString("id")))
         assertEquals("", page.getJSONObject("bindings").getString(unbound.getString("id")))
@@ -56,7 +56,7 @@ class LibraryBrowseTest {
         val folder = directory.newFolder()
         val queue = DurableQueue(folder, cipher)
         val note = fixture("note", 8).put("deviceId", "phone")
-        queue.enqueue(note, null, 1000000)
+        queue.enqueue(note, null)
         val reopened = DurableQueue(folder, cipher).apply { archiveOrigin = "https://central.invalid/" }
         val page = reopened.capturePage("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", source = "", libraryBindings = true)
         val id = note.getString("id")

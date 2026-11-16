@@ -55,12 +55,11 @@ class OfflineSyncInstrumentedTest {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
-            cancel(); settings.save(settings.read().copy(server = "", token = "", deviceName = "Generated Android fixture", syncMode = "manual", uploadedRetentionDays = 0))
+            cancel(); settings.save(settings.read().copy(server = "", token = "", deviceName = "Generated Android fixture", syncMode = "manual"))
             test(context, settings)
         } finally {
             cancel(); waitUntil { !ConnectionGuard.changing() && ConnectionGuard.processing.get() == 0 }
-            val pending = context.queue().pendingPage(0, 60).getJSONArray("items")
-            for (i in 0 until pending.length()) context.queue().acknowledge(pending.getJSONObject(i).getString("id"))
+            context.queue().dedupeIds().forEach { context.queue().removeGeneratedRecord(it) }
             context.localSources().sources().forEach { context.localSources().remove(it.id) }
             QuickNotes.draft(context).clear()
             val edit = prefs.edit().clear()
@@ -76,7 +75,7 @@ class OfflineSyncInstrumentedTest {
             val windows = WindowSnapshot(setOf("dev.mote.generated"), "dev.mote.generated", true)
             assertTrue(pipeline.canCollect(config, windows, AppCollectionMode.ACTIVITY))
             pipeline.submitActivity(windows, config)
-            waitUntil { context.queue().depth() == 1 && !pipeline.isBusy() }
+            waitUntil { context.queue().pendingSync().count == 1 && !pipeline.isBusy() }
             val record = context.queue().peek()!!
             assertEquals("activity", record.getString("source")); assertFalse(record.has("imageBase64")); assertFalse(record.has("ocrText"))
             assertEquals("unconfigured", settings.syncState())
@@ -120,7 +119,7 @@ class OfflineSyncInstrumentedTest {
             Thread.sleep(750)
             assertEquals(0, archive.requests.get()); assertEquals(1, context.queue().depth())
             UploadWorker.schedule(context, config, true)
-            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 1 && settings.syncState() == "idle" }
+            waitUntil { context.queue().pendingSync().count == 0 && archive.notes.get() == 1 && settings.syncState() == "idle" }
             waitUntil { archive.lastSync?.optString("state") == "idle" }
             assertEquals(0, archive.lastSync!!.getInt("pendingRecords"))
             assertTrue(archive.heartbeats.get() > 0); assertNotNull(settings.lastUploadAt())
@@ -133,11 +132,11 @@ class OfflineSyncInstrumentedTest {
             QuickNotes.save(context, "Generated batch one", "")
             Thread.sleep(500); assertEquals(0, archive.notes.get())
             QuickNotes.save(context, "Generated batch two", "")
-            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 2 && settings.syncState() == "idle" }
+            waitUntil { context.queue().pendingSync().count == 0 && archive.notes.get() == 2 && settings.syncState() == "idle" }
             val id = QuickNotes.save(context, "Generated overdue single", "")
             assertTrue(File(QueueStorage(context).current().path, "$id.event").setLastModified(System.currentTimeMillis() - 16 * 60_000))
             UploadWorker.schedule(context, config)
-            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 3 && settings.syncState() == "idle" }
+            waitUntil { context.queue().pendingSync().count == 0 && archive.notes.get() == 3 && settings.syncState() == "idle" }
         }
     }
     @Test fun intervalHoldsNewRecordsUntilDueAndThenFlushes() = fixture { context, settings ->
@@ -148,7 +147,7 @@ class OfflineSyncInstrumentedTest {
             Thread.sleep(500); assertEquals(0, archive.notes.get())
             settings.syncDispatched(System.currentTimeMillis() - 16 * 60_000)
             UploadWorker.schedule(context, config)
-            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 1 && settings.syncState() == "idle" }
+            waitUntil { context.queue().pendingSync().count == 0 && archive.notes.get() == 1 && settings.syncState() == "idle" }
         }
     }
     @Test fun manualWrongAckAndDisconnectKeepRecordWithoutAutomaticRetry() = fixture { context, settings ->
@@ -165,7 +164,7 @@ class OfflineSyncInstrumentedTest {
                 assertTrue(WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().all { it.state.isFinished })
             }
             archive.fault = ""; UploadWorker.schedule(context, config, true)
-            waitUntil { context.queue().depth() == 0 && archive.lastSync?.optString("state") == "idle" }
+            waitUntil { context.queue().pendingSync().count == 0 && archive.lastSync?.optString("state") == "idle" }
         }
     }
     @Test fun manualSourceAckFailureDoesNotScheduleRetry() = fixture { context, settings ->
@@ -194,7 +193,7 @@ class OfflineSyncInstrumentedTest {
             settings.save(config)
             repeat(25) { QuickNotes.save(context, "Generated chunk $it", "") }
             UploadWorker.schedule(context, config, true)
-            waitUntil { archive.notes.get() == 25 && context.queue().depth() == 0 && archive.lastSync?.optString("state") == "idle" }
+            waitUntil { archive.notes.get() == 25 && context.queue().pendingSync().count == 0 && archive.lastSync?.optString("state") == "idle" }
             assertEquals(0, archive.lastSync!!.getInt("pendingRecords"))
             assertEquals("25 notes use one transport request", 1, archive.batches.get())
         }
@@ -212,7 +211,7 @@ class OfflineSyncInstrumentedTest {
             assertEquals("Manual failure must not dispatch a legacy route or retry automatically", 1, archive.requests.get())
             archive.fault = ""
             UploadWorker.schedule(context, config, true)
-            waitUntil { context.queue().depth() == 0 && settings.syncState() == "idle" }
+            waitUntil { context.queue().pendingSync().count == 0 && settings.syncState() == "idle" }
             assertEquals(2, archive.notes.get()); assertEquals(2, archive.batches.get())
         }
     }
@@ -222,12 +221,12 @@ class OfflineSyncInstrumentedTest {
             settings.save(config); archive.fault = "partial"
             repeat(2) { QuickNotes.save(context, "Generated partial $it", "") }
             UploadWorker.schedule(context, config, true)
-            waitUntil { context.queue().depth() == 1 && settings.syncState() == "error" &&
+            waitUntil { context.queue().pendingSync().count == 1 && settings.syncState() == "error" &&
                 WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().any { it.state == WorkInfo.State.FAILED } }
             val retained = context.queue().peek()!!.getString("id")
             assertTrue(WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().any { it.state == WorkInfo.State.FAILED })
             archive.fault = ""; UploadWorker.schedule(context, config, true)
-            waitUntil { context.queue().depth() == 0 }
+            waitUntil { context.queue().pendingSync().count == 0 }
             assertNotNull(retained); assertEquals(2, archive.batches.get())
         }
     }
@@ -250,7 +249,7 @@ class OfflineSyncInstrumentedTest {
             settings.save(config)
             repeat(3) { index ->
                 QuickNotes.save(context, "Generated realtime note $index", "")
-                waitUntil(detail = { "index=$index pending=${context.queue().depth()} received=${archive.notes.get()} batches=${archive.batches.get()} work=${WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().map { it.state }}" }) { context.queue().depth() == 0 && archive.notes.get() == index + 1 && settings.syncState() == "idle" }
+                waitUntil(detail = { "index=$index pending=${context.queue().pendingSync().count} received=${archive.notes.get()} batches=${archive.batches.get()} work=${WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().map { it.state }}" }) { context.queue().pendingSync().count == 0 && archive.notes.get() == index + 1 && settings.syncState() == "idle" }
             }
             assertEquals(3, archive.notes.get())
             assertNotNull(settings.lastUploadAt())
@@ -281,7 +280,7 @@ class OfflineSyncInstrumentedTest {
                 assertEquals("One running predecessor must retain exactly one waiting upload", 2, unfinished.size)
                 assertEquals(1, unfinished.count { it.state == WorkInfo.State.BLOCKED })
             } finally { HeldUploadCompletionWorker.release.countDown() }
-            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 1 }
+            waitUntil { context.queue().pendingSync().count == 0 && archive.notes.get() == 1 }
         }
     }
     @Test fun failedOrCancelledPredecessorDoesNotSilentlyRunItsDependentUpload() = fixture { context, settings ->
@@ -306,7 +305,7 @@ class OfflineSyncInstrumentedTest {
                 assertEquals(1, context.queue().depth()); val before = archive.notes.get()
                 // A new authorized scheduling event can replace a failed/cancelled chain.
                 UploadWorker.schedule(context, config)
-                waitUntil { context.queue().depth() == 0 && archive.notes.get() == before + 1 }
+                waitUntil { context.queue().pendingSync().count == 0 && archive.notes.get() == before + 1 }
             }
         }
     }
@@ -329,7 +328,7 @@ class OfflineSyncInstrumentedTest {
                 } finally { HeldUploadCompletionWorker.release.countDown() }
                 waitUntil { manager.getWorkInfosForUniqueWork("mote-upload").get().all { it.state.isFinished } }
                 assertEquals(0, archive.notes.get()); assertEquals(1, context.queue().depth())
-                context.queue().acknowledge(context.queue().peek()!!.getString("id"))
+                context.queue().removeGeneratedRecord(context.queue().peek()!!.getString("id"))
             }
         }
     }
