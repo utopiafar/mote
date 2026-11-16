@@ -26,7 +26,9 @@ connectors:
   syncIntervalMs: 900000
 ```
 
-回调与运行中的中央节点必须一致。本机开发可以使用 `http://127.0.0.1:端口/oauth/google/callback`；远端要求 HTTPS。上述显式密钥引用从启动环境读取，普通环境变量不覆盖 YAML。OAuth 配置改变后重启该 profile，在「来源」中连接 Google，完成授权后返回 Mote，明确选择需要同步的日历；仅同步间隔改变可热应用。读取授权请求 `calendar.calendarlist.readonly` 与 `calendar.events.readonly`。另有独立云日历写授权和执行方法，但当前source manifest尚未转交行动目录；完成写授权不表示Actions已可执行。授权采用一次性 state、PKCE 和 offline access；详见 [Google 服务端 OAuth](https://developers.google.com/identity/protocols/oauth2/web-server) 与 [日历权限范围](https://developers.google.com/workspace/calendar/api/auth)。
+回调与运行中的中央节点必须一致。本机开发可以使用 `http://127.0.0.1:端口/oauth/google/callback`；远端要求 HTTPS。上述显式密钥引用从启动环境读取，普通环境变量不覆盖 YAML。OAuth 配置改变后重启该 profile，在「来源」中连接 Google，完成授权后返回 Mote，明确选择需要同步的日历；仅同步间隔改变可热应用。读取授权请求 `calendar.calendarlist.readonly` 与 `calendar.events.readonly`。授权采用一次性 state、PKCE 和 offline access；详见 [Google 服务端 OAuth](https://developers.google.com/identity/protocols/oauth2/web-server) 与 [日历权限范围](https://developers.google.com/workspace/calendar/api/auth)。
+
+云日历写出另需独立的 `calendar.events` 授权。启用连接器并完成写授权后，已选日历会进入 Actions 的中央执行目录；所有者还需明确授权一个目标日历及输入来源范围。有效范围内的完整、明确日程沿同一行动派发与回执链执行，无需逐条再次确认；重叠授权不会静默选择日历。撤回写授权、取消日历选择或停用连接器会停止对应的新写入；停用选择在重启后保留，重新启用只恢复原范围。没有事件身份的创建回执记为未知，不作为成功或自动重试。
 
 首次同步覆盖过去 90 天至未来 365 天。日内使用 `syncToken` 增量同步；每天重建这个有界窗口，使新进入范围的重复日程也可见。完整分页成功并保存条目之后才提交新游标。增量请求不会混入 `timeMin`、`timeMax` 或 `orderBy`；失效游标的 HTTP 410 会触发完整重建。失败时保留旧游标和已归档证据，下一次可幂等重试。完整结果中消失的原有窗口条目记录为取消/移除，旧版本及计划时间保留；它不证明用户实际参加过日程。参考 [同步指南](https://developers.google.com/workspace/calendar/api/guides/sync) 和 [events.list 参数约束](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)。
 
@@ -40,6 +42,8 @@ connectors:
 |---|---|
 | `GET /api/connectors/status` | MCP 配置状态、Google 配置/连接/同步状态，无凭据 |
 | `POST /api/connectors/google/start` | `{authorizationUrl, expiresIn:600}` |
+| `POST /api/connectors/google/write/start` | 为当前连接单独发起云日历写授权，返回 `{authorizationUrl, expiresIn:600}` |
+| `DELETE /api/connectors/google/write` | 撤回 Mote 的写授权，保留读取与日历选择 |
 | `GET /oauth/google/callback` | Google 浏览器回调；使用一次性 state 验证，不依赖 Mote Bearer |
 | `GET /api/connectors/google/calendars` | `{calendars:[{id,summary,timeZone?,primary,selected}]}` |
 | `PUT /api/connectors/google/calendars` | `{calendarIds:string[]}`，最多 30 个且须属于授权返回的列表 |
@@ -121,6 +125,8 @@ reference 模式只调用 `resources/list` 获取选中资源的元数据，不�
 只有用户明确选择、声明确认只读且上游标记 `readOnlyHint:true` 的工具才可调用。上游 annotations 是声明，不能证明第三方服务实际没有副作用；仅对可信的远端配置工具读取。Mote 自身不会把这些第三方工具注入内部查询 Agent。标准客户端方法参考 [官方 MCP 客户端文档](https://ts.sdk.modelcontextprotocol.io/client)。
 
 ## 验证边界
+
+`npm run test:file -w @mote/server -- test/cloud-calendar-writes.test.ts` 还通过生产 manifest、正式连接器 host 与 Actions 目录/授权/派发链，使用临时生成 profile、受控 Google OAuth/API 和飞书 runner 验证云日历写入。覆盖读取与写出分离、目标日历和输入来源、撤权、停用/关闭/重启、账号变化及缺少事件身份时的未知回执。
 
 `node --import tsx --test apps/server/test/connectors.test.ts` 使用临时资料库、真实 MCP SDK 客户端/服务端、本机合成 HTTP 服务，以及可控 Google OAuth/API fixture。覆盖读写凭据隔离、写范围、证据分页、恢复旧内容、reference 不读取正文、SSRF/重定向拒绝、PKCE/state 防重放、分页失败保留游标、410 重建、取消计划时间、跨夏令时全天日程和断开连接竞态。统一查询层的合成回归使用 `node --import tsx --test apps/server/test/context-query.test.ts`；本机 Codex Server 的真实外部 MCP 验收使用 `MOTE_TEST_CODEX_MODEL=... node --import tsx scripts/test-mcp-context-live.ts`。
 
