@@ -30,7 +30,7 @@ async function request(config: Config, path: string,authorize:()=>void=()=>{}): 
   if (!response.ok) { await response.body?.cancel(); if (response.status === 404 || response.status === 410) throw Error(moteText('归档内容不存在或已按保留策略清理；同步凭据仍可查看。')); if (response.status === 401 || response.status === 403) {const error=Error(moteText('无法访问采集记录，请检查中央连接权限'));error.name='ArchiveAuthorizationError';throw error;} throw Error(moteText('中央返回 HTTP {0}。稍后重试', response.status)); }
   return response;
 }
-async function json(config: Config, path: string,authorize:()=>void=()=>{}): Promise<Record<string, unknown>> { const value: unknown = JSON.parse(await readResponseText(await request(config, path,authorize), 4 * 1024 * 1024));authorize(); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid archive response'); return value as Record<string, unknown>; }
+async function json(config: Config, path: string,authorize:()=>void=()=>{}): Promise<Record<string, unknown>> { const value: unknown = JSON.parse(await readResponseText(await request(config, path,authorize), 4 * 1024 * 1024,authorize));authorize(); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid archive response'); return value as Record<string, unknown>; }
 export async function syncContent(history: SyncHistory, queue: DurableQueue, sources: LocalSourceManager, config: Config, runId: string, key: string, chunkOffset = 0, includeImage = true,authorize:()=>void=()=>{}): Promise<SyncContent> {
   if (!Number.isSafeInteger(chunkOffset) || chunkOffset < 0 || chunkOffset > 1000000) throw Error(moteText('分页参数无效'));
   const item = history.item(config, runId, key);
@@ -73,14 +73,14 @@ export async function readCentralContent(config:Config,item:SyncContent['item'],
   result.hasImage=Boolean(record.imageMime && item.source==='screen'); if(record.imageMime)result.retainsOriginal=true;
   if(record.fileArchive&&item.source==='file'){
     try { const file=await json(config,`/api/files/${item.captureId}`,authorize);if(typeof file.hasOriginal==='boolean')result.retainsOriginal=file.hasOriginal;const manifestItem=file.item as {layer?:string}|undefined;result.metadataOnly=manifestItem?.layer==='reference'||result.metadataOnly; }
-    catch(error){if(error instanceof Error&&error.name==='ArchiveAuthorizationError')throw error;}
+    catch(error){authorize();if(error instanceof Error&&error.name==='ArchiveAuthorizationError')throw error;}
   }
   result.readiness=result.metadataOnly?'metadata':'unknown';
   const materialRef=record.memoryMaterialRef;
   if(typeof materialRef==='string'&&/^material:[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+$/.test(materialRef)){
     try { const id=materialRef.slice(9).split('@')[0],material=await json(config,`/api/materials/${encodeURIComponent(id)}`,authorize),coverage=material.coverage as {state?:string}|undefined,indexing=material.indexing as {state?:string;revision?:string}|undefined;
       if(material.ref===materialRef) result.readiness=coverage?.state==='complete'&&indexing?.state==='indexed'&&indexing.revision===material.revision?'ready':indexing?.state==='failed'?'failed':coverage?.state==='pending'||coverage?.state==='partial'||indexing?.state==='pending'||indexing?.state==='running'?'pending':'unknown';
-    } catch(error) { if(error instanceof Error&&error.name==='ArchiveAuthorizationError')throw error; /* Content stays readable while readiness cannot be confirmed. */ }
+    } catch(error) { authorize();if(error instanceof Error&&error.name==='ArchiveAuthorizationError')throw error; /* Content stays readable while readiness cannot be confirmed. */ }
   }
   if(result.readiness==='unknown'&&ocr?.status==='pending')result.readiness='pending';
   if(result.readiness==='unknown'&&ocr?.status==='failed')result.readiness='failed';
@@ -89,7 +89,7 @@ export async function readCentralContent(config:Config,item:SyncContent['item'],
     if (Number(response.headers.get('content-length')) > MAX_IMAGE_BYTES) { await response.body?.cancel(); throw Error(moteText('图片超过大小限制')); }
     if (!response.body) throw Error(moteText('图片为空'));
     const reader = response.body.getReader(), chunks: Uint8Array[] = []; let length = 0;
-    try { while (true) { const part = await reader.read();authorize(); if (part.done) break; length += part.value.length; if (length > MAX_IMAGE_BYTES) throw Error(moteText('图片超过大小限制')); chunks.push(part.value); } }
+    try { while (true) { authorize();const part = await reader.read();authorize(); if (part.done) break; length += part.value.length; if (length > MAX_IMAGE_BYTES) throw Error(moteText('图片超过大小限制')); chunks.push(part.value); } }
     finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     result.image = await previewWork.run<string>({ kind: 'preview', bytes: Buffer.concat(chunks), thumbnail: false });
   }
@@ -105,12 +105,12 @@ export async function readCentralContent(config:Config,item:SyncContent['item'],
 }
 
 /** Original bytes remain streamed and inside the current owner read lease. */
-export async function readArchivedFile(config:Config,expected:{captureId:string;externalId:string;deviceId?:string;sourceId?:string;revision?:string;sha256?:string;sizeBytes?:number},authorize:()=>void):Promise<{bytes:AsyncIterable<Uint8Array>;sizeBytes:number;sha256?:string;close:()=>Promise<void>}>{
-  if(!uuid.test(expected.captureId))throw Error('Invalid archive identity');
+export async function readArchivedFile(config:Config,expected:{captureId:string;externalId:string;deviceId:string;sourceId:string;revision:string;sha256:string;sizeBytes:number},authorize:()=>void):Promise<{bytes:AsyncIterable<Uint8Array>;sizeBytes:number;sha256?:string;close:()=>Promise<void>}>{
+  if(!uuid.test(expected.captureId)||!/^[a-f0-9]{64}$/.test(expected.sha256)||!Number.isSafeInteger(expected.sizeBytes)||expected.sizeBytes<1)throw Error('Invalid archive identity');
   const record=await json(config,`/api/capture-browser/${expected.captureId}`,authorize),provenance=record.provenance as {externalId?:string;revision?:string;sourceId?:string}|undefined;
-  if(record.id!==expected.captureId||record.deviceId!==(expected.deviceId??config.deviceId)||provenance?.externalId!==expected.externalId||expected.sourceId&&provenance?.sourceId!==expected.sourceId||expected.revision&&provenance?.revision!==expected.revision)throw Error(moteText('记录不属于当前设备'));
+  if(record.id!==expected.captureId||record.deviceId!==expected.deviceId||provenance?.externalId!==expected.externalId||provenance?.sourceId!==expected.sourceId||provenance?.revision!==expected.revision)throw Error(moteText('记录不属于当前设备'));
   const file=await json(config,`/api/files/${expected.captureId}`,authorize);
-  if(file.captureId!==expected.captureId||!file.hasOriginal||!Number.isSafeInteger(file.sizeBytes)||Number(file.sizeBytes)<1||expected.sizeBytes!==undefined&&file.sizeBytes!==expected.sizeBytes)throw Error(moteText('归档内容不存在或已按保留策略清理；同步凭据仍可查看。'));
+  if(file.captureId!==expected.captureId||!file.hasOriginal||!Number.isSafeInteger(file.sizeBytes)||Number(file.sizeBytes)<1||file.sizeBytes!==expected.sizeBytes)throw Error(moteText('归档内容不存在或已按保留策略清理；同步凭据仍可查看。'));
   const response=await request(config,`/api/files/${expected.captureId}/content`,authorize);
   if(!response.body||Number(response.headers.get('content-length'))!==file.sizeBytes){await response.body?.cancel();throw Error('Invalid original length');}
   const reader=response.body.getReader();let closed=false;

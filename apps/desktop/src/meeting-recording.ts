@@ -316,10 +316,25 @@ export class MeetingRecordingManager {
 
   record(id:string):StoredSession|undefined {const value=this.state.sessions.find(session=>session.id===id);return value?structuredClone(value):undefined;}
   contentRecords():StoredSession[]{return structuredClone(this.state.sessions.filter(session=>session.state!=='recording'));}
+  /** Only the exact receipt saved by complete() authorizes release/readback.
+   * Existing uploaded metadata alone does not establish original byte identity. */
+  archiveReceipt(id:string):StoredSession['archiveReceipt'] {
+    const session=this.state.sessions.find(value=>value.id===id),proof=session?.archiveReceipt;
+    const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    if(!session||session.state!=='uploaded'||!uuid.test(session.id)||!session.captureId||!uuid.test(session.captureId)||typeof session.uploadedAt!=='string'||!Number.isFinite(Date.parse(session.uploadedAt))||!session.uploadOrigin||typeof session.deviceId!=='string'||!session.deviceId.trim()||session.deviceId.length>128||!proof)return;
+    try{if(validateServerUrl(session.uploadOrigin)!==session.uploadOrigin)return;}catch{return;}
+    if(proof.sourceId!=='local-meeting-'+createHash('sha256').update(session.deviceId).digest('hex').slice(0,24)||proof.externalId!=='meeting:'+session.id||!/^[a-f0-9]{64}$/.test(proof.sha256)||proof.revision!==proof.sha256||!Number.isSafeInteger(proof.sizeBytes)||proof.sizeBytes<1||proof.sizeBytes>FILE_MAX_BYTES)return;
+    return {...proof};
+  }
   async releaseContent(id:string,authorize:()=>void=()=>{}):Promise<void>{
-    await this.ensureInitialized();authorize();const session=this.state.sessions.find(value=>value.id===id);
-    if(!session||session.state!=='uploaded'||!session.captureId||!/^[a-f0-9-]{36}$/i.test(session.captureId)||!session.uploadOrigin||validateServerUrl(session.uploadOrigin)!==session.uploadOrigin||!session.uploadedAt||!Number.isFinite(Date.parse(session.uploadedAt)))throw Error(moteText('本机副本已变化；尚无可读取的中央接收凭据。'));
+    await this.ensureInitialized();authorize();const session=this.state.sessions.find(value=>value.id===id),proof=this.archiveReceipt(id);
+    if(!session||!proof)throw Error(moteText('本机副本已变化；尚无可读取的中央接收凭据。'));
     if(session.localContentRelease&&!session.localContentRelease.pending)return;
+    if(!session.audioFile||basename(session.audioFile)!==session.audioFile)throw Error('Invalid recording identity');
+    const path=join(this.options.directory,session.id,session.audioFile);
+    const info=await stat(path).catch(error=>{if(session.localContentRelease?.pending&&(error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;});
+    if(info&&(!info.isFile()||info.size!==proof.sizeBytes||(await this.digest(path,authorize)).hash!==proof.sha256))throw Error('Meeting archive receipt does not match the saved audio');
+    authorize();
     const at=session.localContentRelease?.at??this.now().toISOString();
     const next:StoredSession={...session,localContentRelease:{at,pending:true},warnings:[],error:undefined};
     await this.persist(authorize,{session,next});authorize();
@@ -333,15 +348,17 @@ export class MeetingRecordingManager {
   async readOriginal(id:string,authorize:()=>void):Promise<{bytes:AsyncIterable<Buffer>;sizeBytes:number;sha256?:string;close:()=>void}>{
     await this.ensureInitialized();authorize();const session=this.state.sessions.find(value=>value.id===id);
     if(!session?.audioFile||session.localContentRelease)throw Error(moteText('本机原件不在此设备，连接原中央后可按当前权限读取。'));
+    const proof=this.archiveReceipt(id);if(session.state==='uploaded'&&!proof)throw Error(moteText('本机副本已变化；尚无可读取的中央接收凭据。'));
     if(!/^[a-f0-9-]{36}$/i.test(session.id)||basename(session.audioFile)!==session.audioFile)throw Error('Invalid recording identity');
     const selected=session.localContentRelease,path=join(this.options.directory,session.id,session.audioFile);
-    const info=await stat(path);if(!info.isFile())throw Error('Invalid recording file');const stream=createReadStream(path,{highWaterMark:1024*1024});
+    const info=await stat(path);if(!info.isFile()||proof&&info.size!==proof.sizeBytes)throw Error('Invalid recording file');authorize();const stream=createReadStream(path,{highWaterMark:1024*1024});
     const close=()=>{stream.destroy();};
-    return {sizeBytes:info.size,sha256:session.archiveReceipt?.sha256,close,bytes:(async function*(){try{for await(const part of stream){authorize();if(session.localContentRelease!==selected)throw Error('Local original changed');yield Buffer.from(part);}}finally{close();}})()};
+    return {sizeBytes:info.size,sha256:proof?.sha256,close,bytes:(async function*(){try{for await(const part of stream){authorize();if(session.localContentRelease!==selected)throw Error('Local original changed');yield Buffer.from(part);}}finally{close();}})()};
   }
-  private async digest(path: string): Promise<{ hash: string }> {
+  private async digest(path: string,authorize:()=>void=()=>{}): Promise<{ hash: string }> {
     const hash = createHash('sha256');
-    for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+    for await (const chunk of createReadStream(path)){authorize();hash.update(chunk as Buffer);}
+    authorize();
     return { hash: hash.digest('hex') };
   }
 

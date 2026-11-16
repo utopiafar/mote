@@ -45,17 +45,17 @@ async function request(config: Config, path: string,authorize:()=>void=()=>{}): 
   return response;
 }
 async function remoteDetail(config: Config, id: string,authorize:()=>void=()=>{}): Promise<Partial<CaptureEvent>> {
-  const value = JSON.parse(await readResponseText(await request(config, `/api/capture-browser/${id}`,authorize), 1024 * 1024)) as Partial<CaptureEvent>;
+  const value = JSON.parse(await readResponseText(await request(config, `/api/capture-browser/${id}`,authorize), 1024 * 1024,authorize)) as Partial<CaptureEvent>;
   authorize();
   if (value.id !== id || value.deviceId !== config.deviceId || !['screen','ui_page'].includes(value.source??'')) throw new Error(moteText("记录不属于当前设备的截图"));
   return value;
 }
-async function imageBytes(response: Response, maximum: number): Promise<Buffer> {
+async function imageBytes(response: Response, maximum: number,authorize:()=>void): Promise<Buffer> {
   if (Number(response.headers.get('content-length')) > maximum) { await response.body?.cancel(); throw new Error(moteText("图片超过大小限制")); }
   if (!response.body) throw new Error(moteText("图片为空"));
   const reader = response.body.getReader(), chunks: Uint8Array[] = []; let size = 0;
   try {
-    while (true) { const value = await reader.read(); if (value.done) break; size += value.value.length; if (size > maximum) throw new Error(moteText("图片超过大小限制")); chunks.push(value.value); }
+    while (true) { authorize();const value = await reader.read();authorize(); if (value.done) break; size += value.value.length; if (size > maximum) throw new Error(moteText("图片超过大小限制")); chunks.push(value.value); }
     return Buffer.concat(chunks);
   } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
@@ -117,7 +117,7 @@ export async function captureImage(queue: DurableQueue, config: Config, source: 
   const current=()=>{authorize();if(local&&queue.recordForBrowser(id)?.localContentRelease?.at!==marker)throw Error('Local original changed');};
   current();if(local?.localContentRelease)requireOrigin(local,config);
   if(source==='local'&&!local?.localContentRelease)bytes=await queue.imageForBrowser(id);
-  else { await remoteDetail(config,id,authorize); bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image${thumbnail ? '?thumbnail=1' : ''}`,authorize), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES); }
+  else { await remoteDetail(config,id,authorize); bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image${thumbnail ? '?thumbnail=1' : ''}`,authorize), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES,current); }
   if (!bytes) throw new Error(moteText("图片已同步，请切换到中央已归档查看"));
   current();const result=await previewWork.run<string>({ kind: 'preview', bytes, thumbnail });current();return result;
 }

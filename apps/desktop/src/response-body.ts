@@ -1,5 +1,5 @@
 import { moteText } from '@mote/shared/i18n';
-export async function readResponseText(response: Response, maximumBytes: number): Promise<string> {
+export async function readResponseText(response: Response, maximumBytes: number,authorize:()=>void=()=>{}): Promise<string> {
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) throw new Error(moteText("响应大小限制无效"));
   if (Number(response.headers.get('content-length')) > maximumBytes) {
     await response.body?.cancel().catch(() => undefined);
@@ -12,7 +12,9 @@ export async function readResponseText(response: Response, maximumBytes: number)
   let length = 0, completed = false;
   try {
     while (true) {
+      authorize();
       const next = await reader.read();
+      authorize();
       if (next.done) { completed = true; break; }
       if (length + next.value.byteLength > maximumBytes) throw new Error(moteText("响应超过大小限制"));
       bytes.set(next.value, length); length += next.value.byteLength;

@@ -57,8 +57,8 @@ export function createLibraryWorkspacePlugin(options: LibraryWorkspaceOptions): 
   }
   function meetingItems():ContentItem[]{return options.meetings?.contentRecords().map(record=>({key:'meeting:'+record.id,source:'file',title:moteText('本机会议录音'),observedAt:record.startedAt,preview:'',sourceName:moteText('本机会议录音'),error:record.error,localContentRelease:record.localContentRelease,...(record.state==='uploaded'&&record.uploadedAt&&record.uploadOrigin?{archiveAcknowledgment:{at:record.uploadedAt,origin:record.uploadOrigin}}:{})}))??[];}
   function meetingDetail(id:string):ContentDetail{
-    const record=options.meetings?.record(id);if(!record)throw Error('Recording unavailable');
-    return {text:'',sourceName:moteText('本机会议录音'),metadata:JSON.stringify({id:record.id,startedAt:record.startedAt,endedAt:record.endedAt,captureId:record.captureId,uploadedAt:record.uploadedAt,uploadOrigin:record.uploadOrigin},null,2),localContentRelease:record.localContentRelease,retainsOriginal:!record.localContentRelease&&Boolean(record.audioFile),canRelease:record.state==='uploaded'&&Boolean(record.captureId&&record.uploadOrigin&&record.uploadedAt)&&(!record.localContentRelease||record.localContentRelease.pending),canSaveOriginal:Boolean(record.audioFile&&!record.localContentRelease||record.state==='uploaded'&&record.captureId&&record.uploadOrigin&&record.localContentRelease)};
+    const record=options.meetings?.record(id);if(!record)throw Error('Recording unavailable');const proof=options.meetings?.archiveReceipt(id);
+    return {text:'',sourceName:moteText('本机会议录音'),metadata:JSON.stringify({id:record.id,startedAt:record.startedAt,endedAt:record.endedAt,captureId:record.captureId,uploadedAt:record.uploadedAt,uploadOrigin:record.uploadOrigin},null,2),localContentRelease:record.localContentRelease,retainsOriginal:!record.localContentRelease&&Boolean(record.audioFile),canRelease:Boolean(proof&&(!record.localContentRelease||record.localContentRelease.pending)),canSaveOriginal:Boolean((record.state!=='uploaded'||proof)&&((record.audioFile&&!record.localContentRelease)||proof&&record.localContentRelease))};
   }
   const sources = () => options.sources();
   const local = <T>(operation: () => T): T => {
@@ -81,13 +81,13 @@ export function createLibraryWorkspacePlugin(options: LibraryWorkspaceOptions): 
         register(libraryWorkspaceChannels.contentCentral, libraryReadCapability, args =>
           withConnection(config => centralContentPage(config, args[0] as string | undefined, args[1] as string | undefined)));
         register(libraryWorkspaceChannels.contentCentralDetail, libraryReadCapability, args =>
-          withConnection(config => {
+          withConnection((config,authorize) => {
             const [id, offset, image] = args;
             if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id)
               || offset !== undefined && (!Number.isSafeInteger(offset) || Number(offset) < 0)) throw Error('Invalid content reference');
             return readCentralContent(config, {
               key: id, captureId: id, source: 'file', title: '', observedAt: '', outcome: 'received', firstReceipt: false,
-            }, Number(offset ?? 0), image === true);
+            }, Number(offset ?? 0), image === true,authorize);
           }));
         register(libraryWorkspaceChannels.contentLocal, libraryReadCapability, args => local(() =>
           localContentPage(options.queue,sources(),args[0] as number|undefined,args[1] as string|undefined,undefined,args[2] as boolean|undefined,meetingItems())));
@@ -113,7 +113,7 @@ export function createLibraryWorkspacePlugin(options: LibraryWorkspaceOptions): 
               return readCentralContent(config, {
                 key: receiptKey!, captureId: id, source: 'file', title: '', observedAt: '', outcome: 'received', firstReceipt: false,
                 ...(parts[0] === 'source' ? {sourceId: parts[1]} : {}),
-              }, 0, image === true);
+              }, 0, image === true,authorize);
             });
           }));
 
@@ -126,9 +126,11 @@ export function createLibraryWorkspacePlugin(options: LibraryWorkspaceOptions): 
         register(libraryWorkspaceChannels.contentSaveOriginal,libraryWriteCapability,args=>withConnection(async(config,authorize)=>{
           const key=args[0];if(typeof key!=='string'||!key.startsWith('meeting:')||key.length>160||!options.meetings)throw Error('Invalid recording identity');
           const id=key.slice(8),record=options.meetings.record(id);if(!record)throw Error('Recording unavailable');
+          const proof=options.meetings.archiveReceipt(id);
+          if((record.state==='uploaded'||record.localContentRelease)&&!proof)throw Error(moteText('本机副本已变化；尚无可读取的中央接收凭据。'));
           const marker=record.localContentRelease?.at,current=()=>{authorize();if(options.meetings!.record(id)?.localContentRelease?.at!==marker)throw Error('Local recording changed');};
           const destination=await options.selectOriginalDestination?.(id+(record.mimeType==='audio/wav'?'.wav':'.m4a'));current();if(!destination)return;
-          const input=record.localContentRelease?await (async()=>{originalOrigin(record.uploadOrigin,config);if(!record.captureId)throw Error('Archive receipt unavailable');return readArchivedFile(config,{captureId:record.captureId,externalId:record.archiveReceipt?.externalId??'meeting:'+record.id,deviceId:record.deviceId,...record.archiveReceipt},current);})():await options.meetings.readOriginal(id,current);
+          const input=record.localContentRelease?await (async()=>{originalOrigin(record.uploadOrigin,config);return readArchivedFile(config,{captureId:record.captureId!,deviceId:record.deviceId!,...proof!},current);})():await options.meetings.readOriginal(id,current);
           await saveOriginal(destination,input,current);
         }));
 
