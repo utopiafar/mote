@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createAgent,type QueryInput} from '../packages/agent/src/index.js';
+import {createAgent,type QueryInput} from '@mote/agent';
 import {Store,sha256} from '../apps/server/src/store.js';
 import {SourceStore} from '../apps/server/src/sources.js';
 import {MemoryStore} from '../apps/server/src/memory.js';

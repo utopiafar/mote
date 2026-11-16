@@ -12,7 +12,7 @@ import {repositoryRoot,type Config} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {memoryEvidenceFingerprint,MemoryOutputValidationError} from '../apps/server/src/memory.js';
 import {memoryProfile} from '../apps/server/src/memory-profiles.js';
-import {memoryReviewReceipt} from '../apps/server/src/memory-review.js';
+import {memoryReviewReceipt,reviewMemory} from '../apps/server/src/memory-review.js';
 import {sha256} from '../apps/server/src/store.js';
 
 function external(path:string){const full=resolve(path),part=relative(repositoryRoot,full);assert.ok(part==='..'||part.startsWith('../'),'Keep private diagnostics outside Git');return full;}
@@ -44,7 +44,7 @@ const report:any={status:'running',startedAt:new Date().toISOString(),sourceRun:
  contextTime:job.createdAt,sourceBatchId:batch.id,sourceRanges:ranges,originals,baselineContextMetrics:baseline.trace.payload.metrics,otherIsolatedWorkMayBeConcurrent:true,
  mode:reviewSource?'review':'extraction',extractionRepeated:false,...(reviewBytes?{reviewSourceHash:sha256(reviewBytes),draftRunId:reviewSource.result.runId}:{})};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
-async function save(){if(node)report.usage=node.featureServices.usageLedger.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
+async function save(){if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
 try{
  await save();const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});assert.ok(catalog.items.find(m=>m.id===config.model)?.reasoningEfforts?.includes('max'));
  report.runtimeHashes=Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','scripts/diagnose-memory-deadline-live.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
@@ -70,7 +70,11 @@ try{
  await save();const started=Date.now();
  try{if(reviewSource){
    node.memories.extract(reviewSource.result,config.model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints,validateOnly:true});
-   report.result=await node.featureServices.reviewExtraction(input,reviewSource.result);report.reviewDurationMs=Date.now()-started;report.reviewTested=true;report.reviewReceipt=memoryReviewReceipt(report.result);
+   report.result=await reviewMemory(input,reviewSource.result,
+    reviewInput=>node!.featureServices.queryAgent(reviewInput,'query','memories'),{
+     deletions:node.memories.deletions,
+     authorizeDeletionEvidence:ids=>node!.memoryPipeline.inputs.assertDeletion(ids,input.modelProfileId),
+    });report.reviewDurationMs=Date.now()-started;report.reviewTested=true;report.reviewReceipt=memoryReviewReceipt(report.result);
    assert.equal(report.reviewReceipt?.decision,'independent');
   }else{report.result=await node.featureServices.queryAgent(input,'query','memories');report.extractionDurationMs=Date.now()-started;}}
  finally{report.observedDurationMs=Date.now()-started;}

@@ -20,7 +20,7 @@ const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,
 const report:any={status:'running',startedAt:new Date().toISOString(),reviewOnlyFrom:path,sourceReportHash:sha256(bytes),personalDataUsed:prior.personalDataUsed,model:config.model,reasoningEffort:'max',extractionRepeated:false,answerRepeated:false,cases:[]};
 report.reviewerHash=sha256(await readFile(new URL('./context-journey-judgment.ts',import.meta.url)));
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
-async function save(){if(node)report.usage=node.featureServices.usageLedger.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
+async function save(){if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
 try{
  const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});assert.ok(catalog.items.find(m=>m.id===config.model)?.reasoningEfforts?.includes('max'));
  node=await buildApp(config);const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});await node.app.ready();

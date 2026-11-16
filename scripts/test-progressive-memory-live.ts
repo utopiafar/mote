@@ -56,7 +56,7 @@ const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,
  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 function progress(stage:string,data:Record<string,unknown>={}){console.log(JSON.stringify({stage,...data}));}
-async function save(){if(node)report.usage=node.featureServices.usageLedger.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
+async function save(){if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
 async function request(method:'GET'|'POST'|'PUT',url:string,payload?:unknown){const response=await node!.app.inject({method,url,headers:{authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'},...(payload?{payload}:{})});assert.ok(response.statusCode>=200&&response.statusCode<300,`${method} ${url}: ${response.statusCode} ${response.body}`);return response.json();}
 async function start(){
  node=await buildApp(config);const settings=node.lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});await node.app.ready();
