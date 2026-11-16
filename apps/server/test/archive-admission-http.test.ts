@@ -14,7 +14,7 @@ import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-archive-admission-'));
- const config:Config={dataDir:directory,token:'generated-archive-admission-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:1_000_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-archive-admission-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('Generated archive fixtures must not invoke a live model');}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.app.listen({host:'127.0.0.1',port:0});
@@ -58,7 +58,7 @@ test('HTTP owner correction, extraction and portable merge remain available afte
  // Portable output from this exact current vault must be consumable by a fresh vault, including deletion intent.
  node.memories.delete(extracted[0].id);
  const portable=node.store.exportArchive(400_000_000);assert.equal(portable.memories.length,100002);assert.equal(portable.memoryDeletions.length,1);
- const directory=mkdtempSync(join(tmpdir(),'mote-many-memory-roundtrip-')),mirror=new Store(directory,{maxStorageBytes:1_000_000_000});
+ const directory=mkdtempSync(join(tmpdir(),'mote-many-memory-roundtrip-')),mirror=new Store(directory,{});
  t.after(()=>{mirror.close();rmSync(directory,{recursive:true,force:true});});
  await mirror.importArchive(portable);const restored=new MemoryStore(mirror);
  assert.equal(mirror.db.prepare('SELECT COUNT(*) n FROM memories').get()!.n,100002);

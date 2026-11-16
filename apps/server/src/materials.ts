@@ -250,7 +250,6 @@ export class MaterialStore {
       try{
         for(const row of db.prepare("SELECT material_id,id,version,json FROM material_owner_declarations WHERE json_extract(json,'$.private') LIKE 'json:%'").all()){
           const value=JSON.parse(String(row.json));value.private=encodeMemoryPrivate(store,decodeMemoryPrivate(store,value.private));const json=JSON.stringify(value);
-          store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(row.json))));
           db.prepare('UPDATE material_owner_declarations SET json=? WHERE material_id=? AND id=? AND version=?').run(json,row.material_id,row.id,row.version);
         }
         if(own)db.exec('COMMIT');
@@ -437,7 +436,6 @@ export class MaterialStore {
       const values=material.attributionContext?.declarations??[],prior=values.find(value=>value.id===declaration.id),fingerprint=hash(JSON.stringify(declaration));
       if(prior?.fingerprint===fingerprint){if(own)db.exec('COMMIT');return material;}
       const version=(prior?.version??0)+1,json=JSON.stringify({private:encodeMemoryPrivate(this.store,{question:declaration.question,answer:declaration.answer})});
-      this.store.reserveMetadata(Buffer.byteLength(json)+256);
       db.prepare('INSERT INTO material_owner_declarations VALUES(?,?,?,?)').run(id,declaration.id,version,json);
       this.pendingDeclarations={id,values:[...values.filter(value=>value.id!==declaration.id),{id:declaration.id,version,fingerprint}]};
       const result=this.republishContext(material);if(own)db.exec('COMMIT');return result;
@@ -534,7 +532,6 @@ export class MaterialStore {
     try{
       const prior=db.prepare('SELECT revision,enabled,generation FROM material_index_requests WHERE material_id=?').get(id);
       if(prior?.revision===row.revision&&Boolean(prior.enabled)===enabled){if(own)db.exec('COMMIT');return;}
-      if(!prior)this.store.reserveMetadata(512);
       db.prepare('DELETE FROM material_searchable WHERE material_id=?').run(id);
       db.prepare(`INSERT INTO material_index_requests VALUES(?,?,?,?,?,NULL) ON CONFLICT(material_id) DO UPDATE SET
         revision=excluded.revision,enabled=excluded.enabled,generation=excluded.generation,state=excluded.state,error=NULL`)
@@ -781,15 +778,7 @@ export class MaterialStore {
         const now=new Date().toISOString(),sequence=(head?.sequence??0)+1;
         const {blocks:_,members:__,...manifest}=draft;
         const manifestJson=JSON.stringify(manifest);
-        let offset=0,assetCount=0,requiredBytes=Buffer.byteLength(manifestJson)+512;
-        for(const member of draft.members)requiredBytes+=Buffer.byteLength(JSON.stringify(member))+128;
-        for(const block of draft.blocks){
-          const display=block.kind==='text'?block.text:`[asset ${block.id} ${block.mimeType} ${block.hash}]`;
-          const payloadHash=hash(display);
-          if(!db.prepare('SELECT 1 FROM material_block_payloads WHERE hash=?').get(payloadHash))requiredBytes+=Buffer.byteLength(display);
-          requiredBytes+=Buffer.byteLength(JSON.stringify(block.kind==='text'?{id:block.id,format:block.format,memberIds:block.memberIds,locator:block.locator,evidenceContext:block.evidenceContext}:{id:block.id,hash:block.hash,mimeType:block.mimeType,memberIds:block.memberIds,locator:block.locator}))+256+(block.memberIds.length+(block.evidenceIds?.length??0))*128+(block.kind==='text'&&block.evidenceContext?128:0);
-        }
-        this.store.reserveMetadata(requiredBytes);
+        let offset=0,assetCount=0;
         if(!head)db.prepare(`INSERT INTO material_heads(id,source_id,external_id,kind,revision,sequence,retired,device_id,first_at,last_at,created_at,updated_at)
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,draft.origin.sourceId,draft.origin.externalId,draft.kind,'',0,0,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,now);
         db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,revision,sequence,manifestJson,now,0,draft.blocks.length,draft.members.length,draft.blocks.filter(b=>b.kind==='asset').length,draftHash);
@@ -889,14 +878,6 @@ export class MaterialStore {
       if(draft.reuseBlocks&&!prefix)throw new StoreError('Coding append prefix missing',409);
       const revision=hash(JSON.stringify(draft)),sequence=head.sequence+1,now=new Date().toISOString();
       if(this.version(draft.id,revision))throw new StoreError('An older material revision cannot become current',409);
-      let requiredBytes=Buffer.byteLength(manifestJson)+512;
-      for(const member of draft.members)requiredBytes+=Buffer.byteLength(JSON.stringify(member))+128;
-      for(const block of draft.blocks){const display=block.kind==='text'?block.text:'';
-        if(!db.prepare('SELECT 1 FROM material_block_payloads WHERE hash=?').get(hash(display)))requiredBytes+=Buffer.byteLength(display);
-        requiredBytes+=256+(block.memberIds.length+(block.evidenceIds?.length??0))*128+
-          (block.kind==='text'&&block.evidenceContext?Buffer.byteLength(JSON.stringify(block.evidenceContext))+128:0);
-      }
-      this.store.reserveMetadata(requiredBytes);
       db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?,?)').run(draft.id,revision,sequence,manifestJson,now,0,
         draft.reuseBlocks+draft.blocks.length,draft.members.length,0,null);
       db.prepare('INSERT INTO material_coding_snapshots VALUES(?,?,?,?,?)').run(draft.id,revision,snapshot.checkpoint,snapshot.appendEpoch,snapshot.headCount);

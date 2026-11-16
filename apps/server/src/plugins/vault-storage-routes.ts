@@ -1,4 +1,3 @@
-import {randomUUID} from 'node:crypto';
 import type {FastifyInstance} from 'fastify';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import {z} from 'zod';
@@ -39,7 +38,7 @@ export interface VaultStorageRouteDependencies {
 export function vaultStorageRoutes(content:()=>ContentStorageService,dependencies:VaultStorageRouteDependencies):DomainRouteContribution{
   const {archivedFiles,config,diagnostics,evidenceReader,files,indexer,store}=dependencies;
   return Object.freeze({mount(app:FastifyInstance,scope?:PluginResourceScope){
-    const maintain=()=>{files.sweep();if(config.retentionDays>0)return diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted})));};
+    const maintain=()=>files.sweep();
     if(scope)void scope.run(maintain);else void maintain();scope?.every(3600000,maintain);
     registerContentStorage(app,content());
     app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=indexer.retry();diagnostics.record('queue.snapshot',{pending:result.queued});void indexer.tick();return result;});

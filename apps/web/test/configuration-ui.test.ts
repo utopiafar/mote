@@ -26,10 +26,9 @@ async function fixture(t:any){
   t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of before){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
   return {root,d:dom.window.document};
 }
-function configuration(revision:number,savedDays=30):ServerConfiguration {
-  return {version:1,revision,configFile:'/generated/mote.yaml',profile:'test',runtime:'native',envFile:'/generated/mote.yaml',baseDir:'/generated',readOnly:false,restartRequired:savedDays!==0,description:'Generated fixture',storage:{dataDir:'/generated',sqlitePath:'/generated/mote.sqlite',assetDir:'/generated/files',logDir:'/generated/logs',kind:'local-directory',source:'/generated',mountPath:null,description:'Generated'},groups:[{id:'storage',title:'Storage',description:'Generated',fields:[
-    {key:'retentionDays',label:'Retention',description:'Generated',value:0,savedValue:savedDays,domain:'storage',path:'retentionDays',source:'config-file',effect:'restart',restartRequired:true},
-    {key:'maxStorageBytes',label:'Capacity',description:'Generated',value:1048576,savedValue:1048576,unit:'bytes',domain:'storage',path:'maxStorageBytes',source:'config-file',effect:'restart',restartRequired:true},
+function configuration(revision:number,savedSeconds=900):ServerConfiguration {
+  return {version:1,revision,configFile:'/generated/mote.yaml',profile:'test',runtime:'native',envFile:'/generated/mote.yaml',baseDir:'/generated',readOnly:false,restartRequired:savedSeconds!==300,description:'Generated fixture',storage:{dataDir:'/generated',sqlitePath:'/generated/mote.sqlite',assetDir:'/generated/files',logDir:'/generated/logs',kind:'local-directory',source:'/generated',mountPath:null,description:'Generated'},groups:[{id:'connectors',title:'Connectors',description:'Generated',fields:[
+    {key:'connectorSyncInterval',label:'Interval',description:'Generated',value:300,savedValue:savedSeconds,domain:'connectors',path:'syncIntervalMs',source:'config-file',effect:'restart',restartRequired:true},
   ]}]};
 }
 const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent===label)!;
@@ -52,39 +51,39 @@ test('effective configuration labels keep only file, default and derived sources
 
 test('configuration page saves an edited field into the shared file with its original revision',async t=>{
   const {root,d}=await fixture(t),writes:any[]=[];
-  const api={request:async(path:string,init?:RequestInit)=>{writes.push({path,body:JSON.parse(String(init?.body))});return configuration(8,90);}} as Api;
-  await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api,config:configuration(7),category:'storage'})));
-  const retention=d.querySelector<HTMLSelectElement>('select[aria-label="历史记录保留"]')!;
-  assert.equal(retention.value,'30','pending-restart saved value is the editing baseline');
-  await act(async()=>{retention.value='90';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
+  const api={request:async(path:string,init?:RequestInit)=>{writes.push({path,body:JSON.parse(String(init?.body))});return configuration(8,1800);}} as Api;
+  await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api,config:configuration(7),category:'connectors'})));
+  const retention=d.querySelector<HTMLSelectElement>('select[aria-label="检查来源的间隔"]')!;
+  assert.equal(retention.value,'900','pending-restart saved value is the editing baseline');
+  await act(async()=>{retention.value='1800';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
   await act(async()=>button(d,'保存并应用').click());
-  assert.deepEqual(writes,[{path:'/api/configuration/storage',body:{revision:7,value:{retentionDays:90}}}]);
+  assert.deepEqual(writes,[{path:'/api/configuration/connectors',body:{revision:7,value:{syncIntervalMs:1800000}}}]);
   assert.match(d.body.textContent!,/已保存到配置文件/);assert.doesNotMatch(d.body.textContent!,/下载配置变更|预览环境变量/);
 });
 
 test('an external file revision does not silently rebase the owner draft or overwrite it',async t=>{
   const {root,d}=await fixture(t),writes:any[]=[];
   const api={request:async(_path:string,init?:RequestInit)=>{writes.push(JSON.parse(String(init?.body)));throw new ApiError('generated conflict',409,undefined,'config_conflict');}} as Api;
-  const render=(config:ServerConfiguration)=>React.createElement(ConfigurationBuilder,{api,config,category:'storage'});
+  const render=(config:ServerConfiguration)=>React.createElement(ConfigurationBuilder,{api,config,category:'connectors'});
   await act(async()=>root.render(render(configuration(7))));
-  const retention=d.querySelector<HTMLSelectElement>('select[aria-label="历史记录保留"]')!;
-  await act(async()=>{retention.value='90';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
-  await act(async()=>root.render(render(configuration(8,180))));
-  assert.equal(retention.value,'90');await act(async()=>button(d,'保存并应用').click());
-  assert.equal(writes[0].revision,7);assert.match(d.body.textContent!,/配置或相关操作状态已变化/);assert.equal(retention.value,'90');
-  await act(async()=>button(d,'重新读取并还原草稿').click());assert.equal(retention.value,'180');
+  const retention=d.querySelector<HTMLSelectElement>('select[aria-label="检查来源的间隔"]')!;
+  await act(async()=>{retention.value='1800';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
+  await act(async()=>root.render(render(configuration(8,3600))));
+  assert.equal(retention.value,'1800');await act(async()=>button(d,'保存并应用').click());
+  assert.equal(writes[0].revision,7);assert.match(d.body.textContent!,/配置或相关操作状态已变化/);assert.equal(retention.value,'1800');
+  await act(async()=>button(d,'重新读取并还原草稿').click());assert.equal(retention.value,'3600');
 });
 
 test('a delayed configuration save from the previous node cannot replace the new node editor',async t=>{
   const {root,d}=await fixture(t);let resolve!:(value:ServerConfiguration)=>void,applied=0;
-  const pending=new Promise<ServerConfiguration>(done=>{resolve=done;}),oldApi={request:async()=>pending} as Api,newApi={request:async()=>configuration(1,180)} as Api;
-  await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api:oldApi,config:configuration(7),category:'storage',onApplied:()=>{applied++;}})));
-  const retention=d.querySelector<HTMLSelectElement>('select[aria-label="历史记录保留"]')!;
-  await act(async()=>{retention.value='90';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
+  const pending=new Promise<ServerConfiguration>(done=>{resolve=done;}),oldApi={request:async()=>pending} as Api,newApi={request:async()=>configuration(1,3600)} as Api;
+  await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api:oldApi,config:configuration(7),category:'connectors',onApplied:()=>{applied++;}})));
+  const retention=d.querySelector<HTMLSelectElement>('select[aria-label="检查来源的间隔"]')!;
+  await act(async()=>{retention.value='1800';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
   await act(async()=>button(d,'保存并应用').click());
-  await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api:newApi,config:configuration(1,180),category:'storage',onApplied:()=>{applied++;}})));
-  await act(async()=>resolve(configuration(8,90)));
-  assert.equal(retention.value,'180');assert.equal(applied,0);assert.doesNotMatch(d.body.textContent!,/已保存到配置文件/);
+  await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api:newApi,config:configuration(1,3600),category:'connectors',onApplied:()=>{applied++;}})));
+  await act(async()=>resolve(configuration(8,1800)));
+  assert.equal(retention.value,'3600');assert.equal(applied,0);assert.doesNotMatch(d.body.textContent!,/已保存到配置文件/);
 });
 
 test('diagnostics settings retain the original revision on refresh and allow reloading after conflict',async t=>{
@@ -205,11 +204,11 @@ test('Actions timezone edits keep their original dual revisions across refresh a
 test('a non-conflict 409 preserves its provider recovery reason and the edited configuration',async t=>{
  const {root,d}=await fixture(t);
  const api={request:async()=>{throw new ApiError('PRIVATE_PROVIDER_DETAIL',409,undefined,'provider_quota');}} as Api;
- await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api,config:configuration(7),category:'storage'})));
- const retention=d.querySelector<HTMLSelectElement>('select[aria-label="历史记录保留"]')!;
- await act(async()=>{retention.value='90';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
+ await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api,config:configuration(7),category:'connectors'})));
+ const retention=d.querySelector<HTMLSelectElement>('select[aria-label="检查来源的间隔"]')!;
+ await act(async()=>{retention.value='1800';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
  await act(async()=>button(d,'保存并应用').click());
- assert.match(d.body.textContent!,/额度不足/);assert.doesNotMatch(d.body.textContent!,/PRIVATE|其他会话更新|配置或相关操作状态已变化/);assert.equal(retention.value,'90');
+ assert.match(d.body.textContent!,/额度不足/);assert.doesNotMatch(d.body.textContent!,/PRIVATE|其他会话更新|配置或相关操作状态已变化/);assert.equal(retention.value,'1800');
 });
 
 
@@ -238,4 +237,11 @@ test('old calendar capabilities and scope drafts are not offered as current auth
  assert.equal(button(d,'保存范围草稿').disabled,true);
  capability={id:'calendar.manage',version:1};await act(async()=>button(d,'刷新').click());
  assert.equal(d.querySelectorAll('select option').length,2);assert.match(d.body.textContent!,/继续草稿 ·/);assert.equal(writes,0);
+});
+
+
+test('central storage settings expose retention facts without quota or age-deletion controls',async t=>{
+ const {root,d}=await fixture(t);let writes=0;const api={request:async()=>{writes++;throw Error('Storage facts do not submit configuration');}} as Api;
+ await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api,config:configuration(7),category:'storage'})));
+ assert.match(d.body.textContent!,/持续保留.*不设置资料总量配额.*不按天自动删除/s);assert.match(d.body.textContent!,/原件默认归档.*已有来源/s);assert.equal(d.querySelectorAll('select,input').length,0);assert.equal(button(d,'保存并应用'),undefined);assert.equal(writes,0);
 });

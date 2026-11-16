@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -12,7 +13,7 @@ import {calendarPluginCapabilitySchema} from '@mote/shared';
 const owner='generated-action-capability-owner',mcpReadToken='generated-static-read-mcp-token-123456789',headers=(token=owner)=>({authorization:'Bearer '+token});
 const agent:QueryAgent={configured:false,query:async()=>{throw Error('Capability contracts do not call a model');},close:async()=>{}};
 async function fixture(t:TestContext){
- const directory=await mkdtemp(join(tmpdir(),'mote-action-capabilities-')),store=new Store(directory),config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,profile:'test',maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken,mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+ const directory=await mkdtemp(join(tmpdir(),'mote-action-capabilities-')),store=new Store(directory),config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,profile:'test',maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken,mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
  let node=await buildApp(config,{store,agent,backgroundWorker:false});
  const restart=async()=>{await node.app.close();node=await buildApp(config,{store,agent,backgroundWorker:false});return node;};
  t.after(async()=>{await node.app.close();store.close();await rm(directory,{recursive:true,force:true});});
@@ -75,8 +76,8 @@ test('invalid capabilities, missing scope choices and changed source or device d
 
 test('revoked device connections cannot declare or anchor a new owner draft and storage failure rolls back both record and command',async t=>{
  const f=await fixture(t),paired=await f.pair();assert.equal((await f.app.inject({method:'POST',url:'/api/device-action-capabilities',headers:headers(paired.token),payload:declaration()})).statusCode,200);
- const reserve=f.store.reserveMetadata.bind(f.store);f.store.reserveMetadata=()=>{throw new StoreError('Generated quota failure',507);};
- const input=draft(),save=()=>f.app.inject({method:'PUT',url:'/api/action-capability-drafts',headers:headers(),payload:input});assert.equal((await save()).statusCode,507);f.store.reserveMetadata=reserve;assert.equal((await save()).statusCode,200,'failed transaction does not consume operation identity');
+ const recover=rejectSqliteWrites(f.store,'action_capability_commands');
+ const input=draft(),save=()=>f.app.inject({method:'PUT',url:'/api/action-capability-drafts',headers:headers(),payload:input});assert.equal((await save()).statusCode,500);recover();assert.equal((await save()).statusCode,200,'failed transaction does not consume operation identity');
  await f.connections.revoke(paired.credentialId);
  assert.equal((await f.app.inject({method:'GET',url:'/api/device-action-capabilities',headers:headers(paired.token)})).statusCode,401);
  const inventory=(await f.app.inject({url:'/api/action-capabilities',headers:headers()})).json();assert.equal(inventory.declarations[0].connectionActive,false);

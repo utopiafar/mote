@@ -320,7 +320,6 @@ export class MemoryStore {
         const duplicate=this.store.db.prepare("SELECT json FROM memories WHERE json_extract(json,'$.fingerprint')=? AND json_extract(json,'$.status')!='stale'").get(fingerprint) as {json:string}|undefined;
         if(duplicate){const existing=JSON.parse(duplicate.json) as Memory;if(existing.status==='proposed'&&publish){existing.reviewReceipt=receipt;existing.reviewRunId=receipt!.reviewRunId;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(existing),existing.id);items.push(this.publish(existing.id,existing.version,now));}else items.push(existing);continue;}
         const value:Memory={...m,integration:options.integration,strategy:options.strategy,version:1,id:options.prepared?.items.find(item=>item.fingerprint===fingerprint)?.id??randomUUID(),tier:options.tier??'episode',kind:m.kind??'episodic',relatedMemoryIds:m.relatedMemoryIds,reviewRunId:options.reviewRunId,reviewReceipt:options.reviewReceipt,createdAt:now,status:'proposed',model:options.reviewReceipt?.model??result.usage?.model??model,runId:result.runId,skillVersion:options.skillVersion??MEMORY_SKILL_VERSION,fingerprint};
-        this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));
         this.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(value.id,now,JSON.stringify(value));
         for(const id of new Set(value.evidenceIds.flatMap(id=>this.dependencyIds(id))))this.store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(value.id,id);
         items.push(publish?this.publish(value.id,value.version,now):value);
@@ -328,7 +327,7 @@ export class MemoryStore {
       if(options.prepared){if(JSON.stringify(items)!==JSON.stringify(options.prepared.items)||options.prepared.changed.some(memory=>JSON.stringify(this.get(memory.id))!==JSON.stringify(memory)))throw new StoreError('The provider staged different Memory bodies than the host commit',409);}
       options.onSaved?.(items);
       if(own)this.store.db.exec('COMMIT');return {items,runId:result.runId};
-    }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK');}}throw error;}
   }
   publish(id:string,version?:number,at=new Date().toISOString()){
     const m=this.get(id);if(version!==undefined&&version!==m.version)throw new StoreError('Memory changed; refresh before activation',409);
@@ -338,10 +337,10 @@ export class MemoryStore {
     if(m.relations?.length&&version===undefined)throw new StoreError('A reviewed memory version is required before applying relationships',409);
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');try{
       for(const relation of m.relations??[]){const target=this.get(relation.memoryId);if(target.status==='stale'||target.supersededBy||target.fingerprint!==relation.fingerprint||target.version!==relation.version||target.evidenceIds.some(id=>!this.isCurrentEvidence(id)))throw new StoreError('Related memory changed; review the relationship again',409);
-        if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??m.reviewReceipt?.contextTime??at;target.version=target.version+1;target.updatedAt=at;this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(target)));this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);this.invalidateInterpretation(target.id);}
+        if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??m.reviewReceipt?.contextTime??at;target.version=target.version+1;target.updatedAt=at;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);this.invalidateInterpretation(target.id);}
       }
       m.status='published';m.version=m.version+1;m.updatedAt=at;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(m),id);if(own)this.store.db.exec('COMMIT');return m;
-    }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK');}}throw error;}
   }
   /** An explicit owner correction is original user evidence, never an automatic model overwrite. */
   async correct(id:string,raw:unknown,stage?: (records:Memory[],assert:()=>void)=>Promise<void>,identity?:{noteId:string;memoryId:string;at:string},committed?:()=>void){
@@ -357,7 +356,7 @@ export class MemoryStore {
       saved={id:memoryId,version:1,domain:original.domain,scopeRefs:original.scopeRefs,coding:original.coding?{...original.coding,validation:'user_confirmed'}:undefined,tier:original.tier,kind:original.kind,title:input.title,statement:input.statement+' ['+noteId+']',uncertainty:input.uncertainty,validFrom:input.validFrom??now,validUntil:input.validUntil,evidenceIds:[noteId],evidence:[reference(evidence,{offset:0,length:text.length,quote:text})],createdAt:now,status:'published',model:'owner',runId:'owner-correction:'+noteId,skillVersion:'owner-correction@1',admission:{layer:original.admission.layer,reason:'Explicit owner correction',scope:original.admission.scope,attribution:'user'},fingerprint:sha256(JSON.stringify([id,current.fingerprint,input,noteId])),relations:[{kind:'supersedes',memoryId:id,fingerprint:current.fingerprint,version:current.version}],correction:{memoryId:id,fingerprint:current.fingerprint,noteId}};
       current.supersededBy=memoryId;current.supersededAt=saved.validFrom;current.version=current.version+1;current.updatedAt=now;
       if(persist){
-        this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(saved))+1024);this.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(memoryId,now,JSON.stringify(saved));this.store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(memoryId,noteId);
+        this.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(memoryId,now,JSON.stringify(saved));this.store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(memoryId,noteId);
         this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(current),id);
         this.invalidateInterpretation(id);
         committed?.();
@@ -379,6 +378,6 @@ export class MemoryStore {
       // their history, but do not keep serving that claim through a child card.
       const deleted=this.deletions.revoke(id);
       if(own)db.exec('COMMIT');return {deleted};
-    }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+    }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
   }
 }

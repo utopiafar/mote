@@ -38,7 +38,7 @@ test('withdrawn assistant question evidence cannot be restored by a fresh owner 
 
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-auto-owner-scope-'));
- const config:Config={dataDir:directory,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true,token:'generated-auto-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const config:Config={dataDir:directory,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true,token:'generated-auto-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
  const control:{beforeDeclared?:(input:QueryInput)=>Promise<void>}={};
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;

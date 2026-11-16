@@ -21,13 +21,13 @@ const tokenPattern=/^[A-Za-z0-9_-]{43}$/;
 
 function config(directory:string,mcp=false):Config{
   return {dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',
-    tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:4*1024*1024,retentionDays:0,insightIntervalHours:0,
+    tokenFromEnvironment:true,maxExportBytes:4*1024*1024,insightIntervalHours:0,
     allowedOrigins:['https://synthetic.invalid'],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,
     embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true,
     ...(mcp?{connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'synthetic-static-read-mcp-token-123456789',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}:{})};
 }
 async function fixture(t:TestContext,options:{mcp?:boolean}={}){
-  const directory=await mkdtemp(join(tmpdir(),'mote-developer-access-')),cfg=config(directory,options.mcp),store=new Store(directory,{maxStorageBytes:30*1024*1024}),sources=new SourceStore(store);
+  const directory=await mkdtemp(join(tmpdir(),'mote-developer-access-')),cfg=config(directory,options.mcp),store=new Store(directory,{}),sources=new SourceStore(store);
   const connections=new Connections(store,sources);
     const value=await buildApp(cfg,{store,agent:inactive,connections});
     t.after(async()=>{await value.app.close();store.close();await rm(directory,{recursive:true,force:true});});

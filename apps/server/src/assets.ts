@@ -43,7 +43,7 @@ export class AssetStore {
      CREATE TRIGGER IF NOT EXISTS asset_${table}_delete AFTER DELETE ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; END;
      CREATE TRIGGER IF NOT EXISTS asset_${table}_update AFTER UPDATE OF ${hash} ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; INSERT OR REPLACE INTO asset_references SELECT ${qualify('new')},new.${hash} WHERE new.${hash} IS NOT NULL; END;`);
     if(own)db.exec('COMMIT');
-   }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+   }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
   }
 
  }
@@ -91,7 +91,6 @@ export class AssetStore {
    try{
     const old=db.prepare('SELECT bytes FROM assets WHERE hash=?').get(actualHash);
     if(old&&old.bytes!==expectedBytes)throw new StoreError('Asset size conflict',409);
-    this.store.reserveMetadata(old?0:expectedBytes);
     if(!result.destination){renameSync(staging,destination);syncDirectory(this.directory);}
     db.prepare("INSERT INTO assets VALUES(?,?,?,'chunks') ON CONFLICT(hash) DO UPDATE SET parts=excluded.parts,format='chunks'").run(actualHash,expectedBytes,parts.length);
     const record=db.prepare('INSERT INTO asset_parts VALUES(?,?,?) ON CONFLICT(hash,part) DO UPDATE SET checksum=excluded.checksum');
@@ -126,13 +125,12 @@ export class AssetStore {
     authorize?.();
     const destination=join(this.directory,hash),old=db.prepare('SELECT * FROM assets WHERE hash=?').get(hash) as Asset|undefined;
     if(old&&old.bytes!==size)throw new StoreError('Asset size conflict',409);
-    this.store.reserveMetadata(old?0:size);
     if(existsSync(destination))this.verify({hash,bytes:size,parts:part,format:'chunks'});
     else {syncDirectory(staging);renameSync(staging,destination);installed=true;syncDirectory(this.directory);}
     db.prepare("INSERT INTO assets VALUES(?,?,?,'chunks') ON CONFLICT(hash) DO UPDATE SET parts=excluded.parts,format='chunks'").run(hash,size,part);
     for(const [index,checksum] of checksums.entries())db.prepare('INSERT INTO asset_parts VALUES(?,?,?) ON CONFLICT(hash,part) DO UPDATE SET checksum=excluded.checksum').run(hash,index,checksum);
     release=this.hold(hash);authorize?.();if(own)db.exec('COMMIT');
-   }catch(error){if(own)db.exec('ROLLBACK');release?.();if(installed)rmSync(join(this.directory,hash),{recursive:true,force:true});throw error;}
+   }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}release?.();if(installed)rmSync(join(this.directory,hash),{recursive:true,force:true});throw error;}
    return {hash,bytes:size,parts:part,format:'chunks',release:release!};
   }finally{rmSync(staging,{recursive:true,force:true});}
  }
@@ -159,6 +157,6 @@ export class AssetStore {
   }
   for(const name of readdirSync(this.directory))if(/^[a-f0-9]{64}(?:\.[a-f0-9-]+\.tmp)?$/.test(name)&&!this.store.db.prepare('SELECT 1 FROM assets WHERE hash=?').get(name)&&!this.store.db.prepare('SELECT 1 FROM asset_pins WHERE hash=?').get(name.split('.')[0])){const path=join(this.directory,name);if(/^[a-f0-9]{64}$/.test(name)||now-statSync(path).mtimeMs>3600000)rmSync(path,{recursive:true,force:true});}
   if(own)db.exec('COMMIT');return removed;
-  }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+  }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
  }
 }

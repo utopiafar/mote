@@ -14,7 +14,7 @@ import {modelConfiguration} from '../src/model-configuration.js';
 const text='Generated semantic failure input.';
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-lifecycle-recovery-'));
-  const config:Config={dataDir:directory,token:'generated-lifecycle-recovery-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:5000};
+  const config:Config={dataDir:directory,token:'generated-lifecycle-recovery-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:5000};
   let calls=0;
   // No provider is constructed or contacted; all source text is generated.
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{calls++;throw new ProviderFailure({category:'permanent',code:'generated_semantic_failure'});}}});

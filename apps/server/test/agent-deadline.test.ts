@@ -16,7 +16,7 @@ import {hostRun} from './fixtures/host-run.js';
 
 async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<QueryResult>){
   const directory=mkdtempSync(join(tmpdir(),'mote-host-deadline-'));
-  const config:Config={dataDir:directory,dataKey:undefined,token:'generated-host-deadline-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:5000};
+  const config:Config={dataDir:directory,dataKey:undefined,token:'generated-host-deadline-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:5000};
   // The generated Agent owns its actual execution budget after host admission.
   // The real host propagates its typed failure and owns the usage receipt.
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{

@@ -13,7 +13,7 @@ const headers={authorization:'Bearer '+owner,'x-mote-ingress-version':'2'};
 const old='2026-09-01T10:00:00.000Z';
 async function fixture(t:TestContext){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-first-device-data-'));
- const config:Config={dataDir,token:owner,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir,token:owner,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const start=()=>buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('First data does not require a model');},close:async()=>{}}});
  let node=await start();
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});

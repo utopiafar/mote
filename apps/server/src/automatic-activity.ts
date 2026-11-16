@@ -68,7 +68,6 @@ export class AutomaticActivity {
     if(this.closed)return;
     const notification=input.metadata?.notification,notificationContent=notification&&notification.action!=='removed'&&(input.privacy.collection??'content')==='content'&&[notification.title,notification.text,notification.bigText,notification.subText,...(notification.textLines??[])].some(value=>Boolean(value?.trim()));
     const reason=!this.policy.enabled?'activity_disabled':input.privacy.excluded?'privacy_excluded':!['screen','ui_page','notification'].includes(input.source)||input.source==='notification'&&!notificationContent?'deterministic_only':undefined;
-    this.store.reserveMetadata(256);
     this.store.db.prepare('INSERT INTO activity_intake_receipts VALUES(?,?,?,?)').run(input.id,Number(!reason),reason??'authorized_new_content',this.epoch());
     if(reason)return;
     const epoch=this.epoch(),correlation=input.metadata?.captureObservation?.id,scopeKey=hash([input.deviceId,correlation??input.id]);
@@ -82,7 +81,6 @@ export class AutomaticActivity {
     const reuse=Boolean(previous&&['waiting','blocked'].includes(previous.state));
     const generation=reuse?Number(batch!.generation):Number(batch?.generation??0)+1;
     const stepId=suppressed&&batch?String(batch.step_id):reuse?previous!.id:hash([KIND,scopeKey,epoch,generation]);
-    this.store.reserveMetadata(512);
     this.store.db.prepare('INSERT INTO activity_input_grants VALUES(?,?,?,?,?)').run(input.id,scopeKey,epoch,stepId,Number(suppressed));
     if(suppressed)return;
     if(previous?.state==='running')this.engine.cancel(previous.id,true,'activity_input_enriched');

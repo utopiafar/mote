@@ -13,7 +13,7 @@ import type {Config} from '../src/config.js';
 
 for(const transition of ['create-only','activated-restart','cancelled-restart','deleted-restart'] as const)test(`formal app startup preserves ${transition} Memory activation authority`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-activation-')),calls:string[]=[];
- const config:Config={dataDir:directory,token:'generated-memory-activation',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-memory-activation',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
  let node:Awaited<ReturnType<typeof buildApp>>,hold=transition!=='create-only',entered!:()=>void;
  const started=new Promise<void>(resolve=>entered=resolve);
  const open=async()=>{node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{

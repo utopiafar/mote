@@ -22,7 +22,8 @@ internal object CentralMemoryJobPresentation {
     fun controls(job: JSONObject) = if (invalidated(job)) emptyList() else controls
 }
 
-/** Management uses native controls and explicit endpoint contracts, never a web fallback. */
+/** Common management uses native controls; explicitly selected advanced media
+ * preparation keeps its node/session through the existing Web handoff. */
 internal class CentralAdmin(
     private val screens: CentralScreens,
     private val administration: AdministrationOwner = NativeAdministrationPlugin.owner(screens.ui),
@@ -344,6 +345,10 @@ internal class CentralAdmin(
             listOf("apiKey", "localWorkerApiKey").forEach { settings.put(it, "") }
             if (value.optBoolean("policyConfigured")) payload.put("policy", value.getJSONObject("policy"))
             edit(MoteI18n.text("处理设置"), "/api/file-processing", payload)
+            AdvancedWebTarget.Preparation.entries.forEach { preparation ->
+                val target = AdvancedWebTarget.Models(preparation)
+                ui.button(ui.advancedWebLabel(target)) { ui.openAdvancedWeb(target) }
+            }
         }
     }
     fun memorySettings() {

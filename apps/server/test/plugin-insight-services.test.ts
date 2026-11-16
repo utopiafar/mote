@@ -17,7 +17,7 @@ import {hostRun} from './fixtures/host-run.js';
 
 const headers={authorization:'Bearer generated-insight-plugin-owner'};
 function generatedConfig(dataDir:string,token=headers.authorization.slice(7)):Config{
-  return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,dataKey:'41'.repeat(32),maxStorageBytes:20_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,dataKey:'41'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
 }
 function profile(t:any){
   const directory=mkdtempSync(join(tmpdir(),'mote-insight-plugin-')),store=new Store(directory),executor=new ExecutionEngine(store),runs=new InsightRuns(store,{executor}),instances=[runs];

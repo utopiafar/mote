@@ -17,7 +17,7 @@ import {FileEvidence} from '../src/file-evidence.js';
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-snapshot-recovery-'));
  const token='generated-snapshot-recovery-owner';
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,contentEncryptionEnabled:true,dataKey:'75'.repeat(32)};
+ const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,contentEncryptionEnabled:true,dataKey:'75'.repeat(32)};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model expected in transport fixture');},close:async()=>{}}});
  await node.app.ready();
  node.sources.register({id:'generated-source',name:'Generated snapshot source',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'snapshot'});
@@ -28,9 +28,9 @@ async function fixture(t:TestContext){
  const commit=(uploadId:string)=>request('POST',`/api/file-sync/v1/uploads/${uploadId}/commit`,{});
  const sendParts=async(uploadId:string,bytes:Buffer)=>{for(let n=0;n<Math.ceil(bytes.length/FILE_PART_BYTES);n++){const response=await request('PUT',`/api/file-sync/v1/uploads/${uploadId}/parts/${n}`,bytes.subarray(n*FILE_PART_BYTES,(n+1)*FILE_PART_BYTES),{...headers,'content-type':'application/octet-stream'});assert.equal(response.statusCode,200,response.body);}};
  const upload=async(manifest:FileRevision,bytes:Buffer)=>{const response=await begin(manifest);assert.equal(response.statusCode,200,response.body);const session=response.json();assert.equal(session.ack,null);await sendParts(session.uploadId,bytes);const committed=await commit(session.uploadId);assert.equal(committed.statusCode,200,committed.body);return {session,ack:committed.json()};};
- const expire=(captureId:string)=>{node.store.db.prepare('UPDATE file_snapshot_inputs SET expires=0 WHERE capture_id=?').run(captureId);node.files.sweepSnapshotInputs();};
+ const loseInput=(captureId:string)=>node.files.releaseSnapshotInput(captureId);
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- return {node,headers,request,recovery,begin,commit,sendParts,upload,expire};
+ return {node,headers,request,recovery,begin,commit,sendParts,upload,loseInput};
 }
 
 function manifest(bytes:Buffer,key='generated-file',revision=sha256(bytes),previousRevision:string|null=null):FileRevision{
@@ -46,13 +46,13 @@ async function bounded<T>(pending:Promise<T>,stage:string){
  finally{clearTimeout(timeout);}
 }
 
-test('HTTP recovery resupplies an expired snapshot under its immutable version and lost ACK remains idempotent',async t=>{
+test('HTTP recovery resupplies an snapshot with missing input under its immutable version and lost ACK remains idempotent',async t=>{
  let release!:()=>void,started!:()=>void;
  const held=new Promise<void>(resolve=>release=resolve),entered=new Promise<void>(resolve=>started=resolve);
  // Release before the fixture's close hook, including when an assertion fails.
  t.after(()=>release());
  const f=await fixture(t),bytes=Buffer.from('Generated immutable recovery text'),input=manifest(bytes),initial=await f.upload(input,bytes);
- f.expire(initial.ack.id);await f.node.processing.tick();assert.equal(f.node.files.detail(initial.ack.id).job?.error,'snapshot_input_expired');
+ f.loseInput(initial.ack.id);await f.node.processing.tick();assert.equal(f.node.files.detail(initial.ack.id).job?.error,'snapshot_input_expired');
  // A completion wake can admit the recovered job even without the discovery
  // worker. Hold the real processor to inspect the received-but-unfinished stage.
  const processor=f.node.processing.runtime.registry.get('text.utf8'),execute=processor.process;
@@ -96,7 +96,7 @@ test('cancelled snapshots require owner retry before recovery can restore tempor
 });
 
 test('recovery authorization and strict schema exclude agents, revoked sessions and unrelated request fields',async t=>{
- const f=await fixture(t),bytes=Buffer.from('Generated private transport fixture'),{ack}=await f.upload(manifest(bytes),bytes);f.expire(ack.id);
+ const f=await fixture(t),bytes=Buffer.from('Generated private transport fixture'),{ack}=await f.upload(manifest(bytes),bytes);f.loseInput(ack.id);
  assert.equal((await f.node.app.inject('/api/file-sync/v1/recovery?sourceId=generated-source')).statusCode,401);
  const agent=await readAgentCredential(f.node.connections);assert.equal((await f.request('GET','/api/file-sync/v1/recovery?sourceId=generated-source',undefined,{authorization:'Bearer '+agent.token})).statusCode,403);
  const owner=await f.node.connections.session('http://127.0.0.1:57569','Generated recovery owner');const ownerHeaders={authorization:'Bearer '+owner.token};assert.equal((await f.request('GET','/api/file-sync/v1/recovery?sourceId=generated-source',undefined,ownerHeaders)).statusCode,200);await f.node.connections.revoke(owner.credentialId);assert.equal((await f.request('GET','/api/file-sync/v1/recovery?sourceId=generated-source',undefined,ownerHeaders)).statusCode,401);
@@ -105,7 +105,7 @@ test('recovery authorization and strict schema exclude agents, revoked sessions 
 });
 
 test('source revocation, reference retention, head replacement and forgotten files cannot regain snapshot input',async t=>{
- const f=await fixture(t),bytes=Buffer.from('Generated source grant fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.expire(ack.id);
+ const f=await fixture(t),bytes=Buffer.from('Generated source grant fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.loseInput(ack.id);
  f.node.sources.update(input.sourceId,{enabled:false});assert.deepEqual((await f.recovery()).json(),{items:[]});assert.equal((await f.begin(input)).statusCode,409);
  f.node.sources.update(input.sourceId,{enabled:true,retention:'reference'});assert.deepEqual((await f.recovery()).json(),{items:[]});assert.equal((await f.begin(input)).statusCode,409);
  f.node.sources.update(input.sourceId,{retention:'snapshot'});const recovery=(await f.begin(input)).json();assert.equal(recovery.ack,null);await f.sendParts(recovery.uploadId,bytes);
@@ -114,7 +114,7 @@ test('source revocation, reference retention, head replacement and forgotten fil
 });
 
 test('snapshot restoration verifies exact manifest, bounded bytes and content hash before granting input',async t=>{
- const f=await fixture(t),bytes=Buffer.from('Generated digest validation'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.expire(ack.id);
+ const f=await fixture(t),bytes=Buffer.from('Generated digest validation'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.loseInput(ack.id);
  assert.equal((await f.begin({...input,sizeBytes:input.sizeBytes+1})).statusCode,409);assert.equal((await f.begin({...input,item:{...input.item,title:'Changed metadata'}})).statusCode,409);
  assert.equal((await f.begin({...input,sizeBytes:FILE_MAX_BYTES+1})).statusCode,400);assert.equal((await f.begin({...input,sha256:'invalid'})).statusCode,400);
  const wrongHash='a'.repeat(64);assert.equal((await f.begin({...input,sha256:wrongHash,item:{...input.item,document:{...input.item.document,fileIndex:{...input.item.document!.fileIndex!,contentVersion:wrongHash}}}})).statusCode,409);
@@ -130,7 +130,7 @@ test('snapshot upload accepts a processing input larger than 16 MiB within the f
 });
 
 test('snapshot recovery is admitted beyond 64 unfinished uploads and still verifies exact bytes',async t=>{
- const f=await fixture(t),bytes=Buffer.from('Generated upload bound fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.expire(ack.id);
+ const f=await fixture(t),bytes=Buffer.from('Generated upload bound fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.loseInput(ack.id);
  for(let n=0;n<64;n++)assert.equal(f.node.files.begin(manifest(bytes,'pending-'+n),()=>{}).ack,null);
  const admitted=await f.begin(input);assert.equal(admitted.statusCode,200,admitted.body);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_uploads WHERE ack IS NULL').get()!.n,65);
  const recovery=admitted.json();await f.sendParts(recovery.uploadId,bytes);const restored=await f.commit(recovery.uploadId);assert.equal(restored.statusCode,200,restored.body);assert.equal(restored.json().id,ack.id);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs WHERE capture_id=?').get(ack.id)!.n,1);
@@ -166,7 +166,7 @@ test('an obsolete extraction artifact after a crash cannot suppress recovery for
 
 test('opaque recovery sessions use the stored manifest and completed races return a valid existing receipt',async t=>{
  const f=await fixture(t),bytes=Buffer.from('Generated opaque transport fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);
- f.expire(ack.id);const original=f.node.files.version(ack.id).manifest;
+ f.loseInput(ack.id);const original=f.node.files.version(ack.id).manifest;
  const url=`/api/file-sync/v1/recovery/${ack.id}/uploads`,response=await f.request('POST',url,{});assert.equal(response.statusCode,200,response.body);const session=response.json();assert.equal(session.ack,null);
  assert.equal(f.node.store.db.prepare('SELECT manifest FROM file_uploads WHERE id=?').get(session.uploadId)!.manifest,original,'server owns the immutable manifest; client only sends bytes');
  await f.sendParts(session.uploadId,bytes);const committed=await f.commit(session.uploadId);assert.equal(committed.statusCode,200,committed.body);assert.equal(committed.json().id,ack.id);
@@ -177,7 +177,7 @@ test('opaque recovery sessions use the stored manifest and completed races retur
 });
 
 test('opaque recovery rejects remote paths, resource identity overrides and grants outside the current snapshot',async t=>{
- const f=await fixture(t),bytes=Buffer.from('Generated opaque authorization fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.expire(ack.id);
+ const f=await fixture(t),bytes=Buffer.from('Generated opaque authorization fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.loseInput(ack.id);
  const url=`/api/file-sync/v1/recovery/${ack.id}/uploads`;
  for(const payload of [{sourceId:'other'},{relativePath:'/private/generated-forbidden.txt'},{sha256:input.sha256},{revision:'other'},{manifest:input}])assert.equal((await f.request('POST',url,payload)).statusCode,400);
  assert.equal((await f.request('POST','/api/file-sync/v1/recovery/not-a-uuid/uploads',{})).statusCode,400);assert.equal((await f.request('POST',`/api/file-sync/v1/recovery/${randomUUID()}/uploads`,{})).statusCode,404);
@@ -189,7 +189,7 @@ test('opaque recovery rejects remote paths, resource identity overrides and gran
 });
 
 test('revoking an owner during recovery assembly prevents commit and releases its temporary asset',async t=>{
- const f=await fixture(t),bytes=Buffer.from('Generated revocation during assembly'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.expire(ack.id);
+ const f=await fixture(t),bytes=Buffer.from('Generated revocation during assembly'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.loseInput(ack.id);
  const owner=await f.node.connections.session('http://127.0.0.1:57569','Generated recovery assembly owner'),headers={authorization:'Bearer '+owner.token};
  const response=await f.request('POST',`/api/file-sync/v1/recovery/${ack.id}/uploads`,{},headers);assert.equal(response.statusCode,200,response.body);const session=response.json();await f.sendParts(session.uploadId,bytes);
  const put=f.node.store.assets.putUpload.bind(f.node.store.assets);let release!:()=>void,started!:()=>void;const begun=new Promise<void>(resolve=>started=resolve),gate=new Promise<void>(resolve=>release=resolve);

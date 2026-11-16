@@ -22,7 +22,7 @@ export class MemoryIntegrationSettings {
     return Number(this.store.db.prepare("SELECT coalesce(max(seq),0) n FROM memory_events WHERE stream='memory'").get()!.n);
   }
   private newSelection(binding:MemoryIntegrationSelection['binding']):MemoryIntegrationSelection{return {activation:randomUUID(),afterSequence:this.latest(),binding};}
-  private save(value:MemoryIntegrationSelection){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json)+128);this.store.db.prepare('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(settingKey,json);}
+  private save(value:MemoryIntegrationSelection){const json=JSON.stringify(value);this.store.db.prepare('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(settingKey,json);}
   selection(){return memoryIntegrationSelectionSchema.parse(JSON.parse(String(this.store.db.prepare('SELECT value FROM settings WHERE key=?').get(settingKey)!.value)));}
   view(){const selection=this.selection();let available=false;if(selection.binding)try{this.strategies.resolvePinnedIntegration(selection.binding);available=true;}catch{}return {...selection,available};}
   current(selection:MemoryIntegrationSelection){return JSON.stringify(this.selection())===JSON.stringify(selection);}

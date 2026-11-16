@@ -12,7 +12,7 @@ import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 
-const config=(dataDir:string):Config=>({dataDir,token:'generated-receipt-grant-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const config=(dataDir:string):Config=>({dataDir,token:'generated-receipt-grant-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const original=(id:string,revision='1')=>({externalId:id,revision,observedAt:'2020-01-01T00:00:00Z',text:`Generated original ${id} revision ${revision}`,kind:'message',layer:'original'});
 const coding=(id:string)=>({...original(id),document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'fixture',sessionId:'session',eventId:id,role:'user',attribution:'human',part:0,parts:1}}});
 const empty=(input:QueryInput,node:Awaited<ReturnType<typeof buildApp>>)=>{

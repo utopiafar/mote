@@ -104,7 +104,7 @@ test('source disappearance retains transcript evidence while a new predecessor r
 
 test('Memory API rejects raw source-item chunks while file evidence and deletion remain traceable',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-file-api-generated-'));
-  const config:Config={dataDir:directory,token:'synthetic-memory-file-api-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir:directory,token:'synthetic-memory-file-api-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   let reader!:ContextReader;
   const node=await buildApp(config,{createModelAgent:async(_settings,value)=>{reader=value;return {configured:true,close:async()=>{},query:async()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()})};}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
@@ -129,7 +129,7 @@ test('Memory API rejects raw source-item chunks while file evidence and deletion
 
 test('full local indexes remain exact evidence, while manual raw Memory waits for Material admission',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-local-index-api-'));
- const config:Config={dataDir:directory,token:'generated-index-memory-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-index-memory-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()})})});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  assert.equal(node.store.directory,directory);
  node.sources.register({id:'indexes',deviceId:'generated-device',name:'Generated indexes',kind:'local-files',platform:'macos',retention:'snapshot'});
@@ -143,7 +143,7 @@ test('full local indexes remain exact evidence, while manual raw Memory waits fo
 
 test('manual Memory jobs honor the saved character budget without rewriting existing job ranges',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-manual-memory-budget-'));
- const config:Config={dataDir:directory,token:'generated-memory-budget-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-memory-budget-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const node=await buildApp(config,{createModelAgent:async()=>({configured:false,close:async()=>{},query:async()=>{throw Error('This structural test must not call a model');}})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'};

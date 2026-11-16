@@ -7,7 +7,7 @@ import {fixtureMemoryResult} from '../../apps/server/test/fixtures/memory-result
 const dataDir=mkdtempSync(join(tmpdir(),'mote-native-topics-'));
 const token='generated-native-topics-owner-token';
 const port=Number(process.env.MOTE_TOPICS_PORT??47894);
-const node=await buildApp({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model');},close:async()=>{}}});
+const node=await buildApp({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model');},close:async()=>{}}});
 let detailMode='online';let holdNextDetail=false;let holdNextOriginal=false;let releaseDetail:(()=>void)|undefined;
 let mode='online';let state:any={};let ids:string[]=[];
 node.app.addHook('onRequest',async(req,reply)=>{if(req.url.startsWith('/api/context-trees')&&mode!=='online')return reply.code(mode==='denied'?403:503).send({error:mode==='denied'?'connection_scope_denied':'fixture_offline'});});

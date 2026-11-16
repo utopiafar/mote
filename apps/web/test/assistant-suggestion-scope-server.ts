@@ -21,7 +21,7 @@ const provider=createServer(async(request,response)=>{
  response.end('data: [DONE]\n\n');
 });
 await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
-const runtime=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512,apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'},{backgroundWorker:false});
+const runtime=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512,apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'},{backgroundWorker:false});
 for(let index=0;index<1003;index++)await runtime.store.ingest({id:randomUUID(),deviceId:'generated-ui-device',deviceName:'Generated',platform:'import',source:'note',capturedAt:at,durationMs:0,ocrText:'Generated unrelated library record '+index});
 for(let index=0;index<2;index++){
  const sourceId='generated-ui-source-'+index;

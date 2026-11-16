@@ -15,7 +15,7 @@ const options={backgroundWorker:false,agent:{configured:false,query:async()=>{th
 async function fixture(t:import('node:test').TestContext,at='2026-11-13T13:50:00.000Z'){
  t.mock.timers.enable({apis:['Date'],now:new Date(at)});
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-notification-'));
- const config:Config={dataDir:directory,token:'generated-notification-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-notification-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  let node=await buildApp(config,options);
  t.after(async()=>{t.mock.timers.reset();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+config.token};

@@ -11,7 +11,7 @@ import {ModelSettingsError} from '../src/model-settings.js';
 test('concurrent requests localize presentation, retain protocol codes and leave stored evidence untouched',async t=>{
  const dataDir=await mkdtemp(join(tmpdir(),'mote-language-fixture-'));
  const token='synthetic-language-fixture-owner';
- const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:47832,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:47832,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No live model');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();await rm(dataDir,{recursive:true,force:true});});
  const headers=(locale:string)=>({authorization:'Bearer '+token,'accept-language':locale});

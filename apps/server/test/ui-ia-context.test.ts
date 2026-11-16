@@ -14,7 +14,7 @@ import type {TranscriptionProvider} from '../src/file-processing.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 async function fixture(t:TestContext,transcriptionProvider?:TranscriptionProvider,processAudio=false){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-ui-ia-context-'));
- const config:Config={dataDir,token:'generated-ui-ia-owner-token-1234567890',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir,token:'generated-ui-ia-owner-token-1234567890',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const result=await buildApp(config,{backgroundWorker:false,transcriptionProvider,agent:{configured:false,query:async()=>{throw Error('No live model in generated fixture');},close:async()=>{}}});
  if(processAudio){const settings={...result.processing.view().settings,enabled:true,audioProcessor:'audio.http'};await result.processing.save({revision:result.processing.view().revision,settings,policy:fixtureFilePolicy(settings,result.processing.runtime.registry)});await authorizeFixtureModels(result);}
  t.after(async()=>{await result.app.close();rmSync(dataDir,{recursive:true,force:true});});return {...result,headers:{authorization:`Bearer ${config.token}`}};
@@ -39,7 +39,7 @@ test('context tree and classifier disposers after app close never query the clos
 
 test('a real app restart without catalog changes preserves operation notifications and logical bytes',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-catalog-restart-'));
- const config:Config={dataDir,token:'generated-catalog-restart',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,agentTraceEnabled:false};
+ const config:Config={dataDir,token:'generated-catalog-restart',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,agentTraceEnabled:false};
  const dependencies={backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model in generated restart fixture');},close:async()=>{}}};
  let node=await buildApp(config,dependencies);
  t.after(async()=>{try{await node.app.close();}finally{rmSync(dataDir,{recursive:true,force:true});}});

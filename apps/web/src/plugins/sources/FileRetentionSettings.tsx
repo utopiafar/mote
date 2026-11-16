@@ -27,7 +27,7 @@ export function FileRetentionSettings({api,source}:{api:Api;source:SourceConnect
   finally{if(request.current===controller){request.current=null;setBusy(false);}}
  }
  return <form className="file-retention-settings" onSubmit={event=>{event.preventDefault();void save();}}>
-  <label>{moteText('保存方式')}<select value={retention} disabled={busy||!available} onChange={event=>setDraft({api,sourceId:source.id,retention:event.target.value as SourceConnection['retention']})}>{(['reference','snapshot','archive'] as const).map(mode=><option key={mode} value={mode}>{fileRetentionLabel(mode)}</option>)}</select></label>
+  <label>{moteText('保存方式')}<select value={retention} disabled={busy||!available} onChange={event=>setDraft({api,sourceId:source.id,retention:event.target.value as SourceConnection['retention']})}><option value="archive">{fileRetentionLabel('archive')}</option><optgroup label={moteText('高级选项')}>{(['snapshot','reference'] as const).map(mode=><option key={mode} value={mode}>{fileRetentionLabel(mode)}</option>)}</optgroup></select></label>
   <FileRetentionNote/>
   <p className="fine-print">{moteText('保存方式只提交当前选择，不更改其他来源设置。已有文件的实际能力以文件状态为准。')}</p>
   <div className="source-toolbar"><button className="button" type="submit" disabled={busy||!available||retention===source.retention}>{moteText('保存设置')}</button>{draft?.api===api&&draft.sourceId===source.id&&<button className="button subtle" type="button" disabled={busy} onClick={()=>setDraft(undefined)}>{moteText('取消')}</button>}</div>

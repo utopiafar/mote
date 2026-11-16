@@ -203,7 +203,7 @@ test('changing only a block context invalidates its Memory, preserves other evid
 test('owner material API requires owner credential and serves only bounded reads',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-material-api-'));
   const config:Config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,
-    dataKey:undefined,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,
+    dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,
     allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const {app,store}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('unused');},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(directory,{recursive:true,force:true});});

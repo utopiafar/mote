@@ -23,7 +23,7 @@ async function fixture(t:import('node:test').TestContext){
   if(reject)throw new Error('Generated prepare rejection');
   return {configured:true,query:async()=>({answer:selected.model,citations:[],trace:[],runId:randomUUID()}),close:async()=>{}};
  };
- const node=await buildApp({dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:3_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-original-model',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{backgroundWorker:false,createModelAgent:factory});
+ const node=await buildApp({dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-original-model',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{backgroundWorker:false,createModelAgent:factory});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const call=async(path:string,init?:RequestInit)=>{
   const body=typeof init?.body==='string'?JSON.parse(init.body):undefined;

@@ -41,7 +41,7 @@ export const storageProvider:FoundationProvider<'storage'>=Object.freeze<Foundat
   async create(context,{config,store:supplied,backgroundWorker,configService}){
     // C02's trusted assembly bridge owns the actual resources. Its raw access is
     // private to this transitional root, never a published scoped write service.
-    const assembly=createVaultPlatformAssembly({dataDir:config.dataDir,dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,
+    const assembly=createVaultPlatformAssembly({dataDir:config.dataDir,dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,
       embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(backgroundWorker)},{
       ...(supplied?{store:supplied}:{}),...(configService?{configService}:{}),onContentEncryptionApplied:enabled=>{config.contentEncryptionEnabled=enabled;},
     });

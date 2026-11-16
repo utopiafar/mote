@@ -17,7 +17,6 @@ export function installCaptureMemoryIntake(store:Store,work:MaterialMemoryWork,o
     const db=store.db,now=new Date().toISOString();
     if(!db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(sourceId)){
       const source={id:sourceId,name:input.deviceName||input.deviceId,kind:'custom',deviceId:input.deviceId,platform:input.platform,retention:'archive',enabled:true,createdAt:now,updatedAt:now};
-      store.reserveMetadata(Buffer.byteLength(JSON.stringify(source))+256);
       db.prepare('INSERT INTO source_connections VALUES(?,?)').run(sourceId,JSON.stringify(source));
     }
     work.inputs.receive({sourceId,inputKey:input.id,captureId:input.id});

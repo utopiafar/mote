@@ -12,7 +12,7 @@ import {sha256} from '../src/store.js';
 const headers={authorization:'Bearer generated-scoped-owner-token'};
 async function fixture(t:TestContext,query:QueryAgent['query'],captureReader?:(reader:ContextReader)=>void){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-scoped-query-'));
- const config:Config={dataDir,token:'generated-scoped-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir,token:'generated-scoped-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const build=()=>buildApp(config,{backgroundWorker:false,...(captureReader?{createModelAgent:async(_settings:unknown,reader:ContextReader)=>{captureReader(reader);return {configured:true,query,close:async()=>{}};}}:{agent:{configured:true,query,close:async()=>{}}})});let current=await build();
  t.after(async()=>{await current.app.close();rmSync(dataDir,{recursive:true,force:true});});return {get node(){return current;},restart:async()=>{await current.app.close();current=await build();}};
 }

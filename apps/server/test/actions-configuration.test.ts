@@ -91,12 +91,9 @@ test('a stale runtime revision cannot grant a device but does not postpone an au
   assert.equal(f.service.revision, 1); assert.equal(f.actions.authorizationRevision(), 1);
 });
 
-test('permission withdrawal does not reserve additional logical storage', async t => {
-  const f = await fixture(t), reserve = f.store.reserveMetadata;
-  f.store.reserveMetadata = () => { throw new Error('Generated full quota'); };
-  try { await save(f, { ...f.actions.settings(), reviewDeviceIds: [] }); }
-  finally { f.store.reserveMetadata = reserve; }
-  assert.deepEqual(f.actions.settings().reviewDeviceIds, []); assert.equal(f.actions.authorizationRevision(), 1);
+test('permission withdrawal applies without a storage capacity setting', async t => {
+  const f=await fixture(t);await save(f,{...f.actions.settings(),reviewDeviceIds:[]});
+  assert.deepEqual(f.actions.settings().reviewDeviceIds,[]);assert.equal(f.actions.authorizationRevision(),1);
 });
 
 test('permission grants validate again after the runtime await; failures leave newer authorization intact', async t => {

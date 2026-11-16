@@ -31,7 +31,7 @@ function fake(read:(path:string,init?:RequestInit)=>unknown):Api{return {request
 
 test('the real owner response keeps the report snapshot asOf, exact scope and citations visible',async t=>{
  const {root,d,until}=await fixture(t),dataDir=await mkdtemp(join(tmpdir(),'mote-discovery-contract-'));
- const config:Config={dataDir,token:'generated-discovery-contract-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir,token:'generated-discovery-contract-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Reading a stored report must not call a model');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();await rm(dataDir,{recursive:true,force:true});});
  await node.app.listen({host:'127.0.0.1',port:0});const address=node.app.server.address();assert.ok(address&&typeof address!=='string');const origin='http://127.0.0.1:'+address.port;

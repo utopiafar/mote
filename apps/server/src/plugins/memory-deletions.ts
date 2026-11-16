@@ -5,7 +5,7 @@ import {AgentTimeoutError,type QueryInput} from '@mote/agent';
 import {withExecutionCancellation} from '../execution-cancellation.js';
 import {sourceContentTime,sourceIdSchema,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {StoreError,sha256} from '../store.js';
-import {memoryDeletionDependencyBytes} from '../storage-ledger.js';
+
 import {memoryRelationSchema,type Memory} from '../memory-schema.js';
 
 export const memoryDeletionSchema=z.object({id:z.string().uuid(),memoryId:z.string().uuid(),title:z.string(),statement:z.string(),uncertainty:z.string(),deletedAt:z.string().datetime({offset:true}),originKeys:z.array(z.string().regex(/^(bytes|event|source):[a-f0-9]{64}$/)).min(1).max(60000),lineageKeys:z.array(z.string().regex(/^source:[a-f0-9]{64}$/)).max(20000),originalTexts:z.array(z.string().max(12000)).max(100),dependencies:z.array(z.string().uuid()).min(1).max(20000),derivationSourceIds:z.array(sourceIdSchema).max(40000),sourceLineageComplete:z.boolean()}).strict();
@@ -20,9 +20,9 @@ export interface MemoryDeletionRecordPort {read(ids:readonly string[]):CaptureRe
 export interface MemoryDeletionBindingPort {
   current():{planId:string;generation:number;namespace?:{ownerId:string;instanceId:string;bindingRevision:number}};
 }
-/** The deletion ledger only needs the vault's SQL handle and quota guard; it
+/** The deletion ledger only needs the vault's SQL handle; it
  * never receives the Store object or another domain's feature bag. */
-export interface MemoryDeletionStore {readonly db:DatabaseSync; reserveMetadata(bytes:number):void;}
+export interface MemoryDeletionStore {readonly db:DatabaseSync;}
 export interface MemoryDeletionPorts {
   readonly records:MemoryDeletionRecordPort;
   readonly binding?:MemoryDeletionBindingPort;
@@ -60,8 +60,9 @@ export class MemoryDeletions {
   }
   export(){return this.store.db.prepare('SELECT json FROM memory_deletions ORDER BY id').all().map(row=>memoryDeletionSchema.parse(JSON.parse(String(row.json))));}
   restore(raw:unknown){
-    const values=z.array(memoryDeletionSchema).parse(raw);
-    for(const value of values){
+    const values=z.array(memoryDeletionSchema).parse(raw),db=this.store.db,own=!db.isTransaction;
+    db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT memory_deletions_restore');
+    try{for(const value of values){
       if(value.dependencies.some(id=>!this.read([id]).length))throw new StoreError('Memory deletion archive is missing its original dependencies');
       const actualKeys=[...new Set(value.dependencies.flatMap(id=>this.keys(id)))].sort(),actualLineage=[...new Set(value.dependencies.flatMap(id=>this.lineage(id)))].sort();
       if(JSON.stringify([...new Set(value.originKeys)].sort())!==JSON.stringify(actualKeys)||JSON.stringify([...new Set(value.lineageKeys)].sort())!==JSON.stringify(actualLineage))throw new StoreError('Memory deletion archive original identity mismatch');
@@ -83,10 +84,13 @@ export class MemoryDeletions {
       const prior=this.store.db.prepare('SELECT json FROM memory_deletions WHERE id=?').get(value.id),json=JSON.stringify(value);
       if(prior&&prior.json!==json)throw new StoreError('Memory deletion archive conflicts with an existing intent',409);
       const rows=value.dependencies.map(id=>[value.id,id,JSON.stringify(this.keys(id)),JSON.stringify(this.lineage(id))] as const);
-      if(!prior)this.store.reserveMetadata(Buffer.byteLength(json)+rows.reduce((bytes,row)=>bytes+memoryDeletionDependencyBytes(...row),0));
       this.store.db.prepare('INSERT OR IGNORE INTO memory_deletions VALUES(?,?)').run(value.id,json);
       for(const row of rows)this.store.db.prepare('INSERT OR IGNORE INTO memory_deletion_dependencies VALUES(?,?,?,?)').run(...row);
       this.revoke(value.memoryId);
+    }db.exec(own?'COMMIT':'RELEASE memory_deletions_restore');
+    }catch(error){
+      if(db.isTransaction)db.exec(own?'ROLLBACK':'ROLLBACK TO memory_deletions_restore; RELEASE memory_deletions_restore');
+      throw error;
     }
   }
   revoke(memoryId:string){
@@ -188,7 +192,6 @@ export class MemoryDeletions {
     if(!value.originKeys.length)throw new StoreError('Deletion evidence identity is unavailable',409);
     memoryDeletionSchema.parse(value);
     const json=JSON.stringify(value),rows=dependencies.map(id=>[value.id,id,JSON.stringify(this.keys(id)),JSON.stringify(this.lineage(id))] as const);
-    this.store.reserveMetadata(Buffer.byteLength(json)+rows.reduce((bytes,row)=>bytes+memoryDeletionDependencyBytes(...row),0));
     this.store.db.prepare('INSERT INTO memory_deletions VALUES(?,?)').run(value.id,json);
     for(const row of rows)this.store.db.prepare('INSERT INTO memory_deletion_dependencies VALUES(?,?,?,?)').run(...row);
   }

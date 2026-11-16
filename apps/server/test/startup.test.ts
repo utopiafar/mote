@@ -20,7 +20,7 @@ async function availablePort(): Promise<number> {
 }
 async function startNode(directory:string, port:number, prepareSelfPid:boolean) {
   const configFile = join(directory, 'mote.yaml');
-  await writeFile(configFile, serializeConfigDocument({ version: 1, revision: 0, server: { profile: 'test', runtime: 'native', host: '127.0.0.1', port, token: 'synthetic-startup-fixture-token-only' }, storage: { dataDir: directory, maxStorageBytes: 10 * 1024 * 1024, maxExportBytes: 1024 * 1024 }, models: { deployment: { model: '' } }, diagnostics: { level: 'silent' } }), { mode: 0o600 });
+  await writeFile(configFile, serializeConfigDocument({ version: 1, revision: 0, server: { profile: 'test', runtime: 'native', host: '127.0.0.1', port, token: 'synthetic-startup-fixture-token-only' }, storage: { dataDir: directory,  maxExportBytes: 1024 * 1024 }, models: { deployment: { model: '' } }, diagnostics: { level: 'silent' } }), { mode: 0o600 });
   const script = `${prepareSelfPid ? `import {writeFileSync} from 'node:fs'; import {join} from 'node:path'; writeFileSync(join(${JSON.stringify(directory)},'server.pid'),String(process.pid));` : ''}\nawait import(${JSON.stringify(entry)});`;
   const child = spawn(process.execPath, ['--import', loader, '--input-type=module', '-e', script], {
     stdio:['ignore','pipe','pipe'],

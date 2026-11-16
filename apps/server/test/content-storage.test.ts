@@ -41,7 +41,7 @@ test('content encryption is off even with an environment key, and opt-in persist
 
 test('YAML owns the write-encryption toggle across restart and legacy SQLite flags never override it',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-content-yaml-'));
-  const config:Config={dataDir:dir,token:'generated-content-owner-token-12345',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',dataKey:undefined,logLevel:'silent'};
+  const config:Config={dataDir:dir,token:'generated-content-owner-token-12345',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',dataKey:undefined,logLevel:'silent'};
   const agent={configured:false,query:async()=>{throw Error('unused');},close:async()=>{}};
   let node=await buildApp(config,{agent});t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
   node.store.db.prepare("INSERT OR REPLACE INTO settings VALUES('content-encryption-enabled','0')").run();
@@ -175,7 +175,7 @@ test('retrying a part write after changing encryption policy removes obsolete re
 
 test('developer content controls require owner auth and return background progress without exposing keys',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-content-api-'));
-  const config:Config={dataDir:dir,token:'generated-content-owner-token-12345',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',dataKey:undefined,logLevel:'silent'};
+  const config:Config={dataDir:dir,token:'generated-content-owner-token-12345',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',dataKey:undefined,logLevel:'silent'};
   const {app,store,connections}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('unused');},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${config.token}`};

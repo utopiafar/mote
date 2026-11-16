@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,readdirSync,rmSync} from 'node:fs';
@@ -51,11 +52,11 @@ test('portable archive restores original bytes, stable file IDs and attachment r
  assert.equal(restored.evidence([capture.id])[0].provenance?.document?.fileId,file.id);assert.notDeepEqual(readFileSync(join(restored.assets.directory,file.hash,'0.aes')),restoredFiles.read(file.id));
  assert.equal((await restored.importArchive(archive)).duplicates,1);
 });
-test('portable file preflight, quota and late rollback leave no partial originals',async t=>{
+test('portable file validation, SQLite failure and late rollback leave no partial originals',async t=>{
  const originDirectory=mkdtempSync(join(tmpdir(),'mote-file-origin-')),restoreDirectory=mkdtempSync(join(tmpdir(),'mote-file-restore-')),quotaDirectory=mkdtempSync(join(tmpdir(),'mote-file-quota-'));
- const origin=new Store(originDirectory),restored=new Store(restoreDirectory),quota=new Store(quotaDirectory,{maxStorageBytes:100});t.after(()=>{origin.close();restored.close();quota.close();for(const path of [originDirectory,restoreDirectory,quotaDirectory])rmSync(path,{recursive:true,force:true});});
+ const origin=new Store(originDirectory),restored=new Store(restoreDirectory),quota=new Store(quotaDirectory,{});t.after(()=>{origin.close();restored.close();quota.close();for(const path of [originDirectory,restoreDirectory,quotaDirectory])rmSync(path,{recursive:true,force:true});});
  const file=new ArchivedFileStore(origin).put({name:'fixture.bin',bytes:Buffer.from('synthetic original')});const archive=origin.exportArchive(10000);
  await assert.rejects(restored.importArchive({...archive,files:[{...archive.files[0],dataBase64:Buffer.from('corrupt').toString('base64')}]}),/checksum/);assert.equal(restored.db.prepare('SELECT COUNT(*) AS n FROM archived_files').get()?.n,0);
  await assert.rejects(restored.importArchive({...archive,sourceHeads:[{capture_id:'missing'}]}),/source pointer/);assert.equal(restored.db.prepare('SELECT COUNT(*) AS n FROM archived_files').get()?.n,0);assert.deepEqual(readdirSync(restored.assets.directory),[]);
- await assert.rejects(quota.importArchive(archive),{statusCode:507});assert.deepEqual(readdirSync(quota.assets.directory),[]);assert.throws(()=>origin.exportArchive(20),{statusCode:413});assert.equal(new ArchivedFileStore(origin).read(file.id).toString(),'synthetic original');
+ new ArchivedFileStore(quota);const recover=rejectSqliteWrites(quota,'archived_files');await assert.rejects(quota.importArchive(archive),/Generated SQLite write failure/);recover();assert.deepEqual(readdirSync(quota.assets.directory),[]);assert.throws(()=>origin.exportArchive(20),{statusCode:413});assert.equal(new ArchivedFileStore(origin).read(file.id).toString(),'synthetic original');
 });

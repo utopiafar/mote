@@ -13,7 +13,7 @@ import {Store} from '../src/store.js';
 import type {Config} from '../src/config.js';
 import {restoreProfile} from '../../../scripts/profile-lib.mjs';
 
-const config=(dataDir:string):Config=>({dataDir,token:'generated-mvp-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
+const config=(dataDir:string):Config=>({dataDir,token:'generated-mvp-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
 const result=()=>({answer:'Generated current answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[]}});
 const inactive:QueryAgent={configured:false,close:async()=>{},query:async()=>{throw Error('No model call expected');}};
 async function until(read:()=>boolean){const deadline=Date.now()+15000;while(Date.now()<deadline){if(read())return;await new Promise(resolve=>setTimeout(resolve,20));}throw Error('Generated lifecycle did not settle');}

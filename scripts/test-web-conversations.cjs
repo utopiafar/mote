@@ -26,7 +26,7 @@ async function run() {
   writeFileSync(runner, `import {buildApp} from ${JSON.stringify(pathToFileURL(join(repo, 'apps/server/dist/app.js')).href)};
     import {appendFileSync,existsSync} from 'node:fs'; import {randomUUID} from 'node:crypto';
     const config = ${JSON.stringify({dataDir: join(root, 'data'), token, tokenPath: 'fixture-only', host: '127.0.0.1', port,
-      maxStorageBytes: 10000000, maxExportBytes: 1000000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [],
+       maxExportBytes: 1000000,  insightIntervalHours: 0, allowedOrigins: [],
       model: 'generated-fixture', modelBaseUrl: 'https://model.example.invalid/v1', apiKey: 'generated-fixture-key',
       modelProvider: 'custom', modelProtocol: 'openai-completions', modelReasoningEffort: 'auto', allowUnauthenticatedLocal: false,
       embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false})};

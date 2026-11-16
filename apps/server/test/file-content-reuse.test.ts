@@ -10,7 +10,7 @@ import {sha256} from '../src/store.js';
 
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-file-reuse-')),token='generated-file-reuse-owner';
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',contentEncryptionEnabled:true,dataKey:'53'.repeat(32)};
+ const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',contentEncryptionEnabled:true,dataKey:'53'.repeat(32)};
  const start=()=>buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
  let node=await start();
  await node.app.ready();

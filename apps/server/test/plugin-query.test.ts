@@ -13,7 +13,7 @@ import {SourceContextStore} from '../src/source-context.js';
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 
 const token='generated-query-plugin-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 const original={id:'00000000-0000-4000-8000-000000000301',deviceId:'generated-query-plugin-device',deviceName:'Generated fixture',platform:'import' as const,source:'note' as const,capturedAt:'2026-09-20T01:00:00Z',durationMs:0,ocrText:'Generated original: the sample project selected a durable query plugin.'};
 
 test('HTTP preparation feeds context, attachments and source pins through the Agent runtime into the conversation receipt',async t=>{

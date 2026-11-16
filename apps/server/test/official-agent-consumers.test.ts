@@ -19,8 +19,8 @@ const token='generated-official-consumers-owner',headers={authorization:`Bearer 
 const probeId='7a8f56d1-45de-47b7-90bb-5e84d411c3d6';
 
 function config(dataDir:string,baseUrl:string):Config {
-  return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,
-    retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-official-model',modelProvider:'custom',
+  return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
+    insightIntervalHours:0,allowedOrigins:[],model:'generated-official-model',modelProvider:'custom',
     modelProtocol:'openai-completions',modelBaseUrl:baseUrl,apiKey:'generated-official-key',allowUnauthenticatedLocal:false,
     embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:20_000};
 }

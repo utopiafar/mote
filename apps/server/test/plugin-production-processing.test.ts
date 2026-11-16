@@ -42,7 +42,7 @@ async function fixture(t:TestContext,entry=source){
   if(url===base+'mote-plugin.json')return {bytes:strToU8(JSON.stringify(manifest))};
   if(url===base+'processing.zip')return {bytes:archive};throw Error('Unexpected generated release URL');
  };
- const config:Config={dataDir:join(directory,'data'),token:'generated-processing-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:Config={dataDir:join(directory,'data'),token:'generated-processing-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const start=async()=>{const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async close(){},async query(){throw Error('No model call in processing fixture');}}});Object.defineProperty(node.pluginCenter.releases,'transport',{value:transport});return node;};
  let node=await start();const headers={authorization:'Bearer '+config.token};
  t.after(async()=>{await writeFile(controlFile,'{}');await node.app.close();await rm(directory,{recursive:true,force:true});});

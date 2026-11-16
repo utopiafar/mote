@@ -1,3 +1,4 @@
+import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -12,14 +13,14 @@ import {MemoryProviderError,type MemoryProvider} from '../src/memory-provider-co
 const at='2026-10-01T10:00:00.000Z';
 async function fixture(t:TestContext){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-auto-topics-'));
- const config:Config={dataDir,token:'generated-topics-owner-token-1234567890',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir,token:'generated-topics-owner-token-1234567890',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const start=async()=>{const n=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No real model');},close:async()=>{}}});await n.app.ready();return n;};
  let n=await start();const headers={authorization:'Bearer '+config.token};
  t.after(async()=>{await n.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const seed=async(text:string)=>{const id=randomUUID();assert.equal((await n.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'fixture',deviceName:'Generated',platform:'android',capturedAt:at,text}})).statusCode,201);
  const r=fixtureMemoryResult(n.memories,{answer:JSON.stringify({memories:[{title:text,statement:text+' ['+id+']',uncertainty:'Synthetic evidence, not a user fact',evidenceIds:[id]}]}),citations:[{id,capturedAt:at,appName:'Generated',excerpt:text}],trace:[],runId:randomUUID()});const saved=n.memories.extract(r,'fixture').items[0];return n.memories.publish(saved.id);};
  const api=async(path:string)=>{const r=await n.app.inject({url:path,headers});assert.equal(r.statusCode,200,r.body);return r.json();};
- return {get n(){return n;},seed,api,headers,restart:async(maxBytes?:number)=>{if(maxBytes!==undefined)await n.configService.update('storage',{maxStorageBytes:maxBytes},n.configService.revision);await n.app.close();n=await start();}};
+ return {get n(){return n;},seed,api,headers,restart:async()=>{await n.app.close();n=await start();}};
 }
 const authority=(controller=new AbortController()):TopicAuthority=>({admissionId:'original-generated-admission',signal:controller.signal,assertCurrent:()=>{controller.signal.throwIfAborted();}});
 const output=(ids:string[])=>({trees:[{id:'projects',label:'Generated project topics',nodes:[{id:'planning',label:'Generated planning',memoryIds:ids},{id:'review',label:'Generated review',memoryIds:ids.slice(0,1)}]},{id:'practices',label:'Generated practice topics',nodes:[{id:'checklists',label:'Generated checklists',memoryIds:ids.slice(0,1)}]}]});
@@ -200,7 +201,7 @@ test('classifier removal during asynchronous directory read cannot publish its o
 });
 
 
-test('topic payloads count toward quota and a failed replacement preserves the previous visible head',async t=>{
+test('topic payloads have exact byte accounting and a failed replacement preserves the previous visible head',async t=>{
  const f=await fixture(t),a=await f.seed('Synthetic quota input');
  const classifier={id:'fixture',version:'1',classify:async()=>output([a.id])};f.n.featureServices.contextTrees.automatic!.register(classifier);
  const input={operationId:'quota-original',classifierId:'fixture',memoryIds:[a.id]};await f.n.featureServices.contextTrees.automatic!.classify(input,authority());
@@ -208,8 +209,8 @@ test('topic payloads count toward quota and a failed replacement preserves the p
  f.n.store.stats();
  assert.equal(f.n.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='context_topic_batches'").get()!.bytes,Buffer.byteLength(String(row.json))+Buffer.byteLength(input.operationId)+128);
  for(let index=0;index<12;index++){const response=await f.n.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:{id:randomUUID(),deviceId:'fixture-padding',deviceName:'Generated quota filler',platform:'android',capturedAt:at,text:'Synthetic quota padding '.repeat(4000)}});assert.equal(response.statusCode,201,response.body);}
- const ceiling=f.n.store.stats().logicalBytes+64;await f.restart(ceiling);f.n.featureServices.contextTrees.automatic!.register(classifier);
- await assert.rejects(f.n.featureServices.contextTrees.automatic!.classify({...input,operationId:'quota-replacement'},authority()),(e:any)=>e.statusCode===507);
+ await f.restart();const recover=rejectSqliteWrites(f.n.store,'context_topic_batches');f.n.featureServices.contextTrees.automatic!.register(classifier);
+ await assert.rejects(f.n.featureServices.contextTrees.automatic!.classify({...input,operationId:'quota-replacement'},authority()),/Generated SQLite write failure/);recover();
  assert.deepEqual(await f.n.featureServices.contextTrees.automatic!.trees(),original);
  assert.equal(f.n.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
  assert.equal(f.n.store.db.prepare('SELECT operation_id FROM context_topic_heads').get()!.operation_id,input.operationId);

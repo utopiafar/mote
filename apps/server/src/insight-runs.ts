@@ -60,7 +60,7 @@ export class InsightRuns {
       const next={stage:event.stage,...(event.phase?{phase:event.phase}:{}),...(event.tool?{tool:event.tool.slice(0,80)}:{}),...(Number.isSafeInteger(event.count)&&event.count!>=0?{count:event.count}:{}),at:new Date().toISOString()};
       current.events.push(next);current.updatedAt=next.at;this.save(current);
     };
-    this.execution.start(id,signal=>work(observe,signal,structuredClone(run.snapshot!)),deadline,()=>{run.snapshot=createInsightSnapshot(this.store,id,input,this.options.evidenceReader);this.store.reserveMetadata(16384+Buffer.byteLength(JSON.stringify(run.snapshot)));this.store.db.prepare('INSERT INTO insight_runs VALUES(?,?,?)').run(id,hash,JSON.stringify(run));});return this.get(id);
+    this.execution.start(id,signal=>work(observe,signal,structuredClone(run.snapshot!)),deadline,()=>{run.snapshot=createInsightSnapshot(this.store,id,input,this.options.evidenceReader);this.store.db.prepare('INSERT INTO insight_runs VALUES(?,?,?)').run(id,hash,JSON.stringify(run));});return this.get(id);
   }
   async perform(id:string,input:Scope&{prompt?:string},work:(observe:(event:AgentProgress)=>void,signal:AbortSignal,snapshot:InsightSnapshot)=>Promise<QueryResult>,deadline:RunDeadline&{beforeCommit?:()=>void}={}):Promise<QueryResult>{
     let result:QueryResult|undefined,error:unknown;

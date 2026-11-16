@@ -13,7 +13,7 @@ import {dingtalkTranscript} from '../src/connectors/dingtalk-recordings.js';
 import {Conversations} from '../src/conversations.js';
 
 const token='generated-history-boundary-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 
 for(const erase of ['retire','forget'] as const)test(`Material revision preserves historical locators and follow-ups; ${erase} applies its distinct retention boundary`,async t=>{
  const dir=await mkdtemp(join(tmpdir(),'mote-history-material-')),seen:QueryInput[]=[];let ids:string[]=[];

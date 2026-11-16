@@ -10,11 +10,12 @@ function draft(name:string):ImportDraft{return {name,instruction:'',sourcePackId
 function gate(){let resolve!:(value:any)=>void;return {promise:new Promise<any>(done=>resolve=done),resolve:(value:any)=>resolve(value)};}
 async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,5));}assert.ok(check(),'Generated queue did not settle');}
 function fixture(t:any,concurrency=2){
-  const begins:{id:string;name:string}[]=[],writes:any[]=[],receipts=new Map<string,ImportJob>(),gates=new Map<string,ReturnType<typeof gate>>();
+  const begins:{id:string;name:string}[]=[],writes:any[]=[],receipts=new Map<string,ImportJob>(),gates=new Map<string,ReturnType<typeof gate>>(),archiveReceipts=new Map<string,string>();
   let loseCreate=false;
   const api={request:async(path:string,init:RequestInit)=>{
+    if(path.endsWith('/commit'))return {id:archiveReceipts.get(path.split('/')[3])};
     const input=JSON.parse(String(init.body));
-    if(path==='/api/import-uploads'){begins.push(input);const held=gates.get(input.name);return held?held.promise:{id:input.id,fileId:'archive:'+input.id,partBytes:4,parts:[]};}
+    if(path==='/api/import-uploads'){begins.push(input);const held=gates.get(input.name),upload=held?await held.promise:{id:input.id,fileId:'archive:'+input.id,partBytes:4,parts:[]};archiveReceipts.set(input.id,upload.fileId);return upload;}
     assert.equal(path,'/api/imports');writes.push(input);
     if(!receipts.has(input.requestId))receipts.set(input.requestId,{id:input.requestId,name:input.name,status:'awaiting_confirmation'} as ImportJob);
     if(loseCreate){loseCreate=false;throw Error('Generated lost response');}
@@ -75,7 +76,8 @@ test('connection close aborts admissions and fences late responses even after re
 
 test('missing local files and missing directories expose source-specific recovery and do not block other batches',async t=>{
   const file=new File(['Generated missing file'],'missing.txt');Object.defineProperty(file,'slice',{value:()=>({arrayBuffer:async()=>{throw new DOMException('Generated missing file','NotFoundError');}})});
-  const api={request:async(path:string,init:RequestInit)=>{const input=JSON.parse(String(init.body));if(path==='/api/import-uploads')return {id:input.id,partBytes:4,parts:[]};throw new ApiError('Generated directory failure',422,undefined,'import_directory_missing');}} as Api;
+  const api={request:async(path:string,init:RequestInit)=>{if(path.endsWith('/commit'))return {id:'archive:'+path.split('/')[3]};
+    const input=JSON.parse(String(init.body));if(path==='/api/import-uploads')return {id:input.id,partBytes:4,parts:[]};throw new ApiError('Generated directory failure',422,undefined,'import_directory_missing');}} as Api;
   const queue=new ImportQueue(api);t.after(()=>queue.close());
   queue.enqueue({...draft('missing'),source:{kind:'files',files:[file]}});queue.enqueue({...draft('directory'),source:{kind:'directory',path:'/generated/missing'}});
   await until(()=>queue.getSnapshot().entries.every(entry=>entry.state==='failed'));
@@ -98,7 +100,8 @@ test('request deadlines fail one admission and release its slot without changing
  t.mock.method(AbortSignal,'timeout',(ms:number)=>++count===1?deadline.signal:originalTimeout(ms));
  const writes:string[]=[];
  const api={request:async(path:string,init:RequestInit)=>{
-  const input=JSON.parse(String(init.body));
+  if(path.endsWith('/commit'))return {id:'archive:'+path.split('/')[3]};
+    const input=JSON.parse(String(init.body));
   if(path==='/api/import-uploads'){
    if(input.name==='slow.txt')return new Promise((_resolve,reject)=>init.signal!.addEventListener('abort',()=>reject(init.signal!.reason),{once:true}));
    return {id:input.id,fileId:'archive:'+input.id,partBytes:4,parts:[]};
@@ -113,7 +116,8 @@ test('request deadlines fail one admission and release its slot without changing
 test('upstream rate limiting waits automatically, preserves create identity and backpressures later admissions',async t=>{
  const writes:any[]=[],begins:string[]=[];let limited=true;
  const api={request:async(path:string,init:RequestInit)=>{
-  const input=JSON.parse(String(init.body));
+  if(path.endsWith('/commit'))return {id:'archive:'+path.split('/')[3]};
+    const input=JSON.parse(String(init.body));
   if(path==='/api/import-uploads'){begins.push(input.name);return {id:input.id,fileId:'archive:'+input.id,partBytes:4,parts:[]};}
   writes.push(input);if(limited){limited=false;throw new ApiError('Generated rate limit',429,undefined,'upstream_rate_limited',100);}
   return {id:input.requestId,name:input.name,status:'completed'};
@@ -133,7 +137,8 @@ test('server history reconciles a lost create receipt and releases the failed lo
 test('repeated transport limit windows advance past archived prefixes and eventually admit the whole batch',async t=>{
  const originals=Array.from({length:6},(_,index)=>new File(['Generated '+index],'original-'+index+'.txt')),begins:string[]=[],writes:any[]=[];let remaining=2;
  const api={request:async(path:string,init:RequestInit)=>{
-  const input=JSON.parse(String(init.body));
+  if(path.endsWith('/commit'))return {id:'archive:'+path.split('/')[3]};
+    const input=JSON.parse(String(init.body));
   if(path==='/api/import-uploads'){
    if(!remaining--){remaining=2;throw new ApiError('Generated transport limit',429,undefined,'upstream_rate_limited',20);}
    begins.push(input.name);return {id:input.id,fileId:'archive:'+input.id,partBytes:4,parts:[]};

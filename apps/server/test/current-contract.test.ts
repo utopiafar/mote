@@ -12,7 +12,7 @@ import {Store} from '../src/store.js';
 import {parse} from 'yaml';
 
 const inactive={configured:false,query:async()=>{throw Error('No fixture model call authorized');},close:async()=>{}};
-const config=(dataDir:string):Config=>({dataDir,token:'generated-contract-owner',tokenPath:'generated',profile:'test',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token:'generated-contract-owner',tokenPath:'generated',profile:'test',host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 
 test('fresh epoch 7 installs final schema and refuses an old epoch without changing its persisted rows',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-epoch4-contract-')),node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false});

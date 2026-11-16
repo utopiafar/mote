@@ -191,7 +191,6 @@ export function restorePortableMaterials(store:Store,portable:Portable|undefined
   for(const row of portable.codingSnapshots)if(!revisions.has(revisionKey(row)))throw new StoreError('Coding material snapshot has no revision');
   for(const row of portable.indexing)if(!heads.has(row.material_id))throw new StoreError('Material search projection has no head');
 
-  store.reserveMetadata(Buffer.byteLength(JSON.stringify(portable)));
   for(const asset of portable.assets)store.assets.putParts([Buffer.from(asset.dataBase64,'base64')],asset.bytes,asset.hash).release();
   // Reject divergent immutable histories instead of overwriting destination proof.
   for(const name of names.filter(name=>!['heads','indexing'].includes(name))){
