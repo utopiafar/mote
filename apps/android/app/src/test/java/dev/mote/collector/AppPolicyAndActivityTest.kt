@@ -149,21 +149,21 @@ class AppPolicyAndActivityTest {
                 .put("source", "activity").put("appId", "com.example.chat").put("appName", "Generated Chat").put("durationMs", 0)
                 .put("privacy", JSONObject().put("excluded", false).put("collection", "activity"))
                 .put("metadata", JSONObject().put("version", 1).put("capture", JSONObject().put("intervalMs", 30000)))
-            queue.enqueue(event, null, 100000); queue.enqueue(event, null, 100000)
+            queue.enqueue(event, null); queue.enqueue(event, null)
             val restored = DurableQueue(directory, cipher)
             assertEquals(StateSeries.extend(null, event).toString(), restored.peek()!!.toString()); assertEquals(1, queue.summary().getInt("activities"))
             assertEquals(0, directory.listFiles()!!.count { it.extension == "blob" })
             for (key in listOf("ocrText", "windowTitle", "title", "mood", "provenance")) {
                 val invalid = JSONObject(event.toString()).put("id", UUID.randomUUID().toString()).put(key, "untrusted content")
-                assertThrows(IllegalArgumentException::class.java) { queue.enqueue(invalid, null, 100000) }
+                assertThrows(IllegalArgumentException::class.java) { queue.enqueue(invalid, null) }
             }
-            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event, byteArrayOf(1), 100000) }
+            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event, byteArrayOf(1)) }
             val badMetadata = JSONObject(event.toString()).put("id", UUID.randomUUID().toString())
             badMetadata.getJSONObject("metadata").getJSONObject("capture").put("ocrEnabled", false)
-            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(badMetadata, null, 100000) }
+            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(badMetadata, null) }
             queue.acknowledge(event.getString("id"), 123); queue.acknowledge(event.getString("id"), 123)
             assertEquals(listOf(OperationKind.ACTIVITY_QUEUED, OperationKind.ACTIVITY_ACK), changes)
-            assertEquals(0, queue.depth())
+            assertEquals(1, queue.depth()); assertEquals(0, queue.pendingSync().count)
         } finally { directory.deleteRecursively() }
     }
     @Test fun observationIntervalsDoNotUseDifferentAsyncCompletionTimes() {

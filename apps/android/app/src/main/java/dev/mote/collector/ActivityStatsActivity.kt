@@ -105,7 +105,7 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("上传待重试结果 {0} · 来源版本已确认 {1} / 失败 {2}\n设备心跳失败 {3}\n", count(OperationKind.UPLOAD_RETRY), count(OperationKind.SOURCE_ACK), count(OperationKind.SOURCE_FAILED), count(OperationKind.HEARTBEAT_FAILED)))
                     append(MoteI18n.text("已确认上传 JSON 字节 {0}（不含 TLS/HTTP 开销）\n", size(state.getLong("confirmedUploadBytes"))))
                     append(MoteI18n.text("\n记录明细抽样\n采集区保留：{0} 条，截图 {1} / 活动 {2} / 媒体 {3} / 系统事件 {4} / 笔记 {5} / 无法读取 {6} / 未检查 {7}（分类最多读取100条）\n", queue.getInt("total"), queue.getInt("screens"), queue.getInt("activities"), queue.optInt("media"), queue.optInt("systemEvents"), queue.getInt("notes"), queue.getInt("unreadable"), queue.getInt("uninspected")))
-                    append(MoteI18n.text("\n资料在哪里\n队列存储：{0} / 上限 {1} MiB\n{2}\n", size(queue.getLong("bytes")), config.maxQueueMiB, QueueStorage(this@ActivityStatsActivity).current().path))
+                    append(MoteI18n.text("本机存储")).append(": ").append(size(queue.getLong("bytes"))).append("\n").append(QueueStorage(this@ActivityStatsActivity).current().path).append("\n")
                     append(MoteI18n.text("来源待确认版本：{0} · 本机来源缓存 {1}\n{2}\n", sourcePending, size(directoryBytes(sources)), sources.absolutePath))
                     append(MoteI18n.text("历史模型及下载断点：{0}\n{1}\n", size(directoryBytes(models)), models.absolutePath))
                     append(MoteI18n.text("临时缓存：{0}\n{1}\n", size(directoryBytes(cacheDir)), cacheDir.absolutePath))

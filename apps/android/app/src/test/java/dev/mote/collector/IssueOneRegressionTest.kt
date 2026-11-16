@@ -16,9 +16,9 @@ class IssueOneRegressionTest {
         .put("capturedAt", "2026-09-16T00:00:00Z").put("privacy", JSONObject().put("excluded", false))
         .put("imageMime", "image/png").put("ocrText", "generated fixture")
         .put("ocr", JSONObject().put("status", if (pending) "pending" else "completed"))
-    @Test fun uploadedImagesRemainBrowsableUntilDeadlineWithoutReuploading() {
+    @Test fun uploadedImagesRemainBrowsableBeyondFormerDeadlineWithoutReuploading() {
         val dir = folder.newFolder(); val queue = DurableQueue(dir, plain); val first = event(); val pending = event()
-        queue.enqueue(first, byteArrayOf(1, 2), 2_000_000); queue.enqueue(pending, byteArrayOf(1, 2), 2_000_000)
+        queue.enqueue(first, byteArrayOf(1, 2)); queue.enqueue(pending, byteArrayOf(1, 2))
         queue.acknowledge(first.getString("id"), retentionDays = 7, now = 1000)
         val restarted = DurableQueue(dir, plain)
         assertArrayEquals(byteArrayOf(1, 2), restarted.image(first.getString("id")))
@@ -26,33 +26,34 @@ class IssueOneRegressionTest {
         assertEquals(listOf(pending.getString("id")), restarted.peekBatch().map { it.getString("id") })
         assertEquals(1, restarted.pendingPage().getInt("total"))
         assertEquals(0, restarted.pruneUploaded(1000 + 7 * 86_400_000L - 1))
-        assertEquals(1, restarted.pruneUploaded(1000 + 7 * 86_400_000L))
+        assertEquals(0, restarted.pruneUploaded(1000 + 7 * 86_400_000L))
+        assertArrayEquals(byteArrayOf(1, 2), restarted.image(first.getString("id"))); assertEquals(2, restarted.depth())
         assertArrayEquals(byteArrayOf(1, 2), restarted.image(pending.getString("id")))
     }
 
     @Test fun archivesRoundTripImagesAndRejectCorruptionBeforeMutatingDestination() {
-        val source = DurableQueue(folder.newFolder(), plain); val record = event(); source.enqueue(record, byteArrayOf(4, 5, 6), 2_000_000)
+        val source = DurableQueue(folder.newFolder(), plain).apply { archiveOrigin = "https://fixture.example" }; val record = event(); source.enqueue(record, byteArrayOf(4, 5, 6))
         source.acknowledge(record.getString("id"), retentionDays = 7)
         val bytes = ByteArrayOutputStream().also { assertEquals(1, QueueArchive.export(source, "https://fixture.example", it)) }.toByteArray()
-        val prepared = QueueArchive.prepare(bytes.inputStream(), File(folder.root, "staged"), 2_000_000)
-        val target = DurableQueue(folder.newFolder(), plain)
-        assertThrows(IllegalArgumentException::class.java) { QueueArchive.restore(prepared, target, "https://different.example", 2_000_000) }
+        val prepared = QueueArchive.prepare(bytes.inputStream(), File(folder.root, "staged"))
+        val target = DurableQueue(folder.newFolder(), plain).apply { archiveOrigin = "https://fixture.example" }
+        assertThrows(IllegalArgumentException::class.java) { QueueArchive.restore(prepared, target, "https://different.example") }
         assertEquals(0, target.depth())
-        assertEquals(1, QueueArchive.restore(prepared, target, "https://fixture.example", 2_000_000))
-        assertEquals(0, QueueArchive.restore(prepared, target, "https://fixture.example", 2_000_000))
+        assertEquals(1, QueueArchive.restore(prepared, target, "https://fixture.example"))
+        assertEquals(0, QueueArchive.restore(prepared, target, "https://fixture.example"))
         assertArrayEquals(byteArrayOf(4, 5, 6), target.image(record.getString("id")))
-        assertEquals(1, target.pendingSync().count); prepared.close()
+        assertEquals(0, target.pendingSync().count); assertTrue(target.capture(record.getString("id"))!!.getBoolean("uploaded")); assertNull(target.peek()); prepared.close()
         val bad = ByteArrayOutputStream().also { out -> ZipOutputStream(out).use { zip -> zip.putNextEntry(ZipEntry("../escape")); zip.write(byteArrayOf(1)); zip.closeEntry() } }.toByteArray()
-        assertThrows(Exception::class.java) { QueueArchive.prepare(bad.inputStream(), File(folder.root, "bad"), 1000) }
+        assertThrows(Exception::class.java) { QueueArchive.prepare(bad.inputStream(), File(folder.root, "bad")) }
         assertFalse(File(folder.root, "escape").exists()); assertFalse(File(folder.root, "bad").exists())
     }
     @Test fun archivePreflightFindsConflictingIdsBeforeAddingOtherRecords() {
         val source = DurableQueue(folder.newFolder(), plain); val target = DurableQueue(folder.newFolder(), plain); val first = event(); val second = event()
-        source.enqueue(first, byteArrayOf(1), 2_000_000); source.enqueue(second, byteArrayOf(2), 2_000_000)
-        target.enqueue(JSONObject(second.toString()).put("ocrText", "different generated text"), byteArrayOf(2), 2_000_000)
+        source.enqueue(first, byteArrayOf(1)); source.enqueue(second, byteArrayOf(2))
+        target.enqueue(JSONObject(second.toString()).put("ocrText", "different generated text"), byteArrayOf(2))
         val bytes = ByteArrayOutputStream().also { QueueArchive.export(source, "", it) }.toByteArray()
-        val prepared = QueueArchive.prepare(bytes.inputStream(), File(folder.root, "staged"), 2_000_000)
-        assertThrows(IllegalArgumentException::class.java) { QueueArchive.restore(prepared, target, "", 2_000_000) }
+        val prepared = QueueArchive.prepare(bytes.inputStream(), File(folder.root, "staged"))
+        assertThrows(IllegalArgumentException::class.java) { QueueArchive.restore(prepared, target, "") }
         assertEquals(1, target.depth()); assertNull(target.capture(first.getString("id"))); prepared.close()
     }
     @Test fun originalLogHasTimeLevelThreadAndLoggerAndBoundedHistory() {

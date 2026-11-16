@@ -20,7 +20,7 @@ class ItemUploadFlowInstrumentedTest {
         val settings=Settings(context);settings.saveConnection("http://127.0.0.1:47890","generated-item-history-fixture-token","Generated reader",true)
         settings.save(settings.read().copy(syncMode="manual"))
         val original=JSONObject().put("id",UUID.randomUUID().toString()).put("deviceId",settings.deviceId).put("source","note").put("capturedAt","2026-10-26T00:00:00Z").put("durationMs",0).put("ocrText","Generated failed attachment original").put("privacy",JSONObject().put("excluded",false))
-        context.queue().enqueue(original,null,100000)
+        context.queue().enqueue(original,null)
         val outgoing=JSONObject(original.toString()).put("metadata",JSONObject().put("attachments",JSONArray().put(UUID.randomUUID().toString())))
         val batch=UUID.randomUUID().toString();val scope=CaptureUploadReceipt.scope(settings.read().server,settings.deviceId)
         CaptureUploadAttempts(context.captureUploadHistory(),batch,scope,LoginProcess.id).send(listOf(outgoing),100,true,listOf(original)) { 503 to JSONObject() }
@@ -99,7 +99,7 @@ class ItemUploadFlowInstrumentedTest {
         val settings=Settings(context);val config=settings.read();val old=System.currentTimeMillis()-8*86_400_000L
         ConnectionGuard.change(context,config.server) {
         val event=JSONObject().put("id",UUID.randomUUID().toString()).put("deviceId",settings.deviceId).put("source","note").put("capturedAt","2026-10-26T00:00:00Z").put("durationMs",0).put("ocrText","Generated retention original").put("privacy",JSONObject().put("excluded",false))
-        context.queue().enqueue(event,null,100000)
+        context.queue().enqueue(event,null)
         val receipt=CaptureUploadReceipt.create(config.server,settings.deviceId,event,event,UUID.randomUUID().toString(),old,30)
         context.captureUploadHistory().received(receipt)
         val identity=ItemUploadIdentity("file",receipt.scope,"source",config.server,settings.deviceId,SourceRules.target(config.server,config.token),"generated-retention-source","generated-retention-item-${UUID.randomUUID()}","revision","fingerprint")

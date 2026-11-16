@@ -8,7 +8,6 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
 
-class QueueFull : IllegalStateException(MoteI18n.text("本机空间已满，暂停新增记录；同步释放空间或调大本机存储上限后恢复"))
 
 data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes: Long, val pendingSync: PendingSync) {
     val bytes: Long get() = diskBytes + reservedOcrBytes
@@ -24,7 +23,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     companion object {
         private val lock = Any()
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
-        private val localFields = listOf("_archiveOrigin", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_archiveMissing", "_uploadConflict")
+        private val localFields = listOf("_archiveOrigin", "_archiveAcknowledgment", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_archiveMissing", "_uploadConflict")
         // Only fixed statistics and date/source index fields are cached, never capture content. A bounded process cache
         // is shared by the short-lived queue handles; the record files remain authoritative.
         private const val MAX_CACHED_DIRECTORIES = 4
@@ -49,7 +48,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         private fun display(dir: File, event: JSONObject): JSONObject {
             val hash = event.optString("_blob")
             event.put("sizeBytes", event.optString("ocrText").toByteArray().size.toLong() + if (hash.matches(Regex("[a-f0-9]{64}"))) File(dir, "$hash.blob").length() else 0L)
-            event.put("retainedUntil", event.optLong("_retainedUntil"))
+            event.put("retainedUntil", 0L)
             event.put("hasImage", event.optString("_blob").isNotBlank()).put("uploaded", event.optBoolean("_uploaded"))
             if (event.optBoolean("_uploadConflict")) event.put("syncError", "upload_conflict")
             if (event.optBoolean("_archiveMissing")) event.put("syncError", "archive_missing").put("ocr", JSONObject().put("status", "failed"))
@@ -67,6 +66,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     /** Origin snapshot supplied by the connection-owned queue handle; unbound handles fail closed for pinned records. */
     internal var externalStorageBytes: () -> Long = { 0L }
     internal var archiveOrigin: String = ""
+    internal var connectionGeneration: String = ""
     private fun matchesOrigin(event: JSONObject) = !event.has("_archiveOrigin") || event.getString("_archiveOrigin") == archiveOrigin.trim().trimEnd('/')
     private fun unfinished(event: JSONObject) = !event.optBoolean("_uploaded") || syncFailed(event) || event.optBoolean("_reviewHeld")
     fun hasPendingConnectionWork(): Boolean = guarded {
@@ -207,7 +207,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val event = read(file)
         if (!event.optBoolean("_reviewHeld")) atomic(file, event.put("_uploadConflict", true).put("_reviewHeld", true).toString().toByteArray())
     }
-    fun retryConflict(id: String, maxBytes: Long): Boolean = guarded {
+    fun retryConflict(id: String): Boolean = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return@guarded false
         val event = read(file)
@@ -220,15 +220,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (file.exists()) atomic(file, read(file).put("_uploadConflict", true).toString().toByteArray())
     }
-    fun cacheCentralDerived(item: JSONObject, maxBytes: Long) = guarded {
+    fun cacheCentralDerived(item: JSONObject) = guarded {
         val file = File(dir, "${UUID.fromString(item.getString("id"))}.event")
         if (!file.exists()) return@guarded
         val event = read(file)
         if (!event.optBoolean("_uploaded") || event.optBoolean("_reviewHeld")) return@guarded
-        val old = file.length()
         event.put("_centralDerived", item)
         val body = event.toString().toByteArray()
-        if (bytes() + body.size - old > maxBytes) return@guarded
         atomic(file, body)
     }
     fun pendingSync(): PendingSync = stats().pendingSync
@@ -272,7 +270,6 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             event.optString("ocrText").isEmpty() && event.optJSONObject("ocr")?.optString("status") == "disabled" &&
             !event.has("imageMime") && !event.has("imageBase64")
     }
-    private fun capacityUpperBound(): Long = externalStorageBytes() + diskBytes() + browseIndex().pendingDiskBytes() + browseIndex().reservationUpperBound(browseFiles())
     private fun validateStageCapture(capture: StageCapture): JSONObject {
         val event = capture.event
         LocalDataFormat.validateEvent(event)
@@ -367,7 +364,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         result.checkpoint.put("lastOperation", operation).put("lastReturnIds", JSONArray(returnedIds))
         if (id != null) result.checkpoint.put("lastInput", JSONObject().put("id", id).put("fingerprint", fingerprint).put("returnId", returned))
         else committed?.optJSONObject("lastInput")?.let { result.checkpoint.put("lastInput", it) }
-        commitStageBatch(result, inbox.getLong("maxBytes"), floor)
+        commitStageBatch(result, floor)
         check(stageInbox.delete()) { "Unable to finish capture stage input" }
         pendingStageFailure = null
         return returnedIds
@@ -437,7 +434,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         check(stageJournal.delete()) { "Unable to finish capture stage transaction" }
     }
 
-    private fun commitStageBatch(result: CapturePipelineResult, maxBytes: Long, privacyFloor: JSONObject): List<String> {
+    private fun commitStageBatch(result: CapturePipelineResult, privacyFloor: JSONObject): List<String> {
         result.checkpoint.optJSONArray("stages")?.let { stages ->
             for (index in 0 until stages.length()) {
                 val held = stages.getJSONObject(index).optJSONArray("held") ?: continue
@@ -468,13 +465,6 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         })
         val journal = JSONObject().put("outputs", rows).put("checkpoint", checkpoint)
         val journalBytes = journal.toString().toByteArray(Charsets.UTF_8)
-        val checkpointBytes = checkpoint.toString().toByteArray(Charsets.UTF_8)
-        val extra = outputs.sumOf { (stored, image, existing) ->
-            val hash = stored.optString("_blob")
-            (stored.toString().toByteArray(Charsets.UTF_8).size + 2048L - (existing?.let { File(dir, "${it.getString("id")}.event").length() } ?: 0L) +
-                if (image != null && !File(dir, "$hash.blob").exists()) image.size + 64L else 0L).coerceAtLeast(0L)
-        } + journalBytes.size + checkpointBytes.size + 4096L
-        if (capacityUpperBound() > maxBytes - extra && bytes() + browseIndex().pendingDiskBytes() > maxBytes - extra) throw QueueFull()
         atomic(stageJournal, journalBytes)
         afterStageJournal?.invoke()
         replayStageJournal()
@@ -488,15 +478,12 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         return outputs.map { it.first.getString("id") }
     }
 
-    fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long, reviewHeld: Boolean = false): String {
+    fun enqueue(rawEvent: JSONObject, image: ByteArray?, reviewHeld: Boolean = false): String {
         LocalDataFormat.validateEvent(rawEvent)
-        val maximumAddition = rawEvent.toString().toByteArray().size * 4L + 8192L + (image?.size ?: 0) * 4L
-        if (guarded { capacityUpperBound() > maxBytes - maximumAddition }) prepareIndex()
         return guarded {
             replayStageJournal()
             if (stageInbox.exists()) {
                 val pending = read(stageInbox)
-                if (pending.getLong("maxBytes") < maxBytes) atomic(stageInbox, pending.put("maxBytes", maxBytes).toString().toByteArray(Charsets.UTF_8))
             }
             processStageInbox()
             val input = StageCapture(JSONObject(rawEvent.toString()), image?.copyOf())
@@ -508,23 +495,21 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                 if (SourceRules.canonical(comparable) == SourceRules.canonical(rawStored)) return@guarded rawId
             }
             val inbox = JSONObject().put("operation", UUID.randomUUID().toString()).put("input", encodeStageInput(input))
-                .put("maxBytes", maxBytes).put("reviewHeld", reviewHeld).put("flush", false)
+                .put("reviewHeld", reviewHeld).put("flush", false)
             val inboxBytes = inbox.toString().toByteArray(Charsets.UTF_8)
-            if (capacityUpperBound() > maxBytes - inboxBytes.size - 2048L && bytes() + browseIndex().pendingDiskBytes() > maxBytes - inboxBytes.size - 2048L) throw QueueFull()
             atomic(stageInbox, inboxBytes)
             processStageInbox().firstOrNull() ?: input.event.getString("id")
         }
     }
 
     /** Releases stage-owned inputs on an explicit capture boundary. */
-    fun flushStages(maxBytes: Long): List<String> = guarded {
+    fun flushStages(): List<String> = guarded {
         replayStageJournal()
         if (stageInbox.exists()) {
             val pending = read(stageInbox)
-            if (pending.getLong("maxBytes") < maxBytes) atomic(stageInbox, pending.put("maxBytes", maxBytes).toString().toByteArray(Charsets.UTF_8))
         }
         processStageInbox()
-        val inbox = JSONObject().put("operation", UUID.randomUUID().toString()).put("maxBytes", maxBytes).put("reviewHeld", false).put("flush", true)
+        val inbox = JSONObject().put("operation", UUID.randomUUID().toString()).put("reviewHeld", false).put("flush", true)
         atomic(stageInbox, inbox.toString().toByteArray(Charsets.UTF_8))
         processStageInbox()
     }
@@ -566,7 +551,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private fun metadataWindow(capturedAt: String, minutes: Int): Long =
         java.time.Instant.parse(capturedAt).toEpochMilli() / (minutes * 60_000L)
     /** A durable confirmation can finish only the exact selected body, never a later stateSeries. */
-    internal fun acknowledgeReceivedVersion(id: String, version: String, origin: String, uploadedBytes: Long, retentionDays: Int, now: Long): Boolean = guarded {
+    internal fun acknowledgeReceivedVersion(id: String, version: String, origin: String, uploadedBytes: Long, retentionDays: Int, now: Long, connectionGeneration: String = ""): Boolean = guarded {
+        if (this.connectionGeneration.isNotBlank() && connectionGeneration != this.connectionGeneration) return@guarded false
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return@guarded false
         val record = read(file)
@@ -581,30 +567,26 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val record = read(file)
         if (observations != null && (record.optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 0) > observations) return
         if (record.optBoolean("_uploaded")) return
-        retainOrRemove(file, record, retentionDays, now)
+        record.remove("_retainedUntil")
+        atomic(file, record.put("_uploaded", true).put("_archiveAcknowledgment", JSONObject().put("at", now).put("origin", archiveOrigin.trim().trimEnd('/')).put("version", CaptureUploadVersion.of(record))).toString().toByteArray())
         releaseAcknowledgedStageHead(id)
         onChange?.invoke(when (record.optString("source")) { "ui_page" -> OperationKind.PAGE_ACK; "notification", "device_event" -> OperationKind.SYSTEM_EVENT_ACK; "media" -> OperationKind.MEDIA_ACK; "activity" -> OperationKind.ACTIVITY_ACK; "note" -> OperationKind.NOTE_ACK; else -> OperationKind.SCREEN_ACK }, uploadedBytes, id)
     }
-    private fun retainOrRemove(file: File, record: JSONObject, days: Int, now: Long) {
-        require(days in 0..365)
-        if (days == 0) remove(file, record)
-        else atomic(file, record.put("_uploaded", true).put("_retainedUntil", now + days * 86_400_000L).toString().toByteArray())
+    /** Restore a confirmed local state only for the same immutable original and
+     * actual archive. Import never clears a current privacy/conflict hold. */
+    internal fun restoreAcknowledgment(id: String, acknowledgment: JSONObject): Boolean = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) return@guarded false
+        val record = read(file)
+        check(acknowledgment.getString("origin") == archiveOrigin.trim().trimEnd('/') && acknowledgment.getString("version") == CaptureUploadVersion.of(record))
+        if (record.optBoolean("_reviewHeld") || syncFailed(record)) return@guarded false
+        record.remove("_retainedUntil")
+        atomic(file, record.put("_uploaded", true).put("_archiveOrigin", acknowledgment.getString("origin")).put("_archiveAcknowledgment", JSONObject(acknowledgment.toString())).toString().toByteArray())
+        releaseAcknowledgedStageHead(id); true
     }
-    /** Never prune pending uploads or conflict records. Deadline starts at final ACK. */
+    /** Formal captures remain local after ACK, including old records with a deadline. */
     fun pruneUploaded(now: Long = System.currentTimeMillis()): Int {
-        prepareIndex()
-        val ids = guarded { metadata().filter { it.optLong("retainedUntil") in 1..now && !it.optBoolean("pending") && !it.optBoolean("blocked") && !it.optBoolean("awaitingOcr") }.map { it.getString("id") } }
-        var count = 0
-        withDeferredIndexWrites {
-            for (id in ids) guarded {
-                val file = File(dir, "$id.event")
-                if (file.exists()) {
-                    val event = read(file)
-                    if (event.optBoolean("_uploaded") && event.optLong("_retainedUntil") in 1..now && !syncFailed(event)) { remove(file, event); count++ }
-                }
-            }
-        }
-        return count
+        return 0
     }
     private fun remove(file: File, record: JSONObject) {
         val hash = record.optString("_blob", "")
@@ -657,7 +639,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (!file.exists()) null else JSONObject(browseIndex().entry(file, ::read).toString())
     }
     /** Commit only against the exact blobs reviewed. Never remove the retained reference. */
-    fun resolveDedupe(id: String, hash: String, referenceId: String?, referenceHash: String?, destination: DurableQueue?, destinationMaxBytes: Long = Long.MAX_VALUE): Boolean = guarded {
+    fun resolveDedupe(id: String, hash: String, referenceId: String?, referenceHash: String?, destination: DurableQueue?): Boolean = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return@guarded false
         val event = read(file)
@@ -679,9 +661,6 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             verifiedBlob(hash)
             if (target.exists()) check(destination.read(target).toString() == event.toString()) { MoteI18n.text("目标已有不同记录，保留两份以供检查") }
             else {
-                val additional = event.toString().toByteArray().size + 2048L +
-                    if (blob.exists()) 0L else File(dir, "$hash.blob").length() + 64L
-                if (destination.bytes() + destination.browseIndex().pendingDiskBytes() > destinationMaxBytes - additional) throw QueueFull()
                 if (!blob.exists()) destination.atomic(blob, requireNotNull(verifiedBlob(hash, readBytes = true)))
                 destination.verifiedBlob(hash)
                 destination.atomic(target, event.toString().toByteArray())
@@ -828,14 +807,14 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val thumbnail = File(dir, "$hash.thumb")
         if (thumbnail.exists()) runCatching { cipher.open(thumbnail.readBytes()) }.getOrNull() else null
     }
-    fun cacheThumbnail(id: String, bytes: ByteArray, maxBytes: Long) = guarded {
+    fun cacheThumbnail(id: String, bytes: ByteArray) = guarded {
         require(bytes.size <= 256 * 1024)
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return@guarded
         val hash = browseIndex().entry(file, ::read).optString("blob")
         if (!hash.matches(Regex("[a-f0-9]{64}"))) return@guarded
         val target = File(dir, "$hash.thumb")
-        if (!target.exists() && capacityUpperBound() + bytes.size + 64 <= maxBytes) atomic(target, bytes)
+        if (!target.exists()) atomic(target, bytes)
     }
     fun summary(): JSONObject {
         prepareIndex()

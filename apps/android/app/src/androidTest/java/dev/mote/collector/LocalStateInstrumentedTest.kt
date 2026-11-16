@@ -153,7 +153,7 @@ class LocalStateInstrumentedTest {
             val id = event.getString("id")
             val beforeVersion = context.captureLibraryVersion(event, null)
             val queue = QueueStorage(context).openQueue().apply { archiveOrigin = origin }
-            queue.enqueue(event, null, 16L * 1024 * 1024)
+            queue.enqueue(event, null)
             val ack = UUID.randomUUID().toString()
             val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
             val identity = ItemUploadIdentity("attachment", "scope", "capture", origin, "device", "target", "source", "external", "revision", "fingerprint", hash, bytes.size.toLong(), id, attachment.getString("id"))

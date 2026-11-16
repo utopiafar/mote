@@ -56,11 +56,11 @@ class AttachmentHistoryFailureInstrumentedTest {
         fun waitFor(message:String,predicate:()->Boolean) { val end=android.os.SystemClock.elapsedRealtime()+15000;while(!predicate()) { serverError?.let { throw AssertionError(it) };check(android.os.SystemClock.elapsedRealtime()<end){message};Thread.sleep(50) } }
         try {
             settings.saveConnection("http://127.0.0.1:${server.localPort}","generated-history-failure-fixture-token","Generated failure",true)
-            settings.save(settings.read().copy(syncMode="manual",wifiOnly=false,chargingOnly=false,packedUpload=false,uploadedRetentionDays=30))
+            settings.save(settings.read().copy(syncMode="manual",wifiOnly=false,chargingOnly=false,packedUpload=false))
             val draft=context.recordDraftStore();val originalBytes="Generated retained attachment".toByteArray();val attachment=draft.stage(originalBytes,"generated.txt","text/plain")
             draft.edit("Generated retained note",JSONArray().put(attachment),JSONObject())
             val note=draft.prepare(settings.read().server) { JSONObject().put("id",UUID.randomUUID().toString()).put("deviceId",settings.deviceId).put("source","note").put("capturedAt","2026-10-26T00:00:00Z").put("durationMs",0).put("ocrText","Generated retained note").put("privacy",JSONObject().put("excluded",false)) }
-            context.queue().enqueue(note,null,100000)
+            context.queue().enqueue(note,null)
             fun runWorker():WorkInfo.State {
                 val request=OneTimeWorkRequestBuilder<UploadWorker>().setInputData(workDataOf("manual" to true,"continuation" to true,"syncStamp" to SyncSchedule.stamp(settings.read()))).build()
                 manager.enqueueUniqueWork("generated-item-history-failure",ExistingWorkPolicy.REPLACE,request).result.get(5,TimeUnit.SECONDS)

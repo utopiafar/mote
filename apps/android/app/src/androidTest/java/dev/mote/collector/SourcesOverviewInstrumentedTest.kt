@@ -124,7 +124,7 @@ class SourcesOverviewInstrumentedTest {
             setScreenConnected(true)
 
             fun enqueue(event: JSONObject, image: ByteArray? = null) {
-                val id = queue.enqueue(event, image, 64L * 1024 * 1024)
+                val id = queue.enqueue(event, image)
                 queue.acknowledge(id, retentionDays = 7)
             }
             val pixels = java.io.ByteArrayOutputStream().use { out ->

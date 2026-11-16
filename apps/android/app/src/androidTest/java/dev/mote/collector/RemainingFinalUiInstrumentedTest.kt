@@ -117,9 +117,9 @@ class RemainingFinalUiInstrumentedTest {
     private fun picker(action:String,file:File,block:()->Unit){val monitor=object:Instrumentation.ActivityMonitor(){override fun onStartActivity(intent:Intent):Instrumentation.ActivityResult?=if(intent.action==action)Instrumentation.ActivityResult(Activity.RESULT_OK,Intent().setData(FileProvider.getUriForFile(context,"${context.packageName}.record-files",file)))else null};instrumentation.addMonitor(monitor);try{block()}finally{instrumentation.removeMonitor(monitor)}}
     @Test fun anotherCentralZipIsRejectedBeforeRestoreAndLocalMetadataExportKeepsOriginals() = fixture { root->
         val id=UUID.randomUUID().toString();val event=JSONObject().put("id",id).put("source","note").put("capturedAt","2026-10-29T01:00:00Z").put("durationMs",0).put("ocrText","Generated final backup note").put("privacy",JSONObject().put("excluded",false).put("redacted",false).put("mode","none"))
-        context.queue().enqueue(event,null,16_000_000)
+        context.queue().enqueue(event,null)
         try {
-            val plain=object:ByteCipher{override fun seal(bytes:ByteArray)=bytes;override fun open(bytes:ByteArray)=bytes};val source=DurableQueue(File(root,"isolated-archive"),plain);source.enqueue(event,null,16_000_000)
+            val plain=object:ByteCipher{override fun seal(bytes:ByteArray)=bytes;override fun open(bytes:ByteArray)=bytes};val source=DurableQueue(File(root,"isolated-archive"),plain);source.enqueue(event,null)
             val zip=File(root,"other-central.zip");zip.outputStream().use { QueueArchive.export(source,"http://127.0.0.1:59998",it) };val before=context.queue().inventory()
             ActivityScenario.launch<BackupActivity>(Intent(context,BackupActivity::class.java)).use { scenario->
                 tag("backup-restore-records");picker(Intent.ACTION_OPEN_DOCUMENT,zip){click("选择备份文件");until("another node ZIP rejected"){text("备份属于不同中央")}}
@@ -130,7 +130,7 @@ class RemainingFinalUiInstrumentedTest {
                 val bad=File(root,"generated-unwritable-directory").apply { mkdirs() };picker(Intent.ACTION_CREATE_DOCUMENT,bad){click("导出本机元数据 JSON");until("actual provider write fails"){text("备份未能生成")}}
                 assertEquals(before,context.queue().inventory());assertNotNull(context.queue().capture(id));scenario.onActivity { picture(it,"p37-local-metadata-json-write-failure-dark") };click("返回")
             }
-        } finally { context.queue().acknowledge(id) }
+        } finally { context.queue().removeGeneratedRecord(id) }
     }
     @Test fun actualNotificationAndUsageGrantReturnNeverStartsCollection() = fixture {
         val appOps=requireNotNull(context.getSystemService(android.app.AppOpsManager::class.java));require(appOps.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),context.packageName)!=android.app.AppOpsManager.MODE_ALLOWED) { "Generated usage grant must start absent" }
@@ -185,7 +185,7 @@ class RemainingFinalUiInstrumentedTest {
     @Test fun localLibraryTabsKeepRealLocationsOriginalAndMemoryHandoff() = fixture {
         val id=UUID.randomUUID().toString();val original="Generated exact local library original"
         val event=JSONObject().put("id",id).put("source","note").put("appName","Generated library note").put("capturedAt","2026-10-29T12:00:00Z").put("durationMs",0).put("ocrText",original).put("privacy",JSONObject().put("excluded",false).put("redacted",false).put("mode","none"))
-        context.queue().enqueue(event,null,16_000_000)
+        context.queue().enqueue(event,null)
         try { ActivityScenario.launch<MainActivity>(Intent(context,MainActivity::class.java).putExtra("page","LIBRARY")).awaitMainUi().use { scenario->
             until("real local library row"){main{visible().any{it.tag=="library-record:"+id}}}
             fun openFilter() { click("筛选"); until("library filter sheet") { main { visible().any { it.tag == "library-location:local" } } } }
@@ -206,7 +206,7 @@ class RemainingFinalUiInstrumentedTest {
             until("return to the same local library"){main{visible().any{it.tag=="library-filter"}&&visible().any{it.tag=="library-record:"+id}}};verifyLocation("local")
             scenario.recreate();scenario.awaitMainUi();until("same local location after recreation"){main{visible().any{it.tag=="library-filter"}&&visible().any{it.tag=="library-record:"+id}}};verifyLocation("local")
             assertNotNull(context.queue().capture(id));assertFalse(Settings(context).enabled)
-        }}finally{context.queue().acknowledge(id)}
+        }}finally{context.queue().removeGeneratedRecord(id)}
     }
     @Test fun processingAndDiagnosticsKeepRealAdvancedDraftsAndVisibleRange() = fixture {
         val settings=Settings(context);settings.save(settings.read().copy(imageDedupeMode="aggressive",captureMaxSide=1920),confirmCentralEndpoint=true)

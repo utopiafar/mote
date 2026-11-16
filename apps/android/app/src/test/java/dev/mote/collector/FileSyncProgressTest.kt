@@ -73,7 +73,9 @@ class FileSyncProgressTest {
         assertEquals(1, queue.progress(all, 61000).total)
         assertEquals(1, queue.progress(all, 61000).count(FileSyncPhase.QUEUED))
         queue.configure(all.copy(excluded = "*.txt"))
-        assertEquals(0, queue.progress(all, 61000).total)
+        assertEquals(1, queue.progress(all, 61000).total)
+        assertEquals(1, queue.progress(all, 61000).count(FileSyncPhase.BLOCKED))
+        assertFalse(queue.transportReady(source.id, 61000)); assertEquals(item().getString("externalId"), queue.rows(source.id).single().getJSONObject("candidate").getString("externalId"))
         queue.remove(source.id)
         assertEquals(0, queue.progress(source, 61000).total)
     }

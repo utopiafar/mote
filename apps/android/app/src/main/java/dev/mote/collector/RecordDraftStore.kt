@@ -7,7 +7,7 @@ import java.io.FileOutputStream
 import java.util.UUID
 
 /** Private draft, immutable submission and encrypted attachment originals share one atomic journal. */
-internal class RecordDraftStore(private val directory: File, private val cipher: ByteCipher, private val availableBytes: () -> Long = { Long.MAX_VALUE }) {
+internal class RecordDraftStore(private val directory: File, private val cipher: ByteCipher) {
     private val stateFile = File(directory, "record.enc")
     private fun emptyDraft() = JSONObject().put("text", "").put("description", "").put("attachments", JSONArray()).put("origin", JSONObject().put("kind", "manual"))
     private fun state() = if (stateFile.exists()) JSONObject(String(cipher.open(stateFile.readBytes()), Charsets.UTF_8)) else JSONObject().put("draft", emptyDraft()).put("records", JSONObject())
@@ -47,8 +47,6 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
         val id = stagedId?.let { UUID.fromString(it).toString() } ?: UUID.randomUUID().toString()
         val target = File(directory, "$id.enc")
         DurableQueue.exclusive {
-            val replaced = if (target.exists()) target.length() else 0L
-            if (diskBytes() - replaced + size > availableBytes()) throw QueueFull()
             val temp = File(directory, UUID.randomUUID().toString() + ".tmp")
             try {
                 FileOutputStream(temp).use { output ->
@@ -152,7 +150,6 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
     private fun write(value: JSONObject) { directory.mkdirs(); atomic(stateFile, cipher.seal(value.toString().toByteArray(Charsets.UTF_8))) }
     private fun atomic(file: File, bytes: ByteArray) {
         DurableQueue.exclusive {
-        if (diskBytes() - (if (file.exists()) file.length() else 0L) + bytes.size > availableBytes()) throw QueueFull()
         val temp = File(directory, UUID.randomUUID().toString() + ".tmp")
         try { FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }; check(temp.renameTo(file)) } finally { temp.delete() }
         }

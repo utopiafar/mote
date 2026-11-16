@@ -123,7 +123,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
         val plan = store.read("plan"); require(plan.getString("job") == inputData.getString("job"))
         val items = plan.getJSONArray("items"); val pending = store.quarantine(); val queue = applicationContext.queue()
         progress(MoteI18n.text("处理记录"), 0, items.length())
-        val restoreLimit = Settings(applicationContext).read().maxQueueMiB * 1024L * 1024L
+        val restoreLimit = Long.MAX_VALUE
         var done = 0; var skipped = 0
         // Each record still commits and releases the queue lock independently. Only the
         // rebuildable index writes are combined; cancellation never leaves a partial move.
@@ -135,7 +135,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
                     val source = if (action in listOf("restore", "purge")) pending else queue
                     val target = when (action) { "move" -> pending; "restore" -> queue; else -> null }
                     val ok = source.resolveDedupe(row.getString("id"), row.getString("blob"),
-                        if (source === queue) ref!!.getString("id") else null, ref?.getString("blob"), target, if (action == "restore") restoreLimit else Long.MAX_VALUE)
+                        if (source === queue) ref!!.getString("id") else null, ref?.getString("blob"), target)
                     if (ok) done++ else skipped++
                 } catch (error: Exception) { SupportEvents.failure(applicationContext, EventStage.DEDUPE, error); skipped++ }
                 progress(MoteI18n.text("处理记录"), index + 1, items.length(), done, skipped)

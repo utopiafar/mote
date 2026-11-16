@@ -200,21 +200,22 @@ class LibraryRecordsRefreshInstrumentedTest {
         try {
             val storage = QueueStorage(generated); val queue = storage.openQueue()
             val device = "generated-signal-device"; val at = Instant.parse("2026-01-01T00:00:00Z")
-            val seed = (0 until 3).map { UUID.randomUUID().toString().also { queue.enqueue(note(it, device, at, "Generated baseline"), null, 16_000_000) } }
+            val seed = (0 until 3).map { UUID.randomUUID().toString().also { queue.enqueue(note(it, device, at, "Generated baseline"), null) } }
             val policy = LibraryRefreshPolicy(LocalStateChanges.revisions.value.records, queue.inventory().records)
             val before = LocalStateChanges.revisions.value.records
             queue.withDeferredIndexWrites {
-                repeat(3) { queue.enqueue(note(UUID.randomUUID().toString(), device, at.plusSeconds(1), "Generated batch insert"), null, 16_000_000) }
+                repeat(3) { queue.enqueue(note(UUID.randomUUID().toString(), device, at.plusSeconds(1), "Generated batch insert"), null) }
                 queue.acknowledge(seed[0]); queue.archiveMissing(seed[1])
             }
             val after = LocalStateChanges.revisions.value.records
-            assertEquals("deferred index writes still report 3 physical inserts, 1 deletion and 1 rewrite", 5L, after - before)
-            assertEquals(5, queue.inventory().records)
+            assertEquals("deferred index writes still report 3 physical inserts and 2 rewrites", 5L, after - before)
+            assertEquals(6, queue.inventory().records)
             assertEquals(LibraryRefreshPolicy.Action.FULL, policy.recordsChanged(after, queue.inventory().records))
             val retained = LocalStateChanges.revisions.value.records
             queue.acknowledge(seed[2], retentionDays = 1, now = 1)
-            assertEquals(1, queue.pruneUploaded(now = 86_400_002))
-            assertEquals("retention rewrite and prune each report their own event mutation", 2L, LocalStateChanges.revisions.value.records - retained)
+            assertEquals(0, queue.pruneUploaded(now = 86_400_002))
+            assertTrue(queue.capture(seed[2])!!.getBoolean("uploaded")); assertEquals(6, queue.inventory().records)
+            assertEquals("only the ACK rewrite mutates the retained original", 1L, LocalStateChanges.revisions.value.records - retained)
             assertEquals(LibraryRefreshPolicy.Action.FULL, policy.recordsChanged(LocalStateChanges.revisions.value.records, queue.inventory().records))
             val dir = File(storage.selected().path)
             val replayIds = (0 until 2).map { UUID.randomUUID().toString() }
@@ -232,7 +233,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             journalFile.writeBytes(generated.localContentCipher().seal(journal.toString().toByteArray()))
             val recovered = storage.openQueue()
             assertEquals("idempotent replay does not manufacture row mutations", 2L, LocalStateChanges.revisions.value.records - replayStart)
-            assertEquals(6, recovered.inventory().records)
+            assertEquals(8, recovered.inventory().records)
         } finally { generated.dispose() }
     }
     @Test fun retainedQueueSentinelRejectsBeforeReplayAndUnarmedCleanup() {
@@ -294,7 +295,7 @@ class LibraryRecordsRefreshInstrumentedTest {
         val base = Instant.now().minusSeconds(4000)
         val locals = (0 until 65).map { index ->
             val id = UUID.randomUUID().toString()
-            assertEquals(id, queue.enqueue(note(id, device, base.minusSeconds(index.toLong()), "Generated library record $index"), null, 64_000_000))
+            assertEquals(id, queue.enqueue(note(id, device, base.minusSeconds(index.toLong()), "Generated library record $index"), null))
             id
         }
         val remotes = (0 until 25).map { index ->
@@ -462,7 +463,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             val burstStarted = SystemClock.elapsedRealtime()
             val fresh = (0 until 5).map { index ->
                 val id = UUID.randomUUID().toString()
-                assertEquals(id, queue.enqueue(note(id, device, Instant.now().plusSeconds(index.toLong()), "Generated inserted record $index"), null, 64_000_000))
+                assertEquals(id, queue.enqueue(note(id, device, Instant.now().plusSeconds(index.toLong()), "Generated inserted record $index"), null))
                 id
             }
             waitFor("insert burst merges into the first page and withdraws a deleted Central deep row") { fresh.all { rows(it) == 1 } && rows(remotes.last()) == 0 }
@@ -487,7 +488,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             api.post("/api/fixture/library-denial", JSONObject().put("mode", "offline"))
             api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
             try {
-                queue.enqueue(note(offlineIds[0], device, Instant.now(), "Generated offline append"), null, 64_000_000)
+                queue.enqueue(note(offlineIds[0], device, Instant.now(), "Generated offline append"), null)
                 waitFor("the real 503 request is held after local-first publication") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 && rows(offlineIds[0]) == 1 }
                 assertFalse(readIdle())
                 assertTrue("the previously authorized Central rows remain until the held response", remotes.dropLast(1).all { rows(it) == 1 })
@@ -504,10 +505,10 @@ class LibraryRecordsRefreshInstrumentedTest {
                 scenario.chooseLibraryLocation("")
             }
             waitFor("returning from the Central filter still keeps the local original") { rows(locals[50]) == 1 && rows(offlineIds[0]) == 1 }
-            queue.enqueue(note(offlineIds[1], device, Instant.now(), "Generated recovered append"), null, 64_000_000)
+            queue.enqueue(note(offlineIds[1], device, Instant.now(), "Generated recovered append"), null)
             waitFor("a later successful incremental read restores the generated Central rows exactly once") { readIdle() && remotes.dropLast(1).all { rows(it) == 1 } && rows(offlineIds[0]) == 1 && rows(offlineIds[1]) == 1 }
             assertEquals("recovery keeps the same pagination continuations", beforeOffline, paginationState())
-            queue.withDeferredIndexWrites { offlineIds.forEach { queue.acknowledge(it) } }
+            queue.withDeferredIndexWrites { offlineIds.forEach { queue.removeGeneratedRecord(it) } }
             waitFor("only the two generated offline probes are removed before continuing") { readIdle() && offlineIds.all { rows(it) == 0 } && rows(locals[50]) == 1 && remotes.dropLast(1).all { rows(it) == 1 } }
             click("加载更多"); waitFor("pagination continues after the cursor") { rows(locals[64]) == 1 }
 
@@ -518,11 +519,11 @@ class LibraryRecordsRefreshInstrumentedTest {
             api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
             var newerDeadline = 0L
             try {
-                queue.enqueue(note(busyIds[0], device, Instant.now(), "Generated in-flight insert"), null, 64_000_000)
+                queue.enqueue(note(busyIds[0], device, Instant.now(), "Generated in-flight insert"), null)
                 waitFor("the real incremental HTTP read is held") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 && rows(busyIds[0]) == 1 }
-                queue.enqueue(note(busyIds[1], device, Instant.now(), "Generated busy-deadline insert"), null, 64_000_000)
+                queue.enqueue(note(busyIds[1], device, Instant.now(), "Generated busy-deadline insert"), null)
                 waitFor("the first production debounce expires against the busy read") { busyDeadlinePending() && !scheduled() }
-                queue.enqueue(note(busyIds[2], device, Instant.now(), "Generated younger-deadline insert"), null, 64_000_000)
+                queue.enqueue(note(busyIds[2], device, Instant.now(), "Generated younger-deadline insert"), null)
                 waitFor("the second insertion has queued its real younger timer") { scheduled() }
                 newerDeadline = SystemClock.uptimeMillis() + LibraryRefreshPolicy.DEBOUNCE_MILLIS
             } finally { api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release")) }
@@ -535,13 +536,13 @@ class LibraryRecordsRefreshInstrumentedTest {
             assertTrue("an empty retired tick cannot start another read", readIdle())
             assertEquals("no extra HTTP/full reload after consuming the busy burst", drainedHttp, api.get("/api/fixture/library-request-stats").getInt("centralRequests"))
             scenario.onActivity { activity -> assertSame("the deep card survives past the younger deadline", busyDeepCard, views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" }) }
-            queue.withDeferredIndexWrites { busyIds.forEach { queue.acknowledge(it) } }
+            queue.withDeferredIndexWrites { busyIds.forEach { queue.removeGeneratedRecord(it) } }
             waitFor("remove only the three generated timing records before the later bounded cases") { busyIds.all { rows(it) == 0 } && rows(locals[64]) == 1 && readIdle() }
 
             waitFor("all page reads finish before the stopped insert") { readIdle() }
             val stoppedInsert = UUID.randomUUID().toString()
             val beforeStop = api.get("/api/fixture/library-request-stats").getInt("centralRequests")
-            queue.enqueue(note(stoppedInsert, device, Instant.now(), "Generated stopped insert"), null, 64_000_000)
+            queue.enqueue(note(stoppedInsert, device, Instant.now(), "Generated stopped insert"), null)
             stopPastRecordDeadline()
             assertEquals("the hidden insert tick starts no HTTP", beforeStop, api.get("/api/fixture/library-request-stats").getInt("centralRequests"))
             resumeStoppedTask()
@@ -555,11 +556,11 @@ class LibraryRecordsRefreshInstrumentedTest {
             queue.withDeferredIndexWrites {
                 repeat(3) { index ->
                     val id = UUID.randomUUID().toString(); mixedAdded += id
-                    queue.enqueue(note(id, device, Instant.now(), "Generated mixed record $index"), null, 64_000_000)
+                    queue.enqueue(note(id, device, Instant.now(), "Generated mixed record $index"), null)
                 }
-                queue.acknowledge(locals[50])
-                queue.acknowledge(locals[51])
-                queue.enqueue(note(locals[51], device, base.minusSeconds(51), "Generated replaced deep preview"), null, 64_000_000)
+                queue.removeGeneratedRecord(locals[50])
+                queue.removeGeneratedRecord(locals[51])
+                queue.enqueue(note(locals[51], device, base.minusSeconds(51), "Generated replaced deep preview"), null)
                 queue.archiveMissing(locals[52])
             }
             stopPastRecordDeadline()
@@ -575,7 +576,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
             try {
                 val probe = UUID.randomUUID().toString()
-                assertEquals(probe, queue.enqueue(note(probe, device, Instant.now(), "Generated denial probe"), null, 64_000_000))
+                assertEquals(probe, queue.enqueue(note(probe, device, Instant.now(), "Generated denial probe"), null))
                 waitFor("denied device-view is held before replying") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 }
                 waitFor("local publication does not wait for the pending denial", timeout = 5_000) { rows(probe) == 1 }
                 assertFalse(readIdle())
@@ -595,7 +596,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
             try {
                 val localFirst = UUID.randomUUID().toString()
-                assertEquals(localFirst, queue.enqueue(note(localFirst, device, Instant.now(), "Generated local-first probe"), null, 64_000_000))
+                assertEquals(localFirst, queue.enqueue(note(localFirst, device, Instant.now(), "Generated local-first probe"), null))
                 waitFor("production device-view request is inside the server barrier") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 }
                 waitFor("committed local capture appears while Central is still blocked", timeout = 5_000) { rows(localFirst) == 1 }
                 assertTrue(api.get("/api/fixture/library-device-hold").getBoolean("held"))
@@ -626,7 +627,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             val device = Settings(context).deviceId; val api = CentralClient(server, token)
             val base = Instant.now().minusSeconds(4000)
             val locals = (0 until 20).map { index -> UUID.randomUUID().toString().also {
-                assertEquals(it, queue.enqueue(note(it, device, base.minusSeconds(index.toLong()), "Generated frontier local $index"), null, 64_000_000))
+                assertEquals(it, queue.enqueue(note(it, device, base.minusSeconds(index.toLong()), "Generated frontier local $index"), null))
             } }
             val remotes = (0 until 70).map { index -> UUID.randomUUID().toString().also {
                 api.post("/api/captures", note(it, "generated-frontier-remote", base.minusSeconds(index.toLong()), "Generated frontier R${index + 1}"))
@@ -659,7 +660,7 @@ class LibraryRecordsRefreshInstrumentedTest {
                 api.post("/api/fixture/library-request-stats", JSONObject())
                 val firstInsert = UUID.randomUUID().toString()
                 val firstStarted = SystemClock.elapsedRealtime()
-                queue.enqueue(note(firstInsert, device, Instant.now(), "Generated first frontier append"), null, 64_000_000)
+                queue.enqueue(note(firstInsert, device, Instant.now(), "Generated first frontier append"), null)
                 waitFor("the first truncated append actually merges R1 through R60") { readIdle() && rows(firstInsert) == 1 && remotes.take(60).all { rows(it) == 1 } }
                 assertTrue(SystemClock.elapsedRealtime() - firstStarted >= LibraryRefreshPolicy.DEBOUNCE_MILLIS)
                 assertEquals("R61 remains behind the ordinary continuation", 0, rows(remotes[60]))
@@ -677,7 +678,7 @@ class LibraryRecordsRefreshInstrumentedTest {
                 api.post("/api/captures", note(backfill, "generated-frontier-remote", base.minusSeconds(56).minusMillis(500), "Generated backfill between R57 and R58"))
                 val secondInsert = UUID.randomUUID().toString()
                 val secondStarted = SystemClock.elapsedRealtime()
-                queue.enqueue(note(secondInsert, device, Instant.now(), "Generated second frontier append"), null, 64_000_000)
+                queue.enqueue(note(secondInsert, device, Instant.now(), "Generated second frontier append"), null)
                 waitFor("the second insertion and its successful remote read finish") { readIdle() && rows(secondInsert) == 1 && heads.all { rows(it) == 1 } }
                 assertTrue(SystemClock.elapsedRealtime() - secondStarted >= LibraryRefreshPolicy.DEBOUNCE_MILLIS)
                 if (rows(remotes[59]) == 1) assertEquals("a successful refresh cannot retain R60 across an undisplayed R57/R58 backfill gap", 1, rows(backfill))

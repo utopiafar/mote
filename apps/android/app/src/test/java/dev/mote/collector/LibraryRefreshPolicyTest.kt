@@ -17,17 +17,17 @@ class LibraryRefreshPolicyTest {
         fun note() = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "note").put("capturedAt", "2026-01-01T00:00:00Z")
             .put("platform", "android").put("durationMs", 0).put("ocrText", "Generated queue contract").put("privacy", JSONObject().put("excluded", false))
         val first = note(); val second = note()
-        queue.enqueue(first, null, 16_000_000); queue.enqueue(second, null, 16_000_000)
+        queue.enqueue(first, null); queue.enqueue(second, null)
         val policy = LibraryRefreshPolicy(revision, queue.inventory().records)
         val baseline = revision
         queue.withDeferredIndexWrites {
-            repeat(3) { queue.enqueue(note(), null, 16_000_000) }
+            repeat(3) { queue.enqueue(note(), null) }
             queue.acknowledge(first.getString("id")); queue.archiveMissing(second.getString("id"))
         }
         assertEquals(5L, revision - baseline)
         assertEquals(4, queue.inventory().records)
         assertEquals("net +2 is not pure insertion", LibraryRefreshPolicy.Action.FULL, policy.recordsChanged(revision, queue.inventory().records))
-        repeat(5) { queue.enqueue(note(), null, 16_000_000) }
+        repeat(5) { queue.enqueue(note(), null) }
         assertEquals(LibraryRefreshPolicy.Action.INCREMENTAL, policy.recordsChanged(revision, queue.inventory().records))
     }
     @Test fun aFirstPageMustCoverEveryInsertionBeforeKeepingDeeperPages() {

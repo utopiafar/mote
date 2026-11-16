@@ -2,7 +2,6 @@ package dev.mote.collector.recording
 
 import dev.mote.collector.ByteCipher
 import dev.mote.collector.CentralAttachments
-import dev.mote.collector.QueueFull
 import dev.mote.collector.RecordDraftStore
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -114,21 +113,19 @@ class SegmentedRecordingTest {
         assertEquals(AdtsFrames.HEADER_BYTES + payloadBytes, AdtsFrames.parse(first, AdtsFrames.HEADER_BYTES + payloadBytes).single().length)
     }
 
-    @Test fun `stageFile streams through the cipher and enforces attachment and disk limits`() {
+    @Test fun `stageFile streams through the cipher without a total quota and keeps the attachment codec limit`() {
         val directory = folder.newFolder("stream-draft")
-        var available = Long.MAX_VALUE
-        val store = RecordDraftStore(directory, cipher) { available }
+        val store = RecordDraftStore(directory, cipher)
         val source = File(folder.root, "record-microphone-0000.aac").apply { writeBytes(ByteArray(4096) { it.toByte() }) }
         val item = store.stageFile(source, source.name, RecordingDraftSink.MIME)
         assertEquals(4096L, item.getLong("size"))
         assertArrayEquals(source.readBytes(), store.bytes(item.getString("id")))
         assertFalse(File(directory, item.getString("id") + ".enc").readBytes().contentEquals(source.readBytes()))
 
-        available = store.diskBytes() + 100
         val overQuota = File(folder.root, "over-quota.aac").apply { writeBytes(ByteArray(101)) }
-        assertThrows(QueueFull::class.java) {
-            store.stageFile(overQuota, overQuota.name, RecordingDraftSink.MIME)
-        }
+        val extra = store.stageFile(overQuota, overQuota.name, RecordingDraftSink.MIME)
+        assertArrayEquals(overQuota.readBytes(), store.bytes(extra.getString("id")))
+        assertArrayEquals(source.readBytes(), store.bytes(item.getString("id")))
 
         val oversized = File(folder.root, "oversized.aac")
         RandomAccessFile(oversized, "rw").use { it.setLength(CentralAttachments.MAX_BYTES + 1L) }

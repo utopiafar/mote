@@ -25,13 +25,13 @@ class NoteDraftStoreTest {
         val dir = folder.newFolder(); val store = NoteDraftStore(dir, cipher)
         store.update("合成草稿", "平静")
         val prepared = store.prepare("https://fixture.example", ::event).prepared!!
-        val queue = DurableQueue(folder.newFolder(), cipher); queue.enqueue(prepared, null, 100000)
+        val queue = DurableQueue(folder.newFolder(), cipher); queue.enqueue(prepared, null)
         val reopened = NoteDraftStore(dir, cipher)
         val retry = reopened.prepare("https://fixture.example") { error("Must reuse original submission") }.prepared!!
         assertEquals(prepared.toString(), retry.toString())
-        queue.enqueue(retry, null, 100000); assertEquals(1, queue.depth())
+        queue.enqueue(retry, null); assertEquals(1, queue.depth())
         queue.acknowledge(retry.getString("id"))
-        queue.enqueue(retry, null, 100000) // Lost ACK/clear still reuses same central idempotency key.
+        queue.enqueue(retry, null) // Lost ACK/clear still reuses same central idempotency key.
         assertEquals(prepared.getString("id"), queue.peek()!!.getString("id"))
         reopened.clear(); assertEquals("", reopened.read().text)
     }
