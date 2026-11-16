@@ -190,7 +190,7 @@ while True:
 });
 
 test('Docker carries worker/domain sources and isolates CPU audio dependencies from OCR',async()=>{
- const docker=await readFile(new URL('../Dockerfile',import.meta.url),'utf8'),{parse}=await import('yaml'),compose=parse(await readFile(new URL('../compose.yaml',import.meta.url),'utf8'));
+ const docker=await readFile(new URL('../Dockerfile',import.meta.url),'utf8'),{parse}=await import('yaml'),compose=parse(await readFile(new URL('../compose.yaml',import.meta.url),'utf8'),{merge:true});
  assert.match(docker,/COPY scripts \.\/scripts\//,'all worker sources, contracts and fixed manifests ship together');
  assert.match(docker,/\/opt\/mote-media\/ocr\/bin\/pip install[^\n]+requirements-ocr\.txt/);
  assert.match(docker,/\/opt\/mote-media\/dialogue\/bin\/pip install[^\n]+requirements-audio\.txt/);

@@ -66,7 +66,7 @@ test('legacy profile refusal leaves the selected old configuration and data unto
  assert.equal(await readFile(paths.legacyEnvFile,'utf8'),body);assert.equal(await readFile(join(paths.directory,'data/sentinel'),'utf8'),'generated archive');assert.equal(await stat(paths.configFile).then(()=>true,()=>false),false);
 });
 test('Docker uses the same parent-mounted YAML, declared paths and private file owner without ordinary env injection',{skip: !composeAvailable ? 'Docker Compose CLI is unavailable' : false},async t=>{
- const home=await fixture(t),paths=profilePaths('test',home);await initialize(paths,{runtime:'docker',port:47954});const p=await loadProfile(paths);
+ const home=await fixture(t),paths=profilePaths('test',home);await initialize(paths,{runtime:'docker',port:47954,'image-variant':'full','media-workers':'ocr,asr'});const p=await loadProfile(paths);
  assert.equal(p.document.server.port,47954);assert.equal(p.document.server.host,'0.0.0.0');assert.equal(p.document.storage.dataDir,'/data');assert.equal(p.document.diagnostics.directory,'/data/logs');
  const config=JSON.parse(await compose(p,['config','--format','json'],{capture:true}));assert.deepEqual(config.services.mote.environment,{MOTE_CONFIG_FILE:'/config/mote.yaml'});
  assert.equal(config.services.mote.healthcheck,undefined,'Central retains the image healthcheck with its local PID check');
@@ -101,7 +101,7 @@ test('offline configuration hides credentials embedded in invalid endpoint edits
 });
 
 test('Docker model paths share the YAML mount target and reject collisions with product mounts', {skip: !composeAvailable ? 'Docker Compose CLI is unavailable' : false}, async t => {
- const home = await fixture(t), paths = profilePaths('test', home); await initialize(paths,{runtime:'docker'});
+ const home = await fixture(t), paths = profilePaths('test', home); await initialize(paths,{runtime:'docker','image-variant':'full','media-workers':'ocr,asr'});
  const raw = parseConfigDocument(await readFile(paths.configFile,'utf8')).savedDocument;
  raw.media.modelDirectory='/generated-model-resources'; await writeFile(paths.configFile,serializeConfigDocument(raw));
  const p=await loadProfile(paths),config=JSON.parse(await compose(p,['config','--format','json'],{capture:true}));

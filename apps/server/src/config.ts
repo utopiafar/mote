@@ -97,6 +97,8 @@ export const pluginsConfigSchema = z.object({
 }).strict();
 export const updatesConfigSchema = z.object({ repository: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/).default('utopiafar/mote'), channel: z.enum(['stable', 'preview']).default('stable') }).strict();
 export const mediaConfigSchema = z.object({
+  // Deployment-owned sidecars. Preparation and processing authorization remain separate.
+  dockerWorkers:z.array(z.enum(['ocr','asr'])).max(2).refine(value=>new Set(value).size===value.length).default([]),
   modelDirectory: line().default(''), ocrEndpoint: endpoint().default(DEFAULT_MEDIA_OCR_ENDPOINT), asrEndpoint: endpoint().default(DEFAULT_MEDIA_ASR_ENDPOINT),
   workerToken: line(8192).default(''), python: line(4096, 1).default('python3'), ocrPort: port.default(9010), asrPort: port.default(9009),
   localImageEndpoint: endpoint().refine(value => {

@@ -11,6 +11,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {safePluginBackupPath} from './plugin-memory-backup.mjs';
 import { validateTunnel, tunnelTokenPath, dockerTunnelUser, removeTunnelSidecars, assertTunnelToken } from './tunnel-lib.mjs';
 import { logRetentionFromDocument, MiB } from '../apps/server/src/log-retention-config.mjs';
+import {dockerImageVariant,parseDockerMediaWorkers,dockerMediaSelection,assertDockerMediaSelection,assertDockerMediaRuntime,dockerMediaRoles} from './docker-media.mjs';
 
 export const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 export const ports = { dev: 47842, test: 47852, prod: 47832 };
@@ -38,6 +39,9 @@ export async function initialize(paths, options = {}) {
   if (paths.profile !== 'prod' && port === ports.prod) throw Error('Port 47832 is reserved for the explicit prod profile');
   const runtime = options.runtime ?? 'native';
   if (!['native', 'docker'].includes(runtime)) throw Error('Runtime must be native or docker');
+  if(runtime!=='docker'&&(options['image-variant']!==undefined||options['media-workers']!==undefined))throw Error('--image-variant and --media-workers require a Docker profile');
+  const imageVariant=dockerImageVariant(options['image-variant']),mediaWorkers=parseDockerMediaWorkers(options['media-workers']);
+  if(imageVariant==='core'&&mediaWorkers.length)throw Error('Managed Docker media workers require --image-variant full');
   if (options['data-dir'] && runtime !== 'native') throw Error('--data-dir is for native profiles; Docker uses --volume with a named volume');
   if (options.volume && runtime !== 'docker') throw Error('--volume requires a Docker profile');
   const dataDir = resolve(paths.directory, options['data-dir'] || 'data');
@@ -70,10 +74,11 @@ export async function initialize(paths, options = {}) {
     models: {},
     connectors: {}, plugins: {}, updates: {},
     media: { modelDirectory: docker ? '/models' : './models', python: 'python3', asrPort, ocrPort, localImagePort,
+      ...(docker?{dockerWorkers:mediaWorkers}:{}),
       asrEndpoint: `http://127.0.0.1:${asrPort}/transcribe`, ocrEndpoint: `http://127.0.0.1:${ocrPort}/ocr`, localImageEndpoint: `http://127.0.0.1:${localImagePort}/v1/interpret`, workerToken: createHash('sha256').update('mote-media-worker:').update(token).digest('hex') },
   };
   await writeFile(paths.configFile, '# Private isolated profile. Relative paths resolve beside this file. Do not commit.\n' + serializeConfigDocument(document), { flag: 'wx', mode: 0o600 });
-  await atomicJson(paths.metaFile, { version: 1, profile: paths.profile, runtime, release: repository, image: options.image ?? `mote-central:${version}`, volume, modelsVolume: volume + '-models' });
+  await atomicJson(paths.metaFile, { version: 1, profile: paths.profile, runtime, release: repository, image: options.image ?? `mote-central:${version}${docker?'-'+imageVariant:''}`, ...(docker?{imageVariant}:{}), volume, modelsVolume: volume + '-models' });
   return { profile: paths.profile, runtime, port, configurationFile: paths.configFile, storage: { kind: docker ? 'docker-volume' : 'local-directory', source: docker ? volume : dataDir, mount: docker ? '/data' : dataDir }, dataDir: docker ? undefined : dataDir, volume: docker ? volume : undefined, project: paths.project };
 }
 // These derived values support device-client bridges and existing lifecycle consumers.
@@ -111,6 +116,7 @@ export async function loadProfile(paths) {
   }
   const document = loaded.document, env = connectionValues(document, paths.directory);
   if (meta.version !== 1 || meta.profile !== paths.profile || !['native', 'docker'].includes(meta.runtime)) throw Error('Profile metadata is invalid');
+  if(meta.runtime==='docker')dockerMediaSelection({meta,document});
   if (document.server?.profile !== paths.profile || document.server?.runtime !== meta.runtime) throw Error('mote.yaml profile/runtime does not match its deployment metadata');
   const tunnel = validateTunnel(meta.tunnel);
   meta.tunnel = { ...tunnel, enabled: document.server?.tunnelEnabled ?? false, protocol: document.server?.tunnelProtocol ?? 'auto' };
@@ -149,6 +155,7 @@ export function deploymentEnvironment(p) {
 export function effectiveConfiguration(p) {
   const tunnel = validateTunnel(p.meta.tunnel), redacted = redactConfigDocument(p.document);
   return { profile: p.profile, runtime: p.meta.runtime, configurationFile: p.configFile, metadataFile: p.metaFile,
+    ...(p.meta.runtime==='docker'?{image:{reference:p.meta.image,...dockerMediaSelection(p)}}:{}),
     document: redacted,
     listener: { host: p.document.server.host, port: p.port, publishedUrl: p.url, publicUrl: redacted.server?.publicUrl || null },
     storage: { kind: p.document.storage.kind, source: p.document.storage.source, mount: p.document.storage.mount || null, logPath: p.env.MOTE_LOG_DIR, dataKeyConfigured: Boolean(p.env.MOTE_DATA_KEY) },
@@ -329,14 +336,15 @@ export async function stopNative(p, expectedMarker) {
   return { stopped: true };
 }
 export function composeEnvironment(p) {
-  return isolatedEnvironment(p, { MOTE_COMPOSE_PROJECT: p.project, MOTE_IMAGE: p.meta.image, MOTE_VOLUME: p.meta.volume, MOTE_MODELS_VOLUME: p.meta.modelsVolume || p.meta.volume+'-models', MOTE_MODELS_DIRECTORY: dockerModelDirectory(p.document),
+  return isolatedEnvironment(p, { MOTE_COMPOSE_PROJECT: p.project, MOTE_IMAGE: p.meta.image, MOTE_IMAGE_TARGET:dockerMediaSelection(p).variant, MOTE_VOLUME: p.meta.volume, MOTE_MODELS_VOLUME: p.meta.modelsVolume || p.meta.volume+'-models', MOTE_MODELS_DIRECTORY: dockerModelDirectory(p.document),
     MOTE_PORT: String(p.port), MOTE_CONFIG_DIRECTORY: p.directory, MOTE_CONTAINER_USER: p.configUser || `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
     MOTE_DOCKER_ENV_FILE: join(p.directory, 'generated/secrets.env'), MOTE_BIND_ADDRESS: '127.0.0.1',
     MOTE_TLS_DOMAIN: p.env.MOTE_TLS_DOMAIN, MOTE_TLS_HTTP_PORT: p.env.MOTE_TLS_HTTP_PORT, MOTE_TLS_HTTPS_PORT: p.env.MOTE_TLS_HTTPS_PORT,
     MOTE_TUNNEL_IMAGE: validateTunnel(p.meta.tunnel).image, MOTE_TUNNEL_PROTOCOL: validateTunnel(p.meta.tunnel).protocol, MOTE_TUNNEL_TOKEN_FILE: tunnelTokenPath(p), MOTE_TUNNEL_USER: p.tunnelUser || `${process.getuid?.() ?? 65532}:${process.getgid?.() ?? 65532}` });
 }
 export function composeArgs(p, args) {
-  return ['compose', '--project-name', p.project, '--project-directory', repository, '--env-file', join(repository, 'deploy/empty.env'), '-f', join(repository, 'compose.yaml'), ...(p.meta.tls ? ['-f', join(repository, 'compose.tls.yaml')] : []), ...(validateTunnel(p.meta.tunnel).enabled ? ['-f', join(repository, 'compose.tunnel.yaml')] : []), ...args];
+  const workers=['stop','down','ps','logs'].includes(composeOperation(args))?dockerMediaRoles:dockerMediaSelection(p).workers;
+  return ['compose', '--project-name', p.project, '--project-directory', repository, '--env-file', join(repository, 'deploy/empty.env'), '-f', join(repository, 'compose.yaml'), ...(p.meta.tls ? ['-f', join(repository, 'compose.tls.yaml')] : []), ...(validateTunnel(p.meta.tunnel).enabled ? ['-f', join(repository, 'compose.tunnel.yaml')] : []), ...workers.flatMap(role=>['--profile','media-'+role]), ...args];
 }
 export function composeOperation(args) {
   const valueOptions = new Set(['--project-name', '-p', '--file', '-f', '--project-directory', '--env-file', '--profile', '--parallel', '--ansi', '--progress']);
@@ -363,7 +371,9 @@ export async function dockerConfigurationUser(p, run = execute) {
 }
 export async function compose(p, args, options = {}) {
   const operation = composeOperation(args);
+  if(operation==='build')assertDockerMediaSelection(p);
   if (['up', 'create', 'run', 'restart'].includes(operation)) await assertLogRetentionCompatible(p);
+  if (['up', 'create', 'run', 'restart'].includes(operation)) await assertDockerMediaRuntime(p,execute);
   const tunnel = validateTunnel(p.meta.tunnel);
   if (['up', 'create', 'run', 'restart'].includes(operation)) p.configUser = await dockerConfigurationUser(p);
   if (tunnel.enabled && ['up','create','run','restart'].includes(operation)) { await assertTunnelToken(p); p.tunnelUser = await dockerTunnelUser(p, execute); }
@@ -373,6 +383,10 @@ export async function compose(p, args, options = {}) {
   const file = join(p.directory, 'generated/secrets.env'), temp = `${file}.${randomUUID()}.tmp`;
   try { await writeFile(temp, lines.join('\n') + '\n', { flag: 'wx', mode: 0o600 }); await rename(temp, file); }
   finally { await rm(temp, { force: true }); }
+  if(['up','restart'].includes(operation)){
+    const disabled=dockerMediaRoles.filter(role=>!dockerMediaSelection(p).workers.includes(role)).map(role=>role+'-worker');
+    if(disabled.length)await execute('docker',composeArgs(p,['stop',...disabled]),{env:composeEnvironment(p),capture:true});
+  }
   return execute('docker', composeArgs(p, args), { env: composeEnvironment(p), ...options });
 }
 export async function migrateStorageOwner(p, dependencies = {}) {
