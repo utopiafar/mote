@@ -1,6 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {constants,createReadStream,copyFileSync,existsSync,fstatSync,lstatSync,mkdirSync,readFileSync,realpathSync,renameSync,rmSync,writeFileSync,openSync,closeSync,fsyncSync,type Stats} from 'node:fs';
+import {constants,createReadStream,copyFileSync,existsSync,fstatSync,lstatSync,mkdirSync,readFileSync,readSync,realpathSync,renameSync,rmSync,writeFileSync,openSync,closeSync,fsyncSync,type Stats} from 'node:fs';
 import {dirname,join,relative,resolve} from 'node:path';
 import {MEDIA_MODEL_PATHS,MEDIA_MODEL_COMPONENT_PATHS,mediaRoleSchema,type MediaRole,type MediaAssetStatus} from '@mote/shared';
 import {FUNASR_MODEL_IDS} from './funasr-contract.js';
@@ -8,7 +8,8 @@ import {LOCAL_IMAGE_MODEL} from './local-image-contract.js';
 import {StoreError} from './store.js';
 
 export type {MediaRole} from '@mote/shared';
-type Item={name:string;size:number;sha256:string;official:string;mirror?:string;extract?:{entry:string;destination:string;kind:'tar'|'bz2'}};
+type Content={size:number;sha256:string};
+type Item=Content&{name:string;official:string;mirror?:string;extract?:{entry:string;destination:string;kind:'tar'|'bz2';output:Content;config?:Content}};
 type ModelSource={id:string;repository:string;revision:string;license:string;directory:string;upstream?:string};
 type Catalog={version:string;files:Item[];models?:Record<string,ModelSource>};
 const paddle='https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0';
@@ -37,8 +38,8 @@ function dialogueCatalog():Catalog {
 export const MEDIA_CATALOG:Record<MediaRole,Catalog>={
   'speaker-wespeaker':{version:'wespeaker-zh-cnceleb-resnet34-f86cd6c5',files:[{name:'speaker.onnx',size:26534363,sha256:'f86cd6c509f331f0e20b07bd48d1b2eb7de54202643401c4e84695ac861a0e5a',official:`${sherpa}/speaker-recongition-models/wespeaker_zh_cnceleb_resnet34.onnx`}]},
   ocr:{version:'pp-ocrv5-mobile-onnx-1',files:[
-    {name:'det.tar',size:4843520,sha256:'781056046c9ed77a15c94681605db6a0f62317c2e9cce6931c71da2478d4bc30',official:`${paddle}/PP-OCRv5_mobile_det_onnx_infer.tar`,extract:{kind:'tar',entry:'PP-OCRv5_mobile_det_onnx_infer/inference.onnx',destination:'det/inference.onnx'}},
-    {name:'rec.tar',size:16701440,sha256:'f7e792bc836f36e7ef895ad47c426d75b0b75b1650caa6d63fe9418441ffba8c',official:`${paddle}/PP-OCRv5_mobile_rec_onnx_infer.tar`,extract:{kind:'tar',entry:'PP-OCRv5_mobile_rec_onnx_infer/inference.onnx',destination:'rec/inference.onnx'}},
+    {name:'det.tar',size:4843520,sha256:'781056046c9ed77a15c94681605db6a0f62317c2e9cce6931c71da2478d4bc30',official:`${paddle}/PP-OCRv5_mobile_det_onnx_infer.tar`,extract:{kind:'tar',entry:'PP-OCRv5_mobile_det_onnx_infer/inference.onnx',destination:'det/inference.onnx',output:{size:4826518,sha256:'a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d'},config:{size:903,sha256:'98069072e1b6b37d727fd9d9f11725faa46d6ea0de012f2ed26caea011c37699'}}},
+    {name:'rec.tar',size:16701440,sha256:'f7e792bc836f36e7ef895ad47c426d75b0b75b1650caa6d63fe9418441ffba8c',official:`${paddle}/PP-OCRv5_mobile_rec_onnx_infer.tar`,extract:{kind:'tar',entry:'PP-OCRv5_mobile_rec_onnx_infer/inference.onnx',destination:'rec/inference.onnx',output:{size:16534782,sha256:'da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092'},config:{size:148345,sha256:'5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e'}}},
   ]},
   'local-image':{version:`internvl3-14b-4bit-${imageRevision}`,models:{image:{id:LOCAL_IMAGE_MODEL.id,repository:'mlx-community/InternVL3-14B-4bit',revision:imageRevision,license:'Apache-2.0',directory:'.',upstream:'https://huggingface.co/OpenGVLab/InternVL3-14B'}},files:[
     {name:'added_tokens.json',size:790,sha256:'e66b6bc948dec3421f01a8986f31632cf8d556aaa89f7b39c183b3dd4b5b2c83',official:hfFile('mlx-community/InternVL3-14B-4bit',imageRevision,'added_tokens.json')},
@@ -98,8 +99,11 @@ function assetPath(root:string,name:string,createParents=false){
   try{if(!lstatSync(path).isFile())throw Error('Invalid model asset file');}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
   return path;
 }
-function outputNames(role:MediaRole,catalog:Catalog){
-  return catalog.files.flatMap(item=>item.extract?[item.extract.destination,...(role==='ocr'?[join(dirname(item.extract.destination),'inference.yml')]:[])]:[item.name]);
+function outputFiles(role:MediaRole,catalog:Catalog){
+  return catalog.files.flatMap(item=>item.extract?[
+    {name:item.extract.destination,...item.extract.output},
+    ...(role==='ocr'?[{name:join(dirname(item.extract.destination),'inference.yml'),...item.extract.config!}]:[]),
+  ]:[{name:item.name,size:item.size,sha256:item.sha256}]);
 }
 function catalogFor(role:MediaRole):Catalog {
   mediaRoleSchema.parse(role);
@@ -110,7 +114,9 @@ function catalogFor(role:MediaRole):Catalog {
     if(!Number.isSafeInteger(file.size)||file.size<1||! /^[a-f0-9]{64}$/.test(file.sha256)||names.has(file.name))throw Error('Invalid model catalog');
     names.add(file.name);if(file.extract){safeName(file.extract.entry);safeName(file.extract.destination);}
   }
-  for(const paths of [[...names],outputNames(role,catalog)]){
+  const outputs=outputFiles(role,catalog);
+  for(const output of outputs){safeName(output.name);if(!Number.isSafeInteger(output.size)||output.size<1||! /^[a-f0-9]{64}$/.test(output.sha256))throw Error('Invalid model output catalog');}
+  for(const paths of [[...names],outputs.map(file=>file.name)]){
     if(paths.includes('complete.json'))throw Error('Invalid model asset path');
     if(new Set(paths).size!==paths.length||paths.some(path=>paths.some(other=>other!==path&&other.startsWith(path+'/'))))throw Error('Conflicting model asset paths');
   }
@@ -127,13 +133,26 @@ export function mediaModelIdentities(role:MediaRole){
     // Match mote_asr_contract.serialize's sorted-key, compact JSON. Identity
     // covers model-relative content only, independently of download URLs and
     // the installation root. Keep the installer receipt's full catalog hash.
-    const manifest=role==='dialogue'?{files:files.map(file=>({name:relative(model.directory,file.name),sha256:file.sha256,size:file.size})),
-      id:model.id,license:model.license,revision:model.revision}:{model,files};
+    const manifest={files:files.map(file=>({name:relative(model.directory,file.name),sha256:file.sha256,size:file.size})),
+      id:model.id,license:model.license,revision:model.revision};
     return [key,{id:model.id,revision:model.revision,manifestSha256:digest(manifest)}];
   }));
 }
 type Signature=Pick<Stats,'size'|'mtimeMs'|'ctimeMs'|'ino'>;
 const signature=(stat:Stats):Signature=>({size:stat.size,mtimeMs:stat.mtimeMs,ctimeMs:stat.ctimeMs,ino:stat.ino});
+const sameSignature=(a:Signature,b:Signature)=>Object.entries(a).every(([key,value])=>b[key as keyof Signature]===value);
+// Only the small OCR/speaker files use synchronous content checks on metadata
+// changes. Keep reads bounded and never certify a file replaced during hashing.
+const sha256FileSync=(path:string,expected:Stats)=>{
+  const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW),before=signature(expected);
+  try{
+    if(!fstatSync(fd).isFile()||!sameSignature(before,signature(fstatSync(fd))))throw Error('Model asset changed');
+    const checksum=createHash('sha256'),buffer=Buffer.allocUnsafe(1024*1024);let total=0;
+    for(;;){const count=readSync(fd,buffer,0,buffer.length,null);if(!count)break;total+=count;if(total>expected.size)throw Error('Model asset changed');checksum.update(buffer.subarray(0,count));}
+    if(total!==expected.size||!sameSignature(before,signature(fstatSync(fd)))||!sameSignature(before,signature(lstatSync(path))))throw Error('Model asset changed');
+    return checksum.digest('hex');
+  }finally{closeSync(fd);}
+};
 type PublishedFile=Signature&{name:string;sha256:string};
 type Progress=MediaAssetStatus;
 type Source='auto'|'official'|'mirror';
@@ -144,6 +163,7 @@ const installingDirectories=new Set<string>();
 const downloadIdleMs=60_000,downloadAttemptsPerSource=2;
 
 export class MediaAssets {
+  private verified=new Map<string,{sha256:string;signature:Signature}>();
   private active=new Map<MediaRole,Progress>();
   private operations=new Map<MediaRole,{controller:AbortController;done:Promise<void>}>();
   private closing=false;
@@ -154,18 +174,19 @@ export class MediaAssets {
     const catalog=catalogFor(role),root=this.path(role),marker=assetPath(root,'complete.json',false);
     // complete.json is reserved for the installer, not a catalog/import file.
     const markerStat=lstatSync(marker);if(markerStat.size>512*1024)return false;
-    const receipt=JSON.parse(readFileSync(marker,'utf8')) as {version:string;manifestSha256:string;files:PublishedFile[]};
-    const names=outputNames(role,catalog);
-    if(receipt.version!==catalog.version||receipt.manifestSha256!==catalogHash(catalog)||!Array.isArray(receipt.files)||receipt.files.length!==names.length)return false;
-    const files=new Map(receipt.files.map(file=>[file.name,file]));if(files.size!==names.length)return false;
-    return names.every(name=>{
-      const file=files.get(name);if(!file||! /^[a-f0-9]{64}$/.test(file.sha256))return false;
-      const stat=lstatSync(assetPath(root,name)),raw=catalog.files.find(item=>!item.extract&&item.name===name);
-      // Local VLM loads verify pinned bytes themselves. Snapshot hardlinks,
-      // touches and other metadata changes do not undo a verified installation;
-      // readiness polls check its files without repeatedly hashing 9 GB.
-      const present=role==='local-image'?stat.size===file.size:Object.entries(signature(stat)).every(([key,value])=>file[key as keyof Signature]===value);
-      return (!raw||file.sha256===raw.sha256&&file.size===raw.size)&&present;
+    const receipt=JSON.parse(readFileSync(marker,'utf8')) as {version:string;files:PublishedFile[]},outputs=outputFiles(role,catalog);
+    if(receipt.version!==catalog.version||!Array.isArray(receipt.files)||receipt.files.length!==outputs.length)return false;
+    const files=new Map(receipt.files.map(file=>[file.name,file]));if(files.size!==outputs.length)return false;
+    return outputs.every(expected=>{
+      const file=files.get(expected.name);if(!file||file.sha256!==expected.sha256||file.size!==expected.size)return false;
+      const path=assetPath(root,expected.name),stat=lstatSync(path);if(stat.size!==expected.size)return false;
+      // VLM and FunASR workers verify pinned bytes. Routine readiness must not
+      // hash gigabytes; an explicit install below always rechecks all content.
+      if(role==='local-image'||role==='dialogue')return true;
+      const current=signature(stat),cached=this.verified.get(path);
+      if(sameSignature(current,file)||cached?.sha256===expected.sha256&&sameSignature(current,cached.signature))return true;
+      if(sha256FileSync(path,stat)!==expected.sha256)return false;
+      this.verified.set(path,{sha256:expected.sha256,signature:current});return true;
     });
   }catch{return false;}}
   status(role:MediaRole):MediaAssetStatus {
@@ -202,9 +223,19 @@ export class MediaAssets {
     const done=this.installAsync(role,source);void done.catch(()=>{});return this.status(role);
   }
   installAsync(role:MediaRole,source:Source='official',signal?:AbortSignal):Promise<void>{
-    this.available(role);signal?.throwIfAborted();
-    if(this.ready(role)){const release=this.claim(role);release();this.active.delete(role);return Promise.resolve();}
-    return this.begin(role,source,signal,(catalog,progress,ownedSignal)=>this.perform(role,catalog,source,progress,ownedSignal));
+    return this.begin(role,source,signal,async(catalog,progress,ownedSignal)=>{
+      if(this.ready(role)){
+        progress.state='verifying';let valid=true;
+        try{for(const expected of outputFiles(role,catalog)){
+          ownedSignal.throwIfAborted();const path=assetPath(this.path(role),expected.name);
+          if(lstatSync(path).size!==expected.size||await sha256File(path,ownedSignal)!==expected.sha256){valid=false;break;}
+          progress.bytes=Math.min(progress.totalBytes,progress.bytes+expected.size);
+        }}catch{ownedSignal.throwIfAborted();valid=false;}
+        ownedSignal.throwIfAborted();
+        if(valid){progress.state='ready';progress.bytes=progress.totalBytes;return;}
+      }
+      progress.bytes=0;await this.perform(role,catalog,source,progress,ownedSignal);
+    });
   }
   private begin(role:MediaRole,source:string,signal:AbortSignal|undefined,work:(catalog:Catalog,progress:Progress,signal:AbortSignal)=>Promise<void>){
     this.available(role);signal?.throwIfAborted();
@@ -265,9 +296,9 @@ export class MediaAssets {
         }else copyFileSync(target,assetPath(staging,item.name,true));
       }
       progress.state='verifying';const files:PublishedFile[]=[];
-      for(const name of outputNames(role,catalog)){
-        const path=assetPath(staging,name),sha256=await sha256File(path,signal),stat=lstatSync(path),raw=catalog.files.find(item=>!item.extract&&item.name===name);
-        if(!stat.size||raw&&(sha256!==raw.sha256||stat.size!==raw.size))throw new InvalidAsset(name);
+      for(const expected of outputFiles(role,catalog)){
+        const name=expected.name,path=assetPath(staging,name),sha256=await sha256File(path,signal),stat=lstatSync(path);
+        if(sha256!==expected.sha256||stat.size!==expected.size)throw new InvalidAsset(name);
         const fd=openSync(path,'r');try{fsyncSync(fd);}finally{closeSync(fd);}files.push({name,sha256,...signature(stat)});
       }
       signal.throwIfAborted();progress.state='installing';

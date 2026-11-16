@@ -136,6 +136,10 @@ export class MediaPreparation {
   private check(job:Job){job.controller.signal.throwIfAborted();if(this.closing||this.changed||this.jobs.get(job.role)!==job)throw Error('media.runtime.configuration_changed');}
   private async perform(job:Job,allowInstall:boolean){
     this.check(job);const {assets,runtime,media}=this.options,role=job.role as NativeMediaRole;
+    // Explicit preparation also verifies an apparently ready installation.
+    // Startup/resume and the optional image plugin pass allowInstall=false.
+    let verified=false;
+    if(allowInstall&&assets.ready(role)){job.state='models';await assets.installAsync(role,'auto',job.controller.signal);this.check(job);verified=true;}
     if(assets.ready(role)&&assets.status(role).state==='ready'&&(runtime==='docker'||this.owned(role))&&(await this.health(role,job.controller.signal)).ready){this.check(job);if(!assets.ready(role)||assets.status(role).state!=='ready')throw Error('media.runtime.model_install_failed');job.state='ready';return;}
     let prepared:Prepared|undefined;
     if(runtime==='native'){
@@ -145,7 +149,7 @@ export class MediaPreparation {
     }
     job.state='models';
     if(!allowInstall&&!assets.ready(role))throw Error('media.runtime.not_prepared');
-    if(!assets.ready(role))await assets.installAsync(role,'auto',job.controller.signal);
+    if(allowInstall&&(!verified||!assets.ready(role)))await assets.installAsync(role,'auto',job.controller.signal);
     this.check(job);if(!assets.ready(role)||assets.status(role).state!=='ready')throw Error('media.runtime.model_install_failed');
     job.state='starting';let started:MediaProcess|undefined;
     try{

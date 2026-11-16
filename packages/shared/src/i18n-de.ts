@@ -9318,6 +9318,7 @@ export const german: Readonly<Record<string, string>> = {
   "此运行方式暂不支持自动安装，可在高级连接中使用已准备的服务。": "Automatische Installation wird für diese Laufzeit nicht unterstützt. Einen vorbereiteten Dienst in den erweiterten Verbindungen verwenden.",
   "准备未完成，请检查网络和可用空间后重试。": "Vorbereitung unvollständig. Netzwerk und freien Speicher prüfen und erneut versuchen.",
   "安装中…": "Wird installiert…",
+  "验证并修复": "Prüfen und reparieren",
   "一键安装": "Installieren",
   "安装进度": "Installationsfortschritt",
   "图片文字识别": "Texterkennung in Bildern",
