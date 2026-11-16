@@ -7,6 +7,7 @@ import {FileDetail} from '../src/plugins/intake/Files';
 import {recordingClock,recordingSpeaker} from '../src/recording-presentation';
 import type {Api} from '../src/api';
 import {resources} from '../src/resource-cache';
+import {ApiError} from '../src/api';
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',dialogue='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',diarization='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const artifacts=[{id:dialogue,kind:'dialogue'},{id:diarization,kind:'diarization',segments:2,samples:[{speaker:'SPEAKER_0'},{speaker:'SPEAKER_1'}]}];
 async function fixture(t:any,options:{raw?:(path:string,init?:RequestInit)=>Promise<Response>;write?:(path:string,body:any)=>Promise<unknown>}={}){
@@ -29,6 +30,21 @@ async function fixture(t:any,options:{raw?:(path:string,init?:RequestInit)=>Prom
 test('recording clocks preserve coordinates and anonymous labels require a real diarization artifact',()=>{
  assert.equal(recordingClock(0),'00:00');assert.equal(recordingClock(61_000),'01:01');assert.equal(recordingClock(3_661_000),'1:01:01');assert.equal(recordingClock(undefined),'未标时间');assert.equal(recordingClock(Number.NaN),'未标时间');
  assert.equal(recordingSpeaker('SPEAKER_0',true),'说话人 1');assert.equal(recordingSpeaker('SPEAKER_1',true),'说话人 2');assert.equal(recordingSpeaker('SPEAKER_0',false),'SPEAKER_0');assert.equal(recordingSpeaker('Source participant',false),'Source participant');assert.equal(recordingSpeaker('SPEAKER_UNKNOWN',true),'SPEAKER_UNKNOWN');assert.equal(recordingSpeaker('SPEAKER_0',true,'Confirmed name'),'Confirmed name');
+});
+
+test('an advanced route waits for the exact readable recording and drops its panel on object or owner withdrawal',async t=>{
+ const f=await fixture(t),hash='#/library?evidence=capture%3A'+id+'&recordingTool=speakers';window.history.replaceState(null,'',hash);
+ const file={captureId:id,sourceId:'generated',sizeBytes:16,hasOriginal:false,originMissing:false,item:{title:'Generated route recording',layer:'original',mimeType:'audio/wav',observedAt:'2026-11-17T00:00:00Z'},job:null,artifacts};
+ let accept!:(value:unknown)=>void;const held=new Promise(resolve=>accept=resolve);
+ const api={...f.api,request:async(path:string,init?:RequestInit)=>path==='/api/files/'+id?held:f.api.request(path,init)} as Api;
+ await act(async()=>f.root.render(React.createElement(FileDetail,{api,id,onOpen(){}})));assert.equal(f.d.querySelector('.recording-dialog'),null,'a query alone is not evidence that the object is a recording');
+ await act(async()=>accept(file));assert.ok(f.d.querySelector('.recording-dialog'));
+ const denied={...api,request:async()=>{throw new ApiError('Generated withdrawn recording',403);}} as Api;
+ await act(async()=>f.root.render(React.createElement(FileDetail,{api:denied,id,onOpen(){}})));assert.equal(f.d.querySelector('.recording-dialog'),null);
+ const text={...f.api,request:async(path:string,init?:RequestInit)=>path==='/api/files/'+id?{...file,item:{...file.item,mimeType:'text/plain'},artifacts:[]}:f.api.request(path,init)} as Api;
+ await act(async()=>f.root.render(React.createElement(FileDetail,{api:text,id,onOpen(){}})));assert.equal(f.d.querySelector('.recording-dialog'),null,'a readable non-recording cannot inherit an old recording tool');
+ const other='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',next={...f.api,request:async(path:string,init?:RequestInit)=>path==='/api/files/'+other?{...file,captureId:other}:f.api.request(path,init)} as Api;
+ await act(async()=>f.root.render(React.createElement(FileDetail,{api:next,id:other,onOpen(){}})));assert.equal(f.d.querySelector('.recording-dialog'),null,'the original capture query cannot select another recording');
 });
 
 test('speaker naming opens the selected row, reads no samples until requested, and shares one scoped player',async t=>{

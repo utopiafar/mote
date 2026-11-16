@@ -15,7 +15,7 @@ const at=(seconds:number)=>new Date(Date.parse('2026-10-10T00:00:00Z')+seconds*1
 const token='generated-field-page-owner-token-000000';
 const headers={authorization:`Bearer ${token}`};
 const agent={configured:false,query:async()=>{throw Error('No live model in generated fixtures');},close:async()=>{}};
-function config(dir:string):Config{return {dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'32'.repeat(32),maxStorageBytes:30_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};}
+function config(dir:string):Config{return {dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'32'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};}
 async function fixture(t:TestContext){
   const dir=mkdtempSync(join(tmpdir(),'mote-field-page-')),settings=config(dir);
   const result=await buildApp(settings,{agent,backgroundWorker:false});

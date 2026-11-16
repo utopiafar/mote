@@ -17,7 +17,7 @@ import {createProcessingServices,type ProcessingServicesDependencies} from '../s
 import {fileProcessingSchema} from '@mote/shared';
 
 const token='generated-prc01-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const record=(text='Generated processing plugin evidence')=>({id:randomUUID(),deviceId:'generated-prc01-device',deviceName:'Generated fixture',platform:'import',capturedAt:'2026-11-01T00:00:00Z',durationMs:0,source:'note' as const,appName:'Fixture',ocrText:text,privacy:{excluded:false,redacted:false,mode:'none'}});
 const fileRecipes=[{id:'mote.file-extraction',version:'1'},{id:'mote.audio-dialogue',version:'2'},{id:'mote.audio-dialogue',version:'3'}];
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;

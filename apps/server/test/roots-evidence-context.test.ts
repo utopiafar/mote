@@ -16,7 +16,7 @@ const note=()=>({id:randomUUID(),deviceId:'generated-evidence-device',deviceName
 
 test('roots serves context reads from one evidence factory, MCP consumes it, and close disposes it',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-evidence-'));
-  const config:Config={dataDir,token:'generated-roots-evidence-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir,token:'generated-roots-evidence-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots evidence fixture');},close:async()=>{}}});
   t.after(async()=>{try{await node.app.close();}catch{}rmSync(dataDir,{recursive:true,force:true});});
   const reader=node.evidenceContext.assembly.reader;
@@ -44,7 +44,7 @@ test('roots serves context reads from one evidence factory, MCP consumes it, and
 
 test('an accepted read finishes before close disposes the evidence factory',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-read-drain-'));
-  const config:Config={dataDir,token:'generated-roots-read-drain-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:Config={dataDir,token:'generated-roots-read-drain-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots read drain fixture');},close:async()=>{}}});
   t.after(async()=>{try{await node.app.close();}catch{}rmSync(dataDir,{recursive:true,force:true});});
   let entered!:()=>void;const enteredRead=new Promise<void>(resolve=>{entered=resolve;});

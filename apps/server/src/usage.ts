@@ -23,10 +23,9 @@ export class UsageLedger {
     }
   }
   prices():ModelPrice[]{return (this.store.db.prepare('SELECT json FROM model_prices ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));}
-  setPrice(body:unknown){const price=priceSchema.parse(body);this.store.reserveMetadata(2048);this.store.db.prepare('INSERT INTO model_prices VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify([price.provider,price.model]),JSON.stringify(price));return price;}
+  setPrice(body:unknown){const price=priceSchema.parse(body);this.store.db.prepare('INSERT INTO model_prices VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify([price.provider,price.model]),JSON.stringify(price));return price;}
   private save(receipt:UsageReceipt){this.store.db.prepare('INSERT INTO model_usage VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(receipt.id,receipt.createdAt,JSON.stringify(receipt));}
   start(provider:string,model:string,operation:string,attribution?:UsageAttribution){
-    this.store.reserveMetadata(4096);
     const price=this.prices().find(p=>p.provider===provider&&p.model===model),started=Date.now();
     const receipt:UsageReceipt={id:randomUUID(),provider,model,operation,...(attribution?{attribution:structuredClone(attribution)}:{}),createdAt:new Date(started).toISOString(),durationMs:0,status:'running',estimatedCost:null,currency:price?.currency??'USD',...(price?{price:structuredClone(price)}:{})};
     this.save(receipt);

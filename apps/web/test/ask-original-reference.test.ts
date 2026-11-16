@@ -21,7 +21,7 @@ test('Memory Ask uses every saved original ID, never a displayed evidence subset
 test('Material Ask preserves the readable exact version including partial, asset-only and more than thirty blocks',async t=>{
  const {buildApp}=await import('../../server/src/app.js'),{materialId}=await import('../../server/src/materials.js');
  const dir=mkdtempSync(join(tmpdir(),'mote-ask-originals-')),token='generated-ask-original-token-123456789';
- const node=await buildApp({dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:3_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
+ const node=await buildApp({dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+token},ids:string[]=[];
  for(let index=0;index<31;index++){const id=randomUUID();ids.push(id);const response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated',deviceName:'Generated',platform:'import',capturedAt:'2026-10-29T00:00:00Z',text:'Generated original '+index}});assert.equal(response.statusCode,201,response.body);}
@@ -41,7 +41,7 @@ test('owner read success for an attachment accepts empty text without assuming t
 
 test('Discovery follow-up reads the exact immutable report and all current originals through owner HTTP',async t=>{
  const {buildApp}=await import('../../server/src/app.js'),directory=mkdtempSync(join(tmpdir(),'mote-discovery-originals-')),token='generated-discovery-original-owner-token';
- const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:3_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
+ const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const ids=[randomUUID(),randomUUID()],runId=randomUUID(),at='2026-10-29T00:00:00Z',headers={authorization:'Bearer '+token};
  for(const id of ids){const response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated',deviceName:'Generated',platform:'import',capturedAt:at,text:'Generated exact Discovery original '+id}});assert.equal(response.statusCode,201,response.body);}

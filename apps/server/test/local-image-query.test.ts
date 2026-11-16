@@ -106,7 +106,7 @@ async function fixture(t:TestContext){
    return {answer:JSON.stringify(result),citations:[],trace:[],runId:randomUUID()};
   }};
  };
- const config:Config={dataDir:join(directory,'archive'),token:'generated-query-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:askModel,modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(endpoint.address() as AddressInfo).port}/v1`,apiKey:'generated-ask-fixture',modelMaxTokens:8192,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentTimeoutMs:30000,diagnosticsEnabled:false,logLevel:'silent'};
+ const config:Config={dataDir:join(directory,'archive'),token:'generated-query-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:askModel,modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(endpoint.address() as AddressInfo).port}/v1`,apiKey:'generated-ask-fixture',modelMaxTokens:8192,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentTimeoutMs:30000,diagnosticsEnabled:false,logLevel:'silent'};
  node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});const central=node,headers={authorization:'Bearer '+config.token};
  const modelView=central.modelSettings.view();await central.modelSettings.updateDefaults({revision:modelView.revision,defaults:modelView.defaults,defaultModels:{file:'generated-configured-intake',memory:'generated-selected-memory',chat:askModel}});
  await central.processing.saveImageDefault({endpoint:'http://127.0.0.1:9/generated-ocr'});

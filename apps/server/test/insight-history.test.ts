@@ -9,7 +9,7 @@ import type {Config} from '../src/config.js';
 
 async function fixture(t:TestContext){
  const dataDir=await mkdtemp(join(tmpdir(),'mote-insight-history-'));
- const config:Config={dataDir,token:'generated-discovery-history-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir,token:'generated-discovery-history-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const value=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Read-only history cannot call a model');},close:async()=>{}}});
  t.after(async()=>{await value.app.close();await rm(dataDir,{recursive:true,force:true});});
  const ids=Array.from({length:67},()=>randomUUID());

@@ -120,7 +120,7 @@ test('portable mixed-channel materials keep original scope and reject a resealed
 
 test('owner HTTP channel context is versioned and denies unregistered, forged, collector and revoked requests',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-capture-context-http-')),token='generated-capture-context-owner-token',headers={authorization:`Bearer ${token}`};
-  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const node=await buildApp(config,{backgroundWorker:false});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const url='/api/devices/generated-phone/capture-context/screen';assert.equal((await node.app.inject({url,headers})).statusCode,404);
   const input=capture('screen');await node.store.ingest(input);assert.equal((await node.app.inject({url,headers})).json().version,0);

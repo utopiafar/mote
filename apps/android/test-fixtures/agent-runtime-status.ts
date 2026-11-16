@@ -25,8 +25,7 @@ const secret = 'generated-runtime-status-secret-do-not-echo';
 const receiptPath = join(directory, 'receipt.json');
 const badRevisionPath = join(directory, 'bad-revision.json');
 const unconfiguredPath = join(directory, 'unconfigured.json');
-const config: Config = {dataDir: join(directory, 'data'), token: owner, tokenPath: 'generated-only', host: '127.0.0.1', port: 0,
-  maxStorageBytes: 10_000_000, maxExportBytes: 1_000_000, retentionDays: 0, insightIntervalHours: 0, allowedOrigins: [],
+const config: Config = {dataDir: join(directory, 'data'), token: owner, tokenPath: 'generated-only', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0, allowedOrigins: [],
   model: 'generated-runtime-model', modelBaseUrl: 'https://fixture.invalid/v1', apiKey: secret, modelProvider: 'custom',
   modelProtocol: 'openai-completions', modelReasoningEffort: 'auto', allowUnauthenticatedLocal: false, embeddingModel: '',
   embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false};

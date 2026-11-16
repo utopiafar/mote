@@ -19,7 +19,7 @@ const headers={authorization:`Bearer ${token}`};
 
 async function fixture(t:any){
  const dir=mkdtempSync(join(tmpdir(),'mote-shared-reader-'));let agentReader!:ContextReader;
- const config:Config={dataDir:dir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(dir,'connectors'),mcpEnabled:true,mcpReadToken:readToken}};
+ const config:Config={dataDir:dir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(dir,'connectors'),mcpEnabled:true,mcpReadToken:readToken}};
  const node=await buildApp(config,{createModelAgent:async(_settings,reader)=>{agentReader=reader;return {configured:true,query:async()=>({answer:'fixture',citations:[],trace:[],runId:randomUUID()}),close:async()=>{}};}});
  const client=new Client({name:'generated-reader-test',version:'1.0'});
  // Register cleanup before transport setup: a failed MCP handshake must not

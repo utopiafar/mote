@@ -22,7 +22,7 @@ import type {Config} from '../src/config.js';
 
 type HostEvent=Parameters<NonNullable<QueryInput['onHostRunEvent']>>[0];
 const token='generated-run-accounting-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 const answer=()=>({answer:'Generated accounting answer',citations:[],trace:[],runId:randomUUID()});
 const identity=(runId:string)=>({runId,runtime:{id:'generated-runtime',revision:1,profileId:'generated-profile',profileRevision:1,assemblyFingerprint:'generated-fingerprint'},model:{modelId:'generated-model',modelRevision:1,profileId:'generated-profile',profileRevision:1,transport:'generated'}});
 const usageEvent=(runId:string,inputTokens=10):HostEvent=>({identity:identity(runId),attemptId:'attempt-1',event:{type:'usage',usage:{requests:1,reportedRequests:1,inputTokens,outputTokens:5,totalTokens:inputTokens+5,cacheReadTokens:0,cacheWriteTokens:0}}});

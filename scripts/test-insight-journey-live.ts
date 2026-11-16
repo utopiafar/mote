@@ -35,7 +35,7 @@ const previous=reviewBytes?JSON.parse(reviewBytes.toString('utf8')):undefined;
 if(previous){assert.equal(previous.sourceReportHash,sha256(sourceBytes));assert.equal(previous.sourceDatabaseHash,beforeHash);assert.equal(previous.model,'gpt-6-sol');assert.equal(previous.reasoningEffort,'max');}
 const token=randomBytes(32).toString('hex');
 const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,
- maxStorageBytes:200_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+ maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
  model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,

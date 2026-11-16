@@ -9,7 +9,7 @@ import sharp from 'sharp';
 import assert from 'node:assert/strict';
 import {Store} from '../apps/server/src/store.js';
 import {SourceStore} from '../apps/server/src/sources.js';
-const path=mkdtempSync(join(tmpdir(),'mote-scale-')),store=new Store(path,{maxStorageBytes:4*1024**3}),sources=new SourceStore(store);
+const path=mkdtempSync(join(tmpdir(),'mote-scale-')),store=new Store(path,{}),sources=new SourceStore(store);
 const counts={observations:Number(process.env.MOTE_BENCH_OBSERVATIONS??20000),files:Number(process.env.MOTE_BENCH_FILES??100000)};
 const report:any={generatedAt:new Date().toISOString(),fixtureOnly:true,realModelsCalled:0,node:process.version,cpu:cpus()[0].model,counts,measurements:{},assumptions:{imageKiB:150,jsonKiB:4,activeHours:16,sampleSeconds:5}};
 const timings:number[]=[];const mark=(name:string,value:unknown)=>{report.measurements[name]=value;console.log(JSON.stringify({stage:name,value}));};

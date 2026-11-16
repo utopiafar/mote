@@ -27,7 +27,7 @@ async search(input){return selected(input.namespace).filter(r=>!input.keys||inpu
 `;
 async function run(){
  await app.whenReady();const token='generated-owner-'+randomUUID(),scope=randomUUID(),ready=join(root,'ready'),runner=join(root,'server.mjs');
- const config={dataDir:join(root,'data'),token,tokenPath:'fixture',profile:'test',host:'127.0.0.1',port:0,maxStorageBytes:100000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-no-request',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config={dataDir:join(root,'data'),token,tokenPath:'fixture',profile:'test',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'generated-no-request',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  writeFileSync(runner,`import {buildApp} from ${JSON.stringify(pathToFileURL(join(repo,'apps/server/dist/app.js')).href)};import {memoryEvidenceFingerprint} from ${JSON.stringify(pathToFileURL(join(repo,'apps/server/dist/memory.js')).href)};import {writeFileSync,existsSync,rmSync} from 'node:fs';import {strToU8,zipSync} from ${JSON.stringify(pathToFileURL(join(repo,'node_modules/fflate/esm/index.mjs')).href)};import {createHash,randomUUID} from 'node:crypto';
 const node=await buildApp(${JSON.stringify(config)},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model request belongs to this fixture');},close:async()=>{}}});
 // Replace only the external GitHub transport. The real release validator,

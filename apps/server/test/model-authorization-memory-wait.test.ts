@@ -14,7 +14,7 @@ import {readAgentCredential} from './login-fixture.js';
 
 test('A1-30: an excluded source Memory waits durably without invoking a model and completes once after re-inclusion',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-authorization-wait-'));
- const config:Config={dataDir:directory,token:'generated-memory-wait-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:Config={dataDir:directory,token:'generated-memory-wait-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let calls=0;const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;
   calls++;
@@ -57,7 +57,7 @@ test('A1-30: an excluded source Memory waits durably without invoking a model an
 
 test('an owner retry admits only the selected formerly excluded Memory job with the current model',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-retry-'));
- const config:Config={dataDir:directory,token:'generated-memory-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-old-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:Config={dataDir:directory,token:'generated-memory-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-old-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
  const calls:{jobId?:string;model?:string}[]=[];let hold=true,opened=false;
  let node:Awaited<ReturnType<typeof buildApp>>;
  const open=async()=>{node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{

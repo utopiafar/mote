@@ -34,7 +34,7 @@ if(process.env.MOTE_FILE_JOURNEY_RESUME==='1'){
 }else await mkdir(directory,{mode:0o700});
 const token=randomBytes(32).toString('hex'),workerToken=priorSettings?.localWorkerApiKey??randomBytes(32).toString('hex');
 const config:Config={dataKey:undefined,dataDir:join(directory,'vault'),token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,
-  maxStorageBytes:2_000_000_000,maxExportBytes:200_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+  maxExportBytes:200_000_000,insightIntervalHours:0,allowedOrigins:[],
   model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
   diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};

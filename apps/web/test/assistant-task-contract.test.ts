@@ -27,8 +27,8 @@ async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.no
 
 test('the actual server task response is rendered by the conversation result component',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-task-web-contract-')),evidenceId=randomUUID();
- const config:Config={dataDir:directory,dataKey:'32'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,
-  retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,
+ const config:Config={dataDir:directory,dataKey:'32'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
+  insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,
   embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
  const query=async(input:QueryInput)=>({answer:input.executionLane==='background'?JSON.stringify({answer:'Generated persisted task result',actions:[]}):'Generated initial answer',
   citations:input.executionLane==='background'?[{id:evidenceId,capturedAt:'2026-10-01T00:00:00Z',appName:'Generated source',excerpt:'Generated original content'}]:[],

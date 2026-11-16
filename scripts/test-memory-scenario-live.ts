@@ -185,7 +185,7 @@ function save(){const value=json(report);saveChain=saveChain.then(async()=>{awai
 function progress(value:string,extra:Record<string,unknown>={}){console.log(JSON.stringify({stage:value,mode,...extra}));}
 function memories(){return node!.store.db.prepare('SELECT json FROM memories ORDER BY id').all().map(row=>JSON.parse(String(row.json)));}
 function evidenceIds():string[]{return report.records.flatMap((r:any)=>r.evidenceIds);}
-function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:200_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
   model:preflight?'scenario-preflight-stub':fixture.model.model,modelReasoningEffort:fixture.model.reasoningEffort,modelProvider:preflight?'custom':fixture.model.provider,modelProtocol:preflight?'openai-completions':fixture.model.protocol,
   modelBaseUrl:preflight?'http://127.0.0.1:1':'',apiKey:'',allowUnauthenticatedLocal:preflight,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:false,agentTraceEnabled:true,
   agentTimeoutMs:limits.perCallTimeoutMs,codexBin:preflight?'/nonexistent-scenario-preflight-no-provider':process.env.MOTE_CODEX_BIN,codexHome:preflight?join(directory,'unused-codex-home'):process.env.MOTE_CODEX_HOME,memoryConcurrency:1};}

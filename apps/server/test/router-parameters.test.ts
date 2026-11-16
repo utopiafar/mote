@@ -12,7 +12,7 @@ test('production routing accepts generated composite work IDs and maximum source
  writeFileSync(join(web,'index.html'),'<!doctype html><title>Generated router fixture</title>');
  writeFileSync(join(web,'assets','fixture.js'),'/* Generated asset */');
  writeFileSync(join(web,'build-info.json'),JSON.stringify({version:JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version}));
- const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const node=await buildApp(config,{webRoot:web,agent:{configured:false,query:async()=>{throw Error('No model in fixtures');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+token},sourceId='generated:'+ 's'.repeat(118);

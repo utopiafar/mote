@@ -64,12 +64,11 @@ export function retainConversationRoots(store:EvidenceStore,ids:readonly string[
   if(!turns.length)continue;
   if(!db.prepare('SELECT 1 FROM conversation_retired_roots WHERE id=?').get(id)){
    const value=identity(store,id);if(!value)continue;
-   const json=JSON.stringify(value.root);store.reserveMetadata(Buffer.byteLength(json)+id.length+128);
+   const json=JSON.stringify(value.root);
    db.prepare('INSERT INTO conversation_retired_roots VALUES(?,?,?)').run(id,json,value.expiresAt);
   }
   for(const turn of turns){
    if(typeof turn.run_id!=='string'||!turn.run_id||db.prepare('SELECT 1 FROM conversation_retired_turn_roots WHERE turn_id=? AND evidence_id=?').get(turn.id,id))continue;
-   store.reserveMetadata(String(turn.id).length+String(turn.conversation_id).length+id.length+turn.run_id.length+128);
    db.prepare('INSERT INTO conversation_retired_turn_roots VALUES(?,?,?,?)').run(turn.conversation_id,turn.id,id,turn.run_id);
   }
  }
@@ -101,7 +100,7 @@ export function inheritRetiredConversationRoots(store:EvidenceStore,conversation
  const rows=store.db.prepare(`SELECT DISTINCT r.evidence_id FROM conversation_retired_turn_roots r JOIN conversation_turns t ON t.id=r.turn_id
   WHERE r.conversation_id=? AND r.evidence_id IN (SELECT value FROM json_each(?))
    AND r.result_run_id=json_extract(t.json,'$.result.runId') AND coalesce(json_extract(t.json,'$.evidenceDeleted'),0)!=1`).all(conversationId,JSON.stringify(turn.historyEvidenceDependencies.ids));
- for(const row of rows){store.reserveMetadata(conversationId.length+turn.id.length+String(row.evidence_id).length+turn.result.runId.length+128);store.db.prepare('INSERT INTO conversation_retired_turn_roots VALUES(?,?,?,?)').run(conversationId,turn.id,row.evidence_id,turn.result.runId);}
+ for(const row of rows){store.db.prepare('INSERT INTO conversation_retired_turn_roots VALUES(?,?,?,?)').run(conversationId,turn.id,row.evidence_id,turn.result.runId);}
 }
 
 export function forgetRetiredConversationRoots(store:EvidenceStore,scope:{sourceId?:string;materialId?:string;file?:{sourceId:string;externalId:string}}){

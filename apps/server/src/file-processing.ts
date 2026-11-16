@@ -142,8 +142,7 @@ export class FileProcessing {
   }
   rememberModelIntent(id:string,phase:'pipeline'|'summary'|'image',authority=this.options.modelAuthority,required=false){
     const intent=authority?.ownerIntent?.(id);if(required&&!intent)throw new StoreError('Explicit model processing intent is required',409);if(!intent||intent===this.modelIntent(id,phase))return false;
-    const prior=this.files.store.db.prepare('SELECT intent_id FROM media_model_intents WHERE capture_id=? AND phase=?').get(id,phase);
-    this.files.store.reserveMetadata(prior?Math.max(0,Buffer.byteLength(intent)-Buffer.byteLength(String(prior.intent_id))):Buffer.byteLength(id)+Buffer.byteLength(phase)+Buffer.byteLength(intent)+128);
+
     this.files.store.db.prepare('INSERT INTO media_model_intents VALUES(?,?,?) ON CONFLICT(capture_id,phase) DO UPDATE SET intent_id=excluded.intent_id').run(id,phase,intent);
     return true;
   }
@@ -463,7 +462,7 @@ export class FileProcessing {
     const active=this.execution.getStore();active?.signal.throwIfAborted();
     const phase=active?.step.kind==='files.summary'?'summary':'pipeline',key=this.workerKey(id,phase),db=this.files.store.db;
     if(this.processorWaits(id).length)throw new ExecutionFailure('blocked',this.cancellation(id).wait==='running'?'processor_still_running':'processor_response_unknown');
-    const token=randomUUID();this.files.store.reserveMetadata(512);
+    const token=randomUUID();
     db.prepare("INSERT INTO file_processor_waits VALUES(?,?,?,'running')").run(key,id,token);this.activeProcessorCalls.add(token);
     // Manual cancellation only revokes publication. Keep the original deadline for the issued call.
     const revoked=new AbortController(),forward=()=>{if(preserveCancellation||!this.manualCancellation)revoked.abort(active?.signal.reason);};
@@ -502,7 +501,7 @@ export class FileProcessing {
         db.prepare("SELECT 1 FROM file_artifacts WHERE capture_id=? AND (kind='summary' OR json_extract(json,'$.semanticGrouping')=1)").get(id)||
         db.prepare("SELECT 1 FROM execution_steps WHERE operation_id=? AND kind='files.summary' AND attempts>0 AND state!='blocked'").get('file:'+id)||
         db.prepare("SELECT 1 FROM file_steps WHERE capture_id=? AND step='turns' AND attempts>0 AND state!='blocked'").get(id));
-      if(started&&!db.prepare('SELECT 1 FROM file_semantic_withdrawals WHERE capture_id=?').get(id)){this.files.store.reserveMetadata(128);db.prepare('INSERT INTO file_semantic_withdrawals VALUES(?)').run(id);}
+      if(started&&!db.prepare('SELECT 1 FROM file_semantic_withdrawals WHERE capture_id=?').get(id)){db.prepare('INSERT INTO file_semantic_withdrawals VALUES(?)').run(id);}
       db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND (kind='summary' OR kind='dialogue' AND json_extract(json,'$.semanticGrouping')=1)").run(id);
       const aligned=db.prepare("SELECT id FROM file_artifacts WHERE capture_id=? AND kind='dialogue' AND json_extract(json,'$.semanticGrouping')=0 ORDER BY rowid DESC LIMIT 1").get(id);
       if(aligned)db.prepare('UPDATE file_artifacts SET current=1 WHERE id=?').run(aligned.id);
@@ -519,7 +518,7 @@ export class FileProcessing {
     if(!this.closing&&!this.stopping&&job?.auto_eligible&&job.state==='succeeded'&&job.summary_state==='waiting'&&!this.files.store.db.prepare('SELECT 1 FROM file_semantic_withdrawals WHERE capture_id=?').get(id))this.enqueue(id,'summary');
   }
   private semanticCallStarted(id:string){
-    if(!this.files.store.db.prepare('SELECT 1 FROM file_semantic_calls WHERE capture_id=?').get(id)){this.files.store.reserveMetadata(128);this.files.store.db.prepare('INSERT INTO file_semantic_calls VALUES(?)').run(id);}
+    if(!this.files.store.db.prepare('SELECT 1 FROM file_semantic_calls WHERE capture_id=?').get(id)){this.files.store.db.prepare('INSERT INTO file_semantic_calls VALUES(?)').run(id);}
   }
   private withAttribution(records:CaptureRecord[]):ContextRecord[]{
     return records.map(record=>{const pin=record.provenance?.sourceId?this.files.sources.contexts.identity(record.provenance.sourceId):undefined;
@@ -542,7 +541,7 @@ export class FileProcessing {
     const intentChanged=this.rememberModelIntent(id,stage==='summary'?'summary':'pipeline');if(intentChanged&&stage!=='summary')db.prepare("DELETE FROM media_model_intents WHERE capture_id=? AND phase='summary'").run(id);
     if(override){
       if(stage!=='diarize'||!db.prepare("SELECT 1 FROM file_artifacts WHERE id=? AND capture_id=? AND kind='transcript' AND current=1").get(override.artifactId,id))throw new StoreError('Current raw transcript required for scoped diarization',409);
-      if(override.options){const options=fileDiarizationOptionsSchema.parse(override.options);if(options.processor!=='audio.diarize')throw new StoreError('The selected diarization processor is unavailable',409);this.files.store.reserveMetadata(512);db.prepare('INSERT INTO file_diarization_overrides VALUES(?,?) ON CONFLICT(capture_id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(options));}
+      if(override.options){const options=fileDiarizationOptionsSchema.parse(override.options);if(options.processor!=='audio.diarize')throw new StoreError('The selected diarization processor is unavailable',409);db.prepare('INSERT INTO file_diarization_overrides VALUES(?,?) ON CONFLICT(capture_id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(options));}
       else db.prepare('DELETE FROM file_diarization_overrides WHERE capture_id=?').run(id);
       this.configurationCache.clear();
     }
@@ -558,7 +557,7 @@ export class FileProcessing {
     const prior=this.engine.list({operationId:'file:'+id,kind:stage==='summary'?'files.summary':'files.pipeline',limit:100}).items.find(step=>this.validStep(step,stage==='summary'?'summary':'pipeline'));if(prior&&!intentChanged)this.engine.retry(prior.id,true);
     if(intentChanged)this.enqueue(id,stage==='summary'?'summary':'pipeline');
     if(own)db.exec('COMMIT');
-    }catch(error){if(own)db.exec('ROLLBACK');this.configurationCache.clear();throw error;}
+    }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}this.configurationCache.clear();throw error;}
     this.log('file.retry',id,{operation:stage==='transcribe'?'extract':stage});
     return {queued:true};
   }
@@ -582,7 +581,7 @@ export class FileProcessing {
         scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(v.source_id)||
         scope.evidenceIds!==undefined&&!scope.evidenceIds.includes(id)||!withinEvidenceScope(record,scope))
         throw new StoreError('Selected file is unavailable or outside the permitted scope',409);
-      const temporary=manifest.item.layer==='snapshot'?this.files.store.db.prepare('SELECT object_hash FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now()):undefined;
+      const temporary=manifest.item.layer==='snapshot'?this.files.store.db.prepare('SELECT object_hash FROM file_snapshot_inputs WHERE capture_id=?').get(id):undefined;
       const hash=v.object_hash??(temporary?String(temporary.object_hash):undefined);
       if(hash){
         try{if(hash!==manifest.sha256||this.files.store.assets.get(hash).bytes!==manifest.sizeBytes||!this.files.store.assets.retained(hash))throw Error();}
@@ -592,7 +591,7 @@ export class FileProcessing {
     access?.(ids,scope);
   }
   private requiresOriginal(id:string){
-    return this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now());
+    return this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(id);
   }
   private assertMaintenanceDependencies(ids:readonly string[],access?:MaintenanceAccess){
     const records=this.files.store.evidenceMetadata(ids),byId=new Map(records.map(record=>[record.id,record]));
@@ -724,7 +723,7 @@ export class FileProcessing {
   private enqueue(id:string,phase:'pipeline'|'summary',parentId?:string){
     const job=this.files.store.db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(id);if(!job)return;
     const configuration=this.configuration(id,phase),revision=configuration.fingerprint;
-    if(!this.files.store.db.prepare('SELECT 1 FROM file_configuration_snapshots WHERE capture_id=? AND fingerprint=?').get(id,revision)){const receipt=JSON.stringify(configuration.receipt);this.files.store.reserveMetadata(Buffer.byteLength(receipt)+128);this.files.store.db.prepare('INSERT INTO file_configuration_snapshots VALUES(?,?,?)').run(id,revision,receipt);}
+    if(!this.files.store.db.prepare('SELECT 1 FROM file_configuration_snapshots WHERE capture_id=? AND fingerprint=?').get(id,revision)){const receipt=JSON.stringify(configuration.receipt);this.files.store.db.prepare('INSERT INTO file_configuration_snapshots VALUES(?,?,?)').run(id,revision,receipt);}
     if(phase==='summary'&&!parentId)parentId=this.engine.list({operationId:'file:'+id,kind:'files.pipeline',limit:100}).items.find(step=>step.state==='succeeded')?.id;
     const inputFingerprint=phase==='summary'?fileSummaryInputFingerprint(this.files,id):undefined,ownerIntentId=this.modelIntent(id,phase);
     const existing=this.engine.list({operationId:'file:'+id,kind:'files.'+phase,limit:100}).items.find(step=>this.validStep(step,phase));
@@ -752,7 +751,7 @@ export class FileProcessing {
       const resolved=fileConfiguration(this.saved,file.sourceId,file.item.mimeType??'application/octet-stream',this.runtime.registry,applied);
       if(resolved.managedModels.length&&resolved.managedModels.every(role=>this.options.mediaAssets!.ready(role)))this.files.store.db.prepare("UPDATE file_jobs SET state='waiting',error=NULL,available_at=0 WHERE capture_id=?").run(id);
     }
-    this.files.sweepSnapshotInputs();this.reconcileConfigurations();this.reconcileSummaryMembership();
+    this.reconcileConfigurations();this.reconcileSummaryMembership();
     for(const row of this.files.store.db.prepare("SELECT DISTINCT p.id FROM execution_steps p JOIN execution_operation_steps po ON po.step_id=p.id AND po.active=1 JOIN execution_operation_steps co ON co.operation_id=po.operation_id AND co.active=1 JOIN execution_steps child ON child.id=co.step_id WHERE p.kind='files.pipeline' AND p.state='waiting' AND child.kind LIKE 'file-step.%' AND child.state='failed' AND child.error='recovery_window_exhausted'").all()){
       const parent=this.engine.get(String(row.id));if(parent&&this.validStep(parent,'pipeline'))this.engine.fail(parent.id,'recovery_window_exhausted');
     }
@@ -778,7 +777,6 @@ export class FileProcessing {
   private transcript(id:string):Transcript{return transcriptSchema.parse(this.artifact(id).transcript);}
   private saveArtifact(id:string,kind:string,payload:unknown,revision:string,transcript?:Transcript){
     const db=this.files.store.db,artifactId=randomUUID(),json=JSON.stringify(payload);
-    this.files.store.reserveMetadata(Buffer.byteLength(json)+(transcript?Buffer.byteLength(JSON.stringify(transcript)):0)+4096);
     db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind=?').run(id,kind);
     db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifactId,id,kind,new Date().toISOString(),revision,json);
     if(transcript){
@@ -872,7 +870,7 @@ export class FileProcessing {
           const category='summary_disabled';this.log('file.blocked',id,{operation:'summary',category});return new ExecutionFailure('blocked',category);
         }
       }else{
-        if(this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now())&&(db.prepare('SELECT error FROM file_jobs WHERE capture_id=?').get(id)?.error==='snapshot_input_expired'||!this.files.store.db.prepare("SELECT 1 FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id WHERE s.capture_id=? AND s.step='extract' AND s.state='succeeded' AND a.config_revision=? AND json_extract(a.json,'$.snapshot')=1").get(id,this.configuration(id,'pipeline').fingerprint)))return new ExecutionFailure('blocked','snapshot_input_expired');
+        if(this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(id)&&(db.prepare('SELECT error FROM file_jobs WHERE capture_id=?').get(id)?.error==='snapshot_input_expired'||!this.files.store.db.prepare("SELECT 1 FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id WHERE s.capture_id=? AND s.step='extract' AND s.state='succeeded' AND a.config_revision=? AND json_extract(a.json,'$.snapshot')=1").get(id,this.configuration(id,'pipeline').fingerprint)))return new ExecutionFailure('blocked','snapshot_input_expired');
         const processor=this.runtime.registry.get(processorId);
         try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns,deduplicate:this.executionSettings(id,'pipeline').parameters.deduplicate!==false});this.runtime.outputs.get(defaultFileOutput(processor));}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
         if(processor.stage!=='extract'||!processor.mediaTypes.some(t=>t.endsWith('/')?mime.startsWith(t):t===mime||t.endsWith('/*')&&mime.startsWith(t.slice(0,-1))))return new ExecutionFailure('blocked','unsupported_format');
@@ -970,7 +968,7 @@ export class FileProcessing {
         const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
         try{
           signal.throwIfAborted();if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');
-          const transcript=this.transcript(outputArtifact);this.files.store.reserveMetadata(Buffer.byteLength(JSON.stringify(transcript))+4096);
+          const transcript=this.transcript(outputArtifact);
           writeFileTranscriptChunks(this.files.store,id,outputArtifact,transcript,{kind:'dialogue'});
           db.prepare("UPDATE file_artifacts SET current=CASE WHEN id=? THEN 1 ELSE 0 END WHERE capture_id=? AND kind='dialogue'").run(outputArtifact,id);this.invalidate(id);
           if(own)db.exec('COMMIT');
@@ -1016,7 +1014,7 @@ export class FileProcessing {
               if(!result.citations.length||result.citations.some(citation=>!allowed.has(citation.id)))throw new Error('Invalid summary citations');
               return {answer:result.answer,citationIds:result.citations.map(citation=>citation.id)};
             },
-            commit:result=>{const json=JSON.stringify(result);this.files.store.reserveMetadata(Buffer.byteLength(json)+256);db.prepare('INSERT OR REPLACE INTO file_summary_pages VALUES(?,?,?)').run(id,fingerprint,json);},read,project:()=>{},
+            commit:result=>{const json=JSON.stringify(result);db.prepare('INSERT OR REPLACE INTO file_summary_pages VALUES(?,?,?)').run(id,fingerprint,json);},read,project:()=>{},
           });
           if(!this.validStep(step,'summary'))throw new ExecutionFailure('stale','input_changed');summaries.push(page);
         }

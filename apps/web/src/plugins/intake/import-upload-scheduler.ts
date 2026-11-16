@@ -16,7 +16,7 @@ export async function uploadImportFiles(api:Api,files:readonly File[],identities
  while(pending.length){const job=pending.shift()!,{file,id}=job;
   if(!job.upload){const upload=await request<Upload>('/api/import-uploads',{method:'POST',body:JSON.stringify({id,name:file.webkitRelativePath||file.name,sizeBytes:file.size,mimeType:file.type||undefined})});
    if(upload.id!==id||!Number.isSafeInteger(upload.partBytes)||upload.partBytes<1||upload.partBytes>4*1024*1024||!Array.isArray(upload.parts))throw Error('Invalid import upload acknowledgement');job.upload=upload;
-   if(upload.fileId){result[job.index]=upload.fileId;completed.set(file,upload.fileId);accepted+=file.size;progress(accepted);continue;}
+   if(upload.fileId){job.offset=file.size;accepted+=file.size;progress(accepted);}
   }
   const upload=job.upload;
   if(job.offset<file.size){const part=job.offset/upload.partBytes;
@@ -24,7 +24,7 @@ export async function uploadImportFiles(api:Api,files:readonly File[],identities
    job.offset+=length;accepted+=length;progress(accepted);
   }
   if(job.offset<file.size){pending.push(job);continue;}
-  const saved=await request<{id:string}>('/api/import-uploads/'+id+'/commit',{method:'POST'});if(typeof saved.id!=='string'||!saved.id)throw Error('Invalid import archive acknowledgement');result[job.index]=saved.id;completed.set(file,saved.id);
+  const saved=await request<{id:string}>('/api/import-uploads/'+id+'/commit',{method:'POST'});if(typeof saved.id!=='string'||!saved.id||upload.fileId&&saved.id!==upload.fileId)throw Error('Invalid import archive acknowledgement');result[job.index]=saved.id;completed.set(file,saved.id);
  }
  return result;
 }

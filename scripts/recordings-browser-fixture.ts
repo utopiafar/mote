@@ -19,6 +19,6 @@ function generatedProvider(id:'feishu'|'dingtalk'):RecordingProvider {
   media:async()=>({bytes:wav,mimeType:'audio/wav'}),
  };
 }
-const runtime=await buildApp({dataDir:join(directory,'data'),dataKey:undefined,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{connectorTesting:{recordings:[generatedProvider('feishu'),generatedProvider('dingtalk')]},agent:{configured:false,query:async()=>{throw Error('No model calls allowed');},close:async()=>{}}});
+const runtime=await buildApp({dataDir:join(directory,'data'),dataKey:undefined,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{connectorTesting:{recordings:[generatedProvider('feishu'),generatedProvider('dingtalk')]},agent:{configured:false,query:async()=>{throw Error('No model calls allowed');},close:async()=>{}}});
 await runtime.app.listen({host:'127.0.0.1',port:0});console.log(JSON.stringify({server:runtime.app.server.address(),token,providers:['feishu','dingtalk'],generatedOnly:true,modelCalls:0}));
 process.on('SIGTERM',()=>{void runtime.app.close().then(()=>process.exit(0));});

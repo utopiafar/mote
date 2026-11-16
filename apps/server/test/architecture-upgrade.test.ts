@@ -22,7 +22,7 @@ test('source batch is one atomic transaction: late conflict, invalid item and re
  const results=await Promise.all([sources.upsertBatch('nas',[sourceItem(1),sourceItem(2)]),sources.upsert('nas',sourceItem(1))]);assert.equal(results[1].duplicate,true);assert.equal(store.stats().captures,3);
 });
 test('settled capture batch keeps successes but rejects conflicting members; capacity ledger rolls back savepoints',async t=>{
- const store=fixture(t,{maxStorageBytes:100000});const a=observation(),b=observation('Other');await store.ingest(a);const baseline=store.logicalBytes();
+ const store=fixture(t,{});const a=observation(),b=observation('Other');await store.ingest(a);const baseline=store.logicalBytes();
  const result=await store.ingestSettled([a,{...a,ocrText:'Conflicting'},b] as any);assert.equal(result[0].result?.duplicate,true);assert.ok(result[1].error);assert.equal(result[2].result?.duplicate,false);assert.equal(store.stats().captures,2);assert.ok(store.logicalBytes()>baseline);
  const after=store.logicalBytes();await assert.rejects(store.ingestBatch([observation('Valid'),{...b,ocrText:'conflicting'}]));assert.equal(store.logicalBytes(),after);assert.equal(store.stats().captures,2);
 });

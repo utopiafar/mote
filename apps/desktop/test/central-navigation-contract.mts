@@ -32,8 +32,7 @@ afterEach(() => {
 async function fixture(serviceOrigin = origin) {
   const directory = await mkdtemp(join(tmpdir(), 'mote-navigation-'));
   const config: ServerConfig = {
-    dataDir: directory, token: owner, tokenPath: join(directory, 'owner-token'), host: '127.0.0.1', port: 0, profile: 'test', tokenFromEnvironment: true,
-    maxStorageBytes: 30 * 1024 * 1024, maxExportBytes: 4 * 1024 * 1024, retentionDays: 0, insightIntervalHours: 0,
+    dataDir: directory, token: owner, tokenPath: join(directory, 'owner-token'), host: '127.0.0.1', port: 0, profile: 'test', tokenFromEnvironment: true, maxExportBytes: 4 * 1024 * 1024, insightIntervalHours: 0,
     allowedOrigins: [serviceOrigin], model: '', modelBaseUrl: 'https://api.deepseek.com', apiKey: '', allowUnauthenticatedLocal: false,
     embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false,
   };

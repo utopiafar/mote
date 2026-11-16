@@ -31,7 +31,7 @@ test('production connector inventory opens built-in and third-party recording ca
     account:()=>generatedUnused('account'),discover:()=>generatedUnused('discover'),metadata:()=>generatedUnused('metadata'),
     transcript:()=>generatedUnused('transcript'),media:()=>generatedUnused('media'),
   }),{label:'Generated third-party recorder',setup:{description:'Generated setup fixture only'}});
-  const config:Config={dataDir:join(directory,'vault'),token:'generated-source-catalog-owner-token',tokenPath:'generated-fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors')}};
+  const config:Config={dataDir:join(directory,'vault'),token:'generated-source-catalog-owner-token',tokenPath:'generated-fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors')}};
   const providerCalls:string[]=[],modelCalls:string[]=[],cliCalls:string[]=[];
   const providerFixture=(id:string):RecordingProvider=>{
     const unused=async(method:string):Promise<never>=>{providerCalls.push(id+':'+method);throw Error('No account or provider reads belong in generated discovery fixtures');};
