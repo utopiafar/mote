@@ -74,11 +74,11 @@ export async function ensureMediaBootstrap(directory,{signal,run=runMediaCommand
   await writeFile(receipt,JSON.stringify({version:MEDIA_UV_VERSION,archiveSha256:platform.sha256,binarySha256:digest(executable)}),{mode:0o600});return binary;
  }finally{await rm(archive,{force:true});await rm(temporary,{force:true});}
 }
-function runtimeSpec(role,repository){
+function runtimeSpec(role){
  const base='import json,sys; assert sys.version_info[:2] == (3,11); ';
  if(role==='ocr')return {requirements:['requirements-ocr.txt'],probe:base+'import paddlex,onnxruntime,PIL; print(json.dumps({"python":sys.version.split()[0]}))'};
  if(role==='local-image')return {requirements:['requirements-vlm.txt'],probe:base+'import mlx.core,mlx_vlm,transformers,PIL; print(json.dumps({"python":sys.version.split()[0]}))'};
- return {requirements:['requirements-audio.txt'],probe:base+`sys.path.insert(0,${JSON.stringify(join(repository,'scripts'))}); from mote_asr_contract import SDK_VERSION; import importlib.metadata,funasr,torch,numpy,imageio_ffmpeg; assert importlib.metadata.version('funasr') == SDK_VERSION; print(json.dumps({"python":sys.version.split()[0],"ffmpeg":imageio_ffmpeg.get_ffmpeg_exe()}))`};
+ return {requirements:['requirements-audio.txt'],probe:base+`sys.path.insert(0,sys.argv[1]); from mote_asr_contract import SDK_VERSION; import importlib.metadata,funasr,torch,numpy,imageio_ffmpeg; assert importlib.metadata.version('funasr') == SDK_VERSION; print(json.dumps({"python":sys.version.split()[0],"ffmpeg":imageio_ffmpeg.get_ffmpeg_exe()}))`};
 }
 const preparations=new Map();
 async function requirementIdentities(paths,root,seen=new Set()){
@@ -107,7 +107,9 @@ async function prepareRoleRuntime({repository,directory,role,signal,onStage=()=>
  checkSignal(signal);
  if(!isAbsolute(directory))throw Error('media.runtime.profile_directory');
  if(!mediaRoleSupported(role))throw Error('media.runtime.unsupported_platform');
- const platform=nativeMediaPlatform(),spec=runtimeSpec(role,repository),requirements=spec.requirements.map(name=>join(repository,'scripts',name)),probeScript=spec.probe;
+ const platform=nativeMediaPlatform(),spec=runtimeSpec(role),requirements=spec.requirements.map(name=>join(repository,'scripts',name)),probeScript=spec.probe;
+ // Release paths are probe inputs, not installed dependency identity.
+ const probeArguments=['-c',probeScript,...(role==='dialogue'?[join(repository,'scripts')]:[])];
  const inputs=await requirementIdentities(requirements,resolve(repository,'scripts'));
  const version=digest(JSON.stringify([role,process.platform,process.arch,MEDIA_UV_VERSION,MEDIA_PYTHON_REQUEST,MEDIA_PYTHON_BUILD,platform.target,inputs,probeScript]));
  const clean=mediaInstallerEnvironment(directory,env),marker=join(directory,'current.json');
@@ -116,7 +118,7 @@ async function prepareRoleRuntime({repository,directory,role,signal,onStage=()=>
   const current=JSON.parse(await readFile(marker,'utf8'));
   if(current.version===version&&/^environment-[a-f0-9-]+$/.test(current.generation)&&(!sourcePython||current.sourcePython===sourcePython)){
    const python=join(directory,current.generation,'bin','python');
-   await run(python,['-c',probeScript],{env:clean,signal,timeoutMs:120000});if(role==='dialogue')await run(join(dirname(python),'ffmpeg'),['-version'],{env:clean,signal,timeoutMs:30000});checkSignal(signal);
+   await run(python,probeArguments,{env:clean,signal,timeoutMs:120000});if(role==='dialogue')await run(join(dirname(python),'ffmpeg'),['-version'],{env:clean,signal,timeoutMs:30000});checkSignal(signal);
    return {python,version,generation:current.generation,created:false};
   }
  }catch(error){checkSignal(signal);}
@@ -132,7 +134,7 @@ async function prepareRoleRuntime({repository,directory,role,signal,onStage=()=>
   // index's older copy. Exhaust compatible pins before trying the next source.
   await run(uv,['pip','install','--python',python,'--index-url','https://pypi.org/simple',...(role==='dialogue'?['--index-strategy','unsafe-first-match']:[]),...requirements.flatMap(path=>['-r',path])],{env:clean,signal,cwd:directory});
   onStage('verifying_dependencies');
-  const receipt=JSON.parse(String(await run(python,['-c',probeScript],{env:clean,signal,timeoutMs:120000})));
+  const receipt=JSON.parse(String(await run(python,probeArguments,{env:clean,signal,timeoutMs:120000})));
   if(role==='dialogue'){
    const ffmpeg=resolve(receipt.ffmpeg);if(!ffmpeg.startsWith(target+'/')||!(await stat(ffmpeg)).isFile())throw Error('media.runtime.ffmpeg_not_managed');
    await symlink(relative(join(target,'bin'),ffmpeg),join(target,'bin','ffmpeg'));
