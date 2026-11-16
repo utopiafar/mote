@@ -1,4 +1,4 @@
-import {FILE_PART_BYTES} from '@mote/shared';
+import {FILE_PART_BYTES,filePartReceipts,type FilePartPage} from '@mote/shared';
 import {INGRESS_VERSION_HEADERS,requireIngressReceipt} from '@mote/shared/collector-receipt';
 import {uploadFilePart,uploadHash,type PartReceipt} from '../../upload-part';
 import type {Api} from '../../api';
@@ -17,12 +17,17 @@ async function uploadAttachment(api:Api,file:File,deviceId:string,sourcePrefix:s
     if(ack.captureId!==receipt.id||ack.sha256!==sha256||ack.sizeBytes!==file.size)throw Error('Attachment archive acknowledgement does not match');
     return receipt.id;
   };
-  const upload=await request<{uploadId:string;ack?:unknown;partBytes:number;parts:PartReceipt[]}>('/api/file-sync/v1/uploads',{method:'POST',body:JSON.stringify(manifest)});
+  type Upload=FilePartPage&{uploadId:string;ack?:unknown;partBytes:number};
+  const upload=await request<Upload>('/api/file-sync/v1/uploads',{method:'POST',body:JSON.stringify(manifest)});
   if(upload.ack)return validate(upload.ack);
   if(typeof upload.uploadId!=='string'||!upload.uploadId||upload.partBytes!==FILE_PART_BYTES||!Array.isArray(upload.parts))throw Error('Invalid attachment upload acknowledgement');
+  const receipts=filePartReceipts(upload,async after=>{const page=await request<Upload>(`/api/file-sync/v1/uploads/${encodeURIComponent(upload.uploadId)}?afterPart=${after}`,{method:'GET'});if(page.uploadId!==upload.uploadId||page.partBytes!==FILE_PART_BYTES)throw Error('Upload receipt identity changed');return page;},file.size);let receipt=await receipts.next();
   for(let part=0;part*FILE_PART_BYTES<file.size;part++){
-    await uploadFilePart(file,part,FILE_PART_BYTES,upload.parts.find(p=>p.part===part),body=>request(`/api/file-sync/v1/uploads/${encodeURIComponent(upload.uploadId)}/parts/${part}`,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body}),signal);
+    const existing=!receipt.done&&receipt.value.part===part?receipt.value:undefined;
+    await uploadFilePart(file,part,FILE_PART_BYTES,existing,body=>request(`/api/file-sync/v1/uploads/${encodeURIComponent(upload.uploadId)}/parts/${part}`,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body}),signal);
+    if(existing)receipt=await receipts.next();
   }
+  if(!receipt.done)throw Error('Incomplete upload receipt traversal');
   return validate(await request(`/api/file-sync/v1/uploads/${encodeURIComponent(upload.uploadId)}/commit`,{method:'POST'}));
 }
 export async function uploadNoteAttachment(api:Api,file:File,deviceId:string,signal?:AbortSignal):Promise<string>{

@@ -1,8 +1,8 @@
 import {fork} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {StoreError} from './store.js';
-export type AssetPreparation={directory:string;staging:string;destinationRoot:string;hash?:string;bytes:number;partBytes:number;parts:{part:number;hash:string;bytes:number}[];encryption:{enabled:boolean;key?:string}};
-export type PreparedAsset={hash:string;checksums:string[];destination?:{dev:number;ino:number;mtimeMs:number}};
+export type AssetPreparation={directory:string;staging:string;destinationRoot:string;hash?:string;bytes:number;partBytes:number;encryption:{enabled:boolean;key?:string}};
+export type PreparedAsset={hash:string;parts:number;metadataHash:string;destination?:{dev:number;ino:number;mtimeMs:number}};
 // Hashing, encryption and durable writes cover an entire supported original.
 const ASSET_EXECUTION_TIMEOUT_MS=15*60*1000;
 let active=0;const queue:(()=>void)[]=[];
@@ -22,7 +22,7 @@ export async function prepareAsset(task:AssetPreparation,signal?:AbortSignal):Pr
   const done=(error?:unknown,result?:PreparedAsset)=>{if(settled)return;settled=true;deadline.removeEventListener('abort',abort);if(error&&child.exitCode===null&&child.signalCode===null&&child.pid){child.once('exit',()=>reject(error));child.kill('SIGKILL');}else if(error)reject(error);else resolve(result!);};
   const abort=()=>done(deadline.reason);deadline.addEventListener('abort',abort,{once:true});if(deadline.aborted){abort();return;}
   child.once('error',error=>done(error));child.once('exit',()=>{if(!settled)done(new StoreError('Asset preparation interrupted',503));});
-  child.once('message',(message:{ok:boolean;result?:PreparedAsset;code?:string})=>{if(message.ok)done(undefined,message.result);else done(new StoreError(message.code==='ENOSPC'?'Asset storage is full':message.code==='invalid_existing'?'Asset checksum mismatch':message.code==='asset_changed'?'Asset changed during preparation':'File part or checksum verification failed',message.code==='ENOSPC'?507:message.code==='invalid_existing'?500:409));});
+  child.once('message',(message:{ok:boolean;result?:PreparedAsset;code?:string})=>{const full=message.code==='ENOSPC'||message.code==='EDQUOT';if(message.ok)done(undefined,message.result);else done(new StoreError(full?'Asset storage is full':message.code==='invalid_existing'?'Asset checksum mismatch':message.code==='asset_changed'?'Asset changed during preparation':'File part or checksum verification failed',full?507:message.code==='invalid_existing'?500:409));});
   child.send(task,error=>{if(error)done(error);});
  });}finally{clearTimeout(timeout);signal?.removeEventListener('abort',abortParent);if(admitted){active--;queue.shift()?.();}}
 }

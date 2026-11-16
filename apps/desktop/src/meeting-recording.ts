@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { FILE_MAX_BYTES, FILE_PART_BYTES, meetingRecordingSessionSchema, type MeetingRecordingProvenance } from '@mote/shared';
+import { FILE_MAX_BYTES, FILE_PART_BYTES, filePartReceipts, meetingRecordingSessionSchema, type MeetingRecordingProvenance } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import { INGRESS_VERSION_HEADERS } from './ingress-protocol';
 
@@ -238,7 +238,7 @@ export class MeetingRecordingManager {
     if (!session.audioFile || !session.endedAt) throw new Error(moteText('会议录音缺少本地音频或结束时间。'));
     const directory = join(this.options.directory, session.id), path = join(directory, session.audioFile);
     const info = await stat(path);
-    if (!info.isFile() || info.size < 1 || info.size > FILE_MAX_BYTES) throw new Error(moteText('会议录音音频超出中央单文件上限或不可读。'));
+    if (!info.isFile() || !Number.isSafeInteger(info.size) || info.size < 1 || info.size > FILE_MAX_BYTES) throw new Error(moteText('会议录音音频超出中央单文件上限或不可读。'));
     const digest = await this.digest(path);
     const sourceId = this.sourceId(connection);
     const manifest = {
@@ -257,19 +257,20 @@ export class MeetingRecordingManager {
     const begun = await this.request(connection, '/api/file-sync/v1/uploads', 'POST', manifest);
     if (begun?.ack?.id) { await this.complete(connection, session, String(begun.ack.id), path, directory); return; }
     if (typeof begun?.uploadId !== 'string' || !Array.isArray(begun.parts) || begun.partBytes !== FILE_PART_BYTES) throw new Error(moteText('中央文件上传会话无效。'));
-    const received = new Set<number>(begun.parts.map((part: { part: number }) => part.part));
+    const receipts=filePartReceipts(begun,async after=>{const page=await this.request(connection,`/api/file-sync/v1/uploads/${begun.uploadId}?afterPart=${after}`,'GET',undefined);if(page.uploadId!==begun.uploadId||page.partBytes!==FILE_PART_BYTES)throw Error('Upload receipt identity changed');return page;},info.size);let receipt=await receipts.next();
     const total = Math.ceil(info.size / FILE_PART_BYTES);
     const file = await open(path, 'r');
     try {
       for (let part = 0; part < total; part++) {
-        if (received.has(part)) continue;
         const length = Math.min(FILE_PART_BYTES, info.size - part * FILE_PART_BYTES);
         const buffer = Buffer.allocUnsafe(length);
         const read = await file.read(buffer, 0, length, part * FILE_PART_BYTES);
         if (read.bytesRead !== length) throw new Error(moteText('会议录音音频读取不完整。'));
-        const response = await this.request(connection, `/api/file-sync/v1/uploads/${begun.uploadId}/parts/${part}`, 'PUT', buffer, 'application/octet-stream');
-        if (response?.part !== part || response?.bytes !== length) throw new Error(moteText('中央未确认会议录音分块。'));
+        const existing=!receipt.done&&receipt.value.part===part?receipt.value:undefined,hash=createHash('sha256').update(buffer).digest('hex');if(existing)receipt=await receipts.next();
+        if(existing?.hash!==hash||existing.bytes!==length){const response = await this.request(connection, `/api/file-sync/v1/uploads/${begun.uploadId}/parts/${part}`, 'PUT', buffer, 'application/octet-stream');
+        if (response?.part !== part || response?.bytes !== length || response?.hash!==hash) throw new Error(moteText('中央未确认会议录音分块。'));}
       }
+      if(!receipt.done)throw Error('Incomplete upload receipt traversal');
     } finally { await file.close(); }
     const committed = await this.request(connection, `/api/file-sync/v1/uploads/${begun.uploadId}/commit`, 'POST', {});
     if (typeof committed?.id !== 'string') throw new Error(moteText('中央未确认会议录音入库。'));
@@ -299,7 +300,7 @@ export class MeetingRecordingManager {
 
   private async request(connection: MeetingRecordingConnection, path: string, method: string, body: unknown, contentType = 'application/json'): Promise<any> {
     if (!connection.serverUrl || !connection.token) throw new Error(moteText('尚未连接中央。'));
-    const payload = body instanceof Buffer ? body : Buffer.from(JSON.stringify(body));
+    const payload = body===undefined?undefined:body instanceof Buffer ? body : Buffer.from(JSON.stringify(body));
     const response = await this.fetchImpl(connection.serverUrl + path, {
       method, body: payload, redirect: 'error', signal: AbortSignal.timeout(30000),
       headers: { ...INGRESS_VERSION_HEADERS, Authorization: 'Bearer ' + connection.token, 'Content-Type': contentType },

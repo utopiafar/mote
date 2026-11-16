@@ -8,7 +8,7 @@ const PART=4*1024*1024;
 /** Called in the source worker. Every part is immutable and durable before the queue can reference it. */
 export async function spoolOriginal(path:string,directory:string,expected:OriginalIdentity):Promise<OriginalSpool>{
  const matches=(s:OriginalIdentity)=>Object.entries(expected).every(([key,value])=>s[key as keyof OriginalIdentity]===value);
- if(expected.size>512*1024*1024||expected.size<0||await realpath(path)!==path)throw Error('Original outside snapshot bounds');
+ if(!Number.isSafeInteger(expected.size)||expected.size<0||await realpath(path)!==path)throw Error('Original outside snapshot bounds');
  await mkdir(directory,{recursive:true,mode:0o700});const id=randomUUID(),staging=join(directory,id+'.tmp'),destination=join(directory,id);await mkdir(staging,{mode:0o700});
  let input;
  try{
@@ -29,7 +29,7 @@ export async function spoolOriginal(path:string,directory:string,expected:Origin
 }
 /** Freeze already privacy-transformed bytes without ever staging the raw input. */
 export async function spoolBytes(bytes:Uint8Array,directory:string):Promise<OriginalSpool>{
- if(bytes.byteLength>512*1024*1024)throw Error('Original outside snapshot bounds');
+ if(!Number.isSafeInteger(bytes.byteLength))throw Error('Invalid original size');
  await mkdir(directory,{recursive:true,mode:0o700});const id=randomUUID(),staging=join(directory,id+'.tmp'),destination=join(directory,id);await mkdir(staging,{mode:0o700});
  try{
   const digest=createHash('sha256');

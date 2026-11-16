@@ -142,7 +142,7 @@ test('backup preserves current plain/encrypted chunks and processing history whi
 test('backup rejects invalid part counts, linked parts and missing committed bytes without leaving partial output',async()=>fixture(async directory=>{
   const {source}=await vault(directory),hash='c'.repeat(64);await mkdir(join(source,'files','objects',hash),{recursive:true});
   const db=new DatabaseSync(join(source,'mote.sqlite'));db.prepare('INSERT INTO asset_references VALUES(?,?)').run('invalid-parts',hash);
-  for(const [index,parts] of [-1,129,1.5,'invalid',null].entries()){
+  for(const [index,parts] of [-1,Math.ceil(Number.MAX_SAFE_INTEGER/(4*1024*1024))+1,1.5,'invalid',null].entries()){
     db.prepare('DELETE FROM assets WHERE hash=?').run(hash);db.prepare("INSERT INTO assets VALUES(?,?,'chunks')").run(hash,parts);const out=join(directory,'invalid-'+index);
     await assert.rejects(backup(source,out),/Invalid asset metadata/);await assert.rejects(lstat(out),{code:'ENOENT'});
   }

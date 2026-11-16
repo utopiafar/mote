@@ -17,11 +17,12 @@ test('generic originals preserve bytes, names and MIME with content-addressed de
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM file_blobs').get()?.n,1);
   assert.throws(()=>files.put({name:'../escape',bytes}),/traverse/);assert.throws(()=>files.put({name:'/escape',bytes}),/Invalid/);
 });
-test('recorder media above the ordinary upload limit keeps its full portable archive round trip',async t=>{
+test('ordinary and recorder media above the parser budget keep their full portable archive round trip',async t=>{
  const originDirectory=mkdtempSync(join(tmpdir(),'mote-recording-original-')),restoreDirectory=mkdtempSync(join(tmpdir(),'mote-recording-restore-'));
  const origin=new Store(originDirectory),restored=new Store(restoreDirectory);t.after(()=>{origin.close();restored.close();for(const directory of [originDirectory,restoreDirectory])rmSync(directory,{recursive:true,force:true});});
- const files=new ArchivedFileStore(origin),bytes=Buffer.alloc(68*1024*1024,7);assert.throws(()=>files.put({name:'ordinary.wav',mimeType:'audio/wav',bytes}),/64 MiB/);
+ const files=new ArchivedFileStore(origin),bytes=Buffer.alloc(68*1024*1024,7);
  const file=files.putRecordingMedia({name:'generated-large.wav',mimeType:'audio/wav',bytes},()=>{});
+ assert.equal(files.put({name:'generated-large.wav',mimeType:'audio/wav',bytes}).id,file.id,'ordinary archival shares the same original despite the separate parser budget');
  const archive=origin.exportArchive(110*1024*1024);assert.ok(archive.files[0].dataBase64.length>90_000_000);await restored.importArchive(archive);
  const restoredFiles=new ArchivedFileStore(restored);assert.deepEqual(restoredFiles.get(file.id),file);assert.equal(restoredFiles.read(file.id).equals(bytes),true);
 });

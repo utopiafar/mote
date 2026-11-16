@@ -149,17 +149,17 @@ object FileUpload {
 
             begun.optJSONObject("ack")?.let { ack -> checkSelection(); history.received(history.identity("file", source.id, item, manifest), FileUploadConfirmation.canonicalId(source.id, manifest, ack)); return queue.pendingCount(source.id) == 0 }
             val uploadId = begun.getString("uploadId"); check(uploadId.matches(Regex("[a-fA-F0-9-]{36}"))); check(begun.getInt("partBytes") == FileArchiveQueue.PART_BYTES)
-            val parts = begun.getJSONArray("parts"); val received = (0 until parts.length()).map { parts.getJSONObject(it).getInt("part") }.toSet()
-            val total = ((manifest.getLong("sizeBytes") + FileArchiveQueue.PART_BYTES - 1) / FileArchiveQueue.PART_BYTES).toInt()
-            check(received.size == parts.length())
-            for (index in 0 until parts.length()) { val entry = parts.getJSONObject(index); val part = entry.getInt("part"); check(part in 0 until total); FileUploadConfirmation.part(entry, part, queue.part(source.id, part)) }
-            for (part in 0 until total) if (part !in received) {
-                if (slice.exhausted) return false
-                checkSelection(); val bytes = queue.part(source.id, part)
-                val ack = send(EventStage.FILE_PART, "/api/file-sync/v1/uploads/$uploadId/parts/$part", "PUT", bytes, true)
-                val hash = MessageDigestCompat.hash(bytes)
-                check(ack.getInt("part") == part && ack.getInt("bytes") == bytes.size && ack.getString("hash") == hash) { MoteI18n.text("文件块确认不匹配") }
+            val size = FileTransfer.number(manifest, "sizeBytes"); val total = FileTransfer.count(size)
+            val received = FilePartReceipts(begun, size, "uploadId", uploadId) { after -> checkSelection(); send(EventStage.FILE_UPLOAD, "/api/file-sync/v1/uploads/$uploadId?afterPart=$after", "GET") }
+            var part = 0L
+            while (part < total) {
+                val prior = received.receipt(part)
+                if (prior == null && slice.exhausted) return false
+                checkSelection(); val bytes = queue.part(source.id, FileTransfer.index(part))
+                val ack = prior ?: send(EventStage.FILE_PART, "/api/file-sync/v1/uploads/$uploadId/parts/$part", "PUT", bytes, true)
+                FileUploadConfirmation.part(ack, FileTransfer.index(part), bytes); part++
             }
+            received.finish()
             checkSelection(); val ack = send(EventStage.FILE_COMMIT, "/api/file-sync/v1/uploads/$uploadId/commit", "POST", "{}".toByteArray()); checkSelection(); history.received(history.identity("file", source.id, item, manifest), FileUploadConfirmation.canonicalId(source.id, manifest, ack))
             return queue.pendingCount(source.id) == 0
         } catch (error: Exception) {

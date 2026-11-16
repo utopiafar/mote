@@ -76,7 +76,7 @@ try {
     const pluginMemory=await pluginMemoryBackup(source,db);
     const paths:string[]=[];
     for(const asset of assets){
-      if(!/^[a-f0-9]{64}$/.test(asset.hash)||!Number.isSafeInteger(asset.parts)||asset.parts<0||asset.parts>128)throw new Error('Invalid asset metadata');
+      if(!/^[a-f0-9]{64}$/.test(asset.hash)||!Number.isSafeInteger(asset.parts)||asset.parts<0||asset.parts>Math.ceil(Number.MAX_SAFE_INTEGER/(4*1024*1024)))throw new Error('Invalid asset metadata');
       if(asset.format!=='chunks')throw new Error('Invalid asset format; epoch 7 requires chunked originals');
       for(let part=0;part<asset.parts;part++)paths.push(await selectedContentPath(`files/objects/${asset.hash}/${part}`));
     }

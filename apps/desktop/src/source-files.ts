@@ -103,7 +103,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     }
     const externalId = matched?.entryId ?? 'file:' + randomUUID();
     const bind=()=>{catalog.bind(candidate.relativePath,externalId,identityRoot,matched);claimed.set(externalId,candidate.relativePath);result.seen.push(externalId);};
-    const maximumFile=accessMarkerPath?512*1024*1024:16*1024*1024;
+    const maximumFile=accessMarkerPath?Number.MAX_SAFE_INTEGER:16*1024*1024;
     if (options.retention !== 'reference' && candidate.size > maximumFile) { bind();result.skipped++; return 'ok'; }
     if (result.items.length >= 2000 || options.retention !== 'reference' && totalBytes>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
     const unchanged = matched && matched.relativePath===candidate.relativePath && matched.syncState === 'synced' && matched.contentQuickHash === candidate.quickHash && matched.fileId === candidate.fileId && matched.size === candidate.size && matched.mtimeMs === candidate.mtimeMs && matched.ctimeMs === candidate.ctimeMs && matched.quickHash === candidate.quickHash && matched.contentVersion;
