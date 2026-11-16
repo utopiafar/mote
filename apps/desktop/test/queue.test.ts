@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DurableQueue, imageHash, QueueFullError, retryDelay } from '../src/queue';
+import { DurableQueue, imageHash, retryDelay } from '../src/queue';
 import {extendState} from '@mote/shared/state-series';
 import { event, image } from './fixtures';
 
@@ -79,10 +79,10 @@ describe('durable capture queue', () => {
     const restored = new DurableQueue(directory, limits); await restored.initialize();
     expect(restored.stats().depth).toBe(2);
     expect((await restored.next())?.image).toEqual(image);
-    await restored.acknowledge(event().id);
+    await restored.acknowledge(event().id,undefined,'https://central.example');
     expect(await readdir(join(directory, 'blobs'))).toHaveLength(1);
-    await restored.acknowledge('f50650f0-fb31-4215-90cd-c96dc62d5e93');
-    expect(await readdir(join(directory, 'blobs'))).toHaveLength(0);
+    await restored.acknowledge('f50650f0-fb31-4215-90cd-c96dc62d5e93',undefined,'https://central.example');
+    expect(await readdir(join(directory,'blobs'))).toHaveLength(1);expect(restored.stats().depth).toBe(0);expect(restored.contentRecords()).toHaveLength(2);expect(await restored.imageForBrowser(event().id)).toEqual(image);
   });
   it('uses stable event IDs idempotently and rejects conflicting content', async () => {
     expect(await queue.enqueue(event(), image)).toBe(true);
@@ -90,17 +90,15 @@ describe('durable capture queue', () => {
     await expect(queue.enqueue({ ...event(), ocrText: 'changed' }, image)).rejects.toThrow('相同事件 ID');
     expect(queue.stats().depth).toBe(1);
   });
-  it('serializes concurrent appends and respects a hard count bound without dropping old observations', async () => {
-    queue.setLimits({ ...limits, maxQueueEvents: 1 });
+  it('serializes concurrent appends and ignores retired count settings without dropping old observations', async () => {
+    queue.setConnection({ ...limits, maxQueueEvents: 1 });
     const results = await Promise.allSettled([queue.enqueue(event(), image), queue.enqueue(event('f50650f0-fb31-4215-90cd-c96dc62d5e93'), image)]);
-    expect(results.map(r => r.status)).toEqual(['fulfilled', 'rejected']);
-    expect(queue.stats().depth).toBe(1);
-    expect((results[1] as PromiseRejectedResult).reason).toBeInstanceOf(QueueFullError);
+    expect(results.map(r => r.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(queue.stats().depth).toBe(2);
   });
-  it('counts metadata against the byte bound and writes no orphan when full', async () => {
-    queue.setLimits({ ...limits, maxQueueBytes: 20 });
-    await expect(queue.enqueue(event(), image)).rejects.toBeInstanceOf(QueueFullError);
-    expect(await readdir(join(directory, 'blobs'))).toHaveLength(0);
+  it('counts all saved bytes while ignoring retired byte settings', async () => {
+    queue.setConnection({ ...limits, maxQueueBytes: 20 });
+    await expect(queue.enqueue(event(),image)).resolves.toBe(true);expect(queue.stats().bytes).toBeGreaterThan(20);expect(await readdir(join(directory,'blobs'))).toHaveLength(1);
   });
   it('persists retry scheduling across a crash and preserves unchanged retry payload', async () => {
     await queue.enqueue(event(), image);
@@ -159,7 +157,7 @@ describe('durable capture queue', () => {
     const target = new DurableQueue(join(directory, 'notes-target'), limits); await target.initialize();
     expect(await target.importArchive(archive)).toBe(1); expect(await target.importArchive(archive)).toBe(0);
     expect((await target.next())?.record.event.mood).toBe('平静');
-    await target.acknowledge(note.id); expect(target.stats().depth).toBe(0);
+    await target.acknowledge(note.id,undefined,'https://central.example'); expect(target.stats().depth).toBe(0);
     await expect(queue.enqueue(note, image)).rejects.toThrow('不得包含');
   });
 
@@ -192,7 +190,7 @@ it('persists compacted observations across restart and ignores an acknowledgemen
   await queue.enqueue(first);await queue.enqueue({...first,id:crypto.randomUUID(),capturedAt:'2026-09-17T00:00:05.000Z',durationMs:5000});
   const restarted=new DurableQueue(directory,limits);await restarted.initialize();
   expect((await restarted.next())?.record.event.stateSeries?.samples).toHaveLength(2);
-  await restarted.acknowledge(first.id,1);expect(restarted.stats().depth).toBe(1);
+  await restarted.acknowledge(first.id,1,'https://central.example');expect(restarted.stats().depth).toBe(1);
 });
 
 it('packs stable snapshots without acknowledging other records when a receipt is partial', async () => {
@@ -200,7 +198,7 @@ it('packs stable snapshots without acknowledging other records when a receipt is
   await queue.enqueue(a, image); await queue.enqueue(b, image);
   const batch = await queue.nextBatch(25, Date.now());
   expect(batch.map(item => item.record.event.id).sort()).toEqual([a.id, b.id].sort());
-  await queue.acknowledge(a.id);
+  await queue.acknowledge(a.id,undefined,'https://central.example');
   expect((await queue.nextBatch()).map(item => item.record.event.id)).toEqual([b.id]);
   const reopened = new DurableQueue(directory, limits); await reopened.initialize();
   expect((await reopened.next())?.record.event.id).toBe(b.id);

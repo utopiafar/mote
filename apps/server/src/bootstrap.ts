@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {PluginHost,PluginHostError,type HostPluginContext,type HostScope} from '@mote/plugin-host';
-import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease,type ReplacementPolicy,type PluginLifecycle} from '@mote/plugin-api/contracts';
+import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease,type PluginLifecycle} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {Config} from './config.js';
 import type {ConfigService} from './config-service.js';
@@ -12,6 +12,8 @@ import {c10IntegrationDeclaration} from './plugins/c10-integration.js';
 import {createObservabilityPlatformFactory,observabilityPlatformDeclaration,type ObservabilityPlatform,type ObservabilityPlatformOptions} from './plugins/observability-platform.js';
 import {defaultDistribution} from './distribution/default.js';
 import {featureInventory,type HostContributionDescriptor} from './feature-inventory.js';
+import {createDomainActivations,type CentralDomainPlugin} from './domain-activation.js';
+export type {CentralDomainPlugin} from './domain-activation.js';
 
 /** Assembly-private bridge for the existing product, not a plugin SDK service
  * bag. C02/C04 replace the storage/authorization adapters with domain ports. */
@@ -35,13 +37,6 @@ export interface FoundationProvider<K extends FoundationKind=FoundationKind> {
   /** Trusted build code owns acquired resources immediately through scope.defer.
    * Passing this registry is executable assembly authority, never user config. */
   readonly create:(context:HostPluginContext,input:FoundationInput)=>Promise<FoundationValues[K]>|FoundationValues[K];
-}
-/** Trusted build-time descriptor of one domain plugin the distribution selects.
- * The assembly owns construction; H05/H14 turn this table into host installs. */
-export interface CentralDomainPlugin {
-  readonly contribution:ManifestContribution;
-  readonly declaration:{readonly id:string;readonly apiVersion:string};
-  readonly replacement:ReplacementPolicy;
 }
 export interface CentralDistribution {
   readonly foundations:readonly ({[K in FoundationKind]:FoundationProvider<K>}[FoundationKind])[];
@@ -78,9 +73,18 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   if(selected.length!==kinds.length)invalid('Unknown foundation provider kind');
   const features=distribution.features.map(id=>{if(typeof id!=='string'||!id)invalid('Invalid feature contribution');return id;});
   if(new Set(features).size!==features.length)invalid('Duplicate feature contribution');
-  const plugins=distribution.plugins.map(entry=>({...entry,contribution:{...entry.contribution}}));
+  const plugins=distribution.plugins.map(entry=>{
+    const activation=entry.activation;
+    return Object.freeze({...entry,contribution:Object.freeze({...entry.contribution}),declaration:Object.freeze({...entry.declaration}),
+      ...(activation?{activation:Object.freeze({...activation,requires:Object.freeze(Object.fromEntries(Object.entries(activation.requires)
+        .map(([name,requirement])=>[name,Object.freeze({...requirement,service:Object.freeze({...requirement.service})})])))})}:{}),
+    });
+  });
   if(new Set(plugins.map(entry=>entry.contribution.id)).size!==plugins.length)invalid('Duplicate domain plugin contribution');
-  for(const plugin of plugins)if(plugin.contribution.id!==plugin.declaration.id||!plugin.replacement)invalid('Invalid domain plugin descriptor');
+  for(const plugin of plugins){
+    if(plugin.contribution.id!==plugin.declaration.id||!plugin.replacement)invalid('Invalid domain plugin descriptor');
+    if(plugin.activation&&(!plugin.activation.featureId||typeof plugin.activation.create!=='function'))invalid('Invalid domain activation');
+  }
   const contributions=Object.freeze([
     ...selected.map(provider=>({...provider.contribution,featureVersion:provider.version})),
     ...plugins.map(plugin=>({...plugin.contribution,featureVersion:plugin.contribution.version})),
@@ -95,6 +99,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     },
   });
   const leases:{release():Promise<void>}[]=[],bindings:ServiceBinding[]=[];
+  const domainActivations=createDomainActivations(host,plugins,features);
   const facts:{id:string;version:string}[]=[];
   async function install<K extends FoundationKind>(kind:K,current:FoundationInput):Promise<ServiceLease<FoundationValues[K]>>{
     const provider=selected.find(provider=>provider.kind===kind)! as FoundationProvider<K>;
@@ -121,6 +126,12 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
       selectsPlugin:(id:string)=>plugins.some(plugin=>plugin.contribution.id===id),
       selectsFeature:(id:string)=>features.includes(id),
       featureInventory:(extra:readonly HostContributionDescriptor[]=[])=>featureInventory(host.snapshot(),[...contributions,...extra]),
+      /** Producers register the binding returned by provide(), not an object
+       * lookup or a guessed activation/revision. Ordinary plugins still acquire
+       * only the exact requirements enforced by PluginHost. */
+      registerDomainService:domainActivations.register,
+      acquireDomainService:domainActivations.acquire,
+      activateDomains:domainActivations.activate,
       /** Trusted build-only installation in the same host; no public service or second host. */
       async installObservabilityPlatform(options:ObservabilityPlatformOptions){
         if(observability)return observability;

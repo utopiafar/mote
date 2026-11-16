@@ -7,6 +7,7 @@ import {sourceContentTime,sourceIdSchema,type CaptureRecord,type QueryResult} fr
 import {StoreError,sha256} from '../store.js';
 
 import {memoryRelationSchema,type Memory} from '../memory-schema.js';
+import {releasedMemoryOriginal} from '../memory-original-retention.js';
 
 export const memoryDeletionSchema=z.object({id:z.string().uuid(),memoryId:z.string().uuid(),title:z.string(),statement:z.string(),uncertainty:z.string(),deletedAt:z.string().datetime({offset:true}),originKeys:z.array(z.string().regex(/^(bytes|event|source):[a-f0-9]{64}$/)).min(1).max(60000),lineageKeys:z.array(z.string().regex(/^source:[a-f0-9]{64}$/)).max(20000),originalTexts:z.array(z.string().max(12000)).max(100),dependencies:z.array(z.string().uuid()).min(1).max(20000),derivationSourceIds:z.array(sourceIdSchema).max(40000),sourceLineageComplete:z.boolean()}).strict();
 type Rejection=z.infer<typeof memoryDeletionSchema>;
@@ -55,15 +56,16 @@ export class MemoryDeletions {
       '$.originalTexts',json('[]')) WHERE id IN (SELECT deletion_id FROM memory_deletion_dependencies WHERE evidence_id=old.id);
       DELETE FROM memory_deletion_dependencies WHERE evidence_id=old.id;
       DELETE FROM memory_deletions WHERE json_array_length(json,'$.dependencies')=0;`;
-    store.db.exec(`CREATE TRIGGER IF NOT EXISTS memory_deletion_original_removed BEFORE DELETE ON captures BEGIN ${cleanup} END;`);
-    if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get())store.db.exec(`CREATE TRIGGER IF NOT EXISTS memory_deletion_anchor_removed BEFORE DELETE ON material_evidence BEGIN ${cleanup} END;`);
+    const unreleased="NOT EXISTS(SELECT 1 FROM memory_provider_evidence_revocations WHERE id=old.id AND json_type(json,'$.releasedOriginal')='object')";
+    store.db.exec(`DROP TRIGGER IF EXISTS memory_deletion_original_removed;CREATE TRIGGER memory_deletion_original_removed BEFORE DELETE ON captures WHEN ${unreleased} BEGIN ${cleanup} END;`);
+    if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get())store.db.exec(`DROP TRIGGER IF EXISTS memory_deletion_anchor_removed;CREATE TRIGGER memory_deletion_anchor_removed BEFORE DELETE ON material_evidence WHEN ${unreleased} BEGIN ${cleanup} END;`);
   }
   export(){return this.store.db.prepare('SELECT json FROM memory_deletions ORDER BY id').all().map(row=>memoryDeletionSchema.parse(JSON.parse(String(row.json))));}
   restore(raw:unknown){
     const values=z.array(memoryDeletionSchema).parse(raw),db=this.store.db,own=!db.isTransaction;
     db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT memory_deletions_restore');
     try{for(const value of values){
-      if(value.dependencies.some(id=>!this.read([id]).length))throw new StoreError('Memory deletion archive is missing its original dependencies');
+      if(value.dependencies.some(id=>!this.read([id]).length&&!releasedMemoryOriginal(this.store,id)))throw new StoreError('Memory deletion archive is missing its original dependencies');
       const actualKeys=[...new Set(value.dependencies.flatMap(id=>this.keys(id)))].sort(),actualLineage=[...new Set(value.dependencies.flatMap(id=>this.lineage(id)))].sort();
       if(JSON.stringify([...new Set(value.originKeys)].sort())!==JSON.stringify(actualKeys)||JSON.stringify([...new Set(value.lineageKeys)].sort())!==JSON.stringify(actualLineage))throw new StoreError('Memory deletion archive original identity mismatch');
       const actualSources=this.sourceIds(value.dependencies);
@@ -104,6 +106,7 @@ export class MemoryDeletions {
   snapshot(){return sha256(JSON.stringify({deletions:this.store.db.prepare('SELECT id,json FROM memory_deletions ORDER BY id').all(),binding:this.binding?.current()??null}));}
   private origins(id:string,seen=new Set<string>()):string[]{
     if(seen.has(id))return [];seen.add(id);
+    const released=releasedMemoryOriginal(this.store,id);if(released)return released.identity.origins;
     const file=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(id);
     if(file)return this.origins(String(file.capture_id),seen);
     if(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence_dependencies'").get()){
@@ -113,6 +116,7 @@ export class MemoryDeletions {
     return [id];
   }
   private keys(id:string){
+    const released=releasedMemoryOriginal(this.store,id);if(released)return released.identity.originKeys;
     return this.origins(id).flatMap(origin=>{
       const binary=this.store.db.prepare('SELECT object_hash FROM file_versions WHERE capture_id=?').get(origin)?.object_hash;
       if(typeof binary==='string'&&binary)return ['bytes:'+binary];
@@ -125,10 +129,12 @@ export class MemoryDeletions {
       return keys;
     });
   }
-  private lineage(id:string){return this.origins(id).flatMap(origin=>{const record=this.read([origin])[0],p=record?.provenance;return p?.sourceId&&p.externalId?['source:'+sha256(JSON.stringify([p.sourceId,p.externalId]))]:[];});}
+  private lineage(id:string){const released=releasedMemoryOriginal(this.store,id);if(released)return released.identity.lineageKeys;return this.origins(id).flatMap(origin=>{const record=this.read([origin])[0],p=record?.provenance;return p?.sourceId&&p.externalId?['source:'+sha256(JSON.stringify([p.sourceId,p.externalId]))]:[];});}
+  originalIdentity(id:string){return {origins:this.origins(id),originKeys:this.keys(id),lineageKeys:this.lineage(id),sourceIds:this.sourceIds([id])};}
   private sourceIds(ids:string[]){
     const hasMaterials=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get()),sources=new Set<string>();
     for(const id of new Set(ids.flatMap(id=>[id,...this.origins(id)]))){
+      for(const source of releasedMemoryOriginal(this.store,id)?.identity.sourceIds??[])sources.add(source);
       const raw=this.store.db.prepare("SELECT json_extract(json,'$.provenance.sourceId') source_id FROM captures WHERE id=?").get(id)?.source_id;
       const material=hasMaterials?this.store.db.prepare('SELECT h.source_id FROM material_evidence e JOIN material_heads h ON h.id=e.material_id WHERE e.id=?').get(id)?.source_id:undefined;
       for(const source of [raw,material])if(typeof source==='string')sources.add(source);
@@ -188,7 +194,7 @@ export class MemoryDeletions {
   remember(memory:Memory){
     const routedEvidence=this.deletionEvidenceIds(memory);
     const dependencies=[...new Set(routedEvidence.flatMap(id=>this.origins(id)))];
-    const value:Rejection={id:randomUUID(),memoryId:memory.id,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,deletedAt:new Date().toISOString(),originKeys:[...new Set(routedEvidence.flatMap(id=>this.keys(id)))],lineageKeys:[...new Set(routedEvidence.flatMap(id=>this.lineage(id)))],originalTexts:[...new Set((memory.evidence??[]).flatMap(e=>e.quote?[e.quote]:[]))],dependencies,derivationSourceIds:this.sourceIds([...routedEvidence,...dependencies]),sourceLineageComplete:true};
+    const value:Rejection={id:randomUUID(),memoryId:memory.id,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,deletedAt:new Date().toISOString(),originKeys:[...new Set(routedEvidence.flatMap(id=>this.keys(id)))],lineageKeys:[...new Set(routedEvidence.flatMap(id=>this.lineage(id)))],originalTexts:[...new Set((memory.evidence??[]).flatMap(e=>e.quote&&!releasedMemoryOriginal(this.store,e.id)?[e.quote]:[]))],dependencies,derivationSourceIds:this.sourceIds([...routedEvidence,...dependencies]),sourceLineageComplete:true};
     if(!value.originKeys.length)throw new StoreError('Deletion evidence identity is unavailable',409);
     memoryDeletionSchema.parse(value);
     const json=JSON.stringify(value),rows=dependencies.map(id=>[value.id,id,JSON.stringify(this.keys(id)),JSON.stringify(this.lineage(id))] as const);

@@ -1,3 +1,4 @@
+import {pendingInScope,type SourceScope} from './source-scope';
 import type {SourceUploadObserver} from './sync-history';
 import {DESKTOP_STORAGE_VERSION,RESET_REQUIRED} from './storage-format';
 import {rm} from 'node:fs/promises';
@@ -10,12 +11,13 @@ import type { LocalFileCheckpoint, SourceCheckpoint, SourceDefinition, SourceIte
 import { PriorityScheduler } from './priority-scheduler';
 import {UploadSlice,UploadSliceYield,requestBytes} from './upload-slice';
 import {requireIngressReceipt} from './ingress-protocol';
+import {FILE_MAX_BYTES,FILE_PART_BYTES,filePartReceipts,type FilePartPage} from '@mote/shared';
 
 export const sourceHash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
 
 type QueueName = 'realtime' | 'history';
-export type PendingSourceSummary = Readonly<Pick<SourceItem,'title'|'text'|'observedAt'|'externalId'|'revision'>>;
+export type PendingSourceSummary = Readonly<Pick<SourceItem,'title'|'text'|'observedAt'|'externalId'|'revision'>&{blockedStatus?:number;localPolicy?:true}>;
 function isFileCheckpoint(value: SourceCheckpoint | undefined): value is LocalFileCheckpoint {
   return Boolean(value && value.version === 1 && typeof (value as LocalFileCheckpoint).root === 'string' && Array.isArray((value as LocalFileCheckpoint).pendingDirectories) && (value as LocalFileCheckpoint).catalog && typeof (value as LocalFileCheckpoint).catalog==='object');
 }
@@ -32,7 +34,7 @@ function snapshotMetadataIdentity(raw:ScannedItem):string{
   return sourceHash(JSON.stringify(item));
 }
 interface Known { policy?:string; contentHash: string; discoveryHash?: string; revision: string; item: ScannedItem; deletionPending?: boolean; absentWhileInflight?: string }
-interface RejectedItem { item: SourceItem; status: number }
+interface RejectedItem { item: SourceItem; status: number; localPolicy?:true }
 interface BatchResult { acks: Record<string, unknown>[]; rejected?: RejectedItem[] }
 export interface SnapshotRecovery {captureId:string;externalId:string;revision:string;sha256:string;sizeBytes:number;observedAt:string}
 interface State {
@@ -48,6 +50,7 @@ interface State {
   oneTimeCompletedAt?: string;
   baseline?: string[];
   policy?: string;
+  sourceScope?:SourceScope;
   adapterVersion: number;
   known: Record<string, Known>;
   snapshotRecoveries?: Record<string,SnapshotRecovery&{identityHash:string}>;
@@ -75,8 +78,8 @@ export class SourceSync {
   private knownItems=0;
   private pendingContentRevision=0;
   private data: State = { version: DESKTOP_STORAGE_VERSION, ingressVersion:2, adapterVersion:1, known: {}, pendingRealtime: [], pendingHistory: [] };
-  private readonly limits: { maxEvents: number; maxBytes: number; batchSize: number; concurrency: number };
-  constructor(private readonly path: string, limits?: Partial<{ maxEvents: number; maxBytes: number; batchSize: number; concurrency: number }>) { this.limits = { maxEvents: 4000, maxBytes: 32 * 1024 * 1024, batchSize: 100, concurrency: 4, ...limits }; }
+  private readonly limits: { batchSize: number; concurrency: number };
+  constructor(private readonly path: string, limits?: Partial<{ batchSize: number; concurrency: number }>) { this.limits = { batchSize: 100, concurrency: 4, ...limits }; }
 
   async initialize(): Promise<void> {
     try {
@@ -84,7 +87,6 @@ export class SourceSync {
       if (value === undefined) {await sourceWork.run({kind:'source-state',path:this.path,patches:sourceStatePatch({},this.data as unknown as Record<string,unknown>)});return;}
       const next = value as unknown as State;
       if (Object.hasOwn(next,'localProcessing') || next.version !== DESKTOP_STORAGE_VERSION || next.ingressVersion!==2 || !Number.isSafeInteger(next.adapterVersion) || next.adapterVersion<1 || !next.known || !Array.isArray(next.pendingRealtime) || !Array.isArray(next.pendingHistory)) throw Error(RESET_REQUIRED);
-      if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源同步状态超过本地队列上限，请恢复网络后重试"));
       this.data = next;
       this.knownItems=Object.values(next.known).filter(value=>!value.item.deleted).length;
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
@@ -93,7 +95,8 @@ export class SourceSync {
   pendingContent(): SourceItem[] { return structuredClone([...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)]); }
   /** Detached scalar fields from both outbox lanes and quarantine; no originals or metadata. */
   pendingSummaries(): readonly PendingSourceSummary[] {
-    return [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].map(({title,text,observedAt,externalId,revision})=>({title,text,observedAt,externalId,revision}));
+    const summary=({title,text,observedAt,externalId,revision}:SourceItem)=>({title,text,observedAt,externalId,revision});
+    return [...this.pendingItems().map(summary),...Object.values(this.data.quarantined??{}).map(({item,status,localPolicy})=>({...summary(item),blockedStatus:status,...(localPolicy?{localPolicy}: {})}))];
   }
   pendingForHistory(versionKey: string): SourceItem | undefined { const item = [...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)].find(item => sourceHash(`${item.externalId}\0${item.revision}`) === versionKey); return item ? structuredClone(item) : undefined; }
   checkpoint(): SourceCheckpoint | undefined { return structuredClone(this.data.checkpoint); }
@@ -113,20 +116,28 @@ export class SourceSync {
   oneTimeCompletedAt(policy:string):string|undefined { return this.data.policy===policy?this.data.oneTimeCompletedAt:undefined; }
   async resetOneTimeCompletion():Promise<void>{await this.mutate(async()=>{if(this.data.oneTimeCompletedAt)await this.commit({...this.data,oneTimeCompletedAt:undefined});});}
   private pendingItems(): SourceItem[] { return [...this.data.pendingRealtime, ...this.data.pendingHistory]; }
-  status(): { pendingContentRevision:number; blocked: number; failures: {externalId:string;title:string;status:number}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
+  status(): { pendingContentRevision:number; blocked: number; failures: {externalId:string;title:string;status:number;localPolicy?:true}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
     const pending = this.pendingItems();
     const rejected=Object.values(this.data.quarantined??{});
-    return { pendingContentRevision:this.pendingContentRevision,blocked:rejected.length,failures:rejected.slice(0,100).map(({item,status})=>({externalId:item.externalId,title:item.title,status})),oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? this.knownItems, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
+    return { pendingContentRevision:this.pendingContentRevision,blocked:rejected.length,failures:rejected.slice(0,100).map(({item,status,localPolicy})=>({externalId:item.externalId,title:item.title,status,...(localPolicy?{localPolicy}: {})})),oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? this.knownItems, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
   }
   async checkpointTo(path: string): Promise<void> { const previous=await sourceWork.run<Record<string,unknown>|undefined>({kind:'source-state',path});await sourceWork.run({kind:'source-state',path,patches:sourceStatePatch(previous??{},this.data as unknown as Record<string,unknown>)}); }
 
-  async ensurePolicy(policy:string):Promise<void>{return this.mutate(()=>this.ensurePolicyInternal(policy));}
-  private async ensurePolicyInternal(policy: string): Promise<void> {
-    if (this.data.policy === policy) return;
-    const next = { ...this.data, oneTimeCompletedAt:undefined, checkpoint: rescanFileCheckpoint(this.data.checkpoint), delivered: undefined, predecessors: undefined, quarantined: undefined, snapshotRecoveries:undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '', discoveryHash: undefined }])), pendingRealtime: [], pendingHistory: [] } as State;
-    const retired = [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)];
+  policyMatches(policy:string){return this.data.policy===policy;}
+  async ensurePolicy(policy:string,scope?:SourceScope):Promise<void>{return this.mutate(()=>this.ensurePolicyInternal(policy,scope));}
+  private async ensurePolicyInternal(policy:string,scope?:SourceScope):Promise<void>{
+    if(this.data.policy===policy&&JSON.stringify(this.data.sourceScope)===JSON.stringify(scope))return;
+    const quarantined={...this.data.quarantined},canonicalRoot=isFileCheckpoint(this.data.checkpoint)?this.data.checkpoint.root:undefined;
+    const retain=(item:SourceItem)=>{if(scope&&pendingInScope(item,this.data.sourceScope,scope,canonicalRoot))return true;quarantined[itemKey(item)]={item,status:403,localPolicy:true};return false;};
+    const admitted=new Set<string>();
+    const known=Object.fromEntries(Object.entries(this.data.known).map(([key,value])=>{if(scope&&pendingInScope(value.item,this.data.sourceScope,scope,canonicalRoot)){admitted.add(key);return [key,{...value,policy}];}return [key,{...value,contentHash:'',discoveryHash:undefined}];}));
+    const delivered=Object.fromEntries(Object.entries(this.data.delivered??{}).filter(([key])=>admitted.has(key)));
+    const next:State={...this.data,delivered,oneTimeCompletedAt:undefined,checkpoint:rescanFileCheckpoint(this.data.checkpoint),snapshotRecoveries:undefined,policy,sourceScope:scope,
+      known,
+      pendingRealtime:this.data.pendingRealtime.filter(retain),pendingHistory:this.data.pendingHistory.filter(retain),quarantined};
+    // A withdrawn input stays isolated across restart and later scope expansion.
+    // New scans establish fresh revisions; no old request receives a new lease.
     await this.commit(next);
-    await this.discardUnqueuedOriginals(retired);
   }
 
   /** Adapter upgrades rescan from a fresh checkpoint while retaining every
@@ -142,7 +153,7 @@ export class SourceSync {
   async requestSnapshotRecovery(items:SnapshotRecovery[],targeted=false):Promise<SnapshotRecovery[]>{
     return this.mutate(async()=>{
       const pending=new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].map(item=>item.externalId));
-      const matches=items.filter(item=>receiptId.test(item.captureId)&&/^[a-f0-9]{64}$/.test(item.sha256)&&Number.isSafeInteger(item.sizeBytes)&&item.sizeBytes>=0&&item.sizeBytes<=512*1024*1024&&Number.isFinite(Date.parse(item.observedAt))&&!pending.has(item.externalId)&&this.data.known[sourceHash(item.externalId)]?.revision===item.revision&&this.data.known[sourceHash(item.externalId)]?.policy===this.data.policy);
+      const matches=items.filter(item=>receiptId.test(item.captureId)&&/^[a-f0-9]{64}$/.test(item.sha256)&&Number.isSafeInteger(item.sizeBytes)&&item.sizeBytes>=0&&item.sizeBytes<=FILE_MAX_BYTES&&Number.isFinite(Date.parse(item.observedAt))&&!pending.has(item.externalId)&&this.data.known[sourceHash(item.externalId)]?.revision===item.revision&&this.data.known[sourceHash(item.externalId)]?.policy===this.data.policy);
       if(!matches.length)return [];
       const known={...this.data.known};for(const item of matches){const key=sourceHash(item.externalId);known[key]={...known[key],contentHash:'',discoveryHash:undefined};}
       // Continuous sources re-enumerate authorized files instead of trusting a
@@ -250,7 +261,7 @@ export class SourceSync {
     if(oneTime&&complete)next.oneTimeCompletedAt=observedAt;
     let changes = 0;
     if (!scan.checkpoint && initialSync === 'new_only' && !next.initialized && Object.keys(next.known).length === 0) {
-      next.baseline = [...new Set([...(next.baseline ?? []), ...scan.seen])]; next.initialized = complete; await this.commit(next, this.limits.maxBytes); return 0;
+      next.baseline = [...new Set([...(next.baseline ?? []), ...scan.seen])]; next.initialized = complete; await this.commit(next); return 0;
     }
     if (initialSync === 'all') next.baseline = [];
     if (complete) next.initialized = true;
@@ -327,11 +338,9 @@ export class SourceSync {
         stage({ ...item, localOriginalBase64: undefined, localOriginal:undefined, text: '', deleted: true, syncQueue: 'realtime', ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
       }
     }
-    if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试"));
     if (scan.catalogChanges && !isFileCheckpoint(scan.checkpoint)) throw new Error('File catalog changes require a file checkpoint');
     if (scan.checkpoint) { next.checkpoint = scan.catalogChanges&&isFileCheckpoint(scan.checkpoint)?{...scan.checkpoint,catalog:isFileCheckpoint(this.data.checkpoint)?this.data.checkpoint.catalog:{}}:scan.checkpoint; next.collectedItems = (next.collectedItems ?? 0) + changes; }
-    if([...next.pendingRealtime,...next.pendingHistory].reduce((n,item)=>n+(item.localOriginal?.sizeBytes??(item.localOriginalBase64?Math.floor(item.localOriginalBase64.length*3/4):0)),0)>512*1024*1024)throw Error('Original outbox exceeds 512 MiB; upload pending files before scanning more');
-    await this.commit(next, this.limits.maxBytes,[...sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>),...Array.from(knownChanges,([key,value])=>({section:'known',key,value})),...(scan.catalogChanges??[]).map(change=>({section:'catalog',...change}))]);
+    await this.commit(next,[...sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>),...Array.from(knownChanges,([key,value])=>({section:'known',key,value})),...(scan.catalogChanges??[]).map(change=>({section:'catalog',...change}))]);
     for(const [key,value] of knownChanges){const previous=this.data.known[key];this.knownItems+=Number(!value.item.deleted)-Number(Boolean(previous&&!previous.item.deleted));this.data.known[key]=value;}
     if(scan.catalogChanges&&isFileCheckpoint(this.data.checkpoint))for(const {key,value} of scan.catalogChanges){if(value)this.data.checkpoint.catalog[key]=value;else delete this.data.checkpoint.catalog[key];}
     return changes;
@@ -384,7 +393,7 @@ export class SourceSync {
             withdrawn.push(item);
           }
           if (!withdrawn.length && !knownChanges.size) return;
-          await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...Array.from(knownChanges, ([key, value]) => ({ section: 'known' as const, key, value }))]);
+          await this.commit(next, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...Array.from(knownChanges, ([key, value]) => ({ section: 'known' as const, key, value }))]);
           for (const [key, value] of knownChanges) this.data.known[key] = value;
         });
         await this.discardUnqueuedOriginals(withdrawn);
@@ -443,7 +452,7 @@ export class SourceSync {
         const accepted=new Set(acks.map(ack=>itemKey({externalId:String(ack.externalId),revision:String(ack.revision)})));
         observer?.settle(source,outcome.batch,acks,rejected);
         const permanent=rejected.filter(value=>[400,409,410,413,422].includes(value.status));
-        await this.acknowledge(source,outcome.batch.filter(item=>accepted.has(itemKey(item))),acks,permanent);
+        await this.acknowledge(source,outcome.batch.filter(item=>accepted.has(itemKey(item))),acks,permanent,signal);
         for(const value of rejected)if(!permanent.includes(value)){deferred.add(itemKey(value.item));rejectedStatus??=value.status;}
       }
       scheduler.committed(queue,bytes);
@@ -547,7 +556,7 @@ export class SourceSync {
         } else if (entry) known[key] = { ...entry, contentHash: '', discoveryHash: undefined, absentWhileInflight: undefined };
       }
       next.known = known;
-      await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...[...identities.keys()].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
+      await this.commit(next, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...[...identities.keys()].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
     });
     this.uploadProgress += removed.length;
     await this.discardUnqueuedOriginals(removed);
@@ -642,18 +651,22 @@ export class SourceSync {
     const original = localOriginalBase64 ? Buffer.from(localOriginalBase64, 'base64') : undefined, manifest = { sourceId: source.id, previousRevision: previousRevision || null, item: wire, sizeBytes: localOriginal?.sizeBytes??original?.length??item.metadata?.file?.sizeBytes??0, ...(localOriginal?{sha256:localOriginal.sha256}:original ? { sha256: sourceHash(original) } : {}) };
     let ack: Record<string, unknown>;
     if (original||localOriginal) {
-      const upload = await request(snapshotRecovery?'/api/file-sync/v1/recovery/'+encodeURIComponent(snapshotRecovery.captureId)+'/uploads':'/api/file-sync/v1/uploads', snapshotRecovery?{}:manifest, 'POST', signal) as { uploadId: string; ack?: Record<string, unknown>; partBytes: number; parts: { part: number; hash: string; bytes: number }[] };
+      type Upload=FilePartPage&{uploadId:string;ack?:Record<string,unknown>;partBytes:number};
+      const upload = await request(snapshotRecovery?'/api/file-sync/v1/recovery/'+encodeURIComponent(snapshotRecovery.captureId)+'/uploads':'/api/file-sync/v1/uploads', snapshotRecovery?{}:manifest, 'POST', signal) as Upload;
       if (upload.ack) ack = upload.ack;
       else {
-        if (upload.partBytes !== 4194304 || !Array.isArray(upload.parts) || typeof upload.uploadId !== 'string' || !upload.uploadId) throw Error('Unsupported file upload session');
+        if (upload.partBytes !== FILE_PART_BYTES || !Array.isArray(upload.parts) || typeof upload.uploadId !== 'string' || !upload.uploadId) throw Error('Unsupported file upload session');
+        const receipts=filePartReceipts(upload,async after=>{const page=await request('/api/file-sync/v1/uploads/'+encodeURIComponent(upload.uploadId)+'?afterPart='+after,undefined,'GET',signal) as Upload;if(page.uploadId!==upload.uploadId||page.partBytes!==FILE_PART_BYTES)throw Error('Upload receipt identity changed');return page;},manifest.sizeBytes);let receipt=await receipts.next();
         for (let offset = 0; offset < (localOriginal?.sizeBytes??original!.length); offset += upload.partBytes) {
           const part = offset / upload.partBytes, bytes = localOriginal?Buffer.from(await sourceWork.run<Uint8Array>({kind:'original-part',spool:localOriginal,part})):original!.subarray(offset, offset + upload.partBytes), hash = sourceHash(bytes);
-          const existing = upload.parts.find(value=>value.part===part);
+          const existing = !receipt.done&&receipt.value.part===part?receipt.value:undefined;
+          if(existing)receipt=await receipts.next();
           if (existing?.hash === hash && existing.bytes === bytes.length) continue;
-          const receipt = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/parts/' + part, bytes, 'PUT', signal) as {part?:number;hash?:string;bytes?:number};
-          if (receipt?.part !== part || receipt.hash !== hash || receipt.bytes !== bytes.length) throw Error('File part acknowledgement does not match the queued original');
+          const partAck = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/parts/' + part, bytes, 'PUT', signal) as {part?:number;hash?:string;bytes?:number};
+          if (partAck?.part !== part || partAck.hash !== hash || partAck.bytes !== bytes.length) throw Error('File part acknowledgement does not match the queued original');
           this.uploadProgress++;
         }
+        if(!receipt.done)throw Error('Incomplete upload receipt traversal');
         ack = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/commit', {}, 'POST', signal) as Record<string, unknown>;
       }
       if (ack.sha256 !== manifest.sha256 || ack.sizeBytes !== (localOriginal?.sizeBytes??original!.length)) throw Error('File archive acknowledgement does not match the queued original');
@@ -670,7 +683,7 @@ export class SourceSync {
     return value;
   }
 
-  private async acknowledge(source: SourceDefinition, batch: SourceItem[], acks: Record<string, unknown>[],rejected:RejectedItem[]=[]): Promise<void> {return this.mutate(()=>this.acknowledgeInternal(source,batch,acks,rejected));}
+  private async acknowledge(source: SourceDefinition, batch: SourceItem[], acks: Record<string, unknown>[],rejected:RejectedItem[]=[],signal?:AbortSignal): Promise<void> {return this.mutate(()=>{signal?.throwIfAborted();return this.acknowledgeInternal(source,batch,acks,rejected);});}
   private async acknowledgeInternal(_source: SourceDefinition, batch: SourceItem[], acks: Record<string, unknown>[],rejected:RejectedItem[]): Promise<void> {
     const acked = new Set(acks.map(ack => itemKey({ externalId: String(ack.externalId), revision: String(ack.revision) })));
     const expected = new Set(batch.map(itemKey));
@@ -683,7 +696,7 @@ export class SourceSync {
     for(const [key,value] of knownUpdates)patches.push({section:'known',key,value});
     for(const item of batch)patches.push({section:'predecessors',key:item.revision},{section:'delivered',key:sourceHash(item.externalId),value:item.revision});
     for(const value of rejected)patches.push({section:'quarantined',key:itemKey(value.item),value});
-    await this.commit(next,undefined,patches);
+    await this.commit(next,patches);
     this.uploadProgress += batch.length + rejected.length;
     // Apply only touched map entries after the SQLite transaction is durable.
     // A one-item ACK never clones or scans the full historical catalog.
@@ -693,8 +706,8 @@ export class SourceSync {
     for(const item of batch)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true}).catch(()=>{});
   }
 
-  private async commit(next: State, maximum?: number, patches=sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>)): Promise<void> {
-    await sourceWork.run({kind:'source-state',path:this.path,patches:[...patches,{section:'state',key:'version',value:DESKTOP_STORAGE_VERSION}],maximum});
+  private async commit(next: State, patches=sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>)): Promise<void> {
+    await sourceWork.run({kind:'source-state',path:this.path,patches:[...patches,{section:'state',key:'version',value:DESKTOP_STORAGE_VERSION}]});
     // Existing transaction patches identify real membership/body changes without
     // a full catalog signature. Metadata-only scans and sync timestamps do not advance it.
     if(patches.some(patch=>patch.section==='pendingRealtime'||patch.section==='pendingHistory'||patch.section==='quarantined'))this.pendingContentRevision++;

@@ -226,7 +226,7 @@ it('never reads a file body or creates an original spool in reference mode', asy
 
 it('compares privacy-transformed digests only with the same transformed bytes', async () => {
   vi.spyOn(volume, 'localVolumeIdentity').mockResolvedValue(undefined);
-  const file = join(root, 'a.txt'), options = {...DEFAULT_SOURCE_OPTIONS, redactLiterals:['AAA', 'BBB']};
+  const file = join(root, 'a.txt'), options = {...DEFAULT_SOURCE_OPTIONS,retention:'snapshot' as const, redactLiterals:['AAA', 'BBB']};
   await writeWithOldMtime(file, 'AAA');
   const first = await scanSourceFiles(root, options), prior = checkpoint(first);
   expect(prior.catalog['a.txt'].contentHash).toBe(sourceHash('[已遮盖]'));

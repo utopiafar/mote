@@ -1,6 +1,7 @@
 import type {EvidenceStore} from './evidence-store.js';
 import type {EvidenceExposureContext} from './evidence-exposure.js';
 import {imageViewSchema,type QueryResult} from '@mote/shared';
+import {releasedMemoryOriginal} from './memory-original-retention.js';
 
 /** Identity and exposure metadata only. No body, description, tool arguments or
  * owner declaration is retained here, and this table is never a retrieval source. */
@@ -103,12 +104,16 @@ export function inheritRetiredConversationRoots(store:EvidenceStore,conversation
  for(const row of rows){store.db.prepare('INSERT INTO conversation_retired_turn_roots VALUES(?,?,?,?)').run(conversationId,turn.id,row.evidence_id,turn.result.runId);}
 }
 
-export function forgetRetiredConversationRoots(store:EvidenceStore,scope:{sourceId?:string;materialId?:string;file?:{sourceId:string;externalId:string}}){
+export function forgetRetiredConversationRoots(store:EvidenceStore,scope:{sourceId?:string;materialId?:string;file?:{sourceId:string;externalId:string}},retainPublishedMemory=false){
  const predicates:string[]=[],values:string[]=[];
  if(scope.sourceId){predicates.push("json_extract(json,'$.scope.sourceId')=?");values.push(scope.sourceId);}
  if(scope.materialId){predicates.push("json_extract(json,'$.materialId')=?");values.push(scope.materialId);}
  if(scope.file){predicates.push("(json_extract(json,'$.file.sourceId')=? AND json_extract(json,'$.file.externalId')=?)");values.push(scope.file.sourceId,scope.file.externalId);}
  if(!predicates.length)return;
  const ids=store.db.prepare('SELECT id FROM conversation_retired_roots WHERE '+predicates.join(' OR ')).all(...values).map(row=>String(row.id));
- if(ids.length)store.invalidateConversationAnswers(ids,true);
+ if(ids.length){
+  const retained:Record<string,string>|undefined=retainPublishedMemory?{}:undefined;
+  if(retained)for(const id of ids)Object.assign(retained,releasedMemoryOriginal(store,id)?.memoryFingerprints);
+  store.invalidateConversationAnswers(ids,true,retained);
+ }
 }

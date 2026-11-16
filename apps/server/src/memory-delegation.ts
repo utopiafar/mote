@@ -10,6 +10,7 @@ import type {MemoryPipeline} from './memory-pipeline.js';
 import type {MaterialMemoryWork,MemoryWorkCandidate,MemoryWorkProposal} from './material-memory-work.js';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import type {ModelConfiguration} from './model-configuration.js';
+import {linkOperationParent} from './operation-projection.js';
 
 const packageInput=z.object({members:z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1).max(8),instruction:z.string().min(1).max(4000)}).strict();
 type PlannerInput={catalog:MemoryWorkCandidate[];evidenceIds?:string[];configuration?:ModelConfiguration};
@@ -44,7 +45,9 @@ export function registerMemoryDelegation(options:MemoryDelegationOptions){
  });
  const stop=runtime.engine.register({kind:'memory.package-status',pool:'memory.package-status',concurrency:()=>8,policy:EXECUTION_POLICIES.control,
   validate:step=>{try{return Boolean(pipeline.state(String(step.input.jobId)));}catch{return false;}},
-  admit:step=>{const job=pipeline.state(String(step.input.jobId));if(job.status==='paused'||job.status==='waiting_for_model'||job.status==='waiting_for_input'&&job.errorCode==='memory_context_required')return new ExecutionFailure('blocked',job.errorCode??'memory_'+job.status);if(!['completed','failed','cancelled'].includes(job.status))return new ExecutionFailure('waiting','memory_processing',1000);},
+  // A product failure is an observed prerequisite, not a failed control call.
+  // Its explicit product retry may rejoin without resetting any model budget.
+  admit:step=>{const job=pipeline.state(String(step.input.jobId));if(['paused','waiting_for_model','failed','cancelled'].includes(job.status)||job.status==='waiting_for_input'&&job.errorCode==='memory_context_required')return new ExecutionFailure('blocked',job.errorCode??'memory_'+job.status);if(job.status!=='completed')return new ExecutionFailure('waiting','memory_processing',1000);},
   execute:async step=>{const job=pipeline.get(String(step.input.jobId));if(job.status!=='completed')throw new ExecutionFailure(job.status==='waiting_for_model'||job.status==='paused'||job.status==='waiting_for_input'?'blocked':job.status==='cancelled'?'permanent':'stale',job.errorCode??'memory_'+job.status);return {value:{jobId:job.id,memoryIds:job.memoryIds},summary:'Evaluated Memory package',coverage:job.batches.filter(batch=>!batch.supersededBy).flatMap(batch=>batch.coverage??[])};},
   commit:(step,product)=>runtime.recordExternalArtifact(String(step.input.workId),String(step.input.unitId),product as Parameters<DelegationRuntime['recordExternalArtifact']>[2]),
  });
@@ -59,16 +62,39 @@ export function registerMemoryDelegation(options:MemoryDelegationOptions){
   return accepted(owner).filter(unit=>unit.capabilityId==='memory.package').map(unit=>({id:unit.id,members:packageInput.parse(unit.input).members,goal:unit.goal,instruction:String(unit.input.instruction)}));
  };
  const onCreated=(proposal:MemoryWorkProposal,job:{id:string})=>{
-  const marker=proposal.id?.lastIndexOf(':unit:');if(marker===undefined||marker<0)throw new StoreError('Memory proposal has no durable coordinator identity',409);
-  const workId=proposal.id!.slice(0,marker),unitId=proposal.id!;
-  const stepId='memory-package-status:'+job.id,unit=runtime.unit(unitId);
-  if(unit.stepId===stepId&&runtime.engine.get(stepId))return;
-  runtime.engine.enqueue('memory:'+job.id,'memory.package-status',{jobId:job.id,workId,unitId},{id:stepId});
-  runtime.linkExternalUnit(workId,unitId,stepId);
+  if(!proposal.id)throw new StoreError('Memory proposal has no durable coordinator identity',409);
+  const unitId=proposal.id,unit=runtime.unit(unitId),workId=unit.workId,stepId='memory-package-status:'+job.id,db=runtime.store.db;
+  db.exec('SAVEPOINT memory_product_link');
+  try{
+   if(unit.stepId!==stepId||!runtime.engine.get(stepId)){
+    runtime.engine.enqueue('memory:'+job.id,'memory.package-status',{jobId:job.id,workId,unitId},{id:stepId});
+    runtime.linkExternalUnit(workId,unitId,stepId);
+   }
+   // Attribute the product's real input, batch and publication steps to its
+   // accepted plan. This copies membership, never state or model authority.
+   linkOperationParent(runtime.store,runtime.get(workId).operationId,'memory:'+job.id);
+   db.exec('RELEASE memory_product_link');
+  }catch(error){db.exec('ROLLBACK TO memory_product_link; RELEASE memory_product_link');throw error;}
  };
  let statusCursor='';
  const reconcile=()=>{
-  for(const row of runtime.store.db.prepare("SELECT j.id, json_extract(j.json,'$.workPackage.id') unit_id FROM memory_jobs j JOIN delegation_units u ON u.id=json_extract(j.json,'$.workPackage.id') WHERE json_extract(u.json,'$.external')=1 AND (json_extract(u.json,'$.stepId') != ('memory-package-status:' || j.id) OR NOT EXISTS(SELECT 1 FROM execution_steps e WHERE e.id=('memory-package-status:' || j.id))) LIMIT 64").all()){const unit=runtime.unit(String(row.unit_id));if(unit.status==='cancelled'){pipeline.cancel(String(row.id));continue;}onCreated({id:unit.id,members:[],goal:unit.goal,instruction:String(unit.input.instruction)}, {id:String(row.id)});}
+  const links=runtime.store.db.prepare(`SELECT j.id,json_extract(j.json,'$.workPackage.id') unit_id,json_extract(j.json,'$.status') product_status
+   FROM memory_jobs j JOIN delegation_units u ON u.id=json_extract(j.json,'$.workPackage.id') JOIN delegation_works w ON w.id=u.work_id
+   WHERE json_extract(u.json,'$.external')=1 AND (
+    (json_extract(u.json,'$.status')='cancelled' AND (json_extract(j.json,'$.status') NOT IN ('cancelled','completed') OR
+     NOT EXISTS(SELECT 1 FROM execution_steps e WHERE e.id=json_extract(u.json,'$.stepId')))) OR
+    (json_extract(u.json,'$.status')!='cancelled' AND (
+     json_extract(u.json,'$.stepId')!=('memory-package-status:' || j.id) OR
+     NOT EXISTS(SELECT 1 FROM execution_steps e WHERE e.id=('memory-package-status:' || j.id)) OR
+     NOT EXISTS(SELECT 1 FROM operation_parents p WHERE p.parent_id=json_extract(w.json,'$.operationId') AND p.child_id=('memory:' || j.id))))) LIMIT 64`).all();
+  for(const row of links){
+   const unit=runtime.unit(String(row.unit_id));
+   // Stop may commit after the queue claim but before its bridge was linked.
+   // Observe that durable withdrawal; it cannot authorize a replacement link.
+   if(row.product_status==='cancelled'){runtime.cancelUnit(unit.id,{productStopped:true});continue;}
+   if(unit.status==='cancelled'){pipeline.cancel(String(row.id));continue;}
+   onCreated({id:unit.id,members:[],goal:unit.goal,instruction:String(unit.input.instruction)}, {id:String(row.id)});
+  }
   // Expired parent works cannot rejoin a product. Other rejected authority can
   // remain in the journal, so advance a bounded keyset even when resume returns
   // 409; an immutable prefix must not hide later independently resumed jobs.

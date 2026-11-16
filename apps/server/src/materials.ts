@@ -1145,5 +1145,5 @@ export class MaterialStore {
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   /** Explicit privacy erasure removes all revisions, payloads unique to them and asset refs. */
-  forget(id:string):boolean {parseId(id);forgetRetiredConversationRoots(this.store,{materialId:id});this.setSearchable(id,false);for(const anchor of this.store.db.prepare('SELECT id FROM material_evidence WHERE material_id=?').all(id))this.store.invalidateMemoryEvidence(String(anchor.id),true);const result=this.store.db.prepare('DELETE FROM material_heads WHERE id=?').run(id);this.pruneIndexes();return result.changes>0;}
+  forget(id:string):boolean {parseId(id);forgetRetiredConversationRoots(this.store,{materialId:id});this.store.revokeReleasedMemory({materialId:id});this.setSearchable(id,false);for(const anchor of this.store.db.prepare('SELECT id FROM material_evidence WHERE material_id=?').all(id))this.store.invalidateMemoryEvidence(String(anchor.id),true);const result=this.store.db.prepare('DELETE FROM material_heads WHERE id=?').run(id);this.pruneIndexes();return result.changes>0;}
 }

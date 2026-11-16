@@ -7,7 +7,7 @@ import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import type {StatementSync} from 'node:sqlite';
-import {fileRevisionSchema,fileViewSchema,sourceItemSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,transcriptSchema,type FileCoverage,type SourceItem,type Transcript,type FileRevision,type CaptureRecord,type ArchivedFile,type FileProcessingJobView,type ExecutionEnvelope,fileEvidenceSchema} from '@mote/shared';
+import {fileRevisionSchema,fileViewSchema,sourceItemSchema,FILE_MAX_BYTES,FILE_PART_BYTES,FILE_PART_RECEIPTS,executionEnvelope,transcriptSchema,type FileCoverage,type SourceItem,type Transcript,type FileRevision,type CaptureRecord,type ArchivedFile,type FileProcessingJobView,type ExecutionEnvelope,fileEvidenceSchema} from '@mote/shared';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import type {ContextRecord,ContextRange} from '@mote/agent';
 import {Store,StoreError,sha256,type Range} from './store.js';
@@ -159,7 +159,11 @@ export class FileStore {
     if(!scope)throw new StoreError('Upload authorization is unavailable; begin a new admission under the current source scope',409);
     this.sources.assertSyncScope(row.source_id,Number(scope.scope_version));return row;
   }
-  upload(id:string,authorize:(sourceId:string)=>void){const row=this.session(id,authorize);return {uploadId:id,partBytes:FILE_PART_BYTES,parts:this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').all(id),ack:row.ack?JSON.parse(row.ack):null};}
+  upload(id:string,authorize:(sourceId:string)=>void,afterPart=-1){
+    const row=this.session(id,authorize);if(!Number.isSafeInteger(afterPart)||afterPart< -1)throw new StoreError('Invalid upload receipt cursor');
+    const rows=this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? AND part>? ORDER BY part LIMIT ?').all(id,afterPart,FILE_PART_RECEIPTS+1),parts=rows.slice(0,FILE_PART_RECEIPTS);
+    return {uploadId:id,partBytes:FILE_PART_BYTES,parts,nextPart:rows.length>FILE_PART_RECEIPTS?Number(parts.at(-1)!.part):null,ack:row.ack?JSON.parse(row.ack):null};
+  }
   /** Only a currently authorized file origin can grant reuse. Asset hashes on
    * their own, including hashes retained by unrelated domains, grant nothing. */
   private reusable(input:FileRevision,authorize:(sourceId:string)=>void,captureId?:string){
@@ -225,7 +229,7 @@ export class FileStore {
     this.assertAdmitting();
     const row=this.session(id,authorize);if(row.ack)throw new StoreError('Upload already committed',409);
     const input=JSON.parse(row.manifest) as FileRevision,n=Math.ceil(input.sizeBytes/FILE_PART_BYTES);
-    if(!Number.isInteger(part)||part<0||part>=n||bytes.length!==Math.min(FILE_PART_BYTES,input.sizeBytes-part*FILE_PART_BYTES))throw new StoreError('Invalid file part size or offset');
+    if(!Number.isSafeInteger(part)||part<0||part>=n||!Number.isSafeInteger(part*FILE_PART_BYTES)||bytes.length!==Math.min(FILE_PART_BYTES,input.sizeBytes-part*FILE_PART_BYTES))throw new StoreError('Invalid file part size or offset');
     const hash=sha256(bytes),prior=this.store.db.prepare('SELECT hash FROM file_parts WHERE upload_id=? AND part=?').get(id,part) as {hash:string}|undefined;
     if(prior){if(prior.hash!==hash)throw new StoreError('Part content conflicts',409);return {part,hash,bytes:bytes.length};}
     const path=join(this.uploads,id,String(part));
@@ -264,8 +268,9 @@ export class FileStore {
     return this.serialize('upload:'+id,async()=>{
     const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();
     const row=this.session(id,authorize);if(row.ack)return JSON.parse(row.ack);
-    const input=JSON.parse(row.manifest) as FileRevision,parts=this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').all(id) as {part:number;hash:string;bytes:number}[];
-    if(parts.length!==Math.ceil(input.sizeBytes/FILE_PART_BYTES))throw new StoreError('Upload is incomplete',409);
+    const input=JSON.parse(row.manifest) as FileRevision,count=Number(this.store.db.prepare('SELECT count(*) n FROM file_parts WHERE upload_id=?').get(id)!.n);
+    if(count!==Math.ceil(input.sizeBytes/FILE_PART_BYTES))throw new StoreError('Upload is incomplete',409);
+    const parts=this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').iterate(id) as Iterable<{part:number;hash:string;bytes:number}>;
     const hash=input.sha256!;
     const {release}=await this.store.assets.putUpload(join(this.uploads,id),parts,input.sizeBytes,hash,cancellation);
     try{
@@ -589,18 +594,20 @@ export class FileStore {
   allowAgain(sourceId:string,externalId:string){
     this.store.db.prepare('DELETE FROM file_forgotten WHERE source_id=? AND external_id=?').run(sourceId,externalId);return {allowed:true};
   }
-  remove(id:string){return this.removeOriginal(id,true,false);}
+  remove(id:string){return this.removeOriginal(id,true,false,true);}
   /** Owner history deletion keeps future revisions under their existing grant. */
-  deleteArchive(id:string){return this.removeOriginal(id,false,false);}
+  deleteArchive(id:string){return this.removeOriginal(id,false,false,true);}
   /** Explicit forgetting additionally suppresses future versions until allowAgain. */
-  forget(id:string){return this.removeOriginal(id,false,true);}
-  private removeOriginal(id:string,preserveDialogue:boolean,forgetFuture:boolean){
+  forget(id:string){return this.removeOriginal(id,false,true,false);}
+  private removeOriginal(id:string,preserveDialogue:boolean,forgetFuture:boolean,retainPublishedMemory:boolean){
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');
     let ids:{capture_id:string}[],uploads:{id:string;manifest:string}[];
     try{
       const retired=!preserveDialogue&&retiredConversationRoot(this.store,id)?.file;
-      const version=retired?{source_id:retired.sourceId,external_id:retired.externalId}:this.version(id);
-      if(!preserveDialogue)forgetRetiredConversationRoots(this.store,{file:{sourceId:version.source_id,externalId:version.external_id}});
+      const released=forgetFuture?db.prepare("SELECT source_id,external_id FROM source_versions v WHERE capture_id=? AND EXISTS(SELECT 1 FROM memory_provider_evidence_revocations r WHERE json_extract(r.json,'$.releasedOriginal.file.sourceId')=v.source_id AND json_extract(r.json,'$.releasedOriginal.file.externalId')=v.external_id)").get(id):undefined;
+      const version=retired?{source_id:retired.sourceId,external_id:retired.externalId}:released?{source_id:String(released.source_id),external_id:String(released.external_id)}:this.version(id);
+      if(!preserveDialogue)forgetRetiredConversationRoots(this.store,{file:{sourceId:version.source_id,externalId:version.external_id}},retainPublishedMemory);
+      if(!retainPublishedMemory)this.store.revokeReleasedMemory({file:{sourceId:version.source_id,externalId:version.external_id}});
       if(forgetFuture)db.prepare('INSERT OR IGNORE INTO file_forgotten VALUES(?,?)').run(version.source_id,version.external_id);
       uploads=db.prepare("SELECT id,manifest FROM file_uploads WHERE source_id=? AND json_extract(manifest,'$.item.externalId')=?").all(version.source_id,version.external_id) as {id:string;manifest:string}[];
       // Reuse the immutable version ledger's existing missing-capture guard for
@@ -608,7 +615,7 @@ export class FileStore {
       const staged=[...uploads.map(row=>JSON.parse(row.manifest) as FileRevision),...this.admittedRevisions].filter(input=>input.sourceId===version.source_id&&input.item.externalId===version.external_id);
       for(const input of staged){const {observedAt,...semantic}=input.item;db.prepare('INSERT OR IGNORE INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(input.sourceId,input.item.externalId,input.item.revision,randomUUID(),sha256(JSON.stringify(semantic)));}
       ids=db.prepare('SELECT capture_id FROM file_versions WHERE source_id=? AND external_id=?').all(version.source_id,version.external_id) as {capture_id:string}[];
-      for(const row of ids)this.store.deleteInTransaction(row.capture_id,preserveDialogue);
+      for(const row of ids)this.store.deleteInTransaction(row.capture_id,preserveDialogue,retainPublishedMemory);
       for(const row of uploads)db.prepare('DELETE FROM file_uploads WHERE id=?').run(row.id);
       db.exec('COMMIT');
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}

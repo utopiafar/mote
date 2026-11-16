@@ -16,7 +16,7 @@ test('unsupported platforms, redirected storage and damaged prepared binaries re
 test('ready read-only deployments need no writes; missing binaries in a read-only directory fail clearly',async t=>{const f=await fixture(t);await prepareConnectorRuntime(f);await chmod(f.directory,0o555);await prepareConnectorRuntime({...f,fetchArchive:()=>{throw Error('No writes/downloads when ready');}});
  const missing=join(f.directory,'new-runtime');await assert.rejects(()=>prepareConnectorRuntime({...f,directory:missing}),error=>['EACCES','EPERM'].includes(error.code));await chmod(f.directory,0o755);});
 
-test('Docker deployment exposes the prepared code directory to its unprivileged runtime user',async()=>{const docker=await readFile(new URL('../../Dockerfile',import.meta.url),'utf8');assert.match(docker,/connector-runtime\.mjs && chmod a\+rx \.mote && chmod -R a\+rX \.mote\/connectors/);assert.ok(docker.indexOf('RUN node scripts/connector-runtime.mjs')<docker.indexOf('USER node'));});
+test('full Docker deployment exposes the prepared code directory to its unprivileged runtime user',async()=>{const docker=await readFile(new URL('../../Dockerfile',import.meta.url),'utf8'),full=docker.split(/^FROM core AS full\n/m)[1]?.split(/^FROM /m)[0];assert.ok(full);assert.match(full,/^USER root$/m);assert.match(full,/connector-runtime\.mjs && chmod a\+rx \.mote && chmod -R a\+rX \.mote\/connectors/);assert.ok(full.indexOf('RUN node scripts/connector-runtime.mjs')<full.indexOf('USER node'));});
 
 test('the native deployment command prepares only the selected release without provider or Mote credentials and forwards process proxies',async t=>{
  const {profilePaths,initialize}=await import('../profile-lib.mjs');
