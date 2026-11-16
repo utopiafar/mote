@@ -10766,5 +10766,8 @@
   "已有部分结果；需要你补充的问题只影响相关结论。": "Des résultats partiels sont disponibles. Les questions en attente de votre réponse ne concernent que les conclusions associées.",
   "任务资料范围": "Documents de la tâche",
   "仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。": "Seules les preuves complètes et les sources dont dépend cette suggestion sont utilisées. Les autres documents sont exclus de cette tâche. Tout contenu manquant ou toute couverture incomplète sera signalé.",
-  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Les documents complets de cette suggestion sont indisponibles. Actualisez et vérifiez à nouveau."
+  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Les documents complets de cette suggestion sont indisponibles. Actualisez et vérifiez à nouveau.",
+  "可安全推进的解析会自动保存；关键缺口需要确认。": "Les résultats qui peuvent être enregistrés sans risque le sont automatiquement ; les lacunes importantes nécessitent une confirmation.",
+  "解析未说明是否需要确认，请核对预览。": "L’analyse ne précise pas si une confirmation est nécessaire. Vérifiez l’aperçu.",
+  "解析未说明继续处理的依据，请核对预览。": "L’analyse n’explique pas sur quelle base poursuivre. Vérifiez l’aperçu."
 }

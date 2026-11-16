@@ -342,11 +342,14 @@ export class ImportStore {
       for(const input of attempt.inputs)await this.materialize(input);
       const decoded=await formatWork({kind:'plain',inputs:attempt.inputs.map(input=>({path:input.path,file:this.files.get(input.fileId)})),createdAt:job.createdAt,manifest:join(attempt.workspace,'prepared.jsonl')},signal);
       signal?.throwIfAborted();grant.assert();
-      if(!decoded.count&&!job.media?.length&&!job.excludedFiles?.length)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived; no searchable text or media work was produced.';this.save(job);return this.public(job);});
       const prepared=await this.stagePrepared(job,attempt,join(attempt.workspace,'prepared.jsonl'),signal);
       job.manifestHash=prepared.hash;job.summary='Source document text archived directly; author and original dates remain unspecified.';job.warnings=decoded.warnings;
       job.preview={count:decoded.count+(job.media?.length??0),samples:decoded.samples};job.progress.total=job.preview.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';
       job.dispositions=this.dispositions(job,{counts:{parsed:attempt.inputs.length,attachment:0,container:0,excluded:0,unsupported:0},items:attempt.inputs.map(input=>this.files.get(input.fileId)).map(file=>({fileId:file.id,path:file.relativePath,status:'parsed',reason:'Deterministic document decoder; no attribution or original date inferred'}))});
+      if(!job.preview.count){
+        job.status='unsupported';job.processingStatus='blocked';job.summary=job.error='Original files are archived; no searchable text or media work was produced.';
+        this.publishPrepared(job,grant,prepared.staged);return this.public(job);
+      }
       job.reviewDecision=decoded.partial?
         {confidence:'low',ambiguous:false,requiresConfirmation:true,reason:'Document decoding reported incomplete coverage; review the available text before publishing.'}:
         {confidence:'high',ambiguous:false,requiresConfirmation:false,reason:'Deterministic document decoding preserved original text without inferred attribution or dates.'};
@@ -394,9 +397,10 @@ export class ImportStore {
       if(!existsSync(resolve(attempt.workspace,path)))return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});
       const prepared=await this.validateManifest(attempt,path,join(attempt.workspace,'prepared.jsonl'),signal,undefined,true);signal?.throwIfAborted();grant.assert();
       job.dispositions=this.dispositions(job,prepared.dispositions);job.warnings=[...job.warnings,...prepared.warnings].slice(-200);
+      job.preview={count:prepared.count+(job.media?.length??0),samples:prepared.samples};job.progress.total=job.preview.count;
       if(!prepared.count&&!job.media?.length)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});
       const canonical=await this.stagePrepared(job,attempt,join(attempt.workspace,'prepared.jsonl'),signal);
-      job.manifestHash=canonical.hash;job.preview={count:prepared.count+(job.media?.length??0),samples:prepared.samples};job.progress.total=job.preview.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';job.reviewDecision=result.reviewDecision;job.reviewGate=reviewGate(job,result.reviewDecision);
+      job.manifestHash=canonical.hash;job.status='awaiting_confirmation';job.processingStatus='preview_ready';job.reviewDecision=result.reviewDecision;job.reviewGate=reviewGate(job,result.reviewDecision);
       this.publishPrepared(job,grant,canonical.staged);return this.public(job);
     }catch(error){return this.phaseFailure(id,'prepare',grant,signal,error);}
     finally{if(attempt)rmSync(attempt.workspace,{recursive:true,force:true});this.running.delete(id);}

@@ -10767,5 +10767,8 @@ export const german: Readonly<Record<string, string>> = {
   "已有部分结果；需要你补充的问题只影响相关结论。": "Teilergebnisse sind verfügbar. Fragen, die deine Antwort benötigen, betreffen nur die zugehörigen Schlussfolgerungen.",
   "任务资料范围": "Aufgabenmaterialien",
   "仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。": "Verwendet nur die vollständigen Belege und Originalquellen dieses Vorschlags. Andere Materialien sind nicht Teil dieser Aufgabe. Fehlende Inhalte oder unvollständige Abdeckung werden ausdrücklich genannt.",
-  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Die vollständigen Materialien dieses Vorschlags sind nicht verfügbar. Aktualisieren und erneut prüfen."
+  "当前建议的完整资料范围不可用，请刷新后重新核对。": "Die vollständigen Materialien dieses Vorschlags sind nicht verfügbar. Aktualisieren und erneut prüfen.",
+  "可安全推进的解析会自动保存；关键缺口需要确认。": "Ergebnisse, bei denen sicher fortgefahren werden kann, werden automatisch gespeichert; wesentliche Lücken erfordern eine Bestätigung.",
+  "解析未说明是否需要确认，请核对预览。": "Die Analyse gibt nicht an, ob eine Bestätigung erforderlich ist. Prüfe die Vorschau.",
+  "解析未说明继续处理的依据，请核对预览。": "Die Analyse erläutert nicht, auf welcher Grundlage fortgefahren werden kann. Prüfe die Vorschau."
 };

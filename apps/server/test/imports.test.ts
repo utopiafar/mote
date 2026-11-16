@@ -106,6 +106,17 @@ test('automatic import follows an explicit confirmation judgment after host vali
  assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/manual preview/);
  assert.equal(store.list().items.length,3);
 });
+test('a valid empty manifest keeps original accounting and cannot confirm a zero-record success',async t=>{
+ const {imports,files,store}=fixture(t,{prepare:async({workspace,inputPaths})=>{
+  writeFileSync(join(workspace,'records.jsonl'),'');
+  writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:inputPaths.map(path=>({path,status:'excluded',reason:'Generated configuration is retained but is not searchable evidence'}))}));
+  return {summary:'Generated original is excluded from searchable evidence',reviewDecision:{confidence:'high',ambiguous:false,requiresConfirmation:false,reason:'The generated original is not evidence'}};
+ }});
+ const job=await imports.create({processing:'automatic',files:[entry('generated.custom','Generated excluded bytes')]}),result=await imports.prepare(job.id);
+ assert.equal(result.status,'unsupported');assert.equal(result.preview?.count,0);assert.equal(result.dispositions?.counts.excluded,1);assert.equal(result.dispositions?.counts.unsupported,0);
+ assert.equal(files.read(job.files[0].id).toString(),'Generated excluded bytes');assert.deepEqual(result.captureIds,[]);assert.equal(store.list().items.length,0);
+ await assert.rejects(imports.confirm(job.id),{statusCode:409});assert.equal(imports.get(job.id).status,'unsupported');
+});
 test('imports select only a configured pinned Python pack and do not fall back to model analysis',async t=>{
  let packCalls=0,modelCalls=0;
  const sourcePacks=new Map([['fixture.pack',{revision:'pinned-v1',prepare:async({workspace,inputPaths,instruction}:import('../src/imports.js').ImportPreparation)=>{

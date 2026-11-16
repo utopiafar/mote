@@ -10766,5 +10766,8 @@
   "已有部分结果；需要你补充的问题只影响相关结论。": "Partial results are available. Questions needing your input affect only the related conclusions.",
   "任务资料范围": "Task materials",
   "仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。": "Uses only the complete evidence and original dependencies for this suggestion. Other materials are outside this task. Missing content or incomplete coverage will be stated explicitly.",
-  "当前建议的完整资料范围不可用，请刷新后重新核对。": "The complete materials for this suggestion are unavailable. Refresh and review again."
+  "当前建议的完整资料范围不可用，请刷新后重新核对。": "The complete materials for this suggestion are unavailable. Refresh and review again.",
+  "可安全推进的解析会自动保存；关键缺口需要确认。": "Parses that can safely proceed are saved automatically; critical gaps require confirmation.",
+  "解析未说明是否需要确认，请核对预览。": "The parser did not state whether confirmation is needed. Review the preview.",
+  "解析未说明继续处理的依据，请核对预览。": "The parser did not explain the basis for proceeding. Review the preview."
 }
