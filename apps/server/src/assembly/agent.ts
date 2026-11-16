@@ -71,7 +71,7 @@ export async function assembleAgent(dependencies:AgentAssemblyDependencies){
     agentGate:dependencies.agentGate,llmGate:dependencies.llmGate,interactiveGate:dependencies.interactiveGate,interactiveModelGate:dependencies.interactiveModelGate,
     onCloseError:()=>diagnostics.record('agent.failed',{category:'internal'},'error'),
     registry:{
-      createModelAgent:dependencies.createModelAgent,authorization:dependencies.authorization,admission:dependencies.admission,
+      createModelAgent:dependencies.createModelAgent,nativeDshForProfile:dependencies.nativeDshForProfile,authorization:dependencies.authorization,admission:dependencies.admission,
       runModelFor:dependencies.runModelFor,authorizeModelRequest:dependencies.authorizeModelRequest,assertPurpose:dependencies.assertPurpose,assertEvidence:dependencies.assertEvidence,assertEvidenceAsync:dependencies.assertEvidenceAsync,pinEvidence:dependencies.pinEvidence,
       modelContext:dependencies.modelContext,modelOperation:dependencies.modelOperation,archiveImagesEnabled:dependencies.allowQueryImages,
       retainSnapshot:input=>dependencies.observeMemory(input,'catalog_snapshot',()=>dependencies.evidenceReader.retainMemorySnapshot(input)),

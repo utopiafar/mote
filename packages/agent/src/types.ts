@@ -28,7 +28,7 @@ export interface AgentOptions {
   /** Server-owned launch configuration, never accepted from profile or query APIs. */
   codex?: {executable?:string;home?:string};
   /** Host-only DSH query assembly, never an executable query or model setting. */
-  nativeDsh?: NativeDshAssemblyBinding;
+  nativeDsh?: NativeDshAssemblyBinding | (() => NativeDshAssemblyBinding | undefined | Promise<NativeDshAssemblyBinding | undefined>);
   /** Custom request headers and JSON parameters are secrets, not diagnostics. */
   headers?: Record<string, string>;
   extraBody?: Record<string, unknown>;
