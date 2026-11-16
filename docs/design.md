@@ -25,3 +25,9 @@ Distinguish receipt, processing, indexing, memory and action completion. Report 
 Retain the existing warm graphite palette, purple accent and light, dark and system-following appearance. Reuse navigation, terms, components and shared design definitions. Code owns exact values.
 
 Keep information and action meaning consistent across clients while respecting platform conventions for input, file pickers, permissions and touch. This page describes current design principles; code owns concrete layouts and values.
+
+## Presentation extensions
+
+Theme packs provide exact versioned role data; layout profiles describe supported navigation and detail preferences. Trusted platform renderers bind them through the shared presentation host. Missing providers recover the pinned built-in choice with a reason; install order does not choose a provider. New renderer code ships in the trusted platform build, without arbitrary remote UI execution.
+
+Presentation changes preserve content nodes, drafts, selection and navigation; registered lifecycle scopes release handlers/timers even after partial mount failure. Light/dark/system choices are local to the browser/profile/install and do not change capture, model or source authority. Contracts: [shared host](../packages/shared/src/ui-presentation.ts), [plugin surfaces](plugin-surfaces.md).

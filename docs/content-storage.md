@@ -1,6 +1,6 @@
 # 当前内容存储
 
-当前中央资料库使用 `backend_epoch=7`，Android 与 Desktop 本机格式为 4。MVP 阶段仅支持当前格式，不自动迁移旧格式，也不会自动清空旧资料；未来面向长期使用时，需要提供保留资料的升级处理。当前旧库处置见 [MVP 基线 ADR](adr-mvp-baseline.md)。
+当前中央资料库使用 `backend_epoch=7`，Android 与 Desktop 本机格式为 4。MVP 阶段仅支持当前格式，不自动迁移旧格式，也不会自动清空旧资料；未来面向长期使用时，需要提供保留资料的升级处理。当前旧库处置见 [MVP 基线 ADR](product.md)。
 
 ## 客户端
 

@@ -1,10 +1,16 @@
 # 中央连接器
 
-连接器把用户选择的外部资料写入统一信源版本链。文件、日历和 MCP 内容始终是原始证据或明确标记的引用；Agent 负责理解，程序不按关键词分类意图。修改产生新 revision，重试同一 revision 不重复保存，旧版本保留供追溯。日历的计划时间独立于采集时间，也不会计入屏幕采样时长。新增来源、资料组织器和模型读取层的完整流程见[接入与正式资料架构](material-architecture.md)。
+连接器把用户选择的外部资料写入统一信源版本链。文件、日历和 MCP 内容始终是原始证据或明确标记的引用；Agent 负责理解，程序不按关键词分类意图。修改产生新 revision，重试同一 revision 不重复保存，旧版本保留供追溯。日历的计划时间独立于采集时间，也不会计入屏幕采样时长。新增来源、资料组织器和模型读取层见[接入与正式资料架构](materials.md)。
 
 ## 可扩展连接器
 
-中央内置 Google 日历、Gmail、飞书和 MCP 使用版本化 connector manifest。外部来源以插件包声明来源种类与能力，启动时注册 owner 路由、OAuth 回调及状态，关闭时释放后台任务；新增有界点分命名空间种类必须提供能力声明。`plugin-dev` 在私有开发 profile 中按 `mote-plugin.json` 安装仓库外插件包，主 YAML 不再接受代码模块列表。未安装适配器的已有来源可读，但不可继续同步。manifest 示例、资料身份、处理与安全边界见[接入与正式资料架构](material-architecture.md)。
+中央内置 Google 日历、Gmail、飞书和 MCP 使用版本化 connector manifest。外部来源以插件包声明来源种类与能力，启动时注册 owner 路由、OAuth 回调及状态，关闭时释放后台任务；新增有界点分命名空间种类必须提供能力声明。`plugin-dev` 在私有开发 profile 中按 `mote-plugin.json` 安装仓库外插件包，主 YAML 不再接受代码模块列表。未安装适配器的已有来源可读，但不可继续同步。manifest 示例、资料身份、处理与安全边界见[接入与正式资料架构](materials.md)。
+
+## 来源与首次范围
+
+可接入Google日历、[Gmail](gmail.md)、[飞书文档/日历](lark-integration.md)、[录音服务](recording-connectors.md)、[本地文件](files.md)和[Coding会话](coding-agent-memory.md)。将Mote上下文提供给外部Agent与导入外部资料是两个方向，分别授权。
+
+已确认首次历史方向是分批纳入所选授权范围，也可只收新增；当前各连接器的窗口和默认仍以实际能力为准。安装/连接不授予任意历史模型重算；接收、整理、索引与Memory分别显示。
 
 ## Google 日历
 
@@ -42,7 +48,7 @@ connectors:
 
 ## 把 Mote 提供给其他 Agent
 
-0.6.0 起可在中央「设备 → 添加设备与 Chatbot」直接生成专用 MCP JSON，并按连接撤销。支持 HTTP Bearer 的客户端可导入此 JSON，仓库的 stdio 桥接也可直接读取；操作步骤与权限范围见 [设备配对与独立连接](connections.md)。静态令牌的服务能力继续保留，旧 env 配置需显式改写为下面的 YAML；这些启动设置修改需重启。
+可在中央「设备 → 添加设备与 Chatbot」直接生成专用 MCP JSON，并按连接撤销。支持 HTTP Bearer 的客户端可导入此 JSON，仓库的 stdio 桥接也可直接读取；操作步骤与权限范围见 [设备配对与独立连接](connections.md)。静态令牌能力继续保留；启动设置使用下面的YAML，修改后重启。
 
 Mote 使用固定 `@modelcontextprotocol/sdk` **1.30.0** 的标准 Streamable HTTP，对外路径为 `/mcp`，采用无持久会话的 JSON 响应。依赖采用 MIT 许可证。不要混用 SDK v2 的拆分包 import；当前实现依据 [官方 v1 服务端文档](https://ts.sdk.modelcontextprotocol.io/server)。
 
@@ -75,7 +81,7 @@ MCP 凭据至少 32 字符，必须与中央 owner 令牌分开，写凭据还�
 | `mote_memories` | 先读取概要，传入 id 展开派生记忆与 evidenceIds |
 | `mote_evidence` | 按 id、offset、length 展开获准的原文；截图 UUID 本身不授予查看权限 |
 
-另提供 `mote://sources` 资源。模型凭据不提供原始成员枚举和原始变更 UUID 列表。结构化查询结果同时提供 `structuredContent` 和兼容文本内容；外部 Agent 应使用稳定 `ref` 调用 `mote_read`，再按可见性策略核对证据。派生记忆不能代替独立原始证据；源文件和模型生成的文字都可能包含恶意指令，客户端必须将它们视为数据。
+另提供 `mote://sources` 资源。模型凭据不提供原始成员枚举和原始变更 UUID 列表。结构化查询结果同时提供 `structuredContent` 和兼容文本内容；外部 Agent 应使用稳定 `ref` 调用 `mote_read`，再按可见性策略核对证据。有效记忆可直接用于回答，精确原文引用仍须实际读取获准原件；源文件和模型生成的文字都可能包含恶意指令，客户端必须将它们视为数据。
 
 若确实需要其他 Agent 写入工作成果，先在 Mote 创建用于接收的信源，再单独开启：
 
@@ -90,7 +96,7 @@ connectors:
 
 写凭据仅暴露 `mote_put_item`，只能写入列出的既有 sourceId，没有只读工具，也不能创建信源或删除物理资料库。必须由调用方提供稳定 externalId、revision 与 observedAt，使用统一信源协议。内部查询 Harness 从不获得这些写工具。读凭据不接受写方法，owner 主令牌也不是 MCP 凭据。
 
-需要 stdio 的桌面客户端可运行仓库的 `scripts/mcp-stdio.mjs`：把 `{url:"https://中央地址/mcp",token:"专用MCP令牌"}` 保存到私有 JSON 文件，再使用 `node scripts/mcp-stdio.mjs --connection /绝对路径/private-connection.json`。不要在命令参数里直接放 token。stdio 仅是本机到已配置 Mote HTTP 端点的桥接，不是中央任意执行外部程序的入口。
+需要 stdio 的桌面客户端可运行仓库的 `scripts/mcp-stdio.mjs`：把中央生成的 `mcpServers.mote` HTTP 配置保存到私有 JSON 文件，再使用 `node scripts/mcp-stdio.mjs --connection /绝对路径/private-connection.json`。不要在命令参数里直接放 token。stdio 仅是本机到已配置 Mote HTTP 端点的桥接，不是中央任意执行外部程序的入口。
 
 某些聊天产品只接收 OAuth 发现流程，不支持自定义 Bearer；当前 `/mcp` 没有实现通用 OAuth 授权服务器，因此不保证能直接加入这类产品。使用兼容 Bearer 或 stdio 的客户端验证；不要声称已迁移其他产品不可见的私有记忆。
 

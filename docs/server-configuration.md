@@ -69,7 +69,7 @@ Memory策略、不可变版本、输入授权和检查点保留在领域数据�
 
 模型设置见[模型服务](model-providers.md)。文件策略使用`processing.policy.services/profiles/rules`；插件参数受已安装处理器schema校验。模型目录与测试连接通过设置操作发起，连接测试只用合成输入，可能产生模型费用。
 
-受管媒体依赖按`ocr`、`dialogue`、`local-image`分别准备；`media-runtime --profile NAME --role ROLE`只准备环境，不代表Worker就绪。权重离线导入使用`media-import --role ocr|dialogue|speaker-wespeaker|local-image --from DIRECTORY`。安装、服务就绪和插件启用分别表达，见[媒体配置](ocr-asr-implementation-plan.md)。
+受管媒体依赖按`ocr`、`dialogue`、`local-image`分别准备；`media-runtime --profile NAME --role ROLE`只准备环境，不代表Worker就绪。权重离线导入使用`media-import --role ocr|dialogue|speaker-wespeaker|local-image --from DIRECTORY`。安装、服务就绪和插件启用分别表达，见[媒体配置](media-setup.md)。
 
 ## 日志与调试
 

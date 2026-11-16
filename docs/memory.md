@@ -1,0 +1,69 @@
+# Memory and evidence retrieval
+
+Memory is selected, model-derived context with a subject, scope, time, provenance and uncertainty. It may describe a preference, subjective experience, provisional interpretation or engineering decision. Automatic publication does not make it independently verified fact. Originals remain retrievable whether or not they produce Memory.
+
+The [product principles](product.md) define the direction; the [architecture gaps](architecture.md#product-direction-and-implementation-gaps) distinguish it from current code. In particular, the model may use valid Memory directly and decide when to verify it. Extra review should be chosen by the model or selected Memory implementation; the current pipeline still requires independent review for its new range-evaluation work.
+
+## Classification and attribution
+
+`admission.layer` separates `observation` (events, document summaries and task leads) from `memory` (selected useful context). Its reason, scope and attribution explain what the result is for and whose statement it represents. Domain, extraction/consolidation tier, kind and publication status are separate fields; a published observation is not thereby a personal fact.
+
+Models interpret meaning using continuous source context and owner-provided background. Source type does not determine meaning: a Coding Agent conversation can contain personal experience, technical decisions and an ordinary task lead. A third-party interview in the owner's archive is not the owner's opinion. Repeated experiences can be useful without becoming a permanent personality label. Reported fixes and Agent claims keep their unverified status.
+
+Source project identity is structured metadata: workspace, session fallback or unknown. It does not assert that every discussed project is the source repository. Preserve subject and source rather than inventing a dedicated identity-confirmation flow. Background uncertainty can remain recorded; clarify when it matters to the current answer or action, remembering earlier answers and constraints.
+
+## Current processing path
+
+1. A durable manual request or automatic receipt authorizes exact inputs and pins the recipe, strategy versions and source state.
+2. Extraction reads bounded targets and may request relevant interpretation context within that grant. Models select useful candidates; zero candidates is valid.
+3. Current range-evaluation recipes independently review the candidate set and coverage, including empty results. Integration and native drafts use the shared admission boundary.
+4. The host checks current permissions, original versions, exact quotes/ranges, dependency validity and deletion state, then commits publication and checkpoints atomically.
+
+Coverage names the target ranges actually assessed. `checked` and `no_candidates` mean complete assessment of those targets, not of an entire file or session. Unread, truncated or unavailable content remains incomplete. No candidate-count quota or keyword semantic classifier substitutes for model judgment. Interpretation context does not itself authorize candidates or count as target coverage.
+
+Saved quotes require exact support, not fuzzy matching or OCR correction. The host may locate an omitted offset only when the identical substring is unique in the permitted range. Current Memory uses the strict schema, including classification, version, fingerprint and evidence content hashes; readers do not manufacture missing metadata for old records.
+
+New accepted results become effective without owner approval of every card. The owner can correct, explicitly publish an eligible proposal or delete results. Those commands recheck current evidence and deletion intent; they are not a compatibility route for malformed old records.
+
+## Jobs, recipes and recovery
+
+Strategies and recipes are replaceable through [memory-strategy-contract.ts](../apps/server/src/memory-strategy-contract.ts). Definitions, fingerprints, input requirements and receipts are pinned. A changed reviewer can reuse an extraction draft but needs a new matching review. New defaults do not rewrite an existing task or retrospectively authorize old inputs.
+
+Manual input plans separate an original source pin from derived readiness. Each material/recipe pair uses a durable `memory.input` execution step. Pending OCR/transcription waits before claiming a model attempt; failed inputs need explicit retry, and retrying Memory does not start media processing. Completed independent batches remain reusable. Cancellation, pause, source replacement or revoked permission prevent unfinished work and late publication. Metadata binding and step creation share one fenced transaction.
+
+Newly authorized ready inputs use rolling packages; older lifecycle windows retain their own cursors and bounded drain policy. Integration, insights and working context have separate lifecycle schedules. Waiting inputs and owner questions do not occupy model slots. Persistent checkpoints survive restarts; a timeout may recompute unfinished work while retaining completed valid stages. The confirmed pause/resume direction includes retained backlogs; current implementation gaps belong in the architecture map rather than a promise of automatic replay.
+
+The existing shared owner-question service retains versioned questions and responses. Obsolete source, binding or authorization state retires a question. An answer can support a continuation; it cannot certify identity or publish a draft by itself. This service should support necessary clarification without interrupting every uncertain background interpretation.
+
+## Query and disclosure
+
+`EvidenceReader` is shared by Web, MCP and the Agent bridge. It does not remember prior authorization; every read applies current credentials, source/device/time scope, privacy and deletion state. Context navigation refs describe a query, not a grant. Reconstructing one still checks the original anchor, and a deleted anchor cannot silently resolve to a newer head.
+
+| Read | Result |
+| --- | --- |
+| Memory list | Bounded cards, metadata and continuation cursor. |
+| Memory detail | Statement, uncertainty and source locators. |
+| Optional source evidence | Verified original ranges with offsets, delivery provenance and explicit partial-coverage information. |
+| Original/material read | Paged current or pinned evidence; unavailable retained text returns its known location and reason without reading an offline device. |
+
+Public evidence refs use explicit `capture:<UUID>` or `memory:<UUID>` namespaces. Resource URLs whose schema declares an ID still use UUIDs; adapters perform the conversion. Derived artifact refs pin `artifact:<encoded-id>:<encoded-revision>`. Ref spelling or a saved locator grants neither access nor citation authority.
+
+A model can answer from useful valid Memory and deepen its read for conflicting evidence, exact detail, recency or visual questions. Exact quotations and original citations require the actual authorized original range to have been delivered successfully in this run. A Memory locator or an old stored quote does not establish that delivery. There is no compulsory traversal through every layer or redundant read of an already delivered range.
+
+Dependency checks include every original behind Memory and derived artifacts. An exact current Material anchor can prove delivery without exposing raw recording ancestors, while their source/privacy/deletion permissions still apply. The reader does not treat one covered member as covering every separate citation. Literal search supports stable exhaustive pagination; ranked retrieval is bounded and may be incomplete. Empty or filtered pages are not proof of absence.
+
+Image disclosure is a separate host setting and is disabled by default. A selected image target must actually reach the relevant model, including an independent reviewer when that review is used; text/OCR does not establish visual coverage. Context-only images remain optional. Missing capability, disabled disclosure or failed delivery stays explicit, rather than dropping the target or claiming it was assessed. See [processing](processing.md#images).
+
+## Publication, deletion and replacement
+
+Only currently valid published Memory enters ordinary Agent queries; historical/proposed/stale views remain explicit owner reads. Current source revision changes make dependent cards stale, and current original deletion propagates through dependent cards, private stage products and outstanding questions. The product direction preserves still-valid Memory after ordinary raw expiry; explicit forgetting or withdrawal applies to the requested scope. That distinction still needs implementation.
+
+Deletion intent survives retries and regeneration. Deleting one card invalidates dependent cards; it does not erase unrelated source originals. An external provider erase is durable work with reconciliation: a lost response is unknown, not success. The host retains admission, authorization, version checks and publication transactions even when storage, search or a native semantic stage is replaced.
+
+Provider bindings prepare, verify and switch exact namespaces, keys, versions and bodies before changing the active reader. Failed preparation retains the previous binding. A native engine produces an untrusted draft; it does not inherit owner commands or publication authority. Process isolation is not a sandbox for hostile native plugins.
+
+## Entry points
+
+Implementation: [memory-pipeline.ts](../apps/server/src/memory-pipeline.ts), [memory.ts](../apps/server/src/memory.ts), [memory-lifecycle.ts](../apps/server/src/memory-lifecycle.ts), [memory-review.ts](../apps/server/src/memory-review.ts), [memory-bindings.ts](../apps/server/src/memory-bindings.ts), [evidence-reader.ts](../apps/server/src/evidence-reader.ts) and [context-query.ts](../apps/server/src/context-query.ts). Provider and native-stage contracts are [memory-provider-contract.ts](../apps/server/src/memory-provider-contract.ts) and [memory-native-stage-contract.ts](../apps/server/src/memory-native-stage-contract.ts).
+
+Owner routes include `/api/memories`, `/:id`, `/:id/evidence` and `/:id/text`; concrete request and response fields live in [evidence-routes.ts](../apps/server/src/evidence-routes.ts) and the shared schemas. Topic indexes are derived navigation over Memory with platform readers, not a second fact store. Use [testing](testing.md) to choose meaningful generated checks; live semantic quality and device behavior require separate evidence.

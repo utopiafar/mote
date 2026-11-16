@@ -29,7 +29,7 @@
 
 HTTP运行时使用Harness/pi-ai，Codex使用独立适配器；共享Mote工具、范围和引用校验。具体字段由[Agent代码](../packages/agent/src)和[模型设置](../apps/server/src/model-settings.ts)定义。Responses关闭服务端会话存储，Harness会话日志和插件清单上传关闭；图片按已有授权内联，远程Files上传在请求前拒绝。
 
-HTTP的`modelRequestTimeoutMs`为5000–600000毫秒；`agentTimeoutMs`为5000–3600000毫秒或`null`，新HTTP预设默认一小时。Agent预算计实际模型、工具和修正时间，不计中央名额等待。并发变化作用于后续准入。默认输出预算65536 tokens，专用设置调整；它不是累计账单或字数。输出超限的较短回答恢复与失败保留见[Agent说明](agent.md)。
+HTTP的`modelRequestTimeoutMs`为5000–600000毫秒；`agentTimeoutMs`为5000–3600000毫秒或`null`，新HTTP预设默认一小时。Agent预算计实际模型、工具和修正时间，不计中央名额等待。并发变化作用于后续准入。默认输出预算65536 tokens，专用设置调整；它不是累计账单或字数。输出超限的较短回答恢复与失败保留见[Agent说明](agent-runtime.md#runtime-roles)。
 
 Codex需要运行Central的系统用户已安装CLI和文件登录；Docker内也需CLI及可访问凭据。`models.codex.executable/home`只由宿主配置提供，修改需重启。每次请求使用独立进程和临时home，不继承私人MCP、插件、hooks或历史会话。查询只开放Mote上下文工具，导入使用独立可写临时工作区。
 

@@ -58,4 +58,4 @@ flowchart LR
 
 本文件随实现更新。协议、插件 SDK、配置、部署和验证使用独立的必要短参考，具体接口以代码与 schema 为准。
 
-技术参考：[资料与来源](source-pipelines.md)、[Memory](memory-current-design.md)、[执行](execution-engine.md)、[协议](protocol.md)、[配置](server-configuration.md)、[内容存储](content-storage.md)。
+技术参考：[资料与来源](materials.md#publication-and-extension)、[Memory](memory.md)、[执行](agent-runtime.md#execution-state-and-recovery)、[协议](protocol.md)、[配置](server-configuration.md)、[内容存储](content-storage.md)。

@@ -58,4 +58,4 @@ Material can be retrieved directly while Memory and interpretations are produced
 
 Update this map as implementation changes. Keep necessary short references for protocols, the plugin SDK, configuration, deployment and verification; code and schemas own concrete interfaces.
 
-Technical references: [material and sources](source-pipelines.md), [Memory](memory-current-design.md), [execution](execution-engine.md), [protocol](protocol.md), [configuration](server-configuration.md), [content storage](content-storage.md).
+Technical references: [material and sources](materials.md#publication-and-extension), [Memory](memory.md), [execution](agent-runtime.md#execution-state-and-recovery), [protocol](protocol.md), [configuration](server-configuration.md), [content storage](content-storage.md).
