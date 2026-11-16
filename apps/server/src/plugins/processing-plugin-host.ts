@@ -55,7 +55,8 @@ export function createProcessingPluginHost(workflows:Pick<ProcessingRuntime,'reg
   // Unique apply identity prevents Cordis deduplication across installations.
   // These registration ports are already resolved by the host. Declaring them
   // as child service dependencies would wait for the preparing parent scope.
-  const isolated={...exported,name:exported.name??'installed-processing',inject:[],apply:(ctx:Context,config:unknown)=>Reflect.apply(apply,plugin,[Object.create(ctx,Object.fromEntries(Object.entries(ports).map(([name,value])=>[name,{value,enumerable:true}]))),config])} as Plugin;
+  const local=(ctx:Context)=>Object.create(ctx,{...Object.fromEntries(Object.entries(ports).map(([name,value])=>[name,{value,enumerable:true}])),get:{value:(name:string)=>{current();if(!Object.hasOwn(ports,name))throw new StoreError('Processing package requires an unsupported registration port',422);return ports[name];}}});
+  const isolated={...exported,name:exported.name??'installed-processing',inject:[],apply:(ctx:Context,config:unknown)=>Reflect.apply(apply,plugin,[local(ctx),config])} as Plugin;
   const close=()=>closing??=(async()=>{revoke();await fiber?.dispose();for(const declaration of declarations.reverse())declaration.remove();})();
   scope.defer(close);
   for(const signal of [scope.signal,options.signal]){signal.addEventListener('abort',revoke,{once:true});scope.defer(()=>signal.removeEventListener('abort',revoke));}

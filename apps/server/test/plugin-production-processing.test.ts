@@ -20,7 +20,7 @@ export const backendPlugin={name:'generated-installed-processing',inject:['moteC
  const processor=id=>({id,version:'1',lane:'extract',deterministic:true,async process({observations,signal}){
    await hold(config.controlFile,'process');signal.throwIfAborted();return observations.map(row=>({kind:'normalized-text',text:config.label+':'+row.ocrText.replace(/\r\n/g,'\n'),metadata:{}}));
  }});
- const register=id=>ctx.effect(()=>ctx.moteContextProcessors.register(processor(id)));
+ const register=id=>ctx.effect(()=>ctx.get('moteContextProcessors').register(processor(id)));
  if(config.mode==='partial-failure'){register(config.processorId+'.partial');throw Error('Generated apply failure');}
  if(config.mode==='unsupported')throw Error('Generated unavailable dependency');
  if(config.mode==='collision')register(config.processorId+'.partial');
@@ -103,4 +103,16 @@ test('an invalid processing export or unsupported registration dependency is blo
  for(const entry of ['export const backendPlugin={};','export const backendPlugin={inject:["moteStore"],apply(){throw Error("Unsupported code must not run");}};']){
   const f=await fixture(t,entry),instance=await f.configure(),checked=await f.check(instance.id);assert.equal(checked.observed,'blocked');assert.ok(!checked.allowedActions.includes('enable'));assert.ok(checked.capabilities.every(value=>value.state!=='verified'));assert.equal(f.node.workflows.registry.get('generated.installed'),undefined);
  }
+});
+
+test('a packaged file extension publishes its format, typed output and recipe into the actual file pipeline',async t=>{
+ const entry=await readFile(new URL('../../../examples/media-intake-plugin/plugin.mjs',import.meta.url),'utf8'),f=await fixture(t,entry),instance=await f.configure();
+ assert.equal((await f.check(instance.id)).observed,'ready');assert.equal((await f.enable(instance.id)).observed,'ready');
+ const settings=await f.request('GET','/api/file-processing');settings.policy.profiles.push({id:'generated-recipe',name:'Generated recipe',processorId:'community.text-extract',parameters:{},diarizationProcessor:'audio.diarize',summarize:false});settings.policy.rules.unshift({type:'application/vnd.mote.text',profileId:'generated-recipe'});await f.request('PUT','/api/file-processing',{revision:settings.revision,settings:settings.settings,policy:settings.policy});
+ f.node.sources.register({id:'generated-recipe-files',kind:'local-files',name:'Generated recipe files',deviceId:'generated',platform:'import',retention:'archive'});
+ const bytes=Buffer.from('MOTE-TEXT\nGenerated\r\nrecipe'),upload=f.node.files.begin({sourceId:'generated-recipe-files',item:{externalId:'generated-recipe',revision:'1',observedAt:'2026-01-01T00:00:00Z',title:'Generated recipe',kind:'file',layer:'original',text:'',mimeType:'application/vnd.mote.text',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});f.node.files.part(upload.uploadId,0,bytes,()=>{});const receipt=await f.node.files.commit(upload.uploadId,()=>{});
+ for(let n=0;n<20&&f.node.files.detail(receipt.id).job?.state!=='succeeded';n++)await f.node.processingServices.tick();
+ const detail=f.node.files.detail(receipt.id);assert.equal(detail.job?.state,'succeeded',JSON.stringify(detail.job));assert.ok(detail.artifacts.some(value=>value.kind==='text'));assert.ok(f.node.processing.runtime.intake.list().formats.some(value=>value.id==='community.text-format'));
+ const text=detail.artifacts.filter(value=>value.kind==='text').map(value=>JSON.stringify(f.node.processing.artifact(value.id).transcript)).join('\n');assert.match(text,/Generated\\nrecipe/);
+ await f.action(instance.id,'disable');assert.ok(!f.node.processing.runtime.intake.list().formats.some(value=>value.id==='community.text-format'));assert.ok(!f.node.processing.runtime.recipes.list().recipes.some(value=>value.id==='community.text-pipeline'));
 });
