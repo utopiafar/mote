@@ -57,7 +57,7 @@ export interface SourceScan {
 
 export type SourceRequest = (path: string, body: unknown, method: 'GET' | 'POST' | 'PUT' | 'PATCH', signal?: AbortSignal) => Promise<unknown>;
 export const DEFAULT_SOURCE_OPTIONS: SourceOptions = {
-  centralProcessingConsent: true, initialSync: 'all', retention: 'snapshot', intervalSeconds: 300, trackDeletions: false,
+  centralProcessingConsent: true, initialSync: 'all', retention: 'archive', intervalSeconds: 300, trackDeletions: false,
   extensions: ['.md', '.txt', '.json', '.csv', '.ics', '.pdf', '.docx', '.wav', '.mp3', '.m4a'], excludedPaths: [], redactLiterals: [],
 };
 /** Fields whose changes make the existing source sync re-enumerate its scope. */

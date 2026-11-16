@@ -21,7 +21,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
     case 'spool-original': return spoolOriginal(request.path,request.directory,request.expected);
     case 'spool-bytes': return spoolBytes(request.bytes,request.directory);
     case 'original-part': return originalPart(request.spool,request.part);
-    case 'source-state': return sourceState(request.path,request.patches,request.maximum);
+    case 'source-state': return sourceState(request.path,request.patches);
     case 'coding-scan': return scanCodingAgent(request.root,request.provider,request.options,request.checkpoint,signal);
     case 'compression-preview': return compressionPreview(request.quality,request.maxSide);
     case 'browse': {

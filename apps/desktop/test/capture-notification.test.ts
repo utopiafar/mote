@@ -102,7 +102,7 @@ describe('Mac needs-action notifications', () => {
     expect(captureStatusRowFor(desktopStatus({ state: 'permission_required' })).id).toBe('permission');
     expect(captureStatusRowFor(desktopStatus({ sync: { state: 'error' } })).id).toBe('send_attention');
     expect(captureStatusRowFor(desktopStatus({ facts: { sync: { state: 'blocked' } } })).id).toBe('send_attention');
-    expect(captureStatusRowFor(desktopStatus({ queueBytes: 1024 })).id).toBe('storage_full');
+    expect(captureStatusRowFor(desktopStatus({ queueBytes: 1024 })).id).toBe('capturing');
     expect(captureStatusRowFor(desktopStatus({ state: 'error' })).id).toBe('interrupted');
     expect(captureStatusRowFor(desktopStatus({ running: false, state: 'error' })).id).toBe('interrupted');
     expect(captureStatusRowFor(desktopStatus({
@@ -112,7 +112,7 @@ describe('Mac needs-action notifications', () => {
     expect(captureStatusRowFor(desktopStatus({
       config: { ...(desktopStatus().config), authSignedOut: true },
     })).id).toBe('reconnect');
-    expect(captureStatusFacts(desktopStatus({ queueDepth: 32 }))).toMatchObject({ storageFull: true });
+    expect(captureStatusFacts(desktopStatus({ queueDepth: 32 }))).toMatchObject({ storageFull: false });
   });
 });
 

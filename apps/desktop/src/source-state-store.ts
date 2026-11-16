@@ -33,7 +33,7 @@ export function sourceStatePatch(previous: Record<string, unknown>, next: Record
   return changes;
 }
 /** The outbox, delivered revisions and scan checkpoint commit together. Only format 3 SQLite row storage is accepted. */
-export function sourceState(path: string, patches?: StatePatch[], maximum?: number): Record<string, unknown> | undefined {
+export function sourceState(path: string, patches?: StatePatch[]): Record<string, unknown> | undefined {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   if(existsSync(path))throw Error(RESET_REQUIRED);
   const databasePath = path + '.sqlite',exists=existsSync(databasePath);
@@ -68,9 +68,6 @@ export function sourceState(path: string, patches?: StatePatch[], maximum?: numb
         if (change.value === undefined) remove.run(change.section, change.key);
         else put.run(change.section, change.key, encodeLocalContent(JSON.stringify(change.value)));
       }
-      // The catalog is not unsent data. Only the actual pending bodies consume the outbox byte allowance.
-      const bytes = Number(db.prepare("SELECT coalesce(sum(length(value)),0) bytes FROM entries WHERE section IN ('pendingRealtime','pendingHistory','quarantined')").get()!.bytes);
-      if (maximum !== undefined && bytes > maximum) throw new Error('来源待同步队列已满，请恢复网络后重试');
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   }
