@@ -126,8 +126,6 @@ class MainActivity : MoteActivity() {
     private data class RetainedDraft(val fields: Map<String, String>, val config: CollectorConfig, val appCapture: AppCaptureEditor.State?)
     private lateinit var name: EditText
     private lateinit var interval: EditText
-    private lateinit var uploadedRetention: EditText
-    private lateinit var maxQueue: EditText
     private lateinit var excludes: EditText
     private lateinit var uiPageMode: Spinner
     private val uiPageModes = listOf("screen_only", "ui_preferred")
@@ -924,15 +922,13 @@ class MainActivity : MoteActivity() {
         batteryBelow = sourcePresetNumber("低于此电量暂停 / % · 0 为关闭", config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
         section(MoteI18n.text("更多采集设置"))
         menu(MoteI18n.text("图像质量与去重"), MoteI18n.text("清晰度与图片去重"), "capture") { showPage(Page.PROCESSING) }
-        menu(MoteI18n.text("本机存储"), MoteI18n.text("上传后保留时间、空间上限与保存位置"), "folder") { showPage(Page.STORAGE) }
+        menu(MoteI18n.text("本机存储"), MoteI18n.text("备份配置与本机记录"), "folder") { showPage(Page.STORAGE) }
     }
     private fun buildStorage(config: CollectorConfig) {
         page(Page.STORAGE, MoteI18n.text("保留你需要回看的本机副本"))
         menu(MoteI18n.text("图片保存位置"), MoteI18n.text("选择应用存储空间并迁移已有记录"), "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
         menu(MoteI18n.text("上传历史保存时长"), MoteI18n.text("默认30天，仅清理历史，不删除资料"), "history") { startActivity(Intent(this, UploadHistorySettingsActivity::class.java)) }
-        uploadedRetention = sourcePresetNumber("上传后本机保留 / 天（0 为立即清理）", config.uploadedRetentionDays, "7", 0..365, listOf(0, 1, 7, 14, 30, 90, 365))
-        maxQueue = sourcePresetNumber("本机存储上限 / MiB", config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
-        text(MoteI18n.text("中央确认上传后开始计时，到期自动清理本机副本；中央归档继续保留。未上传和冲突记录不会自动删除。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("本机采集内容长期保留，上传确认后不自动删除。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         menu(MoteI18n.text("导入与导出"), MoteI18n.text("备份配置与本机记录"), "folder") { startActivity(Intent(this, BackupActivity::class.java)) }
         if (!RuntimeProfile.current.developerTools) menu(MoteI18n.text("本机图片批量去重"), MoteI18n.text("全量扫描、对比预览、移入待决定区或删除"), "chart") { startActivity(Intent(this, BulkDedupeActivity::class.java)) }
     }
@@ -1432,7 +1428,7 @@ class MainActivity : MoteActivity() {
             chargingOnly = chargingOnly.isChecked, batteryPauseBelowPct = number(batteryBelow, 0..95),
             mediaCollectionEnabled = mediaCollectionEnabled.isChecked, screenCollectionEnabled = screenCollectionEnabled.isChecked,
             notificationCollectionEnabled = notificationCollectionEnabled.isChecked, deviceEventCollectionEnabled = deviceEventCollectionEnabled.isChecked)
-        Page.STORAGE -> current.copy(maxQueueMiB = number(maxQueue, 8..4096), uploadedRetentionDays = number(uploadedRetention, 0..365))
+        Page.STORAGE -> current
         Page.PROCESSING -> current.copy(
             jpegQuality = number(jpegQuality, 40..95), captureMaxSide = number(captureMaxSide, 640..2560),
             imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition], imageDedupeDiagnosticsEnabled = imageDedupeDiagnosticsEnabled.isChecked)
@@ -1814,11 +1810,9 @@ class MainActivity : MoteActivity() {
         val queueStats = local.active
         val pending = local.pending
         val bytes = queueStats?.quotaBytes?.div(1024.0 * 1024)
-        val queueFull = c != null && bytes != null && bytes >= c.maxQueueMiB
         val title = when {
             settings.enabled && !live -> MoteI18n.text("等待采集权限")
             settings.enabled && missingSource -> MoteI18n.text("部分来源等待权限")
-            settings.enabled && queueFull -> MoteI18n.text("本机空间已满")
             settings.enabled && settings.state() == "paused" -> MoteI18n.text("采集暂时等待")
             settings.enabled -> MoteI18n.text("正在本机采集")
             else -> MoteI18n.text("采集已暂停")
@@ -1881,7 +1875,6 @@ class MainActivity : MoteActivity() {
                     captureLive = captureServiceLive,
                     screenPausedAt = screenPausedAt?.let { Instant.ofEpochMilli(it).toString() },
                     permission = if (missingSource) CapturePermission.MISSING else null,
-                    storageFull = queueFull && settings.enabled,
                     interrupted = interrupted,
                     syncState = when {
                         !config.hasSyncConnection() -> CaptureSyncState.UNCONFIGURED
@@ -1901,7 +1894,7 @@ class MainActivity : MoteActivity() {
                 }
             }.getOrNull()
         }
-        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, queueFull), notice)
+        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, false), notice)
     }
     private fun mediaPermission() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))

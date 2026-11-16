@@ -28,15 +28,16 @@ class ComplexNoteRoundTripTest {
                 assertEquals(fixture.mood, restored.read().mood)
                 val same = restored.prepare("https://fixture.example") { error("Prepared submission must not be regenerated") }.prepared!!
                 assertEquals(first.toString(), same.toString())
-                val queue = DurableQueue(queueDir, cipher); queue.enqueue(same, null, 2_000_000)
-                val restarted = DurableQueue(queueDir, cipher); restarted.recoverOrphans(); restarted.enqueue(first, null, 2_000_000)
+                val queue = DurableQueue(queueDir, cipher); queue.enqueue(same, null)
+                val restarted = DurableQueue(queueDir, cipher); restarted.recoverOrphans(); restarted.enqueue(first, null)
                 val actual = restarted.peek()!!
                 assertEquals(1, restarted.depth()); assertEquals(fixture.text, actual.getString("ocrText"))
                 assertEquals(first.getString("id"), actual.getString("id"))
                 if (fixture.mood.isBlank()) assertFalse(actual.has("mood")) else assertEquals(fixture.mood, actual.getString("mood"))
                 assertFalse(actual.has("imageBase64")); assertEquals(0, queueDir.listFiles()!!.count { it.extension == "blob" })
-                assertThrows(IllegalStateException::class.java) { restarted.enqueue(JSONObject(actual.toString()).put("ocrText", "different"), null, 2_000_000) }
-                restarted.acknowledge(actual.getString("id")); restored.clear(); assertEquals(0, restarted.depth()); assertEquals("", restored.read().text)
+                assertThrows(IllegalStateException::class.java) { restarted.enqueue(JSONObject(actual.toString()).put("ocrText", "different"), null) }
+                restarted.acknowledge(actual.getString("id")); restored.clear(); assertEquals(1, restarted.depth()); assertEquals("", restored.read().text)
+                assertTrue(restarted.capture(actual.getString("id"))!!.getBoolean("uploaded")); assertEquals(fixture.text, restarted.capture(actual.getString("id"))!!.getString("ocrText")); assertNull(restarted.peek())
             }
         }
     }
@@ -47,11 +48,13 @@ class ComplexNoteRoundTripTest {
         assertThrows(IllegalArgumentException::class.java) { drafts.update(fixture.text + "界", fixture.mood) }
         assertEquals(fixture.text, drafts.read().text)
         val prepared = drafts.prepare("https://fixture.example", ::event).prepared!!
-        val queue = DurableQueue(folder.newFolder(), cipher)
-        assertThrows(QueueFull::class.java) { queue.enqueue(prepared, null, 100) }
+        val queueDirectory = folder.newFolder(); val queue = DurableQueue(queueDirectory, cipher)
+        val blocked = java.io.File(queueDirectory, ".capture-stages.inbox").apply { check(mkdir()) }
+        assertThrows(java.io.IOException::class.java) { queue.enqueue(prepared, null) }
         assertEquals(0, queue.depth())
         assertEquals(prepared.toString(), NoteDraftStore(dir, cipher).prepare("https://fixture.example", ::event).prepared!!.toString())
-        queue.enqueue(prepared, null, 2_000_000)
+        check(blocked.delete())
+        queue.enqueue(prepared, null)
         assertEquals(fixture.text, queue.peek()!!.getString("ocrText"))
     }
 }

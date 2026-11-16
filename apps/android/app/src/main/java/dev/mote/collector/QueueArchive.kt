@@ -30,11 +30,11 @@ object QueueArchive {
         return count
     }
     /** Stage and validate the entire archive before touching the current queue. */
-    fun prepare(input: InputStream, directory: File, maxBytes: Long): Prepared {
-        require(maxBytes > 0 && !directory.exists()); check(directory.mkdirs())
+    fun prepare(input: InputStream, directory: File): Prepared {
+        require(!directory.exists()); check(directory.mkdirs())
         try {
             LocalDataFormat.requireCurrent(directory)
-            val seen = mutableSetOf<String>(); var total = 0L; var origin: String? = null; var count = 0
+            val seen = mutableSetOf<String>(); var origin: String? = null; var count = 0
             ZipInputStream(input).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
@@ -42,7 +42,7 @@ object QueueArchive {
                     val name = entry.name
                     val cap = when { name == "archive.json" -> 16 * 1024; record.matches(name) -> 1024 * 1024; image.matches(name) -> 16 * 1024 * 1024; else -> error(MoteI18n.text("备份条目无效")) }
                     val out = ByteArrayOutputStream(); val buffer = ByteArray(8192)
-                    while (true) { val n = zip.read(buffer); if (n < 0) break; total += n; require(total <= maxBytes && out.size() + n <= cap) { MoteI18n.text("备份超过本机空间上限") }; out.write(buffer, 0, n) }
+                    while (true) { val n = zip.read(buffer); if (n < 0) break; require(out.size() + n <= cap) { MoteI18n.text("备份条目无效") }; out.write(buffer, 0, n) }
                     val bytes = out.toByteArray()
                     when {
                         name == "archive.json" -> {
@@ -74,7 +74,7 @@ object QueueArchive {
             for (id in staged.dedupeIds()) {
                 val (event, bytes) = requireNotNull(staged.archiveRecord(id))
                 val wire = wire(event)
-                validated.enqueue(wire, bytes, maxBytes)
+                validated.enqueue(wire, bytes)
             }
             staged.prepareIndex()
             validatedDir.deleteRecursively()
@@ -87,9 +87,13 @@ object QueueArchive {
         for (key in listOf("_reviewHeld", "_uploadConflict", "_archiveMissing", "_uploaded")) {
             require(!event.has(key) || event.get(key) is Boolean) { MoteI18n.text("备份中的上传授权状态无效") }
         }
+        require(!event.has("_archiveAcknowledgment") || event.get("_archiveAcknowledgment") is JSONObject) { MoteI18n.text("备份中的上传授权状态无效") }
+        event.optJSONObject("_archiveAcknowledgment")?.let { acknowledgment ->
+            require(acknowledgment.get("at") is Number && FileTransfer.number(acknowledgment, "at") > 0 && acknowledgment.optString("origin").isNotBlank() && acknowledgment.optString("version") == CaptureUploadVersion.of(event)) { MoteI18n.text("备份中的上传授权状态无效") }
+        }
     }
     /** Same IDs merge idempotently; a conflicting existing record is rejected before any writes. */
-    fun restore(prepared: Prepared, target: DurableQueue, origin: String, maxBytes: Long): Int = DurableQueue.exclusive {
+    fun restore(prepared: Prepared, target: DurableQueue, origin: String): Int = DurableQueue.exclusive {
         require(prepared.origin == origin) { MoteI18n.text("备份属于不同中央。连接原节点后导入") }
         val source = prepared.queue()
         val ids = source.dedupeIds()
@@ -97,6 +101,7 @@ object QueueArchive {
             val archived = requireNotNull(source.archiveRecord(id)).first
             validateAuthorization(archived)
             require(!archived.has("_archiveOrigin") || archived.getString("_archiveOrigin") == origin.trim().trimEnd('/')) { MoteI18n.text("备份属于不同中央。连接原节点后导入") }
+            require(archived.optJSONObject("_archiveAcknowledgment")?.getString("origin")?.let { it == origin.trim().trimEnd('/') } != false) { MoteI18n.text("备份属于不同中央。连接原节点后导入") }
             val existing = target.archiveRecord(id) ?: continue
             val incoming = requireNotNull(source.archiveRecord(id))
             require(SourceRules.canonical(wire(existing.first)) == SourceRules.canonical(wire(incoming.first)) && existing.second.contentEquals(incoming.second)) { MoteI18n.text("备份中存在同 ID 内容冲突，未导入") }
@@ -105,8 +110,15 @@ object QueueArchive {
         for (id in ids) {
             val (event, bytes) = requireNotNull(source.archiveRecord(id))
             val held = event.optBoolean("_reviewHeld")
-            if (target.capture(id) == null) { target.enqueue(wire(event), bytes, maxBytes, reviewHeld = held); count++ }
+            if (target.capture(id) == null) { target.enqueue(wire(event), bytes, reviewHeld = held); count++ }
             else if (held) target.holdForReview(id)
+            if (event.optBoolean("_archiveMissing")) target.archiveMissing(id)
+            if (event.optBoolean("_uploadConflict")) target.uploadConflict(id)
+            if (event.optBoolean("_uploaded")) {
+                val acknowledgment = event.optJSONObject("_archiveAcknowledgment")
+                if (acknowledgment == null) target.holdForReview(id)
+                else { require(acknowledgment.getString("origin") == origin.trim().trimEnd('/')); target.restoreAcknowledgment(id, acknowledgment) }
+            }
         }
         count
     }

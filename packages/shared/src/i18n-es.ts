@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "本机采集内容长期保留，上传确认后不自动删除。": "El contenido capturado localmente se conserva a largo plazo y no se elimina automáticamente tras confirmar la carga.",
+  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "El alcance de la fuente local ha cambiado. Las versiones pendientes anteriores están aisladas y sus entradas originales se conservan.",
+  "ZIP 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件、附件和会议录音需另行备份。": "Las copias ZIP incluyen los registros capturados localmente, su estado de carga y las imágenes vinculadas. El estado de carga se conserva al restaurar. Los archivos de origen, los adjuntos y las grabaciones de reuniones requieren copias separadas.",
   "单文件上限（MiB，0 为不限）": "Límite por archivo (MiB; 0 = sin límite adicional)",
   "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "El contenido central se conserva indefinidamente, sin cuota total de almacenamiento ni eliminación automática por antigüedad.",
   "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Los archivos originales se archivan por defecto. Las fuentes existentes conservan sus ajustes de retención, que puedes cambiar en Fuentes.",
@@ -10814,8 +10817,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。": "Eliminar este registro original y las imágenes que ya no se referencian. Se conservan los recuerdos que siguen siendo válidos; el original ya no podrá consultarse ni citarse.",
   "删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。": "Eliminar el archivo original y el texto analizado en Central. Se conservan los recuerdos que siguen siendo válidos; el original ya no podrá consultarse ni citarse. Se conserva el archivo original del dispositivo de origen.",
   "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "El original se ha liberado y ya no puede consultarse ni citarse. Este recuerdo sigue siendo utilizable dentro de su ámbito de validez.",
-  "本机采集内容长期保留，上传确认后不自动删除。": "El contenido capturado localmente se conserva a largo plazo y no se elimina automáticamente tras confirmar la carga.",
-  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "El alcance de la fuente local ha cambiado. Las versiones pendientes anteriores están aisladas y sus entradas originales se conservan.",
   "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "Las copias JSON incluyen registros capturados localmente, su estado de carga e imágenes asociadas; al restaurarlas se conserva el estado de carga. Los archivos de origen y las grabaciones de reuniones requieren copias de seguridad separadas.",
   "清理本机副本": "Eliminar copia local",
   "本机副本已清理": "Copia local eliminada",

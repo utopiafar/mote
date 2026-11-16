@@ -30,7 +30,7 @@ class CaptureUploadBatchTest {
     private fun blob(number: Int, size: Int = 16 * 1024) = ByteArray(size) { ((it + number) % 251).toByte() }
         .apply { this[0] = 0x5a; this[1] = number.toByte() }
     private fun enqueue(queue: DurableQueue, dir: File, number: Int, modified: Long, bytes: ByteArray? = blob(number), capturedAt: String = "2026-10-20T00:00:00Z") {
-        queue.enqueue(event(number, capturedAt, note = bytes == null), bytes, 32L * 1024 * 1024)
+        queue.enqueue(event(number, capturedAt, note = bytes == null), bytes)
         assertTrue(File(dir, "${id(number)}.event").setLastModified(modified))
     }
     private fun List<JSONObject>.ids() = map { it.getString("id") }
@@ -48,7 +48,7 @@ class CaptureUploadBatchTest {
         assertEquals(8, queue.depth())
         queue.acknowledge(id(1))
         val restarted = DurableQueue(dir, cipher)
-        assertEquals(7, restarted.depth())
+        assertEquals(8, restarted.depth()); assertEquals(7, restarted.pendingSync().count)
         assertEquals(id(2), restarted.peekUploadBatch(99, false, 10, null).single().getString("id"))
         assertArrayEquals(blob(8), restarted.image(id(8)))
     }

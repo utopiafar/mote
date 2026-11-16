@@ -79,7 +79,7 @@ class PowerOptimizationInstrumentedTest {
             // A transport batch deliberately excludes pixels after a metadata window.
             // Delete every generated row so later fixture guards see a clean queue.
             val generated = context.queue().capturePage("2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z", limit = 60, source = "").getJSONArray("items")
-            (0 until generated.length()).forEach { context.queue().acknowledge(generated.getJSONObject(it).getString("id")) }
+            (0 until generated.length()).forEach { context.queue().removeGeneratedRecord(generated.getJSONObject(it).getString("id")) }
             settings.save(original)
         }
     }
@@ -141,7 +141,7 @@ class PowerOptimizationInstrumentedTest {
         val settings = Settings(context); val original = settings.read()
         val config = original.copy(server = "", token = "", syncMode = "manual", intervalSeconds = 15,
             metadataEnabled = false, masks = "", excludedPackages = "", uiPageMode = "page_only",
-            appCollectionRules = AppCollectionRules.CONTENT_DEFAULT, chargingOnly = false, batteryPauseBelowPct = 0, uploadedRetentionDays = 0)
+            appCollectionRules = AppCollectionRules.CONTENT_DEFAULT, chargingOnly = false, batteryPauseBelowPct = 0)
         val pipeline = CapturePipeline(context) { }
         val queued = mutableListOf<String>()
         try {
@@ -161,7 +161,7 @@ class PowerOptimizationInstrumentedTest {
             pipeline.submitPageActivity(WindowSnapshot(setOf("generated.page.afterpause"), "generated.page.afterpause", true), config, "2026-10-05T00:01:00Z", 60_000); awaitPipeline(pipeline)
             val after = context.queue().capturePage("2026-10-05T00:01:00Z", "2026-10-05T00:02:00Z", limit = 60, source = "activity").getJSONArray("items")
             assertEquals(1, after.length()); queued.add(after.getJSONObject(0).getString("id")); assertEquals(0L, after.getJSONObject(0).getLong("durationMs"))
-        } finally { settings.enabled = false; pipeline.close(); queued.distinct().forEach { context.queue().acknowledge(it) }; settings.save(original) }
+        } finally { settings.enabled = false; pipeline.close(); queued.distinct().forEach { context.queue().removeGeneratedRecord(it) }; settings.save(original) }
     }
     @Test fun retiredStoredModelControlsAreRemovedWithoutChangingPrivacyConsent() {
         val settings = Settings(context); val original = settings.read(); val prefs = context.getSharedPreferences("mote", 0)

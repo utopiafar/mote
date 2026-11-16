@@ -66,7 +66,7 @@ class NotesDiagnosticsInstrumentedTest {
         val token = args.getString("fixtureToken") ?: error("fixtureToken required")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = Settings(context); val original = settings.read()
-        val config = original.copy(server = url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime", uploadedRetentionDays = 0, deviceName = "Android generated-note fixture")
+        val config = original.copy(server = url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime", deviceName = "Android generated-note fixture")
         try {
             assertEquals(0, context.queue().depth()); settings.save(config)
             val id = QuickNotes.save(context, "合成记录：今天完成了本机模型和离线同步验证。", "平静（合成）")

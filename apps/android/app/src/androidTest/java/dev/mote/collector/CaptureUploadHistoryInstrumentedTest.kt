@@ -59,7 +59,7 @@ class CaptureUploadHistoryInstrumentedTest {
         guard(); val directory = directory()
         try {
             val cipher = context.secretBox(); val event = note()
-            val queue = DurableQueue(File(directory, "queue"), cipher).apply { archiveOrigin = origin }; queue.enqueue(event, null, 100000)
+            val queue = DurableQueue(File(directory, "queue"), cipher).apply { archiveOrigin = origin }; queue.enqueue(event, null)
             val file = File(directory, "received.sqlite"); var seals = 0
             val failing = object : ByteCipher {
                 override fun seal(bytes: ByteArray): ByteArray { if (++seals == 2) throw java.io.IOException("Generated interrupted metadata write"); return cipher.seal(bytes) }
@@ -80,7 +80,7 @@ class CaptureUploadHistoryInstrumentedTest {
         guard(); val directory = directory()
         try {
             val cipher = context.secretBox(); val event = note()
-            val queue = DurableQueue(File(directory, "queue"), cipher).apply { archiveOrigin = origin }; queue.enqueue(event, null, 100000)
+            val queue = DurableQueue(File(directory, "queue"), cipher).apply { archiveOrigin = origin }; queue.enqueue(event, null)
             val file = File(directory, "received.sqlite"); val store = CaptureUploadHistory(file, cipher)
             val first = receipt(event, now - 31 * 86_400_000L)
             store.received(first) // Simulated stop immediately after SQLite commit, before queue completion.
@@ -92,7 +92,8 @@ class CaptureUploadHistoryInstrumentedTest {
             CaptureReceiptFinalizer(reopened).recover(queue, first.scope)
             assertTrue(reopened.pending(first.scope).isEmpty()); assertEquals(0, queue.pendingSync().count)
             assertEquals("Original retention is independent of upload history", event.getString("ocrText"), queue.capture(event.getString("id"))!!.getString("ocrText"))
-            assertEquals(first.receivedAt + 365 * 86_400_000L, queue.capture(event.getString("id"))!!.getLong("retainedUntil"))
+            assertEquals(0, queue.capture(event.getString("id"))!!.getLong("retainedUntil"))
+            assertEquals(first.receivedAt, queue.archiveRecord(event.getString("id"))!!.first.getJSONObject("_archiveAcknowledgment").getLong("at"))
         } finally { directory.deleteRecursively() }
     }
 
@@ -137,7 +138,7 @@ class CaptureUploadHistoryInstrumentedTest {
             val event = note().put("ocrText", "Generated replay original").put("platform", "android").put("deviceName", "Generated replay")
             val cipher = context.secretBox()
             val queue = DurableQueue(File(directory, "queue"), cipher).apply { archiveOrigin = endpoint }
-            queue.enqueue(event, null, 100000)
+            queue.enqueue(event, null)
             val file = File(directory, "history.sqlite")
             val history = CaptureUploadHistory(file, cipher)
             val batch = UUID.randomUUID().toString(); val scope = CaptureUploadReceipt.scope(endpoint, device)
@@ -198,7 +199,7 @@ class CaptureUploadHistoryInstrumentedTest {
             LocalDataFormat.requireCurrent(isolated)
             val event = note(); val settings = Settings(isolated)
             val queue = DurableQueue(File(directory, "queue"), isolated.secretBox())
-            queue.enqueue(event, null, 100000)
+            queue.enqueue(event, null)
             val blocked = File(isolated.noBackupFilesDir, "upload-history")
             blocked.writeText("Generated storage fault")
             assertFalse(UploadHistoryRecovery.restore(isolated, queue, settings))

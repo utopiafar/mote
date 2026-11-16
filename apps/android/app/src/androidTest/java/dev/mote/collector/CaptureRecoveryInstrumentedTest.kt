@@ -51,7 +51,7 @@ class CaptureRecoveryInstrumentedTest {
             val media = JSONObject().put("id", UUID.randomUUID().toString()).put("capturedAt", "2026-09-24T00:00:00Z")
                 .put("source", "media").put("durationMs", 0).put("privacy", JSONObject().put("excluded", false).put("collection", "activity"))
                 .put("metadata", JSONObject().put("media", MediaPrivacy.snapshot("disabled", emptyList())))
-            context.queue().enqueue(media, null, 1_000_000)
+            context.queue().enqueue(media, null)
             context.startActivity(Intent().setComponent(ComponentName(fixture, ExternalFixtureActivity::class.java.name)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             waitFor { CaptureAccessibilityService.instance?.windowSnapshot()?.foreground == fixture && MoteApplication.visibleActivities == 0 }
             settings.enabled = true

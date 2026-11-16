@@ -174,7 +174,7 @@ class AppUpdateInstrumentedTest {
                 assertEquals("installed", store.prefs.getString("state", ""))
                 File(context.filesDir, "update-retention-result.json").writeText(JSONObject().put("upgradedVersionCode", 7).put("settingsPreserved", true).put("deviceIdPreserved", true).put("queuePreserved", true).put("draftPreserved", true).put("modelDirectoryPreserved", true).toString())
                 val restore = JSONObject(File(context.filesDir, "update-restore.json").readText())
-                context.queue().acknowledge(context.queue().peek()!!.getString("id")); QuickNotes.draft(context).clear(); model.delete()
+                context.queue().removeGeneratedRecord(context.queue().peek()!!.getString("id")); QuickNotes.draft(context).clear(); model.delete()
                 context.getSharedPreferences("mote", 0).edit().putString("server", restore.getString("server")).putString("deviceName", restore.getString("deviceName")).remove("token").commit()
                 File(context.filesDir, "update-fixture.apk").delete(); File(context.filesDir, "update-fixture-manifest.json").delete()
             }

@@ -216,8 +216,8 @@ class MediaCollectionService : NotificationListenerService() {
                 UploadWorker.heartbeat(this, c)
             } catch (error: Exception) {
                 timeline.reset()
-                Operations.record(this, OperationKind.MEDIA_FAILED, if (error is QueueFull) OperationReason.QUEUE_FULL else OperationReason.STORAGE)
-                notifyStatus(if (error is QueueFull) MoteI18n.text("媒体记录等待本机存储空间") else MoteI18n.text("媒体记录暂未保存，下一周期重试"))
+                Operations.record(this, OperationKind.MEDIA_FAILED, OperationReason.STORAGE)
+                notifyStatus(MoteI18n.text("媒体记录暂未保存，下一周期重试"))
             } finally { ConnectionGuard.processing.decrementAndGet() }
         } ?: run { timeline.reset(); MediaCollection.clear() }
     }
@@ -267,7 +267,7 @@ class MediaCollectionService : NotificationListenerService() {
             .put("metadata", CollectorMetadata.snapshot(this, "media_session", 30_000, activityOnly)
                 .put("media", MediaPrivacy.snapshot(status, sessions, Instant.ofEpochMilli(wall).toString())))
         one?.let { event.put("appId", it.getString("appId")).put("appName", it.getString("appName")) }
-        queue().enqueue(event, null, c.maxQueueMiB * 1024L * 1024L)
+        queue().enqueue(event, null)
         UploadWorker.schedule(this, c)
     }
     private fun publishUnavailable(status: String) {
@@ -311,7 +311,7 @@ class MediaCollectionService : NotificationListenerService() {
         private val instances = java.util.concurrent.atomic.AtomicLong()
         @Volatile var instance: MediaCollectionService? = null; private set
         @Volatile var connected = false; private set
-        private val configurationKeys = setOf("enabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "screenCollectionEnabled", "mediaCollectionEnabled", "metadataEnabled", "appCollectionRules", "excluded", "chargingOnly", "batteryPauseBelowPct", "server", "token", "maxQueue", "syncMode", "wifiOnly")
+        private val configurationKeys = setOf("enabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "screenCollectionEnabled", "mediaCollectionEnabled", "metadataEnabled", "appCollectionRules", "excluded", "chargingOnly", "batteryPauseBelowPct", "server", "token", "syncMode", "wifiOnly")
         fun suspendObservation() { MediaCollection.epoch.incrementAndGet(); MediaCollection.clear(); instance?.let { it.worker.post { it.detach(); it.timeline.reset(); it.events?.reset() } } }
         fun refresh() { instance?.let { it.worker.post { it.refresh() } } }
     }

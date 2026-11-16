@@ -18,10 +18,10 @@ class AppNameTest {
     @Test fun appNamesAreRequiredAndPreservedAcrossQueueRestartAndUpload() {
         val dir = folder.newFolder(); val queue = DurableQueue(dir, plain)
         for (name in listOf(null, "", " \t\n", "A".repeat(201))) {
-            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event().put("appName", name), byteArrayOf(1), 1_000_000) }
+            assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event().put("appName", name), byteArrayOf(1)) }
         }
         assertEquals(0, queue.depth())
-        val record = event(); queue.enqueue(record, byteArrayOf(1), 1_000_000)
+        val record = event(); queue.enqueue(record, byteArrayOf(1))
         val restarted = DurableQueue(dir, plain)
         val uploaded = restarted.peek()!!
         assertEquals("generated.app", uploaded.getString("appId")); assertEquals("生成的应用", uploaded.getString("appName"))
@@ -32,9 +32,9 @@ class AppNameTest {
         val queue = DurableQueue(folder.newFolder(), plain)
         val session = JSONObject().put("appId", "generated.player").put("appName", "  ")
         val record = event().put("metadata", JSONObject().put("media", JSONObject().put("sessions", JSONArray().put(session))))
-        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(record, byteArrayOf(1), 1_000_000) }
+        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(record, byteArrayOf(1)) }
         session.put("appName", "生成的播放器")
-        queue.enqueue(record, byteArrayOf(1), 1_000_000)
+        queue.enqueue(record, byteArrayOf(1))
         assertEquals("生成的播放器", queue.peek()!!.getJSONObject("metadata").getJSONObject("media").getJSONArray("sessions").getJSONObject(0).getString("appName"))
     }
 }

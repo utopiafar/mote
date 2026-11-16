@@ -165,7 +165,7 @@ class FileArchiveQueueTest {
         restarted.acknowledge(source.id, recovery, ack(recovery)); assertNull(restarted.next(source.id))
         val limited = FileArchiveQueue(folder.newFolder(), plain); val narrow = source.copy(maxFileMiB = 16)
         limited.observe(narrow, item(layer = "snapshot", size = bytes.size.toLong()), limited.configure(narrow).getString("generation"), 0)
-        assertThrows(IllegalStateException::class.java) { limited.prepare(narrow, { ByteArrayInputStream(bytes) }, { true }, 61000) }
+        assertNull(limited.prepare(narrow, { error("Out-of-scope bytes must not be opened") }, { true }, 61000)); assertEquals(1, limited.pendingCount(source.id))
         assertNull(limited.next(source.id))
     }
     @Test fun delayedAnchorCannotPublishAChangedCandidateOrRevokedPolicy() {
@@ -183,7 +183,7 @@ class FileArchiveQueueTest {
         assertNull(q.prepare(s, { error("Revoked policy never opens") }, { true }, anchor = {
             q.configure(s.copy(excluded = "a.wav")); "generated-revoked-anchor"
         }))
-        assertNull(q.next(s.id)); assertEquals(0, q.pendingCount(s.id))
+        assertNull(q.next(s.id)); assertEquals(1, q.pendingCount(s.id))
     }
     @Test fun snapshotReadPermissionTravelsWithCentralPendingMetadata() {
         val queue=FileArchiveQueue(folder.newFolder(),cipher);val source=source("snapshot").copy(allowRead=true);val bytes="Generated".toByteArray()
@@ -230,14 +230,15 @@ class FileArchiveQueueTest {
                 .put("duplicate", false).put("sourceId", sourceId).put("externalId", externalId).put("revision", revision))
     }
 
-    @Test fun changedExclusionsDiscardCandidatesAndRevokeAlreadyPreparedBytes() {
+    @Test fun changedExclusionsIsolatePendingBytesWithoutDiscardingTheOriginal() {
         val queue = FileArchiveQueue(folder.newFolder(), cipher); val s = source()
         val generation = queue.configure(s).getString("generation")
         queue.observe(s, item().put("_relativePath", "private/a.wav"), generation, 0)
         val pending = queue.prepare(s, { ByteArrayInputStream(byteArrayOf(1, 2)) }, { true }, 61000)!!
         val changed = s.copy(excluded = "private")
         queue.configure(changed)
-        assertNull(queue.next(s.id)); assertEquals(0, queue.pendingCount(s.id))
+        assertNull(queue.next(s.id)); assertEquals(1, queue.pendingCount(s.id))
+        val retained = java.io.ByteArrayOutputStream(); queue.exportPending(s.id,pending.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("externalId"),pending.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("revision"),retained); assertArrayEquals(byteArrayOf(1,2),retained.toByteArray())
         assertNull(queue.prepare(changed, { error("Excluded content must never open") }, { true }, 62000))
         assertThrows(IllegalStateException::class.java) { queue.assertCurrent(s, pending) }
     }

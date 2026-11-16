@@ -35,7 +35,7 @@ class CaptureAlbumsTest {
 
     @Test fun coldAlbumAndGridReadOnlyEncryptedProjectionAndStayPaginated() = fixture { root, cipher ->
         val source = File(root, "source"); val queue = DurableQueue(source, cipher)
-        repeat(1000) { i -> queue.enqueue(event(java.time.Instant.parse("2026-09-14T12:00:00Z").plusMillis(i.toLong()).toString()).put("ocr", JSONObject().put("status", "completed")), byteArrayOf(1, 2, 3), 100_000_000) }
+        repeat(1000) { i -> queue.enqueue(event(java.time.Instant.parse("2026-09-14T12:00:00Z").plusMillis(i.toLong()).toString()).put("ocr", JSONObject().put("status", "completed")), byteArrayOf(1, 2, 3)) }
         val target = File(root, "restarted"); copy(source, target)
         cipher.opens = 0; cipher.records = 0
         val restarted = DurableQueue(target, cipher)
@@ -54,7 +54,7 @@ class CaptureAlbumsTest {
     @Test fun clockWindowsAppsDatesAndMetadataOnlyRowsStaySeparate() = fixture { root, cipher ->
         val queue = DurableQueue(root, cipher)
         for ((at, app) in listOf("2026-09-14T12:14:59Z" to "a", "2026-09-14T12:15:00Z" to "a", "2026-09-14T12:15:01Z" to "b", "2026-09-15T00:00:00Z" to "a")) {
-            queue.enqueue(event(at, app), byteArrayOf(1), 100_000_000)
+            queue.enqueue(event(at, app), byteArrayOf(1))
         }
         assertEquals(3, queue.albumPage(after, before).getInt("albumCount"))
         assertEquals(1, queue.albumImages("2026-09-14T12:15:00Z", "2026-09-14T12:30:00Z", "a").getInt("totalCount"))
@@ -62,16 +62,16 @@ class CaptureAlbumsTest {
 
     @Test fun incomingCapturesDoNotShiftGridPagination() = fixture { root, cipher ->
         val queue = DurableQueue(root, cipher)
-        repeat(3) { i -> queue.enqueue(event("2026-09-14T12:00:0${i}Z"), byteArrayOf(1), 100_000_000) }
+        repeat(3) { i -> queue.enqueue(event("2026-09-14T12:00:0${i}Z"), byteArrayOf(1)) }
         val first = queue.albumImages(after, before, "fixture.app", limit = 2)
-        queue.enqueue(event("2026-09-14T12:00:05Z"), byteArrayOf(1), 100_000_000)
+        queue.enqueue(event("2026-09-14T12:00:05Z"), byteArrayOf(1))
         val second = queue.albumImages(after, before, "fixture.app", first.getString("nextCursor"), 2)
         assertEquals(1, second.getJSONArray("items").length())
         assertEquals("2026-09-14T12:00:00Z", second.getJSONArray("items").getJSONObject(0).getString("capturedAt"))
     }
     @Test fun interruptedCommitAndLegacyRecordsRebuildFromAuthoritativeFiles() = fixture { root, cipher ->
         val source = File(root, "source"); val queue = DurableQueue(source, cipher)
-        val item = event("2026-09-14T12:00:00Z"); queue.enqueue(item, byteArrayOf(1), 100_000_000)
+        val item = event("2026-09-14T12:00:00Z"); queue.enqueue(item, byteArrayOf(1))
         val eventFile = File(source, "${item.getString("id")}.event")
         QueueBrowseIndex(source, cipher).invalidate(item.getString("id"))
         val raw = JSONObject(String(cipher.open(eventFile.readBytes()))).put("appId", "changed.app")
@@ -85,8 +85,8 @@ class CaptureAlbumsTest {
     @Test fun missingOrDamagedIndexRebuildsWithoutReadingImagesAndDeletionDropsThumbnail() = fixture { root, cipher ->
         val source = File(root, "source"); val queue = DurableQueue(source, cipher)
         val item = event("2026-09-14T12:00:00Z"); val id = item.getString("id")
-        queue.enqueue(item, byteArrayOf(1), 100_000_000)
-        queue.cacheThumbnail(id, byteArrayOf(4, 5), 100_000_000)
+        queue.enqueue(item, byteArrayOf(1))
+        queue.cacheThumbnail(id, byteArrayOf(4, 5))
         val target = File(root, "restarted"); copy(source, target)
         target.listFiles()!!.filter { it.name.startsWith(".browse-") }.forEach { it.writeText("corrupt derived fixture") }
         cipher.records = 0
@@ -94,7 +94,8 @@ class CaptureAlbumsTest {
         assertEquals(1, restarted.albumPage(after, before).getInt("totalCount")); assertEquals(1, cipher.records)
         assertArrayEquals(byteArrayOf(4, 5), restarted.thumbnail(id))
         restarted.acknowledge(id)
-        assertEquals(0, restarted.albumPage(after, before).getInt("totalCount")); assertNull(restarted.thumbnail(id))
-        assertFalse(target.listFiles()!!.any { it.extension in setOf("thumb", "blob") })
+        assertEquals(1, restarted.albumPage(after, before).getInt("totalCount")); assertArrayEquals(byteArrayOf(4, 5), restarted.thumbnail(id))
+        assertArrayEquals(byteArrayOf(1), restarted.image(id)); assertNull(restarted.peek()); assertTrue(restarted.capture(id)!!.getBoolean("uploaded"))
+        assertTrue(target.listFiles()!!.any { it.extension in setOf("thumb", "blob") })
     }
 }

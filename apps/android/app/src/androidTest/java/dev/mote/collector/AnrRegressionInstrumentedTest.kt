@@ -204,7 +204,7 @@ class AnrRegressionInstrumentedTest {
             assertEquals("", QuickNotes.draft(context).read().text)
             assertFalse(Settings(context).enabled)
         } finally {
-            scenario.close(); id?.let { context.queue().acknowledge(it) }
+            scenario.close(); id?.let { context.queue().removeGeneratedRecord(it) }
             QuickNotes.io.submit {}.get(10, TimeUnit.SECONDS); QuickNotes.draft(context).clear()
         }
     }

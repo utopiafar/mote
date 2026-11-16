@@ -26,7 +26,7 @@ class QueueStatsTest {
 
     @Test fun browsingOtherPagesDecryptsOnlyTheirDisplayRecordsAfterIndexWarmup() = fixture { directory, cipher ->
         val queue = DurableQueue(directory, cipher)
-        repeat(65) { queue.enqueue(screen(), byteArrayOf(1), 2_000_000) }
+        repeat(65) { queue.enqueue(screen(), byteArrayOf(1)) }
         queue.stats()
         val before = cipher.opens
         var counted = false
@@ -80,7 +80,7 @@ class QueueStatsTest {
         val source = store.current()
         val queue = DurableQueue(legacy, cipher).apply { assertCurrent = { store.assertCurrent(source) } }
         val item = screen(); val id = item.getString("id")
-        queue.enqueue(item, byteArrayOf(9), 2_000_000)
+        queue.enqueue(item, byteArrayOf(9))
         val initial = queue.stats()
         val target = store.migrate("card", card)
         val moved = DurableQueue(File(target.path), cipher)
@@ -98,7 +98,7 @@ class QueueStatsTest {
 
     @Test fun unreadableRecordIsNeverCountedAsAnEmptyQueueOrDiscarded() = fixture { directory, cipher ->
         val queue = DurableQueue(directory, cipher)
-        val item = screen(); queue.enqueue(item, byteArrayOf(1), 2_000_000)
+        val item = screen(); queue.enqueue(item, byteArrayOf(1))
         queue.stats()
         val file = File(directory, "${item.getString("id")}.event")
         file.writeBytes(cipher.seal("corrupted fixture".toByteArray()))
@@ -112,7 +112,7 @@ class QueueStatsTest {
     @Test fun sameSizeAndTimestampReplacementInvalidatesStatisticsAndIntegrityStillReadsFiles() = fixture { directory, cipher ->
         val queue = DurableQueue(directory, cipher)
         val item = screen(); val id = item.getString("id")
-        queue.enqueue(item, byteArrayOf(1), 2_000_000)
+        queue.enqueue(item, byteArrayOf(1))
         queue.uploadConflict(id); queue.stats()
         val file = File(directory, "$id.event")
         val length = file.length(); val timestamp = file.lastModified()

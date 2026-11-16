@@ -83,11 +83,13 @@ object FileUpload {
         HttpJson.track(connection, collectorSending = true)
         try {
             SyncSchedule.requireConditions(context, config)
+            TransferRequestGuard.check()
             connection.instanceFollowRedirects = false; connection.requestMethod = method; connection.connectTimeout = 15000; connection.readTimeout = 30000
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
             connection.setRequestProperty("Authorization", "Bearer ${config.connectionToken()}")
             if (IngressV2Protocol.uploadWrite(method, config.server.trimEnd('/') + path)) connection.setRequestProperty(IngressV2Protocol.HEADER, IngressV2Protocol.VERSION)
             if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { out -> var offset = 0; while (offset < body.size) { val count = minOf(64 * 1024, body.size - offset); out.write(body, offset, count); offset += count; UploadMeter.add(count.toLong()) } } }
+            TransferRequestGuard.check()
             status = connection.responseCode
             requireAccepted(status)
             val bytes = connection.inputStream.use { readResponse(it) }
@@ -102,10 +104,16 @@ object FileUpload {
     private fun syncSlice(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean, history: ItemUploadSession): Boolean {
         require(source.retention != "snapshot" || source.centralProcessingConsent) { MoteI18n.text("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。") }
         val queue = context.fileArchives()
+        val connectionLease = ConnectionLease(context, config)
+        val sourceLease = queue.sourceLease(source)
         val owner = Any(); val transferKey = queue.transferKey(source.id)
         var observedRow: JSONObject? = null
         var selectedRow: JSONObject? = null
         var phase = FileSyncPhase.PREPARING
+        fun current() {
+            connectionLease.requireCurrent(); check(stillSelected())
+            selectedRow?.let { queue.assertCurrent(source, it, sourceLease) }
+        }
         fun observe(row: JSONObject, nextPhase: FileSyncPhase) {
             observedRow = row; phase = nextPhase
             FileSyncTransfers.set(transferKey, owner, FileSyncTransfer(SourceRules.hash(row.getJSONObject("candidate").getString("externalId")), nextPhase))
@@ -115,18 +123,17 @@ object FileUpload {
             fun send(stage: EventStage, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
                 SyncSchedule.requireConditions(context, config)
                 if (!slice.admit(body?.size ?: 0)) throw SliceYield()
-                check(stillSelected())
-                selectedRow?.let { context.fileArchives().assertCurrent(source, it) }
+                current()
                 observedRow?.let { queue.clearFailure(source.id, it) }
                 val manifest = selectedRow?.optJSONObject("pending")?.optJSONObject("manifest")
-                if (manifest == null || method == "GET") return request(context, stage, config, path, method, body, binary).second
+                if (manifest == null || method == "GET") return TransferRequestGuard.within(::current) { request(context, stage, config, path, method, body, binary).second }
                 val identity = history.identity("file", source.id, manifest.getJSONObject("item"), manifest)
                 val phase = if (binary) "part" else if (path.endsWith("/commit")) "commit" else "manifest"
                 return history.send(identity, phase, (body?.size ?: 0).toLong(), { _, ack ->
                     if (binary) FileUploadConfirmation.part(checkNotNull(ack), path.substringAfterLast('/').toInt(), checkNotNull(body))
                     val final = ack?.optJSONObject("ack") ?: ack?.takeIf { it.has("receipt") }
                     if (final != null) { FileUploadConfirmation.canonicalId(source.id, manifest, final); "received" } else "transferred"
-                }) { request(context, stage, config, path, method, body, binary) }.second!!
+                }) { TransferRequestGuard.within(::current) { request(context, stage, config, path, method, body, binary) } }.second!!
             }
             queue.configure(source); val row = queue.next(source.id) ?: FileSources(context).prepare(source, onSelected = { observe(it, FileSyncPhase.PREPARING) }) { external ->
                 check(stillSelected())
@@ -138,7 +145,7 @@ object FileUpload {
             } ?: return queue.pendingCount(source.id) == 0
             selectedRow = row
             observe(row, FileSyncPhase.UPLOADING)
-            fun checkSelection() { check(stillSelected()); queue.assertCurrent(source, row); SyncSchedule.requireConditions(context, config) }
+            fun checkSelection() { current() }
             checkSelection()
             val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
             if (!manifest.has("sha256")) {

@@ -112,7 +112,7 @@ class NotificationPendingSyncInstrumentedTest {
                     .put("source", "note")
                     .put("capturedAt", "2026-11-06T00:00:0${i}Z")
                     .put("ocrText", "生成的待同步记录 $i")
-                    .put("privacy", JSONObject().put("excluded", false)), null, 4_000_000)
+                    .put("privacy", JSONObject().put("excluded", false)), null)
             }
             until("Pending records reach the queue") { context.queue().inventory().records >= 2 }
             until("The ongoing notification carries the status-only title") {

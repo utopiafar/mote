@@ -119,7 +119,7 @@ internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteC
         }
         return result
     }
-    /** Deferred writes still consume quota even while their invalidated shard is absent.
+    /** Deferred writes still contribute to storage accounting even while their invalidated shard is absent.
      * 64 bytes covers the optional encryption/escape framing without encrypting just to size it.
      */
     fun pendingDiskBytes(): Long = dirty.sumOf { key ->

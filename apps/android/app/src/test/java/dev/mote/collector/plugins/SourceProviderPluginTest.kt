@@ -98,6 +98,24 @@ class SourceProviderPluginTest {
         assertEquals(1, scheduler.schedules)
     }
 
+    @Test fun privacyRepresentationEditKeepsQuarantineVisibleAndInvalidatesCentralRegistration() {
+        val store = LocalSourceStore(folder.newFolder(), cipher)
+        val queue = FileArchiveQueue(folder.newFolder(), cipher, store)
+        val owner = SourceOwner(null, null, store, queue, Scheduler(), { true }, cipher)
+        val calendar = LocalSource(id = "generated-calendar", name = "Generated calendar", kind = "local-calendar", calendarId = 1)
+        owner.save(calendar); store.selectTarget(calendar.id, "target"); store.registered(calendar.id, "target")
+        val item = org.json.JSONObject().put("externalId", "generated-event").put("kind", "calendar").put("layer", "snapshot")
+            .put("observedAt", "2026-11-17T01:00:00Z").put("title", "Generated").put("text", "Generated retained private body")
+        store.scan(calendar, dev.mote.collector.SourceScan(listOf(item), true, "2026-11-17T01:00:00Z"))
+        owner.save(calendar.copy(retention = "reference"))
+        val snapshot = owner.snapshots(calendar.id, 0, 20).single()
+        assertEquals(1, snapshot.pending); assertEquals(1, snapshot.state.getJSONArray("quarantine").length())
+        assertFalse(snapshot.state.getBoolean("registered")); assertNull(store.next(calendar.id, "target"))
+        assertEquals("Generated retained private body", snapshot.state.getJSONArray("quarantine").getJSONObject(0).getJSONObject("item").getString("text"))
+        owner.save(calendar)
+        assertEquals(1, owner.snapshots(calendar.id, 0, 20).single().pending); assertNull(store.next(calendar.id, "target"))
+    }
+
     @Test fun stoppingTheScopeDisposesTheOwnerAndRejectsFurtherSourceWork() {
         val (host, owner, _) = started(mutableMapOf("saved" to true))
         owner.save(source("saved"))
