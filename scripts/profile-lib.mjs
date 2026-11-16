@@ -414,15 +414,16 @@ export async function dockerConfigurationUser(p, run = execute) {
 }
 export async function compose(p, args, options = {}) {
   const operation = composeOperation(args);
+  const needsRuntime = ['up', 'create', 'run', 'start', 'restart'].includes(operation);
   if(operation==='build')assertDockerMediaSelection(p);
-  if (['up', 'create', 'run', 'restart'].includes(operation)) {
+  if (needsRuntime) {
     const {imageId}=await assertDeploymentCompatible(p);
     p.runtimeImage=imageId;
   }
-  if (['up', 'create', 'run', 'restart'].includes(operation)) await assertDockerMediaRuntime({...p,meta:{...p.meta,image:p.runtimeImage}},execute);
+  if (needsRuntime) await assertDockerMediaRuntime({...p,meta:{...p.meta,image:p.runtimeImage}},execute);
   const tunnel = validateTunnel(p.meta.tunnel);
-  if (['up', 'create', 'run', 'restart'].includes(operation)) p.configUser = await dockerConfigurationUser(p);
-  if (tunnel.enabled && ['up','create','run','restart'].includes(operation)) { await assertTunnelToken(p); p.tunnelUser = await dockerTunnelUser(p, execute); }
+  if (needsRuntime) p.configUser = await dockerConfigurationUser(p);
+  if (tunnel.enabled && needsRuntime) { await assertTunnelToken(p); p.tunnelUser = await dockerTunnelUser(p, execute); }
   else if (operation === 'up' && p.meta.tunnel) await removeTunnelSidecars(p, execute);
   // The mounted YAML remains authoritative. Only referenced secrets cross env_file.
   const lines = Object.entries(configSecretEnvironment(p.savedDocument)).map(([key, value]) => { if (/[\r\n]/.test(value)) throw Error('Docker secret values must be single-line'); return `${key}=${value}`; });

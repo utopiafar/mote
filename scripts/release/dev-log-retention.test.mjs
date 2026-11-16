@@ -156,6 +156,7 @@ test('Compose finds subcommands after global options without changing transport 
     [['--ansi', 'never', '--parallel', '2', '--progress', 'plain', 'up', '--detach'], 'up'],
     [['-p', 'generated-project', '-f', 'generated.yaml', '--project-directory', '/generated', '--env-file', '/generated.env', 'create'], 'create'],
     [['--project-name=generated', '--file=generated.yaml', '--profile=generated', '--parallel=2', '--ansi=never', '--progress=plain', 'restart'], 'restart'],
+    [['--ansi', 'never', '--parallel=2', 'start', 'mote'], 'start'],
     [['-pgenerated', '-fgenerated.yaml', '--dry-run', 'run', '--rm', 'mote'], 'run'], [['--compatibility', '--', 'up'], 'up'], [['--help'], undefined],
   ]) { const before = [...args]; assert.equal(composeOperation(args), operation); assert.deepEqual(args, before); }
 });
@@ -164,7 +165,7 @@ test('Compose global flags cannot bypass target preflight before generated confi
   const p = await fixture(t), release = await releaseFixture(p.home, 'legacy'), prospective = { ...p, meta: { ...p.meta, release } };
   const raw = await readFile(p.configFile), meta = await readFile(p.metaFile);
   // Native artifact inspection isolates dispatch ordering from a Docker engine.
-  for (const operation of ['up', 'create', 'run', 'restart']) {
+  for (const operation of ['up', 'create', 'run', 'start', 'restart']) {
     await assert.rejects(compose(prospective, ['--ansi', 'never', '--profile=generated', '-pgenerated', operation]), /could not be verified/);
     assert.deepEqual(await readdir(join(p.directory, 'generated')), []); assert.deepEqual(await readFile(p.configFile), raw); assert.deepEqual(await readFile(p.metaFile), meta);
   }
