@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {chmod,mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -83,6 +83,29 @@ test('a failed upload checkpoint retains acknowledged bytes and replays the same
  const archived=String(store.db.prepare('SELECT id FROM archived_files').get()!.id);assert.deepEqual(files.read(archived),bytes);assert.equal(uploads.begin(manifest).fileId,undefined);assert.equal(uploads.begin(manifest).parts.length,1);assert.deepEqual(store.contentEncryption.read(join(directory,'import-uploads',started.id,'0')),bytes);
  recover();store.db.prepare('UPDATE import_uploads SET expires=1 WHERE id=?').run(started.id);await uploads.close();store.close();store=new Store(directory,options);files=new ArchivedFileStore(store);uploads=new ImportUploads(store,files);
  uploads.begin({name:'generated-next.txt',sizeBytes:0});assert.equal(uploads.begin(manifest).parts.length,1);const saved=await uploads.commit(started.id);assert.equal(saved.id,archived);assert.deepEqual(files.read(saved.id),bytes);assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,1);assert.equal(store.db.prepare('SELECT count(*) n FROM import_upload_parts WHERE upload_id=?').get(started.id)!.n,0);assert.equal(store.contentEncryption.exists(join(directory,'import-uploads',started.id,'0')),false);assert.equal((await uploads.commit(started.id)).id,saved.id);
+});
+
+for(const failure of ['sql','filesystem'] as const)test(`owner HTTP retries ${failure} part cleanup through the real Web receipt consumer without another original upload`,async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-import-cleanup-')),config=join(directory,'mote.yaml'),token='generated-cleanup-retry-owner-12345678';
+ await writeFile(config,JSON.stringify({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:directory},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
+ const boot=()=>buildApp(configFromFile(config),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in generated cleanup lifecycle');},async close(){}}});
+ let node=await boot(),partDirectory='';t.after(async()=>{if(partDirectory)await chmod(partDirectory,0o700).catch(error=>{if(error.code!=='ENOENT')throw error;});await node.app.close();await rm(directory,{recursive:true,force:true});});
+ const headers={authorization:'Bearer '+token},bytes=Buffer.from('Generated retained archive after '+failure+' cleanup failure'),name='generated-cleanup.bin';
+ const started=await node.app.inject({method:'POST',url:'/api/import-uploads',headers,payload:{name,sizeBytes:bytes.length}});assert.equal(started.statusCode,200,started.body);const id=started.json().id;partDirectory=join(directory,'import-uploads',id);
+ const put=await node.app.inject({method:'PUT',url:`/api/import-uploads/${id}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes});assert.equal(put.statusCode,200,put.body);
+ if(failure==='sql')node.store.db.exec("CREATE TRIGGER generated_cleanup_failure BEFORE DELETE ON import_upload_parts BEGIN SELECT RAISE(ABORT,'Generated SQLite cleanup failure'); END");else await chmod(partDirectory,0o500);
+ const failed=await node.app.inject({method:'POST',url:`/api/import-uploads/${id}/commit`,headers});assert.equal(failed.statusCode,500,failed.body);
+ const receipt=JSON.parse(String(node.store.db.prepare('SELECT json FROM import_uploads WHERE id=?').get(id)!.json));assert.ok(receipt.fileId);assert.equal(node.store.db.prepare('SELECT count(*) n FROM import_upload_parts WHERE upload_id=?').get(id)!.n,failure==='sql'?1:0);assert.equal(node.store.contentEncryption.exists(join(partDirectory,'0')),true);
+ const archived=await node.app.inject({url:`/api/archived-files/${receipt.fileId}/content`,headers});assert.equal(archived.statusCode,200,archived.body);assert.deepEqual(archived.rawPayload,bytes);
+ if(failure==='sql')node.store.db.exec('DROP TRIGGER generated_cleanup_failure');else await chmod(partDirectory,0o700);
+ await node.app.close();node=await boot();
+ const {uploadImportFiles}=await import('../../web/src/plugins/intake/import-upload-scheduler.js'),original=new File([bytes],name),identities=new WeakMap<File,string>([[original,id]]),completed=new WeakMap<File,string>(),requests:string[]=[];
+ t.mock.method(original,'slice',()=>assert.fail('a durable archive receipt must not reread or resend the original'));
+ const api={request:async(path:string,init:RequestInit)=>{requests.push(path);assert.equal(init.method,'POST');const response=await node.app.inject({method:'POST',url:path,headers,...(init.body===undefined?{}:{payload:JSON.parse(String(init.body))})});assert.equal(response.statusCode,200,response.body);return response.json();}} as unknown as import('../../web/src/api.js').Api;
+ assert.deepEqual(await uploadImportFiles(api,[original],identities,()=>{},undefined,completed),[receipt.fileId]);assert.equal(completed.get(original),receipt.fileId);assert.deepEqual(requests,['/api/import-uploads',`/api/import-uploads/${id}/commit`]);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM import_upload_parts WHERE upload_id=?').get(id)!.n,0);assert.equal(node.store.contentEncryption.exists(join(partDirectory,'0')),false);assert.equal(node.store.contentEncryption.exists(partDirectory),false);assert.equal(node.store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,1);
+ const replay=await node.app.inject({method:'POST',url:`/api/import-uploads/${id}/commit`,headers});assert.equal(replay.statusCode,200,replay.body);assert.equal(replay.json().id,receipt.fileId);assert.deepEqual((await node.app.inject({url:`/api/archived-files/${receipt.fileId}/content`,headers})).rawPayload,bytes);
+ assert.deepEqual(await uploadImportFiles(api,[original],identities,()=>{},undefined,completed),[receipt.fileId]);assert.equal(requests.length,2,'only a successfully completed commit enters the local completed cache');
 });
 
 test('large browser commit cancellation keeps resumable parts and duplicate replays reuse the original',async t=>{

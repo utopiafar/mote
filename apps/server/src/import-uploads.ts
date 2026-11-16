@@ -32,7 +32,8 @@ export class ImportUploads {
  }
  close():Promise<void>{return this.closingTask??=(async()=>{this.closed=true;this.closing.abort();await Promise.allSettled([...this.pending.values()]);})();}
  async commit(id:string,signal?:AbortSignal){this.assertOpen();const prior=this.pending.get(id)??Promise.resolve(),next=prior.catch(()=>{}).then(()=>this.commitOnce(id,signal));this.pending.set(id,next);try{return await next;}finally{if(this.pending.get(id)===next)this.pending.delete(id);}}
- private async commitOnce(id:string,signal?:AbortSignal){const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();const manifest=this.load(id);if(manifest.fileId)return this.files.get(manifest.fileId);
+ private async releaseParts(id:string){this.store.db.prepare('DELETE FROM import_upload_parts WHERE upload_id=?').run(id);await rm(join(this.directory,id),{force:true,recursive:true});}
+ private async commitOnce(id:string,signal?:AbortSignal){const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();const manifest=this.load(id);if(manifest.fileId){const file=this.files.get(manifest.fileId);await this.releaseParts(id);return file;}
   const parts=this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id) as {part:number;bytes:number;hash:string}[];if(parts.length!==Math.ceil(manifest.sizeBytes/PART))throw new StoreError('Import upload incomplete',409);
   const store=this.store,directory=this.directory;
   function* buffers(){for(const [index,part] of parts.entries()){if(Number(part.part)!==index)throw new StoreError('Missing import part',409);const bytes=store.contentEncryption.read(join(directory,id,String(index)));if(bytes.length!==part.bytes||sha256(bytes)!==part.hash)throw new StoreError('Import checksum mismatch',409);yield bytes;}}
@@ -40,7 +41,7 @@ export class ImportUploads {
   const file=manifest.sizeBytes<=PART?this.files.putParts({name:manifest.name,mimeType:manifest.mimeType},buffers(),manifest.sizeBytes):await this.files.putUpload({name:manifest.name,mimeType:manifest.mimeType},join(directory,id),parts,manifest.sizeBytes,cancellation,()=>{this.load(id);});
   cancellation.throwIfAborted();this.load(id);
   this.store.db.prepare('UPDATE import_uploads SET json=? WHERE id=?').run(JSON.stringify({...manifest,fileId:file.id}),id);
-  this.store.db.prepare('DELETE FROM import_upload_parts WHERE upload_id=?').run(id);await rm(join(this.directory,id),{force:true,recursive:true});return file;
+  await this.releaseParts(id);return file;
  }
 }
 export function registerImportUploads(app:FastifyInstance,uploads:ImportUploads){
