@@ -15,6 +15,7 @@ export function googleCalendarManifest(dependencies?:GoogleDependencies):Connect
     const google=new GoogleCalendarConnector(googleCalendarContext(ctx),dependencies);
     return {
       init:()=>google.init(),status:()=>google.status(),configureSyncInterval:interval=>google.configureSyncInterval(interval),
+      actionProviders:()=>google.calendarActionProviders(),executeAction:request=>google.executeAction(request),
       configure:host=>{
         host.ownerRoute({method:'POST',path:'/api/connectors/google/start',handler:()=>google.start()});
         host.ownerRoute({method:'POST',path:'/api/connectors/google/write/start',handler:()=>google.startWrite()});
