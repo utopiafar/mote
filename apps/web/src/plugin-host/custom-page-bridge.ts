@@ -120,7 +120,9 @@ export class CustomPageBridge {
     const respond = (envelope: BridgeEnvelope) => { if (fenced()) this.options.post(envelope); };
     try {
       const value = await this.options.invoke(env.method, env.payload);
-      respond({contractVersion: bridgeContractVersion, nonce: this.options.nonce, documentKey: this.options.documentKey, instanceId: this.options.instanceId, generation: env.generation, requestId: env.requestId, kind: 'response', method: env.method, ok: true, payload: value});
+      const response:BridgeEnvelope={contractVersion: bridgeContractVersion, nonce: this.options.nonce, documentKey: this.options.documentKey, instanceId: this.options.instanceId, generation: env.generation, requestId: env.requestId, kind: 'response', method: env.method, ok: true, payload: value};
+      if(!isJsonEnvelope(response)||measuredEnvelope(response)>BRIDGE_MAX_MESSAGE_BYTES)throw new Error('Invalid bridge result');
+      respond(response);
       return true;
     } catch {
       // A stable public failure — no internal message is transmitted.

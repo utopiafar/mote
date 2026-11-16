@@ -4,6 +4,7 @@ import {PluginHostError} from '@mote/plugin-host';
 import {serviceBindingSchema,serviceRefSchema,type PluginLifecycle,type ServiceBinding,type ServiceContract} from '@mote/plugin-api/contracts';
 import type {PluginManifest} from '../plugin-release.js';
 import {domainContributions,type DomainPluginFactory,type DomainPluginOptions} from './service-plugin-loader.js';
+import {validatePageBridgePort} from './presentation-plugin-loader.js';
 
 /** One adapter for the existing PluginHost lifecycle, state namespace and
  * lease resolver. Check validates publication without publishing live ports
@@ -24,6 +25,7 @@ export async function createDomainPlugin(context:HostPluginContext,factory:Domai
   provide:<T>(id:string,contract:ServiceContract<T>,value:T,revision=0)=>{
    current();const service=serviceRefSchema.parse(contract),contribution=contributions.find(entry=>entry.id===id),key=JSON.stringify([id,service.id]);
    if(value===undefined||!contribution?.provides?.some(port=>port.id===service.id&&port.apiVersion===service.apiVersion)||published.has(key))throw new PluginHostError('invalid_contract');
+   validatePageBridgePort(manifest,id,service.id,value);
    // Staged checks use the same identity/API/revision schemas as provide(),
    // rather than accepting a descriptor that live publication would reject.
    const candidate=serviceBindingSchema.parse({service,provider:{scope:context.scope.identity,contributionId:id},revision});

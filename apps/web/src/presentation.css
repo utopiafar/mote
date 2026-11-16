@@ -39,10 +39,16 @@
 .app-shell[data-detail=stack] .library-detail { display:none; border-left:0; }
 .app-shell[data-detail=stack] .library-browser.has-selection>.library-master { display:none; }
 .app-shell[data-detail=stack] .library-browser.has-selection>.library-detail { display:block; }
-.app-shell[data-navigation=top]>.sidebar { position:static; width:100%; flex-direction:row; align-items:center; flex-wrap:wrap; gap:18px; padding:10px var(--mote-space-page); border-right:0; border-bottom:1px solid var(--mote-sidebar-border); }
+.app-shell[data-navigation=top] { flex-direction:column; }
+.app-shell[data-navigation=top]>.sidebar { position:static; flex:0 0 auto; width:100%; flex-direction:row; align-items:center; flex-wrap:wrap; gap:18px; padding:10px var(--mote-space-page); border-right:0; border-bottom:1px solid var(--mote-sidebar-border); }
+.app-shell[data-navigation=top] .sidebar .brand { margin:0; }
 .app-shell[data-navigation=top] .sidebar nav { flex-direction:row; }
 .app-shell[data-navigation=top] .sidebar nav button { width:auto; }
-.app-shell[data-navigation=top] .workspace-label,.app-shell[data-navigation=top] .sidebar-bottom { display:none; }
+.app-shell[data-navigation=top] .workspace-label { display:none; }
+.app-shell[data-navigation=top] .sidebar-bottom { display:flex; align-items:center; gap:4px; margin:0 0 0 auto; }
+.app-shell[data-navigation=top] .sidebar-bottom>.utility-nav,.app-shell[data-navigation=top] .settings-nav { width:auto; }
+.app-shell[data-navigation=top] .sidebar-bottom .workspace-node-menu>.node-button { margin:0; padding:6px 10px; border:0; }
+.app-shell[data-navigation=top] .workspace-node-menu>div { top:calc(100% + 8px); bottom:auto; left:auto; right:0; }
 .app-shell[data-navigation=top]>.main { margin:0; width:100%; }
 .source-configuration { min-width:0; }
 .source-configuration h2 { overflow-wrap:anywhere; }

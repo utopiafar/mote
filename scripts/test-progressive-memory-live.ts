@@ -88,7 +88,7 @@ async function waitForJob(wave:Record<string,any>,task:Promise<MemoryJobDetail>,
 }
 function checkMemories(job:MemoryJobDetail){
  const memories=job.memoryIds.map(id=>node!.memories.get(id));
- for(const memory of memories){assert.ok(memory.reviewRunId);if(report.recipes){assert.ok(memory.strategy);assert.ok(report.recipes.some((ref:{id:string;version:string})=>ref.id===memory.strategy!.recipe.id&&ref.version===memory.strategy!.recipe.version));assert.equal(memory.reviewReceipt?.strategy?.fingerprint,memory.strategy.review.fingerprint);}for(const span of memory.evidence??[]){const original=node!.memories.readEvidence([span.id])[0];assert.ok(original);assert.equal(original.ocrText.slice(span.offset!,span.offset!+span.length!),span.quote);}}
+ for(const memory of memories){assert.ok(memory.reviewRunId);if(report.recipes){assert.ok(memory.strategy);assert.ok(memory.strategy.review);assert.ok(report.recipes.some((ref:{id:string;version:string})=>ref.id===memory.strategy!.recipe.id&&ref.version===memory.strategy!.recipe.version));assert.equal(memory.reviewReceipt?.strategy?.fingerprint,memory.strategy.review.fingerprint);}for(const span of memory.evidence??[]){const original=node!.memories.readEvidence([span.id])[0];assert.ok(original);assert.equal(original.ocrText.slice(span.offset!,span.offset!+span.length!),span.quote);}}
  return memories;
 }
 try{

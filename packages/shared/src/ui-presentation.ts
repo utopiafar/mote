@@ -67,6 +67,13 @@ function layout<T>(pack:UiLayoutPack<T>,required:readonly UiDestination[]=pack.p
   return Object.freeze({...pack,primary:Object.freeze([...pack.primary]),...(pack.secondary?{secondary:Object.freeze([...pack.secondary])}:{})});
 }
 
+/** Portable layout data is validated against the compiled shell's required
+ * destinations. A package can never supply its own renderer. */
+export function validateUiLayoutProfile(profile:UiLayoutProfile,required:readonly UiDestination[]):UiLayoutProfile {
+  const {implementation:_,...validated}=layout({...profile,implementation:true},required);
+  return validated;
+}
+
 type PresentationSource={contribution:ScopedContribution;catalogs:PluginI18nRegistry;platform:PluginPlatform;facts:UiAvailabilityFacts};
 
 /** Keep the last readable label but take the newly resolved glyph/a11y roles,

@@ -35,6 +35,11 @@
       "surface": "page",
       "runtime": "host",
       "entry": "web/index.html",
+      "bridge": {
+        "contributionId": "template-collection.port",
+        "service": {"id": "template.collection.log", "apiVersion": "1"},
+        "methods": ["state", "add"]
+      },
       "requires": [
         {
           "kind": "contribution",
