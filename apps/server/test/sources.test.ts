@@ -108,3 +108,13 @@ test('source coverage remains independent of execution, validates completion and
  restored.reportStatus('fixture',{state:'syncing'});assert.equal(restored.getSource('fixture').status?.coverage,undefined);
  restored.reportStatus('fixture',{state:'idle',coverage:complete});restored.resetCoverage('fixture');assert.equal(restored.getSource('fixture').status?.coverage,undefined);assert.equal(restored.getSource('fixture').status?.state,'idle','explicit range reset leaves execution state independent');
 });
+
+test('host-only sync scope versions fence ABA status writes and advance only for effective range changes',t=>{
+ const {sources}=fixture(t),original=sources.getSource('fixture'),version=original.syncScopeVersion??0;
+ assert.throws(()=>sources.register({id:'forged-version',name:'Generated',kind:'custom',deviceId:'synthetic',platform:'import',syncScopeVersion:500}),{statusCode:403});
+ assert.throws(()=>sources.update('fixture',{syncScopeVersion:500} as any),{statusCode:403});
+ sources.reportStatus('fixture',{state:'syncing'},version);sources.reportStatus('fixture',{state:'idle'},version);assert.equal(sources.getSource('fixture').syncScopeVersion,version);
+ sources.update('fixture',{initialSync:'new_only'});sources.update('fixture',{initialSync:'all'});assert.equal(sources.getSource('fixture').initialSync,'all');assert.equal(sources.getSource('fixture').syncScopeVersion,version+2);
+ assert.throws(()=>sources.reportStatus('fixture',{state:'idle',coverage:{state:'complete',window:{to:'2026-11-16T00:00:00.000Z'},processed:1,remaining:0,failed:0,limitations:[],updatedAt:'2026-11-16T00:00:00.000Z'}},version),{statusCode:409});assert.equal(sources.getSource('fixture').status?.coverage,undefined);
+ sources.resetCoverage('fixture');assert.equal(sources.getSource('fixture').syncScopeVersion,version+3,'an explicit authorization/range reset fences work even when coverage is already unknown');
+});

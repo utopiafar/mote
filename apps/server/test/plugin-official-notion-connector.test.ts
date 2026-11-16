@@ -428,3 +428,46 @@ test('Notion page coverage remains partial for unread child blocks, bounded page
  f.transport.setBlocks(Array.from({length:100},()=>({object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:'x'.repeat(1200)}]}})));await f.request('/api/connectors/notion/sync',{});assert.equal(f.node.sources.getItem(source.id,'page-1')!.text.length,100000);assert.equal(f.node.sources.getSource(source.id).status?.coverage?.state,'partial');
  const item=f.node.sources.getItem(source.id,'page-1')!;assert.equal(item.document?.fileIndex,undefined,'unknown full text length is never fabricated as a file index');
 });
+
+for(const mode of ['new_only','aba'] as const)for(const outcome of ['success','error'] as const)test(`owner ${mode} change fences a suspended Notion page ${outcome} without old coverage recovery`,async t=>{
+ const transport=fakeNotion(),delegate=transport.fetch;let armed=false,enter!:()=>void,release!:()=>void;
+ const entered=new Promise<void>(resolve=>enter=resolve),gate=new Promise<void>(resolve=>release=resolve);
+ transport.fetch=async(input,init)=>{const url=typeof input==='string'?input:input instanceof URL?input.toString():input.url;if(armed&&new URL(url).pathname==='/v1/blocks/page-1/children'){armed=false;enter();await gate;if(outcome==='error')return new Response(JSON.stringify({error:'generated delayed read failure'}),{status:500,headers:notionHeaders});}return delegate(input,init);};
+ let running:ReturnType<Awaited<ReturnType<typeof buildApp>>['app']['inject']>|undefined;
+ try{
+  const f=await installedNotion(t,transport);await f.select([{id:'page-1',type:'page'}]);const source=f.node.sources.listSources()[0]!,version=source.syncScopeVersion??0;
+  armed=true;running=f.node.app.inject({method:'POST',url:'/api/connectors/notion/sync',headers,payload:{}});await entered;const checkpoint=f.scan();
+  for(const initialSync of mode==='aba'?['new_only','all']:['new_only']){const response=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers,payload:{initialSync}});assert.equal(response.statusCode,200,response.body);assert.equal(response.json().status.coverage,undefined);}
+  const configured=f.node.sources.getSource(source.id);assert.ok((configured.syncScopeVersion??0)>version);assert.equal(configured.initialSync,mode==='aba'?'all':'new_only');
+  release();const response=await running;assert.equal(response.statusCode,409,response.body);
+  const current=(await f.request('/api/sources')).items.find((value:any)=>value.id===source.id);assert.equal(current.status?.coverage,undefined,'neither success nor catch may restore an old range coverage');assert.equal(f.node.sources.getItem(source.id,'page-1'),undefined,'old all-history work cannot archive after a new mode takes effect');assert.deepEqual(f.scan(),checkpoint,'the old generation cannot advance or fail its checkpoint after reconfiguration');
+  await f.request('/api/connectors/notion/sync',{});assert.equal(f.scan().mode,mode==='aba'?'all':'new_only');assert.equal(Boolean(f.node.sources.getItem(source.id,'page-1')),mode==='aba','the next scan follows the effective policy');
+ }finally{release();await running?.catch(()=>{});}
+});
+
+test('an owner mode ABA fences Notion upserts queued behind an earlier source write and preserves archived history',async t=>{
+ const f=await installedNotion(t);await f.select([{id:'page-1',type:'page'}]);await f.request('/api/connectors/notion/sync',{});
+ const source=f.node.sources.listSources()[0]!,prior=f.node.sources.getItem(source.id,'page-1')!,version=source.syncScopeVersion??0;
+ const {captureId,sourceId,receivedAt,current,...item}=prior;let entered!:()=>void,release!:()=>void,queued!:()=>void,hold=true;
+ const gate=new Promise<void>(resolve=>release=resolve),preparing=new Promise<void>(resolve=>entered=resolve),waiting=new Promise<void>(resolve=>queued=resolve),prepare=f.node.store.prepare.bind(f.node.store),upsert=f.node.sources.upsert.bind(f.node.sources);
+ t.mock.method(f.node.store,'prepare',async(raw:unknown)=>{if(hold){hold=false;entered();await gate;}return prepare(raw);});
+ const blocker=upsert(source.id,item,()=>{f.node.sources.assertSyncScope(source.id,version);}).then(()=>{throw Error('Old queued source write should be rejected');},error=>assert.equal(error.statusCode,409));
+ let running:ReturnType<typeof f.node.app.inject>|undefined;
+ try{
+  await preparing;f.transport.setPageEdited('2026-11-04T00:00:00.000Z');f.transport.setPageText('Generated late replacement that must stay unarchived');
+  t.mock.method(f.node.sources,'upsert',(...args:Parameters<typeof upsert>)=>{queued();return upsert(...args);});
+  running=f.node.app.inject({method:'POST',url:'/api/connectors/notion/sync',headers,payload:{}});await waiting;const checkpoint=f.scan();
+  for(const initialSync of ['new_only','all']){const response=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers,payload:{initialSync}});assert.equal(response.statusCode,200,response.body);}
+  release();await blocker;const response=await running;assert.equal(response.statusCode,409,response.body);assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);
+  assert.equal(f.node.sources.history(source.id,'page-1').length,1);assert.equal(f.node.sources.getItem(source.id,'page-1')?.captureId,prior.captureId,'history committed before the range change remains intact');
+ }finally{release();await blocker;await running?.catch(()=>{});}
+});
+
+test('a queued selection applies after a legal earlier scan rather than invalidating it before the selection takes effect',async t=>{
+ const transport=fakeNotion(),delegate=transport.fetch;let armed=false,enter!:()=>void,release!:()=>void;
+ const entered=new Promise<void>(resolve=>enter=resolve),gate=new Promise<void>(resolve=>release=resolve);
+ transport.fetch=async(input,init)=>{const url=typeof input==='string'?input:input instanceof URL?input.toString():input.url;if(armed&&new URL(url).pathname==='/v1/blocks/page-1/children'){armed=false;enter();await gate;}return delegate(input,init);};
+ let running:Promise<unknown>|undefined,selection:Promise<unknown>|undefined;
+ try{const f=await installedNotion(t,transport);await f.select([{id:'page-1',type:'page'}]);const id=f.node.sources.listSources()[0]!.id;armed=true;running=f.request('/api/connectors/notion/sync',{});await entered;selection=f.select([{id:'db-1',type:'database'}]);release();await running;await selection;assert.ok(f.node.sources.getItem(id,'page-1'),'the old scan completed while its selection was still effective');assert.equal(f.node.sources.getSource(id).enabled,false);assert.equal(f.node.sources.listSources().find(source=>source.id!==id)?.status?.coverage,undefined,'the newly effective selection has no inherited coverage');}
+ finally{release();await running?.catch(()=>{});await selection?.catch(()=>{});}
+});

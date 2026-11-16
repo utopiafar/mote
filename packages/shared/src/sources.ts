@@ -131,6 +131,8 @@ export const sourceConnectionSchema=z.object({
   ownerRelation:ownerRelationSchema.optional(),ownerRelationVersion:z.number().int().positive().optional(),
   /** Owner API only. Source manifests and collectors cannot set this identity. */
   sourceContext:sourceDescriptionDeclarationSchema.omit({sourceId:true}).optional(),
+  /** Read-only host generation for the effective synchronization range. */
+  syncScopeVersion:z.number().int().nonnegative().safe().optional(),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();
 /** Coverage is independent of whether a connector is running. Processed/remaining count

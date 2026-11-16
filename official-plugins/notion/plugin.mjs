@@ -239,14 +239,26 @@ const connector = {
       limitations: [...(!scan.complete && scan.type === 'database' ? ['pagination_pending'] : []), ...(scan.contentPartial ? ['content_partial'] : [])],
       updatedAt: now(),
     });
-    const saveScan = async (record, scan) => {
-      const saved = await ctx.state.compareAndSet(record.key, record.revision || null, scan);
+    const scanPin = (item, source) => {
+      const token = doc.token, selection = item.selection;
+      const condition = {sourceId: source.id, syncScopeVersion: source.syncScopeVersion ?? 0};
+      const current = () => {
+        if (closed || doc.token !== token || !doc.selected.some(value => value.id === item.id && value.type === item.type && value.selection === selection)) throw new NotionError('notion_scope_changed', 409);
+        try { ctx.sources.assertSyncScope(source.id, condition.syncScopeVersion); } catch { throw new NotionError('notion_scope_changed', 409); }
+      };
+      return {condition, current};
+    };
+    const saveScan = async (record, scan, pin) => {
+      pin.current();
+      const saved = await ctx.state.compareAndSet(record.key, record.revision || null, scan, pin.condition);
+      pin.current();
       return {key: record.key, revision: saved.revision, scan};
     };
-    const scanFor = async (item, source) => {
+    const scanFor = async (item, source, pin) => {
       const key = SCAN_PREFIX + item.slot, record = await ctx.state.get(key);
+      pin.current();
       const mode = source.initialSync ?? 'all';
-      const scope = hash(JSON.stringify([doc.token?.workspaceId, doc.token?.botId, doc.token?.connectedAt, item.id, item.type, item.selection, mode]));
+      const scope = hash(JSON.stringify([doc.token?.workspaceId, doc.token?.botId, doc.token?.connectedAt, item.id, item.type, item.selection, mode, pin.condition.syncScopeVersion]));
       let scan = record?.value;
       const same = scan?.version === 1 && scan.id === item.id && scan.type === item.type && scan.mode === mode && scan.scope === scope && source.status?.coverage;
       if (same) {
@@ -259,7 +271,7 @@ const connector = {
         processed: 0, failed: 0, complete: false, contentPartial: true,
         ...(mode === 'new_only' ? {baselineAt: same ? scan.baselineAt : to, ...(same && scan.pageBaseline ? {pageBaseline: scan.pageBaseline} : {})} : {}),
       };
-      return saveScan({key, revision: record?.revision ?? 0}, scan);
+      return saveScan({key, revision: record?.revision ?? 0}, scan, pin);
     };
     const withinWindow = (entry, scan) => {
       if (typeof entry.last_edited_time !== 'string' || !Number.isFinite(Date.parse(entry.last_edited_time))) throw new NotionError('notion_response_invalid', 502);
@@ -441,13 +453,17 @@ const connector = {
           if (closed) throw new NotionError('connector_closed', 503);
           const id = sourceId(item.id), source = ctx.sources.getSource(id);
           if (!source.enabled) continue;
-          active = {id, record: await scanFor(item, source)};
-          ctx.sources.reportStatus(id, {state: 'syncing', coverage: coverage(active.record.scan)});
+          active = {id, pin: scanPin(item, source)};
+          active.record = await scanFor(item, source, active.pin);
+          active.pin.current();
+          ctx.sources.reportStatus(id, {state: 'syncing', coverage: coverage(active.record.scan)}, active.pin.condition.syncScopeVersion);
           const batch = item.type === 'database' ? await databaseItems(item, active.record.scan, source) : await pageItem(item, active.record.scan, source);
+          active.pin.current();
           if (item.type === 'database') databases++; else pages++;
           for (const entry of batch.entries) {
             if (closed) throw new NotionError('connector_closed', 503);
-            const result = await ctx.sources.upsert(id, entry);
+            const result = await ctx.sources.upsert(id, entry, active.pin.current);
+            active.pin.current();
             result.duplicate ? duplicates++ : imported++;
           }
           // The entire bounded page commits before its continuation advances.
@@ -459,9 +475,9 @@ const connector = {
           };
           if (batch.nextCursor) scan.cursor = batch.nextCursor; else delete scan.cursor;
           if (closed) throw new NotionError('connector_closed', 503);
-          active.record = await saveScan(active.record, scan);
+          active.record = await saveScan(active.record, scan, active.pin);
           if (closed) throw new NotionError('connector_closed', 503);
-          ctx.sources.reportStatus(id, {state: 'idle', lastSyncAt: now(), coverage: coverage(scan)});
+          ctx.sources.reportStatus(id, {state: 'idle', lastSyncAt: now(), coverage: coverage(scan)}, active.pin.condition.syncScopeVersion);
           active = undefined;
         }
         doc.lastSyncAt = now();
@@ -469,14 +485,20 @@ const connector = {
         state = 'idle';
         return {imported, duplicates, pages, databases, selected: doc.selected.length};
       } catch (error) {
+        const stale = () => {if (!active) return false;try { active.pin.current();return false; } catch { return true; }};
+        const rejectStale = () => {state = 'idle';code = 'notion_scope_changed';throw new NotionError(code, 409);};
+        if (stale()) rejectStale();
         const failure = error instanceof NotionError ? error : new NotionError('notion_sync_failed', 502);
         state = [401, 403].includes(failure.statusCode) ? 'permission_required' : 'error';
         code = failure.code;
-        if (!closed && active) {
+        if (!closed && active?.record) {
           let scan = {...active.record.scan, failed: 1};
           if (code === 'notion_cursor_invalid') {scan = {...scan, processed: 0, complete: false};delete scan.cursor;}
-          try { active.record = await saveScan(active.record, scan); } catch { /* A fenced host cannot publish a late checkpoint. */ }
-          try { ctx.sources.reportStatus(active.id, {state, code, coverage: coverage(scan)}); } catch { /* The stopped instance cannot publish late status. */ }
+          try { active.record = await saveScan(active.record, scan, active.pin); } catch { if (stale()) rejectStale(); }
+          if (stale()) rejectStale();
+          // The host checks the pin inside the status transaction as well. A
+          // failed old request cannot restore coverage for a newer owner range.
+          try { ctx.sources.reportStatus(active.id, {state, code, coverage: coverage(scan)}, active.pin.condition.syncScopeVersion); } catch { if (stale()) rejectStale(); }
         }
         throw failure;
       }
