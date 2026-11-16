@@ -13,6 +13,7 @@ const API_ROOT = 'https://api.notion.com';
 const SOURCE_KIND = 'mote.official.notion';
 const DEVICE_ID = 'official-notion';
 const STATE_KEY = 'notion';
+const SCAN_PREFIX = 'notion.scan.';
 const MAX_SELECTED = 50;
 const MAX_BLOCKS = 200;
 const MAX_DATABASE_ENTRIES = 100;
@@ -172,7 +173,11 @@ const connector = {
       connected: typeof doc.token?.accessToken === 'string',
       readOnly: true,
       ...(doc.token?.workspaceName ? {workspace: doc.token.workspaceName} : {}),
-      selected: doc.selected.map(item => ({id: item.id, type: item.type, title: item.title ?? ''})),
+      selected: doc.selected.map(item => {
+        let coverage;
+        try { coverage = ctx.sources.getSource(sourceId(item.id)).status?.coverage; } catch { /* No source exists until selection. */ }
+        return {id: item.id, type: item.type, title: item.title ?? '', ...(coverage ? {coverage} : {})};
+      }),
       state: closed ? 'closed' : state,
       ...(code ? {code} : {}),
       ...(doc.lastSyncAt ? {lastSyncAt: doc.lastSyncAt} : {}),
@@ -197,7 +202,13 @@ const connector = {
       if (!record?.value) return;
       const value = record.value;
       if (value.version !== 1 || !Array.isArray(value.selected) || value.selected.some(item => typeof item?.id !== 'string' || (item.type !== 'page' && item.type !== 'database'))) throw new NotionError('notion_state_invalid', 503);
-      doc = value;
+      const slots = new Set();
+      doc = {...value, selected: value.selected.map((item, index) => {
+        const slot = item.slot ?? index;
+        if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_SELECTED || slots.has(slot)) throw new NotionError('notion_state_invalid', 503);
+        slots.add(slot);
+        return {...item, slot, selection: item.selection ?? hash(JSON.stringify([value.token?.connectedAt, item.id, item.type]))};
+      })};
       docRevision = record.revision;
     };
 
@@ -209,7 +220,7 @@ const connector = {
       }
     };
 
-    const ensureSources = () => {
+    const ensureSources = (enableSelected = false) => {
       for (const item of doc.selected) {
         const id = sourceId(item.id);
         ctx.sources.register({
@@ -217,9 +228,45 @@ const connector = {
           platform: 'import', retention: 'snapshot', enabled: true,
         });
         try {
-          ctx.sources.update(id, {name: sourceName(item), enabled: true});
+          ctx.sources.update(id, {name: sourceName(item), ...(enableSelected ? {enabled: true} : {})});
         } catch { /* Registration already failed above when identity changed. */ }
       }
+    };
+
+    const coverage = scan => ({
+      state: scan.complete && !scan.contentPartial && scan.failed === 0 ? 'complete' : 'partial',
+      window: scan.window, processed: scan.processed,
+      remaining: scan.complete && !scan.contentPartial && scan.failed === 0 ? 0 : null,
+      failed: scan.failed,
+      limitations: [...(!scan.complete && scan.type === 'database' ? ['pagination_pending'] : []), ...(scan.contentPartial ? ['content_partial'] : [])],
+      updatedAt: now(),
+    });
+    const saveScan = async (record, scan) => {
+      const saved = await ctx.state.compareAndSet(record.key, record.revision || null, scan);
+      return {key: record.key, revision: saved.revision, scan};
+    };
+    const scanFor = async (item, source) => {
+      const key = SCAN_PREFIX + item.slot, record = await ctx.state.get(key);
+      const mode = source.initialSync ?? 'all';
+      const scope = hash(JSON.stringify([doc.token?.workspaceId, doc.token?.botId, doc.token?.connectedAt, item.id, item.type, item.selection, mode]));
+      let scan = record?.value;
+      const same = scan?.version === 1 && scan.id === item.id && scan.type === item.type && scan.scope === scope && source.status?.coverage;
+      if (same) {
+        if (mode === 'new_only' && (typeof scan.baselineAt !== 'string' || !Number.isFinite(Date.parse(scan.baselineAt))) || scan.pageBaseline !== undefined && (typeof scan.pageBaseline !== 'string' || !Number.isFinite(Date.parse(scan.pageBaseline))) || !scan.window || !Number.isFinite(Date.parse(scan.window.to)) || scan.window.from && (!Number.isFinite(Date.parse(scan.window.from)) || Date.parse(scan.window.from) > Date.parse(scan.window.to)) || !Number.isSafeInteger(scan.processed) || scan.processed < 0 || !Number.isSafeInteger(scan.failed) || scan.failed < 0 || typeof scan.complete !== 'boolean' || typeof scan.contentPartial !== 'boolean' || scan.cursor !== undefined && (typeof scan.cursor !== 'string' || !scan.cursor || scan.cursor.length > 2048)) throw new NotionError('notion_state_invalid', 503);
+        if (!scan.complete) return {key, revision: record.revision, scan};
+      }
+      const to = now();
+      scan = {version: 1, id: item.id, type: item.type, scope, mode,
+        window: {...(same ? {from: scan.window.to} : mode === 'new_only' ? {from: to} : {}), to},
+        processed: 0, failed: 0, complete: false, contentPartial: true,
+        ...(mode === 'new_only' ? {baselineAt: same ? scan.baselineAt : to, ...(same && scan.pageBaseline ? {pageBaseline: scan.pageBaseline} : {})} : {}),
+      };
+      return saveScan({key, revision: record?.revision ?? 0}, scan);
+    };
+    const withinWindow = (entry, scan) => {
+      if (typeof entry.last_edited_time !== 'string' || !Number.isFinite(Date.parse(entry.last_edited_time))) throw new NotionError('notion_response_invalid', 502);
+      const at = Date.parse(entry.last_edited_time);
+      return at <= Date.parse(scan.window.to) && (!scan.window.from || at >= Date.parse(scan.window.from));
     };
 
     const schedule = () => {
@@ -273,6 +320,7 @@ const connector = {
           throw new NotionError(code, result.response.status);
         }
         if (result.response.status === 404) throw new NotionError('notion_resource_not_found', 404);
+        if (result.response.status === 400 && body?.start_cursor) throw new NotionError('notion_cursor_invalid', 409);
         if (result.response.status === 429 || result.response.status === 503) throw new NotionError('notion_rate_limited', 503);
         throw new NotionError('notion_request_failed', 502);
       }
@@ -311,61 +359,75 @@ const connector = {
 
     const blockLines = async pageId => {
       const lines = [];
-      let cursor;
+      let cursor, partial = false, blocks = 0;
       for (let page = 0; page < 2; page++) {
         const query = new URLSearchParams({page_size: '100', ...(cursor ? {start_cursor: cursor} : {})});
         const body = await api('GET', '/v1/blocks/' + encodeURIComponent(pageId) + '/children?' + query.toString());
-        for (const block of Array.isArray(body?.results) ? body.results : []) {
+        if (!Array.isArray(body?.results) || body.results.length > 100 || typeof body.has_more !== 'boolean') throw new NotionError('notion_response_invalid', 502);
+        for (const block of body.results) {
+          blocks++;
           const line = blockText(block);
           if (line) lines.push(line);
-          if (lines.length >= MAX_BLOCKS) return lines;
+          if (block.has_children || ['child_page', 'child_database'].includes(block.type) || !Array.isArray(block?.[block.type]?.rich_text) && !['divider', 'breadcrumb', 'table_of_contents'].includes(block.type)) partial = true;
         }
-        cursor = body?.has_more === true && typeof body.next_cursor === 'string' ? body.next_cursor : undefined;
-        if (!cursor) return lines;
+        cursor = body.has_more && typeof body.next_cursor === 'string' && body.next_cursor.length <= 2048 ? body.next_cursor : undefined;
+        if (body.has_more && !cursor) throw new NotionError('notion_response_invalid', 502);
+        if (!cursor) return {lines, partial};
+        if (blocks >= MAX_BLOCKS) return {lines, partial: true};
       }
-      return lines;
+      return {lines, partial: true};
     };
 
-    const pageItem = async item => {
-      const page = await api('GET', '/v1/pages/' + encodeURIComponent(item.id));
-      if (!page || page.object !== 'page' || page.id !== item.id) throw new NotionError('notion_response_invalid', 502);
-      const lines = await blockLines(item.id);
-      const title = titleOf(page) || text(item.title) || 'Notion 页面';
-      const content = lines.join('\n').slice(0, MAX_TEXT);
-      const uri = pageUrl(page.url) ?? item.uri;
-      const modifiedAt = typeof page.last_edited_time === 'string' ? page.last_edited_time : undefined;
+    const pageItem = async (item, scan, source) => {
+      const path = '/v1/pages/' + encodeURIComponent(item.id), page = await api('GET', path);
+      if (!page || page.object !== 'page' || page.id !== item.id || typeof page.last_edited_time !== 'string' || !Number.isFinite(Date.parse(page.last_edited_time))) throw new NotionError('notion_response_invalid', 502);
+      if (Date.parse(page.last_edited_time) > Date.parse(scan.window.to)) return {entries: [], partial: true};
+      if (scan.mode === 'new_only' && !ctx.sources.getItem(source.id, item.id)) {
+        if (!scan.pageBaseline) return {entries: [], partial: false, pageBaseline: page.last_edited_time};
+        if (scan.pageBaseline === page.last_edited_time) return {entries: [], partial: false};
+      }
+      const body = await blockLines(item.id), title = titleOf(page) || text(item.title) || 'Notion 页面';
+      const joined = body.lines.join('\n'), content = joined.slice(0, MAX_TEXT), uri = pageUrl(page.url) ?? item.uri, modifiedAt = page.last_edited_time;
+      // A new revision starts its own read. Never join block pages from an old
+      // revision, or publish a body assembled while the provider changed it.
+      const confirmed = await api('GET', path);
+      if (confirmed?.id !== page.id || confirmed.last_edited_time !== modifiedAt) throw new NotionError('notion_page_changed', 409);
       const revision = hash(JSON.stringify({id: page.id, title, content, uri, modifiedAt}));
-      return {
-        externalId: page.id, revision, observedAt: now(),
-        ...(modifiedAt ? {modifiedAt} : {}),
+      return {entries: [{externalId: page.id, revision, observedAt: now(), modifiedAt,
         title: title.slice(0, 2000), text: content, kind: 'file', layer: 'snapshot', mimeType: 'text/markdown',
-        ...(uri ? {uri} : {}),
-        metadata: {version: 1, provider: {updatedAt: modifiedAt ?? now()}},
-      };
+        ...(uri ? {uri} : {}), metadata: {version: 1, provider: {updatedAt: modifiedAt}},
+      }], partial: body.partial || joined.length > MAX_TEXT};
     };
 
-    const databaseItems = async item => {
+    const databaseItems = async (item, scan, source) => {
+      const filters = [{timestamp: 'last_edited_time', last_edited_time: {on_or_before: scan.window.to}}];
+      if (scan.window.from) filters.push({timestamp: 'last_edited_time', last_edited_time: {on_or_after: scan.window.from}});
       const body = await api('POST', '/v1/databases/' + encodeURIComponent(item.id) + '/query', {
-        page_size: MAX_DATABASE_ENTRIES,
-        sorts: [{timestamp: 'last_edited_time', direction: 'descending'}],
+        page_size: MAX_DATABASE_ENTRIES, ...(scan.cursor ? {start_cursor: scan.cursor} : {}),
+        sorts: [{timestamp: 'last_edited_time', direction: 'descending'}], filter: {and: filters},
       });
-      const entries = [];
-      for (const entry of (Array.isArray(body?.results) ? body.results : []).slice(0, MAX_DATABASE_ENTRIES)) {
-        if (entry?.object !== 'page' || typeof entry.id !== 'string') continue;
-        const title = titleOf(entry) || 'Notion 条目';
-        const content = propertiesText(entry.properties).slice(0, MAX_TEXT);
-        const uri = pageUrl(entry.url);
-        const modifiedAt = typeof entry.last_edited_time === 'string' ? entry.last_edited_time : undefined;
+      if (!Array.isArray(body?.results) || body.results.length > MAX_DATABASE_ENTRIES || typeof body.has_more !== 'boolean') throw new NotionError('notion_response_invalid', 502);
+      const nextCursor = body.has_more && typeof body.next_cursor === 'string' && body.next_cursor.length <= 2048 ? body.next_cursor : undefined;
+      if (body.has_more && (!nextCursor || nextCursor === scan.cursor)) throw new NotionError('notion_response_invalid', 502);
+      const entries = [], identities = new Set();
+      for (const entry of body.results) {
+        if (entry?.object !== 'page' || typeof entry.id !== 'string' || !entry.id || entry.id.length > 200 || identities.has(entry.id)) throw new NotionError('notion_response_invalid', 502);
+        identities.add(entry.id);
+        if (!withinWindow(entry, scan)) continue;
+        if (scan.mode === 'new_only' && !ctx.sources.getItem(source.id, entry.id)) {
+          if (typeof entry.created_time !== 'string' || !Number.isFinite(Date.parse(entry.created_time))) throw new NotionError('notion_response_invalid', 502);
+          if (Date.parse(entry.created_time) <= Date.parse(scan.baselineAt)) continue;
+        }
+        const title = titleOf(entry) || 'Notion 条目', content = propertiesText(entry.properties).slice(0, MAX_TEXT), uri = pageUrl(entry.url), modifiedAt = entry.last_edited_time;
         const revision = hash(JSON.stringify({id: entry.id, title, content, uri, modifiedAt}));
-        entries.push({
-          externalId: entry.id, revision, observedAt: now(),
-          ...(modifiedAt ? {modifiedAt} : {}),
+        entries.push({externalId: entry.id, revision, observedAt: now(), modifiedAt,
           title: title.slice(0, 2000), text: content, kind: 'file', layer: 'snapshot', mimeType: 'text/markdown',
-          ...(uri ? {uri} : {}),
-          metadata: {version: 1, provider: {updatedAt: modifiedAt ?? now()}},
+          ...(uri ? {uri} : {}), metadata: {version: 1, provider: {updatedAt: modifiedAt}},
         });
       }
-      return entries;
+      // Database enumeration currently retains properties only. Its row cursor
+      // can finish while unread page bodies keep content coverage partial.
+      return {entries, partial: true, nextCursor};
     };
 
     const performSync = async () => {
@@ -374,29 +436,33 @@ const connector = {
       if (!doc.selected.length) throw new NotionError('notion_selection_required', 409);
       state = 'syncing';
       code = undefined;
-      let imported = 0, duplicates = 0, pages = 0, databases = 0;
+      let imported = 0, duplicates = 0, pages = 0, databases = 0, active;
       try {
         ensureSources();
         for (const item of doc.selected) {
           if (closed) throw new NotionError('connector_closed', 503);
-          const id = sourceId(item.id);
-          let source;
-          try {
-            source = ctx.sources.getSource(id);
-          } catch {
-            continue;
-          }
+          const id = sourceId(item.id), source = ctx.sources.getSource(id);
           if (!source.enabled) continue;
-          ctx.sources.reportStatus(id, {state: 'syncing'});
-          const entries = item.type === 'database' ? await databaseItems(item) : [await pageItem(item)];
-          if (item.type === 'database') databases++;
-          else pages++;
-          for (const entry of entries) {
+          active = {id, record: await scanFor(item, source)};
+          ctx.sources.reportStatus(id, {state: 'syncing', coverage: coverage(active.record.scan)});
+          const batch = item.type === 'database' ? await databaseItems(item, active.record.scan, source) : await pageItem(item, active.record.scan, source);
+          if (item.type === 'database') databases++; else pages++;
+          for (const entry of batch.entries) {
             if (closed) throw new NotionError('connector_closed', 503);
             const result = await ctx.sources.upsert(id, entry);
             result.duplicate ? duplicates++ : imported++;
           }
-          ctx.sources.reportStatus(id, {state: 'idle', lastSyncAt: now()});
+          // The entire bounded page commits before its continuation advances.
+          // A crash before CAS replays that page; successful replay counts it
+          // once, independent of duplicate archive acknowledgements.
+          const scan = {...active.record.scan, processed: active.record.scan.processed + batch.entries.length,
+            failed: 0, complete: !batch.nextCursor, contentPartial: batch.partial,
+            ...(batch.pageBaseline ? {pageBaseline: batch.pageBaseline} : {}),
+          };
+          if (batch.nextCursor) scan.cursor = batch.nextCursor; else delete scan.cursor;
+          active.record = await saveScan(active.record, scan);
+          ctx.sources.reportStatus(id, {state: 'idle', lastSyncAt: now(), coverage: coverage(scan)});
+          active = undefined;
         }
         doc.lastSyncAt = now();
         await persist();
@@ -406,10 +472,11 @@ const connector = {
         const failure = error instanceof NotionError ? error : new NotionError('notion_sync_failed', 502);
         state = [401, 403].includes(failure.statusCode) ? 'permission_required' : 'error';
         code = failure.code;
-        for (const item of doc.selected) {
-          try {
-            ctx.sources.reportStatus(sourceId(item.id), {state, code});
-          } catch { /* Only selected sources that still exist report failure. */ }
+        if (active) {
+          let scan = {...active.record.scan, failed: 1};
+          if (code === 'notion_cursor_invalid') {scan = {...scan, processed: 0, complete: false};delete scan.cursor;}
+          try { active.record = await saveScan(active.record, scan); } catch { /* A fenced host cannot publish a late checkpoint. */ }
+          try { ctx.sources.reportStatus(active.id, {state, code, coverage: coverage(scan)}); } catch { /* The stopped instance cannot publish late status. */ }
         }
         throw failure;
       }
@@ -483,10 +550,14 @@ const connector = {
         return run(async () => {
           const candidates = await listCandidates();
           const available = new Map(candidates.items.map(item => [item.id, item]));
+          const retained = new Map(doc.selected.filter(item => selection.some(value => value.id === item.id && value.type === item.type)).map(item => [item.id, item]));
+          const used = new Set([...retained.values()].map(item => item.slot));
           const chosen = selection.map(item => {
             const match = available.get(item.id);
             if (!match || match.type !== item.type) throw new NotionError('notion_selection_invalid', 404);
-            return {id: match.id, type: match.type, title: match.title, ...(match.uri ? {uri: match.uri} : {})};
+            const prior = retained.get(item.id), slot = prior?.slot ?? Array.from({length: MAX_SELECTED}, (_, index) => index).find(index => !used.has(index));
+            used.add(slot);
+            return {id: match.id, type: match.type, title: match.title.slice(0, 200), ...(match.uri && match.uri.length <= 500 ? {uri: match.uri} : {}), slot, selection: prior?.selection ?? randomBytes(16).toString('hex')};
           });
           const keep = new Set(chosen.map(item => item.id));
           for (const prior of doc.selected) {
@@ -497,7 +568,12 @@ const connector = {
           }
           doc.selected = chosen;
           await persist();
-          ensureSources();
+          ensureSources(true);
+          for (const item of chosen) if (!retained.has(item.id)) {
+            ctx.sources.resetCoverage(sourceId(item.id));
+            const key = SCAN_PREFIX + item.slot, previous = await ctx.state.get(key);
+            if (previous) await ctx.state.compareAndSet(key, previous.revision, null);
+          }
           schedule();
           return {status: status(), selected: status().selected};
         });

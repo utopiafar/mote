@@ -2,7 +2,7 @@ import {MaterialStore} from './materials.js';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
-import {ownerRelationSchema,type OwnerRelation,sourceCapabilities,sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
+import {ownerRelationSchema,type OwnerRelation,sourceCapabilities,sourceConnectionSchema,sourceStatusSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import type {MemoryInputAuthorization} from './memory-input-authorization.js';
 import {SourceContextStore} from './source-context.js';
@@ -47,6 +47,9 @@ export class SourceStore {
     const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch,...('ownerRelation' in patch?{ownerRelation:patch.ownerRelation??undefined,ownerRelationVersion:(existing.ownerRelationVersion??0)+(patch.ownerRelation!==(existing.ownerRelation??null)?1:0)||undefined}:{})});
     if(input.enabled&&!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     const value={...existing,...input,updatedAt:new Date().toISOString()};
+    // A new owner-selected history policy has no coverage until its producer
+    // starts the new range; ordinary pause/resume keeps the current checkpoint.
+    if((existing.initialSync??'all')!==(input.initialSync??'all')&&value.status){const {coverage,...status}=value.status;value.status=status;}
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
     if(growth>0)this.store.reserveMetadata(growth);
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
@@ -57,7 +60,17 @@ export class SourceStore {
   }
   private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:{...this.capabilities.describe(value),...(value.kind==='coding-agent'?{codingEvidenceFieldsVersion:1 as const}:{})}}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
   private save(value:SourceConnection){const {capabilities,...persisted}=value;this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));}
-  reportStatus(id:string,status:NonNullable<SourceConnection['status']>){const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});}
+  reportStatus(id:string,status:NonNullable<SourceConnection['status']>){
+    const value=this.getSource(id),input=sourceStatusSchema.parse(status),coverage=input.coverage??value.status?.coverage;
+    const next={...value,status:{...input,...(coverage?{coverage}:{})},updatedAt:new Date().toISOString()},growth=Buffer.byteLength(JSON.stringify(next))-Buffer.byteLength(JSON.stringify(value));
+    if(growth>0)this.store.reserveMetadata(growth);this.save(next);
+  }
+  /** A producer must explicitly withdraw coverage when its selected range or
+   * authorization identity changes. Ordinary execution reports preserve it. */
+  resetCoverage(id:string){
+    const value=this.getSource(id);if(!value.status?.coverage)return;
+    const {coverage,...status}=value.status;this.save({...value,status,updatedAt:new Date().toISOString()});
+  }
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {
     const p=c.provenance!;return {sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,observedAt:c.capturedAt,modifiedAt:p.modifiedAt,title:c.windowTitle,text:p.layer==='reference'||p.deleted?'':c.ocrText,uri:p.uri,kind:c.source as SourceItem['kind'],layer:p.layer,calendar:p.calendar,mimeType:p.mimeType,deleted:p.deleted,metadata:p.metadata,document:p.document,captureId:c.id,receivedAt:c.receivedAt,current};
   }

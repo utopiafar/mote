@@ -93,3 +93,17 @@ test('source registration and portable archive merge cross former cumulative lim
  assert.equal(sources.register({id:'fixture',name:'Repeat',kind:'custom',deviceId:'synthetic',platform:'import'}).id,'fixture');
  assert.throws(()=>sources.register({id:'fixture',name:'Conflicting identity',kind:'custom',deviceId:'other',platform:'import'}),{statusCode:409});
 });
+
+test('source coverage remains independent of execution, validates completion and resets on history-policy changes',t=>{
+ const {sources,store}=fixture(t),coverage={state:'partial' as const,window:{to:'2026-11-15T00:00:00.000Z'},processed:100,remaining:null,failed:0,limitations:['pagination_pending','content_partial'] as const,updatedAt:'2026-11-15T00:00:00.000Z'};
+ assert.equal(sources.getSource('fixture').status?.coverage,undefined,'legacy sources have unknown coverage');
+ sources.reportStatus('fixture',{state:'idle',coverage:{...coverage,limitations:[...coverage.limitations]}});
+ for(const state of ['syncing','idle','error'] as const){sources.reportStatus('fixture',{state});assert.equal(sources.getSource('fixture').status?.state,state);assert.deepEqual(sources.getSource('fixture').status?.coverage,coverage);}
+ assert.equal(JSON.parse(String(store.db.prepare("SELECT json FROM source_connections WHERE id='fixture'").get()!.json)).status.coverage.remaining,null);
+ const restored=new SourceStore(store);assert.deepEqual(restored.getSource('fixture').status?.coverage,coverage,'the persisted status retains unknown remaining work');
+ for(const invalid of [{state:'complete',remaining:null,limitations:[]},{state:'complete',remaining:0,failed:1,limitations:[]},{state:'complete',remaining:0,limitations:['content_partial']},{window:{from:'2026-11-16T00:00:00.000Z',to:coverage.window.to}}])assert.throws(()=>restored.reportStatus('fixture',{state:'idle',coverage:{...coverage,...invalid} as any}));
+ const complete={...coverage,state:'complete' as const,remaining:0,limitations:[]};restored.reportStatus('fixture',{state:'idle',coverage:complete});
+ restored.update('fixture',{enabled:false});restored.update('fixture',{enabled:true});assert.deepEqual(restored.getSource('fixture').status?.coverage,complete,'pausing does not discard coverage');
+ restored.update('fixture',{initialSync:'new_only'});assert.equal(restored.getSource('fixture').status?.coverage,undefined,'a new selection policy cannot inherit old complete coverage');
+ restored.reportStatus('fixture',{state:'syncing'});assert.equal(restored.getSource('fixture').status?.coverage,undefined);
+});
