@@ -137,6 +137,9 @@ export const sourceConnectionSchema=z.object({
   sourceContext:sourceDescriptionDeclarationSchema.omit({sourceId:true}).optional(),
   /** Read-only host generation for the effective synchronization range. */
   syncScopeVersion:z.number().int().nonnegative().safe().optional(),
+  /** Read-only owner history-policy generation. Authorization-only resets
+   * change syncScopeVersion while preserving this approved range identity. */
+  syncPolicyVersion:z.number().int().nonnegative().safe().optional(),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();
 /** Coverage is independent of whether a connector is running. Processed/remaining count
