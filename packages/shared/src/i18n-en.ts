@@ -10813,5 +10813,13 @@ export const english: Readonly<Record<string, string>> = {
   "停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。": "Stop reading Feishu conversations and pause the selected chats. Archived content and the Feishu account’s other connections are retained.",
   "本机采集内容长期保留，上传确认后不自动删除。": "Locally captured content is retained long term and is not automatically deleted after upload acknowledgment.",
   "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "The local source scope has changed. Older pending versions are isolated and their original inputs are retained.",
-  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "JSON backups include locally captured records, upload status and associated images, and preserve upload status when restored. Source files and meeting recordings must be backed up separately."
+  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "JSON backups include locally captured records, upload status and associated images, and preserve upload status when restored. Source files and meeting recordings must be backed up separately.",
+  "清理本机副本": "Clear local copy",
+  "本机副本已清理": "Local copy cleared",
+  "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Clear only a local copy whose upload was confirmed. Keep its time, source and receipt; the Central archive and your source files are unaffected.",
+  "本机原件不在此设备，连接原中央后可按当前权限读取。": "The original is not on this device. Connect to the original Central to read it with your current permissions.",
+  "原中央与当前连接不一致，未发送读取请求。": "The original Central differs from the current connection. No read request was sent.",
+  "从中央另存原件": "Save original from Central",
+  "采集阶段仍有待处理输入，暂不能清理本机副本。": "Capture stages still hold pending input. This local copy cannot be cleared yet.",
+  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "The local copy has not been fully cleared. Retry; any remaining input will not be uploaded again."
 };

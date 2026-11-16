@@ -30,12 +30,13 @@ function preview(event: Partial<CaptureEvent> & { hasImage?: boolean; textPrevie
   const normalizedStatus = status === 'pending' || status === 'completed' || status === 'disabled' || status === 'failed' ? status : 'unknown';
   const ocr: BrowserCapture['ocr'] = { status: normalizedStatus, ...(event.ocr?.reason === 'charging' ? { reason: 'charging' as const } : {}) };
   const text = event.ocrText ?? event.textPreview ?? '';
-  return { source:event.source==='ui_page'?'ui_page':'screen', id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), sizeBytes:record?record.blobBytes+Buffer.byteLength(text):event.sizeBytes, hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { syncError: record.syncError } : {}) };
+  return { source:event.source==='ui_page'?'ui_page':'screen', id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), sizeBytes:record?record.blobBytes+Buffer.byteLength(text):event.sizeBytes, hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? {syncError:record.syncError,localContentRelease:record.localContentRelease} : {}) };
 }
-async function request(config: Config, path: string): Promise<Response> {
+async function request(config: Config, path: string,authorize:()=>void=()=>{}): Promise<Response> {
+  authorize();
   if (!connectionToken(config) || !config.serverUrl) throw new Error(moteText("先连接中央；本机记录仍可查看"));
   const response = await fetch(`${validateServerUrl(config.serverUrl)}${path}`, { headers: { 'Accept-Language': getLocale(), Authorization: `Bearer ${requireConnectionToken(config)}` }, redirect: 'error', signal: AbortSignal.timeout(20000) });
-  if (!response.ok) {
+  try{authorize();}catch(error){await response.body?.cancel().catch(()=>{});throw error;}if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     if (response.status === 404) throw new Error(moteText("记录不存在，或中央需要升级才能浏览采集记录"));
     if (response.status === 401 || response.status === 403) throw new Error(moteText("无法访问采集记录，请检查中央连接权限"));
@@ -43,8 +44,9 @@ async function request(config: Config, path: string): Promise<Response> {
   }
   return response;
 }
-async function remoteDetail(config: Config, id: string): Promise<Partial<CaptureEvent>> {
-  const value = JSON.parse(await readResponseText(await request(config, `/api/capture-browser/${id}`), 1024 * 1024)) as Partial<CaptureEvent>;
+async function remoteDetail(config: Config, id: string,authorize:()=>void=()=>{}): Promise<Partial<CaptureEvent>> {
+  const value = JSON.parse(await readResponseText(await request(config, `/api/capture-browser/${id}`,authorize), 1024 * 1024)) as Partial<CaptureEvent>;
+  authorize();
   if (value.id !== id || value.deviceId !== config.deviceId || !['screen','ui_page'].includes(value.source??'')) throw new Error(moteText("记录不属于当前设备的截图"));
   return value;
 }
@@ -98,20 +100,26 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
   if (response.items.some(v => v.deviceId !== config.deviceId || v.source !== source)) throw new Error(moteText("中央返回了其他设备的记录"));
   return { items: response.items.map(v => preview(v)), totalCount: response.totalCount!, nextCursor: response.nextCursor ?? undefined };
 }
-export async function captureDetail(queue: DurableQueue, config: Config, source: CaptureLocation, id: string): Promise<BrowserDetail> {
+export async function captureDetail(queue: DurableQueue, config: Config, source: CaptureLocation, id: string,authorize:()=>void=()=>{}): Promise<BrowserDetail> {
   location(source); validId(id);
   if (source === 'local') {
     const record = queue.recordForBrowser(id); if (!record) throw new Error(moteText("该记录已完成同步，请切换到中央已归档查看"));
+    if(record.localContentRelease){requireOrigin(record,config);const value=await remoteDetail(config,id,authorize);authorize();return {...preview({...value,hasImage:Boolean(value.imageMime)}),localContentRelease:record.localContentRelease,ocrText:String(value.ocrText??'').slice(0,100000),deviceName:record.event.deviceName};}
     return { ...preview(record.event, record), ocrText: record.event.ocrText ?? '', deviceName: record.event.deviceName };
   }
-  const value = await remoteDetail(config, id);
+  const value = await remoteDetail(config, id,authorize);
   return { ...preview({ ...value, hasImage: Boolean(value.imageMime) }), ocrText: String(value.ocrText ?? '').slice(0, 100000), deviceName: String(value.deviceName ?? '').slice(0, 128) };
 }
-export async function captureImage(queue: DurableQueue, config: Config, source: CaptureLocation, id: string, thumbnail: boolean): Promise<string> {
+export async function captureImage(queue: DurableQueue, config: Config, source: CaptureLocation, id: string, thumbnail: boolean,authorize:()=>void=()=>{}): Promise<string> {
   location(source); validId(id); if (typeof thumbnail !== 'boolean') throw new Error(moteText("图片参数无效"));
   let bytes: Buffer | undefined;
-  if (source === 'local') bytes = await queue.imageForBrowser(id);
-  else { await remoteDetail(config, id); bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image${thumbnail ? '?thumbnail=1' : ''}`), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES); }
+  const local=source==='local'?queue.recordForBrowser(id):undefined,marker=local?.localContentRelease?.at;
+  const current=()=>{authorize();if(local&&queue.recordForBrowser(id)?.localContentRelease?.at!==marker)throw Error('Local original changed');};
+  current();if(local?.localContentRelease)requireOrigin(local,config);
+  if(source==='local'&&!local?.localContentRelease)bytes=await queue.imageForBrowser(id);
+  else { await remoteDetail(config,id,authorize); bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image${thumbnail ? '?thumbnail=1' : ''}`,authorize), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES); }
   if (!bytes) throw new Error(moteText("图片已同步，请切换到中央已归档查看"));
-  return previewWork.run<string>({ kind: 'preview', bytes, thumbnail });
+  current();const result=await previewWork.run<string>({ kind: 'preview', bytes, thumbnail });current();return result;
 }
+
+function requireOrigin(record:QueueRecord,config:Config){if(!record.archiveAcknowledgment?.origin||!config.serverUrl)throw Error(moteText('本机原件不在此设备，连接原中央后可按当前权限读取。'));if(record.archiveAcknowledgment.origin!==validateServerUrl(config.serverUrl))throw Error(moteText('原中央与当前连接不一致，未发送读取请求。'));}

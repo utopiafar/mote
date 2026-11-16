@@ -10813,5 +10813,13 @@ export const german: Readonly<Record<string, string>> = {
   "停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。": "Das Lesen von Feishu-Unterhaltungen beenden und die ausgewählten Chats pausieren. Archivierte Inhalte und die anderen Verbindungen des Feishu-Kontos bleiben erhalten.",
   "本机采集内容长期保留，上传确认后不自动删除。": "Lokal erfasste Inhalte werden langfristig aufbewahrt und nach der Upload-Bestätigung nicht automatisch gelöscht.",
   "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "Der lokale Quellenbereich wurde geändert. Ältere ausstehende Versionen sind isoliert; ihre ursprünglichen Eingaben bleiben erhalten.",
-  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "JSON-Sicherungen enthalten lokal erfasste Aufzeichnungen, Upload-Status und zugehörige Bilder. Beim Wiederherstellen bleibt der Upload-Status erhalten. Quelldateien und Besprechungsaufnahmen müssen separat gesichert werden."
+  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "JSON-Sicherungen enthalten lokal erfasste Aufzeichnungen, Upload-Status und zugehörige Bilder. Beim Wiederherstellen bleibt der Upload-Status erhalten. Quelldateien und Besprechungsaufnahmen müssen separat gesichert werden.",
+  "清理本机副本": "Lokale Kopie löschen",
+  "本机副本已清理": "Lokale Kopie gelöscht",
+  "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Nur eine lokale Kopie mit bestätigtem Upload löschen. Zeit, Quelle und Empfangsbeleg bleiben erhalten; das Central-Archiv und Ihre Quelldateien bleiben unberührt.",
+  "本机原件不在此设备，连接原中央后可按当前权限读取。": "Das Original befindet sich nicht auf diesem Gerät. Verbinden Sie sich mit dem ursprünglichen Central, um es mit Ihren aktuellen Berechtigungen zu lesen.",
+  "原中央与当前连接不一致，未发送读取请求。": "Der ursprüngliche Central entspricht nicht der aktuellen Verbindung. Es wurde keine Leseanfrage gesendet.",
+  "从中央另存原件": "Original aus Central speichern",
+  "采集阶段仍有待处理输入，暂不能清理本机副本。": "Erfassungsstufen enthalten noch ausstehende Eingaben. Diese lokale Kopie kann noch nicht gelöscht werden.",
+  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "Die lokale Kopie wurde noch nicht vollständig gelöscht. Versuchen Sie es erneut; verbleibende Eingaben werden nicht erneut hochgeladen."
 };
