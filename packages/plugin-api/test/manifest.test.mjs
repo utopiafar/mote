@@ -69,3 +69,13 @@ test('action declaration payload is opaque to the host and cannot smuggle functi
   assert.deepEqual(parsed.actionCapabilities,[{id:'domain.capability',constraints:{enabled:true}}]);
   assert.throws(()=>packageManifestSchema.parse({...base,actionCapabilities:[{id:'domain.capability',run(){}}]}));
 });
+
+test('custom pages declare bounded methods on an exact instance port without executable bridge metadata',()=>{
+  const bridge={contributionId:'fixture.port',service:{id:'fixture.state',apiVersion:'1'},methods:['state','add']};
+  const page={...base.contributions[2],bridge};
+  assert.deepEqual(packageManifestSchema.parse({...base,contributions:[page]}).contributions[0].bridge,bridge);
+  for(const methods of [[],['state','state'],['constructor'],['__proto__'],['state.path'],Array.from({length:33},(_,index)=>'method'+index)])
+    assert.throws(()=>packageManifestSchema.parse({...base,contributions:[{...page,bridge:{...bridge,methods}}]}));
+  assert.throws(()=>packageManifestSchema.parse({...base,contributions:[{...page,surface:'data'}]}));
+  assert.throws(()=>packageManifestSchema.parse({...base,contributions:[{...page,bridge:{...bridge,invoke:()=>null}}]}));
+});
