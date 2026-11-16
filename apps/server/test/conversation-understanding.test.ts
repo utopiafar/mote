@@ -1,3 +1,4 @@
+import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +26,7 @@ async function fixture(t:TestContext,originalBody=body){
  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
  const id='00000000-0000-4000-8000-000000000123';
  await store.ingest({id,deviceId:'fixture',deviceName:'Generated',platform:'import',source:'message',capturedAt:'2026-01-01T00:00:00Z',durationMs:0,ocrText:'Generated source membership'});
- const material=materials.publish({id:materialId('fixture','conversation'),kind:'mote.coding-session',schemaVersion:6,title:'Generated session',
+ const material=materials.publish({id:materialId('fixture','conversation'),kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,title:'Generated session',
   origin:{sourceId:'fixture',externalId:'conversation',deviceId:'fixture',provider:'codex',projectKey:'generated-project',projectIdentity:'workspace',sessionId:'generated-session'},
   blocks:[{id:'section-0',kind:'text',format:'markdown-fragment',text:originalBody,memberIds:['source']}],members:[{id:'source',kind:'capture',ref:'capture:'+id}],
   coverage:{state:'complete'},artifacts:[{key:'conversation',state:'ready'}],fidelity:{state:'derived',limitations:['metadata_projected','tools_excluded']},retention:{original:'retained',policy:'keep'}});

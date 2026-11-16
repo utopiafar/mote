@@ -1,3 +1,4 @@
+import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 /** Explicitly opt-in local acceptance. Native logs and all derived personal
  * text stay in a private temporary workspace, never the repository/report.
  * --live uses only local Codex App Server with the requested gpt-6.1-sol. */
@@ -64,7 +65,7 @@ try{
   const visible=materials.flatMap(m=>node!.materials.evidence(node!.materials.evidenceIds(m.ref))).map(r=>r.ocrText).join('\n');
   const denied=items.filter(item=>!codingConversationEvidence(item.document!.coding!));
   for(const item of denied)if(item.text.length>=100){const needle=item.text.slice(0,160);if(!visible.includes(needle))forbidden.push(needle);}
-  assert.ok(unique.length>0&&materials.length>0,'provider sample produced no dialogue');assert.ok(materials.every(m=>m.schemaVersion===6));
+  assert.ok(unique.length>0&&materials.length>0,'provider sample produced no dialogue');assert.ok(materials.every(m=>m.schemaVersion===CODING_DIALOGUE_SCHEMA_VERSION));
   for(const text of forbidden)assert.ok(!visible.includes(text),'process body entered indexed dialogue');
   counters.push({provider:sample.provider,nativeFiles:sample.files.length,uploadedParts:unique.length,duplicateParts:items.length-unique.length,uploadedCharacters:items.reduce((n,i)=>n+i.text.length,0),dialogueCharacters:materials.reduce((n,m)=>n+m.textLength,0),materials:materials.length});
  }

@@ -30,14 +30,17 @@ export const codingEvidenceSchema=z.object({
   projectName:z.string().max(400).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),
   eventId:z.string().min(1).max(200),role:z.enum(['user','assistant','tool_call','tool_result','assistant_delta','tool_call_delta','transcript']),
   /** Provider protocol metadata, not a semantic classification of the message. */
-  channel:z.string().min(1).max(64).optional(),attribution:z.enum(['human','agent','host','unknown']).optional(),
+  channel:z.string().min(1).max(64).optional(),
+  /** Native session journal position (JSONL byte offset or database seq), then the event within that entry. */
+  order:z.object({entry:z.number().int().nonnegative().safe(),event:z.number().int().nonnegative().safe()}).strict().optional(),
+  attribution:z.enum(['human','agent','host','unknown']).optional(),
   callId:z.string().max(500).optional(),parentSessionId:z.string().max(500).optional(),
   part:z.number().int().min(0),parts:z.number().int().min(1),
 }).strict();
 export type CodingEvidence=z.infer<typeof codingEvidenceSchema>;
 /** Model-visible Coding evidence is a protocol-selected dialogue, never a raw
  * transcript. These bounds apply before indexing or any model invocation. */
-export const CODING_DIALOGUE_SCHEMA_VERSION=6;
+export const CODING_DIALOGUE_SCHEMA_VERSION=7;
 /** Recognize complete provider-owned envelopes only. Mentioning these names,
  * quoting an envelope, or appending a human request does not match. This is a
  * protocol parser; it never dispatches intent, topics or memory value. */
@@ -75,7 +78,7 @@ export function codingDialogueText(coding:CodingEvidence,text:string):string {
  * retention is independent and never grants an agent access to tool bodies. */
 export function codingConversationEvidence(coding:CodingEvidence,text?:string):boolean {
   const dialogue=coding.role==='user'&&coding.attribution==='human'||
-    coding.role==='assistant'&&coding.attribution==='agent'&&coding.channel==='final';
+    coding.role==='assistant'&&coding.attribution==='agent'&&['final','commentary','partial_answer'].includes(coding.channel??'');
   return dialogue&&!(coding.role==='user'&&text!==undefined&&codingHostEnvelope(coding.provider,text));
 }
 /** Provider activity evidence is a bounded observation, never proof of attention,

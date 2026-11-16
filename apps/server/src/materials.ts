@@ -64,7 +64,7 @@ const appendDraftSchema=draftSchema.omit({blocks:true}).extend({mode:z.literal('
   reuseBlocks:z.number().int().nonnegative(),blocks:z.array(blockSchema)}).strict();
 export type MaterialAppendDraft=z.infer<typeof appendDraftSchema>;
 export type CodingAppendBase={record:MaterialRecord;archiveCheckpoint:string;appendEpoch:number;headCount:number;
-  lastBlock:{id:string;text:string;format:string|null;evidenceContext?:MaterialEvidenceContext}|null};
+  lastBlock:{id:string;text:string;format:string|null;locator?:Record<string,unknown>;evidenceContext?:MaterialEvidenceContext}|null};
 export type CodingArchiveSnapshot={checkpoint:string;appendEpoch:number;headCount:number};
 export type MaterialMember=MaterialDraft['members'][number];
 export type MaterialBlock=MaterialDraft['blocks'][number];
@@ -498,13 +498,14 @@ export class MaterialStore {
     const row=this.store.db.prepare('SELECT archive_checkpoint,append_epoch,head_count FROM material_coding_snapshots WHERE material_id=? AND revision=?').get(id,record.revision) as
       {archive_checkpoint:string|null;append_epoch:number|null;head_count:number|null}|undefined;
     if(!row||row.archive_checkpoint===null||row.append_epoch===null||row.head_count===null)return;
-    const tail=record.blockCount?this.store.db.prepare(`SELECT b.block_id,b.format,p.text,c.json context_json FROM material_block_versions b
+    const tail=record.blockCount?this.store.db.prepare(`SELECT b.block_id,b.format,b.locator,p.text,c.json context_json FROM material_block_versions b
       JOIN material_block_payloads p ON p.hash=b.payload_hash LEFT JOIN material_evidence_context c ON c.anchor_id=b.anchor_id WHERE b.material_id=? AND b.idx=?
       AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)`).get(id,record.blockCount-1,record.sequence,record.sequence) as
-      {block_id:string;format:string|null;text:string;context_json:string|null}|undefined:undefined;
+      {block_id:string;format:string|null;locator:string|null;text:string;context_json:string|null}|undefined:undefined;
     if(record.blockCount&&!tail)return;
     return {record,archiveCheckpoint:row.archive_checkpoint,appendEpoch:row.append_epoch,headCount:row.head_count,
       lastBlock:tail?{id:tail.block_id,text:tail.text,format:tail.format,
+        ...(tail.locator?{locator:JSON.parse(tail.locator) as Record<string,unknown>}:{}),
         ...(tail.context_json?{evidenceContext:materialEvidenceContextSchema.parse(JSON.parse(tail.context_json))}:{})}:null};
   }
 
