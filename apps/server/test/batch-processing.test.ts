@@ -305,3 +305,87 @@ test('a failed batch projects its failure and an explicit retry resumes the same
  f.batch.retry(batch.id);await until(()=>f.batch.progress(batch.id).task.state==='succeeded');
  assert.equal(tasks.get(itemId).state,'succeeded');assert.equal(attempts,2);assert.equal(f.batch.result(batch.id)?.answer,'Generated answer: Generated retry');
 });
+
+test('batch and owner query share the executor while cancellation fences only the selected consumer across restart',async t=>{
+ const batchEntered=gate(),batchRelease=gate(),queryEntered=gate(),queryRelease=gate(),cancelEntered=gate(),cancelRelease=gate();
+ t.after(()=>{batchRelease.release();queryRelease.release();cancelRelease.release();});
+ let heldBatch:QueryInput|undefined,heldQuery:QueryInput|undefined,heldCancelled:QueryInput|undefined;
+ const calls:string[]=[];
+ const f=await fixture(t,async input=>{
+  calls.push(input.question);
+  if(input.question==='Generated independent batch'){heldBatch=input;batchEntered.release();await batchRelease.promise;}
+  if(input.question==='Generated cancelled owner query'){heldQuery=input;queryEntered.release();await queryRelease.promise;}
+  if(input.question==='Generated cancelled batch'){heldCancelled=input;cancelEntered.release();await cancelRelease.promise;}
+  return answer(input);
+ });
+ assert.equal(f.node.delegation.engine,f.node.executor,'the real owner query and batch use one executor instance');
+ const original=await f.note('shared executor'),single=(question:string)=>({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question,evidenceIds:[original]}]});
+ const batch=f.batch.submit(single('Generated independent batch'),manual(f.node));await reached(batchEntered.promise);
+ const queryId=randomUUID(),accepted=await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id:queryId,input:{question:'Generated cancelled owner query'}}});
+ assert.equal(accepted.statusCode,202,accepted.body);await reached(queryEntered.promise);
+ const batchStep=f.batch.progress(batch.id).items[0],work=f.node.delegation.get('query:'+queryId),queryStep=work.id+':coordinator:'+work.revision;
+ assert.equal(f.node.executor.get(batchStep.id)?.state,'running');assert.equal(f.node.executor.get(queryStep)?.state,'running');
+ const cancelled=await f.node.app.inject({method:'POST',url:'/api/query-runs/'+queryId+'/cancel',headers,payload:{}});
+ assert.equal(cancelled.statusCode,200,cancelled.body);assert.equal(cancelled.json().status,'cancelled');
+ assert.equal(heldQuery!.signal!.aborted,true);assert.equal(heldBatch!.signal!.aborted,false);
+ queryRelease.release();await until(()=>!f.node.executor.isActiveStep(queryStep));
+ assert.equal(f.node.executor.get(queryStep)?.state,'cancelled');assert.equal(f.node.delegation.result(work.id),undefined);
+ assert.equal(f.node.queryRuns.get(queryId).turnId,undefined,'the late cancelled answer cannot write a conversation turn');
+ batchRelease.release();await until(()=>f.batch.progress(batch.id).task.state==='succeeded');
+ const saved=f.batch.result(batch.id)!;assert.equal(saved.answer,'Generated answer: Generated independent batch');
+ const item=f.batch.progress(batch.id).items[0];assert.equal(f.node.executor.get(item.id)?.state,'succeeded');
+ const records=new TaskRecords(f.node.store),task=records.get(String(item.input.itemId));
+ assert.equal(task.state,'succeeded');assert.equal(records.result<QueryResult>(task.id,task.revision,ids=>{assert.deepEqual(ids,[original]);assert.ok(f.node.store.isCurrentEvidence(original));})?.runId,saved.runId);
+ await f.restart();
+ assert.equal(f.node.delegation.engine,f.node.executor);assert.deepEqual(f.batch.result(batch.id),saved);
+ assert.equal(f.node.queryRuns.get(queryId).status,'cancelled');assert.equal(f.node.delegation.result(work.id),undefined);
+ assert.equal(calls.filter(value=>value==='Generated independent batch').length,1);assert.equal(calls.filter(value=>value==='Generated cancelled owner query').length,1);
+
+ const unfinished=f.batch.submit(single('Generated cancelled batch'),manual(f.node));await reached(cancelEntered.promise);
+ const completedId=randomUUID(),other=await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id:completedId,input:{question:'Generated independent owner query'}}});
+ assert.equal(other.statusCode,202,other.body);await until(()=>f.node.queryRuns.get(completedId).status==='completed');
+ const receipt=f.node.queryRuns.get(completedId),conversation=(await f.node.app.inject({url:'/api/conversations/'+receipt.conversationId,headers})).json();
+ assert.equal(conversation.turnCount,1);assert.equal(conversation.turns[0].result.answer,'Generated answer: Generated independent owner query');
+ f.batch.cancel(unfinished.id);assert.equal(heldCancelled!.signal!.aborted,true);cancelRelease.release();
+ await until(()=>!f.node.executor.isActiveStep(f.batch.progress(unfinished.id).items[0].id));
+ assert.equal(f.batch.progress(unfinished.id).task.state,'cancelled');
+ assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(unfinished.id)!.result_json,null);
+ assert.equal(f.node.queryRuns.get(completedId).status,'completed');
+ assert.equal((await f.node.app.inject({url:'/api/conversations/'+receipt.conversationId,headers})).json().turnCount,1);
+});
+
+test('one executor recovers interrupted batch and owner query while retaining checkpoints through reducer failure and retry',async t=>{
+ const batchEntered=gate(),queryEntered=gate(),release=gate();t.after(()=>release.release());
+ let interrupt=true,failReduce=true;const calls:string[]=[],times=new Map<string,Set<string>>();
+ const f=await fixture(t,async input=>{
+  calls.push(input.question);const values=times.get(input.question)??new Set<string>();values.add(input.contextTime!);times.set(input.question,values);
+  if(interrupt&&input.question==='Generated item 3'){batchEntered.release();await release.promise;}
+  if(interrupt&&input.question==='Generated restart owner query'){queryEntered.release();await release.promise;}
+  if(input.question==='Summarize generated items'&&failReduce){failReduce=false;throw new ExecutionFailure('permanent','generated_reduce_failed');}
+  return answer(input);
+ });
+ assert.equal(f.node.delegation.engine,f.node.executor);
+ const ids=[await f.note('one'),await f.note('two'),await f.note('three')],batch=f.batch.submit(request(ids),manual(f.node));await reached(batchEntered.promise);
+ const progress=f.batch.progress(batch.id),completed=progress.items.slice(0,2).map(step=>({stepId:step.id,taskId:String(step.input.itemId)}));
+ assert.equal(progress.completed,2);
+ const retained=()=>completed.map(({stepId,taskId})=>({stepId,state:f.node.executor.get(stepId)?.state,...f.node.store.db.prepare('SELECT input_json,result_json FROM task_records WHERE id=?').get(taskId)}));
+ const before=retained();assert.ok(before.every(row=>row.state==='succeeded'&&String(row.input_json).startsWith('aes:')&&String(row.result_json).startsWith('aes:')));
+ const queryId=randomUUID(),accepted=await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id:queryId,input:{question:'Generated restart owner query'}}});
+ assert.equal(accepted.statusCode,202,accepted.body);await reached(queryEntered.promise);
+ const queryWork=f.node.delegation.get('query:'+queryId),queryStep=queryWork.id+':coordinator:'+queryWork.revision;
+ const closing=f.node.app.close();
+ await until(()=>!f.node.executor.isActiveStep(progress.items[2].id)&&!f.node.executor.isActiveStep(queryStep));
+ interrupt=false;release.release();await closing;await f.restart();
+ await until(()=>f.batch.progress(batch.id).reduce?.state==='failed'&&f.node.queryRuns.get(queryId).status==='completed');
+ assert.equal(f.node.delegation.engine,f.node.executor);assert.deepEqual(retained(),before,'restart and reducer failure retain the exact encrypted successful checkpoints');
+ assert.equal(f.batch.progress(batch.id).task.state,'failed');assert.equal(f.batch.progress(batch.id).completed,3);
+ const receipt=f.node.queryRuns.get(queryId);assert.ok(receipt.conversationId);assert.equal(f.node.delegation.get(queryWork.id).status,'succeeded');
+ assert.equal((await f.node.app.inject({url:'/api/conversations/'+receipt.conversationId,headers})).json().turnCount,1);
+ await f.restart();assert.equal(f.batch.progress(batch.id).task.state,'failed');assert.deepEqual(retained(),before);
+ f.batch.retry(batch.id);await until(()=>f.batch.progress(batch.id).task.state==='succeeded');
+ assert.equal(f.batch.result(batch.id)?.answer,'Generated answer: Summarize generated items');assert.deepEqual(retained(),before);
+ assert.deepEqual(calls.filter(value=>value.startsWith('Generated item')),['Generated item 1','Generated item 2','Generated item 3','Generated item 3']);
+ assert.equal(calls.filter(value=>value==='Summarize generated items').length,2);assert.equal(calls.filter(value=>value==='Generated restart owner query').length,2);
+ assert.ok([...times.values()].every(values=>values.size===1),'each accepted consumer retains its semantic time through recovery');
+ assert.equal(f.node.queryRuns.get(queryId).status,'completed');assert.equal((await f.node.app.inject({url:'/api/conversations/'+receipt.conversationId,headers})).json().turnCount,1);
+});

@@ -88,6 +88,7 @@ export function servicePackageSurfaces(manifest: PluginManifest) {
     ingress: surfaces.has('ingress'),
     processing: surfaces.has('processing'),
     data: domainContributions(manifest).length>0,
+    native: (manifest.contributions ?? []).some(contribution => contribution.surface === 'agent' && contribution.runtime === 'native'),
     presentation: [...surfaces].some(surface=>['page','theme','layout'].includes(surface)),
   };
 }
@@ -95,7 +96,7 @@ export function servicePackageSurfaces(manifest: PluginManifest) {
 export function assertServicePackageSupported(manifest: PluginManifest) {
   if (manifest.runtime !== 'service') return;
   const surfaces = servicePackageSurfaces(manifest);
-  if (!surfaces.ingress && !surfaces.processing && !surfaces.data && !surfaces.presentation) {
+  if (!surfaces.ingress && !surfaces.processing && !surfaces.data && !surfaces.presentation && !surfaces.native) {
     throw new StoreError('This release requires a service runtime that this host does not provide', 422);
   }
 }

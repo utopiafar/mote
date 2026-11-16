@@ -82,6 +82,8 @@ export type MaterialReadSpan={attributionContext:AttributionContext;blockId:stri
   pageRange:{start:number;end:number};materialRange:{start:number;end:number};
   memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string};};
 export type MaterialReadPage={material:MaterialRecord;text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:MaterialReadSpan[]};
+/** Distinguish a too-small first-character window from invalid starting offsets. */
+const MATERIAL_CHARACTER_WINDOW=Symbol('material-character-window');
 export type MaterialStoredBlock={attributionContext:AttributionContext;id:string;kind:'text'|'asset';format?:string;text:string;memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string}};
 export type MaterialPage={items:MaterialRecord[];nextCursor:string|null};
 export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;total:number};
@@ -995,7 +997,7 @@ export class MaterialStore {
       const splitsPair=(at:number)=>at>0&&at<rendered.length&&/[\uD800-\uDBFF]/.test(rendered[at-1])&&/[\uDC00-\uDFFF]/.test(rendered[at]);
       if(splitsPair(start-row.start_offset))throw new StoreError('Material read offset splits a UTF-16 pair; use the returned continuation offset');
       if(splitsPair(stop-row.start_offset))stop--;
-      if(stop<=start)throw new StoreError('Material read length cannot deliver a complete Unicode character; request at least two UTF-16 units');
+      if(stop<=start){if(text.length)break;throw new StoreError('Material read length cannot deliver a complete Unicode character; request at least two UTF-16 units',400,{cause:MATERIAL_CHARACTER_WINDOW});}
       const slice=rendered.slice(start-row.start_offset,stop-row.start_offset);
       const pageStart=text.length;text+=slice;cursor=stop;
       const memberIds=JSON.parse(row.member_ids) as string[];
@@ -1024,7 +1026,14 @@ export class MaterialStore {
     let remaining=length,skip=offset;const pages:MaterialReadPage[]=[],ranges:{ref:string;offset:number;length:number}[]=[];
     for(const row of rows){const size=row.end_offset-row.start_offset;if(skip>=size){skip-=size;continue;}
       const readLength=Math.min(remaining,size-skip),range={ref,offset:row.start_offset+skip,length:readLength};
-      if(readLength>0){const page=this.read(ref,range);pages.push(page);ranges.push({...range,length:page.text.length});remaining-=page.text.length;}
+      if(readLength>0){
+        let page:MaterialReadPage;
+        try{page=this.read(ref,range);}catch(error){if(pages.length&&error instanceof StoreError&&error.cause===MATERIAL_CHARACTER_WINDOW)break;throw error;}
+        pages.push(page);ranges.push({...range,length:page.text.length});remaining-=page.text.length;
+        // A Unicode-safe short read leaves this block's suffix undelivered.
+        // Keep the product continuation there instead of jumping to the next block.
+        if(page.text.length<readLength)break;
+      }
       skip=0;if(!remaining||pages.length===32)break;
     }
     return {pin,pages,ranges};
