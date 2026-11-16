@@ -741,12 +741,12 @@ const connector = {
             return {id: match.id, type: match.type, title: match.title.slice(0, 200), ...(match.uri && match.uri.length <= 500 ? {uri: match.uri} : {}), slot, selection: prior?.selection ?? randomBytes(16).toString('hex')};
           });
           // Set every explicitly requested history policy before confirming or
-          // enabling a new selection. Failed staging leaves new sources paused;
+          // enabling a new selection. Each staged policy remains paused until selection is saved;
           // an omitted policy preserves the existing caller's current strategy.
           for (const request of selection) if (request.initialSync !== undefined) {
             const item = chosen.find(value => value.id === request.id), id = sourceId(item.id);
             ctx.sources.register({id, name: sourceName(item), kind: SOURCE_KIND, deviceId: DEVICE_ID, platform: 'import', retention: 'snapshot', enabled: false, initialSync: request.initialSync});
-            ctx.sources.update(id, {initialSync: request.initialSync});
+            ctx.sources.update(id, {enabled: false, initialSync: request.initialSync});
           }
           const keep = new Set(chosen.map(item => item.id));
           for (const prior of doc.selected) {

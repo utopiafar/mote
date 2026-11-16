@@ -202,7 +202,7 @@ function officialSourcePlugin(provider:OfficialProvider):SourcePlugin{
  };
  return plugin;
 }
-export const sourcePlugins: readonly SourcePlugin[] = [larkPlugin, gmailPlugin, googleCalendarPlugin, mcpPlugin,officialSourcePlugin('notion')];
+export const sourcePlugins: readonly SourcePlugin[] = [larkPlugin, gmailPlugin, googleCalendarPlugin, mcpPlugin,...(['notion','slack','feishu-session'] as const).map(officialSourcePlugin)];
 
 export function sourcePluginForSetup(id: string): SourcePlugin | undefined {
   return sourcePlugins.find(plugin => plugin.setup?.id === id);
