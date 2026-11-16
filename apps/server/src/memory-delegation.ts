@@ -78,7 +78,7 @@ export function registerMemoryDelegation(options:MemoryDelegationOptions){
  };
  let statusCursor='';
  const reconcile=()=>{
-  const links=runtime.store.db.prepare(`SELECT j.id,json_extract(j.json,'$.workPackage.id') unit_id
+  const links=runtime.store.db.prepare(`SELECT j.id,json_extract(j.json,'$.workPackage.id') unit_id,json_extract(j.json,'$.status') product_status
    FROM memory_jobs j JOIN delegation_units u ON u.id=json_extract(j.json,'$.workPackage.id') JOIN delegation_works w ON w.id=u.work_id
    WHERE json_extract(u.json,'$.external')=1 AND (
     (json_extract(u.json,'$.status')='cancelled' AND json_extract(j.json,'$.status') NOT IN ('cancelled','completed')) OR
@@ -86,7 +86,14 @@ export function registerMemoryDelegation(options:MemoryDelegationOptions){
      json_extract(u.json,'$.stepId')!=('memory-package-status:' || j.id) OR
      NOT EXISTS(SELECT 1 FROM execution_steps e WHERE e.id=('memory-package-status:' || j.id)) OR
      NOT EXISTS(SELECT 1 FROM operation_parents p WHERE p.parent_id=json_extract(w.json,'$.operationId') AND p.child_id=('memory:' || j.id))))) LIMIT 64`).all();
-  for(const row of links){const unit=runtime.unit(String(row.unit_id));if(unit.status==='cancelled'){pipeline.cancel(String(row.id));continue;}onCreated({id:unit.id,members:[],goal:unit.goal,instruction:String(unit.input.instruction)}, {id:String(row.id)});}
+  for(const row of links){
+   const unit=runtime.unit(String(row.unit_id));
+   // Stop may commit after the queue claim but before its bridge was linked.
+   // Observe that durable withdrawal; it cannot authorize a replacement link.
+   if(row.product_status==='cancelled'){runtime.cancelUnit(unit.id,{productStopped:true});continue;}
+   if(unit.status==='cancelled'){pipeline.cancel(String(row.id));continue;}
+   onCreated({id:unit.id,members:[],goal:unit.goal,instruction:String(unit.input.instruction)}, {id:String(row.id)});
+  }
   // Expired parent works cannot rejoin a product. Other rejected authority can
   // remain in the journal, so advance a bounded keyset even when resume returns
   // 409; an immutable prefix must not hide later independently resumed jobs.

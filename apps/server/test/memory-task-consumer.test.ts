@@ -45,21 +45,22 @@ async function fixture(t:TestContext){
  const jobs=()=>node.memoryPipeline.list().map(job=>node.memoryPipeline.get(job.id));
  const tick=async()=>{await node.sourcePipelines.drainMemory(node.memoryPipeline,true);await node.delegation.tick();};
  const originals:string[]=[];
- const inputs=async()=>{
+ const inputs=async(sourceIds:readonly string[]=['generated-direct','generated-reviewed'])=>{
   for(const [sourceId,recipe] of [['generated-direct',SINGLE_PASS_PERSONAL_RECIPE],['generated-reviewed',reviewed]] as const){
+   if(!sourceIds.includes(sourceId))continue;
    node.sources.register({id:sourceId,name:'Generated source',kind:'custom',deviceId:'generated-device',platform:'import'});node.sourcePipelines.configure(sourceId,{settleSeconds:0});
    const selected=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers,payload:{sourceId,recipes:[recipe]}});assert.equal(selected.statusCode,200,selected.body);
    const received=await node.sources.upsert(sourceId,{externalId:'generated-original',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated explicit retry preference for '+sourceId,document:{contentRole:'authored'}});originals.push(received.id);
   }
   await node.materialOrganizer.tick(10);await node.sourcePipelines.tick(10);
  };
- const plan=async()=>{
-  const catalog=node.materialMemoryWork.catalog();assert.equal(catalog.length,2);
+ const plan=async(dispatch=true,expectedInputs=2)=>{
+  const catalog=node.materialMemoryWork.catalog();assert.equal(catalog.length,expectedInputs);
   const configuration=node.memoryPipeline.modelSnapshot().configuration,evidenceIds=node.memoryPipeline.evidenceDependencies(catalog.flatMap(candidate=>node.materialMemoryWork.planningEvidence(candidate.materialId,candidate.scope)));
   // Use the installed coordinator's real typed admission; no fabricated plan,
   // unit, step, grant or result row is inserted by this fixture.
   const id='memory-plan:'+randomUUID();node.delegation.start({id,operationId:id,profileId:'memory.plan',goal:'Plan and process this authorized input catalog',input:{catalog,configuration,evidenceIds},scope:{contextTime:catalog.map(candidate=>candidate.contextTime).sort().at(-1)},allowedCapabilities:['memory.package']});
-  await node.delegation.waitForPlan(id);await tick();return node.delegation.get(id);
+  await node.delegation.waitForPlan(id);if(dispatch)await tick();return node.delegation.get(id);
  };
  const membership=(id:string)=>node.store.db.prepare('SELECT step_id,active,optional,slot,generation FROM execution_operation_steps WHERE operation_id=? ORDER BY step_id').all(id);
  const manual=(question:string)=>{const profile=node.modelSettings.select('chat');return node.batchProcessing.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question,evidenceIds:[originals[0]]}]},{kind:'manual',identities:[],connections:[agentModelConnection({kind:'profile',id:profile.id},profile.settings)]});};
@@ -121,4 +122,28 @@ test('linked Memory work retains pause authority while immediate stop withdraws 
  await f.restart();await f.memoryCommand('resume');await f.node.materialOrganizer.tick(10);await f.node.sourcePipelines.tick(10);await f.tick();
  assert.equal(f.jobs().length,2);assert.equal(f.count('extract'),2);assert.equal(f.count('review'),0);assert.equal(f.node.memories.list().length,1);assert.notEqual((await f.detail(owner.operationId)).operation.state,'succeeded');
  assert.ok(f.node.store.db.prepare('SELECT authorized,job_id FROM memory_input_authorizations WHERE capture_id=?').all(gap.id).every(row=>row.authorized===0&&row.job_id===null));
+});
+
+test('owner stop after a rolled-back product link remains terminal across Host restart without relinking a revoked claim',async t=>{
+ const f=await fixture(t);await f.inputs(['generated-reviewed']);const owner=await f.plan(false,1);
+ f.node.store.db.exec("CREATE TEMP TRIGGER generated_stopped_product_link_failure BEFORE INSERT ON main.operation_parents BEGIN SELECT RAISE(ABORT,'Generated stopped product link failure'); END");
+ await assert.rejects(f.tick(),/Generated stopped product link failure/);
+ const job=f.jobs()[0];assert.equal(f.jobs().length,1);assert.equal(job.status,'queued');
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='memory.package-status'").get()!.n,0);
+ await f.memoryCommand('stop');
+ const stopped=f.node.memoryPipeline.get(job.id);assert.equal(stopped.status,'cancelled');assert.equal(stopped.cancellationCause,'authority');
+ const claims=f.node.store.db.prepare('SELECT source_id,input_key,scope,authorized,job_id,revoked_at FROM memory_input_authorizations ORDER BY source_id,input_key,scope').all();
+ assert.equal(claims.length,1);assert.ok(claims.every(row=>row.job_id===job.id&&row.authorized===1&&row.revoked_at!==null));
+ assert.equal(f.node.delegation.get(owner.id).units[0].status,'waiting','the failed handoff has no product status step to propagate cancellation');
+ assert.equal(f.count('extract'),0);assert.equal(f.count('review'),0);
+ await f.restart();
+ for(let replay=0;replay<3;replay++)await f.tick();
+ assert.equal(f.node.delegation.get(owner.id).units[0].status,'cancelled');assert.equal(f.node.delegation.get(owner.id).status,'failed');
+ assert.equal(f.node.memoryPipeline.get(job.id).cancellationCause,'authority','observing product withdrawal cannot escalate it to owner cancellation');
+ assert.deepEqual(f.node.store.db.prepare('SELECT source_id,input_key,scope,authorized,job_id,revoked_at FROM memory_input_authorizations ORDER BY source_id,input_key,scope').all(),claims);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='memory.package-status'").get()!.n,0);
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM operation_parents WHERE parent_id=?').get(owner.operationId)!.n,0);
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);assert.equal(f.node.memories.list().length,0);
+ assert.equal(f.count('planning'),1);assert.equal(f.count('extract'),0);assert.equal(f.count('review'),0);
+ await f.restart();await f.tick();assert.equal(f.jobs().length,1);assert.equal(f.node.delegation.get(owner.id).units[0].status,'cancelled');assert.equal(f.count('extract'),0);
 });

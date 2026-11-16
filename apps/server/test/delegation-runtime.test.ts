@@ -126,6 +126,18 @@ test('query workers receive no controls and independent scoped contexts',async t
  runtime.start({id:'query-work',profileId:'query',goal:'Generated task',input:{question:'Generated question',conversation:{turns:[],omittedTurns:0},taskContext:{turns:[]}},scope:{deviceId:'selected'},allowedCapabilities:['context.research']});await settle(runtime,'query-work');assert.equal(seen.length,3);assert.equal(seen[1].hostControlChannel,undefined);assert.equal(seen[1].conversation,undefined);assert.equal(seen[1].taskContext,undefined);assert.equal(seen[1].deviceId,'selected');assert.equal(seen[1].question,'Generated subquestion');
 });
 
+test('an already stopped external product retires its unit without issuing another product cancellation',async t=>{
+ const {runtime}=fixture(t);let cancels=0;
+ runtime.register({id:'fixture',version:'1',proposal:true,description:'Generated external product',cancel:()=>{cancels++;},execute:async()=>{throw Error('The product owns execution');}});
+ runtime.registerCoordinator({id:'coordinator',awaitExternal:true,execute:async({controls})=>{await controls.execute('delegation_submit',{units:[proposal('withdrawn'),proposal('owner-cancelled')]});return 'Generated complete plan';}});
+ runtime.start({id:'stopped-external',profileId:'coordinator',goal:'Generated product plan',input:{},allowedCapabilities:['fixture']});
+ const planned=await runtime.waitForPlan('stopped-external'),withdrawn=planned.units[0],ownerCancelled=planned.units[1];
+ runtime.cancelUnit(withdrawn.id,{productStopped:true});runtime.cancelUnit(withdrawn.id,{productStopped:true});
+ assert.equal(runtime.unit(withdrawn.id).status,'cancelled');assert.equal(cancels,0,'product withdrawal cannot become a new owner cancellation');
+ runtime.cancelUnit(ownerCancelled.id);assert.equal(cancels,1,'ordinary owner cancellation retains its product hook');
+ await runtime.tick();assert.equal(runtime.get(planned.id).status,'failed');assert.equal(runtime.artifactMetadata(planned.id).length,0);
+});
+
 test('external product handoff remains waiting until its own fenced job writes a private artifact',async t=>{
  const {runtime,engine}=fixture(t);runtime.register({id:'fixture',version:'1',proposal:true,description:'Generated product proposal',execute:async()=>{throw Error('must not create duplicate executor');}});
  runtime.registerCoordinator({id:'coordinator',awaitExternal:true,execute:async({controls})=>{await controls.execute('delegation_submit',{units:[proposal('a')]});return 'plan ready';}});
