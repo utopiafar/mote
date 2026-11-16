@@ -4,7 +4,7 @@ Date: 2026-10-17; updated 2026-10-29. Status: ordinary revisions already impleme
 ordinary-deletion extension implemented for independent review and PR checks.
 This does not authorize deployment or a paid historical replay.
 
-The final [UI review](codex://threads/01a17d84-94a3-7382-b12a-5c656106f534), turn 38 (`01a183b0-234a-73e0-afee-8424cc5b4c22`, owner message `01a183b0-2359-7d31-95b9-b0f253900ab4`), requires submitted conversations after original modification **or deletion**. The [execution authorization](adr-ui-final-three-clients.md) records the owner's reply `Sentinel_257460f132848191881fe64393bba4c5` to `Sentinel_6409e67a4e0481918ccb06bb1688db5a`, approving ordinary deletion retention with explicit privacy erasure, forget and revocation exceptions. This revision supersedes the previous ADR's ordinary-deletion clearing rule. It neither expands expiry/access policy nor recovers erased text.
+Submitted conversations remain visible after original modification or ordinary deletion. Explicit privacy erasure, forgetting and revocation retain their existing effects. This revision supersedes ordinary-deletion clearing without expanding original access or recovering erased text.
 
 ## Decision and scope
 

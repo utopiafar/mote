@@ -2,11 +2,11 @@
 
 **自己的上下文，自己的资料库。**
 
-Mote 是 AI-native 的个人上下文采集器与自部署归档。把电脑和手机上选定的屏幕记录、随手记、文件、日历与编码对话汇入自己的资料库，回看发生过的事、直接提问，并沿着回答引用找到原始证据。
+Mote 是可扩展的个人上下文中心与自部署归档。把电脑和手机上选定的屏幕记录、随手记、文件、日历与编码对话汇入自己的资料库，回看发生过的事、直接提问，并沿着回答引用找到原始证据。
 
 [English](README.md) · **简体中文**
 
-[快速开始](#快速开始) · [下载安装包](https://github.com/utopiafar/mote/releases) · [文档](docs/README.md) · [反馈问题](https://github.com/utopiafar/mote/issues)
+[快速开始](#快速开始) · [下载安装包](https://github.com/utopiafar/mote/releases) · [文档](docs/README.zh-CN.md) · [反馈问题](https://github.com/utopiafar/mote/issues)
 
 ## 可以用它做什么
 
@@ -127,10 +127,10 @@ flowchart LR
 | 配置设备采集 | [macOS](docs/desktop.md) · [Android](docs/android.md) · [采集与同步](docs/collection-and-sync.md) |
 | 接入文件、日历或其他应用 | [来源与 MCP](docs/connectors.md) · [导入与记忆](docs/central-memory.md) · [编码对话](docs/coding-agent-memory.md) |
 | 了解记忆与处理 | [记忆生命周期](docs/memory-lifecycle.md) · [本地 OCR 与转写](docs/ocr-asr-implementation-plan.md) |
-| 排查问题 | [故障排查](docs/troubleshooting.md) · [文档索引](docs/README.md) |
+| 排查问题 | [故障排查](docs/troubleshooting.md) · [文档索引](docs/README.zh-CN.md) |
 
 当前采集端支持 macOS 和 Android，尚未实现 Windows／Linux 屏幕采集。Mac DEV App 使用 ad-hoc 签名，尚未公证。Android 后台行为与耗电因机型而异；fixture、模拟器、真机和真实模型验证分别记录。
 
 发现问题可使用 [GitHub Issues](https://github.com/utopiafar/mote/issues) 或 App 的 **设置 → 反馈**，提供组件版本、平台和复现步骤。Issue 会公开，请检查附件中的个人内容，勿附访问令牌或私人归档。
 
-参与开发请先阅读[开发指南](docs/development.md)与[项目工作规则](AGENTS.md)。测试分层与触发规则统一见[测试指南](docs/testing.md)，定向命令见各端 `AGENTS.md`，工作流入口见 [CI](docs/ci.md)。普通改动做定向检查与受影响的轻契约；重型验收和性能 benchmark 必须显式手动选择。纯文档修改检查格式、语法、链接和渲染；采集测试使用生成 fixture。依赖与模型许可见[第三方组件说明](THIRD_PARTY_NOTICES.md)。
+参与开发请先阅读[开发指南](docs/development.zh-CN.md)与[项目工作规则](AGENTS.md)。测试分层与触发规则统一见[测试指南](docs/testing.zh-CN.md)，定向命令见各端 `AGENTS.md`，工作流入口见 [CI](docs/ci.md)。普通改动做定向检查与受影响的轻契约；重型验收和性能 benchmark 必须显式手动选择。纯文档修改检查格式、语法、链接和渲染；采集测试使用生成 fixture。依赖与模型许可见[第三方组件说明](THIRD_PARTY_NOTICES.md)。

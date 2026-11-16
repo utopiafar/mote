@@ -1,5 +1,7 @@
 # Bounded memory review reuse
 
+This page describes the existing mandatory-review implementation. The product direction lets the model or selected memory implementation choose additional review; that change is not yet wired into this path. Host authorization, provenance, version and deletion checks remain necessary.
+
 New Memory candidates receive an independent read-only model review. The host always validates schema, exact quotations, citation membership, supplied ranges and current evidence versions. A successful internal review and host validation activate Memory automatically; no owner confirmation step is required.
 
 Visual claims may instead cite a host-verified delivered image view. The reviewer

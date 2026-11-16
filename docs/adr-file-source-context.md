@@ -85,12 +85,7 @@ obey the existing node binding, authorization and pause-all-sending rules.
 
 ### Individual records and capture channels (2026-10-29)
 
-The design source is the final three-client discussion
-`codex://threads/01a17d84-94a3-7382-b12a-5c656106f534`. The owner separately
-authorized the fields, storage, transport and parsing context in
-`codex://threads/01a1767c-d428-715a-8055-60970a2a00c5`, reply
-`Sentinel_257460f132848191881fe64393bba4c5`. That authorization does not make
-descriptions original evidence, a system instruction or a new processing grant.
+Record and capture-channel descriptions carry owner-authored context through storage, transport and parsing. They remain separate from original evidence and do not become system instructions or processing grants.
 
 A record's optional description travels as `metadata.ownerDescription` (at most
 12,000 UTF-16 code units). It is distinct from note text, mood, attachments and

@@ -254,6 +254,6 @@ between API/logs/actual dispatch. Cover contention across stages and independent
 resources, and any multiple-worker/central topology that is explicitly supported.
 The initial documentation-only discussion ran no fixtures. Implementation
 fixtures and final affected checks are recorded in the [verification
-record](validation/task-execution-policies-2026-10-15.md). Private historical
+record](https://github.com/utopiafar/mote/blob/6876178e06da9986949a1de0da287aba3b6dbcc4/docs/validation/task-execution-policies-2026-10-15.md). Private historical
 scenarios are not automatically counted as passed tests; physical-device and
 live-model validation remain separate.

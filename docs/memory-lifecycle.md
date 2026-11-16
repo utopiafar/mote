@@ -58,6 +58,8 @@ A successful automatic run advances its watermark and clock. Manual integration 
 
 ## Pause, drain, stop and resume
 
+Confirmed direction: an ordinary pause defers automatic Memory work. Resume processes the accumulated inputs while their source and model authorization remains valid; explicit stop, revocation and deletion retain their requested scope. The current implementation below still skips unregistered inputs received during the paused gap and has not yet been aligned with this direction.
+
 The owner API at `/api/memory-spaces/default/binding` projects desired admission, actual state, queued/running/checkpointed work, unknown external outcomes, binding revision and generation. Commands require an operation ID and expected revision. The UI reads these server facts; a switch position or accepted request is not completion.
 
 - **Pause** closes new automatic admission at a durable cutoff. Already registered work retains its frozen authorization and old generation, including queued work and declared child stages needed to finish it. Restart and ordinary retries do not revoke that original authority or widen its inputs. The UI remains draining while such work exists.

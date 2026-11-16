@@ -8,6 +8,9 @@ promise. The canonical package descriptor is
 `@mote/plugin-sdk` and use `@mote/plugin-sdk/node` only for Node-only host
 helpers.
 
+The [MVP compatibility policy](plugin-development.md) applies to these public
+surfaces.
+
 A package authors one `mote-plugin.json`, and the host validates it with
 `packageManifestSchema`. The package `runtime` and `entry` select the process
 that starts the package; each contribution's `runtime` says where that

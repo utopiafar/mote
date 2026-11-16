@@ -1,5 +1,7 @@
 # Mote 原生插件架构与现有能力归属（H01）
 
+历史方案与工作拆分记录。当前实现见[架构](../architecture.zh-CN.md)，扩展入口见[插件开发](../plugin-development.md)；下文卡片、排期与角色安排不作为贡献者的固定流程。
+
 > 状态：历史设计稿。本文记录 2026-11-02 的 H01 目标合同与迁移清单，不代表当前插件合同或完成状态；当前公开 surface 见 [插件 surface](../plugin-surfaces.md)。
 
 日期：2026-11-02。范围：H01 的架构决定与迁移清单；公共类型和 schema 实现由 H02 接续。本文描述目标合同，不表示插件迁移、真实消费者验收或发布资格已经完成。独立架构审查结论、执行进度和检查结果记在本任务 PR/CI，不在本文建立另一份进度台账。
@@ -64,7 +66,7 @@ UI/设备可用性至少能区分 active、依赖不可用、requires-build、�
 
 创建权、注册权和关闭权归同一插件 scope。`prepare` 校验依赖并取得可回收资源；`start` 才接纳工作/发布可用贡献；`quiesce` 停新准入和定时器；`stop` 取消/排空受管工作并撤销提交资格；`dispose` 反向释放回调、监听器、连接、子进程和注册。若领域允许固定版本工作排空，必须保持其依赖资源到排空完成。撤权、删除、显式停止及安装身份失效优先于排空许可；取消信号不能单独证明不合作任务已经失去写资格。
 
-当前 [ServerResources](../../apps/server/src/server-resources.ts) 先运行 `beforeClose`，再反向释放 `defer`，聚合清理错误；[ServerFeatureScope](../../apps/server/src/feature-host.ts) 已有 timer/pending/retire。迁移保留这些实际保证并消除重复 owner，不另造 DI 容器。依赖 unavailable 只是一份投影，必须伴随实际 stop/dispose、敏感调用检查和晚到提交拒绝。卸载一个插件不关闭兄弟 scope。
+当前 [ServerResources](../../apps/server/src/server-resources.ts) 先运行 `beforeClose`，再反向释放 `defer`，聚合清理错误；[HostScope](../../packages/plugin-host/src/scope.ts) 已有 timer/pending/retire。迁移保留这些实际保证并消除重复 owner，不另造 DI 容器。依赖 unavailable 只是一份投影，必须伴随实际 stop/dispose、敏感调用检查和晚到提交拒绝。卸载一个插件不关闭兄弟 scope。
 
 基础启动顺序为：本地受信组合 → 配置/存储/授权/执行平台 → 读取同一持久安装控制意图 → 业务与客户端贡献。PluginCenter 依赖数据库/执行，但平台初始选择不依赖 PluginCenter 已经运行，避免初始化环。HTTP 容器可先构造，资料/业务请求只有在所需授权和依赖就绪后才可访问。
 
@@ -72,7 +74,7 @@ UI/设备可用性至少能区分 active、依赖不可用、requires-build、�
 
 ## 4. Central 现有功能与实际对象清单
 
-当前 [buildApp](../../apps/server/src/app.ts) 创建主要对象，[25 项 feature](../../apps/server/src/features/index.ts) 注册 HTTP 及部分 timer/close，[FeatureServices](../../apps/server/src/feature-services.ts) 注入内部对象。下面每行给出终态 owner；多个 C 卡表示分开的对象 owner，不表示共同创建或关闭同一实例。目标名称为职责分组，最终包/贡献 ID 由 H03 固定。
+当前 [buildApp](../../apps/server/src/app.ts) 创建主要对象，[25 项 feature](../../apps/server/src/features/index.ts) 注册 HTTP 及部分 timer/close，[领域端口](../../apps/server/src/plugins/central-contracts.ts) 注入内部对象。下面每行给出终态 owner；多个 C 卡表示分开的对象 owner，不表示共同创建或关闭同一实例。目标名称为职责分组，最终包/贡献 ID 由 H03 固定。
 
 | 当前 feature | 目标插件/实际消费者 | 对象与创建、启动、关闭责任 | 迁移 / 验收旅程 |
 | --- | --- | --- | --- |

@@ -2,7 +2,7 @@
 
 This guide is for an Agent helping someone install and connect Mote. It reuses the existing deployment CLI; it is not a request to develop Mote or an authorization to replace an existing archive. For repository development use [AGENTS.md](../AGENTS.md).
 
-Mote has an independent Central service and macOS/Android collectors. Central archives and processes context; collectors own device permissions and local collection. A local Central install needs no screen, microphone, calendar or Accessibility permission. Model setup and external MCP connections are optional after the first data journey.
+Mote has an independent Central service and macOS/Android collectors. Central archives and processes context; collectors own device permissions and local collection. Start with a local Central and a readable saved note or selected file. A local Central install needs no screen, microphone, calendar or Accessibility permission. Models, collectors and cross-device connections are optional next steps.
 
 ## Copy this prompt
 
@@ -12,14 +12,17 @@ Read docs/agent-install.md and the linked deployment instructions first.
 Inspect my environment and any existing Mote installation without changing it.
 Use the project's CLI to create an isolated local trial, or reuse the installation
 I explicitly choose. Preserve existing archives, profiles, credentials and settings.
-Verify authenticated health and give me the actual Central address, then guide me
-through connecting a collector and opening its first received original in Central.
-Ask before changing network exposure, installing a persistent service, granting
-new permissions, using a paid model, or changing existing data. Keep secrets out
-of output and Git. Stop at an unavailable requirement and report what remains.
+Verify authenticated health and give me the actual Central address, then help me
+save and open a small generated note or a file I select in Central. Continue with
+models, a collector or cross-device access as needed.
+Changes to network exposure, persistent services, permissions, paid models or
+existing data require authorization. Do not ask again when the action and scope
+are already explicitly authorized; ask when they are unclear or change. Keep
+secrets out of output and Git. Report unavailable steps and continue independent
+work.
 ```
 
-The installation request authorizes ordinary setup for the selected environment. It does not authorize a public listener, firewall/DNS change, Tunnel, privileged service, credential replacement, archive reset, migration, deletion or paid AI processing. Complete independent safe steps while a consequential decision is pending.
+The installation request authorizes ordinary setup for the selected environment. By itself, it does not authorize a public listener, firewall/DNS change, Tunnel, privileged service, credential replacement, archive reset, migration, deletion or paid AI processing. Separate explicit instructions still apply without repeated confirmation. Complete independent safe steps while a consequential decision is pending.
 
 ## 1. Discover the environment
 
@@ -70,9 +73,13 @@ Native OCR/audio preparation manages its own pinned uv, Python 3.11, dependencie
 
 Open the actual returned Central URL. Keep the default loopback binding for a local trial. Sign in through the existing owner login. The CLI `token` command intentionally prints an owner credential: use it only in a private local handoff when needed, never in an issue, PR, screenshot, transcript summary, shell command argument or committed file. Do not copy a token from another environment or change token protection.
 
-A phone cannot reach the Mac's loopback address. Cross-device use requires a reachable HTTPS address and a strong token. Explain the current limitation and let the user choose an existing secure address or explicitly authorize a documented network setup. Generating an invitation or QR code does not create reachability. Installing launchd, enabling TLS/Tunnel or changing network access is a separate explicit step, not a hidden dependency of this guide.
+For the first local experience, save a small generated note or a user-selected file through Central and open its original. A healthy Central with this readable saved record completes local onboarding; no collector or AI model is required.
 
-## 4. Continue in the UI
+## 4. Optional next steps
+
+Configure a model only when AI is wanted. For device collection, continue with the steps below and the relevant platform guide.
+
+A phone cannot reach the Mac's loopback address. Cross-device use requires a reachable HTTPS address and a strong token. Explain the current limitation and let the user choose an existing secure address or explicitly authorize a documented network setup. Generating an invitation or QR code does not create reachability. Installing launchd, enabling TLS/Tunnel or changing network access is a separate explicit step, not a hidden dependency of this guide.
 
 1. In Central, open **Data sources → Connect device**. Use an address the collector can actually reach. The current pairing page can be opened directly at `#/connections/pair`.
 2. Obtain the matching existing macOS/Android app from the [official downloads](https://github.com/utopiafar/mote/releases). Follow [Mac](desktop.md) or [Android](android.md) instructions. Do not build or publish a new release just to install it.
@@ -80,7 +87,7 @@ A phone cannot reach the Mac's loopback address. Cross-device use requires a rea
 4. Let the user choose a source and confirm its reading range, upload destination, original retention and optional description/attribution metadata. System permission prompts remain on the device; do not grant broader permissions automatically.
 5. Save a small non-sensitive test record or collect content explicitly selected for this test. Verify local durable save, actual upload acknowledgement, and the same record's readable original in Central. Respect existing send policies and paused states; do not switch them to force success.
 
-No AI key or external MCP client is required for these steps. Local records remain usable offline; an unavailable connection is reported as waiting rather than completed. If the user only wants a local trial without a collector, verify Central and a generated web note, and explicitly report that the collector-to-Central journey is still pending.
+No AI key or external MCP client is required for device collection. Local records remain usable offline; an unavailable connection is reported as waiting rather than completed. Report collector progress when collection was requested; a local-only trial is complete after the saved Central record is readable.
 
 ## 5. Report actual outcomes
 
@@ -88,7 +95,7 @@ Give a compact handoff containing:
 
 - The selected checkout and explicit profile/home/runtime, actual Central URL and authenticated health result.
 - Where data is stored and the exact stop/status commands for this profile; never include credentials.
-- Collector pairing, local save, upload ACK and Central original-read results separately, with the stable record identity when available.
+- The saved Central record and original-read result; when a collector was requested, also distinguish pairing, local save and upload ACK.
 - Optional runtime/model gaps, network limits and the next UI action. Do not call an issued invitation, queued upload or successful model test a completed first-data journey.
 
 For an interrupted or refused step, state the exact action and target, reason, completed work, and whether the result is pending, denied or uncertain. Check an uncertain outcome before retrying. Leave existing data and access settings intact.

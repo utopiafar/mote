@@ -103,6 +103,22 @@ test('iOS-only CLI input selects only the real iOS test entrypoint', t => {
   assert.deepEqual(plan.checks, [{ command: 'apps/ios/scripts/test.sh', args: [] }]);
 });
 
+test('root Markdown additions and deletions do not schedule application checks in the actual CLI', t => {
+  const { directory, git, write } = repository(t);
+  const original = '架构讨论.md';
+  write(original);
+  git('add', '.'); git('commit', '-m', 'generated root documentation');
+  const base = git('rev-parse', 'HEAD');
+  rmSync(join(directory, original));
+  write('CONTRIBUTING.md');
+  assert.deepEqual(changedPaths({ base, directory }).sort(), ['CONTRIBUTING.md', original].sort());
+  const result = spawnSync(process.execPath, [cli, '--base', base, '--dry-run'], { cwd: directory, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout.slice(0, result.stdout.lastIndexOf('}') + 1));
+  assert.deepEqual(plan.affected, { scopes: [], fallback: [] });
+  assert.deepEqual(plan.checks, []);
+});
+
 test('documentation-only CLI skips builds, while moving runtime code into docs retains the old consumer', t => {
   const { directory, git, write, base, dryRun } = repository(t);
   write('AGENTS.md'); write('README.zh-CN.md');

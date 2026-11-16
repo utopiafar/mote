@@ -30,7 +30,7 @@ npm run package -w @mote/desktop
 
 当前 Dev 包用 `MOTE_BUILD_PROFILE=dev node scripts/release/mac-package.mjs` 生成；文件名按 `apps/desktop/package.json` 版本和当前架构生成，位于 `artifacts/release/`。普通 `npm run package -w @mote/desktop` 仍可生成本地 App。默认 ad-hoc 签名；Developer ID 与公证需配置 Apple 凭据，不能把本机构建当作已公证。
 
-收藏 [Mac Dev 下载入口](https://github.com/utopiafar/mote/releases?q=desktop-dev-+prerelease%3Atrue+draft%3Afalse&expanded=true)，打开最新 Pre-release，点击 **Download Mac ZIP**。退出 Mote Collector Dev 后，解压并覆盖应用目录中的 `Mote Collector Dev.app`，保留包外资料目录。每次构建有独立的 `desktop-dev-<构建序号>-<短 SHA>` 标签，App 版本沿用组件版本，具体提交与签名模式见发布说明。Dev 的 Bundle ID 为 `dev.mote.collector.dev`，凭据使用私有本地文件。构建与发布命令见 [发布流程](releasing.md#日常-dev-构建)。
+收藏 [Mac Dev 下载入口](https://github.com/utopiafar/mote/releases?q=desktop-dev-+prerelease%3Atrue+draft%3Afalse&expanded=true)，打开最新 Pre-release，点击 **Download Mac ZIP**。退出 Mote Collector Dev 后，解压并覆盖应用目录中的 `Mote Collector Dev.app`，保留包外资料目录。每次构建有独立的 `desktop-dev-<构建序号>-<短 SHA>` 标签，App 版本沿用组件版本，具体提交与签名模式见发布说明。Dev 的 Bundle ID 为 `dev.mote.collector.dev`，凭据使用私有本地文件。构建与发布命令见 [发布流程](releasing.md#devtest与prod)。
 
 Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按钮被禁用。MVP 尚未接入其可靠前台/可见窗口身份与 OCR，不能以无过滤截图代替。
 

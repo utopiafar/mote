@@ -115,7 +115,7 @@ Mote 控制表保存 canonical ID、provider locator/revision、内容 hash、�
 
 ### 4.2 包、配置实例与 binding 分离
 
-下表保留设计职责。实际 JSON 字段与可用动作以 `packages/shared/src/plugin-center.ts` 和当前 [API](../plugin-center.md#api) 为准，不把概念状态当作客户端枚举：
+下表保留设计职责。实际 JSON 字段与可用动作以 `packages/shared/src/plugin-center.ts` 和当前 [API](../plugin-development.md) 为准，不把概念状态当作客户端枚举：
 
 | 对象 | 身份与状态 | 生命周期 |
 | --- | --- | --- |

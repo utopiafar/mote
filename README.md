@@ -2,7 +2,7 @@
 
 **Your context. Your archive.**
 
-Mote is an AI-native personal context collector and archive you host yourself. Bring together selected screen history, notes, files, calendars, and coding conversations from your computer and phone. Revisit what happened, ask questions, and follow answers back to the original evidence.
+Mote is an extensible personal context center you host yourself. Bring together selected screen history, notes, files, calendars, and coding conversations from your computer and phone. Revisit what happened, ask questions, and follow answers back to the original evidence.
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -39,7 +39,7 @@ exposure, persistent services, permissions, existing data, or paid AI processing
 Keep secrets out of output and Git.
 ```
 
-The [Agent installation guide](docs/agent-install.md) connects deployment to the UI's first-data journey. You can also follow the manual steps below. Models and external AI access are optional after collection and archiving work. Current `init` includes a Codex model default that can use an existing local login; for an archive-only trial, follow the guide's no-model setup **before starting Central or adding data**. An empty API key alone does not disable it.
+The [Agent installation guide](docs/agent-install.md) connects deployment to the UI's first-data journey. You can also follow the manual steps below. Models and external AI access are optional. A new profile starts without a configured model; collect and archive first, then configure model-backed features when needed.
 
 ### 1. Start your archive
 

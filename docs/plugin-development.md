@@ -11,6 +11,11 @@ contribution surfaces, 4 runtime locations and 6 extension methods — is
 [plugin surfaces](plugin-surfaces.md). It describes the code as it is today,
 including that iOS does not load plugins.
 
+Public APIs are available during the MVP and may change. Keep the SDK,
+examples and incompatibility notes in sync when an interface changes; the
+MVP does not promise a transition window for old APIs. Define compatibility
+support before long-term stable use.
+
 The author-facing boundary is `@mote/plugin-sdk` alone: a plugin never
 imports `apps/*`, `packages/*` internals or `@mote/shared`. The SDK tarball
 bundles the public contracts and the host entry; `plugin-dev` verifies the

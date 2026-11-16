@@ -96,7 +96,7 @@ processing services continue to use their existing runtime policy behavior.
 
 This supersedes current multi-source configuration descriptions in the
 [server reference](server-configuration.md),
-[configuration ownership](configuration-ownership.md), model-provider setup, and
+[configuration ownership](server-configuration.md#任务快照与权限), model-provider setup, and
 deployment/development guides. Existing storage epochs and the
 [MVP baseline](adr-mvp-baseline.md) are not bumped by this change. Historical
 release notes and dated validation records describe their original versions and

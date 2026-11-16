@@ -29,7 +29,7 @@ export function affectedComponents(paths, graph = workspaceGraph()) {
     return (byName.get(name)?.dependencies ?? []).some(child => uses(child, dependency, seen));
   }
   for (const path of paths) {
-    if (path.startsWith('docs/') || path.startsWith('release/notes/') || /^(?:README(?:\.[\w-]+)?|AGENTS|THIRD_PARTY_NOTICES)\.md$/.test(path)
+    if (path.startsWith('docs/') || path.startsWith('release/notes/') || /^[^/]+\.md$/.test(path)
       || /(?:^|\/)AGENTS\.md$/.test(path) || /^\.agents\/skills\/.*\.(?:md|yaml)$/.test(path)
       || ['protocol/README.md', 'adapters/ui/README.md'].includes(path)) continue;
     if (path.startsWith('protocol/')) { mark(groups); result.protocol = true; continue; }

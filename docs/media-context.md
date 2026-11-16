@@ -20,7 +20,7 @@
 
 ## 记录协议与时长
 
-每次独立媒体观察使用现有 `POST /api/captures`、加密持久队列、幂等事件 ID、同步策略、ACK 与离线重试。媒体来源为 `source: "media"`，不附图片、OCR、窗口标题、心情或来源引用。
+每次独立媒体观察使用现有 `POST /api/captures`、本机持久队列、幂等事件 ID、同步策略、ACK 与离线重试。媒体来源为 `source: "media"`，不附图片、OCR、窗口标题、心情或来源引用。本机内容与凭据各自的存储保护见[当前内容存储](content-storage.md)。
 
 ```json
 {

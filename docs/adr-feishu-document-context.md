@@ -47,4 +47,4 @@
 | EXCEPTION | 已保存且没有发现配置的旧选择继续只读取明确链接；旧来源覆盖及已授权固定配方不改；历史模型工作需要显式范围，不因安装或重启重跑。 |
 | UNKNOWN | 真实租户权限、上游索引完整性与延迟、官方 CLI 自读是否推进打开筛选、跨组织可见性和系统钥匙串行为；生成响应和模型语义测试不能代替真实飞书验收。 |
 
-原先文档/日历共用的语义在本文标记的范围内由本决定取代；录音专用 Provider 不在本次身份迁移范围。相关说明见 [飞书接入](lark-integration.md)、[Memory 分层](memory-admission.md)、[日常事件](adr-daily-event-memory.md)、[来源说明](adr-file-source-context.md) 和 [验收场景](testing-feishu-document-context.md)。
+原先文档/日历共用的语义在本文标记的范围内由本决定取代；录音专用 Provider 不在本次身份迁移范围。相关说明见 [飞书接入](lark-integration.md)、[Memory 分层](memory-admission.md)、[日常事件](adr-daily-event-memory.md)、[来源说明](adr-file-source-context.md) 和 [验收场景](testing-runbook.md#lark-document-fixtures)。

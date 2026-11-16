@@ -12,45 +12,11 @@
 
 验收包含第 3 节的 **128 个旅程组**（Web 50、Mac 39、Android 39），及第 6 节 **77 个 Central 能力、33 项历史原生能力**的全部保留入口。每组包含多个页面、弹窗或状态；首页截图或入口存在都不等于整组通过。示例内容可随真实结果变化，布局、控件、入口、返回关系、状态含义和既有能力不能遗漏或被替代。
 
-## 1. 来源与优先级
+## 1. 文档范围
 
-设计依据是所有者指定的 [「评审各端 UI 用户旅程」原始对话](codex://threads/01a17d84-94a3-7382-b12a-5c656106f534)。本轮使用受支持的 `read_thread` 完整分页重读了 40 个 turn，其中有 39 个包含用户发言，另一个为无独立用户消息的续轮；最后一轮为定稿网站发布。[第 7 节](#7-原讨论逐轮索引)保留 `S00`—`S39` 的 turn ID、用户 message ID 和产物，不能将助手建议单独当成所有者决定。
+本页保留三端布局、页面、状态和能力入口的详细说明。现行产品与交互方向见[产品](../product.zh-CN.md)和[设计](../design.zh-CN.md)，具体布局、组件和数值以代码为准。
 
-来源顺序为：主对话中较后的明确用户取舍 → 对应获认可/按要求修正的原型 → 最新收尾 HTML 中已有能力的 UI 补全。所有者在本次续作再次明确：**项目 ADR 与该对话冲突时以对话为准；三端最终形态须与对话定稿完全一致；相关 UI 修改直接实施。** 旧 ADR 不能成为保留已否决布局的理由。新功能或未选择的后端架构、执行策略仍须单独确认。
-
-所有者随后明确：“不用参考那个网站，那个网站的内容都是从对话里面出来的，直接看我开头儿给的那个对话就行。”后续以原对话及其中最终认可的原型、图片为依据，不再等待网站登录或继续网站/发布项目预览。此前核对发布提交及访问记录作为历史来源核实保留，不产生独立设计决定。
-
-本轮执行授权另有明确追加：[执行协调对话](codex://threads/01a1767c-d428-715a-8055-60970a2a00c5)，助手提问 `Sentinel_6409e67a4e0481918ccb06bb1688db5a`、用户回复 `Sentinel_257460f132848191881fe64393bba4c5`：“可以就这么搞，然后第四条的自动依赖什么的也都一起做完。”该回复批准第 5 节 H01–H04 所列四项有界变更，并将第四项扩大为完整一键依赖准备、模型下载、启动及失败恢复。它是本轮执行/后端授权来源，不替代前述 UI 设计来源；对应实现已集成，不能再当作待批准事项，也不能仅凭授权或集成宣称旅程通过。
-
-本次续作又对 H07/H09 的两个确实缺失的实现作了具体解释。所有者回复“两处都按这个方案补齐（推荐）”：补齐已配置网站的只读授权检查，以及 Mac 备份恢复的真实部分结果回执。权限、保存与去重规则保持现有边界，不自动授权或自动重试；授权范围详见第 5 节。
-
-随后，所有者对长资料提问的具体方案回复“补齐整份资料的版本引用（推荐）”。H10 因此获准：提问携带一个精确 Material 版本引用，模型沿用既有工具按需分页读取；资料更新或不可用时保留草稿，明确清除/重新选择。沿用当前读取权限、模型和收费配置，不把超过 30 段的资料静默截断。
-
-所有者随后明确批准补齐“只保存缺失时间”的 H11：在 Mote → 待办与日程 → 安排详情，由用户填写原先缺失的开始/结束时间；保存后仅按既有唯一有效的设备、日历及资料范围授权自动同步。完整且满足原有执行条件的日程直接生效，不猜测日期、不增加授权，也不把“保存信息”当作逐条批准写日历。确切合同与已集成状态见第 5 节 H11。
-
-所有者在本轮集中查漏中又明确回复“补齐只读分组，按定稿完成（推荐）”，批准 H12：时间回看新增只读分组，截图沿用已有采集会话；其余按已记录的设备、日期和来源类型归组，没有明确关联不声称同一篇文档。组内保留确切原件、筛选与分页；不改变采集、保存、授权或模型调用。
-
-2026-10-29 03:37 UTC，用户在执行协调对话的消息 `Sentinel_b79931f658388191b44f5559409ca9dc` 提供[三端 UI HTTPS 网站](https://mote-ui-01a17d84.n826wty8ft.chatgpt.site/?platform=central&scene=previous#journey/central/home)，要求“我做成网站了，按这个里面去对比”。这曾是本轮新增的可视核对入口，已被上述“直接看原对话”的较后指示替代；[网站来源证据与剩余状态表](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/ui-final-source-export-gaps-2026-10-29.md#用户提供的-https-来源与已验证状态)记录分组、UTC、视口、可见操作与实际观察，不把网站示例当产品验收。
-
-源原型位于所有者本机该评审对话的 Codex visualizations 目录，不在仓库内，本轮只读。原型包含生成数据，示例日期、数量、设备、账号、成功结果、模型和版本号不是产品常量。顶部客户端、旅程、安装包、示例回执/结果选择器是**评审工具**，不移植到产品。
-
-`mote-final-workspace.html` 是最后收尾稿。S39 中所有者明确要求把“所有的已经定稿的三端的样式”发布为网站，因此其中残留的 `candidate-awaiting-owner-review` 作者标签不能否定后来的所有者决定。网站包含三端界面、首次使用、对话与资料回看、恢复与继续四组；这些组共同构成最终源，不能只实施首页或最后一份 HTML。当前授权没有把示例回执、示例数据或隐含的新执行策略变成产品能力。
-
-本次还核对了 S39 发布工具记录与本机原发布项目：二者 commit 均为 `8f4ff814cd43ebd86e73adabc8266f890a0834ef`，本机发布工作区干净。四组 `dist/` 文件通过受支持的本机只读预览实际渲染，散列及访问经过记录在[来源证据](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/ui-final-source-export-gaps-2026-10-29.md#本次续作的可视来源)。这些是此前的发布来源核实记录；后续逐页对照直接使用原对话及其接受的产物，不再使用网站或发布项目预览。旧浏览器拒绝同样保留为历史记录，不能据此把未核对状态判成通过。
-
-S09 引用的 [更早分享对话](https://chatgpt.com/share/6aded7e7-8e04-83ea-86ed-fa36a31fc8e5) 已通过获准的公开页面只读下载，解析其 `linear_conversation` 可见正文，并复读 56 条实际用户发言；另一个 user 记录仅为不可用自定义指令占位。未执行页面脚本。它补充确定性记录与对话分开、输入与输出分开、结果与异常优先、共享用户状态与本机权限/草稿分开、功能就近与专业设置分层等早期原则。主对话较晚的 Android 轻首页、既有只读 MCP 接入、手动 Memory 操作和历史保留取舍优先；较早分享中的通知算法、iOS、模型路由、隐私生命周期等未定事项不能自动成为本轮新功能。
-
-| 最终源集合 | 用途与接受关系 | SHA-256 |
-| --- | --- | --- |
-| `mote-final-workspace.html` | S38 既有能力集中收尾；保留已接受框架；新策略仍需第 5 节核对 | `d6ae147fbb0b2b9df08b52bc8ee60a85e02c4340c7872e45c4878fdb0592819e` |
-| `mote-recovery-workspace.html` | S37 恢复/中断，S38「大体 OK」 | `58bedf951b124128d7853246e2d3b967e28bdd8e66a6468fc0d3d3a19473bde2` |
-| `mote-continuity-workspace.html` | S36 跨端/副本，S37 明确覆盖其删除历史分支 | `15f899ce90dd79d6058f322bdfc8b34b940a7dec4fa31c04476c57af7eba61b3` |
-| `mote-first-use.html` | S35 首次使用，S36「大体 OK」；不能被最终文件遗漏 | `01b1f22269645d40af80957731b6ecae8f7169e31942bee2c31f60dc0889d7af` |
-| `mote-mac-role-exploration.html` | S34 Mac 对照，S35 接受轻落点/保留侧栏方向 | `64739e25469d468b981a055d05865e04915e38e8c586be6f4a06f7a0620ff113` |
-| `mote-android-assistant.html` | S33 手机轻入口，S34 接受并要求新用户承接 | `361fd91595477797a77059df9bd243b8b005f4ac8e9582499f5f2a2a88fe259b` |
-| `mote-ui-owner-decisions.json` | 作者整理的辅助索引；与用户原话冲突时不优先 | `27fd2c6061b667123bd33f0de7f05b7cb3fc7f6837033f717b999ec79422a6f7` |
-| `audit-features.json` | S00 既有 78 项 Central/33 项原生能力审计；A01 后来被删除，旧导航不再规范 | `cbef62f58de8aeb802611657bc9c56d570490414c0d3a388b8d1672d480499d2` |
-
+示例中的日期、数量、设备、账号、结果、模型和版本号不是产品常量。历史设计或验证记录不代表当前能力已完成验收；按实际变更选择验证范围，见[testing](../testing.md)。
 
 ## 2. 已确认的原则与取舍
 
@@ -295,7 +261,7 @@ D34 的旧调色属于实施偏差，本次按所有者要求恢复源颜色。�
 | H08 Web恢复/凭据 | 现有会话期限已支持；Provider/source暂停及授权受现有合同约束 | 新稿只允许界面归位，服务变更要重核范围，暂停不能被保存/重授权悄悄解除 | 旧hold的纯UI部分可做；自动恢复/故障切换/凭据重用/后端会话政策不因本轮授权解除 |
 | H09 Mac网页权限核验：已授权、已集成 | `setupChromeCapture` 只提供 bridge 准备和扩展目录，bridge ready 不证明每个 origin 已授权 | “重新检查”仅通过现有可信桥接查询保存的精确 HTTP(S) origin，扩展调用 chrome.permissions.contains | 本次所有者明确批准只读查询。不得申请/扩大权限、读取页面或开始采集；未连接、多实例、忙碌、超时、取消、过期及配置变化均保留“待核实”，不能借旧结果宣布新范围已允许 |
 | H10 整份资料版本引用：已授权、已集成 | 旧提问只能选择至多 30 个 UUID；长 Material 的全部块不能装入该字段 | 可空单一 `anchorMaterialRef` 指向 `material:mat_…@revision`，与两种 UUID 选取互斥；会话保留引用，续问继承，显式 null 清除 | 只提供已选准确版本的导航起点，不复制全文或展开所有块，不授予新读权限。准入/准备核对原时间和设备范围，模型调用与结果保存重验当前版本/可见性；分页和原始证据仍走现有工具和披露回执。可读部分资料保留真实覆盖缺口，空正文不被误判成无附件。旧版本/已移除不改指新版本。没有新增表、迁移、后台处理或收费策略 |
-| H11 用户补缺日程时间：已授权、已集成 | 原提案已保留，但开始/结束/时区有 null；不能把手动确认写入冒充普通信息保存 | Mote → 待办与日程 → 安排详情提供“补充时间 / 保存信息 / 收起”；完整且满足既有条件的日程直接生效；不猜时间、不新授设备/日历/资料范围 | `POST /api/actions/:id/information` 严格只收 `{version,start,end,timeZone}`；仅当前 proposed create/update 且原时间字段有 null、未处置/未派发时可补。已有非 null 时间逐字节不变，沿用全天/时区校验；标题、地点、描述、原文及关联/目标/不确定性保留。保存只推进信息版本，不即时写日历；后续仅既有唯一有效 grant 可自动重评，重叠、撤权、过期或语义不确定仍待处理。版本/原文/关联变化拒绝；结果未知锁定原 version/body 重试，409 后读取精确当前对象核验，不静默换 payload、重写新版本或伪称已写入。实现/合同见 [actions.ts](../../apps/server/src/actions.ts)、[actions-information.test.ts](../../apps/server/test/actions-information.test.ts) 与 [ActionTimeInformation.tsx](../../apps/web/src/ActionTimeInformation.tsx) |
+| H11 用户补缺日程时间：已授权、已集成 | 原提案已保留，但开始/结束/时区有 null；不能把手动确认写入冒充普通信息保存 | Mote → 待办与日程 → 安排详情提供“补充时间 / 保存信息 / 收起”；完整且满足既有条件的日程直接生效；不猜时间、不新授设备/日历/资料范围 | `POST /api/actions/:id/information` 严格只收 `{version,start,end,timeZone}`；仅当前 proposed create/update 且原时间字段有 null、未处置/未派发时可补。已有非 null 时间逐字节不变，沿用全天/时区校验；标题、地点、描述、原文及关联/目标/不确定性保留。保存只推进信息版本，不即时写日历；后续仅既有唯一有效 grant 可自动重评，重叠、撤权、过期或语义不确定仍待处理。版本/原文/关联变化拒绝；结果未知锁定原 version/body 重试，409 后读取精确当前对象核验，不静默换 payload、重写新版本或伪称已写入。实现/合同见 [actions.ts](../../apps/server/src/actions.ts)、[actions-information.test.ts](../../apps/server/test/actions-information.test.ts) 与 [ActionTimeInformation.tsx](../../apps/web/src/plugins/work/ActionTimeInformation.tsx) |
 | H12 时间回看只读分组：已授权、投影已集成，消费者与终验待完成 | 逐条 CapturePreview 及仅截图会话接口不能提供完整混合时间分组与真实组内数量 | 截图复用现有采集会话；其他按设备、日期和已记录来源类型归组；未关联记录不声称同一文档；展开确切原件 | 所有者明确批准新增只读接口与该分组规则。保留全部现有筛选和分页、原件身份与权限；数量从完整查询得到，不能把当前已加载页当总量。只改读取投影，不改采集、保存/删除/保留、来源授权、已有会话切分或模型调用；投影已集成为 `c8981f3a`＋`ff1ab543`，8 项真实 SQLite/HTTP focused 通过，Android 独立只读核查闭合跨午夜问题；消费者仍由 L1 实施。新增 `/api/capture-browser/timeline` 与 `/timeline/members`，绑定 owner/范围/完整 revision/组，变更时失效而不换原件；顶层日期展示行 ID 不代替 nested `record.id`。 |
 | H13 直接文件容量数字对齐：已批准实施 | 原型直接选件4000、当前Web/公开DTO2000 | Web阈值与files/archivedFileIds同改4000、提示数字六语同步；不改字段/格式/字节及ZIP处理 | 所有者明确“提高4000，如果只是改数字，直接生效即可，不用额外测试”；2de044d8未加测试/未跑容量专项，仅既有边界fixture数字同步，原定CI/三端回归继续。后续同类细节直接推进，结束汇总。 |
 | Q02 Mac内容搜索/筛选核实（非批准项） | 既有列表分页与本机保留、Central事实不等于源演示“本机待发送”；未核实全量搜索合同 | 源要求内容搜索与范围按钮，但累计演示不得删掉现有回执筛选/分页/详情 | 先映射真实查询与状态；只搜索已加载子集必须诚实命名。只有确需新增全量检索或统计语义时提窄范围功能选择；原有能力入口保留 |
@@ -421,50 +387,3 @@ D34 的旧调色属于实施偏差，本次按所有者要求恢复源颜色。�
 | Android A14 | 本机存储、备份恢复/配置迁移、空间/采集统计、压缩与去重 | P28–32/P35–38 |
 | Android A15 | 诊断/日志/脱敏支持包、更新、语言/外观、profile | P24–26/P33–34 |
 | Android A16 | Central管理原生消费者：来源/飞书/导入/文件/后台工作/插件/模型/用量/存储/诊断等 | P39 |
-
-## 7. 原讨论逐轮索引
-
-以下条目全部来自指定主对话。每轮用户消息决定其**上一轮**原型是否被认可，不能把当轮新生成的建议立即当作获确认。S27的停下随后由S28继续，不能解释为取消当前实施任务。源对话的“HTML-only”边界是当时设计阶段的执行范围，当前用户已明确另行授权产品UI实现和PR合入。
-
-| 序号 | Turn ID / 用户 message ID | 本轮用户取舍（摘要） | 本轮文本提及的原型 |
-| --- | --- | --- | --- |
-| S00 | `01a17d84-96f6-7570-a2a5-66c2513e84db`<br>`01a17d84-a175-7593-84b5-0a46e3261efa` | 完整功能/用户旅程审计，设计阶段只通过HTML交互 | `mote-ui-review.html` |
-| S01 | `01a17d98-df92-74a0-995f-e95ea9a2dd17`<br>`01a17d98-dfa6-72e3-a539-f0b593dc8231` | 逐旅程评审；减少无谓文字；产物可独立使用 | `mote-material-ask.html` |
-| S02 | `01a17e18-eb22-77c2-a0fb-a04f39b07d4e`<br>`01a17e18-eb36-7bd1-8e44-f4aa231af77b` | 只用已有正文/缩略图，不为UI引入摘要架构 | `mote-material-ask.html`、`mote-library-content.html` |
-| S03 | `01a17e26-7341-7540-9a0d-3903ccc4d6b5`<br>`01a17e26-7351-79a0-96f0-4e6cb059bd15` | 质疑记录与采集的硬分；先审计数据含义 | `mote-library-content.html`、`mote-library-data-audit.html` |
-| S04 | `01a17e34-2d22-74f0-9f94-235ca1852ba9`<br>`01a17e34-2d33-7ee0-b176-ed113156b1da` | 要求从用户旅程完善资料页 | `mote-library-data-audit.html`、`mote-library.html` |
-| S05 | `01a17e42-3fb6-7532-89e1-30edf64de23f`<br>`01a17e42-3fd4-71c2-82d0-6c8d90a35052` | 否决未经讨论整体重做、侧栏消失 | `mote-library.html`、`mote-library-restored.html` |
-| S06 | `01a17e4a-ccb9-74c3-ab1b-7ea7dce4c611`<br>`01a17e4a-ccc9-7690-ab41-e4c9d869e49e` | 认可恢复框架，继续列表内容 | `mote-library-restored.html`、`mote-library-list.html` |
-| S07 | `01a17e55-28c9-7b82-9b78-0dcefa1d2085`<br>`01a17e55-28db-7332-bcff-52aff105fe4c` | 认可预览方向；原文预览为默认 | `mote-library-list.html`、`mote-library-complete.html` |
-| S08 | `01a17e68-57a3-7572-b75a-b03c107c5e7b`<br>`01a17e68-57b5-7320-8f94-5904dcf8b498` | 要求全局随手记而非资料页专属 | `mote-library-complete.html`、`mote-note-global.html` |
-| S09 | `01a17e91-9449-73b3-a1ad-5c8ebc553954`<br>`01a17e91-9476-7032-bdcd-3f68cdee551f` | 认可记笔记方向；参考早期原则，下一旅程 | `mote-note-global.html`、`mote-workspace-next.html` |
-| S10 | `01a17eac-71c7-7852-8b2e-4d51e611e363`<br>`01a17eac-71d9-7cf1-95c2-ce78f5311099` | 资料库与来源进入同一详情，继续细化 | `mote-workspace-next.html`、`mote-detail-library.html`、`mote-detail-source.html` |
-| S11 | `01a1804d-54a4-7363-8f99-95fe2df7df91`<br>`01a1804d-54cd-7ad1-a804-2c7536fb0b51` | 实体详情是建议；当前稿大体可，审查交互/ADR | `mote-memory-workspace.html` |
-| S12 | `01a1805b-8851-7583-be19-3b682fb7f159`<br>`01a1805b-8860-7ec1-8c55-98f4af57a8fc` | 否决新增独立视图；尊重既有功能与实体 | `mote-memory-workspace.html`、`mote-memory-current.html` |
-| S13 | `01a1806a-c977-7cd2-90bf-66babf18bfcc`<br>`01a1806a-c98f-71a3-802a-b724092b2844` | 继续收敛记忆页，不新增能力 | `mote-memory-current.html`、`mote-memory-polished.html` |
-| S14 | `01a18075-840e-7960-9085-ab8abec67030`<br>`01a18075-841f-7371-8e34-bf3abd967324` | 接受记忆精修；先核实导入现状 | `mote-memory-polished.html`、`mote-import-workspace.html` |
-| S15 | `01a1809e-290e-7213-9ecb-0bd938dc8e01`<br>`01a1809e-2924-7881-9a29-6deba309cd15` | 删除服务器目录导入，其余继续来源 | `mote-import-workspace.html`、`mote-source-workspace.html` |
-| S16 | `01a180b2-b4f8-70b1-b121-91839c9b2c97`<br>`01a180b2-b9f8-7443-b09f-adb6905af23a` | 接受来源方向；再评AI接入 | `mote-source-workspace.html`、`mote-ai-access.html` |
-| S17 | `01a180c2-751c-74d1-b4d9-a0efde45ca6f`<br>`01a180c2-752e-7d02-af59-620208ab383e` | 接受AI接入；首页与发现 | `mote-ai-access.html`、`mote-home-discoveries.html` |
-| S18 | `01a180e2-d6cf-7ef0-a050-26f8cb1c716f`<br>`01a180e2-d6ed-70c2-ae27-6321197373f9` | 发现阅读形式需要收敛 | `mote-home-discoveries.html` |
-| S19 | `01a180e5-3590-7921-a2a1-800e5b790198`<br>`01a180e5-35a4-7e22-927a-7c19b183a0b3` | 默认排版结果，切换进更多，不改后端 | `mote-home-discoveries.html`、`mote-discovery-refined.html`、`mote-activity-workspace.html` |
-| S20 | `01a18103-f5e3-7893-84b9-e53af9a2cba8`<br>`01a18103-f5f5-7431-b070-570c763fd561` | 接受活动方向；模型设置 | `mote-discovery-refined.html`、`mote-model-settings.html` |
-| S21 | `01a1819e-6849-75c0-81f9-b2ed7def8668`<br>`01a1819e-6d39-7470-a9af-49dd3db91df4` | OCR/语音与语言模型统筹服务，先盘现状 | `mote-model-settings.html` |
-| S22 | `01a181a8-7fd7-7541-adc1-9ec246ba5e68`<br>`无独立用户消息` | 系统续轮；无独立用户消息，不新增所有者决定 | `mote-settings-services.html` |
-| S23 | `01a181b8-bfce-7400-91f2-9c5b5d795bc0`<br>`01a181b8-bfe9-7670-954c-759ddc2d5769` | 要求后台授权合入对应功能而非独立页 | `mote-settings-services.html` |
-| S24 | `01a181bb-7d46-7961-a768-bb58ff20a313`<br>`01a181bb-7d57-71d0-a29a-93667c92e8a5` | 移除后台授权单页，资料处理内开关和首次说明 | `mote-settings-services.html`、`mote-settings-automatic.html` |
-| S25 | `01a1820c-4ba9-7030-919c-be4f33ef71f1`<br>`01a1820c-4bc2-7431-9fb3-41e8e256948d` | 更完整设置；本机识别一键准备；其他设置不能漏 | `mote-settings-automatic.html`、`mote-settings-complete.html` |
-| S26 | `01a18227-ca9e-7091-ba17-7f6a7e6d2c41`<br>`01a18227-caaf-7d50-b08d-87ee723f8fd9` | 接受完整设置，继续待办/日程 | `mote-settings-complete.html`、`mote-actions-workspace.html` |
-| S27 | `01a18260-7e10-7eb0-8115-9648f9222e2e`<br>`01a18260-7e20-7bd1-b1e6-be6569224bdc` | 明确日程默认生效不逐项确认；暂停该次执行 | `mote-actions-workspace.html`、`mote-settings-complete.html` |
-| S28 | `01a1827e-0ee7-7273-b245-6dad68ff8206`<br>`01a1827e-0efa-7e13-82d4-7ecb9b2451a1` | 继续并纠正改错文件；完整盘点后做设备 | `mote-settings-complete.html`、`mote-device-workspace.html`、`mote-actions-automatic.html` |
-| S29 | `01a18288-6ba9-7603-b3e1-0e898f14ead5`<br>`01a18288-6bb9-7880-84e5-82f9eefc8905` | 接受设备；继续录音 | `mote-device-workspace.html`、`mote-recording-workspace.html` |
-| S30 | `01a1829b-cf34-7083-8be9-20117ff18759`<br>`01a1829b-cf4b-7db0-8597-670c9daa2ed4` | 接受录音；盘Mac和Android主旅程 | `mote-recording-workspace.html`、`mote-mac-workspace.html` |
-| S31 | `01a182cc-ee54-7ad1-b955-92fe25d98e3c`<br>`01a182cc-ee65-71c3-b6ee-2ad246f88798` | 任何同步/保存都可填独立说明，其余Mac通过 | `mote-mac-workspace.html`、`mote-android-workspace.html` |
-| S32 | `01a18336-5ac2-7982-a5d4-b202625207f2`<br>`01a18336-5ad3-7a53-a23a-ead1f7c6f319` | 手机记录不应每页重复；提出Tab供探讨 | `mote-android-workspace.html`、`mote-android-navigation.html` |
-| S33 | `01a18351-4851-75b0-b4c4-5189f2ff11ae`<br>`01a18351-486a-7c61-9007-74d541a52bfb` | 改为轻输入/输出端；管理次级，日常只记录/提问 | `mote-android-navigation.html`、`mote-android-assistant.html` |
-| S34 | `01a18367-9d7e-7881-b5a7-6b8924249ea9`<br>`01a18367-9d8e-7ab2-9a11-7913f5ddc979` | 接受Android轻首页；补首次使用；探讨Mac | `mote-android-assistant.html`、`mote-mac-role-exploration.html` |
-| S35 | `01a18379-0906-7d01-a4df-d6c97abdff88`<br>`01a18379-0916-7ed3-9fe6-b9bb0f1e7bcb` | 接受Mac轻落点，保留框架；继续新用户旅程 | `mote-mac-role-exploration.html`、`mote-first-use.html` |
-| S36 | `01a1838f-8d0e-7be0-a411-8898a799081c`<br>`01a1838f-8d20-7ac3-a2bd-946f23ad32b5` | 首次使用大体OK；跨端与本机清理/暂停 | `mote-first-use.html`、`mote-continuity-workspace.html` |
-| S37 | `01a183b0-234a-73e0-afee-8424cc5b4c22`<br>`01a183b0-2359-7d31-95b9-b0f253900ab4` | 明确修改/删除资料不能隐藏历史问答；继续恢复 | `mote-continuity-workspace.html`、`mote-recovery-workspace.html` |
-| S38 | `01a183c8-8cb8-7b51-944c-3a29607e263b`<br>`01a183c8-8cce-7b40-85d3-4a9814098458` | 恢复大体OK；全盘收尾，遗漏入口一并补齐 | `mote-recovery-workspace.html`、`mote-final-workspace.html` |
-| S39 | `01a185ae-ecf5-7e73-a7f8-11b76104247c`<br>`01a185ae-f1b2-7083-aafb-654ab133e19c` | 将所有已经定稿的三端样式发布为仅自己可见的网站 | 网站的三端界面、首次使用、对话与资料回看、恢复与继续四组；对应 index/first-use/continuity/recovery.html |

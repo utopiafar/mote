@@ -2,7 +2,7 @@
 
 > 用户自身表达、代办任务和项目归属见[个人记忆归属](personal-memory-attribution.md)。用户的日常、重复主观表达可以成为个人记忆；第三方或身份未知的有用内容可成为来源限定观察。当前个人 v5 组合按需原件上下文读取与完整范围评估，由模型择要保存，见[范围评估 ADR](adr-memory-range-evaluation.md)。上下文解释责任及旧 v4 固定定义见[上下文读取 ADR](adr-memory-context-reading.md)，旧 v3 固定定义见[有限个人 Memory ADR](adr-bounded-personal-memory.md)。
 
-> 当前 Central epoch 7：新产物须经过 admission 分层与独立审核；已授权且就绪的新输入采用有界滚动package，保留artifact/history的固定窗口。当前规则见 [系统改造ADR](adr-system-refactor.md)、[记忆准入设计](memory-admission.md)，存储边界见 [MVP 基线 ADR](adr-mvp-baseline.md)。
+> 当前 Central epoch 7 实现仍对新Memory产物执行准入与固定独立审核；已授权且就绪的新输入采用有界滚动package。按[产品方向](product.zh-CN.md)，额外复核应由模型或所选记忆方案判断，现有链路尚待调整。当前细节见[Memory设计](memory-current-design.md)，存储边界见[内容存储](content-storage.md)。
 
 本文的通用导入与 [文件原件同步](files.md) 是不同入口。当前已共享 PDF/DOCX/XLSX 解码，已知文档可直接提取；需要模型映射的资料仍走预览确认。自动记忆调度与审核以 [生命周期](memory-lifecycle.md)、[准入](memory-admission.md) 和 [版本化更新](memory-updates.md) 为准。
 
@@ -194,7 +194,7 @@ HTML 布局由模型生成，展示失败时仍可查看文字和引用。引用
 - 队列持久化在 SQLite，导入、Memory 等步骤通过共享执行器和资源池并发准入；没有多租户分布式任务平台。
 - Memory 的精确引句校验是出处约束，不是自动事实核验、矛盾裁决或持续自我学习；用户可做版本绑定的记忆校正，生成独立原始笔记与确认版本；矛盾、替代和有效期通过模型提议及宿主确认维护，不会自动裁决全部矛盾或推断遗忘策略，见 [记忆更新](memory-updates.md)。
 - 原件不会因为单条记录到期就自动从导入归档中删除。当前需显式管理整次导入；不要把记录保留期限理解成全部文件的清理期限。
-- 当前便携 JSON v2 包含Material修订历史、来源归档批次、原件和校验关系，旧格式或缺少必需集合的包会被拒绝；二进制归档的完整运行状态使用同epoch离线备份。导出包含私人原文，应自行保管。执行状态、对话、工作目录和凭据不在便携包中；完整备份范围与恢复步骤见[部署文档](deployment.md)。
+- 完整中央资料库恢复使用同 epoch 的停库备份。JSON 便携导出仅适用于满足当前条件的小资料库，不包含对话历史；有文件归档、图片处理成果或来源处理档案时会拒绝导出。范围、密钥与恢复步骤见[部署文档](deployment.md)。
 - 原生 Harness、通用解析、任务恢复及报告展示有合成 fixture 测试。测试包含真实 Harness 子进程与模拟模型响应；这不等同真实模型语义效果、真实私人资料完整覆盖或物理设备验收。实网模型和真机结果应单独记录，不能从构建或 fixture 通过推导。
 
 关键实现入口：[导入服务](../apps/server/src/imports.ts)、[解析辅助程序](../apps/server/src/import-parser.mjs)、[Memory 流水线](../apps/server/src/memory-pipeline.ts)、[报告处理](../apps/server/src/insights.ts)、[导入 Harness](../packages/agent/src/import-agent.ts)、[查询 Harness](../packages/agent/src/index.ts)。

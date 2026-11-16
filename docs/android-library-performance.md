@@ -1,6 +1,6 @@
 # Android 大资料库性能与当前本机格式
 
-当前本机格式为 3；下方 0.0.25 / Android versionCode 36 的性能数值是历史记录。
+当前本机格式为 4；下方 0.0.25 / Android versionCode 36 的性能数值是历史记录。
 
 2026-10-04 本次清理验证：54 个 JVM 测试类、245 项测试全部通过（0 失败、0 错误、0 跳过）；instrumentation Kotlin 源码编译与 debug APK 构建通过。未运行模拟器或物理设备 instrumentation、真实模型或个人数据检查。下方历史验证不能视为本次重新执行。
 

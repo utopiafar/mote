@@ -22,13 +22,13 @@ The new album/grid path reads a separate minimal projection. It neither deserial
 
 ## Local storage
 
-- Android current format 3 stores authoritative `.event` JSON and content-addressed `.blob` image bytes verbatim. Retired local data is rejected with a reset-required error; old AES readers are removed.
-- Sixteen `.browse-v1-*` shards (verbatim bytes in format 3) contain only record ID, source, timestamp, app identity, image availability/blob reference and file size/mtime. New writes update their shard; reads use a bounded directory cache across queue handles.
+- Android current format 4 stores authoritative `.event` JSON and content-addressed `.blob` image bytes verbatim. Retired local data is rejected with a reset-required error; old AES readers are removed.
+- Sixteen `.browse-v1-*` shards (verbatim bytes in format 4) contain only record ID, source, timestamp, app identity, image availability/blob reference and file size/mtime. New writes update their shard; reads use a bounded directory cache across queue handles.
 - A shard is invalidated on disk before its authoritative event changes. After a crash, missing or stale entries are reconstructed from events. A broken derived index can be rebuilt; unreadable authoritative events are preserved and surfaced as errors.
 - Current-format queues rebuild a missing derived projection on recovery/browse. This reads current authoritative event metadata; later launches read the compact index. It is crash recovery, not an old-data upgrade path. Explicit integrity checks still open and verify authoritative records/blobs.
-- `.thumb` files are derivatives stored as original bytes, generated from the final privacy-processed bitmap. Current-format images lacking a derivative generate one when first opened in the grid. Derivatives share their parent's blob identity, follow queue retention/migration/orphan cleanup, and count toward storage usage. Thumbnail writes are optional when the configured storage limit leaves no room. Decoded display bitmaps use a bounded memory cache; on-disk derivatives use the current format 3 raw-byte policy. See [content storage](content-storage.md).
+- `.thumb` files are derivatives stored as original bytes, generated from the final privacy-processed bitmap. Current-format images lacking a derivative generate one when first opened in the grid. Derivatives share their parent's blob identity, follow queue retention and orphan cleanup, and count toward storage usage. Thumbnail writes are optional when the configured storage limit leaves no room. Decoded display bitmaps use a bounded memory cache; on-disk derivatives use the current format 4 raw-byte policy. See [content storage](content-storage.md).
 
-The central server maintains its own SQLite `capture_gallery` projection on current capture writes and cascades deletes with parent captures. Epoch 3 creates its final schema without historical backfill. Image authorization now reads only the owner device and blob reference. See [protocol](protocol.md#screenshot-albums).
+The central server maintains its own SQLite `capture_gallery` projection on current capture writes and cascades deletes with parent captures. Current epoch 7 vaults create the current schema; opening a vault does not backfill a retired storage format. Image authorization reads the owner device and blob reference. See [content storage](content-storage.md) and [protocol](protocol.md#screenshot-albums).
 
 ## Historical validation — 2026-09-15
 

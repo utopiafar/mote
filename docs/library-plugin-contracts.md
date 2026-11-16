@@ -2,7 +2,7 @@
 
 应用外壳和主题的可信扩展现由 [UI presentation ADR](adr-ui-presentation-packs.md)补充：功能贡献保持以下精确类型／版本合同，主题和布局单独绑定。默认主导航与来源配置／活动归属按新 ADR 执行，不改变 MaterialStore、执行器或权限权威。
 
-本次保留 DeepSeek fork Cordis、领域 registries、ExecutionEngine、MaterialStore 和 Harness bridge。资料库是 MaterialStore 的所有者目录投影；新插件不能另建一套资料、任务或授权权威。
+当前使用 DeepSeek fork Cordis、领域 registries、ExecutionEngine、MaterialStore 和 Harness bridge。资料库是 MaterialStore 的所有者目录投影；插件接入 Mote 正式资料和任务时使用对应公共端口。原生应用可保留内部会话与流程，Mote 连接授权上下文、可见状态和产物。
 
 ## 用户流程与归属
 

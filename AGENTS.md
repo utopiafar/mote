@@ -1,39 +1,23 @@
 # Mote
 
-One instance, one owner: a personal context collector and central archive for that owner's devices, sources and Agent clients ([ADR](docs/adr-single-owner-mvp.md#decision)).
+An extensible personal context center, one instance per owner. [Product](docs/product.md), [design](docs/design.md) and [architecture](docs/architecture.md) describe the project.
 
-## Product invariants
+## Essentials
 
 - No accounts, tenants or account hosts.
-- One current wire/storage format. Add migrations, old-format readers, dual writes or compatibility paths only when the user asks.
-- Models interpret intent, tasks, topics and insights and choose retrieval tools; never replace them with keyword dispatch or handcrafted semantic heuristics. Deterministic code is right for privacy filters, authorization, transport, deduplication, retention and measured time accounting.
-- Captured content is untrusted evidence. Query agents get read-only context tools; external effects require product authorization through Actions.
+- Models interpret meaning and choose retrieval tools; no keyword dispatch or handcrafted semantic heuristics. Use deterministic code for privacy, authorization, transport, deduplication, retention and measured usage.
+- Captured content is untrusted evidence. Context tools are read-only; external effects use authorized Actions.
+- MVP uses one current wire/storage format; add compatibility or migrations only when requested. Long-term use needs data-preserving upgrades.
 - Keep secrets and personal data out of Git. Listen on loopback by default; remote deployments need TLS and a strong token.
-- Tests use generated data and private temporary profiles; real profiles, screenshots and devices are never fixtures.
-- Dev keeps Mote-owned credentials in private profile files; Prod uses OS protection; third-party CLIs keep their own credential stores.
-- Host runtime contract is frozen: add no new concepts; delete leases, bindings, delivery ledgers and commit fences once no module needs them.
-- Delegation is frozen: fix defects only; batch processing replaces it after release.
+- Tests use generated data and isolated temporary profiles. Dev credentials stay in private profile files; Prod uses OS protection; third-party CLIs keep their own stores.
 
-## Before editing
+## Working references
 
-- Under `apps/<app>/`, read `apps/<app>/AGENTS.md` first: focused tests and platform limits.
-- Setup and Dev/Test profiles: [development](docs/development.md).
-- Shared or Agent libraries changed or missing: `npm run build:libs`.
-- New `moteText` strings: add the key to all six `packages/shared/src/i18n-*.ts`, then run `node scripts/sync-i18n.mjs && npm run check:i18n`.
-- Reuse existing UI terms, navigation and components.
+- Use existing module boundaries, UI terms and components. App-specific commands and limits are in `apps/<app>/AGENTS.md`.
+- Setup and profiles: [development](docs/development.md). Localization: [i18n](docs/internationalization.md). Rebuild shared/Agent libraries with `npm run build:libs` when affected or missing.
 
-## Verifying
+## Validation and reporting
 
-- Run the narrowest check that exercises the change. Preview the light plan with `npm run check:affected -- --dry-run`.
-- Rerun only checks invalidated by later edits. Ending a turn, a handoff or a Draft PR update is not a reason to run more.
-- Heavy E2E, scale, benchmark and live-model checks run only when the user asks; otherwise list them as not run. Layers and triggers: [testing](docs/testing.md).
-- Never weaken assertions, timeouts, input scale or entrypoints to get green; moving a failing test to a manual suite doesn't fix it. Tests named `performance` or `migration` can guard correctness; keep their coverage.
-- Correctness first; optimize only measured, serious slowness.
-- UI automation stays hidden: [background UI](docs/testing-runbook.md#background-testing).
-- When fixing bugs, changing lifecycle behavior, or writing or reviewing tests, follow [regression test design](docs/testing.md#regression-test-design).
-
-## Deciding and reporting
-
-- Decide implementation details yourself.
-- PR description: behavior changes; checks actually run, with reused results marked as reused; checks not run and untested risks; fixture, physical-device and live-model evidence kept separate. Add no other tracking files.
-- Large or multi-module work: [coordination guide](docs/agent-development-workflow.md); wire one real end-to-end path first.
+- Choose the smallest meaningful check; reuse still-valid results. `npm run check:affected -- --dry-run` can preview affected checks. Heavy E2E, scale, benchmark and live-model checks require an explicit user request; see [testing](docs/testing.md).
+- Preserve meaningful assertions, input scale and timeouts; do not hide failures. UI automation stays [hidden](docs/testing-runbook.md#background-testing).
+- Decide implementation details independently. Report behavior changes, actual checks and remaining risks concisely; distinguish generated-fixture, device and live-model evidence. No extra tracking files are needed.

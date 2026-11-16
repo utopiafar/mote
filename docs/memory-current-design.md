@@ -1,6 +1,8 @@
 # Memory 当前设计
 
-日期：2026-11-08。状态：当前实现说明。范围：本文记录当前代码里的 Memory 主链路、数据与状态、五项保证和已冻结的可替换接口。旧 ADR 和历史设计稿只作为决策记录；本文不描述后续目标设计。
+日期：2026-11-08。状态：当前实现说明。范围：本文记录当前代码里的 Memory 主链路、数据与状态、五项保证和当前可替换接口。旧 ADR 和历史设计稿只作为决策记录；本文不描述后续目标设计。
+
+现行产品方向：是否需要额外复核由模型或选定的记忆方案判断，不固定每批多调一次模型，也不用手写语义规则分流。下文的固定独立审核记录现有实现，尚待调整；权限、来源、版本、纠正与删除的宿主校验继续保留。
 
 代码位置约定：路径相对于仓库根；`文件` 加函数/常量名指向具体实现，行号可能随重构移动，以符号为准。
 
@@ -127,11 +129,11 @@ Memory 不是一次模型调用，而是宿主编排、可恢复的多阶段链�
 - 原件删除、资料退役、安装替换或问题过期会让问题变为 `obsolete`，不继续向所有者追问旧内容（`apps/server/src/owner-questions.ts` `obsolete` 与依赖触发器）。
 - 当前问题 API 和读模型复用共享 owner-question 服务；Memory 不建立第二套问题表或第二套回答状态（`apps/server/src/plugins/owner-question-services.ts`；`apps/server/src/owner-questions.ts`）。
 
-## 4. 可替换接口（已冻结）
+## 4. 可替换接口
 
-“冻结”指只接受缺陷修复：不新增方法、阶段、输入/输出契约、绑定模式或新授权概念；新增能力必须先修改本文件并另立决策。可替换实现仍必须满足相同的宿主校验、独立审查、发布栅栏和删除传播。
+接口与实现可按实际需求演进，接口或行为变化时同步更新当前说明。可替换实现仍须满足当前权限校验、独立审查、发布和删除规则。
 
-| 接口 | 当前可替换内容 | 冻结边界 | 代码位置 |
+| 接口 | 当前可替换内容 | 当前职责与权限边界 | 代码位置 |
 | --- | --- | --- | --- |
 | 提取策略 | `memory-evidence@1 → memory-candidates@1`，只读 `evidence.read` | 不能获得写工具、发布权或替换公共校验 | `apps/server/src/memory-strategy-contract.ts` `memoryExtractionStrategySchema`；`apps/server/src/memory-strategies.ts` `registerExtraction` |
 | 审查策略 | `memory-candidates@1 → memory-candidates@1`，只读证据或只读 Memory + 证据 | 不能跳过宿主校验、删除快照或独立审查责任 | `apps/server/src/memory-strategy-contract.ts` `memoryReviewStrategySchema`；`apps/server/src/memory-strategies.ts` `registerReview` |
@@ -139,10 +141,10 @@ Memory 不是一次模型调用，而是宿主编排、可恢复的多阶段链�
 | 整合策略与配方 | `memory-cards@1 → memory-candidates@1`，只读 Memory + 证据 | 不能改变证据准入、关系目标版本和发布事务 | `apps/server/src/memory-strategy-contract.ts` `memoryIntegrationStrategySchema` / `memoryIntegrationRecipeSchema`；`apps/server/src/memory-strategies.ts` `registerIntegration` / `registerIntegrationRecipe` |
 | 存储与检索供应方 | `put`、`read`、`remove`、`search`、`export`、`health`、`recover`、`close` | 只负责存储与检索；准入、来源授权、发布栅栏、删除传播仍归宿主 | `apps/server/src/memory-provider-contract.ts` `MemoryProvider` |
 | 完整引擎 / 原生阶段 | `prepare`、可选 `discardPrepared` / `erasePreparedEvidence`；适配器 `prepare` / `settle` | 只负责语义传输；宿主持有固定草稿、清理恢复、独立审查和发布权 | `apps/server/src/memory-native-stage-contract.ts` `MemoryEngine` / `MemoryNativeStageAdapter`；`apps/server/src/memory-native-stages.ts` `MemoryNativeStages` |
-| 生命周期扩展 | `extraction`、`consolidation`、`insights`、`working` 的窗口执行 | 不能新增窗口种类或绕过游标、检查点、暂停/排空/停止 | `apps/server/src/memory-lifecycle.ts` `LifecycleExtension` / `MemoryLifecycle.register` |
+| 生命周期扩展 | `extraction`、`consolidation`、`insights`、`working` 的窗口执行 | 扩展时复用游标、检查点和暂停/排空/停止机制 | `apps/server/src/memory-lifecycle.ts` `LifecycleExtension` / `MemoryLifecycle.register` |
 | 发布端口 | `MemoryStagePublication` 与 `MemoryOwnerPublication` 分离的已审查暂存/所有者命令 | 不能让供应方替换宿主提交、所有者授权或删除账本 | `apps/server/src/plugins/memory-publication-contract.ts` `MemoryStagePublication` / `MemoryOwnerPublication` |
-| 绑定与切换 | 内置与外部 `modules` / `engine` 计划，准备、核验、切换和失败保旧 | 不能新增第二种绑定模式或跳过正文迁移/核验 | `apps/server/src/memory-bindings.ts` `MemoryBindings.plans` / `prepare` / `action`；`apps/server/src/memory-automation.ts` `MemoryAutomation.freeze` / `release` |
-| Worker 供应方 ABI | `createMemoryProvider(configuration)` 与 JSON-lines 调用，支持 repository / retrieval | 只使用已支持的调用方法；不新增方法或权限；任意 worker 声明 `engine` 不等于可运行引擎 | `apps/server/src/worker-memory-provider.ts` `WorkerMemoryProvider`；`apps/server/src/plugins/memory-provider-adapters.ts` |
+| 绑定与切换 | 内置与外部 `modules` / `engine` 计划，准备、核验、切换和失败保旧 | 切换时仍校验正文与当前权限 | `apps/server/src/memory-bindings.ts` `MemoryBindings.plans` / `prepare` / `action`；`apps/server/src/memory-automation.ts` `MemoryAutomation.freeze` / `release` |
+| Worker 供应方 ABI | `createMemoryProvider(configuration)` 与 JSON-lines 调用，支持 repository / retrieval | 调用方法与权限由当前 ABI 和宿主能力校验确定；任意 worker 声明 `engine` 不等于已实现该能力 | `apps/server/src/worker-memory-provider.ts` `WorkerMemoryProvider`；`apps/server/src/plugins/memory-provider-adapters.ts` |
 
 ## 5. 相关记录
 
