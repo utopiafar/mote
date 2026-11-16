@@ -1,4 +1,5 @@
 import {retiredConversationRoot} from './conversation-retention.js';
+import {releasedMemoryOriginal} from './memory-original-retention.js';
 import type {CaptureInput} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import type {ModelSettings} from '@mote/shared/models';
@@ -63,7 +64,7 @@ export class ModelAuthorizationHost {
   }
   disclosure(ids:readonly string[]):ModelDisclosure[]{
     const records=[...this.store.evidence([...ids]),...this.materials.evidence([...ids]),...(this.files?.evidence([...ids])??[])];
-    return [...records.map(record=>({sourceId:record.provenance?.sourceId??'device:'+record.deviceId})),...ids.flatMap(id=>{const root=retiredConversationRoot(this.store,id);return root?[{sourceId:root.scope.sourceId??'device:'+root.scope.deviceId}]:[];})];
+    return [...records.map(record=>({sourceId:record.provenance?.sourceId??'device:'+record.deviceId})),...ids.flatMap(id=>{const root=retiredConversationRoot(this.store,id),released=releasedMemoryOriginal(this.store,id);return [...(root?[{sourceId:root.scope.sourceId??'device:'+root.scope.deviceId}]:[]),...(released?[{sourceId:released.record.provenance?.sourceId??'device:'+released.record.deviceId}]:[])];})];
   }
   assertEvidence(ids:readonly string[]){this.control.assertDisclosure(this.disclosure(ids));}
   async manual<T>(id:string,connections:ModelConnection[],task:(signal:AbortSignal)=>Promise<T>,signal?:AbortSignal,kind:'manual'|'probe'='manual',identities:readonly string[]=[]){

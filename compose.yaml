@@ -1,4 +1,34 @@
 name: ${MOTE_COMPOSE_PROJECT:?Use node scripts/mote.mjs compose with a profile}
+x-media-worker: &media-worker
+  image: ${MOTE_IMAGE:?Profile image is required}
+  user: ${MOTE_CONTAINER_USER:?Profile owner is required}
+  restart: unless-stopped
+  network_mode: "service:mote"
+  depends_on:
+    mote:
+      condition: service_healthy
+  env_file:
+    - path: ${MOTE_DOCKER_ENV_FILE:?Generated secret environment is required}
+      format: raw
+  environment:
+    MOTE_CONFIG_FILE: /config/mote.yaml
+  volumes:
+    - type: volume
+      source: mote-models
+      target: ${MOTE_MODELS_DIRECTORY:?Configured model directory is required}
+      # Execution receipts share the resource root and survive worker restart.
+      read_only: false
+      volume:
+        nocopy: true
+    - type: bind
+      source: ${MOTE_CONFIG_DIRECTORY:?Profile configuration directory is required}
+      target: /config
+      read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  init: true
 services:
   storage-init:
     image: ${MOTE_IMAGE:?Profile image is required}
@@ -19,7 +49,9 @@ services:
     network_mode: none
   mote:
     image: ${MOTE_IMAGE:?Profile image is required}
-    build: .
+    build:
+      context: .
+      target: ${MOTE_IMAGE_TARGET:?Profile image variant is required}
     user: ${MOTE_CONTAINER_USER:?Profile owner is required}
     restart: unless-stopped
     ports:
@@ -58,44 +90,17 @@ services:
         max-size: "10m"
         max-file: "3"
   ocr-worker:
-    image: ${MOTE_IMAGE:?Profile image is required}
-    user: ${MOTE_CONTAINER_USER:?Profile owner is required}
-    restart: unless-stopped
-    network_mode: "service:mote"
-    depends_on:
-      mote:
-        condition: service_healthy
-    env_file:
-      - path: ${MOTE_DOCKER_ENV_FILE:?Generated secret environment is required}
-        format: raw
-    environment:
-      MOTE_CONFIG_FILE: /config/mote.yaml
-    volumes:
-      - type: volume
-        source: mote-models
-        target: ${MOTE_MODELS_DIRECTORY:?Configured model directory is required}
-        # The existing execution-facts store shares the model resource root and
-        # must survive a sidecar restart; do not create a second receipt ledger.
-        read_only: false
-        volume:
-          nocopy: true
-      - type: bind
-        source: ${MOTE_CONFIG_DIRECTORY:?Profile configuration directory is required}
-        target: /config
-        read_only: true
+    <<: *media-worker
+    profiles: [media-ocr]
     command: ["node", "scripts/media-worker-entry.mjs", "ocr", "/opt/mote-media/ocr/bin/python"]
     healthcheck:
       test: ["CMD", "node", "scripts/media-worker-health.mjs", "ocr"]
       interval: 30s
       timeout: 5s
       start_period: 30s
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    init: true
   asr-worker:
-    extends: ocr-worker
+    <<: *media-worker
+    profiles: [media-asr]
     command: ["node", "scripts/media-worker-entry.mjs", "asr", "/opt/mote-media/dialogue/bin/python"]
     healthcheck:
       test: ["CMD", "node", "scripts/media-worker-health.mjs", "asr"]

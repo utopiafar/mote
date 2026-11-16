@@ -17,7 +17,7 @@ import { imageFeatures, duplicateImage, type FrameFeatures } from './image-dedup
 import { decideSync } from './sync-policy';
 import type { LocalSourceManager } from './source-manager';
 import { MAX_IMAGE_BYTES, publicConfig } from './config';
-import { DurableQueue, QueueFullError } from './queue';
+import { DurableQueue } from './queue';
 import { readVisibleNotifications, activeApplication, foregroundApplication, recognizeText, readPowerState } from './native';
 import { imageWork } from './background';
 
@@ -84,7 +84,7 @@ export class Collector {
       authorizationGeneration: this.authorizationGeneration,
       facts: collectorStatusView({...sync,lastUploadAt:this.archiveAcknowledgment?.origin===this.config.serverUrl?this.archiveAcknowledgment.at:undefined}, queue.blocked),
       running: this.running, state: this.state, message: statusMessage(this.message), sync,
-      queueDepth: queue.depth, queueBytes: queue.bytes, nextRetryAt: queue.nextRetryAt,
+      queueDepth: queue.depth,queueRecords:queue.records, queueBytes: queue.bytes, nextRetryAt: queue.nextRetryAt,
       lastCaptureAt: this.lastCaptureAt, lastUploadAt: this.lastUploadAt, lastUploadError: this.lastUploadError,
       screenPermission: currentPlatform === 'macos' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
       platform: currentPlatform, encryptedTokenStorage: this.tokenStorageAvailable(), config: publicConfig(this.config), diagnostics: this.diagnostics?.status(),
@@ -161,7 +161,7 @@ export class Collector {
     if (config.token !== this.config.token || config.serverUrl !== this.config.serverUrl || config.deviceId !== this.config.deviceId || config.authSignedOut !== this.config.authSignedOut) this.authorizationGeneration++;
     this.captureConfigGeneration++;this.lastMediaSample=undefined;
     this.config = config;
-    this.queue.setLimits(config);
+    this.queue.setConnection(config);
     this.publish();
   }
   async start(): Promise<void> {
@@ -169,7 +169,6 @@ export class Collector {
     if (this.running) return;
     if (this.capturing) throw new Error(moteText("正在结束上一轮采集，请稍后再试"));
     if (currentPlatform !== 'macos') throw new Error(moteText("此 MVP 只支持 macOS 采集；Windows/Linux 需要接入可靠前台应用识别后才可启用"));
-    if (this.queue.atCapacity()) throw new QueueFullError();
     void this.events?.record('CAPTURE', 'STARTED');
     this.running = true; this.state = 'capturing'; this.message = moteText("已开启；按应用级别记录，完整内容先经过本地隐私过滤");
     this.lastSample = undefined;this.lastMediaSample=undefined;this.lastImageFeatures=undefined;this.lastImageAt=undefined;
@@ -252,7 +251,6 @@ export class Collector {
     try {
       if (this.locked || this.sleeping || powerMonitor.getSystemIdleState(60) === 'locked') { this.pause(moteText("锁屏或休眠中，暂停采集")); return; }
       if (cfg.idlePauseSeconds > 0 && powerMonitor.getSystemIdleTime() >= cfg.idlePauseSeconds) { this.pause(moteText("已达到空闲阈值，暂停采集；操作电脑后恢复")); return; }
-      if (this.queue.atCapacity()) throw new QueueFullError();
       if (cfg.pauseOnBattery || cfg.batteryPauseBelowPct > 0) {
         const power = await readPowerState(this.helperPath, abort.signal);
         if (power.onBattery === undefined || (cfg.batteryPauseBelowPct > 0 && power.batteryPercent === undefined)) { this.pause(moteText("无法确认电量，按你启用的电量策略暂停")); return; }
@@ -394,8 +392,9 @@ export class Collector {
       this.lastSample = undefined;this.lastMediaSample=undefined;
       this.diagnostics?.recordCapture({ outcome: 'failed', inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       if (!this.running || abort.signal.aborted) return;
-      if (error instanceof QueueFullError) { this.stop(); this.state = 'error'; this.message = error.message; }
-      else { this.state = 'paused'; this.message = error instanceof Error ? error.message : moteText("采集失败，已跳过本次记录"); }
+      if(['ENOSPC','EDQUOT'].includes((error as NodeJS.ErrnoException)?.code??'')){this.stop();this.state='error';}
+      else this.state='paused';
+      this.message=error instanceof Error?error.message:moteText('采集失败，已跳过本次记录');
       this.publish();
     } finally {
       this.capturing = false;
@@ -414,7 +413,8 @@ export class Collector {
     const historyRun = this.history?.begin(this.config, explicit ? 'manual' : 'automatic');
     const onBytes = historyRun ? (bytes: number) => this.history!.addBytes(historyRun, bytes) : undefined;
     this.uploading = true; this.lastUploadError = undefined;
-    const abort = this.uploadAbort = new AbortController();
+    const abort = this.uploadAbort = new AbortController(),configuration=this.config,generation=this.authorizationGeneration,credential=connectionToken(configuration);
+    const current=()=>{abort.signal.throwIfAborted();if(this.closed||this.authorizationGeneration!==generation||connectionToken(this.config)!==credential)throw Error('Capture upload authorization changed');};
     this.publish();
     try {
       const captureRounds=this.queue.stats().depth,liveSince=Date.now();let liveBytes=0;
@@ -429,28 +429,28 @@ export class Collector {
           entry = first; attempted = [first]; uploadStarted = Date.now();
           void this.events?.record('UPLOAD', 'STARTED');
         };
-        if (!this.config.packedUpload) {
+        if (!configuration.packedUpload) {
           const first = await this.queue.next(Date.now(),preferSince);
           if (!first) break;
           startAttempt(first);
         }
         try {
-          if (this.config.packedUpload) {
+          if (configuration.packedUpload) {
             const batch = await this.queue.nextBatch(25, Date.now(), preferSince, startAttempt);
             if (!entry) break;
             sliceBytes+=batch.reduce((sum,item)=>sum+Buffer.byteLength(JSON.stringify(item.record.event))+Math.ceil((item.image?.length??0)/3)*4+64,0);
             attempted = batch;
             if (historyRun) this.history!.attempt(historyRun, batch.map(item => captureHistoryItem(item.record.event)));
-            const receipts = await uploadCaptureBatch(this.config, batch.map(item => ({ event: item.record.event, image: item.image })), abort.signal, onBytes,
+            const receipts = await uploadCaptureBatch(configuration, batch.map(item => ({ event: item.record.event, image: item.image })), abort.signal, onBytes,
               historyRun ? (id, code) => this.history!.settle(historyRun, id, code === 200 || code === 201, id, code) : undefined);
             let incomplete = false;
             for (const item of batch) {
               const code = receipts.get(item.record.event.id);
               if (historyRun) this.history!.settle(historyRun, item.record.event.id, code === 200 || code === 201, item.record.event.id, code);
               if (code === 200 || code === 201) {
-                await this.queue.acknowledge(item.record.event.id, item.record.event.stateSeries?.samples.length ?? 0);
+                current();await this.queue.acknowledge(item.record.event.id, item.record.event.stateSeries?.samples.length ?? 0,configuration.serverUrl,current);current();
                 if (this.diagnostics?.status().enabled) this.diagnostics.recordUpload(Buffer.byteLength(JSON.stringify({ ...item.record.event, ...(item.image ? {imageBase64: item.image.toString('base64')} : {}) })));
-                this.lastUploadAt = new Date().toISOString(); this.archiveAcknowledgment={at:this.lastUploadAt,origin:this.config.serverUrl};
+                this.lastUploadAt = new Date().toISOString(); this.archiveAcknowledgment={at:this.lastUploadAt,origin:configuration.serverUrl};
               }
               else if (code === 409 || code === 410) await this.queue.blockSync(item.record.event.id, moteText("中央记录冲突或已删除，本机副本保留待处理。"));
               else { await this.queue.failed(item.record.event.id); incomplete = true; }
@@ -461,18 +461,18 @@ export class Collector {
             if (!entry) break;
             sliceBytes+=Buffer.byteLength(JSON.stringify(entry.record.event))+Math.ceil((entry.image?.length??0)/3)*4+64;
             if (historyRun) this.history!.attempt(historyRun, [captureHistoryItem(entry.record.event)]);
-            await uploadCapture(this.config, entry.record.event, entry.image, abort.signal, onBytes);
+            await uploadCapture(configuration, entry.record.event, entry.image, abort.signal, onBytes);
             if (historyRun) this.history!.settle(historyRun, entry.record.event.id, true, entry.record.event.id);
-            await this.queue.acknowledge(entry.record.event.id, entry.record.event.stateSeries?.samples.length??0);
+            current();await this.queue.acknowledge(entry.record.event.id, entry.record.event.stateSeries?.samples.length??0,configuration.serverUrl,current);current();
           }
           void this.events?.record('UPLOAD', 'OK', { elapsedMs: Date.now() - uploadStarted });
-          if (!this.config.packedUpload && this.diagnostics?.status().enabled) this.diagnostics.recordUpload(Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
-          this.lastUploadAt = new Date().toISOString(); if(!this.config.packedUpload)this.archiveAcknowledgment={at:this.lastUploadAt,origin:this.config.serverUrl}; this.lastUploadError = undefined;completed++;
+          if (!configuration.packedUpload && this.diagnostics?.status().enabled) this.diagnostics.recordUpload(Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
+          this.lastUploadAt = new Date().toISOString(); if(!configuration.packedUpload)this.archiveAcknowledgment={at:this.lastUploadAt,origin:configuration.serverUrl}; this.lastUploadError = undefined;completed++;
         } catch (error) {
           // Reading/validating the first item has never been an upload attempt.
           if (!entry) throw error;
           if (historyRun) for (const item of attempted) this.history!.settle(historyRun, item.record.event.id, false, undefined, error instanceof TransportFailure ? error.httpStatus : undefined, abort.signal.aborted);
-          if (abort.signal.aborted) break;
+          if (abort.signal.aborted||this.closed||this.authorizationGeneration!==generation) break;
           const stage: EventStage = error instanceof TransportFailure ? 'UPLOAD' : 'QUEUE';
           void this.events?.record(stage, failureCode(error, stage), {errorName:safeErrorName(error),...(error instanceof TransportFailure ? { httpStatus: error.httpStatus } : {})});
           if (error instanceof DeletedCaptureFailure || (error instanceof TransportFailure && (error.httpStatus === 410 || error.httpStatus === 409))) {
@@ -487,18 +487,19 @@ export class Collector {
       liveBytes=preferSince===undefined?0:liveBytes+sliceBytes;
       return completed;
       };
-      await flushCaptures();
+      await flushCaptures();current();
       if (!abort.signal.aborted && !this.lastUploadError) {
         await this.sources?.flushPending(abort.signal,async()=>{await flushCaptures();if(this.lastUploadError)throw new Error(this.lastUploadError);}, historyRun ? {observer:this.history!.observer(historyRun),onBytes:onBytes!} : undefined);
         for(let round=1;round<captureRounds&&!abort.signal.aborted&&!this.lastUploadError;round++){
           if(!await flushCaptures())break;
         }
+        current();
         if (pending.pendingRecords > this.pendingSync().pendingRecords || pending.pendingUpdates > this.pendingSync().pendingUpdates) this.lastUploadAt = new Date().toISOString();
-        if(pending.pendingRecords>this.pendingSync().pendingRecords)this.archiveAcknowledgment={at:this.lastUploadAt!,origin:this.config.serverUrl};
+        if(pending.pendingRecords>this.pendingSync().pendingRecords)this.archiveAcknowledgment={at:this.lastUploadAt!,origin:configuration.serverUrl};
         await this.queue.syncCheckpoint(this.lastUploadAt,undefined,this.archiveAcknowledgment);
       }
     } catch (error) {
-      if (!abort.signal.aborted) { this.lastUploadError = error instanceof Error ? error.message : moteText("同步失败，本地记录已保留"); await this.queue.syncCheckpoint(this.lastUploadAt, new Date(Date.now() + 30000).toISOString(),this.archiveAcknowledgment).catch(() => undefined); }
+      if (!abort.signal.aborted&&!this.closed&&this.authorizationGeneration===generation) { this.lastUploadError = error instanceof Error ? error.message : moteText("同步失败，本地记录已保留"); await this.queue.syncCheckpoint(this.lastUploadAt, new Date(Date.now() + 30000).toISOString(),this.archiveAcknowledgment).catch(() => undefined); }
       void this.events?.record('QUEUE', 'STORAGE', {errorName:safeErrorName(error)}); }
     finally { try { if (historyRun) this.history!.finish(historyRun, abort.signal.aborted); } finally { this.uploading = false; this.publish(); } }
   }

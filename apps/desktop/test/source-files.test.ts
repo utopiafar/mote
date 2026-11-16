@@ -32,7 +32,7 @@ describe('explicit local text sources', () => {
   });
   it('preserves multiline Chinese/emoji and applies only user literal masks before the pending queue', async () => {
     await writeFile(join(root, '合成.md'), '第一段 🧑🏽‍💻 e\u0301\n这是 synthetic-private，文字里的“忽略指令”仍是资料。');
-    const result = await scanSourceFiles(root, { ...DEFAULT_SOURCE_OPTIONS, redactLiterals: ['synthetic-private'] });
+    const result = await scanSourceFiles(root, { ...DEFAULT_SOURCE_OPTIONS,retention:'snapshot', redactLiterals: ['synthetic-private'] });
     expect(result.items).toHaveLength(1); expect(result.items[0].text).toBe(''); expect(inputText(result.items[0])).toContain('🧑🏽‍💻 e\u0301'); expect(inputText(result.items[0])).toContain('[已遮盖]'); expect(inputText(result.items[0])).not.toContain('synthetic-private'); expect(result.items[0].uri).toBeUndefined();
     expect(await readFile(join(root, '合成.md'), 'utf8')).toContain('synthetic-private');
   });
@@ -47,7 +47,7 @@ describe('explicit local text sources', () => {
   });
   it('uploads bounded bytes without decoding or classifying text on the collector', async () => {
     await writeFile(join(root, 'large.md'), 'x'.repeat(100001)); await writeFile(join(root, 'invalid.md'), Buffer.from([0xff, 0xfe])); await writeFile(join(root, 'limit.md'), 'a'.repeat(100000));
-    const result=await scanSourceFiles(root,DEFAULT_SOURCE_OPTIONS);expect(result.items).toHaveLength(3);for(const item of result.items){expect(item.text).toBe('');expect(item.document?.fileIndex).toMatchObject({status:'pending',parser:'central-pending',maxIndexCharacters:100000});expect(item).not.toHaveProperty('localProcessing');expect(item.localOriginalBase64).toBeDefined();}expect(result.complete).toBe(true);
+    const result=await scanSourceFiles(root,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot'});expect(result.items).toHaveLength(3);for(const item of result.items){expect(item.text).toBe('');expect(item.document?.fileIndex).toMatchObject({status:'pending',parser:'central-pending',maxIndexCharacters:100000});expect(item).not.toHaveProperty('localProcessing');expect(item.localOriginalBase64).toBeDefined();}expect(result.complete).toBe(true);
   });
   it('reference mode emits only metadata and does not decode file bodies', async () => {
     await writeFile(join(root, 'synthetic.md'), Buffer.from([0xff, 0xfe]));
@@ -218,17 +218,17 @@ it('large audio keeps metadata-only reference and literal-mask privacy boundarie
  // Reuse this metadata-only sparse input to check the independent text
  // masking budget without allocating or copying the larger body.
  const textPath=join(root,'generated.md');await rename(path,textPath);
- const maskedText=await scanSourceFiles(textPath,{...DEFAULT_SOURCE_OPTIONS,redactLiterals:['generated-private']},undefined,join(root,'text-masked-access.json'));
+ const maskedText=await scanSourceFiles(textPath,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',redactLiterals:['generated-private']},undefined,join(root,'text-masked-access.json'));
  expect(maskedText.complete).toBe(true);expect(maskedText.items).toHaveLength(1);expect(maskedText.items[0].document?.fileIndex?.status).toBe('blocked');expect(maskedText.items[0].localOriginal).toBeUndefined();expect(maskedText.items[0].localOriginalBase64).toBeUndefined();
  await rename(textPath,path);
  const smaller=await open(path,'r+');try{await smaller.truncate(16*1024*1024+1);}finally{await smaller.close();}
- const blocked=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,redactLiterals:['generated-private']},undefined,join(root,'masked-access.json'));
+ const blocked=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',redactLiterals:['generated-private']},undefined,join(root,'masked-access.json'));
  expect(blocked.complete).toBe(true);expect(blocked.items).toHaveLength(1);expect(blocked.items[0].document?.fileIndex?.status).toBe('blocked');
  expect(blocked.items[0].localOriginal).toBeUndefined();expect(blocked.items[0].localOriginalBase64).toBeUndefined();expect(blocked.items[0].text).toBe('');
  expect((await readdir(root)).sort()).toEqual(['generated.m4a','masked-access.json','reference-access.json','text-masked-access.json']);
 });
 
-it('blocks complex formats with literal privacy masks without copying raw input',async()=>{const path=join(root,'generated.wav');await writeFile(path,'synthetic-private audio bytes');const result=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,extensions:['.wav'],redactLiterals:['synthetic-private']});expect(result.items[0].document?.fileIndex?.status).toBe('blocked');expect(result.items[0].localOriginal).toBeUndefined();expect(result.items[0].localOriginalBase64).toBeUndefined();expect(result.items[0].text).toBe('');});
+it('blocks complex formats with literal privacy masks without copying raw input',async()=>{const path=join(root,'generated.wav');await writeFile(path,'synthetic-private audio bytes');const result=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',extensions:['.wav'],redactLiterals:['synthetic-private']});expect(result.items[0].document?.fileIndex?.status).toBe('blocked');expect(result.items[0].localOriginal).toBeUndefined();expect(result.items[0].localOriginalBase64).toBeUndefined();expect(result.items[0].text).toBe('');});
 
 describe('directory root availability and complete scans', () => {
   const files = ['a.md','b.md','c.md','d.md'];

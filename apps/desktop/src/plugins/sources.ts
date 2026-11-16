@@ -1,3 +1,4 @@
+import {connectionToken} from '../login-session';
 /** Mac sources plugin: owns LocalSourceManager, the source adapters, native
  * watchers, durable source jobs and the only source IPC surface. The renderer
  * receives only the declared read/write services; source paths and native
@@ -78,13 +79,13 @@ const labelFor = (channel: string): string | undefined => {
 };
 
 export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugin {
-  const manager = new LocalSourceManager(
+  const manager:LocalSourceManager = new LocalSourceManager(
     options.directory, options.settings(), options.helperPath, true,
-    options.events as EventJournal | undefined,
+    options.events as EventJournal | undefined,undefined,()=>meetings.connectionActivity(),
   );
-  const meetings = new MeetingRecordingManager({
+  const meetings:MeetingRecordingManager = new MeetingRecordingManager({
     directory: join(options.directory, 'meetings'),
-    connection: () => options.settings(),
+    connection: () => {const settings=options.settings();return {...settings,token:connectionToken(settings),generation:manager.connectionGeneration};},
     backend: new NativeMeetingAudioBackend(options.helperPath),
     permissions: meetingRecordingPermissions,
     platform: 'macos',

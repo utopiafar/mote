@@ -51,7 +51,7 @@ it('keeps multiple Chinese diary revisions, emoji and combining characters exact
     }
     mode = 'ok'; const pending = (await queue.next())!;
     await uploadCapture(config, pending.record.event, pending.image); await uploadCapture(config, pending.record.event, pending.image);
-    await queue.acknowledge(saved.id); expect(queue.stats().depth).toBe(0);
+    await queue.acknowledge(saved.id,undefined,'https://central.example'); expect(queue.stats().depth).toBe(0);
   }
   expect(new Set(ids).size).toBe(3); expect(accepted.size).toBe(3);
   for (const [i, id] of ids.entries()) { const payload = JSON.parse(accepted.get(id)!); expect(payload.ocrText).toBe(bodies[i]);expect(payload.metadata.ownerDescription).toBe('Generated owner description '+i); expect(payload.imageBase64).toBeUndefined(); }

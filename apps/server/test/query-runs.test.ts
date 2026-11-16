@@ -11,11 +11,11 @@ import {hostRun,hostTerminal,hostUsage} from './fixtures/host-run.js';
 const token='generated-query-owner-token',headers={authorization:`Bearer ${token}`};
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 test('background admission survives client departure, deduplicates and persists progress, result and usage',async t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-query-runs-'));let complete!:()=>void,calls=0,heldRun='';
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-runs-'));let complete!:()=>void,entered!:()=>void,calls=0,heldRun='';const started=new Promise<void>(resolve=>{entered=resolve;});
   const agent:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{
     lease?.onFinalizer?.('host');
     calls++;input.onProgress?.({stage:'tool',tool:'search_context',phase:'started'});
-    heldRun=hostUsage(input,{requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});
+    heldRun=hostUsage(input,{requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});entered();
     await new Promise<void>(r=>{complete=r;});input.onProgress?.({stage:'tool',tool:'search_context',phase:'completed',count:3});
     hostTerminal(input,'completed',heldRun);
     return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};
@@ -23,7 +23,7 @@ test('background admission survives client departure, deduplicates and persists 
   const {app,store}=await buildApp(config(dir),{agent});t.after(async()=>{complete?.();await app.close();rmSync(dir,{recursive:true,force:true});});
   const id=randomUUID(),payload={id,input:{question:'Generated question'}};
   const accepted=await app.inject({method:'POST',url:'/api/query-runs',headers,payload});assert.equal(accepted.statusCode,202);
-  await new Promise(r=>setImmediate(r));
+  await started;
   const active=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();assert.equal(active.status,'running');assert.equal(active.events[0].phase,'started');
   assert.equal((await app.inject({method:'POST',url:'/api/query-runs',headers,payload})).statusCode,202);assert.equal(calls,1);
   assert.equal((await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'different'}}})).statusCode,409);

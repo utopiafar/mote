@@ -8,12 +8,14 @@ test('rejects JSON and old SQLite source states without converting or clearing t
  await rm(path);const db=new DatabaseSync(path+'.sqlite');db.exec('CREATE TABLE entries(section TEXT,key TEXT,value BLOB)');db.prepare('INSERT INTO entries VALUES(?,?,?)').run('state','version',Buffer.from('2'));db.close();
  const before=await readFile(path+'.sqlite');assert.throws(()=>sourceState(path),/Unsupported desktop storage format/);assert.deepEqual(await readFile(path+'.sqlite'),before);
 });
-test('current row outbox capacity rolls back with its checkpoint and ACK deletes only its own revision',async()=>{
+test('current row outbox storage failure rolls back with its checkpoint and ACK deletes only its own revision',async()=>{
  const path=await fixture(),before={version:4,known:{a:{revision:'1'}},pendingRealtime:[{externalId:'one',revision:'1'}],pendingHistory:[],checkpoint:{cursor:1}};
  sourceState(path,sourceStatePatch({},before));assert.deepEqual(sourceState(path),before);
  const next={...before,checkpoint:{cursor:2},pendingRealtime:[{externalId:'one',revision:'2',body:'x'.repeat(1000)}]};
- assert.throws(()=>sourceState(path,sourceStatePatch(before,next),100),/队列已满/);assert.deepEqual(sourceState(path),before);
- const ack={...before,pendingRealtime:[],checkpoint:{cursor:2}};sourceState(path,sourceStatePatch(before,ack),100);assert.deepEqual(sourceState(path),ack);
+ const failing=new DatabaseSync(path+'.sqlite');failing.exec("CREATE TRIGGER reject_pending BEFORE INSERT ON entries WHEN new.section='pendingRealtime' BEGIN SELECT RAISE(ABORT,'generated write failure'); END");failing.close();
+ assert.throws(()=>sourceState(path,sourceStatePatch(before,next)),/generated write failure/);assert.deepEqual(sourceState(path),before);
+ const repair=new DatabaseSync(path+'.sqlite');repair.exec('DROP TRIGGER reject_pending');repair.close();sourceState(path,sourceStatePatch(before,next));assert.deepEqual(sourceState(path),next);
+ const ack={...before,pendingRealtime:[],checkpoint:{cursor:2}};sourceState(path,sourceStatePatch(next,ack));assert.deepEqual(sourceState(path),ack);
  const inspect=new DatabaseSync(path+'.sqlite');assert.equal(inspect.prepare('PRAGMA user_version').get()!.user_version,4);inspect.close();
 });
 test('current initialization waits for a concurrent transaction',async()=>{

@@ -11,6 +11,8 @@ export interface MediaRuntimeSettings {
   localImageEndpoint?: string;
 }
 export interface MediaConfiguration extends MediaRuntimeSettings {
+  /** Explicit Docker resources; never enables a processing plugin or model work. */
+  dockerWorkers?:('ocr'|'asr')[];
   modelDirectory: string;
   python: string;
   ocrPort: number;

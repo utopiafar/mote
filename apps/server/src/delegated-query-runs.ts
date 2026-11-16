@@ -53,7 +53,8 @@ export class DelegatedQueryRuns {
         const id=work.id.slice('query:'.length),input=saved as SavedInput;
         try{
           const prepared=await callbacks.prepare(input.hostRequest,work,signal,event=>this.observe(id,event));
-          runtime.recordEvidence(work.id,[...(prepared.contextEvidenceDependencies?.ids??[]),...(prepared.conversation?.evidenceDependencies?.ids??[]),...(prepared.directImages?.map(image=>image.id)??[])]);
+          // The query preparation owner records exact original/Memory roles
+          // in its publication transaction; do not flatten its closed lineage here.
           return prepared;
         }catch(error){if(!signal.aborted)this.rememberFailure(id,error);throw this.executionFailure(error,id);}
       },

@@ -87,7 +87,7 @@ export interface MemoryLifecycleRuntimeDependencies {
   readonly whenReady?:(task:()=>void)=>void;
   readonly semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
   readonly providerCooldownCheck?:()=>void;
-  readonly insights?:InsightRuns;
+  readonly insights?:InsightRuns|false;
   readonly insightTimeout?:()=>number|null;
   readonly query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;
   readonly replacements?:readonly LifecycleExtension[];

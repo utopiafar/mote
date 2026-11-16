@@ -29,7 +29,7 @@ export function captureStatusFacts(status: Pick<Status, 'config' | 'facts' | 'qu
     captureEnabled: status.running || status.state === 'error',
     captureLive: status.running && status.state !== 'error',
     permission: status.state === 'permission_required' ? 'missing' : null,
-    storageFull: status.queueBytes >= status.config.maxQueueBytes || status.queueDepth >= status.config.maxQueueEvents,
+    storageFull: false,
     interrupted: status.state === 'error',
     syncState,
     pending: status.queueDepth,
