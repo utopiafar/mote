@@ -97,7 +97,13 @@ Running on a real host:
 - **Host-bound identity and state.** The host supplies `ctx.state` scoped to
   the package installation; the plugin never chooses a package,
   installation, instance or activation identity. `ctx.state` persists across
-  restarts and disable/re-enable; writes use `compareAndSet`.
+  restarts and disable/re-enable; writes use `compareAndSet`. Connector state
+  can pass `{sourceId, syncScopeVersion}` as its fourth argument to reject a
+  checkpoint after the host-owned source scope changes. The host checks this
+  condition in the same SQLite write transaction, using the connector's
+  verified `sourceKinds`; generic state handles cannot use source conditions.
+  This adds no namespace or per-instance source ownership authority. Source
+  ingestion and status publication must separately pin the same scope version.
 - **Lifecycle.** Factories construct domain objects only inside `create` /
   `createPlugin`. `prepare` builds and loads; `start` publishes; `quiesce`
   stops accepting new work; `stop` drains accepted work; `close`/`dispose`

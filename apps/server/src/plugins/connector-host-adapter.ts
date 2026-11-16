@@ -30,7 +30,7 @@ export interface ConnectorHostAdapterOptions {
   /** H05 fixes this to the actual installed instance scope. */
   readonly scopeFor:ConnectorScopeFactory;
   /** Trusted persistent state binding for each installed instance scope. */
-  readonly stateFor?:(scope:HostScope)=>StateStore;
+  readonly stateFor?:(scope:HostScope,sourceKinds:readonly string[])=>StateStore;
   readonly statusScope:HostScope;
   /** Trusted transport slot only; ordinary plugins get no raw context here. */
   readonly transport?:(instance:ConnectorInstance)=>void|Promise<void>;
@@ -143,9 +143,9 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     pluginStates:options.pluginStates,
     ...(options.transport?{transport:options.transport}:{}),
     activationFor:(manifest:ConnectorManifest)=>activations.get(manifest.id),
-    ...(options.stateFor?{stateFor:(_manifest:ConnectorManifest,scope?:HostScope)=>{
+    ...(options.stateFor?{stateFor:(manifest:ConnectorManifest,scope?:HostScope)=>{
       if(!scope)throw Error('Connector state scope is unavailable');
-      return options.stateFor!(scope);
+      return options.stateFor!(scope,manifest.sourceKinds.map(entry=>typeof entry==='string'?entry:entry.kind));
     }}:{}),
   });
   const manifests=new Map(options.manifests.map(manifest=>[manifest.id,manifest])),retiring=new Set<Promise<void>>(),pendingHot=new Set<Promise<void>>(),hotById=new Map<string,Promise<void>>(),lateCleanupFailures:unknown[]=[];

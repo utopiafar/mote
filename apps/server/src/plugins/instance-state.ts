@@ -2,9 +2,10 @@ import {createHash} from 'node:crypto';
 import type {HostScope} from '@mote/plugin-host';
 import {
   StateError, stateLimits,
-  type StateCheckpoint, type StateLimits, type StateRecord, type StateStore, type StateValue,
+  type StateCheckpoint, type StateLimits, type StateRecord, type StateStore, type StateValue, type StateWriteCondition,
 } from '@mote/plugin-api';
 import type {Store} from '../store.js';
+import {sourceIdSchema} from '@mote/shared';
 
 type Row = {key: string; json: string; bytes: number; revision: number; updated_at: string};
 type Namespace = {readonly packageId: string; readonly installationId: string; readonly instanceId: string};
@@ -44,7 +45,7 @@ class InstanceState implements StateStore {
   private readonly namespace: Namespace;
   private readonly limits: StateLimits;
 
-  constructor(private readonly store: Store, private readonly scope: HostScope, limits: StateLimits = stateLimits) {
+  constructor(private readonly store: Store, private readonly scope: HostScope, limits: StateLimits = stateLimits, private readonly sourceKinds: readonly string[] = []) {
     this.namespace = Object.freeze({
       packageId: scope.identity.packageId,
       installationId: scope.identity.installationId,
@@ -74,13 +75,17 @@ class InstanceState implements StateStore {
     });
   }
 
-  compareAndSet(key: string, expectedRevision: number | null, value: StateValue, ...namespace: never[]): Promise<StateRecord> {
+  compareAndSet(key: string, expectedRevision: number | null, value: StateValue, condition?: StateWriteCondition, ...namespace: never[]): Promise<StateRecord> {
     return this.admit(() => {
       this.rejectNamespace(namespace);
+      if (condition !== undefined) {
+        if (!condition || typeof condition !== 'object' || Array.isArray(condition) || Object.keys(condition).sort().join(',') !== 'sourceId,syncScopeVersion') throw new StateError('invalid_namespace');
+        if (!sourceIdSchema.safeParse(condition.sourceId).success || !Number.isSafeInteger(condition.syncScopeVersion) || condition.syncScopeVersion < 0) throw new StateError('invalid_condition');
+      }
       this.key(key);
       if (expectedRevision !== null && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) throw new StateError('invalid_revision');
       const json = this.serialize(value);
-      return this.write(key, expectedRevision, json, Buffer.byteLength(json));
+      return this.write(key, expectedRevision, json, Buffer.byteLength(json), condition);
     });
   }
 
@@ -101,11 +106,15 @@ class InstanceState implements StateStore {
     });
   }
 
-  private write(key: string, expectedRevision: number | null, json: string, bytes: number): StateRecord {
+  private write(key: string, expectedRevision: number | null, json: string, bytes: number, condition?: StateWriteCondition): StateRecord {
     const db = this.store.db, now = new Date().toISOString(), keyBytes = Buffer.byteLength(key);
     db.exec('BEGIN IMMEDIATE');
     try {
       this.current();
+      if (condition) {
+        const source = db.prepare("SELECT COALESCE(json_extract(json,'$.syncScopeVersion'),0) version,json_extract(json,'$.enabled') enabled FROM source_connections WHERE id=? AND json_extract(json,'$.kind') IN (SELECT value FROM json_each(?))").get(condition.sourceId,JSON.stringify(this.sourceKinds));
+        if (!source || source.enabled !== 1 || source.version !== condition.syncScopeVersion) throw new StateError('condition_failed');
+      }
       const existing = this.row(key);
       const usage = db.prepare(`SELECT COALESCE(SUM(bytes + length(CAST(key AS BLOB))),0) AS bytes, COUNT(*) AS records
         FROM plugin_instance_state WHERE package_id=? AND installation_id=? AND instance_id=?`).get(...this.values()) as {bytes: number; records: number};
@@ -212,8 +221,9 @@ class InstanceState implements StateStore {
   }
 }
 
-/** Trusted factory: the handle binds itself to the real activation scope. No
- * public state method accepts an identity, namespace, validator or SQL. */
-export function createInstanceState(store: Store, scope: HostScope, limits: StateLimits = stateLimits): StateStore {
-  return new InstanceState(store, scope, limits);
+/** Trusted factory: the handle binds its activation namespace and permitted
+ * connector source kinds. Ordinary state has no source-condition permission.
+ * Public methods accept no instance identity, namespace, validator or SQL. */
+export function createInstanceState(store: Store, scope: HostScope, limits: StateLimits = stateLimits, sourceKinds: readonly string[] = []): StateStore {
+  return new InstanceState(store, scope, limits, Object.freeze([...sourceKinds]));
 }
