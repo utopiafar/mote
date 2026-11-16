@@ -4,7 +4,7 @@ import {TASK_DESCRIPTOR_API_VERSION,TASK_OUTPUT_SCHEMA,type SkillDescriptor,type
 import {defaultTaskRegistry,type TaskRegistry} from './registry.js';
 
 export const IMPORT_TASK_VERSION = '1';
-export const IMPORT_SKILL_VERSION = '1.0.6';
+export const IMPORT_SKILL_VERSION = '1.0.7';
 export const IMPORT_TASK_ID = 'import';
 export const IMPORT_SKILL_ID = 'document-import';
 /** Import never receives archive tools. Its provider owns a separate writable

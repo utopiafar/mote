@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {DeepSeekHarness} from '@deepseek-ai/dsh-sdk-client';
 import type {AgentOptions} from '@mote/agent';
@@ -50,7 +51,7 @@ function fixture(t:any,options:{capability?:ImportCapabilityFactory;hostAuthoriz
   t.after(async()=>{
     await imports.stop();await host.close();await executor.close();authorization.close();store.close();rmSync(directory,{recursive:true,force:true});
   });
-  return {directory,store,files,imports,authorization,connection};
+  return {directory,store,files,sources,imports,authorization,connection};
 }
 
 async function ownerPrepare(imports:ImportStore,authorization:BackgroundModelAuthorization,connection:{id:string;fingerprint:string},id:string){
@@ -82,7 +83,7 @@ test('DSH fixture preview is consumed by ImportRuntime and manifest while archiv
       {path:request.inputPaths[1],status:'attachment',reason:'Generated retained attachment'},
     ]}));
     return {events:[],finalResponse:JSON.stringify({summary:'Generated preview summary',recordsPath:'records.jsonl',
-      warnings:['Generated preview warning'],reviewDecision:{confidence:'low',ambiguous:true,reason:'Generated review ambiguity'}})};
+      warnings:['Generated preview warning'],reviewDecision:{confidence:'low',ambiguous:true,requiresConfirmation:true,reason:'Generated review ambiguity'}})};
   });
   t.mock.method(DeepSeekHarness.prototype,'close',async()=>{});
 
@@ -133,7 +134,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   send({id:m.id,result:{turn:{id:'generated-turn'}}});
   writeFileSync('records.jsonl',JSON.stringify({item:{externalId:'generated-codex-diary',revision:'v1',observedAt:'2026-09-15T12:00:00Z',kind:'file',layer:'original',title:'Generated Codex diary title',text:original,document:{recordedAt:'2020-01-01T10:00:00Z',timeBasis:'recorded',contentRole:'authored'}},evidencePaths:[request.inputPaths[0]],attachments:[attachment]})+'\\n');
   writeFileSync('dispositions.json',JSON.stringify({items:[{path:request.inputPaths[0],status:'parsed',reason:'Generated authored text'},{path:attachment,status:'attachment',reason:'Generated retained attachment'}]}));
-  send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify({summary:'Generated Codex preview summary',recordsPath:'records.jsonl',warnings:['Generated Codex preview warning'],reviewDecision:{confidence:'low',ambiguous:true,reason:'Generated Codex review ambiguity'}})}}});
+  send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify({summary:'Generated Codex preview summary',recordsPath:'records.jsonl',warnings:['Generated Codex preview warning'],reviewDecision:{confidence:'low',ambiguous:true,requiresConfirmation:true,reason:'Generated Codex review ambiguity'}})}}});
   send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'completed'}}});
  }
 });
@@ -171,6 +172,97 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   assert.equal(evidence.provenance?.document?.recordedAt,'2020-01-01T10:00:00Z');
 });
 
+for(const protocol of ['openai-completions','codex-app-server'] as const)test(`${protocol} carries owner context through the real import host and confirmation contract`,{timeout:30000},async t=>{
+  const root=mkdtempSync(join(tmpdir(),'mote-import-context-')),converter=join(root,'generated-converter.mjs'),control=join(root,'controlled-result.json'),rpcPath=join(root,'rpc.ndjson');
+  const instruction='文件名开头八位是日记日期 YYYYMMDD。这是朋友林的合成日记，不是我的经历。只整理原文；日期可修订，不需要精确时区；引用保留第三方主体。';
+  const criticalInstruction='文件名开头八位是日记日期。这批合成资料混有我和他人的日记，正文未标作者；必须区分主体，不得把他人的经历归到我。';
+  const original='合成日记原文：今天整理了旧书。\n保留引用：“先保留原文。”';
+  const skill=readFileSync(new URL('../../../packages/agent/skills/document-import/SKILL.md',import.meta.url),'utf8');
+  const decision={confidence:'low',ambiguous:true,requiresConfirmation:false,reason:'用户已解释命名与第三方主体。日期仅用于低影响整理，可修订；未知钟点和时区不改变原文或观测时间。'};
+  writeFileSync(converter,`import {readFileSync,writeFileSync} from 'node:fs';
+import {basename,join} from 'node:path';
+export async function prepare(request,decision){
+ const original=readFileSync(request.inputPaths[0],'utf8'),filename=basename(request.inputPaths[0]);
+ const interpretation={kind:'inference',subject:decision.requiresConfirmation?'unknown':'林',date:'2020-01-02',sourceFilename:filename,basis:request.instruction,uncertainty:'Clock time and time zone are unknown',revisable:true};
+ writeFileSync(join(request.workspace,'records.jsonl'),JSON.stringify({item:{externalId:filename,revision:'generated-1',observedAt:request.importedAt,kind:'file',layer:'original',title:filename,text:original,document:{contentRole:'authored',timeBasis:'unknown',originalMetadata:{importInterpretation:interpretation}}},evidencePaths:[request.inputPaths[0]],attachments:[]})+'\\n');
+ writeFileSync(join(request.workspace,'dispositions.json'),JSON.stringify({items:[{path:request.inputPaths[0],status:'parsed',reason:'Generated exact original text'}]}));
+ const helper=await import(request.helperPath);const checked=await helper.validateRecords(join(request.workspace,'records.jsonl'));if(!checked.valid)throw Error(JSON.stringify(checked));
+ return {summary:'合成日记原文已保留；日期为基于说明的可修订推断。',recordsPath:'records.jsonl',warnings:['精确钟点和时区未知，未写成原始时间戳。'],reviewDecision:decision};
+}
+`,{mode:0o600});
+  const requests:any[]=[];
+  let codex:AgentOptions['codex'];
+  if(protocol==='openai-completions'){
+    const generated=await import(pathToFileURL(converter).href);
+    t.mock.method(DeepSeekHarness.prototype,'run',async function(prompt:string){
+      const request=JSON.parse(prompt);requests.push(request);
+      const options=this.client.options,registered=JSON.parse(options.env!.MOTE_SKILLS!);
+      assert.equal(registered[0].version,'1.0.7');assert.equal(registered[0].content,skill);
+      const patch=JSON.parse(readFileSync(options.patches![0],'utf8'));assert.equal(patch.find((entry:any)=>entry.id==='system-prompt').config.personaPrefix,skill);
+      return {events:[],finalResponse:JSON.stringify(await generated.prepare(request,JSON.parse(readFileSync(control,'utf8'))))};
+    });
+    t.mock.method(DeepSeekHarness.prototype,'close',async()=>{});
+  }else{
+    const executable=join(root,'generated-codex.mjs');
+    writeFileSync(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused'}),{mode:0o600});
+    writeFileSync(executable,`#!${process.execPath}
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
+import readline from 'node:readline';
+import {appendFileSync,readFileSync} from 'node:fs';
+import {prepare} from ${JSON.stringify(pathToFileURL(converter).href)};
+const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+readline.createInterface({input:process.stdin}).on('line',async line=>{
+ const m=JSON.parse(line);appendFileSync(${JSON.stringify(rpcPath)},JSON.stringify(m)+'\\n');
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'context-thread',model:m.params.model},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'workspaceWrite'}}});
+ else if(m.method==='turn/start'){
+  send({id:m.id,result:{turn:{id:'context-turn'}}});
+  const result=await prepare(JSON.parse(m.params.input[0].text),JSON.parse(readFileSync(${JSON.stringify(control)},'utf8')));
+  send({method:'item/completed',params:{threadId:'context-thread',item:{id:'context-message',type:'agentMessage',text:JSON.stringify(result)}}});
+  send({method:'turn/completed',params:{threadId:'context-thread',turn:{status:'completed'}}});
+ }
+});
+`,{mode:0o700});
+    codex={executable,home:root};
+  }
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const selected=protocol==='codex-app-server'?{...settings,provider:'codex',protocol,model:'generated-codex-model',baseUrl:'',apiKey:'',reasoningEffort:'auto',modelRequestTimeoutMs:null} as ModelSettings:settings;
+  const {store,files,sources,imports,authorization,connection}=fixture(t,{settings:selected,codex});
+  const create=(processing:'automatic'|'preview',suffix:string,context=instruction)=>imports.create({processing,instruction:context,files:[{name:'20200102-note-'+suffix+'.custom',dataBase64:Buffer.from(original).toString('base64')}]});
+  const prepare=(id:string)=>ownerPrepare(imports,authorization,connection,id);
+  writeFileSync(control,JSON.stringify(decision));
+  const automatic=await create('automatic','automatic'),done=await prepare(automatic.id);
+  assert.equal(done.status,'completed',done.error);assert.equal(done.reviewGate?.decision,'automatic');assert.equal(done.reviewDecision?.confidence,'low');assert.equal(done.reviewDecision?.ambiguous,true);assert.equal(done.reviewGate?.reason,decision.reason);assert.equal(done.warnings.length,1);
+  assert.equal(done.progress.imported,1);assert.equal(store.list().items.length,1);
+  const source=sources.getItem(done.sourceId,automatic.files[0].name)!;
+  const interpretation=source.document?.originalMetadata?.importInterpretation as Record<string,unknown>;
+  assert.equal(source.text,original);assert.equal(source.document?.recordedAt,undefined);assert.equal(source.document?.occurredAt,undefined);assert.equal(source.document?.timeBasis,'unknown');
+  assert.deepEqual(interpretation,{kind:'inference',subject:'林',date:'2020-01-02',sourceFilename:automatic.files[0].name,basis:instruction,uncertainty:'Clock time and time zone are unknown',revisable:true});
+  assert.notEqual(source.observedAt.slice(0,10),interpretation.date);assert.equal(files.read(automatic.files[0].id).toString(),original);
+  const criticalReason='缺少来源主体的关键说明会改变归属，需先确认这批材料属于谁。';
+  writeFileSync(control,JSON.stringify({...decision,confidence:'high',ambiguous:false,requiresConfirmation:true,reason:criticalReason}));
+  const critical=await create('automatic','critical',criticalInstruction),held=await prepare(critical.id);
+  assert.equal(held.status,'awaiting_confirmation');assert.equal(held.reviewGate?.reason,criticalReason);assert.deepEqual(held.captureIds,[]);assert.equal(store.list().items.length,1);
+  const revised=instruction+' 已确认整批均为林的日记。';imports.updateInstruction(critical.id,revised);
+  writeFileSync(control,JSON.stringify(decision));const recovered=await prepare(critical.id);
+  assert.equal(recovered.status,'completed');assert.equal(store.list().items.length,2);
+  assert.equal((sources.getItem(recovered.sourceId,critical.files[0].name)!.document!.originalMetadata!.importInterpretation as Record<string,unknown>).basis,revised);
+  const manual=await create('preview','preview'),preview=await prepare(manual.id);
+  assert.equal(preview.status,'awaiting_confirmation');assert.match(preview.reviewGate?.reason??'',/manual preview/);assert.deepEqual(preview.captureIds,[]);assert.equal(store.list().items.length,2);
+  assert.equal((await imports.confirm(manual.id)).status,'completed');assert.equal(store.list().items.length,3);
+  if(protocol==='codex-app-server'){
+    const rpc=readFileSync(rpcPath,'utf8').trim().split('\n').map(line=>JSON.parse(line)),threads=rpc.filter(message=>message.method==='thread/start');
+    for(const {params}of threads){assert.equal(params.baseInstructions,skill);assert.equal(params.ephemeral,true);assert.equal(params.sandbox,'workspace-write');assert.deepEqual(params.dynamicTools,[]);}
+    for(const {params}of rpc.filter(message=>message.method==='turn/start')){assert.ok(params.outputSchema.properties.reviewDecision.required.includes('requiresConfirmation'));requests.push(JSON.parse(params.input[0].text));}
+  }
+  assert.equal(requests.length,4);assert.deepEqual(requests.map(request=>request.instruction),[instruction,criticalInstruction,revised,instruction]);
+  for(const request of requests){assert.equal(request.requiredSkill,'document-import');assert.equal(request.taskId,'import');assert.equal(request.taskVersion,'1');assert.equal(request.inputPaths.length,1);assert.equal(request.archive,undefined);assert.equal(request.memory,undefined);}
+  assert.equal(source.observedAt,requests[0].importedAt);
+  const {MaterialStore}=await import('../src/materials.js'),context=new MaterialStore(store).contextForEvidence(store.evidence(done.captureIds)[0]);
+  assert.equal(context.importStatements?.[0].instruction,instruction);assert.equal(context.ownerRelation,'unknown');
+});
+
 test('a cancelled import cannot publish a late manifest from the DSH fixture',{timeout:30000},async t=>{
   const {store,files,imports,authorization,connection}=fixture(t);
   let entered!:()=>void,release!:()=>void;
@@ -182,11 +274,11 @@ test('a cancelled import cannot publish a late manifest from the DSH fixture',{t
       evidencePaths:[request.inputPaths[0]],attachments:[],
     })+'\n');
     writeFileSync(join(request.workspace,'dispositions.json'),JSON.stringify({items:[{path:request.inputPaths[0],status:'parsed',reason:'Generated late text'}]}));
-    return {events:[],finalResponse:JSON.stringify({summary:'Generated late preview'})};
+    return {events:[],finalResponse:JSON.stringify({summary:'Generated late preview',reviewDecision:{confidence:'high',ambiguous:false,requiresConfirmation:false,reason:'Generated exact source mapping'}})};
   });
   t.mock.method(DeepSeekHarness.prototype,'close',async()=>{});
 
-  const created=await imports.create({processing:'preview',files:[generatedInput('Generated cancellation original')]});
+  const created=await imports.create({processing:'automatic',files:[generatedInput('Generated cancellation original')]});
   const pending=ownerPrepare(imports,authorization,connection,created.id);
   await started;
   assert.equal(imports.cancel(created.id).status,'cancelled');

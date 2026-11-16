@@ -71,7 +71,7 @@ test('a link-only diary record attaches host-retained ZIP media through helper, 
   writeFileSync(join(input.workspace,'dispositions.json'),JSON.stringify({items:input.inputPaths.map(path=>({path,status:'parsed',reason:'Generated diary text'}))}));
   const prepared=prepareImportInput(input),helper=await import(pathToFileURL(prepared.helperPath).href);
   assert.deepEqual(await helper.validateRecords('records.jsonl'),{valid:true,count:1,errors:[]});
-  return {summary:'Generated diary; media extraction follows confirmation.',reviewDecision:{confidence:'high',ambiguous:false,reason:'Explicit generated source mapping'}};
+  return {summary:'Generated diary; media extraction follows confirmation.',reviewDecision:{confidence:'high',ambiguous:false,requiresConfirmation:false,reason:'Explicit generated source mapping'}};
  });
  const job=await f.create([entry('diary.zip',Buffer.from(zipSync({'diary.md':Buffer.from(text),'assets/photo.png':png})))],'preview','Preserve diary entries and image references');
  assert.equal(job.status,'awaiting_confirmation',JSON.stringify(job));assert.deepEqual(job.warnings,[]);
@@ -101,10 +101,11 @@ test('ZIP AppleDouble members are retained and explicitly excluded by bytes whil
  await f.restart();assert.deepEqual(f.node.archivedFiles.read(excluded.fileId),metadata);await f.node.processing.tick();assert.equal(f.calls.length,0);
 });
 
-test('a metadata-only original produces an accounted preview without a model or image job',async t=>{
+test('a metadata-only original retains excluded accounting without a zero-output success, model or image job',async t=>{
  const f=await fixture(t),metadata=generatedAppleDouble(),job=await f.create([entry('looks-like-a-photo.jpg',metadata)]);
- assert.equal(job.status,'awaiting_confirmation',JSON.stringify(job));assert.equal(job.dispositions?.counts.excluded,1);assert.equal(job.media?.length,0);assert.equal(job.preview?.count,0);
- const confirmed=await withFixtureOwnerModelWork(f.node,()=>f.node.imports.confirm(job.id));assert.equal(confirmed.status,'completed');assert.equal(confirmed.captureIds.length,0);
+ assert.equal(job.status,'unsupported',JSON.stringify(job));assert.equal(job.dispositions?.counts.excluded,1);assert.equal(job.dispositions?.counts.unsupported,0);assert.match(job.dispositions!.items[0].reason,/AppleDouble/);assert.equal(job.media?.length,0);assert.equal(job.preview?.count,0);assert.equal(job.captureIds.length,0);
+ await assert.rejects(withFixtureOwnerModelWork(f.node,()=>f.node.imports.confirm(job.id)),{statusCode:409});
+ assert.equal(f.node.imports.get(job.id).status,'unsupported');assert.match(job.error??'',/no searchable text or media work/);
  assert.deepEqual(f.node.archivedFiles.read(job.files[0].id),metadata);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
 });
 
