@@ -4,7 +4,7 @@
  * supplies the deterministic packer as development tooling only; package
  * files never import repository source. Pass `--mote PATH` or set
  * MOTE_REPOSITORY to a Mote checkout. */
-import {cp, mkdir, mkdtemp, rm} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -15,10 +15,10 @@ import {packageManifestSchema} from '@mote/plugin-sdk';
 const packageRoot = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const {values} = parseArgs({
   args: process.argv.slice(2),
-  options: {mote: {type: 'string'}, out: {type: 'string'}, help: {type: 'boolean', short: 'h'}},
+  options: {mote: {type: 'string'}, out: {type: 'string'}, 'data-only': {type: 'boolean'}, help: {type: 'boolean', short: 'h'}},
 });
 if (values.help) {
-  console.info('Usage: node scripts/pack.mjs [--mote PATH] [--out DIR]');
+  console.info('Usage: node scripts/pack.mjs [--mote PATH] [--out DIR] [--data-only]');
   process.exit(0);
 }
 const moteInput = values.mote ?? process.env.MOTE_REPOSITORY;
@@ -27,6 +27,7 @@ const mote = resolve(moteInput);
 const {packPlugin} = await import(pathToFileURL(join(mote, 'scripts/plugin-pack.mjs')).href);
 const repositoryRequire = createRequire(join(mote, 'package.json'));
 const {unzipSync} = repositoryRequire('fflate');
+const {build} = repositoryRequire('esbuild');
 
 /** Same archive boundary the release resolver enforces: relative paths only,
  * the package entry and every declared contribution entry must be present. */
@@ -46,12 +47,26 @@ const work = await mkdtemp(join(tmpdir(), 'mote-plugin-pack-'));
 try {
   const payload = join(work, 'payload');
   await mkdir(payload, {recursive: true, mode: 0o700});
-  for (const file of ['plugin.mjs', 'domain.mjs', 'port.mjs', 'source.mjs', 'seed.mjs', 'package.json', 'README.md'])
+  for (const file of ['package.json', 'README.md'])
     await cp(join(packageRoot, file), join(payload, file));
-  await cp(join(packageRoot, 'web'), join(payload, 'web'), {recursive: true});
+  // Installed profiles have no development node_modules. Ship the public SDK
+  // contract used by the entry as part of its self-contained ESM payload.
+  await build({entryPoints: [join(packageRoot, 'plugin.mjs')], outfile: join(payload, 'plugin.mjs'), bundle: true, platform: 'node', format: 'esm', logLevel: 'silent'});
+  let manifestPath = join(packageRoot, 'mote-plugin.json');
+  if (values['data-only']) {
+    const manifest = packageManifestSchema.parse(JSON.parse(await readFile(manifestPath, 'utf8')));
+    const contributions = manifest.contributions.filter(value => value.surface === 'data' && value.runtime === 'service');
+    const capabilities = new Set(contributions.flatMap(value => value.capabilities ?? []));
+    manifestPath = join(work, 'data-manifest.json');
+    await writeFile(manifestPath, JSON.stringify({...manifest, contributions, capabilities: manifest.capabilities.filter(id => capabilities.has(id))}));
+  } else {
+    // Keep the separate presentation declaration and payload. Its host must
+    // actually support loading it before the full release can report ready.
+    await cp(join(packageRoot, 'web'), join(payload, 'web'), {recursive: true});
+  }
   const out = resolve(packageRoot, values.out ?? 'dist');
   const result = await packPlugin({
-    manifestPath: join(packageRoot, 'mote-plugin.json'),
+    manifestPath,
     payload,
     out,
     manifestSchema: packageManifestSchema,

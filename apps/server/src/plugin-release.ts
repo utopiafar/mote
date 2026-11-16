@@ -67,9 +67,9 @@ const parseJson=(bytes:Uint8Array)=>JSON.parse(new TextDecoder().decode(bytes)) 
 function assertSupportedManifest(manifest:PluginManifest){
   if(manifest.runtime==='service'){
     const surfaces=new Set((manifest.contributions??[]).map(contribution=>contribution.surface));
-    // Central activates connector/processing service packages; other service
+    // Central activates connector/processing/data service packages; other service
     // ABIs still require a host that publishes them.
-    if(!surfaces.has('ingress')&&!surfaces.has('processing'))throw new StoreError('This release requires a service runtime that this host does not provide',422);
+    if(!surfaces.has('ingress')&&!surfaces.has('processing')&&!(manifest.contributions??[]).some(value=>value.surface==='data'&&value.runtime==='service'))throw new StoreError('This release requires a service runtime that this host does not provide',422);
   }
 }
 

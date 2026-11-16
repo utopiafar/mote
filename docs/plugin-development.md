@@ -3,7 +3,7 @@
 Mote plugins are developed outside the repository against the public
 `@mote/plugin-sdk` contract. This page describes the three runnable SDK
 templates, when to pick each, and how the generated projects build and run on
-a real host. All templates use generated fixtures and private plugin-dev
+a real host. All templates use generated fixtures and private
 profiles only — never vault scans, personal data, credentials or models.
 
 The complete author reference for every current public surface — 16
@@ -32,7 +32,7 @@ by the host and are not covered by these templates.
 | --- | --- | --- | --- |
 | `connector` — ordinary integration | `examples/external-plugin` | A repository-external Source plugin package: declares source kinds, uses injected `ctx.state`, publishes owner-only routes. | `plugin-dev dev` package install |
 | `worker` — deep runtime | `examples/worker-plugin` | A packaged `runtime: "worker"` plugin: `createMemoryProvider` ABI executed inside the dedicated plugin-worker process over JSON lines with per-call cancellation and drained shutdown. | Plugin-center release (`/api/plugins`) |
-| `domain` — new domain | `examples/domain-plugin` | A packaged `runtime: "service"` domain: typed port (`serviceContract`), host-bound lifecycle (`prepare`/`start`/`quiesce`/`stop`/`dispose`), durable `ctx.state`, custom page — plus a connector adapter as the deployment seam. | `PluginHost`; `plugin-dev dev` via adapter |
+| `domain` — new domain | `examples/domain-plugin` | A service-runtime data domain with typed port, lifecycle and durable `ctx.state`, plus a separate page declaration. | Explicit `--data-only` release through Plugin Center; real `PluginHost` typed leases |
 
 Use `connector` for an external source or integration that fits the
 connector manifest (`apiVersion`, `id`, `sourceKinds`, `create`). Use
@@ -57,7 +57,7 @@ node scripts/mote.mjs plugin-dev create /external/my-plugin --template connector
 `create` copies the whole template directory (never `node_modules`,
 `vendor`, `dist` or `archive` — those are generated), installs the SDK
 tarball, and rewrites the dependency to `file:vendor/...`. The generated
-project is self-contained and buildable without the monorepo.
+runtime uses the public SDK; the release packer is supplied by the Mote checkout.
 
 ## Building and running
 
@@ -73,7 +73,7 @@ Every generated project supports `npm run build`:
 
 Running on a real host:
 
-- `connector` and `domain` (via their declared ingress contribution):
+- `connector`:
   `node scripts/mote.mjs plugin-dev dev --plugin /external/my-plugin --once --seed`.
   This creates a private plugin-dev-owned profile (ownership marker, native,
   loopback, non-prod, storage inside the private home), validates
@@ -82,9 +82,19 @@ Running on a real host:
   routes, runs the generated seed and stops. Reusing `--home`/`--profile`
   proves `ctx.state` persistence across restarts. Configuration never selects
   executable modules.
-- `domain` additionally runs on the SDK host directly: the generated
+- `domain` builds with `npm run build -- --data-only` install through the same fixed-release Plugin Center
+  path, with a service-runtime `data` contribution and no ingress requirement.
+  Check validates the lifecycle and typed ports without live publication or
+  state writes; explicit enablement publishes them into the existing host.
+  The generated
   project's `npm test` installs the package on a real `PluginHost` (from
   `@mote/plugin-sdk/node`) and exercises the typed port through a lease.
+  Its optional source/seed files require an explicitly declared ingress adapter
+  for `plugin-dev dev`; the explicitly selected data-only release omits ingress.
+  The default build preserves the separate page declaration and HTML. That full
+  artifact stays blocked with `collection.page` unknown until its presentation
+  host actually supports installed-page loading; it is not a production-ready
+  whole-template claim.
 - `worker` artifacts install through the plugin-center release path: the
   host resolves a pinned release, verifies the archive digest, expands the
   payload, creates an instance with the declared `dataFile` configuration
@@ -148,14 +158,16 @@ done
 
 # [K] Real host installs and runs the built artifacts
 node scripts/mote.mjs plugin-dev dev --plugin /tmp/gen-connector --home /tmp/dev-home-connector --once --seed
-node scripts/mote.mjs plugin-dev dev --plugin /tmp/gen-domain --home /tmp/dev-home-domain --once --seed
+# domain: the formal release fixture builds the template, installs its archive,
+# enables it and consumes the actual typed port in an isolated Central profile.
+npm run test:file -w @mote/server -- test/plugin-production-domain.test.ts
 # worker: expand dist/*.zip to a private directory and run it under the real
 # worker runtime; the repository test probes health/CRUD/scope/restart.
 ```
 
-The `domain` seed itself checks one error branch (invalid input must fail
-through the real mount with the domain's mapped error, never as a silent
-success).
+The optional domain ingress fixture explicitly adds that adapter declaration
+before checking owner-route writes and mapped invalid-input failures. The data
+installation fixture exercises the production path independently.
 
 ## Scanning generated artifacts
 
@@ -191,7 +203,11 @@ standard home, temporary or repository directories.
 
 A new source declares explicit source kinds and uses the existing connector/source-pipeline services. A processing contribution registers `moteContextProcessors`; file decoders use `moteFileProcessors`. The [text-normalization example](../examples/text-normalization-plugin) demonstrates deterministic processing. Owner workflows at `POST /api/processing/workflows` name processors and versioned original/artifact inputs, and can use `dependsOn` for a DAG. The host retains authorization, cancellation, measured usage, output bounds and commit checks. Lane names (`extract`, `aggregate`, `semantic`, `memory`) are scheduling categories, not semantic intent classifiers.
 
-Self-contained `runtime: "service"` releases with a processing contribution and `processing.pack` export their Cordis plugin as `backendPlugin` or `default`. Plugin Center checks declarations in an isolated host scope, then explicit enablement publishes them into the same production registries. Supported registration ports are `moteContextProcessors`, `moteFileProcessors`, `moteFileOutputs`, `moteFileRecipes`, `moteImportIntake`, `moteImageInputs`, `moteImageRecipes` and `moteMaterialConsumers`. Only registration methods are passed, without Store access; declarations must complete during plugin application. Empty declarations, unsupported injected ports, invalid definitions and publication conflicts block activation. Registration cleanup and guarded callbacks belong to the installed instance scope, so disabling or changing its configuration withdraws the old implementation and prevents late output publication. A failed package does not remove another instance's registrations. This path does not enable pure domain or presentation packages.
+Self-contained `runtime: "service"` releases with a processing contribution and `processing.pack` export their Cordis plugin as `backendPlugin` or `default`. Plugin Center checks declarations in an isolated host scope, then explicit enablement publishes them into the same production registries. Supported registration ports are `moteContextProcessors`, `moteFileProcessors`, `moteFileOutputs`, `moteFileRecipes`, `moteImportIntake`, `moteImageInputs`, `moteImageRecipes` and `moteMaterialConsumers`. Only registration methods are passed, without Store access; declarations must complete during plugin application. Empty declarations, unsupported injected ports, invalid definitions and publication conflicts block activation. Registration cleanup and guarded callbacks belong to the installed instance scope, so disabling or changing its configuration withdraws the old implementation and prevents late output publication. A failed package does not remove another instance's registrations.
+
+Pure data service releases use the [domain template](../examples/domain-plugin). The entry exports `manifest` (`apiVersion: 1`, matching package ID/version, data contributions, capability IDs, `required` and `optional` dependency declarations) and `createPlugin(context, {configuration, required, optional})`. Data declarations match the verified package, use its entry, and provide distinct `kind: "service"`, `cardinality: "single"` ports with one exact API version per contribution. The factory receives host-bound `scope`, `state`, `services` and `provide`, plus configuration and exact resolved dependency bindings. Construct the domain in the factory, load in `prepare`, publish every declared port in `start`, and release resources in the remaining lifecycle phases. A capability summary may be empty; the actual typed declaration still needs a successful check for the current configuration.
+
+Check uses the real PluginHost lifecycle with staged port publication and read-only instance state. Enable alone publishes actual typed services; missing ports, undeclared ports/APIs, module claims beyond the verified Manifest and lifecycle failures block readiness and release partial publications. `context.services.acquire(contract, binding)` accepts only the resolved required/optional pins. Required service/package/contribution/host dependencies must resolve to exact live providers, multiple matching providers are an explicit ambiguity, and dependencies are never enabled automatically. Normal restart restores already-enabled providers before consumers; dependency withdrawal aborts the pinned consumer and projects it blocked, while a new explicit check/enable can acquire a fresh binding. Stop fences old leases and state writes, including asynchronous startup and late results. State stays in the same instance namespace across disable and restart. Installed page/theme/layout activation remains a separate host boundary.
 
 Installing or upgrading a consumer does not scan history or grant model work. Versioned outputs, source scope, runtime removal and current installation identity control reuse and publication. Disabling presentation does not revoke or enable processing. A native application can keep internal workflows while connecting authorized Mote context, visible state and artifacts. See [material and consumer contracts](plugin-surfaces.md#material-and-processing-contracts), [materials](materials.md), [processing](processing.md) and [Memory](memory.md).
 

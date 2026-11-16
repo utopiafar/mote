@@ -61,13 +61,22 @@ test('[U] every template generates a plugin project that builds in a temporary d
   }
 });
 
-test('[K] the real Central host installs and runs the generated connector and domain plugins',async t=>{
+test('[K] the real Central host installs the generated connector and an explicitly selected domain ingress adapter',async t=>{
   const base=await mkdtemp(join(tmpdir(),'mote-ext03-k-'));
   t.after(async()=>{await rm(base,{recursive:true,force:true});});
   const tarball=await packSdk(t);
   for(const template of['connector','domain']){
     const project=join(base,template);
     create(tarball,project,template);
+    if(template==='domain'){
+      // The production domain template is data-only. This existing dev-route
+      // fixture explicitly selects its optional source adapter and retains the
+      // real owner-route/error assertions below. Formal data installation is
+      // exercised by plugin-production-domain.test.ts.
+      const file=join(project,'mote-plugin.json'),manifest=JSON.parse(await readFile(file,'utf8'));
+      manifest.contributions.push({id:'template-collection.connector',version:'1',surface:'ingress',runtime:'service',entry:'source.mjs',capabilities:['source.connector']});
+      manifest.capabilities.push('source.connector');await writeFile(file,JSON.stringify(manifest));
+    }
     const output=run(['dev','--plugin',project,'--home',join(base,'home-'+template),'--once','--seed']);
     const lines=jsonLines(output);
     const result=lines.at(-1);
