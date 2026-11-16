@@ -70,6 +70,9 @@ export class LarkConnector{
   private disconnecting=false;
   private reading?:Promise<{calendars:LarkCalendar[]}>;
   private readController?:AbortController;
+  private calendarGeneration=0;
+  private calendarAbort=new AbortController();
+  private calendarWrites=new Set<Promise<ConnectorActionReceipt>>();
   constructor(private ctx:LarkContext,runner?:LarkRunner){const dir=ctx.directory;this.file=new PrivateFile(dir,'lark.json');this.runner=runner??createLarkRunner(dir);}
   async init(){const saved=await this.file.read();if(saved)this.saved=savedSchema.parse(saved);this.initialized=true;this.configureSyncInterval(this.ctx.syncIntervalMs??900000);}
   configureSyncInterval(intervalMs:number){
@@ -85,28 +88,30 @@ export class LarkConnector{
     if(this.active||this.reading||this.disconnecting)return this.status();
     return this.checking??=this.probe().finally(()=>{this.checking=undefined;});
   }
-  private async probe():Promise<LarkStatus>{
-    try{const version=await this.runner({kind:'version'});const match=version.match(/\b(\d+\.\d+\.\d+)\b/);this.snapshot={installed:true,version:match?.[1],configured:false,connected:false,missingScopes:[]};}
-    catch(e){this.snapshot={installed:false,configured:false,connected:false,missingScopes:[],error:this.code(e)};return this.status();}
+  private async probe(signal?:AbortSignal):Promise<LarkStatus>{
+    const current=()=>{if(signal?.aborted)throw new ConnectorError('lark_operation_cancelled',409);};
+    const run=(command:LarkCommand)=>{current();return signal?this.calendarPreflight(this.runner(command,{signal}),signal):this.runner(command);};
+    try{const version=await run({kind:'version'});current();const match=version.match(/\b(\d+\.\d+\.\d+)\b/);this.snapshot={installed:true,version:match?.[1],configured:false,connected:false,missingScopes:[]};}
+    catch(e){if(signal?.aborted)throw e;this.snapshot={installed:false,configured:false,connected:false,missingScopes:[],error:this.code(e)};return this.status();}
     try{
-      const data=larkJson(await this.runner({kind:'status'})),user=data.identities?.user;
+      const raw=await run({kind:'status'});current();const data=larkJson(raw),user=data.identities?.user;
       this.snapshot.configured=typeof data.appId==='string'&&data.appId.length>0;
       const granted=new Set<string>(typeof user?.scope==='string'?user.scope.split(/\s+/):[]);this.grantedScopes=granted;
       // A live provider check may withdraw Mote's stored write authorization,
       // but it never turns an ordinary read login into write authorization.
-      if(this.saved.calendarWriteAuthorized===true&&!larkCalendarWriteScopesOk([...granted])){this.saved={...this.saved,calendarWriteAuthorized:false};await this.file.write(this.saved);}
+      if(this.saved.calendarWriteAuthorized===true&&!larkCalendarWriteScopesOk([...granted])){this.invalidateCalendarActions();this.saved={...this.saved,calendarWriteAuthorized:false};await this.file.write(this.saved);current();}
       this.snapshot.missingScopes=missingScopes(this.saved.selection,granted);
       this.snapshot.connected=user?.available===true&&typeof user?.openId==='string';
       this.snapshot.accountName=typeof user?.userName==='string'?user.userName.slice(0,200):undefined;
       this.account=this.snapshot.connected?hash(`${data.appId}:${user.openId}`):undefined;
-      if(this.saved.account&&this.account&&this.saved.account!==this.account){await this.pauseSources();this.saved={version:1,enabled:false,selection:defaults()};await this.file.write(this.saved);this.snapshot.error='lark_account_changed';}
-    }catch(e){this.snapshot.error=this.code(e);this.account=undefined;}
+      if(this.saved.account&&this.account&&this.saved.account!==this.account){this.invalidateCalendarActions();await this.pauseSources();this.saved={version:1,enabled:false,selection:defaults()};await this.file.write(this.saved);this.snapshot.error='lark_account_changed';}
+    }catch(e){if(signal?.aborted)throw e;this.snapshot.error=this.code(e);this.account=undefined;}
     return this.status();
   }
   private code(error:unknown){return error instanceof ConnectorError?error.code:error instanceof z.ZodError?'lark_response_invalid':'lark_operation_failed';}
   private assertIdle(){if(this.closed)throw new ConnectorError('connector_closed',503);if(this.active||this.checking||this.reading||this.disconnecting)throw new ConnectorError('lark_busy',409);}
   private start(kind:LarkJob['kind'],work:(signal:AbortSignal,job:LarkJob)=>Promise<void>,documentsOnly=false):LarkJob{
-    this.assertIdle();const job:LarkJob={id:randomUUID(),kind,state:'running'};this.job=job;const controller=new AbortController();this.controller=controller;
+    this.assertIdle();if(['login','configure','setup','selection'].includes(kind))this.invalidateCalendarActions();const job:LarkJob={id:randomUUID(),kind,state:'running'};this.job=job;const controller=new AbortController();this.controller=controller;
     this.active=Promise.resolve().then(()=>work(controller.signal,job)).then(()=>{job.state='completed';delete this.snapshot.error;}).catch(e=>{job.state=controller.signal.aborted?'cancelled':'failed';job.error=this.code(e);this.snapshot.error=job.error;if(kind==='sync')this.reportSources('error',job.error,documentsOnly);}).finally(()=>{delete job.authorizationUrl;delete job.expiresAt;this.active=undefined;this.controller=undefined;});
     return {...job};
   }
@@ -151,12 +156,12 @@ export class LarkConnector{
     const expires=AbortSignal.timeout(data.expires_in*1000);
     try{await this.run({kind:'complete',deviceCode:data.device_code},AbortSignal.any([signal,expires]));}catch(e){if(expires.aborted&&!signal.aborted)throw new ConnectorError('lark_authorization_expired',409);throw e;}
   }
-  async cancel(){this.controller?.abort();await this.active;return this.status();}
+  async cancel(){this.invalidateCalendarActions();this.controller?.abort();await this.active;await Promise.allSettled([...this.calendarWrites]);return this.status();}
   private sourceId(kind:'docs'|'calendar',id=''){return `lark-${kind}-${hash(`${this.saved.account}:${id}`).slice(0,24)}`;}
   private async pauseSources(){if(!this.saved.account)return;for(const id of [this.sourceId('docs'),...this.saved.selection.calendarIds.map(id=>this.sourceId('calendar',id))]){try{this.ctx.sources.update(id,{enabled:false});}catch{}}}
   private async disable(){await this.pauseSources();this.saved={...this.saved,enabled:false};await this.file.write(this.saved);}
-  async disconnect(){if(this.disconnecting)throw new ConnectorError('lark_busy',409);this.disconnecting=true;try{this.readController?.abort();await this.reading?.catch(()=>{});await this.checking;await this.cancel();await this.disable();const next={...this.saved,calendarWriteAuthorized:false};await this.file.write(next);this.saved=next;return this.status();}finally{this.disconnecting=false;}}
-  private async requireConnected(){await this.probe();if(!this.snapshot.connected||!this.saved.enabled||!this.account||this.account!==this.saved.account)throw new ConnectorError('lark_not_connected',409);}
+  async disconnect(){if(this.disconnecting)throw new ConnectorError('lark_busy',409);this.disconnecting=true;this.invalidateCalendarActions();try{this.readController?.abort();await this.reading?.catch(()=>{});await this.checking;await this.cancel();await this.disable();const next={...this.saved,calendarWriteAuthorized:false};await this.file.write(next);this.saved=next;return this.status();}finally{this.disconnecting=false;}}
+  private async requireConnected(signal?:AbortSignal){await this.probe(signal);if(signal?.aborted)throw new ConnectorError('lark_operation_cancelled',409);if(!this.snapshot.connected||!this.saved.enabled||!this.account||this.account!==this.saved.account)throw new ConnectorError('lark_not_connected',409);}
   private async listCalendars(signal?:AbortSignal):Promise<LarkCalendar[]>{
     let token:string|undefined;const all:LarkCalendar[]=[];const seen=new Set<string>();
     for(let page=0;page<30;page++){
@@ -244,13 +249,25 @@ export class LarkConnector{
     const next={...this.saved,lastSyncAt:now()};await this.file.write(next);this.saved=next;
   },Boolean(reference));}
   calendarActionProviders():ActionPluginProvider[]{
-    if(!this.saved.enabled||this.saved.calendarWriteAuthorized!==true)return [];
+    if(this.closed||this.disconnecting||this.changingCalendarScope()||!this.saved.enabled||this.saved.calendarWriteAuthorized!==true)return [];
     return this.saved.selection.calendarIds.map(calendarId=>({identity:builtinIdentity,name:moteText("飞书日历 · {0}", calendarId.slice(0,80)),capability:centralCalendarCapability,calendarId}));
   }
   disconnectWriteAuthorization(){return this.start('selection',async()=>{
     const next={...this.saved,calendarWriteAuthorized:false};await this.file.write(next);this.saved=next;
   });}
-  async executeAction(request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
+  private changingCalendarScope(){return Boolean(this.active&&this.job&&['login','configure','setup','selection'].includes(this.job.kind));}
+  private invalidateCalendarActions(){this.calendarGeneration++;this.calendarAbort.abort();if(!this.closed)this.calendarAbort=new AbortController();}
+  /** Read-only preflight may finish late even if the runner ignores abort. Its
+   * result must never resume a withdrawn execution or mutate the live account. */
+  private async calendarPreflight<T>(task:Promise<T>,signal:AbortSignal):Promise<T>{
+    let cancel!:()=>void;
+    try{return await Promise.race([task,new Promise<never>((_,reject)=>{cancel=()=>reject(new ConnectorError('lark_operation_cancelled',409));signal.addEventListener('abort',cancel,{once:true});if(signal.aborted)cancel();})]);}
+    finally{signal.removeEventListener('abort',cancel);}
+  }
+  executeAction(request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
+    const task=this.performAction(request);this.calendarWrites.add(task);void task.then(()=>this.calendarWrites.delete(task),()=>this.calendarWrites.delete(task));return task;
+  }
+  private async performAction(request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
     if(this.closed)throw new ConnectorError('connector_closed',503);
     if(request.capability?.id!=='calendar.manage'||request.capability.version!==1)throw new ConnectorError('lark_calendar_action_unsupported',403);
     if(typeof request.operationId!=='string'||!request.operationId)throw new ConnectorError('lark_calendar_operation_required',400);
@@ -259,11 +276,20 @@ export class LarkConnector{
     if(!isCentralConnectorActionTarget(input.target)||!input.target.calendarId)throw new ConnectorError('lark_calendar_target_required',400);
     const calendarId=input.target.calendarId;
     if(!this.saved.selection.calendarIds.includes(calendarId))throw new ConnectorError('lark_calendar_target_not_selected',403);
-    await this.requireConnected();
-    if(this.saved.calendarWriteAuthorized!==true||!larkCalendarWriteScopesOk([...this.grantedScopes]))throw new ConnectorError('lark_calendar_write_not_authorized',403);
+    const generation=this.calendarGeneration,signal=this.calendarAbort.signal,account=this.saved.account;
+    const authorize=()=>{
+      if(this.closed)throw new ConnectorError('connector_closed',503);
+      if(signal.aborted||generation!==this.calendarGeneration||this.disconnecting||this.changingCalendarScope()||this.saved.account!==account)throw new ConnectorError('lark_calendar_scope_changed',409);
+      if(!this.saved.selection.calendarIds.includes(calendarId))throw new ConnectorError('lark_calendar_target_not_selected',403);
+      if(!this.saved.enabled||this.saved.calendarWriteAuthorized!==true)throw new ConnectorError('lark_calendar_write_not_authorized',403);
+    };
+    authorize();await this.requireConnected(signal);authorize();
+    if(!larkCalendarWriteScopesOk([...this.grantedScopes]))throw new ConnectorError('lark_calendar_write_not_authorized',403);
+    // Once dispatched, cancellation is only a request to the runner. Consume a
+    // real receipt or leave the host operation uncertain; never claim rollback.
     if(input.kind==='calendar.create'){
       const event=calendarEventSchema.parse(input.event),data=this.eventBody(event,request);
-      const raw=larkJson(await this.runner({kind:'calendar-event-create',calendarId,data}));
+      const raw=larkJson(await this.runner({kind:'calendar-event-create',calendarId,data},{signal}));
       const id=raw?.data?.event?.event_id??raw?.event?.event_id;
       if(typeof id!=='string'||!id)throw new ConnectorError('lark_event_receipt_missing',502);
       return {status:'succeeded',externalId:id.slice(0,1000)};
@@ -272,10 +298,10 @@ export class LarkConnector{
     if(!externalId)throw new ConnectorError('lark_event_identity_required',400);
     if(input.kind==='calendar.update'){
       const event=calendarEventSchema.parse(input.event),data=this.eventBody(event,request);
-      larkJson(await this.runner({kind:'calendar-event-update',calendarId,eventId:externalId,data}));
+      larkJson(await this.runner({kind:'calendar-event-update',calendarId,eventId:externalId,data},{signal}));
       return {status:'succeeded',externalId};
     }
-    larkJson(await this.runner({kind:'calendar-event-delete',calendarId,eventId:externalId}));
+    larkJson(await this.runner({kind:'calendar-event-delete',calendarId,eventId:externalId},{signal}));
     return {status:'succeeded',externalId};
   }
   private eventBody(event:CalendarDraft,request:ConnectorActionExecution){
@@ -283,5 +309,5 @@ export class LarkConnector{
     const boundary=(value:string|null)=>event.allDay?{date:value,timezone:event.timeZone??'UTC'}:{timestamp:String(Math.floor(Date.parse(value!)/1000)),timezone:event.timeZone??'UTC'};
     return {summary:event.title,...(description?{description}:{}),start_time:boundary(event.start),end_time:boundary(event.end),...(event.location?{location:{name:event.location}}:{})};
   }
-  async close(){this.closed=true;clearInterval(this.timer);this.timer=undefined;this.controller?.abort();this.readController?.abort();await this.reading?.catch(()=>{});await this.active;await this.checking;await this.file.flush();}
+  async close(){this.closed=true;this.invalidateCalendarActions();clearInterval(this.timer);this.timer=undefined;this.controller?.abort();this.readController?.abort();await this.reading?.catch(()=>{});await this.active;await this.checking;await Promise.allSettled([...this.calendarWrites]);await this.file.flush();}
 }

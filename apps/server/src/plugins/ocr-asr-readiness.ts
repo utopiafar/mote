@@ -18,7 +18,7 @@ export const ocrAsrReadinessDeclaration={id:ocrAsrReadinessContribution.id,apiVe
 export const ocrAsrReadinessReplacement='hot' as const;
 
 export type OcrAsrReadinessPhase='created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed';
-export type MediaReadinessPort=Pick<MediaPreparation,'status'|'statuses'|'start'|'cancel'|'stop'|'restart'|'preparing'>&{readonly phase:OcrAsrReadinessPhase;assertCurrent():void};
+export type MediaReadinessPort=Pick<MediaPreparation,'status'|'statuses'|'prepare'|'start'|'cancel'|'stop'|'restart'|'preparing'>&{readonly phase:OcrAsrReadinessPhase;assertCurrent():void};
 type PreparationOptions=ConstructorParameters<typeof MediaPreparation>[0];
 export interface OcrAsrReadinessDependencies {
   readonly runtime:PreparationOptions['runtime'];
@@ -69,6 +69,7 @@ export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):
     preparing:(role,endpoint)=>phase==='active'&&Boolean(current?.preparing(role,endpoint)),
     status:role=>readable().status(role),
     statuses:()=>readable().statuses(),
+    prepare:role=>active().prepare(role),
     start:(role,allowInstall)=>active().start(role,allowInstall),
     cancel:role=>readable().cancel(role),
     stop:role=>readable().stop(role),

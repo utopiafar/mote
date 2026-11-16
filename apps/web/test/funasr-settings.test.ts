@@ -15,7 +15,7 @@ import {MEDIA_CATALOG} from '../../server/src/media-assets.js';
 import {audioCentral,audioDom,deferred,until} from './fixtures/funasr-ui.js';
 
 test('audio settings consume real Central installation and worker HTTP statuses without showing the retired backend',async t=>{
- let health:Record<string,unknown>={protocol:'mote.funasr/1',asr:false,diarization:false,missingDependencies:['funasr','torch']};
+ let health:Record<string,unknown>={protocol:'mote.funasr/1',execution:'local',asr:false,diarization:false,missingDependencies:['funasr','torch']};
  const worker=createServer((request,response)=>{assert.equal(request.headers.authorization,'Bearer generated-audio-health');response.setHeader('content-type','application/json');response.end(JSON.stringify(health));});
  worker.listen(0,'127.0.0.1');await once(worker,'listening');t.after(async()=>{worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));});
  const f=await audioCentral(t,{mediaWorker:{endpoint:`http://127.0.0.1:${(worker.address() as {port:number}).port}/transcribe`,token:'generated-audio-health'}}),ui=await audioDom(t),before=f.node.modelAuthorization.view();
@@ -27,7 +27,7 @@ test('audio settings consume real Central installation and worker HTTP statuses 
  const refresh=async()=>act(async()=>resources(f.api).invalidate(path=>path==='/api/media-models'||path==='/api/media-preparation'));
  await refresh();await until(()=>ui.d.body.textContent!.includes('缺少运行依赖：funasr, torch'));
  assert.match(ui.d.querySelector('.audio-model-status')!.textContent!,/模型已准备，音频或图片服务尚未就绪/);assert.match(ui.d.body.textContent!,/generated-ui-funasr/);
- health={protocol:'mote.funasr/1',asr:true,diarization:true,missingDependencies:[],identity:f.bundle.request.identity};await refresh();await until(()=>ui.d.querySelector('.audio-model-status [role=status]')?.textContent==='可使用');
+ health={protocol:'mote.funasr/1',execution:'local',asr:true,diarization:true,missingDependencies:[],identity:f.bundle.request.identity};await refresh();await until(()=>ui.d.querySelector('.audio-model-status [role=status]')?.textContent==='可使用');
  const actual=f.responses.filter(response=>response.path==='/api/media-models').at(-1)!;assert.equal(mediaModelsViewSchema.parse(JSON.parse(actual.body)).dialogue!.runtimeReady,true);
  health={version:2,asr:true,diarization:true,missingDependencies:['faster_whisper','sherpa_onnx']};await refresh();await until(()=>ui.d.querySelector('.audio-model-status [role=status]')?.textContent?.includes('尚未就绪')===true);
  assert.doesNotMatch(ui.d.body.textContent!,/faster_whisper|sherpa_onnx|WeSpeaker/);assert.deepEqual(f.node.modelAuthorization.view(),before);

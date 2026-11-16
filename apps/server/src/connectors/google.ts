@@ -65,6 +65,8 @@ export class GoogleCalendarConnector {
   private running?:Promise<{imported:number;duplicates:number;calendars:number}>;
   private sequence:Promise<unknown>=Promise.resolve();
   private closed=false;private timer?:ReturnType<typeof setInterval>;private abort=new AbortController();
+  private calendarGeneration=0;private calendarAbort=new AbortController();private calendarChanging=0;
+  private calendarWrites=new Set<Promise<ConnectorActionReceipt>>();
   private initialized=false;private syncIntervalMs?:number;
   private state:'idle'|'syncing'|'error'|'permission_required'='idle';private code?:string;private lastSyncAt?:string;
   private readonly fetcher:typeof fetch;private readonly clock:()=>number;
@@ -75,6 +77,17 @@ export class GoogleCalendarConnector {
   private serialize<T>(operation:()=>Promise<T>):Promise<T>{
     const result=this.sequence.catch(()=>{}).then(()=>{if(this.closed)throw new ConnectorError('connector_closed',503);return operation();});
     this.sequence=result.catch(()=>{});return result;
+  }
+  private invalidateCalendarActions(){this.calendarGeneration++;this.calendarAbort.abort();if(!this.closed)this.calendarAbort=new AbortController();}
+  private changeCalendarScope<T>(operation:()=>Promise<T>):Promise<T>{
+    this.invalidateCalendarActions();this.calendarChanging++;return this.serialize(operation).finally(()=>{this.calendarChanging--;});
+  }
+  /** Cancel a token preflight without trusting the OAuth implementation to
+   * observe abort; only the live generation may proceed to the write request. */
+  private async calendarPreflight<T>(task:Promise<T>,signal:AbortSignal):Promise<T>{
+    let cancel!:()=>void;
+    try{return await Promise.race([task,new Promise<never>((_,reject)=>{cancel=()=>reject(new ConnectorError('google_calendar_scope_changed',409));signal.addEventListener('abort',cancel,{once:true});if(signal.aborted)cancel();})]);}
+    finally{signal.removeEventListener('abort',cancel);}
   }
   get configured(){const c=this.ctx.configuration;return Boolean(c?.googleClientId&&c.googleClientSecret&&c.googleRedirectUri);}
   status(){return {configured:this.configured,connected:Boolean(this.saved.tokens.refresh_token||this.saved.tokens.access_token),writeConnected:this.writeAuthorized(),selectedCalendarIds:this.saved.calendars.map(c=>c.id),state:this.state,...(this.code?{code:this.code}:{}),...(this.lastSyncAt?{lastSyncAt:this.lastSyncAt}:{})};}
@@ -117,7 +130,7 @@ export class GoogleCalendarConnector {
   async callback(state:string,code:string){
     const request=this.pending.get(state);this.pending.delete(state);
     if(this.closed||!request||request.expires<this.clock())throw new ConnectorError('google_state_invalid',400);
-    return this.serialize(async()=>{
+    return this.changeCalendarScope(async()=>{
       let tokens:Credentials;
       try{({tokens}=await this.oauth().getToken({code,codeVerifier:request.verifier}));}catch{throw new ConnectorError('google_authorization_failed',400);}
       if(this.closed)throw new ConnectorError('connector_closed',503);
@@ -136,12 +149,15 @@ export class GoogleCalendarConnector {
     });
   }
   /** Owner-facing stop for Mote's write path. Google's own grant is unchanged. */
-  disconnectWrite(){return this.serialize(async()=>{if(this.saved.write){const {write:_,...next}=this.saved;await this.file.write(next as Saved);this.saved=next as Saved;}return this.status();});}
+  disconnectWrite(){return this.changeCalendarScope(async()=>{if(this.saved.write){const {write:_,...next}=this.saved;await this.file.write(next as Saved);this.saved=next as Saved;}return this.status();});}
   calendarActionProviders():ActionPluginProvider[]{
-    if(!this.status().connected||!this.writeAuthorized())return [];
+    if(this.closed||this.calendarChanging||!this.status().connected||!this.writeAuthorized())return [];
     return this.saved.calendars.map(calendar=>({identity:builtinIdentity,name:moteText("Google 日历 · {0}", calendar.summary),capability:centralCalendarCapability,calendarId:calendar.id}));
   }
-  async executeAction(request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
+  executeAction(request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
+    const task=this.performAction(request);this.calendarWrites.add(task);void task.then(()=>this.calendarWrites.delete(task),()=>this.calendarWrites.delete(task));return task;
+  }
+  private async performAction(request:ConnectorActionExecution):Promise<ConnectorActionReceipt>{
     if(this.closed)throw new ConnectorError('connector_closed',503);
     if(request.capability?.id!=='calendar.manage'||request.capability.version!==1)throw new ConnectorError('google_calendar_action_unsupported',403);
     if(typeof request.operationId!=='string'||!request.operationId)throw new ConnectorError('google_calendar_operation_required',400);
@@ -152,9 +168,16 @@ export class GoogleCalendarConnector {
     // One explicit, already selected calendar. Never guess or fan out.
     if(!this.saved.calendars.some(calendar=>calendar.id===calendarId))throw new ConnectorError('google_calendar_target_not_selected',403);
     if(!this.writeAuthorized())throw new ConnectorError('google_calendar_write_not_authorized',403);
+    const generation=this.calendarGeneration,signal=this.calendarAbort.signal,write=this.saved.write;
+    const authorize=()=>{
+      if(this.closed)throw new ConnectorError('connector_closed',503);
+      if(signal.aborted||generation!==this.calendarGeneration||this.calendarChanging||this.saved.write!==write)throw new ConnectorError('google_calendar_scope_changed',409);
+      if(!this.saved.calendars.some(calendar=>calendar.id===calendarId))throw new ConnectorError('google_calendar_target_not_selected',403);
+      if(!this.status().connected||!this.writeAuthorized())throw new ConnectorError('google_calendar_write_not_authorized',403);
+    };
     if(input.kind==='calendar.create'){
       const event=calendarEventSchema.parse(input.event),body=this.eventBody(event,request);
-      const created=await this.writeApi<{id?:string}>(`calendars/${encodeURIComponent(calendarId)}/events`,{method:'POST',body});
+      const created=await this.writeApi<{id?:string}>(`calendars/${encodeURIComponent(calendarId)}/events`,{method:'POST',body},authorize,signal);
       if(!created?.id)throw new ConnectorError('google_event_receipt_missing',502);
       return {status:'succeeded',externalId:created.id};
     }
@@ -162,10 +185,10 @@ export class GoogleCalendarConnector {
     if(!externalId)throw new ConnectorError('google_event_identity_required',400);
     if(input.kind==='calendar.update'){
       const event=calendarEventSchema.parse(input.event),body=this.eventBody(event,request);
-      const updated=await this.writeApi<{id?:string}>(`calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(externalId)}`,{method:'PATCH',body});
+      const updated=await this.writeApi<{id?:string}>(`calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(externalId)}`,{method:'PATCH',body},authorize,signal);
       return {status:'succeeded',externalId:updated?.id??externalId};
     }
-    await this.writeApi(`calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(externalId)}`,{method:'DELETE'});
+    await this.writeApi(`calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(externalId)}`,{method:'DELETE'},authorize,signal);
     return {status:'succeeded',externalId};
   }
   private eventBody(event:CalendarDraft,request:ConnectorActionExecution){
@@ -179,19 +202,20 @@ export class GoogleCalendarConnector {
       ...(request.input.actionId?{extendedProperties:{private:{moteActionId:request.input.actionId,moteOperationId:request.operationId}}}:{}),
     };
   }
-  private async writeApi<T=unknown>(path:string,init:{method:'POST'|'PATCH'|'DELETE';body?:unknown}):Promise<T|undefined>{
-    if(this.closed)throw new ConnectorError('connector_closed',503);
+  private async writeApi<T=unknown>(path:string,init:{method:'POST'|'PATCH'|'DELETE';body?:unknown},authorize:()=>void,signal:AbortSignal):Promise<T|undefined>{
+    authorize();
     const write=this.saved.write;if(!write)throw new ConnectorError('google_calendar_write_not_authorized',403);
     const oauth=this.oauth();oauth.setCredentials(write.tokens);
     let token:string|null|undefined;
-    try{token=(await oauth.getAccessToken()).token;}catch{throw new ConnectorError('google_calendar_write_authorization_required',403);}
-    if(this.closed)throw new ConnectorError('connector_closed',503);
+    try{token=(await this.calendarPreflight(oauth.getAccessToken(),signal)).token;}catch{authorize();throw new ConnectorError('google_calendar_write_authorization_required',403);}
+    authorize();
     if(!token)throw new ConnectorError('google_calendar_write_authorization_required',403);
     write.tokens={...write.tokens,...oauth.credentials,refresh_token:oauth.credentials.refresh_token??write.tokens.refresh_token};
     await this.file.write(this.saved);
+    authorize();
     const url=new URL(`https://www.googleapis.com/calendar/v3/${path}`);
-    const response=await this.fetcher(url,{method:init.method,headers:{Authorization:`Bearer ${token}`,...(init.body===undefined?{}:{'Content-Type':'application/json'})},...(init.body===undefined?{}:{body:JSON.stringify(init.body)}),redirect:'error',signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(20000)])});
-    if([401,403].includes(response.status)){delete this.saved.write;await this.file.write(this.saved);throw new ConnectorError('google_calendar_write_permission_required',403);}
+    const response=await this.fetcher(url,{method:init.method,headers:{Authorization:`Bearer ${token}`,...(init.body===undefined?{}:{'Content-Type':'application/json'})},...(init.body===undefined?{}:{body:JSON.stringify(init.body)}),redirect:'error',signal:AbortSignal.any([this.abort.signal,signal,AbortSignal.timeout(20000)])});
+    if([401,403].includes(response.status)){if(this.saved.write===write){this.invalidateCalendarActions();delete this.saved.write;await this.file.write(this.saved);}throw new ConnectorError('google_calendar_write_permission_required',403);}
     if([404,410].includes(response.status))throw new ConnectorError('google_calendar_event_not_found',404);
     if([429,503].includes(response.status))throw new ConnectorError('google_rate_limited',503);
     if(!response.ok)throw new ConnectorError('google_calendar_write_failed',502);
@@ -227,7 +251,7 @@ export class GoogleCalendarConnector {
     }
     throw new ConnectorError('google_calendar_limit',413);
   }
-  select(raw:unknown){return this.serialize(()=>this.selectCalendars(raw));}
+  async select(raw:unknown){const input=selectedCalendarsSchema.parse(raw);return this.changeCalendarScope(()=>this.selectCalendars(input));}
   private async selectCalendars(raw:unknown){
     const {calendarIds}=selectedCalendarsSchema.parse(raw);
     const available=(await this.listCalendars()).calendars,selected=calendarIds.map(id=>{const c=available.find(c=>c.id===id);if(!c)throw new ConnectorError('google_calendar_not_found',404);return {id:c.id,summary:c.summary,timeZone:c.timeZone,primary:c.primary};});
@@ -286,6 +310,6 @@ export class GoogleCalendarConnector {
       this.state='idle';this.lastSyncAt=now();return {imported,duplicates,calendars};
     }catch(error){this.code=error instanceof ConnectorError?error.code:'google_sync_failed';this.state=error instanceof ConnectorError&&[401,403].includes(error.statusCode)?'permission_required':'error';for(const c of this.saved.calendars)if(this.ctx.sources.getSource(this.sourceId(c.id)).enabled)this.ctx.sources.reportStatus(this.sourceId(c.id),{state:this.state,code:this.code});throw error instanceof ConnectorError?error:new ConnectorError('google_sync_failed',502);}
   }
-  disconnect(){return this.serialize(async()=>{for(const c of this.saved.calendars)this.ctx.sources.update(this.sourceId(c.id),{enabled:false});this.pending.clear();await this.file.clear();this.saved={version:1,tokens:{},calendars:[],checkpoints:{}};this.state='idle';this.code=undefined;return this.status();});}
-  async close(){this.closed=true;if(this.timer)clearInterval(this.timer);this.timer=undefined;this.pending.clear();this.abort.abort();await this.sequence;await this.file.flush();}
+  disconnect(){return this.changeCalendarScope(async()=>{for(const c of this.saved.calendars)this.ctx.sources.update(this.sourceId(c.id),{enabled:false});this.pending.clear();await this.file.clear();this.saved={version:1,tokens:{},calendars:[],checkpoints:{}};this.state='idle';this.code=undefined;return this.status();});}
+  async close(){this.closed=true;this.invalidateCalendarActions();if(this.timer)clearInterval(this.timer);this.timer=undefined;this.pending.clear();this.abort.abort();await this.sequence;await Promise.allSettled([...this.calendarWrites]);await this.file.flush();}
 }

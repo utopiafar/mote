@@ -69,7 +69,7 @@ Memory策略、不可变版本、输入授权和检查点保留在领域数据�
 
 模型设置见[模型服务](model-providers.md)。文件策略使用`processing.policy.services/profiles/rules`；插件参数受已安装处理器schema校验。模型目录与测试连接通过设置操作发起，连接测试只用合成输入，可能产生模型费用。
 
-受管媒体依赖按`ocr`、`dialogue`、`local-image`分别准备；`media-runtime --profile NAME --role ROLE`只准备环境，不代表Worker就绪。权重离线导入使用`media-import --role ocr|dialogue|speaker-wespeaker|local-image --from DIRECTORY`。安装、服务就绪和插件启用分别表达，见[媒体配置](media-setup.md)。
+受管媒体依赖按`ocr`、`dialogue`、`local-image`分别准备。本地识图页面在 Native macOS Apple Silicon 上通过同一媒体准备生命周期校验和修复 Python/MLX 依赖与模型资产，完成后仅表示已准备；现有插件启用或重试操作才启动 worker，不改变后台处理授权。Central 重启后保留模型已安装的事实，依赖需再次验证时会明确显示；未启用的 worker 停止属于正常状态。默认音频页准备完整 FunASR/CAM++ 安装，不提供无内置消费者的 WeSpeaker 安装入口。`media-runtime --profile NAME --role ROLE`仍可只准备环境，不代表 Worker 就绪；权重离线导入使用`media-import --role ocr|dialogue|speaker-wespeaker|local-image --from DIRECTORY`。安装、服务就绪和插件启用分别表达，见[媒体配置](media-setup.md)。
 
 ## 日志与调试
 

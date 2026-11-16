@@ -13,6 +13,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {MEDIA_CATALOG,MediaAssets} from '../src/media-assets.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
+import {generatedLocalImageSetup} from './fixtures/media-setup.js';
 
 async function installGeneratedOcr(t:TestContext,directory:string,modelDirectory:string){
  const prior=MEDIA_CATALOG.ocr,bundle=join(directory,'bundle'),tree=join(directory,'tree'),files=[];
@@ -42,12 +43,24 @@ test('preparation HTTP requires owner authority and cannot turn installation int
  assert.equal((await node.app.inject({url:'/api/media-preparation'})).statusCode,401);
  const invitation=node.connections.invite({serverUrl:'https://fixture.invalid',label:'Generated collector'},'collector');
  const collector=await node.connections.redeem({code:invitation.invitation.code,deviceId:'generated-collector',deviceName:'Generated collector',platform:'android'}),collectorHeaders={authorization:'Bearer '+collector.token};
- for(const [method,url] of [['GET','/api/media-preparation'],['POST','/api/media-preparation/ocr'],['POST','/api/media-preparation/ocr/cancel']] as const)assert.equal((await node.app.inject({method,url,headers:collectorHeaders,...(method==='POST'?{payload:{}}:{})})).statusCode,403);
+ for(const [method,url] of [['GET','/api/media-preparation'],['POST','/api/media-preparation/ocr'],['POST','/api/media-preparation/ocr/cancel'],['POST','/api/media-preparation/local-image'],['POST','/api/media-preparation/local-image/cancel']] as const)assert.equal((await node.app.inject({method,url,headers:collectorHeaders,...(method==='POST'?{payload:{}}:{})})).statusCode,403);
  const status=await node.app.inject({url:'/api/media-preparation',headers});assert.equal(status.statusCode,200);assert.equal(status.json().ocr.error,'runtime_unknown');
  assert.equal((await node.app.inject({method:'POST',url:'/api/media-preparation/ocr',headers,payload:{}})).statusCode,409);
+ assert.equal((await node.app.inject({method:'POST',url:'/api/media-preparation/local-image',headers,payload:{}})).statusCode,409,'local-image reaches the same lifecycle admission rather than failing role validation');
+ assert.equal((await node.app.inject({method:'POST',url:'/api/media-preparation/speaker-wespeaker',headers,payload:{}})).statusCode,400,'the retired installation entry is not a managed preparation role');
  assert.equal((await node.app.inject({method:'POST',url:'/api/media-preparation/unlisted',headers,payload:{}})).statusCode,400);
  assert.equal((await node.app.inject({method:'POST',url:'/api/media-preparation/ocr',headers,payload:{source:'https://untrusted.invalid'}})).statusCode,400);
  assert.deepEqual(node.modelAuthorization.view(),before);assert.deepEqual(node.perception.settings(),initialPerception);
+});
+
+test('a platform without managed local-image inference reports unsupported before invoking dependency or asset installation',async t=>{
+ const f=await generatedLocalImageSetup(t,'docker'),headers={authorization:'Bearer '+f.token};
+ const response=await f.node.app.inject({url:'/api/media-preparation',headers});assert.equal(response.statusCode,200);
+ assert.equal(response.json()['local-image'].state,'unsupported');assert.equal(response.json()['local-image'].error,'platform_unsupported');
+ assert.equal(response.json()['local-image'].runtimeReady,false);assert.equal(response.json()['local-image'].model.state,'not_installed');
+ const before=f.node.modelAuthorization.view();
+ const request=await f.node.app.inject({url:'/api/media-preparation/local-image',method:'POST',headers,payload:{}});assert.equal(request.statusCode,409);
+ assert.deepEqual(f.counts,{prepare:0,pip:0,probe:0});assert.deepEqual(f.node.modelAuthorization.view(),before);
 });
 
 
