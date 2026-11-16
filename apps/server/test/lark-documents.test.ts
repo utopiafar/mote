@@ -44,6 +44,14 @@ async function fixture(t:any){
 }
 function matches(...ids:string[]){return {results:ids.map(id=>({title:`Generated ${id}`,result_meta:{url:url(id)}})),has_more:false};}
 
+test('a real Lark long-body producer resumes a new revision after Central history deletion with no readable prior file',async t=>{
+ const f=await fixture(t);f.state.content.set('DocumentDiary123','Generated original long document. '.repeat(6000));await f.c.select({...selection,documentDiscovery:undefined,documents:[url('DocumentDiary123')]});f.c.startSync();assert.equal((await done(f.c)).job?.state,'completed');
+ const source=f.sources.listSources()[0],first=f.sources.getItem(source.id,'DocumentDiary123')!;assert.ok(first);const manifest=JSON.parse(f.files.version(first.captureId).manifest);assert.equal(f.files.deleteArchive(first.captureId).deleted,1);assert.equal(f.sources.getItem(source.id,'DocumentDiary123'),undefined);assert.deepEqual(f.files.syncHead(source.id,'DocumentDiary123'),{revision:first.revision,forgotten:false});
+ f.state.documentRevision++;const replacement='Generated next long document. '.repeat(6000);f.state.content.set('DocumentDiary123',replacement);f.c.startSync();assert.equal((await done(f.c)).job?.state,'completed');
+ const current=f.sources.getItem(source.id,'DocumentDiary123')!;assert.ok(current);assert.notEqual(current.captureId,first.captureId);assert.equal(JSON.parse(f.files.version(current.captureId).manifest).previousRevision,null,'the existing producer has no readable old file and is not rewritten');assert.equal(Buffer.concat([...f.files.bytes(current.captureId)]).toString(),replacement);
+ assert.throws(()=>f.files.begin(manifest,()=>{}),{statusCode:410});f.c.startSync();assert.equal((await done(f.c)).job?.state,'completed');assert.equal(f.sources.getItem(source.id,'DocumentDiary123')?.captureId,current.captureId);assert.equal(f.sources.history(source.id,'DocumentDiary123').length,1);
+});
+
 test('fixed native discovery operations are read-only and never request a calendar scope for documents',()=>{
  const command:LarkCommand={kind:'documents-search',action:'created',start:'2026-10-01T00:00:00.000Z',end:'2026-10-15T00:00:00.000Z',pageToken:'opaque; $(ignored)'};
  const args=larkArguments(command);assert.ok(args.includes('--created-by-me'));assert.ok(args.includes('--created-since'));assert.ok(args.includes('--created-until'));assert.equal(args[args.indexOf('--page-token')+1],command.pageToken);assert.ok(args.includes('user'));assert.ok(!args.includes('--mine'));
