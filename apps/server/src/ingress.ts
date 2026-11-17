@@ -77,13 +77,13 @@ export class IngressService {
     const ack=await this.files.commit(uploadId,authorize,signal) as FileAck;
     return fileAcknowledgement(ack);
   }
-  async fileBegin(input:unknown,authorize:(sourceId:string)=>void){
-    const upload=this.files.begin(input,authorize);
+  async fileBegin(input:unknown,authorize:(sourceId:string)=>void,admitUpload?:()=>void){
+    const upload=this.files.begin(input,authorize,admitUpload);
     const ack=upload.ack??await this.files.reuse(upload.uploadId,authorize);
     return {...upload,ack:ack?fileAcknowledgement(ack as FileAck):null};
   }
-  async fileRecovery(id:string,authorize:(sourceId:string)=>void){
-    const upload=this.files.beginSnapshotRecovery(id,authorize);
+  async fileRecovery(id:string,authorize:(sourceId:string)=>void,admitUpload?:()=>void){
+    const upload=this.files.beginSnapshotRecovery(id,authorize,admitUpload);
     const ack=upload.ack??await this.files.reuse(upload.uploadId,authorize);
     return {...upload,ack:ack?fileAcknowledgement(ack as FileAck):null};
   }
@@ -91,8 +91,8 @@ export class IngressService {
     const upload=this.files.upload(id,authorize,afterPart);
     return {...upload,ack:upload.ack?fileAcknowledgement(upload.ack as FileAck):null};
   }
-  async fileManifests(input:unknown,authorize:(sourceId:string)=>void){
-    const result=await this.files.manifestBatch(input,authorize);
+  async fileManifests(input:unknown,authorize:(sourceId:string)=>void,admitUpload?:()=>void){
+    const result=await this.files.manifestBatch(input,authorize,admitUpload);
     return {results:(result.results as Array<{ack?:FileAck;upload?:{ack?:FileAck};[key:string]:unknown}>).map(entry=>('ack' in entry&&entry.ack?{...entry,ack:fileAcknowledgement(entry.ack)}:
       'upload' in entry&&entry.upload&&entry.upload.ack?{...entry,upload:{...entry.upload,ack:fileAcknowledgement(entry.upload.ack as FileAck)}}:entry))};
   }
