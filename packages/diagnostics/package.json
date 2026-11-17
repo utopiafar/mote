@@ -8,8 +8,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -b --stopBuildOnErrors",
+    "typecheck": "tsc -b tsconfig.json --stopBuildOnErrors",
     "test": "vitest run"
   },
   "devDependencies": {

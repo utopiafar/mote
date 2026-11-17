@@ -16,7 +16,7 @@ import {WorkerPluginRuntime} from '../src/plugin-runtime.js';
 import {WorkerMemoryProvider} from '../src/worker-memory-provider.js';
 import {memoryProviderKey,type MemoryProviderNamespace} from '../src/memory-provider-contract.js';
 import {memorySchema,type Memory} from '../src/memory-schema.js';
-import {restoreProfile,verifiedBackup} from '../../../scripts/profile-lib.mjs';
+import {restoreProfile,verifiedBackup,repository as releaseRepository} from '../../../scripts/profile-lib.mjs';
 
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const backupScript=fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url));
@@ -73,7 +73,7 @@ test('stopped-host CLI backup and fresh restore preserve generated plugin bodies
  store.invalidateMemoryEvidence(originalId);const projected=memories.get(second.id);assert.equal(projected.status,'stale');assert.ok(projected.updatedAt);assert.equal(projected.version,second.version);
  assert.throws(()=>takeBackup(source,join(directory,'running-failure')),/Memory provider worker is still running/);await assert.rejects(lstat(join(directory,'running-failure')),{code:'ENOENT'});
  await provider.close();provider=undefined;takeBackup(source,snapshot);const checked=await verifiedBackup(snapshot);assert.ok(checked.names.includes(runtimeRelative+'/provider.json'),'the generated provider data file is part of the stopped backup');assert.ok(checked.names.includes('plugins/packages/'+preview.source.digest+'/mote-install-lock.json'));assert.ok(!checked.names.some(name=>name.endsWith('provider.lock')||name.includes('credentials')||name.includes('sdk-state')));
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(directory,'absent-process')},snapshot);restored=new Store(target);assert.deepEqual(new MemoryStore(restored).get(second.id),projected,'host history and invalidation state restore with the provider data');
+ await restoreProfile({meta:{runtime:'native',release:releaseRepository},env:{},dataDir:target,processFile:join(directory,'absent-process')},snapshot);restored=new Store(target);assert.deepEqual(new MemoryStore(restored).get(second.id),projected,'host history and invalidation state restore with the provider data');
  restoredPlugins=new PluginCenter(restored,restoredExecutor=new ExecutionEngine(restored),new GitHubPluginReleases(join(target,'plugins/packages')));const restoredPackage=restoredPlugins.packageForInstance(instanceId),restoredInstance=restoredPlugins.instanceView(instanceId);
  restoredProvider=new WorkerMemoryProvider(new WorkerPluginRuntime(join(restoredPackage.directory!,restoredPackage.manifest.entry),restoredInstance.configuration,restoredPackage.directory!));
  assert.deepEqual(await restoredProvider.read({namespace,key:memoryProviderKey(first)}),first);assert.deepEqual(await restoredProvider.read({namespace,key:memoryProviderKey(second)}),second);assert.equal(await restoredProvider.read({namespace,key:memoryProviderKey(deleted)}),null,'a deleted generated body restores as deleted');assert.deepEqual(await restoredProvider.remove({namespace,key:memoryProviderKey(deleted),opId:deleteId}),deleteReceipt,'the tombstone receipt is durable');await assert.rejects(restoredProvider.put({namespace,key:memoryProviderKey(deleted),memory:deleted,opId:randomUUID()}),{statusCode:502},'a tombstoned key cannot be recreated');

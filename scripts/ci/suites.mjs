@@ -31,7 +31,7 @@ const agentBuild = () => npm('build', '-w', '@mote/agent');
 const libs = () => [sharedBuild(), agentBuild()];
 // These are generated-data guards; neither test invokes a model or reads a real profile.
 const imageAuditTests = () => node('--import', 'tsx', '--test', 'scripts/composed-image-disclosure.test.ts', 'scripts/test-image-context-live.test.ts');
-// Server runtime adapters consume plugin-host. Its prebuild builds plugin-api.
+// Server runtime adapters consume plugin-host; its project references build plugin-api.
 const serverLibs = () => [npm('build', '-w', '@mote/plugin-host'), ...libs()];
 export function taskPlan(task, root = '.', selectedServer = ['all']) {
   if (task === 'architecture') return [node('scripts/ci/architecture.mjs')];

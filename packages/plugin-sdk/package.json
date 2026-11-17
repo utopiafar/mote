@@ -30,11 +30,10 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -b --stopBuildOnErrors",
+    "typecheck": "tsc -b tsconfig.json --stopBuildOnErrors",
     "pretest": "npm run build",
     "test": "node --test test/*.test.mjs",
-    "prebuild": "npm run build -w @mote/plugin-host",
     "prepack": "node scripts/pack.mjs",
     "pack:sdk": "node scripts/pack.mjs"
   },

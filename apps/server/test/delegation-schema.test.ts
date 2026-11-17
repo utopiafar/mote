@@ -10,7 +10,7 @@ import {Store} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {DelegationRuntime} from '../src/delegation-runtime.js';
 import {SourceStore} from '../src/sources.js';
-import {restoreProfile} from '../../../scripts/profile-lib.mjs';
+import {restoreProfile,repository} from '../../../scripts/profile-lib.mjs';
 
 const table = 'delegation_source_context_dependencies';
 
@@ -71,7 +71,7 @@ test('fresh and repeated current delegation initialization retain kind-qualified
   await engine.close();
   const backupScript = fileURLToPath(new URL('../../../scripts/backup.ts', import.meta.url));
   execFileSync(process.execPath, [backupScript, '--data', directory, '--out', snapshot], {stdio: 'pipe'});
-  await restoreProfile({meta: {runtime: 'native'}, dataDir: restoredDirectory, processFile: join(root, 'missing-process')}, snapshot);
+  await restoreProfile({meta: {runtime: 'native', release: repository}, env: {}, dataDir: restoredDirectory, processFile: join(root, 'missing-process')}, snapshot);
   const restored = new Store(restoredDirectory); stores.push(restored);
   const restoredEngine = new ExecutionEngine(restored); engines.push(restoredEngine);
   const restoredRuntime = new DelegationRuntime(restored, restoredEngine, {autoPump: false}); runtimes.push(restoredRuntime);

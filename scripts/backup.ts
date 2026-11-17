@@ -4,6 +4,7 @@ import { mkdir, readdir, readFile, writeFile, copyFile, rm, realpath, lstat, chm
 import { resolve, join, relative, dirname, basename, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import {pluginMemoryBackup} from './plugin-memory-backup.mjs';
+import {nativeApplicationBackup,sanitizeNativeApplicationSnapshot,assertNativeApplicationBackupLock} from './native-application-backup.mjs';
 
 const args = process.argv.slice(2);
 const usage = 'Stop the central node first. Usage: npm run backup -- --data ./data --out /absolute/new-backup-directory';
@@ -74,6 +75,8 @@ try {
     if(!hasSettings||db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value!=='7')throw new Error('Unsupported Mote vault epoch. Back up older vaults with their matching older binary or a stopped full-directory copy. Existing source data was preserved.');
     const assets=db.prepare('SELECT hash,parts,format FROM assets WHERE hash IN (SELECT hash FROM asset_references)').all() as {hash:string;parts:number;format:string}[];
     const pluginMemory=await pluginMemoryBackup(source,db);
+    const nativeApplications=await nativeApplicationBackup(source,db,{dataKey:process.env.MOTE_DATA_KEY});
+    const appLock=nativeApplications.controls.length?await assertNativeApplicationBackupLock(argument('--profile-lock','')):undefined;
     const paths:string[]=[];
     for(const asset of assets){
       if(!/^[a-f0-9]{64}$/.test(asset.hash)||!Number.isSafeInteger(asset.parts)||asset.parts<0||asset.parts>Math.ceil(Number.MAX_SAFE_INTEGER/(4*1024*1024)))throw new Error('Invalid asset metadata');
@@ -92,6 +95,8 @@ try {
       snapshot.exec('PRAGMA journal_mode=DELETE; PRAGMA foreign_keys=ON; BEGIN IMMEDIATE');
       const hasTable=(name:string)=>!!snapshot.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
       try{
+        if(appLock!==undefined&&await assertNativeApplicationBackupLock(argument('--profile-lock',''))!==appLock)throw Error('Profile backup lifecycle lock changed');
+        sanitizeNativeApplicationSnapshot(snapshot,nativeApplications);
         // Upload staging is excluded. Clients open new sessions from their own durable queues.
         if(hasTable('file_uploads'))snapshot.exec('DELETE FROM file_uploads');
         if(hasTable('asset_pins'))snapshot.exec('DELETE FROM asset_pins');
@@ -119,14 +124,14 @@ try {
           }
         }
         snapshot.exec('COMMIT');
-      }catch(error){snapshot.exec('ROLLBACK');throw error;}
+      }catch(error){if(snapshot.isTransaction)snapshot.exec('ROLLBACK');throw error;}
     }finally{snapshot.close();}
     for(const path of paths){
       await mkdir(dirname(join(out,path)),{recursive:true,mode:0o700});
       await copyFile(join(source,path),join(out,path),constants.COPYFILE_EXCL);
       await chmod(join(out,path),0o600);checksums[path]=await sum(join(out,path));
     }
-    for(const path of pluginMemory.paths){
+    for(const path of [...pluginMemory.paths,...nativeApplications.paths]){
       await ordinarySource(join(source,path));await mkdir(dirname(join(out,path)),{recursive:true,mode:0o700});await copyFile(join(source,path),join(out,path),constants.COPYFILE_EXCL);await chmod(join(out,path),0o600);checksums[path]=await sum(join(out,path));
     }
     // SQLite backup includes committed WAL pages. Copying only the .db bytes
@@ -136,6 +141,6 @@ try {
     }
   } finally { db.close(); }
   checksums['mote.sqlite'] = await sum(join(out, 'mote.sqlite'));
-  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, storageEpoch:7, createdAt: new Date().toISOString(), checksums, note: 'Storage epoch 7 referenced chunked originals and source archive batches are included in their selected stored formats; checksums retain explicit .plain and .aes filenames. Fixed installed plugin artifacts and stopped provider databases include history, immutable bodies, tombstones and operation receipts; provider locks/pids, endpoint credentials, model profiles and generated SDK home/state files are excluded. A later owner-started Central retains prior desired states and registered task authorizations subject to restored approved credentials. Generic external engines require a separately verified native service snapshot. Import workspaces/scripts, tokens and encryption keys are excluded. Unfinished imports require a fresh analysis and preview after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used, including after disabling new encrypted writes. Restore provider/model credentials separately before external retrieval.' }, null, 2), { mode: 0o600, flag: 'wx' });
+  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, storageEpoch:7, createdAt: new Date().toISOString(), checksums, note: 'Storage epoch 7 referenced chunked originals and source archive batches retain their selected .plain/.aes formats. Fixed installed plugin artifacts, stopped provider databases and complete sealed native-application generations are included with the same SQLite control/receipt facts; only copied APP process-writer leases are removed. Unsealed APP working state is refused. Provider locks/pids, endpoint credentials, model profiles, unrelated HOME credential stores, import workspaces/scripts, tokens and encryption keys are excluded. A later owner-started Central follows existing execution recovery and current authorization; restoring an APP does not start an old interaction or add a grant. Generic external engines require a separately verified native service snapshot. Unfinished imports require fresh analysis and preview. Preserve the original MOTE_DATA_KEY or vault content-key separately, including after disabling new encrypted writes; encrypted APP integrity verification and restore require that key. Restore provider/model credentials separately before external retrieval.' }, null, 2), { mode: 0o600, flag: 'wx' });
   console.info(`Consistent vault backup written to ${out}. Restore into an empty data directory; separately restore the original MOTE_DATA_KEY or content-key when encryption has been used.`);
 } catch (error) { await rm(out, { recursive: true, force: true }); throw error; }
