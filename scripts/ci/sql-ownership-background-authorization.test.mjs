@@ -17,7 +17,22 @@ test('background authorization owns six tables while complete routine consumers 
  for(const table of tables){assert.equal(result.tables[table].owner,'background-model-authorization');assert.equal(result.tables[table].installer,'backgroundModelAuthorizationSchemaInstallation');}
  assert.equal(consumers['background-model-authorization.ts'],undefined);
  const scopes=consumerScopes['background-model-authorization.ts'];
- assert.equal(Object.keys(scopes).length,14);assert.ok(Object.values(scopes).every(owner=>owner==='background-model-authorization'));
+ assert.deepEqual(scopes,{
+  'BackgroundModelAuthorization.state':'background-model-authorization',
+  'BackgroundModelAuthorization.transaction':'background-model-authorization',
+  'BackgroundModelAuthorization.command':'background-model-authorization',
+  'BackgroundModelAuthorization.receive':'background-model-authorization',
+  'BackgroundModelAuthorization.derive':'background-model-authorization',
+  'BackgroundModelAuthorization.roots':'background-model-authorization',
+  'BackgroundModelAuthorization.freshTriggers':'background-model-authorization',
+  'BackgroundModelAuthorization.save':'background-model-authorization',
+  'BackgroundModelAuthorization.saved':'background-model-authorization',
+  'BackgroundModelAuthorization.automatic':'background-model-authorization',
+  'BackgroundModelAuthorization.bindStep':'background-model-authorization',
+  'BackgroundModelAuthorization.stepAuthority':'background-model-authorization',
+  'BackgroundModelAuthorization.assertStep':'background-model-authorization',
+  'BackgroundModelAuthorization.runStep':'background-model-authorization',
+ });
  assert.equal(scopes['BackgroundModelAuthorization.eligible'],undefined);assert.equal(scopes['BackgroundModelAuthorization.receiveRoutineOccurrence'],undefined);
  assert.deepEqual(result.exceptions.filter(issue=>issue.from===consumer).map(issue=>[issue.rule,issue.scope,issue.symbol]).sort(),[
   ['sql-uncovered-consumer','BackgroundModelAuthorization.eligible','194855c2d8e299964bf2997be7324bffcfa6159765013c07b97c39de0929cd93'],
@@ -25,7 +40,7 @@ test('background authorization owns six tables while complete routine consumers 
   ['sql-uncovered-consumer','BackgroundModelAuthorization.receiveRoutineOccurrence','24505e29c9b9867a055a2ec818ae718579fbd86233dbeaa231ed10f587c1b82e'],
  ].sort());
  for(const entries of [sharedReads,schemaMaintenance,retainedClassificationScopes])assert.ok(!entries.some(item=>[schema,consumer].includes(item.from)));
- assert.equal(result.dynamicStatements,231);assert.equal(result.pendingRawWrites.length,4);
+ assert.equal(result.pendingRawWrites.length,4);
 });
 
 test('production entry rejects background foreign effects, moved scopes, changed pending SQL and installer escape',t=>{

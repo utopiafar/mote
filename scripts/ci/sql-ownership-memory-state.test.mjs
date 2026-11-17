@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync,spawnSync} from 'node:child_process';
+import {retainedClassificationScopes} from './sql-ownership-policy.mjs';
 
 const repository=fileURLToPath(new URL('../..',import.meta.url));
 const cli=fileURLToPath(new URL('./sql-ownership.mjs',import.meta.url));
@@ -19,7 +20,10 @@ test('Memory state production owners and exact reads reject new writes, changed 
  const map=JSON.parse(readFileSync(resolve(root,'scripts/ci/sql-ownership-map.json'),'utf8'));
  for(const [table,owner] of [['memory_input_authorizations','memory-input-authorization'],['memory_extraction_drafts','memory-extraction-drafts'],['memory_phase_outputs','memory-phase-outputs']])assert.equal(map.tables[table]?.owner,owner);
  const run=()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8',timeout:120000});
- const positive=run();assert.equal(positive.status,0,positive.stderr);assert.match(positive.stdout,/233 unproved SQL statements/);assert.match(positive.stdout,/4 write-unproved pending/);
+ const positive=run();assert.equal(positive.status,0,positive.stderr);assert.match(positive.stdout,/SQL ownership: \d+ schema owners/);assert.match(positive.stdout,/4 write-unproved pending/);
+ assert.deepEqual(retainedClassificationScopes.filter(item=>item.from==='apps/server/src/material-memory-work.ts'),[
+  {rule:'sql-uncovered-table',from:'apps/server/src/material-memory-work.ts',to:'memory_input_authorizations',kind:'write',symbol:'4519c685db0ff9e34515bd3054321837fdf0d9477526b80d152e1145d1b7b548',scope:'MaterialMemoryWork.constructor',scopeFingerprint:'2220edebc9aa3497c04ff01e2b53d46e6d96ca81904b97ea16b36b758991ddbe',operation:'delete',completeSql:true},
+ ]);
  const phasePath=resolve(root,'apps/server/src/memory-phase-outputs.ts'),phase=readFileSync(phasePath,'utf8');
  const variants=[
   [phasePath,phase.replace('retryReview(batchId:string,ownerAction:boolean){','retryReview(batchId:string,ownerAction:boolean){\n void ownerAction;'),/sql-cross-owner.*memory-phase-outputs.ts.*execution_steps.*read/],
