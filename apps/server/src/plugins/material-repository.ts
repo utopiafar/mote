@@ -1,5 +1,5 @@
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
+import type {PluginLifecycle,ServiceBinding} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {MaterialStore} from '../materials.js';
 import {MaterialNoteDeletion} from '../material-note-deletion.js';
@@ -29,11 +29,19 @@ export function openMaterialNoteDeletion(store:MaterialStore['store'],materials:
  * the host lease; only the publication facade accepts an external commit grant. */
 export function createMaterialRepository(store:MaterialStore['store'],authorization:CommitAuthorization){
   if(!authorization||typeof authorization.assertCurrent!=='function')throw unavailable();
-  let phase:'created'|'prepared'|'active'|'quiescing'|'disposed'='created';
+  // PluginHost orders lifecycle calls. This one-way publication latch is local
+  // policy: prepared/quiescing resources remain readable, but cannot publish.
+  // Undefined means never started; a withdrawn owner needs a fresh activation.
+  let publicationOpen:boolean|undefined;
   let materials:MaterialStore|undefined,closing:Promise<void>|undefined,transactionId=0;
   const verify=authorization.assertCurrent.bind(authorization);
-  const active=()=>{if(phase!=='active')throw unavailable();};
-  const close=()=>closing??=(async()=>{phase='disposed';await materials?.index?.close();})();
+  const active=()=>{if(publicationOpen!==true)throw unavailable();};
+  const close=()=>{
+    publicationOpen=false;
+    // Publish the terminal owner promise before invoking a resource, including
+    // a resource which synchronously reenters close or throws.
+    return closing??=Promise.resolve().then(()=>materials?.index?.close());
+  };
   const publication:MaterialPublication=Object.freeze({
     publish(draft:Parameters<MaterialStore['publish']>[0],options:Parameters<MaterialStore['publish']>[1],authority:CommitAuthority){
       active();verify(authority);
@@ -51,26 +59,24 @@ export function createMaterialRepository(store:MaterialStore['store'],authorizat
   });
   return Object.freeze({
     async prepare(){
-      if(phase!=='created')throw unavailable();
-      try{materials=new MaterialStore(store);phase='prepared';}
-      catch(error){
-        try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Material repository preparation and disposal failed',{cause:error});}
-        throw error;
-      }
+      if(materials||closing)throw unavailable();
+      materials=new MaterialStore(store);
     },
-    start(){if(phase!=='prepared')throw unavailable();phase='active';},
-    quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';},
-    stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
+    start(){if(!materials||closing||publicationOpen!==undefined)throw unavailable();publicationOpen=true;},
+    quiesce(){if(publicationOpen)publicationOpen=false;},
+    close,
     /** Trusted composition bridge until the remaining Material consumers migrate. */
-    get storeForAssembly(){if(!materials||phase==='created'||phase==='disposed')throw unavailable();return materials;},
+    get storeForAssembly(){if(!materials||closing)throw unavailable();return materials;},
     publication,
   });
 }
 export type MaterialRepository=ReturnType<typeof createMaterialRepository>;
 
+/** The single lifecycle adapter. Host startup unwind also runs the deferred
+ * resource close when preparation or service publication fails. */
 export function createMaterialRepositoryFactory(platform:MaterialRepository,onStarted?:(bindings:MaterialRepositoryBindings)=>void){
   return (context:HostPluginContext):PluginLifecycle=>{
-    context.scope.defer(()=>platform.close());
+    context.scope.defer(platform.close);
     return {
       prepare:platform.prepare,
       start(){
@@ -82,7 +88,7 @@ export function createMaterialRepositoryFactory(platform:MaterialRepository,onSt
         const publication=context.provide(materialRepositoryContribution.id,centralServices.materialPublication,platform.publication);
         onStarted?.({repository,publication});
       },
-      quiesce:(reason?:StopReason)=>platform.quiesce(reason),stop:(reason?:StopReason)=>platform.stop(reason),dispose:platform.dispose,
+      quiesce:platform.quiesce,stop:platform.close,dispose:platform.close,
     };
   };
 }

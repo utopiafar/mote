@@ -24,7 +24,7 @@ function boundary(){
     capture(){if(!current)throw Error('Generated grant revoked');return token;},
     assertCurrent(value){calls++;if(!current||value!==token||calls===failAt)throw Error('Generated Material commit rejected');},
   };
-  return {authorization,token,failAfterAcceptedWrite(){failAt=calls+3;},get calls(){return calls;}};
+  return {authorization,token,revoke(){current=false;},failAfterAcceptedWrite(){failAt=calls+3;},get calls(){return calls;}};
 }
 
 async function install(host:PluginHost,store:Store,authorization:CommitAuthorization){
@@ -69,6 +69,9 @@ test('publication ports preserve exact refs, revisions, original ranges and boun
   assert.equal(equivalent.changed,false);assert.equal(equivalent.ref,published.ref);assert.equal(equivalent.revision,published.revision);
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM material_revisions WHERE material_id=?').get(input.id)!.n,1);
   assert.deepEqual(materialRepositoryContribution.provides.map(service=>service.id).sort(),[centralServices.materialRepository.id,centralServices.materialPublication.id].sort());
+  assert.throws(()=>current.publication.publish(draft('Generated forged grant','forged'),{},{} as CommitAuthority),/Generated Material commit rejected/);
+  auth.revoke();assert.throws(()=>current.publication.publish(draft('Generated revoked grant','revoked'),{},auth.token),/Generated Material commit rejected/);
+  assert.equal(current.repository.get(input.id)?.revision,published.revision);
   await current.close();
 });
 
@@ -100,12 +103,47 @@ test('quiesce rejects new publication while reads survive, and a new activation 
   await current.handle.quiesce('upgrade');
   assert.equal(current.repository.get(published.ref)?.revision,published.revision);
   assert.throws(()=>current.publication.publish(draft('Generated late write','late'),{},auth.token),{statusCode:503});
+  assert.throws(()=>current.platform.start(),{statusCode:503},'the quiesced instance cannot reopen its publication admission');
   await current.close();assert.throws(()=>current.repository.get(published.ref));
   current=await install(f.host,f.store,auth.authorization);
   assert.equal(current.repository.read(published.ref).text,'Generated original text\n');
   const next=current.publication.publish(draft('Generated reactivated write','reactivated'),{},auth.token);
   assert.equal(current.repository.read(next.ref).text,'Generated reactivated write\n');
   await current.close();
+});
+
+test('a real bound index reentering close joins one owner promise without closing borrowed SQLite',async t=>{
+  const f=profile(t),auth=boundary(),current=await install(f.host,f.store,auth.authorization),engine=new ExecutionEngine(f.store);
+  const index=current.platform.storeForAssembly.bindIndexEngine(engine),closeIndex=index.close.bind(index);
+  let calls=0,nested:Promise<void>|undefined,closing:Promise<void>|undefined;
+  t.mock.method(index,'close',()=>{calls++;if(calls===1)nested=current.platform.close();return closeIndex();});
+  try{
+    closing=current.platform.close();await Promise.resolve();
+    assert.equal(calls,1);assert.equal(nested,closing);assert.equal(current.platform.close(),closing);
+    assert.throws(()=>current.platform.storeForAssembly,{statusCode:503});
+    assert.throws(()=>current.platform.publication.publish(draft(),{},auth.token),{statusCode:503});
+    await closing;assert.equal(f.store.db.isOpen,true);
+    await current.close();assert.throws(()=>current.repository.list());
+  }finally{await Promise.allSettled([closing,nested]);await closeIndex();await engine.close();await current.close();}
+});
+
+test('host close withdraws ports before a held index failure and every close observes that same failure',async t=>{
+  const f=profile(t),auth=boundary(),current=await install(f.host,f.store,auth.authorization),engine=new ExecutionEngine(f.store);
+  const published=current.publication.publish(draft(),{},auth.token),index=current.platform.storeForAssembly.bindIndexEngine(engine),closeIndex=index.close.bind(index);
+  const failure=new Error('Generated Material index close failure');let calls=0,entered!:()=>void,release!:()=>void;
+  const started=new Promise<void>(resolve=>{entered=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
+  const includesFailure=(error:unknown):boolean=>error===failure||error instanceof AggregateError&&error.errors.some(includesFailure);
+  t.mock.method(index,'close',async()=>{calls++;entered();await held;await closeIndex();throw failure;});
+  let closing:Promise<void>|undefined;
+  try{
+    closing=current.handle.close('disabled');await started;
+    assert.throws(()=>current.repository.read(published.ref));
+    assert.throws(()=>current.publication.publish(draft('Generated late publication','late'),{},auth.token));
+    assert.throws(()=>current.platform.storeForAssembly,{statusCode:503});assert.equal(f.store.db.isOpen,true);
+    const same=current.platform.close();assert.equal(current.platform.close(),same);
+    release();await assert.rejects(closing,includesFailure);await assert.rejects(same,error=>error===failure);assert.equal(calls,1);
+    const next=await install(f.host,f.store,auth.authorization);assert.equal(next.repository.read(published.ref).text,'Generated original text\n');await next.close();
+  }finally{release();await closing?.catch(()=>{});await closeIndex();await engine.close();await current.close().catch(()=>{});}
 });
 
 test('failed prepare leaves the borrowed SQLite usable and permits a clean activation',async t=>{
