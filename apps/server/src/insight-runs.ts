@@ -10,6 +10,8 @@ import {safeError} from './diagnostics.js';
 import type {ExecutionEnvelope} from '@mote/shared/execution';
 import {RunExecution,runEnvelope,type RunExecutionOptions,type RunDeadline} from './run-execution.js';
 import type {ExecutionStep} from './execution-engine.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {insightRunsSchemaInstallation} from './auxiliary-state-schema.js';
 
 type Scope={after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface InsightRun {
@@ -25,7 +27,7 @@ export class InsightRuns {
   private paused=false;
   private closed=false;
   constructor(private readonly store:Store,private readonly options:RunExecutionOptions&{evidenceReader?:Pick<MaterialRead,'materialCatalog'>}={}){
-    store.db.exec('CREATE TABLE IF NOT EXISTS insight_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
+    installSchemaPlan(store.db,[insightRunsSchemaInstallation]);
     this.execution=new RunExecution(store,'insight',{
       exists:id=>Boolean(store.db.prepare('SELECT 1 FROM insight_runs WHERE id=?').get(id)),
       project:(id,step)=>this.project(id,step),

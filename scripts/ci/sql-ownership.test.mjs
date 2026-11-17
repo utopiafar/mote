@@ -135,7 +135,15 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,65);assert.equal(Object.keys(result.tables).length,168);
+ assert.equal(result.owners.length,67);assert.equal(Object.keys(result.tables).length,170);
+ assert.equal(result.tables.insight_runs.owner,'insight-runs');assert.equal(result.tables.record_context_declarations.owner,'record-context');
+ assert.ok(result.coveredFiles.includes('apps/server/src/insight-runs.ts'));assert.ok(result.uncoveredFiles.includes('apps/server/src/insight-runs.ts'),'insight runtime keeps its cross-owner reads pending');
+ assert.ok(result.coveredFiles.includes('apps/server/src/record-context.ts'));assert.ok(!result.uncoveredFiles.includes('apps/server/src/record-context.ts'));
+ assert.deepEqual(policy.consumerScopes['insight-runs.ts'],{'InsightRuns.save':'insight-runs','InsightRuns.raw':'insight-runs','InsightRuns.list':'insight-runs','InsightRuns.start':'insight-runs'});
+ assert.deepEqual(policy.consumerScopes['record-context.ts'],{'RecordContextStore.constructor':'record-context','RecordContextStore.bind':'record-context','RecordContextStore.insert':'record-context','RecordContextStore.identities':'record-context','RecordContextStore.open':'record-context','RecordContextStore.export':'record-context','RecordContextStore.restore':'record-context'});
+ const recordReads=policy.sharedReads.filter(item=>item.from==='apps/server/src/record-context.ts');assert.equal(recordReads.length,6);assert.ok(recordReads.every(item=>['captures','file_evidence_links'].includes(item.to)&&item.scope&&item.scopeFingerprint&&item.reason));
+ assert.ok(result.exceptions.filter(issue=>issue.from==='apps/server/src/insight-runs.ts').every(issue=>issue.rule==='sql-uncovered-consumer'));
+ assert.equal(result.exceptions.filter(issue=>issue.from==='apps/server/src/record-context.ts').length,6);
  assert.deepEqual(result.owners.filter(owner=>owner.owner==='actions').map(owner=>owner.declaration),['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation']);
  for(const table of ['action_meta','action_proposals','action_semantic_checkpoints','action_targets','action_jobs','action_chunk_changes'])assert.deepEqual(result.tables[table],{owner:'actions',file:'apps/server/src/actions-schema.ts',installer:'actionsSchemaInstallation'});
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));

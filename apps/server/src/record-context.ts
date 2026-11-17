@@ -4,6 +4,8 @@ import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {recordContextDeclarationSchema as declarationSchema,portableRecordContextSchema,type PortableRecordContext} from './record-context-contract.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {recordContextSchemaInstallation} from './auxiliary-state-schema.js';
 export {portableRecordContextSchema,type PortableRecordContext} from './record-context-contract.js';
 
 type Declaration=z.infer<typeof declarationSchema>;
@@ -21,10 +23,7 @@ export function withoutOwnerDescription(input:CaptureInput):CaptureInput {
  * as their original capture. No source prose or derived output can create one. */
 export class RecordContextStore {
   constructor(private readonly store:Store){
-    store.db.exec(`CREATE TABLE IF NOT EXISTS record_context_declarations(
-      capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,
-      version INTEGER NOT NULL CHECK(version=1),capture_fingerprint TEXT NOT NULL,
-      fingerprint TEXT NOT NULL,json TEXT NOT NULL);`);
+    installSchemaPlan(store.db,[recordContextSchemaInstallation]);
     if(store.contentEncryption.enabled){
       const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');
       try{
