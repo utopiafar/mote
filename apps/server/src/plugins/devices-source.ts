@@ -1,12 +1,12 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {heartbeatSchema,type DeviceRecord,type Heartbeat} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {StoreError} from '../store.js';
 import type {RequestAuthority} from './central-contracts.js';
 import type {AuthorizationPlatform} from './authorization-platform.js';
-import {firstDeviceData} from '../first-device-data.js';
+import type {firstDeviceData} from '../first-device-data.js';
 type FirstDeviceData=ReturnType<typeof firstDeviceData>;
 
 /** Trusted C04 members only. Request pins come from the host's bindRequest hook. */
@@ -66,12 +66,13 @@ function contactLost(device:DeviceRecord,now:number):boolean{
 /** Owns the devices HTTP contribution. Heartbeats are writes and stop at quiesce;
  * read views keep working until close. Archived device/capture rows are never
  * deleted here, so disabling the plugin cannot erase history. */
-export function createDevicesSource(options:DeviceSourceOptions,dependencies:DeviceSourceDependencies){
+export function createDevicesSource(options:DeviceSourceOptions,dependencies:DeviceSourceDependencies,owner?:Pick<PluginScope,'assertCurrent'>){
   const {devices,firstData,authority,identity}=dependencies;
   let phase:'created'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let routesInstalled=false,closing:Promise<void>|undefined;
-  const reading=()=>{if(phase!=='active'&&phase!=='quiescing')throw unavailable();};
-  const writing=()=>{if(phase!=='active')throw unavailable();};
+  const currentOwner=()=>{try{owner?.assertCurrent();}catch{throw unavailable();}};
+  const reading=()=>{currentOwner();if(phase!=='active'&&phase!=='quiescing')throw unavailable();};
+  const writing=()=>{currentOwner();if(phase!=='active')throw unavailable();};
   const close=()=>closing??=(async()=>{phase='disposed';})();
   function routes(app:FastifyInstance,context:DeviceRouteContext){
     if(routesInstalled)throw new StoreError('Device routes are already installed',409);
@@ -92,20 +93,22 @@ export function createDevicesSource(options:DeviceSourceOptions,dependencies:Dev
       // rules; owner credentials skip both checks inside the trusted assembly.
       identity.assertOwnDevice(requestPin,beat);
       identity.assertOwnPlatform(requestPin,beat.platform);
+      writing();authority.requests.assertCurrent(requestPin);
       const result=devices.heartbeat(beat);
       options.recordQueueSnapshot?.(beat);
       return result;
     });
     app.get('/api/devices',async request=>{
-      pin(request);reading();
+      const requestPin=pin(request);reading();
       const items=devices.devices(),now=Date.now();
+      reading();authority.requests.assertCurrent(requestPin);
       return {items,disconnectedDeviceIds:items.filter(device=>contactLost(device,now)).map(device=>device.deviceId)};
     });
     // Owner-only through the host's default-deny collector allowlist. This module
     // never loosens it: no collector/MCP route is registered for first data.
     app.get('/api/devices/first-data',async request=>{
-      pin(request);reading();
-      return firstData();
+      const requestPin=pin(request);reading();
+      const result=firstData();reading();authority.requests.assertCurrent(requestPin);return result;
     });
   }
   return Object.freeze({
@@ -121,7 +124,7 @@ export type DevicesSource=ReturnType<typeof createDevicesSource>;
 /** Compiled trusted H04 owner. The host never infers routes from contributions. */
 export function createDevicesSourceFactory(options:DeviceSourceOptions,dependencies:DeviceSourceDependencies,registerRoutes?:((platform:DevicesSource)=>void)){
   return (context:HostPluginContext):PluginLifecycle=>{
-    const platform=createDevicesSource(options,dependencies);
+    const platform=createDevicesSource(options,dependencies,context.scope);
     context.scope.defer(()=>platform.close());
     return {
       prepare(){},

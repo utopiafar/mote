@@ -1870,8 +1870,8 @@ export const nonSqlCalls=[
   "entryType": "AssistantTasks",
   "definitionFile": "apps/server/src/assistant-tasks.ts",
   "occurrence": 1,
-  "moduleFingerprint": "29afe943e1794b176626b6f0d0552767aaaa5aa770a858194b98196782b1e213",
-  "scopeFingerprint": "cfbafa2a0c7adb2fb741bb0bb418298a560591b3d199024f0ecd39dccc507118",
+  "moduleFingerprint": "abbfe0bd23b7f691efc520d3b7c43b51f3515bf450983d322f999a5eda7079c8",
+  "scopeFingerprint": "e8a53c0d5e26c1b782bac27c671e6fa988dfde6e575409e94f3f4ec0221d6578",
   "callFingerprint": "9104236b78880379928fdb6b2d187dac91fbc78fef00cba42700d3204be1cb92",
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
@@ -1944,7 +1944,7 @@ export const storageConstructions=[
    {
     "from": "apps/server/src/host.ts",
     "scope": "buildHost",
-    "scopeFingerprint": "cfbafa2a0c7adb2fb741bb0bb418298a560591b3d199024f0ecd39dccc507118",
+    "scopeFingerprint": "e8a53c0d5e26c1b782bac27c671e6fa988dfde6e575409e94f3f4ec0221d6578",
     "callFingerprint": "3104364775643689599971ecfdccf278aa2c597fd6bed3e7756bef6ea52d3ac1",
     "importFingerprint": "2ea0a997a5352c58cc652eeb49a1073b2cafef6aca8d1d603f16e5aaebcd0e05"
    }

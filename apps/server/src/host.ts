@@ -22,7 +22,7 @@ import {AssistantRoutines} from './assistant-routines.js';
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {assemblePlatform} from './assembly/platform.js';
-import {assembleSources} from './assembly/sources.js';
+import {assembleSources,prepareDevicesDomain} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
 import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages,type MediaAssemblyDependencies} from './assembly/processing.js';
 import {memoryInputs,memoryRuntime} from './assembly/memory.js';
@@ -99,7 +99,6 @@ import { conversationUnderstandingProcessor } from './conversation-understanding
 import { Store,StoreError } from './store.js';
 import {captureFeature} from './features/capture.js';
 import {notesFeature,type NotesCapture} from './features/notes.js';
-import {devicesFeature} from './features/devices.js';
 import {filesFeature} from './features/files.js';
 import {sourcesFeature} from './features/sources.js';
 import {connectionsFeature} from './features/connections.js';
@@ -202,6 +201,8 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const credential=(req:FastifyRequest)=>{const c=connectionIdentity(req);return c&&!connections.isOwner(c)?c:undefined;};
   const assertRequestActive=(req:FastifyRequest)=>{const c=connectionIdentity(req);if(c)connections.assertActive(c);};
   const sourceOwner=(req:FastifyRequest,id:string)=>{assertRequestActive(req);const c=credential(req);if(c)connections.assertOwnSource(c,id);};
+  const notesCapture:NotesCapture={authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake};
+  await prepareDevicesDomain({bootstrap,resources,store,files,reader:evidenceReader,diagnostics,notesCapture});
   const {ownerQuestionServices,ownerQuestions}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
   // The authorization platform's mote.models table; the feature bridge mounts
   // it once and each handler dispatches against the platform's current activation.
@@ -637,7 +638,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const routes:FeatureRoute[]=[];
   const withAgentTools=(route:FeatureRoute):FeatureRoute=>({...route,mount:(app,scope)=>{route.mount(app,scope);scope.defer(()=>agentFeatures.dispose(route.id));}});
   const domain=(id:string,extra?:(app:FastifyInstance,scope:import('./features/index.js').FeatureScope)=>void):FeatureRoute=>withAgentTools({id,mount:(app,scope)=>{domainRoutes[id]?.mount(app,scope);extra?.(app,scope);}});
-  const notesCapture:NotesCapture={authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake};
   if(selected('mote.files'))routes.push(withAgentTools(filesFeature({withMediaOwnerBatch,withMediaOwnerIntent,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization:authorize=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlayback}})));
   if(selected('mote.connections'))routes.push(withAgentTools(connectionsFeature({config,connections,connectionIdentity,serverVersion})));
   if(selected('mote.connections'))routes.push(developerAccessFeature({host:developerAccess,credential,connectionIdentity}));
@@ -650,7 +650,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.models'))routes.push(domain('mote.models'));
   if(selected('mote.processing'))routes.push(domain('mote.processing'));
   if(selected('mote.notes')&&bootstrap.selectsPlugin('notes-source'))routes.push(withAgentTools(notesFeature({assertRequestActive,connections,credential,diagnostics,files,ingress,notesSource:notesSource.assemblyForRoutes(),notesCapture})));
-  if(selected('mote.devices'))routes.push(withAgentTools(devicesFeature({diagnostics,store,files,evidenceReader,notesCapture,request:request=>pins.get(request)})));
   if(selected('mote.media'))routes.push(domain('mote.media',(app,scope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media:config.media,runtimeStatus:async role=>{const {runtimeReady,missingDependencies}=await mediaPreparation.status(role);return {runtimeReady,...(missingDependencies?{missingDependencies}:{})};}}).mount(app,scope);}));
   if(selected('mote.owner-questions'))routes.push(domain('mote.owner-questions'));
   if(selected('mote.memory'))routes.push(domain('mote.memory',app=>registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);})));

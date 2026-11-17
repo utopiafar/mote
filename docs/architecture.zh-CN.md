@@ -32,6 +32,8 @@ flowchart LR
 
 Activity通过可执行的[activity-services声明](../apps/server/src/plugins/activity-services.ts)和现有PluginHost领域装载器启用；同时选中feature与plugin时才打开投影、后续采集hook、自动理解handler及轮询。未选不创建这些资源，Memory、Query与执行事实仍归各自所有者。13条Activity Memory订阅改为当前连接拥有的SQLite TEMP触发器，关闭即撤回，重新选中只从原任务事实重建可丢弃投影。打开旧profile时先撤回已知的持久Activity订阅，保留历史表和原有产品。Agent View有独立只读声明；Activity通过当前QueryRuns元数据lease读取委派工作，不接收私有payload或回答。其他领域装配与私有持久化适配仍为后续范围。
 
+Devices通过可执行的[devices-source声明](../apps/server/src/plugins/devices-domain.ts)启用。PluginHost activation创建、启动和关闭source，并拥有其HTTP贡献；未选feature或plugin时不打开source。可信source装配只提供携带窄设备操作和既有Notes/Capture请求权限的私有构造能力。心跳和首条数据视图继续校验当前请求pin，关闭HTTP scope会撤回真实owner。共享持久化`devices`表仍属于Vault并供采集入口使用；本领域没有独立schema或timer。
+
 ## 技术底座
 
 - Central 使用 Node.js / TypeScript 与 Fastify，Web 使用 React；Mac 使用 Electron 与原生辅助程序，Android 使用 Kotlin 原生客户端。
