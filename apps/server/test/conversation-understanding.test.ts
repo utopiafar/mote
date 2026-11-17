@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
@@ -151,7 +152,7 @@ test('fabricated times, artifact references and uncited or incomplete claims are
 });
 
 test('failed conversation validation retains the final safe field and run through the real processing commit boundary',async t=>{
- const f=await fixture(t),runtime=new ProcessingRuntime(f.store,[],{},Date.now,undefined,f.materials);t.after(()=>runtime.close());
+ const f=await fixture(t),runtime=new ProcessingRuntime(f.store,[],{},Date.now,undefined,f.materials,testScope(t));t.after(()=>runtime.close());
  const generated=processor(f,async request=>{
   const output=products(f.anchor,false);
   output.summary='Generated private summary must never be retained in a failure receipt';

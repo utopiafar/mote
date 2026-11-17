@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
@@ -21,7 +22,7 @@ test('one changed segment invalidates only its descendants; unchanged chunks and
  const directory=mkdtempSync(join(tmpdir(),'mote-file-dependencies-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);let revision=1;
  sources.register({id:'generated',name:'Generated audio',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive'});
  const bytes=Buffer.from('Generated audio fixture'),upload=files.begin({sourceId:'generated',previousRevision:null,item:{externalId:'generated.wav',revision:'1',observedAt:'2025-01-01T00:00:00.000Z',title:'Generated',text:'',kind:'file',layer:'original',mimeType:'audio/wav',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes),relativePath:'generated.wav'},()=>{});files.part(upload.uploadId,0,bytes,()=>{});const original=await files.commit(upload.uploadId,()=>{});
- const processing=new FileProcessing(files,{transcribe:async()=>({durationMs:2000,segments:[{startMs:0,endMs:1000,text:'Stable first segment'},{startMs:1000,endMs:2000,text:'Second segment version '+revision}]})},undefined,{analyze:async records=>({answer:'Generated summary',citations:[{id:records[0].id}]})});
+ const processing=new FileProcessing(testScope(t),files,{transcribe:async()=>({durationMs:2000,segments:[{startMs:0,endMs:1000,text:'Stable first segment'},{startMs:1000,endMs:2000,text:'Second segment version '+revision}]})},undefined,{analyze:async records=>({answer:'Generated summary',citations:[{id:records[0].id}]})});
  const runs=new InsightRuns(store,{executor:processing.engine});let organizers:MaterialOrganizerRuntime|undefined;
  t.after(async()=>{await organizers?.close();await processing.close();await runs.close();store.close();rmSync(directory,{recursive:true,force:true});});
  await processing.runtime.ready;

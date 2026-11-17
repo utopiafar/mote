@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,7 +27,7 @@ function result(id:string,answer:unknown):QueryResult{return {answer:JSON.string
 async function fixture(t:TestContext,coverage:MaterialDraft['coverage']={state:'complete'},sourceTime=(time:string)=>time){
   const directory=mkdtempSync(join(tmpdir(),'mote-assistant-understanding-'));
   const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
-  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);
+  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t));
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials);
   const adapter=new AssistantUnderstandingReader(store,materials,reader);
   const memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id));

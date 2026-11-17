@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -92,7 +93,7 @@ test('source-only descriptions narrow mixed material blocks and invalidate only 
 
 test('a running interpretation cannot publish after its channel context changes or acquire unrelated device scope',async t=>{
   const f=fixture(t),input=capture('activity');await f.store.ingest(input);updateCaptureContext(f.store,f.sources,input.deviceId,'activity',{expectedVersion:0,description:'Generated first scope'});
-  const runtime=new ProcessingRuntime(f.store,[],{},Date.now,undefined,f.materials);t.after(()=>runtime.close());let calls=0;
+  const runtime=new ProcessingRuntime(f.store,[],{},Date.now,undefined,f.materials,testScope(t));t.after(()=>runtime.close());let calls=0;
   runtime.registry.register({id:'fixture.channel-context',version:'1',lane:'semantic',async process(value){calls++;assert.deepEqual(value.observations[0].attributionContext?.sourceContextStatements?.[0].captureIds,[input.id]);updateCaptureContext(f.store,f.sources,input.deviceId,'activity',{expectedVersion:1,description:'Generated second scope'});return [{kind:'generated',text:'Generated stale interpretation',metadata:{}}];}});
   const id=runtime.enqueue([{name:'channel',processor:'fixture.channel-context',inputs:[input.id]}]).channel;await runtime.tick();
   const job=runtime.view().jobs.find(job=>job.id===id)!;assert.equal(calls,1);assert.equal(job.state,'stale');assert.deepEqual(job.outputs,[]);

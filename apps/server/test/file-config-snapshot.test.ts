@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,17 +13,17 @@ import {FileProcessing} from '../src/file-processing.js';
 import type {ModelSettings} from '@mote/shared/models';
 import type {TranscriptionProvider} from '../src/file-processors.js';
 
-async function fixture(t:any,options:ConstructorParameters<typeof FileProcessing>[3]={},segmentCount=1){
+async function fixture(t:any,options:ConstructorParameters<typeof FileProcessing>[4]={},segmentCount=1){
  const dir=mkdtempSync(join(tmpdir(),'mote-file-config-')),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources);
  sources.register({id:'audio',name:'Generated audio',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});
  let begin!:()=>void,finish!:()=>void;const started=new Promise<void>(r=>begin=r),gate=new Promise<void>(r=>finish=r),calls:Parameters<TranscriptionProvider['transcribe']>[0][]=[];
- const provider:TranscriptionProvider={transcribe:async input=>{calls.push(input);begin();await gate;return {durationMs:segmentCount*1000,segments:Array.from({length:segmentCount},(_,i)=>({startMs:i*1000,endMs:(i+1)*1000,text:'Generated immutable transcript '+i}))};}};let processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;
+ const provider:TranscriptionProvider={transcribe:async input=>{calls.push(input);begin();await gate;return {durationMs:segmentCount*1000,segments:Array.from({length:segmentCount},(_,i)=>({startMs:i*1000,endMs:(i+1)*1000,text:'Generated immutable transcript '+i}))};}};let processing=new FileProcessing(testScope(t),files,provider,undefined,options);await processing.runtime.ready;
  t.after(async()=>{finish();await processing.close();store.close();rmSync(dir,{recursive:true,force:true});});
  // These snapshot tests exercise the current HTTP ASR processor; the product default now includes diarization.
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http'},processing.runtime.registry)});
  const bytes=Buffer.from('generated audio fixture'),manifest={sourceId:'audio',previousRevision:null,item:{externalId:'generated.wav',revision:'1',observedAt:'2024-01-01T00:00:00.000Z',title:'Generated audio',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},relativePath:'generated.wav',sizeBytes:bytes.length,sha256:sha256(bytes)};
  const session=files.begin(manifest,()=>{});files.part(session.uploadId,0,bytes,()=>{});const id=(await files.commit(session.uploadId,()=>{})).id;
- return {dir,store,files,get processing(){return processing;},id,calls,started,finish,async restart(configuration=processing.configurationSnapshot()){await processing.close();processing=new FileProcessing(files,provider,undefined,{...options,configuration});await processing.runtime.ready;}};
+ return {dir,store,files,get processing(){return processing;},id,calls,started,finish,async restart(configuration=processing.configurationSnapshot()){await processing.close();processing=new FileProcessing(testScope(t),files,provider,undefined,{...options,configuration});await processing.runtime.ready;}};
 }
 
 test('unrelated image settings preserve an active audio grant and its immutable processing snapshot',async t=>{

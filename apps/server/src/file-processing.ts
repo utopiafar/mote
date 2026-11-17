@@ -18,6 +18,7 @@ import {z} from 'zod';
 import {ProviderFailure,fileProcessingSchema,transcriptSchema,diarizationSchema,type AttributionContext,type CaptureRecord,type FileProcessingSettings,type Transcript,type Diarization,filePolicySchema,fileTypePattern,type FilePolicy,type ProcessingService} from '@mote/shared';
 import type {ContextRecord,QueryInput} from '@mote/agent';
 import type {Plugin} from '@deepseek-ai/cordis';
+import type {HostScope} from '@mote/plugin-host';
 import {FileStore} from './files.js';
 import {StoreError,sha256} from './store.js';
 import {FileProcessorRuntime,isLoopback,mediaModelConnection,type FileProcessor,type TranscriptionProvider,type ProcessorInput,type MediaRequestIdentity} from './file-processors.js';
@@ -69,14 +70,14 @@ export class FileProcessing {
   private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
   readonly runtime:FileProcessorRuntime;
   private unregister:Array<()=>Promise<void>>=[];
-  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginScope?:import('@mote/plugin-host').HostScope;plugins?:Plugin[];modules?:string[];builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup;analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;mediaPreparation?:Pick<MediaPreparation,'preparing'>;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
+  constructor(scope:HostScope,readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;plugins?:Plugin[];modules?:string[];builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup;analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;mediaPreparation?:Pick<MediaPreparation,'preparing'>;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
     this.media=mediaRuntimeSettings(options.media);
     files.store.db.exec('CREATE TABLE IF NOT EXISTS media_model_intents(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,phase TEXT NOT NULL,intent_id TEXT NOT NULL,PRIMARY KEY(capture_id,phase))');
     this.processorAdmission=new ProcessorAdmission(files.store);
     this.mediaCalls=new MediaExecutionCalls(files.store);
     installEvidenceDependencies(files.store);
     files.store.db.exec('CREATE TABLE IF NOT EXISTS file_diarization_overrides(capture_id TEXT PRIMARY KEY REFERENCES file_versions(capture_id) ON DELETE CASCADE,json TEXT NOT NULL)');
-    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,options.pluginScope,{builtinContributions:options.builtinContributions,dialogueCleanup:options.dialogueCleanup});
+    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,scope,{builtinContributions:options.builtinContributions,dialogueCleanup:options.dialogueCleanup});
     const initial=options.configService?.current<ProcessingConfiguration>('processing')??options.configuration??defaultProcessingConfiguration(this.media);
     this.saved={revision:options.configService?String(options.configService.revision):'initial',...processingConfigurationSchema.parse(initial)};
     this.publishImagePolicy();

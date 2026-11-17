@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import assert from 'node:assert/strict';
 import test,{type TestContext} from 'node:test';
 import {spawnSync} from 'node:child_process';
@@ -82,7 +83,7 @@ async function fixture(t:TestContext){
     ],output:'cleanup'}));
     return ()=>disposes.reverse().forEach(dispose=>dispose());
   });}};
-  processing=new FileProcessing(files,{transcribe:async()=>{throw Error('The default ASR is outside this fixture');}},undefined,{plugins:[plugin],analyze:async records=>{
+  processing=new FileProcessing(testScope(t),files,{transcribe:async()=>{throw Error('The default ASR is outside this fixture');}},undefined,{plugins:[plugin],analyze:async records=>{
     counts.review++;
     const target=records.map(record=>JSON.parse(record.ocrText)).find(row=>row.text==='使用扣迪士。');assert.ok(target);
     return {answer:JSON.stringify({suggestions:[{chunkId:target.chunkId,original:'扣迪士',replacement:'扣迪斯',reason:'Generated owner review candidate.'}]}),citations:[{id:target.chunkId}]};

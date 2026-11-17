@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -26,7 +27,7 @@ async function fixture(t:import('node:test').TestContext,options:{hold?:boolean;
  const memoryWork=new MaterialMemoryWork(store,materials,()=>Date.now(),()=>true);
  const sources=new SourceStore(store,undefined,memoryWork.inputs),files=new FileStore(store,sources);
  new ArchivedFileStore(store);
- const engine=new ExecutionEngine(store),processing=new FileProcessing(files,undefined,undefined,{executor:engine,builtinContributions:false});
+ const engine=new ExecutionEngine(store),processing=new FileProcessing(testScope(t),files,undefined,undefined,{executor:engine,builtinContributions:false});
  await processing.runtime.ready;processing.installContributions(undefined,{imageRecipes:false});
  const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,memoryWork),organizer=new MaterialOrganizerRuntime(store,materials,[],engine,memoryWork);
  const outcomes:string[]=[],calls={ocr:0,understanding:0};let entered!:()=>void,release!:()=>void;

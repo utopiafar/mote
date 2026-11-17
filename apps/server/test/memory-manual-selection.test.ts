@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -76,7 +77,7 @@ test('a manual selection freezes current range offsets and checkpoint keys',asyn
 });
 
 test('archive-backed selection pins original group contents before a late event is organized',async t=>{
-  const directory=mkdtempSync(join(tmpdir(),'mote-manual-archive-')),store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);
+  const directory=mkdtempSync(join(tmpdir(),'mote-manual-archive-')),store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));
   await runtime.ready;const sources=new SourceStore(store,runtime);
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'coding',name:'Generated Coding',kind:'coding-agent',deviceId:'generated-device',platform:'macos'});

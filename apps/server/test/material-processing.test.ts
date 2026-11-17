@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -22,7 +23,7 @@ function fixture(t:import('node:test').TestContext,enabled=true){
   const directory=mkdtempSync(join(tmpdir(),'mote-material-processing-'));
   const store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store);
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials);
-  const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled}},Date.now,undefined,materials);
+  const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled}},Date.now,undefined,materials,testScope(t));
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   return {store,materials,sources,reader,runtime};
 }

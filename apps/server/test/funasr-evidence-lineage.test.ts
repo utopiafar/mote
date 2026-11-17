@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import assert from 'node:assert/strict';
 import test,{type TestContext} from 'node:test';
 import {spawnSync} from 'node:child_process';
@@ -90,7 +91,7 @@ async function fixture(t:TestContext):Promise<Fixture>{
   });}};
   const cleanup={id:TRANSCRIPT_CLEANUP.id,version:TRANSCRIPT_CLEANUP.version,output:cleanedDialogueOutput,
     process:(input:{transcript:Transcript;checkpoint:{sentences:{precision:'sentence'|'vad'|'unknown'}[]}})=>{counts.cleanup++;return cleanupTranscript(input.transcript,{enabled:cleanupEnabled},input.checkpoint.sentences.map(sentence=>sentence.precision));}};
-  processing=new FileProcessing(files,{transcribe:async()=>{throw Error('The default ASR transport is outside this fixture');}},undefined,{plugins:[plugin],dialogueCleanup:cleanup});
+  processing=new FileProcessing(testScope(t),files,{transcribe:async()=>{throw Error('The default ASR transport is outside this fixture');}},undefined,{plugins:[plugin],dialogueCleanup:cleanup});
   await processing.runtime.ready;
   const settings=fileProcessingSchema.parse({...processing.currentSettings(),audioProcessor:'generated.funasr',diarizationProcessor:'generated.cam',speakerCount:null,speakerMin:null,speakerMax:null,semanticTurns:false,summarize:false});
   const policyFor=(cleanup:boolean)=>{const policy=fixtureFilePolicy(settings,processing!.runtime.registry);policy.profiles.find(profile=>profile.processorId==='generated.funasr')!.parameters.transcriptCleanup=cleanup;return policy;};

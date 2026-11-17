@@ -73,6 +73,7 @@ object QueueArchive {
             val validatedDir = File(directory, "validated"); val validated = DurableQueue(validatedDir, plain)
             for (id in staged.dedupeIds()) {
                 val (event, bytes) = requireNotNull(staged.archiveRecord(id))
+                if (event.has(ReleasedCapture.FIELD)) { ReleasedCapture.validate(event); continue }
                 val wire = wire(event)
                 validated.enqueue(wire, bytes)
             }
@@ -104,11 +105,19 @@ object QueueArchive {
             require(archived.optJSONObject("_archiveAcknowledgment")?.getString("origin")?.let { it == origin.trim().trimEnd('/') } != false) { MoteI18n.text("备份属于不同中央。连接原节点后导入") }
             val existing = target.archiveRecord(id) ?: continue
             val incoming = requireNotNull(source.archiveRecord(id))
+            if (existing.first.has(ReleasedCapture.FIELD)) {
+                require(CaptureUploadVersion.of(existing.first) == CaptureUploadVersion.of(incoming.first) &&
+                    existing.first.getJSONObject("_archiveAcknowledgment").getString("origin") == origin.trim().trimEnd('/')) { MoteI18n.text("备份中存在同 ID 内容冲突，未导入") }
+                continue
+            }
+            require(!incoming.first.has(ReleasedCapture.FIELD)) { MoteI18n.text("备份中存在同 ID 内容冲突，未导入") }
             require(SourceRules.canonical(wire(existing.first)) == SourceRules.canonical(wire(incoming.first)) && existing.second.contentEquals(incoming.second)) { MoteI18n.text("备份中存在同 ID 内容冲突，未导入") }
         }
         var count = 0
         for (id in ids) {
             val (event, bytes) = requireNotNull(source.archiveRecord(id))
+            if (target.archiveRecord(id)?.first?.has(ReleasedCapture.FIELD) == true) continue
+            if (event.has(ReleasedCapture.FIELD)) { target.restoreReleased(event); count++; continue }
             val held = event.optBoolean("_reviewHeld")
             if (target.capture(id) == null) { target.enqueue(wire(event), bytes, reviewHeld = held); count++ }
             else if (held) target.holdForReview(id)

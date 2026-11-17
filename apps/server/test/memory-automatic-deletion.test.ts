@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
@@ -285,7 +286,7 @@ test('partial original retention keeps the independent owner rule until explicit
 });
 
 test('forgetting a Coding archive removes private deletion intent even without capture roots',async t=>{
- const f=await fixture(t),materials=new MaterialStore(f.store),runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin]);await runtime.ready;t.after(()=>runtime.close());
+ const f=await fixture(t),materials=new MaterialStore(f.store),runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;t.after(()=>runtime.close());
  const sources=new SourceStore(f.store,runtime);sources.register({id:'coding',name:'Generated coding',kind:'coding-agent',deviceId:'fixture',platform:'macos'});runtime.configure('coding',{settleSeconds:0});
  await sources.upsert('coding',{externalId:'event-1',revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'message',layer:'snapshot',text:'Generated owner preference: use written decisions for batch tasks.',document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'fixture-session',projectKey:'fixture-project',eventId:'000001',role:'user',part:0,parts:1}}});await runtime.tick();
  const material=materials.list().items[0],memories=new MemoryStore(f.store,ids=>[...f.store.evidence(ids),...materials.evidence(ids)],id=>materials.isCurrentEvidence(id)||f.store.isCurrentEvidence(id)),ids=materials.evidenceIds(material.id),records=memories.readEvidence(ids);
@@ -296,7 +297,7 @@ test('forgetting a Coding archive removes private deletion intent even without c
 });
 
 test('explicit source forgetting erases mixed-source owner rules before removing their dependencies',async t=>{
- const f=await fixture(t),materials=new MaterialStore(f.store),runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin]);await runtime.ready;t.after(()=>runtime.close());
+ const f=await fixture(t),materials=new MaterialStore(f.store),runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;t.after(()=>runtime.close());
  const sources=new SourceStore(f.store,runtime);
  for(const sourceId of ['coding-a','coding-b']){
   sources.register({id:sourceId,name:'Generated '+sourceId,kind:'coding-agent',deviceId:'fixture',platform:'macos'});runtime.configure(sourceId,{settleSeconds:0});
@@ -322,7 +323,7 @@ test('source lineage survives prune, restart and portable restore before explici
  const [intent]=f.memories.deletions.export();assert.deepEqual(intent.dependencies,[b]);assert.deepEqual(intent.originalTexts,[]);assert.deepEqual(intent.derivationSourceIds,['coding-a','coding-b']);assert.equal(intent.sourceLineageComplete,true);assert.equal(f.store.evidence([a]).length,0);
  const restored=await fixture(t);await restored.store.importArchive(f.store.exportArchive(2_000_000));assert.deepEqual(restored.memories.deletions.export(),[intent]);
  for(const target of [f,restored]){
-  const runtime=new SourcePipelineRuntime(target.store,new MaterialStore(target.store),[codingSourcePlugin]);await runtime.ready;t.after(()=>runtime.close());runtime.configure('coding-a',{pipelineId:'mote.coding',settleSeconds:0});
+  const runtime=new SourcePipelineRuntime(target.store,new MaterialStore(target.store),[codingSourcePlugin],testScope(t));await runtime.ready;t.after(()=>runtime.close());runtime.configure('coding-a',{pipelineId:'mote.coding',settleSeconds:0});
   assert.equal(runtime.forget('coding-a').erased,true);assert.deepEqual(target.memories.deletions.export(),[]);assert.equal(target.store.evidence([b]).length,1);
   await target.memories.deletions.review({question:'Generated'},output(target,[b]),async()=>assert.fail('Forgotten A text must not enter subsequent B review'));
  }

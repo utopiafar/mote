@@ -1,4 +1,7 @@
 import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const memoryStorageSchemaInstallation={owner:'memory',requires:[],install:memoryStorageSchema} as const satisfies SchemaInstallation;
 
 /** Memory owns native cards, work/checkpoints, evidence dependencies and durable provider revocations. */
 export function memoryStorageSchema(db:DatabaseSync){db.exec(`

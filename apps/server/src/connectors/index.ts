@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
-import {Context} from '@deepseek-ai/cordis';
+import type {Context} from '@deepseek-ai/cordis';
 import {PluginResourceScope,type HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import {installRecordingSources,recordingSourceManifests,type RecordingProvider} from '../plugins/recording-sources.js';
@@ -38,10 +38,15 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
 
 /** One host-owned install scope per connector. The scope owns routes, OAuth
  * callbacks, timers and host-bound state; closing one never touches siblings. */
-function connectorScope(packageId:string,instanceId:string,errorMessage:string):ConnectorInstanceScope&{resources:PluginResourceScope}{
+function connectorScope(owner:Context,packageId:string,instanceId:string,errorMessage:string):ConnectorInstanceScope&{resources:PluginResourceScope}{
   const resources=new PluginResourceScope(undefined,errorMessage);
-  const cordis=new Context();
-  resources.retire(()=>cordis.fiber.dispose());
+  const fiber=owner.plugin((context:Context)=>{
+    context.on('internal/plugin',unloading=>{
+      if(unloading.uid===null&&(unloading===context.fiber||unloading===owner.fiber||unloading===owner.root.fiber))resources.stop();
+    });
+    context.effect(()=>()=>resources.close());
+  });
+  const cordis=fiber.ctx;
   const identity={
     host:{kind:'central' as const,id:'central-connectors'},
     packageId,installationId:'central-connectors',instanceId,activationId:randomUUID(),
@@ -53,13 +58,18 @@ function connectorScope(packageId:string,instanceId:string,errorMessage:string):
     every:(ms:number,work:(signal:AbortSignal)=>unknown|Promise<unknown>)=>resources.every(ms,work),
     retire:(dispose:()=>unknown|Promise<unknown>)=>resources.retire(dispose),
   });
-  return {resources,scope,fence:()=>resources.stop(),close:()=>resources.close()};
+  let closing:Promise<void>|undefined;
+  return {resources,scope,fence:()=>resources.stop(),close:()=>closing??=(async()=>{
+    const errors:unknown[]=[];
+    for(const dispose of [()=>resources.close(),()=>fiber.dispose()])try{await dispose();}catch(error){errors.push(error);}
+    if(errors.length)throw new AggregateError(errors,errorMessage);
+  })()};
 }
 
 /** Register built-ins plus trusted assembly manifests before Fastify listens.
  * Owner routes and OAuth callbacks reach only the one dynamic dispatcher; each
  * installed connector gets its own host scope and failure rollback. */
-export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[],dispatcherInput?:DynamicHttpDispatcher):Promise<ConnectorHostAdapter>{
+export async function registerConnectors(app:FastifyInstance,owner:Context,context:ConnectorContext,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[],dispatcherInput?:DynamicHttpDispatcher):Promise<ConnectorHostAdapter>{
   const directory=context.config.connectors?.directory??join(context.config.dataDir,'connectors');
   const larkBinding=testing?.larkBinding??createLarkBinding({runner:testing?.lark??createLarkRunner(directory)});
   const ctx={...context,bindings:{lark:larkBinding},...(testing?.fetch?{fetch:testing.fetch}:{}),config:{...context.config,connectors:{directory,...context.config.connectors}}};
@@ -68,7 +78,7 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   const manifests=[...builtins(testing),...additionalManifests];
   const control=new PluginControlStore(context.store);
   const initiallyDisabled=prepareBundledConnectors(control,manifests.map(manifest=>manifest.id));
-  const status=connectorScope('mote.connectors','status','Connector status scope disposal failed');
+  const status=connectorScope(owner,'mote.connectors','status','Connector status scope disposal failed');
   app.addHook('onClose',()=>status.close());
   const states=new WeakMap<HostScope,StateStore>();
   const dispatcher=dispatcherInput??createDynamicHttpDispatcher({
@@ -80,7 +90,7 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
     manifests,context:ctx,dispatcher,statusScope:status.scope,bindings:{lark:larkBinding},initiallyDisabled,
     pluginStates:()=>Object.fromEntries(control.builds().flatMap(record=>{const connector=bundledConnector(record.id);return connector?[[connector.id,{enabled:Boolean(record.desired)}]]:[];})),
     required:additionalManifests.map(manifest=>manifest.id),
-    scopeFor:(manifest,instanceId)=>connectorScope(manifest.id,instanceId,`Connector ${instanceId} scope disposal failed`),
+    scopeFor:(manifest,instanceId)=>connectorScope(owner,manifest.id,instanceId,`Connector ${instanceId} scope disposal failed`),
     stateFor:(scope,sourceKinds)=>{
       let state=states.get(scope);
       if(!state){state=createInstanceState(ctx.store,scope,undefined,sourceKinds);states.set(scope,state);}
@@ -88,11 +98,13 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
     },
     transport:instance=>instance.mountTransport?.(app),
   });
-  const closeHost=async()=>{
+  let closing:Promise<void>|undefined;
+  const closeHost=()=>closing??=(async()=>{
     const errors:unknown[]=[];
     for(const dispose of [()=>adapter.close(),()=>status.close(),()=>dispatcher.close()])try{await dispose();}catch(error){errors.push(error);}
     if(errors.length)throw new AggregateError(errors,'Connector host disposal failed');
-  };
+  })();
+  owner.effect(()=>closeHost);
   try{await adapter.start();}
   catch(error){try{await closeHost();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host startup and disposal failed',{cause:error});}throw error;}
   for(const record of control.builds())if(record.id.startsWith('bundled:')){

@@ -1,4 +1,7 @@
 import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const conversationSchemaInstallation={owner:'conversation',requires:[],install:conversationSchema} as const satisfies SchemaInstallation;
 
 /** Conversation metadata is installed with the vault; turn history is installed by Conversations. */
 export function conversationSchema(db:DatabaseSync){db.exec(`

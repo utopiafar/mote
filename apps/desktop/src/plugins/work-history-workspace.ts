@@ -23,20 +23,22 @@ export interface WorkHistoryWorkspaceOptions {
   readonly queue: DurableQueue;
   readonly sources: () => LocalSourceManager;
   readonly guard?: () => void;
+  readonly generation?:()=>number|string;
 }
 
 export function createWorkHistoryWorkspacePlugin(options: WorkHistoryWorkspaceOptions): BuiltinDesktopPlugin {
+  let scopeSignal:AbortSignal|undefined;
+  const active=()=>{options.guard?.();if(scopeSignal?.aborted)throw Error('History authorization ended');};
   // A Central read that started against an older connection is never projected
   // as the current node's work; callers re-read after the change.
-  const withConnection = async <T>(operation: (config: Config) => Promise<T>): Promise<T> => {
-    options.guard?.();
-    const requested = options.settings();
-    const result = await operation(requested);
-    if (options.settings() !== requested) throw new Error(moteText('连接已改变，请刷新采集记录'));
+  const withConnection = async <T>(operation: (config: Config,authorize:()=>void) => Promise<T>): Promise<T> => {
+    active();
+    const requested=options.settings(),generation=options.generation?.();const authorize=()=>{active();if(options.settings()!==requested||options.generation?.()!==generation)throw Error(moteText('连接已改变，请刷新采集记录'));};
+    authorize();const result=await operation({...requested},authorize);authorize();
     return result;
   };
   const local = <T>(operation: () => T): T => {
-    options.guard?.();
+    active();
     return operation();
   };
   return {
@@ -46,6 +48,7 @@ export function createWorkHistoryWorkspacePlugin(options: WorkHistoryWorkspaceOp
         instanceId: 'mote.work-history-workspace',
         capabilities: [workHistoryReadCapability],
       });
+      scopeSignal=scope.signal;
       const outcome = await host.startPlugin(scope, plugin => {
         const roleFrameUrls = {main: [pageUrl]};
         const register = (channel: string, handler: (args: readonly unknown[]) => unknown) =>
@@ -61,12 +64,12 @@ export function createWorkHistoryWorkspacePlugin(options: WorkHistoryWorkspaceOp
         register(workHistoryWorkspaceChannels.syncHistoryContents, args =>
           local(() => options.history.contents(options.settings(), args[0] as SyncHistoryContentQuery)));
         register(workHistoryWorkspaceChannels.syncHistoryContent, args =>
-          withConnection(config => {
+          withConnection((config,authorize) => {
             const [runId, key, offset, includeImage] = args;
             if (typeof runId !== 'string' || typeof key !== 'string') throw Error('Invalid sync content reference');
             return syncContent(
               options.history, options.queue, options.sources(), config,
-              runId, key, offset as number | undefined, includeImage === undefined ? true : includeImage === true,
+              runId, key, offset as number | undefined, includeImage === undefined ? true : includeImage === true,authorize,
             );
           }));
         register(workHistoryWorkspaceChannels.syncHistoryPending, () =>

@@ -57,7 +57,7 @@ export interface MeetingRecordingPermissions {microphone:MeetingPermissionValue;
 export interface MeetingSessionView {
   id:string;startedAt:string;endedAt?:string;state:'recording'|'completed'|'uploaded'|'failed';
   durationMs:number;microphone:boolean;systemAudio:boolean;noticeAcknowledgedAt:string;
-  platform:'macos'|'android';warnings:string[];uploadedAt?:string;captureId?:string;uploadOrigin?:string;error?:string;
+  platform:'macos'|'android';warnings:string[];uploadedAt?:string;captureId?:string;uploadOrigin?:string;deviceId?:string;localContentRelease?:{at:string;pending?:true};error?:string;
 }
 export interface MeetingRecordingStatus {
   noticeAcknowledged:boolean;recording:boolean;startedAt?:string;permissions:MeetingRecordingPermissions;
