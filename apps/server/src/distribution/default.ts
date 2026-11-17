@@ -5,6 +5,7 @@ import {configDocumentDomains,configFromDocument,documentFromConfig,validateReso
 import {createConfigurationPlatform} from '../plugins/configuration-platform.js';
 import {createVaultPlatformAssembly} from '../plugins/vault-platform.js';
 import {plugins as platformPlugins} from '../assembly/platform.js';
+import {plugins as systemPlugins} from '../plugins/system-domain.js';
 import {plugins as sourcePlugins} from '../assembly/sources.js';
 import {plugins as materialPlugins} from '../assembly/materials.js';
 import {plugins as processingPlugins} from '../assembly/processing.js';
@@ -55,11 +56,12 @@ export const authorizationProvider:FoundationProvider<'authorization'>=Object.fr
     const expected=Buffer.from(`Bearer ${config.token}`);
     return {validOwnerBearer(authorization){if(typeof authorization!=='string')return false;const supplied=Buffer.from(authorization);return supplied.length===expected.length&&timingSafeEqual(supplied,expected);}};
   }});
-/** The complete default domain-plugin selection. Each entry is owned by the
- * assembly module for its domain; this table only selects and pins the build
+/** The complete default domain-plugin selection. Each entry is owned by its
+ * domain module; this table only selects and pins the build
  * descriptors, never constructs a second object or installs another host. */
 export const defaultPlugins:readonly CentralDomainPlugin[]=Object.freeze([
   ...platformPlugins,
+  ...systemPlugins,
   ...sourcePlugins,
   ...materialPlugins,
   ...processingPlugins,
