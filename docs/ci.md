@@ -21,6 +21,24 @@ node scripts/ci/run.mjs --task web --dry-run
 
 Use the PR's actual target remote in comparisons. Without `--head`, selection includes working changes; with it, only the committed comparison is selected. Invalid revisions fail. `--all` expands light scopes only. Local/PR selection differs from main's successful-run baseline. Broad `npm test`, `check:local` and component commands remain available, but are not required for every edit. A dry-run prints a plan, not a passing result.
 
+## SQL ownership boundaries
+
+`node scripts/ci/architecture.mjs` also runs the [SQL ownership check](../scripts/ci/sql-ownership.mjs). Run that module directly for a focused check, `--inventory` for concrete covered/uncovered files, relations and statement fingerprints, or `--map` to print the generated ownership map. The check never changes the database or updates a baseline.
+
+The [policy](../scripts/ci/sql-ownership-policy.mjs) names production `SchemaInstallation` declarations and exact consumer modules. Owner names and tables/views are extracted from each declared install function into the checked-in [generated map](../scripts/ci/sql-ownership-map.json); changing a declaration makes a stale map fail. This initial scope contains the core vault installers and Material/Material Catalog. Execution, feature Memory and other installers must join after their production owner declarations land. The CLI explicitly reports partial coverage; passing with existing debt does not mean every domain is covered.
+
+The TypeScript AST follows immutable lexical constants, concatenations, finite conditional branches, templates, and local `prepare`/`exec` aliases, and also inspects complete SQL literals outside those calls. A small SQL lexer checks visible read/write relations, quoted identifiers, nested queries, CTE scopes, trigger bodies and FTS table functions. Unknown fragments remain unproved SQL; this is a static literal boundary, not whole-program value-flow analysis or a general SQL validator. Foreign-key declarations express schema dependencies rather than data reads. SQLite metadata and built-in JSON/pragma table functions are outside domain data ownership.
+
+A cross-owner access fails unless its exact statement is registered. Shared read models require a reviewed purpose and exact file, statement fingerprint, table and read access; they never grant writes. The initial grants cover only Material Catalog's bounded source facets over visible Material heads and source labels. Other existing accesses remain debt, including potentially legitimate reads that still need domain review.
+
+The separate [SQL baseline](../scripts/ci/sql-ownership-baseline.json) freezes existing cross-owner accesses, unresolved SQL, unknown tables and uncovered consumers. A `symbols` array groups exact fingerprints for the same access; it is not a file or table exemption. Fingerprints include resolved constant contents and occurrence count; unresolved SQL also fingerprints its enclosing lexical body. New statements, copied calls, changed constants and changed dynamic helpers fail. Remove stale entries as consumers gain an owner or access moves behind its owner; existing debt may only shrink. Do not regenerate the baseline to approve a change. When adding an owner, review the generated map and remove resolved coverage entries instead of exempting the entire module.
+
+Focused generated-fixture checks:
+
+```sh
+node --test scripts/ci/sql-ownership.test.mjs scripts/ci/architecture.test.mjs
+```
+
 ## Explicit manual workflow
 
 In **Checks → Run workflow**, choose a workflow ref containing the runner and supply:

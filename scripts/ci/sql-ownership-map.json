@@ -1,0 +1,420 @@
+{
+ "owners": [
+  {
+   "declaration": "vaultSchemaInstallation",
+   "owner": "vault",
+   "fn": "vaultSchema",
+   "file": "apps/server/src/vault-schema.ts"
+  },
+  {
+   "declaration": "captureSchemaInstallation",
+   "owner": "capture",
+   "fn": "captureSchema",
+   "file": "apps/server/src/capture-schema.ts"
+  },
+  {
+   "declaration": "captureProjectionSchemaInstallation",
+   "owner": "capture-projections",
+   "fn": "captureProjectionSchema",
+   "file": "apps/server/src/capture-schema.ts"
+  },
+  {
+   "declaration": "perceptionSchemaInstallation",
+   "owner": "perception",
+   "fn": "perceptionSchema",
+   "file": "apps/server/src/perception-schema.ts"
+  },
+  {
+   "declaration": "sourceSchemaInstallation",
+   "owner": "source",
+   "fn": "sourceSchema",
+   "file": "apps/server/src/source-schema.ts"
+  },
+  {
+   "declaration": "fileSchemaInstallation",
+   "owner": "file",
+   "fn": "fileSchema",
+   "file": "apps/server/src/file-schema.ts"
+  },
+  {
+   "declaration": "memoryStorageSchemaInstallation",
+   "owner": "memory",
+   "fn": "memoryStorageSchema",
+   "file": "apps/server/src/memory-storage-schema.ts"
+  },
+  {
+   "declaration": "conversationSchemaInstallation",
+   "owner": "conversation",
+   "fn": "conversationSchema",
+   "file": "apps/server/src/conversation-schema.ts"
+  },
+  {
+   "declaration": "insightSchemaInstallation",
+   "owner": "insight",
+   "fn": "insightSchema",
+   "file": "apps/server/src/insight-schema.ts"
+  },
+  {
+   "declaration": "todoSchemaInstallation",
+   "owner": "todo",
+   "fn": "ensureTodoSchema",
+   "file": "apps/server/src/todo-schema.ts"
+  },
+  {
+   "declaration": "captureReadModelsSchemaInstallation",
+   "owner": "capture-read-models",
+   "fn": "initializeReadModels",
+   "file": "apps/server/src/read-models.ts"
+  },
+  {
+   "declaration": "sourceCatalogSchemaInstallation",
+   "owner": "source-catalog",
+   "fn": "initializeSourceCatalog",
+   "file": "apps/server/src/source-catalog.ts"
+  },
+  {
+   "declaration": "materialSchemaInstallation",
+   "owner": "material",
+   "fn": "materialSchema",
+   "file": "apps/server/src/material-schema.ts"
+  },
+  {
+   "declaration": "materialCatalogSchemaInstallation",
+   "owner": "material-catalog",
+   "fn": "materialCatalogSchema",
+   "file": "apps/server/src/material-catalog.ts"
+  }
+ ],
+ "tables": {
+  "blob_counts": {
+   "owner": "capture-read-models",
+   "file": "apps/server/src/read-models.ts",
+   "installer": "captureReadModelsSchemaInstallation"
+  },
+  "blobs": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "capture_counts": {
+   "owner": "capture-read-models",
+   "file": "apps/server/src/read-models.ts",
+   "installer": "captureReadModelsSchemaInstallation"
+  },
+  "capture_gallery": {
+   "owner": "capture-projections",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureProjectionSchemaInstallation"
+  },
+  "capture_ocr_receipts": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "captures": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "captures_fts": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "captures_trigram": {
+   "owner": "capture-projections",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureProjectionSchemaInstallation"
+  },
+  "changes": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "conversation_retired_roots": {
+   "owner": "conversation",
+   "file": "apps/server/src/conversation-schema.ts",
+   "installer": "conversationSchemaInstallation"
+  },
+  "conversation_retired_turn_roots": {
+   "owner": "conversation",
+   "file": "apps/server/src/conversation-schema.ts",
+   "installer": "conversationSchemaInstallation"
+  },
+  "conversations": {
+   "owner": "conversation",
+   "file": "apps/server/src/conversation-schema.ts",
+   "installer": "conversationSchemaInstallation"
+  },
+  "devices": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "file_artifacts": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_assets": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_chunks": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_chunks_fts": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_chunks_trigram": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_evidence_links": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_forgotten": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_heads": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_jobs": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_objects": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_parts": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_reviews": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_snapshot_index": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_snapshot_inputs": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_snapshot_text": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_steps": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_upload_scopes": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_uploads": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_usage": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_versions": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "insights": {
+   "owner": "insight",
+   "file": "apps/server/src/insight-schema.ts",
+   "installer": "insightSchemaInstallation"
+  },
+  "material_block_payloads": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_block_versions": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_blocks": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_catalog_generation": {
+   "owner": "material-catalog",
+   "file": "apps/server/src/material-catalog.ts",
+   "installer": "materialCatalogSchemaInstallation"
+  },
+  "material_coding_snapshots": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_evidence": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_evidence_context": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_evidence_dependencies": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_fts": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_fts_blocks": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_heads": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_index_garbage": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_index_requests": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_members": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_owner_declarations": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_revisions": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_searchable": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "memories": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_batch_dependencies": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_batches": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_checkpoints": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_dependencies": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_jobs": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_provider_evidence_revocations": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "perception_jobs": {
+   "owner": "perception",
+   "file": "apps/server/src/perception-schema.ts",
+   "installer": "perceptionSchemaInstallation"
+  },
+  "perception_results": {
+   "owner": "perception",
+   "file": "apps/server/src/perception-schema.ts",
+   "installer": "perceptionSchemaInstallation"
+  },
+  "settings": {
+   "owner": "vault",
+   "file": "apps/server/src/vault-schema.ts",
+   "installer": "vaultSchemaInstallation"
+  },
+  "source_catalog": {
+   "owner": "source-catalog",
+   "file": "apps/server/src/source-catalog.ts",
+   "installer": "sourceCatalogSchemaInstallation"
+  },
+  "source_connections": {
+   "owner": "source",
+   "file": "apps/server/src/source-schema.ts",
+   "installer": "sourceSchemaInstallation"
+  },
+  "source_heads": {
+   "owner": "source",
+   "file": "apps/server/src/source-schema.ts",
+   "installer": "sourceSchemaInstallation"
+  },
+  "source_versions": {
+   "owner": "source",
+   "file": "apps/server/src/source-schema.ts",
+   "installer": "sourceSchemaInstallation"
+  },
+  "todos": {
+   "owner": "todo",
+   "file": "apps/server/src/todo-schema.ts",
+   "installer": "todoSchemaInstallation"
+  }
+ }
+}
