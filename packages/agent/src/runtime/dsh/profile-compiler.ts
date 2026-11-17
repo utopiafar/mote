@@ -33,7 +33,7 @@ export class DshProfileError extends Error {
 }
 
 /** Trusted installed-artifact projection from the Host, never a query/config DTO.
- * H07/A07 own verification and grant authority; selection is not a sandbox. */
+ * The Host owns installed-artifact verification and grant authority; selection is not a sandbox. */
 export interface InstalledDshModule {
   readonly reference: RuntimeModuleReference;
   readonly packageRoot: string;
@@ -68,7 +68,7 @@ function configurationValue(value: unknown): RuntimeProfileConfiguration {
   return {assembly: runtimeAssemblySchema.parse(parsed.assembly), allowedHostCapabilities: allowed, launch};
 }
 
-/** Resolve exact installed refs through A03's real-loader planner. All errors
+/** Resolve exact installed refs through the real native-assembly planner. All errors
  * exposed here are value-free; package paths/source and secrets stay private. */
 export async function compileNativeDshProfile(profile: ResolvedRuntimeProfile<RuntimeProfileConfiguration>, installed: readonly InstalledDshModule[]): Promise<readonly NativeDshAssemblyEntry[]> {
   let configuration: RuntimeProfileConfiguration;
@@ -93,7 +93,7 @@ export async function compileNativeDshProfile(profile: ResolvedRuntimeProfile<Ru
       const manifest = await readNativeDshManifest(root);
       if (group.some(item => item.packageName !== manifest.name || item.packageVersion !== manifest.version)) throw new DshProfileError('dsh_module_unavailable');
       // One installed package is one trusted grant scope; every selection must
-      // agree, and A03 requires ALL package-level declarations to be granted.
+      // agree, and native assembly requires ALL package-level declarations to be granted.
       if (group.some(item => !isDeepStrictEqual([...item.grantedCapabilities].sort(), [...group[0]!.grantedCapabilities].sort()))) throw new DshProfileError('dsh_profile_invalid');
       const plan = planNativeDshAssembly(root, manifest, group.map(item => ({
         id: 'native-' + createHash('sha256').update(JSON.stringify(item.reference)).digest('hex').slice(0, 24),

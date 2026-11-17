@@ -24,7 +24,7 @@ export interface ModelSelection {
 }
 
 /** Local model/transport access may contain secrets. Only selection is eligible for a public receipt.
- * A02/A10 define the actual adapter value and pairing checks; a Codex login is not an HTTP model. */
+ * The model adapter and transport authority define the actual adapter value and pairing checks; a Codex login is not an HTTP model. */
 export interface ModelLease<Adapter = unknown> extends ServiceLease<Adapter> {
   readonly selection: ModelSelection;
 }
@@ -79,8 +79,8 @@ export interface HostToolPort {
   /** Host verifies this issued attempt is still active, plus scope/grant/plugin, before I/O,
    * after reading/before disclosure and after awaiting the sender, before any receipt mutation.
    * A valid run lease alone cannot admit a late callback from an already settled attempt.
-   * The sender resolves only after the adapter's actual delivery boundary. A05/A12 implement it:
-   * DSH attachment preparation; Codex same-active-turn steer ACK, including exact turn identity.
+   * The sender resolves only after the adapter's actual delivery boundary. The DSH runtime prepares
+   * attachments; the Codex runtime ACKs the same active-turn steer, including exact turn identity.
    * Failure/cancellation/stale identity cannot confirm a delivery. No provider-supplied receipt is accepted. */
   deliver<T>(attempt: RuntimeAttempt, call: RuntimeToolCall, sender: (payload: RuntimeToolPayload) => Promise<T>): Promise<T>;
 }
@@ -103,7 +103,7 @@ export interface HostRunPort {
   observe?(event: AgentTraceEvent): void;
   assertCurrent(): void;
   /** Host admission runs outside active-time accounting; all repairs share one active budget.
-   * A10 additionally fences each observable DSH HTTP attempt. Codex internal retries are not observable. */
+   * The DSH runtime additionally fences each observable HTTP attempt. Codex internal retries are not observable. */
   runModel<T>(attempt: RuntimeAttempt, task: () => Promise<T>): Promise<T>;
   /** Host validates its issued attempt, stamps identity, normalizes usage and isolates observers.
    * null is only for tool readiness during prepare; Host also rejects readiness after prepare.
