@@ -39,9 +39,12 @@ export function createConversationSteering(dependencies:QueryRunDependencies,run
       try{return await execute(prepared);}
       catch(error){if(error instanceof StoreError&&error.statusCode===409&&(error as StoreError&{code?:string}).code==='native_application_busy')throw new ExecutionFailure('waiting','native_application_busy',1000);throw error;}
     };
+    // Research children share the operation id and lane, but only the actual
+    // Host coordinator owns this control channel and receives owner input.
+    if(!input.hostControlChannel||input.executionLane==='background'||input.skill||input.responseMode&&input.responseMode!=='answer')return perform(input);
     const operationId=input.traceContext?.operationId,id=operationId?.startsWith('query:')?operationId.slice(6):undefined;
     const initial=id&&conversations.messageForRun(id);
-    if(!initial||input.executionLane==='background'||input.skill||input.responseMode&&input.responseMode!=='answer')return perform(input);
+    if(!initial)return perform(input);
     const work=runtime.get('query:'+id),stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
     const assertCurrent=()=>{
       input.signal?.throwIfAborted();if(!fence||!executor.isCurrentGrant(stepId,fence))throw new StoreError('Conversation steering admission expired',409);

@@ -2,7 +2,7 @@
 
 The product direction is one continuing conversation for questions, records, corrections and authorized work. The model interprets the owner's latest instructions and effective Memory, with reasonable judgment for low-consequence details that are easy to correct. Pure recording needs a light acknowledgement; evidence and structured detail stay behind small optional entry points.
 
-The current main conversation still uses read-only queries and action drafts, with messages queued per conversation. User steering, unified actions and background integration are implementation gaps in the [architecture map](architecture.md), not a separate permanent read-only product mode.
+The main conversation persists each owner message before starting its read-only query or action draft. When compatible work is already active, the selected model decides whether the new message supplements that work or starts an independent request. Independent messages can answer while another query waits. Steering formal assistant tasks, unified actions and lightweight recording/onboarding remain separate implementation steps in the [architecture map](architecture.md).
 
 ## Conversation and background work
 
@@ -11,6 +11,10 @@ Central retains submitted conversations, task state and results across clients. 
 Tasks, matters, suggestions, drafts and notifications describe different state. A suggestion is not an executed action, an accepted task is not a completed result, and an Agent report is not independent verification. Background uncertainty can remain unresolved until it affects the current answer or action. Owner questions use the shared versioned service and release execution resources while waiting.
 
 Important constraints such as “do not create calendar events automatically” remain effective. A newer applicable instruction can steer ongoing work; unrelated new messages do not implicitly cancel it. Current provider support and task cancellation/version checks determine whether steering or continuation is available. No keyword table should determine whether a sentence is a question, request or personal preference.
+
+For a compatible active Codex query, Central delivers the exact owner supplement through the existing native turn's `turn/steer` and retains its actual acknowledgement and turn identity. The acknowledgement is a receipt, not the adjusted task's final result. DSH currently has no matching live-steer protocol; its supplement is a durable continuation after the original query, with a visible relationship to the later owner message. The superseded original draft cannot start work as the latest instruction. A persistent DSH application keeps its existing single-writer identity: a second interaction waits without starting a private application child, while a query using another available runtime can continue.
+
+Unconfirmed delivery remains unknown across restart and is never blindly resent. An acknowledged supplement can resume only from the original valid prepared input, with its original tools and scope plus the exact acknowledged owner text; missing or invalid input blocks recovery. Cancelling words already accepted by the runtime withdraws the affected current query/result rather than claiming to erase the model's input. Late or superseded results cannot publish. A supplement does not widen the older query's source, model or Action authority, and recovery does not replay external effects.
 
 ## Authorization and external effects
 
