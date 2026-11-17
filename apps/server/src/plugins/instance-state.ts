@@ -1,3 +1,5 @@
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
 import {createHash} from 'node:crypto';
 import type {HostScope} from '@mote/plugin-host';
 import {
@@ -7,14 +9,11 @@ import {
 import type {Store} from '../store.js';
 import {sourceIdSchema} from '@mote/shared';
 
-type Row = {key: string; json: string; bytes: number; revision: number; updated_at: string};
-type Namespace = {readonly packageId: string; readonly installationId: string; readonly instanceId: string};
+export const instanceStateSchemaInstallation={owner:'plugin-instance-state',requires:[],install:instanceStateSchema} as const satisfies SchemaInstallation;
 
-/** Feature-owned DDL for the fixed startup inventory. Production wiring calls
- * this before app.ready(); InstanceState also calls it defensively for isolated
- * module tests. One table in the existing vault, no second control/state DB. */
-export function installInstanceStateSchema(store: Store) {
-  store.db.exec(`CREATE TABLE IF NOT EXISTS plugin_instance_state(
+/** Only the original instance-state table; ledger registration stays at its call site. */
+function instanceStateSchema(db:DatabaseSync){
+  db.exec(`CREATE TABLE IF NOT EXISTS plugin_instance_state(
     package_id TEXT NOT NULL,
     installation_id TEXT NOT NULL,
     instance_id TEXT NOT NULL,
@@ -25,6 +24,16 @@ export function installInstanceStateSchema(store: Store) {
     updated_at TEXT NOT NULL,
     PRIMARY KEY(package_id, installation_id, instance_id, key)
   ) WITHOUT ROWID`);
+}
+
+type Row = {key: string; json: string; bytes: number; revision: number; updated_at: string};
+type Namespace = {readonly packageId: string; readonly installationId: string; readonly instanceId: string};
+
+/** Feature-owned DDL for the fixed startup inventory. Production wiring calls
+ * this before app.ready(); InstanceState also calls it defensively for isolated
+ * module tests. One table in the existing vault, no second control/state DB. */
+export function installInstanceStateSchema(store: Store) {
+  installSchemaPlan(store.db,[instanceStateSchemaInstallation]);
   // Creates the StorageLedger row/triggers for this new table before its
   // first write.
   store.registerStorage('plugin-control',{plugin_instance_state:"bytes+length(CAST(key AS BLOB))+length(CAST(package_id AS BLOB))+length(CAST(installation_id AS BLOB))+length(CAST(instance_id AS BLOB))+length(CAST(updated_at AS BLOB))+32"});

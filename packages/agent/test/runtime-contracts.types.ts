@@ -3,7 +3,7 @@ import type {AgentAnswer} from '../src/types.js';
 import type {HostOutputInput, HostOutputProvider, HostRunBudget, HostRunDependencies, HostRunEvent} from '../src/host/run-contracts.js';
 import type {HostRunPort, ModelLease, ResolvedRuntimeProfile, RuntimeAttempt, RuntimeHandle, RuntimeOutcome, RuntimeProvider, RuntimeToolCall, RuntimeToolPayload} from '../src/runtime/contracts.js';
 
-// Compile-only consumers of the real A01 declarations. Not an assembled runtime or T3.
+// Compile-only consumers of the real runtime and Host declarations. Not an assembled runtime or real producer/consumer integration.
 declare const provider: RuntimeProvider;
 declare const profile: ResolvedRuntimeProfile;
 declare const model: ModelLease;
@@ -40,7 +40,7 @@ port.emit({type: 'progress', progress: {stage: 'model'}}, null);
 const initial: RuntimeAttempt = {id: 'generated-initial', index: 0};
 const repair: RuntimeAttempt = {id: 'generated-repair', index: 1};
 // Both carry issued identity. If repair is active, the first call is dynamically stale:
-// A04 must reject it before disclosure/receipt, not infer currency from the still-valid run lease.
+// The Host run session must reject it before disclosure/receipt, not infer currency from the still-valid run lease.
 port.tools.deliver(initial, call, sender);
 port.tools.deliver(repair, call, sender);
 // @ts-expect-error delivery cannot omit the Host-issued attempt
