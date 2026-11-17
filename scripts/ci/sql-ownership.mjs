@@ -52,10 +52,10 @@ export function sqlAccesses(sql,{schemaLifecycle=false,maintenance=false}={}){
  const relation=(index,kind)=>{
   if(t[index]==='(')return;
   if(!tokens[index]?.identifier)return;
-  let table=tokens[index].text;
-  if(t[index+1]==='.'&&tokens[index+2]?.identifier)table=['main','temp'].includes(table)?tokens[index+2].text:table+'.'+tokens[index+2].text;
+  let table=tokens[index].text;const qualified=t[index+1]==='.';
+  if(qualified&&tokens[index+2]?.identifier)table=['main','temp'].includes(table)?tokens[index+2].text:table+'.'+tokens[index+2].text;
   else if(t[index+1]==='('&&kind==='read'&&(['json_each','json_tree'].includes(table)||table.startsWith('pragma_')))return;
-  if(!ctes.some(cte=>cte.name===table&&index>=cte.start&&index<cte.end))accesses.push({table,kind});
+  if(!(kind==='read'&&!qualified&&ctes.some(cte=>cte.name===table&&index>=cte.start&&index<cte.end)))accesses.push({table,kind});
  };
  // WITH [RECURSIVE] name [(columns)] AS [NOT] MATERIALIZED (...), name ...
  for(let i=0;i<t.length;i++)if(t[i]==='with'){
@@ -214,7 +214,7 @@ export function sqlStatements(file,text,{finiteScopes=[]}={}){
  const sqlMethod=node=>{
   node=unwrap(node);if(!node)return false;
   if(ts.isPropertyAccessExpression(node))return ['prepare','exec'].includes(node.name.text);
-  if(ts.isElementAccessExpression(node)&&ts.isStringLiteralLike(node.argumentExpression))return ['prepare','exec'].includes(node.argumentExpression.text);
+  if(ts.isElementAccessExpression(node))return literal(node.argumentExpression).some(method=>['prepare','exec'].includes(method));
   return false;
  };
  const sink=(node,seen=new Set())=>{

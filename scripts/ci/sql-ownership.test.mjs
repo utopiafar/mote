@@ -38,6 +38,19 @@ test('SQL relation lexer distinguishes strings, comments, quoted names, CTE alia
  assert.ok(sqlAccesses('SELECT * FROM settings WHERE EXISTS(WITH settings AS (SELECT 1) SELECT * FROM settings)').accesses.some(x=>x.table==='settings'));
 });
 
+test('CTEs shadow only unqualified reads, never schema-qualified relations or DML targets',()=>{
+ assert.deepEqual(sqlAccesses('WITH settings AS (SELECT 1) SELECT * FROM settings').accesses,[]);
+ for(const sql of ['WITH settings AS (SELECT 1) SELECT value FROM main.settings','WITH "settings" AS (SELECT 1) SELECT value FROM main."settings"'])assert.deepEqual(sqlAccesses(sql).accesses,[{table:'settings',kind:'read'}]);
+ for(const sql of ['WITH settings AS (SELECT 1) DELETE FROM main.settings','WITH settings AS (SELECT 1) DELETE FROM settings','WITH settings AS (SELECT 1) UPDATE settings SET value=?','WITH settings AS (SELECT 1) INSERT INTO main.settings VALUES(?)'])assert.deepEqual(sqlAccesses(sql).accesses,[{table:'settings',kind:'write'}]);
+});
+
+test('computed prepare and exec methods use finite immutable lexical constants to retain unknown SQL boundaries',t=>{
+ for(const source of ["const method='prepare';db[method](sql);","const prefix='pre';const method=(prefix+'pare') as const;const alias=method;db[alias](sql);","const method=flag?'prepare':'exec';db[method](sql);"]){
+  const statements=sqlStatements('generated.ts',source);assert.equal(statements.length,1);assert.deepEqual(statements[0].values,['__dynamic__']);
+ }
+ const f=fixture(t);f.write('apps/server/src/consumer.ts',"const method='prepare';function read(db,sql){return db[method](sql);}");assert.deepEqual(rules(f.check()),['sql-dynamic']);
+});
+
 test('writes, trigger effects and insert-select reads retain their individual access kinds',()=>{
  const accesses=sqlAccesses(`INSERT OR REPLACE INTO own_rows SELECT * FROM other_rows;
   UPDATE own_rows SET id=(SELECT id FROM deep_rows); DELETE FROM other_rows;
