@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "npm run build && electron . --profile=dev",
     "start": "electron .",
-    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json && node scripts/build.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -b --stopBuildOnErrors && node scripts/build.mjs",
+    "typecheck": "tsc -b tsconfig.check.json --stopBuildOnErrors",
     "test": "vitest run --maxWorkers=2 --testTimeout=15000",
     "test:fixture": "npm run build && electron scripts/fixture-smoke.cjs",
     "test:profiles": "npm run build && node scripts/test-profiles.mjs",

@@ -1,0 +1,39 @@
+{
+  "extends": "./tsconfig.base.json",
+  "files": [],
+  "references": [
+    {
+      "path": "packages/plugin-api"
+    },
+    {
+      "path": "packages/plugin-host"
+    },
+    {
+      "path": "packages/plugin-sdk"
+    },
+    {
+      "path": "packages/shared"
+    },
+    {
+      "path": "packages/agent"
+    },
+    {
+      "path": "packages/diagnostics"
+    },
+    {
+      "path": "apps/server/tsconfig.check.json"
+    },
+    {
+      "path": "apps/web"
+    },
+    {
+      "path": "apps/desktop/tsconfig.check.json"
+    },
+    {
+      "path": "packages/plugin-api/tsconfig.test.json"
+    },
+    {
+      "path": "tsconfig.scripts.json"
+    }
+  ]
+}

@@ -15,9 +15,8 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prebuild": "npm run build -w @mote/plugin-api",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -b --stopBuildOnErrors",
+    "typecheck": "tsc -b tsconfig.json --stopBuildOnErrors",
     "pretest": "npm run build",
     "test": "node --test test/*.test.mjs"
   },
