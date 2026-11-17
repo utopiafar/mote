@@ -79,7 +79,7 @@ export class ActivityProjection {
    if(!batches.length)for(const ref of job.evidenceIds)items.get(identity(ref))!.push(state(job.status)==='completed'?'waiting':state(job.status));
    if(!sources.length&&this.has('memory_input_plans'))for(const row of this.store.db.prepare('SELECT json FROM memory_input_plans WHERE job_id=?').all(job.id)){
     const plan=JSON.parse(String(row.json)) as {materialId:string;resolvedInput?:{fingerprint:string;evidenceIds:string[]};batchIds?:string[];coveredByBatchId?:string};
-    if(!plan.resolvedInput?.evidenceIds.length)items.set(plan.materialId+':pending',[]);
+    if(!plan.resolvedInput?.evidenceIds.length)items.set(plan.materialId+':pending',job.status==='cancelled'?['cancelled']:[]);
    }
   }
   // Import scope is the owner's saved manifest. Source-wide receipts and

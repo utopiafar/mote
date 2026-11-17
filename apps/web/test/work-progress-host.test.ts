@@ -10,6 +10,7 @@ import {AgentYieldError,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type WorkActivity} from '@mote/shared';
 import {configureLocale} from '@mote/shared/i18n';
 import {buildApp} from '../../server/src/app.js';
+import {materialId} from '../../server/src/materials.js';
 import type {Config} from '../../server/src/config.js';
 import {authorizeFixtureModels,fixtureTopicResult} from '../../server/test/fixtures/model-authorization.js';
 import {fixtureMemoryPlan,fixtureMemoryWorkResult} from '../../server/test/fixtures/memory-planning.js';
@@ -116,4 +117,26 @@ test('mounted capacity settings save only the four writable fields and read thei
  const write=f.writes.find(item=>item.path==='/api/execution-settings')!;assert.ok(write);assert.deepEqual(Object.keys(write.body as object).sort(),['agentConcurrency','interactiveConcurrency','llmConcurrency','memoryConcurrency','revision']);
  await act(async()=>until(()=>ui.d.querySelector('[role=status]')?.textContent?.includes('已保存')===true));assert.match(ui.d.body.textContent!,/已保存/);assert.doesNotMatch(ui.d.body.textContent!,/委派/);await f.restart();await act(async()=>resources(f.api).invalidate(path=>path==='/api/execution-settings'));
  assert.deepEqual([...ui.d.querySelectorAll<HTMLInputElement>('input[type=number]')].map(input=>input.value),['2','3','2','1']);const view=await f.api.request<{queues:{agents:{limit:number};llm:{limit:number};interactive:{limit:number};delegated:{background:{limit:number};interactive:{limit:number}}}}>('/api/execution-settings');assert.equal(view.queues.agents.limit,3);assert.equal(view.queues.llm.limit,2);assert.equal(view.queues.interactive.limit,2);assert.equal(view.queues.delegated.background.limit,3);assert.equal(view.queues.delegated.interactive.limit,2);
+});
+
+test('owner cancellation stops an unresolved input plan in real Activity without losing its known record count',async t=>{
+ const f=await fixture(t),ui=await domFixture(t),sourceId='generated-pending-progress',deviceId='generated-pending-device',at='2026-10-01T00:00:00Z';
+ await f.api.request('/api/sources',{method:'POST',body:JSON.stringify({id:sourceId,name:'Generated pending input',kind:'custom',deviceId,platform:'import'})});
+ const original=await f.api.request<{id:string}>('/api/sources/'+sourceId+'/items',{method:'PUT',body:JSON.stringify({externalId:'original',revision:'1',observedAt:at,kind:'message',layer:'original',text:'Generated original while its derived input is pending.'})});
+ const material=f.node.materials.publish({id:materialId(sourceId,'original'),kind:'mote.message',schemaVersion:1,title:'Generated pending interpretation',origin:{sourceId,externalId:'original',deviceId,firstAt:at,lastAt:at},members:[{id:'original',kind:'capture',ref:'capture:'+original.id}],blocks:[{id:'body',kind:'text',format:'plain',text:'Generated original while its derived input is pending.',memberIds:['original']}],artifacts:[{key:'body',state:'ready',blockIds:['body']},{key:'daily-events',state:'pending'}],coverage:{state:'partial'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+ const job=await f.api.request<{id:string}>('/api/memory-jobs',{method:'POST',body:JSON.stringify({deviceId,recipes:[{id:'mote.daily-event-memory',version:'2'}]})}),id='memory:'+job.id;
+ await until(()=>f.node.memoryPipeline.get(job.id).status==='waiting_for_input');
+ const observe=async(cancelled:boolean)=>{
+  const current=f.node.memoryPipeline.get(job.id);assert.equal(current.status,cancelled?'cancelled':'waiting_for_input');assert.equal(current.inputPlans?.total,1);assert.equal(current.inputPlans?.completed,0);assert.equal((current.inputPlans?.waiting??0)+(current.inputPlans?.blocked??0),1);assert.equal(current.batches.length,0);assert.equal(f.calls.length,0);
+  const plans=f.node.store.db.prepare('SELECT material_id FROM memory_input_plans WHERE job_id=?').all(job.id);assert.deepEqual(plans.map(row=>row.material_id),[material.id]);
+  const detail=await f.activity(id),page=await f.api.request<{items:WorkActivity[]}>('/api/work-activity?state='+(cancelled?'completed':'attention')+'&limit=20'),card=page.items.find(item=>item.id===id);assert.ok(card);
+  for(const work of [detail,card]){assert.equal(work.state,cancelled?'cancelled':'needs_input');assert.equal(work.progress.mode,'determinate');assert.equal(work.progress.mode==='determinate'&&work.progress.total,1);assert.equal(work.progress.mode==='determinate'&&work.progress.completed,0);}
+  assert.deepEqual(card.progress,detail.progress);assert.equal(detail.events.some(event=>event.type==='work.cancelled'),cancelled);
+  await ui.activity(f.api,id);await ui.refresh(f.api,id);assert.match(ui.d.body.textContent!,/已处理 0 \/ 1 条资料/);
+  const visible=ui.d.querySelector('.activity-current')!.textContent!;if(cancelled){assert.match(visible,/已停止/);assert.doesNotMatch(visible,/等待开始/);}else assert.doesNotMatch(visible,/已停止/);
+  if(cancelled)for(const state of ['active','attention'])assert.ok(!(await f.api.request<{items:WorkActivity[]}>('/api/work-activity?state='+state+'&limit=20')).items.some(item=>item.id===id));
+ };
+ await observe(false);await f.restart();await observe(false);
+ const stopped=await f.api.request<{status:string}>('/api/memory-jobs/'+job.id+'/cancel',{method:'POST',body:'{}'});assert.equal(stopped.status,'cancelled');
+ await observe(true);await f.restart();await observe(true);
 });
