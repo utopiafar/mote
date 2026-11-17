@@ -11,6 +11,13 @@ import type {StatementSync} from 'node:sqlite';
 const availableStatements=new WeakMap<Store,StatementSync>();
 const parentStatements=new WeakMap<Store,StatementSync>();
 
+/** Storage fact only: callers still check current evidence, attachment lineage
+ * and the expected hash. A retained snapshot remains available until release. */
+export function fileProcessingObjectHash(store:Store,captureId:string):string|undefined {
+ const row=store.db.prepare(`SELECT coalesce(v.object_hash,(SELECT object_hash FROM file_snapshot_inputs s WHERE s.capture_id=v.capture_id)) AS hash FROM file_versions v WHERE v.capture_id=?`).get(captureId);
+ return typeof row?.hash==='string'?row.hash:undefined;
+}
+
 /** The declaration is not authority. Resolve only the host's retained lineage,
  * exact archived bytes and original parent attachment link. */
 export function fileAttachmentParent(store:Store,id:string,metadataOnly=false):{record:CaptureRecord;fileId:string}|undefined {
