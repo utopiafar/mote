@@ -75,6 +75,7 @@ export const installations={
  * has its declared owner inside its function; other functions use this mapping.
  * A new file never inherits access merely from a filename prefix or directory. */
 export const consumers={
+ 'owner-calendar-instructions.ts':'actions',
  'plugins/plugin-control-store.ts':'plugin-control',
  'plugins/instance-state.ts':'plugin-instance-state',
  'assistant-task-steering.ts':'assistant-task-runtime',
@@ -125,6 +126,7 @@ export const consumers={
 /** These exact method scopes belong to the named formal owner. Other
  * statements in the same file remain pending. */
 export const consumerScopes={
+ 'actions.ts':{'Actions.proposeCurrentCalendar':'actions','Actions.connectorClaim':'actions','Actions.discover':'actions'},
  'processor-admission.ts':{
   'ProcessorAdmission.check':'processor-admission',
   'ProcessorAdmission.run':'processor-admission',
@@ -2008,8 +2010,8 @@ export const nonSqlCalls=[
   "entryType": "AssistantTasks",
   "definitionFile": "apps/server/src/assistant-tasks.ts",
   "occurrence": 1,
-  "moduleFingerprint": "97f11d594433a2f4e5d6073333ee5ee5e2c4a04191f44e440a4c6913943e337d",
-  "scopeFingerprint": "9abc3e8ada24371b798fc120d1529b35509c573af33fb70d8207e1fcb0019c8c",
+  "moduleFingerprint": "c1b29375a7b119fa50348f1e56c639c1f9810877715957576b1f583dbf781d1d",
+  "scopeFingerprint": "d605bd749c39f1c13dd9dab611099b05c297484916158c6b572eacbd13cecf61",
   "callFingerprint": "9104236b78880379928fdb6b2d187dac91fbc78fef00cba42700d3204be1cb92",
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
@@ -2082,7 +2084,7 @@ export const storageConstructions=[
    {
     "from": "apps/server/src/host.ts",
     "scope": "buildHost",
-    "scopeFingerprint": "9abc3e8ada24371b798fc120d1529b35509c573af33fb70d8207e1fcb0019c8c",
+    "scopeFingerprint": "d605bd749c39f1c13dd9dab611099b05c297484916158c6b572eacbd13cecf61",
     "callFingerprint": "3104364775643689599971ecfdccf278aa2c597fd6bed3e7756bef6ea52d3ac1",
     "importFingerprint": "2ea0a997a5352c58cc652eeb49a1073b2cafef6aca8d1d603f16e5aaebcd0e05"
    }

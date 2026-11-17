@@ -22,7 +22,7 @@ function escapeJsonStringControls(raw: string): string {
   return normalized;
 }
 
-export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRecord>, options: {draft?: boolean;currentInstruction?:boolean} = {}) {
+export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRecord>, options: {draft?: boolean;currentInstruction?:boolean;currentAction?:boolean} = {}) {
   if (typeof raw !== 'string' || raw.length > 1_000_000)
     throw new AgentResponseError('The model response exceeds the answer size limit.', 'response_too_large');
   const clean = raw
@@ -57,14 +57,15 @@ export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRec
   let draftProposal: AssistantDraftProposal | undefined;
   if (value.draft !== undefined) {
     // A draft is a semantic proposal. It never carries scope, identity,
-    // revision, capability, task or action fields; those belong to the host.
+    // revision or capability. A permitted current Action branch is still only
+    // proposed content for one opaque Host target, never execution authority.
     if (!options.draft)
       throw new AgentResponseError(
         "The model returned a draft when the host did not request one.", 'invalid_shape',
       );
     if (value.draft !== null) {
       const parsed = assistantDraftProposalSchema.safeParse(value.draft);
-      if (!parsed.success || parsed.data.input && !options.currentInstruction)
+      if (!parsed.success || parsed.data.input && !options.currentInstruction || parsed.data.input==='current-action'&&!options.currentAction)
         throw new AgentResponseError(
           "The model draft must contain a nonempty goal and only the Host-permitted current-input selection.", 'invalid_shape',
         );

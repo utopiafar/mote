@@ -36,7 +36,7 @@ export class Actions {
   readonly engine:ExecutionEngine;private owned:boolean;private unregister:()=>Promise<void>;private closing?:Promise<void>;
   private runtimeSettings:ActionsRuntimeSettings;
   private settingsTail:Promise<void>=Promise.resolve();
-  constructor(readonly store:Store,private files:FileStore,private query:(input:QueryInput)=>Promise<QueryResult>,private configured:()=>boolean,private options:{executor?:ExecutionEngine;semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;configService?:ConfigService;connectorTargets?:()=>ActionConnectorChoice[];messageSendAuthorized?:(target:CentralConnectorActionTarget)=>boolean;proposalCurrent?:(id:string)=>boolean;readEvidence?:(ids:string[])=>CaptureRecord[];currentEvidence?:(id:string)=>boolean}={}){
+  constructor(readonly store:Store,private files:FileStore,private query:(input:QueryInput)=>Promise<QueryResult>,private configured:()=>boolean,private options:{executor?:ExecutionEngine;semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;configService?:ConfigService;connectorTargets?:()=>ActionConnectorChoice[];messageSendAuthorized?:(target:CentralConnectorActionTarget)=>boolean;proposalCurrent?:(id:string)=>boolean;ownerInstructionCurrent?:(action:ActionProposal)=>boolean;readEvidence?:(ids:string[])=>CaptureRecord[];currentEvidence?:(id:string)=>boolean}={}){
     this.runtimeSettings=options.configService?.current(actionsConfigDomain)??actionsRuntimeSettingsSchema.parse({});
     installSchemaPlan(store.db,[actionsSchemaInstallation]);
     this.engine=options.executor??new ExecutionEngine(store);this.owned=!options.executor;
@@ -126,9 +126,9 @@ export class Actions {
   private save(a:ActionProposal){a.updatedAt=new Date().toISOString();this.store.db.prepare('INSERT INTO action_proposals VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(a.id,JSON.stringify(a));return a;}
   private original(a:ActionProposal){if(!a.related)return;const row=this.store.db.prepare('SELECT json FROM action_proposals WHERE id=?').get(a.related.actionId) as {json:string}|undefined;return row?JSON.parse(row.json) as ActionProposal:undefined;}
   private relationValid(a:ActionProposal){if(!a.related)return true;const original=this.original(a);return !!original&&original.kind==='calendar.create'&&!original.resolution&&original.version===a.related.version&&original.status===a.related.status;}
-  /** Owner-created message proposals have no captured evidence; every calendar
-   * proposal keeps the original proof requirement. */
-  private valid(a:ActionProposal){return this.options.proposalCurrent?.(a.id)!==false&&this.relationValid(a)&&(a.kind==='message.send'?Boolean(a.message&&a.message.text.trim()):a.evidence.length>0&&a.evidence.every(e=>{const r=this.read([e.id])[0];return r&&this.current(e.id)&&fingerprint(r)===e.fingerprint;}));}
+  /** Only the private, exact current-owner receipt can replace captured proof.
+   * Ordinary calendar proposals retain the existing evidence requirement. */
+  private valid(a:ActionProposal){return this.options.proposalCurrent?.(a.id)!==false&&this.relationValid(a)&&(a.ownerInstruction?this.options.ownerInstructionCurrent?.(a)===true:a.kind==='message.send'?Boolean(a.message&&a.message.text.trim()):a.evidence.length>0&&a.evidence.every(e=>{const r=this.read([e.id])[0];return r&&this.current(e.id)&&fingerprint(r)===e.fingerprint;}));}
   private validate(a:ActionProposal){
     if(this.options.proposalCurrent?.(a.id)===false){
       // The origin check can retire its task and scrub this durable proposal.
@@ -137,7 +137,10 @@ export class Actions {
     }
     const missing=a.evidence.filter(e=>!this.read([e.id]).length);
     if(missing.length){a.evidence=a.evidence.filter(e=>!missing.includes(e));if(['proposed','approved','dismissed','stale'].includes(a.status)){a.event={title:moteText("来源已删除的日程建议"),start:null,end:null,timeZone:null,allDay:false,location:'',description:''};if(a.related)a.related.event={...a.event};a.uncertainty='';a.status='stale';a.version++;}this.save(a);}
-    if(['proposed','approved'].includes(a.status)&&!this.valid(a)){a.status='stale';a.version++;this.save(a);}return a;
+    if(['proposed','approved'].includes(a.status)&&!this.valid(a)){
+      if(a.ownerInstruction)a.event={title:moteText('日程'),start:null,end:null,timeZone:null,allDay:false,location:'',description:''};
+      a.status='stale';a.version++;this.save(a);
+    }return a;
   }
   get(id:string){const row=this.store.db.prepare('SELECT json FROM action_proposals WHERE id=?').get(z.string().uuid().parse(id)) as {json:string}|undefined;if(!row)throw new StoreError(moteText("未找到行动建议"),404);return this.validate(JSON.parse(row.json) as ActionProposal);}
   list(){return (this.store.db.prepare('SELECT json FROM action_proposals ORDER BY rowid DESC LIMIT 200').all() as {json:string}[]).map(r=>this.validate(JSON.parse(r.json)));}
@@ -172,6 +175,14 @@ export class Actions {
   connectorTargets(){return this.options.connectorTargets?.()??[];}
   private connectorChoice(target:ActionProposalTarget){return this.connectorTargets().find(choice=>JSON.stringify(choice.target)===JSON.stringify(target));}
   messageProposalRevision(){return this.meta('message-proposals',{revision:0}).revision;}
+  /** Internal Actions-owner sink. Its caller must already hold the real query
+   * commit transaction and the exact private single-use message receipt. */
+  proposeCurrentCalendar(id:string,event:ActionProposal['event'],target:CentralConnectorActionTarget,ownerInstruction:NonNullable<ActionProposal['ownerInstruction']>){
+    if(!this.store.db.isTransaction)throw new StoreError('Owner Action acceptance requires its query transaction',409);
+    const at=new Date().toISOString(),action:ActionProposal={id,kind:'calendar.create',event:calendarEventSchema.parse(event),target,ownerInstruction,evidence:[],uncertainty:'',status:'proposed',version:1,createdAt:at,updatedAt:at};
+    if(this.store.db.prepare('SELECT 1 FROM action_proposals WHERE id=?').get(id)||this.options.ownerInstructionCurrent?.(action)!==true)throw new StoreError('The current owner Action receipt is unavailable',409);
+    return this.save(action);
+  }
   /** Called only by the owner product adapter after task/version/grant checks.
    * This creates the existing proposal; confirmation and sending stay unchanged. */
   proposeAssistant(draft:Exclude<AssistantActionDraft,{kind:'todo.create'}>,target:ActionProposalTarget){
@@ -273,12 +284,15 @@ export class Actions {
   /** Host-owned Central connector channel. The host, not the connector, owns
    * operation identity, the approved-to-executing transition and receipts. */
   connectorClaim(id:string,operationId:string){
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');try{
     const a=this.get(id);if(!a.target||!isCentralConnectorActionTarget(a.target))throw new StoreError('Not a Central connector action',403);
     if(a.operationId!==operationId)throw new StoreError(moteText("执行回执与确认操作不匹配"),403);
     if(!['approved','executing','uncertain','succeeded'].includes(a.status))throw new StoreError(moteText("此建议尚未确认或证据已失效"),409);
     if(['executing','uncertain'].includes(a.status)&&a.related&&!this.relationValid(a))throw new StoreError(moteText('原日程版本已改变，请核实已有操作'),409);
-    if(a.status==='approved'){if(a.kind!=='calendar.cancel'&&a.kind!=='message.send'&&calendarExpired(a.event))throw new StoreError(moteText("日程已过期，请重新核对"),409);a.status='executing';this.save(a);}
-    return a;
+    const mutationAllowed=a.status==='approved';
+    if(mutationAllowed){if(a.kind!=='calendar.cancel'&&a.kind!=='message.send'&&calendarExpired(a.event))throw new StoreError(moteText("日程已过期，请重新核对"),409);a.status='executing';this.save(a);}
+    if(own)db.exec('COMMIT');return {...a,mutationAllowed};
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   connectorReceipt(id:string,operationId:string,raw:unknown){
     const v=z.object({operationId:z.string().uuid(),status:z.enum(['succeeded','uncertain']),externalId:z.string().min(1).max(2000).optional()}).strict().parse(raw),a=this.get(id);
@@ -292,7 +306,13 @@ export class Actions {
   }
   bindManaged(id:string,managed:NonNullable<ActionProposal['managed']>){const action=this.get(id);action.managed=managed;return this.save(action);}
   cancelManaged(id:string,version:number){
-    const action=this.get(id);if(!action.managed)throw new StoreError('Not a managed action',409);
+    const action=this.get(id);
+    if(action.ownerInstruction){
+      if(action.cancelRequestedAt)return action;
+      if(action.version!==version||!['approved','executing','uncertain'].includes(action.status))throw new StoreError('Action changed; refresh before cancelling',409);
+      action.cancelRequestedAt=new Date().toISOString();if(action.status==='approved')action.status='dismissed';action.version++;return this.save(action);
+    }
+    if(!action.managed)throw new StoreError('Not a managed action',409);
     if(['cancelled','cancel_requested'].includes(action.managed.state))return action;
     if(action.version!==version||!['approved','executing','uncertain'].includes(action.status))throw new StoreError('Action changed; refresh before cancelling',409);
     action.managed.cancelRequestedAt=new Date().toISOString();
