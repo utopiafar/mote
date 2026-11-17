@@ -3,6 +3,10 @@ import {z} from 'zod';
 import {navigationScopeSchema} from './context-navigation.js';
 import {availableFileAttachmentSql,readableFileSql} from './file-access.js';
 import type {Range} from './store.js';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const sourceCatalogSchemaInstallation={owner:'source-catalog',requires:['capture','source'],install:initializeSourceCatalog} as const satisfies SchemaInstallation;
+
 /** Literal URI structure only. Never opens a remote URI or interprets its contents. */
 function parent(json:unknown){const record=JSON.parse(String(json)),uri=record.provenance?.uri;if(!uri)return '';try{const url=new URL(uri);url.search='';url.hash='';url.pathname=url.pathname.slice(0,url.pathname.lastIndexOf('/')+1);return url.href;}catch{return '';}}
 export function initializeSourceCatalog(db:DatabaseSync){

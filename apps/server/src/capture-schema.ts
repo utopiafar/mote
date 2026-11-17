@@ -1,4 +1,8 @@
 import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const captureSchemaInstallation={owner:'capture',requires:[],install:captureSchema} as const satisfies SchemaInstallation;
+export const captureProjectionSchemaInstallation={owner:'capture-projections',requires:['capture'],install:captureProjectionSchema} as const satisfies SchemaInstallation;
 
 /** Capture originals, device/blob identities, change feed and capture browsing/search projections. */
 export function captureSchema(db:DatabaseSync){db.exec(`
