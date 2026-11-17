@@ -4,7 +4,6 @@ import type {Context} from '@deepseek-ai/cordis';
 import {PluginResourceScope,type HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import {installRecordingSources,recordingSourceManifests,type RecordingProvider} from '../plugins/recording-sources.js';
-import {createInstanceState} from '../plugins/instance-state.js';
 import {createConnectorHostAdapter,type ConnectorHostAdapter,type ConnectorInstanceScope} from '../plugins/connector-host-adapter.js';
 import {createDynamicHttpDispatcher,type DynamicHttpDispatcher} from '../plugins/dynamic-http-dispatcher.js';
 import type {ConnectorManifest} from './registry.js';
@@ -18,7 +17,7 @@ import {createLarkBinding,type LarkBinding} from './lark-binding.js';
 import {ConnectorError,type ConnectorContext} from './types.js';
 import type {FastifyInstance} from 'fastify';
 import {ZodError} from 'zod';
-import {PluginControlStore} from '../plugins/plugin-control-store.js';
+import type {PluginControlStore} from '../plugins/plugin-control-store.js';
 import {bundledConnector,prepareBundledConnectors} from '../bundled-connectors.js';
 
 export type {ConnectorConfig,ConnectorContext} from './types.js';
@@ -69,16 +68,20 @@ function connectorScope(owner:Context,packageId:string,instanceId:string,errorMe
 /** Register built-ins plus trusted assembly manifests before Fastify listens.
  * Owner routes and OAuth callbacks reach only the one dynamic dispatcher; each
  * installed connector gets its own host scope and failure rollback. */
-export async function registerConnectors(app:FastifyInstance,owner:Context,context:ConnectorContext,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[],dispatcherInput?:DynamicHttpDispatcher):Promise<ConnectorHostAdapter>{
+export interface ConnectorPluginStorage {
+  controlForScope(scope:HostScope):PluginControlStore;
+  stateForScope(scope:HostScope,sourceKinds:readonly string[]):StateStore;
+}
+export async function registerConnectors(app:FastifyInstance,owner:Context,context:ConnectorContext,storage:ConnectorPluginStorage,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[],dispatcherInput?:DynamicHttpDispatcher):Promise<ConnectorHostAdapter>{
   const directory=context.config.connectors?.directory??join(context.config.dataDir,'connectors');
   const larkBinding=testing?.larkBinding??createLarkBinding({runner:testing?.lark??createLarkRunner(directory)});
   const ctx={...context,bindings:{lark:larkBinding},...(testing?.fetch?{fetch:testing.fetch}:{}),config:{...context.config,connectors:{directory,...context.config.connectors}}};
   const removeMemory=installRecordingSources(context.memoryStrategies);
   if(removeMemory)app.addHook('onClose',async()=>removeMemory());
   const manifests=[...builtins(testing),...additionalManifests];
-  const control=new PluginControlStore(context.store);
-  const initiallyDisabled=prepareBundledConnectors(control,manifests.map(manifest=>manifest.id));
   const status=connectorScope(owner,'mote.connectors','status','Connector status scope disposal failed');
+  const control=storage.controlForScope(status.scope);
+  const initiallyDisabled=prepareBundledConnectors(control,manifests.map(manifest=>manifest.id));
   app.addHook('onClose',()=>status.close());
   const states=new WeakMap<HostScope,StateStore>();
   const dispatcher=dispatcherInput??createDynamicHttpDispatcher({
@@ -93,7 +96,7 @@ export async function registerConnectors(app:FastifyInstance,owner:Context,conte
     scopeFor:(manifest,instanceId)=>connectorScope(owner,manifest.id,instanceId,`Connector ${instanceId} scope disposal failed`),
     stateFor:(scope,sourceKinds)=>{
       let state=states.get(scope);
-      if(!state){state=createInstanceState(ctx.store,scope,undefined,sourceKinds);states.set(scope,state);}
+      if(!state){state=storage.stateForScope(scope,sourceKinds);states.set(scope,state);}
       return state;
     },
     transport:instance=>instance.mountTransport?.(app),

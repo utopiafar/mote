@@ -1,3 +1,4 @@
+import {testPluginStorage} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer,type ServerResponse} from 'node:http';
@@ -77,7 +78,7 @@ async function fixture(t:TestContext){
   modelStatus:()=>({role:'local-image',state:'ready',version:'generated-image-assets',bytes:1,totalBytes:1,source:'generated',runtimeReady:Boolean(worker)}),
   createWorker:()=>({prepare(){},async start(){worker=await startLocalImageFixtureWorker(images);worker.setFault(fault);},quiesce(){},async stop(){const owned=worker;worker=undefined;await owned?.close();},dispose(){}}),
  });
- const control=createPluginControlPlatform({store:controlStore,executor,host,releases:new GitHubPluginReleases(join(directory,'packages'))},[local.build]);
+ const control=createPluginControlPlatform({store:controlStore,executor,host,releases:new GitHubPluginReleases(join(directory,'packages')),controlForScope:testPluginStorage(controlStore).controlForScope},[local.build]);
  const handle=await host.install({identity:{host:host.identity,packageId:'mote.plugin-control',installationId:'generated-query-control',instanceId:'control',activationId:randomUUID()},contributions:[pluginControlDeclaration],factory:control.factory});
  plugins=control.assembly;await control.startBuilds();
  t.after(async()=>{

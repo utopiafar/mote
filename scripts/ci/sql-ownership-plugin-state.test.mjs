@@ -10,7 +10,7 @@ import {sharedReads} from './sql-ownership-policy.mjs';
 
 const repository=fileURLToPath(new URL('../..',import.meta.url));
 const cli=fileURLToPath(new URL('./architecture.mjs',import.meta.url));
-const control='apps/server/src/plugins/plugin-control-store.ts',state='apps/server/src/plugins/instance-state.ts';
+const control='apps/server/src/plugin-control-storage.ts',state='apps/server/src/plugin-instance-state-storage.ts';
 
 test('formal plugin-state owners cover their independent tables and one exact Source condition read',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
@@ -32,11 +32,11 @@ test('production entry rejects plugin-state foreign writes, moved/copied reads a
  const baselinePath=resolve(root,'scripts/ci/sql-ownership-baseline.json'),baseline=readFileSync(baselinePath,'utf8');
  const guard=sqlStatements(state,stateSource).find(statement=>statement.fingerprint===sharedReads.find(item=>item.from===state).symbol);assert.ok(guard);
  const cases=[
-  [control,controlSource+"\nfunction generatedForeignStateWrite(db){db.prepare('UPDATE plugin_instance_state SET revision=revision+1');}",/sql-cross-owner.*plugin-control-store.ts.*plugin_instance_state.*write/],
-  [state,stateSource+"\nfunction generatedForeignControlWrite(db){db.prepare('UPDATE plugin_center SET revision=revision+1');}",/sql-cross-owner.*instance-state.ts.*plugin_center.*write/],
-  [state,stateSource+"\nfunction generatedForeignSourceWrite(db){db.prepare('UPDATE source_connections SET json=json WHERE id=?');}",/sql-cross-owner.*instance-state.ts.*source_connections.*write/],
-  [state,stateSource.replace('private write(','private movedWrite('),/sql-cross-owner.*instance-state.ts.*source_connections.*read/],
-  [state,stateSource+'\nfunction copiedSourceRead(db){db.prepare('+guard.expression+');}',/sql-cross-owner.*instance-state.ts.*source_connections.*read/],
+  [control,controlSource+"\nfunction generatedForeignStateWrite(db){db.prepare('UPDATE plugin_instance_state SET revision=revision+1');}",/sql-cross-owner.*plugin-control-storage.ts.*plugin_instance_state.*write/],
+  [state,stateSource+"\nfunction generatedForeignControlWrite(db){db.prepare('UPDATE plugin_center SET revision=revision+1');}",/sql-cross-owner.*plugin-instance-state-storage.ts.*plugin_center.*write/],
+  [state,stateSource+"\nfunction generatedForeignSourceWrite(db){db.prepare('UPDATE source_connections SET json=json WHERE id=?');}",/sql-cross-owner.*plugin-instance-state-storage.ts.*source_connections.*write/],
+  [state,stateSource.replace('private write(','private movedWrite('),/sql-cross-owner.*plugin-instance-state-storage.ts.*source_connections.*read/],
+  [state,stateSource+'\nfunction copiedSourceRead(db){db.prepare('+guard.expression+');}',/sql-cross-owner.*plugin-instance-state-storage.ts.*source_connections.*read/],
   [control,controlSource+'\nfunction unregisteredRuntime(db){pluginControlSchema(db);}',/schema installer cannot acquire another runtime call path/],
   [control,controlSource.replace('function pluginControlSchema(db:DatabaseSync){','function pluginControlSchema(db:DatabaseSync){db.prepare(\'UPDATE source_connections SET json=json WHERE id=?\');'),/sql-schema-maintenance.*source_connections.*update/],
  ];

@@ -1,3 +1,4 @@
+import {testRegisterConnectors as registerConnectors} from './fixtures/plugin-storage.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import {mcpContext,remoteMcpContext} from '../src/connectors/mcp-context.js';
 import {googleCalendarContext} from '../src/connectors/google-context.js';
@@ -23,7 +24,7 @@ import {Store} from '../src/store.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {SourceStore} from '../src/sources.js';
-import {registerConnectors} from '../src/connectors/index.js';
+
 import {recordingManifest,type RecordingProvider} from '../src/plugins/recording-sources.js';
 import type {ConnectorManifest} from '../src/connectors/registry.js';
 import {connectorRegistryHost} from './fixtures/connector-host.js';

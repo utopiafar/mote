@@ -16,7 +16,7 @@ import type {MaterialStore} from '../materials.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {MaterialOrganizerRuntime} from '../material-organizers.js';
 import type {ProcessingRuntime} from '../processing-runtime.js';
-import {registerConnectors,type ConnectorTestDependencies} from '../connectors/index.js';
+import {registerConnectors,type ConnectorTestDependencies,type ConnectorPluginStorage} from '../connectors/index.js';
 import type {ConnectorManifest} from '../connectors/registry.js';
 import {ConnectorError} from '../connectors/types.js';
 import {createDynamicHttpDispatcher} from '../plugins/dynamic-http-dispatcher.js';
@@ -32,6 +32,7 @@ export interface ConnectorsAssemblyDependencies {
   readonly files:FileStore;
   readonly sources:SourceStore;
   readonly store:Store;
+  readonly pluginStorage:ConnectorPluginStorage;
   readonly evidenceReader:EvidenceReader;
   readonly materials:MaterialStore;
   readonly sourcePipelines:SourcePipelineRuntime;
@@ -58,7 +59,7 @@ export async function assembleConnectors(dependencies:ConnectorsAssemblyDependen
     mapError:error=>error instanceof ConnectorError?{status:error.statusCode,error:error.code}:error instanceof ZodError?{status:400,error:'connector_input_invalid'}:undefined,
   });
   const connectorConfig={...config,publicUrl:config.configuration?.publicUrl??undefined};
-  const connectors=await registerConnectors(app,dependencies.backendContext,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config:connectorConfig,ownerAuthorization,mcpAuthorization:(header,resource)=>connections.mcpAuthorization(header,config.connectors,resource)},dependencies.connectorTesting,additionalManifests,dispatcher);
+  const connectors=await registerConnectors(app,dependencies.backendContext,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config:connectorConfig,ownerAuthorization,mcpAuthorization:(header,resource)=>connections.mcpAuthorization(header,config.connectors,resource)},dependencies.pluginStorage,dependencies.connectorTesting,additionalManifests,dispatcher);
   resources.defer(()=>connectors.close());
   return Object.freeze({connectors});
 }

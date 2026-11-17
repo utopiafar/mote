@@ -31,8 +31,8 @@ export const installations={
  'memory-input-authorization.ts':['memoryInputAuthorizationSchemaInstallation'],
  'memory-extraction-drafts.ts':['memoryExtractionDraftsSchemaInstallation'],
  'memory-phase-outputs.ts':['memoryPhaseOutputsSchemaInstallation'],
- 'plugins/plugin-control-store.ts':['pluginControlSchemaInstallation'],
- 'plugins/instance-state.ts':['instanceStateSchemaInstallation'],
+ 'plugin-control-storage.ts':['pluginControlSchemaInstallation'],
+ 'plugin-instance-state-storage.ts':['instanceStateSchemaInstallation'],
  'actions-schema.ts':['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation'],
  'processing-runtime-schema.ts':['processingRuntimeSchemaInstallation'],
  "background-model-authorization-schema.ts":["backgroundModelAuthorizationSchemaInstallation"],
@@ -76,8 +76,8 @@ export const installations={
  * A new file never inherits access merely from a filename prefix or directory. */
 export const consumers={
  'owner-calendar-instructions.ts':'actions',
- 'plugins/plugin-control-store.ts':'plugin-control',
- 'plugins/instance-state.ts':'plugin-instance-state',
+ 'plugin-control-storage.ts':'plugin-control',
+ 'plugin-instance-state-storage.ts':'plugin-instance-state',
  'assistant-task-steering.ts':'assistant-task-runtime',
  'memory-input-authorization.ts':'memory-input-authorization',
  'memory-extraction-drafts.ts':'memory-extraction-drafts',
@@ -550,7 +550,7 @@ export const sharedReads=[
   "reason": "Pin the accepted archive work to its existing Source identity and pipeline configuration before enqueueing its execution generation."
  },
  {
-  "from": "apps/server/src/plugins/instance-state.ts",
+  "from": "apps/server/src/plugin-instance-state-storage.ts",
   "to": "source_connections",
   "symbol": "2f759e3921782b241e17e54714ba24586a9886226de682df0ac51b78062f8365",
   "scope": "InstanceState.write",
@@ -2010,8 +2010,8 @@ export const nonSqlCalls=[
   "entryType": "AssistantTasks",
   "definitionFile": "apps/server/src/assistant-tasks.ts",
   "occurrence": 1,
-  "moduleFingerprint": "c1b29375a7b119fa50348f1e56c639c1f9810877715957576b1f583dbf781d1d",
-  "scopeFingerprint": "d605bd749c39f1c13dd9dab611099b05c297484916158c6b572eacbd13cecf61",
+  "moduleFingerprint": "898c87b0bc11d27d4dd251fe183198f6205f43ec63b5ccfd641db1c5cfadd5b8",
+  "scopeFingerprint": "258295bb5073a8969d978ef8bf0328f82bcf6e604f04e7fe4f05f252a048cb4a",
   "callFingerprint": "9104236b78880379928fdb6b2d187dac91fbc78fef00cba42700d3204be1cb92",
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
@@ -2084,7 +2084,7 @@ export const storageConstructions=[
    {
     "from": "apps/server/src/host.ts",
     "scope": "buildHost",
-    "scopeFingerprint": "d605bd749c39f1c13dd9dab611099b05c297484916158c6b572eacbd13cecf61",
+    "scopeFingerprint": "258295bb5073a8969d978ef8bf0328f82bcf6e604f04e7fe4f05f252a048cb4a",
     "callFingerprint": "3104364775643689599971ecfdccf278aa2c597fd6bed3e7756bef6ea52d3ac1",
     "importFingerprint": "2ea0a997a5352c58cc652eeb49a1073b2cafef6aca8d1d603f16e5aaebcd0e05"
    }

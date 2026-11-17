@@ -1,3 +1,4 @@
+import {testInstanceState as createInstanceState} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -6,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {createInstanceState} from '../src/plugins/instance-state.js';
+
 
 const readScopes='channels:read,groups:read,im:read,mpim:read,channels:history,groups:history,im:history,mpim:history,users:read';
 const epoch=Math.floor(Date.now()/1000)-90*86400;

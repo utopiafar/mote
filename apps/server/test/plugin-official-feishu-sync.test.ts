@@ -1,3 +1,4 @@
+import {testInstanceState as createInstanceState} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -6,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {createInstanceState} from '../src/plugins/instance-state.js';
+
 import {materialId} from '../src/materials.js';
 import {LARK_VERSION,larkArguments,type LarkCommand,type LarkRunner} from '../src/connectors/lark-cli.js';
 import {createLarkBinding,LARK_IM_READ_SCOPES} from '../src/connectors/lark-binding.js';

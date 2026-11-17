@@ -1,3 +1,4 @@
+import {testPluginControl,testPluginStorage} from './fixtures/plugin-storage.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +17,7 @@ import {MemoryAutomation} from '../src/memory-automation.js';
 import {MemoryStore} from '../src/memory.js';
 import {WorkerMemoryProvider} from '../src/worker-memory-provider.js';
 import {GitHubPluginReleases,type PluginManifest} from '../src/plugin-release.js';
-import {PluginControlStore} from '../src/plugins/plugin-control-store.js';
+import {type PluginControlStore} from '../src/plugins/plugin-control-store.js';
 import {createPluginControlPlatform,pluginControlDeclaration,type TrustedPluginBuild} from '../src/plugin-center.js';
 
 const command=(expectedRevision:number)=>({operationId:randomUUID(),expectedRevision});
@@ -29,7 +30,7 @@ function build(options:{replacement?:'hot'|'restart';requires?:ServiceBinding[];
 }
 async function platform(path:string,builds:TrustedPluginBuild[]=[],releases?:GitHubPluginReleases){
   const store=new Store(path),executor=new ExecutionEngine(store),host=new PluginHost({kind:'central',id:randomUUID()});
-  const control=createPluginControlPlatform({store,executor,host,releases:releases??new GitHubPluginReleases(join(path,'packages'))},builds);
+  const control=createPluginControlPlatform({store,executor,host,releases:releases??new GitHubPluginReleases(join(path,'packages')),controlForScope:testPluginStorage(store).controlForScope},builds);
   const identity:ScopeIdentity={host:host.identity,packageId:'mote.control',installationId:'control-install',instanceId:'control-instance',activationId:randomUUID()};
   const handle=await host.install({identity,contributions:[pluginControlDeclaration],factory:control.factory});
   await control.startBuilds();
@@ -41,7 +42,7 @@ function binding(identity:ScopeIdentity):ServiceBinding{return {service:read,pro
 // User failure: a lost response or two stale editors must not duplicate effects
 // or lose the acknowledgement after reopening the same private vault.
 test('control intent and receipt commit atomically; replay and CAS survive restart',async t=>{
-  const path=directory(t);let store=new Store(path),control=new PluginControlStore(store);
+  const path=directory(t);let store=new Store(path),control=testPluginControl(store);
   const input=command(control.revision());let applied=0;
   assert.equal(control.command('enable',input,()=>control.revision(),()=>applied++),true);
   const receipt=control.receipt(input.operationId)!;assert.equal(receipt.revision,2);
@@ -50,7 +51,7 @@ test('control intent and receipt commit atomically; replay and CAS survive resta
   const stale=command(1);assert.throws(()=>control.command('enable',stale,()=>control.revision(),()=>{}),{statusCode:409});assert.equal(control.receipt(stale.operationId),undefined);
   const failed=command(2);assert.throws(()=>control.command('fail',failed,()=>control.revision(),()=>{store.db.prepare('UPDATE plugin_center SET revision=99').run();throw Error('fixture rollback');}));
   assert.equal(control.revision(),2);assert.equal(control.receipt(failed.operationId),undefined);
-  store.close();store=new Store(path);t.after(()=>store.close());control=new PluginControlStore(store);
+  store.close();store=new Store(path);t.after(()=>store.close());control=testPluginControl(store);
   assert.deepEqual(control.receipt(input.operationId),receipt);assert.equal(control.command('enable',input,()=>control.revision(),()=>applied++),false);assert.equal(applied,1);
   const expected=control.revision(),results=await Promise.allSettled([1,2].map(()=>Promise.resolve().then(()=>control.command('edit',command(expected),()=>control.revision(),()=>{}))));
   assert.equal(results.filter(value=>value.status==='fulfilled').length,1);assert.equal(results.filter(value=>value.status==='rejected'&&value.reason.statusCode===409).length,1);
@@ -150,7 +151,7 @@ test('worker package and trusted native builds expose the same control projectio
 });
 
 test('control JSON rows are counted and a SQLite receipt failure rolls intent, state and receipt back together',t=>{
-  const path=directory(t),store=new Store(path);t.after(()=>store.close());const control=new PluginControlStore(store);
+  const path=directory(t),store=new Store(path);t.after(()=>store.close());const control=testPluginControl(store);
   const before=store.logicalBytes();const input=command(control.revision());
   control.command('select',input,()=>control.revision(),()=>control.saveBuild({id:'fixture',packageId:'fixture.build',installationId:randomUUID(),revision:1,desired:selection,retired:false,observed:'queued',blockers:[],operationId:input.operationId}));
   const rows=store.db.prepare("SELECT name,bytes FROM storage_ledger WHERE name IN ('plugin_control_receipts','plugin_build_instances') ORDER BY name").all();

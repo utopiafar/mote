@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
@@ -40,7 +41,7 @@ function generatedProvider(){
 
 async function fixture(t:any,count=200){
  const directory=await mkdtemp(join(tmpdir(),'mote-read-snapshot-')),store=new Store(join(directory,'vault')),sources=new SourceStore(store),reader=new EvidenceReader(store,sources);
- const executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(directory,'plugins'))),bindings=new MemoryBindings(store,reader.memories,new MemoryAutomation(store),plugins,executor);reader.memoryBindings=bindings;
+ const executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(directory,'plugins')),testPluginControl(store)),bindings=new MemoryBindings(store,reader.memories,new MemoryAutomation(store),plugins,executor);reader.memoryBindings=bindings;
  const app=Fastify();app.setErrorHandler((error,_req,reply)=>reply.code(error instanceof StoreError?error.statusCode:500).send({error:error.message}));registerEvidenceRoutes(app,reader);
  const namespace:MemoryProviderNamespace={ownerId:'generated-owner',instanceId:'generated-provider',bindingRevision:1},provider=generatedProvider();bindings.providerFactory=()=>provider;
  const bind=(ns=namespace)=>store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify({planId:'instance:'+ns.instanceId,generation:ns.bindingRevision,namespace:ns}));

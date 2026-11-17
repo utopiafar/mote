@@ -1,12 +1,11 @@
 import {randomUUID} from 'node:crypto';
 import {PluginHost,PluginHostError,type HostPluginContext,type HostScope} from '@mote/plugin-host';
 import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease,type PluginLifecycle} from '@mote/plugin-api/contracts';
-import type {ManifestContribution} from '@mote/plugin-api';
+import type {ManifestContribution,StateStore} from '@mote/plugin-api';
 import type {Config} from './config.js';
 import type {ConfigService} from './config-service.js';
 import type {Store} from './store.js';
 import type {createVaultPlatformAssembly} from './plugins/vault-platform.js';
-import {createInstanceState} from './plugins/instance-state.js';
 import type {ConfigurationPlatform} from './plugins/configuration-platform.js';
 import {c10IntegrationDeclaration} from './plugins/c10-integration.js';
 import {createObservabilityPlatformFactory,observabilityPlatformDeclaration,type ObservabilityPlatform,type ObservabilityPlatformOptions} from './plugins/observability-platform.js';
@@ -89,13 +88,13 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     ...selected.map(provider=>({...provider.contribution,featureVersion:provider.version})),
     ...plugins.map(plugin=>({...plugin.contribution,featureVersion:plugin.contribution.version})),
   ]);
-  let stateStore:Store|undefined,storageOwner:HostScope|undefined;
+  let stateFor:((scope:HostScope)=>StateStore)|undefined,storageOwner:HostScope|undefined;
   const host=new PluginHost({kind:'central',id:randomUUID()},undefined,undefined,{
     // The vault store is created by the storage foundation. State is bound
     // lazily on first plugin access, after that foundation has started.
     stateFor:scope=>{
-      if(!stateStore)throw new PluginHostError('dependency_unavailable');
-      return createInstanceState(stateStore,scope);
+      if(!stateFor)throw new PluginHostError('dependency_unavailable');
+      return stateFor(scope);
     },
   });
   const leases:{release():Promise<void>}[]=[],bindings:ServiceBinding[]=[];
@@ -118,10 +117,16 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   try{
     const configuration=await install('configuration',input);
     const current={...input,config:configuration.value.config,configService:configuration.value.service};
-    const storage=await install('storage',current);stateStore=storage.value.store;
+    const storage=await install('storage',current);
+    const stateOwner=()=>{if(!storageOwner)throw new PluginHostError('dependency_unavailable');return storageOwner;};
+    const pluginStorage=Object.freeze({
+      stateForScope:(scope:HostScope,sourceKinds:readonly string[]=[])=>storage.value.assembly.instanceStateForAssembly(stateOwner(),scope,undefined,sourceKinds),
+      controlForScope:(scope:HostScope)=>storage.value.assembly.pluginControlForAssembly(stateOwner(),scope),
+    });
+    stateFor=scope=>pluginStorage.stateForScope(scope);
     const authorization=await install('authorization',current);
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;
-    return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,
+    return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,pluginStorage,
       authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),host,get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
       selectsPlugin:(id:string)=>plugins.some(plugin=>plugin.contribution.id===id),
       selectsFeature:(id:string)=>features.includes(id),

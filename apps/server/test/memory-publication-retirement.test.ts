@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
@@ -38,7 +39,7 @@ async function fixture(t:TestContext){
  };
  const bodyDigest=(memory:any)=>{const {status:_,staleReason:__,updatedAt:___,...body}=memory;return sha256(JSON.stringify(body));};
  let providerOverride:MemoryProvider|undefined;
- const open=async()=>{const store=new Store(vault),memories=new MemoryStore(store),executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(vault,'plugins/packages'),transport)),bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor),base=await createMemoryProvider({dataFile}) as MemoryProvider,basePut=base.put.bind(base),provider=Object.assign(base,{
+ const open=async()=>{const store=new Store(vault),memories=new MemoryStore(store),executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(vault,'plugins/packages'),transport),testPluginControl(store)),bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor),base=await createMemoryProvider({dataFile}) as MemoryProvider,basePut=base.put.bind(base),provider=Object.assign(base,{
    recover:(input:Parameters<MemoryProvider['recover']>[0])=>base.health(input),
    async put(input:Parameters<MemoryProvider['put']>[0]){
     // Host validity fields may change without advancing the immutable version.

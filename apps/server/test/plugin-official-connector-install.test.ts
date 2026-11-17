@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
@@ -45,7 +46,7 @@ test('production resolver packages the in-repo fixture without GitHub, then inst
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   const store=new Store(directory),executor=new ExecutionEngine(store);
   const releases=new GitHubPluginReleases(join(directory,'packages'),rejectingGitHub(githubCalls),repoRoot);
-  const plugins=new PluginCenter(store,executor,releases);
+  const plugins=new PluginCenter(store,executor,releases,testPluginControl(store));
   t.after(()=>plugins.close());
   const installedConnectors:string[]=[];
   plugins.connectorHost={
@@ -151,7 +152,7 @@ test('official local identity rejects wrong tags and arbitrary local paths witho
   await assert.rejects(releases.resolve({repository:'generated-fixture/not-official',tag:'v1'}),/GitHub transport must not be used/);
   assert.equal(githubCalls.length,1,'non-catalog identities still use the GitHub path');
 
-  const store=new Store(directory),executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,releases);
+  const store=new Store(directory),executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,releases,testPluginControl(store));
   t.after(()=>plugins.close());
   await assert.rejects(plugins.resolve({repository:official.repository,tag:official.tag,localDirectory:official.localDirectory}),/Unrecognized key|Invalid input|validation/i);
 });

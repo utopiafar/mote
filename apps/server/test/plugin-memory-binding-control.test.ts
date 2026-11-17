@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -147,7 +148,7 @@ test('prepare/activate/cancel replay keeps an unverified target out, releases on
 
 test('real binding snapshots drive reader and publication with the exact namespace, retain unresolved references across restart, and refuse retirement until reconciliation',async t=>{
   const path=directory(t),instanceId='generated-binding-instance',packageId='generated.memory-binding@'+'b'.repeat(64),namespace:MemoryProviderNamespace={ownerId:'mote-owner',instanceId,bindingRevision:2};
-  let store=new Store(path),executor=new ExecutionEngine(store),memories=new MemoryStore(store),automation=new MemoryAutomation(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(path,'packages'))),provider=generatedProvider();
+  let store=new Store(path),executor=new ExecutionEngine(store),memories=new MemoryStore(store),automation=new MemoryAutomation(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(path,'packages')),testPluginControl(store)),provider=generatedProvider();
   const manifest={schemaVersion:1 as const,id:'generated.memory-binding',name:'Generated binding package',version:'1.0.0',runtime:'worker' as const,entry:'worker.mjs',archive:{asset:'worker.zip',sha256:'b'.repeat(64)},capabilities:['repository','retrieval'] as const,configuration:[],dependencies:[],access:['Generated fixture only']},installationId=randomUUID();
   store.db.prepare('INSERT INTO plugin_build_instances VALUES(?,?)').run(packageId,JSON.stringify({id:packageId,packageId,version:manifest.version,installationId,revision:1,desired:null,retired:false,observed:'stopped',blockers:[],operationId:randomUUID(),kind:'package',package:{installationId,previewId:randomUUID(),manifest,view:{id:packageId,name:manifest.name,version:manifest.version,source:{repository:'generated-fixture/binding',tag:'v1.0.0',commit:'a'.repeat(40),digest:'b'.repeat(64)},runtime:'worker',state:'installed',desired:false,observed:'installed',issues:[],instanceIds:[instanceId],allowedActions:[],operationId:randomUUID()}}}));
   const instance={configurationId:'generated-configuration-identity',view:{id:instanceId,packageId,name:'Generated binding instance',scope:'default',revision:1,configurationSchema:[],configuration:{},secretStatus:{},capabilities:[{id:'engine',state:'verified'}],desired:false,observed:'disabled',issues:[],allowedActions:[]}};
@@ -184,7 +185,7 @@ test('real binding snapshots drive reader and publication with the exact namespa
 
   // Restart the process; the durable write remains referenced until reconciled.
   await publication.close();await current.close();await plugins.close();await executor.close();store.close();
-  store=new Store(path);executor=new ExecutionEngine(store);memories=new MemoryStore(store);automation=new MemoryAutomation(store);plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(path,'packages')));new MemoryInputAuthorization(store,()=>true);
+  store=new Store(path);executor=new ExecutionEngine(store);memories=new MemoryStore(store);automation=new MemoryAutomation(store);plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(path,'packages')),testPluginControl(store));new MemoryInputAuthorization(store,()=>true);
   publication=undefined;
   current=platform({store,memories,automation,plugins,executor,publication:()=>publication!});
   current.prepare();const restartedBindings=current.bindings;restartedBindings.providerFactory=()=>provider.provider;

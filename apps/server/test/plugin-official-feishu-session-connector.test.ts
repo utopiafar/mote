@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -205,7 +206,7 @@ test('official Feishu session check requires the host lark binding even before a
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   const store=new Store(directory),executor=new ExecutionEngine(store);
   const releases=new GitHubPluginReleases(join(directory,'packages'),rejectingGitHub(githubCalls),repoRoot);
-  const plugins=new PluginCenter(store,executor,releases);
+  const plugins=new PluginCenter(store,executor,releases,testPluginControl(store));
   t.after(()=>plugins.close());
   plugins.connectorHost={async install(){},async stop(){},async restart(){},inventory:()=>[],supportsBinding:()=>false};
   const preview=await plugins.resolve({repository:feishu.repository,tag:feishu.tag});

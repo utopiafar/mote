@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -120,7 +121,7 @@ test('repository output is consumed by MemoryBindings and the read-only catalog 
   const first=await evidence(f.store,'Generated first observation.'),second=await evidence(f.store,'Generated second observation.');
   const a=memories.extract(extraction(first,memories),'fixture').items[0]!,b=memories.extract(extraction(second,memories),'fixture').items[0]!;
   memories.publish(a.id,a.version);
-  const executor=new ExecutionEngine(f.store),plugins=new PluginCenter(f.store,executor,new GitHubPluginReleases(join(f.directory,'packages')));
+  const executor=new ExecutionEngine(f.store),plugins=new PluginCenter(f.store,executor,new GitHubPluginReleases(join(f.directory,'packages')),testPluginControl(f.store));
   const bindings=new MemoryBindings(f.store,memories,new MemoryAutomation(f.store),plugins,executor);
   t.after(async()=>{await bindings.close();await plugins.close();await executor.close();});
   const snapshot=bindings.retainSnapshot();

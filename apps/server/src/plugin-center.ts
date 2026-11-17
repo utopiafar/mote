@@ -12,7 +12,7 @@ import {memoryControlCommandSchema} from './memory-automation.js';
 import {sha256,StoreError,type Store} from './store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {pluginReleasePreviewsSchemaInstallation} from './plugin-surface-schema.js';
-import {PluginControlStore,type BuildInstance,type BuildInstanceRecord,type BuildPackageRecord,type BuildSelection} from './plugins/plugin-control-store.js';
+import type {PluginControlStore,BuildInstance,BuildInstanceRecord,BuildPackageRecord,BuildSelection} from './plugins/plugin-control-store.js';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {DshProfileError} from '@mote/agent/runtime/dsh';
@@ -20,7 +20,7 @@ import {dshAssemblyReferences,dshConfigurationSchema,dshInstanceKey} from './dsh
 import {dshSelectionBoundary,validateNativeDshGrant,type InstalledDshAuthority} from './dsh-native.js';
 import {activateInstalledDsh,installedDshModule,nativeDshCatalog,projectInstalledDshModules,type InstalledDshActivation} from './dsh-installed-modules.js';
 import {serviceContract,type PluginLifecycle,type ServiceBinding,type ScopeIdentity} from '@mote/plugin-api/contracts';
-import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext} from '@mote/plugin-host';
+import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext,type HostScope} from '@mote/plugin-host';
 import {centralServices} from './plugins/central-contracts.js';
 import {officialPluginCatalog} from './official-plugin-catalog.js';
 import {assertServicePackageSupported,connectorFromModule,domainContributions,domainDependencies,domainPluginFromModule,isOutboundExportCapability,isProcessingCapability,loadServicePackageModule,outboundExportFromModule,processingPluginFromModule,servicePackageSurfaces,type OutboundExportDescriptor} from './plugins/service-plugin-loader.js';
@@ -77,7 +77,6 @@ const sameBinding=(a:ServiceBinding,b:ServiceBinding)=>a.revision===b.revision&&
  * and runtime admission stay separate facts; all work uses the host
  * ExecutionEngine and survives a host restart. */
 export class PluginCenter {
-  readonly control:PluginControlStore;
   private accepting=true;
   private closed=false;
   private readonly builds=new Map<string,TrustedPluginBuild>();
@@ -110,8 +109,7 @@ export class PluginCenter {
    * executes; the same host dispatcher revalidates it on every action. */
   builtinActions?:{providers:()=>readonly BuiltinActionProvider[];execute:BuiltinActionDispatch};
   private readonly activeConnectors=new Map<string,{connectorId:string;instanceId:string}>();
-  constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;assertCurrent?:()=>void;hostDependencies?:readonly TrustedHostDependency[]}){
-    this.control=new PluginControlStore(store);
+  constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,readonly control:PluginControlStore,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;assertCurrent?:()=>void;hostDependencies?:readonly TrustedHostDependency[]}){
     installSchemaPlan(store.db,[pluginReleasePreviewsSchemaInstallation]);
     store.registerStorage('plugin-control',{plugin_release_previews:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128'});
     this.disposeHandlers.push(executor.register({kind:'plugin.install',pool:'plugin-control',concurrency:()=>1,policy:EXECUTION_POLICIES.control,admit:()=>this.admit(),
@@ -1034,22 +1032,22 @@ export interface TrustedPluginBuild {
 export const pluginControlDeclaration=Object.freeze({id:'mote.plugin-control',apiVersion:'1'});
 /** Trusted root seam only: the control plane and its release resolver are
  * plugin-domain objects, never constructed by the application shell. */
-export function openPluginControlRoot(dependencies:{readonly store:Store;readonly executor:ExecutionEngine;readonly directory:string}){
+export function openPluginControlRoot(dependencies:{readonly store:Store;readonly executor:ExecutionEngine;readonly directory:string;readonly control:PluginControlStore}){
   const releases=new GitHubPluginReleases(dependencies.directory);
-  const pluginCenter=new PluginCenter(dependencies.store,dependencies.executor,releases);
+  const pluginCenter=new PluginCenter(dependencies.store,dependencies.executor,releases,dependencies.control);
   return Object.freeze({pluginCenter,close:()=>pluginCenter.close()});
 }
 export const pluginControlContribution:ManifestContribution=Object.freeze<ManifestContribution>({id:pluginControlDeclaration.id,version:'1.0.0',surface:'data',runtime:'host',provides:[{kind:'service',id:centralServices.pluginControlRead.id,apiVersion:'1',cardinality:'single'}]});
 /** Borrowed host/store/executor/release resolver. Only the read port is published;
  * commands and the executable build registry stay in trusted assembly (C08). */
-export function createPluginControlPlatform(deps:{store:Store;executor:ExecutionEngine;releases:GitHubPluginReleases;host:PluginHost;hostDependencies?:readonly TrustedHostDependency[]},builds:readonly TrustedPluginBuild[]=[]){
+export function createPluginControlPlatform(deps:{store:Store;executor:ExecutionEngine;releases:GitHubPluginReleases;host:PluginHost;controlForScope:(scope:HostScope)=>PluginControlStore;hostDependencies?:readonly TrustedHostDependency[]},builds:readonly TrustedPluginBuild[]=[]){
   let center:PluginCenter|undefined,binding:ServiceBinding|undefined,claimed=false;
   const current=()=>{if(!center)throw new StoreError('Plugin control is unavailable',503);return center;};
   return Object.freeze({
     factory:(context:HostPluginContext):PluginLifecycle=>{
       if(claimed||context.scope.identity.host.id!==deps.host.identity.id||context.scope.identity.host.kind!==deps.host.identity.kind)throw new StoreError('Plugin control factory is already owned or belongs to another host',409);claimed=true;
       return {
-      prepare(){center=new PluginCenter(deps.store,deps.executor,deps.releases,{host:deps.host,assertCurrent:context.scope.assertCurrent,hostDependencies:structuredClone(deps.hostDependencies??[]),binding:()=>{if(!binding)throw new StoreError('Control binding unavailable',503);return binding;}});context.scope.defer(()=>center!.close());for(const build of builds)center.registerBuild(build);},
+      prepare(){const control=deps.controlForScope(context.scope);center=new PluginCenter(deps.store,deps.executor,deps.releases,control,{host:deps.host,assertCurrent:context.scope.assertCurrent,hostDependencies:structuredClone(deps.hostDependencies??[]),binding:()=>{if(!binding)throw new StoreError('Control binding unavailable',503);return binding;}});context.scope.defer(()=>center!.close());for(const build of builds)center.registerBuild(build);},
       start(){binding=context.provide(pluginControlDeclaration.id,centralServices.pluginControlRead,{view:()=>current().view(),instanceView:id=>current().instanceView(id)});},
       quiesce(){current().quiesce();},stop(){return current().close();},dispose(){return center?.close();},
     };},

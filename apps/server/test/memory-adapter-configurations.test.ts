@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import {modelConfigService} from './fixtures/model-config-service.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -61,7 +62,7 @@ function generatedRelease(){
 
 test('generated provider history erasure returns to configuration A after migration, reconfiguration B and adapter restart',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-adapter-configurations-')),vault=join(directory,'vault'),store=new Store(vault),memories=new MemoryStore(store),executor=new ExecutionEngine(store),release=generatedRelease();
- const releases=new GitHubPluginReleases(join(vault,'plugins/packages'),release.transport),plugins=new PluginCenter(store,executor,releases);
+ const releases=new GitHubPluginReleases(join(vault,'plugins/packages'),release.transport),plugins=new PluginCenter(store,executor,releases,testPluginControl(store));
  const models=new ModelSettingsStore({configService:modelConfigService(join(directory,'models'),{provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',model:'generated-unused',reasoningEffort:'auto',maxTokens:1024,modelRequestTimeoutMs:5000,agentTimeoutMs:5000,allowUnauthenticatedLocal:false,apiKey:'',headers:{},extraBody:{}}),prepare:async()=>({activate(){},async dispose(){}}),probe:async()=>{throw Error('No model should run in this storage journey');}});await models.initialize();
  let adapters=new MemoryAdapters(join(vault,'plugins/instances'),plugins,models);const bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor),publication=new MemoryPublication(store,memories,bindings);
  bindings.providerFactory=(id,ns)=>adapters.provider(id,ns);plugins.probe=(id,signal)=>adapters.probe(id,signal);plugins.configurationAllowed=(field,value)=>adapters.configurationAllowed(field.type,value);
@@ -89,7 +90,7 @@ test('generated provider history erasure returns to configuration A after migrat
 test('a separate maintenance process source deletion survives complete host close and clears generated provider bodies on restart',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-source-outbox-restart-')),vault=join(directory,'vault'),native=join(directory,'native'),namespace={ownerId:'generated-owner',instanceId:'generated-native',bindingRevision:2};
  let now=Date.now();
- const open=async()=>{const store=new Store(vault),memories=new MemoryStore(store),executor=new ExecutionEngine(store,()=>now),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(vault,'plugins/packages'))),bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor),provider=await createMemoryProvider({dataFile:join(native,'provider.json')});bindings.providerFactory=()=>provider;return {store,memories,executor,plugins,bindings,provider};};
+ const open=async()=>{const store=new Store(vault),memories=new MemoryStore(store),executor=new ExecutionEngine(store,()=>now),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(vault,'plugins/packages')),testPluginControl(store)),bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor),provider=await createMemoryProvider({dataFile:join(native,'provider.json')});bindings.providerFactory=()=>provider;return {store,memories,executor,plugins,bindings,provider};};
  type Host=Awaited<ReturnType<typeof open>>;
  const close=async(host:Host,publication:MemoryPublication)=>{await publication.close();await host.bindings.close();await host.provider.close();await host.plugins.close();await host.executor.close();host.store.close();};
  let host=await open(),publication=new MemoryPublication(host.store,host.memories,host.bindings);t.after(async()=>{await close(host,publication);await rm(directory,{recursive:true,force:true});});
