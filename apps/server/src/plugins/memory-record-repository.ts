@@ -9,13 +9,13 @@ import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';
 import type {MemoryRecordHostState,MemoryRecordRead,MemoryRecordSnapshot,MemoryRecordSnapshots} from '../evidence-read-ports.js';
 
-/** C21B owns the canonical Memory record storage: the `memories` rows, the
+/** This repository owns the canonical Memory record storage: the `memories` rows, the
  * dependency/index triggers and the read-only `memory_catalog` projection.
  * The read/snapshot ports below serve already host-validated records; they are
  * not an evidence disclosure scope, so Agent and MCP audiences keep using the
  * evidence-context reader's scoped MemoryRead port.
  *
- * Wiring note: until K04 moves the materials read graph behind this factory,
+ * Wiring note: until the host moves the materials read graph behind this factory,
  * `buildApp` still lets EvidenceReader construct its own MemoryStore and the
  * vault installs the same idempotent schema. This factory is the single owner
  * once installed; the acceptance test activates it through the real host. */
@@ -36,7 +36,7 @@ const unavailable=()=>new StoreError('Memory record repository is unavailable',5
 
 /** The only construction path for the record storage. The repository factory
  * uses it, and the transitional EvidenceReader borrows the same builder until
- * K04 injects the acquired port instead of a constructor. */
+ * the host injects the acquired port instead of a constructor. */
 export function openMemoryRecords(store:MemoryStore['store'],readEvidence?:ConstructorParameters<typeof MemoryStore>[1],currentEvidence?:ConstructorParameters<typeof MemoryStore>[2]){
   memoryStorageSchema(store.db);
   return new MemoryStore(store,readEvidence,currentEvidence);

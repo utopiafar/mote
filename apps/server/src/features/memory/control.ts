@@ -11,7 +11,7 @@ export interface MemoryControlRouteDependencies {
   readonly writable:()=>boolean;
 }
 
-/** C21's recipe and integration selections. Reads keep serving a prepared
+/** Memory recipe and integration selections. Reads keep serving a prepared
  * activation; writes require the current one. */
 export function registerMemoryControlRoutes(app:FastifyInstance,dependencies:MemoryControlRouteDependencies){
   app.register(async child=>{

@@ -32,7 +32,7 @@ export interface MemoryPublicationOptions {
    * the historical constructor-starts behavior. */
   readonly autostart?:boolean;
 }
-/** C24 reads canonical Memory records and deletion intents through this port;
+/** Publication reads canonical Memory records and deletion intents through this port;
  * it never constructs a second record storage or reaches into its SQL. */
 export type MemoryPublicationRecordPort=Pick<MemoryStore,'prepareExtract'|'assertPrepared'|'get'|'publish'|'correct'|'delete'|'isCurrentEvidence'|'readEvidence'|'deletions'>;
 /** Provider identity, transport and retention all come from the live Memory
@@ -213,7 +213,7 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
   async close(){this.stop();this.closed=true;this.memories.deletions.attachBinding(undefined);const dispose=this.dispose;this.dispose=undefined;await dispose?.();}
 }
 
-/** C24 owns staged publication, owner mutation replay, the durable
+/** This plugin owns staged publication, owner mutation replay, the durable
  * reconciliation of unknown remote writes and the portable backup bodies.
  * The two publication ports deliberately separate reviewed staging from owner
  * commands; the backup port stays a read-only consumer of the pinned binding. */
@@ -240,16 +240,16 @@ export interface MemoryPublicationPlatformDependencies {
   readonly memories:MemoryPublicationRecordPort;
   readonly bindings:MemoryPublicationBindingPort;
   readonly executor?:ExecutionEngine;
-  /** C23 owns native source cleanup; C24 keeps its durable intent. */
+  /** Provider adapters own native source cleanup; publication keeps its durable intent. */
   readonly revokeEvidence?:(ids:string[])=>Promise<void>;
-  /** C24 also owns evidence deletion identity. Ports stay narrow; the capture
+  /** This plugin also owns evidence deletion identity. Ports stay narrow; the capture
    * feature acquires the live object instead of constructing another one. */
   readonly evidenceDeletion?:EvidenceDeletionPorts;
 }
 export interface MemoryPublicationPort {
   readonly stage:MemoryStagePublication;
   readonly owner:MemoryOwnerPublication;
-  /** C24's backup contribution: portable bodies for restore and portable export. */
+  /** Publication's backup contribution: portable bodies for restore and portable export. */
   readonly backup:MemoryBackup;
 }
 export interface MemoryPublicationBindings {
