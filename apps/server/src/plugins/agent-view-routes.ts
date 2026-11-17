@@ -1,3 +1,7 @@
+import {serviceContract} from '@mote/plugin-api/contracts';
+import type {ManifestContribution} from '@mote/plugin-api';
+import type {CentralDomainPlugin} from '../domain-activation.js';
+import {StoreError} from '../store.js';
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 import type {ContextReader} from '@mote/agent';
@@ -9,8 +13,8 @@ import {openingMemories} from '../opening-memory.js';
 import {requestLocale} from '../i18n.js';
 const scope={...navigationScopeSchema.shape,limit:z.coerce.number().int().min(1).max(20).default(12),cursor:z.string().max(4096).optional()};
 
-/** C26's Agent read projection. The activity plugin mounts this table over its
- * current activation so disabling the owner also revokes Agent browsing. */
+/** Read-only Agent browsing uses the same authorized reader as Ask, without
+ * creating Activity projections or automatic model work. */
 export interface AgentViewRouteDependencies {
   readonly archiveReader:ContextReader;
   readonly diagnostics:Pick<ServerDiagnostics,'snapshot'|'events'>;
@@ -87,3 +91,39 @@ export function registerAgentViewRoutes(app:FastifyInstance,{archiveReader,diagn
     return {items,nextSeq,oldestSeq:page.oldestSeq,recording:diagnostics.snapshot().agentTrace};
   });
 }
+
+export function createAgentViewServices(dependencies:AgentViewRouteDependencies){
+  let phase:'created'|'prepared'|'active'|'stopped'='created';
+  const mounted=new WeakSet<FastifyInstance>();
+  const close=()=>{phase='stopped';};
+  return Object.freeze({
+    prepare(){if(phase!=='created')throw new StoreError('Agent view is unavailable',503);phase='prepared';},
+    start(){if(phase==='created')throw new StoreError('Agent view is unavailable',503);phase='active';},
+    quiesce:close,stop:close,dispose:close,close,
+    routes(app:FastifyInstance){
+      if(mounted.has(app))throw new StoreError('Agent view routes are already installed',409);
+      if(phase!=='prepared'&&phase!=='active')throw new StoreError('Agent view is unavailable',503);
+      mounted.add(app);app.register(async child=>{
+        child.addHook('onRequest',async(_request,reply)=>{if(phase!=='active')return reply.code(503).send({error:'feature_unavailable'});});
+        registerAgentViewRoutes(child,dependencies);
+      });
+    },
+  });
+}
+export interface AgentViewServicesInputs {open():ReturnType<typeof createAgentViewServices>}
+export const agentViewInputsContract=serviceContract<AgentViewServicesInputs>('mote.central.agent-view-inputs','1');
+export const agentViewInputsContribution={id:'agent-view-inputs',version:'1.0.0',surface:'data',runtime:'host',
+  provides:[{kind:'service',id:agentViewInputsContract.id,apiVersion:'1',cardinality:'single'}],
+} as const satisfies ManifestContribution;
+export const agentViewInputsDeclaration={id:agentViewInputsContribution.id,apiVersion:'1'} as const;
+export const agentViewServicesPlugin:CentralDomainPlugin=Object.freeze<CentralDomainPlugin>({
+  contribution:{id:'agent-view-services',version:'1.0.0',surface:'data',runtime:'host',requires:[{kind:'service',id:agentViewInputsContract.id,version:'1.0.0'}],provides:[]},
+  declaration:{id:'agent-view-services',apiVersion:'1'},replacement:'hot',
+  activation:{featureId:'mote.agent-view',requires:{inputs:{provider:agentViewInputsContribution.id,service:agentViewInputsContract}},
+    async create(context,bindings){
+      const inputs=await context.services.acquire(agentViewInputsContract,bindings.inputs!);context.scope.defer(()=>inputs.release());
+      const service=inputs.value.open();context.scope.defer(()=>service.close());
+      return {prepare:service.prepare,start:service.start,quiesce:service.quiesce,stop:service.stop,dispose:service.dispose,route:{id:'mote.agent-view',mount:service.routes}};
+    },
+  },
+});

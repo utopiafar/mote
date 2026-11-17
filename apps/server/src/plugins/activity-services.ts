@@ -1,26 +1,26 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import {serviceContract,type PluginLifecycle,type StopReason} from '@mote/plugin-api/contracts';
+import type {CentralDomainPlugin} from '../domain-activation.js';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {ActivityProjection,registerActivity,type ActivityDelegationReader} from '../activity.js';
 import {AutomaticActivity} from '../automatic-activity.js';
 import {registerOperations} from '../operations.js';
 import {StoreError} from '../store.js';
-import {registerAgentViewRoutes,type AgentViewRouteDependencies} from './agent-view-routes.js';
-import {centralServices} from './central-contracts.js';
 
-/** C26A owns the Activity read projection, the automatic-activity handler/timer
- * and the work-activity plus automatic-activity HTTP table. C26's Agent view
- * read routes are contributed by the same activation. Execution receipts stay
- * owned by C05; this plugin only reads them and registers its own handler. */
+
+/** Activity owns its read projection and prospective automatic understanding.
+ * Execution and Memory receipts retain their independent owners. */
+export interface ActivityServicesInputs {open():ActivityServices}
+export const activityServicesInputsContract=serviceContract<ActivityServicesInputs>('mote.central.activity-inputs','1');
+export const activityServicesInputsContribution={id:'activity-services-inputs',version:'1.0.0',surface:'data',runtime:'host',
+  provides:[{kind:'service',id:activityServicesInputsContract.id,apiVersion:'1',cardinality:'single'}],
+} as const satisfies ManifestContribution;
+export const activityServicesInputsDeclaration={id:activityServicesInputsContribution.id,apiVersion:'1'} as const;
 export const activityServicesContribution={
   id:'activity-services',version:'1.0.0',surface:'data',runtime:'host',
-  requires:[
-    {kind:'host',id:'mote.vault-platform',version:'1.0.0'},
-    {kind:'service',id:centralServices.execution.id,version:'1.0.0'},
-    {kind:'service',id:centralServices.materialRead.id,version:'1.0.0'},
-  ],
-  provides:[],
+  requires:[{kind:'service',id:activityServicesInputsContract.id,version:'1.0.0'}],
+  provides:[{kind:'service',id:'mote.central.activity',apiVersion:'1',cardinality:'single'}],
 } as const satisfies ManifestContribution;
 export const activityServicesDeclaration={id:activityServicesContribution.id,apiVersion:'1'} as const;
 /** Persisted grants, batches and execution steps survive a stopped activation. */
@@ -35,8 +35,6 @@ export interface ActivityServicesDependencies {
   readonly config:ConstructorParameters<typeof AutomaticActivity>[3];
   readonly options:ConstructorParameters<typeof AutomaticActivity>[4];
   readonly isCollector:(request:FastifyRequest)=>boolean;
-  /** The Agent read projection is part of the same C26 activation. */
-  readonly agentView:AgentViewRouteDependencies;
   /** Defaults to the previous processing-feature poll interval. */
   readonly pollIntervalMs?:number;
 }
@@ -46,13 +44,14 @@ export interface ActivityServices extends PluginLifecycle {
   readonly automaticActivity:AutomaticActivity;
   /** Mount the owned activity HTTP table once, before Fastify listen. */
   routes(app:FastifyInstance):void;
-  /** Mount the Agent view table once; it shares this activation and gate. */
-  agentViewRoutes(app:FastifyInstance):void;
   tick():Promise<void>;
   close():Promise<void>;
 }
 
 const unavailable=()=>new StoreError('Activity services are unavailable',503);
+// One connection can have only one owner of these named SQL subscriptions and
+// the prospective capture hook. This weak guard stores no domain services.
+const activityOwners=new WeakSet<ActivityServicesDependencies['store']>();
 
 /** A stop closes the automatic-activity handler and intake observer. A later
  * start opens a fresh activation over the same durable profile, so re-enabling
@@ -63,8 +62,10 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
   if(!Number.isFinite(pollIntervalMs)||pollIntervalMs<=0)throw new RangeError('Invalid activity poll interval');
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let projection:ActivityProjection|undefined,automatic:AutomaticActivity|undefined,poll:ReturnType<typeof setInterval>|undefined,runningPoll=false;
-  let closing:Promise<void>|undefined;
-  const mounted=new WeakSet<FastifyInstance>(),agentViewMounted=new WeakSet<FastifyInstance>();
+  let closing:Promise<void>|undefined,ownsConnection=false;
+  const claim=()=>{if(activityOwners.has(dependencies.store))throw new StoreError('Activity already has an active owner',409);activityOwners.add(dependencies.store);ownsConnection=true;};
+  const release=()=>{if(ownsConnection){activityOwners.delete(dependencies.store);ownsConnection=false;}};
+  const mounted=new WeakSet<FastifyInstance>();
   const prepared=()=>{
     if(!projection||!automatic||phase==='created'||phase==='stopped'||phase==='disposed')throw unavailable();
     return {projection,automatic};
@@ -94,7 +95,7 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
     phase='quiescing';
     stopPoll();
     // Stop prospective intake and fence late model results before accepted work drains.
-    automatic?.stop();
+    automatic?.stop();projection?.close();
   };
   const stop=async()=>{
     if(phase==='stopped'||phase==='disposed')return;
@@ -103,6 +104,7 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
     const errors:unknown[]=[];
     try{automatic?.stop();}catch(error){errors.push(error);}
     await closeAutomatic(errors);
+    projection?.close();release();
     phase='stopped';
     if(errors.length)throw new AggregateError(errors,'Activity service stop failed');
   };
@@ -117,11 +119,11 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
     get automaticActivity(){return prepared().automatic;},
     prepare(){
       if(phase!=='created')throw unavailable();
-      projection=new ActivityProjection(dependencies.store,dependencies.operations,dependencies.delegation?{delegation:dependencies.delegation}:{});
-      try{openAutomatic();}catch(error){
+      claim();
+      try{projection=new ActivityProjection(dependencies.store,dependencies.operations,{get delegation(){return dependencies.delegation;}});openAutomatic();}catch(error){
         const owned=automatic;automatic=undefined;
         if(owned)void owned.close();
-        projection=undefined;
+        projection?.close();projection=undefined;release();
         throw error;
       }
       phase='prepared';
@@ -132,7 +134,9 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
       if(phase==='stopped'){
         // Re-read the current configuration and reopen over the same durable
         // grants, batches and execution receipts.
-        openAutomatic();
+        claim();
+        try{projection=new ActivityProjection(dependencies.store,dependencies.operations,{get delegation(){return dependencies.delegation;}});openAutomatic();}
+        catch(error){projection?.close();release();throw error;}
         phase='active';startPoll();return;
       }
       throw unavailable();
@@ -161,31 +165,29 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
         child.put('/api/processing/activity',async request=>prepared().automatic.save(request.body));
       });
     },
-    /** Mounted once by the mote.agent-view bridge but still owned by this
-     * activation, so stopping the activity plugin fences Agent browsing too. */
-    agentViewRoutes(app:FastifyInstance){
-      if(agentViewMounted.has(app))throw new StoreError('Agent view routes are already installed',409);
-      if(phase==='created'||phase==='stopped'||phase==='disposed')throw unavailable();
-      agentViewMounted.add(app);
-      app.register(async child=>{
-        child.addHook('onRequest',async(_request,reply)=>{
-          if(phase!=='active')return reply.code(503).send({error:'feature_unavailable'});
-        });
-        registerAgentViewRoutes(child,dependencies.agentView);
-      });
-    },
+
   });
 }
 export type ActivityServicesPlatform=ReturnType<typeof createActivityServices>;
 
-/** Native host factory. The pre-H14 bridge mounts the same route contribution
- * through `moteDomainRoutes`; both paths share one actual service instance. */
+/** One owner holds the handler, intake hook, poll and mounted route gate. */
 export function createActivityServicesFactory(dependencies:ActivityServicesDependencies){
-  return (context:HostPluginContext):PluginLifecycle&{routes:ActivityServices['routes'];agentViewRoutes:ActivityServices['agentViewRoutes']}=>{
+  return (context:HostPluginContext):PluginLifecycle&{routes:ActivityServices['routes']}=>{
     const service=createActivityServices(dependencies);
     context.scope.defer(()=>service.close());
-    return Object.freeze({
-      prepare:service.prepare,start:service.start,quiesce:service.quiesce,stop:service.stop,dispose:service.dispose,routes:service.routes,agentViewRoutes:service.agentViewRoutes,
-    });
+    return Object.freeze({prepare:service.prepare,start:service.start,quiesce:service.quiesce,stop:service.stop,dispose:service.dispose,routes:service.routes});
   };
 }
+export const activityServicesContract=serviceContract<ActivityServices>('mote.central.activity','1');
+export const activityServicesPlugin:CentralDomainPlugin=Object.freeze<CentralDomainPlugin>({
+  contribution:activityServicesContribution,declaration:activityServicesDeclaration,replacement:activityServicesReplacement,
+  activation:{featureId:'mote.activity',requires:{inputs:{provider:activityServicesInputsContribution.id,service:activityServicesInputsContract}},
+    async create(context,bindings){
+      const inputs=await context.services.acquire(activityServicesInputsContract,bindings.inputs!);
+      context.scope.defer(()=>inputs.release());
+      const service=inputs.value.open();context.scope.defer(()=>service.close());
+      return {prepare:service.prepare,start(){service.start();context.provide(activityServicesContribution.id,activityServicesContract,service);},
+        quiesce:service.quiesce,stop:service.stop,dispose:service.dispose,route:{id:'mote.activity',mount:service.routes}};
+    },
+  },
+});

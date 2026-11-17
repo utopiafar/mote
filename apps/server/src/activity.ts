@@ -26,6 +26,7 @@ function lifecycleEvents(id:string,value:WorkState,createdAt:string,updatedAt:st
 export class ActivityProjection {
  private memoryIndex:ActivityMemoryIndex;
  constructor(private store:Store,private operations:Operations,private options:{delegation?:ActivityDelegationReader}={}){this.memoryIndex=new ActivityMemoryIndex(store);if(this.has('delegation_works'))this.store.db.exec("CREATE INDEX IF NOT EXISTS activity_delegation_recent ON delegation_works(json_extract(json,'$.updatedAt') DESC,id)");}
+ close(){this.memoryIndex.close();}
  private has(table:string){return Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));}
  private json<T>(table:string,id:string):T|undefined {if(!this.has(table))return;const row=this.store.db.prepare(`SELECT json FROM ${table} WHERE id=?`).get(id);return row?JSON.parse(String(row.json)) as T:undefined;}
  private sourceName(sourceId:string){const source=this.json<{name?:string}>('source_connections',sourceId);return source?.name??moteText('历史资料');}

@@ -30,6 +30,8 @@ Material can be retrieved directly while Memory and interpretations are produced
 
 [host.ts](../apps/server/src/host.ts) is the Central composition root. Existing assembly, features and plugins connect domains. Extensions reuse the existing SDK, models and task infrastructure. Interfaces and implementation evolve with actual needs.
 
+Activity uses the executable [activity-services declaration](../apps/server/src/plugins/activity-services.ts) and the common PluginHost domain loader. Selecting the feature and plugin opens its projection, prospective capture hook, automatic-understanding handler and poll; deselection opens none of those resources. Canonical Memory, Query and execution state keep their own owners. The 13 Activity Memory subscriptions are SQLite TEMP triggers owned by the active connection; close withdraws them, while a later selected activation rebuilds only disposable projection metadata. Opening an older profile retires the known persistent Activity subscriptions before new work, retaining historical tables and canonical products. Agent View has a separate read-only declaration, and Activity reads delegated work through the current QueryRuns metadata lease without receiving private payloads or answers. Remaining domain assembly and private persistence adapters continue to be separate follow-up work.
+
 ## Technical foundations
 
 - Central uses Node.js / TypeScript and Fastify; Web uses React. Mac uses Electron and native helpers; Android uses a native Kotlin client.
