@@ -17,8 +17,10 @@ import {FileAttachments} from './file-attachments.js';
 import {Readable} from 'node:stream';
 import {PlaybackGrants,type FilePlaybackGrants} from './plugins/files-source.js';
 import type {IngressService} from './ingress.js';
+import {UploadHttpProtection} from './local-rate-limits.js';
 
 export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'|'archivedEvidence'>&Pick<EvidenceReader,'contextDependenciesAllowed'>,diagnostics:ServerDiagnostics|undefined,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>,withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>,playback?:FilePlaybackGrants){
+  const uploads=new UploadHttpProtection();uploads.install(app);
   const measure=<T>(operation:Operation,task:()=>T|Promise<T>)=>diagnostics?diagnostics.measure('file',operation,task):Promise.resolve().then(task);
   const reviews=new FileReviews(files,processing);
   const attachments=new FileAttachments(files);
@@ -42,15 +44,15 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.get('/api/file-sync/v1/capabilities',async()=>files.capabilities());
   app.get('/api/file-sync/v1/head',async req=>{const q=z.object({sourceId:z.string().min(1).max(128),externalId:z.string().min(1).max(1000)}).strict().parse(req.query);authorize(req,q.sourceId);return files.syncHead(q.sourceId,q.externalId);});
   app.get('/api/file-sync/v1/recovery',async req=>{const q=z.object({sourceId:z.string().min(1).max(128)}).strict().parse(req.query);authorize(req,q.sourceId);return files.snapshotRecovery(q.sourceId);});
-  app.post('/api/file-sync/v1/recovery/:id/uploads',{bodyLimit:1024},async req=>{z.object({}).strict().parse(req.body??{});return ingress.fileRecovery(fileId(req),check(req));});
-  app.post('/api/file-sync/v1/manifests',{bodyLimit:8*1024*1024},async req=>measure('file_revision',()=>ingress.fileManifests(req.body,check(req))));
-  app.post('/api/file-sync/v1/uploads',{bodyLimit:32768},async req=>measure('file_upload',()=>ingress.fileBegin(req.body,check(req))));
+  app.post('/api/file-sync/v1/recovery/:id/uploads',{bodyLimit:1024},async req=>{z.object({}).strict().parse(req.body??{});return ingress.fileRecovery(fileId(req),check(req),()=>uploads.admit(req));});
+  app.post('/api/file-sync/v1/manifests',{bodyLimit:8*1024*1024},async req=>measure('file_revision',()=>ingress.fileManifests(req.body,check(req),()=>uploads.admit(req))));
+  app.post('/api/file-sync/v1/uploads',{bodyLimit:32768},async req=>measure('file_upload',()=>ingress.fileBegin(req.body,check(req),()=>uploads.admit(req))));
   app.get('/api/file-sync/v1/uploads/:id',async req=>{const query=z.object({afterPart:z.coerce.number().int().safe().min(-1).default(-1)}).strict().parse(req.query);return ingress.fileUpload(id(req),check(req),query.afterPart);});
-  app.put('/api/file-sync/v1/uploads/:id/parts/:part',{bodyLimit:FILE_PART_BYTES},async req=>{if(!Buffer.isBuffer(req.body))throw new StoreError('Binary part required');return measure('file_part',()=>files.part(id(req),Number((req.params as {part:string}).part),req.body as Buffer,check(req)));});
+  app.put('/api/file-sync/v1/uploads/:id/parts/:part',{bodyLimit:FILE_PART_BYTES,onRequest:uploads.receive},async req=>{if(!Buffer.isBuffer(req.body))throw new StoreError('Binary part required');return measure('file_part',()=>files.part(id(req),Number((req.params as {part:string}).part),req.body as Buffer,check(req)));});
   app.post('/api/file-sync/v1/uploads/:id/commit',async(req,reply)=>{
     const controller=new AbortController(),abort=()=>{if(!reply.raw.writableEnded)controller.abort();};
     req.raw.once('aborted',abort);reply.raw.once('close',abort);
-    try{return await measure('file_commit',()=>ingress.fileCommit(id(req),check(req),controller.signal));}
+    try{return await uploads.commit(req,()=>measure('file_commit',()=>ingress.fileCommit(id(req),check(req),controller.signal)));}
     finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
   });
   app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024},async req=>measure('file_revision',()=>ingress.fileRevision(req.body,check(req))));
