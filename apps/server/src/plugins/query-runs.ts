@@ -43,7 +43,7 @@ import {conversationInputIdentity} from '../conversations.js';
 import {acceptedConversationAmendments,createConversationSteering} from '../conversation-steering.js';
 import type {AssistantTaskSteering} from '../assistant-task-steering.js';
 
-/** C27 owns the durable delegation journal and the replayable Ask receipts
+/** The query-runs owner keeps the durable delegation journal and the replayable Ask receipts
  * that the admitted query runtime prepares and commits. */
 export const queryRunsContribution={
   id:'query-runs',version:'1.0.0',surface:'data',runtime:'host',

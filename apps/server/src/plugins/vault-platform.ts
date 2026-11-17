@@ -53,7 +53,7 @@ export interface VaultRepositoryAccess {
   /** Invalidates this access only. It neither closes sibling accesses nor deletes data. */
   release():void;
 }
-/** H03 owns the package Manifest. This is its actual data-contribution fragment only. */
+/** The package owns its Manifest. This is its actual data-contribution fragment only. */
 export const vaultPlatformContribution={
   id:'vault-platform',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'service',id:centralServices.commitAuthorization.id,version:centralServices.commitAuthorization.apiVersion}],
@@ -80,7 +80,7 @@ export interface VaultPlatform extends PluginLifecycle {
   close():Promise<void>;
 }
 
-/** Trusted H05 bootstrap bridge only. Not a published service, SDK, ordinary plugin
+/** Trusted bootstrap bridge only. Not a published service, SDK, ordinary plugin
  * capability or replacement for domain authorization. It preserves the current legacy
  * composition until domain factories replace it. Caller-supplied Store is borrowed. */
 export function createVaultPlatformAssembly(options:VaultPlatformOptions,dependencies:{store?:Store;configService?:ConfigService;onContentEncryptionApplied?:(enabled:boolean)=>void}={}){
@@ -186,9 +186,9 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
 }
 
 /** Trusted warehouse assembly only, not a public service: domain SQL remains in its existing repositories. The trusted
- * caller supplies the fixed C04 verifier; no consumer can pass an issuer or callback.
+ * caller supplies the fixed commit verifier; no consumer can pass an issuer or callback.
  * This adapter checks its opaque reference at the synchronous transaction boundary.
- * Actual request/job resource/action/owner admission still belongs to C04/domain writers;
+ * Actual request/job resource/action/owner admission still belongs to the domain writers;
  * this module is not their implementation or proof of runtime authorization. */
 export function createVaultPlatform(options:VaultPlatformOptions,authorization:CommitAuthorization):VaultPlatform {
   // Capture private primitive options, so later host mutations cannot retarget this instance.
@@ -316,7 +316,7 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
 
 /** Public contribution exposes only flat read methods guarded by the H04 caller lease.
  * No consumer scope, nested repository, iterator, transaction or writer leaves this boundary.
- * Actual domain writers stay in trusted factory assembly until C04/owner checks are wired. */
+ * Actual domain writers stay in trusted factory assembly until owner checks are wired. */
 export function createVaultPlatformFactory(options:VaultPlatformOptions,authorization:CommitAuthorization){
   return (context:HostPluginContext):PluginLifecycle=>{
     const platform=createVaultPlatform(options,authorization);context.scope.defer(()=>platform.close());
