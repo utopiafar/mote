@@ -21,9 +21,14 @@ import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSo
 import {c10IntegrationContribution,c10IntegrationDeclaration,c10IntegrationReplacement} from '../plugins/c10-integration.js';
 import {devicesSourcePlugin,devicesFactoryContribution,devicesFactoryDeclaration,createDevicesDomainFactory,bindDevicesDomainFactory} from '../plugins/devices-domain.js';
 import {firstDeviceData} from '../first-device-data.js';
-import type {NotesCapture} from '../features/notes.js';
+import {notesFeature,type NotesCapture,type NotesFeatureDependencies} from '../features/notes.js';
+import {filesFeature,type FilesFeatureDependencies} from '../features/files.js';
+import {captureFeature,type CaptureFeatureDependencies} from '../features/capture.js';
+import {sourcesFeature,type SourcesFeatureDependencies} from '../features/sources.js';
 import {openMaterialNoteDeletion} from '../plugins/material-repository.js';
 import type {FeatureRoute} from '../features/index.js';
+import {contributeDomainRoutes} from '../plugins/domain-routes.js';
+import type {Context} from '@deepseek-ai/cordis';
 
 /** Declared build-time domain plugins the sources assembly wires; the
  * distribution concatenates each domain's list into one selected table. */
@@ -40,6 +45,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
 
 export interface SourcesAssemblyDependencies {
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
+  readonly backendContext:Context;
   readonly store:Store;
   readonly materials:MaterialStore;
   readonly materialMemoryWork:MaterialMemoryWork;
@@ -52,7 +58,7 @@ export interface SourcesAssemblyDependencies {
 /** SourceRuntime, SourceStore, Files, Capture and Notes construction plus the
  * source-facing platform close order app.ts previously held inline. */
 export async function assembleSources(dependencies:SourcesAssemblyDependencies){
-  const {bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources}=dependencies;
+  const {bootstrap,backendContext,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources}=dependencies;
   const sourceRuntimeStorage=createSourceRuntimeOwner({store,materials,memoryWork:materialMemoryWork,execution:executionPlatform});
   const sourceRuntime=createSourceRuntime({},{port:sourceRuntimeStorage.port});
   const sourceRuntimeOwner=await bootstrap.host.install({identity:{packageId:'mote.source-runtime',installationId:'build:source-runtime@1.0.0',instanceId:'source-runtime',activationId:randomUUID(),host:bootstrap.snapshot().host},
@@ -62,6 +68,7 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   const sources=sourceRuntimeStorage.sourceStoreForAssembly();
   const sourceControl=sourceRuntimeStorage.sourceControlForAssembly(),sourceIdentity=sourceRuntimeStorage.sourceIdentityForAssembly();
   const codingRoutes=createCodingSourceRoutes(sourcePipelines),codingFeature:FeatureRoute={id:'mote.coding',mount:app=>codingRoutes.mount(app)};
+  if(bootstrap.selectsFeature('mote.coding'))contributeDomainRoutes(backendContext,{'mote.coding':{mount:codingFeature.mount}});
   const codingSourceOwner=await bootstrap.host.install({identity:{packageId:'mote.coding-source',installationId:'build:coding-source@1.0.0',instanceId:'coding-source',activationId:randomUUID(),host:bootstrap.snapshot().host},
     contributions:[codingSourceDeclaration],factory:createCodingSourceFactory({runtime:sourcePipelines,sources,store},codingRoutes)});
   resources.defer(()=>codingSourceOwner.close('disabled'));
@@ -92,7 +99,27 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
   // sourceRuntime, capture and files slices.
-  return Object.freeze({sourceRuntime,sourceRuntimeStorage,sourcePipelines,sources,sourceControl,sourceIdentity,c10Authorization,captureOwner,capturePort:captureOwner.port,captureC04,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback:filesAssembly.playback,codingFeature});
+  return Object.freeze({sourceRuntime,sourceRuntimeStorage,sourcePipelines,sources,sourceControl,sourceIdentity,c10Authorization,captureOwner,capturePort:captureOwner.port,captureC04,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback:filesAssembly.playback});
+}
+
+export interface SourceFeatureRouteDependencies {
+  readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
+  readonly backendContext:Context;
+  readonly files:FilesFeatureDependencies;
+  readonly capture:CaptureFeatureDependencies;
+  readonly sources:SourcesFeatureDependencies;
+  readonly notes:NotesFeatureDependencies;
+}
+
+/** Register the source-owned HTTP surfaces in the one selected route table.
+ * The common collector mounts only ids present in the pinned distribution;
+ * an omitted feature never constructs its factory, table, timer or handler. */
+export function prepareSourceFeatureRoutes(dependencies:SourceFeatureRouteDependencies){
+  const {bootstrap,backendContext,files,capture,sources,notes}=dependencies;
+  if(bootstrap.selectsFeature('mote.files'))contributeDomainRoutes(backendContext,{'mote.files':{mount:filesFeature(files).mount}});
+  if(bootstrap.selectsFeature('mote.capture'))contributeDomainRoutes(backendContext,{'mote.capture':{mount:captureFeature(capture).mount}});
+  if(bootstrap.selectsFeature('mote.sources'))contributeDomainRoutes(backendContext,{'mote.sources':{mount:sourcesFeature(sources).mount}});
+  if(bootstrap.selectsFeature('mote.notes')&&bootstrap.selectsPlugin('notes-source'))contributeDomainRoutes(backendContext,{'mote.notes':{mount:notesFeature(notes).mount}});
 }
 
 /** Only narrow device operations and the existing request authority enter the

@@ -4,9 +4,12 @@ import {assertMemoryRequestFits,type MemoryRequestCapacity} from '../memory-requ
 import type {CentralDomainPlugin} from '../bootstrap.js';
 import type {QueryResult} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
-import type {FastifyInstance} from 'fastify';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
 import {sha256,StoreError,type EvidenceStore as Store} from '../evidence-store.js';
+import type {ConnectionCredential} from '../connections.js';
+import type {AssistantCommitments} from '../assistant-commitments.js';
+import {registerMemoryAssociationRoutes} from '../features/memory/associations.js';
 import {memoryConfigDomain,perceptionConfigDomain} from '../config.js';
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -138,6 +141,11 @@ export interface MemoryRuntimeDependencies {
   readonly memoryAutomation:MemoryAutomation;
   /** Shared owner-question ledger; the phase plugin owns the Memory provider. */
   readonly ownerQuestions:OwnerQuestionsPort;
+  /** The Memory browser reads the existing commitment projection; its owner
+   * guard is the ordinary request authority, not a second Memory permission. */
+  readonly assistantCommitments:Pick<AssistantCommitments,'page'>;
+  readonly assertRequestActive:(request:FastifyRequest)=>void;
+  readonly credential:(request:FastifyRequest)=>ConnectionCredential|undefined;
   readonly pluginCenter:PluginCenter;
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
@@ -169,7 +177,7 @@ export interface MemoryRuntimeDependencies {
  * the automatic topics host — the Memory runtime app.ts previously wired
  * inline. Memory objects keep their relative defer/beforeClose order. */
 export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
-  const {store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,availableModelConnections,queryAgent,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
+  const {store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,assistantCommitments,assertRequestActive,credential,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,availableModelConnections,queryAgent,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
   memoryStrategySettings.start();
   // The plugin constructs the binding; its disposer is registered by app.ts at
   // the original shutdown slot. Runtime collaborators are resolved when the
@@ -264,6 +272,7 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
         modelAuthorizationHost,
         availableModelConnections,
       });
+      registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);});
     },
   })});
   return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryProviderAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryStrategySettings,memoryTopics,memoryTopicsService,memoryLifecycleService,memoryPublicationService:memoryPublicationPlatform});
