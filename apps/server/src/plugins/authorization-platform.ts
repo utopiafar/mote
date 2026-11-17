@@ -17,6 +17,8 @@ import {moteText} from '../i18n.js';
 import {INGRESS_PROTOCOL_VERSION} from '../ingress.js';
 import {Connections,ConnectionError,type ConnectionCredential,type ConnectionRouteContext} from '../connections.js';
 import {LoginHandoffs} from '../login-handoffs.js';
+import {LocalRateLimit,LocalRateLimitError,localRateLimitErrors,localRetryHeader,verifiedCredentialIdentity} from '../local-rate-limits.js';
+import {safeError} from '../diagnostics.js';
 import {IngressService} from '../ingress.js';
 import {assertExternalCaptures,assertCaptureAttachments} from '../capture-admission.js';
 import {BackgroundModelAuthorization,type ModelConnection} from '../background-model-authorization.js';
@@ -88,6 +90,13 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
   const liveAdmissions=new Set<Admission>();
   const liveRequests=new Map<RequestAuthority,RequestState>(),memoryRuns=new Set<{controller:AbortController;assert:()=>void}>();
   const context=new AsyncLocalStorage<Admission>();
+  const loginAdmissions=new Map<string,LocalRateLimit>(),loginFailures=new Map<string,LocalRateLimit>();
+  // Call only for the fixed, locally registered login/pairing route sets below.
+  // A full public entry point cannot consume another entry point's key space.
+  const takeLogin=(limits:Map<string,LocalRateLimit>,route:string,key:string)=>{
+    if(phase==='stopped'||phase==='disposed')throw denied('authorization_unavailable',503);
+    let limit=limits.get(route);if(!limit){limit=new LocalRateLimit(10,now);limits.set(route,limit);}limit.take(key);
+  };
   const running=()=>{if(phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);};
   const ready=()=>{if(!control||phase==='stopped'||phase==='disposed')throw denied('authorization_unavailable',503);};
   const track=<T>(work:Promise<T>):Promise<T>=>{pending.add(work);void work.then(()=>pending.delete(work),()=>pending.delete(work));return work;};
@@ -229,6 +238,31 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     const readable=()=>{if(phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);return fixed();};
     const writable=()=>{if(phase!=='active')throw denied('authorization_unavailable',503);return fixed();};
     const authorize=(request:FastifyRequest)=>()=>{const credential=context.identity(request);if(credential)connections!.assertActive(credential);};
+    const publicAdmissions=new Set(['/api/login/exchange','/api/login/requests','/api/connections/redeem']);
+    const ownerAdmissions=new Set(['/api/login/ticket','/api/login/session','/api/login/requests/:id/approve','/api/connections/invitations','/api/connections/collector-invitations']);
+    const failedAdmissions=new Set([...ownerAdmissions,'/api/login/poll','/api/login/ack']);
+    localRateLimitErrors(app);
+    app.addHook('onRequest',async request=>{
+      if(request.method!=='POST')return;
+      const route=request.routeOptions.url??'';
+      // Fastify owns proxy trust. Never parse Forwarded/X-Forwarded-For here.
+      if(publicAdmissions.has(route))takeLogin(loginAdmissions,route,request.ip);
+      else if(ownerAdmissions.has(route))takeLogin(loginAdmissions,route,verifiedCredentialIdentity(request));
+    });
+    // The root auth hook rejects bad owner bearers before this child's
+    // onRequest hook. Count those failures at the same narrow login surface.
+    // Correct PKCE polls are instead isolated by their verified handoff below.
+    app.addHook('onSend',async(request,reply,payload)=>{
+      if(request.method!=='POST'||![400,401,410].includes(reply.statusCode)||!failedAdmissions.has(request.routeOptions.url??''))return payload;
+      try{takeLogin(loginFailures,request.routeOptions.url??'',request.ip);}
+      catch(error){
+        if(!(error instanceof LocalRateLimitError))throw error;
+        localRetryHeader(reply,error);reply.code(429);
+        const failure=safeError(error);
+        return JSON.stringify({error:failure.category,message:failure.message,requestId:request.id});
+      }
+      return payload;
+    });
     app.post('/api/login/ticket',{bodyLimit:8192},request=>{
       const {handoffs}=writable(),{expiresAt}=z.object({expiresAt:z.number().int().positive().optional()}).strict().parse(request.body??{});
       const credential=context.identity(request),deadline=credential?.expiresAt?Date.parse(credential.expiresAt):undefined;
@@ -313,6 +347,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
   }
   function stopNow(){
     if(phase==='disposed')return;phase='stopped';
+    for(const limits of [loginAdmissions,loginFailures]){for(const limit of limits.values())limit.close();limits.clear();}
     for(const value of liveRequests.values()){value.active=false;if(value.timer)clearTimeout(value.timer);value.controller.abort(denied('authorization_unavailable',503));}
     liveRequests.clear();for(const run of memoryRuns)run.controller.abort(denied('authorization_unavailable',503));control?.close();
   }
