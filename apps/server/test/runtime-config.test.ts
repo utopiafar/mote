@@ -150,7 +150,7 @@ test('an asynchronous plugin failure exposes no candidate model, admission limit
  const node=await buildApp({...config(directory),model:'committed-model',diagnosticsEnabled:false},{backgroundWorker:false,createModelAgent:async settings=>({configured:true,query:async()=>({answer:settings.model,citations:[],trace:[],runId:'synthetic-publication-run'}),close:async()=>{closed.push(settings.model);}})});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(resolve=>{enter=resolve;}),held=new Promise<void>(resolve=>{finish=resolve;});
- await node.configService.registerPlugin({id:'publication-fixture',schema:z.object({reject:z.boolean()}),defaultValue:{reject:false},prepare:next=>({apply:async()=>{if(next.reject){enter();await held;throw Error('Synthetic asynchronous failure');}},rollback:()=>{}})});
+ await node.configService.registerPlugin({id:'publication-fixture',updatePaths:['reject'],schema:z.object({reject:z.boolean()}),defaultValue:{reject:false},prepare:next=>({apply:async()=>{if(next.reject){enter();await held;throw Error('Synthetic asynchronous failure');}},rollback:()=>{}})});
  const previous=node.configService.current<Record<string,unknown>>('execution'),models=node.configService.saved<{deployment:Record<string,unknown>}>('models');
  const pending=node.configService.updateMany({models:{...models,deployment:{...models.deployment,model:'unpublished-model'}},execution:{agentConcurrency:1},diagnostics:{enabled:true,debug:true,traceEnabled:true,level:'debug'},'plugin.publication-fixture':{reject:true}},node.configService.revision);
  const failed=assert.rejects(pending,{code:'config_apply_failed'});await entered;
