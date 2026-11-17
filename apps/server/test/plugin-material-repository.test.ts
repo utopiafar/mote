@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -122,7 +123,7 @@ test('failed prepare leaves the borrowed SQLite usable and permits a clean activ
 test('a real SourceRecipe output published through the leased repository is readable by EvidenceReader',async t=>{
   const f=profile(t),auth=boundary(),current=await install(f.host,f.store,auth.authorization),materials=current.repository as MaterialStore;
   const memoryWork=new MaterialMemoryWork(f.store,materials),engine=new ExecutionEngine(f.store);
-  const runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],undefined,engine,memoryWork);
+  const runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],testScope(t),engine,memoryWork);
   runtime.quiesce();await runtime.ready;runtime.start();
   t.after(async()=>{await runtime.close();await current.close();await engine.close();});
   const sources=new SourceStore(f.store,runtime);sources.register({id:'generated-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'generated-device',platform:'macos'});

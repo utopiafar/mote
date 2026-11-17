@@ -7,6 +7,7 @@ export {prepareTaskContext} from './tasks/context-assembly.js';
 export {createOfficialReadPacks,type ReadPackRegistration,type DerivedNavigationInputs} from './tools/official-read-packs.js';
 export {buildContextEnvelope, taskTools} from './task-context.js';
 export {assembleHostContext} from './host/run-session.js';
+export type {HostRunControl,HostSteeringTarget} from './host/run-contracts.js';
 export {parseAnswer} from './answer-parser.js';
 export {skillCatalog, SKILL_VERSION} from './skills.js';
 export {type ImportAgentInput} from './import-agent.js';

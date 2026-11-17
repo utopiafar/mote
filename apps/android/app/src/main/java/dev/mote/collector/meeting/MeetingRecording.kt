@@ -33,6 +33,7 @@ internal data class MeetingSession(
     val archiveSha256: String? = null,
     val archiveSizeBytes: Long? = null,
     val quarantined: Boolean = false,
+    val localContentRelease: MeetingContentRelease? = null,
 ) {
     fun json() = JSONObject().put("id", id).put("startedAt", startedAt).put("endedAt", endedAt ?: JSONObject.NULL)
         .put("state", state).put("durationMs", durationMs).put("microphone", microphone).put("systemAudio", systemAudio)
@@ -41,6 +42,7 @@ internal data class MeetingSession(
         .put("error", error ?: JSONObject.NULL).put("warnings", JSONArray(warnings))
         .put("origin", origin ?: JSONObject.NULL).put("archiveFingerprint", archiveFingerprint ?: JSONObject.NULL).put("quarantined", quarantined)
         .put("archiveSha256", archiveSha256 ?: JSONObject.NULL).put("archiveSizeBytes", archiveSizeBytes ?: JSONObject.NULL)
+        .put("localContentRelease", localContentRelease?.json() ?: JSONObject.NULL)
 
     companion object {
         fun from(value: JSONObject): MeetingSession {
@@ -62,7 +64,20 @@ internal data class MeetingSession(
                 archiveSha256 = value.opt("archiveSha256") as? String,
                 archiveSizeBytes = (value.opt("archiveSizeBytes") as? Number)?.toLong(),
                 quarantined = value.optBoolean("quarantined"),
+                localContentRelease = value.optJSONObject("localContentRelease")?.let(MeetingContentRelease::from),
             )
+        }
+    }
+}
+
+internal data class MeetingContentRelease(val at: String, val pending: Boolean, val sourceId: String, val deviceId: String, val audioFile: String) {
+    fun json() = JSONObject().put("at", at).put("pending", pending).put("sourceId", sourceId).put("deviceId", deviceId).put("audioFile", audioFile)
+    companion object {
+        fun from(value: JSONObject): MeetingContentRelease {
+            Instant.parse(value.getString("at")); require(value.get("pending") is Boolean)
+            val device = value.getString("deviceId"); require(device.isNotBlank() && value.getString("sourceId") == MeetingRecordingItems.sourceId(device))
+            val name = value.getString("audioFile"); require(File(name).name == name && name.endsWith(".wav"))
+            return MeetingContentRelease(value.getString("at"), value.getBoolean("pending"), value.getString("sourceId"), device, name)
         }
     }
 }
@@ -121,10 +136,40 @@ internal class MeetingRecordingStore(private val directory: File, private val ci
     fun quarantine(session: MeetingSession) = synchronized(lock) {
         if (sessions().find { it.id == session.id } == session && !session.quarantined) replace(session.copy(quarantined = true))
     }
+    /** No proof upgrade: incomplete old receipts keep their only local input. */
+    fun releaseContent(id: String, deviceId: String, authorize: () -> Unit) = synchronized(lock) {
+        authorize()
+        val current = sessions().first { it.id == id }
+        check(current.state == "uploaded" && !current.quarantined && !current.origin.isNullOrBlank() && current.uploadedAt != null)
+        UUID.fromString(current.captureId); Instant.parse(current.uploadedAt)
+        check(current.archiveSha256?.matches(Regex("[a-f0-9]{64}")) == true && (current.archiveSizeBytes ?: 0) > 0 && current.archiveFingerprint?.matches(Regex("[a-f0-9]{64}")) == true)
+        val existing = current.localContentRelease
+        if (existing != null && !existing.pending) return@synchronized
+        val name = existing?.audioFile ?: requireNotNull(current.audioFile)
+        require(File(name).name == name && name.endsWith(".wav"))
+        val audio = File(directory, name)
+        check(!java.nio.file.Files.isSymbolicLink(audio.toPath()) && audio.canonicalFile.parentFile == directory.canonicalFile)
+        if (existing == null) {
+            val manifest = MeetingRecordingItems.manifest(deviceId, current.copy(state = "completed"), current.archiveSizeBytes!!, current.archiveSha256!!)
+            check(SourceRules.hash(SourceRules.canonical(manifest)) == current.archiveFingerprint)
+            check(audio.isFile && audio.length() == current.archiveSizeBytes && MeetingRecordingItems.digest(audio) == current.archiveSha256)
+        } else check(existing.deviceId == deviceId)
+        val release = existing ?: MeetingContentRelease(Instant.now().toString(), true, MeetingRecordingItems.sourceId(deviceId), deviceId, name)
+        fun persist(session: MeetingSession) { authorize(); replace(session, authorize); syncDirectory(); dev.mote.collector.LocalStateChanges.changed(records = true) }
+        if (existing == null) persist(current.copy(localContentRelease = release))
+        val light = current.copy(audioFile = null, warnings = emptyList(), error = null, localContentRelease = release)
+        persist(light); authorize()
+        if (sessions().none { it.id != id && it.audioFile == name }) {
+            check(!audio.exists() || audio.delete()) { MoteI18n.text("无法保存会议录音状态") }; syncDirectory()
+        }
+        try { persist(light.copy(localContentRelease = release.copy(pending = false))) }
+        catch (error: Exception) { runCatching { replace(light) }; throw error }
+    }
+    private fun syncDirectory() { java.nio.channels.FileChannel.open(directory.toPath(), java.nio.file.StandardOpenOption.READ).use { it.force(true) } }
     fun hasPendingConnectionWork(): Boolean = synchronized(lock) {
         val all = sessions()
         if (all.any { it.state == "recording" || it.uploadedAt == null && it.audioFile != null || it.quarantined }) return@synchronized true
-        val confirmed = all.filter { it.uploadedAt != null }.mapNotNull { it.audioFile }.toSet()
+        val confirmed = all.filter { it.uploadedAt != null }.flatMap { listOfNotNull(it.audioFile, it.localContentRelease?.audioFile) }.toSet()
         return@synchronized directory.listFiles()?.any { it.isFile && it.extension == "wav" && it.name !in confirmed } == true
     }
 
@@ -134,21 +179,22 @@ internal class MeetingRecordingStore(private val directory: File, private val ci
         return@synchronized sessions().filter { it.state == "completed" && !it.quarantined }
     }
 
-    private fun replace(session: MeetingSession) {
+    private fun replace(session: MeetingSession, authorize: (() -> Unit)? = null) {
         val state = read(); val records = state.getJSONArray("sessions")
         val next = JSONArray()
         for (index in 0 until records.length()) {
             val row = records.getJSONObject(index)
             if (row.getString("id") == session.id) next.put(session.json()) else next.put(row)
         }
-        state.put("sessions", next); write(state)
+        state.put("sessions", next); write(state, authorize)
     }
 
-    private fun write(state: JSONObject) {
+    private fun write(state: JSONObject, authorize: (() -> Unit)? = null) {
         directory.mkdirs()
         val temp = File(directory, UUID.randomUUID().toString() + ".tmp")
         try {
             FileOutputStream(temp).use { it.write(cipher.seal(state.toString().toByteArray(Charsets.UTF_8))); it.fd.sync() }
+            authorize?.invoke()
             check(temp.renameTo(stateFile)) { MoteI18n.text("无法保存会议录音状态") }
         } finally { temp.delete() }
     }

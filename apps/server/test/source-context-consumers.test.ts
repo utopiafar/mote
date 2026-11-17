@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -65,7 +66,7 @@ test('HTTP file intake uses source description in summaries; changing it retires
  holdAsr=true;const pending=node.processing.tick();await asrStarted;const fourth='Generated call recording: the pending file has its latest owner background before initial understanding.';
  const pendingChanged=await request('PATCH','/api/sources/generated-audio/context',{expectedVersion:3,description:fourth});assert.equal(pendingChanged.statusCode,200,pendingChanged.body);releaseAsr();await pending;
  assert.equal(transcriptions,2);assert.equal(summaryCalls,4);assert.equal(seen[3],fourth,'initial work pending ASR continues with the current source default');assert.ok(node.files.detail(futureCommit.json().id).artifacts.some((item:any)=>item.kind==='summary'));
- const {FileProcessing}=await import('../src/file-processing.js');await node.processing.close();const restarted=new FileProcessing(node.files,undefined,async records=>{summaryCalls++;return {answer:'Unexpected historical call',citations:records.map(record=>({id:record.id}))};});
+ const {FileProcessing}=await import('../src/file-processing.js');await node.processing.close();const restarted=new FileProcessing(testScope(t),node.files,undefined,async records=>{summaryCalls++;return {answer:'Unexpected historical call',citations:records.map(record=>({id:record.id}))};});
  try{await restarted.tick();assert.equal(summaryCalls,4,'restart preserves historical withdrawal');assert.equal(node.files.chunks(id).length,10);}finally{await restarted.close();}
 
 });

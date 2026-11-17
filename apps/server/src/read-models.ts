@@ -1,4 +1,7 @@
 import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const captureReadModelsSchemaInstallation={owner:'capture-read-models',requires:['capture'],install:initializeReadModels} as const satisfies SchemaInstallation;
 
 /** Transactional projections: request paths never scan capture JSON for global counts. */
 export function initializeReadModels(db:DatabaseSync){

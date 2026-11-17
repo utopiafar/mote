@@ -78,6 +78,7 @@ export class AssistantDrafts {
     if(!turn||turn.status!=='completed'||!turn.result?.draft)throw new StoreError('Assistant draft not found',404);
     if(turn.evidenceDeleted||turn.evidenceUnavailable)throw new StoreError('Assistant draft evidence is no longer available',409);
     if(turn.evidenceStale)throw new StoreError('Assistant draft is out of date; generate a new one',409);
+    if(turn.supersededBy?.length)throw new StoreError('Assistant draft was superseded by a later owner message',409);
     const draft=assistantDraftSchema.parse(turn.result.draft);
     const edited=command.expectedRevision>draft.revision;
     if(command.expectedRevision<draft.revision)

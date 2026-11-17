@@ -3,7 +3,7 @@ import {ProviderFailure,providerHttpFailure} from '@mote/shared';
 import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import {extractDocument,extractUtf8} from './format-work.js';
 import { moteText } from './i18n.js';
-import {Context,type Plugin} from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import {pathToFileURL} from 'node:url';
 import {isAbsolute} from 'node:path';
 import {isLoopback,requestLocalJson} from './local-http.js';
@@ -157,26 +157,28 @@ function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
   return processors;
 }
 /** File processing plugins mount into the host scope's Cordis root when mounted
- * by the server; standalone tests own a private root. */
+ * by the server; generated fixtures pass their own explicit owner. */
 export class FileProcessorRuntime {
   readonly context:Context;readonly registry:ProcessorRegistry;readonly ready:Promise<void>;private readonly resources=new PluginResourceScope(undefined,'File processor plugin scope disposal failed');
   readonly intake=new ImportIntakeRegistry();readonly recipes:FileRecipeRegistry;readonly outputs=new FileOutputRegistry();
   readonly imageRecipes=new ImageRecipeRegistry();readonly imageInputs=new ImageInputRegistry();
   private removeContributions:(()=>void)|undefined;
   private removeImageRecipes:(()=>void)|undefined;
-  constructor(private readonly provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,scope?:HostScope,private readonly options:{builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup}={}){
-    this.context=scope?.cordis.root??new Context();
-    if(!scope)this.resources.retire(()=>this.context.fiber.dispose());
-    if(scope)scope.defer(()=>this.resources.close());
+  constructor(private readonly provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors:import('./processing-runtime.js').ContextProcessorRegistry|undefined,scope:HostScope,private readonly options:{builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup}={}){
+    scope.assertCurrent();
+    scope.defer(()=>this.resources.close());
     this.registry=new ProcessorRegistry(scope);this.recipes=new FileRecipeRegistry(scope);
-    const provide=(name:string,value:unknown)=>{const remove=this.context.provide(name,value);this.resources.retire(()=>remove());};
-    provide('moteFileProcessors',this.registry);
-    provide('moteImportIntake',this.intake);
-    provide('moteFileRecipes',this.recipes);
-    provide('moteFileOutputs',this.outputs);
-    provide('moteImageRecipes',this.imageRecipes);
-    provide('moteImageInputs',this.imageInputs);
-    if(contextProcessors&&this.context.get('moteContextProcessors',false)===undefined)provide('moteContextProcessors',contextProcessors);
+    const services=scope.cordis.plugin((context:Context)=>{
+      context.provide('moteFileProcessors',this.registry);
+      context.provide('moteImportIntake',this.intake);
+      context.provide('moteFileRecipes',this.recipes);
+      context.provide('moteFileOutputs',this.outputs);
+      context.provide('moteImageRecipes',this.imageRecipes);
+      context.provide('moteImageInputs',this.imageInputs);
+      if(contextProcessors&&context.get('moteContextProcessors',false)===undefined)context.provide('moteContextProcessors',contextProcessors);
+    });
+    this.context=services.ctx;
+    this.resources.retire(()=>services.dispose());
     const install=async(plugin:Plugin)=>{
       const fiber=this.context.plugin(plugin);
       this.resources.defer(()=>fiber.dispose());
@@ -184,6 +186,7 @@ export class FileProcessorRuntime {
     };
     this.ready=(async()=>{
       try{
+        await services;
         // A host activation may own these contributions itself; the standalone
         // runtime keeps installing them for tests and embedded use.
         if(options.builtinContributions!==false)await install({name:'mote-file-capabilities',apply:ctx=>{ctx.effect(()=>this.installContributions());}});

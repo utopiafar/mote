@@ -56,12 +56,16 @@ internal data class CaptureUploadCompletion(val itemKey: String, val scope: Stri
 /** Same fingerprint for a stored event and its upload body, without retaining text/image bytes. */
 internal object CaptureUploadVersion {
     fun of(event: JSONObject): String {
+        if (event.optJSONObject(ReleasedCapture.FIELD)?.optBoolean("cleared") == true) {
+            ReleasedCapture.validate(event)
+            return event.getJSONObject(ReleasedCapture.FIELD).getString("version")
+        }
         val value = JSONObject(event.toString())
         val blob = value.optString("_blob").takeIf { it.matches(Regex("[a-f0-9]{64}")) }
             ?: value.optString("imageBase64").takeIf(String::isNotBlank)?.let { encoded ->
                 MessageDigest.getInstance("SHA-256").digest(Base64.getDecoder().decode(encoded)).joinToString("") { "%02x".format(it) }
             }
-        listOf("_archiveOrigin", "_archiveAcknowledgment", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_archiveMissing", "_uploadConflict", "_blob", "imageBase64").forEach(value::remove)
+        listOf("_archiveOrigin", "_archiveAcknowledgment", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_archiveMissing", "_uploadConflict", "_blob", "imageBase64", ReleasedCapture.FIELD).forEach(value::remove)
         blob?.let { value.put("imageSha256", it) }
         return SourceRules.hash(SourceRules.canonical(value))
     }

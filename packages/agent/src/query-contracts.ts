@@ -7,7 +7,7 @@ export interface QueryRequest {
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
   taskContext?: {imageEvidence?:unknown;queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;originatingSuggestion?:unknown;ownerClarificationReply?:unknown;untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
-  responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
+  responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction'|'other';
   /** Host-selected procedure, never selected from captured text. */
   skill?: string;
   /** User-selected starting originals for an open query; never an authorization grant. */
@@ -40,6 +40,9 @@ export interface QueryRequest {
 
 /** Host-selected execution identity and admission context. */
 export interface QueryExecutionContext {
+  /** Local Host registration for this exact run; never decoded from an HTTP
+   * request, runtime output or captured context. Cleanup withdraws the port. */
+  onRuntimeControl?:(control:import('./host/run-contracts.js').HostRunControl)=>(()=>void)|void;
   /** Host-prepared conversation identity and current privacy proof for an
    * explicitly selected persistent native application. No paths or grants. */
   nativeApplicationContext?: () => import('./runtime/dsh/application-contracts.js').NativeApplicationContext|undefined;

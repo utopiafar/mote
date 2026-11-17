@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -17,7 +18,7 @@ async function fixture(t:import('node:test').TestContext,held=false,count=1){
   const directory=mkdtempSync(join(tmpdir(),'mote-summary-lineage-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);
   sources.register({id:'generated',name:'Generated audio',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});
   let start!:()=>void,release!:()=>void,calls=0;const started=new Promise<void>(resolve=>start=resolve),gate=new Promise<void>(resolve=>release=resolve);
-  const processing=new FileProcessing(files,{transcribe:async()=>({durationMs:count*1000,segments:Array.from({length:count},(_,i)=>({startMs:i*1000,endMs:(i+1)*1000,text:'Generated launch is complete '+i,speaker:'SPEAKER_0'}))})},async records=>{
+  const processing=new FileProcessing(testScope(t),files,{transcribe:async()=>({durationMs:count*1000,segments:Array.from({length:count},(_,i)=>({startMs:i*1000,endMs:(i+1)*1000,text:'Generated launch is complete '+i,speaker:'SPEAKER_0'}))})},async records=>{
     const first=calls++===0;if(held&&first){start();await gate;}
     return {answer:held&&first?'OBSOLETE_HELD_RESPONSE':'CURRENT '+records.map(r=>r.ocrText+' '+JSON.stringify(r.fileEvidence?.speakerAttribution??{})).join('\n'),citations:records.map(r=>({id:r.id}))};
   });
@@ -71,7 +72,7 @@ test('changing a later page while the first page is held never publishes a mixed
 
 test('restart retires legacy summaries without pinned input lineage before exposing current completion',async t=>{
   const f=await fixture(t);await f.processing.tick();f.store.db.prepare("UPDATE file_artifacts SET json=json_remove(json,'$.inputFingerprint') WHERE kind='summary'").run();
-  await f.processing.close();const restarted=new FileProcessing(f.files,undefined,async records=>({answer:'Generated replacement after restart',citations:records.map(record=>({id:record.id}))}));
+  await f.processing.close();const restarted=new FileProcessing(testScope(t),f.files,undefined,async records=>({answer:'Generated replacement after restart',citations:records.map(record=>({id:record.id}))}));
   try{restarted.prepare();assert.equal(f.files.detail(f.id).artifacts.some((a:any)=>a.kind==='summary'),false);await restarted.tick();const current=f.files.detail(f.id).artifacts.find((a:any)=>a.kind==='summary') as any;assert.equal(current.inputFingerprint,fileSummaryInputFingerprint(f.files,f.id));}finally{await restarted.close();}
 });
 
@@ -81,6 +82,6 @@ test('an upgrade preserves the exact legacy summary input hash when no source de
  for(const record of f.files.chunks(f.id))hash.update(JSON.stringify([record.id,record.ocrText,record.fileEvidence]));
  const legacyHash=hash.digest('hex');assert.equal(fileSummaryInputFingerprint(f.files,f.id),legacyHash);
  const summary=f.files.detail(f.id).artifacts.find((item:any)=>item.kind==='summary')!;await f.processing.close();let newCalls=0;
- const restarted=new FileProcessing(f.files,undefined,async records=>{newCalls++;return {answer:'Unexpected historical model call',citations:records.map(record=>({id:record.id}))};});
+ const restarted=new FileProcessing(testScope(t),f.files,undefined,async records=>{newCalls++;return {answer:'Unexpected historical model call',citations:records.map(record=>({id:record.id}))};});
  try{await restarted.tick();assert.equal(newCalls,0);assert.equal(f.files.detail(f.id).artifacts.find((item:any)=>item.kind==='summary')?.id,summary.id);}finally{await restarted.close();}
 });

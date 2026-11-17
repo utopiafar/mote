@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -52,7 +53,7 @@ async function fixture(t:TestContext){
  const batch=node.batchProcessing,service=node.featureServices.assistantFollowup;
  const tasks=new TaskRecords(node.store);
  await node.app.ready();
- const runtime=new ProcessingRuntime(node.store,[],{},Date.now,undefined,node.materials);
+ const runtime=new ProcessingRuntime(node.store,[],{},Date.now,undefined,node.materials,testScope(t));
  t.after(async()=>{await runtime.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const add=async(text:string,deviceId='generated-device')=>{
   const id=randomUUID(),response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId,deviceName:'Generated',platform:'import',capturedAt:at,text}});

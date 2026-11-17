@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureMemoryCapacity} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,7 +24,7 @@ import {reviewMemory} from '../src/memory-review.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
 async function fixture(t:TestContext,count=4){
- const directory=mkdtempSync(join(tmpdir(),'mote-delegated-memory-')),store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store),memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id)),engine=new ExecutionEngine(store),work=new MaterialMemoryWork(store,materials),runtime=new DelegationRuntime(store,engine,{autoPump:false}),sourcePipelines=new SourcePipelineRuntime(store,materials,[],undefined,engine,work);await sourcePipelines.ready;
+ const directory=mkdtempSync(join(tmpdir(),'mote-delegated-memory-')),store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store),memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id)),engine=new ExecutionEngine(store),work=new MaterialMemoryWork(store,materials),runtime=new DelegationRuntime(store,engine,{autoPump:false}),sourcePipelines=new SourcePipelineRuntime(store,materials,[],testScope(t),engine,work);await sourcePipelines.ready;
  for(const sourceId of ['generated-one','generated-two'])sources.register({id:sourceId,name:'Generated source',kind:'custom',deviceId:sourceId,platform:'import'});
  for(let index=0;index<count;index++){
   const sourceId=index%2?'generated-two':'generated-one',externalId=String(index),original=await sources.upsert(sourceId,{externalId,revision:'1',text:'Generated reference with no durable personal fact.',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});

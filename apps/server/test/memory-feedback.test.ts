@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureMemoryCapacity} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,7 +49,7 @@ async function fixture(t:TestContext,mode:FixtureMode='resolved',targets=1){
   store=new Store(directory);sources=new SourceStore(store);materials=new MaterialStore(store);
   memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id));
   engine=new ExecutionEngine(store);work=new MaterialMemoryWork(store,materials);
-  runtime=new DelegationRuntime(store,engine,{autoPump:false,concurrency:()=>1});sourcePipelines=new SourcePipelineRuntime(store,materials,[],undefined,engine,work);await sourcePipelines.ready;
+  runtime=new DelegationRuntime(store,engine,{autoPump:false,concurrency:()=>1});sourcePipelines=new SourcePipelineRuntime(store,materials,[],testScope(t),engine,work);await sourcePipelines.ready;
   pipeline=new MemoryPipeline({store,memories,executor:engine,concurrency:()=>1,batchCharacters:256,requireAdmission:true,admission:{automaticAllowed:job=>work.authorized(job),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:()=>['material'],materialAllowedForMemory:()=>true},models:{configured:()=>true,model:()=> 'generated'},phases:{query:input=>runModel(()=>{extraction.push(input);return output(input,'generated-extraction-'+extraction.length);}),review:(input,draft)=>reviewMemory(input,draft,next=>runModel(()=>{reviews.push(next);return output(next,'generated-review-'+reviews.length);}))}});
   const enqueue=engine.enqueue.bind(engine);
   engine.enqueue=(operationId,kind,input,options)=>{

@@ -8,7 +8,7 @@ import {ContextToolError} from '../../tool-errors.js';
 import {CodexSession, type CodexTool, type CodexToolDelivery} from '../../codex-session.js';
 import {createHostRunSession, type HostSessionAssembly} from '../../host/run-session.js';
 import type {HostRunDependencies} from '../../host/run-contracts.js';
-import {runtimeService, type HostRunPort, type ModelLease, type ResolvedRuntimeProfile, type RuntimeAttempt, type RuntimeHandle, type RuntimeOutcome, type RuntimeProvider, type RuntimeRunRequest} from '../contracts.js';
+import {runtimeService,RuntimeSteeringUnavailable, type HostRunPort, type ModelLease, type ResolvedRuntimeProfile, type RuntimeAttempt, type RuntimeHandle, type RuntimeOutcome, type RuntimeProvider, type RuntimeRunRequest} from '../contracts.js';
 import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile.js';
 
 export const CODEX_RUNTIME_ID = 'mote.runtime.codex';
@@ -148,6 +148,14 @@ export function createCodexRuntimeProvider() {
           const handle: RuntimeHandle = {
             run: drive,
             repair: drive,
+            steering:{
+              target:()=>active&&!released&&!stopped?session.steeringTarget():undefined,
+              async send(request){
+                if(!active||request.attempt!==active||released||stopped)throw new RuntimeSteeringUnavailable('stale');
+                host.assertCurrent();model.assertCurrent();const accepted=await session.steer(request.turnId,request.text);
+                host.assertCurrent();model.assertCurrent();if(active!==request.attempt||released||stopped)throw new RuntimeSteeringUnavailable('stale');return accepted;
+              },
+            },
             async cancel(cause) { cancellation ??= cause; session.cancel(cancellationError(cause.kind)); },
             async close() { try { await closeResources(); } finally { handles.delete(handle); } },
           };

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -72,7 +73,7 @@ test('context edits apply to existing and future materials, keep corrections, fe
   assert.equal(after.attributionContext?.sourceContextDeclarations?.[0].version,2);assert.equal(sources.contexts.getAtVersion(sourceId,1,next.fingerprint)?.description,description);
   const future=await sources.upsert(sourceId,{...item,externalId:'future'}),futureMaterial=materials.publish(draft(sourceId,future.id,'future'));
   assert.deepEqual(futureMaterial.attributionContext?.sourceContextStatements,[{sourceId,version:2,description:changed.description}]);
-  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);t.after(()=>runtime.close());
+  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t));t.after(()=>runtime.close());
   runtime.registry.register({id:'fixture.source-description-race',version:'1',lane:'semantic',async process(input){
     assert.equal(input.observations[0].attributionContext?.sourceContextStatements?.[0].version,2);
     sources.updateContext(sourceId,{expectedVersion:2,description:''});return [{kind:'generated',text:'Obsolete interpretation',metadata:{}}];
@@ -96,7 +97,7 @@ test('a failed semantic withdrawal rolls back the source declaration and its exi
 
 test('default unknown description-only processing inputs retain legacy identity and fence changes before any Material exists',async t=>{
   const {sources,store,materials,sourceId}=fixture(t);sources.update(sourceId,{enabled:true});const receipt=await sources.upsert(sourceId,item);
-  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);t.after(()=>runtime.close());let changeWhileRunning=false,calls=0;
+  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t));t.after(()=>runtime.close());let changeWhileRunning=false,calls=0;
   runtime.registry.register({id:'fixture.description-only-race',version:'1',lane:'semantic',async process(input){
     calls++;assert.equal(input.observations[0].attributionContext?.basis,'default');assert.equal(input.observations[0].attributionContext?.ownerRelation,'unknown');
     if(changeWhileRunning){assert.equal(input.observations[0].attributionContext?.sourceContextDeclarations?.[0].version,1);sources.updateContext(sourceId,{expectedVersion:1,description:'Generated changed while processing'});}
