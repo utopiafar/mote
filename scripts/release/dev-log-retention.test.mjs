@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import {DEFAULT_LOG_RETENTION} from '../../apps/server/src/log-retention-config.mjs';
 import { parseConfigDocument, serializeConfigDocument } from '../../packages/shared/src/config-file.ts';
-import { repository, profilePaths, loadProfile, atomicJson, nativeIdentity, stopNative, assertLogRetentionCompatible, composeOperation, compose, updateProfileConfiguration } from '../profile-lib.mjs';
+import { repository, profilePaths, loadProfile, atomicJson, nativeIdentity, stopNative, assertDeploymentCompatible, composeOperation, compose, updateProfileConfiguration } from '../profile-lib.mjs';
 import { cli, freePort, request } from '../profile-fixtures.mjs';
 const MiB = 1024 * 1024;
 
@@ -28,8 +28,7 @@ async function releaseFixture(home, kind) {
   const release = join(home, `${kind}-release`);
   await mkdir(join(release, 'apps/server/dist'), { recursive: true });
   await writeFile(join(release, 'package.json'), '{"type":"module"}');
-  if (kind !== 'env-legacy') await writeFile(join(release, 'apps/server/dist/config-service.js'), '// Generated YAML capability marker\n');
-  if(kind==='capable')for(const name of ['log-retention-config.mjs','diagnostic-log-store.mjs'])await writeFile(join(release,'apps/server/dist',name),'// Generated capability marker\n');
+  if(kind!=='env-legacy')await atomicJson(join(release,'apps/server/dist/deployment-contract.json'),{kind:'mote.deployment',version:kind==='capable'?1:0,serverVersion:'0.0.0-generated'});
   const reader = new URL('packages/shared/src/config-file.ts', 'file://' + repository + '/').href;
   // Exercise actual CLI/supervisor ordering with a generated strict YAML target.
   await writeFile(join(release, 'apps/server/dist/index.js'), `import {createServer} from 'node:http';import {writeFileSync} from 'node:fs';import {resolve,dirname} from 'node:path';import {readConfigDocument} from ${JSON.stringify(reader)};
@@ -96,14 +95,14 @@ test('invalid YAML limits and active lifecycle ownership fail without changing p
   assert.deepEqual(await readFile(p.configFile), raw); assert.equal(await readFile(join(p.directory, 'lifecycle.lock'), 'utf8'), String(process.pid));
 });
 
-test('older targets reject tiered diagnostics before launch regardless of segment capacity', async t => {
+test('older deployment contracts reject before launch regardless of segment capacity', async t => {
   let p = await fixture(t), release = await releaseFixture(p.home, 'legacy');
   await atomicJson(p.metaFile, { ...p.meta, release }); p = await loadProfile(profilePaths('dev', p.home));
   await writeFile(join(p.dataDir, 'generated-evidence.txt'), 'Generated evidence is untouched');
   for (const maxBytes of [undefined,100*MiB,2*MiB]) {
     await updateProfileConfiguration(p, document => { if (maxBytes === undefined) delete document.diagnostics.maxBytes; else document.diagnostics.maxBytes = maxBytes; });
     const raw = await readFile(p.configFile), meta = await readFile(p.metaFile);
-    assert.match((await cli(p.home, 'dev', 'start', [], { fail: true })).stderr, /tiered diagnostic retention/);
+    assert.match((await cli(p.home, 'dev', 'start', [], { fail: true })).stderr, /expected mote.deployment version 1, received 0/);
     assert.deepEqual(await readFile(p.configFile), raw); assert.deepEqual(await readFile(p.metaFile), meta);
     assert.deepEqual(await readdir(p.dataDir), ['generated-evidence.txt']); assert.ok(!(await readdir(p.directory)).includes('process.json'));
   }
@@ -111,7 +110,7 @@ test('older targets reject tiered diagnostics before launch regardless of segmen
   const raw = await readFile(p.configFile); await cli(p.home, 'dev', 'log-retention', ['--defaults'], { fail: true }); assert.deepEqual(await readFile(p.configFile), raw);
   await cli(p.home,'dev','start',[],{fail:true});
   const envRelease = await releaseFixture(p.home, 'env-legacy'); await atomicJson(p.metaFile, { ...p.meta, release: envRelease });
-  assert.match((await cli(p.home, 'dev', 'start', [], { fail: true })).stderr, /YAML configuration/);
+  assert.match((await cli(p.home, 'dev', 'start', [], { fail: true })).stderr, /expected mote.deployment version 1/);
   assert.deepEqual(await readFile(p.configFile), raw);
 });
 
@@ -119,7 +118,7 @@ test('incompatible upgrade and rollback reject before stopping the process, back
   let p = await fixture(t), legacy = await releaseFixture(p.home, 'legacy');
   const snapshot = join(p.home, 'generated-previous-snapshot'); await mkdir(snapshot);
   const database = new DatabaseSync(join(snapshot, 'mote.sqlite'));
-  database.exec("CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT); INSERT INTO settings VALUES ('backend_epoch','7')"); database.close();
+  database.exec("CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT); INSERT INTO settings VALUES ('backend_epoch','7'); CREATE TABLE assets(hash TEXT PRIMARY KEY,parts INTEGER,format TEXT); CREATE TABLE asset_references(hash TEXT)"); database.close();
   const hash = createHash('sha256').update(await readFile(join(snapshot, 'mote.sqlite'))).digest('hex');
   await atomicJson(join(snapshot, 'backup-manifest.json'), { version: 1, storageEpoch: 7, checksums: { 'mote.sqlite': hash } });
   await atomicJson(p.metaFile, { ...p.meta, previous: { ...p.meta, release: legacy, backup: snapshot } }); p = await loadProfile(profilePaths('dev', p.home));
@@ -127,7 +126,7 @@ test('incompatible upgrade and rollback reject before stopping the process, back
   const raw = await readFile(p.configFile), meta = await readFile(p.metaFile), processRecord = await readFile(p.processFile);
   const dataNames = (await readdir(p.dataDir)).sort(), backupNames = await readdir(join(p.directory, 'backups'));
   for (const [action, args] of [['upgrade', ['--release', legacy]], ['rollback', ['--restore-data']]]) {
-    assert.match((await cli(p.home, 'dev', action, args, { fail: true })).stderr, /could not be verified to support YAML configuration or this log capacity/);
+    assert.match((await cli(p.home, 'dev', action, args, { fail: true })).stderr, /Deployment contract could not be verified/);
     assert.deepEqual(await readFile(p.configFile), raw); assert.deepEqual(await readFile(p.metaFile), meta); assert.deepEqual(await readFile(p.processFile), processRecord);
     assert.deepEqual((await readdir(p.dataDir)).sort(), dataNames); assert.deepEqual(await readdir(join(p.directory, 'backups')), backupNames);
     assert.equal(await readFile(join(p.dataDir, 'generated-evidence.txt'), 'utf8'), 'Generated current evidence'); assert.equal((await nativeIdentity(p)).running, true);
@@ -135,16 +134,20 @@ test('incompatible upgrade and rollback reject before stopping the process, back
   }
 });
 
-test('Docker capability probes are inert, offline and bounded and always verify YAML support', async () => {
-  const p = { profile: 'dev', document: { server: { profile: 'dev' }, diagnostics: {} }, meta: { runtime: 'docker', image: 'generated-capability-image' } }, calls = [];
-  await assertLogRetentionCompatible(p, { execute: async (...args) => { calls.push(args); return ''; } });
-  const [binary, args, options] = calls[0]; assert.equal(binary, 'docker');
-  assert.deepEqual(args.slice(0, 10), ['run', '--rm', '--pull', 'never', '--network', 'none', '--entrypoint', 'node', 'generated-capability-image', '--input-type=module']);
-  assert.deepEqual(options, { capture: true, timeoutMs: 15000 });
-  assert.ok(!args.slice(0, 9).some(value => ['--volume', '--mount', '-v', '-e', '--env', '--env-file'].includes(value)));
-  assert.match(args.at(-1), /config-service.js/); assert.match(args.at(-1), /log-retention-config.mjs/);
-  await assert.rejects(assertLogRetentionCompatible(p, { execute: async () => { throw Error('Generated private Docker output'); } }), error => /tiered diagnostic retention/.test(error.message) && !error.message.includes('Generated private Docker output'));
-  for (const maxBytes of [2 * MiB, 8 * MiB]) await assertLogRetentionCompatible({ ...p, document: { ...p.document, diagnostics: { maxBytes } } }, { execute: async (_, args) => { assert.match(args.at(-1), /config-service.js/); assert.match(args.at(-1),/diagnostic-log-store.mjs/); } });
+test('Docker contract probes pin image identity and read an offline artifact without mounting owner data', async () => {
+  const imageId='sha256:'+'a'.repeat(64),contract={kind:'mote.deployment',version:1,serverVersion:'0.0.0-generated'};
+  const p={profile:'dev',meta:{runtime:'docker',image:'generated-contract-image'}},calls=[];
+  const result=await assertDeploymentCompatible(p,{execute:async(...args)=>{calls.push(args);return calls.length===1?imageId:JSON.stringify(contract);}});
+  assert.deepEqual(result,{imageId,contract});assert.equal(calls.length,2);
+  assert.deepEqual(calls[0].slice(0,2),['docker',['image','inspect','--format','{{.Id}}',p.meta.image]]);
+  const [binary,args,options]=calls[1];assert.equal(binary,'docker');
+  const fixed=[...args];fixed.splice(fixed.indexOf('--name'),2);
+  assert.deepEqual(fixed.slice(0,10),['run','--rm','--pull','never','--network','none','--entrypoint','node',imageId,'--input-type=module']);
+  assert.deepEqual(options,{capture:true,timeoutMs:15000});
+  assert.ok(!args.some(value=>['--volume','--mount','-v','--env','--env-file'].includes(value)));
+  assert.match(args.at(-1),/deployment-contract.json/);assert.doesNotMatch(args.at(-1),/accessSync|config-service|log-retention-config/);
+  await assert.rejects(assertDeploymentCompatible(p,{execute:async()=>{throw Error('Generated private Docker output');}}),error=>/Deployment contract could not be verified/.test(error.message)&&!error.message.includes('Generated private Docker output'));
+  for(const version of [0,2])await assert.rejects(assertDeploymentCompatible(p,{execute:async(_,args)=>args[0]==='image'?imageId:JSON.stringify({...contract,version})}),new RegExp('expected mote.deployment version 1, received '+version));
 });
 
 test('Compose finds subcommands after global options without changing transport arguments', () => {
@@ -153,6 +156,7 @@ test('Compose finds subcommands after global options without changing transport 
     [['--ansi', 'never', '--parallel', '2', '--progress', 'plain', 'up', '--detach'], 'up'],
     [['-p', 'generated-project', '-f', 'generated.yaml', '--project-directory', '/generated', '--env-file', '/generated.env', 'create'], 'create'],
     [['--project-name=generated', '--file=generated.yaml', '--profile=generated', '--parallel=2', '--ansi=never', '--progress=plain', 'restart'], 'restart'],
+    [['--ansi', 'never', '--parallel=2', 'start', 'mote'], 'start'],
     [['-pgenerated', '-fgenerated.yaml', '--dry-run', 'run', '--rm', 'mote'], 'run'], [['--compatibility', '--', 'up'], 'up'], [['--help'], undefined],
   ]) { const before = [...args]; assert.equal(composeOperation(args), operation); assert.deepEqual(args, before); }
 });
@@ -160,8 +164,8 @@ test('Compose finds subcommands after global options without changing transport 
 test('Compose global flags cannot bypass target preflight before generated configuration writes', async t => {
   const p = await fixture(t), release = await releaseFixture(p.home, 'legacy'), prospective = { ...p, meta: { ...p.meta, release } };
   const raw = await readFile(p.configFile), meta = await readFile(p.metaFile);
-  // Native marker inspection isolates dispatch ordering from a Docker engine.
-  for (const operation of ['up', 'create', 'run', 'restart']) {
+  // Native artifact inspection isolates dispatch ordering from a Docker engine.
+  for (const operation of ['up', 'create', 'run', 'start', 'restart']) {
     await assert.rejects(compose(prospective, ['--ansi', 'never', '--profile=generated', '-pgenerated', operation]), /could not be verified/);
     assert.deepEqual(await readdir(join(p.directory, 'generated')), []); assert.deepEqual(await readFile(p.configFile), raw); assert.deepEqual(await readFile(p.metaFile), meta);
   }

@@ -4,6 +4,7 @@ import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { FILE_MAX_BYTES, FILE_PART_BYTES, filePartReceipts, meetingRecordingSessionSchema, type MeetingRecordingProvenance } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
+import {validateServerUrl} from './config';
 import { INGRESS_VERSION_HEADERS,requireIngressReceipt } from './ingress-protocol';
 
 export type MeetingPermissionValue = 'granted' | 'denied' | 'not-determined' | 'unsupported';
@@ -19,7 +20,7 @@ interface StoredSession {
   id: string; startedAt: string; endedAt?: string; state: 'recording' | 'completed' | 'uploaded' | 'failed';
   durationMs: number; microphone: boolean; systemAudio: boolean; noticeAcknowledgedAt: string;
   platform: 'macos' | 'android'; warnings: string[]; audioFile?: string; mimeType?: string;
-  uploadedAt?: string; captureId?: string; uploadOrigin?:string;error?: string;
+  uploadedAt?: string; captureId?: string; uploadOrigin?:string;deviceId?:string;localContentRelease?:{at:string;pending?:true};archiveReceipt?:{sourceId:string;externalId:string;revision:string;sha256:string;sizeBytes:number};error?: string;
 }
 interface StoredState { version: 1; noticeAcknowledgedAt?: string; sessions: StoredSession[] }
 
@@ -165,7 +166,7 @@ export class MeetingRecordingManager {
     const session: StoredSession = {
       id, startedAt: startedAt.toISOString(), state: 'recording', durationMs: 0,
       microphone: false, systemAudio: false, noticeAcknowledgedAt: this.state.noticeAcknowledgedAt,
-      platform: this.platform, warnings: [],
+      platform: this.platform,deviceId:this.options.connection().deviceId, warnings: [],
     };
     await mkdir(directory, { recursive: true, mode: 0o700 });
     try {
@@ -308,14 +309,56 @@ export class MeetingRecordingManager {
     this.current(connection);
     const ack=requireIngressReceipt(value,{kind:'file-revision',sourceId:manifest.sourceId,externalId:manifest.item.externalId,revision:manifest.item.revision});
     const bytes=value as {sha256?:unknown;sizeBytes?:unknown};if(bytes.sha256!==manifest.sha256||bytes.sizeBytes!==manifest.sizeBytes)throw Error('Meeting archive receipt does not match the saved audio');
-    const next:StoredSession={...session,state:'uploaded',captureId:ack.id,uploadedAt:this.now().toISOString(),error:undefined};
+    const next:StoredSession={...session,deviceId:connection.deviceId,archiveReceipt:{sourceId:manifest.sourceId,externalId:manifest.item.externalId,revision:manifest.item.revision,sha256:manifest.sha256,sizeBytes:manifest.sizeBytes},state:'uploaded',captureId:ack.id,uploadedAt:this.now().toISOString(),error:undefined};
     await this.persist(()=>this.current(connection),{session,next});
     // This is a formally saved local recording, not a source-file transport copy.
   }
 
-  private async digest(path: string): Promise<{ hash: string }> {
+  record(id:string):StoredSession|undefined {const value=this.state.sessions.find(session=>session.id===id);return value?structuredClone(value):undefined;}
+  contentRecords():StoredSession[]{return structuredClone(this.state.sessions.filter(session=>session.state!=='recording'));}
+  /** Only the exact receipt saved by complete() authorizes release/readback.
+   * Existing uploaded metadata alone does not establish original byte identity. */
+  archiveReceipt(id:string):StoredSession['archiveReceipt'] {
+    const session=this.state.sessions.find(value=>value.id===id),proof=session?.archiveReceipt;
+    const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    if(!session||session.state!=='uploaded'||!uuid.test(session.id)||!session.captureId||!uuid.test(session.captureId)||typeof session.uploadedAt!=='string'||!Number.isFinite(Date.parse(session.uploadedAt))||!session.uploadOrigin||typeof session.deviceId!=='string'||!session.deviceId.trim()||session.deviceId.length>128||!proof)return;
+    try{if(validateServerUrl(session.uploadOrigin)!==session.uploadOrigin)return;}catch{return;}
+    if(proof.sourceId!=='local-meeting-'+createHash('sha256').update(session.deviceId).digest('hex').slice(0,24)||proof.externalId!=='meeting:'+session.id||!/^[a-f0-9]{64}$/.test(proof.sha256)||proof.revision!==proof.sha256||!Number.isSafeInteger(proof.sizeBytes)||proof.sizeBytes<1||proof.sizeBytes>FILE_MAX_BYTES)return;
+    return {...proof};
+  }
+  async releaseContent(id:string,authorize:()=>void=()=>{}):Promise<void>{
+    await this.ensureInitialized();authorize();const session=this.state.sessions.find(value=>value.id===id),proof=this.archiveReceipt(id);
+    if(!session||!proof)throw Error(moteText('本机副本已变化；尚无可读取的中央接收凭据。'));
+    if(session.localContentRelease&&!session.localContentRelease.pending)return;
+    if(!session.audioFile||basename(session.audioFile)!==session.audioFile)throw Error('Invalid recording identity');
+    const path=join(this.options.directory,session.id,session.audioFile);
+    const info=await stat(path).catch(error=>{if(session.localContentRelease?.pending&&(error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;});
+    if(info&&(!info.isFile()||info.size!==proof.sizeBytes||(await this.digest(path,authorize)).hash!==proof.sha256))throw Error('Meeting archive receipt does not match the saved audio');
+    authorize();
+    const at=session.localContentRelease?.at??this.now().toISOString();
+    const next:StoredSession={...session,localContentRelease:{at,pending:true},warnings:[],error:undefined};
+    await this.persist(authorize,{session,next});authorize();
+    // Session IDs are host-generated UUIDs and this directory contains only
+    // this app's recording outputs, never a selected source file.
+    if(!/^[a-f0-9-]{36}$/i.test(session.id))throw Error('Invalid recording identity');
+    await rm(join(this.options.directory,session.id),{recursive:true,force:true});
+    if(process.platform!=='win32'){const directory=await open(this.options.directory,'r');try{await directory.sync();}finally{await directory.close();}}
+    await this.persist(authorize,{session,next:{...next,audioFile:undefined,localContentRelease:{at}}});
+  }
+  async readOriginal(id:string,authorize:()=>void):Promise<{bytes:AsyncIterable<Buffer>;sizeBytes:number;sha256?:string;close:()=>void}>{
+    await this.ensureInitialized();authorize();const session=this.state.sessions.find(value=>value.id===id);
+    if(!session?.audioFile||session.localContentRelease)throw Error(moteText('本机原件不在此设备，连接原中央后可按当前权限读取。'));
+    const proof=this.archiveReceipt(id);if(session.state==='uploaded'&&!proof)throw Error(moteText('本机副本已变化；尚无可读取的中央接收凭据。'));
+    if(!/^[a-f0-9-]{36}$/i.test(session.id)||basename(session.audioFile)!==session.audioFile)throw Error('Invalid recording identity');
+    const selected=session.localContentRelease,path=join(this.options.directory,session.id,session.audioFile);
+    const info=await stat(path);if(!info.isFile()||proof&&info.size!==proof.sizeBytes)throw Error('Invalid recording file');authorize();const stream=createReadStream(path,{highWaterMark:1024*1024});
+    const close=()=>{stream.destroy();};
+    return {sizeBytes:info.size,sha256:proof?.sha256,close,bytes:(async function*(){try{for await(const part of stream){authorize();if(session.localContentRelease!==selected)throw Error('Local original changed');yield Buffer.from(part);}}finally{close();}})()};
+  }
+  private async digest(path: string,authorize:()=>void=()=>{}): Promise<{ hash: string }> {
     const hash = createHash('sha256');
-    for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+    for await (const chunk of createReadStream(path)){authorize();hash.update(chunk as Buffer);}
+    authorize();
     return { hash: hash.digest('hex') };
   }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Explicit profiles only. Ambient MOTE_* variables never choose a target or supply credentials.
-import { parseArgs } from 'node:util';
+import {parseMoteArguments} from './mote-options.mjs';
 import { writeFile,readFile,stat } from 'node:fs/promises';
 import { join,resolve } from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
@@ -49,16 +49,8 @@ if (process.argv[2] === 'plugin-dev') {
   catch (error) { console.error(`Mote: ${error.message}`); process.exitCode = 1; }
   process.exit(process.exitCode ?? 0);
 }
-const split = process.argv.indexOf('--');
-const raw = process.argv.slice(2, split < 0 ? undefined : split);
-const tail = split < 0 ? [] : process.argv.slice(split + 1);
-let values, positionals;
-try { ({ values, positionals } = parseArgs({ args: raw, allowPositionals: true, options: {
-  profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, runtime: { type: 'string' }, port: { type: 'string' }, image: { type: 'string' }, release: { type: 'string' }, version: { type: 'string' },
-  'image-variant':{type:'string'},'media-workers':{type:'string'},
-  'data-dir': { type: 'string' }, volume: { type: 'string' }, 'token-file': { type: 'string' }, 'public-url': { type: 'string' }, protocol: { type: 'string' }, binary: { type: 'string' },
-  out: { type: 'string' }, from: { type: 'string' }, role:{type:'string'}, node: { type: 'string' }, python: {type:'string'}, enable: { type: 'boolean' }, disable: { type: 'boolean' }, defaults: { type: 'boolean' }, 'restore-data': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
-} })); } catch { console.error('Mote: Invalid arguments; use --help. Credentials are never accepted as argument values.'); process.exit(1); }
+let values,positionals,tail;
+try{({values,positionals,tail}=parseMoteArguments(process.argv.slice(2)));}catch{console.error('Mote: Invalid arguments; use --help. Credentials are never accepted as argument values.');process.exit(1);}
 const command = positionals[0] ?? 'help';
 const print = value => console.info(JSON.stringify(value));
 async function main() {
@@ -213,4 +205,4 @@ async function main() {
   if (result?.wait) { const finished = await result.wait(); process.exitCode = finished.code ?? 1; }
   else print({ profile: p.profile, ...result });
 }
-main().catch(error => { console.error(`Mote: ${error.message}`); process.exitCode = 1; });
+await main().catch(error => { console.error(`Mote: ${error.message}`); process.exitCode = 1; });
