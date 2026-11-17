@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,cpSync,appendFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,appendFileSync,copyFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {spawnSync} from 'node:child_process';
+import {spawnSync,execFileSync} from 'node:child_process';
 import {sqlAccesses,sqlStatements,ownershipInventory,checkSqlOwnership} from './sql-ownership.mjs';
 
 const repository=fileURLToPath(new URL('../..',import.meta.url));
 const cli=fileURLToPath(new URL('./sql-ownership.mjs',import.meta.url));
+const architectureCli=fileURLToPath(new URL('./architecture.mjs',import.meta.url));
 function fixture(t){
  const root=mkdtempSync(join(tmpdir(),'mote-sql-owner-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
  const write=(file,text)=>{mkdirSync(resolve(root,file,'..'),{recursive:true});writeFileSync(resolve(root,file),text);};
@@ -110,18 +111,23 @@ test('real production inventory and generated map stay in sync with explicit par
 
 test('actual CLI rejects an inserted cross-owner query in a copy of the production source, permits the existing shared model, and cleans up',t=>{
  const root=mkdtempSync(join(tmpdir(),'mote-sql-production-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
- cpSync(resolve(repository,'apps/server/src'),resolve(root,'apps/server/src'),{recursive:true});
- cpSync(resolve(repository,'scripts/ci'),resolve(root,'scripts/ci'),{recursive:true});
+ // Copy tracked code/config only, never profiles, dependencies or user data.
+ const tracked=execFileSync('git',['ls-files','-z','--','apps','packages','scripts','*.json'],{cwd:repository,encoding:'utf8'}).split('\0').filter(file=>/\.(?:[cm]?[jt]sx?|json)$/.test(file));
+ for(const file of tracked){mkdirSync(resolve(root,file,'..'),{recursive:true});copyFileSync(resolve(repository,file),resolve(root,file));}
+
  const run=()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8'});
- let result=run();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/PARTIAL coverage/);
+ const architecture=()=>spawnSync(process.execPath,[architectureCli],{cwd:root,encoding:'utf8'});
+ let result=architecture();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/PARTIAL coverage/);assert.match(result.stdout,/Architecture boundaries passed/);
  const mapPath=resolve(root,'scripts/ci/sql-ownership-map.json'),map=readFileSync(mapPath,'utf8');
  writeFileSync(mapPath,'{}');result=run();assert.equal(result.status,1);assert.match(result.stderr,/map is stale/);writeFileSync(mapPath,map);
  const target=resolve(root,'apps/server/src/material-index.ts'),original=readFileSync(target,'utf8');
  appendFileSync(target,"\nfunction generatedOwnershipNegative(db){db.prepare('SELECT value FROM settings WHERE key=?');}\n");
- result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner: apps\/server\/src\/material-index.ts.*settings/);
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner: apps\/server\/src\/material-index.ts.*settings/);
  writeFileSync(target,original);result=run();assert.equal(result.status,0,result.stderr);
+ appendFileSync(target,'\nfunction generatedDynamicNegative(db,sql){db.prepare(sql); }\n');
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-dynamic.*material-index.ts/);writeFileSync(target,original);
  appendFileSync(target,"\nfunction generatedOwnRead(db){db.prepare('SELECT id FROM material_heads LIMIT 1');}\n");
  result=run();assert.equal(result.status,0,result.stderr);
  const unexpected=resolve(root,'apps/server/src/generated-new-consumer.ts');writeFileSync(unexpected,"db.prepare('SELECT id FROM material_heads');\n");
- result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-consumer.*generated-new-consumer/);
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-consumer.*generated-new-consumer/);
 });
