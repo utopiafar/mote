@@ -133,7 +133,10 @@ export class Conversations {
     return {...value,firstIndex:oldest??0,nextCursor:hasMore&&oldest!==undefined?String(oldest):null};
   }
   private visibleTurn(value:ConversationTurn):ConversationTurn {
-    let turn=value;
+    const {disposition:_,steering,...publicTurn}=value;
+    // Routing inputs, model receipts and native fences are private execution
+    // state. History/catalog consumers receive only the actual relationship.
+    let turn:ConversationTurn={...publicTurn,...(steering?{steering:{targetMessageId:steering.targetMessageId,targetRunId:steering.targetRunId,state:steering.state}}:{})};
     // A submitted reference is dialogue input even when no retrieval tool was
     // called. Derive missing pins at read time as well as at publication, so
     // existing user messages cannot become untracked summary inputs.
@@ -242,14 +245,14 @@ export class Conversations {
       if(target.conversationId!==row.conversation_id||target.runId!==value.targetRunId)throw new StoreError('Conversation steering target changed',409);
       const saved=this.rewrite(row.conversation_id,{...message,steering:structuredClone(value),version:message.version+1},row.json);
       if(value.state==='accepted'||value.state==='continuation'){
-        const targetRow=this.messageRow(target.id),key=value.state==='accepted'?'amendedBy':'supersededBy';
-        this.rewrite(target.conversationId,{...target,[key]:[...new Set([...(target[key]??[]),id])],version:target.version+1},targetRow.json);
+        const targetRow=this.messageRow(target.id),key=value.state==='accepted'?'amendedBy':'supersededBy',{conversationId:targetConversationId,...targetTurn}=target;
+        this.rewrite(targetConversationId,{...targetTurn,[key]:[...new Set([...(target[key]??[]),id])],version:target.version+1},targetRow.json);
       }
       return {conversationId:row.conversation_id,...saved};
     });
   }
   assertSteeringSettled(id:string){
-    const row=this.store.db.prepare("SELECT 1 FROM conversation_turns WHERE json_extract(json,'$.steering.targetMessageId')=? AND json_extract(json,'$.steering.state') IN ('pending','unknown','cancelled') LIMIT 1").get(id);
+    const row=this.store.db.prepare("SELECT 1 FROM conversation_turns WHERE json_extract(json,'$.steering.targetMessageId')=? AND (json_extract(json,'$.steering.state') IN ('pending','unknown') OR json_extract(json,'$.steering.state')='cancelled' AND json_type(json,'$.steering.target')='object') LIMIT 1").get(id);
     if(row)throw Object.assign(new StoreError('A steering delivery is unconfirmed or withdrawn',409),{code:'steering_delivery_unknown'});
   }
 
@@ -288,9 +291,18 @@ export class Conversations {
     return this.transaction(()=>{
       const row=this.messageRow(id),message=JSON.parse(row.json) as ConversationTurn;
       if(message.status==='cancelled')return {conversationId:row.conversation_id,...message};
-      if(!['accepted','queued','running'].includes(message.status))throw new StoreError('Conversation message is already finished',409);
-      const cancelled:ConversationTurn={...message,status:'cancelled',version:message.version+1};
+      const applied=message.status==='completed'&&message.steering?.state==='accepted'&&['accepted','queued','running'].includes(this.message(message.steering.targetMessageId).status);
+      if(!['accepted','queued','running'].includes(message.status)&&!applied)throw new StoreError('Conversation message is already finished',409);
+      const cancelled:ConversationTurn={...message,status:'cancelled',version:message.version+1,...(message.steering?{steering:{...message.steering,state:'cancelled'}}:{})};
       delete cancelled.result;delete cancelled.error;
+      if(message.steering?.state==='continuation'){
+        const targetRow=this.messageRow(message.steering.targetMessageId),target=JSON.parse(targetRow.json) as ConversationTurn;
+        this.rewrite(targetRow.conversation_id,{...target,supersededBy:target.supersededBy?.filter(value=>value!==id),version:target.version+1},targetRow.json);
+      }
+      if(applied){
+        this.store.db.prepare("UPDATE conversations SET json=json_set(json,'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(row.conversation_id);
+        return {conversationId:row.conversation_id,...this.rewrite(row.conversation_id,cancelled,row.json)};
+      }
       return {conversationId:row.conversation_id,...this.rewriteTerminal(row.conversation_id,cancelled,row.json)};
     });
   }

@@ -294,3 +294,43 @@ test('server accepted, queued, running, failed and cancelled states are shown wi
  assert.deepEqual(rows.map(row=>row.dataset.state),states);
  assert.match(rows[0].textContent!,/已接收/);assert.match(rows[1].textContent!,/排队等待回答/);assert.match(rows[2].textContent!,/正在回答/);assert.match(rows[3].textContent!,/这次回答没有完成/);assert.match(rows[4].textContent!,/已停止/);
 });
+
+test('a same-status receipt revision refreshes continuation relations and withdraws the superseded draft action',async t=>{
+ const {root,d}=await fixture(t),parent='11111111-1111-4111-8111-111111111111',next='22222222-2222-4222-8222-222222222222';let continued=false,detailReads=0;
+ const draft={requestId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',revision:1,goal:'Generated original draft',scope:{kind:'all' as const},capabilities:['assistant.task.preview' as const]};
+ const followup={id:next,version:1,question:'Generated exact owner correction',createdAt:at,status:'running'};
+ const base=api(),owner={...base,request:async(path:string,init?:RequestInit)=>{
+  if(path==='/api/conversations/'+id){detailReads++;return {...conversation,revision:continued?2:1,turnCount:2,status:'running',turns:[{...conversation.turns[0],id:parent,version:1,result:{...answer,draft},...(continued?{supersededBy:[next]}:{})},{...followup,...(continued?{version:2,steering:{targetMessageId:parent,targetRunId:'generated-original-run',state:'continuation'}}:{})}]};}
+  if(path===`/api/conversations/${id}/messages/${next}`)return{id:next,conversationId:id,revision:continued?2:1,status:'running'};
+  return base.request(path,init);
+ }} as Api;
+ await view(root,owner);assert.ok(d.querySelector(`#conversation-turn-${parent} .assistant-draft`));assert.equal(d.querySelector('.conversation-steering-links'),null);
+ const before=detailReads;continued=true;
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1450));});
+ assert.ok(detailReads>before,'a new receipt revision must re-read the conversation even while it remains running');
+ const row=d.querySelector(`#conversation-turn-${parent}`)!;assert.equal(row.querySelector('.assistant-draft'),null,'a superseded draft cannot offer a new start command');
+ const link=row.querySelector<HTMLAnchorElement>('.conversation-steering-links a')!;assert.equal(link.textContent,followup.question);assert.equal(link.hash,'#/ask?'+new URLSearchParams({conversation:id,turn:next}));
+ assert.equal(d.querySelector(`#conversation-turn-${next} .conversation-steering-links a`)!.textContent,conversation.turns[0].question);
+});
+
+test('the composer admits a later message while native work is active and stops an accepted supplement by its exact receipt',async t=>{
+ const {root,d}=await fixture(t),parent='33333333-3333-4333-8333-333333333333',amendment='44444444-4444-4444-8444-444444444444',writes:{path:string;body?:any}[]=[];
+ let stopped=false,revision=1;const later:any[]=[];
+ const turns=()=>[{id:parent,version:revision,question:'Generated original native work',createdAt:at,status:stopped?'cancelled':'running',amendedBy:[amendment]},{id:amendment,version:revision,question:'Generated already accepted correction',createdAt:at,status:stopped?'cancelled':'completed',steering:{targetMessageId:parent,targetRunId:'generated-original-run',state:stopped?'cancelled':'accepted'},...(!stopped?{result:{...answer,answer:'Generated accepted correction receipt'}}:{})},...later];
+ const base=api(),owner={...base,request:async(path:string,init?:RequestInit)=>{
+  if(path==='/api/conversations/'+id)return {...conversation,revision,turnCount:turns().length,status:'running',turns:turns()};
+  if(path==='/api/conversations/messages'&&init?.method==='POST'){const body=JSON.parse(String(init.body));writes.push({path,body});const accepted=receipt(body);later.push({...accepted,version:accepted.revision});revision++;return accepted;}
+  if(path===`/api/conversations/${id}/messages/${amendment}/cancel`){writes.push({path});stopped=true;revision++;return{id:amendment,conversationId:id,status:'cancelled',revision};}
+  if(path.includes('/messages/')){const turn=turns().find(value=>path.endsWith('/'+value.id));return{...turn,conversationId:id,revision:turn?.version};}
+  return base.request(path,init);
+ }} as Api;
+ await view(root,owner);const correction=d.querySelector(`#conversation-turn-${amendment}`)!;
+ assert.ok(correction.querySelector('.conversation-steering-links a'));assert.match(correction.textContent!,/Generated accepted correction receipt/);
+ await field(d,'textarea[aria-label="向 Mote 提问"]','Generated independent later question');assert.equal(d.querySelector<HTMLButtonElement>('.send-button')!.disabled,false);
+ await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(writes[0].body.question,'Generated independent later question');assert.equal(d.querySelector(`#conversation-turn-${parent}`)!.getAttribute('data-state'),'running');
+ await field(d,'textarea[aria-label="向 Mote 提问"]','Generated still unsent draft');await click(d,'停止这条回答',d.querySelector(`#conversation-turn-${amendment}`)!);
+ assert.equal(writes.at(-1)!.path,`/api/conversations/${id}/messages/${amendment}/cancel`);assert.equal(writes.filter(value=>value.path.endsWith('/cancel')).length,1);
+ assert.equal(d.querySelector(`#conversation-turn-${parent}`)!.getAttribute('data-state'),'cancelled');assert.equal(d.querySelector(`#conversation-turn-${amendment}`)!.getAttribute('data-state'),'cancelled');
+ assert.equal(d.querySelector<HTMLTextAreaElement>('textarea[aria-label="向 Mote 提问"]')!.value,'Generated still unsent draft');
+});

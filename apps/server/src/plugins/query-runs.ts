@@ -38,7 +38,7 @@ import type {UsageLedger} from '../usage.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
 import {conversationInputIdentity} from '../conversations.js';
-import {createConversationSteering} from '../conversation-steering.js';
+import {acceptedConversationAmendments,createConversationSteering} from '../conversation-steering.js';
 
 /** C27 owns the durable delegation journal and the replayable Ask receipts
  * that the admitted query runtime prepares and commits. */
@@ -156,15 +156,21 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       }))throw Object.assign(new StoreError(moteText('参考原件暂不可用，请清除参考后继续。'),409),{code:'context_evidence_restricted'});
       return selected;
     },
-    prepare:(body:unknown,work:DelegationWork,signal:AbortSignal,onProgress:QueryInput['onProgress'])=>{
+    prepare:async(body:unknown,work:DelegationWork,signal:AbortSignal,onProgress:QueryInput['onProgress'])=>{
       const message=assertMessage(work.id.slice('query:'.length),body);if(message)conversations.assertSteeringSettled(message.id);
-      return prepareDelegatedQuery.prepare(body,work,signal,onProgress);
+      const amendments=message?acceptedConversationAmendments(dependencies,message):[],keys=amendments.map(value=>value.key),saved=runtime.journal.payload<SavedQuery>(work.id);
+      if(keys.length&&!saved.prepared)throw new ExecutionFailure('blocked','steering_input_unavailable');
+      const prepared=await prepareDelegatedQuery.prepare(body,work,signal,onProgress);
+      if(!amendments.length)return prepared;
+      const result:QueryInput={...prepared,taskContext:{...prepared.taskContext,turns:prepared.taskContext?.turns??[],ownerClarificationReply:{instruction:'These exact owner amendments were acknowledged by the former native turn. Continue the read-only task accounting for them, within its unchanged original permission/scope. This is a controlled new attempt, not a replay of turn/steer or of an external Action.',messages:amendments.map(({id,question})=>({messageId:id,question}))}}};
+      const current=runtime.journal.payload<SavedQuery>(work.id);current.prepared={...result,signal:undefined,onProgress:undefined};current.steeringPreparedFor=keys;runtime.journal.savePayload(work.id,current);
+      return {...result,assertContextAuthority:()=>{prepared.assertContextAuthority?.();const active=assertMessage(work.id.slice('query:'.length),body);if(!active)throw new StoreError('Conversation steering owner is no longer available',409);conversations.assertSteeringSettled(active.id);acceptedConversationAmendments(dependencies,active);}};
     },
     query:(input:QueryInput)=>steerConversation(input,value=>queryRuntime.queryAgent(value,'query','conversations'),async()=>{
-      const work=runtime.get(input.traceContext!.operationId!),saved=runtime.journal.payload<SavedQuery&{continuationPrepared?:boolean}>(work.id);
+      const work=runtime.get(input.traceContext!.operationId!),saved=runtime.journal.payload<SavedQuery>(work.id);
       if(!saved.continuationPrepared){delete saved.prepared;runtime.journal.savePayload(work.id,saved);}
       const prepared=await prepareDelegatedQuery.prepare(saved.hostRequest,work,input.signal!,input.onProgress);
-      const current=runtime.journal.payload<SavedQuery&{continuationPrepared?:boolean}>(work.id);current.continuationPrepared=true;runtime.journal.savePayload(work.id,current);return prepared;
+      const current=runtime.journal.payload<SavedQuery>(work.id);current.continuationPrepared=true;runtime.journal.savePayload(work.id,current);return prepared;
     }),
     operationUsage:(operationId:string,createdAt:string,finishedAt:string)=>usageLedger.operation(operationId,createdAt,finishedAt),
     pinnedConfigurationCurrent,
@@ -182,6 +188,8 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       const message=assertMessage(work.id.slice('query:'.length),body);
       if(message){
         conversations.assertSteeringSettled(message.id);
+        const preparedKeys=new Set(saved.steeringPreparedFor??[]);
+        if(acceptedConversationAmendments(dependencies,message).some(amendment=>amendment.hostRunId!==result.runId&&!preparedKeys.has(amendment.key)))throw new StoreError('A late result did not consume the accepted owner amendment',409);
         if(evidenceIds?.length===0&&(result.citations.length||(result.evidenceDependencies?.ids.length??0)>0||result.evidenceDependencies?.complete===false||(result.sourceContextDependencies?.length??0)>0))throw new StoreError('Query result is outside the empty selection',409);
         // Preparation suppresses archive tools for an empty selection by
         // omitting the array from the agent input. Restore the owner's actual

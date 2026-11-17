@@ -2,7 +2,7 @@ import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {createServer,type ServerResponse} from 'node:http';
-import fs,{existsSync,mkdirSync,readFileSync,renameSync,symlinkSync} from 'node:fs';
+import fs,{existsSync,mkdirSync,readFileSync,realpathSync,renameSync,symlinkSync} from 'node:fs';
 import {syncBuiltinESMExports} from 'node:module';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -31,7 +31,7 @@ async function waitFor(check: () => boolean | Promise<boolean>, label: string) {
 
 function generatedRelease(trace: string,hook?:string) {
   const repository = 'generated-fixture/native-dsh', tag = 'v1.0.0';
-  const log = `import {appendFileSync} from 'node:fs';const trace=event=>appendFileSync(${JSON.stringify(trace)},JSON.stringify({event,pid:process.pid})+'\\n');`;
+  const log = `import {appendFileSync} from 'node:fs';const trace=event=>appendFileSync(${JSON.stringify(trace)},JSON.stringify({event,pid:process.pid,cwd:process.cwd()})+'\\n');`;
   const archive = zipSync({
     'package.json': strToU8(JSON.stringify({name: '@mote/generated-installed-native', version: '1.0.0', type: 'module', exports: {'.': './index.mjs', './alias': './index.mjs', './hook': './hook.mjs', './factory': './factory.mjs'}, dsh: {native: {capabilities: ['hooks', 'factory', 'agents', 'mote.application.outputs']}}})),
     'index.mjs': strToU8(`${log}export const name='installed-native-package';export function apply(ctx){trace('package-loaded');ctx.effect(()=>()=>trace('package-disposed'));}`),
@@ -367,4 +367,25 @@ test('the maintenance physical snapshot includes real native application bytes i
   const before=store.measurePhysicalStorage();store.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
   const directory=join(root,'native-applications','generated-private-session');mkdirSync(directory,{recursive:true,mode:0o700});const bytes=Buffer.alloc(9973,31);await writeFile(join(directory,'generated-protected-state.aes'),bytes,{mode:0o600});
   const logical=store.logicalBytes(),after=store.measurePhysicalStorage();assert.equal(after.bytes-before.bytes,bytes.length);assert.equal(store.logicalBytes(),logical);assert.ok(after.asOf);
+});
+
+for(const cancel of [false,true])test(`independent owner input respects the real persistent APP writer while ordinary conversation remains responsive (${cancel?'cancel waiting':'resume once'})`,{timeout:30000},async t=>{
+  const entered=gate(),release=gate();
+  const f=await applicationFixture(t,{respond:async(request,response,index)=>{
+    const user=request.messages.filter((message:any)=>message.role==='user').at(-1).content,envelope=JSON.parse(typeof user==='string'?user:user.find((part:any)=>part.type==='text').text);let disposition;try{disposition=JSON.parse(envelope.request);}catch{}
+    if(disposition?.task==='mote.conversation-disposition'){writeMessagesResponse(response,{stage:0,model:'generated-native-model',text:JSON.stringify({answer:JSON.stringify({kind:'independent'}),citationIds:[]})});return;}
+    if(index===1){entered.release();await release.promise;}terminalResponse(response,index);
+  }});t.after(()=>release.release());
+  const first=await f.enqueue('GENERATED-SERIAL-FIRST');await entered.promise;const firstControl=control(f),second=await f.enqueue('GENERATED-SERIAL-SECOND');
+  await waitFor(()=>Boolean(f.node.store.db.prepare("SELECT 1 FROM execution_steps WHERE operation_id=? AND state='waiting' AND error='native_application_busy'").get('query:'+second.id)),'the second APP request to wait on the existing writer');
+  assert.equal(f.requests.length,2,'only the first application request and the disposition have reached a model');assert.equal(f.controlRows().length,1);assert.deepEqual(control(f).writer,firstControl.writer);assert.equal(control(f).accepted,undefined);assert.equal(f.node.sources.listSources().filter(source=>source.id.startsWith('dsh-app:')).length,0);
+  const workspace=realpathSync(join(f.root,'vault','native-applications',firstControl.identity,'working','workspace')),events=()=>readFileSync(f.trace,'utf8').trim().split('\n').map(line=>JSON.parse(line));
+  assert.equal(new Set(events().filter(event=>event.event==='factory-create'&&event.cwd===workspace).map(event=>event.pid)).size,1,'the semantic disposition uses a temporary PACKS child, never another private APP writer');
+  assert.equal(Number(f.node.store.db.prepare("SELECT attempts FROM execution_steps WHERE operation_id=? AND kind='delegation.coordinator.query'").get('query:'+second.id)!.attempts),0,'writer capacity waiting does not consume the failure budget');
+  const short=await f.interact('GENERATED-INDEPENDENT-ORDINARY-CHAT',{modelProfileId:'env:deployment'});assert.equal(short.status,'completed',JSON.stringify(short));assert.equal(f.node.conversations.message(first.id).status,'running');
+  if(cancel){const response=await f.node.app.inject({method:'POST',url:'/api/conversations/'+f.conversationId+'/messages/'+second.id+'/cancel',headers:f.headers});assert.equal(response.statusCode,200,response.body);}
+  release.release();assert.equal((await f.settled(first)).status,'completed');
+  if(!cancel){const result=await f.settled(second);assert.equal(result.status,'completed',JSON.stringify({result,run:f.node.queryRuns.get(second.id)}));}
+  const source=f.node.sources.listSources().find(source=>source.id.startsWith('dsh-app:'))!;assert.equal(f.node.sources.history(source.id,'report.txt').length,cancel?1:2);assert.equal(outputText(f,source.id),cancel?'GENERATED-APPLICATION-REPORT-1\n':'GENERATED-APPLICATION-REPORT-2\n');
+  assert.equal(events().filter(event=>event.event==='factory-resume'&&event.cwd===workspace).length,cancel?0:1);await f.restart();assert.equal(f.node.conversations.message(second.id).status,cancel?'cancelled':'completed');assert.equal(f.requests.length,cancel?3:4);
 });

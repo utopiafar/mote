@@ -131,6 +131,7 @@ for (const mode of ['wrong', 'stale']) {
   test(`Codex releases the image reservation with false on ${mode} steer`, async t => {
     const f = await fixture(t, mode);
     const running = f.session.run('Read generated image');
+    void running.catch(() => {});
     await waitFor(f.started);
     await writeFile(f.release, '');
     await assert.rejects(running);

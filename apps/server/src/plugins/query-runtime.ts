@@ -219,7 +219,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       if(observed.conversation?.historyContext)conversations.assertHistoryContext(observed.conversation.historyContext);
     };
     observed.nativeApplicationContext=()=>nativeApplicationContext(observed,{store,conversations,assertModelEvidence,assertCurrent:()=>modelAuthorization.assertCurrent()});
-    if(observed.traceContext?.operationId&&(!observed.responseMode||observed.responseMode==='answer')){
+    if(moduleId==='conversations'&&observed.executionLane==='interactive'&&observed.traceContext?.operationId&&(!observed.responseMode||observed.responseMode==='answer')){
       const operationId=observed.traceContext.operationId,previous=observed.onRuntimeControl;
       observed.onRuntimeControl=control=>{
         const release=controls.register(operationId,control,()=>{observed.signal?.throwIfAborted();modelAuthorization.assertCurrent();observed.assertContextAuthority?.();assertModelEvidence(observed);});

@@ -19,11 +19,14 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
  if(m.method==='initialize')send({id:m.id,result:{}});
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
  else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread'},model:m.params.model,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
- else if(m.method==='turn/start'){turn++;send({id:m.id,result:{turn:{id:'generated-turn-'+turn}}});send({method:'turn/started',params:{threadId:'generated-thread',turn:{id:'generated-turn-'+turn,status:'inProgress'}}});}
+ else if(m.method==='turn/start'){turn++;send({id:m.id,result:{turn:{id:'generated-turn-'+turn}}});send({method:'turn/started',params:{threadId:'generated-thread',turn:{id:'generated-turn-'+turn,status:'inProgress'}}});
+  if(${JSON.stringify(mode)}==='pre-ack-draft')send({method:'item/completed',params:{threadId:'generated-thread',turnId:'generated-turn-'+turn,item:{id:'old-draft',type:'agentMessage',text:'Generated pre-correction answer'}}});
+  if(${JSON.stringify(mode)}==='stale-turn'&&turn>1){send({id:9007,method:'item/tool/call',params:{threadId:'generated-thread',turnId:'generated-turn-1',tool:'generated_stale_tool',arguments:{}}});send({method:'item/completed',params:{threadId:'generated-thread',turnId:'generated-turn-1',item:{id:'stale-answer',type:'agentMessage',text:'Generated stale answer'}}});send({method:'turn/completed',params:{threadId:'generated-thread',turn:{id:'generated-turn-1',status:'completed'}}});}
+ }
  else if(m.method==='turn/steer'){if(m.params.expectedTurnId!=='generated-turn-'+turn)process.exit(5);
   if(${JSON.stringify(mode)}==='terminal-before-ack')finish();
   send({id:m.id,result:{turnId:${JSON.stringify(mode)}==='wrong-ack'?'generated-other-turn':'generated-turn-'+turn}});
-  if(${JSON.stringify(mode)}==='same-frame')finish();else if(${JSON.stringify(mode)}!=='terminal-before-ack')setTimeout(finish,10);
+  if(${JSON.stringify(mode)}==='pre-ack-draft')send({method:'turn/completed',params:{threadId:'generated-thread',turn:{id:'generated-turn-'+turn,status:'completed'}}});else if(${JSON.stringify(mode)}==='same-frame')finish();else if(${JSON.stringify(mode)}!=='terminal-before-ack')setTimeout(finish,10);
  }
 });
 `,{mode:0o700});
@@ -53,6 +56,18 @@ test('a completed native turn cannot steer the next turn in the same process',as
   running=f.session.run('Generated next task');void running.catch(()=>{});const second=await until(()=>f.session.steeringTarget());assert.notEqual(second.turnId,first.turnId);
   await assert.rejects(f.session.steer(first.turnId,'Generated stale correction'));assert.equal((await f.rpc()).filter(row=>row.method==='turn/steer').length,1);
   await f.session.steer(second.turnId,'Generated current correction');assert.equal(JSON.parse(await running).answer,'Generated adjusted answer 2');
+});
+
+test('late native items, tool calls and terminal events keep their original turn fence',async t=>{
+  const f=await fixture(t,'stale-turn');let {running}=await f.begin();const first=await until(()=>f.session.steeringTarget());await f.session.steer(first.turnId,'Generated first correction');await running;
+  running=f.session.run('Generated next task');void running.catch(()=>{});const second=await until(()=>f.session.steeringTarget());
+  const rejection=await until(async()=>(await f.rpc()).find(row=>row.id===9007));assert.equal(rejection.error.code,-32600);assert.deepEqual(f.session.steeringTarget(),second);
+  await f.session.steer(second.turnId,'Generated current correction');assert.equal(JSON.parse(await running).answer,'Generated adjusted answer 2');
+});
+
+test('a native draft completed before the steering ACK cannot become the adjusted answer',async t=>{
+  const f=await fixture(t,'pre-ack-draft'),{running}=await f.begin(),target=await until(()=>f.session.steeringTarget());
+  await f.session.steer(target.turnId,'Generated owner correction');assert.equal(await running,'','the Host must obtain a current candidate instead of accepting the old draft');
 });
 
 for(const fail of [false,true])test(`Host output waits for its local steering receipt commit after a same-frame native ACK/terminal (${fail?'failure':'success'})`,async t=>{

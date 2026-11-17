@@ -108,7 +108,16 @@ export class ConversationQueue {
   cancel(conversationId:string,id:string){
     const message=this.dependencies.conversations.message(id);if(message.conversationId!==conversationId)throw new StoreError('Conversation message not found',404);
     const cancelled=this.dependencies.conversations.cancel(id);
-    if(cancelled.runId&&this.dependencies.store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(cancelled.runId))this.runs.cancel(cancelled.runId);
+    if(cancelled.runId&&this.dependencies.store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(cancelled.runId)&&this.runs.get(cancelled.runId).status==='running')this.runs.cancel(cancelled.runId);
+    if(message.steering&&['pending','accepted','unknown'].includes(message.steering.state)){
+      // Already delivered words cannot be recalled. Withdraw the affected
+      // current task/result rather than pretending the provider forgot them.
+      const target=this.dependencies.conversations.message(message.steering.targetMessageId);
+      if(target.conversationId===conversationId&&target.runId===message.steering.targetRunId&&['accepted','queued','running'].includes(target.status)){
+        this.dependencies.conversations.cancel(target.id);
+        if(target.runId&&this.dependencies.store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(target.runId)&&this.runs.get(target.runId).status==='running')this.runs.cancel(target.runId);
+      }
+    }
     this.suspended.clear();this.wake();return this.view(cancelled);
   }
 

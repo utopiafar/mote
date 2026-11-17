@@ -183,7 +183,7 @@ export class CodexSession {
     try{
       await this.options.authorizeModelRequest?.();
       if(this.turn!==pending||this.steeringTarget()?.turnId!==turnId)throw new RuntimeSteeringUnavailable('stale');
-      await this.request('turn/steer',{threadId:this.threadId,expectedTurnId:turnId,input:[{type:'text',text,text_elements:[]}]},accepted=>{receipt.acknowledged=this.turn===pending&&this.steeringTarget()?.turnId===turnId&&accepted?.turnId===turnId;});
+      await this.request('turn/steer',{threadId:this.threadId,expectedTurnId:turnId,input:[{type:'text',text,text_elements:[]}]},accepted=>{receipt.acknowledged=this.turn===pending&&this.steeringTarget()?.turnId===turnId&&accepted?.turnId===turnId;if(receipt.acknowledged)this.messages.clear();});
       // The native terminal may follow its ACK in the same read frame. Only
       // that positively ordered ACK permits the completion to remain valid.
       if(!receipt.acknowledged||this.failure||this.ending)throw this.providerError(undefined,{source:'runtime',code:'steering_ack_mismatch',stage:'model'});
@@ -214,6 +214,11 @@ export class CodexSession {
   private dispatch(message:Rpc){
     const method=message.method??'',p=message.params;
     if(p?.threadId&&this.threadId&&p.threadId!==this.threadId)return;
+    const turnId=p?.turnId??p?.turn?.id;
+    if(this.activeTurnId&&typeof turnId==='string'&&turnId!==this.activeTurnId){
+      if(message.id!==undefined&&message.method)this.send({id:message.id,error:{code:-32600,message:'The native turn is no longer active'}});
+      return;
+    }
     if(['item/agentMessage/delta','item/reasoning/summaryTextDelta','item/reasoning/textDelta'].includes(method)&&typeof p?.delta==='string'){
       this.deltaText.set(method,(this.deltaText.get(method)??'')+p.delta);
       if((this.deltaText.get(method)?.length??0)>=4096)this.flushDeltas();
@@ -310,7 +315,7 @@ export class CodexSession {
     void completed.catch(()=>{});
     const effort=this.options.reasoningEffort;
     const pending=this.turn;
-    try{const started=await this.request('turn/start',{threadId:this.threadId,input:[{type:'text',text:prompt,text_elements:[]}],...(outputSchema?{outputSchema}:{}),...(effort&&effort!=='auto'?{effort:effort==='off'?'none':effort}:{})});if(this.turn===pending&&typeof started?.turn?.id==='string')this.activeTurnId=started.turn.id;return await completed;}
+    try{await this.request('turn/start',{threadId:this.threadId,input:[{type:'text',text:prompt,text_elements:[]}],...(outputSchema?{outputSchema}:{}),...(effort&&effort!=='auto'?{effort:effort==='off'?'none':effort}:{})},started=>{if(this.turn===pending&&typeof started?.turn?.id==='string')this.activeTurnId=started.turn.id;});return await completed;}
     catch(error){this.interruptUsage();this.turn=undefined;this.activeTurnId=undefined;throw error;}
   }
   close():Promise<void>{return this.closed??=this.cleanup();}
