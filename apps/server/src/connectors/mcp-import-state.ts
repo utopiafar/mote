@@ -1,10 +1,14 @@
 import type {Store} from '../store.js';
+import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
+
+export const mcpStateSchemaInstallation={owner:'mcp-import',requires:[],prerequisites:[{owner:'source',objects:[{type:'table',name:'source_connections'}]}],install:db=>{db.exec('CREATE TABLE IF NOT EXISTS mcp_import_manifests(source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,identity TEXT NOT NULL,members TEXT NOT NULL,PRIMARY KEY(source_id,identity))');}} as const satisfies SchemaInstallation;
+
 
 /** Membership snapshots share SourceStore's transaction for nonempty batches;
  * an empty result still publishes its snapshot in the same SQLite connection. */
 export function mcpImportState(store:Pick<Store,'db'>){
  const {db}=store;
- db.exec('CREATE TABLE IF NOT EXISTS mcp_import_manifests(source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,identity TEXT NOT NULL,members TEXT NOT NULL,PRIMARY KEY(source_id,identity))');
+ installSchemaPlan(db,[mcpStateSchemaInstallation]);
  return {
   members:(sourceId:string,identity:string)=>{const row=db.prepare('SELECT members FROM mcp_import_manifests WHERE source_id=? AND identity=?').get(sourceId,identity);return row?String(row.members):undefined;},
   save:(sourceId:string,identity:string,members:string)=>{

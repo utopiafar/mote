@@ -6,7 +6,7 @@ export interface QueryRequest {
   language?: import('@mote/shared/i18n').Locale;
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
-  taskContext?: {imageEvidence?:unknown;queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;originatingSuggestion?:unknown;ownerClarificationReply?:unknown;untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
+  taskContext?: {imageEvidence?:unknown;queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;originatingSuggestion?:unknown;ownerClarificationReply?:unknown;ownerAmendments?:{messageId:string;question:string}[];untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction'|'other';
   /** Host-selected procedure, never selected from captured text. */
   skill?: string;
