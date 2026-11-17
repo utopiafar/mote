@@ -1,4 +1,14 @@
 import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
+
+/** Vault-owned StorageLedger DDL. EvidenceStore keeps its original core
+ * installation stage; this second Vault stage runs when StorageLedger is
+ * constructed, before registerAll and the first bytes() read. */
+export const storageLedgerSchemaInstallation={owner:'vault',requires:[],install:storageLedgerSchema} as const satisfies SchemaInstallation;
+export function storageLedgerSchema(db:DatabaseSync){
+  db.exec(`CREATE TABLE IF NOT EXISTS storage_ledger(name TEXT PRIMARY KEY,bytes INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS storage_ledger_meters(name TEXT PRIMARY KEY,plugin TEXT NOT NULL,expression TEXT NOT NULL);`);
+}
 
 /** One registered table and the logical-byte expression its plugin declared. */
 export interface StorageMeterEntry {readonly name:string;readonly bytes:number}
@@ -17,9 +27,8 @@ export class StorageLedger {
   private schemaVersion=-1;
   /** `excluded` names remain metered rows (and stay visible in `stats()`), but
    * the vault decides which physical object stores are not logical payload. */
-  constructor(private db:DatabaseSync,private excluded:readonly string[]=[]) {
-    db.exec(`CREATE TABLE IF NOT EXISTS storage_ledger(name TEXT PRIMARY KEY,bytes INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS storage_ledger_meters(name TEXT PRIMARY KEY,plugin TEXT NOT NULL,expression TEXT NOT NULL);`);
+  constructor(private db:DatabaseSync,private excluded:readonly string[]=[],plan:readonly SchemaInstallation[]=[storageLedgerSchemaInstallation]) {
+    installSchemaPlan(db,plan);
   }
   /** Register or re-declare the tables one plugin owns. A changed expression
    * rebuilds that table's row/triggers on the next read. */
