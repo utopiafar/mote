@@ -65,10 +65,10 @@ export class AssistantDrafts {
 
   setVersionValidator(validate:(context:AssistantDraftCommandContext)=>void){this.validateVersion=validate;}
 
-  issue(input:{goal:string;scope:QueryScope}):AssistantDraft{
+  issue(input:{goal:string;scope:QueryScope;currentInstruction?:{requestId:string}}):AssistantDraft{
     const capabilities=this.capabilities();
     if(!capabilities.length)throw new StoreError('No assistant draft command is available',503);
-    return assistantDraftSchema.parse({requestId:randomUUID(),revision:1,goal:input.goal.trim(),scope:input.scope,capabilities});
+    return assistantDraftSchema.parse({requestId:input.currentInstruction?.requestId??randomUUID(),revision:1,goal:input.goal.trim(),scope:input.scope,...(input.currentInstruction?{input:'current-instruction'}:{}),capabilities:input.currentInstruction?capabilities.filter(capability=>capability==='assistant.task.preview'):capabilities});
   }
 
   async command(raw:unknown):Promise<unknown>{

@@ -64,7 +64,7 @@ export function codexImageMetadata(body:ImagePayload){
   };
 }
 
-/** Codex App Server `turn/steer` input items for one authorized image. A12 owns
+/** Codex App Server `turn/steer` input items for one authorized image. The Codex runtime owns
  * the exact active turn and its ACK; this only builds the bounded value pair. */
 export function codexImageSteerInputs(metadata:unknown,image:{readonly mimeType:string;readonly data:string}){
   const authorized=requireImage(image);

@@ -61,7 +61,7 @@ export type AssistantTaskRecord=z.infer<typeof assistantTaskRecordSchema>;
 
 /** A model may propose a goal, never an identity, scope, permission or effect.
  * The host binds the remaining fields after validating the current answer. */
-export const assistantDraftProposalSchema=z.object({goal:ownerText}).strict();
+export const assistantDraftProposalSchema=z.object({goal:ownerText,input:z.literal('current-instruction').optional()}).strict();
 export type AssistantDraftProposal=z.infer<typeof assistantDraftProposalSchema>;
 
 /** Commands the host can offer for a validated draft. The model never chooses
@@ -72,7 +72,7 @@ export type AssistantDraftCapability=z.infer<typeof assistantDraftCapabilitySche
 /** One host-validated draft attached to a completed answer. `requestId` is
  * stable for retries; `revision` changes only for an explicit owner edit. */
 export const assistantDraftSchema=z.object({
-  requestId:uuid,revision,goal:ownerText,scope:queryScopeSchema,
+  requestId:uuid,revision,goal:ownerText,scope:queryScopeSchema,input:z.literal('current-instruction').optional(),
   capabilities:z.array(assistantDraftCapabilitySchema).min(1).refine(values=>new Set(values).size===values.length,{message:'Draft capabilities must be unique'}),
 }).strict();
 export type AssistantDraft=z.infer<typeof assistantDraftSchema>;

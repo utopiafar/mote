@@ -46,7 +46,7 @@ export function outputRepairPrompt(input: QueryInput, error: AgentResponseError,
   return JSON.stringify({
     responseMode,
     instruction,
-    ...(input.assistantDraft ? {draft: 'The host output schema requires draft: null or one object with exactly goal. Do not add requestId, revision, scope, capability, task or action fields. Set draft to null when no concrete follow-up is warranted.'} : {}),
+    ...(input.assistantDraft ? {draft: input.assistantCurrentInstruction?'Return draft:null, a goal-only proposal, or {goal,input:"current-instruction"} only for an explicit self-contained live owner task requiring no archive reads. No ids, scope, capability or Action grant.':'The host output schema requires draft: null or one object with exactly goal. Do not add requestId, revision, scope, capability, task or action fields. Set draft to null when no concrete follow-up is warranted.'} : {}),
     ...((input.responseMode ?? (input.skill ? 'other' : 'answer')) === 'answer' ? {presentation: 'The answer string must be the user-facing prose or Markdown itself. Do not serialize a title/markdown/html object inside it, and do not generate a duplicate HTML report.'} : {}),
     ...(error.reason === 'output_limit' ? (requiresToolUse
       ? {outputBudget: maxTokens, recovery: 'The previous response exhausted the output budget. Call read_image for the exact image id first, then return a materially shorter, complete interpretation using only evidence already retrieved. Select fewer supported claims and representative citations rather than enumerating every record. Preserve uncertainty and coverage limits. Do not continue the truncated fragment or abbreviate evidence IDs.'}
