@@ -10817,5 +10817,13 @@ export const spanish: Readonly<Record<string, string>> = {
   "删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。": "Eliminar este registro original y las imágenes que ya no se referencian. Se conservan los recuerdos que siguen siendo válidos; el original ya no podrá consultarse ni citarse.",
   "删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。": "Eliminar el archivo original y el texto analizado en Central. Se conservan los recuerdos que siguen siendo válidos; el original ya no podrá consultarse ni citarse. Se conserva el archivo original del dispositivo de origen.",
   "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "El original se ha liberado y ya no puede consultarse ni citarse. Este recuerdo sigue siendo utilizable dentro de su ámbito de validez.",
-  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "Las copias JSON incluyen registros capturados localmente, su estado de carga e imágenes asociadas; al restaurarlas se conserva el estado de carga. Los archivos de origen y las grabaciones de reuniones requieren copias de seguridad separadas."
+  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "Las copias JSON incluyen registros capturados localmente, su estado de carga e imágenes asociadas; al restaurarlas se conserva el estado de carga. Los archivos de origen y las grabaciones de reuniones requieren copias de seguridad separadas.",
+  "清理本机副本": "Eliminar copia local",
+  "本机副本已清理": "Copia local eliminada",
+  "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Eliminar solo una copia local cuya carga se haya confirmado. Se conservan la fecha, la fuente y el recibo; no se modifican el archivo de Central ni tus archivos de origen.",
+  "本机原件不在此设备，连接原中央后可按当前权限读取。": "El original no está en este dispositivo. Conéctate al Central original para leerlo con tus permisos actuales.",
+  "原中央与当前连接不一致，未发送读取请求。": "El Central original no coincide con la conexión actual. No se envió ninguna solicitud de lectura.",
+  "从中央另存原件": "Guardar original desde Central",
+  "采集阶段仍有待处理输入，暂不能清理本机副本。": "Las etapas de captura aún tienen entradas pendientes. Todavía no se puede eliminar esta copia local.",
+  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "La copia local aún no se ha eliminado por completo. Reintenta; las entradas restantes no se volverán a cargar."
 };

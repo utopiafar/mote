@@ -24,6 +24,7 @@ async function readFile(path: string, encoding?: 'utf8'): Promise<Buffer | strin
 export interface ArchiveAcknowledgment {at:string;origin:string}
 export interface QueueRecord {
   archiveAcknowledgment?: ArchiveAcknowledgment;
+  localContentRelease?: {at:string;pending?:true;imageHash?:string};
   event: CaptureEvent;
   blobHash?: string;
   blobBytes: number;
@@ -32,7 +33,7 @@ export interface QueueRecord {
   syncBlocked?: boolean;
   syncError?: string;
 }
-type ContentSummary = Readonly<Pick<CaptureEvent,'id'|'source'|'appName'|'ocrText'|'capturedAt'|'deviceName'> & Pick<QueueRecord,'syncError'|'archiveAcknowledgment'>>;
+type ContentSummary = Readonly<Pick<CaptureEvent,'id'|'source'|'appName'|'ocrText'|'capturedAt'|'deviceName'> & Pick<QueueRecord,'syncError'|'archiveAcknowledgment'|'localContentRelease'>>;
 type QueueConnection = Partial<Pick<Config,'serverUrl'|'token'>>;
 export interface QueueStats { archiveAcknowledgment?:{at:string;origin:string}; depth: number;records:number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string; eligibleDepth: number; blocked: number }
 export interface QueueArchive {
@@ -97,14 +98,23 @@ function validateEvent(value: unknown): CaptureEvent {
   const ocr = v.ocr ? { status: v.ocr.status, ...(v.ocr.reason ? { reason: v.ocr.reason } : {}), ...(v.ocr.updatedAt ? { updatedAt: v.ocr.updatedAt } : {}) } : undefined;
   return { ...base, ocrText: v.ocrText, ...(ocr ? { ocr } : {}), source: 'screen', imageMime: 'image/jpeg', privacy: { excluded: false, redacted: v.privacy.redacted, mode: 'local', ...(v.privacy.collection ? { collection: v.privacy.collection } : {}), reason: v.privacy.reason } };
 }
+/** A released record is evidence of receipt, never another transport event. */
+function releasedEvent(value:CaptureEvent):CaptureEvent {
+  if(!value||!['screen','note','activity','notification','ui_page','media'].includes(value.source))throw Error('Invalid released record');
+  const {id,deviceId,deviceName,platform,capturedAt,durationMs,appId,appName,source}=value;
+  const metadata=validateEvent({id,deviceId,deviceName,platform,capturedAt,durationMs,appId,appName,source:'activity',...(source==='activity'&&value.stateSeries?{stateSeries:value.stateSeries}:{}),privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
+  return {...metadata,source};
+}
 export function validateRecord(value: unknown): QueueRecord {
   const v = value as QueueRecord;
-  const event = validateEvent(v?.event);
+  const released=v?.localContentRelease;
+  if(released&&(!v.archiveAcknowledgment||!Number.isFinite(Date.parse(released.at))||released.pending!==undefined&&released.pending!==true||released.imageHash!==undefined&&!HASH.test(released.imageHash)))throw Error('Invalid local release');
+  const event = released?releasedEvent(v.event):validateEvent(v?.event);
   if(v.archiveAcknowledgment!==undefined&&(!v.archiveAcknowledgment||typeof v.archiveAcknowledgment.at!=='string'||!Number.isFinite(Date.parse(v.archiveAcknowledgment.at))||validateServerUrl(v.archiveAcknowledgment.origin)!==v.archiveAcknowledgment.origin))throw Error('Invalid archive acknowledgment');
-  if ((event.source === 'screen' ? (!v.blobHash || !HASH.test(v.blobHash) || !Number.isInteger(v.blobBytes) || v.blobBytes < 4 || v.blobBytes > MAX_IMAGE_BYTES) : (v.blobHash !== undefined || v.blobBytes !== 0)) || !Number.isInteger(v.attempts) || v.attempts < 0 || !Number.isFinite(v.nextAttemptAt) || v.nextAttemptAt < 0) throw new Error(moteText("队列记录无效"));
+  if ((released?(v.blobHash!==undefined||v.blobBytes!==0||v.syncBlocked===true):(event.source === 'screen' ? (!v.blobHash || !HASH.test(v.blobHash) || !Number.isInteger(v.blobBytes) || v.blobBytes < 4 || v.blobBytes > MAX_IMAGE_BYTES) : (v.blobHash !== undefined || v.blobBytes !== 0))) || !Number.isInteger(v.attempts) || v.attempts < 0 || !Number.isFinite(v.nextAttemptAt) || v.nextAttemptAt < 0) throw new Error(moteText("队列记录无效"));
   if(['uploaded','ocrResult','ocrRetryAt','localArchiveOnly'].some(key=>Object.hasOwn(v,key)))throw Error('Unsupported desktop queue record format');
   if ((v.syncBlocked !== undefined && typeof v.syncBlocked !== 'boolean') || (v.syncError !== undefined && (typeof v.syncError !== 'string' || v.syncError.length > 300))) throw new Error(moteText("同步失败状态无效"));
-  return { ...(v.archiveAcknowledgment?{archiveAcknowledgment:{at:v.archiveAcknowledgment.at,origin:v.archiveAcknowledgment.origin}}:{}),event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt, ...(v.syncBlocked ? { syncBlocked: true, syncError: v.syncError } : {}) };
+  return { ...(released?{localContentRelease:{at:released.at,...(released.pending?{pending:true as const}:{}),...(released.imageHash?{imageHash:released.imageHash}:{})}}:{}),...(v.archiveAcknowledgment?{archiveAcknowledgment:{at:v.archiveAcknowledgment.at,origin:v.archiveAcknowledgment.origin}}:{}),event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt, ...(v.syncBlocked ? { syncBlocked: true, syncError: v.syncError } : {}) };
 }
 export function validateImage(image: Buffer, hash?: string): void {
   if (image.length < 4 || image.length > MAX_IMAGE_BYTES || image[0] !== 0xff || image[1] !== 0xd8 || image.at(-2) !== 0xff || image.at(-1) !== 0xd9 || (hash && imageHash(image) !== hash)) throw new Error(moteText("队列图片格式、大小或校验和不正确"));
@@ -234,7 +244,7 @@ export class DurableQueue {
         checked.set(record.blobHash,data.length);
       }
       for (const name of await readdir(join(this.directory, 'blobs'))) {
-        if (name.endsWith('.tmp') || (name.endsWith('.jpg') && HASH.test(name.slice(0, -4)) && !checked.has(name.slice(0, -4)))) await unlink(join(this.directory, 'blobs', name));
+        if (name.endsWith('.tmp') || (name.endsWith('.jpg') && HASH.test(name.slice(0, -4)) && !checked.has(name.slice(0, -4))&&!Array.from(this.records.values()).some(record=>record.localContentRelease?.pending&&record.localContentRelease.imageHash===name.slice(0,-4)))) await unlink(join(this.directory, 'blobs', name));
       }
       const config = this.connection;
       await this.binding.initialize({ serverUrl: config.serverUrl ?? '', token: config.token }, restored.size > 0);
@@ -247,7 +257,7 @@ export class DurableQueue {
   contentRecords(): QueueRecord[] { return structuredClone([...this.records.values()]); }
   /** Detached content and receipt fields; originals and mutable event metadata stay in the queue. */
   contentSummaries(): readonly ContentSummary[] {
-    return Array.from(this.records.values(),({event,syncError,archiveAcknowledgment})=>({archiveAcknowledgment:archiveAcknowledgment?{...archiveAcknowledgment}:undefined,id:event.id,source:event.source,appName:event.appName,ocrText:event.ocrText,capturedAt:event.capturedAt,deviceName:event.deviceName,syncError}));
+    return Array.from(this.records.values(),({event,syncError,archiveAcknowledgment,localContentRelease})=>({localContentRelease:localContentRelease?{at:localContentRelease.at,...(localContentRelease.pending?{pending:true as const}:{})}:undefined,archiveAcknowledgment:archiveAcknowledgment?{...archiveAcknowledgment}:undefined,id:event.id,source:event.source,appName:event.appName,ocrText:event.ocrText,capturedAt:event.capturedAt,deviceName:event.deviceName,syncError}));
   }
   historyPending(): {source: CaptureEvent['source']; pending: number; review: number; blocked: number; retrying: number}[] { return ['screen','ui_page','note','activity','notification'].map(source => {const records=[...this.records.values()].filter(record=>!record.archiveAcknowledgment&&record.event.source===source);return {source:source as CaptureEvent['source'],pending:records.length,review:records.filter(r=>r.syncError==='upload_review_pending').length,blocked:records.filter(r=>r.syncBlocked&&r.syncError!=='upload_review_pending').length,retrying:records.filter(r=>!r.syncBlocked&&r.attempts>0).length};}); }
   recordsForBrowser(): QueueRecord[] { return structuredClone([...this.records.values()].filter(r => r.event.source === 'screen')); }
@@ -422,6 +432,32 @@ export class DurableQueue {
       const next={...record,archiveAcknowledgment,nextAttemptAt:0,syncBlocked:undefined,syncError:undefined};
       await atomicWrite(this.eventsPath(id),JSON.stringify(next),authorize);
       this.records.set(id,next);this.cachedStats=undefined;
+    });
+  }
+  /** Explicit owner cleanup, serialized with capture/ACK/backup writes. */
+  async releaseContent(id:string,authorize:()=>void=()=>{}):Promise<void>{
+    await this.exclusive(async()=>{
+      this.assertReady();authorize();
+      if(Object.entries(this.captureCheckpoint?.stages??{}).some(([id,state])=>state.held||id!=='state-series'&&state.value!==undefined&&state.value!==null&&(typeof state.value!=='object'||Object.keys(state.value).length>0)))throw Error(moteText('采集阶段仍有待处理输入，暂不能清理本机副本。'));
+      const record=this.records.get(id);
+      if(!record?.archiveAcknowledgment||record.syncBlocked||record.syncError)throw Error(moteText('本机副本已变化；尚无可读取的中央接收凭据。'));
+      if(record.localContentRelease&&!record.localContentRelease.pending)return;
+      const imageHash=record.localContentRelease?.imageHash??record.blobHash;
+      let next:QueueRecord={event:releasedEvent(record.event),archiveAcknowledgment:{...record.archiveAcknowledgment},blobBytes:0,attempts:0,nextAttemptAt:0,localContentRelease:{at:record.localContentRelease?.at??new Date().toISOString(),pending:true,...(imageHash?{imageHash}:{})}};
+      await atomicWrite(this.eventsPath(id),JSON.stringify(next),authorize);this.records.set(id,next);
+      // The built-in activity stage may retain its already-emitted head. Never
+      // clear another stage's held, unacknowledged input.
+      const state=this.captureCheckpoint?.stages['state-series'];
+      if((state?.value as {head?:CaptureEvent}|undefined)?.head?.id===id){
+        const checkpoint=structuredClone(this.captureCheckpoint!);checkpoint.stages['state-series'].value={};
+        await atomicWrite(this.stageCheckpointPath(),JSON.stringify(checkpoint),authorize);this.captureCheckpoint=checkpoint;
+      }
+      authorize();
+      if(imageHash&&![...this.records.values()].some(value=>value.event.id!==id&&(value.blobHash===imageHash||value.localContentRelease?.pending&&value.localContentRelease.imageHash===imageHash))){
+        await unlink(this.blobPath(imageHash)).catch(error=>{if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;});await syncDirectory(join(this.directory,'blobs'));
+      }
+      next={...next,localContentRelease:{at:next.localContentRelease!.at}};
+      await atomicWrite(this.eventsPath(id),JSON.stringify(next),authorize);this.records.set(id,next);
     });
   }
   async failed(id: string, now = Date.now(), random = Math.random): Promise<void> {
