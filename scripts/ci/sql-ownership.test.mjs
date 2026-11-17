@@ -135,7 +135,7 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,51);assert.equal(Object.keys(result.tables).length,153);
+ assert.equal(result.owners.length,63);assert.equal(Object.keys(result.tables).length,166);
  assert.deepEqual(result.owners.filter(owner=>owner.owner==='actions').map(owner=>owner.declaration),['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation']);
  for(const table of ['action_meta','action_proposals','action_semantic_checkpoints','action_targets','action_jobs','action_chunk_changes'])assert.deepEqual(result.tables[table],{owner:'actions',file:'apps/server/src/actions-schema.ts',installer:'actionsSchemaInstallation'});
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));
@@ -147,7 +147,7 @@ test('real production inventory and generated map stay in sync with explicit par
  assert.equal(result.tables.processing_jobs.owner,'processing-runtime');assert.equal(result.tables.processing_dependencies.owner,'processing-runtime');
  assert.ok(result.uncoveredFiles.includes('apps/server/src/processing-runtime.ts'),'the dynamic Processing view stays pending');
  assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,4);
- assert.equal(result.tables.assistant_task_runtime.owner,'assistant-task-runtime');assert.equal(result.owners.filter(owner=>owner.construction).length,3);
+ assert.equal(result.tables.assistant_task_runtime.owner,'assistant-task-runtime');assert.equal(result.owners.filter(owner=>owner.construction).length,4);
  assert.deepEqual(result.pendingRawWrites.map(({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})=>({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})),originalPendingWrites);
  assert.ok(result.pendingRawWrites.every(issue=>issue.rule==='sql-unproved-relation'&&issue.kind==='write'&&issue.completeSql===false),'known raw targets do not authorize these unproved writes');
  const projection=result.owners.find(owner=>owner.feature==='mote.activity');

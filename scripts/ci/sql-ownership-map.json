@@ -323,6 +323,72 @@
    "file": "apps/server/src/delegation-schema.ts"
   },
   {
+   "declaration": "assetSchemaInstallation",
+   "owner": "assets",
+   "fn": "assetSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "archivedFilesSchemaInstallation",
+   "owner": "archived-files",
+   "fn": "archivedFilesSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "evidenceMaterialLineageSchemaInstallation",
+   "owner": "evidence-material-lineage",
+   "fn": "evidenceMaterialLineageSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "assetSnapshotInputsReferencesInstallation",
+   "owner": "asset-reference-projections",
+   "fn": "assetSnapshotInputsReferencesSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "assetSnapshotTextReferencesInstallation",
+   "owner": "asset-reference-projections",
+   "fn": "assetSnapshotTextReferencesSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "assetFileVersionsReferencesInstallation",
+   "owner": "asset-reference-projections",
+   "fn": "assetFileVersionsReferencesSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "assetFileAssetsReferencesInstallation",
+   "owner": "asset-reference-projections",
+   "fn": "assetFileAssetsReferencesSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "assetCaptureReferencesInstallation",
+   "owner": "asset-reference-projections",
+   "fn": "assetCaptureReferencesSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "assetArchivedFilesReferencesInstallation",
+   "owner": "asset-reference-projections",
+   "fn": "assetArchivedFilesReferencesSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "evidenceDependenciesWithoutMaterialsInstallation",
+   "owner": "evidence-dependencies",
+   "fn": "evidenceDependenciesWithoutMaterialsSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
+   "declaration": "evidenceDependenciesWithMaterialsInstallation",
+   "owner": "evidence-dependencies",
+   "fn": "evidenceDependenciesWithMaterialsSchema",
+   "file": "apps/server/src/asset-evidence-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -515,6 +581,74 @@
      "name": "assistant_task_turn_deleted"
     }
    ]
+  },
+  {
+   "owner": "material",
+   "file": "apps/server/src/material-organizers.ts",
+   "declaration": "MaterialOrganizerRuntime.constructor",
+   "construction": true,
+   "callPath": [
+    "apps/server/src/plugins/material-organizer-service.ts#createMaterialOrganizerService",
+    "MaterialOrganizerRuntime.constructor"
+   ],
+   "objects": [
+    {
+     "type": "table",
+     "name": "material_organizer_inputs"
+    },
+    {
+     "type": "table",
+     "name": "material_organizer_backfills"
+    },
+    {
+     "type": "table",
+     "name": "material_organizer_groups"
+    },
+    {
+     "type": "index",
+     "name": "material_organizer_group_material"
+    },
+    {
+     "type": "table",
+     "name": "material_organizer_digests"
+    },
+    {
+     "type": "trigger",
+     "name": "material_capture_json_change"
+    },
+    {
+     "type": "trigger",
+     "name": "material_attachment_add"
+    },
+    {
+     "type": "trigger",
+     "name": "material_attachment_remove"
+    },
+    {
+     "type": "trigger",
+     "name": "material_file_job_change"
+    },
+    {
+     "type": "trigger",
+     "name": "material_file_artifact_add"
+    },
+    {
+     "type": "trigger",
+     "name": "material_file_artifact_change"
+    },
+    {
+     "type": "trigger",
+     "name": "material_file_chunk_add"
+    },
+    {
+     "type": "trigger",
+     "name": "material_file_chunk_change"
+    },
+    {
+     "type": "trigger",
+     "name": "material_file_chunk_remove"
+    }
+   ]
   }
  ],
  "tables": {
@@ -593,6 +727,36 @@
    "file": "apps/server/src/activity-memory-index.ts",
    "installer": "ActivityMemoryIndex.constructor"
   },
+  "archived_files": {
+   "owner": "archived-files",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "archivedFilesSchemaInstallation"
+  },
+  "artifact_material_inputs": {
+   "owner": "evidence-material-lineage",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "evidenceMaterialLineageSchemaInstallation"
+  },
+  "asset_parts": {
+   "owner": "assets",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "assetSchemaInstallation"
+  },
+  "asset_pins": {
+   "owner": "assets",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "assetSchemaInstallation"
+  },
+  "asset_references": {
+   "owner": "assets",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "assetSchemaInstallation"
+  },
+  "assets": {
+   "owner": "assets",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "assetSchemaInstallation"
+  },
   "assistant_task_runtime": {
    "owner": "assistant-task-runtime",
    "file": "apps/server/src/assistant-task-runtime-schema.ts",
@@ -652,6 +816,11 @@
    "owner": "capture-read-models",
    "file": "apps/server/src/read-models.ts",
    "installer": "captureReadModelsSchemaInstallation"
+  },
+  "capture_files": {
+   "owner": "archived-files",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "archivedFilesSchemaInstallation"
   },
   "capture_gallery": {
    "owner": "capture-projections",
@@ -758,6 +927,11 @@
    "file": "apps/server/src/capture-schema.ts",
    "installer": "captureSchemaInstallation"
   },
+  "evidence_dependency_edges": {
+   "owner": "evidence-dependencies",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "evidenceDependenciesWithMaterialsInstallation"
+  },
   "execution_cancellation_aliases": {
    "owner": "execution",
    "file": "apps/server/src/execution-schema.ts",
@@ -807,6 +981,11 @@
    "owner": "file",
    "file": "apps/server/src/file-schema.ts",
    "installer": "fileSchemaInstallation"
+  },
+  "file_blobs": {
+   "owner": "archived-files",
+   "file": "apps/server/src/asset-evidence-schema.ts",
+   "installer": "archivedFilesSchemaInstallation"
   },
   "file_chunks": {
    "owner": "file",
@@ -982,6 +1161,26 @@
    "owner": "material",
    "file": "apps/server/src/material-schema.ts",
    "installer": "materialSchemaInstallation"
+  },
+  "material_organizer_backfills": {
+   "owner": "material",
+   "file": "apps/server/src/material-organizers.ts",
+   "construction": "MaterialOrganizerRuntime.constructor"
+  },
+  "material_organizer_digests": {
+   "owner": "material",
+   "file": "apps/server/src/material-organizers.ts",
+   "construction": "MaterialOrganizerRuntime.constructor"
+  },
+  "material_organizer_groups": {
+   "owner": "material",
+   "file": "apps/server/src/material-organizers.ts",
+   "construction": "MaterialOrganizerRuntime.constructor"
+  },
+  "material_organizer_inputs": {
+   "owner": "material",
+   "file": "apps/server/src/material-organizers.ts",
+   "construction": "MaterialOrganizerRuntime.constructor"
   },
   "material_owner_declarations": {
    "owner": "material",
