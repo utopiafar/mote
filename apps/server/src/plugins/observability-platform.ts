@@ -3,7 +3,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
-import type {HostPluginContext,HostScope} from '@mote/plugin-host';
+import {currentServiceAccess,type HostPluginContext,type HostScope} from '@mote/plugin-host';
 import type {TokenUsage,UsageAttribution,UsageReceipt} from '@mote/shared';
 import {ServerDiagnostics,diagnosticStageFilters,type ServerDiagnosticsOptions} from '../diagnostics.js';
 import {ExecutionObservability,type ObservationClock} from '../execution-observability.js';
@@ -161,16 +161,15 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
     try{owner.assertCurrent();owner.signal.throwIfAborted();}catch{throw unavailable();}
   };
   const current=()=>{if(phase!=='active'&&phase!=='quiescing')throw unavailable();ownerCurrent();};
-  /** The host guards a service call, not methods on the object it returns. A
-   * retained meter must therefore recheck this platform on every write: accepted
-   * work may drain while quiescing, but a stopped/disposed platform rejects. */
-  const guardedMeter=(meter:ReturnType<UsageLedger['start']>)=>Object.freeze({
-    update:(tokens:TokenUsage)=>{current();meter.update(tokens);},
-    finish:(status:'completed'|'failed')=>{current();return meter.finish(status);},
-    discard:()=>{current();meter.discard();},
-  });
   const usagePort:UsageRecording=Object.freeze({
-    start:(...args)=>{current();if(!ledger)throw unavailable();return guardedMeter(ledger.start(...args));},
+    start:(...args)=>{
+      current();if(!ledger)throw unavailable();
+      // Preserve the invoking consumer's actual lease through the existing
+      // ledger write barriers, including DTO copying. Accepted pins may drain
+      // during quiesce; release or consumer/provider stop invalidates the meter.
+      const access=currentServiceAccess(),check=()=>{current();access?.assertCurrent();};
+      return Object.freeze(new UsageLedger(ledger,check).start(...args));
+    },
     operation:(operationId:string,createdAt?:string,finishedAt?:string):OperationUsage=>{current();if(!ledger)throw unavailable();return ledger.operation(operationId,createdAt,finishedAt);},
   });
   const view=(check:()=>void):ObservabilityRead=>Object.freeze({
