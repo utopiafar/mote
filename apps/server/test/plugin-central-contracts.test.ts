@@ -18,8 +18,8 @@ import type {MemoryExtractRouteDependencies,MemoryOwnerRouteDependencies} from '
 import type {MemoryOwnerPublication} from '../src/plugins/memory-publication-contract.js';
 import * as contractExports from '../src/plugins/central-contracts.js';
 
-// These are T1 declaration/type checks. No provider/host or runtime authorization is implemented
-// by C01, and a successful preflight is not evidence of a real startup/HTTP/SQLite T3 journey.
+// These are declaration/type checks. No provider/host or runtime authorization is implemented
+// by this contract module, and a successful preflight is not evidence of a real startup/HTTP/SQLite journey.
 test('the C01 transition audit is gone while service contracts and ownership stay explicit',()=>{
   assert.equal('centralMigrationSlices' in contractExports,false);
   assert.equal('centralFeatureMigrations' in contractExports,false);
@@ -67,7 +67,7 @@ for (const key of ['memoryInputSelection','memoryOwnerPublication'] as const) te
 });
 
 // These entries assemble the Vault, capture/source intake and Material publication writers.
-// Ordinary route consumers of their write ports do not acquire the C04 issuer/verifier.
+// Ordinary route consumers of their write ports do not acquire the fixed commit issuer/verifier.
 for (const consumer of [
   'mote.storage','mote.capture','mote.materials',
 ] as const) test(`${consumer} cannot start without its fixed C04 commit verifier`, () => {
@@ -174,7 +174,7 @@ function checkDomainTypes(vault: VaultTransactions, intake: CaptureIntake, read:
 void checkDomainTypes;
 
 // Actual consumer signatures: ContextQuery browsing and the existing exact-evidence route
-// can be assembled from the separate read capabilities. This is compile evidence, not T3.
+// can be assembled from the separate read capabilities. This is compile evidence, not a runtime journey.
 function checkContextReadTypes(exact: CaptureRead, browse: CaptureContextRead, images: CaptureImageRead,
   navigation: ContextNavigationRead, inventory: ContextInventoryRead, trees: ContextTreesRead,
   memory: MemoryRead, snapshots: MemoryReadSnapshots, context: object) {

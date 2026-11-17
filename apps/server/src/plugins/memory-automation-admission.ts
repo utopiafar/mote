@@ -5,7 +5,7 @@ import {MemoryAutomation,type MemoryAutomationStore,type MemoryAutomationState} 
 import {StoreError} from '../store.js';
 import {centralServices,type MemoryAdmission} from './central-contracts.js';
 
-/** C21C's durable admission owner: automatic-work pause/resume/stop commands and
+/** The durable admission owner: automatic-work pause/resume/stop commands and
  * the host switch cutover fence. Binding state and local stop participants stay
  * with their own owners; this plugin only decides whether new automatic work may
  * be admitted. */
@@ -69,15 +69,15 @@ export function createMemoryAutomationAdmission(store:MemoryAutomationStore,now=
     quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';},
     async stop(_reason?:StopReason){await close();},
     dispose:close,close,
-    /** Trusted composition bridge until K04 installs this domain through the
-     * host. Consumers receive the narrower MemoryAdmission service instead. */
+    /** Trusted composition bridge until the plugin host installs this domain;
+     * consumers receive the narrower MemoryAdmission service instead. */
     get automationForAssembly(){return ready();},
     admission,
   });
 }
 export type MemoryAutomationAdmission=ReturnType<typeof createMemoryAutomationAdmission>;
 
-/** Compiled trusted H04 owner. The host stages the port until start succeeds,
+/** Compiled trusted plugin owner. The host stages the port until start succeeds,
  * so a prepare failure cannot leave an acquirable admission service behind. */
 export function createMemoryAutomationAdmissionFactory(platform:MemoryAutomationAdmission,onStarted?:(bindings:MemoryAutomationAdmissionBindings)=>void){
   return (context:HostPluginContext):PluginLifecycle=>{

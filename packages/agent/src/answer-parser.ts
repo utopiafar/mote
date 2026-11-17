@@ -1,4 +1,4 @@
-import {assistantDraftProposalSchema,fileEvidenceSchema,recordMetadataSchema} from '@mote/shared';
+import {assistantDraftProposalSchema,fileEvidenceSchema,recordMetadataSchema,type AssistantDraftProposal} from '@mote/shared';
 import {evidenceExcerpt,excerptSlice} from './evidence-ledger.js';
 import {validateInlineCitations} from './citations.js';
 import {AgentResponseError} from './types.js';
@@ -22,7 +22,7 @@ function escapeJsonStringControls(raw: string): string {
   return normalized;
 }
 
-export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRecord>, options: {draft?: boolean} = {}) {
+export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRecord>, options: {draft?: boolean;currentInstruction?:boolean} = {}) {
   if (typeof raw !== 'string' || raw.length > 1_000_000)
     throw new AgentResponseError('The model response exceeds the answer size limit.', 'response_too_large');
   const clean = raw
@@ -54,9 +54,9 @@ export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRec
       "The model cited evidence that was not retrieved in this run.", 'unretrieved_citation',
     );
   validateInlineCitations(value.answer, ids, records.keys());
-  let draftProposal: {goal: string} | undefined;
+  let draftProposal: AssistantDraftProposal | undefined;
   if (value.draft !== undefined) {
-    // A draft is a goal-only proposal. It never carries scope, identity,
+    // A draft is a semantic proposal. It never carries scope, identity,
     // revision, capability, task or action fields; those belong to the host.
     if (!options.draft)
       throw new AgentResponseError(
@@ -64,11 +64,11 @@ export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRec
       );
     if (value.draft !== null) {
       const parsed = assistantDraftProposalSchema.safeParse(value.draft);
-      if (!parsed.success)
+      if (!parsed.success || parsed.data.input && !options.currentInstruction)
         throw new AgentResponseError(
-          "The model draft must contain only a nonempty goal.", 'invalid_shape',
+          "The model draft must contain a nonempty goal and only the Host-permitted current-input selection.", 'invalid_shape',
         );
-      draftProposal = {goal: parsed.data.goal.trim()};
+      draftProposal = {...parsed.data,goal: parsed.data.goal.trim()};
     }
   }
   return {

@@ -23,7 +23,7 @@ import {modelConfiguration} from '../model-configuration.js';
 import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';
 
-/** C18C's image intake, OCR/understanding stages and their model receipts. */
+/** The image intake, OCR/understanding stages and their model receipts. */
 export const imageProcessingServiceContribution={
   id:'image-processing-service',version:'1.0.0',surface:'data',runtime:'host',
   requires:[
@@ -83,7 +83,7 @@ export interface ImageProcessingService extends PluginLifecycle {
   /** One image-owned pass; the processing poll invokes the attached control. */
   tick():Promise<void>;
   bindAgent(configuredFor:(id:string)=>boolean):void;
-  /** CORE-03 binds the one optional plugin selection after control assembly. */
+  /** The trusted processing assembly binds the one optional local-image selection after control assembly. */
   bindLocalImages(binding:LocalImageUnderstandingBinding):void;
 }
 
@@ -216,7 +216,7 @@ export function createImageProcessingService(dependencies:ImageProcessingService
 }
 export type ImageProcessingPlatform=ReturnType<typeof createImageProcessingService>;
 
-/** Stable pre-H14 image routes. A new activation replaces the current port
+/** Stable image routes mounted by the feature bridge. A new activation replaces the current port
  * without mounting a second table; stopped or missing activations return 503. */
 export function createImageProcessingRoutes(owner?:{readonly withMediaOwnerBatch?:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;readonly withMediaOwnerIntent?:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>}){
   let current:ImageProcessingPort|undefined;

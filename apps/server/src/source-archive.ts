@@ -1,3 +1,5 @@
+import {installSchemaPlan} from './schema-installation.js';
+import {sourceArchiveSchemaInstallation} from './source-state-schema.js';
 import {z} from 'zod';
 import {existsSync,lstatSync,readdirSync,rmSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -22,22 +24,7 @@ const batchFile=/^([a-f0-9]{64})(?:\.plain|\.aes)$/;
  * Metadata is indexed only by the current SQLite schema. */
 export class SourceArchive {
   constructor(private store:Store) {
-    store.db.exec(`CREATE TABLE IF NOT EXISTS source_archive_sizes(source_id TEXT PRIMARY KEY,bytes INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS source_archive_indexed_sources(source_id TEXT PRIMARY KEY REFERENCES source_archive_sizes(source_id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS source_archive_groups(source_id TEXT NOT NULL,group_hash TEXT NOT NULL,group_key TEXT NOT NULL,checkpoint TEXT NOT NULL,
-        append_epoch INTEGER NOT NULL DEFAULT 0,head_count INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY(source_id,group_hash),FOREIGN KEY(source_id) REFERENCES source_archive_indexed_sources(source_id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS source_archive_versions(source_id TEXT NOT NULL,version_key TEXT NOT NULL,content_hash TEXT NOT NULL,
-        batch_hash TEXT NOT NULL,batch_index INTEGER NOT NULL,observed_at TEXT NOT NULL,group_hash TEXT NOT NULL,
-        PRIMARY KEY(source_id,version_key),FOREIGN KEY(source_id) REFERENCES source_archive_indexed_sources(source_id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS source_archive_heads(id INTEGER PRIMARY KEY,source_id TEXT NOT NULL,external_key TEXT NOT NULL,
-        version_key TEXT NOT NULL,group_hash TEXT NOT NULL,observed_at TEXT NOT NULL,content_hash TEXT NOT NULL,
-        UNIQUE(source_id,external_key),FOREIGN KEY(source_id) REFERENCES source_archive_indexed_sources(source_id) ON DELETE CASCADE);
-      CREATE INDEX IF NOT EXISTS source_archive_heads_group ON source_archive_heads(source_id,group_hash,id);
-      CREATE TABLE IF NOT EXISTS source_archive_batches(source_id TEXT NOT NULL,batch_hash TEXT NOT NULL,bytes INTEGER NOT NULL,
-        PRIMARY KEY(source_id,batch_hash),FOREIGN KEY(source_id) REFERENCES source_archive_indexed_sources(source_id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS source_archive_recovery_groups(source_id TEXT NOT NULL,group_hash TEXT NOT NULL,
-        PRIMARY KEY(source_id,group_hash),FOREIGN KEY(source_id) REFERENCES source_archive_indexed_sources(source_id) ON DELETE CASCADE);`);
+    installSchemaPlan(store.db,[sourceArchiveSchemaInstallation]);
     privateDirectory(join(store.directory,'source-archive'));
   }
   private directory(sourceId:string){const path=join(this.store.directory,'source-archive',archiveHash(sourceId));privateDirectory(path);return path;}

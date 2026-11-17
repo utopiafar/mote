@@ -25,6 +25,8 @@ export const installations={
  'connectors/mcp-import-state.ts':['mcpStateSchemaInstallation'],
  'connectors/recording-state.ts':['recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'],
  'assistant-task-runtime-schema.ts':['assistantTaskRuntimeSchemaInstallation'],
+ 'memory-input-plans-schema.ts':['memoryInputPlansSchemaInstallation'],
+ 'source-state-schema.ts':['sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation'],
  'memory-input-authorization.ts':['memoryInputAuthorizationSchemaInstallation'],
  'memory-extraction-drafts.ts':['memoryExtractionDraftsSchemaInstallation'],
  'memory-phase-outputs.ts':['memoryPhaseOutputsSchemaInstallation'],
@@ -56,7 +58,6 @@ export const consumers={
  'source-archive-reader.ts':'source',
  'source-catalog.ts':'source-catalog',
  'source-context-lineage.ts':'source',
- 'source-context.ts':'source',
  'source-context-catalog.ts':'source',
  'source-context-contract.ts':'source',
  'source-material-view.ts':'source',
@@ -83,6 +84,48 @@ export const consumers={
 /** These Task adapter methods belong to the formal runtime marker owner. The
  * older Task schema and other consumers in the same file remain pending. */
 export const consumerScopes={
+ 'memory-input-plans.ts':{
+  'MemoryInputPlans.list':'memory-input-plans',
+  'MemoryInputPlans.get':'memory-input-plans',
+  'MemoryInputPlans.put':'memory-input-plans',
+ },
+ 'source-context.ts':{
+  'SourceContextStore.constructor':'source-context',
+  'SourceContextStore.source':'source',
+  'SourceContextStore.getAtVersion':'source-context',
+  'SourceContextStore.set':'source',
+  'SourceContextStore.export':'source-context',
+  'SourceContextStore.restore':'source-context',
+ },
+ 'source-archive.ts':{
+  'SourceArchive.ensureIndexed':'source-archive',
+  'SourceArchive.ensureGroup':'source-archive',
+  'SourceArchive.indexedCheckpoint':'source-archive',
+  'SourceArchive.hasSource':'source-archive',
+  'SourceArchive.versionInfo':'source-archive',
+  'SourceArchive.readVersion':'source-archive',
+  'SourceArchive.currentHeadsPage':'source-archive',
+  'SourceArchive.currentSnapshot':'source-archive',
+  'SourceArchive.receive':'source-archive',
+  'SourceArchive.forget':'source-archive',
+ },
+ 'source-pipelines.ts':{
+  'SourcePipelineRuntime.row':'source-pipeline',
+  'SourcePipelineRuntime.enqueueWork':'source-pipeline',
+  'SourcePipelineRuntime.validWork':'source-pipeline',
+  'SourcePipelineRuntime.admitWork':'source-pipeline',
+  'SourcePipelineRuntime.organizeGroup':'source-pipeline',
+  'SourcePipelineRuntime.publishGroup':'source-pipeline',
+  'SourcePipelineRuntime.projectWork':'source-pipeline',
+  'SourcePipelineRuntime.selected':'source-pipeline',
+  'SourcePipelineRuntime.receive':'source-pipeline',
+  'SourcePipelineRuntime.tick':'source-pipeline',
+  'SourcePipelineRuntime.drainPipeline':'source-pipeline',
+  'SourcePipelineRuntime.storedOptions':'source-pipeline',
+  'SourcePipelineRuntime.configure':'source-pipeline',
+  'SourcePipelineRuntime.memoryAllowed':'source-pipeline',
+  'SourcePipelineRuntime.status':'source-pipeline',
+ },
  'assistant-tasks.ts':{
   'AssistantTasks.currentBatch':'assistant-task-runtime',
   'AssistantTasks.continueSteering':'assistant-task-runtime',
@@ -275,6 +318,78 @@ export const sharedReads=[
   "reason": "Check the original accepted supplement request hash against its saved QueryRun receipt."
  },
  {
+  "from": "apps/server/src/source-context.ts",
+  "to": "source_connections",
+  "symbol": "5a26256857fe0bd59feb0fa0b2e0df0f5e9149b4bba3ff45d2f29817278a60ba",
+  "scope": "SourceContextStore.restore",
+  "scopeFingerprint": "bdf5f2bc1ae9f68a44d2b00b8819b8ba3bcbfa2f2ed210a74195cedcd0a956f3",
+  "reason": "Validate restored declaration history against canonical Source IDs whose current metadata already carries a context pin; do not rewrite the Source pointer."
+ },
+ {
+  "from": "apps/server/src/source-pipelines.ts",
+  "to": "source_connections",
+  "symbol": "1a90286d107264d340491e42abc94a6c10feb415d90983a220a27c2a1702de05",
+  "scope": "SourcePipelineRuntime.validWork",
+  "scopeFingerprint": "41100c9d5c3ae3a338f481179aa4aadb4dd5acc06a91f86c5bedd8daf3f30b8b",
+  "reason": "Compare the current Source identity with the accepted immutable work fingerprint before continuing the pinned archive group."
+ },
+ {
+  "from": "apps/server/src/source-pipelines.ts",
+  "to": "source_connections",
+  "symbol": "51a199494c714e32e24760b4907024dcadd8475ae68d30656f27348f179dc813",
+  "scope": "SourcePipelineRuntime.admitWork",
+  "scopeFingerprint": "1b9d6700cf85000d90bf994b49d80ad1a989604f6353842feea8b14f4a4c21f4",
+  "reason": "Check the Source kind against the selected pipeline and exact installed recipe before admitting existing archive work."
+ },
+ {
+  "from": "apps/server/src/source-pipelines.ts",
+  "to": "source_connections",
+  "symbol": "5a66ecfff8e22e1c2533b084aa36f7ac6297d0ba389fc75e8c9e49ccc636ecb0",
+  "scope": "SourcePipelineRuntime.tick",
+  "scopeFingerprint": "63e8fbe0804b6be34f054ffc4de42b75284673e97584a7f117431204435a15b9",
+  "reason": "Reconcile deterministic recipe upgrades only against the previously accepted Source and configuration fingerprints."
+ },
+ {
+  "from": "apps/server/src/source-pipelines.ts",
+  "to": "source_connections",
+  "symbol": "a19fe332bad6f19db42e41be2e8694d7d5bc7a3ad4f0d8208cd3f7109a3503b7",
+  "scope": "SourcePipelineRuntime.memoryAllowed",
+  "scopeFingerprint": "9d4c059bac1b8474c96186d7998d8f6553f52fb54eff4138a2fcafd8b3622899",
+  "reason": "Resolve the existing Source kind and archive pipeline for ongoing Material Memory authority without admitting new Source receipts."
+ },
+ {
+  "from": "apps/server/src/source-pipelines.ts",
+  "to": "source_connections",
+  "symbol": "aa75c5fc792542902afecdb595e45e2b1c1fd8258c0d59d1dd2d65b99fbb3e25",
+  "scope": "SourcePipelineRuntime.publishGroup",
+  "scopeFingerprint": "50bab93515605686c551fa3a93584c19023210db6c715515db3f39af8369319f",
+  "reason": "Recheck Source identity against the prepared result inside fenced Material publication; the read grants no Source mutation."
+ },
+ {
+  "from": "apps/server/src/source-pipelines.ts",
+  "to": "source_connections",
+  "symbol": "cc2ab50248ab7058b9519e11d5cc0696861d76bce2f507d457969b13b4c646d1",
+  "scope": "SourcePipelineRuntime.organizeGroup",
+  "scopeFingerprint": "1f6718a619519e1e172f1bb1d9a61e1f041daddf69f8e7f9c630ec91b7b16f06",
+  "reason": "Read Source identity metadata for the selected recipe and the accepted group while preparing its bounded Material draft."
+ },
+ {
+  "from": "apps/server/src/source-pipelines.ts",
+  "to": "source_connections",
+  "symbol": "dd03852f0ac8ea26d2b18bdadf01e575ce7a66867db754d794ff889ccacb6d47",
+  "scope": "SourcePipelineRuntime.configure",
+  "scopeFingerprint": "62066ed8811f9c0f0eeeea2e49ef4c9e1ca3eb94da80228e027aedd2e691b2d5",
+  "reason": "Validate Source kind and the existing physical storage contract before writing only pipeline-owned bindings and configuration."
+ },
+ {
+  "from": "apps/server/src/source-pipelines.ts",
+  "to": "source_connections",
+  "symbol": "def4469d98bdf5ba5cb7229cddb238f11d8c2f07ed6ba26ea704df320fb1086c",
+  "scope": "SourcePipelineRuntime.enqueueWork",
+  "scopeFingerprint": "abf3962e943a71b4f523f936443a2172e5df4896ecf0c33dcbadfe253b72e924",
+  "reason": "Pin the accepted archive work to its existing Source identity and pipeline configuration before enqueueing its execution generation."
+ },
+ {
   "from": "apps/server/src/plugins/instance-state.ts",
   "to": "source_connections",
   "symbol": "2f759e3921782b241e17e54714ba24586a9886226de682df0ac51b78062f8365",
@@ -307,7 +422,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",
@@ -1434,6 +1549,83 @@ export const retainedClassificationScopes=[
   "classification": "write-unproved-pending",
   "targetOwner": "query-run-storage",
   "constructionFingerprint": "3e00d98ef0ac2640ea837f7562561477554e367e696e1d2b655e6eda04866902"
+ },
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/evidence-store.ts",
+  "to": "source_pipeline_bindings",
+  "kind": "read",
+  "symbol": "3cf81441c93e2b10bbd1e5e64c037517e3d898fb8b467ac209dddbc825756e7d",
+  "scope": "EvidenceStore.exportArchive",
+  "scopeFingerprint": "ec3905d1000d6389813a97e87f2bce4e214f168ed88d2a92d495fa9a154353d7",
+  "operation": "read",
+  "completeSql": true
+ },
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/material-portable.ts",
+  "to": "source_context_declarations",
+  "kind": "read",
+  "symbol": "4d57227e9a17d096f28ed077fc8f5997542ae2e574cbcc92f7bb7feb43aa13bc",
+  "scope": "exportPortableMaterials",
+  "scopeFingerprint": "d2c17a00575b5ae5ba932c51364e2830442ef3f5e3d5abde4d4e9306c00105e5",
+  "operation": "read",
+  "completeSql": true
+ },
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/material-portable.ts",
+  "to": "source_context_declarations",
+  "kind": "read",
+  "symbol": "61b67decb19ddea3c358d654a2197177bd7d6d3eed6cac1a5360fee13e5b9eb6",
+  "scope": "portableMaterialEstimate",
+  "scopeFingerprint": "6476a4b2469e481d21325287e2b67b452f4c9dd3d57a9652358b92b13e631dff",
+  "operation": "read",
+  "completeSql": true
+ },
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/material-source-pin.ts",
+  "to": "source_pipeline_work",
+  "kind": "read",
+  "symbol": "0ee060d35490c8c76644aaf5106e44b3efef9c8fd888ed0c559f5331507cc97e",
+  "scope": "materialSourcePin",
+  "scopeFingerprint": "9b9816cac8adc40782be42f7fe85225278e7d61f9a0695e66aa0aa83eddfac4c",
+  "operation": "read",
+  "completeSql": true
+ },
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/source-archive-reader.ts",
+  "to": "source_archive_sizes",
+  "kind": "read",
+  "symbol": "899ab76b784556136dc92b7741dbb381a07422a81b709da084076ce9764945a0",
+  "scope": "SourceArchiveRawReader.page",
+  "scopeFingerprint": "c8a3ef7f38c4a1395571a3dcc4c827992743d85edbc31a0cb8bedfc53d5cbe54",
+  "operation": "read",
+  "completeSql": true
+ },
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/source-archive-reader.ts",
+  "to": "source_archive_sizes",
+  "kind": "read",
+  "symbol": "89feecf1ca3ce06c8bd9d53658c2a5e172832f9602ed3751f50dcb95308f2659",
+  "scope": "SourceArchiveRawReader.sourceId",
+  "scopeFingerprint": "e0641fdd33c510229d6ef2171b3cb0eabe91afd0d045748e7c75cb062310d0b2",
+  "operation": "read",
+  "completeSql": true
+ },
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/source-context.ts",
+  "to": "source_context_declarations",
+  "kind": "write",
+  "symbol": "8a86d33da7db56ad9b600ff5c33089ed8af48f7fda5134b4607d4ef267d5a274",
+  "scope": "SourceContextStore.set",
+  "scopeFingerprint": "32606ba9704638f033d828f7b0ba3aa84230c420a913ea7850973d8df6b673d8",
+  "operation": "insert",
+  "completeSql": true
  }
 ];
 
@@ -1471,11 +1663,11 @@ export const nonSqlCalls=[
   "entryType": "AssistantTaskQuestions",
   "definitionFile": "apps/server/src/assistant-task-questions.ts",
   "occurrence": 1,
-  "moduleFingerprint": "12bfddc3fb7eaf7d1d30af5a88ee06415dbfb86e7c03457c7a35ae84db28c800",
-  "scopeFingerprint": "e338633cf97c5f0616a6dc895eef9ec7a600730df58bffc28580c282a7a13b31",
+  "moduleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "scopeFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "callFingerprint": "3d906b2269f1ad4ee39e3c5161d750d5f20bab1ccac157f6b30bc6d8ad1663cc",
   "bindingFingerprint": "2d05845989f54f3e2c061756d456fbc2b7c19054c00fbd8549f74b294877cf4c",
-  "assignmentFingerprint": "80c8c1d5a0eba12c2d4f4f40f801ccea705053dfc27143d4388efe74bf0c9610",
+  "assignmentFingerprint": "e30ea9bd2415ba9abdc28b809cc47c018cb799506b2c67923c3706231c4b14a3",
   "importFingerprint": "91c632ad6f9ebcd86c2183a7d687309531b2c04f4e2d976be04799cb9366e3c9",
   "definitionModuleFingerprint": "6aa34bb3950e19a727e66805433262b774bc8be519e04cb0b60081c2a15a8810",
   "definitionFingerprint": "b65951dae7702e66406f51295ffe91f152a42b347de0d9257558ce8fc46f1289",
@@ -1491,8 +1683,8 @@ export const nonSqlCalls=[
   "entryType": "AssistantTaskSteering",
   "definitionFile": "apps/server/src/assistant-task-steering.ts",
   "occurrence": 1,
-  "moduleFingerprint": "12bfddc3fb7eaf7d1d30af5a88ee06415dbfb86e7c03457c7a35ae84db28c800",
-  "scopeFingerprint": "e338633cf97c5f0616a6dc895eef9ec7a600730df58bffc28580c282a7a13b31",
+  "moduleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "scopeFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "callFingerprint": "1a8498f52fc1e958977fa07a005043d951c0beddeb51997bfa9b2eb241ad7507",
   "bindingFingerprint": "61cf8fed3926ae5cd5698e04777fd48667042dccb961ed0470425f89c0b22f8a",
   "assignmentFingerprint": "40acd4e8a4e63ee3ce8741171a182adb1c7fe024aba9c5ec1d640ccd426fef72",
@@ -1517,8 +1709,8 @@ export const nonSqlCalls=[
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
   "importFingerprint": "2ea0a997a5352c58cc652eeb49a1073b2cafef6aca8d1d603f16e5aaebcd0e05",
-  "definitionModuleFingerprint": "12bfddc3fb7eaf7d1d30af5a88ee06415dbfb86e7c03457c7a35ae84db28c800",
-  "definitionFingerprint": "e338633cf97c5f0616a6dc895eef9ec7a600730df58bffc28580c282a7a13b31",
+  "definitionModuleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "definitionFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "reason": "Exact imported Task adapter prepares a QueryInput through its statically bound class method; the call is not a SQLite statement."
  }
 ];
@@ -1578,7 +1770,7 @@ export const storageConstructions=[
   "owner": "assistant-task-storage",
   "file": "assistant-tasks.ts",
   "scope": "AssistantTasks.constructor",
-  "scopeFingerprint": "945d47677833cb6f576a9db01a764882f8e4ea349d7b532654c955e71f36cb13",
+  "scopeFingerprint": "311c90e384f6f263a25fb3cc69cf9a3eb6f9a236e7c24477060d850a4cdcbd00",
   "statementFingerprint": "7241408afabccd57333b9782790ad9549a6b2ab234853b3d5f9ab1f6651c667f",
   "sqlFingerprint": "22c21d3bf441b58d3edae8ac255f03f580428a4e8f81d0e21f720a954465715a",
   "calls": [
