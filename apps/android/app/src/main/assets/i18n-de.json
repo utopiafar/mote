@@ -10827,5 +10827,9 @@
   "原中央与当前连接不一致，未发送读取请求。": "Der ursprüngliche Central entspricht nicht der aktuellen Verbindung. Es wurde keine Leseanfrage gesendet.",
   "从中央另存原件": "Original aus Central speichern",
   "采集阶段仍有待处理输入，暂不能清理本机副本。": "Erfassungsstufen enthalten noch ausstehende Eingaben. Diese lokale Kopie kann noch nicht gelöscht werden.",
-  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "Die lokale Kopie wurde noch nicht vollständig gelöscht. Versuchen Sie es erneut; verbleibende Eingaben werden nicht erneut hochgeladen."
+  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "Die lokale Kopie wurde noch nicht vollständig gelöscht. Versuchen Sie es erneut; verbleibende Eingaben werden nicht erneut hochgeladen.",
+  "采集范围与隐私": "Erfassungsumfang und Datenschutz",
+  "选择后自动填写": "Nach der Auswahl automatisch ausgefüllt",
+  "本机设置": "Lokale Einstellungen",
+  "压缩前图片": "Bild vor der Komprimierung"
 }
