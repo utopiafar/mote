@@ -1,12 +1,14 @@
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
 import {ExecutionEngine,ExecutionFailure} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {sha256,StoreError,type Store} from './store.js';
 
-/** Owned execution checkpoints, not an evictable cache or query evidence. */
-export class MemoryPhaseOutputs {
- constructor(private store:Store,private engine:ExecutionEngine){
-  store.db.exec(`CREATE TABLE IF NOT EXISTS memory_phase_outputs(
+export const memoryPhaseOutputsSchemaInstallation={owner:'memory-phase-outputs',requires:[],prerequisites:[{owner:'memory',objects:[{type:'table',name:'memory_batches'},{type:'table',name:'memory_jobs'},{type:'table',name:'memory_batch_dependencies'}]},{owner:'execution',objects:[{type:'table',name:'execution_steps'}]}],install:memoryPhaseOutputsSchema} as const satisfies SchemaInstallation;
+
+function memoryPhaseOutputsSchema(db:DatabaseSync){
+  db.exec(`CREATE TABLE IF NOT EXISTS memory_phase_outputs(
    step_id TEXT PRIMARY KEY REFERENCES execution_steps(id) ON DELETE CASCADE,
    batch_id TEXT NOT NULL REFERENCES memory_batches(id) ON DELETE CASCADE,
    phase TEXT NOT NULL CHECK(phase IN ('extract','review')),input_hash TEXT NOT NULL,
@@ -28,6 +30,12 @@ export class MemoryPhaseOutputs {
     AND json_extract(b.json,'$.status') NOT IN ('invalidated','completed') AND coalesce(json_extract(b.json,'$.privateRetired'),0)=0
     AND json_extract(j.json,'$.status') NOT IN ('cancelled','paused'))
    BEGIN SELECT RAISE(ABORT,'Memory phase authority retired'); END;`);
+}
+
+/** Owned execution checkpoints, not an evictable cache or query evidence. */
+export class MemoryPhaseOutputs {
+ constructor(private store:Store,private engine:ExecutionEngine){
+  installSchemaPlan(store.db,[memoryPhaseOutputsSchemaInstallation]);
  }
  id(batchId:string,phase:'extract'|'review',inputHash:string){return 'memory-phase:'+sha256([batchId,phase,inputHash].join(':'));}
  read<T>(stepId:string,inputHash:string):T|undefined{
