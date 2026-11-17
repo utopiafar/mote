@@ -1873,13 +1873,6 @@
   {
     "rule": "server-host-allowlist",
     "from": "apps/server/src/host.ts",
-    "to": "apps/server/src/features/features.ts",
-    "kind": "runtime",
-    "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
-  },
-  {
-    "rule": "server-host-allowlist",
-    "from": "apps/server/src/host.ts",
     "to": "apps/server/src/features/files.ts",
     "kind": "runtime",
     "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
