@@ -191,6 +191,13 @@
    "file": "apps/server/src/assistant-task-runtime-schema.ts"
   },
   {
+   "declaration": "memoryInputPlansSchemaInstallation",
+   "owner": "memory-input-plans",
+   "fn": "memoryInputPlansSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/memory-input-plans-schema.ts"
+  },
+  {
    "declaration": "sourceArchiveSchemaInstallation",
    "owner": "source-archive",
    "fn": "sourceArchiveSchema",
@@ -853,6 +860,11 @@
    "owner": "memory-input-authorization",
    "file": "apps/server/src/memory-input-authorization.ts",
    "installer": "memoryInputAuthorizationSchemaInstallation"
+  },
+  "memory_input_plans": {
+   "owner": "memory-input-plans",
+   "file": "apps/server/src/memory-input-plans-schema.ts",
+   "installer": "memoryInputPlansSchemaInstallation"
   },
   "memory_jobs": {
    "owner": "memory",

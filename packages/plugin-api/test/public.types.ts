@@ -3,7 +3,7 @@ import {
   type PluginContext, type PluginSnapshot, type PluginFailure, type Cancellation,
 } from '../src/index.js';
 
-// Port shapes reflect actual baseline boundaries. They are type examples, not implemented consumers/T3.
+// Port shapes reflect actual baseline boundaries. They are type examples, not implemented consumers or runtime code.
 interface OriginalReadPort { read(ref: string, signal: AbortSignal): Promise<{id: string; text: string}> }
 interface MutableStorePort { delete(id: string): Promise<void> }
 const original = serviceContract<OriginalReadPort>('mote.evidence.original', '1');

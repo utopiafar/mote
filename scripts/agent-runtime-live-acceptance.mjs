@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Manual G4 real-model acceptance for the converged Agent runtimes.
+/** Manual real-model acceptance for the converged Agent runtimes.
  *
  * This runner is intentionally separate from the ordinary test glob and from
  * the fixture-only deep-extension matrix. It refuses to start without an
