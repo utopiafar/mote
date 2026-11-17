@@ -3,6 +3,8 @@ import type {QueryInput} from '@mote/agent';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {sha256,StoreError,type Store} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {memoryNativeStagesSchemaInstallation} from './memory-native-stage-schema.js';
 import {memoryEngineDraftPin,type MemoryEngineDraftContext,type MemoryEngineDraftPin,type MemoryNativeStageAdapter,type MemoryNativeStagePort} from './memory-native-stage-contract.js';
 
 /** Owns native preparation pins and transport cleanup, independently of the
@@ -14,18 +16,23 @@ export class MemoryNativeStages implements MemoryNativeStagePort {
   private unregister?:()=>Promise<void>;
   private closing?:Promise<void>;
   constructor(private store:Store,private engine:ExecutionEngine,private adapter:MemoryNativeStageAdapter={}){
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_engine_stage_cleanups(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_engine_stage_drafts(id TEXT PRIMARY KEY,json TEXT NOT NULL,checkpoint_id TEXT); CREATE INDEX IF NOT EXISTS memory_engine_stage_checkpoint ON memory_engine_stage_drafts(checkpoint_id);');
+    installSchemaPlan(store.db,[memoryNativeStagesSchemaInstallation]);
     store.registerStorage('memory-lifecycle',{
       memory_engine_stage_cleanups:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128',
       memory_engine_stage_drafts:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+coalesce(length(CAST(checkpoint_id AS BLOB)),0)+128',
     });
     if(adapter.settle){
+      try{
       this.unregister=engine.register({kind:'memory.engine-stage-cleanup',pool:'plugin-control',concurrency:()=>1,policy:EXECUTION_POLICIES.control,validate:()=>!this.stopping,
         execute:async step=>{const row=store.db.prepare('SELECT json,state FROM memory_engine_stage_cleanups WHERE id=?').get(String(step.input.id));if(row?.state==='pending')try{await this.track(()=>adapter.settle!(JSON.parse(String(row.json))));}catch{throw new ExecutionFailure('waiting','memory_engine_cleanup_pending',5000);}},
         commit:step=>{store.db.prepare("UPDATE memory_engine_stage_cleanups SET state='acknowledged' WHERE id=?").run(String(step.input.id));}});
       for(const row of store.db.prepare("SELECT id FROM memory_engine_stage_cleanups WHERE state='pending'").all())this.queueCleanup(String(row.id));
       for(const row of store.db.prepare("SELECT DISTINCT d.checkpoint_id FROM memory_engine_stage_drafts d JOIN execution_steps e ON e.id=d.checkpoint_id WHERE e.state IN ('succeeded','failed','cancelled','stale')").all()){const step=engine.get(String(row.checkpoint_id));if(step)this.finalize(step);}
+      }catch(error){
+        // Constructor failure has no owner to close it. Stop queued recovery
+        // and withdraw its handler before preserving the original failure.
+        void this.close().catch(()=>{});throw error;
+      }
     }
   }
   /** Track actual adapter completion even after the engine releases its logical

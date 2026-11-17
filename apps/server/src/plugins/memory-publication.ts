@@ -12,6 +12,8 @@ import type {EvidenceStore as Store} from '../evidence-store.js';
 import {memorySchema,type Memory} from '../memory-schema.js';
 import {randomUUID} from 'node:crypto';
 import {installMemoryPublicationRetirement,registerMemoryPublicationDependencies,memoryPublicationRetired} from './memory-private-storage.js';
+import {installSchemaPlan} from '../schema-installation.js';
+import {memoryPublicationSchemaInstallation} from './memory-publication-schema.js';
 import {createEvidenceDeletion,type EvidenceDeletion,type EvidenceDeletionPorts} from './evidence-deletion.js';
 import {exportBoundMemories,type MemoryBackup,type MemoryBackupBindingPort} from './memory-backup.js';
 import {registerMemoryExtractRoute,registerMemoryOwnerRoutes,type MemoryExtractRouteDependencies} from '../features/memory/publication.js';
@@ -56,13 +58,11 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
   private closed=false;
   revokeEvidence?:(ids:string[])=>Promise<void>;
   constructor(readonly store:Store,readonly memories:MemoryPublicationRecordPort,readonly bindings:MemoryPublicationBindingPort,private executor?:ExecutionEngine,options:MemoryPublicationOptions={}){
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_publications(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_publication_outputs(id TEXT PRIMARY KEY,json TEXT NOT NULL);');
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_writes(id TEXT PRIMARY KEY,parent_id TEXT NOT NULL,json TEXT NOT NULL,state TEXT NOT NULL,automatic INTEGER NOT NULL DEFAULT 0);');
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_owner_mutations(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_erases(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_evidence_revocations(id TEXT PRIMARY KEY,generation INTEGER NOT NULL,json TEXT NOT NULL,state TEXT NOT NULL);');
-    installMemoryPublicationRetirement(store);
+    installSchemaPlan(store.db,[{...memoryPublicationSchemaInstallation,install:db=>{
+      memoryPublicationSchemaInstallation.install(db);
+      db.exec('CREATE TABLE IF NOT EXISTS memory_provider_evidence_revocations(id TEXT PRIMARY KEY,generation INTEGER NOT NULL,json TEXT NOT NULL,state TEXT NOT NULL);');
+      installMemoryPublicationRetirement(store);
+    }}]);
     // This plugin owns the publication journals and their retained retirement;
     // the vault ledger keeps no domain table names.
     store.registerStorage('memory-publication',{
