@@ -26,7 +26,7 @@ const matrix=[
  ['plugin-lifecycle','Plugin off/on, missing model and worker failure'],
  ['intake-policy','Four intake entrances, source/batch selection and existing authorization'],
  ['image-products','Wordless/small-text/long/cropped images and independent OCR failures'],
- ['memory','Independent extraction/review pixels, selected models and original-backed proof'],
+ ['memory','Extractor pixels, model/recipe-selected extra review, selected models and host-verified proof'],
  ['ask','Direct image, search then original, region follow-up and citations'],
  ['recovery','Cancellation, deletion, replacement, source changes and restart'],
  ['clients','Web/Android/Mac controls and the same Central facts'],
@@ -59,7 +59,7 @@ export function acceptancePlan(candidate:string,worktreeDirty=false){
   fullJourneyCompleted:false,releaseAccepted:false,
   paths:{
    A:{state:'not_run',description:'Default Central → official plugin → local worker → current interpretation → Material/index → selected Ask → original/crop → citation'},
-   B:{state:'not_run',description:'Same original → existing Memory admission → selected extractor pixels → independent reviewer pixels → published proof → original deletion invalidation'},
+   B:{state:'not_run',description:'Same original → existing Memory admission → selected extractor pixels → extra reviewer pixels when required by the model or selected recipe (otherwise no extra call) → host-verified published proof → ordinary original release may retain valid published Memory; explicit forget or authorization revocation denies access'},
   },
   releaseMatrix:matrix.map(([id,scenario])=>({id,scenario,state:'not_run'})),
   checks:[{cwd:'apps/server',executable:'node',arguments:contractArguments}],
