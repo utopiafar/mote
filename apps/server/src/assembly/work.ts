@@ -9,13 +9,8 @@ import type {ConfigService} from '../config-service.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {FileStore} from '../files.js';
 import type {MaterialStore} from '../materials.js';
-import type {Operations} from '../operations.js';
-import type {DelegationRuntime} from '../delegation-runtime.js';
-import type {ModelSettingsStore} from '../model-settings.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
-import {modelConfiguration} from '../model-configuration.js';
 import type {ProcessingRuntime} from '../processing-runtime.js';
-import type {ServerDiagnostics} from '../diagnostics.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import {requestLocale} from '../i18n.js';
 import type {ModelConnection} from '../background-model-authorization.js';
@@ -32,7 +27,8 @@ import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import {actionsServicesPlugin,actionsServicesInputsContribution,actionsServicesInputsDeclaration,actionsServicesInputsContract,actionsServicesContract,type ActionsServices} from '../plugins/actions-services.js';
 import {createActionsServiceInputs} from '../action-service-inputs.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
-import {createActivityServices} from '../plugins/activity-services.js';
+import {prepareActivityInputs,type ActivityAssemblyDependencies} from './activity.js';
+import {activityServicesContract,type ActivityServices} from '../plugins/activity-services.js';
 
 /** Executable work domains and their private build input providers. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
@@ -70,12 +66,14 @@ export type WorkDomainDependencies=Parameters<typeof insightServiceInputs>[0]&{
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly resources:ServerResources;
   readonly actions:ActionsAssemblyDependencies;
+  readonly activity:ActivityAssemblyDependencies;
 }
 
 /** Publish only the private typed adapter. The selected declaration, common
  * loader and plugin lifecycle create the domain and contribute its routes. */
 export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
-  const {bootstrap,resources,actions:actionInputs,...inputs}=dependencies;
+  const {bootstrap,resources,actions:actionInputs,activity:activityInputs,...inputs}=dependencies;
+  await prepareActivityInputs(bootstrap,resources,activityInputs);
   const selected=bootstrap.selectsFeature('mote.insights')&&bootstrap.selectsPlugin(insightServicesPlugin.contribution.id);
   if(selected){
     if(!bootstrap.selectsPlugin(insightServicesInputsContribution.id))throw Error('Insights input provider is not selected');
@@ -114,6 +112,11 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
     resources.defer(()=>handle.close('shutdown'));
   }
   const domains=await bootstrap.activateDomains();
+  let activity:ActivityServices|undefined;
+  if(bootstrap.selectsFeature('mote.activity')&&bootstrap.selectsPlugin('activity-services')){
+    const lease=await bootstrap.acquireDomainService('activity-services',activityServicesContract);
+    resources.defer(()=>lease.release());activity=lease.value;
+  }
   resources.beforeClose(()=>domains.quiesce());resources.defer(()=>domains.close());
   let insights:InsightServices|undefined;
   if(selected){
@@ -127,6 +130,9 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
   }
   const current=()=>{if(!insights)throw Error('Insights plugin is not selected');return insights;};
   return Object.freeze({
+    get activityServices(){if(!activity)throw Error('Activity plugin is not selected');return activity;},
+    get activity(){if(!activity)throw Error('Activity plugin is not selected');return activity.activity;},
+    get automaticActivity(){if(!activity)throw Error('Activity plugin is not selected');return activity.automaticActivity;},
     routes:domains.routes,insights,
     get insightServices(){return current();},get insightRuns(){return current().runs;},
     get actions(){if(!actionsLease||!actionsInput)throw Error('Actions plugin is not selected');actionsLease.assertCurrent();return actionsInput.actionsForAssembly;},
@@ -153,42 +159,4 @@ export interface ActionsAssemblyDependencies {
   readonly connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined;
   /** The admitted query path is fixed by assembly and invoked only by accepted work. */
   readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
-}
-
-export interface ActivityAssemblyDependencies {
-  readonly store:Store;
-  readonly resources:ServerResources;
-  readonly operations:Operations;
-  readonly delegation:DelegationRuntime;
-  readonly materials:MaterialStore;
-  readonly executor:ExecutionEngine;
-  readonly configService:ConfigService;
-  readonly modelSettings:ModelSettingsStore;
-  readonly agent:Pick<AgentRuntimeRegistry,'configuredFor'>;
-  readonly workflows:Pick<ProcessingRuntime,'settings'>;
-  readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
-  readonly backendContext:Context;
-  readonly isCollector:(request:FastifyRequest)=>boolean;
-  readonly archiveReader:ContextReader;
-  readonly diagnostics:ServerDiagnostics;
-  readonly evidenceReader:Pick<EvidenceReader,'artifact'>;
-}
-
-/** C26A's activity plugin plus its owned route contribution. Construction and
- * disposal live in the plugin; this assembly only wires the current profile and
- * exposes the feature bridge's domain route table. */
-export function assembleActivity(dependencies:ActivityAssemblyDependencies){
-  const {store,resources,operations,delegation,materials,executor,configService,modelSettings,agent,workflows,queryAgent,backendContext,isCollector,archiveReader,diagnostics,evidenceReader}=dependencies;
-  const activityServices=createActivityServices({store,operations,delegation,materials,executor,config:configService,isCollector,
-    agentView:{archiveReader,diagnostics,evidenceReader},
-    options:{query:input=>queryAgent(input,'query','activity'),selection:profileId=>{const selected=modelSettings.select('chat',profileId);return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},lane:()=>workflows.settings().semantic}});
-  resources.defer(()=>activityServices.close());
-  activityServices.prepare();activityServices.start();
-  const routes=backendContext.get('moteDomainRoutes');
-  const merged=Object.freeze({...(routes??{}),
-    'mote.activity':Object.freeze({mount:(app:Parameters<typeof activityServices.routes>[0])=>activityServices.routes(app)}),
-    'mote.agent-view':Object.freeze({mount:(app:Parameters<typeof activityServices.agentViewRoutes>[0])=>activityServices.agentViewRoutes(app)})});
-  if(routes)backendContext.set('moteDomainRoutes',merged);
-  else backendContext.provide('moteDomainRoutes',merged);
-  return Object.freeze({activity:activityServices.activity,automaticActivity:activityServices.automaticActivity,activityServices});
 }

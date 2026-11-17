@@ -37,7 +37,7 @@ test('default loader preserves the complete product, owner checks and original n
   ]);
   // Foundations/platforms plus insights, Actions and their private input
   // adapters execute in the same host.
-  assert.equal(node.bootstrap.snapshot().contributions.length,20);
+  assert.equal(node.bootstrap.snapshot().contributions.length,24);
   assert.equal(node.bootstrap.snapshot().contributions.filter(value=>value.identity.contributionId==='mote.plugin-control').length,1,'the live control uses the same host exactly once');
   assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'},{id:'source-integration',version:'1.0.0'}]);
   assert.equal(node.configurationPlatform,node.bootstrap.configurationPlatform);
