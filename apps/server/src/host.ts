@@ -308,7 +308,16 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>{
     const prepared=assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input;
     const execute=(value:QueryInput)=>query.queryAgent(assistantFollowup?assistantFollowup.prepareQuery(value):value,'query','conversations');
-    return assistantTasks?assistantTasks.execute(prepared,execute,()=>{const profile=modelSettings.select('chat',prepared.modelProfileId);return{modelProfileId:profile.id,modelOverride:prepared.modelOverride??profile.settings.model};}):execute(prepared);
+    return assistantTasks?assistantTasks.execute(prepared,execute,pin=>{
+      const select=(id?:string)=>{try{return modelSettings.select('chat',id);}catch(error){if(error instanceof ModelSettingsError&&error.code==='model_profile_missing')throw Object.assign(new ExecutionFailure('blocked','assistant_task_model_unavailable'),{cause:error});throw error;}};
+      const profile=select(pin?.profileId??prepared.modelProfileId),model=pin?.model??prepared.modelOverride??profile.settings.model;
+      const configuration=modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision);
+      return{modelProfileId:profile.id,modelOverride:model,configurationFingerprint:configuration.fingerprint,assertCurrent:()=>{
+        const current=select(profile.id);
+        if(modelConfiguration(profile.id,{...current.settings,model},modelSettings.view().revision).fingerprint!==configuration.fingerprint)throw new ExecutionFailure('blocked','assistant_task_model_changed');
+        modelAuthorization.assertCurrent(agentModelConnection({kind:'profile',id:profile.id},{...profile.settings,model}));
+      }};
+    }):execute(prepared);
   },ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),

@@ -24,8 +24,10 @@ import type {RoutineInput,RoutineRef} from './assistant-routines.js';
 import type {BackgroundModelAuthorization} from './background-model-authorization.js';
 import type {OwnerQuestionsPort} from './plugins/central-contracts.js';
 import {AssistantTaskQuestions} from './assistant-task-questions.js';
-import {AssistantTaskSteering,type AssistantTaskSteeringAuthority,type AssistantTaskSteeringWork} from './assistant-task-steering.js';
+import {AssistantTaskSteering,type AssistantTaskSteeringAuthority,type AssistantTaskSteeringWork,type AssistantTaskModelSelector} from './assistant-task-steering.js';
 import type {ConversationMessage} from './conversations.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {assistantTaskRuntimeSchemaInstallation} from './assistant-task-runtime-schema.js';
 
 /** Product projection over existing task records and batch steps. The link
  * contains no private prose; the immutable scope and read set live in the task record. */
@@ -40,6 +42,7 @@ export class AssistantTasks implements BatchProductProjection {
   private readonly connections:()=>ModelConnection[],questions:OwnerQuestionsPort,
   private readonly routines?:{input(ref:RoutineRef):RoutineInput;current(ref:RoutineRef):boolean;allows(ids:readonly string[]):boolean;control:BackgroundModelAuthorization},steeringAuthority?:AssistantTaskSteeringAuthority){
   this.tasks=new TaskRecords(store);
+  installSchemaPlan(store.db,[assistantTaskRuntimeSchemaInstallation]);
   this.acceptance=new AssistantTaskAcceptance(store,cards,matters,{
    validate:(request,ids)=>{if(!isDeepStrictEqual(this.discover(request.scope,false,true).ids,ids))throw new StoreError('Task execution is outside the owner scope',409);},
    accepted:(task,request,ids)=>{this.saveScope(task,request.scope,this.discover(request.scope,false,true).snapshot);
@@ -94,28 +97,31 @@ export class AssistantTasks implements BatchProductProjection {
   const task=input.traceContext?.operationId?this.taskForOperation(input.traceContext.operationId):undefined;
   return task?this.questions.prepare(this.steering?.prepare(input,this.steeringWork(task.id))??input,this.questionWork(task.id)):input;
  }
- execute(input:QueryInput,query:(input:QueryInput)=>Promise<QueryResult>,selection?:()=>Pick<QueryInput,'modelProfileId'|'modelOverride'>){
+ execute(input:QueryInput,query:(input:QueryInput)=>Promise<QueryResult>,selection?:AssistantTaskModelSelector){
   if(!this.steering||!input.traceContext?.operationId||!this.taskForOperation(input.traceContext.operationId))return query(input);
-  return this.steering.execute({...input,...selection?.()},query);
+  return this.steering.execute(input,query,selection);
  }
  private steeringWork(id:string):AssistantTaskSteeringWork{
   const work=this.questionWork(id),frozen=this.draft(work.task);
-  return {task:work.task,goal:work.goal,scope:frozen.request.scope,...(frozen.conversationId?{origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}}:{})};
+  return {task:work.task,goal:work.goal,scope:frozen.request.scope,batchId:this.currentBatch(work.task.operationId),...(frozen.conversationId?{origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}}:{})};
  }
  private currentBatch(operationId:string){return this.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch' ORDER BY rowid DESC LIMIT 1").get(operationId)?.id as string|undefined;}
  private continueSteering(work:AssistantTaskSteeringWork,message:ConversationMessage){
   const current=this.questionWork(work.task.id);if(current.task.revision!==work.task.revision)throw new StoreError('Assistant task changed before continuation',409);
-  const prior=this.currentBatch(work.task.operationId),step=prior&&this.store.db.prepare("SELECT id FROM execution_steps WHERE operation_id=? AND kind='batch.item' AND json_extract(input,'$.batchId')=? ORDER BY rowid LIMIT 1").get(work.task.operationId,prior);
-  if(!prior||!step)throw new StoreError('Assistant task has no authorized work to continue',409);
+  const prior=this.currentBatch(work.task.operationId),step=prior&&this.store.db.prepare("SELECT id,json_extract(input,'$.itemId') AS item_id FROM execution_steps WHERE operation_id=? AND kind='batch.item' AND json_extract(input,'$.batchId')=? ORDER BY rowid LIMIT 1").get(work.task.operationId,prior);
+  if(!prior||!step||typeof step.item_id!=='string')throw new StoreError('Assistant task has no authorized work to continue',409);
+  // Retain prior owner-question answers and source declarations from the
+  // current frozen item, never from the new message's broader preparation.
+  const item=this.tasks.get(step.item_id),saved=this.tasks.input<BatchQuery>(item.id,item.revision,this.assertCurrent);
   this.tasks.setState(work.task.id,work.task.revision,'waiting');
-  const frozen=this.draft(this.tasks.get(work.task.id)) as FrozenDraftTask&{card?:{cardId:string}};
-  const origin=frozen.card?this.suggestionInput(this.cards.get(frozen.card.cardId,frozen.request.scope)):undefined;
-  const next=this.batch().submit({operationId:work.task.operationId,requestId:'task-steering:'+message.id+':'+message.version,items:[{question:work.goal,evidenceIds:current.evidence.map(record=>record.id),...origin}]},{kind:'continuation',parentStepId:String(step.id)});
+  const next=this.batch().submit({operationId:work.task.operationId,requestId:'task-steering:'+message.id+':'+message.version,items:[{question:work.goal,evidenceIds:current.evidence.map(record=>record.id),
+   ...(saved.taskContext?{taskContext:saved.taskContext}:{}),...(saved.contextSourceContextDependencies?{contextSourceContextDependencies:saved.contextSourceContextDependencies}:{})}]},{kind:'continuation',parentStepId:String(step.id)});
   this.batch().supersede(prior);return next.id;
  }
  private scopeHash(scope:QueryScope){return sha256(canonicalRecipeJson(scope));}
  private saveScope(task:TaskRecord,scope:QueryScope,snapshot:string[]){
   this.store.db.prepare('INSERT INTO assistant_task_scopes VALUES(?,?,?)').run(task.id,this.scopeHash(scope),encodeMemoryPrivate(this.store,snapshot));
+  this.steering?.registerTask(task);
  }
  private assertCurrent=(ids:readonly string[])=>{
   if(!this.reader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant task evidence is no longer permitted',409);

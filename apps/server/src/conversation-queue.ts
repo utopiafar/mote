@@ -102,7 +102,7 @@ export class ConversationQueue {
       ...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(anchorMaterialRef?{anchorMaterialRef}:{}),...(attachmentIds?.length?{attachmentIds}:{}),
       ...(message.modelProfileId?{modelProfileId:message.modelProfileId}:{}),...(message.modelOverride?{modelOverride:message.modelOverride}:{}),
       ...(message.steering?{steering:{targetMessageId:message.steering.targetMessageId,targetRunId:message.steering.targetRunId,state:message.steering.state}}:{}),...(message.amendedBy?{amendedBy:message.amendedBy}:{}),...(message.supersededBy?{supersededBy:message.supersededBy}:{}),
-      ...(message.taskSteering?{taskSteering:{targetTaskId:message.taskSteering.targetTaskId,targetOperationId:message.taskSteering.targetOperationId,targetRevision:message.taskSteering.targetRevision,state:message.taskSteering.state}}:{}),
+      ...(message.taskSteering?{taskSteering:{targetTaskId:message.taskSteering.targetTaskId,targetOperationId:message.taskSteering.targetOperationId,targetRevision:message.taskSteering.targetRevision,scope:message.taskSteering.scope,...(message.taskSteering.origin?{origin:message.taskSteering.origin}:{}),state:message.taskSteering.state}}:{}),
       ...(message.runId?{runId:message.runId}:{}),...(message.evidenceDeleted?{evidenceDeleted:true}:{}),...(message.evidenceStale?{evidenceStale:true}:{}),...(message.evidenceUnavailable?{evidenceUnavailable:true}:{}),...(message.historyEvidenceDependencies?{historyEvidenceDependencies:message.historyEvidenceDependencies}:{})});
   }
   get(conversationId:string,id:string){const message=this.dependencies.conversations.message(id);if(message.conversationId!==conversationId)throw new StoreError('Conversation message not found',404);return this.view(message);}

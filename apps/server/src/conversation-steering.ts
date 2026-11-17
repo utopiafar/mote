@@ -66,7 +66,7 @@ export function createConversationSteering(dependencies:QueryRunDependencies,run
     let message=assertCurrent();
     if(!message.disposition){
       const candidates=conversations.pendingHeads({parallel:true}).filter(compatible);
-      const tasks=dependencies.taskSteering?.candidates(message,input)??[];
+      const tasks=dependencies.taskSteering?.candidates(message,input,runtime.journal.payload<{configurationFingerprint?:string}>(work.id).configurationFingerprint)??[];
       if(!candidates.length&&!tasks.length){conversations.disposition(message.id,{kind:'independent'});return perform(input);}
       const question=JSON.stringify({task:'mote.conversation-disposition',instruction:'Decide whether this owner message supplements/corrects one listed current work item, or is an independent request. Interpret meaning from the actual message, visible conversation and work. Do not classify by keywords. Return answer as one JSON object: {kind:"independent"}; for a query candidate {kind:"supplement",targetMessageId:exact candidate id,reply:brief acknowledgement}; for an assistant.task candidate {kind:"task-supplement",targetTaskId:exact candidate id,reply:brief acknowledgement}. The acknowledgement is usable only after an actual native steering ACK. Never claim a queued continuation has been applied. Choose only a listed identity; no tools or actions.',message:{id:message.id,question:message.question,scope:message.scope},candidates:[...candidates.map(candidate=>({kind:'query',id:candidate.id,runId:candidate.runId,version:candidate.version,question:candidate.question,status:candidate.status})),...tasks.map(({reference:_,...metadata})=>metadata)]});
       const parse=(result:QueryResult)=>decisionSchema.parse(JSON.parse(result.answer));
@@ -83,7 +83,7 @@ export function createConversationSteering(dependencies:QueryRunDependencies,run
     const decision=message.disposition!;if(decision.kind==='independent')return perform(input);
     if(decision.kind==='task-supplement'){
       if(!dependencies.taskSteering)throw new ExecutionFailure('blocked','assistant_task_unavailable');
-      return dependencies.taskSteering.apply(message,input,assertCurrent);
+      return dependencies.taskSteering.apply(message,input,assertCurrent,runtime.journal.payload<{configurationFingerprint?:string}>(work.id).configurationFingerprint);
     }
     const target=conversations.message(decision.targetMessageId),base={targetMessageId:target.id,targetRunId:decision.targetRunId};
     if(message.steering?.state==='pending'){

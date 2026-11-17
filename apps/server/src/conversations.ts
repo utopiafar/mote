@@ -2,7 +2,7 @@ import {inheritRetiredConversationRoots,unavailableHistoryEvidence} from './conv
 import {createHash,randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {HostSteeringTarget} from '@mote/agent';
-import type {QueryResult} from '@mote/shared';
+import type {QueryResult,QueryScope} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {combineDependencies,resolveDependencies,historyEvidenceDependencies} from './conversation-lineage.js';
 import {SourceContextStore} from './source-context.js';
@@ -13,10 +13,10 @@ export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'tim
 export type ConversationStatus = 'accepted'|'queued'|'running'|'completed'|'failed'|'cancelled';
 type Attachment = {id:string;name:string;mimeType:string};
 type Failure = {code:string;message:string};
-export type TaskSteeringReference={targetTaskId:string;targetOperationId:string;targetRevision:number;taskInputHash:string};
+export type TaskSteeringReference={targetTaskId:string;targetOperationId:string;targetRevision:number;targetBatchId:string;taskInputHash:string};
 export type ConversationDisposition={kind:'independent'}|{kind:'supplement';targetMessageId:string;targetRunId:string;targetVersion:number;acknowledgement:QueryResult}|({kind:'task-supplement';acknowledgement:QueryResult}&TaskSteeringReference);
 export type ConversationSteering={targetMessageId:string;targetRunId:string;state:'pending'|'accepted'|'continuation'|'unknown'|'cancelled';registrationId?:string;target?:HostSteeringTarget;receipt?:HostSteeringTarget};
-export type ConversationTaskSteering=Omit<TaskSteeringReference,'taskInputHash'>&{taskInputHash?:string;state:ConversationSteering['state'];stepId?:string;stepFence?:string;registrationId?:string;target?:HostSteeringTarget;receipt?:HostSteeringTarget;continuationBatchId?:string};
+export type ConversationTaskSteering=Omit<TaskSteeringReference,'taskInputHash'|'targetBatchId'>&{taskInputHash?:string;targetBatchId?:string;scope:QueryScope;origin?:{conversationId:string;turnId:string};state:ConversationSteering['state'];stepId?:string;stepFence?:string;registrationId?:string;target?:HostSteeringTarget;receipt?:HostSteeringTarget;continuationBatchId?:string};
 export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;modelProfileId?:string;modelOverride?:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[];disposition?:ConversationDisposition;steering?:ConversationSteering;taskSteering?:ConversationTaskSteering;amendedBy?:string[];supersededBy?:string[]};
 /** Mutable execution/steering receipts never alter the owner's accepted input. */
 export function conversationInputIdentity(message:ConversationMessage){return {id:message.id,conversationId:message.conversationId,seq:message.seq,clientRequestId:message.clientRequestId,question:message.question,scope:message.scope,attachments:message.attachments,modelProfileId:message.modelProfileId,modelOverride:message.modelOverride};}
@@ -138,7 +138,7 @@ export class Conversations {
     const {disposition:_,steering,taskSteering,...publicTurn}=value;
     // Routing inputs, model receipts and native fences are private execution
     // state. History/catalog consumers receive only the actual relationship.
-    let turn:ConversationTurn={...publicTurn,...(steering?{steering:{targetMessageId:steering.targetMessageId,targetRunId:steering.targetRunId,state:steering.state}}:{}),...(taskSteering?{taskSteering:{targetTaskId:taskSteering.targetTaskId,targetOperationId:taskSteering.targetOperationId,targetRevision:taskSteering.targetRevision,state:taskSteering.state}}:{})};
+    let turn:ConversationTurn={...publicTurn,...(steering?{steering:{targetMessageId:steering.targetMessageId,targetRunId:steering.targetRunId,state:steering.state}}:{}),...(taskSteering?{taskSteering:{targetTaskId:taskSteering.targetTaskId,targetOperationId:taskSteering.targetOperationId,targetRevision:taskSteering.targetRevision,scope:taskSteering.scope,...(taskSteering.origin?{origin:taskSteering.origin}:{}),state:taskSteering.state}}:{})};
     // A submitted reference is dialogue input even when no retrieval tool was
     // called. Derive missing pins at read time as well as at publication, so
     // existing user messages cannot become untracked summary inputs.
@@ -262,7 +262,7 @@ export class Conversations {
   recordTaskSteering(id:string,value:ConversationTaskSteering):ConversationMessage {
     return this.transaction(()=>{
       const row=this.messageRow(id),message=JSON.parse(row.json) as ConversationTurn,decision=message.disposition;
-      if(message.status!=='running'||decision?.kind!=='task-supplement'||decision.targetTaskId!==value.targetTaskId||decision.targetOperationId!==value.targetOperationId||decision.taskInputHash!==value.taskInputHash)throw new StoreError('Assistant task steering input changed',409);
+      if(message.status!=='running'||decision?.kind!=='task-supplement'||decision.targetTaskId!==value.targetTaskId||decision.targetOperationId!==value.targetOperationId||decision.targetBatchId!==value.targetBatchId||decision.taskInputHash!==value.taskInputHash)throw new StoreError('Assistant task steering input changed',409);
       const previous=message.taskSteering?.state;
       if(previous&&(!['pending','continuation'].includes(previous)||value.state==='pending'))throw new StoreError('Assistant task steering receipt already settled',409);
       return {conversationId:row.conversation_id,...this.rewrite(row.conversation_id,{...message,taskSteering:structuredClone(value),version:message.version+1},row.json)};

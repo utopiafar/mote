@@ -77,7 +77,7 @@ export interface QueryRunDependencies {
   readonly usageLedger:UsageLedger;
   readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'> & {readonly control:Pick<BackgroundModelAuthorization,'workState'|'manual'|'run'>};
   readonly availableModelConnections:()=>ModelConnection[];
-  readonly taskSteering?:AssistantTaskSteering;
+  readonly taskSteering?:Pick<AssistantTaskSteering,'candidates'|'apply'|'cancel'>;
 }
 
 interface Generation {readonly runtime:DelegationRuntime;readonly runs:DelegatedQueryRuns;readonly queue:ConversationQueue}

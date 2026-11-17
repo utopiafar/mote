@@ -14,7 +14,7 @@ export interface ConversationMessageScope {
   evidenceIds?:string[];
   sourceIds?:string[];
 }
-export interface ConversationMessage extends Pick<StoredConversationMessage,'steering'|'amendedBy'|'supersededBy'> {
+export interface ConversationMessage extends Pick<StoredConversationMessage,'steering'|'taskSteering'|'amendedBy'|'supersededBy'> {
   id:string;
   conversationId:string;
   clientRequestId:string;
