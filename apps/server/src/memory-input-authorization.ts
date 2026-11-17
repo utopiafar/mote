@@ -1,3 +1,5 @@
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
 import {z} from 'zod';
 import type {Store} from './store.js';
 import {memoryRecipeScope,type MemoryRecipeSettings} from './memory-recipe-settings.js';
@@ -11,6 +13,17 @@ export const automaticMemoryGrantSchema=z.object({sourceId:z.string().min(1).max
 export type AutomaticMemoryGrant=z.infer<typeof automaticMemoryGrantSchema>;
 export type MemoryInputGrant={scope:string;binding?:MemoryRecipeBinding;contextTime:string;authorized:boolean};
 
+export const memoryInputAuthorizationSchemaInstallation={owner:'memory-input-authorization',requires:[],prerequisites:[{owner:'source',objects:[{type:'table',name:'source_connections'}]},{owner:'capture',objects:[{type:'table',name:'captures'}]}],install:memoryInputAuthorizationSchema} as const satisfies SchemaInstallation;
+
+function memoryInputAuthorizationSchema(db:DatabaseSync){
+  db.exec(`CREATE TABLE IF NOT EXISTS memory_input_authorizations(
+      source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,
+      input_key TEXT NOT NULL,scope TEXT NOT NULL,capture_id TEXT REFERENCES captures(id) ON DELETE CASCADE,
+      authorized INTEGER NOT NULL,received_at INTEGER NOT NULL,job_id TEXT,binding_json TEXT,revoked_at INTEGER,
+      PRIMARY KEY(source_id,input_key,scope));
+      CREATE INDEX IF NOT EXISTS memory_input_authorizations_capture ON memory_input_authorizations(capture_id) WHERE capture_id IS NOT NULL;`);
+}
+
 /** A host receipt authorizes one automatic job per explicitly enabled scope.
  * No source timestamp, derived revision or retry can issue or renew this grant. */
 export class MemoryInputAuthorization {
@@ -20,12 +33,7 @@ export class MemoryInputAuthorization {
   onInvalidated(listener:()=>void){this.invalidated.add(listener);return ()=>{this.invalidated.delete(listener);};}
   onOriginalInput?: (input:Identity,automatic:boolean)=>void;
   constructor(private readonly store:Store,private readonly enabled=()=>false,private readonly now=Date.now,private readonly recipes?:MemoryRecipeSettings){
-    store.db.exec(`CREATE TABLE IF NOT EXISTS memory_input_authorizations(
-      source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,
-      input_key TEXT NOT NULL,scope TEXT NOT NULL,capture_id TEXT REFERENCES captures(id) ON DELETE CASCADE,
-      authorized INTEGER NOT NULL,received_at INTEGER NOT NULL,job_id TEXT,binding_json TEXT,revoked_at INTEGER,
-      PRIMARY KEY(source_id,input_key,scope));
-      CREATE INDEX IF NOT EXISTS memory_input_authorizations_capture ON memory_input_authorizations(capture_id) WHERE capture_id IS NOT NULL;`);
+    installSchemaPlan(store.db,[memoryInputAuthorizationSchemaInstallation]);
   }
   /** Only a newly accepted raw revision calls this, inside its receive transaction.
    * Persist denied receipts too: a duplicate ACK must not acquire a later grant. */

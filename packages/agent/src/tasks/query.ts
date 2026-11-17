@@ -1,4 +1,4 @@
-import {TASK_DESCRIPTOR_API_VERSION,TASK_OUTPUT_SCHEMA,ASSISTANT_DRAFT_OUTPUT_SCHEMA,type TaskDescriptor,type TaskPack,type TaskProfile} from './descriptor.js';
+import {TASK_DESCRIPTOR_API_VERSION,TASK_OUTPUT_SCHEMA,ASSISTANT_DRAFT_OUTPUT_SCHEMA,CURRENT_INSTRUCTION_OUTPUT_SCHEMA,type TaskDescriptor,type TaskPack,type TaskProfile} from './descriptor.js';
 import {defaultTaskRegistry,type TaskRegistry} from './registry.js';
 import {ARCHIVE_RECENCY_INSTRUCTIONS,VALID_MEMORY_CONTEXT_INSTRUCTIONS} from './evidence-rules.js';
 
@@ -62,8 +62,19 @@ export const selectedAnswerDraftTaskDescriptor = {
   select: input => input.assistantDraft === true && input.evidenceIds !== undefined,
 } as const satisfies TaskDescriptor;
 
+/** Output-only variants of the same read-only procedures, selected by a
+ * durable Host owner-message binding rather than source text. */
+export const currentInstructionDraftTaskDescriptor = {
+  ...answerDraftTaskDescriptor,id:'answer-current-instruction',outputSchema:CURRENT_INSTRUCTION_OUTPUT_SCHEMA,priority:11,
+  select: input => input.assistantDraft === true && input.assistantCurrentInstruction === true && input.evidenceIds === undefined,
+} as const satisfies TaskDescriptor;
+export const selectedCurrentInstructionDraftTaskDescriptor = {
+  ...selectedAnswerDraftTaskDescriptor,id:'selected-answer-current-instruction',outputSchema:CURRENT_INSTRUCTION_OUTPUT_SCHEMA,priority:31,
+  select: input => input.assistantDraft === true && input.assistantCurrentInstruction === true && input.evidenceIds !== undefined,
+} as const satisfies TaskDescriptor;
+
 export function createQueryTaskPack(): TaskPack {
-  return Object.freeze({tasks: Object.freeze([answerTaskDescriptor,selectedAnswerTaskDescriptor,answerDraftTaskDescriptor,selectedAnswerDraftTaskDescriptor])});
+  return Object.freeze({tasks: Object.freeze([answerTaskDescriptor,selectedAnswerTaskDescriptor,answerDraftTaskDescriptor,selectedAnswerDraftTaskDescriptor,currentInstructionDraftTaskDescriptor,selectedCurrentInstructionDraftTaskDescriptor])});
 }
 
 export function installQueryTaskPack(registry: TaskRegistry = defaultTaskRegistry): () => void | Promise<void> {

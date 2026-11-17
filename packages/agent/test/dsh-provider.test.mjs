@@ -246,7 +246,7 @@ test('Host image payload keeps private preparation tokens and pixels out of mode
   assert.throws(() => contextToolPayload({image: {mimeType: 'image/png', data: 'generated-base64'}}), {reason: 'tools_unverified'});
 });
 
-// Real A05-style journey fixture: real SDK child, generated data and loopback only.
+// Real DSH journey fixture: real SDK child, generated data and loopback only.
 // Individual cases opt into manual selection when they need a complete model journey.
 async function selectedJourney(t, mode = 'success', options = {}) {
   const root = await mkdtemp(join(tmpdir(), 'mote-a05-journey-')), tracePath = join(root, 'child.jsonl');
