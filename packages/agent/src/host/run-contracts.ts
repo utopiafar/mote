@@ -47,7 +47,7 @@ export type HostOutputDecision =
 
 /** Trusted restart-replaceable Host foundation, not a RuntimeProvider capability.
  * Owns parseAnswer -> restoreMemoryCoverageKeys -> domain validation and Host result construction.
- * It returns no product side effects; C27/Memory/Import retain their actual persistence fences. */
+ * It returns no product side effects; Memory/Import retain their actual persistence fences. */
 export interface HostOutputProvider {
   evaluate(input: HostOutputInput): Promise<HostOutputDecision>;
 }
@@ -101,7 +101,7 @@ export interface HostRunDependencies {
   readonly commitFence: HostCommitFence;
 }
 
-/** Host-only execution skeleton implemented by A04; providers receive only HostRunPort.
+/** Host-only execution skeleton; providers receive only HostRunPort.
  * Owns input/scope/tool pin, context assembly, actual delivery ledger, repairs and final result.
  * No commit() method: accepting a candidate never authorizes a product write. */
 export interface HostRunSession {
