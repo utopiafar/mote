@@ -78,8 +78,8 @@ type BatchOutput={transportBatches:StoredBatch[]}|EvaluatedBatchOutput;
 /** Jobs reference originals. Validated drafts have a separate private, dependency-bound stage store. */
 export class MemoryPipeline {
   get publication(){return this.options.publication;}
-  /** C24 owner commands remain on the pipeline bridge until its routes move to
-   * a domain contribution; they never share the read-only stage port. */
+  /** Owner publication remains on the pipeline bridge until its routes move to
+   * a domain contribution; it never shares the read-only stage port. */
   get ownerPublication(){return this.options.ownerPublication;}
   assertNewManualWork(){this.options.assertNewManualWork?.();}
   assertIntegrationReadable(cards:readonly Memory[]){this.options.assertIntegrationReadable?.(cards);}

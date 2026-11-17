@@ -47,7 +47,7 @@ export interface ObservabilityRead {
   events(afterSeq?:number,limit?:number):Readonly<{items:readonly DiagnosticReadEvent[];nextSeq:number;oldestSeq:number|null}>;
 }
 
-/** Host/domain projections owned outside C06. The observability platform owns the
+/** Host/domain projections owned outside this plugin. The observability platform owns the
  * safe diagnostics envelope and the HTTP transport; callers never supply a writer,
  * credential or raw log path. Values are serialized only by its own routes. */
 export interface DiagnosticProjection {
@@ -68,10 +68,10 @@ export interface ObservabilityRouteViews {
   readonly diagnostics:()=>DiagnosticProjection;
 }
 
-/** Trusted H05/29 assembly only. Raw writer/handles never become an ordinary plugin port. */
+/** Trusted host assembly only. Raw writer/handles never become an ordinary plugin port. */
 export interface ObservabilityAssembly {
   readonly diagnostics:ServerDiagnostics;
-  /** H05 binds value=>observer.lease(value), ()=>observer.enabled() on the real engine
+  /** The host assembly binds value=>observer.lease(value), ()=>observer.enabled() on the real engine
    * and must call bindObserver(undefined) before execution/vault disposal. step.id and
    * claimed attempts are the diagnostic identity; the domain job id and the ledger's
    * receipt UUID remain independent namespaces. */
@@ -109,7 +109,7 @@ const flatEvents=(diagnostics:ServerDiagnostics,afterSeq:number,limit:number)=>{
   return Object.freeze({items:Object.freeze(items),nextSeq:page.nextSeq,oldestSeq:page.oldestSeq});
 };
 
-/** H03 owns the package Manifest. This is the actual data-contribution fragment.
+/** The plugin platform owns the package Manifest. This is the actual data-contribution fragment.
  * A restart platform owns the writer/ledger/observer/update objects; ordinary plugins
  * consume the frozen usage-recording port, never the diagnostics writer. */
 export const observabilityPlatformContribution={
@@ -306,7 +306,7 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
   });
 }
 
-/** Compiled trusted H04 owner. The published contribution is only the frozen
+/** Compiled trusted host factory. The published contribution is only the frozen
  * usage-recording port; writer, event loop, update service and raw reads stay
  * behind the trusted assembly. onStarted is a trusted build handoff only and is
  * not published as a service or manifest capability. */
