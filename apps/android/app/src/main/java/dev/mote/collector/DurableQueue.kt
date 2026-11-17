@@ -23,7 +23,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     companion object {
         private val lock = Any()
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
-        private val localFields = listOf("_archiveOrigin", "_archiveAcknowledgment", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_archiveMissing", "_uploadConflict")
+        private val localFields = listOf("_archiveOrigin", "_archiveAcknowledgment", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_archiveMissing", "_uploadConflict", ReleasedCapture.FIELD)
         // Only fixed statistics and date/source index fields are cached, never capture content. A bounded process cache
         // is shared by the short-lived queue handles; the record files remain authoritative.
         private const val MAX_CACHED_DIRECTORIES = 4
@@ -45,7 +45,11 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             if (!file.exists()) return null
             return display(dir, JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)).also(LocalDataFormat::validateEvent))
         }
-        private fun display(dir: File, event: JSONObject): JSONObject {
+        private fun display(dir: File, original: JSONObject): JSONObject {
+            val release = original.optJSONObject(ReleasedCapture.FIELD)
+            val event = if (release != null) ReleasedCapture.light(original, release) else original
+            release?.let { event.put("localContentRelease", JSONObject(it.toString())) }
+            original.optJSONObject("_archiveAcknowledgment")?.let { event.put("archiveAcknowledgment", JSONObject(it.toString())).put("receivedAt", java.time.Instant.ofEpochMilli(it.getLong("at")).toString()) }
             val hash = event.optString("_blob")
             event.put("sizeBytes", event.optString("ocrText").toByteArray().size.toLong() + if (hash.matches(Regex("[a-f0-9]{64}"))) File(dir, "$hash.blob").length() else 0L)
             event.put("retainedUntil", 0L)
@@ -68,7 +72,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     internal var archiveOrigin: String = ""
     internal var connectionGeneration: String = ""
     private fun matchesOrigin(event: JSONObject) = !event.has("_archiveOrigin") || event.getString("_archiveOrigin") == archiveOrigin.trim().trimEnd('/')
-    private fun unfinished(event: JSONObject) = !event.optBoolean("_uploaded") || syncFailed(event) || event.optBoolean("_reviewHeld")
+    private fun unfinished(event: JSONObject) = !event.optBoolean("_uploaded") || !event.has(ReleasedCapture.FIELD) && (syncFailed(event) || event.optBoolean("_reviewHeld"))
     fun hasPendingConnectionWork(): Boolean = guarded {
         stageInbox.exists() || stageJournal.exists() || readStageCheckpoint()?.let { stageHeldCount(it) > 0 } == true || records().any { unfinished(read(it)) }
     }
@@ -195,7 +199,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         var count = 0
         for (file in records()) {
             val event = read(file)
-            if (syncFailed(event) || !matchesOrigin(event)) continue
+            if (syncFailed(event) || !matchesOrigin(event) || event.has(ReleasedCapture.FIELD)) continue
             if (event.optBoolean("_uploaded")) { event.remove("_uploaded"); event.remove("_retainedUntil"); atomic(file, event.toString().toByteArray()) }
             count++
         }; count
@@ -224,7 +228,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val file = File(dir, "${UUID.fromString(item.getString("id"))}.event")
         if (!file.exists()) return@guarded
         val event = read(file)
-        if (!event.optBoolean("_uploaded") || event.optBoolean("_reviewHeld")) return@guarded
+        if (!event.optBoolean("_uploaded") || event.optBoolean("_reviewHeld") || event.has(ReleasedCapture.FIELD)) return@guarded
         event.put("_centralDerived", item)
         val body = event.toString().toByteArray()
         atomic(file, body)
@@ -247,11 +251,12 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     fun bytes(): Long = stats().bytes + externalStorageBytes()
     private fun read(file: File): JSONObject = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)).also(LocalDataFormat::validateEvent)
     private fun syncFailed(event: JSONObject) = event.optBoolean("_archiveMissing") || event.optBoolean("_uploadConflict")
-    private fun atomic(file: File, bytes: ByteArray, modifiedAt: Long? = null) {
+    private fun atomic(file: File, bytes: ByteArray, modifiedAt: Long? = null, authorize: (() -> Unit)? = null) {
         val temp = File(dir, "${UUID.randomUUID()}.tmp")
         try {
             if (file.extension == "event") browseIndex().invalidate(file.nameWithoutExtension)
             FileOutputStream(temp).use { it.write(cipher.seal(bytes)); it.fd.sync() }
+            authorize?.invoke()
             check(temp.renameTo(file)) { MoteI18n.text("无法原子写入队列") }
             if (modifiedAt != null) file.setLastModified(modifiedAt)
             if (file.extension == "blob") validatedBlobs.remove(file.absolutePath)
@@ -588,6 +593,51 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     fun pruneUploaded(now: Long = System.currentTimeMillis()): Int {
         return 0
     }
+    /** Owner action only. The durable intent also withdraws any previously cached body. */
+    internal fun releaseContent(id: String, expectedVersion: String, libraryVersion: String, authorize: () -> Unit) = guarded {
+        authorize(); check(role == Role.ACTIVE)
+        check(!stageInbox.exists() && !stageJournal.exists() && pendingStageFailure == null) { MoteI18n.text("采集阶段仍有待处理输入，暂不能清理本机副本。") }
+        readStageCheckpoint()?.let { checkpoint ->
+            check(checkpoint.keys().asSequence().all { it in setOf("order", "stages", "lastInput", "lastOperation", "lastReturnIds") }) { MoteI18n.text("采集阶段仍有待处理输入，暂不能清理本机副本。") }
+            val stages = checkpoint.getJSONArray("stages")
+            check((0 until stages.length()).all { index -> stages.getJSONObject(index).let { row ->
+                row.keys().asSequence().all { it in setOf("id", "version", "value", "held") } &&
+                    row.getJSONArray("held").length() == 0 && row.isNull("value")
+            } }) { MoteI18n.text("采集阶段仍有待处理输入，暂不能清理本机副本。") }
+        }
+        val file = File(dir, "${UUID.fromString(id)}.event"); val event = read(file)
+        val ack = event.getJSONObject("_archiveAcknowledgment")
+        check(event.optBoolean("_uploaded") && !event.optBoolean("_reviewHeld") && !syncFailed(event) &&
+            ack.getLong("at") > 0 && ack.getString("origin").isNotBlank() && ack.getString("origin") == archiveOrigin.trim().trimEnd('/') &&
+            matchesOrigin(event) && ack.getString("version") == expectedVersion && CaptureUploadVersion.of(event) == expectedVersion)
+        val existing = event.optJSONObject(ReleasedCapture.FIELD)
+        if (existing != null && !existing.getBoolean("pending")) return@guarded
+        require(libraryVersion.matches(Regex("[a-f0-9]{64}")))
+        val release = existing ?: JSONObject().put("at", System.currentTimeMillis()).put("pending", true).put("cleared", false)
+            .put("version", expectedVersion).put("libraryVersion", libraryVersion).also { value -> event.optString("_blob").takeIf(String::isNotBlank)?.let { value.put("imageSha256", it) } }
+        fun persist(value: JSONObject) { authorize(); atomic(file, value.toString().toByteArray(), authorize = authorize); syncDirectory() }
+        if (existing == null) persist(JSONObject(event.toString()).put(ReleasedCapture.FIELD, release))
+        val light = ReleasedCapture.light(event, release)
+        persist(light)
+        authorize()
+        val hash = release.optString("imageSha256")
+        if (hash.isNotBlank() && browseIndex().references(hash, ::browseFiles, ::read) == 0) {
+            for (extension in listOf("blob", "thumb")) {
+                authorize(); val image = File(dir, "$hash.$extension")
+                check(!image.exists() || image.delete()) { MoteI18n.text("本机图片缺失，原副本已保留") }
+            }
+            validatedBlobs.remove(File(dir, "$hash.blob").absolutePath); syncDirectory()
+        }
+        try { persist(ReleasedCapture.light(light, JSONObject(release.toString()).put("pending", false))) }
+        catch (error: Exception) { runCatching { atomic(file, light.toString().toByteArray()) }; throw error }
+    }
+    private fun syncDirectory() { java.nio.channels.FileChannel.open(dir.toPath(), java.nio.file.StandardOpenOption.READ).use { it.force(true) } }
+    internal fun restoreReleased(event: JSONObject) = guarded {
+        ReleasedCapture.validate(event); check(event.getJSONObject(ReleasedCapture.FIELD).getBoolean("cleared"))
+        check(event.getJSONObject("_archiveAcknowledgment").getString("origin") == archiveOrigin.trim().trimEnd('/'))
+        val file = File(dir, "${UUID.fromString(event.getString("id"))}.event"); check(!file.exists())
+        atomic(file, event.toString().toByteArray()); syncDirectory()
+    }
     private fun remove(file: File, record: JSONObject) {
         val hash = record.optString("_blob", "")
         val lastReference = hash.isNotEmpty() && browseIndex().references(hash, ::browseFiles, ::read) == 1
@@ -676,6 +726,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) null else {
             val event = read(file)
+            if (event.has(ReleasedCapture.FIELD)) return@guarded ReleasedCapture.light(event, event.getJSONObject(ReleasedCapture.FIELD)) to null
             val hash = event.optString("_blob")
             event to if (hash.isBlank()) null else verifiedBlob(hash, readBytes = true)
         }
@@ -694,6 +745,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (!file.exists()) return@guarded null
         val event = read(file)
         if (CaptureUploadVersion.of(event) != version) return@guarded null
+        if (event.has(ReleasedCapture.FIELD)) return@guarded display(dir, event) to null
         val hash = event.optString("_blob")
         val image = if (hash.isBlank()) null else verifiedBlob(hash, readBytes = true)
         // Later Central processing must not replace the confirmed original's body.
@@ -838,7 +890,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val event = read(file)
             check(file.nameWithoutExtension == UUID.fromString(event.getString("id")).toString()) { MoteI18n.text("记录 ID 与存储文件不匹配") }
             val hash = event.optString("_blob", "")
-            if (hash.isEmpty()) { check(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event", "ui_page")); continue }
+            if (hash.isEmpty()) { check(event.has(ReleasedCapture.FIELD) || event.getString("source") in setOf("note", "activity", "media", "notification", "device_event", "ui_page")); continue }
             check(hash.matches(Regex("[a-f0-9]{64}"))) { MoteI18n.text("图片引用无效") }
             if (checked.add(hash)) {
                 val blob = File(dir, "$hash.blob")

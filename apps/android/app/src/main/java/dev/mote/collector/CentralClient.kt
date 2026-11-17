@@ -97,12 +97,14 @@ internal class CentralClient(
         try {
             connection.instanceFollowRedirects = false; connection.connectTimeout = 15000; connection.readTimeout = 120000
             connection.setRequestProperty("Authorization", "Bearer $token")
+            checkActive()
             val status = connection.responseCode
+            checkActive()
             if (status !in 200..299) fail(status)
             connection.inputStream.use { input ->
                 val buffer = ByteArray(65536); var total = 0L
                 while (true) {
-                    checkActive(); val count = input.read(buffer); if (count < 0) break
+                    checkActive(); val count = input.read(buffer); checkActive(); if (count < 0) break
                     total += count; require(total <= maxBytes) { MoteI18n.text("响应超过大小限制") }; output.write(buffer, 0, count)
                 }
             }
@@ -115,18 +117,20 @@ internal class CentralClient(
         try {
             connection.instanceFollowRedirects = false; connection.connectTimeout = 15000; connection.readTimeout = 30000
             connection.setRequestProperty("Authorization", "Bearer $token")
+            checkActive()
             val status = connection.responseCode
+            checkActive()
             if (status !in 200..299) fail(status)
             require(connection.contentType?.startsWith("image/") == true)
             val bytes = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
-                while (true) { val count = input.read(buffer); if (count < 0) break
+                while (true) { checkActive(); val count = input.read(buffer); checkActive(); if (count < 0) break
                     require(output.size() + count <= 12 * 1024 * 1024) { MoteI18n.text("响应超过大小限制") }; output.write(buffer, 0, count)
                 }; output.toByteArray()
             }; checkActive(); return bytes
         } finally { connection.disconnect() }
     }
-    private fun checkActive() { check(active()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") } }
+    private fun checkActive() { TransferRequestGuard.check(); check(active()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") } }
     private fun fail(status: Int, value: JSONObject? = null): Nothing {
         val code = centralResponseFailureCode(value)
         if (status == 401 && code in setOf("", "unauthorized")) runCatching(unauthorized)
@@ -143,7 +147,7 @@ internal class UnifiedCentralSession(private val context: Context) {
     private val settings get() = Settings(context.applicationContext)
     @Synchronized private fun refresh(): CollectorConfig {
         val config = settings.read()
-        val next = SourceRules.hash(listOf(config.server, config.token, config.authSignedOut.toString(), config.authExpiresAt.toString(), config.authProcess).joinToString("\u0000"))
+        val next = SourceRules.hash(listOf(settings.connectionGeneration(), config.server, config.token, config.authSignedOut.toString(), config.authExpiresAt.toString(), config.authProcess).joinToString("\u0000"))
         if (next != stamp) { stamp = next; version++ }
         return config
     }

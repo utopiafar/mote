@@ -17,6 +17,15 @@ import dev.mote.collector.LibrarySourceProjection
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.MoteI18n
 import dev.mote.collector.WorkMemoryReference
+import dev.mote.collector.ArchivedOriginal
+import dev.mote.collector.CaptureUploadVersion
+import dev.mote.collector.ReleasedCapture
+import dev.mote.collector.Settings
+import dev.mote.collector.TransferRequestGuard
+import dev.mote.collector.captureLibraryVersion
+import dev.mote.collector.queue
+import dev.mote.collector.recordDraftStore
+import dev.mote.collector.meeting.meetingRecordings
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -100,6 +109,7 @@ internal class NativeLibraryOwner internal constructor(
     private val context: Context?,
 ) {
     @Volatile private var closed = false
+    private val readers = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
 
     init {
         scope?.registerService(PluginServiceRegistration("library.browse", "${NativeLibraryPlugin.CAPABILITY}.browse"))
@@ -110,6 +120,68 @@ internal class NativeLibraryOwner internal constructor(
     }
 
     internal val active get() = !closed && scope?.revoked != true
+
+    internal fun requireActive() { check(active) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") } }
+    internal fun onClose(withdraw: () -> Unit): () -> Unit {
+        readers.add(withdraw)
+        if (!active) { readers.remove(withdraw); withdraw() }
+        return { readers.remove(withdraw); Unit }
+    }
+
+    fun releaseCapture(id: String, version: String, current: () -> Unit) {
+        val app = requireNotNull(context); val queue = app.queue()
+        fun authorized() { requireActive(); current() }
+        authorized()
+        val original = requireNotNull(queue.archiveRecord(id)).first
+        val drafts = app.recordDraftStore()
+        if (original.optString("source") == "note") {
+            drafts.requireReleasable(id)
+            check(dev.mote.collector.QuickNotes.draft(app).read().prepared?.optString("id") != id) { MoteI18n.text("采集阶段仍有待处理输入，暂不能清理本机副本。") }
+        }
+        val libraryVersion = original.optJSONObject(ReleasedCapture.FIELD)?.getString("libraryVersion")
+            ?: app.captureLibraryVersion(original, original.optString("_blob").takeIf(String::isNotBlank))
+        queue.releaseContent(id, version, libraryVersion, ::authorized)
+    }
+
+    fun localCapture(id: String, version: String?, current: () -> Unit): Pair<JSONObject, ByteArray?> {
+        requireActive(); current()
+        val queue = requireNotNull(context).queue()
+        val original = requireNotNull(queue.archiveRecord(id)).first
+        if (version != null) check(CaptureUploadVersion.of(original) == version) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
+        val release = original.optJSONObject(ReleasedCapture.FIELD)
+        if (release == null || release.getBoolean("pending")) return (requireNotNull(queue.capture(id)) to if (release == null) queue.image(id) else null)
+        return readOriginal(original.getJSONObject("_archiveAcknowledgment").getString("origin"), current) { client, authorized ->
+            fun exact() { authorized(); check(queue.archiveRecord(id)?.first?.optJSONObject(ReleasedCapture.FIELD)?.toString() == release.toString()) }
+            ArchivedOriginal.capture(client, original, ::exact).let { (record, image) ->
+                exact(); record.put("localContentRelease", release).put("archiveAcknowledgment", original.getJSONObject("_archiveAcknowledgment")) to image
+            }
+        }
+    }
+
+    fun releaseMeeting(id: String, current: () -> Unit) {
+        requireActive(); current(); val app = requireNotNull(context); val settings = Settings(app)
+        val store = app.meetingRecordings(); check(store.sessions().first { it.id == id }.origin == settings.dataOrigin())
+        store.releaseContent(id, settings.deviceId) { requireActive(); current() }
+    }
+
+    fun saveMeeting(id: String, destination: () -> java.io.OutputStream, current: () -> Unit) {
+        val app = requireNotNull(context); val store = app.meetingRecordings(); val session = store.sessions().first { it.id == id }
+        readOriginal(requireNotNull(session.origin), current) { client, authorized ->
+            fun exact() { authorized(); check(store.sessions().firstOrNull { it.id == id } == session) }
+            ArchivedOriginal.saveMeeting(client, session, app.cacheDir, destination, ::exact)
+        }
+    }
+
+    private fun <T> readOriginal(origin: String, current: () -> Unit, read: (CentralClient, () -> Unit) -> T): T {
+        val app = requireNotNull(context); val selection = CentralAccess.resolve(app); val connection = Settings(app).connectionGeneration()
+        check(origin == selection.server) { MoteI18n.text("原中央与当前连接不一致，未发送读取请求。") }
+        val client = requireNotNull(selection.client) { MoteI18n.text("先登录中央，各页面会共用这次登录") }
+        fun authorized() {
+            requireActive(); current(); val selected = CentralAccess.resolve(app)
+            check(Settings(app).connectionGeneration() == connection && selected.server == selection.server && selected.generation == selection.generation && selected.client != null) { MoteI18n.text("访问凭据已失效，请重新连接。") }
+        }
+        return TransferRequestGuard.within(::authorized) { read(client, ::authorized).also { authorized() } }
+    }
 
     fun library(screens: CentralScreens): CentralLibrary {
         check(active) { "Native library plugin is stopped" }
@@ -160,6 +232,7 @@ internal class NativeLibraryOwner internal constructor(
     fun close() {
         if (closed) return
         closed = true
+        readers.toList().forEach { runCatching(it) }; readers.clear()
     }
 }
 
