@@ -25,12 +25,16 @@ export const installations={
  'connectors/mcp-import-state.ts':['mcpStateSchemaInstallation'],
  'connectors/recording-state.ts':['recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'],
  'assistant-task-runtime-schema.ts':['assistantTaskRuntimeSchemaInstallation'],
+ 'plugins/plugin-control-store.ts':['pluginControlSchemaInstallation'],
+ 'plugins/instance-state.ts':['instanceStateSchemaInstallation'],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
  * has its declared owner inside its function; other functions use this mapping.
  * A new file never inherits access merely from a filename prefix or directory. */
 export const consumers={
+ 'plugins/plugin-control-store.ts':'plugin-control',
+ 'plugins/instance-state.ts':'plugin-instance-state',
  'assistant-task-steering.ts':'assistant-task-runtime',
  'evidence-store.ts':'capture',
  'capture-browser.ts':'capture',
@@ -247,6 +251,14 @@ export const sharedReads=[
   "scope": "AssistantTaskSteering.amendments",
   "scopeFingerprint": "01a52b68362dfd69df721a5cf7926532c4d04a34449006fcd2a4034934d2da43",
   "reason": "Check the original accepted supplement request hash against its saved QueryRun receipt."
+ },
+ {
+  "from": "apps/server/src/plugins/instance-state.ts",
+  "to": "source_connections",
+  "symbol": "2f759e3921782b241e17e54714ba24586a9886226de682df0ac51b78062f8365",
+  "scope": "InstanceState.write",
+  "scopeFingerprint": "50cd8ec210a04e376136ad146c42d2244486a73ad5d8d2627f23862c9ba83b65",
+  "reason": "Fence the existing conditional instance-state CAS against its exact enabled Source connection, permitted source kind and sync scope version in the same write transaction."
  }
 ];
 
@@ -273,7 +285,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/operation-projection.ts",
