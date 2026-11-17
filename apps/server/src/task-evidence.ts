@@ -1,7 +1,20 @@
 import type {EvidenceDependencies} from '@mote/shared';
+import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
 import type {Store} from './store.js';
 import {StoreError} from './store.js';
 import {resolveDependencies} from './conversation-lineage.js';
+
+export const taskEvidenceSchemaInstallation={
+ owner:'task-evidence',requires:['task-records'],
+ prerequisites:[
+  {owner:'capture',objects:[{type:'table',name:'captures'}]},
+  {owner:'file',objects:[{type:'table',name:'file_chunks'}]},
+  {owner:'evidence-archive',objects:[{type:'table',name:'context_artifacts'}]},
+  {owner:'memory',objects:[{type:'table',name:'memories'}]},
+ ],
+ install:taskEvidenceSchema,
+} as const satisfies SchemaInstallation;
 
 /** SQL-only retirement, shared by evidence mutations and domain-owned triggers.
  * Keep the request receipt and dependency identities; erase both private bodies.
@@ -23,8 +36,7 @@ export function invalidateTaskEvidence(store:Store,ids?:readonly string[]){
   store.db.prepare(retireTaskRecordsSql(selection)).run(...(ids===undefined?[]:[JSON.stringify(ids)]));
 }
 
-export function installTaskEvidence(store:Store){
-  const db=store.db;
+function taskEvidenceSchema(db:DatabaseSync){
   db.exec(`CREATE TABLE IF NOT EXISTS task_evidence(
     task_id TEXT NOT NULL REFERENCES task_records(id) ON DELETE CASCADE,
     evidence_id TEXT NOT NULL,PRIMARY KEY(task_id,evidence_id));
