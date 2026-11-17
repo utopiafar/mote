@@ -20,6 +20,8 @@ import {
 import {healthFeature} from '../src/features/system.js';
 import {FeatureScope} from '../src/features/index.js';
 import type {ReleaseCheck} from '../src/updates.js';
+import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
+import {createTestScope} from './fixtures/plugin-scope.js';
 
 const secret='GENERATED_OBSERVABILITY_PRIVATE_BODY_AND_TOKEN';
 const release:ReleaseManifest={schemaVersion:1,version:'0.4.1',tag:'v0.4.1',channel:'stable',publishedAt:new Date().toISOString(),repository:'utopiafar/mote',notesUrl:'https://github.com/utopiafar/mote/releases/tag/v0.4.1',assets:[],images:[]};
@@ -31,12 +33,13 @@ function consumer(name='generated-consumer'){
     assertCurrent(){controller.signal.throwIfAborted();},defer(dispose){cleanups.push(dispose);}};
   return {scope,close(){controller.abort();for(const dispose of cleanups)dispose();}};
 }
-function fixture(t:import('node:test').TestContext,checkRelease:ReleaseCheck = async()=>({manifest:release,available:false})){
+async function fixture(t:import('node:test').TestContext,checkRelease:ReleaseCheck = async()=>({manifest:release,available:false})){
   const directory=mkdtempSync(join(tmpdir(),'mote-observability-platform-')),store=new Store(directory),logs=join(directory,'logs');
+  const vault=createVaultPlatformAssembly({dataDir:directory},{store}),vaultOwner=createTestScope(),owner=consumer();
+  await vault.prepare();
   const platform=createObservabilityPlatform({logDirectory:logs,diagnostics:{level:'info',maxEntries:500},update:{currentVersion:'0.4.0',runtime:'native',profile:'generated'},updateDependencies:{checkRelease}},
-    {store});
-  const owner=consumer();
-  t.after(async()=>{owner.close();await platform.close().catch(()=>{});store.close();rmSync(directory,{recursive:true,force:true});});
+    {usageForScope:scope=>vault.usageForAssembly(vaultOwner.scope,scope)},owner.scope);
+  t.after(async()=>{owner.close();await platform.close().catch(()=>{});await vault.close();await vaultOwner.close();store.close();rmSync(directory,{recursive:true,force:true});});
   return {directory,logs,store,platform,owner};
 }
 const today=()=>new Date().toISOString().slice(0,10);
@@ -53,11 +56,13 @@ function routeViews(overrides:{status?:unknown;updates?:unknown;buildInfo?:unkno
 
 test('restart contribution publishes only the frozen usage port and releases its writer on host close',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-observability-host-')),store=new Store(directory),logs=join(directory,'logs');
+  const vault=createVaultPlatformAssembly({dataDir:directory},{store}),vaultOwner=createTestScope();await vault.prepare();
   const host=new PluginHost({kind:'central',id:'generated-host'});
-  t.after(async()=>{await host.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  t.after(async()=>{await host.close();await vault.close();await vaultOwner.close();store.close();rmSync(directory,{recursive:true,force:true});});
   const identity:ScopeIdentity={packageId:'generated.observability',installationId:'generated-install',instanceId:'generated-observability',activationId:'generated-activation',host:{kind:'central',id:'generated-host'}};
   let usageBinding:ServiceBinding|undefined;
-  const factory=createObservabilityPlatformFactory({logDirectory:logs,update:{currentVersion:'0.4.0',runtime:'native'},updateDependencies:{checkRelease:async()=>({manifest:release,available:false})}},{store});
+  const factory=createObservabilityPlatformFactory({logDirectory:logs,update:{currentVersion:'0.4.0',runtime:'native'},updateDependencies:{checkRelease:async()=>({manifest:release,available:false})}},
+    {usageForScope:scope=>vault.usageForAssembly(vaultOwner.scope,scope)});
   const handle=await host.install({identity,restartRequired:true,contributions:[observabilityPlatformDeclaration],factory:context=>factory({...context,
     provide:(id,contract,value,revision)=>{const binding=context.provide(id,contract,value,revision);if(contract.id===centralServices.usage.id)usageBinding=binding;return binding;}})});
   assert.ok(usageBinding);assert.equal(host.snapshot().contributions[0].restartRequired,true);
