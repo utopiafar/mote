@@ -25,10 +25,9 @@
   },
   "scripts": {
     "native:prepare": "node native/prepare.mjs",
-    "build": "tsc -p tsconfig.json && cp src/plugin.mjs dist/plugin.mjs",
+    "build": "tsc -b --stopBuildOnErrors && cp src/plugin.mjs dist/plugin.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prebuild": "npm run build -w @mote/plugin-host"
+    "typecheck": "tsc -b tsconfig.json --stopBuildOnErrors"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",

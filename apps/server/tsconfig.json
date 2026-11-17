@@ -1,1 +1,28 @@
-{"extends":"../../tsconfig.base.json","compilerOptions":{"outDir":"dist","rootDir":"src"},"include":["src"]}
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmitOnError": true,
+    "incremental": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "disableSourceOfProjectReferenceRedirect": true
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../packages/agent"
+    },
+    {
+      "path": "../../packages/plugin-api"
+    },
+    {
+      "path": "../../packages/plugin-host"
+    },
+    {
+      "path": "../../packages/shared"
+    }
+  ]
+}

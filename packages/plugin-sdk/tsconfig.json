@@ -5,9 +5,20 @@
     "rootDir": "src",
     "types": [],
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true
+    "exactOptionalPropertyTypes": true,
+    "noEmitOnError": true,
+    "composite": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": [
     "src"
+  ],
+  "references": [
+    {
+      "path": "../plugin-api"
+    },
+    {
+      "path": "../plugin-host"
+    }
   ]
 }
