@@ -1,4 +1,8 @@
 import type {Store} from '../store.js';
+import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
+
+export const larkStateSchemaInstallation={owner:'lark-document-sync',requires:[],install:db=>{db.exec('CREATE TABLE IF NOT EXISTS lark_document_sync(account TEXT NOT NULL,scope TEXT NOT NULL,key TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(account,scope,key));');}} as const satisfies SchemaInstallation;
+
 
 export interface LarkSourceReadModel {
   sourceExists(sourceId:string):boolean;
@@ -26,7 +30,7 @@ export function larkSourceReadModel(store:Pick<Store,'db'>):LarkSourceReadModel 
 /** Per-account/scope transport state; source/file facts remain explicit read projections. */
 export function larkDocumentState(store:Pick<Store,'db'>,account:string,sourceId:string,scope:string):LarkDocumentState {
   const {db}=store,read=larkSourceReadModel(store);
-  db.exec('CREATE TABLE IF NOT EXISTS lark_document_sync(account TEXT NOT NULL,scope TEXT NOT NULL,key TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(account,scope,key));');
+  installSchemaPlan(db,[larkStateSchemaInstallation]);
   return {
     get:<T>(key:string):T|undefined=>{const row=db.prepare('SELECT json FROM lark_document_sync WHERE account=? AND scope=? AND key=?').get(account,(key.startsWith('alias:')||key.startsWith('signal:'))?'identity':scope,key) as {json:string}|undefined;return row?JSON.parse(row.json) as T:undefined;},
     set:(key,value)=>{db.prepare('INSERT INTO lark_document_sync VALUES(?,?,?,?) ON CONFLICT(account,scope,key) DO UPDATE SET json=excluded.json').run(account,(key.startsWith('alias:')||key.startsWith('signal:'))?'identity':scope,key,JSON.stringify(value));},
