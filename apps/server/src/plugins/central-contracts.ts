@@ -46,16 +46,16 @@ import type {MemoryPhasePipelinePort} from './memory-phase-pipeline.js';
 import type {MemoryLifecycleServicePort} from './memory-lifecycle-service.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
- * C02-C27 implement their providers; H owns loading, selection and lifecycle. This file
+ * Domain owners implement their providers; the host owns loading, selection and lifecycle. This file
  * neither constructs current services nor registers a second host or Manifest. */
 
 declare const commitAuthorityBrand: unique symbol;
-/** An opaque C04-issued reference, never a constructor, callback, serialized grant or proof
+/** An opaque reference issued by the authorization platform, never a constructor, callback, serialized grant or proof
  * of permission. Its private brand prevents accidental structural substitution only. */
 export interface CommitAuthority { readonly [commitAuthorityBrand]: true }
-/** Trusted assembly fixes this C04 service in each writer; consumers cannot supply or
- * select a verifier/issuer with a write call. C04 owns issuance/provenance storage.
- * No issuer registry or runtime authorization implementation is introduced by C01. */
+/** Trusted assembly fixes this authorization service in each writer; consumers cannot supply or
+ * select a verifier/issuer with a write call. The authorization platform owns issuance/provenance storage.
+ * No issuer registry or runtime authorization implementation is introduced by these contracts. */
 export interface CommitAuthorization {
   /** Capture the already admitted request/job's domain grant, never a caller validator. */
   capture(): CommitAuthority;
@@ -66,9 +66,9 @@ export interface CommitAuthorization {
   assertCurrent(authority: CommitAuthority): void;
 }
 
-/** C02 owns SQLite/locks. Repository implementations close over their private SQL;
+/** The vault owns SQLite/locks. Repository implementations close over their private SQL;
  * callers receive typed repositories separately, never a database argument or service bag.
- * The writer checks authority via its fixed C04 CommitAuthorization, not a method on
+ * The writer checks authority via the authorization platform's fixed CommitAuthorization, not a method on
  * the handle. No asynchronous work may run between that domain/fence check and commit. */
 export interface VaultTransactions {
   transaction<T>(authority: CommitAuthority, work: () => T & (T extends PromiseLike<unknown> ? never : unknown)): T;
@@ -83,7 +83,7 @@ export type ContextInventoryRead = ConstructorParameters<typeof ContextQuery>[2]
 export type ContextTreesRead = Pick<ContextTreeRegistry, 'catalog' | 'page'>;
 
 declare const requestAuthorityBrand: unique symbol;
-/** C04-issued request reference. The host rejects disallowed routes before dispatch;
+/** A request reference issued by the authorization platform. The host rejects disallowed routes before dispatch;
  * source content cannot mint a reference and a callback is never its verifier. */
 export interface RequestAuthority extends CommitAuthority { readonly [requestAuthorityBrand]: true }
 export interface RequestAuthorization {
@@ -99,7 +99,7 @@ export type ModelAuthority = Pick<BackgroundModelAuthorization, 'capture' | 'ass
 export type ModelAdmission = Pick<ModelAuthorizationHost, 'manual' | 'automatic' | 'assertEvidence' | 'evidenceTriggers'>;
 
 /** The returned v2 receipt means recoverable intake, not processing/Material/Memory readiness.
- * Preserve RecordContext binding in the same transaction as the capture and final C04
+ * Preserve RecordContext binding in the same transaction as the capture and final authorization
  * domain/fence verification. A consumer callback or consumer-selected issuer is not used. */
 export interface CaptureIntake {
   capture(input: CaptureInput, authority: CommitAuthority): ReturnType<IngressService['capture']>;
@@ -113,7 +113,7 @@ export type SourceRepository = Pick<SourceStore, 'register' | 'getSource' | 'lis
 export type SourceBindings = Pick<SourcePipelineRuntime, 'options' | 'configure' | 'memoryAllowed'>;
 
 export type MaterialRepositoryRead = Pick<MaterialStore, 'get' | 'read' | 'members' | 'input' | 'isCurrentEvidence' | 'contextForEvidence'>;
-/** C19C retrieval/index surface: hybrid search status and reads plus the
+/** The retrieval/index surface: hybrid search status and reads plus the
  * new-work submission points. Embedding construction and close stay with the
  * retrieval-index owner; consumers receive this port, never the engine. */
 export type RetrievalIndex = Pick<Indexer, 'configured' | 'search' | 'tick' | 'retry'>;
@@ -121,14 +121,14 @@ export type RetrievalIndex = Pick<Indexer, 'configured' | 'search' | 'tick' | 'r
  * a failed input. The owner binds the per-engine runtime on the MaterialStore. */
 export type MaterialIndexWork = Pick<MaterialIndexRuntime, 'tick' | 'retry'>;
 export interface MaterialPublication {
-  /** The provider's fixed C04 verifier checks the grant/fence within atomic publication. */
+  /** The provider's fixed authorization verifier checks the grant/fence within atomic publication. */
   publish(draft: Parameters<MaterialStore['publish']>[0], options: Parameters<MaterialStore['publish']>[1], authority: CommitAuthority): ReturnType<MaterialStore['publish']>;
 }
 export type FileOriginalRead = Pick<FileRawReader, 'read'>;
 export type ExecutionSubmission = Pick<ExecutionEngine, 'enqueue' | 'get' | 'drain'>;
 /** Handler ownership is granted to providers, independently of ordinary enqueue consumers. */
 export type ExecutionHandlers = Pick<ExecutionEngine, 'register'>;
-/** C03 binds one domain and schema to the handle before acquisition. The provider validates
+/** The configuration owner binds one domain and schema to the handle before acquisition. The provider validates
  * updates and returns detached values; callers cannot choose another domain or read secrets
  * from a global configuration document. Values remain local until a domain defines its DTO. */
 export interface ConfigurationDomain<Value> {
@@ -138,13 +138,13 @@ export interface ConfigurationDomain<Value> {
 }
 export type UsageRecording = Pick<UsageLedger, 'start' | 'operation'>;
 export type PluginControlRead = Pick<PluginCenter, 'view' | 'instanceView'>;
-/** C21C's durable pause/freeze admission. Callbacks that project local stop/resume
+/** The memory control owner's durable pause/freeze admission. Callbacks that project local stop/resume
  * work remain on the trusted assembly bridge, never this control port. */
 export type MemoryAdmission = Pick<MemoryAutomation, 'state' | 'view' | 'accepting' | 'command' | 'freeze' | 'release' | 'touch'>;
-/** C21D's binding state machine. The plugin owns the actual bindings and local
+/** The memory binding state machine. The plugin owns the actual bindings and local
  * control projections; the port exposes only the owner's commands and views. */
 export type MemoryBindingControl = Pick<MemoryBindings, 'view' | 'prepare' | 'action' | 'binding' | 'assertNewManualWork' | 'pendingTail'> & { accepting(): boolean };
-/** C23's external provider adapters. Bindings, publication and the native
+/** The external memory provider adapters. Bindings, publication and the native
  * pipeline stages consume verified providers and durable cleanup through this
  * port; the PluginCenter probe/configuration/retirement hooks and the native
  * model authority pin stay on the trusted assembly bridge, never the port. */
@@ -152,7 +152,7 @@ export type MemoryProviderAdapters = Pick<MemoryAdapters, 'provider' | 'engine' 
 export type ProcessingSubmission = Pick<ProcessingRuntime, 'enqueue' | 'view' | 'retry' | 'cancel'>;
 export type MaterialMemoryCandidates = Pick<MaterialMemoryWork, 'observe' | 'withdraw' | 'planningInput' | 'sourceRequirements' | 'authorized'>;
 /** Read-only managed-asset state. Installs, imports, cancellation and the
- * managed directory itself stay with the C18A owner, never the port. */
+ * managed directory itself stay with the media owner, never the port. */
 export type MediaAssetsRead = Pick<MediaAssets, 'ready' | 'status' | 'statuses'>;
 export type ConversationRepository = Pick<Conversations, 'list' | 'get' | 'page' | 'main' | 'create' | 'selectMain' | 'message' | 'hasMessage' | 'messageByClientRequestId' | 'messageForRun' | 'receive' | 'pendingHeads' | 'disposition' | 'recordSteering' | 'recordTaskSteering' | 'assertSteeringSettled' | 'queue' | 'attachRun' | 'running' | 'cancel' | 'complete' | 'fail' | 'referenceAvailability' | 'append' | 'appendFailure' | 'delete' | 'context' | 'historyContext' | 'assertHistoryContext' | 'historyOriginalDependencies' | 'retiredSelection'>;
 /** The query activation owns admitted model runs, their preparation receipts
@@ -174,7 +174,7 @@ export interface MemoryTopics {
   trees: AutomaticTopics['trees'];
   state: AutomaticTopics['state'];
 }
-/** C26C's durable ledger and provider registry. Explanations and continuation
+/** The durable owner-question ledger and provider registry. Explanations and continuation
  * writes stay with their installed providers; this port never interprets text. */
 export type OwnerQuestionsPort = Pick<OwnerQuestions, 'register' | 'create' | 'get' | 'page' | 'reply' | 'obsolete'>;
 
@@ -272,7 +272,7 @@ const providerKey = (provider: ContributionIdentity) => {
 /** Pure preflight of the selected candidate's declarations, not a resolver: never acquire,
  * select by order/priority, construct a provider, or reinterpret a binding revision.
  * Distinct providers of one API are valid when the consumer supplies an exact binding.
- * H's runtime additionally checks availability, dependency graph, pin validity and revisions. */
+ * The host runtime additionally checks availability, dependency graph, pin validity and revisions. */
 export function checkCentralServiceDeclarations(declarations: readonly CentralServiceDeclaration[], requirements: readonly CentralServiceRequirement[]): CentralServiceIssue[] {
   const issues: CentralServiceIssue[] = [];
   const services = new Map<string, CentralServiceDeclaration[]>();

@@ -5,7 +5,7 @@ import {dirname, resolve, relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {moduleReferences} from '../../../scripts/ci/architecture.mjs';
 
-// H07/H11 own global scanner integration. Check this new package independently now.
+// The repository-wide architecture checks own scanner integration. Check this new package independently now.
 const source = fileURLToPath(new URL('../src', import.meta.url));
 const files = directory => readdirSync(directory, {withFileTypes: true}).flatMap(entry => entry.isDirectory()
   ? files(resolve(directory, entry.name)) : entry.name.endsWith('.ts') ? [resolve(directory, entry.name)] : []);

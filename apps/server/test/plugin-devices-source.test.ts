@@ -20,21 +20,23 @@ const ownerToken='generated-devices-owner-token';
 const beat=(deviceId='generated-phone',platform:'android'|'macos'='android'):Heartbeat=>heartbeatSchema.parse({deviceId,deviceName:'Generated device',platform,status:'capturing',queueDepth:3,lastCaptureAt:'2026-09-14T12:00:00.000Z'});
 const capture=(deviceId='generated-phone'):CaptureInput=>captureSchema.parse({id:randomUUID(),deviceId,deviceName:'Generated phone',platform:'android',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:'Generated first data original'});
 
-async function fixture(t:TestContext,options:{releaseOnRequest?:boolean}={}){
+async function fixture(t:TestContext,options:{releaseOnRequest?:boolean;releaseAfterRead?:boolean}={}){
   const directory=mkdtempSync(join(tmpdir(),'mote-devices-source-'));
   const store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),materials=new MaterialStore(store);
   const reader=new EvidenceReader(store,sources,files);
   const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
   await platform.prepare();platform.bindRepositories({sources,files,materials});await platform.start();
   const pins=new WeakMap<FastifyRequest,RequestAuthority>();
+  let readPin:RequestAuthority|undefined;
+  const completeRead=()=>{if(options.releaseAfterRead&&readPin)platform.releaseRequest(readPin);};
   const calls={heartbeat:0,devices:0,firstData:0};
   const intake=createDevicesSource({recordQueueSnapshot:()=>{}}, {
-    devices:{heartbeat:value=>{calls.heartbeat++;return store.heartbeat(value);},devices:()=>{calls.devices++;return store.devices();}},
-    firstData:()=>{calls.firstData++;return firstDeviceData(store,files,reader);},
+    devices:{heartbeat:value=>{calls.heartbeat++;return store.heartbeat(value);},devices:()=>{calls.devices++;const result=store.devices();completeRead();return result;}},
+    firstData:()=>{calls.firstData++;const result=firstDeviceData(store,files,reader);completeRead();return result;},
     authority:platform,
     identity:{
       assertOwnDevice:(request,value)=>platform.requests.assertOwnDevice(request,value),
-      // C04 owns the released-pin/MCP/foreign-platform rules; the handler keeps
+      // The authorization platform owns the released-pin/MCP/foreign-platform rules; the handler keeps
       // no credential map or second identity registry.
       assertOwnPlatform:(request,value)=>platform.requests.assertOwnPlatform(request,value),
     },
@@ -45,6 +47,7 @@ async function fixture(t:TestContext,options:{releaseOnRequest?:boolean}={}){
   app.addHook('onRequest',async request=>{
     const pin=platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin});
     pins.set(request,pin);
+    readPin=pin;
     // Simulates revocation/expiry after admission but before the handler runs.
     if(options.releaseOnRequest)platform.releaseRequest(pin);
   });
@@ -155,4 +158,23 @@ test('reads recheck the C04 pin so a pin revoked after admission cannot read dev
   const beat=await f.post('/api/devices/heartbeat',ownerToken,f.beat());
   assert.equal(beat.statusCode,401,beat.body);
   assert.equal(f.calls.heartbeat,0);
+});
+
+test('a released C04 pin cannot publish an already computed device or original-evidence view',async t=>{
+  const f=await fixture(t,{releaseAfterRead:true});
+  f.store.heartbeat(f.beat());
+  const fileId=await f.upload('generated-source','generated-fenced.txt',Buffer.from('Generated fenced original'));
+  const input=f.capture();input.metadata={version:1,observedAt:input.capturedAt,attachments:[fileId]};
+  const pin=f.platform.bindRequest({authorization:`Bearer ${ownerToken}`,method:'POST',route:'/api/captures'});
+  try{await f.platform.withCapture(pin,input,()=>f.platform.captureIntake.capture(input,f.platform.commits.capture()));}finally{f.platform.releaseRequest(pin);}
+  const expected=firstDeviceData(f.store,f.files,new EvidenceReader(f.store,f.sources,f.files));
+  assert.equal(expected.state,'ready');
+  const preserved=f.store.devices();
+  for(const route of ['/api/devices','/api/devices/first-data']){
+    const response=await f.get(route);
+    assert.equal(response.statusCode,401,response.body);
+    assert.ok(!response.body.includes(input.id),'the already computed candidate is never returned');
+  }
+  assert.deepEqual(f.calls,{heartbeat:0,devices:1,firstData:1},'both real reads completed before their pin was released');
+  assert.deepEqual(f.store.devices(),preserved);
 });

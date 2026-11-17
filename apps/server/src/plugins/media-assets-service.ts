@@ -5,9 +5,9 @@ import {StoreError} from '../store.js';
 import {MediaAssets} from '../media-assets.js';
 import {centralServices,type MediaAssetsRead} from './central-contracts.js';
 
-/** C18A's actual data-contribution fragment. H03 owns the package Manifest; H05
- * owns install topology. The plugin owns the managed asset directory itself:
- * downloads, checksum verification and atomic version publication. */
+/** The media-assets service's actual data-contribution fragment. The package Manifest
+ * carries its declaration; the host owns install topology. The plugin owns
+ * the managed asset directory itself: downloads, checksum verification and atomic version publication. */
 export const mediaAssetsServiceContribution={
   id:'media-assets-service',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'}],
@@ -68,7 +68,7 @@ export function createMediaAssetsService(options:MediaAssetsServiceOptions):Medi
   });
 }
 
-/** Trusted H04/H05 wiring. Only the read-only asset-state port is published. */
+/** Trusted plugin lifecycle and install wiring. Only the read-only asset-state port is published. */
 export function createMediaAssetsServiceFactory(options:MediaAssetsServiceOptions){
   return (context:HostPluginContext):PluginLifecycle=>{
     const service=createMediaAssetsService(options);

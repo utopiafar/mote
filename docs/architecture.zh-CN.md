@@ -32,6 +32,8 @@ flowchart LR
 
 Activity通过可执行的[activity-services声明](../apps/server/src/plugins/activity-services.ts)和现有PluginHost领域装载器启用；同时选中feature与plugin时才打开投影、后续采集hook、自动理解handler及轮询。未选不创建这些资源，Memory、Query与执行事实仍归各自所有者。13条Activity Memory订阅改为当前连接拥有的SQLite TEMP触发器，关闭即撤回，重新选中只从原任务事实重建可丢弃投影。打开旧profile时先撤回已知的持久Activity订阅，保留历史表和原有产品。Agent View有独立只读声明；Activity通过当前QueryRuns元数据lease读取委派工作，不接收私有payload或回答。其他领域装配与私有持久化适配仍为后续范围。
 
+Devices通过可执行的[devices-source声明](../apps/server/src/plugins/devices-domain.ts)启用。PluginHost activation创建、启动和关闭source，并拥有其HTTP贡献；未选feature或plugin时不打开source。可信source装配只提供携带窄设备操作和既有Notes/Capture请求权限的私有构造能力。心跳和首条数据视图继续校验当前请求pin，关闭HTTP scope会撤回真实owner。共享持久化`devices`表仍属于Vault并供采集入口使用；本领域没有独立schema或timer。
+
 ## 技术底座
 
 - Central 使用 Node.js / TypeScript 与 Fastify，Web 使用 React；Mac 使用 Electron 与原生辅助程序，Android 使用 Kotlin 原生客户端。
@@ -50,7 +52,7 @@ Activity通过可执行的[activity-services声明](../apps/server/src/plugins/a
 
 | 产品方向 | 当前实现与差距 |
 | --- | --- |
-| 主对话、后台任务与授权行动 | 持久对话 query-run 与正式 assistant.task 已支持模型判断相关补充与独立消息，在途工作不会锁住整段对话。Codex 使用原生 turn steering 与持久 ACK 围栏；不支持的运行时受控接续，持续 DSH 应用保留单写者等待。不依赖旧档案的当前指令、记录/认识我轻入口和统一授权 Actions 尚待接通；发消息动作仍逐条确认，外部 Agent 行动入口未接通。见[对话行为](assistant.md)。 |
+| 主对话、后台任务与授权行动 | 持久对话 query-run 与正式 assistant.task 已支持模型判断相关补充与独立消息，在途工作不会锁住整段对话。Codex 使用原生 turn steering 与持久 ACK 围栏；不支持的运行时受控接续，持续 DSH 应用保留单写者等待。明确且自足的当前指令可从私有所有者输入启动只读 Task，无需旧档案证据；空档案读取集合在恢复和补充后仍固定。记录/认识我轻入口和统一授权 Actions 尚待接通；发消息动作仍逐条确认，外部 Agent 行动入口未接通。见[对话行为](assistant.md)。 |
 | 提醒送达 | 当前MVP保留Android进程存活时轮询提醒，尚无后台推送；在线提醒不代表手机休眠后仍能及时送达。 |
 | 默认保存与同步 | 中央已取消资料总量配额和按天自动清理，新文件来源默认归档原件且保留已有明确选择；未完成上传与可重试处理输入不因时长删除，成功处理、显式取消及ACK传输副本仍按各自流程释放。中央历史删除阻止已删及当时在途旧版本复活，允许来源新版本继续；上传会话持久绑定中央既有范围代次，Mac二进制队列按明确410隔离旧版并继续后续版本，见[文件](files.md)。原件归档已通过安全整数、固定分块、分页收据及流式读取／备份承接原512 MiB以上文件，解析和Buffer／便携格式保留独立预算。Mac正式采集与会议音频已在准确ACK后继续本机留存，取消资料总量／条数配额与按天清理；新文件来源默认归档，来源专用暂存在准确整件ACK后释放，本机范围撤回持久隔离旧输入并隔离旧请求许可。Android正式采集与会议音频也已在准确ACK后保留本机原件，不再按总量配额或时长清理；文件来源暂存仅在准确整件ACK后释放，来源准入与连接代次检查使范围变化和重启后旧隔离输入仍被保留。Mac经所有者确认清理后保留轻量回执记录，通过现有权限检查接口读取原中央，包含会议原件流式另存；待传、隔离、缺少精确回执的输入及用户源文件不在清理范围。Android经所有者确认清理后同样保留轻量回执记录，按当前权限与连接代次读取原中央的正文／图片，会议原件流式校验后才打开另存目标。当前MVP不做资料按天保留。 |
 | Memory使用与生命周期 | 额外复核由冻结的recipe显式选择独立复核器或无需复核，两条路径保留相同宿主校验，不增加手写语义分流。有效Memory可直接使用，显式standing上下文在当前权限与实际模型预算内持续提供；原话引用与来源特定论断仍需相应原件。普通暂停/恢复可跨重启保留已授权回执、任务和有限生命周期轮次；拒绝的输入与未登记间隙不补授权，立即停止会撤销自动批次尾部。普通释放原件在当前范围内保留已经发布且仍有效的Memory；明确遗忘、来源撤回与隐私撤权仍使其失效。宿主投递收据在在途查询及已保存对话中区分Memory祖先与实际原文读取。见[Memory生命周期](memory.md)。 |

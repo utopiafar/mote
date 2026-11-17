@@ -2,6 +2,8 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {dirname,join} from 'node:path';
 import {AgentYieldError} from '@mote/agent';
 import type {QueryInput} from '@mote/agent';
+import type {FeatureInventory} from '@mote/shared';
+import {prepareFeatureInventory} from '../plugins/feature-inventory-domain.js';
 import type {Config} from '../config.js';
 import type {Connections} from '../connections.js';
 import type {Store} from '../store.js';
@@ -26,6 +28,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
 ]);
 
 export interface PlatformAssemblyDependencies {
+  readonly readFeatureInventory:()=>FeatureInventory;
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly config:Config;
   readonly store:Store;
@@ -42,6 +45,7 @@ export interface PlatformAssemblyDependencies {
  * model admission/observation wiring that app.ts previously held inline. */
 export async function assemblePlatform(dependencies:PlatformAssemblyDependencies){
   const {bootstrap,config,store,resources}=dependencies;
+  await prepareFeatureInventory(bootstrap,resources,dependencies.readFeatureInventory);
   const authorizationPlatform=createAuthorizationPlatform({ownerToken:config.token,connectorConfiguration:()=>config.connectors,allowedOrigins:config.allowedOrigins},{
     store,availableModelConnections:()=>dependencies.availableModelConnections(),...(dependencies.connections?{connections:dependencies.connections}:{}),
   });

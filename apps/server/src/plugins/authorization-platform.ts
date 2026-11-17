@@ -50,7 +50,7 @@ export interface BoundAuthorizationRequest {
   readonly params?:Readonly<{id?:string}>;readonly origin?:string;readonly signal?:AbortSignal;
 }
 /** Executable local owner only; it advertises no ordinary issuer/control/write service.
- * H05's trusted registry supplies real storage. This is not a release/package Manifest. */
+ * The trusted host registry supplies real storage. This is not a release/package Manifest. */
 export const authorizationPlatformContribution={id:'authorization-platform',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'}],provides:[],
 } as const satisfies ManifestContribution;
@@ -225,7 +225,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     try{assertRequest(reference);return reference;}catch(error){releaseRequest(reference);throw error;}
   }
   /** The single HTTP contribution for credentials and login handoffs. It is mounted
-   * once by the pre-H14 feature bridge; every handler dispatches against this
+   * once by the host feature bridge; every handler dispatches against this
    * platform's current activation instead of installing a second route table. */
   function connectionRoutes(app:FastifyInstance,context:ConnectionRouteContext){
     if(routesInstalled)throw denied('connection_routes_installed',409);
@@ -297,7 +297,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
       return {credential:credential?{id:credential.id,scope:owner?'owner':credential.scope,label:credential.label,serverUrl:credential.serverUrl,...(credential.deviceId?{deviceId:credential.deviceId,deviceName:credential.deviceName,platform:credential.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:context.serverVersion,profile:context.profile??'default',...protocol},capabilities:{ingest:owner||credential?.scope==='collector',ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||credential?.scope==='collector',archiveRead:owner||credential?.scope==='mcp-read'}};
     });
   }
-  /** The mote.models authorization table. It is mounted once by the pre-H14
+  /** The mote.models authorization table. It is mounted once by the host
    * feature bridge; every handler dispatches against this activation, so a
    * stopped or not-yet-started platform reports 503 instead of stale state.
    * `context.credential` is the same non-owner request identity the retired
@@ -392,7 +392,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
 }
 export type AuthorizationPlatform=ReturnType<typeof createAuthorizationPlatform>;
 
-/** Compiled trusted H04 owner. No normal plugin receives admission, issuer or controls. */
+/** Compiled trusted host factory. No normal plugin receives admission, issuer or controls. */
 export function createAuthorizationPlatformFactory(options:AuthorizationPlatformOptions,dependencies:AuthorizationPlatformDependencies,repositories:AuthorizationRepositories){
   return (context:HostPluginContext):PluginLifecycle=>{
     const platform=createAuthorizationPlatform(options,dependencies);context.scope.defer(platform.close);
