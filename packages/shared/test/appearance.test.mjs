@@ -26,7 +26,7 @@ test('live OS changes affect only auto, and returning to auto resolves immediate
 test('palettes retain the final source muted color and contrast for other text and required controls',async()=>{
  const {linearUiTheme}=await import('../dist/ui-presentation.js');
  // The owner requires the exact final prototype. Its light secondary text is
- // #777066, superseding the implementation-only D34 adjustment. These five
+ // #777066, superseding the earlier implementation-only contrast adjustment. These five
  // source pairs range from 4.0485 to 4.4915; all other 4.5:1 checks stay intact.
  const sourcePairs=new Set(['muted/background','muted/surface-sunken','muted/surface-hover','sidebar-muted/sidebar','muted/tint']);
  for(const [scheme,t]of Object.entries(linearUiTheme.schemes)){

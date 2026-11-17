@@ -12,9 +12,9 @@ import {Operations} from '../operations.js';
 import {centralServices,type ExecutionSubmission} from './central-contracts.js';
 
 export interface ExecutionPlatformDependencies {
-  /** Borrowed from C02; execution disposal never closes the vault. */
+  /** Borrowed from the vault; execution disposal never closes the vault. */
   readonly store:Store;
-  /** Fixed trusted C04 authority, not supplied by a handler or submission. */
+  /** Fixed trusted authorization service, not supplied by a handler or submission. */
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly settings:Pick<ExecutionSettings,'execution'>;
   readonly clock?:()=>number;
@@ -39,7 +39,7 @@ export function createExecutionPlatform(dependencies:ExecutionPlatformDependenci
   const ready=()=>{if(!executor||phase==='stopped'||phase==='disposed')throw unavailable();};
   const active=()=>{if(phase!=='active')throw unavailable();};
   const current=()=>{ready();if(phase!=='active'&&phase!=='quiescing')throw unavailable();};
-  /** C03's synchronous publish/rollback supplies its exact next/previous snapshot. */
+  /** The configuration owner's synchronous publish/rollback supplies its exact next/previous snapshot. */
   function refreshSettings(next:ReturnType<ExecutionSettings['execution']>=dependencies.settings.execution()){
     ready();const value=executionSettingsSchema.parse(next);
     gates!.agentGate.configure(value.agentConcurrency);gates!.llmGate.configure(value.llmConcurrency);
@@ -50,7 +50,7 @@ export function createExecutionPlatform(dependencies:ExecutionPlatformDependenci
     get(...args:Parameters<ExecutionEngine['get']>){current();return executor!.get(...args);},
     drain(...args:Parameters<ExecutionEngine['drain']>){current();return executor!.drain(...args);},
   }) satisfies ExecutionSubmission;
-  /** Only a trusted H04 factory passes its fixed context.scope here. Never publish
+  /** Only a trusted host factory passes its fixed context.scope here. Never publish
    * this binder or accept an ordinary consumer's self-selected scope as ownership. */
   function handlersForAssembly(scope:PluginScope){
     active();scope.assertCurrent();let accepting=true,disposed=false,draining:Promise<void>|undefined;

@@ -16,19 +16,19 @@ import {CAPTURE_BATCH_MAX_BYTES} from '../capture-limits.js';
 import {centralServices,type CaptureIntake,type CommitAuthority,type RequestAuthority,type SourceIntake,type SourceRepository} from './central-contracts.js';
 import type {AuthorizationPlatform} from './authorization-platform.js';
 
-/** Trusted C04 members the capture transport is allowed to use. They are never
+/** Trusted authorization members the capture transport is allowed to use. They are never
  * published: `withCapture`/`withSource` establish the admission scope that makes
  * `commits.capture()` meaningful, and the platform owns the single IngressService. */
 export type CaptureIntakeAuthority=Pick<AuthorizationPlatform,
   'bindRequest'|'releaseRequest'|'requests'|'commits'|'withCapture'|'withSource'|'captureIntake'|'sourceIntake'>;
 
-/** H03 owns the package Manifest; this is the actual data-contribution fragment. */
+/** The package Manifest is host-owned; this is the actual data-contribution fragment. */
 export const captureIntakeContribution={
   id:'capture-intake',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'},{kind:'host',id:'mote.owner-authorization',version:'1.0.0'}],
   // `sources` is deliberately not published: SourceStore.register writes owner
   // control-plane state and has no commit-authority parameter, so an ordinary
-  // plugin must not receive it. The C10 parent publishes it with source-route
+  // plugin must not receive it. The source-integration parent publishes it with source-route
   // admission; this slice keeps only the authority-bearing intake facades.
   provides:[centralServices.captureIntake,centralServices.sourceIntake].map(service=>({kind:'service' as const,id:service.id,apiVersion:service.apiVersion,cardinality:'single' as const})),
 } as const satisfies ManifestContribution;
@@ -40,15 +40,15 @@ export interface CaptureIntakeOptions {
   readonly diagnostics?:Pick<ServerDiagnostics,'measure'>;
 }
 export interface CaptureIntakeDependencies {
-  /** C02-owned SQLite and the current domain stores. All four are borrowed. */
+  /** Vault-owned SQLite and the current domain stores. All four are borrowed. */
   readonly store:Store;
-  /** One SourceStore built by the trusted root/C10 parent with the C09 runtime. */
+  /** One SourceStore built by the trusted root/source-integration parent with the source-pipeline runtime. */
   readonly sources:SourceStore;
   readonly files:FileStore;
   readonly materials:MaterialStore;
 }
 export interface CaptureRouteContext {
-  /** Request pin bound by the host's C04 authentication hook; never caller-supplied. */
+  /** Request pin bound by the host's authorization hook; never caller-supplied. */
   readonly request:(request:FastifyRequest)=>RequestAuthority|undefined;
 }
 export interface CaptureIntakePorts {
@@ -74,11 +74,11 @@ export function parseCaptureBundle(body:unknown):CaptureInput[]{
 const unavailable=()=>new StoreError('Capture intake is unavailable',503);
 
 /** Owns the capture write transport and its published intake ports. It borrows
- * the vault, the source/file/material repositories and the single C04 authority;
+ * the vault, the source/file/material repositories and the single authorization platform;
  * closing it revokes admission and drains nothing it does not own. */
 export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:CaptureIntakeDependencies){
   const {store,sources,files,materials}=dependencies;
-  /** The capture owner owns the single IngressService; C04 binds this exact
+  /** The capture owner owns the single IngressService; the authorization platform binds this exact
    * instance through bindRepositories, so the authoritative write path and the
    * plugin routes share one acknowledgement boundary. It has no close(). */
   const ingress=new IngressService(store,sources,files);
@@ -149,7 +149,7 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
       if(sources.store!==store||files.store!==store||materials.store!==store)throw new StoreError('Capture intake repository mismatch',503);
       phase='prepared';
     },
-    /** Trusted assembly only: C04 supplies the fixed verifier after it bound the
+    /** Trusted assembly only: the authorization platform supplies the fixed verifier after it bound the
      * same Ingress instance. This is not a published service or caller callback. */
     bindAuthorization(value:CaptureIntakeAuthority){
       if(phase!=='prepared')throw unavailable();
@@ -158,7 +158,7 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
     start(){if(phase!=='bound')throw unavailable();phase='active';},
     quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';},
     stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
-    /** Trusted assembly binds this exact instance into C04 bindRepositories. */
+    /** Trusted assembly passes this exact instance to the authorization platform's bindRepositories. */
     get ingress(){return ingress;},
     /** Trusted assembly registers these on the feature child app, never globally. */
     routes,
@@ -170,14 +170,14 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
 }
 export type CaptureIntakePlatform=ReturnType<typeof createCaptureIntake>;
 
-/** Trusted assembly closure: it binds this exact Ingress into C04, starts C04 and
+/** Trusted assembly closure: it binds this exact Ingress into the authorization platform, starts it and
  * returns the fixed authority. Never a published service or caller-supplied object. */
 export type CaptureAuthorizationBinding=(ingress:IngressService)=>CaptureIntakeAuthority|Promise<CaptureIntakeAuthority>;
 /** Trusted assembly registers the owned routes on its feature child app. */
 export type CaptureRouteRegistration=(platform:CaptureIntakePlatform)=>void;
 
-/** Compiled trusted H04 owner. PluginHost runs prepare -> start atomically, so the
- * assembly closure must bind C04 to this ingress inside prepare; the host never
+/** Compiled trusted host factory. PluginHost runs prepare -> start atomically, so the
+ * assembly closure must bind the authorization platform to this ingress inside prepare; the host never
  * infers routes or authority from contributions. */
 export function createCaptureIntakeFactory(options:CaptureIntakeOptions,dependencies:CaptureIntakeDependencies,bind:CaptureAuthorizationBinding,registerRoutes?:CaptureRouteRegistration){
   return (context:HostPluginContext):PluginLifecycle=>{

@@ -27,7 +27,7 @@ import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {agentRuntimeContribution,agentRuntimeDeclaration,agentRuntimeReplacement,createAgentRuntimeServices} from '../plugins/agent-runtime.js';
 import type {PluginCenter} from '../plugin-center.js';
 
-/** A09's declared build-time domain plugin; the distribution concatenates each
+/** The agent domain's declared build-time plugin entry; the distribution concatenates each
  * domain's list into one selected table. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:agentRuntimeContribution,declaration:agentRuntimeDeclaration,replacement:agentRuntimeReplacement},

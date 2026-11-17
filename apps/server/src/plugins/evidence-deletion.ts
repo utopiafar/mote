@@ -1,7 +1,7 @@
 import {StoreError} from '../store.js';
 export type EvidenceDeletionCapability={available:boolean;kind:'capture'|'file'|null};
 type Alias={virtual:boolean;captureId?:string};
-/** C24 owns evidence deletion identity. Records, file archives and Material
+/** The publication feature owns evidence deletion identity. Records, file archives and Material
  * aliases arrive as narrow ports; no consumer passes a Store or feature bag. */
 export interface EvidenceDeletionCapturePort {
   delete(id:string,assertCurrent?:()=>void):{deleted:number};

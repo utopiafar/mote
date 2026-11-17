@@ -60,8 +60,8 @@ export async function prepareMaterials(dependencies:MaterialInputDependencies){
   const lease=await dependencies.bootstrap.host.acquire(centralServices.materialRepository,bindings!.repository);
   dependencies.resources.defer(()=>lease.release());
   const materials=lease.value as MaterialStore;
-  // C19E owns the candidate ledger and capture receipt intake. The root still
-  // passes the actual capture hook from app.ts until K04 moves that call site.
+  // The material-memory-intake plugin owns the candidate ledger and the single
+  // capture receipt intake; the trusted root still installs that observer outside this plugin.
   const intake=createMaterialMemoryIntake({store:dependencies.store,materials,recipes:dependencies.memoryRecipeSettings,newInputAdmission:dependencies.newInputAdmission});
   let intakeBindings:MaterialMemoryIntakeBindings|undefined;
   const intakeHandle=await dependencies.bootstrap.host.install({
@@ -126,7 +126,7 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
   materialContext.prepare();materialContext.start();
   resources.beforeClose(()=>dependencies.disableCatalogChanges());
   backendContext.provide('moteContextTrees',contextTrees);
-  // The pre-H14 feature bridge mounts these before listen; each route table
+  // The transitional feature bridge mounts these before listen; each route table
   // dispatches against this activation instead of installing a second handler.
   contributeDomainRoutes(backendContext,{
     'mote.materials':Object.freeze({mount:(app:Parameters<typeof materialContext.routes>[0])=>materialContext.routes(app)}),

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Deterministic package payload packer for the current H03 PackageManifest.
+/** Deterministic package payload packer for the current PackageManifest.
  *
  * The release Manifest is external to the ZIP payload. This intentionally
  * avoids a self-reference when the Manifest carries the archive digest. */
