@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -9,10 +10,10 @@ import {Store} from '../src/store.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {FileProcessorRuntime} from '../src/file-processors.js';
 
-test('a separately installed module shares the durable DAG, cache, lineage and unload boundary',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-community-plugin-')),store=new Store(directory),workflows=new ProcessingRuntime(store);
+test('a separately installed module shares the durable DAG, cache, lineage and unload boundary',async(t)=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-community-plugin-')),store=new Store(directory),workflows=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));
  const textNormalization=(await import(pathToFileURL(fileURLToPath(new URL('../../../examples/text-normalization-plugin/plugin.mjs',import.meta.url))).href)).default;
- const plugins=new FileProcessorRuntime(undefined,[textNormalization],[],workflows.registry);
+ const plugins=new FileProcessorRuntime(undefined,[textNormalization],[],workflows.registry,testScope(t));
  try{
   await plugins.ready;const id=randomUUID();await store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-08-01T00:00:00Z',durationMs:0,ocrText:'First\r\nSecond'});
   const graph=[{name:'normalize',processor:'community.text-normalization',inputs:[id]}];const jobs=workflows.enqueue(graph);await workflows.tick();
@@ -24,8 +25,8 @@ test('a separately installed module shares the durable DAG, cache, lineage and u
  }finally{await plugins.close();await workflows.close();store.close();rmSync(directory,{recursive:true,force:true});}
 });
 
-test('unloading a processor fences an in-flight result and supports explicit recovery after reinstall',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-community-unload-')),store=new Store(directory),runtime=new ProcessingRuntime(store);
+test('unloading a processor fences an in-flight result and supports explicit recovery after reinstall',async(t)=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-community-unload-')),store=new Store(directory),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));
  try{
   const id=randomUUID();await store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-08-01T00:00:00Z',durationMs:0,ocrText:'Generated evidence'});
   let release!:()=>void,entered!:()=>void;const wait=new Promise<void>(r=>release=r),started=new Promise<void>(r=>entered=r);

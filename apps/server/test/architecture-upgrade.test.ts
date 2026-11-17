@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {scanVectors} from '../src/vector-work.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,7 +47,7 @@ test('artifact deletion cannot resurrect forgotten evidence; precise text is ret
  store.delete(a.id);store.archive.aggregate();store.archive.collect();assert.equal(store.archive.stats().contents,0);assert.equal(store.archive.stats().artifacts,0);await assert.rejects(store.ingest(a),{statusCode:410});
 });
 test('workflow DAG validates cycles/missing deps, caches versions and commits multiple artifacts',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;
  runtime.registry.register({id:'fixture.extract',version:'1',lane:'extract',async process(){calls++;return [{kind:'text',text:'Extracted 41',metadata:{}},{kind:'index',text:'Index',metadata:{}}];}});
  runtime.registry.register({id:'fixture.semantic',version:'1',lane:'semantic',async process(input){assert.equal(input.artifacts.length,1);return [{kind:'semantic',text:'Interpreted',metadata:{}}];}});
  assert.throws(()=>runtime.enqueue([{name:'a',processor:'fixture.extract',inputs:[a.id],dependsOn:['b']},{name:'b',processor:'fixture.extract',inputs:[a.id],dependsOn:['a']}]),/cycle/);
@@ -55,14 +56,14 @@ test('workflow DAG validates cycles/missing deps, caches versions and commits mu
  assert.equal(runtime.enqueue([{...graph[0],config:{a:1,b:2}},graph[1]]).extract,jobs.extract);await runtime.tick();assert.equal(calls,1);assert.equal(store.archive.stats().artifacts,3);
 });
 test('lane concurrency, retries, stale input and cancellation are durable',async t=>{
- const store=fixture(t);let now=Date.parse('2026-09-20T00:00:00Z');const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:2}},()=>now);t.after(()=>runtime.close());const a=observation(),b=observation();await store.ingestBatch([a,b]);let calls=0;
+ const store=fixture(t);let now=Date.parse('2026-09-20T00:00:00Z');const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:2}},()=>now,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation(),b=observation();await store.ingestBatch([a,b]);let calls=0;
  runtime.registry.register({id:'fixture.fail',version:'1',lane:'semantic',async process(){calls++;throw new ProcessingFailure('transient');}});
  const ids=runtime.enqueue([{name:'a',processor:'fixture.fail',inputs:[a.id]},{name:'b',processor:'fixture.fail',inputs:[b.id]}]);await runtime.tick();assert.equal(calls,2);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(ids.b)!.state,'waiting');
  now+=60000;await runtime.tick();assert.equal(calls,4);runtime.cancel(ids.a);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(ids.a)!.state,'cancelled');
  store.delete(b.id);now+=86400000;await runtime.tick();assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(ids.b)!.state,'stale');assert.equal(calls,4);
 });
 test('in-flight source deletion and expired leases fence late completions',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let release!:()=>void;const waiting=new Promise<void>(resolve=>{release=resolve;});let started!:()=>void;const start=new Promise<void>(resolve=>{started=resolve;});
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation();await store.ingest(a);let release!:()=>void;const waiting=new Promise<void>(resolve=>{release=resolve;});let started!:()=>void;const start=new Promise<void>(resolve=>{started=resolve;});
  runtime.registry.register({id:'fixture.wait',version:'1',lane:'extract',async process(){started();await waiting;return [{kind:'text',text:'Must not reappear',metadata:{}}];}});
  const id=runtime.enqueue([{name:'a',processor:'fixture.wait',inputs:[a.id]}]).a;const running=runtime.tick();await start;store.delete(a.id);release();await running;assert.equal(store.archive.stats().artifacts,0);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(id)!.state,'stale');
 });
@@ -80,21 +81,21 @@ test('source directory catalog paginates without losing same-title files and tra
  await sources.upsert('nas',{...sourceItem(1),revision:'v2',observedAt:'2026-09-19T00:00:00Z',uri:'nas://generated/moved/1.txt'});assert.equal(browseSourceCatalog(store.db,'nas').directories.length,2);
 });
 test('dependent artifact lineage preserves invalidation without expanding ancestor execution inputs',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation('Parent'),b=observation('Child');await store.ingestBatch([a,b]);
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation('Parent'),b=observation('Child');await store.ingestBatch([a,b]);
  runtime.registry.register({id:'fixture.chain',version:'1',lane:'aggregate',async process(input){if(input.artifacts.length){assert.equal(input.artifacts[0].outputs[0].text,'Derived');assert.deepEqual(input.observations.map(r=>r.id),[b.id]);}return [{kind:'derived',text:'Derived',metadata:{}}];}});
  const jobs=runtime.enqueue([{name:'parent',processor:'fixture.chain',inputs:[a.id]},{name:'child',processor:'fixture.chain',inputs:[b.id],dependsOn:['parent']}]);await runtime.tick();await runtime.tick();const child=JSON.parse(String(store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.child)!.json));assert.equal(store.archive.get(child.outputs[0])!.members.length,1);assert.equal(store.archive.get(child.outputs[0])!.parents!.length,1);store.delete(a.id);assert.equal(store.archive.get(child.outputs[0]),undefined);
 });
 test('restart recovers expired lease once and permanently failing parent blocks descendants',async t=>{
- const store=fixture(t);let now=1000;const runtime=new ProcessingRuntime(store,[],{},()=>now);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;runtime.registry.register({id:'fixture.permanent',version:'1',lane:'extract',async process(){calls++;throw new ProcessingFailure('permanent');}});
+ const store=fixture(t);let now=1000;const runtime=new ProcessingRuntime(store,[],{},()=>now,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;runtime.registry.register({id:'fixture.permanent',version:'1',lane:'extract',async process(){calls++;throw new ProcessingFailure('permanent');}});
  const jobs=runtime.enqueue([{name:'parent',processor:'fixture.permanent',inputs:[a.id]},{name:'child',processor:'fixture.permanent',inputs:[a.id],dependsOn:['parent']}]);store.db.prepare("UPDATE execution_steps SET state='running',lease_until=100,attempts=1,fence='old' WHERE id=?").run(jobs.parent);await runtime.tick();await runtime.tick();assert.equal(calls,1);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(jobs.child)!.state,'blocked');
 });
 test('a stalled semantic lane does not stop new extraction work and cancellation fences its result',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation(),b=observation('Second');await store.ingestBatch([a,b]);let started!:()=>void;const begin=new Promise<void>(resolve=>{started=resolve;});let release!:()=>void;const wait=new Promise<void>(resolve=>{release=resolve;});let extracted=0;
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation(),b=observation('Second');await store.ingestBatch([a,b]);let started!:()=>void;const begin=new Promise<void>(resolve=>{started=resolve;});let release!:()=>void;const wait=new Promise<void>(resolve=>{release=resolve;});let extracted=0;
  runtime.registry.register({id:'fixture.slow',version:'1',lane:'semantic',async process(){started();await wait;return [{kind:'semantic',text:'Late result',metadata:{}}];}});runtime.registry.register({id:'fixture.fast',version:'1',lane:'extract',async process(){extracted++;return [{kind:'text',text:'Fast',metadata:{}}];}});
  const slow=runtime.enqueue([{name:'slow',processor:'fixture.slow',inputs:[a.id]}]).slow;const running=runtime.tick();await begin;runtime.enqueue([{name:'fast',processor:'fixture.fast',inputs:[b.id]}]);await runtime.tick();assert.equal(extracted,1);runtime.cancel(slow);await running;release();assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(slow)!.state,'cancelled');assert.equal(store.archive.page({query:'Late result'}).items.length,0);
 });
 test('artifact revision changes fence a downstream job even when its original input is unchanged',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);store.archive.aggregate();const artifact=store.archive.page().items[0]!;let release!:()=>void;const wait=new Promise<void>(resolve=>{release=resolve;});let started!:()=>void;const begin=new Promise<void>(resolve=>{started=resolve;});
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation();await store.ingest(a);store.archive.aggregate();const artifact=store.archive.page().items[0]!;let release!:()=>void;const wait=new Promise<void>(resolve=>{release=resolve;});let started!:()=>void;const begin=new Promise<void>(resolve=>{started=resolve;});
  runtime.registry.register({id:'fixture.artifact',version:'1',lane:'semantic',async process(){started();await wait;return [{kind:'semantic',text:'Old revision',metadata:{}}];}});const job=runtime.enqueue([{name:'s',processor:'fixture.artifact',inputs:[a.id],artifactInputs:[{id:artifact.id,revision:artifact.revision}]}]).s;const running=runtime.tick();await begin;store.db.prepare('UPDATE context_artifacts SET revision=?,json=json_set(json,\'$.revision\',?) WHERE id=?').run('f'.repeat(64),'f'.repeat(64),artifact.id);release();await running;assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(job)!.state,'stale');assert.equal(store.archive.page({query:'Old revision'}).items.length,0);
 });
 
@@ -104,13 +105,13 @@ test('oversized replay group is reported, preserves originals and becomes retrya
  store.delete(inputs[1000].id);store.archive.aggregate();assert.equal(store.archive.stats().blockedGroups,0);assert.equal(store.archive.stats().artifacts,10);assert.equal(store.archive.stats().observations,1000);
 });
 test('disabled processing lanes consume no attempts and enabling resumes their queued work',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled:false}});t.after(()=>runtime.close());const a=observation('Generated input');await store.ingest(a);let calls=0;
+ const store=fixture(t),runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled:false}},undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation('Generated input');await store.ingest(a);let calls=0;
  runtime.registry.register({id:'fixture.enabled',version:'1',lane:'semantic',async process(){calls++;return [{kind:'semantic',text:'Done',metadata:{}}];}});
  const job=runtime.enqueue([{name:'s',processor:'fixture.enabled',inputs:[a.id]}]).s;await runtime.tick();assert.equal(calls,0);assert.equal(runtime.engine.get(job)?.error,'processing_disabled');assert.equal(runtime.engine.get(job)?.attempts,0);
  const settings=runtime.settings();runtime.configure({...settings,semantic:{...settings.semantic,enabled:true}});await runtime.tick();assert.equal(calls,1);assert.equal(runtime.engine.get(job)?.state,'succeeded');
 });
 test('plugin withdrawal blocks queued work and a changed version gets a new cache identity',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);const processor={id:'fixture.version',version:'1',lane:'extract' as const,async process(){return [{kind:'text',text:'Versioned',metadata:{}}];}};const unregister=runtime.registry.register(processor);const first=runtime.enqueue([{name:'s',processor:processor.id,inputs:[a.id]}]).s;unregister();await runtime.tick();assert.equal(store.db.prepare('SELECT error FROM processing_jobs WHERE id=?').get(first)!.error,'processor_version_unavailable');runtime.registry.register({...processor,version:'2'});const second=runtime.enqueue([{name:'s',processor:processor.id,inputs:[a.id]}]).s;assert.notEqual(first,second);await runtime.tick();assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(second)!.state,'succeeded');
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation();await store.ingest(a);const processor={id:'fixture.version',version:'1',lane:'extract' as const,async process(){return [{kind:'text',text:'Versioned',metadata:{}}];}};const unregister=runtime.registry.register(processor);const first=runtime.enqueue([{name:'s',processor:processor.id,inputs:[a.id]}]).s;unregister();await runtime.tick();assert.equal(store.db.prepare('SELECT error FROM processing_jobs WHERE id=?').get(first)!.error,'processor_version_unavailable');runtime.registry.register({...processor,version:'2'});const second=runtime.enqueue([{name:'s',processor:processor.id,inputs:[a.id]}]).s;assert.notEqual(first,second);await runtime.tick();assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(second)!.state,'succeeded');
 });
 
 test('changing a lifecycle stream is refused without rewriting its durable cursor',async t=>{
@@ -118,7 +119,7 @@ test('changing a lifecycle stream is refused without rewriting its durable curso
 });
 
 test('processing presentation exposes bounded steps and valid actions without raw configuration or content',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation('Generated private content');await store.ingest(a);
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation('Generated private content');await store.ingest(a);
  runtime.registry.register({id:'fixture.presentation',version:'1',lane:'extract',async process(){throw new ProcessingFailure('permanent');}});
  const queued=runtime.enqueue([{name:'test',processor:'fixture.presentation',inputs:[a.id],config:{credential:'generated-only-secret'}}]);
  let view=runtime.view();assert.equal(view.jobs.length,1);assert.deepEqual(view.jobs[0].allowedActions,['cancel']);assert.equal(JSON.stringify(view).includes('generated-only-secret'),false);assert.equal(JSON.stringify(view).includes(a.ocrText),false);
@@ -127,7 +128,7 @@ test('processing presentation exposes bounded steps and valid actions without ra
 });
 
 test('cached DAG steps can be traced from each operation without a second execution owner',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;
  runtime.registry.register({id:'fixture.operations',version:'1',lane:'extract',async process(){calls++;return [{kind:'text',text:'Generated operation output',metadata:{}}];}});
  const parent={name:'root',processor:'fixture.operations',inputs:[a.id]},first=runtime.enqueue([parent]);await runtime.tick();
  const second=runtime.enqueue([parent,{name:'child',processor:'fixture.operations',inputs:[a.id],dependsOn:['root']}]);assert.equal(second.root,first.root);await runtime.tick();
@@ -137,7 +138,7 @@ test('cached DAG steps can be traced from each operation without a second execut
 });
 
 test('workflow controls reject foreign or missing steps and preserve completed cache entries',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;
  runtime.engine.register({kind:'foreign',pool:'foreign',concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{}});
  const foreign=runtime.engine.enqueue('query:unrelated','foreign',{});
  for(const id of [foreign,'missing']){

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import {memorySchema} from '../src/memory-schema.js';
 import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
@@ -261,7 +262,7 @@ test('Coding append retains an active prefix anchor under the current Material s
 
 test('bounded Coding products use original conversation dates, expand only covered anchors and reject legacy tool projections',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-coding-product-scope-')),store=new Store(directory),materials=new MaterialStore(store);
-  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   const sources=new SourceStore(store,runtime),diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
   store.archive.enableMaterialLineage();
   t.after(async()=>{await runtime.close();await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
@@ -360,7 +361,7 @@ test('synthetic Material evidence obeys named Memory readiness without blocking 
 
 test('installed Coding recipe routes query partial materials and gate Memory until complete',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-exposure-recipe-'));
-  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));
   await runtime.ready;
   const sources=new SourceStore(store,runtime),diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
   t.after(async()=>{await runtime.close();await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -14,7 +15,7 @@ import {ProcessingRuntime} from '../src/processing-runtime.js';
 
 const at='2026-10-07T01:00:00.000Z';
 function formal(sourceId:string,externalId:string):MaterialDraft{return {id:materialId(sourceId,externalId),kind:'fixture.document',schemaVersion:1,title:'Generated '+externalId,origin:{sourceId,externalId,firstAt:at,lastAt:at},blocks:[{id:'body',kind:'text',format:'plain',text:'Generated body',memberIds:['archive']},{id:'extra',kind:'text',format:'plain',text:'Do not disclose unrelated product',memberIds:['archive']}],members:[{id:'archive',kind:'archive',ref:'archive:'+createHash('sha256').update(JSON.stringify([sourceId,externalId])).digest('hex')}],coverage:{state:'partial'},artifacts:[{key:'body',state:'ready',revision:'body-v1',blockIds:['body']},{key:'extra',state:'pending'}],fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};}
-function fixture(t:import('node:test').TestContext,limits:ConstructorParameters<typeof ProcessingRuntime>[2]={}){const directory=mkdtempSync(join(tmpdir(),'mote-library-products-')),store=new Store(directory),materials=new MaterialStore(store),runtime=new ProcessingRuntime(store,[],limits,Date.now,undefined,materials);t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});return {store,materials,runtime};}
+function fixture(t:import('node:test').TestContext,limits:ConstructorParameters<typeof ProcessingRuntime>[2]={}){const directory=mkdtempSync(join(tmpdir(),'mote-library-products-')),store=new Store(directory),materials=new MaterialStore(store),runtime=new ProcessingRuntime(store,[],limits,Date.now,undefined,materials,testScope(t));t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});return {store,materials,runtime};}
 
 test('a deployed namespaced pack synchronizes, executes its flow, exposes one logical item and consumes an opted-in product',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-library-pack-'));

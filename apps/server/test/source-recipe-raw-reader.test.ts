@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -16,7 +17,7 @@ const event=(id:string,text:string,session='fixture-session')=>({externalId:id,r
 const group=(session:string)=>JSON.stringify(['codex','fixture-project',session]);
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-recipe-raw-')),store=new Store(directory),materials=new MaterialStore(store);
-  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated Coding',kind:'coding-agent',deviceId:'fixture-device',platform:'macos'});
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   return {store,materials,runtime,sources};

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
@@ -33,10 +34,10 @@ async function fixture(t:any){
   service.register({id:'plugins',schema:z.object({configuration:z.record(z.unknown())}),defaultValue:{configuration:{}}});
   await service.initialize();
   new ArchivedFileStore(store);
-  const engine=new ExecutionEngine(store),files=new FileStore(store,new SourceStore(store)),processing=new FileProcessing(files,undefined,undefined,{configService:service,executor:engine});
+  const engine=new ExecutionEngine(store),files=new FileStore(store,new SourceStore(store)),processing=new FileProcessing(testScope(t),files,undefined,undefined,{configService:service,executor:engine});
   await processing.runtime.ready;
   const images=new ImageProcessing(store,processing,engine,{configService:service});
-  const workflows=new ProcessingRuntime(store,[],{},Date.now,engine,undefined,undefined,service);await workflows.ready;
+  const workflows=new ProcessingRuntime(store,[],{},Date.now,engine,undefined,testScope(t),service);await workflows.ready;
   t.after(async()=>{await service.close();await images.close();await processing.close();await workflows.close();await engine.close();store.close();await rm(directory,{recursive:true,force:true});});
   return {directory,path,store,service,processing,images,workflows,stale};
 }

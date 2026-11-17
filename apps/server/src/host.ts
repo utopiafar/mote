@@ -45,7 +45,7 @@ import {assertMemoryImageGrants} from './memory-image-grants.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,formatEvidenceRef} from '@mote/shared';
 import {imageOutput} from './evidence-image.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
-import { Context,type Plugin } from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import cors from '@fastify/cors';
 import staticFiles from '@fastify/static';
 import { originalEvidenceReceipt,type ContextReader,type QueryInput } from '@mote/agent';
@@ -130,14 +130,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     assertModelEvidence:input=>assertModelEvidence(input)});
   const {memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,memoryBindingControl,topics}=memoryInputs({store,configService});
   const {materials,materialMemoryWork}=await prepareMaterials({bootstrap,store,authorization:authorizationPlatform.commits,resources,memoryRecipeSettings,newInputAdmission:()=>memoryBindingControl.accepting()});
-  // One service tree owns backend plugins. Each runtime installs into its own
-  // managed scope below this root, so closing one cannot dispose a sibling.
-  const backendContext=new Context();
-  resources.defer(()=>backendContext.fiber.dispose());
-  backendContext.provide('moteMaterials',materials);
-  backendContext.provide('moteConfig',configService);
-  backendContext.provide('moteExecution',executor);
-  backendContext.provide('moteMemoryStrategies',memoryStrategies);
+  // Backend registrations share the bootstrap root and retain their own owner.
+  let backendContext!:Context;
+  const backend=bootstrap.host.context.plugin((context:Context)=>{backendContext=context;});
+  resources.defer(()=>backend.dispose());
+  await backend;
   const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback,codingFeature}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
   const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker,prepareMediaRuntime:dependencies?.prepareMediaRuntime});
   const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
@@ -466,7 +463,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // default 500 serializer).
   const sourceIntegration=await startSourceIntegration();
   const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
-  const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
+  const {connectors}=await assembleConnectors({app,resources,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
   // Built-in Google/Lark calendar writes stay deployment connectors: they reuse

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {decodeSourceText} from '@mote/shared';
 const formalValue=(record:{ocrText:string}):any=>decodeSourceText('speech-text-v2',record.ocrText)??{text:record.ocrText};
 import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
@@ -71,7 +72,7 @@ async function fixture(t:any,options:any={}){
     process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly:true,maxAudioMs:input.maxAudioMs,signal:input.signal,request:input.request,authorizeModel:input.authorizeModel})}));
   ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(input){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return options.diarize?options.diarize(input):options.diarization??diary;}});return()=>{disposed=true;dispose();};});}};
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
- const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,provider,async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics,configuration:instances.at(-1)?.configurationSnapshot(),...(options.modelAuthority?{modelAuthority:options.modelAuthority}:{})});instances.push(instance);return instance;};const processing=createProcessing();
+ const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(testScope(t),files,provider,async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics,configuration:instances.at(-1)?.configurationSnapshot(),...(options.modelAuthority?{modelAuthority:options.modelAuthority}:{})});instances.push(instance);return instance;};const processing=createProcessing();
  await processing.runtime.ready;
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'fixture.dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'fixture.dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},processing.runtime.registry)});
  t.after(async()=>{for(const instance of instances)await instance.close();await diagnostics.close();if(store.db.isOpen)store.close();rmSync(dir,{recursive:true,force:true});});
@@ -513,9 +514,9 @@ test('local settings redact all credentials and reject remote destinations',asyn
  assert.throws(()=>f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,localEndpoint:'http://127.0.0.1:12345/transcribe'},policy:fixtureFilePolicy({...f.processing.view().settings,localEndpoint:'http://127.0.0.1:12345/transcribe'},f.processing.runtime.registry)}),{statusCode:409});
 });
 
-test('Cordis rejects duplicate registrations and missing deployment modules',async()=>{
- const runtime=new FileProcessorRuntime();await runtime.ready;assert.throws(()=>runtime.registry.register(runtime.registry.get('text.utf8')));await runtime.close();
- const missing=new FileProcessorRuntime(undefined,[],['/no-such-generated-mote-plugin.mjs']);await assert.rejects(missing.ready);await missing.close();
+test('Cordis rejects duplicate registrations and missing deployment modules',async(t)=>{
+ const runtime=new FileProcessorRuntime(undefined,undefined,undefined,undefined,testScope(t));await runtime.ready;assert.throws(()=>runtime.registry.register(runtime.registry.get('text.utf8')));await runtime.close();
+ const missing=new FileProcessorRuntime(undefined,[],['/no-such-generated-mote-plugin.mjs'],undefined,testScope(t));await assert.rejects(missing.ready);await missing.close();
 });
 
 test('calendar association is model-proposed, requires evidence from both sides, and rejects a superseded event',async t=>{
@@ -944,7 +945,7 @@ test('deployment defaults do not automatically reopen a historical terminal file
  const f=await fixture(t,{transcribe:async()=>{calls++;throw new StoreError('Generated unsupported format',422);}});await f.processing.tick();
  assert.equal(f.files.detail(f.id).job.state,'failed');await f.processing.close();
  const configuration=f.processing.configurationSnapshot();configuration.settings.timeoutMs=1000;
- const restored=new FileProcessing(f.files,{transcribe:async()=>{calls++;return raw;}},undefined,{configuration});t.after(()=>restored.close());
+ const restored=new FileProcessing(testScope(t),f.files,{transcribe:async()=>{calls++;return raw;}},undefined,{configuration});t.after(()=>restored.close());
  await restored.runtime.ready;await restored.tick();assert.equal(calls,1);assert.equal(f.files.detail(f.id).job.state,'failed');
 });
 

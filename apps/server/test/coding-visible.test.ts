@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {test,after,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,appendFile,rm} from 'node:fs/promises';
@@ -115,7 +116,7 @@ async function fixture(t:TestContext,provider:CodingProvider,legacy=false){
  const directory=await mkdtemp(join(tmpdir(),'mote-visible-coding-'));
  const opened:{store?:Store;runtime?:SourcePipelineRuntime;diagnostics?:ServerDiagnostics;files?:FileStore}={};
  t.after(async()=>{await opened.runtime?.close();await opened.files?.close();await opened.diagnostics?.close();opened.store?.close();await rm(directory,{recursive:true,force:true});});
- const native=await nativeSession(join(directory,'native'),provider,legacy),store=opened.store=new Store(join(directory,'central')),materials=new MaterialStore(store),runtime=opened.runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+ const native=await nativeSession(join(directory,'native'),provider,legacy),store=opened.store=new Store(join(directory,'central')),materials=new MaterialStore(store),runtime=opened.runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
  const sources=new SourceStore(store,runtime),source={...DEFAULT_SOURCE_OPTIONS,id:'generated-coding',name:'Generated Coding',kind:'coding-agent',agent:provider,path:native.path,deviceId:'generated-device',platform:'macos' as const,enabled:true};sources.register(sourceDefinition(source));
  const diagnostics=opened.diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
  const state=join(directory,'source.json');let engine=new SourceSync(state);await engine.initialize();let loseAck=true;const received:SourceItem[]=[];

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -130,13 +131,13 @@ test('a mid-prepare failure releases the borrowed engine handlers, vault transac
   const failure=new Error('Generated file processing DDL failure');
   store.db.exec=((sql:string)=>{if(String(sql).includes('CREATE TABLE IF NOT EXISTS file_diarization_overrides'))throw failure;return exec(sql);}) as typeof store.db.exec;
   try{
-    await assert.rejects(platform.prepare(),failure);
+    await assert.rejects(platform.prepare(testScope(t)),failure);
     assert.equal(store.db.isTransaction,false,'a failed prepare leaves no open transaction');
     assert.throws(()=>platform.workflows,{statusCode:503});
     assert.throws(()=>platform.processing,{statusCode:503});
     assert.equal(created,cleared,'no timer is left behind');
     store.db.exec=exec;
-    const reopened=new ProcessingRuntime(store,[],{},Date.now,engine,materials);
+    const reopened=new ProcessingRuntime(store,[],{},Date.now,engine,materials,testScope(t));
     await reopened.ready;
     await reopened.close();
   }finally{
@@ -157,11 +158,11 @@ test('a duplicate processor contribution fails prepare and leaves no partial cap
   } as unknown as ProcessingServicesDependencies;
   const failed=createProcessingServices(dependencies);
   try{
-    await assert.rejects(failed.prepare(),/duplicate file processor/i);
+    await assert.rejects(failed.prepare(testScope(t)),/duplicate file processor/i);
     assert.equal(failed.port.phase,'disposed');
     assert.throws(()=>failed.processing,{statusCode:503});
     const clean=createProcessingServices({...dependencies,contributions:[]});
-    await clean.prepare();
+    await clean.prepare(testScope(t));
     assert.equal(clean.processing.runtime.registry.get('text.utf8').version,'3','the built-in definition was never replaced');
     assert.deepEqual(clean.processing.runtime.recipes.list().recipes.map(({id,version})=>({id,version})),fileRecipes,'the failed contribution left no recipe behind');
     await clean.close();
