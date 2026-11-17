@@ -5,6 +5,13 @@ import {executionEnvelope,type ExecutionEnvelope} from '@mote/shared/execution';
 import {randomUUID} from 'node:crypto';
 import {StoreError,type Store} from './store.js';
 import {ProviderFailure} from '@mote/shared';
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
+
+export const runExecutionSchemaInstallation={owner:'run-execution',requires:[],install:runExecutionSchema} as const satisfies SchemaInstallation;
+function runExecutionSchema(db:DatabaseSync){
+ db.exec('CREATE TABLE IF NOT EXISTS run_execution_owners(id TEXT PRIMARY KEY,lease_until INTEGER NOT NULL)');
+}
 
 const capacityWaiting=(error:unknown)=>error instanceof ExecutionFailure&&error.category==='waiting'||error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited');
 
@@ -28,7 +35,7 @@ export class RunExecution {
  private renewedAt=0;
  constructor(private store:Store,readonly kind:'query'|'insight',private callbacks:{exists?:(id:string)=>boolean;project:(id:string,step:ExecutionStep)=>void;commit:(id:string,result:unknown)=>void;failure:(id:string,error:unknown)=>void},options:RunExecutionOptions={}){
   this.engine=options.executor??new ExecutionEngine(store);
-  store.db.exec('CREATE TABLE IF NOT EXISTS run_execution_owners(id TEXT PRIMARY KEY,lease_until INTEGER NOT NULL)');
+  installSchemaPlan(store.db,[runExecutionSchemaInstallation]);
   this.unregister=this.engine.register({kind:`${kind}.run.${this.ownerId}`,pool:kind==='query'?'interactive-query':'personal-insight',concurrency:options.concurrency??(()=>kind==='query'?4:1),policy:EXECUTION_POLICIES.orchestration,maxAttempts:1,
    timeoutMs:step=>typeof step.input.timeoutMs==='number'?step.input.timeoutMs:null,
    validate:step=>this.pending.has(String(step.input.runId))&&(this.callbacks.exists?.(String(step.input.runId))??true),

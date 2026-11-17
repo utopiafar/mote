@@ -181,10 +181,21 @@ test('failed durable writes neither consume invitations nor revoke the previous 
   fail=false;const second=await redeem(code);assert.ok(connections.authenticate(`Bearer ${second.token}`));assert.equal(connections.authenticate(`Bearer ${first.token}`),undefined);
 });
 
-test('redemption bursts retain expired invitation errors and owner access',async t=>{
-  const {app}=await fixture(t),code='a'.repeat(43);
-  for(let i=0;i<30;i++)assert.equal((await redeem(app,code)).statusCode,410);
+test('redemption bursts bound HTTP attempts while preserving expired invitation errors, recovery and owner access',async t=>{
+  let now=Date.now();t.mock.method(Date,'now',()=>now);
+  const {app,connections}=await fixture(t),code='a'.repeat(43);
+  for(let i=0;i<30;i++){
+    const response=await redeem(app,code);assert.equal(response.statusCode,i<10?410:429);
+    if(i>=10){assert.equal(response.headers['retry-after'],'60');assert.equal(response.json().error,'rate_limited');}
+    // Local HTTP protection does not reclassify the producer's invitation error.
+    await assert.rejects(connections.redeem({code,deviceId:'synthetic-phone',deviceName:'Synthetic phone',platform:'android'}),{code:'invitation_invalid_or_expired',statusCode:410});
+  }
+  assert.equal(connections.inventory().items.length,0);
   assert.equal((await app.inject({url:'/api/connections',headers:headers()})).statusCode,200);
+  now+=60_000;assert.equal((await redeem(app,code)).statusCode,410);
+  const created=await invite(app);assert.equal(created.statusCode,200);
+  assert.equal((await redeem(app,created.json().invitation.code)).statusCode,200);
+  assert.equal(connections.inventory().items.length,1);
 });
 
 test('large MCP scopes cannot create an unreadable credential file and a full registry remains revocable',async t=>{
