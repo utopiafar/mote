@@ -174,7 +174,7 @@ test('sanitized reads stay flat, a write failure is visible, and disposal still 
   const reopened=new ServerDiagnostics({directory:f.logs});try{await reopened.init();assert.equal(reopened.snapshot().writeFailures,0,'the failed writer still released its log lock');}finally{await reopened.close();}
 });
 
-test('minimal health stays a host primitive while system, update, usage and diagnostics are platform route contributions',async t=>{
+test('default health exposes only liveness while system, update, usage and diagnostics stay separate platform route contributions',async t=>{
   const f=await fixture(t);await f.platform.prepare();await f.platform.start();
   const app=Fastify();
   healthFeature('0.4.0').mount(app,new FeatureScope());
