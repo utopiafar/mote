@@ -135,7 +135,7 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,35);assert.equal(Object.keys(result.tables).length,112);
+ assert.equal(result.owners.length,38);assert.equal(Object.keys(result.tables).length,123);
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));
  assert.ok(result.coveredFiles.includes('apps/server/src/evidence-store.ts'));
  assert.ok(result.uncoveredFiles.includes('apps/server/src/execution-engine.ts'));
