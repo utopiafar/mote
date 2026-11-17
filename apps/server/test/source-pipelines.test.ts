@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureMemoryCapacity} from './fixtures/memory-planning.js';
 import {reviewMemory} from '../src/memory-review.js';
 import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
@@ -22,7 +23,7 @@ import {randomUUID} from 'node:crypto';
 const item=(i:number,session='session-a',text='Generated user requirement and tool result.')=>({externalId:'event-'+i,revision:'1',observedAt:'2026-09-24T01:00:00.000Z',kind:'message',layer:'snapshot',text,document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:session,projectKey:'generated-project',eventId:String(i).padStart(6,'0'),role:'user',attribution:'human',part:0,parts:1}}});
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-source-pipeline-')),store=new Store(directory),materials=new MaterialStore(store);
-  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated Coding',kind:'coding-agent',deviceId:'device',platform:'macos'});
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials);
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});return {directory,store,materials,runtime,sources,reader};
@@ -150,7 +151,7 @@ test('retry, crash/reopen, conflicting revision, and atomic publication preserve
   assert.equal((await sources.upsert('coding',item(1))).duplicate,true);
   await assert.rejects(sources.upsert('coding',item(1,'session-a','conflicting')),/different content/);
   // Another process connection reads durable pending work and publishes after restart.
-  const other=new Store(directory),otherMaterials=new MaterialStore(other),reopened=new SourcePipelineRuntime(other,otherMaterials,[codingSourcePlugin]);await reopened.ready;
+  const other=new Store(directory),otherMaterials=new MaterialStore(other),reopened=new SourcePipelineRuntime(other,otherMaterials,[codingSourcePlugin],testScope(t));await reopened.ready;
   await reopened.tick();assert.equal(otherMaterials.list().items.length,1);await reopened.close();other.close();
   const before=materials.list().items[0];const ids=materials.evidenceIds(before.ref);
   await sources.upsert('coding',item(2));await runtime.tick();const after=materials.list().items[0];assert.notEqual(after.revision,before.revision);assert.equal(after.sequence,2);assert.equal(materials.isCurrentEvidence(ids[0]),false);
@@ -163,7 +164,7 @@ test('Cordis uninstall blocks archive work, ordinary records stay supported, ind
   assert.equal(store.db.prepare('SELECT count(*) n FROM captures').get()!.n,1);
   await sources.upsert('coding',item(1));runtime.configure('coding',{index:false,settleSeconds:0});await runtime.tick();assert.equal(materials.list({query:'Generated'}).items.length,0);
   await runtime.close();await assert.rejects(sources.upsert('coding',item(2)),/unavailable/);
-  const empty=new SourcePipelineRuntime(store,materials);await empty.ready;await assert.rejects(new SourceStore(store,empty).upsert('coding',item(2)),/unavailable/);await empty.close();
+  const empty=new SourcePipelineRuntime(store,materials,undefined,testScope(t));await empty.ready;await assert.rejects(new SourceStore(store,empty).upsert('coding',item(2)),/unavailable/);await empty.close();
 });
 test('model extraction first reads the assembled conversation, never raw upload records',async t=>{
   const {store,materials,runtime,sources,reader}=await fixture(t);runtime.configure('coding',{settleSeconds:0});
@@ -287,7 +288,7 @@ test('encrypted raw archive survives bulk decrypt and a keyless restart',async t
   const {FileStore}=await import('../src/files.js');const {ArchivedFileStore}=await import('../src/archived-files.js');const {ContentStorageService}=await import('../src/content-storage.js');
   const {setImmediate}=await import('node:timers/promises');const {readdirSync,readFileSync}=await import('node:fs');
   const directory=mkdtempSync(join(tmpdir(),'mote-encrypted-source-'));
-  let store=new Store(directory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:true});let runtime=new SourcePipelineRuntime(store,new MaterialStore(store),[codingSourcePlugin]);await runtime.ready;
+  let store=new Store(directory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:true});let runtime=new SourcePipelineRuntime(store,new MaterialStore(store),[codingSourcePlugin],testScope(t));await runtime.ready;
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   await sources.upsert('coding',item(1,'session','Encrypted generated conversation'));
@@ -297,7 +298,7 @@ test('encrypted raw archive survives bulk decrypt and a keyless restart',async t
   store.contentEncryption.setEnabled(false);const service=new ContentStorageService(store,new FileStore(store,sources),new ArchivedFileStore(store));service.start();
   for(let i=0;i<1000&&service.snapshot().job.state==='running';i++)await setImmediate();
   assert.equal(service.snapshot().job.state,'completed');assert.equal(service.snapshot().job.failed,0);
-  await runtime.close();store.close();store=new Store(directory);const materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;await runtime.tick();
+  await runtime.close();store.close();store=new Store(directory);const materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;await runtime.tick();
   assert.equal(materials.list({query:'Encrypted generated conversation'}).items.length,1);
 });
 

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {FileProcessorRuntime} from '../src/file-processors.js';
@@ -5,7 +6,7 @@ import {requestLocale} from '../src/i18n.js';
 import {processorContract} from '../src/file-configuration.js';
 
 test('builtin processor metadata follows each request locale without changing registry or execution contracts',async t=>{
- const runtime=requestLocale.run('en',()=>new FileProcessorRuntime());
+ const runtime=requestLocale.run('en',()=>new FileProcessorRuntime(undefined,undefined,undefined,undefined,testScope(t)));
  t.after(()=>runtime.close());await runtime.ready;
  const canonical=runtime.registry.get('audio.local-dialogue');
  const originalParameters=structuredClone(canonical.parameters);
@@ -33,7 +34,7 @@ test('builtin processor metadata follows each request locale without changing re
 });
 
 test('plugin-authored metadata remains literal even when it matches builtin translation keys',async t=>{
- const runtime=new FileProcessorRuntime();t.after(()=>runtime.close());await runtime.ready;
+ const runtime=new FileProcessorRuntime(undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());await runtime.ready;
  runtime.registry.register({id:'fixture.literal',version:'1',name:'本地多人录音',stage:'extract',mediaTypes:['text/'],parameters:[{key:'speakers',label:'预期说话人数',description:'留空由模型自动识别',type:'number'}],process:async()=>{throw Error('Fixture must not execute');}});
  const english=requestLocale.run('en',()=>runtime.registry.list()).find(p=>p.id==='fixture.literal');
  const chinese=requestLocale.run('zh-CN',()=>runtime.registry.list()).find(p=>p.id==='fixture.literal');

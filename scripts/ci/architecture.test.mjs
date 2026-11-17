@@ -329,7 +329,7 @@ test('Agent source and test files may import the native DSH runtime',t=>{
   assert.deepEqual(f.check().violations,[]);
 });
 
-test('Server Context construction is limited to the five registered sites',t=>{
+test('Server Context construction rejects every unregistered site and matches exact baselines',t=>{
   const f=fixture(t);
   for(let index=0;index<5;index++)f.write(`apps/server/src/context-${index}.ts`,"import {Context} from 'cordis'; export const value=new Context();");
   const present=f.check().violations.filter(issue=>issue.rule==='server-new-context');

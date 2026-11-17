@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {fixtureMemoryCapacity} from './fixtures/memory-planning.js';
 import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
@@ -35,13 +36,13 @@ const codingNextVersion=(ctx:Context)=>{
 
 test('default Coding upgrade leaves historical materials and generations untouched',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-coding-manual-upgrade-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   await sources.upsert('coding',event('one','Generated historical dialogue'));await runtime.tick();
   const before=materials.list().items[0],generation=store.db.prepare('SELECT generation FROM source_pipeline_work').get()!.generation;
   await runtime.close();store.close();
   const manualNext=(ctx:Context)=>{codingNextVersion(ctx);ctx.moteSourcePipelines.get('mote.coding')!.reprocess='manual';};
-  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[manualNext]);await runtime.ready;
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[manualNext],testScope(t));await runtime.ready;
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   await runtime.tick();
   assert.equal(materials.list().items[0].ref,before.ref);
@@ -51,7 +52,7 @@ test('default Coding upgrade leaves historical materials and generations untouch
 
 test('exact archive retransmission preserves the published Coding revision and input fingerprint',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-duplicate-complete-'));
-  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   const first=event('one','Generated first event'),second=event('two','Generated continuation');
@@ -67,7 +68,7 @@ test('exact archive retransmission preserves the published Coding revision and i
 
 test('exact retransmission does not revoke a running archive worker',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-duplicate-running-'));
-  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   const entered=deferred(),release=deferred(),snapshot=runtime.recipes.snapshot.bind(runtime.recipes);
   runtime.recipes.snapshot=(async(...args:Parameters<typeof snapshot>)=>{const result=snapshot(...args);entered.resolve();await release.promise;return result;}) as unknown as typeof snapshot;
   t.after(async()=>{release.resolve();await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
@@ -80,7 +81,7 @@ test('exact retransmission does not revoke a running archive worker',async t=>{
 
 test('an unclassified archive failure stops once and exact retransmission preserves it until explicit retry',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-duplicate-failed-'));
-  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   let calls=0;const snapshot=runtime.recipes.snapshot.bind(runtime.recipes);runtime.recipes.snapshot=(()=>{calls++;throw Error('Generated unclassified fixture failure');}) as typeof runtime.recipes.snapshot;
@@ -91,7 +92,7 @@ test('an unclassified archive failure stops once and exact retransmission preser
 
 test('explicit config reprocessing with an empty Coding delta keeps the same Material',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-empty-append-'));
-  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   await sources.upsert('coding',event('one','Generated config reprocessing fixture'));await runtime.tick();const before=materials.list().items[0],input=materials.input(before.ref,['conversation']);
@@ -101,14 +102,14 @@ test('explicit config reprocessing with an empty Coding delta keeps the same Mat
 
 test('archive group is an engine step that survives a runtime restart',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-engine-restart-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   await sources.upsert('coding',event('one','Generated restart proof'));
   const pending=store.db.prepare("SELECT id,operation_id,state,input FROM execution_steps WHERE kind='source.archive-group'").get()!;
   assert.equal(pending.state,'waiting');assert.equal(JSON.parse(String(pending.input)).checkpoint,store.db.prepare('SELECT archive_checkpoint FROM source_pipeline_work').get()!.archive_checkpoint);
   await runtime.close();store.close();
-  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   await runtime.tick();
   assert.equal(runtime.engine.get(String(pending.id))?.state,'succeeded');
   assert.equal(materials.list({query:'restart proof'}).items.length,1);
@@ -118,7 +119,7 @@ test('archive group is an engine step that survives a runtime restart',async t=>
 
 test('a newer committed receipt revokes an old worker before material publication',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-engine-fence-'));
-  const oldStore=new Store(directory),oldMaterials=new MaterialStore(oldStore),oldRuntime=new SourcePipelineRuntime(oldStore,oldMaterials,[codingSourcePlugin]);await oldRuntime.ready;
+  const oldStore=new Store(directory),oldMaterials=new MaterialStore(oldStore),oldRuntime=new SourcePipelineRuntime(oldStore,oldMaterials,[codingSourcePlugin],testScope(t));await oldRuntime.ready;
   const oldSources=new SourceStore(oldStore,oldRuntime);oldSources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   const entered=deferred(),release=deferred();
   const original=oldRuntime.recipes.snapshot.bind(oldRuntime.recipes);
@@ -128,7 +129,7 @@ test('a newer committed receipt revokes an old worker before material publicatio
   const oldStep=String(oldStore.db.prepare("SELECT id FROM execution_steps WHERE kind='source.archive-group'").get()!.id);
   const running=oldRuntime.tick();await entered.promise;
 
-  const nextStore=new Store(directory),nextMaterials=new MaterialStore(nextStore),nextRuntime=new SourcePipelineRuntime(nextStore,nextMaterials,[codingSourcePlugin]);await nextRuntime.ready;
+  const nextStore=new Store(directory),nextMaterials=new MaterialStore(nextStore),nextRuntime=new SourcePipelineRuntime(nextStore,nextMaterials,[codingSourcePlugin],testScope(t));await nextRuntime.ready;
   t.after(async()=>{await nextRuntime.close();nextStore.close();});
   const nextSources=new SourceStore(nextStore,nextRuntime);
   await nextSources.upsert('coding',event('two','New generated body'));
@@ -144,7 +145,7 @@ test('a newer committed receipt revokes an old worker before material publicatio
 
 test('installed deterministic Coding recipe upgrades persisted groups without a new receipt',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-recipe-upgrade-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding]);await runtime.ready;
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding],testScope(t));await runtime.ready;
   const priorVersion=installedCodingVersion(runtime);
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
@@ -153,7 +154,7 @@ test('installed deterministic Coding recipe upgrades persisted groups without a 
   assert.equal(prior.recipe_version,priorVersion);assert.equal(prior.state,'complete');
   await runtime.close();store.close();
 
-  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion],testScope(t));await runtime.ready;
   const currentVersion=installedCodingVersion(runtime);assert.notEqual(currentVersion,priorVersion);
   await runtime.tick();const upgraded=store.db.prepare('SELECT generation,recipe_version,state FROM source_pipeline_work').get()!;
   assert.equal(upgraded.generation,Number(prior.generation)+1);
@@ -165,7 +166,7 @@ test('installed deterministic Coding recipe upgrades persisted groups without a 
 
 test('recipe upgrade does not silently replay after out-of-band configuration drift',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-recipe-config-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding]);await runtime.ready;
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding],testScope(t));await runtime.ready;
   const priorVersion=installedCodingVersion(runtime);
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
@@ -174,7 +175,7 @@ test('recipe upgrade does not silently replay after out-of-band configuration dr
   store.db.prepare('INSERT INTO source_pipeline_config VALUES(?,?)').run('coding',JSON.stringify({settleSeconds:0}));
   await runtime.close();store.close();
 
-  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion],testScope(t));await runtime.ready;
   assert.notEqual(installedCodingVersion(runtime),priorVersion);
   await runtime.tick();const blocked=store.db.prepare('SELECT generation,recipe_version,state,error FROM source_pipeline_work').get()!;
   assert.equal(blocked.recipe_version,priorVersion);assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'recipe_config_changed');
@@ -184,7 +185,7 @@ test('recipe upgrade does not silently replay after out-of-band configuration dr
 
 test('Coding recipe upgrade reuses the common queue without paying for historical extraction; explicit work remains available',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-upgrade-memory-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding]);await runtime.ready;
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding],testScope(t));await runtime.ready;
   const priorVersion=installedCodingVersion(runtime);
   let sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   let calls=0;
@@ -202,7 +203,7 @@ test('Coding recipe upgrade reuses the common queue without paying for historica
   assert.equal((await memory.run(jobId)).status,'completed');assert.equal(calls,1);
   await memory.close();await runtime.close();store.close();
 
-  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion],testScope(t));await runtime.ready;
   const currentVersion=installedCodingVersion(runtime);assert.notEqual(currentVersion,priorVersion);
   sources=new SourceStore(store,runtime);memory=pipeline();
   const snapshot=runtime.recipes.snapshot.bind(runtime.recipes);
@@ -236,7 +237,7 @@ test('closing a source runtime waits for its plugin work before retirement and l
   const store=new Store(directory),materials=new MaterialStore(store),engine=new ExecutionEngine(store);
   let retired=0;
   const plugin=(ctx:Context)=>{codingSourcePlugin(ctx);ctx.effect(()=>()=>{retired++;});};
-  const runtime=new SourcePipelineRuntime(store,materials,[plugin],undefined,engine);await runtime.ready;
+  const runtime=new SourcePipelineRuntime(store,materials,[plugin],testScope(t),engine);await runtime.ready;
   const entered=deferred(),release=deferred(),snapshot=runtime.recipes.snapshot.bind(runtime.recipes);
   runtime.recipes.snapshot=(async(...args:Parameters<typeof snapshot>)=>{const result=await snapshot(...args);entered.resolve();await release.promise;assert.equal(retired,0,'worker retains its installed plugin until it exits');return result;}) as unknown as typeof snapshot;
   t.after(async()=>{release.resolve();await runtime.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});

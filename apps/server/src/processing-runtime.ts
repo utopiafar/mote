@@ -3,7 +3,7 @@ import {MaterialConsumerRegistry} from './material-consumers.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep,type ExecutionState} from './execution-engine.js';
 import type {ProcessingJobView} from '@mote/shared';
 import {createHash} from 'node:crypto';
-import {Context,type Plugin} from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import {z} from 'zod';
 import {artifactOutput,type ArtifactOutput} from './evidence-archive.js';
 import {parseMaterialRef,type MaterialReadPage,type MaterialStore} from './materials.js';
@@ -58,16 +58,18 @@ export class ProcessingRuntime {
   // Logical execution cancellation can finish before an async plugin returns.
   private tasks=new Set<Promise<unknown>>();
   private unregister:Array<()=>Promise<void>>=[];private policy:WorkflowConfiguration;private policyEpoch=Object.fromEntries(WORKFLOW_LANES.map(lane=>[lane,0])) as Record<ProcessingLane,number>;
-  constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;enabled?:boolean}>>={},private now=Date.now,engine?:ExecutionEngine,private materials?:MaterialStore,scope?:HostScope,private configService?:ConfigService){
+  constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;enabled?:boolean}>>={},private now=Date.now,engine:ExecutionEngine|undefined,private materials:MaterialStore|undefined,scope:HostScope,private configService?:ConfigService){
+    scope.assertCurrent();
     this.policy=workflowConfigurationSchema.parse(configService?.current('workflows')??defaultWorkflowConfiguration(limits));
     configService?.setHandler<WorkflowConfiguration>('workflows',next=>{const value=workflowConfigurationSchema.parse(next),previous=this.settings();return {apply:()=>{},publish:()=>{this.policy=structuredClone(value);},rollback:()=>{this.policy=structuredClone(previous);},complete:()=>this.completePolicy(value,previous)};});
     this.resources=new PluginResourceScope(undefined,'Processing runtime plugin scope disposal failed');
-    this.context=scope?.cordis.root??new Context();
-    if(!scope)this.resources.retire(()=>this.context.fiber.dispose());
-    if(scope)scope.defer(()=>this.resources.close());
+    scope.defer(()=>this.resources.close());
     this.registry=new ContextProcessorRegistry(scope);this.consumers=new MaterialConsumerRegistry(scope);
-    const provide=(name:string,value:unknown)=>{const remove=this.context.provide(name,value);this.resources.retire(()=>remove());};
-    provide('moteContextProcessors',this.registry);provide('moteMaterialConsumers',this.consumers);
+    const services=scope.cordis.plugin((context:Context)=>{
+      context.provide('moteContextProcessors',this.registry);context.provide('moteMaterialConsumers',this.consumers);
+    });
+    this.context=services.ctx;
+    this.resources.retire(()=>services.dispose());
     store.db.exec(`CREATE TABLE IF NOT EXISTS processing_jobs(id TEXT PRIMARY KEY,lane TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,fence TEXT,error TEXT,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS processing_ready ON processing_jobs(lane,state,available_at);
       CREATE INDEX IF NOT EXISTS processing_parent_grant ON processing_jobs(json_extract(json,'$.parentGrant.stepId'),json_extract(json,'$.config.generationContract'),coalesce(json_extract(json,'$.config.modelFingerprint'),''),id);
@@ -106,7 +108,7 @@ export class ProcessingRuntime {
       this.resources.defer(()=>fiber.dispose());
       await this.resources.join((async()=>{try{await fiber;}catch(error){try{await fiber.dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'Processing plugin initialization and disposal failed',{cause:error});}throw error;}})());
     };
-    this.ready=(async()=>{for(const plugin of plugins)await install(plugin);})();void this.ready.catch(()=>{});
+    this.ready=(async()=>{await services;for(const plugin of plugins)await install(plugin);})();void this.ready.catch(()=>{});
   }
   enqueue(raw:ProcessingStep[],parentGrant?:ParentGrant,consumerGrant?:ConsumerGrant){
     this.assertAccepting();
