@@ -29,6 +29,7 @@ import {createActionsServiceInputs} from '../action-service-inputs.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {prepareActivityInputs,type ActivityAssemblyDependencies} from './activity.js';
 import {activityServicesContract,type ActivityServices} from '../plugins/activity-services.js';
+import {resolveSelectedDomain} from '../domain-activation.js';
 
 /** Executable work domains and their private build input providers. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
@@ -74,7 +75,7 @@ export type WorkDomainDependencies=Parameters<typeof insightServiceInputs>[0]&{
 export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
   const {bootstrap,resources,actions:actionInputs,activity:activityInputs,...inputs}=dependencies;
   await prepareActivityInputs(bootstrap,resources,activityInputs);
-  const selected=bootstrap.selectsFeature('mote.insights')&&bootstrap.selectsPlugin(insightServicesPlugin.contribution.id);
+  const selected=Boolean(resolveSelectedDomain(bootstrap,insightServicesPlugin.contribution.id));
   if(selected){
     if(!bootstrap.selectsPlugin(insightServicesInputsContribution.id))throw Error('Insights input provider is not selected');
     const handle=await bootstrap.host.install({
