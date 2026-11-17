@@ -1,8 +1,9 @@
 import {randomUUID} from 'node:crypto';
 import type {AsyncLocalStorage} from 'node:async_hooks';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
+import {serviceContract,type PluginLifecycle,type ServiceBinding,type StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
+import type {CentralDomainPlugin} from '../domain-activation.js';
 import type {QueryInput} from '@mote/agent';
 import type {TokenUsage} from '@mote/shared';
 import type {ModelDomain} from '../model-settings.js';
@@ -142,3 +143,39 @@ export function createMaterialRetrievalIndexFactory(platform:MaterialRetrievalIn
     };
   };
 }
+
+/** Private build input for the selected retrieval-index owner. The input carries
+ * borrowed trusted roots and the live MaterialStore; it constructs no index. */
+export interface MaterialRetrievalIndexInputs extends MaterialRetrievalIndexDependencies {
+  readonly onStarted?:(platform:MaterialRetrievalIndex,bindings:MaterialRetrievalIndexBindings)=>void;
+}
+export const materialRetrievalIndexInputsContract=serviceContract<MaterialRetrievalIndexInputs>('mote.central.material-retrieval-index-inputs','1');
+export const materialRetrievalIndexInputsContribution={
+  id:'material-retrieval-index-inputs',version:'1.0.0',surface:'data',runtime:'host',
+  provides:[{kind:'service' as const,id:materialRetrievalIndexInputsContract.id,apiVersion:materialRetrievalIndexInputsContract.apiVersion,cardinality:'single' as const}],
+} as const satisfies ManifestContribution;
+export const materialRetrievalIndexInputsDeclaration={id:materialRetrievalIndexInputsContribution.id,apiVersion:'1'} as const;
+
+/** Selected owner activation: the Indexer, bound index runtime and embedding
+ * timer are constructed only inside this activation. */
+export const materialRetrievalIndexPlugin:CentralDomainPlugin=Object.freeze<CentralDomainPlugin>({
+  contribution:materialRetrievalIndexContribution,declaration:materialRetrievalIndexDeclaration,replacement:materialRetrievalIndexReplacement,
+  activation:{featureId:'mote.materials',requires:{inputs:{provider:materialRetrievalIndexInputsContribution.id,service:materialRetrievalIndexInputsContract}},
+    async create(context,bindings){
+      const input=await context.services.acquire(materialRetrievalIndexInputsContract,bindings.inputs!);
+      context.scope.defer(()=>input.release());
+      const platform=createMaterialRetrievalIndex(input.value);
+      context.scope.defer(()=>platform.close());
+      return {
+        route:{id:'mote.materials',mount(){}},
+        prepare:platform.prepare,
+        start(){
+          platform.start((ms,work)=>context.scope.every(ms,work));
+          const retrievalIndex=context.provide(materialRetrievalIndexContribution.id,centralServices.retrievalIndex,platform.retrievalIndex);
+          const materialIndex=context.provide(materialRetrievalIndexContribution.id,centralServices.materialIndex,platform.materialIndex);
+          input.value.onStarted?.(platform,{retrievalIndex,materialIndex});
+        },
+        quiesce:platform.quiesce,stop:platform.stop,dispose:platform.dispose,
+      };
+    }},
+});

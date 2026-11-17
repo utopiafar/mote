@@ -31,7 +31,7 @@ export interface VaultStorageRouteDependencies {
   readonly diagnostics:ServerDiagnostics;
   readonly evidenceReader:EvidenceReader;
   readonly files:FileStore;
-  readonly indexer:RetrievalIndex;
+  readonly indexer?:RetrievalIndex;
   readonly store:MaterialStore['store'];
 }
 
@@ -42,7 +42,7 @@ export function vaultStorageRoutes(content:()=>ContentStorageService,dependencie
     const maintain=()=>files.sweep();
     if(scope)void scope.run(maintain);else void maintain();scope?.every(3600000,maintain);
     registerContentStorage(app,content());
-    app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=indexer.retry();diagnostics.record('queue.snapshot',{pending:result.queued});void indexer.tick();return result;});
+    app.post('/api/index/retry',async()=>{if(!indexer)throw new StoreError('Material index is unavailable',404);if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=indexer.retry();diagnostics.record('queue.snapshot',{pending:result.queued});void indexer.tick();return result;});
     const memoryBackup=evidenceReader.memoryBindings?createMemoryBackup(evidenceReader.memoryBindings):undefined;
     registerArchiveExport(app,store,files,archivedFiles,config.maxExportBytes,memoryBackup);
     app.get('/api/export',async(_req,reply)=>{

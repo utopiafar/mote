@@ -1,9 +1,10 @@
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,ServiceBinding} from '@mote/plugin-api/contracts';
+import {serviceContract,type PluginLifecycle,type ServiceBinding} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {MaterialStore} from '../materials.js';
 import {MaterialNoteDeletion} from '../material-note-deletion.js';
 import {StoreError} from '../store.js';
+import type {CentralDomainPlugin} from '../domain-activation.js';
 import {centralServices,type CommitAuthority,type CommitAuthorization,type MaterialPublication} from './central-contracts.js';
 
 export const materialRepositoryContribution={
@@ -92,3 +93,44 @@ export function createMaterialRepositoryFactory(platform:MaterialRepository,onSt
     };
   };
 }
+
+/** Private build input for the selected Material owner. It carries the actual
+ * borrowed store and authorization boundary; it is never a public repository. */
+export interface MaterialRepositoryInputs {
+  readonly store:MaterialStore['store'];
+  readonly authorization:CommitAuthorization;
+  readonly onStarted?:(platform:MaterialRepository,bindings:MaterialRepositoryBindings)=>void;
+}
+export const materialRepositoryInputsContract=serviceContract<MaterialRepositoryInputs>('mote.central.material-repository-inputs','1');
+export const materialRepositoryInputsContribution={
+  id:'material-repository-inputs',version:'1.0.0',surface:'data',runtime:'host',
+  provides:[{kind:'service' as const,id:materialRepositoryInputsContract.id,apiVersion:materialRepositoryInputsContract.apiVersion,cardinality:'single' as const}],
+} as const satisfies ManifestContribution;
+export const materialRepositoryInputsDeclaration={id:materialRepositoryInputsContribution.id,apiVersion:'1'} as const;
+
+/** Selected owner activation: the repository, publication latch and store are
+ * constructed only inside this activation. Callers acquire the published
+ * bindings; the private input only supplies borrowed trusted roots. */
+export const materialRepositoryPlugin:CentralDomainPlugin=Object.freeze<CentralDomainPlugin>({
+  contribution:materialRepositoryContribution,declaration:materialRepositoryDeclaration,replacement:materialRepositoryReplacement,
+  activation:{featureId:'mote.materials',requires:{inputs:{provider:materialRepositoryInputsContribution.id,service:materialRepositoryInputsContract}},
+    async create(context,bindings){
+      const input=await context.services.acquire(materialRepositoryInputsContract,bindings.inputs!);
+      context.scope.defer(()=>input.release());
+      const platform=createMaterialRepository(input.value.store,input.value.authorization);
+      context.scope.defer(()=>platform.close());
+      return {
+        route:{id:'mote.materials',mount(){}},
+        prepare:()=>platform.prepare(),
+        start(){
+          platform.start();
+          const repository=context.provide(materialRepositoryContribution.id,centralServices.materialRepository,platform.storeForAssembly);
+          const publication=context.provide(materialRepositoryContribution.id,centralServices.materialPublication,platform.publication);
+          input.value.onStarted?.(platform,{repository,publication});
+        },
+        quiesce:platform.quiesce,
+        stop:platform.close,
+        dispose:platform.close,
+      };
+    }},
+});

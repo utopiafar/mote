@@ -25,23 +25,39 @@ import {createContextTrees,createContextTreesReadCapability,registerContextTreeR
 import {navigationScopeSchema} from '../context-navigation.js';
 import {registerContextRoutes} from '../context-routes.js';
 import {registerEvidenceRoutes} from '../evidence-routes.js';
-import {createEvidenceContextReader,evidenceContextReaderContribution,evidenceContextReaderDeclaration,evidenceContextReaderReplacement} from '../plugins/evidence-context-reader.js';
+import {createEvidenceContextReader,evidenceContextReaderContribution,evidenceContextReaderDeclaration,evidenceContextReaderInputsContribution,evidenceContextReaderInputsContract,evidenceContextReaderInputsDeclaration,evidenceContextReaderPlugin,evidenceContextReaderReplacement,type EvidenceContextReaderInputs} from '../plugins/evidence-context-reader.js';
 import {createContextQuery} from '../plugins/query-context.js';
 import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
-import {contributeDomainRoutes} from '../plugins/domain-routes.js';
-import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextReplacement} from '../plugins/material-context.js';
+import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextInputsContribution,materialContextInputsContract,materialContextInputsDeclaration,materialContextPlugin,materialContextReplacement,type MaterialContextInputs} from '../plugins/material-context.js';
 import {createMaterialMemoryIntake,createMaterialMemoryIntakeFactory,materialMemoryIntakeContribution,materialMemoryIntakeDeclaration,materialMemoryIntakeReplacement,type MaterialMemoryIntakeBindings} from '../plugins/material-memory-intake.js';
 import {createMaterialOrganizerService,materialOrganizerServiceContribution,materialOrganizerServiceDeclaration,materialOrganizerServiceReplacement} from '../plugins/material-organizer-service.js';
-import {createMaterialRepository,createMaterialRepositoryFactory,materialRepositoryContribution,materialRepositoryDeclaration,materialRepositoryReplacement,type MaterialRepositoryBindings} from '../plugins/material-repository.js';
-import {createMaterialRetrievalIndex,materialRetrievalIndexContribution,materialRetrievalIndexDeclaration,materialRetrievalIndexReplacement} from '../plugins/material-retrieval-index.js';
+import {createMaterialRepository,createMaterialRepositoryFactory,materialRepositoryContribution,materialRepositoryDeclaration,materialRepositoryInputsContribution,materialRepositoryInputsDeclaration,materialRepositoryPlugin,materialRepositoryReplacement,type MaterialRepositoryBindings} from '../plugins/material-repository.js';
+import {createMaterialRetrievalIndex,materialRetrievalIndexContribution,materialRetrievalIndexDeclaration,materialRetrievalIndexInputsContribution,materialRetrievalIndexInputsContract,materialRetrievalIndexInputsDeclaration,materialRetrievalIndexPlugin,materialRetrievalIndexReplacement,type MaterialRetrievalIndexInputs} from '../plugins/material-retrieval-index.js';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:materialRepositoryContribution,declaration:materialRepositoryDeclaration,replacement:materialRepositoryReplacement},
   {contribution:materialMemoryIntakeContribution,declaration:materialMemoryIntakeDeclaration,replacement:materialMemoryIntakeReplacement},
   {contribution:materialOrganizerServiceContribution,declaration:materialOrganizerServiceDeclaration,replacement:materialOrganizerServiceReplacement},
-  {contribution:materialRetrievalIndexContribution,declaration:materialRetrievalIndexDeclaration,replacement:materialRetrievalIndexReplacement},
-  {contribution:materialContextContribution,declaration:materialContextDeclaration,replacement:materialContextReplacement},
-  {contribution:evidenceContextReaderContribution,declaration:evidenceContextReaderDeclaration,replacement:evidenceContextReaderReplacement},
+  {contribution:materialRetrievalIndexInputsContribution,declaration:materialRetrievalIndexInputsDeclaration,replacement:'restart'},
+  materialRetrievalIndexPlugin,
+  {contribution:materialContextInputsContribution,declaration:materialContextInputsDeclaration,replacement:'restart'},
+  materialContextPlugin,
+  {contribution:evidenceContextReaderInputsContribution,declaration:evidenceContextReaderInputsDeclaration,replacement:'restart'},
+  evidenceContextReaderPlugin,
+]);
+
+/** Complete owner-ready selection for the final Host union. The default
+ * distribution above keeps the repository as the shared trusted foundation;
+ * this list exposes the repository activation for the selected producer. */
+export const domainPlugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:materialRepositoryInputsContribution,declaration:materialRepositoryInputsDeclaration,replacement:'restart'},
+  materialRepositoryPlugin,
+  {contribution:materialRetrievalIndexInputsContribution,declaration:materialRetrievalIndexInputsDeclaration,replacement:'restart'},
+  materialRetrievalIndexPlugin,
+  {contribution:materialContextInputsContribution,declaration:materialContextInputsDeclaration,replacement:'restart'},
+  materialContextPlugin,
+  {contribution:evidenceContextReaderInputsContribution,declaration:evidenceContextReaderInputsDeclaration,replacement:'restart'},
+  evidenceContextReaderPlugin,
 ]);
 
 export interface MaterialInputDependencies {
@@ -84,6 +100,7 @@ export async function prepareMaterials(dependencies:MaterialInputDependencies){
 }
 
 export interface MaterialsAssemblyDependencies {
+  readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly store:Store;
   readonly embedding:Readonly<ModelDomain['embedding']>;
   readonly diagnostics:ServerDiagnostics;
@@ -109,12 +126,26 @@ export interface MaterialsAssemblyDependencies {
  * reader — the materials read tail the sources domain feeds — plus their close
  * hooks. The retrieval-index domain plugin owns the Indexer, the bound
  * material index runtime and the shared engine's embedding/index timer. */
-export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
-  const {store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence}=dependencies;
-  const retrievalIndex=createMaterialRetrievalIndex({store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,files,materials});
-  resources.defer(()=>retrievalIndex.close());
-  retrievalIndex.prepare();retrievalIndex.start();
-  const indexer=retrievalIndex.retrievalIndex;
+export async function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
+  const {bootstrap,store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence}=dependencies;
+  const lifecycle={prepare(){},start(){},quiesce(){},stop(){},dispose(){}};
+  let retrievalIndex:ReturnType<typeof createMaterialRetrievalIndex>|undefined;
+  if(bootstrap.selectsFeature('mote.materials')&&bootstrap.selectsPlugin('material-retrieval-index')){
+    if(!bootstrap.selectsPlugin('material-retrieval-index-inputs'))throw Error('Selected Material index requires its input provider');
+    const handle=await bootstrap.host.install({
+      identity:{host:bootstrap.snapshot().host,packageId:'mote.material-retrieval-index-inputs',installationId:'build:material-retrieval-index-inputs@1.0.0',instanceId:'materials',activationId:randomUUID()},
+      contributions:[materialRetrievalIndexInputsDeclaration],restartRequired:true,
+      factory(context){
+        const value:MaterialRetrievalIndexInputs={store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,files,materials,onStarted(platform){retrievalIndex=platform;}};
+        bootstrap.registerDomainService(context.provide(materialRetrievalIndexInputsContribution.id,materialRetrievalIndexInputsContract,value));
+        return lifecycle;
+      },
+    });
+    dependencies.resources.defer(()=>handle.close('shutdown'));
+    await bootstrap.domainActivation.installDomain('material-retrieval-index');
+    if(!retrievalIndex)throw Error('Material retrieval index activation did not start');
+  }
+  const indexer=retrievalIndex?.retrievalIndex;
   const organizerService=createMaterialOrganizerService({store,materials,executor,memoryCandidates:materialMemoryWork});
   resources.defer(()=>organizerService.close());
   organizerService.prepare();organizerService.start();
@@ -137,20 +168,45 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
     registerContextRoutes(app,createContextQuery(store,sources,evidenceReader));
     app.get('/api/skills',async()=>({items:skillCatalog()}));
   };
-  const evidenceContext=createEvidenceContextReader({reader:readerFacade,contextTrees:contextTreesRead,mountRoutes});
-  resources.defer(()=>evidenceContext.dispose());
+  let evidenceContext:ReturnType<typeof createEvidenceContextReader>|undefined;
+  if(bootstrap.selectsFeature('mote.context')&&bootstrap.selectsPlugin('evidence-context-reader')){
+    if(!bootstrap.selectsPlugin('evidence-context-reader-inputs'))throw Error('Selected Evidence context requires its input provider');
+    const handle=await bootstrap.host.install({
+      identity:{host:bootstrap.snapshot().host,packageId:'mote.evidence-context-reader-inputs',installationId:'build:evidence-context-reader-inputs@1.0.0',instanceId:'materials',activationId:randomUUID()},
+      contributions:[evidenceContextReaderInputsDeclaration],restartRequired:true,
+      factory(context){
+        const value:EvidenceContextReaderInputs={reader:readerFacade,contextTrees:contextTreesRead,mountRoutes,onStarted(platform){evidenceContext=platform;}};
+        bootstrap.registerDomainService(context.provide(evidenceContextReaderInputsContribution.id,evidenceContextReaderInputsContract,value));
+        return lifecycle;
+      },
+    });
+    dependencies.resources.defer(()=>handle.close('shutdown'));
+    await bootstrap.domainActivation.installDomain('evidence-context-reader');
+    if(!evidenceContext)throw Error('Evidence context reader activation did not start');
+  }else{
+    evidenceContext=createEvidenceContextReader({reader:readerFacade,contextTrees:contextTreesRead,mountRoutes});
+    resources.defer(()=>evidenceContext!.dispose());
+  }
+  if(!evidenceContext)throw Error('Evidence context reader did not start');
   materialMemoryWork.bindSelection(evidenceContext.ports.memoryInputSelection);
-  const materialContext=createMaterialContext({materials,organizer:materialOrganizer,reader:evidenceReader});
-  resources.defer(()=>materialContext.close());
-  materialContext.prepare();materialContext.start();
+  let materialContext:ReturnType<typeof createMaterialContext>|undefined;
+  if(bootstrap.selectsFeature('mote.materials')&&bootstrap.selectsPlugin('material-context')){
+    if(!bootstrap.selectsPlugin('material-context-inputs'))throw Error('Selected Material context requires its input provider');
+    const handle=await bootstrap.host.install({
+      identity:{host:bootstrap.snapshot().host,packageId:'mote.material-context-inputs',installationId:'build:material-context-inputs@1.0.0',instanceId:'materials',activationId:randomUUID()},
+      contributions:[materialContextInputsDeclaration],restartRequired:true,
+      factory(context){
+        const value:MaterialContextInputs={materials,organizer:materialOrganizer,reader:evidenceReader,onStarted(platform){materialContext=platform;}};
+        bootstrap.registerDomainService(context.provide(materialContextInputsContribution.id,materialContextInputsContract,value));
+        return lifecycle;
+      },
+    });
+    dependencies.resources.defer(()=>handle.close('shutdown'));
+    await bootstrap.domainActivation.installDomain('material-context');
+    if(!materialContext)throw Error('Material context activation did not start');
+  }
   resources.beforeClose(()=>dependencies.disableCatalogChanges());
   backendContext.provide('moteContextTrees',contextTrees);
-  // The transitional feature bridge mounts these before listen; each route table
-  // dispatches against this activation instead of installing a second handler.
-  contributeDomainRoutes(backendContext,{
-    'mote.materials':Object.freeze({mount:(app:Parameters<typeof materialContext.routes>[0])=>materialContext.routes(app)}),
-    'mote.context':Object.freeze({mount:(app:Parameters<typeof evidenceContext.routes>[0])=>evidenceContext.routes(app)}),
-  });
   // materials slice.
   return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext,
     setMaterialConsumerTick:(callback:(()=>void)|undefined)=>organizerService.setAfterTick(callback)});

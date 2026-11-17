@@ -161,7 +161,7 @@ export interface ProcessingAssemblyDependencies {
   readonly mediaAssets:MediaAssets;
   readonly archivedFiles:import('../archived-files.js').ArchivedFileStore;
   readonly evidenceReader:import('../evidence-reader.js').EvidenceReader;
-  readonly indexer:import('../plugins/central-contracts.js').RetrievalIndex;
+  readonly indexer?:import('../plugins/central-contracts.js').RetrievalIndex;
   readonly withMediaOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;
   readonly withMediaOwnerIntent:<T>(id:string,task:()=>Promise<T>|T)=>Promise<T>;
   readonly plugins?:readonly Plugin[];

@@ -19,14 +19,20 @@ function draft(captureId:string):MaterialDraft{
 }
 
 test('material and context routes stay plugin-owned and never expose deleted originals',async t=>{
-  const dataDir=mkdtempSync(join(tmpdir(),'mote-material-context-routes-'));
-  const node=await buildApp(config(dataDir),{backgroundWorker:false});
+  const dataDir=mkdtempSync(join(tmpdir(),'mote-material-context-routes-')),options=config(dataDir);
+  const node=await buildApp(options,{backgroundWorker:false});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${config(dataDir).token}`},captureId=randomUUID();
+  const headers={authorization:`Bearer ${options.privateCredential!.token}`},captureId=randomUUID();
   await node.store.ingest({id:captureId,deviceId:'generated-route-device',deviceName:'Generated',platform:'import',source:'note',
     capturedAt:'2026-11-04T00:00:00.000Z',durationMs:0,ocrText:'Generated route original'});
   const published=node.materials.publish(draft(captureId));
 
+  const contributions=node.bootstrap.snapshot().contributions.map(item=>item.identity.contributionId);
+  for(const id of ['material-retrieval-index','material-context','evidence-context-reader'])assert.ok(contributions.includes(id),`default producer installed ${id}`);
+  assert.equal(typeof node.indexer.tick,'function');
+  node.materials.setSearchable(published.id,true);
+  await node.materials.index!.tick();
+  assert.equal(node.materials.get(published.id)?.indexing.state,'indexed','the selected default Indexer consumes a published Material');
   const list=await node.app.inject({url:'/api/materials',headers});assert.equal(list.statusCode,200,list.body);
   assert.deepEqual(Object.keys(list.json()).sort(),['items','nextCursor']);
   assert.ok(list.json().items.some((item:{ref:string})=>item.ref===published.ref));

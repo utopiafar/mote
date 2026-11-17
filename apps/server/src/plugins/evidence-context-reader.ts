@@ -1,6 +1,8 @@
 import type {ManifestContribution} from '@mote/plugin-api';
+import {serviceContract} from '@mote/plugin-api/contracts';
 import type {ContextReader} from '@mote/agent';
 import type {FastifyInstance} from 'fastify';
+import type {CentralDomainPlugin} from '../domain-activation.js';
 import {StoreError} from '../store.js';
 import type {ContextTreesReadCapability} from '../context-trees.js';
 import type {EvidenceReaderAgentOptions,EvidenceReaderFacade} from '../evidence-reader.js';
@@ -165,3 +167,45 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
     get disposed(){return disposed;},
   });
 }
+
+/** Private build input for the selected Evidence/context read owner. It lends
+ * the fixed reader facade and trusted route producer; it carries no Store or
+ * raw reader. */
+export interface EvidenceContextReaderInputs extends EvidenceContextReaderDependencies {
+  readonly onStarted?:(platform:EvidenceContextReader)=>void;
+}
+export const evidenceContextReaderInputsContract=serviceContract<EvidenceContextReaderInputs>('mote.central.evidence-context-reader-inputs','1');
+export const evidenceContextReaderInputsContribution={
+  id:'evidence-context-reader-inputs',version:'1.0.0',surface:'data',runtime:'host',
+  provides:[{kind:'service' as const,id:evidenceContextReaderInputsContract.id,apiVersion:evidenceContextReaderInputsContract.apiVersion,cardinality:'single' as const}],
+} as const satisfies ManifestContribution;
+export const evidenceContextReaderInputsDeclaration={id:evidenceContextReaderInputsContribution.id,apiVersion:'1'} as const;
+
+/** Selected owner activation: it owns the context registry, read ports, route
+ * mounting and lifecycle over the trusted fixed facade/producer. */
+export const evidenceContextReaderPlugin:CentralDomainPlugin=Object.freeze<CentralDomainPlugin>({
+  contribution:evidenceContextReaderContribution,declaration:evidenceContextReaderDeclaration,replacement:evidenceContextReaderReplacement,
+  activation:{featureId:'mote.context',requires:{inputs:{provider:evidenceContextReaderInputsContribution.id,service:evidenceContextReaderInputsContract}},
+    async create(context,bindings){
+      const input=await context.services.acquire(evidenceContextReaderInputsContract,bindings.inputs!);
+      context.scope.defer(()=>input.release());
+      const platform=createEvidenceContextReader(input.value);
+      context.scope.defer(()=>platform.dispose());
+      return {
+        route:{id:'mote.context',mount(app){platform.routes(app);}},
+        prepare(){},
+        start(){
+          const {ports}=platform;
+          context.provide(evidenceContextReaderContribution.id,centralServices.captureRead,ports.captureRead);
+          context.provide(evidenceContextReaderContribution.id,centralServices.captureContextRead,ports.captureContextRead);
+          context.provide(evidenceContextReaderContribution.id,centralServices.contextNavigationRead,ports.contextNavigationRead);
+          context.provide(evidenceContextReaderContribution.id,centralServices.contextTreesRead,ports.contextTreesRead);
+          context.provide(evidenceContextReaderContribution.id,centralServices.materialRead,ports.materialRead);
+          context.provide(evidenceContextReaderContribution.id,centralServices.memoryRead,ports.memoryRead);
+          context.provide(evidenceContextReaderContribution.id,centralServices.memorySnapshots,ports.memorySnapshots);
+          input.value.onStarted?.(platform);
+        },
+        quiesce(){},stop:async()=>{platform.dispose();},dispose(){platform.dispose();},
+      };
+    }},
+});

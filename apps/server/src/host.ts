@@ -158,7 +158,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     };
   };
   let catalogChangesEnabled=false;
-  const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext,setMaterialConsumerTick}=assembleMaterials({store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
+  const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext,setMaterialConsumerTick}=await assembleMaterials({bootstrap,store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,{conversations}=await prepareConversations({bootstrap,store,resources,backendContext,modelAuthorizationHost});
   const assistantDrafts=new AssistantDrafts(conversations);
@@ -553,11 +553,11 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
 
   function diagnosticProjection() {
     const counts=store.indexCounts(),devices=store.devices(),storage=store.stats();
-    return {execution:{failureReceipts:executor.failureDiagnostics(),agents:agentGate.snapshot(),llm:llmGate.snapshot(),interactive:interactiveGate.snapshot(),interactiveHarness:interactiveModelGate.snapshot(),delegated:executor.poolSnapshot('delegated-agents')},services:{agentConfigured:agent.configured,embeddingConfigured:indexer.configured,activeQueries:query.activeQueries(),closing:serverLifecycle.isClosing()},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,imagesEncrypted:storage.imagesEncrypted}};
+    return {execution:{failureReceipts:executor.failureDiagnostics(),agents:agentGate.snapshot(),llm:llmGate.snapshot(),interactive:interactiveGate.snapshot(),interactiveHarness:interactiveModelGate.snapshot(),delegated:executor.poolSnapshot('delegated-agents')},services:{agentConfigured:agent.configured,embeddingConfigured:indexer?.configured??false,activeQueries:query.activeQueries(),closing:serverLifecycle.isClosing()},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,imagesEncrypted:storage.imagesEncrypted}};
   }
   function systemStatus() {
     const profiles=modelSettings.profiles(),current=modelSettings.current(),unbounded=profiles.some(p=>p.settings.agentTimeoutMs===null),agentTimeouts=profiles.map(p=>p.settings.agentTimeoutMs).filter((value):value is number=>value!==null);
-    return {runtime:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,maintenance:maintenanceWorker?.snapshot()??null},profile:config.profile??'default',agent:{configured:agent.configured,provider:modelProvider(current.provider)?.name??current.provider,runtime:current.protocol==='codex-app-server'?'Codex App Server':'DeepSeek Harness',protocol:current.protocol,model:current.model||null,reasoningEffort:current.reasoningEffort,maxTokens:current.maxTokens,modelRequestTimeoutMs:current.modelRequestTimeoutMs,agentTimeoutMs:unbounded?null:agentTimeouts.length?Math.max(...agentTimeouts):null},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:embedding.model||null},diagnostics:diagnostics.snapshot(),insightIntervalHours:lifecycle.settings().insights.enabled?lifecycle.settings().insights.intervalHours:0,serverTime:new Date().toISOString()};
+    return {runtime:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,maintenance:maintenanceWorker?.snapshot()??null},profile:config.profile??'default',agent:{configured:agent.configured,provider:modelProvider(current.provider)?.name??current.provider,runtime:current.protocol==='codex-app-server'?'Codex App Server':'DeepSeek Harness',protocol:current.protocol,model:current.model||null,reasoningEffort:current.reasoningEffort,maxTokens:current.maxTokens,modelRequestTimeoutMs:current.modelRequestTimeoutMs,agentTimeoutMs:unbounded?null:agentTimeouts.length?Math.max(...agentTimeouts):null},storage:store.stats(),index:{mode:indexer?.configured?'hybrid':'text',model:embedding.model||null},diagnostics:diagnostics.snapshot(),insightIntervalHours:lifecycle.settings().insights.enabled?lifecycle.settings().insights.intervalHours:0,serverTime:new Date().toISOString()};
   }
 
 
@@ -659,8 +659,6 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   if(selected('mote.connections'))routes.push(developerAccessFeature({host:developerAccess,credential,connectionIdentity}));
   if(selected('mote.storage'))routes.push(domain('mote.storage'));
   if(selected('mote.capture'))routes.push(withAgentTools(captureFeature({store,connections,credential,assertRequestActive,diagnostics,evidenceReader,files,ingress,executor,maintenanceWorker})));
-  if(selected('mote.context'))routes.push(domain('mote.context'));
-  if(selected('mote.materials'))routes.push(domain('mote.materials'));
   if(selected('mote.coding'))routes.push(codingFeature);
   if(selected('mote.sources'))routes.push(withAgentTools(sourcesFeature({credential,evidenceReader,sources,store,materials,sourcePipelines})));
   if(selected('mote.models'))routes.push(domain('mote.models'));
