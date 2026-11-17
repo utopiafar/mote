@@ -5900,6 +5900,26 @@
       "type": "trigger",
       "name": "ledger_assistant_task_turns_update",
       "fingerprint": "c9052365fa1b902bc0d77040decb9127141f2cd57f533f7e3756fc47fc534e2b"
+    },
+    {
+      "type": "table",
+      "name": "assistant_task_runtime",
+      "fingerprint": "65fd3a6a2ef41bf078be4dafa704d700a581fc4592ea3f751fbc813b964ee26e"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_runtime_delete",
+      "fingerprint": "e9cb47dd7f3816810fa4f4b4c1e540e570be296ec1ab1676e87c697c8c4c94bd"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_runtime_insert",
+      "fingerprint": "f3bf8c49eecb5b8703250c98888072671c7ffb8b50b908a38fa5cc8e92428d48"
+    },
+    {
+      "type": "trigger",
+      "name": "ledger_assistant_task_runtime_update",
+      "fingerprint": "4b1b738a6072638a6c5483866ca562f6bf8f486752a8388aa69989a7056a7b6f"
     }
   ]
 }

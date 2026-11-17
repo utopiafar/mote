@@ -17,7 +17,7 @@ export const BATCH_CONTEXT_MAX_BYTES=48000;
 type FrozenQuery=BatchQuery & {processingEvidence:Record<string,string>};
 type Plan={items:string[];contextTime:string;reduce?:string};
 type StepInput={batchId:string;itemId?:string;index?:number;revision:number};
-export type BatchAdmission={kind:'automatic';purpose:AutomaticModelPurpose;roots:readonly string[]}|{kind:'manual';identities:readonly string[];connections:ModelConnection[]};
+export type BatchAdmission={kind:'automatic';purpose:AutomaticModelPurpose;roots:readonly string[]}|{kind:'manual';identities:readonly string[];connections:ModelConnection[]}|{kind:'continuation';parentStepId:string};
 /** A product owner may project its own record in the existing step lifecycle.
  * These callbacks neither admit work nor create another execution mechanism. */
 export type BatchProductProjection={
@@ -196,7 +196,12 @@ export class BatchProcessing {
         if(request.reduce!==undefined)this.engine.enqueue(request.operationId,'batch.reduce',{batchId:parent.id,revision:parent.revision},{id:reduceStep(parent.id),dependencies:items.map((_,index)=>itemStep(parent.id,index))});
       };
       if(admission.kind==='automatic')this.control.automaticCommand('batch:'+parent.id,admission.roots,admission.purpose,enqueue);
-      else this.control.manualCommand('batch:'+parent.id,admission.identities,admission.connections,enqueue);
+      else if(admission.kind==='manual')this.control.manualCommand('batch:'+parent.id,admission.identities,admission.connections,enqueue);
+      else{
+        const prior=this.engine.get(admission.parentStepId);
+        if(!prior||prior.kind!=='batch.item'||prior.operationId!==request.operationId||!this.control.stepAuthority(prior.id))throw new StoreError('Batch continuation authority is unavailable',409);
+        this.control.commitStep(prior,()=>{enqueue();for(const [index] of items.entries())this.control.inheritStep(prior.id,itemStep(parent.id,index));if(request.reduce!==undefined)this.control.inheritStep(prior.id,reduceStep(parent.id));});
+      }
       return parent;
     });
     this.engine.localEffect(()=>queueMicrotask(()=>{if(!this.closed)void this.engine.tick().catch(()=>{});}));
@@ -213,6 +218,14 @@ export class BatchProcessing {
     // commits. The stop command uses the private transactional path below.
     if(this.store.db.isTransaction)throw new StoreError('Batch cancellation requires its own transaction',409);
     this.cancelBatch(id,true);
+  }
+  /** A product owner has already installed its replacement in this write.
+   * Abort only committed retired steps; a failed surrounding write must leave
+   * the original local work alive as well as retaining its durable records. */
+  supersede(id:string){
+    if(!this.store.db.isTransaction)throw new StoreError('Batch replacement requires its owner transaction',409);
+    const steps=this.steps(id);this.cancelBatch(id,false);
+    queueMicrotask(()=>{if(!this.closed)for(const step of steps)if(this.engine.get(step.id)?.state==='cancelled')this.engine.abortLocal(step.id);});
   }
   private cancelBatch(id:string,abortLocal:boolean){
     const steps=this.steps(id);
