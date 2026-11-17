@@ -295,7 +295,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
     let signal = AbortSignal.any([scope.signal, ...(input.signal ? [input.signal] : [])]);
     const assertCurrent = () => { input.signal?.throwIfAborted(); if (closed) throw new AgentClosedError(); signal.throwIfAborted(); nativeAssembly?.assertCurrent(); nativeAssembly?.application?.assertCurrent(); input.assertContextAuthority?.(); };
     const trace = (event: Parameters<typeof reportTrace>[1]) => reportTrace(input, {...event, runId});
-    let session: HostRunSession | undefined, bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
+    let session: HostRunSession | undefined, bridge: Awaited<ReturnType<typeof startBridge>> | undefined,releaseControl:(()=>void)|void;
     let bridgeClosing: Promise<void> | undefined;
     const closeBridge = () => bridge ? bridgeClosing ??= bridge.close() : Promise.resolve();
     let primary = false;
@@ -449,6 +449,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
         cleanupFailed: (errors: readonly unknown[]) => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}),
       };
       session = await selectedRuntime.prepare(selection, dependencies, assembly);
+      releaseControl=input.onRuntimeControl?.(session.control);
       const answer = await session.execute(); assertCurrent();
       if(nativeAssembly?.application){await session.close();assertCurrent();await nativeAssembly.application.finish();assertCurrent();}
       trace({type: 'run.completed', stage: 'validating', phase: 'completed', status: 'succeeded', payload: {citations: answer.citations.map(citation => citation.id), toolCalls: answer.trace}});
@@ -467,7 +468,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       try {
         // A preparation that failed before returning its session still left a
         // deferred close on this scope. Quiesce it before protecting SDK files.
-        await settleHostCleanup([() => session?.close(), closeBridge, () => scope.close(), () => nativeAssembly?.application?.release()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
+        await settleHostCleanup([() => releaseControl?.(),() => session?.close(), closeBridge, () => scope.close(), () => nativeAssembly?.application?.release()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
       } finally { applications.delete(runId);scopes.delete(resources); }
     }
   }

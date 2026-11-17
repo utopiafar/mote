@@ -45,9 +45,10 @@ interface ConversationSummary {
   scope: Range & {kind?:'all'|'selection';timeZone?:string;evidenceIds?:string[];sourceIds?:string[];anchorEvidenceIds?:string[];anchorMaterialRef?:string};
   status: ConversationMessageState;
 }
-interface ConversationTurn {
+interface ConversationTurn extends Pick<ConversationMessage,'steering'|'amendedBy'|'supersededBy'> {
   id: string;
   seq?: number;
+  version?: number;
   question: string;
   result?: Answer;
   status: ConversationMessageState;
@@ -275,7 +276,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
           const value=await readConversationMessage(api,conversationId,turn.id,controller.signal);
           if(stopped||latestDetail.current.api!==api||latestDetail.current.selectedId!==conversationId)return;
           if(value.id!==turn.id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
-          if(value.status!==turn.status)changed=true;
+          if(value.status!==turn.status||turn.version!==undefined&&value.revision!==turn.version)changed=true;
         }
         if(changed){setTurnError('');detail.refresh();history.refresh();}
       }catch(cause){if(!stopped&&!(cause instanceof DOMException&&cause.name==='AbortError'))setTurnError(conversationFailure(cause));}
@@ -504,11 +505,16 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
     finally {if (!controller.signal.aborted) {setBusy(false); operation.current = null;}}
   }
   function turnBody(turn:ConversationTurn,conversationId:string):ReactNode{
-    if(pendingMessageStatus(turn.status))return <div className="conversation-pending" role="status"><LoaderCircle className="spin" size={18}/><div><strong>{messageStateLabel(turn.status)}</strong><p>{turn.status==='accepted'?moteText('消息已保存在中央，等待开始回答。'):turn.status==='queued'?moteText('前一条回答完成后会按顺序开始。'):moteText('可以离开或刷新，中央会继续执行。')}</p></div><button className="text-button" disabled={cancelRequest.current!==null} onClick={()=>void cancelTurn(turn)}>{moteText('停止这条回答')}</button></div>;
+    if(pendingMessageStatus(turn.status))return <div className="conversation-pending" role="status"><LoaderCircle className="spin" size={18}/><div><strong>{messageStateLabel(turn.status)}</strong><p>{turn.status==='running'?moteText('可以离开或刷新，中央会继续执行。'):moteText('消息已保存在中央，等待开始回答。')}</p></div><button className="text-button" disabled={cancelRequest.current!==null} onClick={()=>void cancelTurn(turn)}>{moteText('停止这条回答')}</button></div>;
     if(turn.status==='cancelled')return <div className="failed-answer" role="status"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText('已停止')}</strong><p>{moteText('这条回答已取消，晚到的结果不会写回。')}</p><button className="button primary" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div>;
     const result=turn.result;
     if(turn.status==='failed'||!result)return <div className="failed-answer" role="alert"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText("这次回答没有完成")}</strong><p>{failureMessage(turn.error)}</p><button className="button primary" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div>;
-    return <>{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : <>{turn.evidenceUnavailable?<p className="notice">{moteText('引用原文已删除，历史问答仍保留。')}</p>:turn.evidenceStale&&<p className="notice">{moteText("这是历史版本，当前资料已更新。")}</p>}{renderAnswer(result,ref=>openHistoryReference(ref,turn.id))}{result.draft&&<AssistantDraftActions api={api} conversationId={conversationId} turnId={turn.id} draft={result.draft} renderAnswer={renderAnswer} onOpen={onOpen}/>}<div className="conversation-turn-actions"><SaveConversationRecord inDialog formatError={conversationFailure} api={api} conversationId={conversationId} messageId={turn.id} question={turn.question} answer={result.answer} answerDetails={result} onOpen={onOpen}/><button className="text-button" aria-label={moteText('本轮详情')+' '+turn.question} onClick={()=>setMoreTurn({owner:api,conversationId,turnId:turn.id})}>{moteText('更多')}</button></div><ConversationTurnDetails api={api} conversationId={conversationId} id={turn.id} question={turn.question} answer={result} open={moreTurn?.owner===api&&moreTurn.conversationId===conversationId&&moreTurn.turnId===turn.id} onClose={()=>setMoreTurn(null)} onOpen={ref=>{setMoreTurn(null);openHistoryReference(ref,turn.id);}} run={run?.turnId===turn.id?run:undefined} pollError={pollError}/></>}</>;
+    return <>{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : <>{turn.evidenceUnavailable?<p className="notice">{moteText('引用原文已删除，历史问答仍保留。')}</p>:turn.evidenceStale&&<p className="notice">{moteText("这是历史版本，当前资料已更新。")}</p>}{renderAnswer(result,ref=>openHistoryReference(ref,turn.id))}{result.draft&&!turn.supersededBy?.length&&<AssistantDraftActions api={api} conversationId={conversationId} turnId={turn.id} draft={result.draft} renderAnswer={renderAnswer} onOpen={onOpen}/>}<div className="conversation-turn-actions"><SaveConversationRecord inDialog formatError={conversationFailure} api={api} conversationId={conversationId} messageId={turn.id} question={turn.question} answer={result.answer} answerDetails={result} onOpen={onOpen}/>{turn.steering?.state==='accepted'&&conversation?.turns.some(target=>target.id===turn.steering!.targetMessageId&&pendingMessageStatus(target.status))&&<button className="text-button" disabled={cancelRequest.current!==null} onClick={()=>void cancelTurn(turn)}>{moteText('停止这条回答')}</button>}<button className="text-button" aria-label={moteText('本轮详情')+' '+turn.question} onClick={()=>setMoreTurn({owner:api,conversationId,turnId:turn.id})}>{moteText('更多')}</button></div><ConversationTurnDetails api={api} conversationId={conversationId} id={turn.id} question={turn.question} answer={result} open={moreTurn?.owner===api&&moreTurn.conversationId===conversationId&&moreTurn.turnId===turn.id} onClose={()=>setMoreTurn(null)} onOpen={ref=>{setMoreTurn(null);openHistoryReference(ref,turn.id);}} run={run?.turnId===turn.id?run:undefined} pollError={pollError}/></>}</>;
+  }
+  function turnRelations(turn:ConversationTurn,conversationId:string):ReactNode{
+    const ids=new Set([...(turn.amendedBy??[]),...(turn.supersededBy??[]),...(turn.steering?[turn.steering.targetMessageId]:[])]);
+    const related=conversation?.turns.filter(item=>ids.has(item.id))??[];
+    return related.length?<div className="conversation-steering-links">{related.map(item=><a key={item.id} href={'#/ask?'+new URLSearchParams({conversation:conversationId,turn:item.id})}><ArrowRight size={14}/>{item.question}</a>)}</div>:null;
   }
   return <div className={"conversation-layout final-conversation"+(historyOpen?" history-open":"")+(threadEmpty?" conversation-fresh":"")} aria-busy={loading||opening||recentRuns.loading}>
     <ConversationDialog open={pendingSwitch?.owner===api} title={moteText('还有未发送的内容')} onClose={()=>setPendingSwitch(null)} footer={<><button className="button" onClick={()=>setPendingSwitch(null)}>{moteText('继续编辑')}</button><button className="button primary" onClick={()=>{const next=pendingSwitch;setPendingSwitch(null);if(next?.owner===api){if(next.id===null)startNew(true);else open(next.id,true);}}}>{moteText('舍弃并切换')}</button></>}><p>{pendingSwitch?.id===null?moteText('还有未发送的问题。舍弃原输入并新建对话？'):moteText('有未保存的修改。离开并丢弃修改？')}</p></ConversationDialog>
@@ -542,6 +548,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       {conversation?.turns.map((turn,index) => <article className={`answer-panel conversation-turn ${['failed','cancelled'].includes(turn.status) ? 'failed' : ''}${pendingMessageStatus(turn.status)?' pending':''}${index===0&&!conversation.nextCursor&&turn.question===conversation.title?' first-question-duplicate':''}`} key={turn.id} id={'conversation-turn-'+turn.id} tabIndex={-1} data-source-turn={targetTurn===turn.id?'true':undefined} data-state={turn.status}>
         <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}</span></div>{Boolean(turn.attachments?.length)&&<div className="chat-attached-images">{turn.attachments?.map(attachment=><span key={attachment.id}><ImagePlus size={13}/>{attachment.name}</span>)}</div>}
         {turnBody(turn,conversation!.id)}
+        {turnRelations(turn,conversation!.id)}
       </article>)}
       {busy&&!run&&pendingQuestion&&<p className="query-admission-status" role="status">{moteText('正在提交问题…')}</p>}
       {pendingQuestion && <div className="asked-question"><MessageSquare size={16}/><span>{pendingQuestion}</span></div>}

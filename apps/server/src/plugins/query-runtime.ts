@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {ConversationRuntimeControls} from '../conversation-runtime-controls.js';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
@@ -72,6 +73,7 @@ export interface QueryRuntimeDependencies {
 }
 
 export interface QueryRuntime {
+  readonly controls:ConversationRuntimeControls;
   readonly activeQueries:ReadonlySet<Promise<QueryResult>>;
   withQueryModelAuthority:<T>(input:QueryInput,moduleId:string,task:(signal:AbortSignal)=>Promise<T>)=>Promise<T>;
   queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
@@ -88,6 +90,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
   const {contextDependencies,sourceContextDependencies,pinProcessingEvidence}=dependencies.modelEvidenceAuthority;
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   const activeQueries=new Set<Promise<QueryResult>>();
+  const controls=new ConversationRuntimeControls();
   function withQueryModelAuthority<T>(input:QueryInput,moduleId:string,task:(signal:AbortSignal)=>Promise<T>){
     const job=input.traceContext?.jobId?memoryModelAuthorityJobs.modelAuthorityJob(input.traceContext.jobId):undefined;
     const grants=job?.automaticGrants??[];
@@ -216,6 +219,14 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       if(observed.conversation?.historyContext)conversations.assertHistoryContext(observed.conversation.historyContext);
     };
     observed.nativeApplicationContext=()=>nativeApplicationContext(observed,{store,conversations,assertModelEvidence,assertCurrent:()=>modelAuthorization.assertCurrent()});
+    if(moduleId==='conversations'&&observed.hostControlChannel&&observed.executionLane==='interactive'&&observed.traceContext?.operationId&&(!observed.responseMode||observed.responseMode==='answer')){
+      const operationId=observed.traceContext.operationId,previous=observed.onRuntimeControl;
+      observed.onRuntimeControl=control=>{
+        const release=controls.register(operationId,control,()=>{observed.signal?.throwIfAborted();modelAuthorization.assertCurrent();observed.assertContextAuthority?.();assertModelEvidence(observed);});
+        let other:(()=>void)|void;try{other=previous?.(control);}catch(error){release();throw error;}
+        return()=>{release();other?.();};
+      };
+    }
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed,runLease).then(result=>{
       taskSignal?.throwIfAborted();
@@ -292,7 +303,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
   }
   const close=async()=>{await Promise.allSettled([...activeQueries]);};
-  return Object.freeze({activeQueries,withQueryModelAuthority,queryAgent,insight,close});
+  return Object.freeze({activeQueries,controls,withQueryModelAuthority,queryAgent,insight,close});
 }
 
 const unavailable=()=>new StoreError('Query runtime is unavailable',503);

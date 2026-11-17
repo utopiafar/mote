@@ -25,7 +25,10 @@ async function until<T>(read:()=>T|Promise<T>,description:string):Promise<NonNul
 async function fixture(t:TestContext,query:QueryAgent['query']){
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-queue-'));
   let implementation=query;
-  const build=()=>buildApp(config(dir),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:(input,lease)=>implementation(input,lease)}});
+  const build=()=>buildApp(config(dir),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:(input,lease)=>{
+    if(input.responseMode==='other'){const route=JSON.parse(input.question);if(route.task==='mote.conversation-disposition')return Promise.resolve(result(JSON.stringify({kind:'supplement',targetMessageId:route.candidates[0].id,reply:'Generated related-message acknowledgement.'})));}
+    return implementation(input,lease);
+  }}});
   let node=await build();
   t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
   return {get node(){return node;},setQuery(next:QueryAgent['query']){implementation=next;},async restart(){await node.app.close();node=await build();}};
@@ -39,15 +42,16 @@ async function message(node:Awaited<ReturnType<typeof buildApp>>,conversationId:
 async function settled(node:Awaited<ReturnType<typeof buildApp>>,conversationId:string,id:string){return until(async()=>{const current=await message(node,conversationId,id);return ['completed','failed','cancelled'].includes(current.status)?current:undefined;},'message settlement');}
 
 test('the production query adapter sends two queued turns in order to a controlled loopback provider',async t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-queue-provider-')),entered=signal(),release=signal(),lateEntered=signal(),lateRelease=signal(),requests:string[]=[];
+  const dir=mkdtempSync(join(tmpdir(),'mote-queue-provider-')),entered=signal(),release=signal(),lateEntered=signal(),lateRelease=signal(),requests:string[]=[],normalRequests:string[]=[];
   const provider=createServer(async(req,res)=>{
-    let body='';for await(const part of req)body+=part;requests.push(body);const index=requests.length;
-    if(index===1){entered.release();await release.promise;}
-    if(index===3){lateEntered.release();await lateRelease.promise;}
+    let body='';for await(const part of req)body+=part;requests.push(body);const request=JSON.parse(body),content=request.messages.filter((message:any)=>message.role==='user').at(-1).content,envelope=JSON.parse(typeof content==='string'?content:content.find((part:any)=>part.type==='text').text);let route;try{route=JSON.parse(envelope.request);}catch{}
+    const routing=route?.task==='mote.conversation-disposition';if(!routing)normalRequests.push(body);const index=normalRequests.length;
+    if(!routing&&index===1){entered.release();await release.promise;}
+    if(!routing&&index===3){lateEntered.release();await lateRelease.promise;}
     if(res.destroyed)return;
     res.writeHead(200,{'Content-Type':'text/event-stream'});
     const send=(value:unknown)=>res.write('data: '+JSON.stringify(value)+'\n\n');
-    send({id:'generated-provider-'+index,choices:[{index:0,delta:{role:'assistant',content:JSON.stringify({answer:'Generated provider answer '+index,citationIds:[]})},finish_reason:null}]});
+    send({id:'generated-provider-'+index,choices:[{index:0,delta:{role:'assistant',content:JSON.stringify({answer:routing?JSON.stringify({kind:'supplement',targetMessageId:route.candidates[0].id,reply:'Generated related continuation.'}):'Generated provider answer '+index,citationIds:[]})},finish_reason:null}]});
     send({id:'generated-provider-'+index,choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});res.end('data: [DONE]\n\n');
   });
   await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
@@ -57,9 +61,9 @@ test('the production query adapter sends two queued turns in order to a controll
   const id=await main(node),invitation=(await node.app.inject({method:'POST',url:'/api/connections/invitations',headers,payload:{serverUrl:'https://generated.invalid',label:'Generated provider phone'}})).json();
   const redeemed=(await node.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.invitation.code,deviceId:'generated-provider-phone',deviceName:'Generated phone',platform:'android'}})).json();
   const first=await post(node,id,'GENERATED PROVIDER FIRST');await entered.promise;
-  const second=await post(node,id,'GENERATED PROVIDER SECOND',{authorization:`Bearer ${redeemed.token}`});assert.equal(second.message.status,'queued');assert.equal(requests.length,1);
+  const second=await post(node,id,'GENERATED PROVIDER SECOND',{authorization:`Bearer ${redeemed.token}`});assert.equal(second.message.status,'queued');await until(()=>node.conversations.message(second.message.id).steering?.state==='continuation','model-selected persistent continuation');assert.equal(normalRequests.length,1);assert.equal(requests.length,2);
   release.release();assert.equal((await settled(node,id,first.message.id)).status,'completed');assert.equal((await settled(node,id,second.message.id)).status,'completed');
-  assert.equal(requests.length,2);assert.match(requests[0],/GENERATED PROVIDER FIRST/);assert.doesNotMatch(requests[0],/GENERATED PROVIDER SECOND/);assert.match(requests[1],/GENERATED PROVIDER SECOND/);assert.match(requests[1],/Generated provider answer 1/);
+  assert.equal(normalRequests.length,2);assert.equal(requests.length,3);assert.match(normalRequests[0],/GENERATED PROVIDER FIRST/);assert.doesNotMatch(normalRequests[0],/GENERATED PROVIDER SECOND/);assert.match(normalRequests[1],/GENERATED PROVIDER SECOND/);assert.match(normalRequests[1],/Generated provider answer 1/);
   const saved=(await node.app.inject({url:`/api/conversations/${id}`,headers})).json();assert.deepEqual(saved.turns.map((turn:any)=>[turn.id,turn.result.answer]),[[first.message.id,'Generated provider answer 1'],[second.message.id,'Generated provider answer 2']]);
   const late=await post(node,id,'GENERATED PROVIDER CANCEL');await lateEntered.promise;
   const cancelled=await node.app.inject({method:'POST',url:`/api/conversations/${id}/messages/${late.message.id}/cancel`,headers});assert.equal(cancelled.json().status,'cancelled');
@@ -103,7 +107,7 @@ test('two clients keep accepted messages in sequence and the real query complete
   const second=await post(f.node,id,'Generated second',{authorization:`Bearer ${redeemed.token}`});
   assert.deepEqual([first.message.seq,second.message.seq],[0,1]);assert.equal(second.message.status,'queued');assert.equal(seen.length,1);
   const pending=(await f.node.app.inject({url:`/api/conversations/${id}`,headers})).json();assert.deepEqual(pending.turns.map((turn:any)=>turn.question),['  Generated first  ','Generated second']);
-  assert.equal(pending.status,'queued');assert.equal(pending.turnCount,2);
+  assert.equal(pending.status,'running');assert.equal(pending.turnCount,2);
   const listed=(await f.node.app.inject({url:'/api/conversations',headers})).json();assert.equal(listed.items.find((item:any)=>item.id===id).turnCount,2);
   const retried=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:second.payload});assert.equal(retried.statusCode,202,retried.body);assert.equal(retried.json().id,second.message.id);
   const conflicting=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{...second.payload,question:'Changed input'}});assert.equal(conflicting.statusCode,409);
@@ -285,12 +289,12 @@ test('a queued message rechecks its selection after withdrawal without invalidat
   assert.equal((await settled(f.node,id,first.message.id)).status,'completed');assert.equal((await settled(f.node,id,second.message.id)).status,'failed');assert.deepEqual(seen,['Unrelated first']);
 });
 
-test('a changed message revision cannot publish the previous in-flight answer',async t=>{
+test('a changed accepted input cannot publish the previous in-flight answer',async t=>{
   const entered=signal(),release=signal();const f=await fixture(t,async()=>{entered.release();await release.promise;return result('Generated stale revision answer');});t.after(()=>release.release());
   const id=await main(f.node),turn=await post(f.node,id,'Generated revision race');await entered.promise;
-  // Inject a concurrent turn revision; there is deliberately no public edit
-  // command yet. The query itself still enters and completes through HTTP.
-  f.node.store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.version',json_extract(json,'$.version')+1) WHERE id=?").run(turn.message.id);
+  // A metadata/ACK revision is legitimate. A changed owner input is not; no
+  // public edit command exists, so inject that actual content race explicitly.
+  f.node.store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.version',json_extract(json,'$.version')+1,'$.question','Generated changed owner input') WHERE id=?").run(turn.message.id);
   release.release();assert.equal((await settled(f.node,id,turn.message.id)).status,'failed');
   const history=await f.node.app.inject({url:`/api/conversations/${id}`,headers});assert.doesNotMatch(history.body,/Generated stale revision answer/);
 });
