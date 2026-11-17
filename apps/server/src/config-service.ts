@@ -41,6 +41,9 @@ export interface ConfigDomainRegistration<T = unknown> {
   resolve?(raw: unknown, document?: Readonly<ConfigDocument>): unknown;
   prepare?(next: T, previous: T): Promise<PreparedConfigChange> | PreparedConfigChange;
 }
+/** Trusted domain code reads the output of its registered schema. This is not a
+ * wire value or an authorization grant; both the id and schema must match the registry. */
+export type ConfigDomainReference<S extends z.ZodTypeAny> = Readonly<{id: string; schema: S}>;
 type FileSystem = Pick<typeof fs, 'open' | 'mkdir' | 'rename' | 'unlink'>;
 type RegisteredDomain = ConfigDomainRegistration<any> & { documentPath?: string[] };
 export interface ConfigServiceOptions {
@@ -218,7 +221,18 @@ export class ConfigService {
     for (const part of domain.documentPath.slice(0, -1)) { if (!object(parent[part])) parent[part] = {}; parent = parent[part] as Record<string, unknown>; }
     parent[domain.documentPath.at(-1)!] = value;
   }
-  setHandler<T>(id: string, prepare: NonNullable<ConfigDomainRegistration<T>['prepare']>): void {
+  private domainId(reference: string | ConfigDomainReference<z.ZodTypeAny>): string {
+    if (typeof reference === 'string') return reference;
+    const id = object(reference) && typeof reference.id === 'string' ? reference.id : '';
+    const domain = this.domains.get(id);
+    if (!domain || domain.schema !== reference.schema) throw new ConfigServiceError('config_invalid');
+    return id;
+  }
+  setHandler<S extends z.ZodTypeAny>(reference: ConfigDomainReference<S>, prepare: NonNullable<ConfigDomainRegistration<z.output<S>>['prepare']>): void;
+  /** Existing consumers only; new domain code supplies its registered schema reference. */
+  setHandler<T>(id: string, prepare: NonNullable<ConfigDomainRegistration<T>['prepare']>): void;
+  setHandler(reference: string | ConfigDomainReference<z.ZodTypeAny>, prepare: NonNullable<RegisteredDomain['prepare']>): void {
+    const id = this.domainId(reference);
     const domain = this.domains.get(id); if (!domain || this.closing) throw new ConfigServiceError('config_unavailable');
     domain.prepare = prepare;
   }
@@ -236,10 +250,15 @@ export class ConfigService {
     for (const domain of this.domains.values()) if (domain.documentPath) configuration[domain.documentPath.at(-1)!] = read(domain);
     return { ...value, configuration };
   }
-  current<T = unknown>(id: string): T {
-    this.state(); if (!this.effective.has(id)) throw new ConfigServiceError('config_invalid');
+  /** Detached effective output; reading a reference never resolves or parses schema input again. */
+  current<S extends z.ZodTypeAny>(reference: ConfigDomainReference<S>): z.output<S>;
+  /** Existing consumers only; new domain code supplies its registered schema reference. */
+  current<T = unknown>(id: string): T;
+  current(reference: string | ConfigDomainReference<z.ZodTypeAny>): unknown {
+    this.state(); const id = this.domainId(reference);
+    if (!this.effective.has(id)) throw new ConfigServiceError('config_invalid');
     const value = clone(this.effective.get(id));
-    return (id === 'plugins' ? this.pluginValues(value, domain => clone(this.effective.get(domain.id))) : value) as T;
+    return id === 'plugins' ? this.pluginValues(value, domain => clone(this.effective.get(domain.id))) : value;
   }
   saved<T = unknown>(id: string): T {
     const raw = this.state(), domain = this.domains.get(id); if (!domain) throw new ConfigServiceError('config_invalid');
