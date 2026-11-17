@@ -1,4 +1,4 @@
-// G4 manual Web stage acceptance (hidden; not part of ordinary checks):
+// Manual Web stage acceptance (hidden; not part of ordinary checks):
 //   npm run build -w @mote/web
 //   cd apps/web && npx electron test/plugin-stage-browser.cjs
 // The generated Central fixture is private and loopback-only. Screenshots and
