@@ -191,6 +191,24 @@
    "file": "apps/server/src/assistant-task-runtime-schema.ts"
   },
   {
+   "declaration": "sourceArchiveSchemaInstallation",
+   "owner": "source-archive",
+   "fn": "sourceArchiveSchema",
+   "file": "apps/server/src/source-state-schema.ts"
+  },
+  {
+   "declaration": "sourceContextSchemaInstallation",
+   "owner": "source-context",
+   "fn": "sourceContextSchema",
+   "file": "apps/server/src/source-state-schema.ts"
+  },
+  {
+   "declaration": "sourcePipelineSchemaInstallation",
+   "owner": "source-pipeline",
+   "fn": "sourcePipelineSchema",
+   "file": "apps/server/src/source-state-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -871,6 +889,41 @@
    "file": "apps/server/src/vault-schema.ts",
    "installer": "vaultSchemaInstallation"
   },
+  "source_archive_batches": {
+   "owner": "source-archive",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourceArchiveSchemaInstallation"
+  },
+  "source_archive_groups": {
+   "owner": "source-archive",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourceArchiveSchemaInstallation"
+  },
+  "source_archive_heads": {
+   "owner": "source-archive",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourceArchiveSchemaInstallation"
+  },
+  "source_archive_indexed_sources": {
+   "owner": "source-archive",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourceArchiveSchemaInstallation"
+  },
+  "source_archive_recovery_groups": {
+   "owner": "source-archive",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourceArchiveSchemaInstallation"
+  },
+  "source_archive_sizes": {
+   "owner": "source-archive",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourceArchiveSchemaInstallation"
+  },
+  "source_archive_versions": {
+   "owner": "source-archive",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourceArchiveSchemaInstallation"
+  },
   "source_catalog": {
    "owner": "source-catalog",
    "file": "apps/server/src/source-catalog.ts",
@@ -881,10 +934,30 @@
    "file": "apps/server/src/source-schema.ts",
    "installer": "sourceSchemaInstallation"
   },
+  "source_context_declarations": {
+   "owner": "source-context",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourceContextSchemaInstallation"
+  },
   "source_heads": {
    "owner": "source",
    "file": "apps/server/src/source-schema.ts",
    "installer": "sourceSchemaInstallation"
+  },
+  "source_pipeline_bindings": {
+   "owner": "source-pipeline",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourcePipelineSchemaInstallation"
+  },
+  "source_pipeline_config": {
+   "owner": "source-pipeline",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourcePipelineSchemaInstallation"
+  },
+  "source_pipeline_work": {
+   "owner": "source-pipeline",
+   "file": "apps/server/src/source-state-schema.ts",
+   "installer": "sourcePipelineSchemaInstallation"
   },
   "source_versions": {
    "owner": "source",
