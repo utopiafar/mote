@@ -135,13 +135,15 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,49);assert.equal(Object.keys(result.tables).length,145);
+ assert.equal(result.owners.length,51);assert.equal(Object.keys(result.tables).length,153);
  assert.deepEqual(result.owners.filter(owner=>owner.owner==='actions').map(owner=>owner.declaration),['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation']);
  for(const table of ['action_meta','action_proposals','action_semantic_checkpoints','action_targets','action_jobs','action_chunk_changes'])assert.deepEqual(result.tables[table],{owner:'actions',file:'apps/server/src/actions-schema.ts',installer:'actionsSchemaInstallation'});
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));
  assert.ok(result.coveredFiles.includes('apps/server/src/evidence-store.ts'));
  assert.ok(result.uncoveredFiles.includes('apps/server/src/execution-engine.ts'));
  assert.equal(result.tables.execution_steps.owner,'execution');assert.ok(result.dynamicStatements>0);
+ assert.equal(result.tables.delegation_works.owner,'delegation');assert.equal(result.tables.delegation_source_context_dependencies.owner,'delegation');
+ assert.equal(result.owners.filter(item=>item.owner==='delegation').length,2,'one logical journal owner retains two installation phases');
  assert.equal(result.tables.processing_jobs.owner,'processing-runtime');assert.equal(result.tables.processing_dependencies.owner,'processing-runtime');
  assert.ok(result.uncoveredFiles.includes('apps/server/src/processing-runtime.ts'),'the dynamic Processing view stays pending');
  assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,4);
@@ -300,6 +302,41 @@ test('existing storage claims bind only actual DDL sinks and their production co
   f.write(target,source+'\nfunction unrelatedShadow('+className+'){return new '+className+'();}');assert.equal(ownershipInventory(f.root,configuration).owners.length,1,'a same-spelled local parameter is not the production class binding');
   f.write(target,source+"\nfunction unrelatedRuntime(db){db.prepare('DELETE FROM settings');}");inventory=ownershipInventory(f.root,configuration);assert.ok(inventory.issues.some(issue=>issue.from===target&&issue.scope==='unrelatedRuntime'&&issue.rule==='sql-uncovered-consumer'));
  }
+});
+
+test('actual CLI bounds both Delegation phases and preserves original unresolved Capture history writes',t=>{
+ const root=mkdtempSync(join(tmpdir(),'mote-delegation-sql-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const tracked=execFileSync('git',['ls-files','-z','--','apps','packages','scripts','*.json'],{cwd:repository,encoding:'utf8'}).split('\0').filter(file=>/\.(?:[cm]?[jt]sx?|json)$/.test(file));
+ for(const file of tracked){mkdirSync(resolve(root,file,'..'),{recursive:true});copyFileSync(resolve(repository,file),resolve(root,file));}
+ const run=()=>spawnSync(process.execPath,[architectureCli],{cwd:root,encoding:'utf8'});
+ const runtimeFile='apps/server/src/delegation-runtime.ts',storeFile='apps/server/src/delegation-store.ts',schemaFile='apps/server/src/delegation-schema.ts',historyFile='apps/server/src/evidence-store.ts';
+ const sources=new Map([runtimeFile,storeFile,schemaFile,historyFile].map(file=>[file,readFileSync(resolve(root,file),'utf8')])),runtime=sources.get(runtimeFile),store=sources.get(storeFile),schema=sources.get(schemaFile),history=sources.get(historyFile);
+ const baselinePath=resolve(root,'scripts/ci/sql-ownership-baseline.json'),baseline=readFileSync(baselinePath,'utf8');
+ let result=run();assert.equal(result.status,0,result.stderr);
+ const inventory=checkSqlOwnership(root),retained=inventory.retainedClassificationDebt.filter(({issue})=>issue.from===historyFile&&issue.to.startsWith('delegation_'));
+ assert.equal(retained.length,10);assert.equal(retained.filter(({issue})=>issue.kind==='write').length,4);assert.ok(retained.filter(({issue})=>issue.kind==='write').every(({issue})=>issue.completeSql&&issue.operation==='update'));
+ assert.ok(!policy.sharedReads.some(grant=>grant.from===historyFile&&grant.to.startsWith('delegation_')));assert.equal(policy.consumers['delegation-store.ts'],undefined);assert.equal(policy.consumers['delegation-runtime.ts'],undefined);
+ const payload='payload<T>(id:string):T {',raw='private raw(id:string):DelegationWork {',active='private activeIds(){',execution='private activeExecutionIds(operationId:string){';
+ writeFileSync(resolve(root,storeFile),store.replace(payload,payload+"this.store.db.prepare('SELECT id FROM delegation_works LIMIT 1');"));result=run();assert.equal(result.status,0,result.stderr);writeFileSync(resolve(root,storeFile),store);
+ const executionRead=sqlStatements(runtimeFile,runtime).find(statement=>statement.scope==='DelegationRuntime.activeExecutionIds'),historyWrite=sqlStatements(historyFile,history).find(statement=>statement.fingerprint==='524142fd89ac5599b22cadded9a3c0d21f5462fedf3432d3c3b2c5dc8d38e13b');assert.ok(executionRead);assert.ok(historyWrite);
+ const cases=[
+  ['runtime foreign write',runtimeFile,runtime.replace(raw,raw+"this.store.db.prepare('DELETE FROM execution_steps WHERE id=?');"),/sql-cross-owner.*delegation-runtime.ts.*execution_steps.*write/],
+  ['journal foreign write',storeFile,store.replace(payload,payload+"this.store.db.prepare('DELETE FROM captures WHERE id=?');"),/sql-cross-owner.*delegation-store.ts.*captures.*write/],
+  ['shared-read method body',runtimeFile,runtime.replace(active,active+'void 0;'),/sql-cross-owner.*delegation-runtime.ts.*execution_steps.*read/],
+  ['shared-read SQL bytes',runtimeFile,runtime.replace('SELECT e.id FROM execution_steps e WHERE e.operation_id=?','SELECT /* generated change */ e.id FROM execution_steps e WHERE e.operation_id=?'),/sql-cross-owner.*delegation-runtime.ts.*execution_steps.*read/],
+  ['shared read in another owned method',runtimeFile,runtime.replace(raw,raw+'this.store.db.prepare('+executionRead.expression+');'),/sql-cross-owner.*delegation-runtime.ts.*execution_steps.*read/],
+  ['second shared-read occurrence',runtimeFile,runtime.replace(execution,execution+'this.store.db.prepare('+executionRead.expression+');'),/sql-cross-owner.*delegation-runtime.ts.*execution_steps.*read/],
+  ['unproved own query',storeFile,store.replace(payload,payload+'this.store.db.prepare(id);'),/sql-dynamic.*delegation-store.ts/],
+  ['new method in the same file',runtimeFile,runtime+"\nfunction generatedDelegationConsumer(db){db.prepare('SELECT id FROM delegation_works');}",/sql-uncovered-consumer.*delegation-runtime.ts/],
+  ['trigger foreign write',schemaFile,schema.replace('DELETE FROM delegation_payloads WHERE work_id IN','DELETE FROM query_runs WHERE id IN'),/sql-schema-maintenance.*delegation-schema.ts.*query_runs.*delete/],
+  ['trigger foreign observation',schemaFile,schema.replace('AFTER INSERT ON changes','AFTER INSERT ON captures'),/sql-schema-maintenance.*delegation-schema.ts.*captures.*observe/],
+  ['journal installer escape',schemaFile,schema+'\nconst generatedJournal=delegationJournalSchemaInstallation.install;',/inline installer cannot escape/],
+  ['runtime installer escape',schemaFile,schema+'\nconst generatedRuntime=delegationSourceContextSchemaInstallation.install;',/inline installer cannot escape/],
+  ['original history write SQL bytes',historyFile,history.replace(historyWrite.expression,historyWrite.expression.replace('SET json=','SET json=/* generated change */')),/sql-cross-owner.*evidence-store.ts.*delegation_works.*write/],
+  ['new original-history write occurrence',historyFile,history.replace("const works='SELECT work_id FROM delegation_dependencies WHERE evidence_id=old.id';","const works='SELECT work_id FROM delegation_dependencies WHERE evidence_id=old.id';this.db.exec("+historyWrite.expression+');'),/sql-cross-owner.*evidence-store.ts.*delegation_works.*write/],
+ ];
+ for(const [name,file,changed,error]of cases){assert.notEqual(changed,sources.get(file),name);try{writeFileSync(resolve(root,file),changed);result=run();assert.equal(result.status,1,name+': '+result.stderr);assert.match(result.stderr,error,name);t.diagnostic('Delegation '+name+' rejects through the total CLI');}finally{writeFileSync(resolve(root,file),sources.get(file));}}
+ assert.equal(readFileSync(baselinePath,'utf8'),baseline);result=run();assert.equal(result.status,0,result.stderr);
 });
 
 test('actual CLI keeps Processing methods, exact shared reads and pending views within their reviewed boundaries',t=>{

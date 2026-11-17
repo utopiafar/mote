@@ -41,6 +41,10 @@ export const installations={
  "developerAccessSchemaInstallation",
  "outboundExportSchemaInstallation"
 ],
+ "delegation-schema.ts":[
+ "delegationJournalSchemaInstallation",
+ "delegationSourceContextSchemaInstallation"
+],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -182,6 +186,37 @@ export const consumerScopes={
  "DeveloperAccessHost.failDelivery": "developer-access",
  "DeveloperAccessHost.failPending": "developer-access",
  "DeveloperAccessHost.prune": "developer-access"
+},
+ "delegation-store.ts":{
+ "DelegationStore.payload": "delegation",
+ "DelegationStore.savePayload": "delegation",
+ "DelegationStore.result": "delegation",
+ "DelegationStore.saveResult": "delegation",
+ "DelegationStore.artifact": "delegation",
+ "DelegationStore.saveArtifact": "delegation"
+},
+ "delegation-runtime.ts":{
+ "DelegationRuntime.constructor": "delegation",
+ "DelegationRuntime.raw": "delegation",
+ "DelegationRuntime.units": "delegation",
+ "DelegationRuntime.unit": "delegation",
+ "DelegationRuntime.save": "delegation",
+ "DelegationRuntime.saveUnit": "delegation",
+ "DelegationRuntime.event": "delegation",
+ "DelegationRuntime.get": "delegation",
+ "DelegationRuntime.page": "delegation",
+ "DelegationRuntime.activeIds": "delegation",
+ "DelegationRuntime.artifactMetadata": "delegation",
+ "DelegationRuntime.start": "delegation",
+ "DelegationRuntime.transaction": "delegation",
+ "DelegationRuntime.submit": "delegation",
+ "DelegationRuntime.retryUnit": "delegation",
+ "DelegationRuntime.resumeExternalUnit": "delegation",
+ "DelegationRuntime.activeExecutionIds": "delegation",
+ "DelegationRuntime.dependencyIds": "delegation",
+ "DelegationRuntime.sourceContextDependencies": "delegation",
+ "DelegationRuntime.recordSourceContextDependencies": "delegation",
+ "DelegationRuntime.recordEvidence": "delegation"
 },
 };
 
@@ -466,7 +501,7 @@ export const sharedReads=[
   "scopeFingerprint": "4fe9dfe57084647a10a9117cbd3a69539952bf902ea7ce1312331632db58e585",
   "reason": "Read at most 1000 ready or expired-lease Processing step IDs before draining those IDs through ExecutionEngine."
  }
-];
+,{"from":"apps/server/src/delegation-runtime.ts","to":"execution_operation_steps","symbol":"653ef180a3dc7da2d215f7b2f0b130db8e215f0bbec096e83a5e4d21fea5e9ab","scope":"DelegationRuntime.activeIds","scopeFingerprint":"7bbd52589abedfda666c147fb325bb96efca8922c080237cc82e3439790371aa","reason":"Find only existing Delegation work whose owned units or operation membership still have active Execution steps before recovery through ExecutionEngine."},{"from":"apps/server/src/delegation-runtime.ts","to":"execution_steps","symbol":"653ef180a3dc7da2d215f7b2f0b130db8e215f0bbec096e83a5e4d21fea5e9ab","scope":"DelegationRuntime.activeIds","scopeFingerprint":"7bbd52589abedfda666c147fb325bb96efca8922c080237cc82e3439790371aa","reason":"Find only existing Delegation work whose owned units or operation membership still have active Execution steps before recovery through ExecutionEngine."},{"from":"apps/server/src/delegation-runtime.ts","to":"execution_steps","symbol":"b455d3ccd33a2e3849625660212a2e289fdb9c0e5436f729b91911af9877e5f4","scope":"DelegationRuntime.activeExecutionIds","scopeFingerprint":"003b5daa00702ce5f708103c98226c02ebc4ddd484a4e0f8c96f507b09f341e3","reason":"Read only active step IDs of this Delegation operation before cancelling or blocking through ExecutionEngine."}];
 
 /** Activity's already formal feature owns only this disposable projection
  * construction and subscription retirement. This is a projection claim, separate from schema installation. */
@@ -491,7 +526,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation',"backgroundModelAuthorizationSchemaInstallation","pluginReleasePreviewsSchemaInstallation","developerAccessSchemaInstallation","outboundExportSchemaInstallation"];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation',"backgroundModelAuthorizationSchemaInstallation","pluginReleasePreviewsSchemaInstallation","developerAccessSchemaInstallation","outboundExportSchemaInstallation","delegationJournalSchemaInstallation","delegationSourceContextSchemaInstallation"];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",
@@ -1340,7 +1375,7 @@ export const schemaMaintenance=[
   ],
   "reason": "Read only chunk IDs of the changed artifact into the Actions-owned dirty-input queue."
  }
-];
+,{"rule":"sql-schema-maintenance","from":"apps/server/src/delegation-schema.ts","to":"changes","kind":"observe","symbol":"de1094b0b7667e4c918b0e65bbbc6dbe8c04ebe09b89aadf1445ba53f9af00e3","statementFingerprint":"b6bcadd99f84cbccf0652d5f6dd45683bd0d0a9cc0bdb613f688b1389af99952","installer":"delegationJournalSchemaInstallation","callPath":["delegationJournalSchemaInstallation","delegationJournalSchemaInstallation.install"],"sourceRelations":["changes"],"reason":"Observe only original deletion events from Capture changes; retire private Delegation rows and metadata only within this same journal owner."}];
 
 /** Scope witnesses preserve existing unresolved access debt when its table owner becomes known. They are not grants. */
 export const retainedClassificationScopes=[
@@ -1827,7 +1862,7 @@ export const retainedClassificationScopes=[
   "operation": "insert",
   "completeSql": true
  }
-];
+,{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_dependencies","kind":"read","symbol":"13209992d4444951c9bb99311bf1f99c5e56ae1252cad27b5f293c9351c9c11e","scope":"EvidenceStore.invalidateConversationAnswers","scopeFingerprint":"6e2e4efe1ac8041556affb8d01b7282696584fb354237e821709df85db30aea0","operation":"read","completeSql":true},{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_dependencies","kind":"read","symbol":"4741849b0a7d33abbf38d15f9f3a2b546f6753755e94a82cad2a5e9816559950","scope":"EvidenceStore.installContextHistoryInvalidation","scopeFingerprint":"f797f6e69796dbd65bee11aa68eba1b28ad94b26ea774970d81d2db5dba2c4b0","operation":"read","completeSql":true},{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_dependencies","kind":"read","symbol":"524142fd89ac5599b22cadded9a3c0d21f5462fedf3432d3c3b2c5dc8d38e13b","scope":"EvidenceStore.installContextHistoryInvalidation","scopeFingerprint":"f797f6e69796dbd65bee11aa68eba1b28ad94b26ea774970d81d2db5dba2c4b0","operation":"read","completeSql":true},{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_dependencies","kind":"read","symbol":"aaec58b0731ec21bb902f8dfd29d1ea5c305306d9cc172ec816d0bc014409215","scope":"EvidenceStore.installContextHistoryInvalidation","scopeFingerprint":"f797f6e69796dbd65bee11aa68eba1b28ad94b26ea774970d81d2db5dba2c4b0","operation":"read","completeSql":true},{"rule":"sql-unproved-relation","from":"apps/server/src/evidence-store.ts","to":"delegation_dependencies","kind":"read","symbol":"f8a6f87c0dba154b6d531cedc62bb08d65a618b189aca78ff122f56341c8fb97","scope":"EvidenceStore.installContextHistoryInvalidation","scopeFingerprint":"f797f6e69796dbd65bee11aa68eba1b28ad94b26ea774970d81d2db5dba2c4b0","operation":"read","completeSql":false},{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_units","kind":"write","symbol":"007f1921387668c8e1247827900acfb24c743fcfd4d696b8c3cc600037b997ac","scope":"EvidenceStore.invalidateConversationAnswers","scopeFingerprint":"6e2e4efe1ac8041556affb8d01b7282696584fb354237e821709df85db30aea0","operation":"update","completeSql":true},{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_units","kind":"write","symbol":"4741849b0a7d33abbf38d15f9f3a2b546f6753755e94a82cad2a5e9816559950","scope":"EvidenceStore.installContextHistoryInvalidation","scopeFingerprint":"f797f6e69796dbd65bee11aa68eba1b28ad94b26ea774970d81d2db5dba2c4b0","operation":"update","completeSql":true},{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_works","kind":"read","symbol":"1d381cafb5711c30e41bfbe84af72906b91ed4965cb101167ffdbfd3256c4595","scope":"EvidenceStore.invalidateConversationAnswers","scopeFingerprint":"6e2e4efe1ac8041556affb8d01b7282696584fb354237e821709df85db30aea0","operation":"read","completeSql":true},{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_works","kind":"write","symbol":"524142fd89ac5599b22cadded9a3c0d21f5462fedf3432d3c3b2c5dc8d38e13b","scope":"EvidenceStore.installContextHistoryInvalidation","scopeFingerprint":"f797f6e69796dbd65bee11aa68eba1b28ad94b26ea774970d81d2db5dba2c4b0","operation":"update","completeSql":true},{"rule":"sql-uncovered-table","from":"apps/server/src/evidence-store.ts","to":"delegation_works","kind":"write","symbol":"7c7138c44a6ebea76bf7d00f5fc96c139d2241ec1f96dc99b9020c612bdc1fea","scope":"EvidenceStore.invalidateConversationAnswers","scopeFingerprint":"6e2e4efe1ac8041556affb8d01b7282696584fb354237e821709df85db30aea0","operation":"update","completeSql":true}];
 
 /** Exact declared non-SQL lifecycle callback; this is not a table-access grant. */
 export const nonSqlCalls=[

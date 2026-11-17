@@ -1,3 +1,5 @@
+import {installSchemaPlan} from './schema-installation.js';
+import {delegationSourceContextSchemaInstallation} from './delegation-schema.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {createHash} from 'node:crypto';
 import {ContextToolError,AgentYieldError,HOST_DELEGATION_CONTROL_DEFINITIONS,HOST_DELEGATION_MAX_DEPTH,HostDelegationRegistrationError,HostDelegationScopeError,assertHostDelegationCapability,createHostDelegationChannel,narrowHostDelegationScope,type ContextRecord,type HostControlChannel,type HostControlResult,type HostDelegationScope,type QueryInput} from '@mote/agent';
@@ -64,11 +66,7 @@ export class DelegationRuntime {
  private admitting=true;
  constructor(readonly store:Store,readonly engine:ExecutionEngine,private options:{concurrency?:()=>number;interactiveConcurrency?:()=>number;revalidateEvidence?:(records:readonly ContextRecord[],scope:DelegationScope)=>Promise<readonly ContextRecord[]>;validateDependencies?:(ids:readonly string[])=>void;validateSourceContextDependencies?:(pins:readonly SourceContextDeclaration[])=>void;autoPump?:boolean;observePump?:()=>void}={}){
   this.journal=new DelegationStore(store);
-  const sourceDependencyTable=`CREATE TABLE IF NOT EXISTS delegation_source_context_dependencies(
-    work_id TEXT NOT NULL REFERENCES delegation_works(id) ON DELETE CASCADE,unit_id TEXT NOT NULL,
-    source_id TEXT NOT NULL,version INTEGER NOT NULL,fingerprint TEXT NOT NULL,kind TEXT NOT NULL DEFAULT 'description',
-    PRIMARY KEY(work_id,unit_id,kind,source_id,version,fingerprint));`;
-  store.db.exec(sourceDependencyTable);
+  installSchemaPlan(store.db,[delegationSourceContextSchemaInstallation]);
   engine.configurePool('delegated-agents',{concurrency:{background:options.concurrency??(()=>4),interactive:options.interactiveConcurrency??options.concurrency??(()=>2)},lane:step=>{
    // Existing work/profile identity is sufficient for restart. The model's
    // payload, capability arguments and captured content cannot elevate a lane.
