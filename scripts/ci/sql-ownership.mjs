@@ -36,6 +36,15 @@ function executionScope(node,source){
  return {name:undefined,node:source};
 }
 
+/** Resolve constructor references to the actual class/import declaration;
+ * same-spelled parameters or local declarations are different bindings. */
+function declarationResolver(source){
+ const scopes=new WeakMap();
+ const bind=(node,name)=>{if(ts.isObjectBindingPattern(name)||ts.isArrayBindingPattern(name)){for(const item of name.elements)if(ts.isBindingElement(item))bind(node,item.name);return;}if(!ts.isIdentifier(name))return;let scope=node.parent;while(scope&&!ts.isSourceFile(scope)&&!ts.isBlock(scope)&&!ts.isFunctionLike(scope)&&!ts.isCatchClause(scope)&&!ts.isForStatement(scope)&&!ts.isForInStatement(scope)&&!ts.isForOfStatement(scope))scope=scope.parent;const bindings=scopes.get(scope)??new Map();bindings.set(name.text,node);scopes.set(scope,bindings);};
+ const visit=node=>{if(ts.isVariableDeclaration(node)||ts.isParameter(node)||ts.isFunctionDeclaration(node)||ts.isClassDeclaration(node)||ts.isImportClause(node)||ts.isImportSpecifier(node)||ts.isNamespaceImport(node))if(node.name)bind(node,node.name);ts.forEachChild(node,visit);};visit(source);
+ return node=>{for(let part=node.parent;part;part=part.parent)if(scopes.get(part)?.has(node.text))return scopes.get(part).get(node.text);};
+}
+
 /** SQL lexer, not a new SQL parser. Strings/comments cannot masquerade as table
  * references. Quoted identifiers and schema qualifications retain their names. */
 export function sqlTokens(sql){
@@ -126,7 +135,7 @@ export function sqlAccesses(sql,{schemaLifecycle=false,maintenance=false}={}){
 
 /** Resolve only immutable lexical constants and finite literal branches. Unknown
  * values are marked, never treated as an empty/approved SQL statement. */
-export function sqlStatements(file,text,{finiteScopes=[],provedFragmentScopes=[],nonSqlProofs=[],nonSqlEvidence=[]}={}){
+export function sqlStatements(file,text,{finiteScopes=[],provedFragmentScopes=[],nonSqlProofs=[],nonSqlEvidence=[],sourceTexts=new Map(),importedHelpers=[]}={}){
  const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);
  if(source.parseDiagnostics.length)throw Error(`${file}: ${ts.flattenDiagnosticMessageText(source.parseDiagnostics[0].messageText,' ')}`);
  const scopes=new WeakMap(),declarationsByScope=new WeakMap(),iterationNodes=new Map(),mutated=new Set(),aliases=[];
@@ -145,6 +154,24 @@ export function sqlStatements(file,text,{finiteScopes=[],provedFragmentScopes=[]
  const mutations=node=>{if(ts.isBinaryExpression(node)&&node.operatorToken.kind>=ts.SyntaxKind.FirstAssignment&&node.operatorToken.kind<=ts.SyntaxKind.LastAssignment)mutated.add(rootName(node.left));if(ts.isDeleteExpression(node)||ts.isPostfixUnaryExpression(node)||ts.isPrefixUnaryExpression(node)&&[ts.SyntaxKind.PlusPlusToken,ts.SyntaxKind.MinusMinusToken].includes(node.operator))mutated.add(rootName(node.expression??node.operand));if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&['push','pop','shift','unshift','splice','sort','reverse','fill','copyWithin','set','delete','clear','add'].includes(node.expression.name.text))mutated.add(rootName(node.expression.expression));if(ts.isCallExpression(node)&&!(ts.isPropertyAccessExpression(node.expression)&&node.expression.expression.getText(source)==='Object'&&node.expression.name.text==='entries'))for(const argument of node.arguments)if(ts.isIdentifier(argument))mutated.add(argument.text);ts.forEachChild(node,mutations);};mutations(source);
  for(let changed=true;changed;){changed=false;for(const [left,right] of aliases)if(mutated.has(left)||mutated.has(right)){if(!mutated.has(left)||!mutated.has(right))changed=true;mutated.add(left);mutated.add(right);}}
  const binding=node=>{for(let p=node.parent;p;p=p.parent)if(scopes.get(p)?.has(node.text))return scopes.get(p).get(node.text);};
+ const imported=new Map();
+ for(const proof of importedHelpers){
+  const declaration=source.statements.find(node=>ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&resolve(dirname(file),node.moduleSpecifier.text.replace(/\.js$/,'.ts'))===resolve(proof.definitionFile)&&node.importClause?.namedBindings&&ts.isNamedImports(node.importClause.namedBindings)&&node.importClause.namedBindings.elements.some(item=>!item.isTypeOnly&&!item.propertyName&&item.name.text===proof.name));
+  const definitionText=sourceTexts.get(proof.definitionFile),definition=definitionText!==undefined?ts.createSourceFile(proof.definitionFile,definitionText,ts.ScriptTarget.Latest,true):undefined,fn=definition?.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text===proof.name);
+  const body=fn?.body?.statements.length===1&&ts.isReturnStatement(fn.body.statements[0])?fn.body.statements[0].expression:undefined;
+  const pure=node=>ts.isStringLiteralLike(node)||ts.isIdentifier(node)&&fn.parameters.some(parameter=>parameter.name.getText(definition)===node.text)||ts.isTemplateExpression(node)&&node.templateSpans.every(span=>pure(span.expression))||ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.PlusToken&&pure(node.left)&&pure(node.right);
+  if(!declaration||declaration.importClause.isTypeOnly||hash(declaration.getText(source))!==proof.importFingerprint||!fn||fn.asteriskToken||fn.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.AsyncKeyword)||fn.parameters.length!==1||!ts.isIdentifier(fn.parameters[0].name)||fn.parameters[0].type?.kind!==ts.SyntaxKind.StringKeyword||fn.parameters[0].dotDotDotToken||!body||!pure(body)||hash(definitionText)!==proof.definitionModuleFingerprint||hash(fn.getText(definition))!==proof.definitionFingerprint)throw Error(`${file}: imported SQL helper requires its exact pure definition and import binding`);
+  let proved=0;
+  const validate=node=>{
+   if(ts.isIdentifier(node)&&node.text===proof.name&&declarationFor(node)?.parent===declaration.importClause.namedBindings){
+    const parent=node.parent;
+    if(ts.isImportSpecifier(parent)){}
+    else if(ts.isCallExpression(parent)&&parent.expression===node){if(executionScope(parent,source).name===proof.scope){if(hash(parent.getText(source))!==proof.callFingerprint||parent.arguments.length!==1||parent.arguments.some(ts.isSpreadElement))throw Error(`${file}: imported SQL helper call changed`);imported.set(parent,{fn,body});proved++;}}
+    else throw Error(`${file}: imported SQL helper cannot alias or escape its direct call`);
+   }
+   ts.forEachChild(node,validate);
+  };validate(source);if(proved!==1)throw Error(`${file}: imported SQL helper needs one exact scoped call`);
+ }
  const combine=(left,right)=>left.length*right.length>64?['__dynamic__']:left.flatMap(a=>right.map(b=>a+b));
  const literal=(node,seen=new Set(),environment=new Map(),helpers=false)=>{
   node=unwrap(node);if(!node||seen.has(node))return ['__dynamic__'];seen.add(node);
@@ -170,6 +197,11 @@ export function sqlStatements(file,text,{finiteScopes=[],provedFragmentScopes=[]
   if(ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.PlusToken)return combine(next(node.left),next(node.right));
   if(ts.isTemplateExpression(node))return node.templateSpans.reduce((values,span)=>combine(values,next(span.expression)).map(value=>value+span.literal.text),[node.head.text]);
   if(helpers&&ts.isCallExpression(node)){
+   if(imported.has(node)){
+    const {fn,body}=imported.get(node),values=next(node.arguments[0]);
+    if(values.length!==1||values[0].includes('__dynamic__'))return ['__dynamic__'];
+    return next(body,new Map([...environment,[fn.parameters[0].name.text,values]]));
+   }
    if(ts.isIdentifier(node.expression)){
     const fn=unwrap(binding(node.expression))??declarationFor(node.expression);
     let body=fn&&(ts.isArrowFunction(fn)||ts.isFunctionDeclaration(fn))?fn.body:undefined;
@@ -243,11 +275,30 @@ export function sqlStatements(file,text,{finiteScopes=[],provedFragmentScopes=[]
  };
  const proofOccurrences=new Map(),types=new Map(source.statements.filter(node=>ts.isInterfaceDeclaration(node)||ts.isTypeAliasDeclaration(node)).map(node=>[node.name.text,node]));
  const nonSqlCall=node=>{
-  if(!ts.isPropertyAccessExpression(node.expression)||!ts.isIdentifier(node.expression.expression))return false;
+  if(!ts.isPropertyAccessExpression(node.expression))return false;
   const method=node.expression.name.text,receiver=node.expression.expression,location=executionScope(node,source);
   for(const proof of nonSqlProofs){
-   if(receiver.text!==proof.receiver||method!==proof.method||location.name!==proof.scope)continue;
+   if(receiver.getText(source)!==proof.receiver||method!==proof.method||location.name!==proof.scope)continue;
    const occurrence=(proofOccurrences.get(proof)??0)+1;proofOccurrences.set(proof,occurrence);
+   if(proof.kind==='class-method'){
+    const definitionText=sourceTexts.get(proof.definitionFile);if(definitionText===undefined)continue;
+    const definition=ts.createSourceFile(proof.definitionFile,definitionText,ts.ScriptTarget.Latest,true),declaration=definition.statements.find(part=>ts.isClassDeclaration(part)&&part.name?.text===proof.className),implementation=declaration?.members.find(part=>ts.isMethodDeclaration(part)&&part.name.getText(definition)===method);
+    if(!implementation?.body||implementation.parameters[0]?.type?.getText(definition)!=='QueryInput')continue;
+    const imported=source.statements.find(part=>ts.isImportDeclaration(part)&&ts.isStringLiteral(part.moduleSpecifier)&&resolve(dirname(file),part.moduleSpecifier.text.replace(/\.js$/,'.ts'))===resolve(proof.definitionFile)&&part.importClause?.namedBindings&&ts.isNamedImports(part.importClause.namedBindings)&&part.importClause.namedBindings.elements.some(item=>!item.isTypeOnly&&(item.propertyName??item.name).text===proof.className&&item.name.text===proof.className));
+    if(!imported||imported.importClause.isTypeOnly)continue;
+    const member=ts.isPropertyAccessExpression(receiver)&&receiver.expression.kind===ts.SyntaxKind.ThisKeyword?receiver.name.text:undefined;
+    const receiverBinding=member&&ts.isClassDeclaration(location.node.parent)?location.node.parent.members.find(part=>ts.isPropertyDeclaration(part)&&part.name.getText(source)===member):ts.isIdentifier(receiver)?declarationFor(receiver):undefined;
+    const receiverType=receiverBinding?.type,allowedType=type=>ts.isTypeReferenceNode(type)&&type.typeName.getText(source)===proof.className||type.kind===ts.SyntaxKind.UndefinedKeyword;
+    if(!receiverBinding||!receiverType||!(ts.isUnionTypeNode(receiverType)?receiverType.types.every(allowedType):allowedType(receiverType)))continue;
+    const bindingScope=member?location.node.parent:location.node,assignments=[];
+    const assignmentsVisit=part=>{if(ts.isBinaryExpression(part)&&part.operatorToken.kind>=ts.SyntaxKind.FirstAssignment&&part.operatorToken.kind<=ts.SyntaxKind.LastAssignment&&part.left.getText(source)===proof.receiver)assignments.push(part);ts.forEachChild(part,assignmentsVisit);};assignmentsVisit(bindingScope);
+    const assignment=assignments[0],value=assignment&&unwrap(assignment.right);
+    if(assignments.length!==1||assignment.operatorToken.kind!==ts.SyntaxKind.EqualsToken||!value||!ts.isNewExpression(value)||!ts.isIdentifier(value.expression)||value.expression.text!==proof.className||declarationFor(value.expression)!==imported.importClause.namedBindings.elements.find(item=>item.name.text===proof.className))continue;
+    const fingerprints={moduleFingerprint:hash(text),scopeFingerprint:hash(location.node.getText(source)),callFingerprint:hash(node.getText(source)),bindingFingerprint:hash(receiverBinding.getText(source)),assignmentFingerprint:hash(assignment.getText(source)),importFingerprint:hash(imported.getText(source)),definitionModuleFingerprint:hash(definitionText),definitionFingerprint:hash(implementation.getText(definition))};
+    if(occurrence!==proof.occurrence||Object.entries(fingerprints).some(([key,value])=>proof[key]!==value))continue;
+    nonSqlEvidence.push({...proof,...fingerprints});return true;
+   }
+   if(!ts.isIdentifier(receiver))continue;
    const binding=declarationFor(receiver),scope=location.node,registration=types.get(proof.registrationType),alias=types.get(proof.entryType),result=types.get(proof.resultType),parameter=scope.parameters?.find(item=>ts.isIdentifier(item.name)&&item.name.text===proof.parameter);
    const reference=(type,name)=>Boolean(type&&ts.isTypeReferenceNode(type)&&type.typeName.getText(source)===name);
    const registrationInput=type=>reference(type,proof.registrationType)||Boolean(type&&ts.isIntersectionTypeNode(type)&&type.types.some(item=>reference(item,proof.registrationType))&&type.types.every(item=>reference(item,proof.registrationType)||ts.isTypeLiteralNode(item)&&item.members.every(member=>member.name?.getText(source)!==method)));
@@ -430,8 +481,8 @@ export function ownershipInventory(root='.',configuration=policy){
   registered.set(file,installerDeclarations(file,text,names).map(installation=>({...installation,finite:finiteNames.has(installation.declaration),contexts:finiteNames.has(installation.declaration)?installerContexts(file,text,installation):[{fn:installation.fn,callPath:[installation.declaration,installation.fn]}]})));
  }
  const nonSqlCalls=[];
- const statements=new Map([...sources].map(([file,text])=>[file,sqlStatements(file,text,{finiteScopes:[...(configuration.projections??[]).filter(item=>prefix+item.file===file).flatMap(item=>[item.scope,...item.lifecycleScopes]),...(registered.get(file)??[]).filter(item=>item.finite).flatMap(item=>item.contexts.map(context=>context.fn))],provedFragmentScopes:(registered.get(file)??[]).filter(item=>item.inline).flatMap(item=>item.contexts.map(context=>context.fn)),nonSqlProofs:(configuration.nonSqlCalls??[]).filter(proof=>proof.from===file),nonSqlEvidence:nonSqlCalls})]));
- const owners=[],tables={},functions=new Map(),projectionScopes=new Map(),projectionObjects=new Map();
+ const statements=new Map([...sources].map(([file,text])=>[file,sqlStatements(file,text,{finiteScopes:[...(configuration.projections??[]).filter(item=>prefix+item.file===file).flatMap(item=>[item.scope,...item.lifecycleScopes]),...(configuration.storageConstructions??[]).filter(item=>prefix+item.file===file).map(item=>item.scope),...(registered.get(file)??[]).filter(item=>item.finite).flatMap(item=>item.contexts.map(context=>context.fn))],provedFragmentScopes:(registered.get(file)??[]).filter(item=>item.inline).flatMap(item=>item.contexts.map(context=>context.fn)),nonSqlProofs:(configuration.nonSqlCalls??[]).filter(proof=>proof.from===file),nonSqlEvidence:nonSqlCalls,sourceTexts:sources,importedHelpers:(configuration.importedHelpers??[]).filter(proof=>proof.from===file)})]));
+ const owners=[],tables={},functions=new Map(),projectionScopes=new Map(),projectionObjects=new Map(),constructionStatements=new Map();
  for(const [file,installations] of registered){
   for(const installation of installations){
    const {finite,contexts,...declaration}=installation;
@@ -468,14 +519,57 @@ export function ownershipInventory(root='.',configuration=policy){
   owners.push({owner:projection.owner,file,declaration:projection.scope,feature,activationFile,activation:projection.activation,objects:[...objects.values()]});
   for(const scope of [projection.scope,...projection.lifecycleScopes])projectionScopes.set(file+'#'+scope,projection.owner);
  }
+ // Existing raw construction is an exact statement claim, never an installer
+ // migration or authority for the rest of the constructor/module.
+ for(const construction of configuration.storageConstructions??[]){
+  const file=prefix+construction.file,body=statements.get(file)?.filter(statement=>statement.scope===construction.scope&&statement.fingerprint===construction.statementFingerprint&&statement.sink&&!statement.callback);
+  if(body?.length!==1||body[0].scopeFingerprint!==construction.scopeFingerprint||body[0].values.length!==1||body[0].values[0].includes('__dynamic__')||hash(body[0].values[0])!==construction.sqlFingerprint)throw Error(`${file}: storage construction requires its exact constructor and proved DDL sink`);
+  const source=ts.createSourceFile(file,sources.get(file),ts.ScriptTarget.Latest,true),className=construction.scope.split('.')[0],declaration=source.statements.find(node=>ts.isClassDeclaration(node)&&node.name?.text===className);
+  if(!declaration||construction.scope!==className+'.constructor')throw Error(`${file}: storage construction must name its actual class constructor`);
+  const calls=[];
+  for(const [caller,text] of sources){
+   const callerSource=ts.createSourceFile(caller,text,ts.ScriptTarget.Latest,true),resolveBinding=declarationResolver(callerSource);
+   const references=(binding,imported)=>{
+    const visit=node=>{if(ts.isIdentifier(node)&&resolveBinding(node)===binding){const parent=node.parent;
+     const runtimeBase=ts.isExpressionWithTypeArguments(parent)&&ts.isHeritageClause(parent.parent)&&parent.parent.token===ts.SyntaxKind.ExtendsKeyword&&(ts.isClassDeclaration(parent.parent.parent)||ts.isClassExpression(parent.parent.parent));
+     let type=false;for(let part=parent;part&&!ts.isStatement(part);part=part.parent)if(ts.isTypeNode(part)){type=true;break;}
+     if(ts.isNewExpression(parent)&&parent.expression===node){const scope=executionScope(parent,callerSource);calls.push({from:caller,scope:scope.name,scopeFingerprint:hash(scope.node.getText(callerSource)),callFingerprint:hash(parent.getText(callerSource)),...(imported?{importFingerprint:hash(imported.getText(callerSource))}:{declarationFingerprint:hash(binding.getText(callerSource))})});}
+     else if(runtimeBase||!type&&!ts.isImportSpecifier(parent)&&!(ts.isClassDeclaration(parent)&&parent.name===node))throw Error(`${caller}: storage constructor cannot escape its concrete construction path`);
+    }ts.forEachChild(node,visit);};visit(callerSource);
+   };
+   if(caller===file)references(callerSource.statements.find(node=>ts.isClassDeclaration(node)&&node.name?.text===className));
+   for(const imported of callerSource.statements)if(ts.isImportDeclaration(imported)&&ts.isStringLiteral(imported.moduleSpecifier)&&resolve(dirname(caller),imported.moduleSpecifier.text.replace(/\.js$/,'.ts'))===resolve(file)&&!imported.importClause?.isTypeOnly){
+    const named=imported.importClause?.namedBindings;if(!named||!ts.isNamedImports(named))throw Error(`${caller}: storage constructor requires a direct named import`);
+    for(const binding of named.elements)if(!binding.isTypeOnly&&(binding.propertyName??binding.name).text===className){
+     if(binding.propertyName)throw Error(`${caller}: storage constructor cannot alias its class binding`);
+     references(binding,imported);
+    }
+   }
+  }
+  if(!calls.length||JSON.stringify(calls)!==JSON.stringify(construction.calls))throw Error(`${file}: storage constructor requires its exact production call path`);
+  const objects=sqlAccesses(body[0].values[0]).created;
+  for(const object of objects){projectionObjects.set(object.name,construction.owner);if(['table','view'].includes(object.type)){if(tables[object.name]&&tables[object.name].owner!==construction.owner)throw Error(`Duplicate SQL table owner: ${object.name}`);tables[object.name]={owner:construction.owner,file,construction:construction.scope};}}
+  if(!objects.some(object=>object.type==='table'||object.type==='view'))throw Error(`${file}: storage construction has no owned table`);
+  const callPath=[...calls.map(call=>call.from+'#'+call.scope),construction.scope];
+  owners.push({owner:construction.owner,file,declaration:construction.scope,construction:true,callPath,objects});
+  constructionStatements.set(file+'#'+body[0].scope+'#'+body[0].fingerprint,{owner:construction.owner,installer:construction.scope,callPath,finite:true});
+ }
  const issues=[],uncoveredFiles=new Set(),uncoveredTables=new Set(),coveredFiles=new Set();
  let dynamicStatements=0;
  for(const [file,items] of statements)for(const statement of items){
-  const registeredContext=functions.get(file+'#'+statement.scope)??functions.get(file+'#'+statement.fn),context=registeredContext&&(!registeredContext.finite||statement.sink&&!statement.callback)?registeredContext:undefined;
-  const owner=projectionScopes.get(file+'#'+statement.scope)??context?.owner??configuration.consumers[file.slice(prefix.length)];
+  const registeredContext=constructionStatements.get(file+'#'+statement.scope+'#'+statement.fingerprint)??functions.get(file+'#'+statement.scope)??functions.get(file+'#'+statement.fn),context=registeredContext&&(!registeredContext.finite||statement.sink&&!statement.callback)?registeredContext:undefined;
+  const owner=projectionScopes.get(file+'#'+statement.scope)??context?.owner??configuration.consumerScopes?.[file.slice(prefix.length)]?.[statement.scope]??configuration.consumers[file.slice(prefix.length)];
   const add=(rule,to,kind)=>{
    const operations=rule==='sql-cross-owner'?[...new Set(statement.values.flatMap(sql=>sqlAccesses(sql,{maintenance:true}).accesses).filter(access=>access.table===to&&(kind==='read'?access.kind==='read':access.kind!=='read')).map(access=>access.kind))]:[];
-   issues.push({rule,from:file,to,kind,symbol:statement.fingerprint,scope:statement.scope,scopeFingerprint:statement.scopeFingerprint,...(operations.length?{operation:operations.length===1?operations[0]:undefined,completeSql:statement.values.every(sql=>!sql.includes('__dynamic__'))}:{}),line:statement.line});
+   const issue={rule,from:file,to,kind,symbol:statement.fingerprint,scope:statement.scope,scopeFingerprint:statement.scopeFingerprint,...(operations.length?{operation:operations.length===1?operations[0]:undefined,completeSql:statement.values.every(sql=>!sql.includes('__dynamic__'))}:{}),line:statement.line};
+   // Preserve four exact original unknown writes as unknown debt when only
+   // their raw target construction becomes known. This grants no write access.
+   if(rule==='sql-cross-owner'&&kind==='write'&&issue.completeSql===false){
+    const target=tables[to],construction=target?.construction&&(configuration.storageConstructions??[]).find(item=>item.owner===target.owner&&prefix+item.file===target.file&&item.scope===target.construction);
+    const witness=construction&&(configuration.retainedClassificationScopes??[]).find(item=>item.classification==='write-unproved-pending'&&item.targetOwner===target.owner&&item.constructionFingerprint===hash(JSON.stringify(construction))&&item.rule==='sql-unproved-relation'&&issueKey(item)===issueKey({...issue,rule:'sql-unproved-relation'})&&item.scope===issue.scope&&item.scopeFingerprint===issue.scopeFingerprint&&item.operation===issue.operation&&item.completeSql===false);
+    if(witness){issue.rule='sql-unproved-relation';issue.classification='write-unproved-pending';issue.knownRawTargetOwner=target.owner;}
+   }
+   issues.push(issue);
   };
   if(!owner){uncoveredFiles.add(file);add('sql-uncovered-consumer','[owner pending]','coverage');}
   else coveredFiles.add(file);
@@ -496,7 +590,7 @@ export function ownershipInventory(root='.',configuration=policy){
   }
  }
  const unique=[...new Map(issues.map(issue=>[issueKey(issue),issue])).values()].sort((a,b)=>issueKey(a).localeCompare(issueKey(b)));
- return {nonSqlCalls,dynamicStatements,owners,tables:Object.fromEntries(Object.entries(tables).sort()),coveredFiles:[...coveredFiles].sort(),uncoveredFiles:[...uncoveredFiles].sort(),uncoveredTables:[...uncoveredTables].sort(),issues:unique};
+ return {nonSqlCalls,pendingRawWrites:unique.filter(issue=>issue.classification==='write-unproved-pending'),dynamicStatements,owners,tables:Object.fromEntries(Object.entries(tables).sort()),coveredFiles:[...coveredFiles].sort(),uncoveredFiles:[...uncoveredFiles].sort(),uncoveredTables:[...uncoveredTables].sort(),issues:unique};
 }
 export const issueKey=issue=>JSON.stringify([issue.rule,issue.from,issue.to,issue.kind,issue.symbol,...(issue.rule==='sql-schema-maintenance'?[issue.installer,issue.callPath,issue.sourceRelations,issue.statementFingerprint]:[])]);
 export function checkSqlOwnership(root='.',{configuration=policy,baseline}={}){
@@ -520,7 +614,7 @@ export function checkSqlOwnership(root='.',{configuration=policy,baseline}={}){
  // cross-owner diagnosis. Retain that exact debt without rewriting the ledger;
  // no other file, SQL, relation, access kind or schema-maintenance path matches.
  const match=issue=>{
-  if(allowed.has(issueKey(issue)))return allowed.get(issueKey(issue));
+  if(allowed.has(issueKey(issue))){const entry=allowed.get(issueKey(issue));if(!grants.includes(entry)||(entry.scope===undefined||entry.scope===issue.scope)&&(entry.scopeFingerprint===undefined||entry.scopeFingerprint===issue.scopeFingerprint))return entry;}
   if(issue.rule==='sql-cross-owner'&&['read','write'].includes(issue.kind))for(const rule of ['sql-uncovered-table','sql-unproved-relation']){
    const entry=allowed.get(issueKey({...issue,rule}));
    const witness=(configuration.retainedClassificationScopes??[]).find(item=>issueKey({...item,rule})===issueKey({...issue,rule})&&item.scope===issue.scope&&item.scopeFingerprint===issue.scopeFingerprint&&item.operation===issue.operation&&(issue.kind!=='write'||item.completeSql===true&&issue.completeSql===true));
@@ -532,8 +626,8 @@ export function checkSqlOwnership(root='.',{configuration=policy,baseline}={}){
  return {...inventory,violations:matched.filter(item=>!item.exception).map(item=>item.issue),exceptions:matched.filter(item=>item.exception).map(item=>item.issue),retainedClassificationDebt:matched.filter(item=>item.exception&&item.issue.rule!==item.exception.rule).map(item=>({issue:item.issue,originalRule:item.exception.rule})),stale:[...[...debt,...grants].filter(item=>!present.has(issueKey(item))),...staleNonSql]};
 }
 export const sqlOwnershipSummary=result=>{
- const projections=result.owners.filter(owner=>owner.feature).length;
- return `SQL ownership: ${result.owners.length-projections} schema owners + ${projections} scoped projection owner(s), ${Object.keys(result.tables).length} tables/views, ${result.coveredFiles.length} files with covered SQL scopes; PARTIAL coverage: ${result.uncoveredFiles.length} files with pending consumers, ${result.uncoveredTables.length} referenced relations pending, ${result.dynamicStatements} unproved SQL statements. ${result.nonSqlCalls?.length??0} proved non-SQL call(s); ${result.exceptions.length} concrete existing exceptions (${result.retainedClassificationDebt?.length??0} retained classification debts).`;
+ const projections=result.owners.filter(owner=>owner.feature).length,constructions=result.owners.filter(owner=>owner.construction).length;
+ return `SQL ownership: ${result.owners.length-projections-constructions} schema owners + ${projections} scoped projection owner(s) + ${constructions} existing construction owner(s), ${Object.keys(result.tables).length} tables/views, ${result.coveredFiles.length} files with covered SQL scopes; PARTIAL coverage: ${result.uncoveredFiles.length} files with pending consumers, ${result.uncoveredTables.length} referenced relations pending, ${result.dynamicStatements} unproved SQL statements. ${result.nonSqlCalls?.length??0} proved non-SQL call(s); ${result.exceptions.length} concrete existing exceptions (${result.retainedClassificationDebt?.length??0} retained classification debts; ${result.pendingRawWrites?.length??0} write-unproved pending).`;
 };
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{

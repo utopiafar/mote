@@ -184,6 +184,13 @@
    "file": "apps/server/src/connectors/recording-state.ts"
   },
   {
+   "declaration": "assistantTaskRuntimeSchemaInstallation",
+   "owner": "assistant-task-runtime",
+   "fn": "assistantTaskRuntimeSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/assistant-task-runtime-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -308,6 +315,74 @@
      "name": "activity_memory_batch_delete"
     }
    ]
+  },
+  {
+   "owner": "conversation-turn-storage",
+   "file": "apps/server/src/conversations.ts",
+   "declaration": "Conversations.constructor",
+   "construction": true,
+   "callPath": [
+    "apps/server/src/plugins/conversations.ts#createConversations",
+    "Conversations.constructor"
+   ],
+   "objects": [
+    {
+     "type": "table",
+     "name": "conversation_turns"
+    },
+    {
+     "type": "index",
+     "name": "conversation_turns_client_request"
+    }
+   ]
+  },
+  {
+   "owner": "query-run-storage",
+   "file": "apps/server/src/delegated-query-runs.ts",
+   "declaration": "DelegatedQueryRuns.constructor",
+   "construction": true,
+   "callPath": [
+    "apps/server/src/plugins/query-runs.ts#createQueryRunsPlatform",
+    "DelegatedQueryRuns.constructor"
+   ],
+   "objects": [
+    {
+     "type": "table",
+     "name": "query_runs"
+    }
+   ]
+  },
+  {
+   "owner": "assistant-task-storage",
+   "file": "apps/server/src/assistant-tasks.ts",
+   "declaration": "AssistantTasks.constructor",
+   "construction": true,
+   "callPath": [
+    "apps/server/src/host.ts#buildHost",
+    "AssistantTasks.constructor"
+   ],
+   "objects": [
+    {
+     "type": "table",
+     "name": "assistant_task_scopes"
+    },
+    {
+     "type": "table",
+     "name": "assistant_task_turns"
+    },
+    {
+     "type": "index",
+     "name": "assistant_task_turns_turn"
+    },
+    {
+     "type": "trigger",
+     "name": "assistant_task_scope_stale"
+    },
+    {
+     "type": "trigger",
+     "name": "assistant_task_turn_deleted"
+    }
+   ]
   }
  ],
  "tables": {
@@ -355,6 +430,21 @@
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "installer": "ActivityMemoryIndex.constructor"
+  },
+  "assistant_task_runtime": {
+   "owner": "assistant-task-runtime",
+   "file": "apps/server/src/assistant-task-runtime-schema.ts",
+   "installer": "assistantTaskRuntimeSchemaInstallation"
+  },
+  "assistant_task_scopes": {
+   "owner": "assistant-task-storage",
+   "file": "apps/server/src/assistant-tasks.ts",
+   "construction": "AssistantTasks.constructor"
+  },
+  "assistant_task_turns": {
+   "owner": "assistant-task-storage",
+   "file": "apps/server/src/assistant-tasks.ts",
+   "construction": "AssistantTasks.constructor"
   },
   "blob_counts": {
    "owner": "capture-read-models",
@@ -410,6 +500,11 @@
    "owner": "conversation",
    "file": "apps/server/src/conversation-schema.ts",
    "installer": "conversationSchemaInstallation"
+  },
+  "conversation_turns": {
+   "owner": "conversation-turn-storage",
+   "file": "apps/server/src/conversations.ts",
+   "construction": "Conversations.constructor"
   },
   "conversations": {
    "owner": "conversation",
@@ -745,6 +840,11 @@
    "owner": "perception",
    "file": "apps/server/src/perception-schema.ts",
    "installer": "perceptionSchemaInstallation"
+  },
+  "query_runs": {
+   "owner": "query-run-storage",
+   "file": "apps/server/src/delegated-query-runs.ts",
+   "construction": "DelegatedQueryRuns.constructor"
   },
   "recording_cursors": {
    "owner": "recording-sync",

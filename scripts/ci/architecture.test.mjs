@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,realpathSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,realpathSync,copyFileSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -8,11 +8,13 @@ import {spawnSync} from 'node:child_process';
 import {moduleReferences,checkArchitecture} from './architecture.mjs';
 import {ownershipInventory,sqlStatements,issueKey} from './sql-ownership.mjs';
 import {installations,sharedReads,sharedObservations,projections,finiteInstallations,schemaMaintenance,nonSqlCalls} from './sql-ownership-policy.mjs';
+import * as sqlPolicy from './sql-ownership-policy.mjs';
 
 const cli=fileURLToPath(new URL('./architecture.mjs',import.meta.url));
 const repository=fileURLToPath(new URL('../..',import.meta.url));
 const productionSql=ownershipInventory(repository);
 const productionOwners=new Map(productionSql.owners.map(item=>[item.declaration,item.owner]));
+const fixtureSqlPolicy={...sqlPolicy,storageConstructions:[],importedHelpers:[],consumerScopes:{},nonSqlCalls:nonSqlCalls.filter(proof=>proof.kind!=='class-method'),sharedReads:sharedReads.filter(grant=>!grant.from.includes('assistant-task')),schemaMaintenance:schemaMaintenance.filter(grant=>grant.installer!=='AssistantTasks.constructor')};
 function fixture(t){
   const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-architecture-')));
   t.after(()=>rmSync(root,{recursive:true,force:true}));
@@ -51,15 +53,20 @@ function fixture(t){
     write('apps/server/src/'+projection.file,source);
     write('apps/server/src/'+projection.activationFile,`export const ${projection.activation}={activation:{featureId:${JSON.stringify(projection.feature)}}};`);
   }
-  for(const proof of nonSqlCalls)write(proof.from,readFileSync(join(repository,proof.from),'utf8'));
+  for(const proof of fixtureSqlPolicy.nonSqlCalls)write(proof.from,readFileSync(join(repository,proof.from),'utf8'));
   const catalog='apps/server/src/material-catalog.ts',catalogSource=readFileSync(join(repository,catalog),'utf8');
-  const facet=sqlStatements(catalog,catalogSource).find(statement=>statement.fingerprint===sharedReads[0].symbol);
+  const facet=sqlStatements(catalog,catalogSource).find(statement=>statement.fingerprint===sharedReads.find(grant=>grant.from===catalog).symbol);
   write(catalog,readFileSync(join(root,catalog),'utf8')+`\nfunction fixtureFacet(db){db.prepare(${facet.expression});}`);
-  const sql=ownershipInventory(root),grants=new Set([...sharedReads.map(item=>({...item,rule:'sql-cross-owner',kind:'read'})),...sharedObservations.map(item=>({...item,rule:'sql-cross-owner',kind:'observe'})),...schemaMaintenance.map(item=>({...item,rule:'sql-schema-maintenance'}))].map(issueKey));
+  const sql=ownershipInventory(root,fixtureSqlPolicy),grants=new Set([...fixtureSqlPolicy.sharedReads.map(item=>({...item,rule:'sql-cross-owner',kind:'read'})),...sharedObservations.map(item=>({...item,rule:'sql-cross-owner',kind:'observe'})),...fixtureSqlPolicy.schemaMaintenance.map(item=>({...item,rule:'sql-schema-maintenance'}))].map(issueKey));
   const debt=sql.issues.filter(issue=>!grants.has(issueKey(issue))).map(({line,...issue})=>({...issue,reason:'Generated architecture fixture'}));
   write('scripts/ci/sql-ownership-baseline.json',JSON.stringify(debt));
   write('scripts/ci/sql-ownership-map.json',JSON.stringify({owners:sql.owners,tables:sql.tables}));
-  return {root,write,check:baseline=>checkArchitecture(root,baseline??[]),run:()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8'})};
+  // Run the identical entrypoint code with generated-fixture policy. Production
+  // Task/class/import proofs belong to the full production-copy tests.
+  for(const file of ['architecture.mjs','sql-ownership.mjs'])copyFileSync(join(repository,'scripts/ci',file),join(root,'scripts/ci',file));
+  write('scripts/ci/sql-ownership-policy.mjs',Object.entries(fixtureSqlPolicy).map(([name,value])=>`export const ${name}=${JSON.stringify(value)};`).join('\n'));
+  symlinkSync(join(repository,'node_modules'),join(root,'node_modules'),'dir');
+  return {root,write,check:baseline=>checkArchitecture(root,baseline??[]),run:()=>spawnSync(process.execPath,[join(root,'scripts/ci/architecture.mjs')],{cwd:root,encoding:'utf8'})};
 }
 const rule=result=>result.violations.map(issue=>issue.rule);
 

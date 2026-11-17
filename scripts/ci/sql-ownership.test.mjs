@@ -5,13 +5,21 @@ import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
-import {nonSqlCalls} from './sql-ownership-policy.mjs';
+import {nonSqlCalls,importedHelpers,storageConstructions} from './sql-ownership-policy.mjs';
+import * as policy from './sql-ownership-policy.mjs';
 import {spawnSync,execFileSync} from 'node:child_process';
 import {sqlAccesses,sqlStatements,ownershipInventory,checkSqlOwnership,issueKey} from './sql-ownership.mjs';
 
 const repository=fileURLToPath(new URL('../..',import.meta.url));
 const cli=fileURLToPath(new URL('./sql-ownership.mjs',import.meta.url));
 const architectureCli=fileURLToPath(new URL('./architecture.mjs',import.meta.url));
+// Frozen original 0b69 statements, including their original enclosing bodies.
+const originalPendingWrites=[
+ {symbol:'27b6a3fef209a72d4c9948043b844600def67489e72967085d22ffefd8d8dfff',scope:'EvidenceStore.invalidateConversationAnswers',scopeFingerprint:'6e2e4efe1ac8041556affb8d01b7282696584fb354237e821709df85db30aea0',to:'conversation_turns',knownRawTargetOwner:'conversation-turn-storage'},
+ {symbol:'6dc7d5da2aae87bc877b4a581e069faf9f1fcb91726833c4e4cf9c8407266f23',scope:'EvidenceStore.installContextHistoryInvalidation',scopeFingerprint:'f797f6e69796dbd65bee11aa68eba1b28ad94b26ea774970d81d2db5dba2c4b0',to:'conversation_turns',knownRawTargetOwner:'conversation-turn-storage'},
+ {symbol:'b340e894b67fac3c9910715ca8dfadeb92492285fb9f1751372247435b551ebd',scope:'EvidenceStore.invalidateConversationAnswers',scopeFingerprint:'6e2e4efe1ac8041556affb8d01b7282696584fb354237e821709df85db30aea0',to:'conversation_turns',knownRawTargetOwner:'conversation-turn-storage'},
+ {symbol:'28af07719a5d788f47a7da12619447756846cb0eec3442aa3e68f639855ba287',scope:'EvidenceStore.installContextHistoryInvalidation',scopeFingerprint:'f797f6e69796dbd65bee11aa68eba1b28ad94b26ea774970d81d2db5dba2c4b0',to:'query_runs',knownRawTargetOwner:'query-run-storage'},
+];
 function fixture(t){
  const root=mkdtempSync(join(tmpdir(),'mote-sql-owner-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
  const write=(file,text)=>{mkdirSync(resolve(root,file,'..'),{recursive:true});writeFileSync(resolve(root,file),text);};
@@ -95,6 +103,15 @@ test('generated owners and exact shared reads do not authorize new reads or any 
  f.configuration.sharedReads[0].kind='write';assert.throws(()=>f.check(),/only grant reads/);
 });
 
+test('named consumer scopes and scoped shared reads cannot move authority to another method',t=>{
+ const f=fixture(t);delete f.configuration.consumers['consumer.ts'];f.configuration.consumerScopes={'consumer.ts':{read:'one'}};
+ const source="function read(db){db.prepare('SELECT * FROM other_rows');}";f.write('apps/server/src/consumer.ts',source);
+ const issue=f.check().violations[0];f.configuration.sharedReads=[{from:issue.from,to:issue.to,symbol:issue.symbol,scope:issue.scope,scopeFingerprint:issue.scopeFingerprint,reason:'Generated bounded read'}];assert.deepEqual(rules(f.check()),[]);
+ f.write('apps/server/src/consumer.ts',source.replace('function read','function moved'));assert.deepEqual(rules(f.check()),['sql-uncovered-consumer']);assert.equal(f.check().stale.length,1);
+ f.configuration.consumerScopes['consumer.ts'].moved='one';assert.deepEqual(rules(f.check()),['sql-cross-owner'],'an identical SQL argument in a changed scope does not reuse the read grant');
+ f.write('apps/server/src/consumer.ts',source+"\nfunction unrelated(db){db.prepare('SELECT * FROM own_rows');}");assert.deepEqual(rules(f.check()),['sql-uncovered-consumer']);
+});
+
 test('uncovered files, unknown tables and dynamic SQL are concrete debt and a copied statement fails',t=>{
  const f=fixture(t);
  f.write('apps/server/src/new.ts',"db.prepare('SELECT * FROM own_rows');");
@@ -118,18 +135,28 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,26);assert.equal(Object.keys(result.tables).length,99);
+ assert.equal(result.owners.length,30);assert.equal(Object.keys(result.tables).length,104);
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));
  assert.ok(result.coveredFiles.includes('apps/server/src/evidence-store.ts'));
  assert.ok(result.uncoveredFiles.includes('apps/server/src/execution-engine.ts'));
  assert.equal(result.tables.execution_steps.owner,'execution');assert.ok(result.dynamicStatements>0);
- assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,1);
+ assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,4);
+ assert.equal(result.tables.assistant_task_runtime.owner,'assistant-task-runtime');assert.equal(result.owners.filter(owner=>owner.construction).length,3);
+ assert.deepEqual(result.pendingRawWrites.map(({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})=>({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})),originalPendingWrites);
+ assert.ok(result.pendingRawWrites.every(issue=>issue.rule==='sql-unproved-relation'&&issue.kind==='write'&&issue.completeSql===false),'known raw targets do not authorize these unproved writes');
  const projection=result.owners.find(owner=>owner.feature==='mote.activity');
  assert.equal(projection.objects.filter(object=>object.type==='table').length,9);
  assert.equal(projection.objects.filter(object=>object.type==='trigger').length,13);
  assert.ok(result.coveredFiles.includes(projection.file));assert.ok(result.uncoveredFiles.includes(projection.file),'only constructor and retirement scopes are covered');
  const map=JSON.parse(readFileSync(resolve(repository,'scripts/ci/sql-ownership-map.json'),'utf8'));
  assert.deepEqual(map,{owners:result.owners,tables:result.tables});
+});
+
+test('original unproved writes need their exact pending witness and raw construction, and never become write grants',()=>{
+ const baseline=JSON.parse(readFileSync(resolve(repository,'scripts/ci/sql-ownership-baseline.json'),'utf8'));
+ for(const configuration of [{...policy,retainedClassificationScopes:policy.retainedClassificationScopes.filter(item=>item.classification!=='write-unproved-pending')},{...policy,storageConstructions:policy.storageConstructions.map(item=>item.owner==='query-run-storage'?{...item,owner:'changed-query-run-storage'}:item)}]){
+  const result=checkSqlOwnership(repository,{configuration,baseline});assert.ok(result.violations.some(issue=>issue.rule==='sql-cross-owner'&&issue.kind==='write'&&originalPendingWrites.some(original=>original.symbol===issue.symbol)));assert.ok(result.pendingRawWrites.length<4);
+ }
 });
 
 test('zero-argument lifecycle prepare has no SQL but the same method with SQL remains checked',()=>{
@@ -225,6 +252,52 @@ test('a non-SQL registration callback needs the exact local type, binding, compl
  const db=new DatabaseSync(':memory:');try{db.exec("CREATE TABLE settings(value TEXT);INSERT INTO settings VALUES('generated-proof-value')");const entry=db;assert.equal(entry.prepare('SELECT value FROM settings').get().value,'generated-proof-value');}finally{db.close();}
 });
 
+test('Task prepare adapters require their imported class binding and exact implementation, and keep nested database sinks visible',()=>{
+ const proofs=nonSqlCalls.filter(proof=>proof.kind==='class-method'),sources=new Map(proofs.flatMap(proof=>[proof.from,proof.definitionFile]).map(file=>[file,readFileSync(resolve(repository,file),'utf8')]));
+ assert.equal(proofs.length,3);
+ for(const proof of proofs){
+  const source=sources.get(proof.from),evidence=[];
+  sqlStatements(proof.from,source,{nonSqlProofs:[proof],nonSqlEvidence:evidence,sourceTexts:sources});assert.equal(evidence.length,1);
+  const call=proof.receiver==='this.questions'?'this.questions.prepare(this.steering?.prepare(input,this.steeringWork(task.id))??input,this.questionWork(task.id))':proof.receiver==='this.steering'?'this.steering?.prepare(input,this.steeringWork(task.id))':'assistantTasks.prepare(input)';
+  assert.ok(source.includes(call));
+  for(const changed of [source.replace(call,call.replace('input',"'SELECT value FROM settings'")),source.replace(call,'('+call+','+call+')'),source+'\nfunction generatedDatabaseReceiver(db,sql){const sameName=db;return sameName.prepare(sql);}']){
+   const rejected=[],statements=sqlStatements(proof.from,changed,{nonSqlProofs:[proof],nonSqlEvidence:rejected,sourceTexts:sources});assert.equal(rejected.length,0);assert.ok(statements.some(statement=>statement.values.includes('__dynamic__')||statement.values.some(value=>value.includes('SELECT value FROM settings'))));
+  }
+  const changedSources=new Map(sources);changedSources.set(proof.definitionFile,sources.get(proof.definitionFile)+'\nexport const changedImplementation=true;');const rejected=[];
+  sqlStatements(proof.from,source,{nonSqlProofs:[proof],nonSqlEvidence:rejected,sourceTexts:changedSources});assert.equal(rejected.length,0);
+ }
+ const db=new DatabaseSync(':memory:');try{db.exec("CREATE TABLE settings(value TEXT);INSERT INTO settings VALUES('generated-task-receiver')");const assistantTasks=db;assert.equal(assistantTasks.prepare('SELECT value FROM settings').get().value,'generated-task-receiver');}finally{db.close();}
+});
+
+test('the imported retirement helper proves only its exact literal constructor call and rejects alias, definition and argument changes',()=>{
+ const proof=importedHelpers[0],source=readFileSync(resolve(repository,proof.from),'utf8'),definition=readFileSync(resolve(repository,proof.definitionFile),'utf8'),sources=new Map([[proof.definitionFile,definition]]);
+ const options={finiteScopes:[proof.scope],importedHelpers:[proof],sourceTexts:sources};
+ const statements=sqlStatements(proof.from,source,options),statement=statements.find(item=>item.scope===proof.scope&&item.sink&&item.values.some(value=>value.includes('CREATE TABLE')));
+ assert.ok(statement.values.every(value=>!value.includes('__dynamic__')));assert.ok(statement.values[0].includes("UPDATE task_records SET state='stale'"));
+ assert.ok(statements.some(item=>item.scope==='AssistantTasks.retire'&&item.values.includes('__dynamic__')),'runtime calls do not inherit constructor proof');
+ for(const changed of [source+'\nconst escapedRetirement=retireTaskRecordsSql;',source.replace("retireTaskRecordsSql('SELECT task_id FROM assistant_task_turns WHERE turn_id=old.id AND conversation_id=old.conversation_id')",'retireTaskRecordsSql(selection)'),source.replace('retireTaskRecordsSql,taskEvidenceIds','retireTaskRecordsSql as renamedRetirement,taskEvidenceIds')])assert.throws(()=>sqlStatements(proof.from,changed,options),/imported SQL helper/);
+ const changedSources=new Map([[proof.definitionFile,definition.replace('UPDATE task_records SET', 'UPDATE captures SET')]]);assert.throws(()=>sqlStatements(proof.from,source,{...options,sourceTexts:changedSources}),/exact pure definition/);
+});
+
+test('existing storage claims bind only actual DDL sinks and their production construction paths',t=>{
+ for(const construction of storageConstructions){
+  const f=fixture(t),target='apps/server/src/'+construction.file,source=readFileSync(resolve(repository,target),'utf8');f.write(target,source);
+  for(const call of construction.calls)f.write(call.from,readFileSync(resolve(repository,call.from),'utf8'));
+  const helpers=importedHelpers.filter(proof=>proof.from===target);for(const proof of helpers)f.write(proof.definitionFile,readFileSync(resolve(repository,proof.definitionFile),'utf8'));
+  const configuration={installations:{},consumers:{},sharedReads:[],storageConstructions:[construction],importedHelpers:helpers};
+  let inventory=ownershipInventory(f.root,configuration);assert.equal(inventory.owners.length,1);assert.equal(inventory.owners[0].construction,true);assert.ok(inventory.uncoveredFiles.includes(target),'the rest of this storage module remains pending');
+  f.write(target,source.replace('CREATE TABLE IF NOT EXISTS','CREATE TABLE IF NOT EXISTS changed_'));assert.throws(()=>ownershipInventory(f.root,configuration),/exact constructor and proved DDL sink/);f.write(target,source);
+  const call=construction.calls[0],caller=readFileSync(resolve(repository,call.from),'utf8'),className=construction.scope.split('.')[0];
+  f.write(call.from,caller+'\nfunction anotherConstruction(db){return new '+className+'(db);}');assert.throws(()=>ownershipInventory(f.root,configuration),/exact production call path/);
+  f.write(call.from,caller+'\nconst escapedConstructor='+className+';');assert.throws(()=>ownershipInventory(f.root,configuration),/cannot escape/);f.write(call.from,caller);
+  for(const addition of ['\nexport function generatedExtraConstruction(db){return new '+className+'(db);}','\nconst aliasedConstructor='+className+';','\npublishConstructor('+className+');','\nclass GeneratedChild extends '+className+' {}']){
+   f.write(target,source+addition);assert.throws(()=>ownershipInventory(f.root,configuration),/storage constructor.*(?:call path|cannot escape)/);
+  }
+  f.write(target,source+'\nfunction unrelatedShadow('+className+'){return new '+className+'();}');assert.equal(ownershipInventory(f.root,configuration).owners.length,1,'a same-spelled local parameter is not the production class binding');
+  f.write(target,source+"\nfunction unrelatedRuntime(db){db.prepare('DELETE FROM settings');}");inventory=ownershipInventory(f.root,configuration);assert.ok(inventory.issues.some(issue=>issue.from===target&&issue.scope==='unrelatedRuntime'&&issue.rule==='sql-uncovered-consumer'));
+ }
+});
+
 test('actual CLI rejects an inserted cross-owner query in a copy of the production source, permits the existing shared model, and cleans up',t=>{
  const root=mkdtempSync(join(tmpdir(),'mote-sql-production-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
  // Copy tracked code/config only, never profiles, dependencies or user data.
@@ -234,6 +307,8 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  const run=()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8'});
  const architecture=()=>spawnSync(process.execPath,[architectureCli],{cwd:root,encoding:'utf8'});
  let result=architecture();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/PARTIAL coverage/);assert.match(result.stdout,/Architecture boundaries passed/);
+ assert.match(result.stdout,/4 write-unproved pending/);
+ const baselinePath=resolve(root,'scripts/ci/sql-ownership-baseline.json'),baselineSource=readFileSync(baselinePath,'utf8');
  const mapPath=resolve(root,'scripts/ci/sql-ownership-map.json'),map=readFileSync(mapPath,'utf8');
  writeFileSync(mapPath,'{}');result=run();assert.equal(result.status,1);assert.match(result.stderr,/map is stale/);writeFileSync(mapPath,map);
  const projectionPath=resolve(root,'apps/server/src/activity-memory-index.ts'),projectionSource=readFileSync(projectionPath,'utf8');
@@ -264,7 +339,11 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  writeFileSync(operationsPath,operationsSource);
  const evidencePath=resolve(root,'apps/server/src/task-evidence.ts'),evidenceSource=readFileSync(evidencePath,'utf8');
  writeFileSync(evidencePath,evidenceSource.replace('UPDATE task_records SET','UPDATE memories SET'));
- result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-schema-maintenance.*memories.*update/);writeFileSync(evidencePath,evidenceSource);
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper requires its exact pure definition/);
+ // The total entry rejects the changed imported module first. Independently
+ // retain the original concrete maintenance-effect assertion at its installer.
+ assert.ok(ownershipInventory(root,{...policy,importedHelpers:[],storageConstructions:storageConstructions.filter(item=>item.owner!=='assistant-task-storage')}).issues.some(issue=>issue.rule==='sql-schema-maintenance'&&issue.from.endsWith('/task-evidence.ts')&&issue.to==='memories'&&issue.kind==='update'));
+ writeFileSync(evidencePath,evidenceSource);
  const searchPath=resolve(root,'apps/server/src/memory-search-schema.ts'),searchSource=readFileSync(searchPath,'utf8');
  writeFileSync(searchPath,searchSource+'\nfunction generatedRuntime(db:DatabaseSync){memoryCatalog(db);}');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/schema db helper cannot inherit installer authority/);writeFileSync(searchPath,searchSource);
  const connectorPath=resolve(root,'apps/server/src/connectors/gmail-state.ts'),connectorSource=readFileSync(connectorPath,'utf8');
@@ -274,6 +353,47 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
   writeFileSync(configPath,changed);result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-consumer.*config-service.ts/);
  }
  writeFileSync(configPath,configSource);
+ const taskPath=resolve(root,'apps/server/src/assistant-tasks.ts'),taskSource=readFileSync(taskPath,'utf8');
+ writeFileSync(taskPath,taskSource+'\nexport function generatedSqliteTask(db){const assistantTasks=db;return assistantTasks.prepare(\'SELECT value FROM settings\').get();}');
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-consumer.*assistant-tasks.ts/);writeFileSync(taskPath,taskSource);
+ const steeringPath=resolve(root,'apps/server/src/assistant-task-steering.ts'),steeringSource=readFileSync(steeringPath,'utf8');
+ writeFileSync(steeringPath,steeringSource+"\nfunction generatedForeignWrite(db){db.prepare('UPDATE captures SET json=json WHERE id=?');}");
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner.*assistant-task-steering.ts.*captures.*write/);
+ writeFileSync(steeringPath,steeringSource.replace('private messages(id:string)','private movedMessages(id:string)'));
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner.*assistant-task-steering.ts.*conversation_turns.*read/);writeFileSync(steeringPath,steeringSource);
+ const retirementPath=resolve(root,'apps/server/src/task-evidence.ts'),retirementSource=readFileSync(retirementPath,'utf8');
+ writeFileSync(retirementPath,retirementSource.replace('UPDATE task_records SET', 'UPDATE captures SET'));
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper requires its exact pure definition/);writeFileSync(retirementPath,retirementSource);
+ writeFileSync(taskPath,taskSource+'\nconst escapedRetirement=retireTaskRecordsSql;');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper cannot alias or escape/);writeFileSync(taskPath,taskSource);
+ const conversationsCaller=resolve(root,'apps/server/src/plugins/conversations.ts'),conversationsSource=readFileSync(conversationsCaller,'utf8');
+ writeFileSync(conversationsCaller,conversationsSource+'\nfunction generatedConstruction(db){return new Conversations(db);}');
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor requires its exact production call path/);writeFileSync(conversationsCaller,conversationsSource);
+ const historyFile='apps/server/src/evidence-store.ts',historyPath=resolve(root,historyFile),historySource=readFileSync(historyPath,'utf8'),historyStatements=sqlStatements(historyFile,historySource);
+ for(const sample of originalPendingWrites){
+  const statement=historyStatements.find(item=>item.fingerprint===sample.symbol);assert.ok(statement);assert.equal(statement.scope,sample.scope);assert.equal(statement.scopeFingerprint,sample.scopeFingerprint);
+  const changed=statement.expression[0]+'/* generated SQL mutation */'+statement.expression.slice(1);writeFileSync(historyPath,historySource.replace(statement.expression,changed));
+  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-(?:cross-owner|dynamic|unproved-relation).*evidence-store.ts/);assert.ok(!ownershipInventory(root).pendingRawWrites.some(issue=>issue.symbol===sample.symbol));
+  t.diagnostic('Frozen unknown-write '+sample.symbol+' rejects its SQL mutation through the total CLI');
+ }
+ const originalStatement=historyStatements.find(item=>item.fingerprint===originalPendingWrites[0].symbol),queryStatement=historyStatements.find(item=>item.fingerprint===originalPendingWrites[3].symbol);
+ const historyMutations=[
+  ['scope',historySource.replace('  invalidateConversationAnswers(evidenceIds?:string[]','  movedConversationAnswers(evidenceIds?:string[]')],
+  ['occurrence',historySource.replace('      const conversationParameters=[...parameters];','      const conversationParameters=[...parameters];\n      this.db.prepare('+originalStatement.expression+');')],
+  ['target',historySource.replace(queryStatement.expression,queryStatement.expression.replaceAll('query_runs','conversation_turns'))],
+  ['fully proved update',historySource.replace(originalStatement.expression,"'UPDATE conversation_turns SET json=json WHERE id=?'")],
+ ];
+ for(const [name,changed]of historyMutations){assert.notEqual(changed,historySource);writeFileSync(historyPath,changed);result=architecture();assert.equal(result.status,1,result.stderr);assert.match(result.stderr,/evidence-store.ts/);if(name==='fully proved update')assert.match(result.stderr,/sql-cross-owner.*evidence-store.ts.*conversation_turns.*write/);t.diagnostic('Frozen unknown-write '+name+' mutation rejects through the total CLI');}
+ writeFileSync(historyPath,historySource);
+ for(const construction of storageConstructions.filter(item=>['conversation-turn-storage','query-run-storage'].includes(item.owner))){
+  const path=resolve(root,'apps/server/src/'+construction.file),source=readFileSync(path,'utf8');writeFileSync(path,source.replace('CREATE TABLE IF NOT EXISTS','CREATE TABLE IF NOT EXISTS changed_'));
+  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage construction requires its exact constructor and proved DDL sink/);writeFileSync(path,source);
+ }
+ const rawPath=resolve(root,'apps/server/src/conversations.ts'),rawSource=readFileSync(rawPath,'utf8');
+ for(const addition of ['\nexport function generatedExtraConstruction(db){return new Conversations(db);}','\nconst aliasedConstructor=Conversations;','\npublishConstructor(Conversations);','\nclass GeneratedChild extends Conversations {}']){
+  writeFileSync(rawPath,rawSource+addition);result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor.*(?:call path|cannot escape)/);
+ }
+ writeFileSync(rawPath,rawSource);
+ assert.equal(readFileSync(baselinePath,'utf8'),baselineSource,'negative cases never edit the production debt ledger');
  const target=resolve(root,'apps/server/src/material-index.ts'),original=readFileSync(target,'utf8');
  appendFileSync(target,"\nfunction generatedOwnershipNegative(db){db.prepare('SELECT value FROM settings WHERE key=?');}\n");
  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner: apps\/server\/src\/material-index.ts.*settings/);
