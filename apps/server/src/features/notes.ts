@@ -10,7 +10,7 @@ import type {FileStore} from '../files.js';
 import type {IngressService} from '../ingress.js';
 import type {FeatureRoute} from './index.js';
 
-/** C10A/C10 trusted assembly supplies the same C04 platform, request pin and
+/** The trusted capture assembly supplies the single authorization platform, request pin and
  * the lifecycle-guarded published capture port; none is minted here. */
 export interface NotesCapture {readonly authority:CaptureIntakeAuthority;readonly route:CaptureRouteContext;readonly intake:CaptureIntake}
 
@@ -26,7 +26,7 @@ export interface NotesFeatureDependencies {
 }
 
 /** notes: owns its transport, data and command contributions. Every write goes
- * through the attached C10A intake; no secondary ingress is accepted. */
+ * through the attached capture intake; no secondary ingress is accepted. */
 export function notesFeature(dependencies:NotesFeatureDependencies):FeatureRoute {
   const {diagnostics,notesSource,notesCapture}=dependencies;
   return Object.freeze({id:'mote.notes',mount(app:FastifyInstance){
