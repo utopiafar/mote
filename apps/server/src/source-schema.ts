@@ -1,4 +1,7 @@
 import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const sourceSchemaInstallation={owner:'source',requires:['capture'],install:sourceSchema} as const satisfies SchemaInstallation;
 
 /** Source identities and immutable version pointers. Captures must exist first;
  * file schema and source catalog triggers are installed after this owner. */

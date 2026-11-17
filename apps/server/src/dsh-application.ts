@@ -34,6 +34,7 @@ const bytesHash=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex')
 const held=new Set<string>();
 const live=(pid:number)=>{try{process.kill(pid,0);return true;}catch(error){return (error as NodeJS.ErrnoException).code!=='ESRCH';}};
 const conflict=()=>new StoreError('Native application state is unavailable; its private input is retained',409);
+const writerBusy=()=>Object.assign(new StoreError('Native application conversation already has a writer',409),{code:'native_application_busy'});
 const value=<T>(record:StateRecord|undefined)=>record?.value as T|undefined;
 const stateValue=(value:unknown)=>JSON.parse(JSON.stringify(value)) as StateValue;
 const owned=(uid:number)=>!process.getuid||uid===process.getuid();
@@ -147,11 +148,12 @@ export function openNativeApplication(input:{store:Store;state:StateStore;profil
   return {sessionId:'mote-app-'+identity,home,workspace,assertCurrent,
     async prepare(seed){
       if(prepared||released)throw conflict();input.assertCurrent();
-      if(held.has(localKey))throw new StoreError('Native application conversation already has a writer',409);
+      if(held.has(localKey))throw writerBusy();
       held.add(localKey);admitted=true;
       try{
         control=await state.get(controlKey);input.assertCurrent();const prior=value<Control>(control);
-        if(prior&&(prior.version!==1||prior.identity!==identity||prior.writer&&prior.writer.pid!==process.pid&&live(prior.writer.pid)))throw conflict();
+        if(prior&&(prior.version!==1||prior.identity!==identity))throw conflict();
+        if(prior?.writer&&prior.writer.pid!==process.pid&&live(prior.writer.pid))throw writerBusy();
         await loadReceipts();assertCurrent();
         // The whole ledger is checked before decrypting even the first history
         // file, including disclosures from failed and cancelled interactions.
