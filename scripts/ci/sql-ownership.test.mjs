@@ -46,6 +46,9 @@ test('writes, trigger effects and insert-select reads retain their individual ac
  assert.ok(accesses.some(x=>x.table==='other_rows'&&x.kind==='read'));
  assert.ok(accesses.some(x=>x.table==='other_rows'&&x.kind==='write'));
  assert.ok(accesses.some(x=>x.table==='deep_rows'&&x.kind==='write'));
+ const subscription=sqlAccesses('CREATE TEMP TRIGGER changed AFTER UPDATE ON memory_jobs BEGIN UPDATE memory_jobs SET json=json; END;').accesses;
+ assert.ok(subscription.some(x=>x.table==='memory_jobs'&&x.kind==='observe'));
+ assert.ok(subscription.some(x=>x.table==='memory_jobs'&&x.kind==='write'),'source DML inside a TEMP trigger remains a write');
 });
 
 test('AST proves immutable finite SQL, catches shadowed/dynamic arguments and follows local sink aliases',()=>{
@@ -100,13 +103,39 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,14);assert.equal(Object.keys(result.tables).length,66);
+ assert.equal(result.owners.length,15);assert.equal(Object.keys(result.tables).length,75);
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));
  assert.ok(result.coveredFiles.includes('apps/server/src/evidence-store.ts'));
  assert.ok(result.uncoveredFiles.includes('apps/server/src/execution-engine.ts'));
  assert.ok(result.uncoveredTables.includes('execution_steps'));assert.ok(result.dynamicStatements>0);
+ const projection=result.owners.find(owner=>owner.feature==='mote.activity');
+ assert.equal(projection.objects.filter(object=>object.type==='table').length,9);
+ assert.equal(projection.objects.filter(object=>object.type==='trigger').length,13);
+ assert.ok(result.coveredFiles.includes(projection.file));assert.ok(result.uncoveredFiles.includes(projection.file),'only constructor and retirement scopes are covered');
  const map=JSON.parse(readFileSync(resolve(repository,'scripts/ci/sql-ownership-map.json'),'utf8'));
  assert.deepEqual(map,{owners:result.owners,tables:result.tables});
+});
+
+test('zero-argument lifecycle prepare has no SQL but the same method with SQL remains checked',()=>{
+ assert.deepEqual(sqlStatements('generated.ts','service.prepare();'),[]);
+ assert.equal(sqlStatements('generated.ts',"service.prepare('SELECT * FROM settings');").length,1);
+});
+
+test('projection helper proofs track SQL dependencies and mutation, not unrelated constructor work',()=>{
+ const source="const states={ready:1,done:-1}; const rank=(value)=>`CASE ${value} ${Object.entries(states).map(([name,value])=>`WHEN '${name}' THEN ${value}`).join(' ')} END`; const columns=(ref)=>`${ref}.id,${rank(`${ref}.state`)}`; class Projection {constructor(){db.prepare(`SELECT ${columns('p')} FROM own_rows p`);}}";
+ const options={finiteScopes:['Projection.constructor']};
+ const before=sqlStatements('generated.ts',source,options).find(x=>x.scope==='Projection.constructor');
+ assert.ok(!before.values[0].includes('__dynamic__'));assert.match(before.values[0],/WHEN 'done' THEN -1/);
+ const unrelated=sqlStatements('generated.ts',source.replace('constructor(){','constructor(){const admitted=true;void admitted;'),options).find(x=>x.scope==='Projection.constructor');
+ assert.equal(unrelated.fingerprint,before.fingerprint);
+ const changed=sqlStatements('generated.ts',source.replace('`${ref}.id,','`(SELECT id FROM other_rows),${ref}.id,'),options).find(x=>x.scope==='Projection.constructor');
+ assert.notEqual(changed.fingerprint,before.fingerprint);assert.ok(sqlAccesses(changed.values[0]).accesses.some(x=>x.table==='other_rows'));
+ const mutation=sqlStatements('generated.ts',source+'states.done=2;',options).find(x=>x.scope==='Projection.constructor');
+ assert.ok(mutation.values.some(sql=>sql.includes('__dynamic__')),'mutated const objects cannot be treated as finite facts');
+ const aliased=sqlStatements('generated.ts',source+'const alias=states;alias.done=2;',options).find(x=>x.scope==='Projection.constructor');
+ assert.ok(aliased.values.some(sql=>sql.includes('__dynamic__')));
+ const escaped=sqlStatements('generated.ts',source+'unknownMutation(states);',options).find(x=>x.scope==='Projection.constructor');
+ assert.ok(escaped.values.some(sql=>sql.includes('__dynamic__')));
 });
 
 test('actual CLI rejects an inserted cross-owner query in a copy of the production source, permits the existing shared model, and cleans up',t=>{
@@ -120,6 +149,26 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  let result=architecture();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/PARTIAL coverage/);assert.match(result.stdout,/Architecture boundaries passed/);
  const mapPath=resolve(root,'scripts/ci/sql-ownership-map.json'),map=readFileSync(mapPath,'utf8');
  writeFileSync(mapPath,'{}');result=run();assert.equal(result.status,1);assert.match(result.stderr,/map is stale/);writeFileSync(mapPath,map);
+ const projectionPath=resolve(root,'apps/server/src/activity-memory-index.ts'),projectionSource=readFileSync(projectionPath,'utf8');
+ const constructor='constructor(private store:Store){';
+ writeFileSync(projectionPath,projectionSource.replace(constructor,constructor+'\n const generatedAdmission=true;void generatedAdmission;'));
+ result=run();assert.equal(result.status,0,result.stderr);
+ writeFileSync(projectionPath,projectionSource.replace(constructor,constructor+"\n store.db.prepare('UPDATE memory_jobs SET json=json WHERE id=?');"));
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner.*activity-memory-index.ts.*memory_jobs.*write/);
+ writeFileSync(projectionPath,projectionSource.replace('FROM ${from}json_each','FROM settings hidden,${from}json_each'));
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner.*activity-memory-index.ts.*settings/);
+ writeFileSync(projectionPath,projectionSource.replace('"activity_memory_source_insert",','"foreign_trigger",'));
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-table.*foreign_trigger/);
+ writeFileSync(projectionPath,projectionSource.replace('CREATE TABLE IF NOT EXISTS activity_memory_jobs(', 'CREATE TABLE IF NOT EXISTS changed_projection_jobs('));
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/map is stale/);
+ writeFileSync(projectionPath,projectionSource+'\nretireActivityMemorySubscriptions({} as Store, computedSchema as any);');
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/requires a proved literal schema argument/);
+ writeFileSync(projectionPath,projectionSource+'\nconst escapedRetirement=retireActivityMemorySubscriptions;');
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/cannot escape its checked call boundary/);
+ writeFileSync(projectionPath,projectionSource);
+ const activationPath=resolve(root,'apps/server/src/plugins/activity-services.ts'),activationSource=readFileSync(activationPath,'utf8');
+ writeFileSync(activationPath,activationSource.replace("featureId:'mote.activity'","featureId:'mote.changed'"));
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/actual production feature activation/);writeFileSync(activationPath,activationSource);
  const target=resolve(root,'apps/server/src/material-index.ts'),original=readFileSync(target,'utf8');
  appendFileSync(target,"\nfunction generatedOwnershipNegative(db){db.prepare('SELECT value FROM settings WHERE key=?');}\n");
  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner: apps\/server\/src\/material-index.ts.*settings/);

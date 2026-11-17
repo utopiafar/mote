@@ -1,5 +1,5 @@
 import {readFileSync,readdirSync,existsSync} from 'node:fs';
-import {resolve,relative} from 'node:path';
+import {resolve,relative,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import ts from 'typescript';
@@ -47,7 +47,7 @@ export function sqlTokens(sql){
  * are local relations. Unknown interpolation remains a separate hard issue even
  * when the visible part can be checked. Foreign keys are schema dependencies,
  * not runtime reads; trigger bodies still expose actual SELECT/UPDATE targets. */
-export function sqlAccesses(sql){
+export function sqlAccesses(sql,{schemaLifecycle=false}={}){
  const tokens=sqlTokens(sql),t=tokens.map(token=>token.quoted?"#"+token.text:token.text),accesses=[],created=[],ctes=[];
  const relation=(index,kind)=>{
   if(t[index]==='(')return;
@@ -88,17 +88,18 @@ export function sqlAccesses(sql){
   }
   if(t[i]==='create'){
    let j=i+1;if(['temp','temporary'].includes(t[j]))j++;if(['virtual','unique'].includes(t[j]))j++;
-   const type=t[j++];if(t[j]==='if')j+=3;
+   const temporary=['temp','temporary'].includes(t[i+1]),type=t[j++];if(t[j]==='if')j+=3;
    if(['table','view','index','trigger'].includes(type)&&tokens[j]?.identifier){
     created.push({type,name:tokens[j].text});
     if(type==='table'||type==='view')relation(j,'write');
     // Index/trigger attachment is a schema write to its target, not a read.
     if(type==='index'||type==='trigger'){
      while(j<t.length&&!['on',';'].includes(t[j]))j++;
-     if(t[j]==='on')relation(j+1,'write');
+     if(t[j]==='on')relation(j+1,type==='trigger'&&temporary?'observe':'write');
     }
    }
   }
+  if(schemaLifecycle&&t[i]==='drop'&&t[i+1]==='trigger')relation(i+2+(t[i+2]==='if'?2:0),'drop-trigger');
   if(['drop','alter'].includes(t[i])&&['table','view'].includes(t[i+1]))relation(i+2+(t[i+2]==='if'?2:0),'write');
  }
  return {accesses:[...new Map(accesses.map(value=>[JSON.stringify(value),value])).values()],created};
@@ -106,39 +107,92 @@ export function sqlAccesses(sql){
 
 /** Resolve only immutable lexical constants and finite literal branches. Unknown
  * values are marked, never treated as an empty/approved SQL statement. */
-export function sqlStatements(file,text){
+export function sqlStatements(file,text,{finiteScopes=[]}={}){
  const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);
  if(source.parseDiagnostics.length)throw Error(`${file}: ${ts.flattenDiagnosticMessageText(source.parseDiagnostics[0].messageText,' ')}`);
- const scopes=new WeakMap();
+ const scopes=new WeakMap(),declarationsByScope=new WeakMap(),iterationNodes=new Map(),mutated=new Set(),aliases=[];
  const scopeFor=node=>{for(let p=node.parent;p;p=p.parent)if(ts.isSourceFile(p)||ts.isBlock(p)||ts.isFunctionLike(p)||ts.isCatchClause(p)||ts.isForStatement(p)||ts.isForInStatement(p)||ts.isForOfStatement(p))return p;return source;};
- const bind=(node,name,value)=>{if(ts.isObjectBindingPattern(name)||ts.isArrayBindingPattern(name)){for(const item of name.elements)if(ts.isBindingElement(item))bind(node,item.name,undefined);return;}if(!ts.isIdentifier(name))return;const scope=scopeFor(node),map=scopes.get(scope)??new Map();map.set(name.text,value);scopes.set(scope,map);};
+ const bind=(node,name,value)=>{if(ts.isObjectBindingPattern(name)||ts.isArrayBindingPattern(name)){for(const item of name.elements)if(ts.isBindingElement(item))bind(node,item.name,undefined);return;}if(!ts.isIdentifier(name))return;const scope=scopeFor(node),map=scopes.get(scope)??new Map();map.set(name.text,value);scopes.set(scope,map);const declarations=declarationsByScope.get(scope)??new Map();declarations.set(name.text,node);declarationsByScope.set(scope,declarations);};
  const declarations=node=>{
-  if(ts.isVariableDeclaration(node))bind(node,node.name,node.parent.flags&ts.NodeFlags.Const?node.initializer:undefined);
+  if(ts.isVariableDeclaration(node)){bind(node,node.name,node.parent.flags&ts.NodeFlags.Const?node.initializer:undefined);if(ts.isIdentifier(node.name)&&node.initializer&&ts.isIdentifier(unwrap(node.initializer)))aliases.push([node.name.text,unwrap(node.initializer).text]);if(!node.initializer&&ts.isIdentifier(node.name)&&ts.isForOfStatement(node.parent.parent))iterationNodes.set(node,node.parent.parent.expression);}
   if(ts.isParameter(node))bind(node,node.name,undefined);
   if((ts.isFunctionDeclaration(node)||ts.isClassDeclaration(node))&&node.name)bind(node,node.name,undefined);
   if(ts.isImportClause(node)&&node.name)bind(node,node.name,undefined);
   if(ts.isImportSpecifier(node)||ts.isNamespaceImport(node))bind(node,node.name,undefined);
   ts.forEachChild(node,declarations);
  };declarations(source);
+ const declarationFor=node=>{for(let p=node.parent;p;p=p.parent)if(declarationsByScope.get(p)?.has(node.text))return declarationsByScope.get(p).get(node.text);};
+ const rootName=node=>{while(ts.isPropertyAccessExpression(node)||ts.isElementAccessExpression(node))node=node.expression;return ts.isIdentifier(node)?node.text:undefined;};
+ const mutations=node=>{if(ts.isBinaryExpression(node)&&node.operatorToken.kind>=ts.SyntaxKind.FirstAssignment&&node.operatorToken.kind<=ts.SyntaxKind.LastAssignment)mutated.add(rootName(node.left));if(ts.isDeleteExpression(node)||ts.isPostfixUnaryExpression(node)||ts.isPrefixUnaryExpression(node)&&[ts.SyntaxKind.PlusPlusToken,ts.SyntaxKind.MinusMinusToken].includes(node.operator))mutated.add(rootName(node.expression??node.operand));if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&['push','pop','shift','unshift','splice','sort','reverse','fill','copyWithin','set','delete','clear','add'].includes(node.expression.name.text))mutated.add(rootName(node.expression.expression));if(ts.isCallExpression(node)&&!(ts.isPropertyAccessExpression(node.expression)&&node.expression.expression.getText(source)==='Object'&&node.expression.name.text==='entries'))for(const argument of node.arguments)if(ts.isIdentifier(argument))mutated.add(argument.text);ts.forEachChild(node,mutations);};mutations(source);
+ for(let changed=true;changed;){changed=false;for(const [left,right] of aliases)if(mutated.has(left)||mutated.has(right)){if(!mutated.has(left)||!mutated.has(right))changed=true;mutated.add(left);mutated.add(right);}}
  const binding=node=>{for(let p=node.parent;p;p=p.parent)if(scopes.get(p)?.has(node.text))return scopes.get(p).get(node.text);};
  const combine=(left,right)=>left.length*right.length>64?['__dynamic__']:left.flatMap(a=>right.map(b=>a+b));
- const literal=(node,seen=new Set())=>{
+ const literal=(node,seen=new Set(),environment=new Map(),helpers=false)=>{
   node=unwrap(node);if(!node||seen.has(node))return ['__dynamic__'];seen.add(node);
+  const next=(value,env=environment)=>literal(value,new Set(seen),env,helpers);
   if(ts.isStringLiteralLike(node))return [node.text];
-  if(ts.isIdentifier(node))return literal(binding(node),seen);
-  if(ts.isConditionalExpression(node))return [...literal(node.whenTrue,new Set(seen)),...literal(node.whenFalse,new Set(seen))];
-  if(ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.PlusToken)return combine(literal(node.left,new Set(seen)),literal(node.right,new Set(seen)));
-  if(ts.isTemplateExpression(node))return node.templateSpans.reduce((values,span)=>combine(values,literal(span.expression,new Set(seen))).map(value=>value+span.literal.text),[node.head.text]);
+  if(helpers&&ts.isNumericLiteral(node))return [node.text];
+  if(helpers&&ts.isPrefixUnaryExpression(node)&&[ts.SyntaxKind.MinusToken,ts.SyntaxKind.PlusToken].includes(node.operator)&&ts.isNumericLiteral(node.operand))return [(node.operator===ts.SyntaxKind.MinusToken?'-':'+')+node.operand.text];
+  if(ts.isIdentifier(node)){
+   if(environment.has(node.text))return environment.get(node.text);
+   if(helpers&&mutated.has(node.text))return ['__dynamic__'];
+   const value=binding(node);if(value)return next(value);
+   if(helpers){
+    const declaration=declarationFor(node);
+    if(declaration&&iterationNodes.has(declaration))return next(iterationNodes.get(declaration));
+    // Only the explicitly selected lifecycle scope consumes finite parameter
+    // types. Its DROP targets are checked against its actual owned objects.
+    if(declaration&&ts.isParameter(declaration)&&declaration.type&&ts.isUnionTypeNode(declaration.type)&&declaration.type.types.every(type=>ts.isLiteralTypeNode(type)&&ts.isStringLiteral(type.literal)))return declaration.type.types.map(type=>type.literal.text);
+   }
+   return ['__dynamic__'];
+  }
+  if(helpers&&ts.isArrayLiteralExpression(node))return node.elements.flatMap(element=>next(element));
+  if(ts.isConditionalExpression(node))return [...next(node.whenTrue),...next(node.whenFalse)];
+  if(ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.PlusToken)return combine(next(node.left),next(node.right));
+  if(ts.isTemplateExpression(node))return node.templateSpans.reduce((values,span)=>combine(values,next(span.expression)).map(value=>value+span.literal.text),[node.head.text]);
+  if(helpers&&ts.isCallExpression(node)){
+   if(ts.isIdentifier(node.expression)){
+    const fn=unwrap(binding(node.expression));
+    if(fn&&ts.isArrowFunction(fn)&&!ts.isBlock(fn.body)&&fn.parameters.every(parameter=>ts.isIdentifier(parameter.name))){
+     const env=new Map(environment);
+     for(const [index,parameter] of fn.parameters.entries())env.set(parameter.name.text,next(node.arguments[index]??parameter.initializer));
+     return next(fn.body,env);
+    }
+   }
+   // The existing finite CASE helper: Object.entries(constObject).map(
+   // ([name,value])=>literalTemplate).join(literalSeparator). Never execute JS.
+   const join=node.expression;
+   if(ts.isPropertyAccessExpression(join)&&join.name.text==='join'&&ts.isCallExpression(join.expression)){
+    const map=join.expression,mapCall=map.expression;
+    if(ts.isPropertyAccessExpression(mapCall)&&mapCall.name.text==='map'&&ts.isCallExpression(mapCall.expression)){
+     const entries=mapCall.expression,fn=map.arguments[0],object=entries.arguments[0];
+     if(ts.isPropertyAccessExpression(entries.expression)&&entries.expression.expression.getText(source)==='Object'&&!mutated.has('Object')&&!mutated.has('Array')&&!declarationFor(entries.expression.expression)&&entries.expression.name.text==='entries'&&object&&ts.isIdentifier(object)&&!mutated.has(object.text)&&fn&&ts.isArrowFunction(fn)&&!ts.isBlock(fn.body)&&fn.parameters.length===1&&ts.isArrayBindingPattern(fn.parameters[0].name)){
+      const values=unwrap(binding(object)),names=fn.parameters[0].name.elements;
+      if(values&&ts.isObjectLiteralExpression(values)&&names.length===2&&names.every(name=>ts.isBindingElement(name)&&ts.isIdentifier(name.name))){
+       const pieces=[];
+       for(const property of values.properties){
+        if(!ts.isPropertyAssignment(property)||!ts.isIdentifier(property.name)&&!ts.isStringLiteral(property.name))return ['__dynamic__'];
+        const number=next(property.initializer);if(number.length!==1||!/^[-+]?\d+(?:\.\d+)?$/.test(number[0]))return ['__dynamic__'];
+        const env=new Map(environment);env.set(names[0].name.text,[property.name.text]);env.set(names[1].name.text,next(property.initializer));
+        const value=next(fn.body,env);if(value.length!==1)return ['__dynamic__'];pieces.push(value[0]);
+       }
+       const separator=next(node.arguments[0]);if(separator.length===1)return [pieces.join(separator[0])];
+      }
+     }
+    }
+   }
+  }
   return ['__dynamic__'];
  };
  const statements=[],sinkArguments=new Set();
  const record=(node,expression)=>{
   let fn;for(let p=node.parent;p;p=p.parent)if(ts.isFunctionDeclaration(p)){fn=p.name?.text;break;}
-  const values=[...new Set(literal(expression))],dynamic=values.some(value=>value.includes('__dynamic__'));
+  let scope;for(let p=node.parent;p;p=p.parent){if(ts.isConstructorDeclaration(p)&&ts.isClassDeclaration(p.parent)){scope=p.parent.name?.text+'.constructor';break;}if(ts.isFunctionDeclaration(p)){scope=p.name?.text;break;}if(ts.isMethodDeclaration(p)&&ts.isClassDeclaration(p.parent)){scope=p.parent.name?.text+'.'+p.name.getText(source);break;}}
+  const values=[...new Set(literal(expression,new Set(),new Map(),finiteScopes.includes(scope)))],dynamic=values.some(value=>value.includes('__dynamic__'));
   // An unresolved call is frozen to its enclosing lexical body as well. An
   // edit to a helper cannot silently reuse a generic `prepare(sql)` exception.
   let context=node; if(dynamic)for(let p=node.parent;p;p=p.parent)if(ts.isFunctionLike(p)||ts.isSourceFile(p)){context=p;break;}
-  statements.push({line:source.getLineAndCharacterOfPosition(node.getStart(source)).line+1,fn,expression:expression?.getText(source)??'<missing>',values,
+  statements.push({line:source.getLineAndCharacterOfPosition(node.getStart(source)).line+1,fn,scope,expression:expression?.getText(source)??'<missing>',values,
    fingerprint:hash(JSON.stringify([expression?.getText(source),values,dynamic?context.getText(source):null]))});
  };
  const sqlMethod=node=>{
@@ -153,7 +207,7 @@ export function sqlStatements(file,text){
  };
  const visit=node=>{
   if(ts.isCallExpression(node)){
-   if(sink(node.expression)){sinkArguments.add(node.arguments[0]);record(node,node.arguments[0]);}
+   if(node.arguments.length&&sink(node.expression)){sinkArguments.add(node.arguments[0]);record(node,node.arguments[0]);}
   }
   ts.forEachChild(node,visit);
  };visit(source);
@@ -188,10 +242,48 @@ function installerDeclarations(file,text,names){
  return result;
 }
 
+/** A lifecycle's finite schema parameter is supported by actual production
+ * call literals, not by a type assertion alone. Taking the function as a value
+ * or passing a computed schema fails until that call boundary can be proved. */
+function validateProjectionLifecycleCalls(sources,projections){
+ for(const projection of projections)for(const name of projection.lifecycleScopes){
+  const target=prefix+projection.file,definition=ts.createSourceFile(target,sources.get(target)??'',ts.ScriptTarget.Latest,true);let parameters;
+  const find=node=>{if(ts.isFunctionDeclaration(node)&&node.name?.text===name)parameters=node.parameters;ts.forEachChild(node,find);};find(definition);
+  if(!parameters)throw Error(`${target}: missing projection lifecycle ${name}`);
+  const finite=parameters.flatMap((parameter,index)=>parameter.type&&ts.isUnionTypeNode(parameter.type)&&parameter.type.types.every(type=>ts.isLiteralTypeNode(type)&&ts.isStringLiteral(type.literal))?[{index,values:parameter.type.types.map(type=>type.literal.text)}]:[]);
+  let calls=0;
+  for(const [file,text] of sources){
+   if(!text.includes(name)&&!text.includes(projection.file.replace(/\.ts$/,'.js')))continue;
+   const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true),names=new Set(file===target?[name]:[]),namespaces=new Set();
+   for(const node of source.statements)if(ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&resolve(dirname(file),node.moduleSpecifier.text.replace(/\.js$/,'.ts'))===resolve(target)){
+    const imported=node.importClause?.namedBindings;
+    if(imported&&ts.isNamedImports(imported))for(const item of imported.elements)if((item.propertyName??item.name).text===name)names.add(item.name.text);
+    if(imported&&ts.isNamespaceImport(imported))namespaces.add(imported.name.text);
+   }
+   const validate=call=>{calls++;for(const {index,values} of finite){const argument=call.arguments[index];if(!argument||!ts.isStringLiteralLike(argument)||!values.includes(argument.text))throw Error(`${file}: projection lifecycle ${name} requires a proved literal schema argument`);}};
+   const visit=node=>{
+    if(ts.isIdentifier(node)&&names.has(node.text)){
+     const parent=node.parent;
+     if(ts.isImportSpecifier(parent)||ts.isFunctionDeclaration(parent)&&parent.name===node||ts.isPropertyAccessExpression(parent)&&parent.name===node){}
+     else if(ts.isCallExpression(parent)&&parent.expression===node)validate(parent);
+     else throw Error(`${file}: projection lifecycle ${name} cannot escape its checked call boundary`);
+    }
+    if(ts.isPropertyAccessExpression(node)&&ts.isIdentifier(node.expression)&&namespaces.has(node.expression.text)&&node.name.text===name){
+     if(ts.isCallExpression(node.parent)&&node.parent.expression===node)validate(node.parent);
+     else throw Error(`${file}: projection lifecycle ${name} cannot escape its checked call boundary`);
+    }
+    ts.forEachChild(node,visit);
+   };visit(source);
+  }
+  if(!calls)throw Error(`${target}: projection lifecycle has no proved production calls`);
+ }
+}
+
 export function ownershipInventory(root='.',configuration=policy){
  root=resolve(root);const sources=new Map(files(resolve(root,prefix)).map(file=>[slash(relative(root,file)),readFileSync(file,'utf8')]));
- const statements=new Map([...sources].map(([file,text])=>[file,sqlStatements(file,text)]));
- const owners=[],tables={},functions=new Map();
+ validateProjectionLifecycleCalls(sources,configuration.projections??[]);
+ const statements=new Map([...sources].map(([file,text])=>[file,sqlStatements(file,text,{finiteScopes:(configuration.projections??[]).filter(item=>prefix+item.file===file).flatMap(item=>[item.scope,...item.lifecycleScopes])})]));
+ const owners=[],tables={},functions=new Map(),projectionScopes=new Map(),projectionObjects=new Map();
  for(const [name,names] of Object.entries(configuration.installations)){
   const file=prefix+name,text=sources.get(file);if(text===undefined)throw Error(`Missing SQL owner source: ${file}`);
   for(const installation of installerDeclarations(file,text,names)){
@@ -200,17 +292,37 @@ export function ownershipInventory(root='.',configuration=policy){
    if(!body.length)throw Error(`${file}: installer ${installation.fn} has no visible SQL`);
    for(const statement of body)for(const sql of statement.values){
     if(sql.includes('__dynamic__'))throw Error(`${file}: schema owner SQL must be static`);
-    for(const object of sqlAccesses(sql).created)if(['table','view'].includes(object.type)){
+    for(const object of sqlAccesses(sql).created){projectionObjects.set(object.name,installation.owner);if(['table','view'].includes(object.type)){
      if(tables[object.name]&&tables[object.name].owner!==installation.owner)throw Error(`Duplicate SQL table owner: ${object.name}`);
      tables[object.name]={owner:installation.owner,file,installer:installation.declaration};
-    }
+    }}
    }
   }
+ }
+ for(const projection of configuration.projections??[]){
+  const file=prefix+projection.file,activationFile=prefix+projection.activationFile,activationText=sources.get(activationFile);
+  if(activationText===undefined)throw Error(`Missing projection activation source: ${activationFile}`);
+  const activationSource=ts.createSourceFile(activationFile,activationText,ts.ScriptTarget.Latest,true);let feature;
+  const find=node=>{if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&node.name.text===projection.activation){let value=unwrap(node.initializer);if(value&&ts.isCallExpression(value))value=value.expression.getText(activationSource)==='Object.freeze'?unwrap(value.arguments[0]):undefined;if(value&&ts.isObjectLiteralExpression(value)){const activation=value.properties.find(p=>ts.isPropertyAssignment(p)&&p.name.getText(activationSource)==='activation');const body=unwrap(activation?.initializer);const property=body&&ts.isObjectLiteralExpression(body)&&body.properties.find(p=>ts.isPropertyAssignment(p)&&p.name.getText(activationSource)==='featureId');const id=unwrap(property?.initializer);if(id&&ts.isStringLiteral(id))feature=id.text;}}ts.forEachChild(node,find);};find(activationSource);
+  if(feature!==projection.feature)throw Error(`${file}: projection must name its actual production feature activation`);
+  const body=statements.get(file)?.filter(statement=>statement.scope===projection.scope);if(!body?.length)throw Error(`${file}: missing production projection construction scope`);
+  const objects=new Map();
+  for(const statement of body)for(const sql of statement.values)for(const object of sqlAccesses(sql).created){
+   if(object.name.includes('__dynamic__'))throw Error(`${file}: projection object names must be static`);
+   objects.set(object.type+':'+object.name,object);
+   if(['table','view'].includes(object.type)){
+    if(tables[object.name]&&tables[object.name].owner!==projection.owner)throw Error(`Duplicate SQL table owner: ${object.name}`);
+    tables[object.name]={owner:projection.owner,file,installer:projection.scope};
+   }
+   projectionObjects.set(object.name,projection.owner);
+  }
+  owners.push({owner:projection.owner,file,declaration:projection.scope,feature,activationFile,activation:projection.activation,objects:[...objects.values()]});
+  for(const scope of [projection.scope,...projection.lifecycleScopes])projectionScopes.set(file+'#'+scope,projection.owner);
  }
  const issues=[],uncoveredFiles=new Set(),uncoveredTables=new Set(),coveredFiles=new Set();
  let dynamicStatements=0;
  for(const [file,items] of statements)for(const statement of items){
-  const owner=functions.get(file+'#'+statement.fn)??configuration.consumers[file.slice(prefix.length)];
+  const owner=projectionScopes.get(file+'#'+statement.scope)??functions.get(file+'#'+statement.fn)??configuration.consumers[file.slice(prefix.length)];
   const add=(rule,to,kind)=>issues.push({rule,from:file,to,kind,symbol:statement.fingerprint,line:statement.line});
   if(!owner){uncoveredFiles.add(file);add('sql-uncovered-consumer','[owner pending]','coverage');}
   else coveredFiles.add(file);
@@ -218,10 +330,10 @@ export function ownershipInventory(root='.',configuration=policy){
   if(statement.values.some(sql=>sql.includes('__dynamic__')))dynamicStatements++;
   for(const sql of statement.values){
    if(owner&&sql.includes('__dynamic__'))add('sql-dynamic','[unproved SQL]','dynamic');
-   for(const access of sqlAccesses(sql).accesses){
+   for(const access of sqlAccesses(sql,{schemaLifecycle:projectionScopes.has(file+'#'+statement.scope)}).accesses){
     if(access.table.startsWith('sqlite_'))continue; // SQLite's own schema, never domain data.
     if(access.table.includes('__dynamic__'))continue;
-    const target=tables[access.table]?.owner;
+    const target=access.kind==='drop-trigger'?projectionObjects.get(access.table):tables[access.table]?.owner;
     if(!target){uncoveredTables.add(access.table);if(owner)add(sql.includes('__dynamic__')?'sql-unproved-relation':'sql-uncovered-table',access.table,access.kind);}
     else if(owner&&target!==owner)add('sql-cross-owner',access.table,access.kind);
    }
@@ -237,6 +349,7 @@ export function checkSqlOwnership(root='.',{configuration=policy,baseline}={}){
   if(grant.kind!==undefined&&grant.kind!=='read')throw Error('Shared SQL models only grant reads');
   return {...grant,rule:'sql-cross-owner',kind:'read'};
  });
+ for(const grant of configuration.sharedObservations??[]){if(grant.kind!==undefined&&grant.kind!=='observe')throw Error('Shared SQL subscriptions only grant observations');grants.push({...grant,rule:'sql-cross-owner',kind:'observe'});}
  const rawDebt=baseline??JSON.parse(readFileSync(resolve(root,'scripts/ci/sql-ownership-baseline.json'),'utf8'));
  const debt=rawDebt.flatMap(({symbols,...item})=>symbols?symbols.map(symbol=>({...item,symbol})):[item]);
  const generated={owners:inventory.owners,tables:inventory.tables};
@@ -249,7 +362,10 @@ export function checkSqlOwnership(root='.',{configuration=policy,baseline}={}){
  const present=new Set(inventory.issues.map(issueKey));
  return {...inventory,violations:inventory.issues.filter(issue=>!allowed.has(issueKey(issue))),exceptions:inventory.issues.filter(issue=>allowed.has(issueKey(issue))),stale:[...debt,...grants].filter(item=>!present.has(issueKey(item)))};
 }
-export const sqlOwnershipSummary=result=>`SQL ownership: ${result.owners.length} production owners, ${Object.keys(result.tables).length} tables/views, ${result.coveredFiles.length} covered SQL files; PARTIAL coverage: ${result.uncoveredFiles.length} consumer files, ${result.uncoveredTables.length} referenced relations pending, ${result.dynamicStatements} unproved SQL statements. ${result.exceptions.length} concrete existing exceptions.`;
+export const sqlOwnershipSummary=result=>{
+ const projections=result.owners.filter(owner=>owner.feature).length;
+ return `SQL ownership: ${result.owners.length-projections} schema owners + ${projections} scoped projection owner(s), ${Object.keys(result.tables).length} tables/views, ${result.coveredFiles.length} files with covered SQL scopes; PARTIAL coverage: ${result.uncoveredFiles.length} files with pending consumers, ${result.uncoveredTables.length} referenced relations pending, ${result.dynamicStatements} unproved SQL statements. ${result.exceptions.length} concrete existing exceptions.`;
+};
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{
   const result=process.argv.includes('--inventory')||process.argv.includes('--map')?ownershipInventory():checkSqlOwnership();

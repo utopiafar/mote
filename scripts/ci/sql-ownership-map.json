@@ -83,9 +83,180 @@
    "owner": "material-catalog",
    "fn": "materialCatalogSchema",
    "file": "apps/server/src/material-catalog.ts"
+  },
+  {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "declaration": "ActivityMemoryIndex.constructor",
+   "feature": "mote.activity",
+   "activationFile": "apps/server/src/plugins/activity-services.ts",
+   "activation": "activityServicesPlugin",
+   "objects": [
+    {
+     "type": "table",
+     "name": "activity_memory_jobs"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_continuations"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_continuation_roots"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_jobs_recent"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_jobs_import"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_sources"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_source_jobs"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_source_nodes"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_source_links"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_batches"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_batch_jobs"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_items"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_item_keys"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_coverage"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_coverage_refs"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_outputs"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_source_insert"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_source_delete"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_job_insert"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_job_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_items_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_outputs_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_job_sources_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_job_delete"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_continuation_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_batch_insert"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_batch_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_batch_outputs_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_batch_delete"
+    }
+   ]
   }
  ],
  "tables": {
+  "activity_memory_batches": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_continuations": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_coverage": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_items": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_jobs": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_outputs": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_source_links": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_source_nodes": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_sources": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
   "blob_counts": {
    "owner": "capture-read-models",
    "file": "apps/server/src/read-models.ts",
