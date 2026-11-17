@@ -49,6 +49,8 @@ test('plan pins the actual candidate and leaves A/B, release and unknown measure
  const plan=JSON.parse(result.stdout);assert.match(plan.candidate,/^[a-f0-9]{40}$/);
  assert.equal(plan.fullJourneyCompleted,false);assert.equal(plan.releaseAccepted,false);
  assert.equal(plan.paths.A.state,'not_run');assert.equal(plan.paths.B.state,'not_run');
+ assert.match(plan.paths.B.description,/extra reviewer pixels when required by the model or selected recipe \(otherwise no extra call\)/);
+ assert.match(plan.paths.B.description,/ordinary original release may retain valid published Memory; explicit forget or authorization revocation denies access/);
  assert.equal(plan.releaseMatrix.length,8);assert.ok(plan.releaseMatrix.every((row:{state:string})=>row.state==='not_run'));
  assert.ok(Object.values(plan.modelMeasurements).every(value=>value===null));
  assert.ok(contractArguments.includes('--test-concurrency=4'));assert.ok(contractArguments.includes('--test-timeout=120000'));
