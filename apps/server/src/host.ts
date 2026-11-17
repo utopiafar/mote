@@ -102,7 +102,7 @@ import {notesFeature,type NotesCapture} from './features/notes.js';
 import {devicesFeature} from './features/devices.js';
 import {filesFeature} from './features/files.js';
 import {sourcesFeature} from './features/sources.js';
-import {connectionsFeature} from './features/connections.js';
+import {prepareConnectionsRoutes} from './features/connections.js';
 import {mediaModelsFeature,mediaPreparationFeature} from './features/media.js';
 import {inventoryFeature} from './features/features.js';
 import {registerMemoryAssociationRoutes} from './features/memory/associations.js';
@@ -471,6 +471,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // child app inherits owner-facing validation/conflict mapping (not Fastify's
   // default 500 serializer).
   const sourceIntegration=await startSourceIntegration();
+  await prepareConnectionsRoutes(bootstrap,resources,{config,connections,connectionIdentity,serverVersion});
   const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,activity:{store,operations:executionPlatform.assembly.operations,materials,executor,configService,modelSettings,agent,query:input=>query.queryAgent(input,'query','activity'),lane:()=>workflows.settings().semantic,delegation:()=>queryMetadata.value,isCollector:request=>Boolean(credential(request)),agentView:{archiveReader,diagnostics,evidenceReader}},actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
   const {connectors}=await assembleConnectors({app,resources,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
@@ -639,7 +640,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const domain=(id:string,extra?:(app:FastifyInstance,scope:import('./features/index.js').FeatureScope)=>void):FeatureRoute=>withAgentTools({id,mount:(app,scope)=>{domainRoutes[id]?.mount(app,scope);extra?.(app,scope);}});
   const notesCapture:NotesCapture={authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake};
   if(selected('mote.files'))routes.push(withAgentTools(filesFeature({withMediaOwnerBatch,withMediaOwnerIntent,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization:authorize=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlayback}})));
-  if(selected('mote.connections'))routes.push(withAgentTools(connectionsFeature({config,connections,connectionIdentity,serverVersion})));
+  if(selected('mote.connections')){
+    const route=workDomains.routes.find(route=>route.id==='mote.connections');
+    if(route)routes.push(withAgentTools(route));
+  }
   if(selected('mote.connections'))routes.push(developerAccessFeature({host:developerAccess,credential,connectionIdentity}));
   if(selected('mote.storage'))routes.push(domain('mote.storage'));
   if(selected('mote.capture'))routes.push(withAgentTools(captureFeature({store,connections,credential,assertRequestActive,diagnostics,evidenceReader,files,ingress,executor,maintenanceWorker})));
@@ -657,6 +661,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.imports'))routes.push(domain('mote.imports'));
   if(selected('mote.ask'))routes.push(domain('mote.ask'));
   for(const route of workDomains.routes){
+    if(route.id==='mote.connections')continue; // Mounted in its fixed slot before developer access.
     const order=bootstrap.features.indexOf(route.id),at=routes.findIndex(entry=>bootstrap.features.indexOf(entry.id)>order);
     routes.splice(at<0?routes.length:at,0,domain(route.id,(app,scope)=>route.mount(app,scope)));
   }

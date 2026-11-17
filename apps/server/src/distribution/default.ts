@@ -6,6 +6,7 @@ import {createConfigurationPlatform} from '../plugins/configuration-platform.js'
 import {createVaultPlatformAssembly} from '../plugins/vault-platform.js';
 import {plugins as platformPlugins} from '../assembly/platform.js';
 import {plugins as systemPlugins} from '../plugins/system-domain.js';
+import {plugins as connectionsPlugins} from '../features/connections.js';
 import {plugins as sourcePlugins} from '../assembly/sources.js';
 import {plugins as materialPlugins} from '../assembly/materials.js';
 import {plugins as processingPlugins} from '../assembly/processing.js';
@@ -62,6 +63,7 @@ export const authorizationProvider:FoundationProvider<'authorization'>=Object.fr
 export const defaultPlugins:readonly CentralDomainPlugin[]=Object.freeze([
   ...platformPlugins,
   ...systemPlugins,
+  ...connectionsPlugins,
   ...sourcePlugins,
   ...materialPlugins,
   ...processingPlugins,
