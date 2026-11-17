@@ -222,7 +222,7 @@ scripts/mote-docker upgrade --profile prod --home /srv/mote/profiles --image mot
 node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restore-data
 ```
 
-服务器构建会生成 `apps/server/dist/deployment-contract.json`，CLI 镜像构建另生成 `deploy/deployment-contract.json`。当前合同为 `mote.deployment` version 1，并记录独立的 Central 版本；它声明本代 YAML、日志、存储及部署行为的共同边界，不以源码文件名或镜像标签推断兼容性。合同缺失、损坏或版本不等于 1 都会明确拒绝。原生/源码 CLI 可在构建前初始化配置；Docker 入口的 init 会先核验目标镜像。所有入口的 start，以及 upgrade/rollback 的目标预检，都会读取实际构建目录或本地镜像中的合同；Docker 校验后使用解析出的不可变 image ID 启动，避免标签在校验和使用间切换。没有自动兼容、降级或资料迁移。
+服务器构建会生成 `apps/server/dist/deployment-contract.json`，CLI 镜像构建另生成 `deploy/deployment-contract.json`。当前合同为 `mote.deployment` version 1，并记录独立的 Central 版本；它声明本代 YAML、日志、存储及部署行为的共同边界，不以源码文件名或镜像标签推断兼容性。合同缺失、损坏或版本不等于 1 都会明确拒绝。原生/源码 CLI 可在构建前初始化配置；Docker 入口的 init 会先核验目标镜像。所有入口的 start、restore，以及 upgrade/rollback 的目标预检，都会读取实际构建目录或本地镜像中的合同；Docker 校验后使用解析出的不可变 image ID 启动，避免标签在校验和使用间切换。没有自动兼容、降级或资料迁移。
 
 upgrade 先核验合同和已选可选资源，确认目标可用后才停该环境并生成一致快照，再切换代码/镜像和验证健康。准备失败且未改动资料时恢复原运行意图；切换开始后的失败保留快照与状态，不让旧代码自动打开不兼容库。rollback额外保留当前资料；升级后新增内容不在恢复后的活动仓库中，但保留在pre-rollback副本/原目录或卷，不自动删除。当前连接器凭据另作私有移交，游标按恢复规则重建。
 
@@ -239,22 +239,28 @@ node scripts/mote.mjs backup --profile prod --home /srv/mote/profiles --out /srv
 
 CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，只对 epoch 7 的完整当前库按资产目录复制截图与文件原件（`files/objects/` 分片，仅 `.plain` / `.aes` 后缀），包含当前 `source-archive/` 批次、索引与校验；不读取旧 `blobs/`、`files/<hash>` 或旧内容包装，写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
 
+已安装原始 SDK APP 的密封 generation 也随离线备份保存：私有 SDK history、workspace 和 interaction 标记与同一 SQLite 快照中的 accepted/pending control、披露回执、权限及已发布 Material/Source 版本保持一致。备份只在持有该 profile 生命周期锁并确认 Central 停写后进行；仅复制出的数据库去掉已经失效的 APP 进程 writer 租约，原库不改写，accepted/pending 和权限不变。存在未密封 working、未知结构、缺失 generation、损坏密文或文件链接时拒绝备份，保留源资料；不从整个 HOME 或第三方 CLI 凭据库推断输入。含 APP 时请使用 profile 的正式 `backup` 入口，直接调用底层 `backup.ts` 不会绕过锁检查。
+
+加密 APP 的备份与恢复会用原密钥验证内部 manifest 和所有密封文件。备份不携带该密钥；恢复前在目标私有 YAML 的 `storage.dataKey` 配置原值或声明的密钥引用。原环境自动生成的 `content-key` 也须另存，其内容可作为该原值，不能改用新随机密钥。恢复仍要求空资料目录／卷。
+
+此备份是明确的时间点快照。快照中已经撤回的披露仍不可读；恢复后的新交互继续核验当前配置、来源和权限，不推断快照之后未随备份提供的事件。恢复和普通启动不会自行发起旧 APP 交互或添加 native grant；在新节点显式选择模型、APP 组合与授权后，所有者可发起新的 SDK 续聊。既有执行恢复、自动 Memory 授权及外部效果的幂等边界保持不变。当前仍需显式停库和执行备份；定时触发、备份保留与自动恢复核验尚待后续单元。
+
 在另一台机器初始化本代新的空环境，然后恢复本代完整离线备份：
 
 ```sh
 node scripts/mote.mjs init --profile prod --home /srv/mote-new/profiles --runtime docker
-# 如备份含密文，在新YAML设置原 storage.dataKey，或单独恢复原 content-key
+# 如备份含加密APP，先在新私有YAML设置原 storage.dataKey；原key另存，不在备份中
 node scripts/mote.mjs restore --profile prod --home /srv/mote-new/profiles --from /srv/mote-backups/mote-2026-09-13
 node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 ```
 
-恢复会验证当前备份 manifest、文件类型、所有 SHA-256，并二次校验复制结果。启动仍要求数据库 epoch 7，不能通过恢复旧快照绕过格式边界。活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
+恢复先核验当前目标部署合同，再验证备份 manifest、文件类型、所有 SHA-256、APP 密封结构与原密钥，并二次校验复制结果。启动仍要求数据库 epoch 7，不能通过恢复旧快照绕过格式边界。活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
 
 内容加密默认关闭，`storage.dataKey` 本身不启用加密；主 YAML 的 `storage.contentEncryptionEnabled` 与开发者页面共用同一设置，校验提交成功后立即影响后续写入，无需重启，也不重写已有对象。`storage.dataKey` 是可选的 64 位十六进制 AES-256-GCM 图片及文件原件密钥；显式开启且未配置时会生成资料库私有的 `content-key` 文件。存在密文时必须单独备份原环境密钥或该文件，离线内容备份不携带密钥。解析文本、元数据与导入工作产物保持明文。尚有密文时不要更换原密钥；丢失密钥不能通过重新下载模型或更换访问令牌恢复内容。已有内容可在开发者页面一次性批量解密，详见[内容存储设置](content-storage.md)。
 
 ### 进阶：JSON 便携归档
 
-中央界面的 JSON 便携归档只适用于满足当前导出条件的小资料库，不包含对话历史。库中存在文件归档、图片处理成果或来源处理档案时，当前实现会拒绝导出；JSON 不覆盖这些资料。当前导入只接受完整 version 2 包；MVP 阶段不自动转换旧格式。 JSON 导出不能替代完整离线备份，导出文件须按私密数据保管。
+中央界面的 JSON 便携归档只适用于满足当前导出条件的小资料库，不包含对话历史。库中存在文件归档、图片处理成果或来源处理档案时，当前实现会拒绝导出；JSON 不覆盖这些资料或持续 APP 的 SDK history/密封 generation，不能作为 APP 恢复路径。当前导入只接受完整 version 2 包；MVP 阶段不自动转换旧格式。 JSON 导出不能替代完整离线备份，导出文件须按私密数据保管。
 
 ## 验证
 

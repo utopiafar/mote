@@ -21,7 +21,6 @@ async function stoppedProvider(directory){try{await ordinary(join(directory,'pro
  * resolves a credential, invokes a model, or substitutes a control SQL body. */
 export async function pluginMemoryBackup(source,db){
  const paths=[],databases=[],providers=[];
- if(!hasTable(db,'memory_plan_binding'))return {paths,databases,providers};
  const configurations=hasTable(db,'memory_provider_configurations')?db.prepare('SELECT json FROM memory_provider_configurations').all().map(row=>JSON.parse(String(row.json))):[];
  const builds=hasTable(db,'plugin_build_instances')?db.prepare('SELECT json FROM plugin_build_instances ORDER BY rowid').all().map(row=>JSON.parse(String(row.json))):[];
  const packages=[...new Map([...builds.filter(value=>value.kind==='package'&&value.package).map(value=>value.package),...configurations.map(value=>value.package)].map(value=>[value.view.id+':'+value.view.source.digest,value])).values()];

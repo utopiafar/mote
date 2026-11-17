@@ -11,7 +11,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import {Store} from '../src/store.js';
 import type {Config} from '../src/config.js';
-import {restoreProfile} from '../../../scripts/profile-lib.mjs';
+import {restoreProfile,repository} from '../../../scripts/profile-lib.mjs';
 
 const config=(dataDir:string):Config=>({dataDir,token:'generated-mvp-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
 const result=()=>({answer:'Generated current answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[]}});
@@ -61,7 +61,7 @@ test('current backup restores a durable query and never repeats its completed an
  t.after(async()=>{await node.app.close();rmSync(root,{recursive:true,force:true});});
  const accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers:{authorization:'Bearer generated-mvp-owner'},payload:{id,input:{question:'Generated saved question'}}});assert.equal(accepted.statusCode,202,accepted.body);await until(()=>entered);
  await node.app.close();execFileSync(process.execPath,['--import','tsx',fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url)),'--data',source,'--out',backup],{stdio:'pipe'});
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'missing-process')},backup);
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(root,'missing-process')},backup);
  const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{calls++;return result();}};
  node=await buildApp(config(target),{agent,backgroundWorker:false});await until(()=>node.queryRuns.get(id).status==='completed');
  const receipt=node.queryRuns.get(id);assert.ok(receipt.turnId);assert.equal(calls,1);await node.app.close();
