@@ -17,22 +17,22 @@ import type {FileProcessing} from '../file-processing.js';
 import type {IngressService} from '../ingress.js';
 import {centralServices,type FileOriginalRead} from './central-contracts.js';
 
-/** C11's actual data-contribution fragment. H03 owns the package Manifest; H05
- * owns HTTP/topology. C02 keeps the SQLite/blob/lock ownership behind these
- * borrowed handles. */
+/** The package Manifest is host-owned; this is the actual data-contribution
+ * fragment. HTTP/topology wiring is also host-owned. The vault keeps
+ * SQLite/blob/lock ownership behind these borrowed handles. */
 export const filesSourceContribution={
   id:'files-source',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'}],
   provides:[centralServices.fileOriginalRead].map(service=>({kind:'service' as const,id:service.id,apiVersion:service.apiVersion,cardinality:'single' as const})),
 } as const satisfies ManifestContribution;
 export const filesSourceDeclaration={id:filesSourceContribution.id,apiVersion:'1'} as const;
-/** Frozen C01 migration contract keeps files hot; no storage format changes. */
+/** The frozen migration contract keeps files hot; no storage format changes. */
 export const filesSourceReplacement='hot' as const;
 
 export interface PlaybackGrant {readonly token:string;readonly until:number;readonly maxAgeSeconds:number}
 /** The trusted route host binds an already admitted request/source check. This
- * registry never invents authorization: it replays the caller's C04-backed
- * check and expires with the issuing plugin scope. */
+ * registry never invents authorization: it replays the caller's
+ * authorization-backed check and expires with the issuing plugin scope. */
 export interface FilePlaybackGrants {
   issue(fileId:string,sourceId:string,check:()=>void):PlaybackGrant;
   verify(fileId:string,token:string|undefined):boolean;
@@ -107,15 +107,15 @@ export type FilesRouteRegistrar=(app:FastifyInstance,files:FileStore,processing:
   withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>,
   playback:FilePlaybackGrants)=>(request:FastifyRequest)=>boolean;
 
-/** Borrowed C02 storage, borrowed C10 source catalogue and the trusted C04/C19D
- * original-read policy. The plugin never closes its dependencies or publishes
- * raw bytes/a Store. */
+/** Borrowed vault storage, borrowed source catalogue and the trusted
+ * authorization/original-read policy. The plugin never closes its dependencies
+ * or publishes raw bytes/a Store. */
 export interface FilesSourceDependencies {
   readonly store:ConstructorParameters<typeof FileStore>[0];
   readonly sources:SourceStore;
   readonly archivedFiles:ArchivedFileStore;
   readonly rawAccess:FileRawAccess;
-  /** Trusted H04 wiring; the plugin owns mounting and activation dispatch. */
+  /** Trusted host wiring; the plugin owns mounting and activation dispatch. */
   readonly registerRoutes?:FilesRouteRegistrar;
 }
 export interface FilesSourceOptions {
@@ -142,8 +142,8 @@ export interface FilesSource extends PluginLifecycle {
   close():Promise<void>;
 }
 const routeContributions=new WeakMap<FilePlaybackGrants,Pick<FilesSource,'routes'>>();
-/** Trusted pre-H14 feature bridge: resolve the route contribution that owns this
- * published playback scope without publishing the platform object. */
+/** Trusted transitional feature bridge: resolve the route contribution that owns
+ * this published playback scope without publishing the platform object. */
 export function filesSourceRoutesFor(playback:FilePlaybackGrants):Pick<FilesSource,'routes'>|undefined {
   return routeContributions.get(playback);
 }
@@ -225,12 +225,12 @@ export function createFilesSource(dependencies:FilesSourceDependencies,options:F
   });
 }
 
-/** H14 mounts the owned route contribution once before listen; the pre-H14
- * feature bridge mounts the same contribution through its playback scope. */
+/** Host activation mounts the owned route contribution once before listen; the
+ * transitional feature bridge mounts the same contribution through its playback scope. */
 export interface FilesSourceLifecycle extends PluginLifecycle {
   routes(app:FastifyInstance,context:FilesSourceRouteContext):void;
 }
-/** Trusted H04/H05 wiring. Only the read-only original port is published. */
+/** Trusted host wiring. Only the read-only original port is published. */
 export function createFilesSourceFactory(dependencies:FilesSourceDependencies,options:FilesSourceOptions={}){
   return (context:HostPluginContext):FilesSourceLifecycle=>{
     const source=createFilesSource(dependencies,options);
