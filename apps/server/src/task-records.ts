@@ -4,7 +4,21 @@ import {z} from 'zod';
 import {StoreError,sha256,type Store} from './store.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
-import {addTaskEvidence,installTaskEvidence,retireTaskRecordsSql,taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
+import {addTaskEvidence,taskEvidenceSchemaInstallation,retireTaskRecordsSql,taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
+
+export const taskRecordsSchemaInstallation={owner:'task-records',requires:[],install:taskRecordsSchema} as const satisfies SchemaInstallation;
+export const taskRecordsSchemaInstallations=[taskRecordsSchemaInstallation,taskEvidenceSchemaInstallation] as const;
+function taskRecordsSchema(db:DatabaseSync){
+  db.exec(`CREATE TABLE IF NOT EXISTS task_records(
+    id TEXT PRIMARY KEY,operation_id TEXT NOT NULL,kind TEXT NOT NULL,state TEXT NOT NULL,
+    revision INTEGER NOT NULL,request_id TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,
+    input_json TEXT,result_json TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS task_records_operation ON task_records(operation_id,created_at DESC,id DESC);
+    CREATE INDEX IF NOT EXISTS task_records_recent ON task_records(created_at DESC,id DESC);`);
+}
+
 
 /** Server-local task metadata, not a second assistant DTO or execution engine.
  * Scope, origin, model choice and domain input stay in the caller's existing
@@ -30,13 +44,7 @@ function checkCurrent(assertCurrent:AssertTaskCurrent,ids:readonly string[]){
  * All bodies live in the vault database, so stopped full backups include them
  * and retain the existing separate content-key recovery requirement. */
 export function installTaskRecords(store:Store){
-  store.db.exec(`CREATE TABLE IF NOT EXISTS task_records(
-    id TEXT PRIMARY KEY,operation_id TEXT NOT NULL,kind TEXT NOT NULL,state TEXT NOT NULL,
-    revision INTEGER NOT NULL,request_id TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,
-    input_json TEXT,result_json TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS task_records_operation ON task_records(operation_id,created_at DESC,id DESC);
-    CREATE INDEX IF NOT EXISTS task_records_recent ON task_records(created_at DESC,id DESC);`);
-  installTaskEvidence(store);
+  installSchemaPlan(store.db,taskRecordsSchemaInstallations);
   store.registerStorage('task-records',{
     task_records:'length(CAST(id AS BLOB))+length(CAST(operation_id AS BLOB))+length(CAST(kind AS BLOB))+length(CAST(request_id AS BLOB))+length(CAST(request_hash AS BLOB))+coalesce(length(CAST(input_json AS BLOB)),0)+coalesce(length(CAST(result_json AS BLOB)),0)+256',
     task_evidence:'length(CAST(task_id AS BLOB))+length(CAST(evidence_id AS BLOB))+64',
