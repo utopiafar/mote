@@ -189,6 +189,34 @@ while True:
  await assert.rejects(readFile(join(env.HOME,'anything')));const {stat}=await import('node:fs/promises');await assert.rejects(stat(env.HOME));
 });
 
+test('file journey ASR worker uses the current model-root CLI and rejects the removed bundle flags',{timeout:20000},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'mote-file-journey-argv-')),repo=fileURLToPath(new URL('..',import.meta.url)),python=process.env.MOTE_FILE_JOURNEY_PYTHON??'python3';
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const source=await readFile(new URL('./test-file-journey-live.ts',import.meta.url),'utf8');
+ assert.ok(source.includes("worker('transcription-server.py',['--model-root',values['asr-model-root']!"));
+ assert.ok(source.includes("'--temporary-root',asrTemporaryRoot!"));
+ assert.equal(source.includes('--segmentation-model'),false,'the journey must not pass the removed segmentation bundle flag');
+ assert.equal(source.includes('--speaker-model'),false,'the journey must not pass the removed speaker bundle flag');
+ const modelRoot=join(root,'dialogue'),temporary=join(root,'worker-tmp');
+ await mkdir(modelRoot,{recursive:true});await mkdir(temporary,{recursive:true});
+ const legacy=childProcess.spawnSync(python,[join('scripts','transcription-server.py'),'--model',modelRoot,'--segmentation-model',join(modelRoot,'segmentation.onnx'),'--speaker-model',join(modelRoot,'speaker.onnx'),'--port','0'],{cwd:repo,encoding:'utf8',timeout:10000,env:{PATH:process.env.PATH}});
+ assert.equal(legacy.status,2);assert.match(legacy.stderr,/unrecognized arguments: --segmentation-model/);
+ const child=childProcess.spawn(python,[join('scripts','transcription-server.py'),'--model-root',modelRoot,'--timeout','3600','--load-timeout','300','--temporary-root',temporary,'--port','0'],{cwd:repo,env:{PATH:process.env.PATH,MOTE_MEDIA_WORKER_TOKEN:'generated-token'},stdio:['ignore','pipe','pipe']});
+ let stdout='',stderr='';child.stdout.on('data',bytes=>stdout+=bytes);child.stderr.on('data',bytes=>stderr+=bytes);
+ const closed=once(child,'close');t.after(async()=>{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGTERM');await closed;});
+ for(let i=0;i<200&&!stdout.includes('"port"');i++){assert.equal(child.exitCode,null,stderr);await new Promise(resolve=>setTimeout(resolve,10));}
+ const port=Number(stdout.match(/"port":\s*(\d+)/)?.[1]);assert.ok(port>0,stdout);
+ let health;
+ for(let i=0;i<100;i++){
+  try{const response=await fetch(`http://127.0.0.1:${port}/health`,{headers:{authorization:'Bearer generated-token'},signal:AbortSignal.timeout(1000)});health=await response.json();if(health.reason==='model_missing'||health.reason==='component_missing')break;}catch{}
+  await new Promise(resolve=>setTimeout(resolve,20));
+ }
+ assert.equal(health?.asr,false,'an empty model root cannot report a ready ASR worker');
+ assert.ok(['model_missing','component_missing'].includes(health?.reason),JSON.stringify(health));
+ child.kill('SIGTERM');const [code,signal]=await closed;
+ assert.equal(signal,null);assert.equal(code,0,stderr);assert.doesNotMatch(stderr,/unrecognized arguments/);
+});
+
 test('Docker carries worker/domain sources and isolates CPU audio dependencies from OCR',async()=>{
  const docker=await readFile(new URL('../Dockerfile',import.meta.url),'utf8'),{parse}=await import('yaml'),compose=parse(await readFile(new URL('../compose.yaml',import.meta.url),'utf8'),{merge:true});
  assert.match(docker,/COPY scripts \.\/scripts\//,'all worker sources, contracts and fixed manifests ship together');
