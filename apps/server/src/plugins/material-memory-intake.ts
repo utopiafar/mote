@@ -10,7 +10,7 @@ import {MaterialMemoryWork} from '../material-memory-work.js';
 import {installCaptureMemoryIntake} from '../capture-memory-intake.js';
 import {centralServices,type MaterialMemoryCandidates} from './central-contracts.js';
 
-/** C19E owns the durable Material-to-Memory candidate ledger and the capture
+/** This service owns the durable Material-to-Memory candidate ledger and the capture
  * receipts that mint new raw input grants. It borrows the canonical Material
  * repository; the reader-backed selection implementation is bound by the
  * materials assembly after the single EvidenceReader exists. */
@@ -34,7 +34,7 @@ export interface MaterialMemoryIntakeDependencies {
   readonly newInputAdmission?:()=>boolean;
   /** Trusted capture receipt hook. When present this owner installs and later
    * removes the single `Store.captureInputReceived` observer. The current root
-   * still installs it in app.ts until K04 moves that call site. */
+   * still installs it in app.ts until the composition root moves that call site. */
   readonly captureOriginal?:(input:CaptureInput)=>void;
 }
 
