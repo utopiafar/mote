@@ -191,6 +191,24 @@
    "file": "apps/server/src/assistant-task-runtime-schema.ts"
   },
   {
+   "declaration": "memoryInputAuthorizationSchemaInstallation",
+   "owner": "memory-input-authorization",
+   "fn": "memoryInputAuthorizationSchema",
+   "file": "apps/server/src/memory-input-authorization.ts"
+  },
+  {
+   "declaration": "memoryExtractionDraftsSchemaInstallation",
+   "owner": "memory-extraction-drafts",
+   "fn": "memoryExtractionDraftsSchema",
+   "file": "apps/server/src/memory-extraction-drafts.ts"
+  },
+  {
+   "declaration": "memoryPhaseOutputsSchemaInstallation",
+   "owner": "memory-phase-outputs",
+   "fn": "memoryPhaseOutputsSchema",
+   "file": "apps/server/src/memory-phase-outputs.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -796,10 +814,25 @@
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
   },
+  "memory_extraction_drafts": {
+   "owner": "memory-extraction-drafts",
+   "file": "apps/server/src/memory-extraction-drafts.ts",
+   "installer": "memoryExtractionDraftsSchemaInstallation"
+  },
+  "memory_input_authorizations": {
+   "owner": "memory-input-authorization",
+   "file": "apps/server/src/memory-input-authorization.ts",
+   "installer": "memoryInputAuthorizationSchemaInstallation"
+  },
   "memory_jobs": {
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_phase_outputs": {
+   "owner": "memory-phase-outputs",
+   "file": "apps/server/src/memory-phase-outputs.ts",
+   "installer": "memoryPhaseOutputsSchemaInstallation"
   },
   "memory_provider_evidence_revocations": {
    "owner": "memory",

@@ -25,6 +25,9 @@ export const installations={
  'connectors/mcp-import-state.ts':['mcpStateSchemaInstallation'],
  'connectors/recording-state.ts':['recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'],
  'assistant-task-runtime-schema.ts':['assistantTaskRuntimeSchemaInstallation'],
+ 'memory-input-authorization.ts':['memoryInputAuthorizationSchemaInstallation'],
+ 'memory-extraction-drafts.ts':['memoryExtractionDraftsSchemaInstallation'],
+ 'memory-phase-outputs.ts':['memoryPhaseOutputsSchemaInstallation'],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -32,6 +35,9 @@ export const installations={
  * A new file never inherits access merely from a filename prefix or directory. */
 export const consumers={
  'assistant-task-steering.ts':'assistant-task-runtime',
+ 'memory-input-authorization.ts':'memory-input-authorization',
+ 'memory-extraction-drafts.ts':'memory-extraction-drafts',
+ 'memory-phase-outputs.ts':'memory-phase-outputs',
  'evidence-store.ts':'capture',
  'capture-browser.ts':'capture',
  'capture-context.ts':'capture',
@@ -82,6 +88,22 @@ export const consumerScopes={
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
  * grant or a whole-file/table exemption. Stale grants fail just like debt. */
 export const sharedReads=[
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "execution_steps",
+  "symbol": "2e1128caba8c3b159f4b649b774acea3a41b23ad0d4873acd83a505bcd8ff366",
+  "scope": "MemoryPhaseOutputs.retryReview",
+  "scopeFingerprint": "d6a8c82c865d67b99ea3585950f8543cc4b2e2e80ae658dc02daf145af61105e",
+  "reason": "Select only saved Memory review step IDs for this batch before removing the owned phase output and retrying through ExecutionEngine."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "execution_steps",
+  "symbol": "89fc8681b552931e4612f37ff4c1049c74cf625114a7e87a0b61c1619176dc4d",
+  "scope": "MemoryPhaseOutputs.retryFailed",
+  "scopeFingerprint": "7c30bd5a6554bc02f7f726e6952775c22e757a00ce0a8610735b6a6fb73b0d0d",
+  "reason": "Select only failed or blocked Memory phase step IDs for this exact batch and generation before retrying through ExecutionEngine."
+ },
  {
   "from": "apps/server/src/assistant-task-steering.ts",
   "to": "execution_steps",
@@ -273,8 +295,175 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation'];
 export const schemaMaintenance=[
+ {
+  "from": "apps/server/src/memory-extraction-drafts.ts",
+  "to": "memory_batch_dependencies",
+  "kind": "observe",
+  "symbol": "02fd4cfa94a222515cbef223917abacd8c109e94f95411dd0172b88bf835602c",
+  "statementFingerprint": "a8f8156a0c0bd4690e80c0a6f8061d50563246b4c35d609a4f165b3657734a13",
+  "installer": "memoryExtractionDraftsSchemaInstallation",
+  "callPath": [
+   "memoryExtractionDraftsSchemaInstallation",
+   "memoryExtractionDraftsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs"
+  ],
+  "reason": "Install the existing Memory draft retirement triggers: observe Memory batch/job/dependency lifecycle and read only batch IDs while deleting this owner's private drafts."
+ },
+ {
+  "from": "apps/server/src/memory-extraction-drafts.ts",
+  "to": "memory_batches",
+  "kind": "observe",
+  "symbol": "02fd4cfa94a222515cbef223917abacd8c109e94f95411dd0172b88bf835602c",
+  "statementFingerprint": "a8f8156a0c0bd4690e80c0a6f8061d50563246b4c35d609a4f165b3657734a13",
+  "installer": "memoryExtractionDraftsSchemaInstallation",
+  "callPath": [
+   "memoryExtractionDraftsSchemaInstallation",
+   "memoryExtractionDraftsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs"
+  ],
+  "reason": "Install the existing Memory draft retirement triggers: observe Memory batch/job/dependency lifecycle and read only batch IDs while deleting this owner's private drafts."
+ },
+ {
+  "from": "apps/server/src/memory-extraction-drafts.ts",
+  "to": "memory_batches",
+  "kind": "read",
+  "symbol": "02fd4cfa94a222515cbef223917abacd8c109e94f95411dd0172b88bf835602c",
+  "statementFingerprint": "a8f8156a0c0bd4690e80c0a6f8061d50563246b4c35d609a4f165b3657734a13",
+  "installer": "memoryExtractionDraftsSchemaInstallation",
+  "callPath": [
+   "memoryExtractionDraftsSchemaInstallation",
+   "memoryExtractionDraftsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs"
+  ],
+  "reason": "Install the existing Memory draft retirement triggers: observe Memory batch/job/dependency lifecycle and read only batch IDs while deleting this owner's private drafts."
+ },
+ {
+  "from": "apps/server/src/memory-extraction-drafts.ts",
+  "to": "memory_jobs",
+  "kind": "observe",
+  "symbol": "02fd4cfa94a222515cbef223917abacd8c109e94f95411dd0172b88bf835602c",
+  "statementFingerprint": "a8f8156a0c0bd4690e80c0a6f8061d50563246b4c35d609a4f165b3657734a13",
+  "installer": "memoryExtractionDraftsSchemaInstallation",
+  "callPath": [
+   "memoryExtractionDraftsSchemaInstallation",
+   "memoryExtractionDraftsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs"
+  ],
+  "reason": "Install the existing Memory draft retirement triggers: observe Memory batch/job/dependency lifecycle and read only batch IDs while deleting this owner's private drafts."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_batch_dependencies",
+  "kind": "observe",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_batches",
+  "kind": "observe",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_batches",
+  "kind": "read",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_jobs",
+  "kind": "observe",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_jobs",
+  "kind": "read",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
  {
   "from": "apps/server/src/operation-projection.ts",
   "to": "execution_operation_steps",
@@ -828,6 +1017,19 @@ export const schemaMaintenance=[
 
 /** Scope witnesses preserve existing unresolved access debt when its table owner becomes known. They are not grants. */
 export const retainedClassificationScopes=[
+ // Keep the original Material-forget DELETE as exact unresolved write debt;
+ // knowing its target owner does not grant this trigger any new write access.
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/material-memory-work.ts",
+  "to": "memory_input_authorizations",
+  "kind": "write",
+  "symbol": "4519c685db0ff9e34515bd3054321837fdf0d9477526b80d152e1145d1b7b548",
+  "scope": "MaterialMemoryWork.constructor",
+  "scopeFingerprint": "2220edebc9aa3497c04ff01e2b53d46e6d96ca81904b97ea16b36b758991ddbe",
+  "operation": "delete",
+  "completeSql": true
+ },
  {
   "from": "apps/server/src/file-processing.ts",
   "to": "execution_operation_steps",
