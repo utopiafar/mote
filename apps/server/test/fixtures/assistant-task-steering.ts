@@ -76,4 +76,3 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
 
  return{root,id,headers,scope,evidenceId,rpc,requests,post,settle,start,task,models,copyProfile,selectProfile,removeProfile,get node(){return node;},release:()=>{writeFileSync(gate,'');releaseModel();},releaseQueued:()=>writeFileSync(queuedGate,''),setTargetTask:(id:string)=>writeFileSync(targetPath,id),releaseAck:()=>writeFileSync(ackGate,''),releaseRoute:()=>writeFileSync(routeGate,''),setMode:(mode:string)=>writeFileSync(modePath,mode),async cancel(messageId:string){return node.app.inject({method:'POST',url:`/api/conversations/${id}/messages/${messageId}/cancel`,headers});},async restart(){await node.app.close();node=await open();}};
 }
-
