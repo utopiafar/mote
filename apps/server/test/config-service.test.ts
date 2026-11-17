@@ -124,7 +124,7 @@ test('watcher reloads stable writes and atomic replacements and close removes th
 });
 test('registered plugin defaults, validation, apply, secret redaction and disposal use the same YAML namespace', async t => {
   const { service, file } = await fixture(t); let interval = 0;
-  const unregister = await service.registerPlugin({ id: 'fixture', schema: z.object({ interval: z.number().int().min(1), token: z.string() }).strict(), defaultValue: { interval: 3, token: 'synthetic-plugin-secret' }, fields: [{ path: 'token', sensitive: true }], prepare: (next, previous) => ({ apply: () => { interval = next.interval; }, rollback: () => { interval = previous.interval; } }) });
+  const unregister = await service.registerPlugin({ id:'fixture',updatePaths:['interval','token'], schema: z.object({ interval: z.number().int().min(1), token: z.string() }).strict(), defaultValue: { interval: 3, token: 'synthetic-plugin-secret' }, fields: [{ path: 'token', sensitive: true }], prepare: (next, previous) => ({ apply: () => { interval = next.interval; }, rollback: () => { interval = previous.interval; } }) });
   assert.equal(interval, 3); assert.ok(!JSON.stringify(service.view()).includes('synthetic-plugin-secret'));
   await service.update('plugin.fixture', { interval: 7 }, 0); assert.equal(interval, 7);
   assert.equal(parse(await fs.readFile(file, 'utf8')).plugins.configuration.fixture.interval, 7);
@@ -138,7 +138,7 @@ test('registering a plugin retains pending restart fields and only publishes its
   t.after(async () => { await service.close(); await fs.rm(directory, { recursive: true, force: true }); });
   service.register({ id: 'plugins', schema: z.object({ deployments: z.array(z.string()), configuration: z.record(z.unknown()) }), defaultValue: { deployments: [], configuration: {} }, restartRequired: true, fields: [{ path: 'deployments', effect: 'restart' }], resolve: raw => raw });
   await service.initialize(); await service.update('plugins', { deployments: ['pending-deployment'] }, 0);
-  await service.registerPlugin({ id: 'added', schema: z.object({ interval: z.number().default(3) }), defaultValue: {} });
+  await service.registerPlugin({ id:'added',updatePaths:['interval'], schema: z.object({ interval: z.number().default(3) }), defaultValue: {} });
   assert.deepEqual(service.current('plugins'), { deployments: [], configuration: { added: { interval: 3 } } });
   assert.deepEqual(service.saved('plugins'), { deployments: ['pending-deployment'], configuration: { added: { interval: 3 } } });
   assert.equal(service.view().domains.find(domain => domain.id === 'plugins')?.status, 'restart-required');
@@ -147,7 +147,7 @@ test('registering a plugin retains pending restart fields and only publishes its
 
 test('failed plugin activation cannot leave an uncertain runtime accepting new configuration', async t => {
   const {service}=await fixture(t); let disposed=0;
-  await assert.rejects(service.registerPlugin({ id:'failed', schema:z.object({enabled:z.boolean()}), defaultValue:{enabled:true}, prepare:()=>({apply:()=>{throw Error('synthetic-private-apply-fault');},rollback:()=>{throw Error('synthetic-private-rollback-fault');},dispose:()=>{disposed++;}}) }), {code:'config_commit_uncertain'});
+  await assert.rejects(service.registerPlugin({ id:'failed',updatePaths:['enabled'], schema:z.object({enabled:z.boolean()}), defaultValue:{enabled:true}, prepare:()=>({apply:()=>{throw Error('synthetic-private-apply-fault');},rollback:()=>{throw Error('synthetic-private-rollback-fault');},dispose:()=>{disposed++;}}) }), {code:'config_commit_uncertain'});
   assert.equal(disposed,1);
   await assert.rejects(service.update('execution',{limit:4},0),{code:'config_unavailable'});
 });
@@ -156,7 +156,7 @@ test('runtime publication waits for every async resource install and rolls snaps
   const {service,file}=await fixture(t); let live=3,entered=false,release!:()=>void;
   service.setHandler<{limit:number}>('execution',(next,previous)=>({apply:()=>{},publish:()=>{live=next.limit;},rollback:()=>{live=previous.limit;}}));
   const hold=new Promise<void>(resolve=>{release=resolve;});
-  await service.registerPlugin({id:'fault',schema:z.object({n:z.number()}),defaultValue:{n:0},prepare:next=>({apply:async()=>{if(next.n===1){entered=true;await hold;throw Error('synthetic-private-install-fault');}},rollback:()=>{}})});
+  await service.registerPlugin({id:'fault',updatePaths:['n'],schema:z.object({n:z.number()}),defaultValue:{n:0},prepare:next=>({apply:async()=>{if(next.n===1){entered=true;await hold;throw Error('synthetic-private-install-fault');}},rollback:()=>{}})});
   await edit(file,doc=>{doc.execution={limit:8};(doc.plugins as {configuration:Record<string,unknown>}).configuration.fault={n:1};});
   const failed=service.reload(); await until(()=>entered);
   assert.equal(live,3); assert.deepEqual(service.current('execution'),{limit:3});
@@ -222,7 +222,7 @@ test('CLI revision successors reload and subsequent API edits continue from the 
 });
 test('credential templates survive an unchanged prefixed value and deletion or reordering of identified profiles', async t => {
   const { service, file } = await fixture(t);
-  await service.registerPlugin({ id: 'templates', schema: z.object({ profiles: z.array(z.object({ id: z.string(), token: z.string() })) }), defaultValue: { profiles: [{ id: 'first', token: '${A}' }, { id: 'remaining', token: 'Bearer ${B}' }] }, fields: [{ path: 'profiles.*.token', sensitive: true }], resolve: raw => ({ profiles: (raw as { profiles: { id: string; token: string }[] }).profiles.map(item => ({ ...item, token: item.token.replace('${A}', 'synthetic-key-A').replace('${B}', 'synthetic-key-B') })) }) });
+  await service.registerPlugin({ id:'templates',updatePaths:['profiles.*.id','profiles.*.token'], schema: z.object({ profiles: z.array(z.object({ id: z.string(), token: z.string() })) }), defaultValue: { profiles: [{ id: 'first', token: '${A}' }, { id: 'remaining', token: 'Bearer ${B}' }] }, fields: [{ path: 'profiles.*.token', sensitive: true }], resolve: raw => ({ profiles: (raw as { profiles: { id: string; token: string }[] }).profiles.map(item => ({ ...item, token: item.token.replace('${A}', 'synthetic-key-A').replace('${B}', 'synthetic-key-B') })) }) });
   await service.update('plugin.templates', { profiles: [{ id: 'remaining', token: 'Bearer synthetic-key-B' }] }, 0);
   const bytes = await fs.readFile(file, 'utf8');
   assert.ok(bytes.includes('Bearer ${B}')); assert.ok(!bytes.includes('synthetic-key-B'));
@@ -244,7 +244,7 @@ test('real profile CLI changes are observed by the watcher and allow subsequent 
 });
 test('complete domain replacements preserve intentional object deletions, including credentials', async t => {
   const { service } = await fixture(t);
-  await service.registerPlugin({ id: 'objects', schema: z.object({ headers: z.record(z.string()), extraBody: z.record(z.unknown()) }), defaultValue: { headers: { Authorization: 'synthetic-key', removed: 'old' }, extraBody: { secret: 'synthetic-key' } }, fields: [{ path: 'headers', sensitive: true }, { path: 'extraBody', sensitive: true }] });
+  await service.registerPlugin({ id:'objects',updatePaths:['headers.*','extraBody.*'], schema: z.object({ headers: z.record(z.string()), extraBody: z.record(z.unknown()) }), defaultValue: { headers: { Authorization: 'synthetic-key', removed: 'old' }, extraBody: { secret: 'synthetic-key' } }, fields: [{ path: 'headers', sensitive: true }, { path: 'extraBody', sensitive: true }] });
   await service.replace('plugin.objects', { headers: { Authorization: 'new' }, extraBody: {} }, 0);
   assert.deepEqual(service.current('plugin.objects'), { headers: { Authorization: 'new' }, extraBody: {} });
   await service.replace('plugin.objects', { headers: {}, extraBody: {} }, 1);
@@ -253,9 +253,9 @@ test('complete domain replacements preserve intentional object deletions, includ
 test('optional hot additions and restart-only deletions obey the declared effect without inventing empty parents', async t => {
   const { service } = await fixture(t);
   let active = '';
-  await service.registerPlugin({ id: 'hot', schema: z.object({ label: z.string().optional() }), defaultValue: {}, restartRequired: true, fields: [{ path: 'label', effect: 'immediate' }], prepare: next => ({ apply: () => { active = next.label ?? ''; } }) });
+  await service.registerPlugin({ id:'hot',updatePaths:['label'], schema: z.object({ label: z.string().optional() }), defaultValue: {}, restartRequired: true, fields: [{ path: 'label', effect: 'immediate' }], prepare: next => ({ apply: () => { active = next.label ?? ''; } }) });
   await service.update('plugin.hot', { label: 'added' }, 0); assert.equal(active, 'added'); assert.deepEqual(service.current('plugin.hot'), { label: 'added' });
-  await service.registerPlugin({ id: 'cold', schema: z.object({ nested: z.object({ frozen: z.string().optional() }).optional(), hot: z.number().default(0) }), defaultValue: {}, fields: [{ path: 'nested.frozen', effect: 'restart' }] });
+  await service.registerPlugin({ id:'cold',updatePaths:['nested.frozen','hot'], schema: z.object({ nested: z.object({ frozen: z.string().optional() }).optional(), hot: z.number().default(0) }), defaultValue: {}, fields: [{ path: 'nested.frozen', effect: 'restart' }] });
   await service.update('plugin.cold', {}, 1); assert.equal(service.revision, 1); assert.deepEqual(service.current('plugin.cold'), { hot: 0 });
   await service.update('plugin.cold', { nested: { frozen: 'pending' } }, 1); assert.deepEqual(service.current('plugin.cold'), { hot: 0 });
 });
@@ -265,15 +265,15 @@ test('watcher readiness reconciles bootstrap edits and plugin credential registr
   assert.equal(service.revision, 1); assert.deepEqual(service.current('execution'), { limit: 8 });
   const before = process.env.MOTE_SYNTHETIC_PLUGIN_KEY; process.env.MOTE_SYNTHETIC_PLUGIN_KEY = 'generated-plugin-key';
   t.after(() => { if (before === undefined) delete process.env.MOTE_SYNTHETIC_PLUGIN_KEY; else process.env.MOTE_SYNTHETIC_PLUGIN_KEY = before; });
-  await service.registerPlugin({ id: 'credentials', schema: z.object({ token: z.string() }), defaultValue: { token: 'Bearer ${MOTE_SYNTHETIC_PLUGIN_KEY}' }, fields: [{ path: 'token', sensitive: true }] });
+  await service.registerPlugin({ id:'credentials',updatePaths:['token'], schema: z.object({ token: z.string() }), defaultValue: { token: 'Bearer ${MOTE_SYNTHETIC_PLUGIN_KEY}' }, fields: [{ path: 'token', sensitive: true }] });
   assert.deepEqual(service.current('plugin.credentials'), { token: 'Bearer generated-plugin-key' });
-  await assert.rejects(service.registerPlugin({ id: 'missing', schema: z.object({ token: z.string() }), defaultValue: { token: '${MOTE_SYNTHETIC_UNSET_KEY}' }, fields: [{ path: 'token', sensitive: true }] }), { code: 'config_invalid' });
+  await assert.rejects(service.registerPlugin({ id:'missing',updatePaths:['token'], schema: z.object({ token: z.string() }), defaultValue: { token: '${MOTE_SYNTHETIC_UNSET_KEY}' }, fields: [{ path: 'token', sensitive: true }] }), { code: 'config_invalid' });
 });
 test('synchronous disposal errors leave the original safe error and continue cleaning every candidate', async t => {
   const { service, file } = await fixture(t); let disposed = 0;
   service.setHandler('execution', () => ({ apply: () => {}, dispose: () => { disposed++; throw Error('generated-private-cleanup-error'); } }));
   service.setHandler('secret', () => ({ apply: () => {}, dispose: () => { disposed++; } }));
-  await service.registerPlugin({ id: 'failing', schema: z.object({ n: z.number() }), defaultValue: { n: 0 } });
+  await service.registerPlugin({ id:'failing',updatePaths:['n'], schema: z.object({ n: z.number() }), defaultValue: { n: 0 } });
   service.setHandler('plugin.failing', () => { throw Error('generated-private-prepare-error'); });
   await edit(file, doc => { doc.execution = { limit: 8 }; doc.secret = { key: '${FIXTURE_KEY}', label: 'new' }; (doc.plugins as { configuration: Record<string, unknown> }).configuration.failing = { n: 1 }; });
   await assert.rejects(service.reload(), { code: 'config_prepare_failed' }); assert.equal(disposed, 2); assert.equal(service.revision, 0);
@@ -281,7 +281,7 @@ test('synchronous disposal errors leave the original safe error and continue cle
 
 test('quiesce fences raw file admissions and drains an accepted transaction while reads remain available',async t=>{
   const {service,file}=await fixture(t);await service.startWatching();
-  const unregister=await service.registerPlugin({id:'quiesceOwned',schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:true}});
+  const unregister=await service.registerPlugin({id:'quiesceOwned',updatePaths:['enabled'],schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:true}});
   let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(done=>enter=done),held=new Promise<void>(done=>finish=done);
   let applied=3,quiesced=false;
   service.setHandler<{limit:number}>('execution',async(next,previous)=>{enter();await held;return {apply(){},publish(){applied=next.limit;},rollback(){applied=previous.limit;}};});
@@ -291,7 +291,7 @@ test('quiesce fences raw file admissions and drains an accepted transaction whil
     await entered;draining=service.quiesce();void draining.then(()=>{quiesced=true;});
     await Promise.all([
       service.update('execution',{limit:6},0),service.updateMany({execution:{limit:6}},0),service.replace('execution',{limit:6},0),
-      service.registerPlugin({id:'tooLate',schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:true}}),service.reload(),service.startWatching(),
+      service.registerPlugin({id:'tooLate',updatePaths:['enabled'],schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:true}}),service.reload(),service.startWatching(),
     ].map(pending=>assert.rejects(pending,{code:'config_unavailable'})));
     assert.equal(quiesced,false);assert.deepEqual(service.current('execution'),{limit:3});assert.equal(service.view().revision,0);
     finish();await first;await draining;assert.equal(applied,5);assert.deepEqual(service.current('execution'),{limit:5});assert.equal(service.view().revision,1);
