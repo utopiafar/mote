@@ -24,6 +24,8 @@ export interface OcrAsrReadinessDependencies {
   readonly runtime:PreparationOptions['runtime'];
   readonly media:MediaConfiguration;
   readonly assets:MediaAssets;
+  /** Private profile execution root; model assets remain under assets.root. */
+  readonly runtimeRoot:string;
   readonly configService:ConfigService;
   readonly backgroundWorker?:boolean;
   readonly repository?:string;
@@ -87,7 +89,7 @@ export function createOcrAsrReadiness(dependencies:OcrAsrReadinessDependencies):
       try{
         await closing;
         if(disposed||attempt!==generation||!['created','stopped'].includes(phase))throw unavailable();
-        current=new MediaPreparation({runtime:dependencies.runtime,media:dependencies.media,assets:dependencies.assets,
+        current=new MediaPreparation({runtime:dependencies.runtime,media:dependencies.media,assets:dependencies.assets,runtimeRoot:dependencies.runtimeRoot,
           ...(dependencies.repository?{repository:dependencies.repository}:{}),...(dependencies.prepare?{prepare:dependencies.prepare}:{}),
           ...(dependencies.fetch?{fetch:dependencies.fetch}:{}),...(dependencies.startupTimeoutMs!==undefined?{startupTimeoutMs:dependencies.startupTimeoutMs}:{})});
         const identity=()=>{const document=dependencies.configService.document();return JSON.stringify([document.media,(document.server as {runtime?:string})?.runtime]);};

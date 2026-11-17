@@ -50,7 +50,7 @@ npm --version
 
 从源码安装 npm 原生依赖或 Python 源码包时，macOS 还需要 Xcode Command Line Tools。用 `xcode-select -p` 检查；缺失时执行 `xcode-select --install` 并完成系统安装提示。仅运行 Central 不需要完整 Xcode、Android SDK、屏幕或麦克风权限。
 
-Native OCR/语音在设置中显式准备后，会把固定版本的 uv、Python 3.11、角色依赖和语音 FFmpeg 安装到 `media.modelDirectory/runtime/<role>/`，无需全局安装 Python、uv 或 FFmpeg。首次准备需要访问 GitHub Release、PyPI 和语音依赖使用的官方 PyTorch CPU wheel 源；模型下载另需当前 catalog 的固定来源。运行依赖准备完成与模型/Worker 就绪分别报告，旧 Whisper 模型不能替代当前 FunASR 四组件。普通重启不会隐式安装缺失依赖。
+Native OCR/语音在设置中显式准备后，会把固定版本的 uv、Python 3.11、角色依赖和语音 FFmpeg 安装到私有 profile 运行根 `<profile>/media-runtime/<role>/`，无需全局安装 Python、uv 或 FFmpeg；模型权重仍位于配置的 `media.modelDirectory`，可在外盘。首次准备需要访问 GitHub Release、PyPI 和语音依赖使用的官方 PyTorch CPU wheel 源；模型下载另需当前 catalog 的固定来源。运行依赖准备完成与模型/Worker 就绪分别报告，旧 Whisper 模型不能替代当前 FunASR 四组件。普通重启不会隐式安装缺失依赖。
 
 如果语音准备在 `dependencies` 阶段失败并报告 `command_failed`，仅凭这个错误码不能断定是缺系统软件。已知旧安装器会因 uv 的首索引策略把 PyTorch CPU 索引中的旧版通用依赖当作唯一候选，导致明明在 PyPI 存在的固定版本无法解析；修复后的语音安装器使用固定官方源之间的版本回退。应使用含修复的版本重试准备，保留已有 profile 和模型；不要靠全局 pip 安装、改版本锁或删除模型目录绕过。代理、下载失败或编译错误仍需按实际失败命令排查，不应只据此错误码归因。
 

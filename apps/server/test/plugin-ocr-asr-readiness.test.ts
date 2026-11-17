@@ -25,7 +25,7 @@ async function fixture(t:Parameters<Parameters<typeof test>[1]>[0],runtime:'nati
   let document:Record<string,unknown>={media:{fixture:1},server:{runtime}};
   const configService={document:()=>structuredClone(document),onChange:(listener:()=>void)=>{listeners.add(listener);return()=>listeners.delete(listener);}} as unknown as ConfigService;
   const port=19000+Math.floor(Math.random()*1000),media={modelDirectory:assets.root,python:process.execPath,workerToken:'generated-readiness-worker',ocrPort:port,asrPort:port,ocrEndpoint:`http://127.0.0.1:${port}/ocr`,asrEndpoint:`http://127.0.0.1:${port}/transcribe`};
-  return {root,assets,listeners,configService,media,runtime,change(){document={...document,media:{fixture:2}};for(const listener of listeners)listener();}};
+  return {root,assets,listeners,configService,media,runtime,runtimeRoot:join(root,'media-runtime'),change(){document={...document,media:{fixture:2}};for(const listener of listeners)listener();}};
 }
 
 async function settled(port:{status(role:MediaRole):Promise<{state:string}>},role:MediaRole){
@@ -35,7 +35,7 @@ async function settled(port:{status(role:MediaRole):Promise<{state:string}>},rol
 
 test('quiesce fences preparation, stop closes it, and a fresh activation reuses the same model directory',async t=>{
   const f=await fixture(t);f.assets.installed=true;
-  const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,fetch:async()=>Response.json({version:1,execution:'local',ocr:true})});
+  const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,runtimeRoot:f.runtimeRoot,configService:f.configService,fetch:async()=>Response.json({version:1,execution:'local',ocr:true})});
   t.after(()=>service.close());await service.prepare();service.start();
   await service.port.start('ocr');assert.equal((await settled(service.port,'ocr')).state,'ready');
   service.quiesce('disabled');assert.throws(()=>service.port.start('ocr'),{statusCode:503});
@@ -49,7 +49,7 @@ test('quiesce fences preparation, stop closes it, and a fresh activation reuses 
 test('a media configuration change aborts in-flight native preparation and cannot publish a late ready state',async t=>{
   const f=await fixture(t,'native');let entered!:()=>void,release!:()=>void,signal:AbortSignal|undefined;
   const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
-  const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,prepare:async options=>{signal=options.signal;entered();await held;options.signal.throwIfAborted();return{python:process.execPath};}});
+  const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,runtimeRoot:f.runtimeRoot,configService:f.configService,prepare:async options=>{assert.equal(options.directory,f.runtimeRoot);assert.notEqual(options.directory,join(f.assets.root,'runtime'));signal=options.signal;entered();await held;options.signal.throwIfAborted();return{python:process.execPath};}});
   t.after(()=>service.close());await service.prepare();service.start();await service.port.start('ocr');await started;
   assert.equal(service.port.preparing('ocr',f.media.ocrEndpoint),true);f.change();assert.equal(service.port.preparing('ocr',f.media.ocrEndpoint),false);assert.equal(signal?.aborted,true);release();await service.stop('disabled');assert.equal(service.port.preparing('ocr',f.media.ocrEndpoint),false);
   assert.equal(f.assets.installs,0);assert.equal(f.listeners.size,0);
@@ -58,7 +58,7 @@ test('a media configuration change aborts in-flight native preparation and canno
 
 test('a failed prepare closes the partial runtime and removes its configuration listener',async t=>{
   const f=await fixture(t),failure=Error('Generated readiness prepare failure');
-  const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:new Proxy(f.configService,{get(target,property,receiver){if(property==='document')return()=>{throw failure;};return Reflect.get(target,property,receiver);}})});
+  const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,runtimeRoot:f.runtimeRoot,configService:new Proxy(f.configService,{get(target,property,receiver){if(property==='document')return()=>{throw failure;};return Reflect.get(target,property,receiver);}})});
   await assert.rejects(service.prepare(),failure);assert.equal(f.listeners.size,0);assert.throws(()=>service.port.status('ocr'),{statusCode:503});
   await service.close();
 });
@@ -66,7 +66,7 @@ test('a failed prepare closes the partial runtime and removes its configuration 
 
 test('media routes return 503 while stopped and recover without another registration',async t=>{
  const f=await fixture(t);f.assets.installed=true;
- const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,fetch:async()=>Response.json({version:1,execution:'local',ocr:true})});
+ const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,runtimeRoot:f.runtimeRoot,configService:f.configService,fetch:async()=>Response.json({version:1,execution:'local',ocr:true})});
  const host=new PluginHost({kind:'central',id:'generated-readiness-host'}),app=Fastify(),scope=new FeatureScope();let binding:import('@mote/plugin-api/contracts').ServiceBinding|undefined;
  t.after(async()=>{await app.close();await host.close();});
  const handle=await host.install({identity:{host:host.identity,packageId:'generated.media.readiness',installationId:'generated-install',instanceId:'generated-readiness',activationId:'generated-activation'},contributions:[ocrAsrReadinessDeclaration],factory:createOcrAsrReadinessFactory(service,value=>{binding=value.readiness;})});

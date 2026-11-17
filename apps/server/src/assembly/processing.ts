@@ -1,4 +1,4 @@
-import {join} from 'node:path';
+import {dirname,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import type {Context,Plugin} from '@deepseek-ai/cordis';
@@ -77,7 +77,10 @@ export function assembleMedia(dependencies:MediaAssemblyDependencies){
   resources.defer(()=>mediaAssetsService.close());
   mediaAssetsService.prepare();mediaAssetsService.start();
   const mediaAssets=mediaAssetsService.assetsForAssembly;
-  const readiness=createOcrAsrReadiness({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets,configService,backgroundWorker:dependencies.backgroundWorker,prepare:dependencies.prepareMediaRuntime});
+  // Runtime environments need the profile filesystem; model assets may live on
+  // an external volume. Both roots remain private to this profile.
+  const runtimeRoot=join(dirname(configService.path),'media-runtime');
+  const readiness=createOcrAsrReadiness({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets,runtimeRoot,configService,backgroundWorker:dependencies.backgroundWorker,prepare:dependencies.prepareMediaRuntime});
   registerOcrAsrReadinessForAssembly(readiness,mediaAssets);resources.defer(()=>readiness.close());
   return Object.freeze({mediaAssets,mediaPreparation:readiness.port});
 }

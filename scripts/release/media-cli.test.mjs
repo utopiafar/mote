@@ -51,7 +51,7 @@ test('the real CLI requires a runtime role and passes only that role to preparat
  for(const role of ['ocr','dialogue','local-image']){
   const result=run(['media-runtime','--role',role,'--python','generated-python']);assert.equal(result.status,0,result.stderr);
   assert.deepEqual(JSON.parse(result.stdout),{profile:paths.profile,role,installed:true,changed:true,python:'generated-python',runtimeReady:false});
-  assert.deepEqual(JSON.parse(await readFile(join(profile.modelDirectory,'runtime/generated-call.json'),'utf8')),{role,repository:release,sourcePython:'generated-python',signal:true});
+  assert.deepEqual(JSON.parse(await readFile(join(profile.directory,'media-runtime/generated-call.json'),'utf8')),{role,repository:release,sourcePython:'generated-python',signal:true});
  }
  const reloaded=await loadProfile(paths);assert.deepEqual(reloaded.document,profile.document,'preparing a role does not replace user configuration');
  assert.ok(profile.document.media.localImagePort>=10000&&profile.document.media.localImagePort<20000);assert.notEqual(profile.document.media.localImagePort,profile.document.media.asrPort);assert.notEqual(profile.document.media.localImagePort,profile.document.media.ocrPort);

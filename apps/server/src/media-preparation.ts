@@ -21,7 +21,7 @@ export interface MediaPreparationAssets {
   installAsync(role:MediaRole,source?:'auto'|'official'|'mirror',signal?:AbortSignal):Promise<void>;
 }
 type Prepared={python:string};
-type Options={runtime:'native'|'docker'|'unknown';media:MediaConfiguration;assets:MediaPreparationAssets;repository?:string;prepare?:(options:MediaRuntimeOptions&{signal:AbortSignal})=>Promise<Prepared>;fetch?:typeof fetch;startupTimeoutMs?:number};
+type Options={runtime:'native'|'docker'|'unknown';media:MediaConfiguration;assets:MediaPreparationAssets;runtimeRoot:string;repository?:string;prepare?:(options:MediaRuntimeOptions&{signal:AbortSignal})=>Promise<Prepared>;fetch?:typeof fetch;startupTimeoutMs?:number};
 const roles=['ocr','dialogue','speaker-wespeaker','local-image'] as const;
 const active=(state:State)=>['queued','dependencies','verifying_dependencies','models','starting'].includes(state);
 const assertWorkerPortAvailable=(port:number)=>new Promise<void>((resolve,reject)=>{
@@ -48,7 +48,7 @@ export class MediaPreparation {
   readonly directory:string;
   constructor(private options:Options){
     this.repository=options.repository??resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
-    this.directory=join(options.assets.root,'runtime');
+    this.directory=options.runtimeRoot;
   }
   private model(role:MediaRole){
     try{return this.options.assets.status(role);}

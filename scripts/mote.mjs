@@ -114,7 +114,7 @@ async function main() {
       const controller=new AbortController(),cancel=()=>controller.abort();process.once('SIGINT',cancel);process.once('SIGTERM',cancel);
       try{
         const sourcePython=values.python?.includes('/')?resolve(values.python):values.python;
-        const prepared=await prepareNativeMediaRuntime({repository:resolve(p.meta.release),directory:join(p.modelDirectory,'runtime'),role:values.role,env:isolatedEnvironment(p),sourcePython,signal:controller.signal});
+        const prepared=await prepareNativeMediaRuntime({repository:resolve(p.meta.release),directory:join(p.directory,'media-runtime'),role:values.role,env:isolatedEnvironment(p),sourcePython,signal:controller.signal});
         return {profile:p.profile,role:values.role,installed:true,changed:prepared.created,python:prepared.python,runtimeReady:false};
       }finally{process.off('SIGINT',cancel);process.off('SIGTERM',cancel);}
     });print(result);return;
