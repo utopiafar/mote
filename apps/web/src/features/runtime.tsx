@@ -70,7 +70,7 @@ export function FeatureActions({position,...props}:ViewProps&{position:'card'|'d
   return <>{webFeatures.views('action',props.value).filter(entry=>'position' in entry&&entry.position===position&&(!props.catalog?.actions||props.catalog.actions.includes(entry.id))).map(entry=><ViewBoundary key={entry.id+props.value.ref+props.value.revision} fallback={null}><ViewContent entry={entry} props={{...props,fallback:null}}/></ViewBoundary>)}</>;
 }
 
-// --- U07: plugins-domain declarative consumption --------------------------------
+// --- Plugins-domain declarative consumption -------------------------------------
 // The real plugins DOMAIN (PluginCenterView/PluginInstanceView: identity,
 // revision, desired/observed, allowedActions) drives declared declarative
 // surfaces. Commands are the same precise revision-carried API paths the

@@ -11,7 +11,7 @@ import {registerSourceMaterialView} from '../source-material-view.js';
 import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';
 
-/** C19 parent bridge: the materials feature's HTTP contribution lives with the
+/** Materials parent bridge: the materials feature's HTTP contribution lives with the
  * Material domain, not the transitional feature adapter. */
 export const materialContextContribution={
   id:'material-context',version:'1.0.0',surface:'data',runtime:'host',
@@ -50,7 +50,7 @@ export function createMaterialContext(dependencies:MaterialContextDependencies){
     stop:async(_reason?:StopReason)=>{stop();},
     dispose:stop,
     close:stop,
-    /** Mounted once by the pre-H14 feature bridge. Reads survive quiesce; new
+    /** Mounted once by the transitional feature bridge. Reads survive quiesce; new
      * writes require an active activation, and a stopped owner returns 503. */
     routes(app:FastifyInstance){
       if(mounted.has(app))throw new StoreError('Material routes are already installed',409);
@@ -71,7 +71,7 @@ export function createMaterialContext(dependencies:MaterialContextDependencies){
 export type MaterialContext=ReturnType<typeof createMaterialContext>;
 
 /** Native host factory for later route-owning activations. The current app
- * mounts the same contribution through the pre-H14 feature bridge. */
+ * mounts the same contribution through the transitional feature bridge. */
 export function createMaterialContextFactory(dependencies:MaterialContextDependencies){
   return (context:HostPluginContext):PluginLifecycle=>{
     const platform=createMaterialContext(dependencies);
