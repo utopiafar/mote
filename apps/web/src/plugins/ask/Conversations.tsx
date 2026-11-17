@@ -1,3 +1,4 @@
+import type {AssistantTaskResultItem} from './AssistantTaskResults';
 import {SaveConversationRecord} from './SaveConversationRecord';
 import {queryRecovery,type OwnedQuery} from './query-recovery';
 import {unsentDrafts,unsentImages,type ChatAttachment,type ChatImageUpload} from './chat-drafts';
@@ -45,7 +46,7 @@ interface ConversationSummary {
   scope: Range & {kind?:'all'|'selection';timeZone?:string;evidenceIds?:string[];sourceIds?:string[];anchorEvidenceIds?:string[];anchorMaterialRef?:string};
   status: ConversationMessageState;
 }
-interface ConversationTurn extends Pick<ConversationMessage,'steering'|'amendedBy'|'supersededBy'> {
+interface ConversationTurn extends Pick<ConversationMessage,'steering'|'taskSteering'|'amendedBy'|'supersededBy'> {
   id: string;
   seq?: number;
   version?: number;
@@ -66,6 +67,21 @@ interface ConversationTurn extends Pick<ConversationMessage,'steering'|'amendedB
 interface Conversation extends ConversationSummary {turns: ConversationTurn[];revision?:number;nextCursor?:string|null}
 interface OlderTurns {api:Api;id:string;revision?:number;turns:ConversationTurn[];nextCursor:string|null}
 interface HistoryPage {items: ConversationSummary[]; nextCursor?: string | null}
+
+/** This reads the formal Task using the Host-projected original scope. The
+ * amendment receipt is a delivery fact, not the current Task state or a grant. */
+function TaskAmendment({api,receipt,revision,onCancel,cancelling}:{api:Api;receipt:NonNullable<ConversationMessage['taskSteering']>;revision?:number;onCancel:()=>void;cancelling:boolean}){
+ const path='/api/assistant/tasks/'+encodeURIComponent(receipt.targetTaskId)+'?'+new URLSearchParams({scope:JSON.stringify(receipt.scope)});
+ const read=useResource<AssistantTaskResultItem>(api,path,2000,revision);
+ const item=read.error===undefined&&read.data?.task.id===receipt.targetTaskId?read.data:undefined;
+ const state=item?.task.state,active=state==='waiting'||state==='running'||state==='needs_input'||state==='failed';
+ return <section className="conversation-task-amendment" aria-label={moteText('任务状态')}>
+  <strong>{moteText('任务状态')}</strong>{' · '}<span role="status">{state==='completed'?moteText('已完成'):state==='running'?moteText('正在进行'):state==='waiting'?moteText('排队中'):state==='stale'?moteText('已失效'):state==='cancelled'?moteText('已取消'):state?moteText('未完成'):moteText('正在读取…')}</span>
+  {read.error!==undefined&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}</p>}
+  {item&&receipt.origin&&<a className="text-button" href={'#/ask?'+new URLSearchParams({conversation:receipt.origin.conversationId,turn:receipt.origin.turnId})}>{moteText('查看任务')}</a>}
+  {active&&receipt.state!=='cancelled'&&<button className="text-button" disabled={cancelling||read.loading} onClick={onCancel}>{moteText('停止这条回答')}</button>}
+ </section>;
+}
 
 function createQuestionDraft(onChange?:(question:string)=>void){
  let value='';const listeners=new Set<()=>void>();
@@ -549,6 +565,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
         <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}</span></div>{Boolean(turn.attachments?.length)&&<div className="chat-attached-images">{turn.attachments?.map(attachment=><span key={attachment.id}><ImagePlus size={13}/>{attachment.name}</span>)}</div>}
         {turnBody(turn,conversation!.id)}
         {turnRelations(turn,conversation!.id)}
+        {turn.taskSteering&&<TaskAmendment api={api} receipt={turn.taskSteering} revision={turn.version} onCancel={()=>void cancelTurn(turn)} cancelling={cancelRequest.current!==null}/>}
       </article>)}
       {busy&&!run&&pendingQuestion&&<p className="query-admission-status" role="status">{moteText('正在提交问题…')}</p>}
       {pendingQuestion && <div className="asked-question"><MessageSquare size={16}/><span>{pendingQuestion}</span></div>}

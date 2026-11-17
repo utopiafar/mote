@@ -160,6 +160,16 @@ exit "$check_status"
 
 [combined-backup-recovery.test.ts](../apps/server/test/combined-backup-recovery.test.ts) runs the production backup/restore path with generated current-epoch data. It checks chunk bytes and hashes, source revisions, corrected Memory, partial imports, checkpoints, restart and foreign-lease invalidation. [mvp-baseline.test.ts](../apps/server/test/mvp-baseline.test.ts) covers real query shutdown/restore and rejects an old epoch without changing its bytes. No migration, live model or physical device is established.
 
+For an explicitly selected backup scheduling check, build Central and run the small generated-profile contract:
+
+```sh
+node --test --test-concurrency=1 --test-timeout=120000 scripts/backup-schedule.test.mjs
+# Select already built local images; this driver performs no build or pull.
+node scripts/test-backup-schedule-container.mjs --image LOCAL_CORE_IMAGE --cli LOCAL_DEPLOY_CLI_IMAGE --evidence /absolute/private/result.json
+```
+
+The Native contract exercises the actual CLI and formal restore consumer, stopped/running intent, copy and restart failures, a killed lock owner, missed intervals, registered-backup retention, corruption, original-key permissions and explicit foreground watch shutdown. The Docker contract invokes the shell entry with no host Node/npm in its PATH, verifies the current operational scripts inside the selected CLI image, and checks the actual original image, stopped intent, offline restore without a service container, and container-lock recovery. Both use small generated data and remove their own profiles and processes. Docker also compares all preexisting containers, volumes, networks and image aliases before and after; it cleans only its own labeled resources. These checks do not establish model quality, physical-device behavior, OS scheduling or a new full runtime-image build.
+
 ## Archive recency
 
 Quality cases distinguish original time from Memory publication, earlier and later stages, one-off events from lasting change, scoped-out newer records, a planned toy base from an assembled body, a completed practice stage from later unfinished work, and a started tool-sorting task from remaining plans. Models choose relevant reads; valid Memory does not require routine rereading. [instructions.test.mjs](../packages/agent/test/instructions.test.mjs) and [task-context.test.mjs](../packages/agent/test/task-context.test.mjs) cover context/permission delivery. Semantic experiments compare actual disclosed evidence and answers at fixed input/model settings; prompt presence or a missing wrong phrase is not a positive quality result.
