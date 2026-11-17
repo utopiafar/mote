@@ -228,7 +228,11 @@ test('SDK package validation has a dedicated light task with real build and exte
   ]);
   const sdk=JSON.parse(readFileSync('packages/plugin-sdk/package.json','utf8'));
   const host=JSON.parse(readFileSync('packages/plugin-host/package.json','utf8'));
-  assert.equal(sdk.scripts.prebuild,'npm run build -w @mote/plugin-host');
-  assert.equal(host.scripts.prebuild,'npm run build -w @mote/plugin-api');
+  assert.match(sdk.scripts.build,/tsc -b/);
+  assert.match(host.scripts.build,/tsc -b/);
+  const sdkProject=JSON.parse(readFileSync('packages/plugin-sdk/tsconfig.json','utf8'));
+  const hostProject=JSON.parse(readFileSync('packages/plugin-host/tsconfig.json','utf8'));
+  assert.deepEqual(sdkProject.references,[{path:'../plugin-api'},{path:'../plugin-host'}]);
+  assert.deepEqual(hostProject.references,[{path:'../plugin-api'}]);
   assert.ok(!taskPlan('tooling').some(step=>step.args.some(arg=>arg.includes('packages/plugin-sdk/')||arg==='@mote/plugin-sdk')));
 });

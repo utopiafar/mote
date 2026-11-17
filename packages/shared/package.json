@@ -232,10 +232,9 @@
   },
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test test/*.test.mjs",
-    "prebuild": "npm run build -w @mote/plugin-api"
+    "build": "tsc -b --stopBuildOnErrors",
+    "typecheck": "tsc -b tsconfig.json --stopBuildOnErrors",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "zod": "^3.25.76",

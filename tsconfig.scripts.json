@@ -1,1 +1,21 @@
-{"extends":"./tsconfig.base.json","compilerOptions":{"noEmit":true},"include":["scripts/**/*.ts"]}
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/mote/scripts.tsbuildinfo",
+    "declaration": false,
+    "disableSourceOfProjectReferenceRedirect": true
+  },
+  "include": [
+    "scripts/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "packages/agent"
+    },
+    {
+      "path": "packages/shared"
+    }
+  ]
+}
