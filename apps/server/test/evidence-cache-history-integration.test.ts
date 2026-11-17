@@ -12,7 +12,7 @@ import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';
-import {restoreProfile} from '../../../scripts/profile-lib.mjs';
+import {restoreProfile,repository} from '../../../scripts/profile-lib.mjs';
 
 const token='generated-cache-history-owner',headers={authorization:`Bearer ${token}`,'content-type':'application/json'};
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
@@ -86,7 +86,7 @@ test('real backup and restore retain conversation authority while raw SQLite cac
  await f.node.working.compact(f.conversationId,{...defaultLifecycleSettings,recentTurns:0},async()=>result([],'Generated retained summary.'));
  const before=f.node.conversations.get(f.conversationId);await f.node.app.close();
  execFileSync(process.execPath,['--import','tsx',fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url)),'--data',f.node.store.directory,'--out',snapshot],{stdio:'pipe'});
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(directory,'missing-process')},snapshot);
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(directory,'missing-process')},snapshot);
  const seen:QueryInput[]=[],agent={configured:true,close:async()=>{},query:async(input:QueryInput)=>{seen.push(input);return result([]);}};
  restored=await buildApp(config(target),{backgroundWorker:false,agent});
  const ask=async()=>{const response=await restored!.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:f.conversationId,question:'Discuss the retained generated proposal'}});assert.equal(response.statusCode,200,response.body);};
