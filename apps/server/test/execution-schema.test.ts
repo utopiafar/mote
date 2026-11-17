@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {installSchemaPlan,type SchemaInstallation} from '../src/schema-installation.js';
 import {executionSchemaInstallations,installExecutionSchema} from '../src/execution-schema.js';
 import {ExecutionEngine,type ExecutionHandler} from '../src/execution-engine.js';

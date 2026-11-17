@@ -7,7 +7,7 @@ import Fastify from 'fastify';
 import type {SourceCapabilityDescriptor} from '@mote/shared';
 import {PluginResourceScope} from '@mote/plugin-host';
 import type {HostScope} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {createDynamicHttpDispatcher} from '../src/plugins/dynamic-http-dispatcher.js';
 import {createConnectorHostAdapter,type ConnectorInstanceScope} from '../src/plugins/connector-host-adapter.js';

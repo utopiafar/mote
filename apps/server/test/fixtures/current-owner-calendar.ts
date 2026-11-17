@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {zipSync,strToU8} from 'fflate';
 import {currentInstructionFixture,gate,until,type ModelRequest} from './current-owner-instruction.js';
 import {GitHubPluginReleases} from '../../src/plugin-release.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 
 export const calendarEvent={title:'Generated owner calendar appointment',start:'2099-09-18T15:00:00Z',end:'2099-09-18T16:00:00Z',timeZone:'UTC',allDay:false,location:'Generated room',description:'Generated direct owner instruction only'};
 export const calendarInstruction='Create Generated owner calendar appointment in Generated owner calendar on 18 September 2099 from 15:00 to 16:00 UTC, in Generated room, with description Generated direct owner instruction only. This is my explicit instruction to create it now, not a draft or a quoted message.';

@@ -8,7 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import type {MediaRole,MediaAssetStatus} from '@mote/shared';
 import {prepareNativeMediaRuntime,mediaRoleSupported,mediaWorkerLaunch,mediaWorkerEnvironment,spawnMediaProcess,type MediaRuntimeOptions,type MediaProcess,type NativeMediaRole} from './media-native-runtime.mjs';
 import {mediaModelHealth,mediaRoleEndpoint,type MediaConfiguration} from './media-configuration.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 type State='idle'|'queued'|'dependencies'|'verifying_dependencies'|'models'|'prepared'|'starting'|'ready'|'failed'|'cancelled'|'unsupported';
 type Job={id:string;role:MediaRole;state:State;startWorker:boolean;error?:string;startedAt:string;controller:AbortController;done:Promise<void>};

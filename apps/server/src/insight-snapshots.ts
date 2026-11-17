@@ -1,7 +1,7 @@
 import type {MaterialRead} from './evidence-read-ports.js';
 import {createHash} from 'node:crypto';
 import type {InsightSnapshot} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 type Scope={after?:string;before?:string;deviceId?:string;timeZone?:string};
 const current="(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=c.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=c.id AND h.deleted=0) OR c.id IN (SELECT capture_id FROM file_heads))";
 function selection(scope:Scope){return {where:current+(scope.after?' AND c.context_end>=?':'')+(scope.before?" AND (c.context_at<? OR (json_extract(c.json,'$.source') IN ('screen','activity') AND (unixepoch(c.captured_at,'subsec')*1000-json_extract(c.json,'$.durationMs')<? OR EXISTS(SELECT 1 FROM json_each(c.json,'$.stateSeries.samples') sample WHERE unixepoch(json_extract(sample.value,'$.at'),'subsec')*1000-json_extract(sample.value,'$.durationMs')<?))))":'')+(scope.deviceId?' AND c.device_id=?':''),args:[...(scope.after?[scope.after]:[]),...(scope.before?[scope.before,Date.parse(scope.before),Date.parse(scope.before)]:[]),...(scope.deviceId?[scope.deviceId]:[])]};}

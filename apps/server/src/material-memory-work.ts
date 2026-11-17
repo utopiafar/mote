@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {MaterialStore} from './materials.js';
 import {materialRequirementsSchema} from './material-readiness.js';
 import {DEFAULT_MEMORY_INPUT_SCOPE,MemoryInputAuthorization,type AutomaticMemoryGrant} from './memory-input-authorization.js';

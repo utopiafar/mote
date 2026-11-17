@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine,ExecutionFailure} from '../src/execution-engine.js';
 import {retainFailureContext} from '../src/execution-failures.js';
 import {ProviderFailure} from '@mote/shared';

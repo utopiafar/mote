@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine,ExecutionFailure} from '../src/execution-engine.js';
 
 test('completed, failed and cancelled steps release their long host deadline timers',async()=>{

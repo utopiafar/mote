@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {setImmediate} from 'node:timers/promises';
 import {ProviderFailure} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';

@@ -2,7 +2,7 @@ import { moteText } from './i18n.js';
 import {join} from 'node:path';
 import {readdirSync} from 'node:fs';
 import {setImmediate} from 'node:timers/promises';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import type {ArchivedFileStore} from './archived-files.js';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {ConfigService,type PreparedConfigChange} from './config-service.js';

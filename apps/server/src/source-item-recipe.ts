@@ -1,5 +1,5 @@
 import {sourceConnectionSchema,sourceIdSchema,sourceKindSchema,type SourceConnection} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {CAPTURE_RAW_READER_VERSION} from './capture-raw-reader.js';
 import {RecipeRegistry,type InstalledRecipe,type RecipeComponentKind,type RecipeComponentPin} from './recipe-registry.js';
 import {recipeFingerprint,type RecipeDefinition} from './recipe-contract.js';

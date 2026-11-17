@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ActionCapabilities} from '../src/plugins/action-capabilities.js';
 import type {SourceStore} from '../src/sources.js';
 import type {Connections} from '../src/connections.js';

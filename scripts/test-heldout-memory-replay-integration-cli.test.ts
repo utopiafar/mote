@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {base,check,equal,json} from './test-heldout-memory-replay.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {repositoryRoot} from '../apps/server/src/config.js';
 import {freezeStage,runBatch,newOutput,treeHash,codeHashes,executorPins} from './test-heldout-memory-replay-stage.js';
 const directory=process.env.MOTE_HELDOUT_TEST_OUTPUT??join(base,'heldout-integration-cli-'+Date.now());await mkdir(directory,{mode:0o700});await mkdir(join(directory,'DO_NOT_OPEN'),{mode:0o700});const checks:unknown[]=[];let stubCalls=0;

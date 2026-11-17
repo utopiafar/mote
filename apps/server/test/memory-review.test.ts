@@ -9,7 +9,7 @@ import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
 import {MemoryReviewCache} from '../src/memory-review-cache.js';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore,MEMORY_ADMISSION_PROMPT,MEMORY_EXTRACTION_PROMPT} from '../src/memory.js';
 import {CONSOLIDATION_RELATION_POLICY} from '../src/memory-policy.js';

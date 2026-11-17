@@ -1,4 +1,4 @@
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {DatabaseSync} from 'node:sqlite';
 import {installSchemaPlan} from './schema-installation.js';
 

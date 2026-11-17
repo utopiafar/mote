@@ -4,7 +4,7 @@ import {constants} from 'node:sqlite';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {DelegationStore} from '../src/delegation-store.js';
 import {DelegationRuntime} from '../src/delegation-runtime.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

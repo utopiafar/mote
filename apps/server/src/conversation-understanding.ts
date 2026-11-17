@@ -9,7 +9,7 @@ import type {MaterialReadPage} from './materials.js';
 import {materialRequirementsSchema} from './material-readiness.js';
 import type {ModelConfiguration} from './model-configuration.js';
 import type {UsageLedger} from './usage.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {languagePreference} from '@mote/shared/i18n';
 import {memoryRangeEvaluationCoverageSchema,memoryWorkInstruction,readMemoryWorkCoverage,type MemoryWorkMember} from './memory-work-contract.js';
 import {claimSchema,MemoryOutputValidationError,type MemoryStore,type EvidenceRange} from './memory.js';

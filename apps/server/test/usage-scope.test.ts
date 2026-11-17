@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {PluginHost,type HostScope} from '@mote/plugin-host';
 import type {PluginLifecycle} from '@mote/plugin-api/contracts';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {UsageLedger} from '../src/usage.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createObservabilityPlatformFactory,type ObservabilityPlatform} from '../src/plugins/observability-platform.js';

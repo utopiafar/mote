@@ -5,7 +5,7 @@ import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {mediaModelIdentities} from '../../src/media-assets.js';
 import {FUNASR_PROTOCOL,parseFunasrRequest,parseFunasrResponse,type FunasrRequest,type FunasrSpeakers} from '../../src/funasr-contract.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 
 /** Only inference is generated. The production Python serializer emits the
  * current wire/checkpoint bytes consumed by the real TypeScript processors. */

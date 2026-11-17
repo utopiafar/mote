@@ -4,7 +4,7 @@ import {chmod,mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {ImportUploads} from '../src/import-uploads.js';
 import {ImportStore} from '../src/imports.js';

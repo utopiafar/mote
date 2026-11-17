@@ -14,7 +14,7 @@ import {actionsServicesContract} from '../src/plugins/actions-services.js';
 import {insightServicesContract} from '../src/plugins/insight-services.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {hostRun} from './fixtures/host-run.js';
-import type {Store} from '../src/store.js';
+import type {EvidenceStore as Store} from '../src/evidence-store.js';
 
 const contains=(error:unknown,wanted:unknown):boolean=>error===wanted||error instanceof AggregateError&&error.errors.some(child=>contains(child,wanted));
 async function bounded<T>(promise:Promise<T>,label:string):Promise<T>{

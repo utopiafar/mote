@@ -6,7 +6,7 @@ import type {AssistantCards} from '../assistant-cards.js';
 import type {AssistantNotifications} from '../assistant-notifications.js';
 import type {AssistantOnboarding} from '../assistant-onboarding.js';
 import {registerAssistantOnboardingRoutes} from '../assistant-onboarding-routes.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {InsightServices} from '../plugins/insight-services.js';
 import type {FeatureRoute} from './index.js';
 import {PluginHostError} from '@mote/plugin-host';

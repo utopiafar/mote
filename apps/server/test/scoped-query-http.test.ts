@@ -8,7 +8,7 @@ import sharp from 'sharp';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ContextReader,QueryInput} from '@mote/agent';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 const headers={authorization:'Bearer generated-scoped-owner-token'};
 async function fixture(t:TestContext,query:QueryAgent['query'],captureReader?:(reader:ContextReader)=>void){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-scoped-query-'));

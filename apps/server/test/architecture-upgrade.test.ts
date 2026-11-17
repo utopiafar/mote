@@ -6,7 +6,7 @@ import {randomUUID} from 'node:crypto';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {ProcessingRuntime,ProcessingFailure} from '../src/processing-runtime.js';
 const capture=(text='Generated value 41',at='2026-09-18T10:00:00.000Z')=>({id:randomUUID(),deviceId:'generated',deviceName:'Generated fixture',platform:'macos',capturedAt:at,durationMs:5000,source:'ui_page',appId:'fixture',appName:'Fixture',windowTitle:'Page A',ocrText:text,privacy:{excluded:false,redacted:false,mode:'none'}});

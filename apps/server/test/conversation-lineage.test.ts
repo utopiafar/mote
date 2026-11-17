@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {Conversations} from '../src/conversations.js';
 import {WorkingMemory} from '../src/working-memory.js';
 import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';

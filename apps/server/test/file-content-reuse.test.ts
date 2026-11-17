@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-file-reuse-')),token='generated-file-reuse-owner';

@@ -20,7 +20,7 @@ import {ImageProcessing} from '../image-processing.js';
 import {imageUnderstanding} from '../image-understanding.js';
 import {localImageUnderstanding,type LocalImageUnderstandingBinding} from '../local-image-understanding.js';
 import {modelConfiguration} from '../model-configuration.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices} from './central-contracts.js';
 
 /** The image intake, OCR/understanding stages and their model receipts. */

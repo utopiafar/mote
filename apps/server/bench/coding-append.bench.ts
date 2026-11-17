@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {performance} from 'node:perf_hooks';
 import {sourceItemSchema} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore} from '../src/materials.js';
 import {SourceStore} from '../src/sources.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';

@@ -2,7 +2,7 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ProviderFailure} from '@mote/shared';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {ExecutionStep} from './execution-engine.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {backgroundModelAuthorizationSchemaInstallation} from './background-model-authorization-schema.js';

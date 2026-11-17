@@ -6,7 +6,7 @@ import {randomUUID} from 'node:crypto';
 import {startCodexRelay} from './codex-relay.mjs';
 import {seedMemoryFixtures} from './memory-fixtures.ts';
 import {parseAnswer} from '@mote/agent';
-import {Store} from '../apps/server/src/store.ts';
+import {EvidenceStore as Store} from '../apps/server/src/evidence-store.ts';
 import {buildApp} from '../apps/server/src/app.ts';
 import {createModelAgent} from '../apps/server/src/model-agent.ts';
 import {Conversations} from '../apps/server/src/conversations.ts';

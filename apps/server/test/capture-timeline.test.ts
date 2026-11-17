@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {CaptureTimeline} from '../src/capture-timeline.js';
 import type {CaptureTimelineGroup,CaptureTimelinePage,CaptureTimelineMembers} from '@mote/shared';
 

@@ -3,7 +3,7 @@ import {Readable} from 'node:stream';
 import {createGzip} from 'node:zlib';
 import {fileEvidenceSchema,type Transcript} from '@mote/shared';
 import {FileStore} from './files.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {latestFileTranscript} from './file-reviews.js';
 import {readDialogueCleanup} from './file-dialogue.js';
 

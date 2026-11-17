@@ -4,7 +4,7 @@ import {sanitizeFailureDiagnostics} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {AgentYieldError,AgentTimeoutError,type AgentProgress,type QueryInput} from '@mote/agent';
 import {executionEnvelope,ProviderFailure,type QueryResult} from '@mote/shared';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {safeError} from './diagnostics.js';
 import {moteText,requestLocale} from './i18n.js';
 import {DelegationRuntime,type DelegationWork} from './delegation-runtime.js';

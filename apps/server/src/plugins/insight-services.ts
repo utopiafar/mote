@@ -15,7 +15,7 @@ import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelProfileIdSchema,type ModelSettingsStore} from '../model-settings.js';
 import {insightRequestSchema} from '../query-request.js';
 import {scopeFields,validRange,type QueryScope} from '../query-scope.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {CentralDomainPlugin} from '../domain-activation.js';
 import {insightFeature} from '../features/insights.js';
 

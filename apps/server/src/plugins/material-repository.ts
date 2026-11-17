@@ -3,7 +3,7 @@ import {serviceContract,type PluginLifecycle,type ServiceBinding} from '@mote/pl
 import type {HostPluginContext} from '@mote/plugin-host';
 import {MaterialStore} from '../materials.js';
 import {MaterialNoteDeletion} from '../material-note-deletion.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {CentralDomainPlugin} from '../domain-activation.js';
 import {centralServices,type CommitAuthority,type CommitAuthorization,type MaterialPublication} from './central-contracts.js';
 

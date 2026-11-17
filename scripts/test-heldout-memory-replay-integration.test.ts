@@ -9,7 +9,7 @@ import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {Memory} from '../apps/server/src/memory-schema.js';
 import {base,check,equal,json,hashObject,cloneClosed,SafeFailure} from './test-heldout-memory-replay.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {inspectAdmissionLedger,AdmissionLedger} from './test-heldout-memory-replay-ledger.js';
 import {freezeStage,newOutput,runBatch,freezeContinuation,codeHashes,executorPins,treeHash,type Manifest} from './test-heldout-memory-replay-stage.js';
 import {freezeIntegration,runIntegration,IntegrationCallOrder,integrationSelection} from './test-heldout-memory-replay-integration.js';

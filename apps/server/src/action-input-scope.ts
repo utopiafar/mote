@@ -1,5 +1,5 @@
 import type {ActionGrant,CaptureRecord} from '@mote/shared';
-import {sha256,type Store} from './store.js';
+import {sha256,type EvidenceStore as Store} from './evidence-store.js';
 import type {SourceStore} from './sources.js';
 
 type Identity=ActionGrant['inputs']['sources'][number];

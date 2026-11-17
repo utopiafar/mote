@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {memoryInputPlansSchemaInstallation} from './memory-input-plans-schema.js';
 import {memoryRecipeBindingSchema,type MemoryStrategyRef} from './memory-strategy-contract.js';

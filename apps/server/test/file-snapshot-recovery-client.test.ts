@@ -8,7 +8,7 @@ import {defaultConfig} from '../../desktop/src/config.js';
 import {DEFAULT_SOURCE_OPTIONS,type SourceOptions} from '../../desktop/src/source-types.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 
 // Real Desktop manual discovery/outbox/upload and Central routes/pipeline.
 // All bytes and credentials are generated fixtures; no live model or ASR.

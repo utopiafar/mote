@@ -6,7 +6,7 @@ import type {MemoryPipeline} from './memory-pipeline.js';
 import {DelegationRuntime,DelegationPlanningError,type DelegationWork} from './delegation-runtime.js';
 import {ExecutionFailure} from './execution-engine.js';
 import {failureContext,recoverableProviderFailure,retainFailureContext} from './execution-failures.js';
-import {sha256,StoreError} from './store.js';
+import {sha256,StoreError} from './evidence-store.js';
 import {memoryFeedbackGroupSchema,validMemoryFeedbackGroup,validMemoryFeedbackPlan,memoryFeedbackBatchId,type MemoryFeedbackRequest,type MemoryFeedbackPlan} from './memory-feedback.js';
 
 /** The feedback planner owns no originals and creates no additional grants.

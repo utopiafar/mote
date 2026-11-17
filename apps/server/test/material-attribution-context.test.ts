@@ -6,13 +6,13 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {sourceItemSchema,captureSchema,formatArtifactRef} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {FileStore} from '../src/files.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from '../src/memory.js';
 import type {CaptureRecord} from '@mote/shared';
 

@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {AssistantWorkbench} from './assistant-workbench.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 export function registerAssistantWorkbenchRoutes(app:FastifyInstance,workbench:AssistantWorkbench,
   options:{credential:(request:FastifyRequest)=>unknown;assertRequestActive:(request:FastifyRequest)=>void;available:()=>boolean}){

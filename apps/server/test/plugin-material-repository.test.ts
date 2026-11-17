@@ -6,7 +6,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {PluginHost} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {formatMaterialRef,materialId,type MaterialDraft,type MaterialStore} from '../src/materials.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
 import {SourceStore} from '../src/sources.js';

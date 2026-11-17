@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {buildContextEnvelope,prepareTaskContext,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {calendarEventSchema,calendarDescription} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {Actions,registerActions} from '../src/actions.js';
@@ -89,7 +89,7 @@ test('device review grant is separate from upload authorization and cannot targe
 
 test('late file text is available to action models and reused chunk rowids do not skip work',async t=>{
  const f=fixture(t);f.sources.register({id:'file-fixture',name:'合成文件',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});
- const bytes=Buffer.from(text),manifest={sourceId:'file-fixture',item:{externalId:'fixture.txt',revision:'1',observedAt:'2026-09-16T01:00:00Z',title:'合成资料.txt',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},sizeBytes:bytes.length,sha256:(await import('../src/store.js')).sha256(bytes)};
+ const bytes=Buffer.from(text),manifest={sourceId:'file-fixture',item:{externalId:'fixture.txt',revision:'1',observedAt:'2026-09-16T01:00:00Z',title:'合成资料.txt',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},sizeBytes:bytes.length,sha256:(await import('../src/evidence-store.js')).sha256(bytes)};
  const begun=f.files.begin(manifest,()=>{});f.files.part(begun.uploadId,0,bytes,()=>{});const ack=await f.files.commit(begun.uploadId,()=>{});await f.actions.tick();assert.equal(f.calls.length,0);
  const artifact=randomUUID(),chunk=randomUUID();f.store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifact,ack.id,'text',new Date().toISOString(),'fixture','{}');
  f.store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,start_ms,end_ms,text,metadata) VALUES(?,?,?,NULL,NULL,?,?)').run(chunk,artifact,ack.id,text,'{}');

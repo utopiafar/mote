@@ -1,5 +1,5 @@
 import {SourceStore} from '../apps/server/src/sources.js';
-import {Store} from '../apps/server/src/store.js';
+import {EvidenceStore as Store} from '../apps/server/src/evidence-store.js';
 
 /** Entirely fictional. Stable scenario labels are test annotations, not product dispatch. */
 export async function seedMemoryFixtures(store:Store,count=480){

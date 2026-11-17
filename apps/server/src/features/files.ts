@@ -1,6 +1,6 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {filesSourceRoutesFor,type FilePlaybackGrants} from '../plugins/files-source.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {ConnectionCredential} from '../connections.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {EvidenceReader} from '../evidence-reader.js';

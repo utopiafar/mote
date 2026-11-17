@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 import {sourceContentTime,imageLocationSchema,documentLocationSchema,type CaptureRecord,type Transcript} from '@mote/shared';
 import {materialId,MaterialStore,type MaterialDraft,type MaterialEvidenceContext} from './materials.js';
 import {ArchivedFileStore} from './archived-files.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {CaptureRawReader,captureRawRef} from './capture-raw-reader.js';
 import {SourceItemRecipeCatalog,type SourceItemRecipePin} from './source-item-recipe.js';

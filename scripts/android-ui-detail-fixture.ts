@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {strToU8,zipSync} from 'fflate';
 import type {buildApp} from '../apps/server/src/app.js';
 import {materialId} from '../apps/server/src/materials.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import type {PluginReleaseTransport,PluginManifest} from '../apps/server/src/plugin-release.js';
 import {fixtureFilePolicy} from '../apps/server/test/fixtures/file-policy.js';
 import {fixtureMemoryResult} from '../apps/server/test/fixtures/memory-result.js';

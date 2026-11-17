@@ -13,7 +13,7 @@ import {materialId} from '../src/materials.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {memoryWorkInstruction} from '../src/memory-work-contract.js';
 import {assertMemoryRequestFits,memoryRequestUsage,memoryRequestSizer,type MemoryRequestCapacity} from '../src/memory-request-budget.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';

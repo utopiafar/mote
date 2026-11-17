@@ -2,7 +2,7 @@ import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import { moteText } from './i18n.js';
 import {filePolicySchema,fileProcessingSchema,resolveFileRule,matchesFileType,type FilePolicy,type FileProcessingSettings,type ProcessingProfile,type ProcessingService,type PolicyRule} from '@mote/shared';
 import {type ProcessorRegistry,isLoopback} from './file-processors.js';
-import {StoreError,sha256} from './store.js';
+import {StoreError,sha256} from './evidence-store.js';
 import {DEFAULT_MEDIA_OCR_ENDPOINT} from './media-configuration.js';
 import {effectiveProcessorParameters} from './processor-parameters.js';
 

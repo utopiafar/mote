@@ -1,5 +1,5 @@
 import type {CaptureInput} from '@mote/shared';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {FileStore} from './files.js';
 import type {ConnectionCredential} from './connections.js';
 /** Correction provenance is minted only by the owner's reviewed Memory service. */

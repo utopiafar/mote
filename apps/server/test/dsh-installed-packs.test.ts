@@ -12,7 +12,7 @@ import type {RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {buildApp} from '../src/app.js';
 import {configurationFromFile} from '../src/config.js';
 import type {PluginManifest, PluginReleaseTransport} from '../src/plugin-release.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.js';
 
 async function waitFor(check: () => boolean | Promise<boolean>, label: string) {

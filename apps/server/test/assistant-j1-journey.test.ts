@@ -15,7 +15,7 @@ import {createApi} from '../../web/src/api.js';
 import {AssistantDraftActions} from '../../web/src/plugins/ask/AssistantDraftActions.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 
 const token='generated-j1-owner';

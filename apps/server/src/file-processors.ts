@@ -8,7 +8,7 @@ import {pathToFileURL} from 'node:url';
 import {isAbsolute} from 'node:path';
 import {isLoopback,requestLocalJson} from './local-http.js';
 import {transcriptSchema,diarizationSchema,fileProcessingSchema,type Transcript,type FileProcessingSettings,processorParameterSchema,type ProcessorParameter} from '@mote/shared';
-import {StoreError,sha256} from './store.js';
+import {StoreError,sha256} from './evidence-store.js';
 import type {ModelConnection} from './background-model-authorization.js';
 import type {ProcessingService} from '@mote/shared';
 import {ImportIntakeRegistry,installImportIntake} from './import-intake.js';

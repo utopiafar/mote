@@ -1,4 +1,4 @@
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
 
 export const larkStateSchemaInstallation={owner:'lark-document-sync',requires:[],install:db=>{db.exec('CREATE TABLE IF NOT EXISTS lark_document_sync(account TEXT NOT NULL,scope TEXT NOT NULL,key TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(account,scope,key));');}} as const satisfies SchemaInstallation;

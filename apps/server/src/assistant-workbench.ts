@@ -10,7 +10,7 @@ import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {Memory} from './memory-schema.js';
 import type {MemoryOwnerPublication} from './plugins/memory-publication-contract.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 const LIMIT=20;
 const emptyScope=(scope:QueryScope)=>scope.evidenceIds?.length===0||scope.kind==='selection'&&scope.sourceIds?.length===0;

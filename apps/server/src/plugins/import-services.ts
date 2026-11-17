@@ -21,7 +21,7 @@ import {ImportUploads,registerImportUploads} from '../import-uploads.js';
 import {UploadHttpProtection} from '../local-rate-limits.js';
 import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput} from './python-source-pack-executor.js';
 import type {FileProcessing} from '../file-processing.js';
-import {StoreError,sha256} from '../store.js';
+import {StoreError,sha256} from '../evidence-store.js';
 import {centralServices} from './central-contracts.js';
 
 export const importServicesContribution={

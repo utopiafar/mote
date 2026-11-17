@@ -14,7 +14,7 @@ import {installMemoryOwnerQuestions} from '../memory-owner-questions.js';
 import {registerMemoryDelegation,type MemoryDelegationOptions} from '../memory-delegation.js';
 import type {MemoryOwnerContinuationPort,MemoryOwnerWorkView} from '../memory-owner-continuation.js';
 import {registerMemoryRuntimeRoutes,type MemoryRuntimeRouteDependencies} from '../features/memory/runtime.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices,type OwnerQuestionsPort} from './central-contracts.js';
 
 /** Owns durable extraction and selected review phases plus the bounded review

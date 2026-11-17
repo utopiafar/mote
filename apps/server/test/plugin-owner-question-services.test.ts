@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import type {OwnerQuestionCreate,OwnerQuestionProvider} from '../src/owner-question-contract.js';
 import {createOwnerQuestionServices,type OwnerQuestionServicesDependencies} from '../src/plugins/owner-question-services.js';
 

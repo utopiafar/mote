@@ -15,7 +15,7 @@ import {runtimeService,type HostRunPort,type RuntimeProvider,type RuntimeRunRequ
 import {ActiveExecutionBudget} from '../../../packages/agent/dist/active-budget.js';
 import {createHostRunUsageObserver,type HostRunEventObserver} from '../src/agent-runtime-events.js';
 import {createAdmittedUsage,type AdmittedUsageMeter} from '../src/plugins/observability-platform.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {UsageLedger} from '../src/usage.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 

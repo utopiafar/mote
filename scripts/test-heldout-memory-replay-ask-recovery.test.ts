@@ -9,7 +9,7 @@ import {exportBlindReview} from './test-heldout-memory-review.js';
 import {AgentProviderError,type ContextReader,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {base,json,hashObject,check} from './test-heldout-memory-replay.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {freezeStage,newOutput,runBatch,treeHash,codeHashes,executorPins} from './test-heldout-memory-replay-stage.js';
 import {AdmissionLedger,readAdmissionChain,inspectAdmissionLedger,askRecoveryLogicalKeys,readAskRecoveryPlan,StageSafetyError,type AskRecoveryRequest} from './test-heldout-memory-replay-ledger.js';
 import {freezeAsk,runAsk,validateAsk,type AskPlan} from './test-heldout-memory-replay-ask.js';

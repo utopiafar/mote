@@ -3,7 +3,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import type {ActionCapabilities} from './action-capabilities.js';
 import type {Connections,ConnectionCredential} from '../connections.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 
 export function registerActionCapabilityRoutes(app:FastifyInstance,{capabilities,connections,connectionIdentity,managed}:{capabilities:ActionCapabilities;managed:ManagedCalendar;connections:Connections;connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined}){
  const owner=(request:FastifyRequest)=>{const value=connectionIdentity(request);if(value&&!connections.isOwner(value))throw new StoreError('Only the owner controls action capability drafts',403);};

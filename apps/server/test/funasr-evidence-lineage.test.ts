@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Plugin} from '@deepseek-ai/cordis';
 import {fileProcessingSchema,type Transcript} from '@mote/shared';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing} from '../src/file-processing.js';

@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 
 /** Original facts only: derived OCR and local presentation never identify an original version. */
 export function captureLibraryVersion(original:Record<string,any>,blobHash:string|null=null):string {

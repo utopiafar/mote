@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,rmSync} from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';
-import {Store} from '../src/store.js';import {ExecutionEngine,ExecutionFailure} from '../src/execution-engine.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';import {ExecutionEngine,ExecutionFailure} from '../src/execution-engine.js';
 test('provider recovery window persists across retry/restart and does not consume a call after expiry',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-recovery-')),store=new Store(dir);let now=10000,calls=0;let engine=new ExecutionEngine(store,()=>now);
  const handler={kind:'fixture',pool:'fixture',concurrency:()=>1,maxAttempts:10,maxRecoveryWindowMs:5000,validate:()=>true,execute:async()=>{calls++;throw new ExecutionFailure('transient','provider_unavailable',2000);},commit:()=>{}};engine.register(handler);

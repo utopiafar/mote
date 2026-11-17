@@ -10,7 +10,7 @@ import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {createQueryRunsPlatform,type QueryRunDependencies} from '../src/plugins/query-runs.js';
 

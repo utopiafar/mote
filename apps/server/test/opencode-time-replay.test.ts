@@ -10,7 +10,7 @@ import {SourceSync} from '../../desktop/src/source-sync.js';
 import {sourceWork} from '../../desktop/src/background.js';
 import type {CodingCheckpoint} from '../../desktop/src/coding-agents.js';
 import {DEFAULT_SOURCE_OPTIONS,type SourceRequest,type SourceScan} from '../../desktop/src/source-types.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceArchive,archiveHash} from '../src/source-archive.js';
 
 test('rescanning OpenCode repairs recorded times under stable event identities without rewriting immutable raw revisions',async t=>{

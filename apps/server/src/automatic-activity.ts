@@ -9,7 +9,7 @@ import {ExecutionFailure,type ExecutionEngine,type ExecutionStep} from './execut
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {materialId,type MaterialDraft,type MaterialRecord,type MaterialStore} from './materials.js';
 import type {ModelConfiguration} from './model-configuration.js';
-import {type Store} from './store.js';
+import {type EvidenceStore as Store} from './evidence-store.js';
 import {imageMaterialProjection} from './image-materials.js';
 
 const KIND='activity.understand';

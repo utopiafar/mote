@@ -193,7 +193,7 @@ test('a tentative free-text answer receives a followup instead of becoming an ow
  await f.node.memoryPipeline.run(job.id);assert.equal(f.calls.length,before+1);
 });
 
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 

@@ -4,7 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {RecordingConnector,type ConnectorContext,type RecordingProvider} from '../src/connectors/index.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {connectorReader} from './fixtures/connector-reader.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';

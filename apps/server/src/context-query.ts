@@ -4,8 +4,8 @@ import {sourceContentTime,formatEvidenceRef,parseArtifactRef,parseEvidenceRef,fi
 import type {Memory} from './memory-schema.js';
 import type {CaptureContextRead,MemoryRead,MemoryReadSnapshot} from './evidence-read-ports.js';
 import type {SourceStore} from './sources.js';
-import type {Store} from './store.js';
-import {StoreError,type Range} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
+import {StoreError,type Range} from './evidence-store.js';
 
 export type ContextQueryInput = Range & {
   query?:string;

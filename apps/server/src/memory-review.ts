@@ -1,7 +1,7 @@
 import {extractionSeedScopeValid,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryOutputValidationError,MEMORY_ADMISSION_PROMPT} from './memory.js';
-import {StoreError,sha256} from './store.js';
+import {StoreError,sha256} from './evidence-store.js';
 import type {MemoryReviewReceipt} from './memory-schema.js';
 import type {MemoryDeletions} from './plugins/memory-deletions.js';
 import type {MemoryReviewCache} from './memory-review-cache.js';

@@ -11,7 +11,7 @@ import type {MemoryReviewStrategy} from '../../memory-strategy-contract.js';
 import type {MemoryPipeline} from '../../memory-pipeline.js';
 import type {MemoryInputSelection} from '../../evidence-read-ports.js';
 import type {FileStore} from '../../files.js';
-import {StoreError,type Store} from '../../store.js';
+import {StoreError,type EvidenceStore as Store} from '../../evidence-store.js';
 import type {ModelAuthorizationHost} from '../../model-authorization-host.js';
 import type {ModelConnection} from '../../background-model-authorization.js';
 import {EvidenceExposurePolicy} from '../../evidence-exposure.js';

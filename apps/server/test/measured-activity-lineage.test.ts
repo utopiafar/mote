@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 
 const at=(second:number)=>new Date(Date.UTC(2026,8,12,1,0,second)).toISOString();
 function fixture(t:TestContext){const directory=mkdtempSync(join(tmpdir(),'mote-generated-measurement-lineage-')),store=new Store(directory);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return store;}

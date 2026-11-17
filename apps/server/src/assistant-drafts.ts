@@ -10,7 +10,7 @@ import {
 } from '@mote/shared';
 import type {ConversationTurn} from './conversations.js';
 import type {ConversationRepository} from './plugins/central-contracts.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 /** Flat host scope used by the accepted query. Anchored questions cannot be
  * represented by the shared task scope, so the host offers no draft for them. */

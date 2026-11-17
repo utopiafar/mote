@@ -15,7 +15,7 @@ import {ExecutionSettings,executionSettingsSchema} from '../src/execution-settin
 import {ConfigService} from '../src/config-service.js';
 import {registerBuiltinDomains,executionConfigDomain,pluginsConfigDomain,serverConfigDomain} from '../src/config.js';
 import {ReloadableAgent} from '../src/agent-runtime-registry.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {testVault} from './fixtures/plugin-runtime-vault.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import {createExecutionPlatform} from '../src/plugins/execution-platform.js';

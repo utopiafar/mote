@@ -8,7 +8,7 @@ import sharp from 'sharp';
 import {formatEvidenceRef} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {parse} from 'yaml';
 
 const inactive={configured:false,query:async()=>{throw Error('No fixture model call authorized');},close:async()=>{}};

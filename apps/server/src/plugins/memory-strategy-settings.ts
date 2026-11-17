@@ -6,7 +6,7 @@ import {MemoryStrategies,defaultMemoryStrategyContribution,installMemoryStrategy
 import {MemoryRecipeSettings,type MemoryRecipeSettingsPort} from '../memory-recipe-settings.js';
 import {MemoryIntegrationSettings,type MemoryIntegrationSettingsPort} from '../memory-integration-settings.js';
 import {registerMemoryControlRoutes} from '../features/memory/control.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices} from './central-contracts.js';
 
 /** C21A owns the trusted strategy catalog and the two durable owner selections.

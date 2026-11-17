@@ -13,7 +13,7 @@ import {serviceContract,type ServiceBinding} from '@mote/plugin-api/contracts';
 import {PluginHostError} from '@mote/plugin-host';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import type {PluginManifest,PluginReleaseTransport} from '../src/plugin-release.js';
 
 const repository=fileURLToPath(new URL('../../../',import.meta.url));

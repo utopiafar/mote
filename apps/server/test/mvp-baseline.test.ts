@@ -9,7 +9,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {buildApp,type QueryAgent} from '../src/app.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {restoreProfile,repository} from '../../../scripts/profile-lib.mjs';
 

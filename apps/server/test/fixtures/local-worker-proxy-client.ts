@@ -6,7 +6,7 @@ import {request as httpsRequest} from 'node:https';
 import {fileProcessingSchema} from '@mote/shared';
 import {FileProcessorRuntime,HttpTranscriptionProvider,type ProcessorInput} from '../../src/file-processors.js';
 import {requestLocalJson} from '../../src/local-http.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 import {generatedFunasr} from './funasr.js';
 import {parseFunasrArchive,parseFunasrResponse,projectFunasrDiarization} from '../../src/funasr-contract.js';
 

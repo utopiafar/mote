@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {installSchemaPlan} from '../src/schema-installation.js';
 import {memoryBindingSchemaInstallation} from '../src/memory-binding-schema.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

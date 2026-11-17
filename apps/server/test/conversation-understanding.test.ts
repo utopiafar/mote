@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {AgentResponseError,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore,materialId,type MaterialReadPage} from '../src/materials.js';
 import {MemoryStore} from '../src/memory.js';
 import {UsageLedger} from '../src/usage.js';

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import type {Store} from '../../src/store.js';
+import type {EvidenceStore as Store} from '../../src/evidence-store.js';
 import type {SourceStore} from '../../src/sources.js';
 import type {MemoryPipeline} from '../../src/memory-pipeline.js';
 import type {MemoryInputAuthorization} from '../../src/memory-input-authorization.js';

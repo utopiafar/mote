@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {BackgroundModelAuthorization,routineModelIdentity} from './background-model-authorization.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {nextRoutineOccurrence,routineScheduleSchema,type RoutineCalendarEvent,type RoutineSchedule} from './routines-time.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 const eventRefSchema=z.object({sourceId:sourceIdSchema,externalId:z.string().min(1).max(1000)}).strict();
 const payloadSchema=z.object({goal:z.string().min(1).max(7600).refine(value=>Boolean(value.trim())),scope:queryScopeSchema,

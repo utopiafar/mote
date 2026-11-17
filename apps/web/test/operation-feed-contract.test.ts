@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import type {Api} from '../src/api.js';
 import {OperationFeed,affectedResource} from '../src/plugins/work/operation-feed.js';
 import {resources} from '../src/resource-cache.js';
-import {Store} from '../../server/src/store.js';
+import {EvidenceStore as Store} from '../../server/src/evidence-store.js';
 import {ExecutionEngine} from '../../server/src/execution-engine.js';
 import {Operations} from '../../server/src/operations.js';
 import {publishOperationChange} from '../../server/src/operation-projection.js';

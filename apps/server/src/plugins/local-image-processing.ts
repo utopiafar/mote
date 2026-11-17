@@ -5,7 +5,7 @@ import {ProviderFailure,type MediaModelStatus} from '@mote/shared';
 import {LOCAL_IMAGE_ERRORS,type LocalImagePluginState} from '../local-image-contract.js';
 import type {TrustedPluginBuild} from '../plugin-center.js';
 import type {BuildSelection} from './plugin-control-store.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 
 export const LOCAL_IMAGE_PROCESSING_INSTANCE='local-image';
 export const localImageProcessingSelection={packageId:'mote.local-image-processing',version:'1.0.0',configurationRevision:0} as const satisfies BuildSelection;

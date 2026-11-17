@@ -1,5 +1,5 @@
 import type {CaptureInput} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {SourceStore} from './sources.js';
 import type {FileStore} from './files.js';
 import {RecordContextStore,withoutOwnerDescription} from './record-context.js';

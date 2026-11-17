@@ -2,7 +2,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {queryScopeSchema,type QueryScope} from '@mote/shared';
 import {AssistantCards,assistantCardFeedbackSchema} from './assistant-cards.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {AssistantNotifications} from './assistant-notifications.js';
 
 /** Owner feed and feedback project the same persisted card. Producers use the

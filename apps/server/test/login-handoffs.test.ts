@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {createHash, randomBytes} from 'node:crypto';
 import {Connections, type ConnectionFile} from '../src/connections.js';
 import {LoginHandoffs} from '../src/login-handoffs.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {buildApp, type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';

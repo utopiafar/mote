@@ -1,5 +1,5 @@
 import {fileAttachmentAvailable,fileProcessingObjectHash,FileAttachments} from './file-attachments.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {FileStore} from './files.js';
 
 export type ImageInputRow={capture_id:string;adapter:string;source_id:string;hash:string|null;mime:string;revision:string;override_id:string|null;auto_eligible:number;generation:number;policy_json:string|null;created_at:number;understanding_enabled:number;reuse_allowed:number;semantic_withdrawn:number};

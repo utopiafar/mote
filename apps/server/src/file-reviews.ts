@@ -5,7 +5,7 @@ import {transcriptSchema,type Transcript} from '@mote/shared';
 import type {ContextRecord} from '@mote/agent';
 import {FileStore} from './files.js';
 import {FileProcessing} from './file-processing.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import {invalidateRetiredFileEvidence} from './evidence-dependencies.js';
 import {invalidateFileSummary} from './file-summary-lineage.js';

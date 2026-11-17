@@ -8,7 +8,7 @@ import type {QueryInput} from '@mote/agent';
 import type {TokenUsage} from '@mote/shared';
 import type {ModelDomain} from '../model-settings.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
-import {sha256,StoreError} from '../store.js';
+import {sha256,StoreError} from '../evidence-store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {UsageLedger} from '../usage.js';
 import type {FileStore} from '../files.js';

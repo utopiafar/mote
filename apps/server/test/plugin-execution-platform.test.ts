@@ -21,7 +21,7 @@ import {ImportStore} from '../src/imports.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing} from '../src/file-processing.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';

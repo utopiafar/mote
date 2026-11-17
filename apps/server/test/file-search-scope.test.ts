@@ -9,7 +9,7 @@ import {FILE_PART_BYTES,fileViewSchema,type FileRevision} from '@mote/shared';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {Indexer} from '../src/indexer.js';
 
 async function fixture(t:any,query?:QueryAgent['query']){

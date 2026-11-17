@@ -4,8 +4,8 @@ import type {RawCollectionRef,RawPageRequest,RawPageResult,RawReadRequest,RawRea
 import {MAX_RAW_PAGE_ITEMS,MAX_RAW_READ_BYTES} from './raw-reader.js';
 import type {FileStore} from './files.js';
 import type {ArchivedFileStore} from './archived-files.js';
-import type {Store} from './store.js';
-import {StoreError} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
+import {StoreError} from './evidence-store.js';
 
 const versionRef=/^raw-file:v1:([0-9a-f-]{36}):([a-f0-9]{64}|missing)$/;
 const archivedRef=/^raw-archive:v1:([0-9a-f-]{36}):([a-f0-9]{64})$/;

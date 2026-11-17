@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {FILE_PART_BYTES,noteCapture,noteSchema} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import type {TranscriptionProvider} from '../src/file-processing.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';

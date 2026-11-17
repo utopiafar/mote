@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import type {FileStore} from './files.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 
 /** A summary depends on the complete preferred transcript and owner-confirmed
  * speaker attribution, including inputs it did not happen to cite. */

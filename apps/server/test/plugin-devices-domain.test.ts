@@ -9,7 +9,7 @@ import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {defaultDistribution} from '../src/distribution/default.js';
 import {devicesSourcePlugin} from '../src/plugins/devices-domain.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 
 const token='generated-devices-domain-owner',agent={configured:false,query:async()=>{throw Error('No model in generated Devices domain');},close:async()=>{}};
 const beat=(depth=3)=>({deviceId:'generated-domain-phone',deviceName:'Generated Devices phone',platform:'android',status:'capturing',queueDepth:depth});

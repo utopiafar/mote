@@ -2,7 +2,7 @@ import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import sharp from 'sharp';
 import {createServer} from 'node:http';
-import {sha256,Store} from '../src/store.js';
+import {sha256,EvidenceStore as Store} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';

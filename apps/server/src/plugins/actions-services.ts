@@ -3,7 +3,7 @@ import {serviceContract,type PluginLifecycle,type StopReason} from '@mote/plugin
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {FastifyInstance} from 'fastify';
 import type {CentralDomainPlugin} from '../domain-activation.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {OwnerCalendarPort} from '../owner-calendar-instructions.js';
 
 /** The input grants one concrete domain factory, never a Store, SQL connection,

@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {scanVectors} from '../src/vector-work.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 
 test('read-only vector worker covers older evidence, bounds IPC, preserves scope and skips corrupt vectors',async()=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-vector-worker-')),store=new Store(directory);

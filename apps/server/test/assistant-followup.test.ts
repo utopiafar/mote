@@ -14,7 +14,7 @@ import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {semanticProcessor} from '../src/semantic-extraction.js';
 import {UsageLedger} from '../src/usage.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
-import {StoreError,sha256} from '../src/store.js';
+import {StoreError,sha256} from '../src/evidence-store.js';
 import {materialId,MaterialStore} from '../src/materials.js';
 import {ImportAttributionStore} from '../src/import-attribution.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';

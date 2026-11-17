@@ -11,7 +11,7 @@ import sharp from 'sharp';
 import type {ImportJob} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store,StoreError,sha256} from '../src/store.js';
+import {EvidenceStore as Store,StoreError,sha256} from '../src/evidence-store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {SourceStore} from '../src/sources.js';
 import {ImportStore} from '../src/imports.js';

@@ -1,7 +1,7 @@
 import type {Plugin} from '@deepseek-ai/cordis';
 import type {HostScope} from '@mote/plugin-host';
 import type {PluginScope} from '@mote/plugin-api/contracts';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {MaterialStore} from './materials.js';
 import type {FileStore} from './files.js';
 import type {MaterialMemoryWork} from './material-memory-work.js';

@@ -6,7 +6,7 @@ import {conversationInputIdentity,type ConversationMessage,type ConversationTask
 import {ConversationRuntimeControls} from './conversation-runtime-controls.js';
 import {conversationSteeringScopeContains} from './conversation-steering.js';
 import {ExecutionFailure,type ExecutionStep} from './execution-engine.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {TaskRecord} from './task-records.js';
 import {BATCH_CONTEXT_MAX_BYTES} from './batch-processing.js';
 

@@ -16,7 +16,7 @@ import {} from '../src/config.js';
 import {createModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
 import {MEDIA_CATALOG} from '../src/media-assets.js';
 import {MediaPreparation} from '../src/media-preparation.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {materialId} from '../src/materials.js';
 import {localImageProcessingSelection} from '../src/plugins/local-image-processing.js';
 import {LOCAL_IMAGE_MODEL} from '../src/local-image-contract.js';

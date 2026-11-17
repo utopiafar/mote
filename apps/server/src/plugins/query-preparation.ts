@@ -1,7 +1,7 @@
 import {AgentNotConfiguredError,assembleHostContext,calculateContextBudget,estimateSerializedTokens,originalEvidenceReceipt,type ContextReader,type QueryInput} from '@mote/agent';
 import type {ConversationSettings} from '@mote/shared';
 import type {QueryResult} from '@mote/shared';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {FileStore} from '../files.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
 import type {Conversations} from '../conversations.js';

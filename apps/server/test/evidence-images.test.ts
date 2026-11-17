@@ -7,7 +7,7 @@ import {zipSync,strToU8} from 'fflate';
 import sharp from 'sharp';
 import {randomUUID} from 'node:crypto';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';

@@ -8,7 +8,7 @@ import {setImmediate} from 'node:timers/promises';
 import {PluginHost} from '@mote/plugin-host';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';

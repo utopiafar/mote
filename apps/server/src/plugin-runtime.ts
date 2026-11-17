@@ -1,7 +1,7 @@
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {serviceContract,type ServiceBinding,type ScopeIdentity,type ServiceLease} from '@mote/plugin-api/contracts';
 import type {PluginHost,PluginHandle} from '@mote/plugin-host';
 

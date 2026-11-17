@@ -8,7 +8,7 @@ import {ProviderFailure,errorDiagnostics,type ConversationSettings,type InsightS
 import type {QueryScope as ReaderQueryScope} from '../query-scope.js';
 import type {DelegationRuntime} from '../delegation-runtime.js';
 import type {AgentRunFinalizer,QueryRunLease} from '../query-agent.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import {ExecutionFailure} from '../execution-engine.js';
 import {modelConfiguration} from '../model-configuration.js';

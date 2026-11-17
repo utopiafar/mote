@@ -9,7 +9,7 @@ import Fastify from 'fastify';
 import {PluginHost} from '@mote/plugin-host';
 import type {PluginLifecycle} from '@mote/plugin-api/contracts';
 import {ProviderFailure,unknownAttributionContext,type ImageReadResult,type MediaAssetStatus,type MediaModelStatus,type PluginBuildView} from '@mote/shared';
-import {Store,StoreError,sha256} from '../src/store.js';
+import {EvidenceStore as Store,StoreError,sha256} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {createPluginControlPlatform,pluginControlDeclaration,type PluginCenter} from '../src/plugin-center.js';

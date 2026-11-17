@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {z} from 'zod';
 import type {CaptureRecord} from '@mote/shared';
-import type {Store,Range} from './store.js';
+import type {EvidenceStore as Store,Range} from './evidence-store.js';
 
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const artifactOutput=z.object({kind:z.string().min(1).max(80),text:z.string().max(12000),metadata:z.record(z.unknown()).default({})}).strict();

@@ -3,7 +3,7 @@ import type {LibraryTypeDescriptor,LibrarySourceFacet,LibraryMaterialType} from 
 import type {Context} from '@deepseek-ai/cordis';
 import {z} from 'zod';
 import type {MaterialStore} from './materials.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {DatabaseSync} from 'node:sqlite';
 import {installSchemaPlan,schemaObjectsExist,type SchemaInstallation,type SchemaObject} from './schema-installation.js';
 import {materialHeadsPrerequisite} from './material-schema.js';

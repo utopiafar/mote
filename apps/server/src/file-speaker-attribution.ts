@@ -1,5 +1,5 @@
 import {fileSpeakerAttributionSchema} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 
 type ArtifactRow={id:string;kind:string;input:string|null;inputs:string|null};
 /** An owner name belongs to the acoustic separation that produced its label.

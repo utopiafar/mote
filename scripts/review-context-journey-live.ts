@@ -6,7 +6,7 @@ import {join,relative,resolve} from 'node:path';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {contextJudgmentQuestion} from './context-journey-judgment.js';
 
 assert.ok(process.env.MOTE_JOURNEY_REVIEW_REPORT&&process.env.MOTE_JOURNEY_OUTPUT);

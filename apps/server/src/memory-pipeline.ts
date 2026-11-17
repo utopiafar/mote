@@ -24,7 +24,7 @@ import {z} from 'zod';
 import type {DatabaseSync} from 'node:sqlite';
 import {modelProfileIdSchema} from './model-settings.js';
 import {ProviderFailure,executionEnvelope,type ExecutionEnvelope,type QueryResult} from '@mote/shared';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION,memoryEvidenceFingerprint,type EvidenceRange} from './memory.js';
 

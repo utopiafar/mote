@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import type {EvidenceDependencies} from '@mote/shared';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {TaskRecords,type AssertTaskCurrent} from '../src/task-records.js';
 import {invalidateTaskEvidence} from '../src/task-evidence.js';
 import {SourceStore} from '../src/sources.js';

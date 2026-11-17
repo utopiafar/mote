@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {sourceDescriptionDeclarationSchema,type SourceContextDeclaration} from '@mote/shared';
-import {StoreError,type Store,type Range} from './store.js';
+import {StoreError,type EvidenceStore as Store,type Range} from './evidence-store.js';
 import type {SourceStore} from './sources.js';
 
 export function sourceContextRef(pin:SourceContextDeclaration){sourceDescriptionDeclarationSchema.parse(pin);return `source-context:${Buffer.from(pin.sourceId).toString('base64url')}@${pin.version}#${pin.fingerprint}`;}

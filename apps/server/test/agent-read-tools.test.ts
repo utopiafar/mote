@@ -78,7 +78,7 @@ test('registered descriptors from external owner use the same run registry and c
 
 test('the formal evidence factory feeds the actual Host sender and owner stop rejects a late prepared receipt',async t=>{
   const {mkdtempSync,rmSync,existsSync}=await import('node:fs'),{randomUUID}=await import('node:crypto');
-  const {Store}=await import('../src/store.js'),{SourceStore}=await import('../src/sources.js'),{MaterialStore,materialId}=await import('../src/materials.js');
+  const {EvidenceStore: Store}=await import('../src/evidence-store.js'),{SourceStore}=await import('../src/sources.js'),{MaterialStore,materialId}=await import('../src/materials.js');
   const {ServerDiagnostics}=await import('../src/diagnostics.js'),{createEvidenceContextReader}=await import('../src/plugins/evidence-context-reader.js'),{createEvidenceReaderFacade,createEvidenceReaderForAssembly}=await import('../src/evidence-reader.js'),{createContextTrees,createContextTreesReadCapability}=await import('../src/context-trees.js');
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js'),{pinContextTools}=await import('../../../packages/agent/dist/tool-contributions.js');
   const {hostFixture}=await import('../../../packages/agent/test/fixtures/read-pack-host.mjs');

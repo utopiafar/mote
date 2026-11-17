@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {UsageLedger,estimateCost,usageTotals} from '../src/usage.js';
 const price={provider:'fixture',model:'fixture-model',currency:'USD' as const,input:2,output:8,cacheRead:0.5,cacheWrite:3};
 const tokens={requests:2,reportedRequests:2,inputTokens:1000000,outputTokens:100000,cacheReadTokens:500000,cacheWriteTokens:100000,totalTokens:1100000,reasoningTokens:50000};

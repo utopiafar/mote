@@ -11,7 +11,7 @@ import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {createPluginControlPlatform,pluginControlDeclaration} from '../src/plugin-center.js';
 import type {StateStore} from '@mote/plugin-api';
 import {PluginHost,type HostScope} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {bindInstanceStateCommit} from '../src/plugin-instance-state-storage.js';
 

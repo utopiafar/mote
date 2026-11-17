@@ -3,7 +3,7 @@ import type {DecodedDocument} from '@mote/shared/document-decoder';
 import {ZodError} from 'zod';
 import {decodeOriginal,pdfLibrary,pdfOptions} from './document-decoder.js';
 import {isLoopback,requestLocalJson} from './local-http.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 /** The existing local OCR worker accepts one image at a time. Two rendered
  * pages may be prepared in parallel, but successful pages are never re-read. */

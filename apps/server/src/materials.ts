@@ -7,7 +7,7 @@ import {CODING_DIALOGUE_SCHEMA_VERSION,documentSchema,attributionContextSchema,o
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {installEvidenceDependencies} from './evidence-dependencies.js';
 import {materialDependencyStatus,materialRequirementsSchema,type MaterialInputPin} from './material-readiness.js';
 import {materialIndexRuntime,type MaterialIndexRuntime,type MaterialIndexStatus} from './material-index.js';

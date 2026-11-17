@@ -12,7 +12,7 @@ import {FileReviews} from './file-reviews.js';
 import {fileExportEntries,exportTar} from './file-export.js';
 import {isLoopback,requestLocalJson} from './local-http.js';
 import {FileProcessing} from './file-processing.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {FileAttachments} from './file-attachments.js';
 import {Readable} from 'node:stream';
 import {PlaybackGrants,type FilePlaybackGrants} from './plugins/files-source.js';

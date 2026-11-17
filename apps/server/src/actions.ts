@@ -9,7 +9,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {calendarExpired,sourceContentTime,actionEvidenceText,actionZone,calendarDraftSchema,calendarEventSchema,calendarChoiceSchema,calendarDescription,actionProposalTargetSchema,centralConnectorActionTargetSchema,isCentralConnectorActionTarget,messageSendDraftSchema,type AssistantActionDraft,type ActionConnectorChoice,type ActionProposal,type ActionProposalTarget,type ActionSettings,type ActionTarget,type CaptureRecord,type CentralConnectorActionTarget,type QueryResult} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import {semanticProductsSchema} from './semantic-extraction.js';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import type {FileStore} from './files.js';
 import type {Connections,ConnectionCredential} from './connections.js';
 import { ConfigServiceError, type ConfigService } from './config-service.js';

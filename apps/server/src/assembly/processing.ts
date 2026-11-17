@@ -13,7 +13,7 @@ import type {MediaConfiguration} from '../media-configuration.js';
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
-import {StoreError,type Store} from '../store.js';
+import {StoreError,type EvidenceStore as Store} from '../evidence-store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {UsageLedger} from '../usage.js';
 import type {MaterialStore} from '../materials.js';

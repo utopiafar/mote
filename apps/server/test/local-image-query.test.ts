@@ -13,7 +13,7 @@ import {ProviderFailure,unknownAttributionContext,type QueryResult} from '@mote/
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {createModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {createPluginControlPlatform,pluginControlDeclaration,type PluginCenter} from '../src/plugin-center.js';

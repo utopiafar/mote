@@ -15,7 +15,7 @@ import type {QueryResult} from '@mote/shared';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {archiveHash,sourceReceiptId} from '../apps/server/src/source-archive.js';
 import {defaultMemoryIntegrationRecipe} from '../apps/server/src/memory-integration-policy.js';
 import {requestMemoryIntegration} from '../apps/server/src/memory-integration.js';

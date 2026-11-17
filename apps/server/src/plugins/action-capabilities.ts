@@ -3,7 +3,7 @@ import {actionCapabilitiesSchemaInstallation} from '../action-capabilities-schem
 import {ActionInputScope} from '../action-input-scope.js';
 import {actionGrantCommandSchema,type ActionConnectorChoice,type ActionGrant,type ActionPluginProvider,type ActionPluginIdentity,type CentralConnectorActionTarget} from '@mote/shared';
 import {actionCapabilityCommandSchema,actionCapabilityDraftSchema,actionDeviceDeclarationSchema,actionPluginCapabilityIdentitySchema,actionPluginCapabilitySchema,calendarManageCapability,calendarCapabilityIdentitySchema,projectDeviceCapability,type ActionCapabilityDraft,type ActionDeviceCapability,type DeviceCapabilityProjection} from '@mote/shared';
-import {StoreError,sha256} from '../store.js';
+import {StoreError,sha256} from '../evidence-store.js';
 import type {SourceStore} from '../sources.js';
 import type {Connections,ConnectionCredential} from '../connections.js';
 

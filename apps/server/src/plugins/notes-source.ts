@@ -2,7 +2,7 @@ import type {CaptureRecord} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {StoreError,type Range} from '../store.js';
+import {StoreError,type Range} from '../evidence-store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialNoteDeletion} from '../material-note-deletion.js';
 

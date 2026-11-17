@@ -1,7 +1,7 @@
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {EvidenceDependencies} from '@mote/shared';
 import {z} from 'zod';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 type Lead=NonNullable<QueryInput['openingMemories']>[number];
 type Scope=Pick<QueryInput,'after'|'before'|'deviceId'|'contextTime'>;

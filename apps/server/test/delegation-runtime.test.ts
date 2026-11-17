@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
 import {AgentYieldError,HOST_DELEGATION_CONTROL_DEFINITIONS} from '@mote/agent';
 import {ContentStorageService} from '../src/content-storage.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine,ExecutionFailure} from '../src/execution-engine.js';
 import {createAgentDelegationPlugin,registerQueryDelegation} from '../src/agent-delegation-plugin.js';
 import {DelegationRuntime,DelegationPlanningError,type DelegationCoordinatorContext} from '../src/delegation-runtime.js';

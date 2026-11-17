@@ -11,7 +11,7 @@ import type {MemoryStore} from '../memory.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {ContextTreeRegistry} from '../context-trees.js';
 import {MemoryTopicsHost,type MemoryTopicsSelection} from '../memory-topics-host.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices,type MemoryTopics} from './central-contracts.js';
 
 /** C22C owns automatic topics end to end: the derived tree index, the

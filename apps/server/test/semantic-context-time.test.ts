@@ -16,7 +16,7 @@ import {MemoryLifecycle,freezeSemanticContextTime,type LifecycleWindow} from '..
 import {requestMemoryIntegration} from '../src/memory-integration.js';
 import {defaultMemoryIntegrationRecipe} from '../src/memory-integration-policy.js';
 import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ConfigService} from '../src/config-service.js';
 import {lifecycleSettingsSchema,defaultLifecycleSettings} from '../src/memory-configuration.js';
 import {hostRun} from './fixtures/host-run.js';

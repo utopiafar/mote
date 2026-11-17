@@ -11,7 +11,7 @@ import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {fileAttachmentChildren} from '../src/file-attachments.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {materialId,type MaterialDraft,type MaterialRecord} from '../src/materials.js';
 import {imageMaterialProjection,projectImageMaterial,imageMaterialSections,type ImageMaterialSnapshot} from '../src/image-materials.js';
 import {memoryImageGrants,memoryImageInterpretation} from '../src/memory-image-grants.js';

@@ -1,4 +1,4 @@
-import {Store} from './store.js';
+import {EvidenceStore as Store} from './evidence-store.js';
 // Private options arrive over IPC; credentials never appear in argv or logs.
 let store:Store|undefined,timer:ReturnType<typeof setTimeout>|undefined,closing=false,lastPhysical=0,needsStartupSweep=true;
 function tick(){

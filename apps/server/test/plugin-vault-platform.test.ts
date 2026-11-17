@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync,mkdirSync,writeFileSync,readFileSync,existsSync} from
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {StoreDatabase} from '../src/sqlite-database.js';
 import {MemoryStore} from '../src/memory.js';
 import type {MemoryBindings} from '../src/memory-bindings.js';
@@ -14,7 +14,7 @@ import {FileStore} from '../src/files.js';
 import {AssetStore} from '../src/assets.js';
 import {MaintenanceWorker} from '../src/maintenance.js';
 import {setImmediate} from 'node:timers/promises';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {PluginHost} from '@mote/plugin-host';
 import type {PluginScope,ScopeIdentity,ServiceBinding} from '@mote/plugin-api/contracts';
 import {createVaultPlatform,createVaultPlatformAssembly,createVaultPlatformFactory,vaultPlatformContribution,vaultPlatformDeclaration} from '../src/plugins/vault-platform.js';

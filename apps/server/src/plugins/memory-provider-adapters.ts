@@ -4,7 +4,7 @@ import type {HostPluginContext} from '@mote/plugin-host';
 import type {PluginCenter} from '../plugin-center.js';
 import type {ModelSettingsStore} from '../model-settings.js';
 import {MemoryAdapters} from '../memory-adapters.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices,type MemoryProviderAdapters} from './central-contracts.js';
 
 /** This service owns the external Memory provider adapters: generic worker providers and

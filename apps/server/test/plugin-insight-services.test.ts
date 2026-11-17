@@ -11,7 +11,7 @@ import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {InsightRuns} from '../src/insight-runs.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {createInsightServices,type InsightServicesDependencies} from '../src/plugins/insight-services.js';
 import {hostRun} from './fixtures/host-run.js';
 import {defaultDistribution} from '../src/distribution/default.js';

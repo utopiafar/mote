@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {base,check,equal,json,SafeFailure} from './test-heldout-memory-replay.js';
 import {StageSafetyError} from './test-heldout-memory-replay-ledger.js';
 import {freezeStage,freezeContinuation,newOutput,runBatch,treeHash,codeHashes,executorPins,experimentHash,type Manifest} from './test-heldout-memory-replay-stage.js';

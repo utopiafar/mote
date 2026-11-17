@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {installSchemaPlan} from '../src/schema-installation.js';
 import {type PluginControlStore} from '../src/plugins/plugin-control-store.js';
 import {pluginControlSchemaInstallation} from '../src/plugin-control-storage.js';

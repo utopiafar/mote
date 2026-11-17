@@ -1,7 +1,7 @@
 import {installSchemaPlan} from './schema-installation.js';
 import {delegationJournalSchemaInstallation} from './delegation-schema.js';
-import type {Store} from './store.js';
-import {StoreError} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
+import {StoreError} from './evidence-store.js';
 
 /** Private execution products: never indexed, exported as originals, or accepted
  * as citation authority. Vault encryption policy also applies to these payloads. */

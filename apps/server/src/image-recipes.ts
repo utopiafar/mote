@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import type {CaptureRecord,ImageReadInput,ImageReadResult,Transcript} from '@mote/shared';
 import {recipeFingerprint,freezeRecipe} from './recipe-contract.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {ComponentRef} from './file-recipes.js';
 
 /** These are interpretations, never OCR or verbatim original evidence. Regions

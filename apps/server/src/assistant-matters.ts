@@ -3,7 +3,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {queryScopeSchema,type OperationState,type QueryScope} from '@mote/shared';
 import {z} from 'zod';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
-import {StoreError,sha256,type Store} from './store.js';
+import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 
 /** Owner-authored assistant matters. A matter stores a goal, the scope the
  * owner selected, its lifecycle state and links to existing work/evidence. It

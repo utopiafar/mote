@@ -11,7 +11,7 @@ import {uiPageText,type CaptureInput,type UiPageV3} from '@mote/shared';
 import type {ContextRecord,QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {uiPageCaptureSource} from '../src/capture-memory-intake.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';

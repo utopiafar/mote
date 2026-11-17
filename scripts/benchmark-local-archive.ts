@@ -3,7 +3,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import {resolve,join} from 'node:path';
 import {writeFileSync} from 'node:fs';
-import {Store} from '../apps/server/src/store.js';
+import {EvidenceStore as Store} from '../apps/server/src/evidence-store.js';
 import {MemoryStore} from '../apps/server/src/memory.js';
 import {Conversations} from '../apps/server/src/conversations.js';
 import {MemoryPipeline} from '../apps/server/src/memory-pipeline.js';

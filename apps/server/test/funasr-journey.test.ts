@@ -14,7 +14,7 @@ import {buildApp} from '../src/app.js';
 import {} from '../src/config.js';
 import {MEDIA_CATALOG,mediaModelIdentities} from '../src/media-assets.js';
 import {materialId} from '../src/materials.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {processorSettingsFingerprint} from '../src/file-configuration.js';
 import {effectiveFileSettings,selectFilePolicy} from '../src/file-policy.js';
 import {mediaModelHealth} from '../src/media-configuration.js';

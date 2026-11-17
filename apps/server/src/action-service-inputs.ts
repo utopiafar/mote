@@ -8,7 +8,7 @@ import {ManagedCalendar} from './managed-calendar.js';
 import {TodoStore,registerTodoRoutes} from './todos.js';
 import {createAssistantActions,registerAssistantActionRoutes,type AssistantActions} from './assistant-actions.js';
 import {OwnerCalendarInstructions,type OwnerCalendarAuthority} from './owner-calendar-instructions.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {ActionsDomain,ActionsServicesInputs} from './plugins/actions-services.js';
 import type {FileStore} from './files.js';
 import type {SourceStore} from './sources.js';

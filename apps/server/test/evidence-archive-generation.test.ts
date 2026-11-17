@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 
 test('a changed group cannot publish an exact segment from its earlier member snapshot',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-archive-generation-')),store=new Store(directory),id=randomUUID();

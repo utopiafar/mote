@@ -1,7 +1,7 @@
 import {serviceContract} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {CentralDomainPlugin} from '../domain-activation.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 import type {ContextReader} from '@mote/agent';

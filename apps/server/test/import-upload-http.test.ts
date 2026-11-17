@@ -8,7 +8,7 @@ import {setTimeout} from 'node:timers/promises';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 
 test('HTTP binary import archives exact generated image without a model, enforcing owner access and part limits',{timeout:60_000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-http-'));

@@ -14,7 +14,7 @@ import {ArchivedFileStore} from '../src/archived-files.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {ImportStore} from '../src/imports.js';
 import {SourceStore} from '../src/sources.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 
 const settings:ModelSettings={
   provider:'custom',protocol:'openai-completions',model:'generated-model',baseUrl:'http://127.0.0.1:9/v1',apiKey:'generated-key',

@@ -2,7 +2,7 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {MemoryAutomation,type MemoryAutomationStore,type MemoryAutomationState} from '../memory-automation.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices,type MemoryAdmission} from './central-contracts.js';
 
 /** The durable admission owner: automatic-work pause/resume/stop commands and

@@ -1,6 +1,6 @@
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {MaterialStore} from './materials.js';
 
 export type MaterialIndexStatus={state:'disabled'|'pending'|'running'|'indexed'|'failed';revision?:string;reason?:string};

@@ -8,7 +8,7 @@ import {configurationFromFile} from '../../src/config.js';
 import {startServer} from '../../src/start-server.js';
 import {MaterialMemoryWork} from '../../src/material-memory-work.js';
 import {MemoryPipeline} from '../../src/memory-pipeline.js';
-import type {Store} from '../../src/store.js';
+import type {EvidenceStore as Store} from '../../src/evidence-store.js';
 import type {QueryAgent} from '../../src/query-agent.js';
 import {authorizeFixtureModels} from './model-authorization.js';
 import {seedSourceMemoryBacklog} from './source-memory-backlog.js';

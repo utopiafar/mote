@@ -13,7 +13,7 @@ import {agentModelConnection} from './model-authorization-host.js';
 import type {PreparedModelSettings} from './model-settings.js';
 import type {ProviderAdmission} from './provider-admission.js';
 import type {QueryAgent,QueryRunLease} from './query-agent.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {dshSelectionBoundary} from './dsh-native.js';
 
 export interface AgentRuntimeRegistryDependencies {

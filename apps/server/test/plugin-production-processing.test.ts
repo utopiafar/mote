@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {strToU8,zipSync} from 'fflate';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import type {PluginManifest,PluginReleaseTransport} from '../src/plugin-release.js';
 
 const source=String.raw`

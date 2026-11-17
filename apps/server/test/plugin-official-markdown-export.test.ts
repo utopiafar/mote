@@ -6,7 +6,7 @@ import {existsSync,mkdirSync,mkdtempSync,readFileSync,readdirSync,rmSync,statSyn
 import {homedir,tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {GitHubPluginReleases,officialPluginLocalDirectory,pluginManifestSchema,type PluginReleaseTransport} from '../src/plugin-release.js';
 import {PluginCenter} from '../src/plugin-center.js';

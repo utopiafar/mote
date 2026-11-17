@@ -1,8 +1,8 @@
 import {formatArtifactRef,formatEvidenceRef,type SourceContextDeclaration} from '@mote/shared';
-import type {Store,Range} from './store.js';
+import type {EvidenceStore as Store,Range} from './evidence-store.js';
 import type {MemoryStore} from './memory.js';
 import type {SourceStore} from './sources.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {browseSourceContexts} from './source-context-catalog.js';
 
 export const CONTEXT_DIRECTORIES=[

@@ -9,7 +9,7 @@ import type {AddressInfo} from 'node:net';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Connections} from '../src/connections.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
 import {officialPluginCatalog} from '../src/official-plugin-catalog.js';

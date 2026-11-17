@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setImmediate} from 'node:timers/promises';
 import {sourceItemSchema,captureSchema} from '@mote/shared';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {SourceContextStore} from '../src/source-context.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';

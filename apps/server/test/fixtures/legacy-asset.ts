@@ -1,6 +1,6 @@
 import {join} from 'node:path';
 import {writeFileSync,rmSync,mkdirSync} from 'node:fs';
-import type {Store} from '../../src/store.js';
+import type {EvidenceStore as Store} from '../../src/evidence-store.js';
 /** Generate authentic previous-format storage without reading any personal content. */
 export function legacyAsset(store:Store,hash:string,format:'image-legacy'|'archive-legacy',unsuffixed=false){
  const bytes=store.assets.read(hash);

@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
 import {PluginHost} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {centralServices,type ConversationRepository} from '../src/plugins/central-contracts.js';
 import {
   createConversations,createConversationsFactory,createConversationRoutes,

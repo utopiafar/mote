@@ -1,7 +1,7 @@
 import type {ConversationMessage} from './conversations.js';
 import {conversationInputIdentity} from './conversations.js';
 import type {ModelConnection} from './background-model-authorization.js';
-import {sha256} from './store.js';
+import {sha256} from './evidence-store.js';
 
 /** Host-only origin in the existing private Task input. This is owner text,
  * not a capture, retrieval record, citation, source grant or Action authority. */

@@ -18,7 +18,7 @@ import type {MaintenanceWorker} from '../maintenance.js';
 import type {LifecycleSettings} from '../memory-lifecycle.js';
 import {ModelSettingsError,type ModelDomain,type ModelSettingsStore} from '../model-settings.js';
 import type {ProviderAdmission} from '../provider-admission.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices} from './central-contracts.js';
 import {registerAgentRuntimeSettingsRoutes} from './agent-runtime-settings-routes.js';
 import {registerExecutionSettingsRoutes} from './execution-settings-routes.js';

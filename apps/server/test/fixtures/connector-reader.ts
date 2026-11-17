@@ -4,7 +4,7 @@ import type {MaterialOrganizerRuntime} from '../../src/material-organizers.js';
 import type {MaterialStore} from '../../src/materials.js';
 import type {SourcePipelineRuntime} from '../../src/source-pipelines.js';
 import type {SourceStore} from '../../src/sources.js';
-import type {Store} from '../../src/store.js';
+import type {EvidenceStore as Store} from '../../src/evidence-store.js';
 
 /** Test injection point for the roots-owned reader. Production passes the one
  * reader built by the evidence-context factory; connector fixtures that never

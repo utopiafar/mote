@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout,setImmediate} from 'node:timers/promises';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {ImportAttributionStore} from '../src/import-attribution.js';
 import {ImportStore} from '../src/imports.js';
 import {ArchivedFileStore} from '../src/archived-files.js';

@@ -2,7 +2,7 @@ import {ensureTodoSchema} from './todo-schema.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import {todoInputSchema} from '@mote/shared';
 
 const {id:_,...fields}=todoInputSchema.shape;

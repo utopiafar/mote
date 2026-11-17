@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {ProviderFailure,errorDiagnostics} from '@mote/shared';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {isLoopback,requestLocalJson} from './local-http.js';
 import {mediaModelIdentities} from './media-assets.js';
 import {FUNASR_HTTP,FUNASR_LIMITS,FUNASR_PROTOCOL,funasrIdentitySchema,parseFunasrArchive,parseFunasrRequest,parseFunasrResponse,type FunasrFailure,type FunasrRequest,type FunasrIdentity} from './funasr-contract.js';

@@ -6,7 +6,7 @@ import type {Actions} from './actions.js';
 import type {ManagedCalendar} from './managed-calendar.js';
 import type {TodoStore} from './todos.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
 
 /** This constructor only installs links and their storage meter. Keep its

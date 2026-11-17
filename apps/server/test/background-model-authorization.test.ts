@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {BackgroundModelAuthorization,modelConnection,type ModelConnection} from '../src/background-model-authorization.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine,type ExecutionStep} from '../src/execution-engine.js';
 
 function fixture(t:import('node:test').TestContext){

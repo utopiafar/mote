@@ -1,6 +1,6 @@
 import type {LibraryMaterialType} from '@mote/shared';
 import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 const primary=`FROM material_members m JOIN captures c ON m.ref='capture:'||c.id
   LEFT JOIN file_versions f ON f.capture_id=c.id

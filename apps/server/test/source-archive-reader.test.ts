@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {sourceItemSchema} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceArchive} from '../src/source-archive.js';
 import {MAX_RAW_PAGE_ITEMS,MAX_RAW_READ_BYTES,SourceArchiveRawReader,sourceArchiveCollectionRef,sourceArchiveRawRef} from '../src/source-archive-reader.js';
 

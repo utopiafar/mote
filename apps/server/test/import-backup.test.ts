@@ -8,7 +8,7 @@ import {execFileSync} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
 import {randomUUID} from 'node:crypto';
 import {FILE_PART_BYTES} from '@mote/shared';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {FileStore} from '../src/files.js';
 import {SourceStore} from '../src/sources.js';

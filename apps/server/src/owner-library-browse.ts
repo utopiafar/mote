@@ -3,7 +3,7 @@ import type {StatementSync} from 'node:sqlite';
 import {z} from 'zod';
 import {formatEvidenceRef,sourceContentTime,libraryMaterialTypes,type CapturePreview,type LibraryMaterialType} from '@mote/shared';
 import {moteText} from './i18n.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {storedCaptureLibraryVersion} from './capture-library-version.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {MaterialStore,MaterialRecord} from './materials.js';

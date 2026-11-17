@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import {Actions} from '../src/actions.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {FileStore} from '../src/files.js';
 import {SourceStore} from '../src/sources.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

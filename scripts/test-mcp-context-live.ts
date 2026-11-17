@@ -8,7 +8,7 @@ import Fastify from 'fastify';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {createAgent,type ContextRecord} from '../packages/agent/src/index.js';
-import {Store} from '../apps/server/src/store.js';
+import {EvidenceStore as Store} from '../apps/server/src/evidence-store.js';
 import {SourceStore} from '../apps/server/src/sources.js';
 import {registerMcp} from '../apps/server/src/connectors/mcp.js';
 import {mcpContext} from '../apps/server/src/connectors/mcp-context.js';

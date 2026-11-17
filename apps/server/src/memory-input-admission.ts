@@ -5,7 +5,7 @@ import type {MemoryRecipeBinding} from './memory-strategy-contract.js';
 import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
 import type {AutomaticMemoryGrant} from './memory-input-authorization.js';
 import {formatMaterialRef} from './materials.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {memoryEvidenceFingerprint} from './memory.js';
 import type {StatementSync} from 'node:sqlite';
 

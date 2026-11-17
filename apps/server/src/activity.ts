@@ -3,7 +3,7 @@ import {queryWorkProgress,type WorkActivity,type WorkActivityPage,type WorkArtif
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {moteText} from './i18n.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {Operations} from './operations.js';
 import type {MemoryJob,MemoryBatch} from './memory-pipeline.js';
 import type {ImportJob} from '@mote/shared';

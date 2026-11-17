@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {Store} from '../src/store.js';import {SourceStore} from '../src/sources.js';import {MaterialStore,materialId} from '../src/materials.js';import {MaterialOrganizerRuntime} from '../src/material-organizers.js';import {MemoryStore} from '../src/memory.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';import {SourceStore} from '../src/sources.js';import {MaterialStore,materialId} from '../src/materials.js';import {MaterialOrganizerRuntime} from '../src/material-organizers.js';import {MemoryStore} from '../src/memory.js';
 
 test('source intake publishes canonical original text; exact multiline Unicode quotes validate and changed punctuation fails',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-canonical-generated-')),store=new Store(dir),sources=new SourceStore(store),materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);

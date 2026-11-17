@@ -4,7 +4,7 @@ import {homedir} from 'node:os';
 import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import type {MaterialRecord,MaterialStore} from '../materials.js';
-import {StoreError,sha256} from '../store.js';
+import {StoreError,sha256} from '../evidence-store.js';
 import {installSchemaPlan} from '../schema-installation.js';
 import {outboundExportSchemaInstallation} from '../plugin-surface-schema.js';
 import type {OutboundExportDescriptor} from './service-plugin-loader.js';

@@ -10,7 +10,7 @@ import {setImmediate as nextTurn,setTimeout as delay} from 'node:timers/promises
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {MemoryStore,MemoryOutputValidationError,memoryEvidenceFingerprint} from '../src/memory.js';

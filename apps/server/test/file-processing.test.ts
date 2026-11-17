@@ -15,7 +15,7 @@ import {gunzipSync} from 'node:zlib';
 import sharp from 'sharp';
 import {type Plugin} from '@deepseek-ai/cordis';
 import {ProviderFailure,providerHttpFailure,type Transcript,diarizationSchema,transcriptSchema,fileProcessingSchema} from '@mote/shared';
-import {Store,StoreError,sha256} from '../src/store.js';
+import {EvidenceStore as Store,StoreError,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing,HttpTranscriptionProvider} from '../src/file-processing.js';
@@ -941,7 +941,7 @@ test('25 uploaded recordings survive repeated real HTTP busy responses, share du
 
 
 test('deployment defaults do not automatically reopen a historical terminal file failure',async t=>{
- const {StoreError}=await import('../src/store.js');let calls=0;
+ const {StoreError}=await import('../src/evidence-store.js');let calls=0;
  const f=await fixture(t,{transcribe:async()=>{calls++;throw new StoreError('Generated unsupported format',422);}});await f.processing.tick();
  assert.equal(f.files.detail(f.id).job.state,'failed');await f.processing.close();
  const configuration=f.processing.configurationSnapshot();configuration.settings.timeoutMs=1000;

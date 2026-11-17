@@ -6,7 +6,7 @@ import {mkdtemp,rm,readFile,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {LarkConnector,LARK_SCOPES,documentReference,larkEvent} from '../src/connectors/lark.js';
 import {larkArguments,authorizationUrl,createLarkRunner,type LarkRunner,type LarkCommand} from '../src/connectors/lark-cli.js';

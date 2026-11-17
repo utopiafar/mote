@@ -8,7 +8,7 @@ import {mediaRuntimeSettings,type MediaRuntimeSettings} from '../media-configura
 import {FUNASR_PROTOCOL} from '../funasr-contract.js';
 import type {MediaReadinessPort} from '../plugins/ocr-asr-readiness.js';
 import type {ConnectionCredential,Connections} from '../connections.js';
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import type {FeatureRoute} from './index.js';
 
 export interface MediaPreparationFeatureDependencies {

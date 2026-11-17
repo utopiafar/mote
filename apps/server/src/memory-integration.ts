@@ -6,7 +6,7 @@ import type {MemoryLifecycle} from './memory-lifecycle.js';
 import type {MemoryPipeline} from './memory-pipeline.js';
 import {memoryEngineDraftPin,type MemoryEngineDraftContext,type MemoryEngineDraftPin} from './memory-native-stage-contract.js';
 import {MemoryStore,MemoryOutputValidationError} from './memory.js';
-import {StoreError,sha256} from './store.js';
+import {StoreError,sha256} from './evidence-store.js';
 import {MemoryIntegrationSettings,memoryIntegrationSelectionSchema} from './memory-integration-settings.js';
 import {MEMORY_CANDIDATE_OUTPUT_CONTRACT,memoryStrategyRefSchema} from './memory-strategy-contract.js';
 import {reviewMemory,memoryReviewReceipt} from './memory-review.js';

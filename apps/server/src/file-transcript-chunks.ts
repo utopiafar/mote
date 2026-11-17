@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import type {Transcript} from '@mote/shared';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 type ChunkRow={id:string;text:string;start_ms:number|null;end_ms:number|null;metadata:string};
 

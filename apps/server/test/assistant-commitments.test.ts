@@ -15,7 +15,7 @@ import {AssistantUnderstandingReader} from '../src/assistant-understanding.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {semanticProcessor} from '../src/semantic-extraction.js';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {TodoStore} from '../src/todos.js';

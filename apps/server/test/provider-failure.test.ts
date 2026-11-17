@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {Store} from '../src/store.js';import {ExecutionEngine} from '../src/execution-engine.js';import {readProcessorJson} from '../src/file-processors.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';import {ExecutionEngine} from '../src/execution-engine.js';import {readProcessorJson} from '../src/file-processors.js';
 test('processor HTTP facts reach the durable executor; auth blocks, 429 waits and bad input stops',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-provider-failure-')),store=new Store(dir);let now=Date.now(),calls=0,cancelled=0;const engine=new ExecutionEngine(store,()=>now);
  t.after(async()=>{await engine.close();store.close();rmSync(dir,{recursive:true,force:true});});

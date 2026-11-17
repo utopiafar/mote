@@ -10,7 +10,7 @@ import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {validMemoryFeedbackGroup,validMemoryFeedbackPlan,type MemoryFeedbackRequest} from '../src/memory-feedback.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 

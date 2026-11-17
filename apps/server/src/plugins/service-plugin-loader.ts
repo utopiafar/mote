@@ -2,7 +2,7 @@ import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
 import type {PluginManifest} from '../plugin-release.js';
 import type {ConnectorManifest} from '../connectors/registry.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {Plugin} from '@deepseek-ai/cordis';
 import {packageManifestSchema,type ManifestContribution,type ManifestDependency} from '@mote/plugin-api';
 import type {HostPluginContext} from '@mote/plugin-host';

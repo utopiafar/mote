@@ -7,7 +7,7 @@ import {join,relative} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import type {AgentAnswer,ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult,UsageReceipt} from '@mote/shared';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {corpus,evaluation,check,equal,json,hashObject,closed,cloneClosed,sqliteCheck,verifyFreeze,parse,exactIndex} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,inspectAdmissionLedger,StageSafetyError} from './test-heldout-memory-replay-ledger.js';

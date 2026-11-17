@@ -12,7 +12,7 @@ import type {ContextReader} from '@mote/agent';
 import {formatArtifactRef} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {materialId} from '../src/materials.js';
 import {TURN_GROUP_PROMPT,readDialogueCleanup} from '../src/file-dialogue.js';
 import {mediaModelIdentities} from '../src/media-assets.js';

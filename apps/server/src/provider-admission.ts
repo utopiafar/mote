@@ -2,7 +2,7 @@ import {ProviderFailure} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
 import {providerAdmissionSchemaInstallation} from './admission-schema.js';
 import {installSchemaPlan} from './schema-installation.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 type Identity=Pick<ModelSettings,'protocol'|'provider'|'baseUrl'|'apiKey'|'headers'>;
 /** Upstream rate limits and explicit Retry-After are shared across features/models
  * using the same endpoint and credentials. Other transient failures remain task-local.

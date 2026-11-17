@@ -1,4 +1,4 @@
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import type {ArchivedFileStore} from '../archived-files.js';
 import type {RecordingMetadata} from './recordings.js';
 

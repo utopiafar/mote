@@ -1,5 +1,5 @@
 import type {CodingEvidence} from '@mote/shared';
-import {sha256} from './store.js';
+import {sha256} from './evidence-store.js';
 
 type Project = {provider:string} & Pick<CodingEvidence,'projectKey'|'sessionId'|'projectName'|'projectIdentity'|'cwd'|'repositoryKey'|'branch'>;
 

@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import type {AttributionContext,CaptureInput} from '@mote/shared';
 import {z} from 'zod';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {recordContextDeclarationSchema as declarationSchema,portableRecordContextSchema,type PortableRecordContext} from './record-context-contract.js';
 import {installSchemaPlan} from './schema-installation.js';

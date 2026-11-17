@@ -6,7 +6,7 @@ import type {HostPluginContext} from '@mote/plugin-host';
 import {ActivityProjection,registerActivity,type ActivityDelegationReader} from '../activity.js';
 import {AutomaticActivity} from '../automatic-activity.js';
 import {registerOperations} from '../operations.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 
 
 /** Activity owns its read projection and prospective automatic understanding.

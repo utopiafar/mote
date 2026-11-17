@@ -9,7 +9,7 @@ import {randomUUID} from 'node:crypto';
 import {setImmediate} from 'node:timers/promises';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {captureSchema} from '@mote/shared';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {IngressService} from '../src/ingress.js';

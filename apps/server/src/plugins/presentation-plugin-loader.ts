@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {desktopUiLayout,validateUiLayoutProfile,validateUiTheme,type UiLayoutProfile,type UiThemePack} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginManifest} from '../plugin-release.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 
 export const presentationSurfaces=new Set(['page','theme','layout']);
 export const presentationContributions=(manifest:PluginManifest)=>manifest.contributions?.filter(value=>presentationSurfaces.has(value.surface))??[];

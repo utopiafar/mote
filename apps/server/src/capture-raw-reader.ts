@@ -1,7 +1,7 @@
 import {parseRawPageCursor,encodeRawPageCursor} from './raw-page-cursor.js';
 import {createHash} from 'node:crypto';
 import {sourceItemSchema,type CaptureRecord,type SourceItem,type SourceItemRecord} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {MAX_RAW_PAGE_ITEMS,MAX_RAW_READ_BYTES} from './raw-reader.js';
 import type {RawCollectionRef,RawPageRequest,RawPageResult,RawReadRequest,RawReadResult,RawReader,RawRef} from './raw-reader.js';
 

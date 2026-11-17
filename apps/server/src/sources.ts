@@ -3,7 +3,7 @@ import type {SourcePipelineRuntime} from './source-pipelines.js';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {ownerRelationSchema,type OwnerRelation,sourceCapabilities,sourceConnectionSchema,sourceStatusSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import type {MemoryInputAuthorization} from './memory-input-authorization.js';
 import {SourceContextStore} from './source-context.js';
 import {availableFileAttachmentSql,readableFileSql} from './file-access.js';

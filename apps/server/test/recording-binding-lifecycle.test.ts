@@ -4,7 +4,7 @@ import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {RecordingConnector,type RecordingBindingGrant,type RecordingProvider} from '../src/connectors/recordings.js';
 import {RecordingAuthorization} from '../src/plugins/recording-authorization.js';

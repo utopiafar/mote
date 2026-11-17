@@ -15,7 +15,7 @@ import {ProviderFailure,type Transcript,type UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {MEDIA_CATALOG} from '../src/media-assets.js';
 import {LOCAL_IMAGE_MODEL,LOCAL_IMAGE_PROMPT_VERSION,LOCAL_IMAGE_PROTOCOL,localImageRequestSchema,parseLocalImageResponse,type LocalImageRequest,type LocalImageSuccess} from '../src/local-image-contract.js';

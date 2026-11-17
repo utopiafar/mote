@@ -13,13 +13,13 @@ import type {RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {buildApp} from '../src/app.js';
 import {configurationFromFile} from '../src/config.js';
 import type {PluginManifest, PluginReleaseTransport} from '../src/plugin-release.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {resolveDependencies} from '../src/conversation-lineage.js';
 import {readNativeFile} from '../src/dsh-application.js';
 import {materialId} from '../src/materials.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import sharp from 'sharp';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 

@@ -5,7 +5,7 @@ import {installExecutionSchema} from './execution-schema.js';
 import {randomUUID,createHash} from 'node:crypto';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {failureContext,retainFailureContext,safeFailureContext,type FailureContext} from './execution-failures.js';
 import {EXECUTION_POLICIES,type ExecutionPolicy} from './execution-policy.js';

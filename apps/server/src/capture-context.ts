@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import type {SourceConnection,SourceContextSnapshot} from '@mote/shared';
 import {sourceConnectionSchema} from '@mote/shared';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {SourceStore} from './sources.js';
 import {moteText} from './i18n.js';
 import type {StatementSync} from 'node:sqlite';

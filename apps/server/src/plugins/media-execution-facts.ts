@@ -3,7 +3,7 @@ import {z} from 'zod';
 import {requestLocalJson,isLoopback} from '../local-http.js';
 import {installSchemaPlan} from '../schema-installation.js';
 import {mediaExecutionCallsSchemaInstallation} from '../file-processing-schema.js';
-import {sha256,StoreError} from '../store.js';
+import {sha256,StoreError} from '../evidence-store.js';
 import type {ExecutionStep} from '../execution-engine.js';
 import type {FileStore} from '../files.js';
 type Store=FileStore['store'];

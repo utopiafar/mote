@@ -11,7 +11,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import type {UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {memoryStrategyRefSchema} from '../apps/server/src/memory-strategy-contract.js';
 import type {MemoryJobDetail} from '../apps/server/src/memory-pipeline.js';

@@ -97,7 +97,7 @@ import { linkOperationParent } from './operation-projection.js';
 import { MAX_RAW_READ_BYTES } from './raw-reader.js';
 import { semanticProcessor } from './semantic-extraction.js';
 import { conversationUnderstandingProcessor } from './conversation-understanding.js';
-import { Store,StoreError } from './store.js';
+import { EvidenceStore as Store,StoreError } from './evidence-store.js';
 import {captureFeature} from './features/capture.js';
 import {notesFeature,type NotesCapture} from './features/notes.js';
 import {filesFeature} from './features/files.js';

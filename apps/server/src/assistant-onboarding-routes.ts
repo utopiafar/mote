@@ -2,7 +2,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {queryScopeSchema} from '@mote/shared';
 import type {AssistantOnboarding} from './assistant-onboarding.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 /** These are owner product operations, never query tools or intake flags. */
 export function registerAssistantOnboardingRoutes(app:FastifyInstance,onboarding:AssistantOnboarding,owner:(request:FastifyRequest)=>void){

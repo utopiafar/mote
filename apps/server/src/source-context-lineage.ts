@@ -1,6 +1,6 @@
 import {sourceContextDeclarationSchema,type SourceContextDeclaration} from '@mote/shared';
 import {SourceContextStore} from './source-context.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 /** Metadata reads have their own lineage; they are never synthetic captures. */
 export function combineSourceContextDependencies(values:readonly (readonly SourceContextDeclaration[]|undefined)[]):SourceContextDeclaration[]{

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {ConcurrencyGate} from '../src/concurrency.js';
-import {mkdtempSync,rmSync} from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';import {Store} from '../src/store.js';import {ExecutionEngine} from '../src/execution-engine.js';
+import {mkdtempSync,rmSync} from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';import {EvidenceStore as Store} from '../src/evidence-store.js';import {ExecutionEngine} from '../src/execution-engine.js';
 test('a large operation cannot take every newly free slot ahead of a small operation',async()=>{
  const gate=new ConcurrencyGate(1),order:string[]=[],releases:(()=>void)[]=[];const work=(name:string,key:string)=>gate.run(async()=>{order.push(name);await new Promise<void>(r=>releases.push(r));},undefined,key);
  const first=work('bulk-1','bulk');await new Promise(r=>setImmediate(r));const rest=[work('bulk-2','bulk'),work('bulk-3','bulk'),work('small-1','small'),work('small-2','small')];

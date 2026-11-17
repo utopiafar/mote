@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-source-'));const store=new Store(dir);const sources=new SourceStore(store);sources.register({id:'fixture',name:'合成资料',kind:'custom',deviceId:'synthetic',platform:'import',retention:'snapshot'});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {store,sources};}

@@ -13,7 +13,7 @@ import {GitHubPluginReleases} from '../../src/plugin-release.js';
 import {createLocalImageProcessing,LOCAL_IMAGE_PROCESSING_INSTANCE,localImageProcessingSelection} from '../../src/plugins/local-image-processing.js';
 import {LOCAL_IMAGE_ERRORS,LOCAL_IMAGE_PROTOCOL,localImageRequestSchema,parseLocalImageResponse,type LocalImageSuccess} from '../../src/local-image-contract.js';
 import {requestLocalJson} from '../../src/local-http.js';
-import {Store,sha256} from '../../src/store.js';
+import {EvidenceStore as Store,sha256} from '../../src/evidence-store.js';
 import {startLocalImageFixtureWorker,type LocalImageFixture} from './local-image.js';
 
 type Node=Awaited<ReturnType<typeof buildApp>>;

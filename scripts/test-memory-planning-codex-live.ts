@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomBytes} from 'node:crypto';
 import {createAgent} from '@mote/agent';
-import {Store} from '../apps/server/src/store.js';
+import {EvidenceStore as Store} from '../apps/server/src/evidence-store.js';
 import {SourceStore} from '../apps/server/src/sources.js';
 import {MaterialStore,materialId} from '../apps/server/src/materials.js';
 import {MemoryStore} from '../apps/server/src/memory.js';

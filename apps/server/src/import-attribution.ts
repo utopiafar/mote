@@ -2,7 +2,7 @@ import type {StatementSync} from 'node:sqlite';
 import {z} from 'zod';
 import {createHash} from 'node:crypto';
 import type {AttributionContext} from '@mote/shared';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {importAttributionSchemaInstallation} from './import-schema.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';

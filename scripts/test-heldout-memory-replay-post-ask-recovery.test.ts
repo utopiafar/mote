@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {json,hashObject,cloneClosed,recipes} from './test-heldout-memory-replay.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {type Manifest,codeHashes,executorPins,newOutput,treeHash,runBatch,openNode,drain,assertRuntimePin} from './test-heldout-memory-replay-stage.js';
 import {AdmissionLedger,readAdmissionChain,inspectAdmissionLedger,readAskRecoveryPlan,normalLimits} from './test-heldout-memory-replay-ledger.js';
 import {type PhaseManifest,type WavePlan,ref,readRef,phaseCursor,freezePhase,runPhase} from './test-heldout-memory-replay-sequence.js';

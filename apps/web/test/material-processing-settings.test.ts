@@ -14,7 +14,7 @@ import {MaterialProcessing} from '../src/plugins/models-processing/MaterialProce
 import {FileProcessingSettings} from '../src/FileProcessingSettings';
 import {automaticProcessingPlan,type ProcessingAuthority} from '../src/plugins/models-processing/automatic-processing-plan';
 import {buildApp} from '../../server/src/app.js';
-import {sha256} from '../../server/src/store.js';
+import {sha256} from '../../server/src/evidence-store.js';
 import type {FileSettingsView} from '../src/processing-settings-view';
 import type {ModelSettingsView} from '@mote/shared/models';
 import {resources} from '../src/resource-cache';

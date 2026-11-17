@@ -13,7 +13,7 @@ import sharp from 'sharp';
 import {FILE_PART_BYTES} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {authorizeFixtureModels} from '../apps/server/test/fixtures/model-authorization.js';
 

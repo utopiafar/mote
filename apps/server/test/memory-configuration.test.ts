@@ -10,7 +10,7 @@ import type { ConfigurationPlatformOptions } from '../src/config.js';
 import { ConfigService } from '../src/config-service.js';
 import { parseConfigDocument, readConfigDocument, registerBuiltinDomains } from '../src/config.js';
 import { MemoryLifecycle, storedMemoryLifecycleSettings, type LifecycleWindow } from '../src/memory-lifecycle.js';
-import { Store } from '../src/store.js';
+import { EvidenceStore as Store } from '../src/evidence-store.js';
 
 test('Memory settings save to the single YAML, ignore the old SQLite key and use revision conflicts', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'mote-memory-config-')), file = join(directory, 'mote.yaml'), store = new Store(join(directory, 'vault'));

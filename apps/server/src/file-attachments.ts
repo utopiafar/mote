@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import type {CaptureRecord,FileRevision} from '@mote/shared';
-import {StoreError,sha256,type Store} from './store.js';
+import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import type {FileStore} from './files.js';
 import {ArchivedFileStore} from './archived-files.js';
 import {linkOperationParent} from './operation-projection.js';

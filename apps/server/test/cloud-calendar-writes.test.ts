@@ -9,7 +9,7 @@ import {OAuth2Client} from 'google-auth-library';
 import {centralCalendarPluginCapabilitySchema,type ActionConnectorChoice,type ActionGrant,type ActionPluginProvider,type PluginBuildView} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {Connections} from '../src/connections.js';

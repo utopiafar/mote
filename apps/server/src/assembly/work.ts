@@ -3,7 +3,7 @@ import type {ServiceLease} from '@mote/plugin-api/contracts';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import type {ServerResources} from '../server-resources.js';
 import type {ConfigService} from '../config-service.js';
 import type {ExecutionEngine} from '../execution-engine.js';

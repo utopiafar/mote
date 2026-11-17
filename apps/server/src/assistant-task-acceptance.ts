@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {AssistantCards} from './assistant-cards.js';
 import {AssistantMatters,type MatterAuthority} from './assistant-matters.js';
 import {withinEvidenceScope} from './evidence-reader.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {TaskRecords,type AssertTaskCurrent,type TaskRecord} from './task-records.js';
 import type {CurrentInstructionOrigin} from './assistant-current-instruction.js';
 

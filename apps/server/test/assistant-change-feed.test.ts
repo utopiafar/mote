@@ -13,7 +13,7 @@ import {AssistantChangeFeed} from '../src/assistant-change-feed.js';
 import {BatchProcessing} from '../src/batch-processing.js';
 import {TaskRecords} from '../src/task-records.js';
 import {materialId,MaterialStore} from '../src/materials.js';
-import {sha256,Store,StoreError} from '../src/store.js';
+import {sha256,EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {SourceArchive} from '../src/source-archive.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

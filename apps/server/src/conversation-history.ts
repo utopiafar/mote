@@ -4,7 +4,7 @@ import type {Conversations,ConversationTurn} from './conversations.js';
 import {combineDependencies} from './conversation-lineage.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
 import {scopedHistoryTurns,type QueryScope} from './query-scope.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 const prefix='/_conversation/';
 type Args=ContextRange&{path?:string;query?:string};

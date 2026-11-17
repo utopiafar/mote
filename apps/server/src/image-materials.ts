@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {IMAGE_MAX_PIXELS,imageViewSchema,transcriptSchema,type CaptureRecord,type ImageView,type Transcript} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {ImageInputRow} from './image-inputs.js';
 import {imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
 import {fileAttachmentAvailable,fileProcessingObjectHash} from './file-attachments.js';

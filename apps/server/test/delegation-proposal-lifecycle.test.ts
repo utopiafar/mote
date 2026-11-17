@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {ContextToolError,HOST_DELEGATION_CONTROL_DEFINITIONS} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {DelegationRuntime} from '../src/delegation-runtime.js';
 

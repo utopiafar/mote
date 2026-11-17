@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,readdirSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {SourceStore} from '../src/sources.js';
 

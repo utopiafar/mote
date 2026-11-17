@@ -11,7 +11,7 @@ import {SourceSync} from '../../desktop/src/source-sync.js';
 import {sourceDefinition} from '../../desktop/src/source-manager.js';
 import {sourceWork} from '../../desktop/src/background.js';
 import {DEFAULT_SOURCE_OPTIONS,type SourceRequest} from '../../desktop/src/source-types.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore} from '../src/materials.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';

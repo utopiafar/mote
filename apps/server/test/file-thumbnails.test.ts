@@ -7,7 +7,7 @@ import {Readable} from 'node:stream';
 import {get as httpGet} from 'node:http';
 import sharp from 'sharp';
 import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {buildApp} from '../src/app.js';
 import {configurationFromFile} from '../src/config.js';
 import {serializeConfigDocument} from '@mote/shared/config-file';

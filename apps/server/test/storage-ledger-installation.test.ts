@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {StoreDatabase} from '../src/sqlite-database.js';
 import {installSchemaPlan} from '../src/schema-installation.js';
 import {storageLedgerSchemaInstallation} from '../src/storage-ledger.js';

@@ -11,7 +11,7 @@ import type {CodingEvidence,QueryResult,SourceItem,TokenUsage,UsageReceipt} from
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {MemoryWorkPackage} from '../src/memory-work-contract.js';
-import {StoreError} from '../src/store.js';
+import {StoreError} from '../src/evidence-store.js';
 import {AssistantUnderstandingReader} from '../src/assistant-understanding.js';
 import {hostRun} from './fixtures/host-run.js';
 

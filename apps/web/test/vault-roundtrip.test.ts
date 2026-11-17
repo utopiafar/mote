@@ -8,7 +8,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {storageStatistics} from '@mote/shared/storage-statistics';
-import {Store} from '../../server/src/store.js';
+import {EvidenceStore as Store} from '../../server/src/evidence-store.js';
 import {SourceStore} from '../../server/src/sources.js';
 import {ArchivedFileStore} from '../../server/src/archived-files.js';
 import {Vault} from '../src/plugins/maintenance/Vault.js';

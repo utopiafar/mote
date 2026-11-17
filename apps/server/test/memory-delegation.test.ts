@@ -10,7 +10,7 @@ import {AgentYieldError} from '@mote/agent';
 import {Operations} from '../src/operations.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import type {QueryResult} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MemoryStore} from '../src/memory.js';

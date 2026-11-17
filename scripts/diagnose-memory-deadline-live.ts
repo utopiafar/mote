@@ -13,7 +13,7 @@ import {codexModels} from '../apps/server/src/model-catalog.js';
 import {memoryEvidenceFingerprint,MemoryOutputValidationError} from '../apps/server/src/memory.js';
 import {memoryProfile} from '../apps/server/src/memory-profiles.js';
 import {memoryReviewReceipt,reviewMemory} from '../apps/server/src/memory-review.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 
 function external(path:string){const full=resolve(path),part=relative(repositoryRoot,full);assert.ok(part==='..'||part.startsWith('../'),'Keep private diagnostics outside Git');return full;}
 assert.ok(process.env.MOTE_MEMORY_DIAG_SOURCE&&process.env.MOTE_MEMORY_DIAG_OUTPUT&&process.env.MOTE_MEMORY_DIAG_BATCH);

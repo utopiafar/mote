@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../../src/app.js';
 import {materialId} from '../../src/materials.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 import {authorizeFixtureModels,withFixtureOwnerModelWork} from './model-authorization.js';
 import {generatedMemoryOutput} from './memory-planning.js';
 

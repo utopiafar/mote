@@ -3,7 +3,7 @@ import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-e
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {executionEnvelope,type ExecutionEnvelope} from '@mote/shared/execution';
 import {randomUUID} from 'node:crypto';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {ProviderFailure} from '@mote/shared';
 import type {DatabaseSync} from 'node:sqlite';
 import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';

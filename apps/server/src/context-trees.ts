@@ -1,13 +1,13 @@
 import {z} from 'zod';
 import type {AutomaticTopics} from './automatic-topics.js';
 import {publishOperationChange} from './operation-projection.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {moteText} from './i18n.js';
 import type {FastifyInstance} from 'fastify';
 import type {MemoryRead,MemoryReadSnapshots} from './evidence-read-ports.js';
 import type {Memory} from './memory-schema.js';
 import {navigationScopeSchema} from './context-navigation.js';
-import {StoreError,sha256} from './store.js';
+import {StoreError,sha256} from './evidence-store.js';
 import {formatEvidenceRef} from '@mote/shared';
 export type TreeMemoryRead=Pick<MemoryRead,'memoryPageAsync'> & Pick<MemoryReadSnapshots,'memoryBindings'>;
 

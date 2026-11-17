@@ -11,7 +11,7 @@ import type { QueryResult } from '@mote/shared';
 import { Actions, registerActions } from '../src/actions.js';
 import { ConfigService } from '../src/config-service.js';
 import { parseConfigDocument, readConfigDocument, registerBuiltinDomains,actionsConfigDomain } from '../src/config.js';
-import { Store } from '../src/store.js';
+import { EvidenceStore as Store } from '../src/evidence-store.js';
 import { SourceStore } from '../src/sources.js';
 import { FileStore } from '../src/files.js';
 import type { Connections } from '../src/connections.js';

@@ -1,6 +1,6 @@
 import {installSchemaPlan} from './schema-installation.js';
 import {evidenceDependenciesWithoutMaterialsInstallation,evidenceDependenciesWithMaterialsInstallation} from './asset-evidence-schema.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 export type EvidenceNode={kind:'capture'|'context_artifact'|'file_artifact'|'file_chunk'|'material_evidence'|'memory'|'memory_batch';id:string};
 /** A projection over existing lineage, never another authoritative job or artifact store. */
 export function installEvidenceDependencies(store:Store){

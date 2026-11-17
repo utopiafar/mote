@@ -3,7 +3,7 @@ import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
-import {Store} from '../apps/server/src/store.js';
+import {EvidenceStore as Store} from '../apps/server/src/evidence-store.js';
 import {SourceStore} from '../apps/server/src/sources.js';
 import {FileStore} from '../apps/server/src/files.js';
 import {SourceSync,sourceHash} from '../apps/desktop/src/source-sync.js';

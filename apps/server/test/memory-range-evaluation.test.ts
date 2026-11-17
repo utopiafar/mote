@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {AgentResponseError,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore,MemoryOutputValidationError} from '../src/memory.js';
 import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';

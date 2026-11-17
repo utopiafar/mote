@@ -2,7 +2,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {queryScopeSchema} from '@mote/shared';
 import {z} from 'zod';
 import type {AssistantCommitments} from './assistant-commitments.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 /** Shared owner read of the existing commitment projection. Memory and
  * matter details use the same list; register it once per server. */

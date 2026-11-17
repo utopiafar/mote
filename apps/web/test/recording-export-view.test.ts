@@ -8,7 +8,7 @@ import {gunzipSync} from 'node:zlib';
 import {rawTranscriptFromTar} from '../src/plugins/sources/RecordingTools';
 import {buildApp} from '../../server/src/app.js';
 import {fileExportEntries,exportTar} from '../../server/src/file-export.js';
-import {sha256} from '../../server/src/store.js';
+import {sha256} from '../../server/src/evidence-store.js';
 const text='Generated raw <script>literal</script> and original words';
 const transcript={durationMs:1000,segments:[{startMs:0,endMs:1000,text,speaker:'SPEAKER_0'}]};
 async function bytes(stream:AsyncIterable<Uint8Array>){const parts=[];for await(const part of stream)parts.push(part);return Buffer.concat(parts);}

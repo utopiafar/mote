@@ -3,7 +3,7 @@ import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 import {MaterialStore,formatMaterialRef} from './materials.js';
 import type {MaterialOrganizerRuntime} from './material-organizers.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 const id=z.string().regex(/^mat_[a-f0-9]{64}$/);
 const revision=z.string().regex(/^[a-f0-9]{64}$/);

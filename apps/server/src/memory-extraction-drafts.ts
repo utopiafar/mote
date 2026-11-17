@@ -2,7 +2,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import type {QueryResult} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {retainedMemoryReadReceipt} from './memory-read-context.js';
 
 export const memoryExtractionDraftsSchemaInstallation={owner:'memory-extraction-drafts',requires:[],prerequisites:[{owner:'memory',objects:[{type:'table',name:'memory_batches'},{type:'table',name:'memory_jobs'},{type:'table',name:'memory_batch_dependencies'}]}],install:memoryExtractionDraftsSchema} as const satisfies SchemaInstallation;
