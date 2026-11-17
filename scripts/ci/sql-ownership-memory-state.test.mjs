@@ -19,7 +19,7 @@ test('Memory state production owners and exact reads reject new writes, changed 
  const map=JSON.parse(readFileSync(resolve(root,'scripts/ci/sql-ownership-map.json'),'utf8'));
  for(const [table,owner] of [['memory_input_authorizations','memory-input-authorization'],['memory_extraction_drafts','memory-extraction-drafts'],['memory_phase_outputs','memory-phase-outputs']])assert.equal(map.tables[table]?.owner,owner);
  const run=()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8',timeout:120000});
- const positive=run();assert.equal(positive.status,0,positive.stderr);assert.match(positive.stdout,/235 unproved SQL statements/);assert.match(positive.stdout,/4 write-unproved pending/);
+ const positive=run();assert.equal(positive.status,0,positive.stderr);assert.match(positive.stdout,/233 unproved SQL statements/);assert.match(positive.stdout,/4 write-unproved pending/);
  const phasePath=resolve(root,'apps/server/src/memory-phase-outputs.ts'),phase=readFileSync(phasePath,'utf8');
  const variants=[
   [phasePath,phase.replace('retryReview(batchId:string,ownerAction:boolean){','retryReview(batchId:string,ownerAction:boolean){\n void ownerAction;'),/sql-cross-owner.*memory-phase-outputs.ts.*execution_steps.*read/],

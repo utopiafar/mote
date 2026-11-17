@@ -246,6 +246,25 @@
    "file": "apps/server/src/plugins/instance-state.ts"
   },
   {
+   "declaration": "actionsSchemaInstallation",
+   "owner": "actions",
+   "fn": "actionsSchema",
+   "file": "apps/server/src/actions-schema.ts"
+  },
+  {
+   "declaration": "actionsExecutionSchemaInstallation",
+   "owner": "actions",
+   "fn": "actionsExecutionSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/actions-schema.ts"
+  },
+  {
+   "declaration": "actionsRetirementSchemaInstallation",
+   "owner": "actions",
+   "fn": "actionsRetirementSchema",
+   "file": "apps/server/src/actions-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -441,6 +460,36 @@
   }
  ],
  "tables": {
+  "action_chunk_changes": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_jobs": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_meta": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_proposals": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_semantic_checkpoints": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_targets": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
   "activity_memory_batches": {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
