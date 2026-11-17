@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +15,7 @@ import {PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 
 test('private plugin operation payloads and identity routing are metered without a quota, including transactional retirement and restart',async t=>{
- const directory=await mkdtemp(join(tmpdir(),'mote-plugin-ledger-')),options={},store=new Store(directory,options),memories=new MemoryStore(store),executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(directory,'packages'))),bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor),publication=new MemoryPublication(store,memories,bindings);
+ const directory=await mkdtemp(join(tmpdir(),'mote-plugin-ledger-')),options={},store=new Store(directory,options),memories=new MemoryStore(store),executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(directory,'packages')),testPluginControl(store)),bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),plugins,executor),publication=new MemoryPublication(store,memories,bindings);
  t.after(async()=>{await publication.close();await bindings.close();await plugins.close();await executor.close();store.close();await rm(directory,{recursive:true,force:true});});
  store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify({planId:'instance:generated',generation:2,namespace:{ownerId:'generated-owner',instanceId:'generated',bindingRevision:2}}));
  const baseline=store.logicalBytes(),prose='Generated private quota fixture '.repeat(200),operationId='generated-private-output',evidenceId='generated-evidence';publication.retainOutput(operationId,{privateDraft:prose},{evidenceIds:[evidenceId]});

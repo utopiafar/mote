@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import {modelConfigService} from './fixtures/model-config-service.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -52,7 +53,7 @@ const manifest:PluginManifest={schemaVersion:1,id:'generated.adapter',name:'Gene
 async function buildStack(directory:string){
   const vault=join(directory,'vault'),store=new Store(vault),executor=new ExecutionEngine(store);
   const releases=new GitHubPluginReleases(join(vault,'plugins/packages'),async url=>({bytes:url.endsWith('/releases/tags/'+tag)?strToU8(JSON.stringify({tag_name:tag,draft:false,assets:[{name:'mote-plugin.json',browser_download_url:base+'mote-plugin.json'},{name:'adapter.zip',browser_download_url:base+'adapter.zip'}]})):url.endsWith('/commits/'+tag)?strToU8(JSON.stringify({sha:'a'.repeat(40)})):url===base+'mote-plugin.json'?strToU8(JSON.stringify(manifest)):url===base+'adapter.zip'?archive:(()=>{throw Error('Unexpected generated release request');})()}));
-  const plugins=new PluginCenter(store,executor,releases),models=new ModelSettingsStore({configService:modelConfigService(join(directory,'model-settings'),{provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',model:'generated-unused',reasoningEffort:'auto',maxTokens:1024,modelRequestTimeoutMs:5000,agentTimeoutMs:5000,allowUnauthenticatedLocal:false,apiKey:'',headers:{},extraBody:{}}),prepare:async()=>({activate(){},async dispose(){}}),probe:async()=>{throw Error('A storage canary must not call a model');}});
+  const plugins=new PluginCenter(store,executor,releases,testPluginControl(store)),models=new ModelSettingsStore({configService:modelConfigService(join(directory,'model-settings'),{provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',model:'generated-unused',reasoningEffort:'auto',maxTokens:1024,modelRequestTimeoutMs:5000,agentTimeoutMs:5000,allowUnauthenticatedLocal:false,apiKey:'',headers:{},extraBody:{}}),prepare:async()=>({activate(){},async dispose(){}}),probe:async()=>{throw Error('A storage canary must not call a model');}});
   await models.initialize();
   const platform=createMemoryProviderAdapters({directory:join(vault,'plugins/instances'),plugins,models,usage:new UsageLedger(store)});
   return {store,executor,releases,plugins,models,platform};

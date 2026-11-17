@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -52,7 +53,7 @@ test('a real producer-emitted instance drives the declarative adapter and precis
     throw new Error('fixture transport rejects: ' + url);
   };
   const store = new Store(directory), executor = new ExecutionEngine(store, () => Date.now());
-  const plugins = new PluginCenter(store, executor, new GitHubPluginReleases(join(directory, 'packages'), transport));
+  const plugins = new PluginCenter(store, executor, new GitHubPluginReleases(join(directory, 'packages'), transport),testPluginControl(store));
   plugins.probe = async () => ({capabilities: [{id: 'repository', state: 'verified'}], issues: []});
   t.after(async () => {await executor.close(); await plugins.close(); store.close();});
 

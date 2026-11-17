@@ -1,3 +1,4 @@
+import {testPluginStorage} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -86,7 +87,7 @@ async function fixture(t:TestContext,options:{installed?:boolean;prepareFailure?
     const store=new Store(join(directory,'control')),executor=new ExecutionEngine(store),host=new PluginHost({kind:'central',id:randomUUID()});
     let plugins:PluginCenter|undefined;
     const local=createLocalImageProcessing({desired:()=>plugins?.control.build(LOCAL_IMAGE_PROCESSING_INSTANCE)?.desired,modelStatus:status,createWorker});
-    const control=createPluginControlPlatform({store,executor,host,releases:new GitHubPluginReleases(join(directory,'packages'))},[local.build]);
+    const control=createPluginControlPlatform({store,executor,host,releases:new GitHubPluginReleases(join(directory,'packages')),controlForScope:testPluginStorage(store).controlForScope},[local.build]);
     const handle=await host.install({identity:{host:host.identity,packageId:'mote.plugin-control',installationId:'generated-control-build',instanceId:'control',activationId:randomUUID()},contributions:[pluginControlDeclaration],factory:control.factory});
     plugins=control.assembly;await control.startBuilds();
     const app=Fastify();

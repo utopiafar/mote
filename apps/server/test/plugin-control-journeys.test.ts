@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test, {type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -109,7 +110,7 @@ function fixture(t: TestContext, release = generatedRelease(), durablePublicatio
   let tail = 0;
   function open() {
     store = new Store(directory); executor = new ExecutionEngine(store, () => clock);
-    plugins = new PluginCenter(store, executor, new GitHubPluginReleases(join(directory, 'packages'), release.transport));
+    plugins = new PluginCenter(store, executor, new GitHubPluginReleases(join(directory, 'packages'), release.transport),testPluginControl(store));
     automation = new MemoryAutomation(store, () => clock); memories = new MemoryStore(store);
     bindings = new MemoryBindings(store, memories, automation, plugins, executor);
     publication = durablePublication ? new MemoryPublication(store, memories, bindings) : undefined;

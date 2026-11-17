@@ -1,3 +1,4 @@
+import {testPluginStorage} from './plugin-storage.js';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
@@ -34,7 +35,7 @@ export async function memoryImageIntakeBoundary(directory:string,ocr:'text'|'emp
  const local=createLocalImageProcessing({desired:()=>plugins?.control.build(LOCAL_IMAGE_PROCESSING_INSTANCE)?.desired,
   modelStatus:():MediaModelStatus=>({role:'local-image',state:installed?'ready':'not_installed',version:'generated-memory-image',bytes:0,totalBytes:0,source:'generated',runtimeReady:running}),
   createWorker:()=>({prepare(){},start(){running=true;},quiesce(){},stop(){running=false;},dispose(){running=false;}})});
- const control=createPluginControlPlatform({store,executor,host,releases:new GitHubPluginReleases(join(directory,'packages'))},[local.build]);
+ const control=createPluginControlPlatform({store,executor,host,releases:new GitHubPluginReleases(join(directory,'packages')),controlForScope:testPluginStorage(store).controlForScope},[local.build]);
  const handle=await host.install({identity:{host:host.identity,packageId:'mote.plugin-control',installationId:'generated-image-control',instanceId:'control',activationId:randomUUID()},contributions:[pluginControlDeclaration],factory:control.factory});
  plugins=control.assembly;await control.startBuilds();
  return {image,worker,responses,local,counts:()=>({local:worker.requests.length,configured:configuredCalls}),

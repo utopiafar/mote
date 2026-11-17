@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,7 +32,7 @@ async function fixture(t:TestContext){
   if(url===base+'adapter.zip')return {bytes:archive};
   throw Error('Unexpected release URL');
  });
- const plugins=new PluginCenter(store,executor,releases),capabilities=new ActionCapabilities(store,sources,connections,()=>plugins.actionProviders());
+ const plugins=new PluginCenter(store,executor,releases,testPluginControl(store)),capabilities=new ActionCapabilities(store,sources,connections,()=>plugins.actionProviders());
  t.after(async()=>{await executor.close();await plugins.close();await connections.close();store.close();await rm(directory,{recursive:true,force:true});});
  const preview=await plugins.resolve({repository:'generated-fixture/calendar',tag:'v1'});plugins.install({...command(plugins.revision()),previewId:preview.id});await waitFor(()=>plugins.view().packages[0]?.state!=='installing');assert.equal(plugins.view().packages[0].state,'installed');
  const instance=plugins.configure(undefined,{...command(plugins.revision()),packageId:plugins.view().packages[0].id,name:'Generated device actions',scope:'default',configuration:{}});

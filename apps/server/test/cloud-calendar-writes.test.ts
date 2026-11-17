@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -188,7 +189,7 @@ test('a single calendar-scoped Central grant auto-dispatches only that calendar;
 test('the host dispatch seam revalidates a built-in calendar target and the catalog never gains installable calendar writers',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-cloud-center-')),store=new Store(join(directory,'vault')),executor=new ExecutionEngine(store);
  const releases=new GitHubPluginReleases(join(directory,'packages'),async()=>{throw Error('No release fetch in this fixture');});
- const center=new PluginCenter(store,executor,releases);t.after(async()=>{await center.close();await executor.close();store.close();await rm(directory,{recursive:true,force:true});});
+ const center=new PluginCenter(store,executor,releases,testPluginControl(store));t.after(async()=>{await center.close();await executor.close();store.close();await rm(directory,{recursive:true,force:true});});
  const builtin=provider('mote.builtin.google-calendar','generated-calendar-a'),calls:{connectorId:string;target:any;request:any}[]=[];
  center.builtinActions={providers:()=>[{connectorId:'google-calendar',provider:builtin}],execute:async({connectorId,target,request})=>{calls.push({connectorId,target,request});return {status:'succeeded',externalId:'generated-host-event'};}};
  assert.deepEqual(center.actionProviders(),[builtin],'a built-in provider appears only through its live declaration');

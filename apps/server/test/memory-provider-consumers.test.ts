@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
@@ -27,7 +28,7 @@ import {exportBoundMemories} from '../src/plugins/memory-backup.js';
 const hash=(text:string)=>createHash('sha256').update(text).digest('hex');
 async function fixture(t:any){
  const directory=await mkdtemp(join(tmpdir(),'mote-provider-consumer-')),store=new Store(join(directory,'vault')),sources=new SourceStore(store),reader=new EvidenceReader(store,sources);
- const executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(directory,'plugins'))),bindings=new MemoryBindings(store,reader.memories,new MemoryAutomation(store),plugins,executor);reader.memoryBindings=bindings;
+ const executor=new ExecutionEngine(store),plugins=new PluginCenter(store,executor,new GitHubPluginReleases(join(directory,'plugins')),testPluginControl(store)),bindings=new MemoryBindings(store,reader.memories,new MemoryAutomation(store),plugins,executor);reader.memoryBindings=bindings;
  const provider=await createMemoryProvider({dataFile:join(directory,'generated-provider.json')}) as MemoryProvider;
  bindings.providerFactory=()=>provider;
  const namespace:MemoryProviderNamespace={ownerId:'generated-owner',instanceId:'generated-provider',bindingRevision:1};

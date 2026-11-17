@@ -1,3 +1,4 @@
+import {testPluginControl,testPluginStorage} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer,type Server} from 'node:http';
@@ -23,7 +24,7 @@ import {createLocalImageProcessing,LOCAL_IMAGE_PROCESSING_INSTANCE,localImagePro
 import {createImageProcessingService,imageProcessingServiceForAssembly} from '../src/plugins/image-processing-service.js';
 import {createPluginControlPlatform,pluginControlDeclaration,type PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
-import {PluginControlStore} from '../src/plugins/plugin-control-store.js';
+import {type PluginControlStore} from '../src/plugins/plugin-control-store.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 
@@ -110,7 +111,7 @@ async function fixture(t:TestContext,options:{enabled?:boolean;authorize?:boolea
  // CORE-03 owns the default control assembly. Compose the existing hosted
  // control in its own private profile here, and bind its real selection port.
  controlStore=new Store(join(directory,'control'));controlExecutor=new ExecutionEngine(controlStore);
- const control=createPluginControlPlatform({store:controlStore,executor:controlExecutor,host,releases:new GitHubPluginReleases(join(directory,'packages'))},[local.build]);
+ const control=createPluginControlPlatform({store:controlStore,executor:controlExecutor,host,releases:new GitHubPluginReleases(join(directory,'packages')),controlForScope:testPluginStorage(controlStore).controlForScope},[local.build]);
  controlHandle=await host.install({identity:{host:host.identity,packageId:'mote.plugin-control',installationId:'generated-img03-control',instanceId:'control',activationId:randomUUID()},contributions:[pluginControlDeclaration],factory:control.factory});
  plugins=control.assembly;await control.startBuilds();imageProcessingServiceForAssembly(central.processing).bindLocalImages({selection:local.selection,media:{localImageEndpoint:localUrl+LOCAL_IMAGE_PROTOCOL.path,workerToken:token},usage:central.observabilityAssembly.usage});
  // The previous release hashed the full model/source catalog into this receipt.
@@ -168,9 +169,9 @@ test('source and batch model overrides remain saved while local intake takes pre
  snapshot.policy.rules.unshift({sourceId:'generated-sync',type:'image/*',profileId:'source-image'});await f.node.processing.save({revision:f.node.processing.view().revision,...snapshot});
  const before=f.node.processing.configurationSnapshot(),models=f.node.modelSettings.view(),perception=f.node.perception.settings(),authorization=f.node.modelAuthorization.view();
  await f.upload(await f.image(),'generated-sync');await f.upload(await f.image(),'generated-import','batch-image');await f.settle();assert.equal(f.localCalls.length,2);assert.equal(f.intakeCloud().length,0);
- await f.enable(false);assert.equal(new PluginControlStore(f.controlStore).build(LOCAL_IMAGE_PROCESSING_INSTANCE)!.desired,null);
+ await f.enable(false);assert.equal(testPluginControl(f.controlStore).build(LOCAL_IMAGE_PROCESSING_INSTANCE)!.desired,null);
  await f.upload(await f.image(),'generated-sync');await f.upload(await f.image(),'generated-import','batch-image');await f.settle();assert.deepEqual(f.intakeCloud().map(call=>call.model).sort(),['batch-image','source-image']);
- await f.enable(true);assert.deepEqual(new PluginControlStore(f.controlStore).build(LOCAL_IMAGE_PROCESSING_INSTANCE)!.desired,localImageProcessingSelection);assert.deepEqual(f.node.processing.configurationSnapshot(),before);assert.deepEqual(f.node.modelSettings.view(),models);assert.deepEqual(f.node.perception.settings(),perception);assert.deepEqual(f.node.modelAuthorization.view(),authorization);
+ await f.enable(true);assert.deepEqual(testPluginControl(f.controlStore).build(LOCAL_IMAGE_PROCESSING_INSTANCE)!.desired,localImageProcessingSelection);assert.deepEqual(f.node.processing.configurationSnapshot(),before);assert.deepEqual(f.node.modelSettings.view(),models);assert.deepEqual(f.node.perception.settings(),perception);assert.deepEqual(f.node.modelAuthorization.view(),authorization);
 });
 
 for(const [fault,code] of [['model_missing','model_missing'],['worker_unavailable','image_worker_unavailable'],['busy','rate_limited'],['invalid_request','invalid_image_request'],['version_mismatch','image_protocol_version_mismatch'],['inference_failed','image_processing_failed'],['invalid-json','invalid_image_product'],['wrong-original','invalid_image_product'],['wrong-view','invalid_image_product'],['wrong-revision','invalid_image_product'],['out-of-bounds','invalid_image_region']] as const)test(`local ${fault} never calls intake cloud or discards searchable OCR`,async t=>{

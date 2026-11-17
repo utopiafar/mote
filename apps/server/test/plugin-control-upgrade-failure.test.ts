@@ -1,3 +1,4 @@
+import {testPluginStorage} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -25,7 +26,7 @@ function build(overrides:Partial<TrustedPluginBuild>={}):TrustedPluginBuild{
 // dependent can pin a provider activation that only exists after selection.
 async function platform(path:string,builds:TrustedPluginBuild[]=[]){
   const store=new Store(path),executor=new ExecutionEngine(store),host=new PluginHost({kind:'central',id:randomUUID()});
-  const control=createPluginControlPlatform({store,executor,host,releases:new GitHubPluginReleases(join(path,'packages'))},builds);
+  const control=createPluginControlPlatform({store,executor,host,releases:new GitHubPluginReleases(join(path,'packages')),controlForScope:testPluginStorage(store).controlForScope},builds);
   const identity:ScopeIdentity={host:host.identity,packageId:'mote.control',installationId:'control-install',instanceId:'control-instance',activationId:randomUUID()};
   const handle=await host.install({identity,contributions:[pluginControlDeclaration],factory:control.factory});
   return {store,executor,host,control,handle,plugins:control.assembly,async close(){await handle.close('shutdown');await host.close();await executor.close();store.close();}};

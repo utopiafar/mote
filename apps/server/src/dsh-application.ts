@@ -8,7 +8,7 @@ import {dshInstanceKey,NATIVE_OUTPUT_CAPABILITY} from './dsh-configuration.js';
 import {privateDirectory} from './private-storage.js';
 import {MAX_FILE_BYTES,archiveRelativePath} from './archived-files.js';
 import {StoreError,type Store} from './store.js';
-import {bindInstanceStateCommit} from './plugins/instance-state.js';
+import {bindInstanceStateCommit} from './plugin-instance-state-storage.js';
 import {replaceContentFile} from './content-encryption.js';
 
 type Profile=DshConfiguration['profiles'][number];

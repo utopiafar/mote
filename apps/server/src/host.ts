@@ -164,7 +164,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const assistantMatters=new AssistantMatters(store);
   const assistantCards=new AssistantCards(store,evidenceReader);
   const assistantCommitments=new AssistantCommitments(store,evidenceReader);
-  const pluginControl=createPluginControlPlatform({store,executor,host:bootstrap.host,releases:new GitHubPluginReleases(join(config.dataDir,'plugins','packages'))});
+  const pluginControl=createPluginControlPlatform({store,executor,host:bootstrap.host,controlForScope:bootstrap.pluginStorage.controlForScope,releases:new GitHubPluginReleases(join(config.dataDir,'plugins','packages'))});
   const pluginControlHandle=await bootstrap.host.install({
     identity:{host:bootstrap.snapshot().host,packageId:'mote.plugin-control',installationId:'build:plugin-control@1.0.0',instanceId:'control',activationId:randomUUID()},
     contributions:[pluginControlDeclaration],factory:pluginControl.factory,
@@ -475,7 +475,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const sourceIntegration=await startSourceIntegration();
   await prepareConnectionsRoutes(bootstrap,resources,{config,connections,connectionIdentity,serverVersion});
   const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,activity:{store,operations:executionPlatform.assembly.operations,materials,executor,configService,modelSettings,agent,query:input=>query.queryAgent(input,'query','activity'),lane:()=>workflows.settings().semantic,delegation:()=>queryMetadata.value,isCollector:request=>Boolean(credential(request)),agentView:{archiveReader,diagnostics,evidenceReader}},actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,ownerCalendarAuthority:{conversations,assertContext:assertModelEvidence},queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
-  const {connectors}=await assembleConnectors({app,resources,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
+  const {connectors}=await assembleConnectors({app,resources,pluginStorage:bootstrap.pluginStorage,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
   // Built-in Google/Lark calendar writes stay deployment connectors: they reuse

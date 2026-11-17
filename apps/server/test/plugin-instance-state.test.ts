@@ -1,3 +1,4 @@
+import {testInstanceState as createInstanceState} from './fixtures/plugin-storage.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ import {backup} from 'node:sqlite';
 import {PluginHost} from '@mote/plugin-host';
 import {StateError, stateLimits, type ScopeIdentity, type StateLimits, type StateStore} from '@mote/plugin-api';
 import {Store} from '../src/store.js';
-import {createInstanceState,bindInstanceStateCommit} from '../src/plugins/instance-state.js';
+import {bindInstanceStateCommit} from '../src/plugin-instance-state-storage.js';
 
 const lifecycle = () => ({prepare() {}, start() {}, quiesce() {}, stop() {}, dispose() {}});
 const hostIdentity = {kind: 'central' as const, id: 'generated-state-host'};

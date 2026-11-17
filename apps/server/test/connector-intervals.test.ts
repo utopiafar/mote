@@ -1,3 +1,4 @@
+import {testRegisterConnectors as registerConnectors} from './fixtures/plugin-storage.js';
 import {larkContext} from '../src/connectors/lark-context.js';
 import {gmailContext} from '../src/connectors/gmail-context.js';
 import {googleCalendarContext} from '../src/connectors/google-context.js';
@@ -10,7 +11,7 @@ import Fastify from 'fastify';
 import {OAuth2Client} from 'google-auth-library';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
-import {registerConnectors} from '../src/connectors/index.js';
+
 import {connectorRegistryHost} from './fixtures/connector-host.js';
 import {GoogleCalendarConnector,type GoogleDependencies} from '../src/connectors/google.js';
 import {GmailConnector,gmailScope} from '../src/connectors/gmail.js';

@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -109,7 +110,7 @@ test('a top-level outbound-export DDL failure leaves no partial table and the sa
 
 test('PluginCenter installs release previews at its constructor and resolve uses that exact table',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-plugin-surface-center-')),store=new Store(directory);
- const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(directory,'packages'),async url=>{throw Error('generated transport must stay unused: '+url);},repoRoot));
+ const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(directory,'packages'),async url=>{throw Error('generated transport must stay unused: '+url);},repoRoot),testPluginControl(store));
  t.after(async()=>{await plugins.close();store.close();rmSync(directory,{recursive:true,force:true});});
  assert.deepEqual(rows(store.db,objectNames[0]!),direct(owners[0]!),'the constructor installs the same release-preview objects as the owner');
  assert.deepEqual(rows(store.db,[...objectNames[1]!,...objectNames[2]!]),[],'PluginCenter does not install another surface owner');

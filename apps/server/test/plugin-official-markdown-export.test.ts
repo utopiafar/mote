@@ -1,3 +1,4 @@
+import {testPluginControl} from './fixtures/plugin-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
@@ -88,7 +89,7 @@ test('in-repository Markdown export resolves without GitHub, rejects wrong tags,
   const state=mkdtempSync(join(tmpdir(),'mote-markdown-state-')),vault=mkdtempSync(join(tmpdir(),'mote-markdown-vault-')),githubCalls:string[]=[];
   t.after(()=>{rmSync(state,{recursive:true,force:true});rmSync(vault,{recursive:true,force:true});});
   const store=new Store(state),materials=new MaterialStore(store),plugins=new PluginCenter(store,new ExecutionEngine(store),
-    new GitHubPluginReleases(join(state,'packages'),rejectingGitHub(githubCalls),repoRoot));
+    new GitHubPluginReleases(join(state,'packages'),rejectingGitHub(githubCalls),repoRoot),testPluginControl(store));
   const outbound=new OutboundExportHost({store,materials,repoRoot,dataDir:state,home:homedir(),sourceKind:()=>'custom',intervalMs:3_600_000});
   plugins.outboundHost=outbound;
   t.after(async()=>{await plugins.close();store.close();});
@@ -178,7 +179,7 @@ test('path safety rejects traversal, repository/data/home roots and symlink esca
   const escapeRoot=mkdtempSync(join(tmpdir(),'mote-markdown-escape-root-')),outside=mkdtempSync(join(tmpdir(),'mote-markdown-outside-'));
   t.after(()=>{for(const directory of [state,vault,escapeRoot,outside])rmSync(directory,{recursive:true,force:true});});
   const store=new Store(state),materials=new MaterialStore(store);
-  const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(state,'packages'),rejectingGitHub([]),repoRoot));
+  const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(state,'packages'),rejectingGitHub([]),repoRoot),testPluginControl(store));
   const outbound=new OutboundExportHost({store,materials,repoRoot,dataDir:state,home:homedir(),sourceKind:()=>'custom',intervalMs:3_600_000});
   plugins.outboundHost=outbound;
   t.after(async()=>{await plugins.close();store.close();});
@@ -212,7 +213,7 @@ test('an empty target or empty scope enables nothing and never dumps the library
   const state=mkdtempSync(join(tmpdir(),'mote-markdown-empty-')),target=mkdtempSync(join(tmpdir(),'mote-markdown-empty-target-'));
   t.after(()=>{rmSync(state,{recursive:true,force:true});rmSync(target,{recursive:true,force:true});});
   const store=new Store(state),materials=new MaterialStore(store);
-  const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(state,'packages'),rejectingGitHub([]),repoRoot));
+  const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(state,'packages'),rejectingGitHub([]),repoRoot),testPluginControl(store));
   plugins.outboundHost=new OutboundExportHost({store,materials,repoRoot,dataDir:state,home:homedir(),sourceKind:()=>'custom',intervalMs:3_600_000});
   t.after(async()=>{await plugins.close();store.close();});
   materials.publish(draft('generated-notes','empty','Generated empty-scope body'));
@@ -245,7 +246,7 @@ test('an enabled export resumes its cursor after a Central process restart witho
   const state=mkdtempSync(join(tmpdir(),'mote-markdown-restart-')),target=mkdtempSync(join(tmpdir(),'mote-markdown-restart-vault-'));
   const store=new Store(state),materials=new MaterialStore(store);
   const create=()=>{
-    const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(state,'packages'),rejectingGitHub([]),repoRoot));
+    const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(state,'packages'),rejectingGitHub([]),repoRoot),testPluginControl(store));
     plugins.outboundHost=new OutboundExportHost({store,materials,repoRoot,dataDir:state,home:homedir(),sourceKind:()=>'custom',intervalMs:3_600_000});
     return plugins;
   };
@@ -282,7 +283,7 @@ test('an unsafe configured target fails check instead of enabling a sandbox',asy
   const state=mkdtempSync(join(tmpdir(),'mote-markdown-check-'));
   t.after(()=>rmSync(state,{recursive:true,force:true}));
   const store=new Store(state),materials=new MaterialStore(store);
-  const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(state,'packages'),rejectingGitHub([]),repoRoot));
+  const plugins=new PluginCenter(store,new ExecutionEngine(store),new GitHubPluginReleases(join(state,'packages'),rejectingGitHub([]),repoRoot),testPluginControl(store));
   plugins.outboundHost=new OutboundExportHost({store,materials,repoRoot,dataDir:state,home:homedir(),sourceKind:()=>'custom',intervalMs:3_600_000});
   t.after(async()=>{await plugins.close();store.close();});
   const view=plugins.view(),preview=await plugins.resolve({repository:official.repository,tag:official.tag});

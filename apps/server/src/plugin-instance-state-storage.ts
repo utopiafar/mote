@@ -1,12 +1,12 @@
 import type {DatabaseSync} from 'node:sqlite';
-import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
 import {createHash} from 'node:crypto';
 import type {HostScope} from '@mote/plugin-host';
 import {
   StateError, stateLimits,
   type StateCheckpoint, type StateLimits, type StateRecord, type StateStore, type StateValue, type StateWriteCondition,
 } from '@mote/plugin-api';
-import type {Store} from '../store.js';
+import type {Store} from './store.js';
 import {sourceIdSchema} from '@mote/shared';
 
 export const instanceStateSchemaInstallation={owner:'plugin-instance-state',requires:[],install:instanceStateSchema} as const satisfies SchemaInstallation;
@@ -54,7 +54,7 @@ class InstanceState implements StateStore {
   private readonly namespace: Namespace;
   private readonly limits: StateLimits;
 
-  constructor(private readonly store: Store, private readonly scope: HostScope, limits: StateLimits = stateLimits, private readonly sourceKinds: readonly string[] = []) {
+  constructor(private readonly store: Store, private readonly scope: HostScope, private readonly ownerCurrent:()=>void, limits: StateLimits = stateLimits, private readonly sourceKinds: readonly string[] = []) {
     this.namespace = Object.freeze({
       packageId: scope.identity.packageId,
       installationId: scope.identity.installationId,
@@ -216,13 +216,13 @@ class InstanceState implements StateStore {
   private values(): [string, string, string] { return [this.namespace.packageId, this.namespace.installationId, this.namespace.instanceId]; }
 
   private current() {
-    try { this.scope.assertCurrent(); }
+    try { this.ownerCurrent();this.scope.assertCurrent(); }
     catch { throw new StateError('stale_scope'); }
   }
 
   private admit<T>(work: () => T): Promise<T> {
     if (this.scope.signal.aborted) return Promise.reject(new StateError('stale_scope'));
-    return this.scope.run(() => ({value: work()})).then(result => {
+    return this.scope.run(() => { this.current();return {value: work()}; }).then(result => {
       if (!result) throw new StateError('quiesced');
       return result.value;
     }, error => {
@@ -232,17 +232,19 @@ class InstanceState implements StateStore {
   }
 }
 
-/** Trusted factory: the handle binds its activation namespace and permitted
- * connector source kinds. Ordinary state has no source-condition permission.
- * Public methods accept no instance identity, namespace, validator or SQL. */
-export function createInstanceState(store: Store, scope: HostScope, limits: StateLimits = stateLimits, sourceKinds: readonly string[] = []): StateStore {
-  return new InstanceState(store, scope, limits, Object.freeze([...sourceKinds]));
+const joinedCommits=new WeakMap<StateStore,(key:string)=>(expectedRevision:number,value:StateValue)=>StateRecord>();
+
+/** Vault-owned storage root. The returned object has only the four public state
+ * operations; neither its prototype nor own properties expose the backend,
+ * namespace, HostScope or an atomic writer. */
+export function createVaultInstanceState(store:Store,scope:HostScope,ownerCurrent:()=>void,limits:StateLimits=stateLimits,sourceKinds:readonly string[]=[]):StateStore {
+  const state=new InstanceState(store,scope,ownerCurrent,limits,Object.freeze([...sourceKinds]));
+  const facade:StateStore=Object.freeze({get:state.get.bind(state),list:state.list.bind(state),compareAndSet:state.compareAndSet.bind(state),checkpoint:state.checkpoint.bind(state)});
+  joinedCommits.set(facade,state.bindCommit.bind(state));return facade;
 }
 
-/** Host-internal atomic consumer: a real bound state instance, one fixed key,
- * an existing revision, and an already opened owning SQLite transaction. All
- * ordinary state limits, scope and CAS checks remain in the state owner. */
+/** Host-only fixed-key binding. Copies and lookalike state objects cannot acquire
+ * it; the existing owner still checks its exact transaction, CAS and limits. */
 export function bindInstanceStateCommit(state:StateStore,key:string):(expectedRevision:number,value:StateValue)=>StateRecord {
-  if(!(state instanceof InstanceState))throw new StateError('invalid_namespace');
-  return state.bindCommit(key);
+  const bind=joinedCommits.get(state);if(!bind)throw new StateError('invalid_namespace');return bind(key);
 }

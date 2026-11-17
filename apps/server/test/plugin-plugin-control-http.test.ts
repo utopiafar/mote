@@ -1,3 +1,4 @@
+import {testPluginStorage} from './fixtures/plugin-storage.js';
 import test, {type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -46,7 +47,7 @@ async function platform(t: TestContext) {
   const store = new Store(directory), executor = new ExecutionEngine(store), host = new PluginHost({kind: 'central', id: randomUUID()});
   const control = createPluginControlPlatform({
     store, executor, host, releases: new GitHubPluginReleases(join(directory, 'packages')),
-  }, [trustedBuild('fixture.restart', 'restart'), trustedBuild('fixture.broken', 'hot', true)]);
+  controlForScope:testPluginStorage(store).controlForScope}, [trustedBuild('fixture.restart', 'restart'), trustedBuild('fixture.broken', 'hot', true)]);
   const identity: ScopeIdentity = {
     host: host.identity, packageId: 'mote.control', installationId: 'control-install', instanceId: 'control-instance', activationId: randomUUID(),
   };

@@ -1,3 +1,4 @@
+import {testRegisterConnectors as registerConnectors} from './fixtures/plugin-storage.js';
 import {larkContext} from '../src/connectors/lark-context.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {LarkConnector,LARK_SCOPES,documentReference,larkEvent} from '../src/connectors/lark.js';
 import {larkArguments,authorizationUrl,createLarkRunner,type LarkRunner,type LarkCommand} from '../src/connectors/lark-cli.js';
-import {registerConnectors} from '../src/connectors/index.js';
+
 import {ConnectorError,type ConnectorContext} from '../src/connectors/types.js';
 import {connectorReader} from './fixtures/connector-reader.js';
 

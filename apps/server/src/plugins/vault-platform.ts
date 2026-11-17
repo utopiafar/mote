@@ -1,6 +1,7 @@
 import type {PluginLifecycle,PluginScope} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {HostPluginContext,HostScope} from '@mote/plugin-host';
+import {stateLimits,type StateLimits} from '@mote/plugin-api';
 import {join} from 'node:path';
 import {Store,StoreError} from '../store.js';
 import {SourceStore} from '../sources.js';
@@ -11,6 +12,8 @@ import {ContentStorageService} from '../content-storage.js';
 import type {ConfigService} from '../config-service.js';
 import {MaintenanceWorker} from '../maintenance.js';
 import {UsageLedger} from '../usage.js';
+import {createVaultInstanceState} from '../plugin-instance-state-storage.js';
+import {createVaultPluginControlStore} from '../plugin-control-storage.js';
 import {centralServices,type CommitAuthority,type CommitAuthorization,type VaultTransactions,type MaterialRepositoryRead,type MaterialPublication,type ArchivedContentRead} from './central-contracts.js';
 
 /** Private host configuration, never a Manifest configuration value or a wire DTO. */
@@ -67,6 +70,15 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
   let usage:UsageLedger|undefined,usageOwner:HostScope|undefined;
   let phase:'created'|'prepared'|'closing'|'closed'='created',closing:Promise<void>|undefined,accessorsClosing:Promise<void>|undefined;
   const assertPrepared=()=>{if(phase!=='prepared')throw new StoreError('Vault assembly is unavailable',503);};
+  const pluginCurrent=(owner:HostScope,consumer:HostScope)=>{
+    let released=false;
+    const current=()=>{
+      assertPrepared();
+      try{if(released)throw Error();owner.assertCurrent();owner.signal.throwIfAborted();consumer.assertCurrent();consumer.signal.throwIfAborted();}
+      catch{throw new StoreError('Vault plugin storage scope is unavailable',503);}
+    };
+    current();consumer.defer(()=>{released=true;});return current;
+  };
   const stopAccessors=()=>accessorsClosing??=(async()=>{
     const errors:unknown[]=[];
     try{await maintenance?.close();}catch(error){errors.push(error);}
@@ -94,6 +106,16 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
     get store(){assertPrepared();return store!;},
     get archivedFiles(){assertPrepared();return archivedFiles!;},
     get contentStorage(){assertPrepared();return content!;},
+    /** Trusted Host factory only: the real scope fixes the namespace and the
+     * verified connector manifest fixes source kinds. No factory is published. */
+    instanceStateForAssembly(owner:HostScope,consumer:HostScope,limits:StateLimits=stateLimits,sourceKinds:readonly string[]=[]){
+      const current=pluginCurrent(owner,consumer);return createVaultInstanceState(store!,consumer,current,limits,sourceKinds);
+    },
+    /** Opening retains the original control installation call point. Only the
+     * fixed control operations escape; the Vault owns the SQLite repository. */
+    pluginControlForAssembly(owner:HostScope,consumer:HostScope){
+      const current=pluginCurrent(owner,consumer);return createVaultPluginControlStore(store!,current);
+    },
     /** The real storage activation owns recovery and the backend. Consumer
      * views only share it; none can retrieve or close the borrowed Store. */
     usageForAssembly(owner:HostScope,consumer:PluginScope):UsageLedger{
