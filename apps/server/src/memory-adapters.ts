@@ -7,6 +7,8 @@ import {sha256,StoreError} from './store.js';
 import {probeMemoryProvider} from './memory-provider-probe.js';
 import type {MemoryEngine} from './memory-native-stage-contract.js';
 import type {ModelSettingsStore} from './model-settings.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {memoryProviderConfigurationsSchemaInstallation} from './memory-settings-schema.js';
 
 type ProviderConfiguration={namespace:MemoryProviderNamespace;package:StoredPackage;instance:PluginInstanceView;identity:string};
 
@@ -16,7 +18,7 @@ export class MemoryAdapters {
   private providers=new Map<string,MemoryProvider>();
   private closed=false;
   private closing?:Promise<void>;
-  constructor(private directory:string,private plugins:PluginCenter,private models:ModelSettingsStore){plugins.store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_configurations(id TEXT PRIMARY KEY,json TEXT NOT NULL);');plugins.store.registerStorage('memory-provider-adapters',{memory_provider_configurations:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128'});}
+  constructor(private directory:string,private plugins:PluginCenter,private models:ModelSettingsStore){installSchemaPlan(plugins.store.db,[memoryProviderConfigurationsSchemaInstallation]);plugins.store.registerStorage('memory-provider-adapters',{memory_provider_configurations:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128'});}
   configurationAllowed(type:string,value:string|number|boolean){if(typeof value!=='string')return false;try{if(type==='model-profile'){this.models.select('memory',value);return true;}if(type==='secret-reference'&&value.startsWith('model:'))return Boolean(this.models.select('memory',value.slice(6)).settings.apiKey);}catch{}return false;}
   private configuration(id:string,namespace?:MemoryProviderNamespace){
     if(!namespace)return {instance:this.plugins.instanceView(id),package:this.plugins.packageForInstance(id),identity:this.plugins.configurationIdentity(id)};

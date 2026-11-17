@@ -58,6 +58,10 @@ export const installations={
  "evidenceDependenciesWithoutMaterialsInstallation",
  "evidenceDependenciesWithMaterialsInstallation"
 ],
+ "memory-settings-schema.ts":[
+ "memoryProviderConfigurationsSchemaInstallation",
+ "memoryRecipeSettingsSchemaInstallation"
+],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -108,6 +112,7 @@ export const consumers={
  "plugin-center.ts":"plugin-release-previews",
  "plugins/outbound-export-host.ts":"outbound-export",
  "assets.ts":"assets",
+ "memory-recipe-settings.ts":"memory-recipe-settings",
 };
 
 /** These exact method scopes belong to the named formal owner. Other
@@ -245,6 +250,11 @@ export const consumerScopes={
 },
  "evidence-dependencies.ts":{
  "evidenceDependents": "evidence-dependencies"
+},
+ /** Only this scan reads this owner's saved provider configurations. The
+  * configuration() path also reads dynamic plan/binding relations and stays pending. */
+ "memory-adapters.ts":{
+ "MemoryAdapters.erasePreparedEvidence": "memory-provider-configurations"
 },
 };
 
@@ -529,7 +539,7 @@ export const sharedReads=[
   "scopeFingerprint": "4fe9dfe57084647a10a9117cbd3a69539952bf902ea7ce1312331632db58e585",
   "reason": "Read at most 1000 ready or expired-lease Processing step IDs before draining those IDs through ExecutionEngine."
  }
-,{"from":"apps/server/src/delegation-runtime.ts","to":"execution_operation_steps","symbol":"653ef180a3dc7da2d215f7b2f0b130db8e215f0bbec096e83a5e4d21fea5e9ab","scope":"DelegationRuntime.activeIds","scopeFingerprint":"7bbd52589abedfda666c147fb325bb96efca8922c080237cc82e3439790371aa","reason":"Find only existing Delegation work whose owned units or operation membership still have active Execution steps before recovery through ExecutionEngine."},{"from":"apps/server/src/delegation-runtime.ts","to":"execution_steps","symbol":"653ef180a3dc7da2d215f7b2f0b130db8e215f0bbec096e83a5e4d21fea5e9ab","scope":"DelegationRuntime.activeIds","scopeFingerprint":"7bbd52589abedfda666c147fb325bb96efca8922c080237cc82e3439790371aa","reason":"Find only existing Delegation work whose owned units or operation membership still have active Execution steps before recovery through ExecutionEngine."},{"from":"apps/server/src/delegation-runtime.ts","to":"execution_steps","symbol":"b455d3ccd33a2e3849625660212a2e289fdb9c0e5436f729b91911af9877e5f4","scope":"DelegationRuntime.activeExecutionIds","scopeFingerprint":"003b5daa00702ce5f708103c98226c02ebc4ddd484a4e0f8c96f507b09f341e3","reason":"Read only active step IDs of this Delegation operation before cancelling or blocking through ExecutionEngine."}];
+,{"from":"apps/server/src/delegation-runtime.ts","to":"execution_operation_steps","symbol":"653ef180a3dc7da2d215f7b2f0b130db8e215f0bbec096e83a5e4d21fea5e9ab","scope":"DelegationRuntime.activeIds","scopeFingerprint":"7bbd52589abedfda666c147fb325bb96efca8922c080237cc82e3439790371aa","reason":"Find only existing Delegation work whose owned units or operation membership still have active Execution steps before recovery through ExecutionEngine."},{"from":"apps/server/src/delegation-runtime.ts","to":"execution_steps","symbol":"653ef180a3dc7da2d215f7b2f0b130db8e215f0bbec096e83a5e4d21fea5e9ab","scope":"DelegationRuntime.activeIds","scopeFingerprint":"7bbd52589abedfda666c147fb325bb96efca8922c080237cc82e3439790371aa","reason":"Find only existing Delegation work whose owned units or operation membership still have active Execution steps before recovery through ExecutionEngine."},{"from":"apps/server/src/delegation-runtime.ts","to":"execution_steps","symbol":"b455d3ccd33a2e3849625660212a2e289fdb9c0e5436f729b91911af9877e5f4","scope":"DelegationRuntime.activeExecutionIds","scopeFingerprint":"003b5daa00702ce5f708103c98226c02ebc4ddd484a4e0f8c96f507b09f341e3","reason":"Read only active step IDs of this Delegation operation before cancelling or blocking through ExecutionEngine."},{"from":"apps/server/src/memory-recipe-settings.ts","to":"source_connections","symbol":"def4469d98bdf5ba5cb7229cddb238f11d8c2f07ed6ba26ea704df320fb1086c","scope":"MemoryRecipeSettings.sourceDefault","scopeFingerprint":"127942509f92fbfe1b3bc50bcdfcfe5db1d510045fdf7cb8f092747710b5c78c","reason":"Read only the canonical Source kind/device metadata that chooses the inherited recipe category default; the FK is a schema dependency, not Source data authority."},{"from":"apps/server/src/memory-recipe-settings.ts","to":"source_connections","symbol":"e419071df7f985c66e1b34bb6eacf5f186d94c309ce5fff1d135b751440a6494","scope":"MemoryRecipeSettings.source","scopeFingerprint":"b47a5a72021ca0a39ed13f525492e455e3b8542a3f2518f0b95ff12321f919e3","reason":"Verify an exact owner-selected Source exists before reading or writing only its Memory recipe override; this never mutates the Source row."}];
 
 /** Activity's already formal feature owns only this disposable projection
  * construction and subscription retirement. This is a projection claim, separate from schema installation. */
