@@ -1,4 +1,4 @@
-// G4 manual Mac stage acceptance:
+// Manual Mac plugin-stage acceptance:
 //   npm run build -w @mote/desktop
 //   cd apps/desktop && npx electron test/plugin-stage-smoke.cjs
 // The hidden generated-profile journey writes screenshots and result.json to
