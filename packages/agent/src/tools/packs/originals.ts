@@ -6,7 +6,7 @@ import {defineToolDescriptor, type ToolDescriptor, type ToolFields} from '../des
 import type {HostSessionPort} from '../host-session.js';
 import type {ContextRange, ContextRecord} from '../../context-contracts.js';
 
-/** C10/A08B original-read pack. It owns the five original-facing tool schemas,
+/** Original-evidence read pack. It owns the five original-facing tool schemas,
  * argument parsing and read request shape; the parent Host still owns discovery,
  * fresh grants, delivery receipts, ledger, citations and cancellation.
  *

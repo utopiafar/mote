@@ -12,11 +12,11 @@ export interface SourcePlatformChain {
 
 /** Ordered shutdown of the source-facing platform chain.
  *
- * C04 stops admitting new requests first; already accepted request pins stay
- * valid until their response release. C10A then stops new intake and drains
- * what it accepted before C11's borrows close. C09 is only quiesced here: fresh
- * admission stops, while its Memory authority stays valid until C05 has
- * interrupted and drained accepted execution work. Retiring C09 before C05
+ * Request authorization stops admitting new requests first; already accepted request
+ * pins stay valid until their response release. Capture then stops new intake and
+ * drains accepted work before file borrows close. The source runtime is only
+ * quiesced here: fresh admission stops, while its Memory authority stays valid
+ * until execution has stopped and drained accepted work. Retiring it too early
  * would turn a completing Memory operation into a permanent
  * `memory_authorization_revoked` failure instead of restartable interrupted
  * work, so the runtime is closed last. */

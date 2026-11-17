@@ -6,11 +6,12 @@ import {AssistantMatters,type MatterAuthority} from './assistant-matters.js';
 import {withinEvidenceScope} from './evidence-reader.js';
 import {StoreError,type Store} from './store.js';
 import {TaskRecords,type AssertTaskCurrent,type TaskRecord} from './task-records.js';
+import type {CurrentInstructionOrigin} from './assistant-current-instruction.js';
 
 const referenceSchema=z.object({cardId:z.string().uuid(),expectedRevision:z.number().int().positive().max(Number.MAX_SAFE_INTEGER)}).strict();
 type Reference=z.infer<typeof referenceSchema>;
 type FrozenAcceptance={request:AssistantTaskInput;card:Reference;cardVersion:string;matterId:string|null};
-export type FrozenDraftTask={request:AssistantTaskInput;conversationId:string;turnId:string;draftRevision:number;evidenceIds:string[]};
+export type FrozenDraftTask={request:AssistantTaskInput;conversationId:string;turnId:string;draftRevision:number;evidenceIds:string[];instruction?:CurrentInstructionOrigin};
 type FrozenBatchItem={question:string;evidenceIds:string[]};
 
 /** A domain admission callback must synchronously enqueue work in this same
@@ -35,7 +36,7 @@ export class AssistantTaskAcceptance {
  /** The same acceptance owner handles a conversation draft. Its origin and
   * exact read set are private immutable input, not model-granted authority. */
  acceptDraft(rawRequest:AssistantTaskInput,origin:{conversationId:string;turnId:string;draftRevision:number},evidenceIds:string[],
-  dependencies:string[],assertCurrent:AssertTaskCurrent,link:(task:TaskRecord)=>void,enqueue:EnqueueAcceptedTask):TaskRecord{
+  dependencies:string[],assertCurrent:AssertTaskCurrent,link:(task:TaskRecord)=>void,enqueue:EnqueueAcceptedTask,instruction?:CurrentInstructionOrigin):TaskRecord{
   const parsed=assistantTaskInputSchema.parse(rawRequest),request={...parsed,goal:parsed.goal.trim()};
   const ref=z.object({conversationId:z.string().uuid(),turnId:z.string().uuid(),draftRevision:z.number().int().nonnegative().safe()}).strict().parse(origin);
   return this.transaction(()=>{
@@ -44,15 +45,15 @@ export class AssistantTaskAcceptance {
     const task=this.tasks.get(String(previous.id));
     if(task.kind!=='assistant.task')throw new StoreError('Task request ID was reused with different content',409);
     const frozen=this.tasks.input<FrozenDraftTask>(task.id,task.revision,assertCurrent);
-    if(!isDeepStrictEqual(frozen.request,request)||frozen.conversationId!==ref.conversationId||frozen.turnId!==ref.turnId||frozen.draftRevision!==ref.draftRevision)
+    if(!isDeepStrictEqual(frozen.request,request)||frozen.conversationId!==ref.conversationId||frozen.turnId!==ref.turnId||frozen.draftRevision!==ref.draftRevision||!isDeepStrictEqual(frozen.instruction,instruction))
      throw new StoreError('Task request ID was reused with different content',409);
     return task;
    }
-   const frozen:FrozenDraftTask={request,...ref,evidenceIds:[...evidenceIds]};
+   const frozen:FrozenDraftTask={request,...ref,evidenceIds:[...evidenceIds],...(instruction?{instruction}:{} )};
    const task=this.tasks.create({operationId:'assistant.task:'+request.requestId,kind:'assistant.task',requestId:request.requestId,
     input:frozen,evidenceDependencies:{version:1,complete:true,ids:[...new Set([...dependencies,...evidenceIds])]}},assertCurrent);
    link(task);
-   if(!evidenceIds.length)return this.tasks.setState(task.id,task.revision,'blocked');
+   if(!evidenceIds.length&&!instruction)return this.tasks.setState(task.id,task.revision,'blocked');
    const result:unknown=enqueue(task,request);
    if(result!==undefined){void Promise.resolve(result).catch(()=>{});throw new StoreError('Task enqueue must complete synchronously',409);}
    const batches=this.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch'").all(task.operationId);
