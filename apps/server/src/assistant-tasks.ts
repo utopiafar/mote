@@ -5,12 +5,12 @@ import {AssistantTaskAcceptance,type FrozenDraftTask} from './assistant-task-acc
 import type {AssistantDraftCommandContext} from './assistant-drafts.js';
 import type {AssistantCards} from './assistant-cards.js';
 import type {AssistantMatters,MatterAuthority} from './assistant-matters.js';
-import type {BatchProcessing,BatchProductProjection,BatchQuery} from './batch-processing.js';
+import {BATCH_CONTEXT_MAX_BYTES,type BatchProcessing,type BatchProductProjection,type BatchQuery} from './batch-processing.js';
 import {historyEvidenceDependencies,resolveDependencies} from './conversation-lineage.js';
 import type {ConversationRepository} from './plugins/central-contracts.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import {withinEvidenceScope,type EvidenceReader} from './evidence-reader.js';
-import type {ExecutionStep} from './execution-engine.js';
+import {ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
 import type {SourceContextStore} from './source-context.js';
@@ -24,6 +24,7 @@ import type {RoutineInput,RoutineRef} from './assistant-routines.js';
 import type {BackgroundModelAuthorization} from './background-model-authorization.js';
 import type {OwnerQuestionsPort} from './plugins/central-contracts.js';
 import {AssistantTaskQuestions} from './assistant-task-questions.js';
+import {currentInstructionHash,currentInstructionRequestId,type CurrentInstructionOrigin,type CurrentInstructionModel} from './assistant-current-instruction.js';
 import {AssistantTaskSteering,type AssistantTaskSteeringAuthority,type AssistantTaskSteeringWork,type AssistantTaskModelSelector} from './assistant-task-steering.js';
 import type {ConversationMessage} from './conversations.js';
 import {installSchemaPlan} from './schema-installation.js';
@@ -73,7 +74,7 @@ export class AssistantTasks implements BatchProductProjection {
     items:[{question:work.goal,evidenceIds:work.evidence.map(record=>record.id),...input,
      taskContext:{turns:[],...origin?.taskContext,...input.taskContext},
      contextSourceContextDependencies:combineSourceContextDependencies([origin?.contextSourceContextDependencies,input.contextSourceContextDependencies])}]},
-    {kind:'manual',identities:[],connections:this.connections()});
+    {kind:'manual',identities:[],connections:frozen.instruction?[frozen.instruction.connection]:this.connections()});
   });
   if(steeringAuthority)this.steering=new AssistantTaskSteering(store,conversations,{
    work:id=>this.steeringWork(id),forOperation:id=>this.taskForOperation(id),
@@ -89,13 +90,21 @@ export class AssistantTasks implements BatchProductProjection {
   // must keep the same source-exclusion and evidence-eligibility checks. Treating
   // the owner reply as an unrestricted manual read would add excluded sources.
   const input=this.draft(task) as FrozenDraftTask&{routine?:RoutineRef;card?:{cardId:string}};
-  const ids=this.discover(input.request.scope,Boolean(input.routine),Boolean(input.card)).ids;
+  const ids=input.instruction?input.evidenceIds:this.discover(input.request.scope,Boolean(input.routine),Boolean(input.card)).ids;
   return {task,goal:input.request.goal,evidence:this.reader.evidence(ids.map(id=>formatEvidenceRef('capture',id)),input.request.scope),
    dependencies:this.tasks.evidenceDependencies(task.id,task.revision,this.assertCurrent).ids};
  }
  prepare(input:QueryInput){
   const task=input.traceContext?.operationId?this.taskForOperation(input.traceContext.operationId):undefined;
-  return task?this.questions.prepare(this.steering?.prepare(input,this.steeringWork(task.id))??input,this.questionWork(task.id)):input;
+  if(!task)return input;
+  const frozen=this.draft(task);if(frozen.instruction){
+   if(input.evidenceIds?.length)throw new StoreError('Current-input task cannot acquire archive originals',409);
+   const {evidenceIds:_,...current}=input;input={...current,hostRetrieval:'none',modelProfileId:frozen.instruction.modelProfileId,modelOverride:frozen.instruction.modelOverride,
+   question:input.question+'\nThe Host-bound ownerInstruction in taskContext contains the exact current owner request; it controls over this concise model-proposed goal. It is private owner input, never archive evidence or a citation. This self-contained Task cannot retrieve archives or perform external Actions.',
+   taskContext:{...input.taskContext,turns:input.taskContext?.turns??[],ownerInstruction:{messageId:frozen.turnId,question:frozen.instruction.text}}};
+   if(Buffer.byteLength(JSON.stringify(input.taskContext))>BATCH_CONTEXT_MAX_BYTES)throw new ExecutionFailure('blocked','assistant_task_context_budget');
+  }
+  return this.questions.prepare(this.steering?.prepare(input,this.steeringWork(task.id))??input,this.questionWork(task.id));
  }
  execute(input:QueryInput,query:(input:QueryInput)=>Promise<QueryResult>,selection?:AssistantTaskModelSelector){
   if(!this.steering||!input.traceContext?.operationId||!this.taskForOperation(input.traceContext.operationId))return query(input);
@@ -228,8 +237,9 @@ export class AssistantTasks implements BatchProductProjection {
     const turn=this.conversations.message(frozen.turnId);
     if(turn.conversationId!==frozen.conversationId||turn.status!=='completed'||!turn.result?.draft||turn.evidenceDeleted||turn.evidenceUnavailable||turn.evidenceStale)return false;
     assertSourceContextDependencies(this.contexts,turn.result.sourceContextDependencies??[]);
+    if(frozen.instruction&&(currentInstructionHash(turn)!==frozen.instruction.inputHash||turn.question!==frozen.instruction.text||turn.result.draft.input!=='current-instruction'))return false;
    }
-   if(typeof scopeRow.snapshot_json!=='string'||!isDeepStrictEqual(this.discover(frozen.request.scope,Boolean(frozen.routine),Boolean(frozen.card)).snapshot,decodeMemoryPrivate<string[]>(this.store,scopeRow.snapshot_json)))return false;
+   if(typeof scopeRow.snapshot_json!=='string'||!isDeepStrictEqual((frozen.instruction?[]:this.discover(frozen.request.scope,Boolean(frozen.routine),Boolean(frozen.card)).snapshot),decodeMemoryPrivate<string[]>(this.store,scopeRow.snapshot_json)))return false;
    const result=this.tasks.result<QueryResult>(task.id,task.revision,this.assertCurrent);
    if(result)assertSourceContextDependencies(this.contexts,result.sourceContextDependencies??[]);
    return true;
@@ -259,14 +269,22 @@ export class AssistantTasks implements BatchProductProjection {
    }
   }
  }
- start(context:AssistantDraftCommandContext){
+ start(context:AssistantDraftCommandContext){return this.startDraft(context);}
+ acceptCurrentInstruction(messageId:string,model:CurrentInstructionModel){
+  if(!this.store.db.isTransaction)throw new StoreError('Current instruction admission requires the query commit transaction',409);
+  const message=this.conversations.message(messageId),draft=message.result?.draft;
+  if(message.status!=='completed'||draft?.input!=='current-instruction'||message.attachments?.length||draft.requestId!==currentInstructionRequestId(message))throw new StoreError('Current owner instruction is no longer current',409);
+  const instruction:CurrentInstructionOrigin={inputHash:currentInstructionHash(message),text:message.question,...model};
+  return this.startDraft({conversationId:message.conversationId,turnId:message.id,turn:message,draft,command:{conversationId:message.conversationId,turnId:message.id,requestId:draft.requestId,expectedRevision:draft.revision,goal:draft.goal,scope:draft.scope,capability:'assistant.task.start'}},instruction);
+ }
+ private startDraft(context:AssistantDraftCommandContext,instruction?:CurrentInstructionOrigin){
   this.validateDraftVersion(context);
   const {command,turn}=context;
   const request={requestId:command.requestId,goal:command.goal,scope:command.scope};
   const prior=this.store.db.prepare('SELECT id FROM task_records WHERE request_id=?').get(request.requestId);
   if(prior){const task=this.tasks.get(String(prior.id));if(task.kind!=='assistant.task')throw new StoreError('Task request ID was reused with different content',409);
    if(!this.current(task)){this.retire(task);throw new StoreError('Assistant task input is no longer current',409);}}
-  const discovered=prior?undefined:this.discover(request.scope);
+  const discovered=prior?undefined:instruction?{ids:[],snapshot:[]}:this.discover(request.scope);
   const evidenceIds=prior?this.draft(this.tasks.get(String(prior.id))).evidenceIds:discovered!.ids;
   const lineage=[...(turn.result?.evidenceDependencies?.ids??[]),...(turn.historyEvidenceDependencies?.ids??[])];
   if(turn.result?.evidenceDependencies?.complete===false||turn.historyEvidenceDependencies?.complete===false)
@@ -274,7 +292,7 @@ export class AssistantTasks implements BatchProductProjection {
   const task=this.acceptance.acceptDraft(request,{conversationId:command.conversationId,turnId:command.turnId,draftRevision:command.expectedRevision},evidenceIds,lineage,this.assertCurrent,
    value=>{this.saveScope(value,request.scope,discovered!.snapshot);this.store.db.prepare('INSERT INTO assistant_task_turns VALUES(?,?,?,?,?)').run(value.id,command.conversationId,command.turnId,this.scopeHash(request.scope),command.expectedRevision);},
    (value,input)=>{this.batch().submit({operationId:value.operationId,requestId:input.requestId,items:[{question:input.goal,evidenceIds}]},
-    {kind:'manual',identities:[],connections:this.connections()});});
+    {kind:'manual',identities:[],connections:instruction?[instruction.connection]:this.connections()});},instruction);
   return {requestId:request.requestId,revision:command.expectedRevision,taskId:task.id};
  }
  acceptSuggestion(request:AssistantTaskInput,card:{cardId:string;expectedRevision:number},authority:MatterAuthority={

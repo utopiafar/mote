@@ -1,3 +1,5 @@
+import {installSchemaPlan} from './schema-installation.js';
+import {sourcePipelineSchemaInstallation} from './source-state-schema.js';
 import {forgetRetiredConversationRoots} from './conversation-retention.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {z} from 'zod';
@@ -86,10 +88,7 @@ export class SourcePipelineRuntime {
     });
     this.context=services.ctx;
     this.resources.retire(()=>services.dispose());
-    store.db.exec(`CREATE TABLE IF NOT EXISTS source_pipeline_bindings(source_id TEXT PRIMARY KEY,pipeline_id TEXT NOT NULL,storage TEXT);
-      CREATE TABLE IF NOT EXISTS source_pipeline_work(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,pipeline_id TEXT NOT NULL,version TEXT NOT NULL,group_key TEXT NOT NULL,state TEXT NOT NULL,error TEXT,updated_at INTEGER NOT NULL,material_ref TEXT,generation INTEGER NOT NULL DEFAULT 0,archive_checkpoint TEXT,memory_trigger TEXT NOT NULL,
-        recipe_id TEXT,recipe_version TEXT,recipe_definition_fingerprint TEXT,recipe_config_fingerprint TEXT,recipe_component_pins TEXT);
-      CREATE TABLE IF NOT EXISTS source_pipeline_config(source_id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
+    installSchemaPlan(store.db,[sourcePipelineSchemaInstallation]);
     this.memoryWork=memoryWork??new MaterialMemoryWork(store,materials);
     this.unregisterHandler=(handlers??this.engine).register({kind:STEP_KIND,pool:'source.archive',concurrency:()=>2,policy:EXECUTION_POLICIES.orchestration,
       resourceKeys:step=>[`source.archive:${(step.input as unknown as GroupInput).workId}`],

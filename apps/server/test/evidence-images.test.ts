@@ -165,10 +165,10 @@ test('original identity is rechecked after image processing even if authority st
  f.store.db.prepare('UPDATE file_versions SET object_hash=? WHERE capture_id=?').run(original,one.id);assert.ok(calls>=4);
 });
 
-test('deleted originals and expired or released snapshot inputs never borrow identical retained pixels',async t=>{
+test('deleted originals and revoked or released snapshot inputs never borrow identical retained pixels',async t=>{
  const f=await fixture(t),retained=await f.upload('independent-retained-original'),hash=sha256(f.bytes);
  f.sources.register({id:'generated-snapshots',name:'Generated snapshot images',kind:'local-files',deviceId:'generated-snapshot-device',platform:'import',retention:'snapshot'});
- for(const mode of ['expired','released','deleted'] as const){
+ for(const mode of ['revoked','released','deleted'] as const){
   let id:string;
   if(mode==='deleted'){
    id=(await f.upload('deleted-original')).id;
@@ -176,9 +176,10 @@ test('deleted originals and expired or released snapshot inputs never borrow ide
    f.store.delete(id);
   }else{
    const input={sourceId:'generated-snapshots',item:{externalId:mode,revision:'1',kind:'file',layer:'snapshot',text:'',mimeType:'image/png',observedAt:'2026-10-01T00:00:00Z',document:{fileIndex:{version:1,fileId:mode,status:'pending',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead:true}}},sha256:hash,sizeBytes:f.bytes.length};
+   f.sources.update('generated-snapshots',{retention:'snapshot'});
    const upload=f.files.begin(input,()=>{});f.files.part(upload.uploadId,0,f.bytes,()=>{});id=(await f.files.commit(upload.uploadId,()=>{})).id;
-   assert.deepEqual(Buffer.concat([...f.files.processingBytes(id)]),f.bytes,'a private temporary processing input exists before expiry/release');
-   if(mode==='expired')f.store.db.prepare('UPDATE file_snapshot_inputs SET expires=0 WHERE capture_id=?').run(id);
+   assert.deepEqual(Buffer.concat([...f.files.processingBytes(id)]),f.bytes,'a private temporary processing input exists before revocation/release');
+   if(mode==='revoked'){f.sources.update('generated-snapshots',{retention:'reference'});f.files.sweep();}
    else f.files.releaseSnapshotInput(id);
    assert.throws(()=>Buffer.concat([...f.files.processingBytes(id)]),{statusCode:410});
    assert.equal(f.files.detail(id).hasOriginal,false);

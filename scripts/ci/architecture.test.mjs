@@ -1,14 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,realpathSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,realpathSync,copyFileSync,symlinkSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {moduleReferences,checkArchitecture} from './architecture.mjs';
+import {ownershipInventory,sqlStatements,issueKey} from './sql-ownership.mjs';
+import {installations,sharedReads,sharedObservations,projections,finiteInstallations,schemaMaintenance,nonSqlCalls} from './sql-ownership-policy.mjs';
+import * as sqlPolicy from './sql-ownership-policy.mjs';
 
 const cli=fileURLToPath(new URL('./architecture.mjs',import.meta.url));
 const repository=fileURLToPath(new URL('../..',import.meta.url));
+const productionSql=ownershipInventory(repository);
+const productionOwners=new Map(productionSql.owners.map(item=>[item.declaration,item.owner]));
+const fixtureSqlPolicy={...sqlPolicy,storageConstructions:[],importedHelpers:[],consumerScopes:{},nonSqlCalls:nonSqlCalls.filter(proof=>proof.kind!=='class-method'),schemaMaintenance:schemaMaintenance.filter(grant=>grant.installer!=='AssistantTasks.constructor')};
 function fixture(t){
   const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-architecture-')));
   t.after(()=>rmSync(root,{recursive:true,force:true}));
@@ -34,7 +40,34 @@ function fixture(t){
   write('packages/shared/src/browser-helper.ts','export const browserValue=1;');
   write('packages/shared/src/config-file.ts',"import {readFileSync} from 'node:fs'; export interface Configuration {} export {readFileSync};");
   write('scripts/ci/architecture-baseline.json','[]');
-  return {root,write,check:baseline=>checkArchitecture(root,baseline??[]),run:()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8'})};
+  // The real CLI includes SQL ownership. Isolate its production installer
+  // inventory here so the import-boundary negatives still test the real CLI.
+  for(const [file,names] of Object.entries(installations))write('apps/server/src/'+file,names.map((name,index)=>{
+    const tables=Object.entries(productionSql.tables).filter(([,table])=>table.installer===name).map(([table])=>`CREATE TABLE ${table}(id TEXT);`).join('');
+    return `export const ${name}={owner:'${productionOwners.get(name)}',install:install${index}}; function install${index}(db){db.exec(${JSON.stringify(tables)});}`;
+  }).join('\n'));
+  for(const [file,names] of Object.entries(installations))if(names.some(name=>finiteInstallations.includes(name)))
+    write('apps/server/src/'+file,readFileSync(join(repository,'apps/server/src/'+file),'utf8').replace(/^import .*;\n/gm,''));
+  for(const projection of projections){
+    const source=readFileSync(join(repository,'apps/server/src/'+projection.file),'utf8').replace(/^import .*;\n/gm,'');
+    write('apps/server/src/'+projection.file,source);
+    write('apps/server/src/'+projection.activationFile,`export const ${projection.activation}={activation:{featureId:${JSON.stringify(projection.feature)}}};`);
+  }
+  for(const proof of fixtureSqlPolicy.nonSqlCalls)write(proof.from,readFileSync(join(repository,proof.from),'utf8'));
+  const catalog='apps/server/src/material-catalog.ts',catalogSource=readFileSync(join(repository,catalog),'utf8');
+  const facet=sqlStatements(catalog,catalogSource).find(statement=>statement.fingerprint===sharedReads.find(grant=>grant.from===catalog).symbol);
+  write(catalog,readFileSync(join(root,catalog),'utf8')+`\nfunction fixtureFacet(db){db.prepare(${facet.expression});}`);
+  const configuration={...fixtureSqlPolicy,sharedReads:sharedReads.filter(grant=>existsSync(join(root,grant.from)))};
+  const sql=ownershipInventory(root,configuration),grants=new Set([...configuration.sharedReads.map(item=>({...item,rule:'sql-cross-owner',kind:'read'})),...sharedObservations.map(item=>({...item,rule:'sql-cross-owner',kind:'observe'})),...configuration.schemaMaintenance.map(item=>({...item,rule:'sql-schema-maintenance'}))].map(issueKey));
+  const debt=sql.issues.filter(issue=>!grants.has(issueKey(issue))).map(({line,...issue})=>({...issue,reason:'Generated architecture fixture'}));
+  write('scripts/ci/sql-ownership-baseline.json',JSON.stringify(debt));
+  write('scripts/ci/sql-ownership-map.json',JSON.stringify({owners:sql.owners,tables:sql.tables}));
+  // Run the identical entrypoint code with generated-fixture policy. Production
+  // Task/class/import proofs belong to the full production-copy tests.
+  for(const file of ['architecture.mjs','sql-ownership.mjs'])copyFileSync(join(repository,'scripts/ci',file),join(root,'scripts/ci',file));
+  write('scripts/ci/sql-ownership-policy.mjs',Object.entries(configuration).map(([name,value])=>`export const ${name}=${JSON.stringify(value)};`).join('\n'));
+  symlinkSync(join(repository,'node_modules'),join(root,'node_modules'),'dir');
+  return {root,write,check:baseline=>checkArchitecture(root,baseline??[]),run:()=>spawnSync(process.execPath,[join(root,'scripts/ci/architecture.mjs')],{cwd:root,encoding:'utf8'})};
 }
 const rule=result=>result.violations.map(issue=>issue.rule);
 
@@ -281,6 +314,13 @@ test('actual CLI fails a controlled browser leak, then passes the same fixture a
   const failed=f.run();assert.equal(failed.status,1);assert.match(failed.stderr,/browser-no-node.*node:fs/);assert.doesNotMatch(failed.stdout,/passed/);
   f.write('packages/shared/src/browser-helper.ts',"export type {Stats} from 'node:fs';");
   const passed=f.run();assert.equal(passed.status,0,passed.stderr);assert.match(passed.stdout,/Architecture boundaries passed/);
+});
+
+test('actual architecture CLI rejects a new cross-owner SQL read through the production entrypoint',t=>{
+  const f=fixture(t);
+  f.write('apps/server/src/material-index.ts',"db.prepare('SELECT value FROM settings WHERE key=?');");
+  const failed=f.run();assert.equal(failed.status,1);assert.match(failed.stderr,/sql-cross-owner.*material-index.ts.*settings/);
+  assert.doesNotMatch(failed.stdout,/Architecture boundaries passed/);
 });
 
 test('Server plugins cannot import Store by value or type, and exceptions go stale when only Store is removed',t=>{

@@ -1,5 +1,7 @@
 import {z} from 'zod';
 import type {Store} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {memoryInputPlansSchemaInstallation} from './memory-input-plans-schema.js';
 import {memoryRecipeBindingSchema,type MemoryStrategyRef} from './memory-strategy-contract.js';
 import {materialRequirementsSchema,type MaterialInputPin} from './material-readiness.js';
 import {materialSourcePinSchema} from './material-source-pin.js';
@@ -11,9 +13,7 @@ export type ManualMemoryInputPlan=ManualMemoryInputPlanRequest&{id:string;jobId:
 export type MemoryPlanSummary={total:number;waiting:number;blocked:number;stale:number;completed:number};
 export type MemoryRecipeProgress={recipe:MemoryStrategyRef;inputs:MemoryPlanSummary;completedBatches:number;failedBatches:number;invalidatedBatches?:number;reasons:{code:string;required?:string[];materialRef?:string}[]};
 export class MemoryInputPlans {
- constructor(private store:Store){store.db.exec(`CREATE TABLE IF NOT EXISTS memory_input_plans(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES memory_jobs(id) ON DELETE CASCADE,material_id TEXT NOT NULL REFERENCES material_heads(id) ON DELETE CASCADE,json TEXT NOT NULL);
-  CREATE INDEX IF NOT EXISTS memory_input_plans_job ON memory_input_plans(job_id);
-  CREATE INDEX IF NOT EXISTS memory_input_plans_material ON memory_input_plans(material_id);`);}
+ constructor(private store:Store){installSchemaPlan(store.db,[memoryInputPlansSchemaInstallation]);}
  list(jobId:string):ManualMemoryInputPlan[]{return this.store.db.prepare('SELECT json FROM memory_input_plans WHERE job_id=? ORDER BY rowid').all(jobId).map(row=>JSON.parse(String(row.json)));}
  get(id:string):ManualMemoryInputPlan|undefined{const row=this.store.db.prepare('SELECT json FROM memory_input_plans WHERE id=?').get(id);return row?JSON.parse(String(row.json)):undefined;}
  put(plan:ManualMemoryInputPlan){const json=JSON.stringify(plan);this.store.db.prepare('INSERT INTO memory_input_plans VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(plan.id,plan.jobId,plan.materialId,json);}
