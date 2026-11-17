@@ -6,7 +6,7 @@ export type HostKind = typeof hostKinds[number];
 export interface HostIdentity { readonly kind: HostKind; readonly id: string }
 /** IDs are host-issued opaque values. Reinstall changes installationId; instances never share state identity. */
 export interface InstanceIdentity {
-  /** Stable canonical Manifest ID; artifact version/digest/address belong to the package manifest descriptor. */
+  /** Stable canonical Manifest ID; release address and artifact digest identity live in the package resolver's verified metadata, outside this Manifest. */
   readonly packageId: string;
   /** Installed deployment identity, including host-registered bundled builds. Never an activation ID. */
   readonly installationId: string;
