@@ -132,7 +132,7 @@ test('async failing plugin application cannot expose speculative file, image or 
   await f.images.save({revision:f.service.revision,settings:{...f.images.settings(),understandingEnabled:false,allowExternalProcessing:false}});
   await f.workflows.save({revision:f.service.revision,settings:{...f.workflows.settings(),extract:{concurrency:1,enabled:false}}});
   let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),gate=new Promise<void>(resolve=>finish=resolve);
-  await f.service.registerPlugin({id:'fault',schema:z.object({n:z.number()}),defaultValue:{n:0},prepare(next){return {async apply(){if(!next.n)return;enter();await gate;throw Error('generated asynchronous apply failure');},rollback(){}};}});
+  await f.service.registerPlugin({id:'fault',updatePaths:['n'],schema:z.object({n:z.number()}),defaultValue:{n:0},prepare(next){return {async apply(){if(!next.n)return;enter();await gate;throw Error('generated asynchronous apply failure');},rollback(){}};}});
   let imageCalls=0,workflowCalls=0;
   f.processing.runtime.registry.get('image.http').process=async()=>{imageCalls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image result'}]};};
   f.workflows.registry.register({id:'generated.speculative',version:'1',lane:'extract',async process(){workflowCalls++;return [{kind:'text',text:'Generated workflow result',metadata:{}}];}});

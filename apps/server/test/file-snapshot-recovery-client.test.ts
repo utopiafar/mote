@@ -16,6 +16,8 @@ let root:string,selected:string,node:Awaited<ReturnType<typeof buildApp>>,manage
 let paths:string[],loseCommitAck:boolean;
 const token='generated-cross-end-recovery-owner',headers={authorization:'Bearer '+token};
 const originalFetch=globalThis.fetch;
+// Recovery exercises explicitly selected snapshots, independent of the archive default.
+const snapshotOptions:SourceOptions={...DEFAULT_SOURCE_OPTIONS,retention:'snapshot'};
 beforeEach(async()=>{
  root=await realpath(await mkdtemp(join(tmpdir(),'mote-cross-end-recovery-')));selected=join(root,'authorized');await mkdir(selected);await writeFile(join(selected,'generated.txt'),'Generated current snapshot');managers=[];paths=[];loseCommitAck=false;
  const config:Config={dataDir:join(root,'central'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
@@ -32,7 +34,7 @@ beforeEach(async()=>{
 });
 afterEach(async()=>{for(const manager of managers)await manager.close();await node?.app.close();globalThis.fetch=originalFetch;await rm(root,{recursive:true,force:true});});
 async function manager(){const value=new LocalSourceManager(join(root,'desktop'),{...defaultConfig(),deviceId:'bf07fd16-109f-47f9-b4f0-daf02649060d',serverUrl:'http://127.0.0.1:47832',token,syncMode:'manual'},'/never-real-calendar',true);managers.push(value);await value.initialize();return value;}
-async function firstUpload(options:SourceOptions=DEFAULT_SOURCE_OPTIONS){const value=await manager();await value.addFiles(selected,options);await value.sync(true);assert.equal(paths.length,0,'manual local discovery cannot request recovery or transmit');assert.equal(value.pendingStats().pendingRecords,1);await value.flushPending(new AbortController().signal);assert.equal(value.pendingStats().pendingRecords,0);const sourceId=value.status()[0].source.id;const rows=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions').all();assert.equal(rows.length,1);const id=String(rows[0].capture_id),manifest=String(rows[0].manifest);return {value,sourceId,id,manifest,input:JSON.parse(manifest)};}
+async function firstUpload(options:SourceOptions=snapshotOptions){const value=await manager();await value.addFiles(selected,options);await value.sync(true);assert.equal(paths.length,0,'manual local discovery cannot request recovery or transmit');assert.equal(value.pendingStats().pendingRecords,1);await value.flushPending(new AbortController().signal);assert.equal(value.pendingStats().pendingRecords,0);const sourceId=value.status()[0].source.id;assert.equal(node.sources.getSource(sourceId).retention,'snapshot');const rows=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions').all();assert.equal(rows.length,1);const id=String(rows[0].capture_id),manifest=String(rows[0].manifest),input=JSON.parse(manifest);assert.equal(input.item.layer,'snapshot');return {value,sourceId,id,manifest,input};}
 function loseInput(id:string){node.files.releaseSnapshotInput(id);}
 function identity(id:string,manifest:string){assert.deepEqual(node.store.db.prepare('SELECT capture_id,manifest FROM file_versions').all().map(row=>({...row})),[{capture_id:id,manifest}]);assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM captures').get()!.n,1);}
 async function recover(value:LocalSourceManager){const before=paths.length;await value.sync(true);assert.equal(paths.length,before,'manual local scan must stay offline');await value.flushPending(new AbortController().signal);assert.equal(value.pendingStats().pendingRecords,0);}
@@ -112,7 +114,7 @@ test('maintenance rejects out-of-scope and revoked files without revealing their
 });
 
 test('a completed one-time import waits for released bytes, then restores the same version without importing later files',async()=>{
- const first=await firstUpload({...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});
+ const first=await firstUpload({...snapshotOptions,syncContinuously:false});
  assert.ok(first.value.status()[0].source.importCompletedAt);
  loseInput(first.id);await node.processing.tick();
  assert.equal(node.files.detail(first.id).job!.state,'blocked');
@@ -132,7 +134,7 @@ test('a completed one-time import waits for released bytes, then restores the sa
 });
 
 test('maintenance reprocess of a completed one-time import waits for and reacquires the same released snapshot version',async()=>{
- const first=await firstUpload({...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await finishPipeline(first.id);
+ const first=await firstUpload({...snapshotOptions,syncContinuously:false});await finishPipeline(first.id);
  assert.equal(node.files.detail(first.id).job!.state,'succeeded');assert.ok(first.value.status()[0].source.importCompletedAt);
  const request=(method:'POST',url:string,payload?:unknown)=>node.app.inject({method,url,headers,...(payload===undefined?{}:{payload})});
  const revision=node.processing.view().revision,scope={kind:'selection',sourceIds:[first.sourceId]};
@@ -158,7 +160,7 @@ test('Desktop manual sync restores missing input bytes under the same capture/re
 });
 
 test('Desktop lost ACK plus missing input reuses the immutable pending version without a second capture',async()=>{
- const value=await manager();await value.addFiles(selected,DEFAULT_SOURCE_OPTIONS);await value.sync(true);loseCommitAck=true;await assert.rejects(value.flushPending(new AbortController().signal),/lost ACK/);assert.equal(value.pendingStats().pendingRecords,1);
+ const value=await manager();await value.addFiles(selected,snapshotOptions);await value.sync(true);loseCommitAck=true;await assert.rejects(value.flushPending(new AbortController().signal),/lost ACK/);assert.equal(value.pendingStats().pendingRecords,1);
  const first=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions').get()!;const id=String(first.capture_id),manifest=String(first.manifest);loseInput(id);await node.processing.tick();await value.close();
  const restarted=await manager();await restarted.sync(true);assert.equal(restarted.pendingStats().pendingRecords,1);await restarted.flushPending(new AbortController().signal);identity(id,manifest);assert.equal(restarted.pendingStats().pendingRecords,0);await finishPipeline(id);assert.equal(node.files.detail(id).job!.state,'succeeded');
 });
@@ -175,7 +177,7 @@ test('a revoked source cannot restore missing input through Desktop manual sync'
 });
 
 test('narrowing read permission creates a current restricted revision without replaying missing input',async()=>{
- const first=await firstUpload({...DEFAULT_SOURCE_OPTIONS,allowRead:true});loseInput(first.id);await node.processing.tick();assert.equal(first.input.item.document.fileIndex.allowRead,true);
+ const first=await firstUpload({...snapshotOptions,allowRead:true});loseInput(first.id);await node.processing.tick();assert.equal(first.input.item.document.fileIndex.allowRead,true);
  const before=paths.length,selectedSource=first.value.status()[0].source;
  await first.value.update(first.sourceId,{...selectedSource,allowRead:false});await first.value.sync(true);assert.equal(first.value.pendingStats().pendingRecords,1);await first.value.flushPending(new AbortController().signal);
  const rows=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions ORDER BY rowid').all();assert.equal(rows.length,2);const current=rows[1],manifest=JSON.parse(String(current.manifest));assert.notEqual(current.capture_id,first.id);assert.notEqual(manifest.item.revision,first.input.item.revision);assert.equal(manifest.previousRevision,first.input.item.revision);assert.equal(manifest.sha256,first.input.sha256);
@@ -189,7 +191,7 @@ test('same inode metadata rename creates a successor snapshot instead of settlin
  // It must preserve a metadata change even when the remote request matches bytes.
  for(const managedUploads of [false,true]){
   const selectedPath=managedUploads?join(root,'authorized-managed'):selected;if(managedUploads){await mkdir(selectedPath);await writeFile(join(selectedPath,'generated.txt'),'Generated current snapshot');}
-  const value=new LocalSourceManager(join(root,managedUploads?'desktop-managed':'desktop'),{...defaultConfig(),deviceId:'bf07fd16-109f-47f9-b4f0-daf02649060d',serverUrl:'http://127.0.0.1:47832',token,syncMode:'manual'},'/never-real-calendar',managedUploads);managers.push(value);await value.initialize();await value.addFiles(selectedPath,DEFAULT_SOURCE_OPTIONS);const firstStart=paths.length;await value.sync(true);
+  const value=new LocalSourceManager(join(root,managedUploads?'desktop-managed':'desktop'),{...defaultConfig(),deviceId:'bf07fd16-109f-47f9-b4f0-daf02649060d',serverUrl:'http://127.0.0.1:47832',token,syncMode:'manual'},'/never-real-calendar',managedUploads);managers.push(value);await value.initialize();await value.addFiles(selectedPath,snapshotOptions);const firstStart=paths.length;await value.sync(true);
   if(managedUploads){assert.equal(paths.length,firstStart,'UI local discovery has no transport before explicit flush');assert.equal(value.pendingStats().pendingRecords,1);await value.flushPending(new AbortController().signal);}
   assert.equal(value.pendingStats().pendingRecords,0);const sourceId=value.status()[0].source.id,first=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions WHERE source_id=?').get(sourceId)!,firstId=String(first.capture_id),firstManifest=String(first.manifest),input=JSON.parse(firstManifest);loseInput(firstId);await node.processing.tick();
   const originalPath=join(selectedPath,'generated.txt'),renamedPath=join(selectedPath,'renamed-generated.txt'),before=await stat(originalPath);await rename(originalPath,renamedPath);const after=await stat(renamedPath);assert.equal(after.ino,before.ino);assert.equal(after.dev,before.dev);
