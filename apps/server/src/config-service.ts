@@ -22,15 +22,20 @@ export interface PreparedConfigChange {
   /** Resource swaps that must share the publication point, such as models, apply last. */
   applyOrder?: number;
 }
+/** Raw editor input paths, independent of a schema's transformed output.
+ * Select branches from the untrusted candidate without parsing or resolving it.
+ * A final `*` deliberately opens that value's whole subtree (records/unknown input).
+ * Other stars match one member, as in `profiles.*.enabled`. */
+export type ConfigUpdatePaths = readonly string[] | ((input: unknown) => readonly string[]);
 export interface ConfigDomainRegistration<T = unknown> {
   id: string;
   schema: ZodType<T, any, any>;
   defaultValue: unknown;
   fields?: ConfigFieldMetadata[];
   restartRequired?: boolean;
-  /** Public domain editors must not persist submitted paths stripped by their input schema. */
-  rejectUnknownUpdates?: boolean;
-  /** Explicit raw-key declaration for public domains with opaque preprocessors. Parsed output is never persisted. */
+  /** Explicit accepted raw input. Public plugin registrations require this declaration. */
+  updatePaths?: ConfigUpdatePaths;
+  /** Optional independent raw-input validation; its defaults/transforms are never persisted. */
   rawInputSchema?: z.AnyZodObject;
   /** Resolve declared credentials and contextual defaults without materializing them in the raw file. */
   resolve?(raw: unknown, document?: Readonly<ConfigDocument>): unknown;
@@ -64,53 +69,19 @@ function merge(base: unknown, patch: unknown): unknown {
   }
   return result;
 }
-/** Path membership follows the registered INPUT declaration, independently of its parsed output.
- * The original schema remains responsible for full candidate validation in the same transaction. */
-function knownInputPath(schema:z.ZodTypeAny,input:unknown,path:string[]):boolean {
-  if(!path.length)return true;
-  if(schema instanceof z.ZodEffects){
-    // Opaque raw inputs need their own declaration; never infer keys by executing a preprocessor.
-    if(schema._def.effect.type==='preprocess')return false;
-    return knownInputPath(schema.innerType(),input,path);
-  }
-  if(schema instanceof z.ZodOptional||schema instanceof z.ZodNullable||schema instanceof z.ZodBranded||schema instanceof z.ZodReadonly)return knownInputPath(schema.unwrap(),input,path);
-  if(schema instanceof z.ZodDefault)return knownInputPath(schema.removeDefault(),input,path);
-  if(schema instanceof z.ZodCatch)return knownInputPath(schema._def.innerType,input,path);
-  if(schema instanceof z.ZodPipeline)return knownInputPath(schema._def.in,input,path);
-  if(schema instanceof z.ZodLazy)return knownInputPath(schema.schema,input,path);
-  if(schema instanceof z.ZodUnion||schema instanceof z.ZodDiscriminatedUnion){
-    const selected=schema.options.find((option:z.ZodTypeAny)=>option.safeParse(input).success);
-    return Boolean(selected&&knownInputPath(selected,input,path));
-  }
-  if(schema instanceof z.ZodIntersection)return knownInputPath(schema._def.left,input,path)||knownInputPath(schema._def.right,input,path);
-  const [key,...tail]=path,child=(object(input)||Array.isArray(input))?(input as Record<string,unknown>)[key]:undefined;
-  if(schema instanceof z.ZodObject){
-    const declared=Object.hasOwn(schema.shape,key)?schema.shape[key] as z.ZodTypeAny:undefined;
-    if(declared)return knownInputPath(declared,child,tail);
-    if(!(schema._def.catchall instanceof z.ZodNever))return knownInputPath(schema._def.catchall,child,tail);
-    return schema._def.unknownKeys==='passthrough';
-  }
-  if(schema instanceof z.ZodArray)return /^(0|[1-9][0-9]*)$/.test(key)&&knownInputPath(schema.element,child,tail);
-  if(schema instanceof z.ZodTuple){
-    const item=/^(0|[1-9][0-9]*)$/.test(key)?schema.items[Number(key)]??schema._def.rest:undefined;
-    return Boolean(item&&knownInputPath(item,child,tail));
-  }
-  if(schema instanceof z.ZodRecord)return knownInputPath(schema.element,child,tail);
-  return schema instanceof z.ZodAny||schema instanceof z.ZodUnknown;
+const forbiddenPathPart=(part:string)=>['__proto__','constructor','prototype'].includes(part);
+function inputPathPatterns(paths:unknown):string[][] {
+  if(!Array.isArray(paths)||paths.some(path=>typeof path!=='string'||!path||path.split('.').some(part=>!part||forbiddenPathPart(part)||/[\x00-\x1f\x7f]/.test(part))))throw new ConfigServiceError('config_invalid');
+  return paths.map(path=>path.split('.'));
 }
-function hasPreprocessor(schema:z.ZodTypeAny,seen=new Set<z.ZodTypeAny>()):boolean {
-  if(seen.has(schema))return false;seen.add(schema);
-  if(schema instanceof z.ZodEffects&&schema._def.effect.type==='preprocess')return true;
-  if(schema instanceof z.ZodPipeline)return hasPreprocessor(schema._def.in,seen);
-  if(schema instanceof z.ZodLazy)return hasPreprocessor(schema.schema,seen);
-  if(schema instanceof z.ZodObject&&Object.values(schema.shape).some(child=>hasPreprocessor(child as z.ZodTypeAny,seen)))return true;
-  // Traverse declarations only. Do not call default/refinement/transform functions or interpret their behavior.
-  const children=Object.values(schema._def).flatMap(value=>Array.isArray(value)?value:value instanceof Map?[...value.values()]:[value]);
-  return children.some(value=>value instanceof z.ZodType&&hasPreprocessor(value,seen));
-}
-function knownPatchPaths(patch:unknown,schema:z.ZodTypeAny,input:unknown,path:string[]=[]):boolean {
-  if(!knownInputPath(schema,input,path))return false;
-  return !object(patch)&&!Array.isArray(patch)||Object.entries(patch as object).every(([key,value])=>knownPatchPaths(value,schema,input,[...path,key]));
+function knownInputPaths(input:unknown,patterns:string[][],path:string[]=[]):boolean {
+  if(path.length&&!patterns.some(pattern=>{
+    const shared=Math.min(path.length,pattern.length);
+    if(path.slice(0,shared).some((part,index)=>pattern[index]!=='*'&&pattern[index]!==part))return false;
+    return path.length<=pattern.length||pattern.at(-1)==='*';
+  }))return false;
+  if(!object(input)&&!Array.isArray(input))return true;
+  return Object.entries(input).every(([key,value])=>!forbiddenPathPart(key)&&(!Array.isArray(input)||/^(0|[1-9][0-9]*)$/.test(key)&&Number(key)<input.length)&&knownInputPaths(value,patterns,[...path,key]));
 }
 function editPath(value: unknown, path: string[], fn: (value: unknown, previous: unknown) => unknown, previous?: unknown): unknown {
   if (!path.length) return fn(value, previous);
@@ -197,23 +168,20 @@ export class ConfigService {
   get revision(): number { return this.state().revision; }
   register<T>(domain: ConfigDomainRegistration<T>): () => void {
     if (this.raw || !/^[a-z][a-zA-Z0-9_-]*$/.test(domain.id) || this.domains.has(domain.id) || ['version', 'revision'].includes(domain.id)) throw new ConfigServiceError('config_invalid');
+    if(domain.updatePaths!==undefined&&typeof domain.updatePaths!=='function')inputPathPatterns(domain.updatePaths);
     this.domains.set(domain.id, domain);
     return () => { if (!this.closing && this.raw) throw new ConfigServiceError('config_unavailable'); this.domains.delete(domain.id); };
   }
   /** Trusted Cordis plugins register after bootstrap; each gets an isolated namespace in the same file. */
-  registerPlugin<T>(domain: ConfigDomainRegistration<T>): Promise<() => Promise<void>> {
+  registerPlugin<T>(domain: ConfigDomainRegistration<T>&{updatePaths:ConfigUpdatePaths}): Promise<() => Promise<void>> {
     return this.serialize(async () => {
       if (!/^[a-z][a-zA-Z0-9_-]*$/.test(domain.id) || !this.domains.has('plugins')) throw new ConfigServiceError('config_invalid');
       const id = `plugin.${domain.id}`;
       if (this.domains.has(id)) throw new ConfigServiceError('config_conflict');
-      const entry: RegisteredDomain = { ...domain, id, documentPath: ['plugins', 'configuration', domain.id] };
+      if(typeof domain.updatePaths!=='function')inputPathPatterns(domain.updatePaths);
+      const entry: RegisteredDomain = { ...domain, updatePaths:typeof domain.updatePaths==='function'?domain.updatePaths:Object.freeze([...domain.updatePaths]), id, documentPath: ['plugins', 'configuration', domain.id] };
       const raw = this.state(), input = this.domainRaw(raw, entry) ?? entry.defaultValue;
-      if(entry.rejectUnknownUpdates){
-        if(!(entry.schema instanceof z.ZodType))throw new ConfigServiceError('config_invalid',id);
-        if(entry.rawInputSchema){
-          if(!(entry.rawInputSchema instanceof z.ZodObject)||hasPreprocessor(entry.rawInputSchema))throw new ConfigServiceError('config_invalid',id);
-        }else if(hasPreprocessor(entry.schema))throw new ConfigServiceError('config_invalid',id);
-      }
+      if(!(entry.schema instanceof z.ZodType)||entry.rawInputSchema&&!(entry.rawInputSchema instanceof z.ZodObject))throw new ConfigServiceError('config_invalid',id);
       const resolvedInput=this.resolveDomainInput(entry,input,raw),value=this.parseDomainInput(entry,resolvedInput);
       let candidate: PreparedConfigChange | undefined, applied = false;
       try {
@@ -296,16 +264,25 @@ export class ConfigService {
     try{return domain.schema.parse(clone(input));}catch{throw new ConfigServiceError('config_invalid',domain.id);}
   }
   private validateRawInput(domain:ConfigDomainRegistration,input:unknown):void {
-    if(!domain.rawInputSchema)return;
     try{
-      domain.rawInputSchema.parse(clone(input));
-      if(!knownPatchPaths(input,domain.rawInputSchema,input))throw new ConfigServiceError('config_invalid',domain.id);
+      this.validateInputPaths(domain,input);
+      domain.rawInputSchema?.parse(clone(input));
+    }catch{throw new ConfigServiceError('config_invalid',domain.id);}
+  }
+  private validateInputPaths(domain:ConfigDomainRegistration,input:unknown):void {
+    if(domain.updatePaths===undefined)return;
+    try{
+      const declaration=typeof domain.updatePaths==='function'?domain.updatePaths(clone(input)):domain.updatePaths;
+      if(!knownInputPaths(input,inputPathPatterns(declaration)))throw new ConfigServiceError('config_invalid',domain.id);
     }catch{throw new ConfigServiceError('config_invalid',domain.id);}
   }
   private parseDomain(domain:ConfigDomainRegistration,raw:unknown,document?:ConfigDocument):unknown {
     return this.parseDomainInput(domain,this.resolveDomainInput(domain,raw,document));
   }
   private parse(raw: unknown): { raw: ConfigDocument; inputs:Map<string,unknown>; values: Map<string, unknown> } {
+    // A reload must fence every declared raw namespace before another domain's
+    // normalizer/resolver/schema can observe a rejected input transaction.
+    if(object(raw))for(const domain of this.domains.values())this.validateInputPaths(domain,this.domainRaw(raw as ConfigDocument,domain)??domain.defaultValue);
     if (this.normalizeDocument) { try { raw = this.normalizeDocument(raw, this.raw ? clone(this.raw) : undefined); } catch { throw new ConfigServiceError('config_invalid'); } }
     if (!object(raw) || raw.version !== 1 || !Number.isSafeInteger(raw.revision) || Number(raw.revision) < 0 || Object.keys(raw).some(key => !['version', 'revision'].includes(key) && !this.domains.has(key))) throw new ConfigServiceError('config_invalid');
     const next = clone(raw) as ConfigDocument, values = new Map<string, unknown>(),inputs=new Map<string,unknown>();
@@ -504,13 +481,16 @@ export class ConfigService {
         if ((disk?.text ?? null) !== this.diskText) { await this.reloadInternal(disk); throw new ConfigServiceError('config_conflict'); }
         const state = this.state(); if (expectedRevision !== state.revision) throw new ConfigServiceError('config_conflict');
         const next = clone(state);
+        const values=new Map<string,unknown>();
         for (const [id, patch] of Object.entries(patches)) {
-          const domain = this.domains.get(id)!, saved = this.saved(id), value = replace ? clone(patch) : merge(this.domainRaw(state, domain) ?? domain.defaultValue, patch);
+          const domain = this.domains.get(id)!,value = replace ? clone(patch) : merge(this.domainRaw(state, domain) ?? domain.defaultValue, patch);
           if (id === 'plugins' && object(patch) && Object.hasOwn(patch, 'configuration')) throw new ConfigServiceError('config_invalid');
-          if(domain.rejectUnknownUpdates){
-            this.parseDomain(domain,value,state);
-            if(!knownPatchPaths(patch,domain.rawInputSchema??domain.schema,value))throw new ConfigServiceError('config_invalid',id);
-          }
+          // Reject undeclared raw paths in every domain before any submitted
+          // transaction invokes a resolver, validator or preprocessor.
+          this.validateInputPaths(domain,value);values.set(id,value);
+        }
+        for(const [id,value]of values){
+          const domain=this.domains.get(id)!,saved=this.saved(id);
           this.assignRaw(next, domain, preserveReferences(this.domainRaw(state, domain), saved, value));
         }
         return await this.commit(this.parse(next), disk);
