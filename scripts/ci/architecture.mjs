@@ -3,6 +3,7 @@ import {builtinModules} from 'node:module';
 import {dirname,resolve,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import ts from 'typescript';
+import {checkSqlOwnership,sqlOwnershipSummary} from './sql-ownership.mjs';
 
 const sourceDirectories=['packages/agent/src','packages/shared/src','packages/plugin-api/src','packages/plugin-host/src','packages/plugin-sdk/src','apps/server/src','apps/desktop/src','apps/web/src'];
 const sourceExtension=/\.(?:[cm]?[jt]sx?)$/;
@@ -361,6 +362,9 @@ export function checkArchitecture(root='.',baseline){
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{
     const result=checkArchitecture();
+    const sql=checkSqlOwnership();
+    result.violations.push(...sql.violations);result.stale.push(...sql.stale);
+    console.log(sqlOwnershipSummary(sql));
     for(const issue of result.violations)console.error(`${issue.rule}: ${issue.from}:${issue.line} -> ${issue.to} (${issue.kind})${issue.chain?' via '+issue.chain.join(' -> '):''}`);
     for(const issue of result.stale)console.error(`Remove resolved architecture exception: ${issue.rule}: ${issue.from} -> ${issue.to} (${issue.kind})`);
     if(result.violations.length||result.stale.length)process.exitCode=1;
