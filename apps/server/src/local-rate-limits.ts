@@ -62,14 +62,15 @@ class LocalSlots {
 
 /** Each upload transport owns one scope. Admission counts new multi-part
  * sessions only; part/replay/receipt counts never spend the admission budget.
- * At most 16 bodies (4 per credential, each <=4 MiB) and 4 commit tasks (2 per
- * credential) are in flight. The limits bound work, not retained data. */
+ * The default chunk transport has at most 16 bodies (4 per credential, each
+ * <=4 MiB) and 4 commit tasks (2 per credential) in flight. Inline JSON uses
+ * an explicit 1-per-credential/2-total body scope. These bound work, not data. */
 export class UploadHttpProtection {
   private readonly admissions:LocalRateLimit;
-  private readonly parts=new LocalSlots(4,16);
+  private readonly parts:LocalSlots;
   private readonly commits=new LocalSlots(2,4);
   private readonly receiving=new Map<FastifyRequest,()=>void>();
-  constructor(clock=Date.now){this.admissions=new LocalRateLimit(120,clock);}
+  constructor(clock=Date.now,bodySlots={perIdentity:4,total:16}){this.admissions=new LocalRateLimit(120,clock);this.parts=new LocalSlots(bodySlots.perIdentity,bodySlots.total);}
   install(app:FastifyInstance){
     localRateLimitErrors(app);
     const release=(request:FastifyRequest)=>{this.receiving.get(request)?.();this.receiving.delete(request);};
@@ -82,6 +83,19 @@ export class UploadHttpProtection {
   admit(request:FastifyRequest){this.admissions.take(verifiedCredentialIdentity(request));}
   /** Route onRequest runs before Fastify buffers the binary body. */
   readonly receive=async(request:FastifyRequest)=>{this.receiving.set(request,this.parts.acquire(verifiedCredentialIdentity(request)));};
+  /** The inline import contract accepts a large JSON body as well as small
+   * directory/archive references. Unknown-length bodies reserve the large-body
+   * slot too; lying about Content-Length is rejected by the HTTP parser. */
+  readonly receiveLargeJson=async(request:FastifyRequest)=>{
+    if(this.largeJsonBody(request))await this.receive(request);
+  };
+  largeJsonBody(request:FastifyRequest){return Number(request.headers['content-length'])>4*1024*1024||Boolean(request.headers['transfer-encoding']);}
+  /** Transfer the parsed body's lease to its real producer. Client disconnect
+   * now stops owning the release; the producer may still retain decoded data. */
+  async produce<T>(request:FastifyRequest,work:()=>Promise<T>){
+    const release=this.receiving.get(request);this.receiving.delete(request);
+    try{return await work();}finally{release?.();}
+  }
   async commit<T>(request:FastifyRequest,work:()=>Promise<T>){
     const release=this.commits.acquire(verifiedCredentialIdentity(request));
     // Keep the slot until the producer actually settles, including aborts.

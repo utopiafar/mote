@@ -1,26 +1,27 @@
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {request as httpRequest,type ClientRequest} from 'node:http';
 import {setTimeout as delay} from 'node:timers/promises';
-import {FILE_PART_BYTES,FILE_PART_RECEIPTS,filePartReceipts,type FilePartPage,type FileRevision} from '@mote/shared';
+import {FILE_PART_BYTES,FILE_PART_RECEIPTS,filePartReceipts,noteCapture,type FilePartPage,type FileRevision} from '@mote/shared';
+import type {FastifyRequest} from 'fastify';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {LocalRateLimit,LocalRateLimitError} from '../src/local-rate-limits.js';
+import {LocalRateLimit,LocalRateLimitError,UploadHttpProtection} from '../src/local-rate-limits.js';
 import {sha256} from '../src/store.js';
 import {SourceSync} from '../../desktop/src/source-sync.js';
 import type {ScannedItem,SourceDefinition,SourceRequest} from '../../desktop/src/source-types.js';
 
 const PART=FILE_PART_BYTES,owner='generated-local-rate-owner-credential',sourceId='generated-rate-source';
-async function fixture(t:TestContext){
+async function fixture(t:TestContext,options:{maxExportBytes?:number}={}){
   const directory=await mkdtemp(join(tmpdir(),'mote-local-rate-'));
   let now=Date.now(),modelCalls=0;
   t.mock.method(Date,'now',()=>now);
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,profile:'test',maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
-  const boot=()=>buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model in local HTTP admission tests');},close:async()=>{}}});
+  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,profile:'test',maxExportBytes:options.maxExportBytes??1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const boot=()=>buildApp(config,{backgroundWorker:false,prepareImport:async({workspace})=>{await writeFile(join(workspace,'records.jsonl'),'');return {summary:'Generated empty preparation without a model'};},agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model in local HTTP admission tests');},close:async()=>{}}});
   let node=await boot(),origin='';
   const listen=async()=>{origin=await node.app.listen({host:'127.0.0.1',port:0});};
   const headers=(token=owner)=>({authorization:'Bearer '+token,'x-mote-ingress-version':'2'});
@@ -38,6 +39,14 @@ async function fixture(t:TestContext){
 }
 function limited(response:{status:number;headers:Headers;body:Record<string,unknown>},retry='60'){
   assert.equal(response.status,429);assert.equal(response.headers.get('retry-after'),retry);assert.equal(response.body.error,'rate_limited');
+}
+function incompleteJson(origin:string,path:string,headers:Record<string,string>,length=2*PART){
+  return new Promise<{status:number;headers:Headers;body:Record<string,unknown>}>((resolve,reject)=>{
+    const request=httpRequest(origin+path,{method:'POST',headers:{...headers,'content-type':'application/json','content-length':String(length)}},response=>{
+      let body='';response.setEncoding('utf8');response.on('data',chunk=>body+=chunk);response.on('end',()=>{resolve({status:response.statusCode!,headers:new Headers(Object.entries(response.headers).filter((entry):entry is [string,string]=>typeof entry[1]==='string')),body:JSON.parse(body)});request.destroy();});
+    });
+    request.on('error',reject);request.setTimeout(3000,()=>request.destroy(Error('Expected rejection before the incomplete JSON body was read')));request.write('{');
+  });
 }
 
 test('login failures have a real HTTP 429 window, cannot forge a proxy identity, and never reach the session producer',async t=>{
@@ -236,6 +245,98 @@ test('real commit work stays bounded through client abort, then ACK retries retu
     const incomplete=await f.call('/api/import-uploads','POST',{name:'generated-incomplete.bin',sizeBytes:17});
     for(let i=0;i<5;i++)assert.equal((await f.call('/api/import-uploads/'+incomplete.body.id+'/commit','POST')).status,409,'producer failures retain their classification and release commit capacity');
     assert.equal((await f.call('/api/import-uploads/'+id+'/commit','POST')).status,200);
+  }finally{controller.abort();release.resolve();await aborted;}
+});
+
+test('inline JSON uploads reserve body slots before parsing and gate new producer work after request-ID deduplication',async t=>{
+  const f=await fixture(t);let entered=0,aborts=0;
+  f.node.app.addHook('preParsing',async request=>{if(request.headers['x-generated-inline'])entered++;});
+  f.node.app.addHook('onRequestAbort',async request=>{if(request.headers['x-generated-inline'])aborts++;});
+  await f.listen();const other=await f.session('generated-inline-owner-b'),third=await f.session('generated-inline-owner-c');
+  const requests:ClientRequest[]=[];
+  const unfinished=(token:string,chunked=false)=>{
+    const result=Promise.withResolvers<{status:number;headers:Headers;body:Record<string,unknown>}>();
+    const req=httpRequest(f.origin+'/api/imports',{method:'POST',headers:{...f.headers(token),'content-type':'application/json','x-generated-inline':'1',...(chunked?{'transfer-encoding':'chunked'}:{'content-length':String(2*PART)})}},response=>{
+      let body='';response.setEncoding('utf8');response.on('data',chunk=>body+=chunk);response.on('end',()=>result.resolve({status:response.statusCode!,headers:new Headers(Object.entries(response.headers).filter((entry):entry is [string,string]=>typeof entry[1]==='string')),body:JSON.parse(body)}));
+    });
+    req.on('error',error=>result.reject(error));req.write('{');requests.push(req);void result.promise.catch(()=>{});return result.promise;
+  };
+  try{
+    void unfinished(owner);for(let i=0;i<100&&entered<1;i++)await delay(10);assert.equal(entered,1);
+    limited(await unfinished(owner),'1');limited(await unfinished(owner,true),'1');
+    void unfinished(other);for(let i=0;i<100&&entered<2;i++)await delay(10);assert.equal(entered,2,'the second credential retains its large-body slot');
+    limited(await unfinished(third),'1');
+    const small=await f.call('/api/imports','POST',{files:[{name:'generated-small.txt',dataBase64:Buffer.from('Generated small inline').toString('base64')}]});assert.equal(small.status,202,small.text);
+    assert.equal((await f.call('/api/imports')).status,200);
+    for(const request of requests)request.destroy();
+    for(let i=0;i<100&&aborts<2;i++)await delay(10);assert.equal(aborts,2);await new Promise<void>(resolve=>setImmediate(resolve));
+    let observed:{protection:UploadHttpProtection;request:FastifyRequest}|undefined;
+    const admit=UploadHttpProtection.prototype.admit;
+    t.mock.method(UploadHttpProtection.prototype,'admit',function(this:UploadHttpProtection,request:FastifyRequest){observed??={protection:this,request};return admit.call(this,request);});
+    const bytes=Buffer.alloc(PART+17,37),body={requestId:randomUUID(),files:[{name:'generated-inline.bin',dataBase64:bytes.toString('base64')}]};
+    const created=await f.call('/api/imports','POST',body);assert.equal(created.status,202,created.text);assert.ok(observed);
+    // Seed the remaining real admission state without retransmitting another
+    // 119 large JSON bodies. Both chunked producers above test all 120 HTTP
+    // admissions; this case observes the actual inline producer's gate.
+    for(let i=1;i<120;i++)admit.call(observed.protection,observed.request);
+    const replay=await f.call('/api/imports','POST',body);assert.equal(replay.status,202,replay.text);assert.equal(replay.body.id,created.body.id);
+    const jobs=f.node.store.db.prepare('SELECT count(*) n FROM import_jobs').get()!.n;
+    limited(await f.call('/api/imports','POST',{...body,requestId:randomUUID()}));
+    assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM import_jobs').get()!.n,jobs,'over-limit new work does not create another job');
+    assert.equal((await f.call('/api/imports','POST',{files:[{name:'generated-invalid.bin',dataBase64:'?'}]})).status,400,'validation retains its original classification');
+    const reference=await f.call('/api/imports','POST',{archivedFileIds:[created.body.files[0].id]});assert.equal(reference.status,202,reference.text);
+    const another=await f.call('/api/imports','POST',{...body,requestId:randomUUID()},other);assert.equal(another.status,202,another.text);
+    f.advance(60_000);assert.equal((await f.call('/api/imports','POST',{...body,requestId:randomUUID()})).status,202);
+    const content=await fetch(f.origin+'/api/archived-files/'+created.body.files[0].id+'/content',{headers:f.headers()});assert.equal(content.status,200);assert.equal(sha256(Buffer.from(await content.arrayBuffer())),sha256(bytes));
+  }finally{for(const request of requests)request.destroy();}
+});
+
+test('inline archiving retains its large-body lease after client abort until the actual create producer settles',async t=>{
+  const f=await fixture(t);await f.listen();
+  const entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>(),done=Promise.withResolvers<void>();
+  const imports=f.node.imports as unknown as {expand:(...args:unknown[])=>Promise<void>};
+  const expand=imports.expand.bind(imports),create=f.node.imports.create.bind(f.node.imports);let first=true;
+  t.mock.method(imports,'expand',async(...args:unknown[])=>{await expand(...args);if(first){first=false;entered.resolve();await release.promise;}});
+  t.mock.method(f.node.imports,'create',async(...args:Parameters<typeof create>)=>{try{return await create(...args);}finally{done.resolve();}});
+  const body={requestId:randomUUID(),files:[{name:'generated-aborted-inline.bin',dataBase64:Buffer.alloc(PART+17,53).toString('base64')}]};
+  const controller=new AbortController(),request=fetch(f.origin+'/api/imports',{method:'POST',headers:{...f.headers(),'content-type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+  const aborted=assert.rejects(request,{name:'AbortError'});
+  try{
+    await entered.promise;controller.abort();await aborted;
+    limited(await incompleteJson(f.origin,'/api/imports',f.headers()),'1');
+    assert.equal((await f.call('/api/imports')).status,200);
+    release.resolve();await done.promise;await new Promise<void>(resolve=>setImmediate(resolve));
+    const retry=await f.call('/api/imports','POST',body);assert.equal(retry.status,202,retry.text);
+    assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM import_jobs').get()!.n,1);
+  }finally{controller.abort();release.resolve();await aborted;}
+});
+
+test('portable archive upload preserves its budget, keeps ordinary imports available, and holds parsed data through an aborted producer',async t=>{
+  const budget=8*PART,f=await fixture(t,{maxExportBytes:budget});await f.listen();
+  await f.node.store.ingest(noteCapture({id:randomUUID(),deviceId:'generated-portable-device',deviceName:'Generated portable device',platform:'macos',capturedAt:new Date().toISOString(),text:'Generated portable archive context'}));
+  const small=f.node.store.exportArchive(budget),bytes=Buffer.alloc(PART+17,59);
+  const file=f.node.archivedFiles.put({name:'generated-portable.bin',bytes}),archive=f.node.store.exportArchive(budget);
+  assert.equal(archive.files.length,1);
+  const entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>(),done=Promise.withResolvers<void>();
+  const preparation=f.node.store as unknown as {prepare:(input:unknown)=>Promise<unknown>};const prepare=preparation.prepare.bind(preparation),importArchive=f.node.store.importArchive.bind(f.node.store);let first=true;
+  let observed:{protection:UploadHttpProtection;request:FastifyRequest}|undefined;const admit=UploadHttpProtection.prototype.admit;
+  t.mock.method(UploadHttpProtection.prototype,'admit',function(this:UploadHttpProtection,request:FastifyRequest){observed??={protection:this,request};return admit.call(this,request);});
+  t.mock.method(preparation,'prepare',async input=>{const result=await prepare(input);if(first){first=false;entered.resolve();await release.promise;}return result;});
+  t.mock.method(f.node.store,'importArchive',async(...args:Parameters<typeof importArchive>)=>{try{return await importArchive(...args);}finally{done.resolve();}});
+  const controller=new AbortController(),request=fetch(f.origin+'/api/import',{method:'POST',headers:{...f.headers(),'content-type':'application/json'},body:JSON.stringify(archive),signal:controller.signal});
+  const aborted=assert.rejects(request,{name:'AbortError'});
+  try{
+    await entered.promise;controller.abort();await aborted;
+    limited(await incompleteJson(f.origin,'/api/import',f.headers()),'1');
+    assert.equal((await f.call('/api/import','POST',small)).status,200,'a small portable import does not spend large-body slots or allowance');
+    release.resolve();await done.promise;await new Promise<void>(resolve=>setImmediate(resolve));
+    const restored=await f.call('/api/import','POST',archive);assert.equal(restored.status,200,restored.text);assert.equal(restored.body.imported,0,'the original portable deduplication contract is preserved');
+    assert.ok(observed);for(let i=2;i<120;i++)admit.call(observed.protection,observed.request);
+    limited(await f.call('/api/import','POST',archive));
+    f.advance(60_000);assert.equal((await f.call('/api/import','POST',archive)).status,200);
+    assert.equal(sha256(f.node.archivedFiles.read(file.id)),sha256(bytes));
+    for(let i=0;i<3;i++)assert.equal((await f.call('/api/import','POST',Buffer.alloc(PART+17,'{'),owner,{'content-type':'application/json'})).status,400,'large JSON parser errors release the body slot');
+    assert.equal((await incompleteJson(f.origin,'/api/import',f.headers(),budget+1)).status,413,'the original configured portable budget still rejects before the body is allocated');
   }finally{controller.abort();release.resolve();await aborted;}
 });
 
