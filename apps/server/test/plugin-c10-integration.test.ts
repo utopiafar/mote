@@ -1,3 +1,4 @@
+import {executionConfigDomain} from '../src/config.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -47,7 +48,7 @@ const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>
 const item=(externalId='one')=>({externalId,revision:'1',observedAt:new Date().toISOString(),kind:'message',layer:'original',text:'Generated C10 original '+externalId});
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-c10-')),vault=createVaultPlatformAssembly({dataDir:directory});await vault.prepare();const store=vault.store;
-  const config=new ConfigService({path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0},watch:false});config.register({id:'execution',schema:executionSettingsSchema,defaultValue:executionSettingsSchema.parse({})});await config.initialize();
+  const config=new ConfigService({path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0},watch:false});config.register({...executionConfigDomain,defaultValue:executionSettingsSchema.parse({})});await config.initialize();
   const materials=new MaterialStore(store),memoryWork=new MaterialMemoryWork(store,materials);let sources=new SourceStore(store,undefined,memoryWork.inputs);const connections=new Connections(store,sources),authorization=createAuthorizationPlatform({ownerToken},{vault,connections,availableModelConnections:()=>[]});await authorization.prepare();
   const execution=createExecutionPlatform({vault,settings:new ExecutionSettings(config),modelAuthorization:authorization.trusted().modelAuthorization});await execution.prepare();execution.start();
   const host=new PluginHost({kind:'central',id:'generated-c10-host'}),sourceOwner=createSourceRuntimeOwner({store,materials,memoryWork,execution}),runtimePlatform=createSourceRuntime({},{port:sourceOwner.port});

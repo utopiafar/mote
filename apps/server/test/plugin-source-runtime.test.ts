@@ -1,3 +1,4 @@
+import {executionConfigDomain} from '../src/config.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -34,7 +35,7 @@ const event=(id='one')=>({externalId:id,revision:'1',observedAt:'2026-11-03T01:0
 const lowPriority:Plugin={name:'generated-low-priority',inject:['moteSourcePipelines'],apply:context=>{context.effect(()=>context.moteSourcePipelines.register({...context.moteSourcePipelines.get('mote.coding')!,id:'generated.low',priority:-10}));}};
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-source-runtime-')),config=new ConfigService({path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0},watch:false});
-  config.register({id:'execution',schema:executionSettingsSchema,defaultValue:executionSettingsSchema.parse({})});await config.initialize();const settings=new ExecutionSettings(config);
+  config.register({...executionConfigDomain,defaultValue:executionSettingsSchema.parse({})});await config.initialize();const settings=new ExecutionSettings(config);
   const open=async()=>{
     const vault=createVaultPlatformAssembly({dataDir:directory});await vault.prepare();const store=vault.store,materials=new MaterialStore(store),memoryWork=new MaterialMemoryWork(store,materials);
     const authorization=createAuthorizationPlatform({ownerToken},{vault,availableModelConnections:()=>[]});await authorization.prepare();

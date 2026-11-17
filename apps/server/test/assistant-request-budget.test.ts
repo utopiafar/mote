@@ -1,3 +1,4 @@
+import {modelsConfigDomain,conversationsConfigDomain} from '../src/config.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -50,7 +51,7 @@ async function fixture(t:TestContext,window=272000){
  node=await buildApp(config,{backgroundWorker:false});
  t.after(async()=>{await node.app.close();server.closeAllConnections();await new Promise<void>(done=>server.close(()=>done()));rmSync(root,{recursive:true,force:true});});
  await node.app.ready();
- const configuration=await node.app.inject({method:'GET',url:'/api/configuration',headers}),models=node.featureServices.configService.current<ModelDomain>('models');
+ const configuration=await node.app.inject({method:'GET',url:'/api/configuration',headers}),models=node.featureServices.configService.current(modelsConfigDomain);
  const fast=await node.app.inject({method:'PUT',url:'/api/configuration/models',headers,payload:{revision:configuration.json().revision,value:{...models,deployment:{...models.deployment,serviceTier:'fast'}}}});assert.equal(fast.statusCode,200,fast.body);
  if(window!==272000){const settings=await node.app.inject({method:'GET',url:'/api/configuration',headers});const changed=await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:settings.json().revision,value:{context:{contextWindow:window,contextWindowSource:'configured'}}}});assert.equal(changed.statusCode,200,changed.body);}
  const id=randomUUID(),text='Generated complete source. '+Array.from({length:80},(_,i)=>`Generated block ${i}. `+'证'.repeat(1000)).join('');
@@ -61,7 +62,7 @@ async function fixture(t:TestContext,window=272000){
   blocks:Array.from({length:80},(_,i)=>({id:'generated-'+i,kind:'text' as const,format:'plain',text:`Generated block ${i}. `+'证'.repeat(1000),memberIds:['original']})),
   artifacts:[{key:'body',state:'ready',blockIds:Array.from({length:80},(_,i)=>'generated-'+i)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}},{expectedRevision:initial.revision});
  return {get node(){return node;},requests,material,originalId:id,setExpectedWindow(value:number){window=value;},holdCompletion(){let release!:()=>void;completionGate=new Promise<void>(done=>release=done);return release;},async restart(){
-  const configuration={models:node.featureServices.configService.current<ModelDomain>('models'),conversations:node.featureServices.configService.current('conversations')};
+  const configuration={models:node.featureServices.configService.current(modelsConfigDomain),conversations:node.featureServices.configService.current(conversationsConfigDomain)};
   await node.app.close();node=await buildApp({...config,configuration} as ConfigurationPlatformOptions,{backgroundWorker:false});await node.app.ready();
  }};
 }

@@ -1,3 +1,4 @@
+import {executionConfigDomain} from '../src/config.js';
 import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,7 +34,7 @@ const base:ExecutionHandler={kind:'generated.execution',pool:'generated.executio
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-execution-platform-'));
   const config=new ConfigService({path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0},watch:false});
-  config.register({id:'execution',schema:executionSettingsSchema,defaultValue:executionSettingsSchema.parse({})});await config.initialize();const settings=new ExecutionSettings(config);
+  config.register({...executionConfigDomain,defaultValue:executionSettingsSchema.parse({})});await config.initialize();const settings=new ExecutionSettings(config);
   const model=modelConnection('generated-model',{model:'generated',apiKey:'generated-only'}),dependents:(()=>Promise<unknown>)[]=[];
   let now=Date.now(),vault=createVaultPlatformAssembly({dataDir:directory});await vault.prepare();
   let authorization=createAuthorizationPlatform({ownerToken:'generated-execution-owner'},{vault,availableModelConnections:()=>[model]});await authorization.prepare();
@@ -96,7 +97,7 @@ test('quiesce refuses new work but lets an accepted lease commit without startin
 test('four real gates consume configuration and durable provider cooldowns survive resource replacement',async t=>{
   const f=await fixture(t),settings={protocol:'openai-completions' as const,provider:'custom',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-private-key',headers:{}},provider=f.platform.assembly.providerAdmission;
   await assert.rejects(provider.run(settings,async()=>{throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:5000});}),ProviderFailure);
-  f.config.setHandler<ReturnType<ExecutionSettings['execution']>>('execution',(next,previous)=>({apply:()=>{},publish:()=>f.platform.refreshSettings(next),rollback:()=>f.platform.refreshSettings(previous)}));
+  f.config.setHandler(executionConfigDomain,(next,previous)=>({apply:()=>{},publish:()=>f.platform.refreshSettings(next),rollback:()=>f.platform.refreshSettings(previous)}));
   await f.config.update('execution',{interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:3,memoryConcurrency:1},f.config.revision);
   assert.deepEqual(Object.fromEntries(Object.entries(f.platform.assembly).filter(([key])=>key.endsWith('Gate')).map(([key,gate])=>[key,(gate as import('../src/concurrency.js').ConcurrencyGate).snapshot().limit])),{agentGate:2,llmGate:3,interactiveGate:1,interactiveModelGate:1});
   const gate=f.platform.assembly.interactiveGate,started=deferred(),release=deferred();t.after(()=>release.resolve());let accepted=false;

@@ -1,3 +1,4 @@
+import {connectorsConfigDomain,executionConfigDomain} from '../src/config.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
@@ -136,7 +137,7 @@ test('a later domain application failure restores the old model generation and k
  const node=await buildApp({...config(directory),model:'original-model'},{backgroundWorker:false,createModelAgent:async settings=>({configured:true,query:async input=>{if(input.question==='hold rollback'){started();await held;}return {answer:settings.model,citations:[],trace:[],runId:'synthetic-rollback-run'};},close:async()=>{closed.push(settings.model);}})});
  t.after(async()=>{release();await node.app.close();await rm(directory,{recursive:true,force:true});});
  const pending=node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'hold rollback'}});await began;
- node.configService.setHandler('connectors',()=>({applyOrder:2000,apply:()=>{},publish:()=>{throw Error('Synthetic publication failure');},rollback:()=>{}}));
+ node.configService.setHandler(connectorsConfigDomain,()=>({applyOrder:2000,apply:()=>{},publish:()=>{throw Error('Synthetic publication failure');},rollback:()=>{}}));
  const models=node.configService.saved<{deployment:Record<string,unknown>}>('models'),connectors=node.configService.saved<{syncIntervalMs:number}>('connectors');
  await assert.rejects(node.configService.updateMany({models:{...models,deployment:{...models.deployment,model:'candidate-model'}},connectors:{...connectors,syncIntervalMs:connectors.syncIntervalMs+60000}},node.configService.revision),{code:'config_apply_failed'});
  assert.equal(node.modelSettings.current().model,'original-model');assert.equal(node.configService.view().lastError?.code,'config_apply_failed');assert.equal(closed.includes('original-model'),false);
@@ -151,7 +152,7 @@ test('an asynchronous plugin failure exposes no candidate model, admission limit
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(resolve=>{enter=resolve;}),held=new Promise<void>(resolve=>{finish=resolve;});
  await node.configService.registerPlugin({id:'publication-fixture',updatePaths:['reject'],schema:z.object({reject:z.boolean()}),defaultValue:{reject:false},prepare:next=>({apply:async()=>{if(next.reject){enter();await held;throw Error('Synthetic asynchronous failure');}},rollback:()=>{}})});
- const previous=node.configService.current<Record<string,unknown>>('execution'),models=node.configService.saved<{deployment:Record<string,unknown>}>('models');
+ const previous=node.configService.current(executionConfigDomain),models=node.configService.saved<{deployment:Record<string,unknown>}>('models');
  const pending=node.configService.updateMany({models:{...models,deployment:{...models.deployment,model:'unpublished-model'}},execution:{agentConcurrency:1},diagnostics:{enabled:true,debug:true,traceEnabled:true,level:'debug'},'plugin.publication-fixture':{reject:true}},node.configService.revision);
  const failed=assert.rejects(pending,{code:'config_apply_failed'});await entered;
  try{

@@ -10,7 +10,7 @@ import type { QueryInput } from '@mote/agent';
 import type { QueryResult } from '@mote/shared';
 import { Actions, registerActions } from '../src/actions.js';
 import { ConfigService } from '../src/config-service.js';
-import { parseConfigDocument, readConfigDocument, registerBuiltinDomains } from '../src/config.js';
+import { parseConfigDocument, readConfigDocument, registerBuiltinDomains,actionsConfigDomain } from '../src/config.js';
 import { Store } from '../src/store.js';
 import { SourceStore } from '../src/sources.js';
 import { FileStore } from '../src/files.js';
@@ -101,7 +101,7 @@ test('permission grants validate again after the runtime await; failures leave n
   t.after(() => second.close());
   let entered!: () => void, release!: () => void;
   const ready = new Promise<void>(resolve => { entered = resolve; });
-  f.service.setHandler('actions', async () => { entered(); await new Promise<void>(resolve => { release = resolve; }); return { apply() {} }; });
+  f.service.setHandler(actionsConfigDomain, async () => { entered(); await new Promise<void>(resolve => { release = resolve; }); return { apply() {} }; });
   const update = save(f, { ...f.actions.settings(), timeZone: 'Europe/Paris', reviewDeviceIds: ['phone', 'outsider'] });
   await ready; second.configure({ enabled: false, timeZone: 'UTC', reviewDeviceIds: [] }); release();
   await assert.rejects(update, (error: { statusCode?: number }) => error.statusCode === 409);

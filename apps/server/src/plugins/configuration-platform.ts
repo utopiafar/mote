@@ -4,8 +4,8 @@ import {serviceContract,type PluginLifecycle,type StopReason} from '@mote/plugin
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {ModelFeature} from '@mote/shared/models';
 import type {z} from 'zod';
-import {ConfigService,ConfigServiceError,type ConfigDomainRegistration,type ConfigServiceOptions,type ConfigUpdatePaths} from '../config-service.js';
-import {registerBuiltinDomains,serverConfigDomain,validateResolvedConfigDocument} from '../config.js';
+import {ConfigService,ConfigServiceError,type ConfigDomainReference,type ConfigDomainRegistration,type ConfigServiceOptions,type ConfigUpdatePaths} from '../config-service.js';
+import {registerBuiltinDomains,serverConfigDomain,executionConfigDomain,diagnosticsConfigDomain,validateResolvedConfigDocument} from '../config.js';
 import {ExecutionSettings,executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from '../execution-settings.js';
 import {ModelSettingsStore,ModelSettingsError,type ModelSettingsStoreOptions} from '../model-settings.js';
 import type {ConfigurationDomain} from './central-contracts.js';
@@ -53,8 +53,9 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
   const subscriptions=new Set<()=>void>(),registrations=new Map<string,()=>Promise<void>>();
   const assertReady=()=>{if(!ready||closing)throw new ConfigServiceError('config_unavailable');};
   const assertAdmission=()=>{assertReady();if(quiescing)throw new ConfigServiceError('config_unavailable');};
-  const domain=<T,Input=T>(id:string,parse:(input:unknown)=>T,parsePatch:(input:unknown)=>unknown=(input)=>input):RegisteredConfigurationDomain<Input,T>=>{
-    const snapshot=()=>{assertReady();return {revision:service.revision,value:parse(service.current(id))};};
+  const domain=<T,Input=T>(reference:ConfigDomainReference<z.ZodTypeAny>,parse:(input:unknown)=>T,parsePatch:(input:unknown)=>unknown=(input)=>input):RegisteredConfigurationDomain<Input,T>=>{
+    const {id}=reference;
+    const snapshot=()=>{assertReady();return {revision:service.revision,value:parse(service.current(reference))};};
     return Object.freeze({snapshot,
       async update(value:Partial<Input>,expectedRevision:number){
         assertAdmission();let patch:unknown;try{patch=parsePatch(value);}catch{throw new ConfigServiceError('config_invalid',id);}
@@ -75,8 +76,8 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
       },
     });
   };
-  const execution=domain('execution',value=>executionSettingsSchema.strip().parse(value),value=>executionSettingsSchema.partial().parse(value));
-  const diagnostics=domain('diagnostics',value=>diagnosticsSettingsSchema.strip().parse(value),value=>diagnosticsSettingsSchema.partial().parse(value));
+  const execution=domain(executionConfigDomain,value=>executionSettingsSchema.strip().parse(value),value=>executionSettingsSchema.partial().parse(value));
+  const diagnostics=domain(diagnosticsConfigDomain,value=>diagnosticsSettingsSchema.strip().parse(value),value=>diagnosticsSettingsSchema.partial().parse(value));
   // Builtin domains contain a few additional deployment fields. These public ports deliberately project only their schema.
   const runtimeSettings=new ExecutionSettings({execution,diagnostics});
   const selection:ModelProfileSelection=Object.freeze({select(feature:ModelFeature,override?:string){assertReady();if(!modelsReady||!models)throw new ModelSettingsError('model_settings_unavailable');return models.selectPublic(feature,override);}});
@@ -121,7 +122,7 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
       // ConfigService merges partial patches into the saved document and validates the full candidate.
       // Filling omitted keys from effective state here would overwrite pending restart-only values.
       // current() already returns a detached schema output, which need not be valid schema input.
-      return domain<z.output<S>,DomainInput<S,R>>(id,input=>input as z.output<S>);
+      return domain<z.output<S>,DomainInput<S,R>>({id,schema:registration.schema},input=>input as z.output<S>);
     },
   };
 }

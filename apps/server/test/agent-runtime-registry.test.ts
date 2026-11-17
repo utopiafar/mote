@@ -1,3 +1,4 @@
+import {modelsConfigDomain} from '../src/config.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {AsyncLocalStorage} from 'node:async_hooks';
@@ -126,10 +127,11 @@ test('a persist failure after activation keeps the new runtime and releases only
 
 test('a rollback restores the previous composition and releases the candidate once',async t=>{
   const f=await fixture(t);
-  f.service.register({id:'execution',schema:z.object({agentConcurrency:z.number().int()}).strict(),defaultValue:{agentConcurrency:1}});
+  const executionDomain={id:'execution',schema:z.object({agentConcurrency:z.number().int()}).strict()};
+  f.service.register({...executionDomain,defaultValue:{agentConcurrency:1}});
   await f.store.initialize();
   const before=f.created.length,base=f.created[0]!;
-  f.service.setHandler('execution',()=>({applyOrder:2000,apply(){},publish(){throw new Error('Synthetic private publish failure '+secret);},rollback(){}}));
+  f.service.setHandler(executionDomain,()=>({applyOrder:2000,apply(){},publish(){throw new Error('Synthetic private publish failure '+secret);},rollback(){}}));
   const revision=f.service.revision,error=await f.service.updateMany({models:{deployment:{model:'synthetic-rolled-back-model'}},execution:{agentConcurrency:2}},revision).then(()=>undefined,reason=>reason);
   assert.equal(error.code,'config_apply_failed');assert.ok(!receipt(error).includes(secret));
   await flush();
@@ -139,7 +141,7 @@ test('a rollback restores the previous composition and releases the candidate on
   assert.equal(base.closes,0,'the restored generation remains live');
   assert.equal((await f.agent.query({question:'Generated question'})).answer,environment.model);
   assert.equal(f.store.current().model,environment.model);
-  assert.equal(f.service.current<{deployment:{model:string}}>('models').deployment.model,environment.model);
+  assert.equal(f.service.current(modelsConfigDomain).deployment.model,environment.model);
 });
 
 test('repeated close releases the active generation and every candidate exactly once',async t=>{

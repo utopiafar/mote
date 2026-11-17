@@ -221,17 +221,14 @@ export class ConfigService {
     for (const part of domain.documentPath.slice(0, -1)) { if (!object(parent[part])) parent[part] = {}; parent = parent[part] as Record<string, unknown>; }
     parent[domain.documentPath.at(-1)!] = value;
   }
-  private domainId(reference: string | ConfigDomainReference<z.ZodTypeAny>): string {
-    if (typeof reference === 'string') return reference;
-    const id = object(reference) && typeof reference.id === 'string' ? reference.id : '';
+  private domainId(reference: ConfigDomainReference<z.ZodTypeAny>): string {
+    if (!object(reference) || typeof reference.id !== 'string') throw new ConfigServiceError('config_invalid');
+    const id = reference.id;
     const domain = this.domains.get(id);
     if (!domain || domain.schema !== reference.schema) throw new ConfigServiceError('config_invalid');
     return id;
   }
-  setHandler<S extends z.ZodTypeAny>(reference: ConfigDomainReference<S>, prepare: NonNullable<ConfigDomainRegistration<z.output<S>>['prepare']>): void;
-  /** Existing consumers only; new domain code supplies its registered schema reference. */
-  setHandler<T>(id: string, prepare: NonNullable<ConfigDomainRegistration<T>['prepare']>): void;
-  setHandler(reference: string | ConfigDomainReference<z.ZodTypeAny>, prepare: NonNullable<RegisteredDomain['prepare']>): void {
+  setHandler<S extends z.ZodTypeAny>(reference: ConfigDomainReference<S>, prepare: NonNullable<ConfigDomainRegistration<z.output<S>>['prepare']>): void {
     const id = this.domainId(reference);
     const domain = this.domains.get(id); if (!domain || this.closing) throw new ConfigServiceError('config_unavailable');
     domain.prepare = prepare;
@@ -251,11 +248,11 @@ export class ConfigService {
     return { ...value, configuration };
   }
   /** Detached effective output; reading a reference never resolves or parses schema input again. */
-  current<S extends z.ZodTypeAny>(reference: ConfigDomainReference<S>): z.output<S>;
-  /** Existing consumers only; new domain code supplies its registered schema reference. */
-  current<T = unknown>(id: string): T;
-  current(reference: string | ConfigDomainReference<z.ZodTypeAny>): unknown {
-    this.state(); const id = this.domainId(reference);
+  current<S extends z.ZodTypeAny>(reference: ConfigDomainReference<S>): z.output<S> {
+    return this.currentValue(this.domainId(reference)) as z.output<S>;
+  }
+  private currentValue(id: string): unknown {
+    this.state();
     if (!this.effective.has(id)) throw new ConfigServiceError('config_invalid');
     const value = clone(this.effective.get(id));
     return id === 'plugins' ? this.pluginValues(value, domain => clone(this.effective.get(domain.id))) : value;
@@ -563,7 +560,7 @@ export class ConfigService {
   view(): ConfigServiceView {
     const state = this.state();
     const domains = [...this.domains.values()].map(domain => {
-      const saved = this.saved(domain.id), effective = this.current(domain.id);
+      const saved = this.saved(domain.id), effective = this.currentValue(domain.id);
       const redact = (value: unknown) => { let result = clone(value); for (const field of domain.fields ?? []) if (field.sensitive) result = editPath(result, field.path.split('.'), item => Boolean(item && (typeof item !== 'object' || Object.keys(item).length))); return result; };
       return { id: domain.id, saved: redact(saved), effective: redact(effective), fields: clone(domain.fields ?? []), status: this.failedDomains.has(domain.id) ? 'invalid' as const : isDeepStrictEqual(saved, effective) ? 'applied' as const : 'restart-required' as const, ...(this.failedDomains.has(domain.id) ? { error: 'config_apply_failed' } : {}) };
     });

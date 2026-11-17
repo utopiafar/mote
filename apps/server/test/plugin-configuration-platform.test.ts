@@ -13,7 +13,7 @@ import {createConfigurationPlatform,createConfigurationPlatformFactory,configura
 import {defaultModelSettings} from '../src/model-settings.js';
 import {ExecutionSettings,executionSettingsSchema} from '../src/execution-settings.js';
 import {ConfigService} from '../src/config-service.js';
-import {registerBuiltinDomains} from '../src/config.js';
+import {registerBuiltinDomains,executionConfigDomain,pluginsConfigDomain,serverConfigDomain} from '../src/config.js';
 import {ReloadableAgent} from '../src/agent-runtime-registry.js';
 import {Store} from '../src/store.js';
 import {testVault} from './fixtures/plugin-runtime-vault.js';
@@ -77,7 +77,7 @@ test('actual file watcher publishes one registered-domain change and unsubscribe
 test('close removes callbacks before held accepted configuration work drains and same profile reopens',async t=>{
   const {platform,path}=await fixture(t),entered=barrier(),finish=barrier(),events:unknown[]=[];
   const service=platform.configService;
-  service.setHandler('execution',async()=>{entered.release();await finish.promise;return {apply(){}};});
+  service.setHandler(executionConfigDomain,async()=>{entered.release();await finish.promise;return {apply(){}};});
   platform.execution.subscribe(value=>events.push(value));
   const pending=platform.execution.update({agentConcurrency:6},0);
   // Observe rejection immediately so node:test does not mistake the controlled close fence for an unhandled rejection.
@@ -94,7 +94,7 @@ test('close removes callbacks before held accepted configuration work drains and
 
 test('declared plugin domains validate values, reject unknown schemas and publish only their own changes',async t=>{
   const {platform}=await fixture(t),events:unknown[]=[];
-  assert.throws(()=>platform.configService.current('plugin.missing'),{code:'config_invalid'});
+  assert.throws(()=>platform.configService.current({id:'plugin.missing',schema:pluginsConfigDomain.schema}),{code:'config_invalid'});
   const domain=await platform.registerDomain({id:'generated',updatePaths:['enabled'],schema:z.object({enabled:z.boolean()}).strict(),defaultValue:{enabled:false}});
   domain.subscribe(value=>events.push(value));
   await domain.update({enabled:true},0);assert.deepEqual(events,[{revision:1,value:{enabled:true}}]);
@@ -314,12 +314,12 @@ test('model selection fails closed until AGENT binding and returns no credential
 test('restart-only saved values stay pinned until restart and owner token conflicts remain rejected',async t=>{
   const {platform,path}=await fixture(t);
   await platform.configService.update('server',{port:49101},0);
-  assert.equal(platform.configService.current<{port:number}>('server').port,47832);
+  assert.equal(platform.configService.current(serverConfigDomain).port,47832);
   assert.equal(platform.configService.view().domains.find(domain=>domain.id==='server')!.status,'restart-required');
   await assert.rejects(platform.configService.update('connectors',{mcpReadToken:owner},1),{code:'config_invalid'});
   assert.equal(JSON.stringify(platform.configService.view()).includes(owner),false);
   await platform.close();const restarted=createConfigurationPlatform({path,watch:false});t.after(()=>restarted.close());await restarted.prepare();
-  assert.equal(restarted.configService.current<{port:number}>('server').port,49101);
+  assert.equal(restarted.configService.current(serverConfigDomain).port,49101);
 });
 
 test('real H04 factory owns watcher and stores, exact leases fence after provider shutdown',async t=>{
@@ -349,7 +349,7 @@ test('adopted initialized service supplies early execution settings, late AGENT 
   t.after(async()=>{await platform.close();if(!closes)await service.close();await agent.close();await rm(directory,{recursive:true,force:true});});
   await platform.prepare();await platform.prepare();assert.equal(platform.configService,service);assert.equal(platform.configService.path,path);
   const settings=platform.runtimeSettings;await settings.saveExecution({...settings.execution(),agentConcurrency:3,revision:service.revision});
-  assert.equal(service.current<{agentConcurrency:number}>('execution').agentConcurrency,3);
+  assert.equal(service.current(executionConfigDomain).agentConcurrency,3);
   assert.throws(()=>platform.modelSettings,{code:'model_settings_unavailable'});assert.throws(()=>platform.selection.select('chat'),{code:'model_settings_unavailable'});
   let activeModel='';
   await platform.bindModels({...modelDependencies(),codex:{home:directory},prepare:async(settings,profiles,defaultProfileId)=>{
@@ -359,7 +359,7 @@ test('adopted initialized service supplies early execution settings, late AGENT 
   const models=platform.modelSettings;assert.equal(agent.configured,true);assert.equal(activeModel,'generated-model');assert.equal(platform.selection.select('chat').revision,service.revision);
   await models.update({revision:service.revision,settings:{...models.current(),model:'late-model'}});assert.equal(activeModel,'late-model');
   assert.throws(()=>platform.bindModels(modelDependencies()),{code:'config_conflict'});
-  let applied=settings.execution().agentConcurrency;service.setHandler<{agentConcurrency:number}>('execution',(next,previous)=>({apply(){},publish(){applied=next.agentConcurrency;},rollback(){applied=previous.agentConcurrency;}}));
+  let applied=settings.execution().agentConcurrency;service.setHandler(executionConfigDomain,(next,previous)=>({apply(){},publish(){applied=next.agentConcurrency;},rollback(){applied=previous.agentConcurrency;}}));
   const changed=barrier();platform.execution.subscribe(next=>{if(next.value.agentConcurrency===4)changed.release();});
   await platform.start();await edit(path,document=>{document.execution.agentConcurrency=4;});await changed.promise;
   assert.equal(applied,4);assert.equal(settings.execution().agentConcurrency,4);assert.equal(platform.configService,service);
@@ -404,7 +404,7 @@ test('platform quiesce fences raw and model writes and publishes accepted settin
   await execution.prepare();execution.start();await platform.bindModels(modelDependencies());
   const service=platform.configService,models=platform.modelSettings,oldModels=models.current(),entered=barrier(),finish=barrier(),events:string[]=[];
   const gate=execution.assembly.agentGate;
-  service.setHandler<ReturnType<ExecutionSettings['execution']>>('execution',async(next,previous)=>{
+  service.setHandler(executionConfigDomain,async(next,previous)=>{
     entered.release();await finish.promise;
     return {apply(){},publish(){execution.refreshSettings(executionSettingsSchema.strip().parse(next));assert.equal(gate.snapshot().limit,6);events.push('published');},rollback(){execution.refreshSettings(executionSettingsSchema.strip().parse(previous));}};
   });
@@ -434,6 +434,6 @@ test('raw quiesce rejects watcher admission before an existing watcher finishes 
     draining=service.quiesce();await entered.promise;
     starting=service.startWatching().then(()=>{outcome={};},error=>{outcome=error;});
     await setImmediate();assert.equal(outcome?.code,'config_unavailable','new watcher admission must not wait for the old teardown');
-    finish.release();await draining;await starting;assert.ok(service.current('execution'));
+    finish.release();await draining;await starting;assert.ok(service.current(executionConfigDomain));
   }finally{finish.release();FSWatcher.prototype.close=original;await Promise.allSettled([draining,starting]);}
 });

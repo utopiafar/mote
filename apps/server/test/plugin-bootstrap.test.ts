@@ -1,3 +1,4 @@
+import {executionConfigDomain} from '../src/config.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -79,7 +80,7 @@ test('shutdown drains a held execution configuration transaction before stopping
   t.after(()=>node.app.close());
   const initial=(await node.app.inject({url:'/api/execution-settings',headers})).json();
   let entered!:()=>void,release!:()=>void;const running=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
-  node.configService.setHandler('execution',async(next)=>{entered();await gate;return {apply(){},publish:()=>node.executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(next))};});
+  node.configService.setHandler(executionConfigDomain,async(next)=>{entered();await gate;return {apply(){},publish:()=>node.executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(next))};});
   const request=node.app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:initial.revision,interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:2,memoryConcurrency:1}});
   await running;
   const closing=node.app.close();
