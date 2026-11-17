@@ -30,7 +30,7 @@ export interface MemoryDeletionPorts {
   /** Explicit caller/test cap for one semantic review. */
   readonly reviewTimeoutMs?:number|null;
 }
-/** C24 owns the durable owner-rejection ledger and its schema. The record
+/** This plugin owns the durable owner-rejection ledger and its schema. The record
  * storage opens this plugin factory so extraction and publication share one
  * ledger instance; publication later attaches the live binding port. */
 export function openMemoryDeletions(store:MemoryDeletionStore,ports:MemoryDeletionPorts):MemoryDeletions{return new MemoryDeletions(store,ports);}
