@@ -11,7 +11,9 @@ import type {ExecutionPlatform} from '../plugins/execution-platform.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
 import {closeSourcePlatforms} from '../platform-close-order.js';
 import {registerFileRoutes} from '../file-routes.js';
-import {createSourceRuntime,createSourceRuntimeFactory,openSourceStore,sourceRuntimeContribution,sourceRuntimeDeclaration,sourceRuntimeReplacement} from '../plugins/source-runtime.js';
+import {createSourceRuntime,createSourceRuntimeFactory,sourceRuntimeContribution,sourceRuntimeDeclaration,sourceRuntimeReplacement} from '../plugins/source-runtime.js';
+import {bindSourceFilesForControl,createC10AuthorizationPort,createSourceRuntimeOwner} from '../source-runtime-storage.js';
+import {createCaptureOwner} from '../capture-storage.js';
 import {codingSourceContribution,codingSourceDeclaration,codingSourceReplacement,createCodingSourceFactory,createCodingSourceRoutes} from '../coding-source-plugin.js';
 import {createFilesSource,filesSourceContribution,filesSourceDeclaration,filesSourceReplacement} from '../plugins/files-source.js';
 import {createCaptureIntake,captureIntakeContribution,captureIntakeDeclaration,captureIntakeReplacement} from '../plugins/capture-intake.js';
@@ -51,12 +53,14 @@ export interface SourcesAssemblyDependencies {
  * source-facing platform close order app.ts previously held inline. */
 export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   const {bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources}=dependencies;
-  const sourceRuntime=createSourceRuntime({},{store,materials,execution:executionPlatform,memoryWork:materialMemoryWork});
+  const sourceRuntimeStorage=createSourceRuntimeOwner({store,materials,memoryWork:materialMemoryWork,execution:executionPlatform});
+  const sourceRuntime=createSourceRuntime({},{port:sourceRuntimeStorage.port});
   const sourceRuntimeOwner=await bootstrap.host.install({identity:{packageId:'mote.source-runtime',installationId:'build:source-runtime@1.0.0',instanceId:'source-runtime',activationId:randomUUID(),host:bootstrap.snapshot().host},
     contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(sourceRuntime)});
   resources.defer(()=>sourceRuntimeOwner.close('disabled'));
-  const sourcePipelines=sourceRuntime.runtimeForAssembly;
-  const sources=openSourceStore(store,sourcePipelines);
+  const sourcePipelines=sourceRuntimeStorage.ownerRuntime();
+  const sources=sourceRuntimeStorage.sourceStoreForAssembly();
+  const sourceControl=sourceRuntimeStorage.sourceControlForAssembly(),sourceIdentity=sourceRuntimeStorage.sourceIdentityForAssembly();
   const codingRoutes=createCodingSourceRoutes(sourcePipelines),codingFeature:FeatureRoute={id:'mote.coding',mount:app=>codingRoutes.mount(app)};
   const codingSourceOwner=await bootstrap.host.install({identity:{packageId:'mote.coding-source',installationId:'build:coding-source@1.0.0',instanceId:'coding-source',activationId:randomUUID(),host:bootstrap.snapshot().host},
     contributions:[codingSourceDeclaration],factory:createCodingSourceFactory({runtime:sourcePipelines,sources,store},codingRoutes)});
@@ -70,13 +74,17 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   await filesPlatform.prepare();filesPlatform.start();
   const filesAssembly=filesPlatform.assemblyForRoutes(),files=filesAssembly.files,fileEvidence=filesAssembly.evidence,fileRawReader=filesAssembly.originalRead;
   filesForAccess=files;
-  const captureIntake=createCaptureIntake({diagnostics},{store,sources,files,materials});
+  bindSourceFilesForControl(sourceControl,files);
+  const captureOwner=createCaptureOwner({store,sources,files,materials,memoryInputs:materialMemoryWork.inputs,memoryWork:materialMemoryWork});
+  const captureIntake=createCaptureIntake({diagnostics},{port:captureOwner.port});
   resources.defer(()=>captureIntake.close());
   await captureIntake.prepare();
-  await authorizationPlatform.bindRepositories({sources,files,materials,ingress:captureIntake.ingress,memoryInputs:materialMemoryWork.inputs,memoryWork:materialMemoryWork});
+  captureOwner.bindRepositories(authorizationPlatform);
   await authorizationPlatform.start();
-  captureIntake.bindAuthorization(authorizationPlatform);captureIntake.start();
-  const ingress=captureIntake.ingress,modelAuthorizationHost=authorizationPlatform.assembly.modelAuthorizationHost!;
+  const captureC04=captureOwner.c04Port(authorizationPlatform);
+  captureIntake.bindAuthorization(captureC04);captureIntake.start();
+  const c10Authorization=createC10AuthorizationPort(authorizationPlatform,store);
+  const ingress=captureOwner.ingress,modelAuthorizationHost=authorizationPlatform.trusted().modelAuthorizationHost!;
   resources.beforeClose(()=>closeSourcePlatforms({authorization:authorizationPlatform,capture:captureIntake,files:filesPlatform,source:sourceRuntime,execution:executionPlatform}));
   const notesSelected=bootstrap.selectsPlugin('notes-source');
   if(!notesSelected&&bootstrap.selectsFeature('mote.notes'))throw new StoreError('Required plugin notes-source is not selected for mote.notes',503);
@@ -84,7 +92,7 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
   // sourceRuntime, capture and files slices.
-  return Object.freeze({sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback:filesAssembly.playback,codingFeature});
+  return Object.freeze({sourceRuntime,sourceRuntimeStorage,sourcePipelines,sources,sourceControl,sourceIdentity,c10Authorization,captureOwner,capturePort:captureOwner.port,captureC04,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback:filesAssembly.playback,codingFeature});
 }
 
 /** Only narrow device operations and the existing request authority enter the

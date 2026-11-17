@@ -2,35 +2,29 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {SourceStore} from '../sources.js';
-import {StoreError,type Store} from '../store.js';
-import type {SourcePipelineRuntime} from '../source-pipelines.js';
-import type {MaterialMemoryWork} from '../material-memory-work.js';
-import type {FileStore} from '../files.js';
+import {StoreError} from '../store.js';
 import type {SourceFileCatalogRead} from '../evidence-read-ports.js';
 import {LayersReadModel} from '../layers-read-model.js';
-import type {MemoryStore} from '../memory.js';
 import type {ConnectionCredential} from '../connections.js';
 import {registerSourceRoutes} from '../source-routes.js';
-import type {AuthorizationPlatform} from './authorization-platform.js';
-import type {CaptureIntakePlatform} from './capture-intake.js';
+import type {CapturePort} from '../capture-storage.js';
+import type {C10AuthorizationPort,SourceControlPort,SourceIdentityPort} from '../source-runtime-storage.js';
 import {centralServices,type RequestAuthority} from './central-contracts.js';
 
 export interface C10IntegrationDependencies {
-  readonly store:Store;
-  readonly runtime:SourcePipelineRuntime;
-  readonly memoryWork:MaterialMemoryWork;
-  /** Actual shared repository; independent owners keep their own write authority. */
-  readonly sources?:SourceStore;
+  readonly sources:SourceControlPort;
+  readonly identity:SourceIdentityPort;
+  readonly authorization:C10AuthorizationPort;
+  readonly capture:CapturePort;
+  readonly fileCatalog:(sourceId:string,args:Parameters<SourceFileCatalogRead['fileCatalog']>[1])=>ReturnType<SourceFileCatalogRead['fileCatalog']>;
+  readonly memoryCount:()=>number;
 }
 export interface C10SourceRouteBindings {
-  readonly authorization:AuthorizationPlatform;
-  readonly capture:CaptureIntakePlatform;
-  readonly files:FileStore;
-  readonly evidenceReader:SourceFileCatalogRead;
-  readonly memories:Pick<MemoryStore,'count'>;
+  readonly authorization:C10AuthorizationPort;
+  readonly capture:CapturePort;
+  readonly fileCatalog:(sourceId:string,args:Parameters<SourceFileCatalogRead['fileCatalog']>[1])=>ReturnType<SourceFileCatalogRead['fileCatalog']>;
 }
-interface C10BoundSourceRoutes extends Omit<C10SourceRouteBindings,'memories'> {
+interface C10BoundSourceRoutes extends C10SourceRouteBindings {
   readonly layers:LayersReadModel;
 }
 /** No ordinary sources service: the shared source repository still includes an unguarded
@@ -45,25 +39,22 @@ const unavailable=()=>new StoreError('Source integration is unavailable',503);
 
 interface C10RouteActivation {
   readonly bindings:C10BoundSourceRoutes;
-  readonly sources:SourceStore;
+  readonly sources:SourceControlPort;
   admit(request:FastifyRequest):void;
   assert(request:FastifyRequest):void;
   release(request:FastifyRequest):void;
   credential(request:FastifyRequest):ConnectionCredential|undefined;
   sourceOwner(request:FastifyRequest,id:string):void;
   writable(request:FastifyRequest):void;
-  sourceItem(request:FastifyRequest,id:string,input:unknown):ReturnType<CaptureIntakePlatform['ports']['sourceIntake']['sourceItem']>;
-  sourceBatch(request:FastifyRequest,id:string,inputs:unknown):ReturnType<CaptureIntakePlatform['ports']['sourceIntake']['sourceBatch']>;
+  sourceItem(request:FastifyRequest,id:string,input:unknown):ReturnType<C10AuthorizationPort['sourceItem']>;
+  sourceBatch(request:FastifyRequest,id:string,inputs:unknown):ReturnType<C10AuthorizationPort['sourceBatch']>;
 }
 const routeActivations=new WeakMap<C10Integration,C10RouteActivation>();
 
 /** Owns source routes over one shared repository. Capture, Notes, Devices,
  * runtime, MemoryWork, authorization and the vault retain their independent owners. */
 export function createC10Integration(dependencies:C10IntegrationDependencies){
-  const {store,runtime,memoryWork}=dependencies;
-  if(runtime.store!==store||runtime.memoryWork!==memoryWork)throw new StoreError('Source integration repository mismatch',503);
-  const sources=dependencies.sources??new SourceStore(store,runtime,memoryWork.inputs);
-  if(sources.store!==store||sources.pipelines!==runtime||!sources.usesMemoryInputs(memoryWork.inputs))throw new StoreError('Source integration repository mismatch',503);
+  const {sources,identity,authorization,capture,fileCatalog,memoryCount}=dependencies;
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created',scope:PluginScope|undefined,bindings:C10BoundSourceRoutes|undefined,closing:Promise<void>|undefined,mounted=false;
   const pending=new Set<Promise<unknown>>();
   const track=<T>(task:Promise<T>):Promise<T>=>{
@@ -76,7 +67,7 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
   const assertRequest=(request:FastifyRequest)=>{
     if(phase!=='active'&&phase!=='quiescing')throw unavailable();scope!.assertCurrent();
     const entry=requests.get(request);if(!entry)throw new StoreError('Owner authorization is required',401);
-    bindings!.authorization.requests.assertCurrent(entry.pin);return entry;
+    bindings!.authorization.assertRequest(entry.pin);return entry;
   };
   const writable=(request:FastifyRequest)=>{if(phase!=='active')throw unavailable();return assertRequest(request);};
   const close=()=>{
@@ -87,24 +78,24 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
     get bindings(){if(!bindings)throw unavailable();return bindings;},sources,
     admit(request){
       if(phase!=='active'&&!(phase==='quiescing'&&['GET','HEAD'].includes(request.method)))throw unavailable();scope!.assertCurrent();
-      const fixed=activation.bindings,connections=fixed.authorization.assembly.connections!;
+      const fixed=activation.bindings;
       const pin=fixed.authorization.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin,signal:scope!.signal});
-      const credential=connections.authenticate(request.headers.authorization);
-      requests.set(request,{pin,...(credential&&!connections.isOwner(credential)?{credential:Object.freeze({...credential})}:{})});
+      const credential=fixed.authorization.authenticate(request.headers.authorization);
+      requests.set(request,{pin,...(credential&&!fixed.authorization.isOwner(credential)?{credential:Object.freeze({...credential})}:{})});
     },
     assert:assertRequest,release,credential:request=>assertRequest(request).credential,
-    sourceOwner(request,id){const entry=assertRequest(request);if(entry.credential)activation.bindings.authorization.requests.assertOwnSource(entry.pin,id);},
+    sourceOwner(request,id){const entry=assertRequest(request);if(entry.credential)activation.bindings.authorization.assertOwnSource(entry.pin,id);},
     writable(request){writable(request);},
-    sourceItem(request,id,input){const {pin}=writable(request),fixed=activation.bindings;if(!sources.getSource(id).enabled)throw new StoreError('Source is paused',409);return track(fixed.authorization.withSource(pin,id,input,()=>fixed.capture.ports.sourceIntake.sourceItem(id,input,fixed.authorization.commits.capture())));},
-    sourceBatch(request,id,inputs){const {pin}=writable(request),fixed=activation.bindings;if(!sources.getSource(id).enabled)throw new StoreError('Source is paused',409);return track(fixed.authorization.withSource(pin,id,inputs,()=>fixed.capture.ports.sourceIntake.sourceBatch(id,inputs,fixed.authorization.commits.capture())));},
+    sourceItem(request,id,input){const {pin}=writable(request),fixed=activation.bindings;if(!sources.getSource(id).enabled)throw new StoreError('Source is paused',409);return track(fixed.authorization.withSource(pin,id,input,()=>fixed.authorization.sourceItem(id,input,fixed.authorization.captureCommit())));},
+    sourceBatch(request,id,inputs){const {pin}=writable(request),fixed=activation.bindings;if(!sources.getSource(id).enabled)throw new StoreError('Source is paused',409);return track(fixed.authorization.withSource(pin,id,inputs,()=>fixed.authorization.sourceBatch(id,inputs,fixed.authorization.captureCommit())));},
   };
   const platform=Object.freeze({
     /** The sole private root bridge for source integration, authorization, files and connectors. Not a service value. */
     get sourcesForAssembly(){if(phase!=='created')throw unavailable();return sources;},
     bindRoutes(value:C10SourceRouteBindings){
       if(bindings||phase!=='created'&&phase!=='prepared')throw unavailable();
-      if(value.files.store!==store||!value.capture.ingress.usesRepositories(store,sources,value.files)||!value.authorization.assembly.connections?.usesStore(store))throw new StoreError('Source authorization repository mismatch',503);
-      bindings={authorization:value.authorization,capture:value.capture,files:value.files,evidenceReader:value.evidenceReader,layers:new LayersReadModel(sources,value.memories)};
+      identity.assertBindings({sources,capture:value.capture,authorization:value.authorization});
+      bindings={authorization:value.authorization,capture:value.capture,fileCatalog:value.fileCatalog,layers:new LayersReadModel(sources,memoryCount)};
     },
     async prepare(value:PluginScope){
       if(phase!=='created')throw unavailable();phase='preparing';scope=value;
@@ -124,8 +115,16 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
 export type C10Integration=ReturnType<typeof createC10Integration>;
 
 function mountC10SourceRoutes(app:FastifyInstance,current:()=>C10RouteActivation){
-  const initial=current(),fixed=initial.bindings,connections=fixed.authorization.assembly.connections!,dispatched=new WeakMap<FastifyRequest,C10RouteActivation>();
+  const initial=current(),fixed=initial.bindings,dispatched=new WeakMap<FastifyRequest,C10RouteActivation>();
   const activation=(request:FastifyRequest)=>{const value=dispatched.get(request);if(!value)throw unavailable();return value;};
+  const connections=Object.freeze({
+    authenticate:(header:string|undefined)=>fixed.authorization.authenticate(header),
+    isOwner:(credential:ConnectionCredential)=>fixed.authorization.isOwner(credential),
+    assertActive:(credential:ConnectionCredential)=>fixed.authorization.assertActive(credential),
+    assertOwnDevice:(credential:ConnectionCredential,input:{deviceId:string})=>fixed.authorization.assertOwnDevice(credential,input),
+    assertPlatform:(credential:ConnectionCredential,platform:unknown)=>fixed.authorization.assertPlatform(credential,platform),
+    assertOwnSource:(credential:ConnectionCredential,sourceId:string)=>fixed.authorization.assertOwnCredentialSource(credential,sourceId),
+  });
   // Scoped Fastify hooks cannot capture unrelated feature routes.
   app.register(async child=>{
     child.addHook('onRequest',async request=>{const value=current();value.admit(request);dispatched.set(request,value);});
@@ -133,7 +132,7 @@ function mountC10SourceRoutes(app:FastifyInstance,current:()=>C10RouteActivation
     child.addHook('onResponse',async request=>{dispatched.get(request)?.release(request);dispatched.delete(request);});
     child.addHook('onRequestAbort',async request=>{dispatched.get(request)?.release(request);dispatched.delete(request);});
     registerSourceRoutes(child,{sources:initial.sources,connections,credential:request=>activation(request).credential(request),sourceOwner:(request,id)=>activation(request).sourceOwner(request,id),
-      evidenceReader:fixed.evidenceReader,layers:fixed.layers,ingress:fixed.capture.ingress,
+      fileCatalog:fixed.fileCatalog,layers:fixed.layers,
       admission:{assertCurrent:request=>{activation(request).assert(request);},assertWritable:request=>{activation(request).writable(request);},
         sourceItem:(request,id,input)=>activation(request).sourceItem(request,id,input),sourceBatch:(request,id,inputs)=>activation(request).sourceBatch(request,id,inputs),
       },

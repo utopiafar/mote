@@ -24,20 +24,33 @@ const agent={configured:false,query:async()=>{throw Error('No model in bootstrap
 test('default loader preserves the complete product, owner checks and original note write/read, then closes its vault',async t=>{
   const {config,headers}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});
   t.after(()=>node.app.close());
-  assert.equal(node.executor,node.executionPlatform.assembly.executor,'buildApp must use the execution platform engine');
+  assert.equal(node.executor,node.executionPlatform.trusted().executor,'buildApp must use the execution platform engine');
   const execution=node.featureServices.runtimeSettings.execution();
-  assert.deepEqual({agent:node.executionPlatform.assembly.agentGate.snapshot().limit,llm:node.executionPlatform.assembly.llmGate.snapshot().limit,interactive:node.executionPlatform.assembly.interactiveGate.snapshot().limit,interactiveModel:node.executionPlatform.assembly.interactiveModelGate.snapshot().limit},
+  assert.deepEqual({agent:node.executionPlatform.trusted().agentGate.snapshot().limit,llm:node.executionPlatform.trusted().llmGate.snapshot().limit,interactive:node.executionPlatform.trusted().interactiveGate.snapshot().limit,interactiveModel:node.executionPlatform.trusted().interactiveModelGate.snapshot().limit},
     {agent:execution.agentConcurrency,llm:execution.llmConcurrency,interactive:execution.interactiveConcurrency,interactiveModel:execution.interactiveConcurrency});
   assert.deepEqual(node.featureRoutes.registry.inventory().features.map(feature=>feature.id),[
     'mote.activity','mote.files','mote.actions','mote.connections','mote.developer-access','mote.system','mote.storage','mote.capture','mote.context','mote.materials',
     'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
     'mote.imports','mote.ask','mote.insights','mote.agent-view','mote.features',
   ]);
-  // Foundations/platforms plus System, insights, Actions and their private input
-  // adapters execute in the same host.
-  assert.equal(node.bootstrap.snapshot().contributions.length,25);
-  assert.equal(node.bootstrap.snapshot().contributions.filter(value=>value.identity.contributionId==='system-health').length,1);
-  assert.equal(node.bootstrap.snapshot().contributions.filter(value=>value.identity.contributionId==='mote.plugin-control').length,1,'the live control uses the same host exactly once');
+  const contributionIds=node.bootstrap.snapshot().contributions.map(value=>value.identity.contributionId);
+  // Foundations/platforms plus System, insights and Actions and their private
+  // input adapters execute in the same host. Inventory, Devices and Connections
+  // add their six formal selected-domain identities below; the global total is
+  // not the contract.
+  const coreOwners=[
+    'mote.platform.configuration','mote.platform.storage','mote.platform.authorization',
+    'observability-platform','material-repository','material-memory-intake','source-runtime',
+    'coding-source','conversations','mote.plugin-control','query-runtime','ocr-asr-readiness',
+    'processing-services','image-processing-service','source-integration','activity-services-inputs',
+    'agent-view-inputs','insight-services-inputs','actions-services-inputs','system-health',
+    'activity-services','agent-view-services','actions-services','insight-services','query-runs',
+  ];
+  assert.deepEqual(contributionIds.filter(id=>coreOwners.includes(id)),coreOwners);
+  for(const id of ['feature-inventory-reader','feature-inventory','devices-source-factory','devices-source','connections-route-input','connections-routes'])assert.equal(contributionIds.filter(value=>value===id).length,1,`${id} registers once`);
+  assert.equal(new Set(contributionIds).size,contributionIds.length,'no duplicate contribution activation');
+  assert.equal(contributionIds.filter(value=>value==='system-health').length,1);
+  assert.equal(contributionIds.filter(value=>value==='mote.plugin-control').length,1,'the live control uses the same host exactly once');
   assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'},{id:'source-integration',version:'1.0.0'}]);
   assert.equal(node.configurationPlatform,node.bootstrap.configurationPlatform);
   assert.equal(node.configurationPlatform.configService,node.configService);

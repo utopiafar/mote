@@ -1426,3 +1426,111 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       },page=>({count:page.items.length}))};
   }
 }
+
+/** Trusted construction input for the single Material/Evidence reader. It is
+ * consumed only by assembly; the plugin receives the fixed facade below. */
+export interface EvidenceReaderAssemblyDependencies {
+  readonly store:Store;
+  readonly sources:SourceStore;
+  readonly files?:FileStore;
+  readonly indexer?:Pick<Indexer,'search'>;
+  readonly fileEvidence?:FileEvidence;
+  readonly materials?:MaterialStore;
+  readonly sourcePipelines?:SourcePipelineRuntime;
+  readonly sourceItemRecipes?:SourceItemRecipeCatalog;
+  readonly materialMemoryReady?:(ref:string)=>boolean;
+  readonly sourceContexts?:SourceContextStore;
+}
+
+/** Safe retained-binding capability. It exposes only the existing snapshot DTO
+ * and an idempotent release closure; the MemoryBindings instance never escapes. */
+export interface EvidenceReaderMemoryBindingFacade {
+  retainSnapshot(ids?:readonly string[]):MemoryReadSnapshot;
+}
+
+/** Fixed read facade for the Evidence/context plugin. Every function closes over
+ * the one trusted reader; no Store, repository, class instance or mutable bag is
+ * reachable from this object. */
+export interface EvidenceReaderFacade {
+  evidence(...args:Parameters<EvidenceReader['evidence']>):ReturnType<EvidenceReader['evidence']>;
+  archivedEvidence(...args:Parameters<EvidenceReader['archivedEvidence']>):ReturnType<EvidenceReader['archivedEvidence']>;
+  imageReference(...args:Parameters<EvidenceReader['imageReference']>):ReturnType<EvidenceReader['imageReference']>;
+  context(...args:Parameters<EvidenceReader['context']>):ReturnType<EvidenceReader['context']>;
+  records(...args:Parameters<EvidenceReader['records']>):ReturnType<EvidenceReader['records']>;
+  search(...args:Parameters<EvidenceReader['search']>):ReturnType<EvidenceReader['search']>;
+  artifact(...args:Parameters<EvidenceReader['artifact']>):ReturnType<EvidenceReader['artifact']>;
+  segments(...args:Parameters<EvidenceReader['segments']>):ReturnType<EvidenceReader['segments']>;
+  catalogAsync(...args:Parameters<EvidenceReader['catalogAsync']>):ReturnType<EvidenceReader['catalogAsync']>;
+  materialCatalog(...args:Parameters<EvidenceReader['materialCatalog']>):ReturnType<EvidenceReader['materialCatalog']>;
+  materialRead(...args:Parameters<EvidenceReader['materialRead']>):ReturnType<EvidenceReader['materialRead']>;
+  memory(...args:Parameters<EvidenceReader['memory']>):ReturnType<EvidenceReader['memory']>;
+  memoryPage(...args:Parameters<EvidenceReader['memoryPage']>):ReturnType<EvidenceReader['memoryPage']>;
+  memoryAsync(...args:Parameters<EvidenceReader['memoryAsync']>):ReturnType<EvidenceReader['memoryAsync']>;
+  memoryPageAsync(...args:Parameters<EvidenceReader['memoryPageAsync']>):ReturnType<EvidenceReader['memoryPageAsync']>;
+  assertMemoryReadable(...args:Parameters<EvidenceReader['assertMemoryReadable']>):ReturnType<EvidenceReader['assertMemoryReadable']>;
+  memoryPlanSelection(...args:Parameters<EvidenceReader['memoryPlanSelection']>):ReturnType<EvidenceReader['memoryPlanSelection']>;
+  memorySelection(...args:Parameters<EvidenceReader['memorySelection']>):ReturnType<EvidenceReader['memorySelection']>;
+  retainMemorySnapshot(...args:Parameters<EvidenceReader['retainMemorySnapshot']>):ReturnType<EvidenceReader['retainMemorySnapshot']>;
+  memorySnapshot(...args:Parameters<EvidenceReader['memorySnapshot']>):ReturnType<EvidenceReader['memorySnapshot']>;
+  releaseMemorySnapshot(...args:Parameters<EvidenceReader['releaseMemorySnapshot']>):ReturnType<EvidenceReader['releaseMemorySnapshot']>;
+  memoryBindings():EvidenceReaderMemoryBindingFacade|undefined;
+  agent(...args:Parameters<EvidenceReader['agent']>):ReturnType<EvidenceReader['agent']>;
+  dispose():void;
+  readonly disposed:boolean;
+}
+
+const evidenceReaderUnavailable=()=>new StoreError('Evidence context reader dependencies are unavailable',503);
+
+/** Validate the borrowed roots and construct the one reader at the original
+ * assembly point. memoryBindings remains a later assignment on this instance. */
+export function createEvidenceReaderForAssembly(deps:EvidenceReaderAssemblyDependencies){
+  const {store,sources}=deps;
+  if(sources.store!==store||deps.files&&deps.files.store!==store||deps.materials&&deps.materials.store!==store||deps.sourcePipelines&&deps.sourcePipelines.store!==store)throw evidenceReaderUnavailable();
+  const sourceContexts=deps.sourceContexts??sources.contexts;
+  const reader=new EvidenceReader(store,sources,deps.files,deps.indexer,deps.fileEvidence,deps.materials,deps.sourcePipelines,deps.sourceItemRecipes,deps.materialMemoryReady,sourceContexts);
+  reader.bindDerivedMaterials();
+  return reader;
+}
+
+export function createEvidenceReaderFacade(reader:EvidenceReader):EvidenceReaderFacade {
+  const project=(snapshot:MemoryReadSnapshot):MemoryReadSnapshot=>{
+    let released=false;
+    return Object.freeze({...snapshot,release:()=>{if(released)return;released=true;snapshot.release();}}) as MemoryReadSnapshot;
+  };
+  const bindings=():EvidenceReaderMemoryBindingFacade|undefined=>{
+    const current=reader.memoryBindings;if(!current)return undefined;
+    return Object.freeze({retainSnapshot:(ids?:readonly string[])=>{
+      if(reader.disposed)throw new StoreError('Evidence context reader is unavailable',503);
+      const latest=reader.memoryBindings;if(!latest)throw new StoreError('Evidence context reader is unavailable',503);
+      return project(latest.retainSnapshot(ids));
+    }});
+  };
+  const facade:EvidenceReaderFacade={
+    evidence:(...args)=>reader.evidence(...args),
+    archivedEvidence:(...args)=>reader.archivedEvidence(...args),
+    imageReference:(...args)=>reader.imageReference(...args),
+    context:(...args)=>reader.context(...args),
+    records:(...args)=>reader.records(...args),
+    search:(...args)=>reader.search(...args),
+    artifact:(...args)=>reader.artifact(...args),
+    segments:(...args)=>reader.segments(...args),
+    catalogAsync:(...args)=>reader.catalogAsync(...args),
+    materialCatalog:(...args)=>reader.materialCatalog(...args),
+    materialRead:(...args)=>reader.materialRead(...args),
+    memory:(...args)=>reader.memory(...args),
+    memoryPage:(...args)=>reader.memoryPage(...args),
+    memoryAsync:(...args)=>reader.memoryAsync(...args),
+    memoryPageAsync:(...args)=>reader.memoryPageAsync(...args),
+    assertMemoryReadable:(...args)=>reader.assertMemoryReadable(...args),
+    memoryPlanSelection:(...args)=>reader.memoryPlanSelection(...args),
+    memorySelection:(...args)=>reader.memorySelection(...args),
+    retainMemorySnapshot:(...args)=>reader.retainMemorySnapshot(...args),
+    memorySnapshot:(...args)=>reader.memorySnapshot(...args),
+    releaseMemorySnapshot:(...args)=>reader.releaseMemorySnapshot(...args),
+    memoryBindings:bindings,
+    agent:(...args)=>reader.agent(...args),
+    dispose:()=>reader.dispose(),
+    get disposed(){return reader.disposed;},
+  };
+  return Object.freeze(facade);
+}

@@ -1,7 +1,9 @@
 import {randomUUID} from 'node:crypto';
 import type {AsyncLocalStorage} from 'node:async_hooks';
 import type {Context} from '@deepseek-ai/cordis';
-import type {QueryInput} from '@mote/agent';
+import type {FastifyInstance} from 'fastify';
+import {z} from 'zod';
+import {skillCatalog,type QueryInput} from '@mote/agent';
 import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {ModelDomain} from '../model-settings.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -18,7 +20,13 @@ import type {BackgroundModelAuthorization} from '../background-model-authorizati
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
+import {createEvidenceReaderFacade,createEvidenceReaderForAssembly} from '../evidence-reader.js';
+import {createContextTrees,createContextTreesReadCapability,registerContextTreeRoutes} from '../context-trees.js';
+import {navigationScopeSchema} from '../context-navigation.js';
+import {registerContextRoutes} from '../context-routes.js';
+import {registerEvidenceRoutes} from '../evidence-routes.js';
 import {createEvidenceContextReader,evidenceContextReaderContribution,evidenceContextReaderDeclaration,evidenceContextReaderReplacement} from '../plugins/evidence-context-reader.js';
+import {createContextQuery} from '../plugins/query-context.js';
 import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextReplacement} from '../plugins/material-context.js';
@@ -113,13 +121,24 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
   const materialOrganizer=organizerService.organizerForAssembly;
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
   // One EvidenceReader and one context registry own every read surface. The
-  // factory borrows the roots repositories; it never constructs a second
-  // Store/Source/File/Material/Indexer or a second reader.
+  // trusted assembly constructs the reader and fixed facade; the plugin never
+  // receives Store, repositories or the raw class.
   const sourceContexts=sources.contexts;
-  const evidenceContext=createEvidenceContextReader({store,sources,files,indexer,fileEvidence,materials,sourcePipelines,
+  const evidenceReader=createEvidenceReaderForAssembly({store,sources,files,indexer,fileEvidence,materials,sourcePipelines,
     sourceItemRecipes:materialOrganizer.sourceItemRecipes,materialMemoryReady:ref=>materialMemoryWork.readyForMemory(ref),sourceContexts});
+  const readerFacade=createEvidenceReaderFacade(evidenceReader);
+  const contextTrees=createContextTrees();
+  const contextTreesRead=createContextTreesReadCapability(contextTrees);
+  const mountRoutes=(app:FastifyInstance)=>{
+    registerEvidenceRoutes(app,evidenceReader);
+    registerContextTreeRoutes(app,evidenceReader,contextTrees);
+    app.get('/api/context/segments',async request=>evidenceReader.segments(z.object({...navigationScopeSchema.shape,id:z.string().max(1600).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(request.query)));
+    app.get('/api/context-index',async request=>evidenceReader.catalogAsync(z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),...navigationScopeSchema.shape}).strict().parse(request.query)));
+    registerContextRoutes(app,createContextQuery(store,sources,evidenceReader));
+    app.get('/api/skills',async()=>({items:skillCatalog()}));
+  };
+  const evidenceContext=createEvidenceContextReader({reader:readerFacade,contextTrees:contextTreesRead,mountRoutes});
   resources.defer(()=>evidenceContext.dispose());
-  const contextTrees=evidenceContext.assembly.contextTrees,evidenceReader=evidenceContext.assembly.reader;
   materialMemoryWork.bindSelection(evidenceContext.ports.memoryInputSelection);
   const materialContext=createMaterialContext({materials,organizer:materialOrganizer,reader:evidenceReader});
   resources.defer(()=>materialContext.close());

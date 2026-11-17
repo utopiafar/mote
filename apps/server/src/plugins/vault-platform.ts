@@ -9,6 +9,15 @@ import {FileStore} from '../files.js';
 import {MaterialStore} from '../materials.js';
 import {ArchivedFileStore} from '../archived-files.js';
 import {ContentStorageService} from '../content-storage.js';
+import {BackgroundModelAuthorization,type ModelConnection} from '../background-model-authorization.js';
+import {ModelAuthorizationHost} from '../model-authorization-host.js';
+import {Connections} from '../connections.js';
+import {IngressService} from '../ingress.js';
+import {LoginHandoffs} from '../login-handoffs.js';
+import {ExecutionEngine} from '../execution-engine.js';
+import {ProviderAdmission} from '../provider-admission.js';
+import {Operations} from '../operations.js';
+import type {ExecutionModelAuthority} from '../plugin-runtime-ports.js';
 import type {ConfigService} from '../config-service.js';
 import {MaintenanceWorker} from '../maintenance.js';
 import {UsageLedger} from '../usage.js';
@@ -52,6 +61,17 @@ export const vaultPlatformContribution={
 } as const satisfies ManifestContribution;
 export const vaultPlatformDeclaration={id:vaultPlatformContribution.id,apiVersion:'1'} as const;
 export const vaultPlatformReplacement='restart' as const;
+
+/** Fixed host-bound storage factories. They return the trusted domain instance
+ * only to the host-bound plugin; public plugin/port consumers receive frozen
+ * closure facades from that plugin, never this instance or Store/DB. */
+export interface VaultAuthorizationFactories {
+  authorizationControlForAssembly(available:()=>ModelConnection[]):BackgroundModelAuthorization;
+  authorizationRepositoriesForAssembly(input:{control:BackgroundModelAuthorization;sources:SourceStore;files:FileStore;materials:MaterialStore;ingress?:IngressService;connections?:Connections;clock?:()=>number}):{host:ModelAuthorizationHost;connections:Connections;handoffs:LoginHandoffs;ingress?:IngressService};
+}
+export interface VaultExecutionFactories {
+  executionForAssembly(input:{clock?:()=>number;modelAuthority:ExecutionModelAuthority}):{executor:ExecutionEngine;providerAdmission:ProviderAdmission;operations:Operations};
+}
 export interface VaultPlatform extends PluginLifecycle {
   /** Trusted domain-factory wiring only. Caller-supplied scopes are not a public capability. */
   repositoriesForAssembly(scope:PluginScope):VaultRepositoryAccess;
@@ -135,6 +155,27 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
       current();consumer.defer(()=>{released=true;});
       usageOwner=owner;usage??=new UsageLedger(store!,ownerCurrent);
       return new UsageLedger(usage,current);
+    },
+    authorizationControlForAssembly(available:()=>ModelConnection[]):BackgroundModelAuthorization{
+      assertPrepared();return new BackgroundModelAuthorization(store!,available);
+    },
+    authorizationRepositoriesForAssembly(input:{control:BackgroundModelAuthorization;sources:SourceStore;files:FileStore;materials:MaterialStore;ingress?:IngressService;connections?:Connections;clock?:()=>number}){
+      assertPrepared();
+      const mismatch=(message:string)=>Object.assign(new StoreError(message,503),{code:'authorization_repository_mismatch'});
+      if(input.control.constructor!==BackgroundModelAuthorization||input.sources.store!==store||input.files.store!==store||input.materials.store!==store)
+        throw mismatch('Authorization repository mismatch');
+      if(input.connections&&!input.connections.usesStore(store!))throw mismatch('Authorization connection repository mismatch');
+      if(input.ingress&&!input.ingress.usesRepositories(store!,input.sources,input.files))throw mismatch('Authorization ingress repository mismatch');
+      const host=new ModelAuthorizationHost(input.control,store!,input.materials,input.files);
+      const connections=input.connections??new Connections(store!,input.sources,{clock:input.clock});
+      const handoffs=new LoginHandoffs(connections,input.clock);
+      return {host,connections,handoffs,...(input.ingress?{ingress:input.ingress}:{})};
+    },
+    executionForAssembly(input:{clock?:()=>number;modelAuthority:ExecutionModelAuthority}){
+      assertPrepared();
+      const executor=new ExecutionEngine(store!,input.clock);executor.bindModelAuthority(input.modelAuthority);
+      const providerAdmission=new ProviderAdmission(store!,input.clock),operations=new Operations(store!);
+      return {executor,providerAdmission,operations};
     },
     startMaintenance(){
       assertPrepared();if(accessorsClosing)throw new StoreError('Vault assembly is stopping',503);

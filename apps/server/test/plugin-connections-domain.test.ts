@@ -42,7 +42,7 @@ for(const omitted of ['feature','plugin','both'] as const)test(`omitting Connect
 
 test('selected Connections uses the original authorization owner and actual HTTP pairing/collector checks in its fixed slot',{timeout:120000},async t=>{
  const f=await fixture(t),{node,origin,request}=await f.build();
- assert.equal(node.connections,node.authorizationPlatform.assembly.connections);
+ assert.equal(node.connections,node.authorizationPlatform.trusted().connections);
  for(const id of [connectionsRouteInputContribution.id,connectionsRoutesContribution.id])assert.equal(node.bootstrap.snapshot().contributions.filter(row=>row.identity.contributionId===id).length,1,id);
  const order=node.featureRoutes.registry.inventory().features.map(row=>row.id),at=order.indexOf('mote.connections');assert.ok(at>=0);assert.equal(order[at+1],'mote.developer-access');
  assert.equal((await request('POST','/api/connections/invitations','',{serverUrl:origin,label:'Generated owner'})).status,401);

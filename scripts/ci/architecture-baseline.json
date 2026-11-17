@@ -86,22 +86,6 @@
   },
   {
     "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/source-runtime.ts",
-    "to": "C04",
-    "kind": "comment",
-    "symbol": "count:2",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/source-runtime.ts",
-    "to": "C10",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
     "from": "apps/server/src/plugins/vault-platform.ts",
     "to": "C04",
     "kind": "comment",
@@ -123,62 +107,6 @@
     "kind": "comment",
     "symbol": "count:1",
     "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/authorization-platform.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "type",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the authorization platform still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/c10-integration.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "runtime",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the C10 integration still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/capture-intake.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "runtime",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: capture intake still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/evidence-context-reader.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "runtime",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the evidence context reader still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/execution-platform.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "type",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the execution platform still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/notes-source.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "runtime",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the notes source still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/source-runtime.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "runtime",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the source runtime still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
   },
   {
     "rule": "server-plugins-no-store",

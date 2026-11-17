@@ -12,9 +12,11 @@ import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {MaterialStore} from '../src/materials.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
+import {testVault} from './fixtures/plugin-runtime-vault.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import {centralServices,type RequestAuthority} from '../src/plugins/central-contracts.js';
 import {captureIntakeContribution,captureIntakeReplacement,createCaptureIntake,captureIntakeDeclaration,createCaptureIntakeFactory} from '../src/plugins/capture-intake.js';
+import {createCaptureOwner} from '../src/capture-storage.js';
 import {PluginHost} from '@mote/plugin-host';
 
 const ownerToken='generated-capture-owner-token';
@@ -27,23 +29,24 @@ async function fixture(t:TestContext){
   const store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);
   const diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),level:'debug'});
   await diagnostics.init();
-  const intake=createCaptureIntake({diagnostics}, {store,sources,files,materials});
+  const captureOwner=createCaptureOwner({store,sources,files,materials}),intake=createCaptureIntake({diagnostics}, {port:captureOwner.port});
   await intake.prepare();
-  const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
-  await platform.prepare();platform.bindRepositories({sources,files,materials,ingress:intake.ingress});await platform.start();
-  intake.bindAuthorization(platform);intake.start();
+  const vault=await testVault(store,directory);
+  const platform=createAuthorizationPlatform({ownerToken},{vault,availableModelConnections:()=>[]});
+  await platform.prepare();captureOwner.bindRepositories(platform);await platform.start();
+  intake.bindAuthorization(captureOwner.c04Port(platform));intake.start();
   const app=Fastify(),pins=new WeakMap<FastifyRequest,RequestAuthority>();
   app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_request,body,done)=>done(null,body));
   app.setErrorHandler((error,_request,reply)=>{const value=error as Error&{statusCode?:number;status?:number;code?:string};reply.code(value.statusCode??value.status??500).send({error:value.code??'capture_intake_failed'});});
   app.addHook('onRequest',async request=>{pins.set(request,platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
   intake.routes(app,{request:request=>pins.get(request)});
-  t.after(async()=>{await app.close();await intake.close();await platform.close();await diagnostics.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  t.after(async()=>{await app.close();await intake.close();await platform.close();await diagnostics.close();await vault.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'generated-source',name:'Generated source',kind:'custom',deviceId:'generated-phone-a',platform:'android',enabled:true,retention:'archive'});
   const post=(path:string,token:string,body:unknown,contentType='application/json')=>app.inject({method:'POST',url:path,headers:{authorization:`Bearer ${token}`,'content-type':contentType},payload:contentType==='application/gzip'?body as Buffer:JSON.stringify(body)});
   const bundleBody=(inputs:CaptureInput[])=>gzipSync(Buffer.from(inputs.map(input=>JSON.stringify(input)).join('\n')+'\n'));
   const upload=async(sourceId:string,name:string,bytes:Buffer)=>{const pending=files.begin({sourceId,item:{externalId:name,revision:'1',observedAt:new Date().toISOString(),title:name,kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});files.part(pending.uploadId,0,bytes,()=>{});return (await files.commit(pending.uploadId,()=>{})).id;};
-  return {store,sources,files,materials,platform,intake,app,diagnostics,post,bundleBody,upload};
+  return {store,sources,files,materials,platform,intake,captureOwner,app,diagnostics,post,bundleBody,upload};
 }
 
 test('real gzip bundle keeps per-item receipts, rejects duplicate ids and never re-archives',async t=>{
@@ -142,7 +145,8 @@ test('quiescing the plugin rejects new intake and keeps the platform authoritati
 test('real PluginHost install binds this ingress into C04 before start and registers routes',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-capture-host-'));
   const store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);
-  const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
+  const vault=await testVault(store,directory);
+  const platform=createAuthorizationPlatform({ownerToken},{vault,availableModelConnections:()=>[]});
   await platform.prepare();
   sources.register({id:'generated-source',name:'Generated source',kind:'custom',deviceId:'generated-phone-a',platform:'android',enabled:true,retention:'archive'});
   const app=Fastify(),pins=new WeakMap<FastifyRequest,RequestAuthority>();
@@ -151,13 +155,14 @@ test('real PluginHost install binds this ingress into C04 before start and regis
   app.addHook('onRequest',async request=>{pins.set(request,platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
   let boundIngress:unknown;
+  const captureOwner=createCaptureOwner({store,sources,files,materials});
   const host=new PluginHost({kind:'central',id:'generated-capture-host'});
-  t.after(async()=>{await host.close();await app.close();await platform.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
-  const factory=createCaptureIntakeFactory({}, {store,sources,files,materials}, async ingress=>{
-    boundIngress=ingress;
-    platform.bindRepositories({sources,files,materials,ingress});
+  t.after(async()=>{await host.close();await app.close();await platform.close();await vault.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  const factory=createCaptureIntakeFactory({}, {port:captureOwner.port}, async()=>{
+    boundIngress=captureOwner.ingress;
+    captureOwner.bindRepositories(platform);
     await platform.start();
-    return platform;
+    return captureOwner.c04Port(platform);
   },intake=>intake.routes(app,{request:request=>pins.get(request)}));
   await host.install({identity:{packageId:'generated.capture-intake',installationId:randomUUID(),instanceId:'capture',activationId:randomUUID(),host:{kind:'central',id:'generated-capture-host'}},
     contributions:[{id:'capture-intake',apiVersion:'1'}],factory});
@@ -170,11 +175,11 @@ test('real PluginHost install binds this ingress into C04 before start and regis
 
 test('shared ingress identity accepts only its exact repositories',async t=>{
   const f=await fixture(t);
-  assert.equal(f.intake.ingress.usesRepositories(f.store,f.sources,f.files),true);
-  assert.equal(f.intake.ingress.usesRepositories(f.store,new SourceStore(f.store),f.files),false,'a different SourceStore is not the same ingress');
-  assert.equal(f.intake.ingress.usesRepositories(f.store,f.sources,new FileStore(f.store,f.sources)),false,'a different FileStore is not the same ingress');
+  assert.equal(f.captureOwner.ingress.usesRepositories(f.store,f.sources,f.files),true);
+  assert.equal(f.captureOwner.ingress.usesRepositories(f.store,new SourceStore(f.store),f.files),false,'a different SourceStore is not the same ingress');
+  assert.equal(f.captureOwner.ingress.usesRepositories(f.store,f.sources,new FileStore(f.store,f.sources)),false,'a different FileStore is not the same ingress');
   const other=mkdtempSync(join(tmpdir(),'mote-ingress-other-')),otherStore=new Store(other),otherSources=new SourceStore(otherStore),otherFiles=new FileStore(otherStore,otherSources);
-  try{assert.equal(f.intake.ingress.usesRepositories(otherStore,otherSources,otherFiles),false,'a different Store is not the same ingress');}
+  try{assert.equal(f.captureOwner.ingress.usesRepositories(otherStore,otherSources,otherFiles),false,'a different Store is not the same ingress');}
   finally{await otherFiles.close();otherStore.close();rmSync(other,{recursive:true,force:true});}
 });
 

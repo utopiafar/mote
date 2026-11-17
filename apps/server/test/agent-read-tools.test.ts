@@ -79,7 +79,7 @@ test('registered descriptors from external owner use the same run registry and c
 test('the formal evidence factory feeds the actual Host sender and owner stop rejects a late prepared receipt',async t=>{
   const {mkdtempSync,rmSync,existsSync}=await import('node:fs'),{randomUUID}=await import('node:crypto');
   const {Store}=await import('../src/store.js'),{SourceStore}=await import('../src/sources.js'),{MaterialStore,materialId}=await import('../src/materials.js');
-  const {ServerDiagnostics}=await import('../src/diagnostics.js'),{createEvidenceContextReader}=await import('../src/plugins/evidence-context-reader.js');
+  const {ServerDiagnostics}=await import('../src/diagnostics.js'),{createEvidenceContextReader}=await import('../src/plugins/evidence-context-reader.js'),{createEvidenceReaderFacade,createEvidenceReaderForAssembly}=await import('../src/evidence-reader.js'),{createContextTrees,createContextTreesReadCapability}=await import('../src/context-trees.js');
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js'),{pinContextTools}=await import('../../../packages/agent/dist/tool-contributions.js');
   const {hostFixture}=await import('../../../packages/agent/test/fixtures/read-pack-host.mjs');
   const directory=mkdtempSync('/private/tmp/mote-a08-factory-'),store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store),diagnostics=new ServerDiagnostics({directory:directory+'/logs',enabled:false}),root=new Context();
@@ -90,7 +90,7 @@ test('the formal evidence factory feeds the actual Host sender and owner stop re
   let material=materials.publish({id:materialId('generated','item'),kind:'mote.note',schemaVersion:1,title:'Generated material',origin:{sourceId:'generated',externalId:'item',deviceId:'generated'},blocks:[{id:'body',kind:'text',format:'plain',text,memberIds:[id]}],members:[{id,kind:'capture',ref:'capture:'+id}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
   material=materials.declareContext(material.id,material.revision,{id:randomUUID(),question:'Generated private question',answer:'PRIVATE OWNER PROSE'});
   let factory!:ReturnType<typeof createEvidenceContextReader>,features!:Awaited<ReturnType<typeof installAgentReadTools>>;
-  const owner=root.plugin(async(ctx:Context)=>{factory=createEvidenceContextReader({store,sources,materials});ctx.effect(()=>()=>factory.dispose());features=await installAgentReadTools(ctx,factory.agent({diagnostics}));});await owner;
+  const owner=root.plugin(async(ctx:Context)=>{factory=createEvidenceContextReader({reader:createEvidenceReaderFacade(createEvidenceReaderForAssembly({store,sources,materials})),contextTrees:createContextTreesReadCapability(createContextTrees()),mountRoutes:()=>{}});ctx.effect(()=>()=>factory.dispose());features=await installAgentReadTools(ctx,factory.agent({diagnostics}));});await owner;
   const input=pinContextTools({question:'Generated factory read',deviceId:'generated',hostContextToolMode:'all-native'},features.reader),bridge=await startBridge(features.reader,input);bridges.push(bridge);
   const entered=deferred(),ack=deferred();let shownIds:string[]=[];
   const session=await hostFixture(bridge,input,async(host,attempt)=>{

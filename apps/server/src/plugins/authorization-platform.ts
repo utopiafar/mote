@@ -7,7 +7,6 @@ import {MOTE_PROTOCOL_RANGE,captureSchema,sourceItemSchema,type CaptureInput} fr
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import type {Store} from '../store.js';
 import type {SourceStore} from '../sources.js';
 import type {FileStore} from '../files.js';
 import type {MaterialStore} from '../materials.js';
@@ -15,19 +14,21 @@ import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {ConnectorConfig} from '../connectors/types.js';
 import {moteText} from '../i18n.js';
 import {INGRESS_PROTOCOL_VERSION} from '../ingress.js';
-import {Connections,ConnectionError,type ConnectionCredential,type ConnectionRouteContext} from '../connections.js';
-import {LoginHandoffs} from '../login-handoffs.js';
+import {ConnectionError,type ConnectionCredential,type ConnectionRouteContext,type Connections} from '../connections.js';
+import type {LoginHandoffs} from '../login-handoffs.js';
 import {LocalRateLimit,LocalRateLimitError,localRateLimitErrors,localRetryHeader,verifiedCredentialIdentity} from '../local-rate-limits.js';
 import {safeError} from '../diagnostics.js';
-import {IngressService} from '../ingress.js';
+import type {IngressService} from '../ingress.js';
 import {assertExternalCaptures,assertCaptureAttachments} from '../capture-admission.js';
-import {BackgroundModelAuthorization,type ModelConnection} from '../background-model-authorization.js';
-import {ModelAuthorizationHost,sourceModelIdentity} from '../model-authorization-host.js';
+import type {BackgroundModelAuthorization,ModelConnection} from '../background-model-authorization.js';
+import {sourceModelIdentity,type ModelAuthorizationHost} from '../model-authorization-host.js';
 import {registerModelAuthorizationRoutes} from './model-authorization-routes.js';
 import {McpOAuthServer} from '../connectors/mcp-oauth.js';
 import {registerMcpOAuthRoutes} from '../connectors/mcp-oauth-routes.js';
 import {automaticMemoryGrantSchema,type AutomaticMemoryGrant,type MemoryInputAuthorization} from '../memory-input-authorization.js';
 import type {RequestAuthority,RequestAuthorization,CommitAuthority,CommitAuthorization,CaptureIntake,SourceIntake} from './central-contracts.js';
+import type {VaultAuthorizationFactories} from './vault-platform.js';
+import {authorizationControlPort,authorizationHostPort,connectionsPort,handoffsPort,type AuthorizationControlPort,type AuthorizationHostPort,type ConnectionsPort,type HandoffsPort} from '../plugin-runtime-ports.js';
 
 export interface AuthorizationPlatformOptions {
   readonly ownerToken:string;
@@ -36,7 +37,7 @@ export interface AuthorizationPlatformOptions {
   readonly clock?:()=>number;
 }
 export interface AuthorizationPlatformDependencies {
-  readonly store:Store;
+  readonly vault:VaultAuthorizationFactories;
   readonly availableModelConnections:()=>ModelConnection[];
   /** Matches existing buildApp ownership: supplied Connections is owned and closed. */
   readonly connections?:Connections;
@@ -80,10 +81,10 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
   if(!options.ownerToken)throw denied('authorization_unavailable',503);
   const ownerToken=options.ownerToken,now=options.clock??Date.now,origins=[...(options.allowedOrigins??[])];
   const configuration=options.connectorConfiguration??(()=>undefined);
-  const {store}=dependencies;
   let phase:'created'|'prepared'|'bound'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let control:BackgroundModelAuthorization|undefined,host:ModelAuthorizationHost|undefined,connections:Connections|undefined,handoffs:LoginHandoffs|undefined;
   let repositories:AuthorizationRepositories|undefined,ingress:IngressService|undefined,closing:Promise<void>|undefined;
+  let controlPort:AuthorizationControlPort|undefined,hostPort:AuthorizationHostPort|undefined,connectionsPortValue:ConnectionsPort|undefined,handoffsPortValue:HandoffsPort|undefined;
   let routesInstalled=false,modelRoutesInstalled=false,oauthRoutesInstalled=false;
   const disposers:(()=>void)[]=[],pending=new Set<Promise<unknown>>();
   const requestRegistry=new WeakMap<object,RequestState>(),commitRegistry=new WeakMap<object,Admission>();
@@ -177,25 +178,26 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
       catch(error){accepted.active=false;liveAdmissions.delete(accepted);throw error;}
     });
   }
+  const ingressRequired=()=>{if(!ingress)throw denied('authorization_unavailable',503);return ingress;};
   const captures={
     async capture(input:CaptureInput,authority:CommitAuthority){
       const actual=immutable(captureSchema.parse(input));admission(authority,{kind:'capture',input:actual});
-      return track(ingress!.capture(actual,()=>{admission(authority,{kind:'capture',input:actual});}));
+      return track(ingressRequired().capture(actual,()=>{admission(authority,{kind:'capture',input:actual});}));
     },
     async captureSettled(inputs:CaptureInput[],authority:CommitAuthority){
       const actual=immutable(inputs.map(input=>captureSchema.parse(input)));admission(authority,{kind:'captures',input:actual});
-      return track(ingress!.captureSettled(actual,()=>{admission(authority,{kind:'captures',input:actual});}));
+      return track(ingressRequired().captureSettled(actual,()=>{admission(authority,{kind:'captures',input:actual});}));
     },
   } satisfies CaptureIntake;
   const sources={
     async sourceItem(sourceId:string,input:unknown,authority:CommitAuthority){
       const actual=immutable(sourceItemSchema.parse(input));admission(authority,{kind:'source',sourceId,input:actual});
-      return track(ingress!.sourceItem(sourceId,actual,()=>{admission(authority,{kind:'source',sourceId,input:actual});}));
+      return track(ingressRequired().sourceItem(sourceId,actual,()=>{admission(authority,{kind:'source',sourceId,input:actual});}));
     },
     async sourceBatch(sourceId:string,inputs:unknown,authority:CommitAuthority){
       if(!Array.isArray(inputs))throw denied('invalid_source_batch',400);
       const actual=immutable(inputs.map(input=>sourceItemSchema.parse(input)));admission(authority,{kind:'sources',sourceId,input:actual});
-      return track(ingress!.sourceBatch(sourceId,actual,()=>{admission(authority,{kind:'sources',sourceId,input:actual});}));
+      return track(ingressRequired().sourceBatch(sourceId,actual,()=>{admission(authority,{kind:'sources',sourceId,input:actual});}));
     },
   } satisfies SourceIntake;
   function bindRequest(input:BoundAuthorizationRequest):RequestAuthority{
@@ -362,14 +364,15 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     })();return closing;
   }
   return Object.freeze({
-    async prepare(){if(phase!=='created')throw denied('authorization_unavailable',503);try{control=new BackgroundModelAuthorization(store,dependencies.availableModelConnections);phase='prepared';}catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Authorization preparation and cleanup failed',{cause:error});}throw error;}},
+    async prepare(){if(phase!=='created')throw denied('authorization_unavailable',503);try{control=dependencies.vault.authorizationControlForAssembly(dependencies.availableModelConnections);controlPort=authorizationControlPort(control);phase='prepared';}catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Authorization preparation and cleanup failed',{cause:error});}throw error;}},
     bindRepositories(value:AuthorizationRepositories){
       if(phase!=='prepared')throw denied('authorization_unavailable',503);
-      if(value.sources.store!==store||value.files.store!==store||value.materials.store!==store)throw denied('authorization_repository_mismatch',503);
-      if(dependencies.connections&&!dependencies.connections.usesStore(store))throw denied('authorization_repository_mismatch',503);
-      repositories=value;ingress=value.ingress??new IngressService(store,value.sources,value.files);
-      host=new ModelAuthorizationHost(control!,store,value.materials,value.files);
-      connections=dependencies.connections??new Connections(store,value.sources,{clock:now});handoffs=new LoginHandoffs(connections,now);
+      repositories=value;
+      let bound:{host:ModelAuthorizationHost;connections:Connections;handoffs:LoginHandoffs;ingress?:IngressService};
+      try{bound=dependencies.vault.authorizationRepositoriesForAssembly({control:control!,sources:value.sources,files:value.files,materials:value.materials,...(value.ingress?{ingress:value.ingress}:{}),...(dependencies.connections?{connections:dependencies.connections}:{}),clock:now});}
+      catch(error){if((error as {code?:string}).code==='authorization_repository_mismatch')throw denied('authorization_repository_mismatch',503);throw error;}
+      ingress=bound.ingress;host=bound.host;connections=bound.connections;handoffs=bound.handoffs;
+      hostPort=authorizationHostPort(host,controlPort!);connectionsPortValue=connectionsPort(connections);handoffsPortValue=handoffsPort(handoffs);
       connections.bindRoutes(connectionRoutes);
       disposers.push(connections.onChange(refreshFences));
       if(value.memoryInputs){
@@ -380,8 +383,12 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     },
     async start(){if(phase!=='bound')throw denied('authorization_unavailable',503);try{await connections!.init();if(phase!=='bound')throw denied('authorization_unavailable',503);phase='active';}catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Authorization start and cleanup failed',{cause:error});}throw error;}},
     quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';},stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
-    /** These assembly members must never be published as ordinary plugin services. */
-    get assembly(){ready();return Object.freeze({get connections(){return connections;},get handoffs(){return handoffs;},modelAuthorization:control!,get modelAuthorizationHost(){return host;}});},
+    /** Public plugin/port consumers receive frozen closure facades, never the
+     * Connections/control/host classes or their Store. */
+    get assembly(){ready();return Object.freeze({connections:connectionsPortValue,handoffs:handoffsPortValue,modelAuthorization:controlPort!,modelAuthorizationHost:hostPort});},
+    /** Trusted host assembly only. The real instances stay in this closed-over
+     * host plugin; they are not a plugin service, port or native capability. */
+    trusted(){ready();return Object.freeze({connections,handoffs,modelAuthorization:control!,modelAuthorizationHost:host});},
     validOwnerBearer(header:string|undefined){return phase!=='stopped'&&phase!=='disposed'&&equalBearer(header,ownerToken);},
     requests:Object.freeze(requestChecks),commits:Object.freeze(commits),captureIntake:Object.freeze(captures),sourceIntake:Object.freeze(sources),
     bindRequest,releaseRequest,requestSignal:(request:RequestAuthority)=>assertRequest(request).signal,

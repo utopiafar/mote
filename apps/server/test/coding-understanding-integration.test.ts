@@ -103,7 +103,7 @@ test('clean Coding material runs one authorized understanding and reuses its can
  const artifact=node.store.archive.page({kind:'semantic'}).items[0];assert.ok(artifact);const full=node.store.archive.get(artifact.id)!;
  assert.equal(full.processor,'mote.coding-conversation-understanding');assert.equal(full.metadata.materialRef,fixture.material.ref);assert.ok(full.text.includes('device validation remains unknown'));
  assert.deepEqual(full.metadata.evidenceRanges,job.batches[0].evidenceRanges);assert.ok((full.metadata.memoryCandidates as unknown[]).length);
- const input=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader).read({ref:fixture.material.ref,scope:{kind:'all'}});
+ const input=new AssistantUnderstandingReader(node.store,node.materials,node.featureServices.evidenceReader).read({ref:fixture.material.ref,scope:{kind:'all'}});
  assert.equal(input.products[0].memoryCandidates[0].admission?.attribution,'user');assert.equal(input.products[0].memoryCandidates[0].evidenceIds[0],fixture.ids[0]);
  assert.ok(input.products[0].sourceEvidence.some(evidence=>evidence.quote.includes(owner)));
  assert.equal(calls.filter(input=>isUnderstanding(input)).length,1);assert.ok(calls.filter(isUnderstanding).every(input=>input.executionLane==='background'));
@@ -194,7 +194,7 @@ test('empty Coding candidates publish work/events and receive independent review
  const fixture=await receive(node),job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,fixture.ids).id));
  assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.equal(calls,2);const artifacts=node.store.archive.page({kind:'semantic'}).items;
  assert.equal(artifacts.length,1);const artifact=node.store.archive.get(artifacts[0].id)!;assert.deepEqual(artifact.metadata.memoryCandidates,[]);assert.ok((artifact.metadata.workRecords as unknown[]).length);assert.ok((artifact.metadata.events as unknown[]).length);
- const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader),input=adapter.read({ref:fixture.material.ref,scope:{kind:'all'}});
+ const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.featureServices.evidenceReader),input=adapter.read({ref:fixture.material.ref,scope:{kind:'all'}});
  assert.equal(input.products.length,1);assert.equal(input.coverage.semantic.status,'ready');assert.deepEqual(input.products[0].memoryCandidates,[]);
  assert.equal(input.products[0].events[0].actor,'user');assert.equal(input.products[0].workRecords[0].results[0].basis,'assistant_reported');
  assert.ok(input.products[0].sourceEvidence.some(evidence=>evidence.quote.includes(owner)));assert.ok(!JSON.stringify(input).includes(toolSecret));
@@ -248,7 +248,7 @@ test('a failed Coding tail resumes without repeating completed pages and supplie
  await node.sourcePipelines.tick();const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref);
  const created=manualJob(node,ids),failed=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
  assert.equal(failed.status,'failed');assert.ok(failed.completedBatches>0);assert.equal(failed.memoryIds.length,0);
- const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader),partial=adapter.read({ref:material.ref,scope:{kind:'all'}}),completedRefs=partial.products.map(product=>product.ref);
+ const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.featureServices.evidenceReader),partial=adapter.read({ref:material.ref,scope:{kind:'all'}}),completedRefs=partial.products.map(product=>product.ref);
  assert.ok(completedRefs.length);assert.equal(partial.coverage.semantic.status,'partial');
  const before=new Map(attempts);failTail=false;
  const retry=await node.app.inject({method:'POST',url:`/api/memory-jobs/${created.id}/retry`,headers:{authorization:'Bearer '+token}});assert.equal(retry.statusCode,202,retry.body);
@@ -286,7 +286,7 @@ test('a later import observation does not move a source-timed Coding material ou
   {...event('assistant','assistant',report),observedAt:'2020-01-01T00:00:00Z'}]);
  await node.sourcePipelines.tick();const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref);
  const job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,ids).id));assert.equal(job.status,'completed');
- const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader),historical={kind:'all' as const,after:'2001-01-01T00:00:00Z',before:'2001-01-02T00:00:00Z'};
+ const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.featureServices.evidenceReader),historical={kind:'all' as const,after:'2001-01-01T00:00:00Z',before:'2001-01-02T00:00:00Z'};
  const view=adapter.read({ref:material.ref,scope:historical});assert.equal(view.products.length,1);
  assert.equal(view.material.origin.firstAt,'2001-01-01T10:00:00.000Z');assert.equal(view.products[0].events[0].sourceTime,null);
  const original=view.products[0].sourceEvidence.find(item=>item.quote.includes(owner))!;assert.equal(original.capturedAt,'2020-01-01T00:00:00Z');
@@ -379,7 +379,7 @@ test('600k hidden analysis stays excluded while a long final reply remains reada
   let offset=0;for(const range of covered.filter(range=>range.id===record.id).sort((a,b)=>a.offset-b.offset)){assert.equal(range.offset,offset);offset+=range.length;}
   assert.equal(offset,record.ocrText.length,'long final replies retain every character, including the tail');
  }
- const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.evidenceContext.assembly.reader),view=adapter.read({ref:material.ref,scope:{kind:'all'}});
+ const adapter=new AssistantUnderstandingReader(node.store,node.materials,node.featureServices.evidenceReader),view=adapter.read({ref:material.ref,scope:{kind:'all'}});
  assert.equal(view.coverage.semantic.status,'ready');assert.ok(view.products.some(product=>product.events.some(event=>event.evidence.some(evidence=>evidence.quote===tail))));
  assert.ok(secrets.every(secret=>!JSON.stringify(view).includes(secret)));
  assert.equal(node.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='coding_conversation_contexts'").get(),undefined);

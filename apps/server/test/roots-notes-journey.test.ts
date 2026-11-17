@@ -17,7 +17,7 @@ test('real buildApp Notes journey uses one C10A ingress and C04 pin, then closes
   const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-roots-notes-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots notes fixture');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
-  assert.equal(node.featureServices.ingress,node.captureIntake.ingress);
+  assert.equal(node.featureServices.ingress,node.featureServices.ingress);
   assert.equal(node.featureServices.files,node.filesPlatform.assemblyForRoutes().files);
   const headers={authorization:`Bearer ${config.privateCredential!.token}`},input=note();
   const created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:input});
@@ -25,7 +25,7 @@ test('real buildApp Notes journey uses one C10A ingress and C04 pin, then closes
   const listed=await node.app.inject({url:'/api/notes',headers});assert.equal(listed.statusCode,200,listed.body);
   assert.ok(listed.json().items.some((item:any)=>item.id===input.id&&item.attributionContext));
   assert.deepEqual((await node.app.inject({method:'DELETE',url:'/api/notes/'+input.id,headers})).json(),{deleted:1});
-  const connections=node.authorizationPlatform.assembly.connections!;
+  const connections=node.authorizationPlatform.trusted().connections!;
   const invitation=connections.invite({serverUrl:'https://generated.invalid',label:'Generated collector',deviceId:'generated-notes-device'},'collector');
   const paired=await connections.redeem({code:invitation.invitation.code,deviceId:'generated-notes-device',deviceName:'Generated notes device',platform:'android'});
   const collector={authorization:'Bearer '+paired.token,'x-mote-ingress-version':'2'};

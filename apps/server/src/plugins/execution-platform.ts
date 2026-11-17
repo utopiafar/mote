@@ -1,21 +1,20 @@
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import type {Store} from '../store.js';
 import {StoreError} from '../store.js';
-import {ExecutionEngine,ExecutionFailure,type ExecutionHandler,type ExecutionGrant} from '../execution-engine.js';
+import {ExecutionFailure,type ExecutionEngine,type ExecutionHandler,type ExecutionGrant} from '../execution-engine.js';
+import type {ProviderAdmission} from '../provider-admission.js';
+import type {Operations} from '../operations.js';
 import {executionSettingsSchema,type ExecutionSettings} from '../execution-settings.js';
-import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
-import {ProviderAdmission} from '../provider-admission.js';
 import {ConcurrencyGate} from '../concurrency.js';
-import {Operations} from '../operations.js';
 import {centralServices,type ExecutionSubmission} from './central-contracts.js';
+import type {VaultExecutionFactories} from './vault-platform.js';
+import {admissionPort,executionPort,operationsPort,type AdmissionPort,type ExecutionModelAuthority,type ExecutionPort,type OperationsPort} from '../plugin-runtime-ports.js';
 
 export interface ExecutionPlatformDependencies {
-  /** Borrowed from the vault; execution disposal never closes the vault. */
-  readonly store:Store;
+  readonly vault:VaultExecutionFactories;
   /** Fixed trusted authorization service, not supplied by a handler or submission. */
-  readonly modelAuthorization:BackgroundModelAuthorization;
+  readonly modelAuthorization:ExecutionModelAuthority;
   readonly settings:Pick<ExecutionSettings,'execution'>;
   readonly clock?:()=>number;
 }
@@ -33,6 +32,7 @@ const unavailable=()=>new StoreError('Execution platform is unavailable',503);
 export function createExecutionPlatform(dependencies:ExecutionPlatformDependencies){
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let executor:ExecutionEngine|undefined,providerAdmission:ProviderAdmission|undefined,operations:Operations|undefined;
+  let executorPortValue:ExecutionPort|undefined,admissionPortValue:AdmissionPort|undefined,operationsPortValue:OperationsPort|undefined;
   let gates:{agentGate:ConcurrencyGate;llmGate:ConcurrencyGate;interactiveGate:ConcurrencyGate;interactiveModelGate:ConcurrencyGate}|undefined;
   let closing:Promise<void>|undefined;
   const owners=new Map<string,{accepting:()=>boolean;dispose:()=>Promise<void>}>(),bindings=new Set<{quiesce:()=>void;close:()=>Promise<void>}>();
@@ -112,8 +112,9 @@ export function createExecutionPlatform(dependencies:ExecutionPlatformDependenci
       try{
         if(!dependencies.modelAuthorization)throw unavailable();
         const value=executionSettingsSchema.parse(dependencies.settings.execution());
-        executor=new ExecutionEngine(dependencies.store,dependencies.clock);executor.bindModelAuthority(dependencies.modelAuthorization);
-        providerAdmission=new ProviderAdmission(dependencies.store,dependencies.clock);operations=new Operations(dependencies.store);
+        const created=dependencies.vault.executionForAssembly({...(dependencies.clock?{clock:dependencies.clock}:{}),modelAuthority:dependencies.modelAuthorization});
+        executor=created.executor;providerAdmission=created.providerAdmission;operations=created.operations;
+        executorPortValue=executionPort(executor);admissionPortValue=admissionPort(providerAdmission);operationsPortValue=operationsPort(operations);
         gates={agentGate:new ConcurrencyGate(value.agentConcurrency),llmGate:new ConcurrencyGate(value.llmConcurrency),interactiveGate:new ConcurrencyGate(value.interactiveConcurrency),interactiveModelGate:new ConcurrencyGate(value.interactiveConcurrency)};
         phase='prepared';
       }catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Execution preparation and cleanup failed',{cause:error});}throw error;}
@@ -124,8 +125,12 @@ export function createExecutionPlatform(dependencies:ExecutionPlatformDependenci
     cancel(...args:Parameters<ExecutionEngine['cancel']>){active();return executor!.cancel(...args);},
     retry(...args:Parameters<ExecutionEngine['retry']>){active();return executor!.retry(...args);},
     receipt(id:string){current();return {step:executor!.get(id),failure:executor!.failure(id)};},
-    /** Fixed trusted bootstrap only. No raw object is a normal provided service. */
-    get assembly(){ready();return Object.freeze({executor:executor!,providerAdmission:providerAdmission!,operations:operations!,...gates!});},
+    /** Public plugin/port consumers receive frozen closure facades, never the
+     * engine, Store, gates or mutable controls. */
+    get assembly(){ready();if(!executorPortValue||!admissionPortValue||!operationsPortValue)throw unavailable();return Object.freeze({executor:executorPortValue,providerAdmission:admissionPortValue,operations:operationsPortValue,...gates!});},
+    /** Trusted host assembly only. The real engine remains closure-owned by
+     * this host plugin; it is never a plugin service, port or native capability. */
+    trusted(){ready();return Object.freeze({executor:executor!,providerAdmission:providerAdmission!,operations:operations!,...gates!});},
   });
 }
 export type ExecutionPlatform=ReturnType<typeof createExecutionPlatform>;

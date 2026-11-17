@@ -6,7 +6,6 @@ import type {FeatureInventory} from '@mote/shared';
 import {prepareFeatureInventory} from '../plugins/feature-inventory-domain.js';
 import {serverConfigDomain,connectorsConfigDomain,diagnosticsConfigDomain,updatesConfigDomain} from '../config.js';
 import type {Connections} from '../connections.js';
-import type {Store} from '../store.js';
 import {moteText} from '../i18n.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ObservationIdentity,ObservationName} from '../execution-observability.js';
@@ -29,7 +28,6 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
 export interface PlatformAssemblyDependencies {
   readonly readFeatureInventory:()=>FeatureInventory;
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
-  readonly store:Store;
   readonly resources:ServerResources;
   readonly serverVersion:string;
   readonly availableModelConnections:()=>ModelConnection[];
@@ -42,15 +40,16 @@ export interface PlatformAssemblyDependencies {
 /** Authorization, observability and execution platform construction plus the
  * model admission/observation wiring that app.ts previously held inline. */
 export async function assemblePlatform(dependencies:PlatformAssemblyDependencies){
-  const {bootstrap,store,resources}=dependencies;
+  const {bootstrap,resources}=dependencies;
   const facts=bootstrap.configurationBootstrap,service=bootstrap.configService,server=service.current(serverConfigDomain),logs=service.current(diagnosticsConfigDomain),updates=service.current(updatesConfigDomain);
   await prepareFeatureInventory(bootstrap,resources,dependencies.readFeatureInventory);
+  const vault=bootstrap.vault;
   const authorizationPlatform=createAuthorizationPlatform({ownerToken:facts.owner.token,connectorConfiguration:()=>service.current(connectorsConfigDomain),allowedOrigins:server.allowedOrigins},{
-    store,availableModelConnections:()=>dependencies.availableModelConnections(),...(dependencies.connections?{connections:dependencies.connections}:{}),
+    vault,availableModelConnections:()=>dependencies.availableModelConnections(),...(dependencies.connections?{connections:dependencies.connections}:{}),
   });
   resources.defer(()=>authorizationPlatform.close());
   await authorizationPlatform.prepare();
-  const modelAuthorization=authorizationPlatform.assembly.modelAuthorization;
+  const modelAuthorization=authorizationPlatform.trusted().modelAuthorization;
   const runtimeSettings=bootstrap.configurationPlatform.runtimeSettings;
   const observability=await bootstrap.installObservabilityPlatform({
     logDirectory:logs.directory?resolve(facts.baseDir,logs.directory):join(facts.dataDir,'logs'),
@@ -61,10 +60,10 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
   const observabilityPlatform=observability.platform,observabilityScope=observability.scope,observabilityAssembly=observabilityPlatform.forAssembly(observability.scope);
   const diagnostics=observabilityAssembly.diagnostics,executionObserver=observabilityAssembly.observer,eventLoop=observabilityAssembly.eventLoop,usageLedger=observabilityAssembly.usage,softwareUpdate=observabilityAssembly.softwareUpdate;
   resources.defer(()=>observabilityPlatform.close());
-  const executionPlatform=createExecutionPlatform({store,modelAuthorization,settings:runtimeSettings});
+  const executionPlatform=createExecutionPlatform({vault,modelAuthorization,settings:runtimeSettings});
   resources.defer(()=>executionPlatform.stop('shutdown'));
   await executionPlatform.prepare();executionPlatform.start();
-  const {executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate}=executionPlatform.assembly;
+  const {executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate}=executionPlatform.trusted();
   const modelContext=new AsyncLocalStorage<QueryInput>();
   const modelOperation=new AsyncLocalStorage<string>();
   // Accounting observes trusted admission boundaries, independently of model

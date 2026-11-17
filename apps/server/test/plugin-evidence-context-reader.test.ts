@@ -10,7 +10,17 @@ import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import type {MemoryBindings} from '../src/memory-bindings.js';
+import {createEvidenceReaderFacade,createEvidenceReaderForAssembly} from '../src/evidence-reader.js';
+import {createContextTrees,createContextTreesReadCapability} from '../src/context-trees.js';
 import {createEvidenceContextReader} from '../src/plugins/evidence-context-reader.js';
+
+function open(store:Store,sources:SourceStore,materials:MaterialStore,binding?:MemoryBindings){
+  const reader=createEvidenceReaderForAssembly({store,sources,materials});
+  const facade=createEvidenceReaderFacade(reader);
+  const service=createEvidenceContextReader({reader:facade,contextTrees:createContextTreesReadCapability(createContextTrees()),mountRoutes:()=>{}});
+  if(binding)reader.memoryBindings=binding;
+  return {reader,facade,service};
+}
 
 async function fixture(t:test.TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-evidence-context-reader-')),store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
@@ -28,9 +38,11 @@ async function fixture(t:test.TestContext){
 
 test('the unique reader serves a real Material through agent view and read ports',async t=>{
   const {store,sources,materials,diagnostics,captureId,published}=await fixture(t);
-  const service=createEvidenceContextReader({store,sources,materials});
+  const {reader,service}=open(store,sources,materials);
   t.after(()=>service.dispose());
   const view=service.agent({diagnostics});
+  assert.equal('store' in view,false);
+  assert.equal(typeof view.materialRead,'function');
   const page=await view.materialRead!({ref:published.ref,length:9});
   assert.match(page.text,/^Generated/);
   assert.ok(page.originalRefs.includes(formatEvidenceRef('capture',captureId)));
@@ -38,15 +50,46 @@ test('the unique reader serves a real Material through agent view and read ports
   const portPage=service.ports.materialRead.materialRead({ref:published.ref});
   assert.equal(portPage.text,'Generated member 0\n');
   assert.deepEqual(portPage.originalRefs,[formatEvidenceRef('capture',captureId)]);
+  assert.throws(()=>service.ports.materialRead.materialRead({ref:published.ref,deviceId:'other-device'}),{statusCode:404});
   assert.equal(service.ports.materialRead.materialCatalog({}).items.length,1);
-  assert.equal(typeof service.assembly.reader.fileCatalog,'function');
+  assert.equal(typeof reader.fileCatalog,'function');
   const trees=await service.ports.contextTreesRead.catalog();
   assert.ok(trees.items.some(tree=>tree.id==='topics'));
 });
 
+test('the fixed facade exposes no Store, reads a late MemoryBindings assignment and keeps release idempotent after dispose',async t=>{
+  const {store,sources,materials}=await fixture(t);
+  const {reader,facade,service}=open(store,sources,materials);
+  assert.equal(facade.store,undefined);
+  assert.equal(facade.constructor,Object);
+  assert.equal(Object.getPrototypeOf(facade),Object.prototype);
+  assert.throws(()=>structuredClone(facade));
+  assert.equal(Reflect.get(service.assembly.contextTrees,'store'),undefined,'the contextTrees capability must not expose the registry Store');
+  assert.equal(typeof facade.disposed,'boolean');
+  assert.equal(facade.disposed,false);
+  assert.equal(typeof reader.contextDependencyGroups,'function');
+  assert.equal(reader.contextDependenciesAllowed([]),true);
+  assert.equal(service.ports.memorySnapshots.memoryBindings,undefined,'a later assignment is not cached as undefined');
+  const released:{count:number}[]=[];
+  const binding={
+    retainSnapshot:()=>{const state={count:0};released.push(state);return {binding:{namespace:{ownerId:'mote-owner',instanceId:'generated-instance',bindingRevision:1}},catalog:{generated:{memoryId:'generated'}},recordDigests:{},metadata:{},lineage:{},records:undefined,release:()=>{state.count++;}};},
+  } as unknown as MemoryBindings;
+  reader.memoryBindings=binding;
+  const capability=service.ports.memorySnapshots.memoryBindings;
+  assert.ok(capability);
+  const snapshot=capability.retainSnapshot();
+  assert.equal('store' in snapshot,false);
+  service.dispose();
+  assert.equal(facade.disposed,true);
+  assert.equal(reader.disposed,true);
+  assert.throws(()=>capability.retainSnapshot(),{statusCode:503});
+  snapshot.release();snapshot.release();
+  assert.equal(released[0]!.count,1);
+});
+
 test('agent material reads follow revision changes and source deletion',async t=>{
   const {store,sources,materials,diagnostics,captureId,draft,published}=await fixture(t);
-  const service=createEvidenceContextReader({store,sources,materials});
+  const {service}=open(store,sources,materials);
   t.after(()=>service.dispose());
   const view=service.agent({diagnostics});
   const revised=materials.publish({...draft,title:'Generated material revised',blocks:[{id:'body',kind:'text',format:'plain',text:'Generated revised text',memberIds:['member-0']}]},{expectedRevision:published.revision});
@@ -64,7 +107,7 @@ test('dispose revokes views and ports, releases retained snapshots, and leaves b
   const binding={
     retainSnapshot:()=>{const state={count:0};released.push(state);return {binding:{namespace:{ownerId:'mote-owner',instanceId:'generated-instance',bindingRevision:1}},catalog:{generated:{memoryId:'generated'}},recordDigests:{},metadata:{},lineage:{},records:undefined,release:()=>{state.count++;}};},
   } as unknown as MemoryBindings;
-  const service=createEvidenceContextReader({store,sources,materials,memoryBindings:binding});
+  const {reader,service}=open(store,sources,materials,binding);
   const view=service.agent({diagnostics}),snapshot=service.ports.memorySnapshots.retainMemorySnapshot({}),retain=service.ports.memorySnapshots.memoryBindings!.retainSnapshot;
   assert.ok(snapshot);
   assert.equal(released[0]!.count,0);
@@ -79,7 +122,7 @@ test('dispose revokes views and ports, releases retained snapshots, and leaves b
   assert.throws(()=>retain(),{statusCode:503});
   assert.throws(()=>service.ports.memorySnapshots.memoryBindings!.retainSnapshot(),{statusCode:503});
   assert.equal(service.disposed,true);
-  assert.equal(service.assembly.reader.disposed,true);
+  assert.equal(reader.disposed,true);
   assert.equal(released[0]!.count,1);
   service.dispose();
   assert.equal(released[0]!.count,1);
@@ -88,7 +131,7 @@ test('dispose revokes views and ports, releases retained snapshots, and leaves b
   assert.throws(()=>service.ports.contextTreesRead.catalog(),{statusCode:503});
   assert.throws(()=>view.materialRead!({ref:published.ref}),{statusCode:503});
   assert.equal(materials.get(published.ref)?.ref,published.ref,'borrowed MaterialStore stays open');
-  const reopened=createEvidenceContextReader({store,sources,materials});
+  const reopened=open(store,sources,materials).service;
   t.after(()=>reopened.dispose());
   assert.equal(reopened.ports.materialRead.materialRead({ref:published.ref}).text,'Generated member 0\n');
 });
@@ -101,7 +144,7 @@ test('dispose rejects a held agent read after its await boundary',async t=>{
     retainSnapshot:()=>({binding:{namespace:{ownerId:'mote-owner',instanceId:'generated-instance',bindingRevision:1}},catalog:{generated:{memoryId:'generated'}},recordDigests:{},metadata:{},lineage:{},records:undefined,release:()=>{}}),
     provider:()=>({search:async()=>{entered();await gate;return [];}}),
   } as unknown as MemoryBindings;
-  const service=createEvidenceContextReader({store,sources,materials,memoryBindings:binding});
+  const {service}=open(store,sources,materials,binding);
   t.after(()=>service.dispose());
   const reading=service.agent({diagnostics}).memories!({query:'generated'});
   await started;
@@ -114,6 +157,6 @@ test('a mismatched borrowed repository is rejected instead of falling back to a 
   const {store,sources,materials}=await fixture(t);
   const otherDirectory=mkdtempSync(join(tmpdir(),'mote-evidence-context-reader-other-')),other=new Store(otherDirectory);
   t.after(()=>{other.close();rmSync(otherDirectory,{recursive:true,force:true});});
-  assert.throws(()=>createEvidenceContextReader({store,sources:new SourceStore(other),materials}),{statusCode:503});
-  assert.throws(()=>createEvidenceContextReader({store,sources,materials:new MaterialStore(other)}),{statusCode:503});
+  assert.throws(()=>createEvidenceReaderForAssembly({store,sources:new SourceStore(other),materials}),{statusCode:503});
+  assert.throws(()=>createEvidenceReaderForAssembly({store,sources,materials:new MaterialStore(other)}),{statusCode:503});
 });

@@ -2,7 +2,7 @@ import type {CaptureRecord} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {StoreError,type Range,type Store} from '../store.js';
+import {StoreError,type Range} from '../store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialNoteDeletion} from '../material-note-deletion.js';
 
@@ -11,18 +11,20 @@ import type {MaterialNoteDeletion} from '../material-note-deletion.js';
  * dependencies are trusted-assembly functions from current production, never
  * a published Store, generic writer or synthetic cross-domain contract. */
 export interface NotesSourceDependencies {
-  /** Note-only page using the existing Store.list cursor and total semantics. */
-  readonly page:(args:Range)=>ReturnType<Store['list']>;
+  /** Note-only page using the existing list cursor and total semantics. */
+  readonly page:(args:Range)=>NotePage;
   readonly attribution:(record:CaptureRecord)=>ReturnType<MaterialStore['contextForEvidence']>;
-  readonly evidence:(ids:string[])=>ReturnType<Store['evidence']>;
+  readonly evidence:(ids:string[])=>NoteEvidence;
   /** Current DELETE /api/notes/:id semantics; material aliases stay on the
    * capture/EvidenceDeletion path. */
-  readonly deleteNote:(id:string)=>ReturnType<Store['delete']>;
+  readonly deleteNote:(id:string)=>NoteDeleteResult;
   readonly noteDeletion:Pick<MaterialNoteDeletion,'resolve'>;
 }
 export type NotesAttribution=ReturnType<MaterialStore['contextForEvidence']>;
-export type NoteListPage=Omit<ReturnType<Store['list']>,'items'> & {items:(CaptureRecord&{attributionContext:NotesAttribution})[]};
-export type NoteDeleteResult=ReturnType<Store['delete']>;
+export type NotePage={items:CaptureRecord[];nextCursor:string|null;totalCount:number|undefined};
+export type NoteEvidence=CaptureRecord[];
+export type NoteListPage=Omit<NotePage,'items'> & {items:(CaptureRecord&{attributionContext:NotesAttribution})[]};
+export type NoteDeleteResult={deleted:number};
 export type MaterialNoteAlias=ReturnType<MaterialNoteDeletion['resolve']>;
 
 /** The plugin platform owns the package Manifest. The frozen notes intake adds the exact host

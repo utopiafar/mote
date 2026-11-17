@@ -19,9 +19,13 @@ test('roots serves context reads from one evidence factory, MCP consumes it, and
   const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-roots-evidence-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots evidence fixture');},close:async()=>{}}});
   t.after(async()=>{try{await node.app.close();}catch{}rmSync(dataDir,{recursive:true,force:true});});
-  const reader=node.evidenceContext.assembly.reader;
-  assert.equal(node.featureServices.evidenceReader,reader,'features must read through the factory reader');
-  assert.equal(node.featureServices.contextTrees,node.evidenceContext.assembly.contextTrees,'one context registry, no duplicate');
+  const reader=node.featureServices.evidenceReader;
+  assert.equal(typeof reader.evidence,'function','features must read through the factory reader');
+  assert.equal(typeof node.featureServices.contextTrees.catalog,'function','one trusted context registry remains available to trusted consumers');
+  const exposedTrees=node.evidenceContext.assembly.contextTrees;
+  assert.equal(typeof exposedTrees.catalog,'function');
+  assert.notEqual(exposedTrees,node.featureServices.contextTrees,'the plugin gets the fixed capability, not the registry');
+  assert.equal(Reflect.get(exposedTrees,'store'),undefined,'the plugin contextTrees capability must not expose the trusted Store');
   assert.equal(node.evidenceContext.disposed,false);
   const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   assert.equal((await node.app.inject({method:'POST',url:'/api/notes',headers,payload:note()})).statusCode,201);

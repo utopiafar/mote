@@ -9,7 +9,7 @@ import type {Memory} from './memory-schema.js';
 import {navigationScopeSchema} from './context-navigation.js';
 import {StoreError,sha256} from './store.js';
 import {formatEvidenceRef} from '@mote/shared';
-type TreeMemoryRead=Pick<MemoryRead,'memoryPageAsync'> & Pick<MemoryReadSnapshots,'memoryBindings'>;
+export type TreeMemoryRead=Pick<MemoryRead,'memoryPageAsync'> & Pick<MemoryReadSnapshots,'memoryBindings'>;
 
 const identity=z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/);
 const selector=z.object({domain:z.enum(['personal','coding']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),codingKind:z.enum(['pitfall','decision','principle','preference']).optional(),memoryIds:z.array(z.string().uuid()).max(20000).optional()}).strict();
@@ -135,6 +135,20 @@ export class ContextTreeRegistry {
       return {items,nextCursor:encode('')};
     }finally{snapshot?.release();if(automatic&&!(await this.automaticTrees(reader,navigation))?.some(current=>JSON.stringify(current)===JSON.stringify(tree)))throw new StoreError('Automatic topic inputs changed; restart browsing',409);}
   }
+}
+/** Fixed read-only capability for the context plugin. The registry instance is
+ * held only by trusted assembly; no Store, attach/detach or mutable state
+ * crosses this capability. */
+export interface ContextTreesReadCapability {
+  catalog(...args:Parameters<ContextTreeRegistry['catalog']>):ReturnType<ContextTreeRegistry['catalog']>;
+  page(...args:Parameters<ContextTreeRegistry['page']>):ReturnType<ContextTreeRegistry['page']>;
+}
+export function createContextTreesReadCapability(trees:ContextTreeRegistry):ContextTreesReadCapability {
+  const capability:ContextTreesReadCapability={
+    catalog:(...args)=>trees.catalog(...args),
+    page:(...args)=>trees.page(...args),
+  };
+  return Object.freeze(capability);
 }
 export function createContextTrees(){
   // These fixed host labels are generic navigation, not model/person data.
