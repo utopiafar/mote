@@ -209,6 +209,18 @@
    "file": "apps/server/src/memory-phase-outputs.ts"
   },
   {
+   "declaration": "pluginControlSchemaInstallation",
+   "owner": "plugin-control",
+   "fn": "pluginControlSchema",
+   "file": "apps/server/src/plugins/plugin-control-store.ts"
+  },
+  {
+   "declaration": "instanceStateSchemaInstallation",
+   "owner": "plugin-instance-state",
+   "fn": "instanceStateSchema",
+   "file": "apps/server/src/plugins/instance-state.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -873,6 +885,31 @@
    "owner": "perception",
    "file": "apps/server/src/perception-schema.ts",
    "installer": "perceptionSchemaInstallation"
+  },
+  "plugin_build_instances": {
+   "owner": "plugin-control",
+   "file": "apps/server/src/plugins/plugin-control-store.ts",
+   "installer": "pluginControlSchemaInstallation"
+  },
+  "plugin_center": {
+   "owner": "plugin-control",
+   "file": "apps/server/src/plugins/plugin-control-store.ts",
+   "installer": "pluginControlSchemaInstallation"
+  },
+  "plugin_commands": {
+   "owner": "plugin-control",
+   "file": "apps/server/src/plugins/plugin-control-store.ts",
+   "installer": "pluginControlSchemaInstallation"
+  },
+  "plugin_control_receipts": {
+   "owner": "plugin-control",
+   "file": "apps/server/src/plugins/plugin-control-store.ts",
+   "installer": "pluginControlSchemaInstallation"
+  },
+  "plugin_instance_state": {
+   "owner": "plugin-instance-state",
+   "file": "apps/server/src/plugins/instance-state.ts",
+   "installer": "instanceStateSchemaInstallation"
   },
   "query_runs": {
    "owner": "query-run-storage",
