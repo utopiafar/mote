@@ -16,7 +16,7 @@ function translated(key,locale){
 }
 
 /** Generates a private current-format tree with authored catalogs and sources. */
-function fixture(t,{enKeys,localeKeys={},source}){
+function fixture(t,{enKeys,localeKeys={},source,html='<!doctype html><title>Fixture</title>'}){
  const root=mkdtempSync(join(tmpdir(),'mote-i18n-'));
  t.after(()=>rmSync(root,{recursive:true,force:true}));
  for(const dir of defaultSourceDirs)mkdirSync(join(root,dir),{recursive:true});
@@ -29,7 +29,7 @@ function fixture(t,{enKeys,localeKeys={},source}){
   writeFileSync(join(root,'apps/android/app/src/main/assets',`i18n-${locale}.json`),JSON.stringify(entries));
  }
  writeFileSync(join(root,'apps/web/src/fixture.ts'),source);
- writeFileSync(join(root,'apps/desktop/src/index.html'),'<!doctype html><title>Fixture</title>');
+ writeFileSync(join(root,'apps/desktop/src/index.html'),html);
  return root;
 }
 
@@ -88,4 +88,42 @@ test('G2-04 a stale allowlist entry is listed separately and only warns',t=>{
  assert.match(report,/Stale dynamic-key allowlist entries: 1 \(warning only/);
  assert.ok(report.includes('已删除的动态词条'),report);
  assert.ok(!report.includes('有引用的词条'),report);
+});
+
+test('G2-05 four data-i18n attribute forms are referenced while unmarked HTML stays untranslated',t=>{
+ const keys=['问一问…','所选参数的 JPEG','有未保存的设置','采集状态','引号 "词条"'];
+ const root=fixture(t,{
+  enKeys:keys,
+  source:'export {};\n',
+  html:`<!doctype html>
+<textarea id="home-question" rows="2" maxlength="8000" placeholder="问一问…" data-i18n-placeholder=""></textarea>
+<img id="record-detail-image" alt="所选参数的 JPEG" data-i18n-alt="">
+<section data-i18n-title="" title="有未保存的设置"></section>
+<div data-i18n-aria-label='' aria-label='采集状态'></div>
+<textarea data-i18n-placeholder="不是词条" placeholder="引号 &quot;词条&quot;"></textarea>
+<p aria-label="未标记的属性">普通文案</p>`,
+ });
+ const result=scanI18n({root});
+ for(const key of keys)assert.ok(result.referenced.has(key),key);
+ assert.ok(!result.referenced.has('不是词条'));
+ assert.deepEqual(result.unused,[]);
+ assert.deepEqual(result.missing,[]);
+ const output=[],errors=[];
+ const checked=checkI18n({root,stdout:text=>output.push(text),stderr:text=>errors.push(text)});
+ assert.equal(checked.exitCode,0,errors.join('\n'));
+ assert.match(output.join('\n'),/Unused messages: 0 \(warning only/);
+});
+
+test('G2-06 a missing data-i18n attribute key fails the translation check',t=>{
+ const root=fixture(t,{
+  enKeys:['有引用的词条'],
+  source:"import {moteText} from '@mote/shared/i18n';\nexport const label=moteText('有引用的词条');\n",
+  html:'<img id="compression-before" alt="压缩前图片" data-i18n-alt="">',
+ });
+ const result=scanI18n({root});
+ assert.deepEqual(result.missing,[{file:'desktop HTML',key:'压缩前图片'}]);
+ const output=[],errors=[];
+ const checked=checkI18n({root,stdout:text=>output.push(text),stderr:text=>errors.push(text)});
+ assert.equal(checked.exitCode,1);
+ assert.match(errors.join('\n'),/Missing English translations/);
 });

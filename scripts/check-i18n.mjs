@@ -38,6 +38,58 @@ function catalogFor(root,dir){
 
 function kotlinLiteral(value){try{return JSON.parse(value.replaceAll('\\$','$').replaceAll("\\'","'"))}catch{return undefined;}}
 
+/** ui-bootstrap translates these attribute values in place; the marker itself has no key. */
+const htmlAttributeKeys={
+ 'data-i18n-placeholder':'placeholder',
+ 'data-i18n-title':'title',
+ 'data-i18n-aria-label':'aria-label',
+ 'data-i18n-alt':'alt',
+};
+const htmlEntities={amp:'&',apos:"'",gt:'>',lt:'<',nbsp:'\u00a0',quot:'"'};
+
+function decodeHtmlAttribute(value){
+ return value.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z][a-z0-9]*));/gi,(match,decimal,hex,named)=>{
+  if(decimal!==undefined||hex!==undefined){
+   const code=decimal!==undefined?Number.parseInt(decimal,10):Number.parseInt(hex,16);
+   return Number.isInteger(code)&&code>=0&&code<=0x10ffff?String.fromCodePoint(code):match;
+  }
+  return htmlEntities[named.toLowerCase()]??match;
+ });
+}
+
+/** Minimal tag scanner: quoted `>` stays inside an attribute value, as in authored HTML. */
+function htmlStartTags(html){
+ const tags=[];
+ for(let cursor=0;cursor<html.length;){
+  const open=html.indexOf('<',cursor);
+  if(open<0)break;
+  if(html.startsWith('<!--',open)){
+   const close=html.indexOf('-->',open+4);cursor=close<0?html.length:close+3;continue;
+  }
+  if(!/[A-Za-z]/.test(html[open+1]??'')){cursor=open+1;continue;}
+  let end=open+1,quote;
+  for(;end<html.length;end++){
+   const char=html[end];
+   if(quote){if(char===quote)quote=undefined;continue;}
+   if(char==='"'||char==="'"){quote=char;continue;}
+   if(char==='>')break;
+  }
+  if(end>=html.length)break;
+  tags.push(html.slice(open,end+1));cursor=end+1;
+ }
+ return tags;
+}
+
+function htmlAttributes(tag){
+ const name=/^<\s*[^\s/>]+/.exec(tag);
+ const body=tag.slice(name?name[0].length:1).replace(/\/?>$/,'');
+ const attributes=new Map();
+ for(const match of body.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)){
+  attributes.set(match[1].toLowerCase(),decodeHtmlAttribute(match[2]??match[3]??match[4]??''));
+ }
+ return attributes;
+}
+
 /** Scans authored call sites, catalogs and generated report data for one root.
  *  `sourceDirs` are relative to `root` so fixture tests can point at a temp tree. */
 export function scanI18n({
@@ -78,6 +130,15 @@ export function scanI18n({
  const html=readFileSync(join(root,htmlFile),'utf8');
  for(const m of html.matchAll(/<[^>]*data-i18n(?:\s|>)[^<]*|<[^>]*data-i18n>/g)){
   const key=m[0].slice(m[0].indexOf('>')+1);if(!key)continue;check(key,'desktop HTML');referenced.add(key);
+ }
+ // Only marked attributes are translated; unrelated HTML text/attributes stay untranslated.
+ for(const tag of htmlStartTags(html)){
+  const attributes=htmlAttributes(tag);
+  for(const [marker,attribute] of Object.entries(htmlAttributeKeys)){
+   if(!attributes.has(marker))continue;
+   const key=attributes.get(attribute);
+   if(!key)continue;check(key,'desktop HTML');referenced.add(key);
+  }
  }
 
  // A key counts as used when its exact authored text appears as a source literal.
