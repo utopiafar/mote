@@ -1,9 +1,9 @@
-/** G1 stage journey (manual selection only; not part of ordinary checks).
+/** Stage journey (manual selection only; not part of ordinary checks).
  *
  * Same shortest server journey as plugin-startup-contract.test.ts — real
  * entrypoint start, owner authentication, POST note, GET original, stop,
  * same-profile restart, reread — plus one stage step: a repository-external
- * plugin package (the H08 examples/external-plugin sample) is installed through
+ * plugin package (the examples/external-plugin sample) is installed through
  * the private plugin-dev package host and loaded by the real Central connector
  * registry. */
 import assert from 'node:assert/strict';
@@ -22,7 +22,7 @@ const report: { status:string; fixtureOnly:true; liveModel:false; physicalDevice
 let run: PrivateProcess | undefined;
 const work = await mkdtemp(join(tmpdir(), 'mote-jny1-stage-'));
 
-/** Copy the H08 sample outside the repository and give it the packed SDK
+/** Copy the examples/external-plugin sample outside the repository and give it the packed SDK
  * dependency the same way `npm install <tarball>` would, without network. */
 async function stageExternalPlugin() {
   const plugin = join(work, 'external-plugin');

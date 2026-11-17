@@ -16,7 +16,7 @@ import {createDomainActivations,type CentralDomainPlugin} from './domain-activat
 export type {CentralDomainPlugin} from './domain-activation.js';
 
 /** Assembly-private bridge for the existing product, not a plugin SDK service
- * bag. C02/C04 replace the storage/authorization adapters with domain ports. */
+ * bag. Storage and owner-authorization adapters stay raw foundation values; domain plugins acquire narrower services. */
 export interface FoundationValues {
   configuration:{readonly config:Config;readonly service:ConfigService;readonly platform:ConfigurationPlatform};
   storage:{readonly store:Store;readonly assembly:ReturnType<typeof createVaultPlatformAssembly>};
@@ -54,7 +54,7 @@ const kinds=['configuration','storage','authorization'] as const;
 const lifecycle={prepare(){},start(){},quiesce(){},stop(){},dispose(){}};
 function invalid(message:string):never{throw Object.assign(new Error(message),{code:'MOTE_BOOTSTRAP_INVALID'});}
 
-/** Trusted local build registry -> H04 execution definitions. It deliberately
+/** Trusted local build registry -> executable built-in registrations. It deliberately
  * does not manufacture a PackageManifest/archive/install row. Managed packages
  * are read later through PluginCenter's canonical release/integrity boundary. */
 export async function bootstrapCentral(input:FoundationInput,distribution:CentralDistribution=defaultDistribution){
@@ -145,7 +145,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
         if(!platform||!scope)throw Error('Observability platform did not hand off its trusted assembly');
         facts.push(Object.freeze({id:'observability-platform',version:'1.0.0'}));observability={platform,scope};return observability;
       },
-      /** Trusted C10 activation in the same host; callers retain the owner to stop or replace it. */
+      /** Trusted source-integration activation in the same host; callers retain the owner to stop or replace it. */
       async installSourceIntegration(factory:(context:HostPluginContext)=>PluginLifecycle|Promise<PluginLifecycle>){
         const owner=await host.install({identity:{host:host.identity,packageId:'mote.source-integration',installationId:'build:source-integration@1.0.0',instanceId:'source-integration',activationId:randomUUID()},
           contributions:[c10IntegrationDeclaration],restartRequired:true,factory});

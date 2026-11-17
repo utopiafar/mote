@@ -1,5 +1,5 @@
 /** UI contribution descriptors are wire metadata projected from the single
- * canonical package Manifest (H03); they are not a second package schema and
+ * canonical package Manifest; they are not a second package schema and
  * carry no executable code, callbacks, SQL, URLs or reflected class names.
  * Availability types come from the frozen @mote/plugin-api contract so TS and
  * Kotlin decoders share the same identity, revision and failure codes. */
@@ -79,7 +79,7 @@ export interface UiContributionDescriptor {
   readonly presentation: UiContributionPresentation;
   readonly data?: {readonly schemaRef: string; readonly schemaVersion: number};
   readonly commands?: readonly UiContributionCommand[];
-  /** Draft/return-ticket scope per the view-lifetime contract (U02). */
+  /** Draft/return-ticket scope per the view-lifetime contract. */
   readonly draftScope?: UiDraftScope;
 }
 

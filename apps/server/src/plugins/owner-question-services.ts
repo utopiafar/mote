@@ -10,7 +10,7 @@ import {OwnerQuestions} from '../owner-questions.js';
 import {StoreError} from '../store.js';
 import {centralServices,type OwnerQuestionsPort} from './central-contracts.js';
 
-/** C26C owns the durable owner-question ledger and its owner-only HTTP table.
+/** This plugin owns the durable owner-question ledger and its owner-only HTTP table.
  * Memory registers one provider through the shared instance; this plugin never
  * interprets answers or writes a continuation itself. */
 export const ownerQuestionServicesContribution={
@@ -140,7 +140,7 @@ export function createOwnerQuestionServices(dependencies:OwnerQuestionServicesDe
 }
 export type OwnerQuestionServicesPlatform=ReturnType<typeof createOwnerQuestionServices>;
 
-/** Native host factory. The pre-H14 feature bridge mounts the same route
+/** Native host factory. The transitional feature bridge mounts the same route
  * contribution through `moteDomainRoutes`; both paths share one ledger. */
 export function createOwnerQuestionServicesFactory(dependencies:OwnerQuestionServicesDependencies){
   return (context:HostPluginContext):PluginLifecycle=>{
