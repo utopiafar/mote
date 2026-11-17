@@ -14,7 +14,7 @@ import {invalidateTaskEvidence} from '../src/task-evidence.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {installEvidenceDependencies} from '../src/evidence-dependencies.js';
-import {restoreProfile,verifiedBackup} from '../../../scripts/profile-lib.mjs';
+import {restoreProfile,verifiedBackup,repository} from '../../../scripts/profile-lib.mjs';
 import {competingSqliteWrite} from './fixtures/sqlite-writer.js';
 
 const dependencies=(ids:string[]=[]):EvidenceDependencies=>({version:1,complete:true,ids});
@@ -195,7 +195,7 @@ test('private task bodies obey vault encryption, survive complete backup and nev
   execFileSync(process.execPath,[fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url)),'--data',source,'--out',snapshot],{stdio:'pipe'});
   await verifiedBackup(snapshot);
   assert.ok(!readFileSync(join(snapshot,'backup-manifest.json'),'utf8').includes('Generated private'));
-  await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(directory,'absent-process')},snapshot);
+  await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(directory,'absent-process')},snapshot);
   store=new Store(target,{dataKey:key});tasks=new TaskRecords(store);
   assert.deepEqual(tasks.get(task.id),finished);assert.deepEqual(tasks.input(task.id,finished.revision,ownerInputOnly),input.input);assert.deepEqual(tasks.result(task.id,finished.revision,ownerInputOnly),{answer:'Generated private result marker'});
   assert.equal(store.storageBreakdown().plugins.find(plugin=>plugin.plugin==='task-records')!.bytes,bytes);
