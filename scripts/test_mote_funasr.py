@@ -98,6 +98,27 @@ class CappedRuntime(GeneratedRuntime):
             yield SimpleNamespace(generate=generate)
 
 
+class TimedRuntime(GeneratedRuntime):
+    """Generated SDK observations, not times inferred from the emitted text."""
+    def __init__(self, *args, timestamps):
+        super().__init__(*args)
+        self.timestamps = list(timestamps)
+
+    @contextmanager
+    def component(self, role, directory):
+        with super().component(role, directory) as model:
+            if role != 'asr':
+                yield model
+                return
+            def generate(**kwargs):
+                result = model.generate(**kwargs)
+                result[0]['timestamps'] = copy.deepcopy(self.timestamps.pop(0))
+                result[0]['ctc_text'] = '另一组CTC解码原文'
+                result[0]['ctc_timestamps'] = [{'token': '另一组CTC解码原文', 'start_time': 0, 'end_time': .06}]
+                return result
+            yield SimpleNamespace(generate=generate)
+
+
 @contextmanager
 def generated_engine(frames=64000):
     with tempfile.TemporaryDirectory(prefix='mote-funasr-test-') as temporary:
@@ -133,18 +154,80 @@ def diarize_request(request, response, speakers=None):
             'speakers': speakers or {'mode': 'unknown'}}
 
 
-def generated_bundle(recover=False):
+def generated_bundle(recover=False, ctc=False):
     with generated_engine() as f:
-        recognizer = (CappedRuntime([[1000, 4000]], [' 合成原文 ', '尾段'], ['合成原文。', '尾段。'], capped_calls=[1])
+        recognizer = (TimedRuntime([[1000, 4000]], [' 合成原文尾段'], ['合成原文。尾段。'], timestamps=[[
+                          {'token': ' 合成原文', 'start_time': 0, 'end_time': .6},
+                          {'token': '尾段', 'start_time': 2.1, 'end_time': 3}]]) if ctc else
+                      CappedRuntime([[1000, 4000]], [' 合成原文 ', '尾段'], ['合成原文。', '尾段。'], capped_calls=[1])
                       if recover else GeneratedRuntime([[1000, 1500], [3000, 4000]], [' 合成原文 ', '尾段'], ['合成原文。', '尾段。']))
         response = f.run(recognizer)
         request = diarize_request(f.request, response)
-        diarization = f.run(GeneratedRuntime([], [], [], [0, 7]), request)
+        diarization = f.run(GeneratedRuntime([], [], [], [0, 7, 7] if ctc else [0, 7]), request)
         return {'request': f.request, 'response': response, 'diarizeRequest': request, 'diarizeResponse': diarization}
 
 
 @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg is required for generated engine integration')
 class FunasrEngine(unittest.TestCase):
+    def test_observed_ctc_time_survives_offset_punctuation_cache_and_cam_only_retry(self):
+        with generated_engine(frames=64001) as f:
+            observed = [{'token': '甲', 'start_time': .12, 'end_time': .48},
+                        {'token': '乙', 'start_time': 2.04, 'end_time': 3.06}]
+            runtime = TimedRuntime([[1000, 4000.0625]], ['甲乙'], ['甲，乙。'], timestamps=[observed])
+            response = contract.parse_response(f.run(runtime), f.request)
+            cp = contract.read_checkpoint(response['checkpoint'])
+            self.assertEqual(cp['sentences'], [
+                {'startMs': 1120, 'endMs': 1480, 'text': '甲，', 'precision': 'ctc'},
+                {'startMs': 3040, 'endMs': 4000.0625, 'text': '乙。', 'precision': 'ctc'}])
+            self.assertEqual(cp['recognitionChunks'], [{'vadIndex': 0, 'text': '甲乙', 'tokens': [
+                {'startMs': 1120, 'endMs': 1480, 'text': '甲'},
+                {'startMs': 3040, 'endMs': 4000.0625, 'text': '乙'}]}])
+            self.assertEqual(cp['text'], '甲，乙。')
+            self.assertEqual(len([call for call in runtime.calls if call[:2] == ('generate', 'asr')]), 1)
+            self.assertEqual(runtime.released, ['vad', 'asr', 'punctuation'])
+            self.assertEqual(runtime.closed, 1)
+            archive = copy.deepcopy(response['checkpoint'])
+            for options in ({'mode': 'unknown'}, {'mode': 'exact', 'count': 2}):
+                request = diarize_request(f.request, contract.serialize(response), options)
+                retry = GeneratedRuntime([], [], [], [0, 7, 7, 7])
+                result = contract.parse_response(f.run(retry, request), request)
+                self.assertEqual(result['diarization']['assignments'], [0, 7])
+                self.assertEqual(result['checkpoint'], archive)
+                self.assertEqual(retry.released, ['speaker'])
+                self.assertTrue(all(call[1] == 'speaker' for call in retry.calls if call[0] == 'generate'))
+                self.assertEqual(retry.closed, 1)
+                self.assertEqual(contract.read_checkpoint(archive), cp)
+
+    def test_ctc_tokens_keep_observed_spans_and_fail_safe_on_incomplete_or_invalid_alignment(self):
+        chunk = {'text': 'C++乙', 'timestamps': [
+            {'token': 'C++', 'start_time': .06, 'end_time': .42},
+            {'token': '乙', 'start_time': .9, 'end_time': 1.08}],
+            'ctc_text': '另一CTC文本', 'ctc_timestamps': [{'token': '另一CTC文本', 'start_time': 0, 'end_time': 2}]}
+        self.assertEqual(engine.ctc_sentences(chunk, ' C++，乙。 ', 16000, 48000), ([
+            {'start': 1060, 'end': 1420, 'text': ' C++，', 'precision': 'ctc'},
+            {'start': 1900, 'end': 2080, 'text': '乙。 ', 'precision': 'ctc'}], [
+            {'startMs': 1060, 'endMs': 1420, 'text': 'C++'},
+            {'startMs': 1900, 'endMs': 2080, 'text': '乙'}]))
+        for value in ({'text': chunk['text']}, {**chunk, 'timestamps': []},
+                      {**chunk, 'timestamps': chunk['timestamps'][:1]},
+                      {**chunk, 'text': '另一个原文'}):
+            with self.subTest(value=value):
+                self.assertIsNone(engine.ctc_sentences(value, 'C++，乙。', 16000, 48000))
+        self.assertIsNone(engine.ctc_sentences(chunk, 'C++，甲。', 16000, 48000))
+        for start, end in ((float('nan'), .42), (-.1, .42), (.6, .42), (.06, 2.1), (True, .42)):
+            bad = copy.deepcopy(chunk);bad['timestamps'][0].update(start_time=start, end_time=end)
+            with self.subTest(start=start, end=end), self.assertRaises(engine.EngineError):
+                engine.ctc_sentences(bad, 'C++，乙。', 16000, 48000)
+
+    def test_coarse_vad_text_crossing_observed_speakers_is_not_given_a_majority_label(self):
+        cp = {'sentences': [
+            {'startMs': 0, 'endMs': 200, 'text': '真实CTC片段', 'precision': 'ctc'},
+            {'startMs': 0, 'endMs': 1000, 'text': '跨说话人的旧粗段', 'precision': 'vad'},
+            {'startMs': 2000, 'endMs': 3000, 'text': '无声学归属', 'precision': 'vad'}]}
+        acoustics = [{'startMs': 0, 'endMs': 550, 'speaker': 0},
+                     {'startMs': 550, 'endMs': 1000, 'speaker': 7}]
+        self.assertEqual([row['spk'] for row in engine.assign_sentences(cp, acoustics)], [0, None, None])
+
     def test_separate_speech_clips_keep_original_pcm_time_and_tail_without_repacking(self):
         with generated_engine(frames=64001) as f:
             runtime = GeneratedRuntime([[1000, 1500], [3000, 4000.0625]], [' 首块 ', '最后一个采样'], ['首块。', '最后一个采样。'])
@@ -520,6 +603,7 @@ class FunasrEngine(unittest.TestCase):
 import {FileOutputRegistry} from './apps/server/src/file-recipes.ts';
 import {parseFunasrRequest,parseFunasrResponse,parseFunasrArchive,projectFunasrDiarization,funasrTranscriptOutput,funasrDialogueOutput} from './apps/server/src/funasr-contract.ts';
 import {transcriptSchema,diarizationSchema} from '@mote/shared';
+import {prepareFunasrDialogue} from './apps/server/src/file-dialogue.ts';
 import assert from 'node:assert/strict';
 const chunks=[]; for await (const part of process.stdin) chunks.push(part);
 const b=JSON.parse(Buffer.concat(chunks));
@@ -533,12 +617,16 @@ assert.deepEqual(transcript.segments.map(s=>[s.startMs,s.endMs,s.text]),b.expect
 assert.deepEqual(dialogue.segments.map(s=>s.speaker),['SPEAKER_0','SPEAKER_7']);
 assert.equal(acoustic.observedSpeakers,2); assert.equal(acoustic.samples.length,2);
 assert.equal(speakers.checkpoint.json,raw.checkpoint.json);
+const cleaned=prepareFunasrDialogue(JSON.parse(b.diarizeResponse));
+assert.deepEqual(cleaned.uncleanedTranscript,dialogue);
+assert.deepEqual(cleaned.cleanup.sourcePrecisions,parseFunasrArchive(raw.checkpoint).sentences.map(s=>s.precision));
 console.log('actual engine bytes -> FileOutputRegistry / Transcript / Diarization: passed');
 """
-        for recover in (False, True):
-            with self.subTest(recover=recover):
-                bundle = generated_bundle(recover)
-                bundle['expectedSegments'] = ([[1000, 2500, '合成原文。'], [2500, 4000, '尾段。']]
+        for recover, ctc in ((False, False), (True, False), (False, True)):
+            with self.subTest(recover=recover, ctc=ctc):
+                bundle = generated_bundle(recover, ctc)
+                bundle['expectedSegments'] = ([[1000, 1600, '合成原文。'], [3100, 4000, '尾段。']] if ctc else
+                                             [[1000, 2500, '合成原文。'], [2500, 4000, '尾段。']]
                                               if recover else [[1000, 1500, '合成原文。'], [3000, 4000, '尾段。']])
                 result = subprocess.run(['node', '--import', 'tsx', '--input-type=module', '-e', code],
                                         cwd=Path(__file__).resolve().parents[1], input=contract.serialize(bundle),

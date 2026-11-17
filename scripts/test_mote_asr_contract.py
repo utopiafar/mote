@@ -79,10 +79,16 @@ def generated_bundle():
         silent_diarize_response = contract.diarize_from_checkpoint(silent_diarize_request, silent_source, request['identity'],
             lambda cp, options: {'timeUnit': 'ms', 'speakers': options, 'assignments': [], 'segments': [], 'samples': []})
         empty.append({'request': silent_request, 'response': silent_response, 'diarizeRequest': silent_diarize_request, 'diarizeResponse': silent_diarize_response})
+    ctc_native = {'text': '甲，乙。', 'sentence_info': [
+        {'text': '甲，', 'start': 100, 'end': 200, 'precision': 'ctc'},
+        {'text': '乙。', 'start': 700, 'end': 900, 'precision': 'ctc'}]}
+    ctc_response = contract.recognize_to_checkpoint(request, source, request['identity'], {'value': [[0, 1000]]},
+        ctc_native, [{'text': '甲乙', 'tokens': [
+            {'text': '甲', 'startMs': 100, 'endMs': 200}, {'text': '乙', 'startMs': 700, 'endMs': 900}]}])
     return {'protocol': contract.PROTOCOL, 'sdkVersion': contract.SDK_VERSION, 'sdkWheelSha256': contract.SDK_WHEEL_SHA256,
             'pins': contract.PINS, 'limits': contract.LIMITS, 'modelIds': contract.MODEL_IDS,
             'request': request, 'source': source, 'native': native, 'response': response,
-            'diarizeRequest': diarize_request, 'diarizeResponse': diarize_response, 'empty': empty,
+            'diarizeRequest': diarize_request, 'diarizeResponse': diarize_response, 'empty': empty, 'ctcResponse': ctc_response,
             'failures': [contract.worker_failure('diarize', code) for code in contract.FAILURES]}
 
 
@@ -90,6 +96,18 @@ class AsrContract(unittest.TestCase):
     def setUp(self):
         self.bundle = generated_bundle()
         self.cp = contract.read_checkpoint(json.loads(self.bundle['response'])['checkpoint'])
+
+    def test_ctc_precision_requires_the_archived_matching_raw_text_and_observed_time_pair(self):
+        cp = contract.read_checkpoint(json.loads(self.bundle['ctcResponse'])['checkpoint'])
+        self.assertEqual(cp['recognitionChunks'][0]['text'], '甲乙')
+        self.assertEqual([token['text'] for token in cp['recognitionChunks'][0]['tokens']], ['甲', '乙'])
+        for mutate in (lambda c: c['recognitionChunks'][0].pop('tokens'),
+                       lambda c: c['recognitionChunks'][0]['tokens'][0].update(text='另一个词'),
+                       lambda c: c['sentences'][0].update(endMs=201),
+                       lambda c: c['recognitionChunks'][0]['tokens'][0].update(startMs=-1)):
+            changed = copy.deepcopy(cp);mutate(changed)
+            with self.subTest(mutate=mutate), self.assertRaises(contract.ContractError):
+                contract.validate_checkpoint(changed)
 
     def test_fixed_millisecond_boundaries_overlap_and_tail_are_preserved(self):
         self.assertEqual([(s['startMs'], s['endMs']) for s in self.cp['sentences']],

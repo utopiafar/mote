@@ -3,7 +3,7 @@
  * SDK source: https://pypi.org/project/funasr/1.4.25/ (wheel digest below).
  * auto_model.py sentence_info uses text and millisecond start/end. Nano's
  * model-level timestamps use seconds: convert at that SDK boundary explicitly.
- * We retain sentence/VAD precision, without inventing token or word timings.
+ * We retain observed CTC token spans or truthful sentence/VAD precision.
  */
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
@@ -19,10 +19,10 @@ export const FUNASR_HTTP={recognize:'/transcribe',diarize:'/diarize',requestPart
 export const FUNASR_SDK_VERSION='1.4.25';
 export const FUNASR_SDK_WHEEL_SHA256='11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75';
 export const FUNASR_PINS={
-  recipe:{id:'mote.audio-dialogue',version:'3'},
-  extract:{id:'audio.local-dialogue',version:'5'},
-  diarize:{id:'audio.diarize',version:'4'},
-  align:{id:'mote.funasr-align',version:'1'},
+  recipe:{id:'mote.audio-dialogue',version:'4'},
+  extract:{id:'audio.local-dialogue',version:'6'},
+  diarize:{id:'audio.diarize',version:'5'},
+  align:{id:'mote.funasr-align',version:'2'},
 } as const;
 export const FUNASR_LIMITS={wireBytes:32*1024*1024,checkpointBytes:16*1024*1024,textBytes:4*1024*1024,
   durationMs:86_400_000,vad:50_000,sentences:50_000,acousticSegments:100_000,samples:16,sampleBytes:768*1024} as const;
@@ -51,7 +51,7 @@ export const funasrSourceSchema=z.object({
 export type FunasrSource=z.infer<typeof funasrSourceSchema>;
 const interval=z.object({startMs:ms,endMs:ms}).strict();
 const utf8Text=z.string().refine(s=>Buffer.from(s,'utf8').toString('utf8')===s,'Invalid Unicode text');
-const sentence=z.object({startMs:ms,endMs:ms,text:utf8Text.refine(s=>s.length>0&&s.length<=8000),precision:z.enum(['sentence','vad'])}).strict();
+const sentence=z.object({startMs:ms,endMs:ms,text:utf8Text.refine(s=>s.length>0&&s.length<=8000),precision:z.enum(['sentence','vad','ctc'])}).strict();
 export const funasrSpeakersSchema=z.discriminatedUnion('mode',[
   z.object({mode:z.literal('unknown')}).strict(),
   z.object({mode:z.literal('exact'),count:z.number().int().min(1).max(16)}).strict(),
@@ -61,7 +61,9 @@ export type FunasrSpeakers=z.infer<typeof funasrSpeakersSchema>;
 const checkpointSchema=z.object({protocol:z.literal(FUNASR_PROTOCOL),kind:z.literal('recognition'),timeUnit:z.literal('ms'),complete:z.literal(true),
   source:funasrSourceSchema,identity:funasrIdentitySchema,text:utf8Text.refine(s=>Buffer.byteLength(s)<=FUNASR_LIMITS.textBytes),
   vad:z.array(interval).max(FUNASR_LIMITS.vad),sentences:z.array(sentence).max(FUNASR_LIMITS.sentences),
-  recognitionChunks:z.array(z.object({vadIndex:z.number().int().min(0).max(FUNASR_LIMITS.vad-1),text:utf8Text.refine(s=>Buffer.byteLength(s)<=FUNASR_LIMITS.textBytes)}).strict()).max(FUNASR_LIMITS.vad),
+  recognitionChunks:z.array(z.object({vadIndex:z.number().int().min(0).max(FUNASR_LIMITS.vad-1),text:utf8Text.refine(s=>Buffer.byteLength(s)<=FUNASR_LIMITS.textBytes),
+    tokens:z.array(z.object({startMs:ms,endMs:ms,text:utf8Text.refine(s=>Buffer.byteLength(s)<=FUNASR_LIMITS.textBytes)}).strict()).max(FUNASR_LIMITS.sentences).optional(),
+  }).strict()).max(FUNASR_LIMITS.vad),
 }).strict();
 export type FunasrCheckpoint=z.infer<typeof checkpointSchema>;
 const archiveSchema=z.object({sha256:digest,json:z.string().refine(s=>Buffer.byteLength(s)<=FUNASR_LIMITS.checkpointBytes)}).strict();
@@ -124,6 +126,16 @@ export function parseFunasrArchive(value:unknown,expected?:Pick<FunasrRequest,'a
   const checkpoint=checkpointSchema.parse(JSON.parse(archive.json)),{source,vad,sentences}=checkpoint;
   timeline(vad,source.durationMs,true,true);timeline(sentences,source.durationMs,false);
   requireContract(checkpoint.recognitionChunks.length===vad.length&&checkpoint.recognitionChunks.every((chunk,i)=>chunk.vadIndex===i),'Incomplete VAD recognition coverage');
+  const observedCtc=new Set<string>();
+  for(const chunk of checkpoint.recognitionChunks){
+    if(!chunk.tokens)continue;
+    timeline(chunk.tokens,source.durationMs,false);
+    const region=vad[chunk.vadIndex];
+    requireContract(chunk.tokens.every(token=>region.startMs<=token.startMs&&token.endMs<=region.endMs),'CTC token outside its recognition region');
+    requireContract(chunk.tokens.map(token=>token.text).join('')===chunk.text,'CTC tokens do not match final ASR text');
+    for(const token of chunk.tokens)observedCtc.add(JSON.stringify([token.startMs,token.endMs]));
+  }
+  for(const s of sentences)requireContract(s.precision!=='ctc'||observedCtc.has(JSON.stringify([s.startMs,s.endMs])),'CTC sentence has no archived token observation');
   requireContract(Boolean(checkpoint.text.trim())===(sentences.length>0),'Text and sentence coverage disagree');
   // A sentence can span several regions from this SAME VAD. Preserve overlap.
   const covered=(time:number)=>{let lo=0,hi=vad.length;while(lo<hi){const mid=(lo+hi)>>>1;if(vad[mid].startMs<=time)lo=mid+1;else hi=mid;}return lo>0&&vad[lo-1].endMs>=time;};

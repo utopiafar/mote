@@ -28,13 +28,14 @@ from mote_audio import (file_sha256, frame_interval, normalize, offline_process,
                         read_pcm, speaker_previews)
 
 # Full, untrimmed PCM; independent VAD regions are never concatenated. Nano's
-# token timings are deliberately not exported: the truthful common basis here
-# is VAD precision, not interpolated words. CT-Punc is local, with no hotwords.
+# CTC timings are actual SDK observations, never interpolated words. Missing
+# or incomplete token coverage retains truthful VAD precision. CT-Punc is local.
 SETTINGS = {'sampleRate': 16000, 'maxSegmentMs': 30000, 'segmentBufferMs': 100, 'vadFrameMs': 10,
             'maxNewTokens': 512, 'batchSize': 1,
             'mergeVad': False, 'llmDtype': 'fp32', 'hotwords': False,
             'punctuation': 'per-vad', 'speakerWindowFrames': 24000,
-            'speakerShiftFrames': 12000, 'speakerSmoothing': False}
+            'speakerShiftFrames': 12000, 'speakerSmoothing': False,
+            'textTiming': 'observed-ctc-or-vad', 'ctcFrameMs': 60}
 SETTINGS_FINGERPRINT = hashlib.sha256(contract.serialize(SETTINGS).encode()).hexdigest()
 # Recovery only retries a decoder that could not produce a complete result.
 # Model parameters and successful checkpoints stay unchanged. Smaller inputs
@@ -337,7 +338,61 @@ def recognize_intervals(model, pcm, intervals, runtime, cancelled):
             continue
         check_cancelled(cancelled)
         model_text(result.get('text'), contract.LIMITS['textBytes'])
-        yield first, last, {'text': result['text']}
+        yield first, last, {'text': result['text'], **({'timestamps': copy.deepcopy(result['timestamps'])}
+                                                     if 'timestamps' in result else {})}
+
+
+def ctc_sentences(chunk, punctuated, first, last):
+    """Keep complete SDK CTC token spans on the original PCM timeline.
+
+    Nano reports seconds on its 60 ms CTC grid. Intersect padded final frames
+    with real PCM; do not apportion a token's time among its characters. Only
+    structural CT-Punc punctuation/whitespace attaches to an observed token.
+    A partial/undecodable alignment keeps the entire region at VAD precision.
+    """
+    timestamps = chunk.get('timestamps')
+    if timestamps is None:
+        return None
+    if type(timestamps) is not list or len(timestamps) > contract.LIMITS['sentences']:
+        raise EngineError('inference_failed')
+    if not timestamps:
+        return None
+    markup = frozenset('。！？，、；：.,!?;:')
+    def spoken(char):
+        return char not in markup and not char.isspace()
+    observations, characters, previous = [], [], 0
+    for index, token in enumerate(timestamps):
+        if type(token) is not dict or type(token.get('token')) is not str:
+            raise EngineError('inference_failed')
+        start, end = token.get('start_time'), token.get('end_time')
+        if (any(type(value) not in (int, float) or not math.isfinite(value) for value in (start, end))
+                or not 0 <= previous <= start <= end <= (last-first)/16000 + SETTINGS['ctcFrameMs']/1000):
+            raise EngineError('inference_failed')
+        previous = start
+        observations.append({'startMs': (first+min(last-first, round(start*16000)))/16,
+                             'endMs': (first+min(last-first, round(end*16000)))/16, 'text': token['token']})
+        characters.extend((char, index) for char in token['token'] if spoken(char))
+    observed = ''.join(char for char, _index in characters)
+    if (not observed or ''.join(token['text'] for token in observations) != chunk['text']
+            or observed != ''.join(char for char in punctuated if spoken(char))):
+        return None
+    sentences, prefix, position, current = [], '', 0, None
+    for char in punctuated:
+        if not spoken(char):
+            if sentences:
+                sentences[-1]['text'] += char
+            else:
+                prefix += char
+            continue
+        _observed, index = characters[position]
+        position += 1
+        if current != index:
+            sentences.append({**observations[index], 'text': prefix+char, 'precision': 'ctc'})
+            prefix, current = '', index
+        else:
+            sentences[-1]['text'] += char
+    return ([{'start': row['startMs'], 'end': row['endMs'], 'text': row['text'], 'precision': row['precision']}
+             for row in sentences], observations)
 
 
 def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
@@ -363,7 +418,7 @@ def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
     vad = {**vad, 'value': completed_regions}
     # Keep the Nano text verbatim in recognitionChunks. Punctuation is a local
     # model stage, not deduplication or correction. No forced token timestamps.
-    sentences = []
+    sentences, punctuated = [], []
     if any(chunk['text'].strip() for chunk in chunks):
         with runtime.component('punctuation', root / 'punctuation') as model:
             for region, chunk in zip(vad['value'], chunks):
@@ -378,10 +433,20 @@ def recognize_pcm(request, source, identity, pcm, root, runtime, cancelled):
                 model_text(result.get('text'), 32000, 8000)
                 if not result['text'].strip():
                     raise EngineError('inference_failed')
-                sentences.append({'start': region[0], 'end': region[1], 'text': result['text']})
+                punctuated.append(result['text'])
+                first, last = frame_interval(region[0], region[1], frames)
+                timed = ctc_sentences(chunk, result['text'], first, last)
+                if timed is None:
+                    sentences.append({'start': region[0], 'end': region[1], 'text': result['text'], 'precision': 'vad'})
+                else:
+                    rows, tokens = timed
+                    chunk['tokens'] = tokens  # Matched final text/timestamps pair, converted exactly once.
+                    sentences.extend(rows)
+                if len(sentences) > contract.LIMITS['sentences']:
+                    raise EngineError('output_limit')
     check_cancelled(cancelled)
     return contract.recognize_to_checkpoint(request, source, identity, vad,
-        {'text': '\n'.join(sentence['text'] for sentence in sentences), 'sentence_info': sentences}, chunks, 'vad')
+        {'text': '\n'.join(punctuated), 'sentence_info': sentences}, chunks, 'vad')
 
 
 def speaker_windows(vad, pcm):
@@ -435,7 +500,7 @@ def acoustic_segments(windows, labels):
 
 
 def assign_sentences(cp, rows):
-    """SDK distribute_spk's total-overlap rule, with no fabricated default 0."""
+    """Observed spans use total overlap; coarse mixed VAD has no single owner."""
     native = []
     for sentence in cp['sentences']:
         overlaps = {}
@@ -444,8 +509,10 @@ def assign_sentences(cp, rows):
             if duration > 0:
                 label = row['speaker']
                 overlaps[label] = overlaps.get(label, 0) + duration
-        native.append({'text': sentence['text'], 'start': sentence['startMs'], 'end': sentence['endMs'],
-                       'spk': max(overlaps, key=overlaps.get) if overlaps else None})
+        label = max(overlaps, key=overlaps.get) if overlaps else None
+        if sentence.get('precision') == 'vad' and len({speaker for speaker in overlaps if speaker is not None}) > 1:
+            label = None  # Coarse mixed-speaker text has no observed finer attribution.
+        native.append({'text': sentence['text'], 'start': sentence['startMs'], 'end': sentence['endMs'], 'spk': label})
     return native
 
 
