@@ -102,7 +102,6 @@ import {notesFeature,type NotesCapture} from './features/notes.js';
 import {devicesFeature} from './features/devices.js';
 import {filesFeature} from './features/files.js';
 import {sourcesFeature} from './features/sources.js';
-import {healthFeature} from './features/system.js';
 import {connectionsFeature} from './features/connections.js';
 import {mediaModelsFeature,mediaPreparationFeature} from './features/media.js';
 import {inventoryFeature} from './features/features.js';
@@ -642,7 +641,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.files'))routes.push(withAgentTools(filesFeature({withMediaOwnerBatch,withMediaOwnerIntent,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization:authorize=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlayback}})));
   if(selected('mote.connections'))routes.push(withAgentTools(connectionsFeature({config,connections,connectionIdentity,serverVersion})));
   if(selected('mote.connections'))routes.push(developerAccessFeature({host:developerAccess,credential,connectionIdentity}));
-  if(selected('mote.system'))routes.push(healthFeature(serverVersion));
   if(selected('mote.storage'))routes.push(domain('mote.storage'));
   if(selected('mote.capture'))routes.push(withAgentTools(captureFeature({store,connections,credential,assertRequestActive,diagnostics,evidenceReader,files,ingress,executor,maintenanceWorker})));
   if(selected('mote.context'))routes.push(domain('mote.context'));

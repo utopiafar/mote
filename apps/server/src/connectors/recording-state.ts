@@ -2,14 +2,23 @@ import type {Store} from '../store.js';
 import type {ArchivedFileStore} from '../archived-files.js';
 import type {RecordingMetadata} from './recordings.js';
 
+import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
+
+// The manifest's early media-only activation may precede ArchivedFileStore.
+// Its original forward foreign key is retained; the full state is activated later.
+export const recordingMediaSchemaInstallation={owner:'recording-media',requires:[],install:db=>{db.exec('CREATE TABLE IF NOT EXISTS recording_media(source_id TEXT NOT NULL,external_id TEXT NOT NULL,file_id TEXT NOT NULL REFERENCES archived_files(id) ON DELETE CASCADE,PRIMARY KEY(source_id,external_id))');}} as const satisfies SchemaInstallation;
+export const recordingSyncSchemaInstallation={owner:'recording-sync',requires:['recording-media'],prerequisites:[{owner:'archived-files',objects:[{type:'table',name:'archived_files'}]}],install:db=>{db.exec(`CREATE TABLE IF NOT EXISTS recording_exports(source_id TEXT NOT NULL,external_id TEXT NOT NULL,file_id TEXT NOT NULL REFERENCES archived_files(id) ON DELETE CASCADE,metadata TEXT NOT NULL,observed_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('empty','unsupported')),PRIMARY KEY(source_id,external_id)); CREATE TABLE IF NOT EXISTS recording_cursors(source_id TEXT PRIMARY KEY,epoch TEXT NOT NULL,scanned_until TEXT NOT NULL,full_at INTEGER NOT NULL);`);}} as const satisfies SchemaInstallation;
+export const recordingSchemaInstallations=[recordingMediaSchemaInstallation,recordingSyncSchemaInstallation] as const;
+
+
 export function initializeRecordingMedia(store:Pick<Store,'db'>){
- store.db.exec('CREATE TABLE IF NOT EXISTS recording_media(source_id TEXT NOT NULL,external_id TEXT NOT NULL,file_id TEXT NOT NULL REFERENCES archived_files(id) ON DELETE CASCADE,PRIMARY KEY(source_id,external_id))');
+ installSchemaPlan(store.db,[recordingMediaSchemaInstallation]);
 }
 /** Durable recording receipts and explicit source/file read projections. Callers
  * retain the existing execution-grant transaction around publication methods. */
 export function recordingState(store:Pick<Store,'db'|'isCurrentEvidence'>,archives:Pick<ArchivedFileStore,'attach'>){
  const {db}=store,isCurrentEvidence=store.isCurrentEvidence.bind(store);
- db.exec(`CREATE TABLE IF NOT EXISTS recording_media(source_id TEXT NOT NULL,external_id TEXT NOT NULL,file_id TEXT NOT NULL REFERENCES archived_files(id) ON DELETE CASCADE,PRIMARY KEY(source_id,external_id)); CREATE TABLE IF NOT EXISTS recording_exports(source_id TEXT NOT NULL,external_id TEXT NOT NULL,file_id TEXT NOT NULL REFERENCES archived_files(id) ON DELETE CASCADE,metadata TEXT NOT NULL,observed_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('empty','unsupported')),PRIMARY KEY(source_id,external_id)); CREATE TABLE IF NOT EXISTS recording_cursors(source_id TEXT PRIMARY KEY,epoch TEXT NOT NULL,scanned_until TEXT NOT NULL,full_at INTEGER NOT NULL);`);
+ installSchemaPlan(db,recordingSchemaInstallations);
  return {
   pipelineConfigured:(sourceId:string)=>Boolean(db.prepare('SELECT 1 FROM source_pipeline_config WHERE source_id=?').get(sourceId)),
   memoryRecipeConfigured:(sourceId:string)=>Boolean(db.prepare('SELECT 1 FROM memory_recipe_settings WHERE source_id=?').get(sourceId)),
