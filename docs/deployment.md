@@ -6,7 +6,7 @@
 
 ## 环境与私有目录
 
-需要 Node.js 24。以下命令从仓库根目录执行。统一入口是 `node scripts/mote.mjs`，也可用 `npm run mote --`。默认选择 **dev**，即使 shell 继承了 `MOTE_PROFILE=prod` 也不会改变目标；正式节点必须显式传 `--profile prod`。也可使用 1–32 位小写字母、数字、下划线或连字符的独立环境名；其它名字默认使用开发端口，建议初始化时显式指定空闲 `--port`。CLI 拒绝 `legacy` 环境名；直接进程的默认环境名是 `default`，两者的默认入口不同。
+原生部署需要 Node.js 24；Docker 部署可使用下文的 `scripts/mote-docker`，宿主不需要 Node/npm。以下命令从仓库根目录执行。原生入口是 `node scripts/mote.mjs`，也可用 `npm run mote --`。默认选择 **dev**，即使 shell 继承了 `MOTE_PROFILE=prod` 也不会改变目标；正式节点必须显式传 `--profile prod`。也可使用 1–32 位小写字母、数字、下划线或连字符的独立环境名；其它名字默认使用开发端口，建议初始化时显式指定空闲 `--port`。CLI 拒绝 `legacy` 环境名；直接进程的默认环境名是 `default`，两者的默认入口不同。
 
 | 环境 | 默认 API 端口 | 默认配置 | 数据与日志 |
 |---|---:|---|---|
@@ -137,18 +137,26 @@ launchctl bootout "gui/$(id -u)/$LABEL"
 
 ## Linux / NAS Docker
 
-需要 Docker Engine、**Docker Compose 2.30.0 或更新版本**与 Node 24（运行部署 CLI 和离线备份）。Compose 使用 `env_file.format: raw`，避免密钥中的 `$` 或引号被再次解释；此格式的版本要求见 [Docker 官方文档](https://docs.docker.com/reference/compose-file/services/#env_file)。从源码运行宿主 CLI 前，先执行 `npm ci --ignore-scripts` 安装锁定的 YAML 解析依赖；普通 Docker profile 命令无需构建共享库或服务器，也无需在宿主运行服务器的原生依赖安装脚本。镜像构建会自行安装容器内的 npm 依赖。
+Docker 部署入口 `scripts/mote-docker` 需要宿主的 POSIX shell、标准系统工具和 Docker CLI，可连接本机 Unix socket 的 Linux Engine 或 macOS Docker Desktop。Node、YAML 解析器和固定版本 Docker/Compose 客户端在独立的 `deploy-cli` 镜像内运行；宿主不需要安装 Node、npm 或 Compose。该入口运行预先准备的镜像，先用宿主 Docker 构建或拉取 CLI 与 Central：
 
 ```sh
-npm ci --ignore-scripts
-node scripts/mote.mjs init --profile prod --home /srv/mote/profiles --runtime docker
+docker build --target deploy-cli --tag mote-central:cli .
+docker build --target core --tag mote-central:local-core .
+scripts/mote-docker init --profile prod --home /srv/mote/profiles --image mote-central:local-core
 # 编辑 /srv/mote/profiles/prod/mote.yaml
-node scripts/mote.mjs compose --profile prod --home /srv/mote/profiles -- build
-node scripts/mote.mjs start --profile prod --home /srv/mote/profiles
-node scripts/mote.mjs status --profile prod --home /srv/mote/profiles
-node scripts/mote.mjs token --profile prod --home /srv/mote/profiles
-node scripts/mote.mjs stop --profile prod --home /srv/mote/profiles
+scripts/mote-docker start --profile prod --home /srv/mote/profiles
+scripts/mote-docker status --profile prod --home /srv/mote/profiles
+scripts/mote-docker token --profile prod --home /srv/mote/profiles
+scripts/mote-docker stop --profile prod --home /srv/mote/profiles
 ```
+
+CLI 镜像默认名为 `mote-central:cli`，可用 `MOTE_DEPLOY_CLI_IMAGE=LOCAL_TOOLING_IMAGE` 明确选择。Docker/Compose 来自固定 digest 的官方 Docker CLI 镜像；Compose 支持 `env_file.format: raw`，避免密钥中的 `$` 或引号被再次解释。运行 CLI 容器不挂载宿主 Docker 配置或凭据目录，不自动登录注册表；需要私有镜像时先通过宿主的 Docker 凭据工具完成拉取。
+
+入口遵守宿主 Docker 的 [context 优先级](https://docs.docker.com/reference/cli/docker/#environment-variables)：显式 `DOCKER_CONTEXT` 优先于 `DOCKER_HOST`，否则使用当前 context。SSH/TCP endpoint、userns-remap 和不支持的主目录在写 profile 前拒绝。本机 Unix socket 会绑定到 CLI 容器，profile home 则以**相同绝对路径**挂载，以便 Compose 的配置目录、项目身份和卷身份仍由真实宿主路径生成。保持 `--home` 路径拼写一致；不接受 `.`/`..` 路径段、控制字符或逗号。CLI 使用宿主 UID/GID 和 socket 组，rootless Engine 使用映射后的 0:0。生命周期锁保存完整 CLI 容器 ID；活跃容器持锁时拒绝另一个写操作，容器退出后可恢复，无法核验 Docker 状态时不会抢锁。过期锁清理期间另持有短暂的私有 recovery claim，防止并发清理删掉新持有者的锁；清理本身被中断时会拒绝重试，需检查 `lifecycle.lock.recovery`。遗留的宿主 PID 锁需在宿主确认后处理。
+
+`scripts/mote-docker` 支持 Docker profile 的初始化、启停、状态、配置、令牌、备份恢复、显式镜像升级/回滚及 Compose 运维。`backup --out` 和 `restore --from` 必须位于挂载的 home 内；未指定 `--out` 时仍使用 profile 的 `backups/`。容器不继承宿主 shell 的模型密钥，所需凭据写入私有 YAML。原生 profile、源码自动更新、宿主命令执行和源码构建使用现有 Node 入口；Docker 入口遇到原生 profile 会拒绝操作。
+
+仍可从源码运行 `node scripts/mote.mjs` 管理 Docker profile：宿主需要 Node 24、Compose 2.30.0 或更新版本，以及 `npm ci --ignore-scripts` 安装的锁定 YAML 依赖。普通 Docker profile 命令无需构建共享库或服务器，也无需在宿主安装服务器的原生依赖。`compose -- build` 只通过此源码入口使用本地完整源码上下文。Compose 的 raw 环境文件要求见 [Docker 官方文档](https://docs.docker.com/reference/compose-file/services/#env_file)。
 
 默认 Docker profile 选择 `core`，本地镜像标签为 `mote-central:<Central版本>-core`。`core` 包含 Central/Web、SQLite、Agent/DSH SDK、插件宿主和导入运行时；构建所用的 Python/C++ 工具链不会进入该运行镜像。OCR/ASR Python 环境、FFmpeg 和固定版本 Lark/DingTalk CLI 是可选资源，只安装在 `full`。两个目标共享同一 Central 层，均不包含模型权重。直接使用 `docker build` 时也默认 core；明确构建目标可用：
 
@@ -160,9 +168,9 @@ docker build --target full --tag mote-central:local-full .
 需要官方录音 CLI 或受管 OCR/ASR 环境时，初始化时显式选择 full；只选择 full 仍不启动媒体 worker：
 
 ```sh
-node scripts/mote.mjs init --profile prod --home /srv/mote/profiles --runtime docker --image-variant full --media-workers ocr,asr
-node scripts/mote.mjs compose --profile prod --home /srv/mote/profiles -- build
-node scripts/mote.mjs start --profile prod --home /srv/mote/profiles
+docker build --target full --tag mote-central:local-full .
+scripts/mote-docker init --profile prod --home /srv/mote/profiles --image mote-central:local-full --image-variant full --media-workers ocr,asr
+scripts/mote-docker start --profile prod --home /srv/mote/profiles
 ```
 
 `--media-workers` 接受 `none`（默认）、`ocr`、`asr` 或 `ocr,asr`，写入主 YAML 的 `media.dockerWorkers`。已有 profile 可直接编辑该数组，再执行 `start` 应用所选资源；取消的角色会先停止，`stop` 也会停止此前已选择的角色。Compose 使用独立的 `media-ocr` / `media-asr` [profiles](https://docs.docker.com/compose/how-tos/profiles/)，只有显式选择的角色参与普通启动。`profile.json` 的 `imageVariant` 记录构建目标，镜像标签不用于推断变体；`core` 选择受管媒体会在启动前拒绝，选择 full 但镜像缺少所需解释器/FFmpeg 也会明确拒绝。配置中的端口、endpoint 或 token 不启用角色。
@@ -210,11 +218,13 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 ```sh
 node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --release /srv/mote/releases/next
 # Docker先准备明确的本地镜像，再选择--image；切换变体也显式声明
-node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --image mote-central:next-full --image-variant full
+scripts/mote-docker upgrade --profile prod --home /srv/mote/profiles --image mote-central:next-full --image-variant full
 node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restore-data
 ```
 
-upgrade先停该环境并生成一致快照，再切换代码/镜像和验证健康。准备失败且未改动资料时恢复原运行意图；切换开始后的失败保留快照与状态，不让旧代码自动打开不兼容库。rollback额外保留当前资料；升级后新增内容不在恢复后的活动仓库中，但保留在pre-rollback副本/原目录或卷，不自动删除。当前连接器凭据另作私有移交，游标按恢复规则重建。
+服务器构建会生成 `apps/server/dist/deployment-contract.json`，CLI 镜像构建另生成 `deploy/deployment-contract.json`。当前合同为 `mote.deployment` version 1，并记录独立的 Central 版本；它声明本代 YAML、日志、存储及部署行为的共同边界，不以源码文件名或镜像标签推断兼容性。合同缺失、损坏或版本不等于 1 都会明确拒绝。原生/源码 CLI 可在构建前初始化配置；Docker 入口的 init 会先核验目标镜像。所有入口的 start，以及 upgrade/rollback 的目标预检，都会读取实际构建目录或本地镜像中的合同；Docker 校验后使用解析出的不可变 image ID 启动，避免标签在校验和使用间切换。没有自动兼容、降级或资料迁移。
+
+upgrade 先核验合同和已选可选资源，确认目标可用后才停该环境并生成一致快照，再切换代码/镜像和验证健康。准备失败且未改动资料时恢复原运行意图；切换开始后的失败保留快照与状态，不让旧代码自动打开不兼容库。rollback额外保留当前资料；升级后新增内容不在恢复后的活动仓库中，但保留在pre-rollback副本/原目录或卷，不自动删除。当前连接器凭据另作私有移交，游标按恢复规则重建。
 
 launchd等自动管理须先停止接管，升级验收后恢复，避免迁移时自动重启写入。跨代回滚必须配套旧程序与完整旧备份。签名、不可变制品及客户端更新说明见[更新](updating.md)和[发布](releasing.md)。
 
@@ -248,4 +258,4 @@ node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 
 ## 验证
 
-部署测试使用临时profile、生成数据和独立loopback进程验证健康、身份隔离、备份/恢复与切换。`test:profiles`、`test:profiles:container`和更新测试是按需入口。已构建的core/full可分别用`node scripts/test-docker-images.mjs --variant core --image LOCAL_CORE_TAG`和`--variant full --image LOCAL_FULL_TAG`验证真实消费：Agent/导入依赖、SQLite/HTTP、默认资源选择与full的角色切换。该入口不构建镜像、不安装权重或执行模型推理，仅清理本次生成的profile、容器和卷。Docker/NAS权限、公网证书、系统服务和实际目标机器必须各自验证。已有历史通过数量不代表当前部署已验收，见[测试规范](testing.zh-CN.md)。
+部署测试使用临时profile、生成数据和独立loopback进程验证健康、身份隔离、备份/恢复与切换。`test:profiles`、`test:profiles:container`和更新测试是按需入口。已构建的core/full可分别用`node scripts/test-docker-images.mjs --variant core --image LOCAL_CORE_TAG`和`--variant full --image LOCAL_FULL_TAG`验证真实消费：Agent/导入依赖、SQLite/HTTP、默认资源选择与full的角色切换。该入口不构建镜像、不安装权重或执行模型推理，仅清理本次生成的profile、容器和卷。Docker-only 入口可用 `node scripts/test-docker-deploy-cli.mjs --image LOCAL_CORE --cli LOCAL_DEPLOY_CLI` 按需验证；测试驱动使用 Node，但传给真实宿主入口的 PATH 只有 Docker 和必需系统工具，覆盖拒绝、锁、失败恢复、备份、升级和回滚，并核对测试前后的容器/卷清单。Docker/NAS权限、公网证书、系统服务和实际目标机器必须各自验证。已有历史通过数量不代表当前部署已验收，见[测试规范](testing.zh-CN.md)。
