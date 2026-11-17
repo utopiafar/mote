@@ -12,6 +12,7 @@ import {parseMaterialRef,type MaterialReadPage,type MaterialStore} from './mater
 import {StoreError,type Store} from './store.js';
 import {PluginResourceScope,PluginEpochs,type HostScope} from '@mote/plugin-host';
 import type {ConfigService} from './config-service.js';
+import {workflowConfigDomain} from './config.js';
 import {workflowConfigurationSchema,defaultWorkflowConfiguration,WORKFLOW_LANES,type WorkflowConfiguration} from './workflow-configuration.js';
 
 const fingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)??'null').digest('hex');
@@ -62,12 +63,12 @@ export class ProcessingRuntime {
   private unregister:Array<()=>Promise<void>>=[];private policy:WorkflowConfiguration;private policyEpoch=Object.fromEntries(WORKFLOW_LANES.map(lane=>[lane,0])) as Record<ProcessingLane,number>;
   constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;enabled?:boolean}>>={},private now=Date.now,engine:ExecutionEngine|undefined,private materials:MaterialStore|undefined,scope:HostScope,private configService?:ConfigService){
     scope.assertCurrent();
-    this.policy=workflowConfigurationSchema.parse(configService?.current('workflows')??defaultWorkflowConfiguration(limits));
+    this.policy=configService?.current(workflowConfigDomain)??defaultWorkflowConfiguration(limits);
     this.resources=new PluginResourceScope(undefined,'Processing runtime plugin scope disposal failed');
     this.registry=new ContextProcessorRegistry(scope);this.consumers=new MaterialConsumerRegistry(scope);
     installSchemaPlan(store.db,[processingRuntimeSchemaInstallation]);
     // Publish runtime bindings only after the storage transaction succeeds.
-    configService?.setHandler<WorkflowConfiguration>('workflows',next=>{const value=workflowConfigurationSchema.parse(next),previous=this.settings();return {apply:()=>{},publish:()=>{this.policy=structuredClone(value);},rollback:()=>{this.policy=structuredClone(previous);},complete:()=>this.completePolicy(value,previous)};});
+    configService?.setHandler(workflowConfigDomain,next=>{const previous=this.settings();return {apply:()=>{},publish:()=>{this.policy=structuredClone(next);},rollback:()=>{this.policy=structuredClone(previous);},complete:()=>this.completePolicy(next,previous)};});
     scope.defer(()=>this.resources.close());
     const services=scope.cordis.plugin((context:Context)=>{
       context.provide('moteContextProcessors',this.registry);context.provide('moteMaterialConsumers',this.consumers);
@@ -170,7 +171,7 @@ export class ProcessingRuntime {
   async save(input:unknown){
     this.assertAccepting();
     const parsed=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),settings:workflowConfigurationSchema}).strict().parse(input);
-    if(this.configService)await this.configService.replace('workflows',parsed.settings,parsed.revision);
+    if(this.configService)await this.configService.replace(workflowConfigDomain.id,parsed.settings,parsed.revision);
     else {const previous=this.settings();this.policy=parsed.settings;this.completePolicy(parsed.settings,previous);}
     return {revision:this.configService?.revision??0,settings:this.settings()};
   }
