@@ -5,6 +5,19 @@ import {StoreError} from '../store.js';
 import {MediaAssets} from '../media-assets.js';
 import {centralServices,type MediaAssetsRead} from './central-contracts.js';
 
+export type LazyTarget<T extends object>={readonly proxy:T;set(value:T):void};
+/** Early Host consumers receive the profile's real selected service once its
+ * owner activation starts. Access before selection is a hard failure. */
+export function lazyTarget<T extends object>(name:string):LazyTarget<T>{
+ let target:T|undefined;
+ const proxy=new Proxy({} as T,{get(_target,property,receiver){
+  if(!target)throw new StoreError(name+' is not active',503);
+  const value=Reflect.get(target,property,receiver);
+  return typeof value==='function'?value.bind(target):value;
+ },has(_target,property){if(!target)throw new StoreError(name+' is not active',503);return property in target;}});
+ return {proxy,set(value){target=value;}};
+}
+
 /** The media-assets service's actual data-contribution fragment. The package Manifest
  * carries its declaration; the host owns install topology. The plugin owns
  * the managed asset directory itself: downloads, checksum verification and atomic version publication. */
