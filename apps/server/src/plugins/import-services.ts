@@ -18,6 +18,7 @@ import type {EvidenceReader} from '../evidence-reader.js';
 import {navigationScopeSchema} from '../context-navigation.js';
 import {ImportInputError,ImportStore,type ImportPreparation,type ImportPreparationResult} from '../imports.js';
 import {ImportUploads,registerImportUploads} from '../import-uploads.js';
+import {UploadHttpProtection} from '../local-rate-limits.js';
 import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput} from './python-source-pack-executor.js';
 import type {FileProcessing} from '../file-processing.js';
 import {StoreError,sha256} from '../store.js';
@@ -122,11 +123,15 @@ export function createImportServices(dependencies:ImportServicesDependencies,imp
         if(phase!=='active'&&(phase!=='quiescing'||write))return reply.code(503).send({error:'feature_unavailable'});
       });
       registerImportUploads(app,currentUploads);
+      // Inline base64 is also a current upload contract. Bound its larger JSON
+      // buffers separately; small directory/archive-reference commands bypass
+      // this body gate. Request-ID replay is resolved before new admission.
+      const inlineUploads=new UploadHttpProtection(Date.now,{perIdentity:1,total:2});inlineUploads.install(app);
       app.get('/api/import-capabilities',async()=>current.intake.list());
       app.get('/api/imports',async()=>({items:current.list()}));
       app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
-      app.post('/api/imports',{bodyLimit:360*1024*1024},async(req,reply)=>{
-        try{const job=await current.create(req.body);if(job.status==='queued')launchOwnerImport(job.id,()=>current.prepare(job.id));return reply.code(202).send(current.get(job.id));}
+      app.post('/api/imports',{bodyLimit:360*1024*1024,onRequest:inlineUploads.receiveLargeJson},async(req,reply)=>{
+        try{const job=await inlineUploads.produce(req,()=>current.create(req.body,()=>inlineUploads.admit(req)));if(job.status==='queued')launchOwnerImport(job.id,()=>current.prepare(job.id));return reply.code(202).send(current.get(job.id));}
         catch(error){if(error instanceof ImportInputError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});throw error;}
       });
       app.post('/api/imports/:id/cancel',async req=>current.cancel(jobId(req.params)));

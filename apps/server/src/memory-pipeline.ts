@@ -1,7 +1,6 @@
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {MEMORY_VISUAL_EVIDENCE_CONTRACT} from './memory-image-proof.js';
 import {memoryImageGrants,memoryImageLocator,memoryImageLocators,assertMemoryImageGrants,uninspectedMemoryImageTargets,type MemoryImageLocator,type MemoryImageGrant} from './memory-image-grants.js';
-import {ActivityMemoryIndex} from './activity-memory-index.js';
 import {memoryFeedbackBatchId,validMemoryFeedbackPlan,hasUsefulMemoryFeedbackScope,type MemoryFeedbackPlanner,type MemoryFeedbackRequest,type MemoryFeedbackPlan,type MemoryFeedbackGroup} from './memory-feedback.js';
 import {decodeMemoryJob,encodeMemoryJob,decodeMemoryBatch,encodeMemoryBatch,installMemoryPrivateRetirement} from './plugins/memory-private-storage.js';
 import {memoryWorkPackageSchema,memoryWorkInstruction,readMemoryWorkCoverage,type MemoryWorkPackage,type MemoryWorkMember,type MemoryWorkCoverage,type MemoryOwnerQuestion,type MemoryWorkInspection} from './memory-work-contract.js';
@@ -218,7 +217,6 @@ export class MemoryPipeline {
     this.batchBudget();
     this.store.db.exec("CREATE INDEX IF NOT EXISTS memory_generation_context ON memory_batches(json_extract(json,'$.generationContract'))");
     this.store.db.exec("CREATE INDEX IF NOT EXISTS memory_continuation_parent ON memory_jobs(json_extract(json,'$.continuationOf')) WHERE json_extract(json,'$.continuationOf') IS NOT NULL");
-    new ActivityMemoryIndex(this.store);
     this.initializeCounts();
     this.initializePrivateStorage();
     this.drafts=new MemoryExtractionDrafts(this.store);
