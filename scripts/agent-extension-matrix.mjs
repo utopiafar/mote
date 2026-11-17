@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** G4 manual deep-extension matrix for Agent runtime/package boundaries.
+/** Manual deep-extension matrix for Agent runtime/package boundaries.
  *
  * This runner deliberately composes the existing generated-fixture cases
  * instead of reimplementing their protocol servers. Every case starts from
