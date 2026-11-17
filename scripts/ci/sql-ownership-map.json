@@ -291,6 +291,24 @@
    "file": "apps/server/src/background-model-authorization-schema.ts"
   },
   {
+   "declaration": "pluginReleasePreviewsSchemaInstallation",
+   "owner": "plugin-release-previews",
+   "fn": "pluginReleasePreviewsSchema",
+   "file": "apps/server/src/plugin-surface-schema.ts"
+  },
+  {
+   "declaration": "developerAccessSchemaInstallation",
+   "owner": "developer-access",
+   "fn": "developerAccessSchema",
+   "file": "apps/server/src/plugin-surface-schema.ts"
+  },
+  {
+   "declaration": "outboundExportSchemaInstallation",
+   "owner": "outbound-export",
+   "fn": "outboundExportSchema",
+   "file": "apps/server/src/plugin-surface-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -671,6 +689,16 @@
    "file": "apps/server/src/conversation-schema.ts",
    "installer": "conversationSchemaInstallation"
   },
+  "developer_deliveries": {
+   "owner": "developer-access",
+   "file": "apps/server/src/plugin-surface-schema.ts",
+   "installer": "developerAccessSchemaInstallation"
+  },
+  "developer_events": {
+   "owner": "developer-access",
+   "file": "apps/server/src/plugin-surface-schema.ts",
+   "installer": "developerAccessSchemaInstallation"
+  },
   "devices": {
    "owner": "capture",
    "file": "apps/server/src/capture-schema.ts",
@@ -1011,6 +1039,16 @@
    "file": "apps/server/src/operation-projection.ts",
    "installer": "operationProjectionSchemaInstallation"
   },
+  "outbound_export_instances": {
+   "owner": "outbound-export",
+   "file": "apps/server/src/plugin-surface-schema.ts",
+   "installer": "outboundExportSchemaInstallation"
+  },
+  "outbound_export_items": {
+   "owner": "outbound-export",
+   "file": "apps/server/src/plugin-surface-schema.ts",
+   "installer": "outboundExportSchemaInstallation"
+  },
   "perception_jobs": {
    "owner": "perception",
    "file": "apps/server/src/perception-schema.ts",
@@ -1045,6 +1083,11 @@
    "owner": "plugin-instance-state",
    "file": "apps/server/src/plugins/instance-state.ts",
    "installer": "instanceStateSchemaInstallation"
+  },
+  "plugin_release_previews": {
+   "owner": "plugin-release-previews",
+   "file": "apps/server/src/plugin-surface-schema.ts",
+   "installer": "pluginReleasePreviewsSchemaInstallation"
   },
   "processing_dependencies": {
    "owner": "processing-runtime",

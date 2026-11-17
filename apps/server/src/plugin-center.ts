@@ -10,6 +10,8 @@ import {GitHubPluginReleases,type PluginManifest,type ResolvedPluginRelease} fro
 import {HostedPluginRuntime,WorkerPluginRuntime,type PluginRuntime} from './plugin-runtime.js';
 import {memoryControlCommandSchema} from './memory-automation.js';
 import {sha256,StoreError,type Store} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {pluginReleasePreviewsSchemaInstallation} from './plugin-surface-schema.js';
 import {PluginControlStore,type BuildInstance,type BuildInstanceRecord,type BuildPackageRecord,type BuildSelection} from './plugins/plugin-control-store.js';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {RuntimeModuleReference} from '@mote/shared/agent-runtimes';
@@ -110,7 +112,7 @@ export class PluginCenter {
   private readonly activeConnectors=new Map<string,{connectorId:string;instanceId:string}>();
   constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;assertCurrent?:()=>void;hostDependencies?:readonly TrustedHostDependency[]}){
     this.control=new PluginControlStore(store);
-    store.db.exec(`CREATE TABLE IF NOT EXISTS plugin_release_previews(id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
+    installSchemaPlan(store.db,[pluginReleasePreviewsSchemaInstallation]);
     store.registerStorage('plugin-control',{plugin_release_previews:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128'});
     this.disposeHandlers.push(executor.register({kind:'plugin.install',pool:'plugin-control',concurrency:()=>1,policy:EXECUTION_POLICIES.control,admit:()=>this.admit(),
       validate:step=>Boolean(this.package(String(step.input.packageId))?.view.state==='installing'),
