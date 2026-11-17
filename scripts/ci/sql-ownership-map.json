@@ -1,6 +1,18 @@
 {
  "owners": [
   {
+   "declaration": "processorAdmissionSchemaInstallation",
+   "owner": "processor-admission",
+   "fn": "processorAdmissionSchema",
+   "file": "apps/server/src/admission-schema.ts"
+  },
+  {
+   "declaration": "providerAdmissionSchemaInstallation",
+   "owner": "provider-admission",
+   "fn": "providerAdmissionSchema",
+   "file": "apps/server/src/admission-schema.ts"
+  },
+  {
    "declaration": "vaultSchemaInstallation",
    "owner": "vault",
    "fn": "vaultSchema",
@@ -1006,6 +1018,16 @@
    "owner": "processing-runtime",
    "file": "apps/server/src/processing-runtime-schema.ts",
    "installer": "processingRuntimeSchemaInstallation"
+  },
+  "processor_cooldowns": {
+   "owner": "processor-admission",
+   "file": "apps/server/src/admission-schema.ts",
+   "installer": "processorAdmissionSchemaInstallation"
+  },
+  "provider_cooldowns": {
+   "owner": "provider-admission",
+   "file": "apps/server/src/admission-schema.ts",
+   "installer": "providerAdmissionSchemaInstallation"
   },
   "query_runs": {
    "owner": "query-run-storage",
